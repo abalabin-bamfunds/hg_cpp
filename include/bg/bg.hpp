@@ -1,0 +1,20 @@
+#pragma once
+
+#include <bg/type/guarantee_parameter.hpp>
+#include <bg/type/guarantee_variable.hpp>
+#include <bg/type/node_signature.hpp>
+#include <bg/type/scalar_type.hpp>
+#include <bg/type/size.hpp>
+#include <bg/type/time_series_guarantee.hpp>
+#include <bg/type/time_series_type.hpp>
+#include <bg/type/time_series_value_type.hpp>
+#include <bg/type/type.hpp>
+#include <bg/type/type_map.hpp>
+#include <bg/type/type_of.hpp>
+#include <bg/type/type_resolution_error.hpp>
+#include <bg/type/type_variable.hpp>
+#include <bg/type/variable.hpp>
+#include <bg/util/compile_time_string.hpp>
+#include <bg/util/polymorphic_value.hpp>
+#include <bg/util/symbol.hpp>
+#include <bg/version.hpp>

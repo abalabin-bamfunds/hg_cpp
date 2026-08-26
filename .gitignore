@@ -1,0 +1,35 @@
+# CMake build trees
+/build/
+/cmake-build-*/
+/out/
+
+# CMake-generated files
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+compile_commands.json
+CTestTestfile.cmake
+Testing/
+
+# Compiled artifacts
+*.a
+*.dll
+*.dylib
+*.lib
+*.o
+*.obj
+*.so
+
+# Python
+__pycache__/
+*.egg-info/
+*.py[cod]
+.pytest_cache/
+.venv/
+dist/
+
+# Editors and operating systems
+.DS_Store
+.idea/
+.vscode/
+*~

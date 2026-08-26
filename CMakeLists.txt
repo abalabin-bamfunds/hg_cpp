@@ -1,0 +1,89 @@
+cmake_minimum_required(VERSION 3.20)
+
+project(
+    bg
+    VERSION 0.1.0
+    DESCRIPTION "An engine for forward propagation through computation graphs"
+    LANGUAGES CXX
+)
+
+include(CTest)
+include(GNUInstallDirs)
+
+option(BG_BUILD_PYTHON "Build the Python extension module" OFF)
+
+add_library(
+    bg
+    src/guarantee_parameter.cpp
+    src/node_signature.cpp
+    src/scalar_type.cpp
+    src/symbol.cpp
+    src/time_series_value_type.cpp
+    src/type_of.cpp
+    src/version.cpp
+)
+add_library(bg::bg ALIAS bg)
+
+target_compile_features(bg PUBLIC cxx_std_23)
+target_compile_definitions(bg PRIVATE BG_VERSION="${PROJECT_VERSION}")
+target_include_directories(
+    bg
+    PUBLIC
+        $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+)
+
+set_target_properties(
+    bg
+    PROPERTIES
+        CXX_EXTENSIONS OFF
+        VERSION ${PROJECT_VERSION}
+        SOVERSION ${PROJECT_VERSION_MAJOR}
+)
+
+if(BUILD_TESTING)
+    add_subdirectory(tests)
+endif()
+
+if(BG_BUILD_PYTHON)
+    add_subdirectory(bindings/python)
+endif()
+
+include(CMakePackageConfigHelpers)
+
+configure_package_config_file(
+    cmake/bgConfig.cmake.in
+    "${CMAKE_CURRENT_BINARY_DIR}/bgConfig.cmake"
+    INSTALL_DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/bg"
+)
+
+write_basic_package_version_file(
+    "${CMAKE_CURRENT_BINARY_DIR}/bgConfigVersion.cmake"
+    VERSION ${PROJECT_VERSION}
+    COMPATIBILITY SameMajorVersion
+)
+
+install(
+    TARGETS bg
+    EXPORT bgTargets
+    ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+    LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+    RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
+    INCLUDES DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}"
+)
+
+install(DIRECTORY include/ DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
+
+install(
+    EXPORT bgTargets
+    FILE bgTargets.cmake
+    NAMESPACE bg::
+    DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/bg"
+)
+
+install(
+    FILES
+        "${CMAKE_CURRENT_BINARY_DIR}/bgConfig.cmake"
+        "${CMAKE_CURRENT_BINARY_DIR}/bgConfigVersion.cmake"
+    DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/bg"
+)
