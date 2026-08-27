@@ -47,6 +47,7 @@ focused on one behavior.
 - constant-size polymorphic values and visitor dispatch
 - thread-local context storage
 - scheduling bit iteration
+- stable-address storage, shared occupancy, and incremental hash containers
 
 ### Value system
 

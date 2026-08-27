@@ -20,7 +20,13 @@ add_executable(
     testing/test_graph_test.cpp
     type/type_system_test.cpp
     utils/polymorphic_value_test.cpp
+    utils/contiguous_bunch_test.cpp
+    utils/hash_dictionary_test.cpp
+    utils/hash_set_test.cpp
+    utils/linear_hash_table_test.cpp
+    utils/occupancy_index_test.cpp
     utils/reflection_test.cpp
+    utils/sparse_bunch_test.cpp
     utils/symbol_test.cpp
     utils/version_test.cpp
     value/erased_scalar_value_test.cpp

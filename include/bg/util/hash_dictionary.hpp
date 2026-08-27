@@ -1,0 +1,182 @@
+#pragma once
+
+#include <bg/util/details/hash_key_table.hpp>
+#include <bg/util/sparse_bunch.hpp>
+
+#include <cstddef>
+#include <cstdint>
+#include <functional>
+#include <iterator>
+#include <memory_resource>
+#include <stdexcept>
+#include <type_traits>
+#include <utility>
+
+namespace bg::util {
+
+// Stores stable-address keys and values in separate typed columns that share occupied positions.
+// The caller must use one memory resource for all storage changes and release storage before destruction.
+template <typename Key, typename Value, typename Hash = std::hash<Key>, typename Equal = std::equal_to<>>
+class hash_dictionary {
+  public:
+    using size_type = std::uint32_t;
+
+    hash_dictionary() = default;
+
+    hash_dictionary(const hash_dictionary &) = delete;
+    hash_dictionary &operator=(const hash_dictionary &) = delete;
+    hash_dictionary(hash_dictionary &&) = delete;
+    hash_dictionary &operator=(hash_dictionary &&) = delete;
+
+    template <typename KeySource, typename... ValueArguments>
+    [[nodiscard]] std::pair<Value *, bool> try_emplace(KeySource &&key, std::pmr::memory_resource &memory,
+                                                       ValueArguments &&...value_arguments) {
+        const auto result = keys_.insert(std::forward<KeySource>(key), memory);
+        if (!result.inserted) {
+            return {&values_[result.position], false};
+        }
+
+        try {
+            auto &value = values_.emplace_at(result.position, memory,
+                                             std::forward<ValueArguments>(value_arguments)...);
+            return {&value, true};
+        } catch (...) {
+            keys_.erase_at(result.position, result.hash, memory);
+            throw;
+        }
+    }
+
+    template <typename KeySource, typename ValueSource>
+    Value &insert_or_assign(KeySource &&key, ValueSource &&value, std::pmr::memory_resource &memory) {
+        auto [stored, inserted] = try_emplace(std::forward<KeySource>(key), memory,
+                                             std::forward<ValueSource>(value));
+        if (!inserted) {
+            *stored = std::forward<ValueSource>(value);
+        }
+
+        return *stored;
+    }
+
+    template <typename Lookup> [[nodiscard]] Value *find(const Lookup &key) {
+        const auto position = keys_.find_position(key);
+
+        return position == occupancy_index::npos ? nullptr : &values_[position];
+    }
+
+    template <typename Lookup> [[nodiscard]] const Value *find(const Lookup &key) const {
+        const auto position = keys_.find_position(key);
+
+        return position == occupancy_index::npos ? nullptr : &values_[position];
+    }
+
+    template <typename Lookup> [[nodiscard]] bool contains(const Lookup &key) const {
+        return find(key) != nullptr;
+    }
+
+    template <typename Lookup> [[nodiscard]] Value &at(const Lookup &key) {
+        auto *value = find(key);
+        if (value == nullptr) {
+            throw std::out_of_range{"dictionary key was not found"};
+        }
+
+        return *value;
+    }
+
+    template <typename Lookup> [[nodiscard]] const Value &at(const Lookup &key) const {
+        const auto *value = find(key);
+        if (value == nullptr) {
+            throw std::out_of_range{"dictionary key was not found"};
+        }
+
+        return *value;
+    }
+
+    template <typename Lookup>
+    [[nodiscard]] bool erase(const Lookup &key, std::pmr::memory_resource &memory) {
+        const auto found = keys_.find(key);
+        if (!found) {
+            return false;
+        }
+
+        values_.erase_at(found->position, memory);
+        keys_.erase_at(found->position, found->hash, memory);
+
+        return true;
+    }
+
+    [[nodiscard]] bool reduce(std::pmr::memory_resource &memory) { return keys_.reduce(memory); }
+
+    void release(std::pmr::memory_resource &memory) noexcept {
+        values_.release(keys_.positions(), memory);
+        keys_.release(memory);
+    }
+
+    [[nodiscard]] size_type size() const noexcept { return keys_.size(); }
+    [[nodiscard]] bool empty() const noexcept { return keys_.empty(); }
+
+    struct entry {
+        const Key &key;
+        Value &value;
+    };
+
+    struct const_entry {
+        const Key &key;
+        const Value &value;
+    };
+
+    template <bool Constant> class basic_iterator {
+      public:
+        using iterator_concept = std::forward_iterator_tag;
+        using iterator_category = std::forward_iterator_tag;
+        using value_type = std::conditional_t<Constant, const_entry, entry>;
+        using difference_type = std::ptrdiff_t;
+
+        basic_iterator() = default;
+
+        basic_iterator(const basic_iterator<false> &other) requires Constant
+            : dictionary_{other.dictionary_}, position_{other.position_} {}
+
+        [[nodiscard]] value_type operator*() const noexcept {
+            const auto position = *position_;
+            return {dictionary_->keys_.key_at(position), dictionary_->values_[position]};
+        }
+        basic_iterator &operator++() noexcept {
+            ++position_;
+            return *this;
+        }
+        basic_iterator operator++(int) noexcept {
+            auto previous = *this;
+            ++*this;
+            return previous;
+        }
+        bool operator==(const basic_iterator &) const noexcept = default;
+
+      private:
+        friend class hash_dictionary;
+        template <bool> friend class basic_iterator;
+
+        using dictionary_type = std::conditional_t<Constant, const hash_dictionary, hash_dictionary>;
+
+        basic_iterator(dictionary_type *dictionary, occupancy_index::iterator position)
+            : dictionary_{dictionary}, position_{position} {}
+
+        dictionary_type *dictionary_{};
+        occupancy_index::iterator position_;
+    };
+
+    using iterator = basic_iterator<false>;
+    using const_iterator = basic_iterator<true>;
+
+    [[nodiscard]] iterator begin() noexcept { return {this, keys_.positions().begin()}; }
+    [[nodiscard]] iterator end() noexcept { return {this, keys_.positions().end()}; }
+    [[nodiscard]] const_iterator begin() const noexcept { return {this, keys_.positions().begin()}; }
+    [[nodiscard]] const_iterator end() const noexcept { return {this, keys_.positions().end()}; }
+    [[nodiscard]] const_iterator cbegin() const noexcept { return begin(); }
+    [[nodiscard]] const_iterator cend() const noexcept { return end(); }
+
+  private:
+    details::hash_key_table<Key, Hash, Equal> keys_;
+    sparse_bunch<Value> values_;
+};
+
+} // namespace bg::util

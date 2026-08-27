@@ -1,6 +1,7 @@
 #pragma once
 
 #include <bg/scalar/value.hpp>
+#include <bg/util/hash_dictionary.hpp>
 #include <bg/util/symbol.hpp>
 
 #include <cstddef>
@@ -8,7 +9,6 @@
 #include <memory_resource>
 #include <stdexcept>
 #include <string_view>
-#include <unordered_map>
 
 namespace bg {
 
@@ -39,30 +39,28 @@ class GlobalState {
         }
     };
 
-    using Values = std::pmr::unordered_map<util::symbol, ScalarValue<>, SymbolHash, SymbolEqual>;
+    using Values = util::hash_dictionary<util::symbol, ScalarValue<>, SymbolHash, SymbolEqual>;
 
   public:
     explicit GlobalState(std::pmr::memory_resource &upstream = *std::pmr::get_default_resource())
-        : memory_{&upstream}, values_{&memory_} {}
+        : memory_{&upstream} {}
 
     GlobalState(const GlobalState &) = delete;
     GlobalState &operator=(const GlobalState &) = delete;
     GlobalState(GlobalState &&) = delete;
     GlobalState &operator=(GlobalState &&) = delete;
 
+    ~GlobalState() { values_.release(memory_); }
+
     [[nodiscard]] bool contains(util::symbol key) const noexcept { return values_.contains(key); }
     [[nodiscard]] bool contains(std::string_view key) const noexcept { return values_.contains(key); }
 
     [[nodiscard]] const ScalarValue<> *find(util::symbol key) const noexcept {
-        const auto found = values_.find(key);
-
-        return found == values_.end() ? nullptr : &found->second;
+        return values_.find(key);
     }
 
     [[nodiscard]] const ScalarValue<> *find(std::string_view key) const noexcept {
-        const auto found = values_.find(key);
-
-        return found == values_.end() ? nullptr : &found->second;
+        return values_.find(key);
     }
 
     [[nodiscard]] Scalar<> at(util::symbol key) const {
@@ -84,19 +82,11 @@ class GlobalState {
     }
 
     template <details::ScalarHandle Value> void set(util::symbol key, const Value &value) {
-        values_.insert_or_assign(key, ScalarValue<>{value, memory_});
+        values_.insert_or_assign(key, ScalarValue<>{value, memory_}, memory_);
     }
 
-    bool erase(util::symbol key) { return values_.erase(key) != 0; }
-    bool erase(std::string_view key) {
-        const auto found = values_.find(key);
-        if (found == values_.end()) {
-            return false;
-        }
-
-        values_.erase(found);
-        return true;
-    }
+    bool erase(util::symbol key) { return values_.erase(key, memory_); }
+    bool erase(std::string_view key) { return values_.erase(key, memory_); }
 
     [[nodiscard]] std::pmr::memory_resource &memory_resource() noexcept { return memory_; }
 
