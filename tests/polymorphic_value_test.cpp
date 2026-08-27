@@ -24,12 +24,9 @@ class value_view {
     const void *data_{};
 };
 
-template <typename T>
-class typed_value_view final : public value_view {
+template <typename T> class typed_value_view final : public value_view {
   public:
-    [[nodiscard]] double value() const noexcept override {
-        return static_cast<double>(*static_cast<const T *>(data_));
-    }
+    [[nodiscard]] double value() const noexcept override { return static_cast<double>(*static_cast<const T *>(data_)); }
 };
 
 static_assert(sizeof(value_view) == 3 * sizeof(void *));

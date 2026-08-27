@@ -16,9 +16,7 @@ class ResolvedTimeSeriesValueType final : public TimeSeriesValueType {
 
     [[nodiscard]] bool is_resolved() const noexcept override { return true; }
 
-    [[nodiscard]] bool match(const Type &supplied, TypeMap &) const override {
-        return this == &supplied;
-    }
+    [[nodiscard]] bool match(const Type &supplied, TypeMap &) const override { return this == &supplied; }
 
     [[nodiscard]] const Type &resolve(const TypeMap &) const override { return *this; }
 };
@@ -41,10 +39,9 @@ struct TimeSeriesValueTypeKeyHash {
 
 class TimeSeriesValueTypes {
   public:
-    [[nodiscard]] const TimeSeriesValueType &get(const ScalarType &value_type,
-                                                 TimeSeriesGuarantee guarantee) {
+    [[nodiscard]] const TimeSeriesValueType &get(const ScalarType &value_type, TimeSeriesGuarantee guarantee) {
         const std::lock_guard lock(mutex_);
-        const TimeSeriesValueTypeKey key{&value_type, guarantee};
+        const auto key = TimeSeriesValueTypeKey{&value_type, guarantee};
 
         if (const auto found = types_.find(key); found != types_.end()) {
             return *found->second;
@@ -59,9 +56,7 @@ class TimeSeriesValueTypes {
 
   private:
     std::mutex mutex_;
-    std::unordered_map<TimeSeriesValueTypeKey,
-                       std::unique_ptr<ResolvedTimeSeriesValueType>,
-                       TimeSeriesValueTypeKeyHash>
+    std::unordered_map<TimeSeriesValueTypeKey, std::unique_ptr<ResolvedTimeSeriesValueType>, TimeSeriesValueTypeKeyHash>
         types_;
 };
 
@@ -73,8 +68,7 @@ TimeSeriesValueTypes &time_series_value_types() {
 
 } // namespace
 
-const TimeSeriesValueType &time_series_value_type(const ScalarType &value_type,
-                                                  TimeSeriesGuarantee guarantee) {
+const TimeSeriesValueType &time_series_value_type(const ScalarType &value_type, TimeSeriesGuarantee guarantee) {
     return time_series_value_types().get(value_type, guarantee);
 }
 
@@ -84,7 +78,7 @@ bool GenericTimeSeriesValueType::match(const Type &supplied, TypeMap &bindings) 
         return false;
     }
 
-    TypeMap trial_bindings = bindings.overlay();
+    auto trial_bindings = bindings.overlay();
     if (!value_type().match(time_series->value_type(), trial_bindings) ||
         !guarantee().match(*time_series->guarantee().value(), trial_bindings)) {
         return false;
@@ -96,11 +90,10 @@ bool GenericTimeSeriesValueType::match(const Type &supplied, TypeMap &bindings) 
 }
 
 const Type &GenericTimeSeriesValueType::resolve(const TypeMap &bindings) const {
-    const Type &resolved_value_type = value_type().resolve(bindings);
+    const auto &resolved_value_type = value_type().resolve(bindings);
     const auto *scalar_type = dynamic_cast<const ScalarType *>(&resolved_value_type);
     if (scalar_type == nullptr) {
-        throw TypeResolutionError{TypeResolutionErrorCode::invalid_binding,
-                                  util::symbol{"TS"},
+        throw TypeResolutionError{TypeResolutionErrorCode::invalid_binding, util::symbol{"TS"},
                                   "time series value type did not resolve to a scalar type"};
     }
 

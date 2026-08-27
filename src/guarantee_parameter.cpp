@@ -19,8 +19,7 @@ TimeSeriesGuarantee GuaranteeParameter::resolve(const TypeMap &bindings) const {
 
     const auto *guarantee_variable = variable();
     if (guarantee_variable == nullptr) {
-        throw TypeResolutionError{TypeResolutionErrorCode::unbound_variable,
-                                  util::symbol{"guarantee"},
+        throw TypeResolutionError{TypeResolutionErrorCode::unbound_variable, util::symbol{"guarantee"},
                                   "unspecified guarantee cannot be resolved"};
     }
 

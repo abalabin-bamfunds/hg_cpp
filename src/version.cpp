@@ -6,6 +6,8 @@
 
 namespace bg {
 
-std::string_view version() noexcept { return BG_VERSION; }
+std::string_view version() noexcept {
+    return BG_VERSION;
+}
 
 } // namespace bg

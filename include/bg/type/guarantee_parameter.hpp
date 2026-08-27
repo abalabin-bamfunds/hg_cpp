@@ -13,9 +13,7 @@ class GuaranteeParameter {
     GuaranteeParameter(TimeSeriesGuarantee value) : value_(value) {}
     GuaranteeParameter(const GuaranteeVariable &variable) : value_(&variable) {}
 
-    [[nodiscard]] bool is_resolved() const noexcept {
-        return std::holds_alternative<TimeSeriesGuarantee>(value_);
-    }
+    [[nodiscard]] bool is_resolved() const noexcept { return std::holds_alternative<TimeSeriesGuarantee>(value_); }
 
     [[nodiscard]] std::optional<TimeSeriesGuarantee> value() const noexcept {
         if (const auto *value = std::get_if<TimeSeriesGuarantee>(&value_)) {

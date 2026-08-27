@@ -18,8 +18,8 @@ class TimeSeriesValueType : public TimeSeriesType {
     const ScalarType *value_type_;
 };
 
-[[nodiscard]] const TimeSeriesValueType &
-time_series_value_type(const ScalarType &value_type, TimeSeriesGuarantee guarantee);
+[[nodiscard]] const TimeSeriesValueType &time_series_value_type(const ScalarType &value_type,
+                                                                TimeSeriesGuarantee guarantee);
 
 class GenericTimeSeriesValueType final : public TimeSeriesValueType {
   public:

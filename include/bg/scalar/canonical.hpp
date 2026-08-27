@@ -1,0 +1,94 @@
+#pragma once
+
+#include <bg/evaluation_time.hpp>
+#include <bg/scalar/list.hpp>
+#include <bg/scalar/string.hpp>
+
+#include <concepts>
+#include <cstdint>
+#include <limits>
+#include <string>
+#include <string_view>
+#include <type_traits>
+
+namespace bg {
+
+namespace details {
+
+template <typename T>
+concept canonical_integer_source =
+    std::integral<std::remove_cvref_t<T>> && !std::same_as<std::remove_cvref_t<T>, bool> &&
+    !std::same_as<std::remove_cvref_t<T>, char> && !std::same_as<std::remove_cvref_t<T>, signed char> &&
+    !std::same_as<std::remove_cvref_t<T>, unsigned char> &&
+    (std::numeric_limits<std::remove_cvref_t<T>>::digits <= std::numeric_limits<std::int64_t>::digits);
+
+template <typename T> struct is_character_string : std::false_type {};
+
+template <typename Traits, typename Allocator>
+struct is_character_string<std::basic_string<char, Traits, Allocator>> : std::true_type {};
+
+template <typename T>
+concept canonical_string_source =
+    std::same_as<std::remove_cvref_t<T>, std::string_view> || is_character_string<std::remove_cvref_t<T>>::value ||
+    (std::is_array_v<std::remove_reference_t<T>> &&
+     std::same_as<std::remove_cv_t<std::remove_extent_t<std::remove_reference_t<T>>>, char>);
+
+template <typename T> struct canonical_scalar;
+
+template <canonical_integer_source T> struct canonical_scalar<T> {
+    using type = std::int64_t;
+};
+
+template <canonical_string_source T> struct canonical_scalar<T> {
+    using type = string;
+};
+
+template <typename T>
+    requires std::same_as<std::remove_cvref_t<T>, EvaluationTime>
+struct canonical_scalar<T> {
+    using type = EvaluationTime;
+};
+
+template <typename T>
+    requires std::same_as<std::remove_cvref_t<T>, float> || std::same_as<std::remove_cvref_t<T>, double>
+struct canonical_scalar<T> {
+    using type = std::remove_cvref_t<T>;
+};
+
+template <typename T> struct canonical_scalar<List<T>> {
+    using type = List<T>;
+};
+
+} // namespace details
+
+template <typename T> using canonical_scalar_t = typename details::canonical_scalar<T>::type;
+
+template <typename T>
+concept scalar_source = requires { typename canonical_scalar_t<T>; };
+
+template <details::canonical_integer_source T> [[nodiscard]] constexpr std::int64_t canonical_scalar(T value) noexcept {
+    return static_cast<std::int64_t>(value);
+}
+
+template <details::canonical_string_source T>
+[[nodiscard]] constexpr std::string_view canonical_scalar(const T &value) noexcept {
+    return std::string_view{value};
+}
+
+[[nodiscard]] constexpr EvaluationTime canonical_scalar(EvaluationTime value) noexcept {
+    return value;
+}
+
+template <std::same_as<float> T> [[nodiscard]] constexpr float canonical_scalar(T value) noexcept {
+    return value;
+}
+
+template <std::same_as<double> T> [[nodiscard]] constexpr double canonical_scalar(T value) noexcept {
+    return value;
+}
+
+template <typename T> [[nodiscard]] constexpr List<T> canonical_scalar(List<T> value) noexcept {
+    return value;
+}
+
+} // namespace bg

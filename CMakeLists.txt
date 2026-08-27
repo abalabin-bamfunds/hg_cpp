@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.31)
 
 project(
     bg
@@ -8,24 +8,52 @@ project(
 )
 
 include(CTest)
+include(FetchContent)
 include(GNUInstallDirs)
+
+find_package(Threads REQUIRED)
 
 option(BG_BUILD_PYTHON "Build the Python extension module" OFF)
 
+FetchContent_Declare(
+    tpack
+    GIT_REPOSITORY https://github.com/uentity/tpack.git
+    GIT_TAG v0.3.4
+    GIT_SHALLOW TRUE
+)
+FetchContent_MakeAvailable(tpack)
+
+FetchContent_Declare(
+    ddvisitor
+    GIT_REPOSITORY https://github.com/uentity/ddvisitor.git
+    GIT_TAG v0.9.6
+    GIT_SHALLOW TRUE
+)
+FetchContent_MakeAvailable(ddvisitor)
+
 add_library(
-    bg
+    bg SHARED
+    src/compiled_graph.cpp
+    src/graph_wiring.cpp
     src/guarantee_parameter.cpp
-    src/node_signature.cpp
+    src/list_scalar_type.cpp
+    src/runtime_graph.cpp
+    src/scalar_allocation.cpp
+    src/signature.cpp
+    src/simulation_evaluation_engine.cpp
     src/scalar_type.cpp
     src/symbol.cpp
     src/time_series_value_type.cpp
+    src/thread_local_pointer.cpp
     src/type_of.cpp
     src/version.cpp
+    src/wiring_context.cpp
 )
 add_library(bg::bg ALIAS bg)
 
 target_compile_features(bg PUBLIC cxx_std_23)
 target_compile_definitions(bg PRIVATE BG_VERSION="${PROJECT_VERSION}")
+target_link_libraries(bg PUBLIC ddv::ddvisitor PRIVATE Threads::Threads)
 target_include_directories(
     bg
     PUBLIC
@@ -37,6 +65,7 @@ set_target_properties(
     bg
     PROPERTIES
         CXX_EXTENSIONS OFF
+        WINDOWS_EXPORT_ALL_SYMBOLS ON
         VERSION ${PROJECT_VERSION}
         SOVERSION ${PROJECT_VERSION_MAJOR}
 )

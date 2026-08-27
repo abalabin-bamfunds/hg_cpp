@@ -21,7 +21,7 @@ The wiring layer selects one of these actions:
 | Other compatible types | Insert or reuse a node that provides the requested representation |
 
 Wiring selects representations transparently. Node code receives the type
-declared by its node signature.
+declared by its signature.
 
 The inserted node belongs to the graph that owns the source. Wiring reuses one
 such node for each source output and records each representation requested by

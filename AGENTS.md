@@ -13,11 +13,20 @@ layout proposal. Do not treat a proposed choice as an approved design.
 [docs/node-api.md](docs/node-api.md) defines node inputs, evaluation functions,
 and output modification.
 
+[docs/graph-wiring.md](docs/graph-wiring.md) defines graph functions, wiring
+templates, graph templates, wiring contexts, and wiring paths.
+
 [docs/evaluation.md](docs/evaluation.md) defines evaluation order, context
 services, lifecycle, scheduling, cycle callbacks, and failure behavior.
 
 [docs/type-system.md](docs/type-system.md) defines type resolution, time series
 guarantees, compatibility, propagation, and runtime enforcement.
+
+[docs/scalar-api.md](docs/scalar-api.md) defines scalar access, ownership,
+construction, and generic list access.
+
+[docs/global-state.md](docs/global-state.md) defines scalar values shared by an
+outer graph and its inner graphs.
 
 [docs/time-series-references.md](docs/time-series-references.md) defines reference
 routing, dynamic subscriptions, nested graphs, and removal lifetime.
@@ -73,8 +82,15 @@ Prefer the smallest clear implementation, the code should be elegant.
 
 - Use existing utilities and the standard library before adding project code or
   a dependency.
-- Do not add a helper for a single simple expression.
-- Do not add a wrapper that only forwards or renames an interface.
+- Write each operation in execution order and at one consistent level of
+  detail. Use early returns and `continue` statements to keep nesting shallow.
+- Make each branch represent required behavior or a state transition. Prefer
+  one representation until another has a measured benefit.
+- Name intermediate values by their role and access clear members directly.
+  Avoid aliases, accessors, and wrappers that make readers follow more code.
+- Extract a function or class only when it has a coherent responsibility and
+  gives its caller a smaller, clearer interface. Keep simple operations at
+  their point of use.
 - Add defensive checks only when a value can be null or invalid by design.
 - Do not add ways to replace behavior, special object-creation code, or settings
   for an unconfirmed need.
@@ -85,11 +101,27 @@ Prefer the smallest clear implementation, the code should be elegant.
 - Use empty lines to separate distinct parts of logic.
 - Keep related statements together.
 - Do not use repeated empty lines for decoration.
+- Keep code within 120 columns unless a longer line is clearer.
+
+## Comments
+
+- Comment code when its purpose or contract is not clear from its interface.
+- State what the code provides, what it returns, and any non-obvious behavior.
+- Describe intent at the caller's level. Explain mechanics only when a
+  constraint makes them important.
+- Do not narrate statements that are already clear from the code.
 
 ## C++
 
 Use C++23. The code must work with the latest Apple Clang, GCC, and Microsoft
 Visual C++ (MSVC) compilers.
+
+- Use `auto` by default. Spell out a type when it adds information that the
+  initializer does not show or selects a required representation.
+- Prefer C++23 language and library features when all supported compilers
+  implement them.
+- Prefer ranges, views, spans, structured bindings, and designated initializers
+  when they make data flow clearer.
 
 ## Review
 

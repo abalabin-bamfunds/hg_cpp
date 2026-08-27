@@ -2,6 +2,9 @@
 
 Status: working design.
 
+A time series is valid when its last updated time is greater than `MIN_DT`.
+Invalidation sets its last updated time to `MIN_DT`.
+
 ## Invalidation and revalidation
 
 `ordinary` and `deduplicated` time series support

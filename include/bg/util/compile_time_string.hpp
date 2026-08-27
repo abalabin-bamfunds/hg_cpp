@@ -5,8 +5,7 @@
 
 namespace bg::util {
 
-template <std::size_t Size>
-struct compile_time_string {
+template <std::size_t Size> struct compile_time_string {
     char value[Size];
 
     consteval compile_time_string(const char (&text)[Size]) {
@@ -19,14 +18,14 @@ struct compile_time_string {
 
     [[nodiscard]] constexpr std::size_t size() const noexcept { return Size - 1; }
 
-    [[nodiscard]] constexpr std::string_view view() const noexcept {
-        return {value, size()};
-    }
+    [[nodiscard]] constexpr std::string_view view() const noexcept { return {value, size()}; }
 
-    constexpr bool operator==(const compile_time_string &) const = default;
+    template <std::size_t OtherSize>
+    constexpr bool operator==(const compile_time_string<OtherSize> &other) const noexcept {
+        return view() == other.view();
+    }
 };
 
-template <std::size_t Size>
-compile_time_string(const char (&)[Size]) -> compile_time_string<Size>;
+template <std::size_t Size> compile_time_string(const char (&)[Size]) -> compile_time_string<Size>;
 
 } // namespace bg::util

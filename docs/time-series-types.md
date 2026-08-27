@@ -11,6 +11,12 @@ Collection notation accepts another collection type as `TS_T`.
 Every time series type has the recursive guarantee defined by the
 [type system](type-system.md#time-series-guarantees).
 
+A guarantee is an optional template property:
+
+```cpp
+bg::TS<float, bg::TimeSeriesGuarantee::final>
+```
+
 The [validity design](time-series-validity.md) defines invalidation and
 revalidation for these types.
 
@@ -27,6 +33,11 @@ revalidation for these types.
 | Time series dictionary | `TSD<K, TS_T>` | Added and removed keys; modified items |
 
 ## Layout
+
+A time series view contains one pointer to its last updated time and one pointer
+to its value. A storage representation can co-locate them or use separate typed
+objects and buffers. An invalid view points to `MIN_DT` as its last updated
+time.
 
 The [TSD layout](tsd-layout.md) defines dictionary storage, shared
 representations, and tabular buffers.

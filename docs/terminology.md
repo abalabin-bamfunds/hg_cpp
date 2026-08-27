@@ -48,6 +48,12 @@ A scalar with an ordered schema of named fields and explicitly declared base
 types. It accepts values of its declared type and derived types. Compatibility
 is covariant through containers.
 
+### storage representation
+
+A description of the typed objects and buffers used to store a graph type and
+construct its views. The objects and buffers can occupy separate locations.
+Graph compilation selects storage representations after type resolution.
+
 ### time series
 
 A value that can change over time. A time series is valid when it has a current
@@ -155,12 +161,17 @@ output is used.
 Code that constructs a graph by creating nodes and connecting their inputs and
 outputs. The connections define how data moves through the graph.
 
-### node parameter
+### graph function
 
-A named argument of a node evaluation function. Wiring resolves a plain C++
-function parameter to a time series input or a scalar from the corresponding
-graph-code argument. A parameter declared with `In<TS_T, ...>` is a time series
-input.
+A function that constructs graph code by invoking node templates or graph
+templates.
+
+### parameter
+
+A named input or scalar argument in a node or graph signature. Wiring resolves
+a plain C++ function parameter to a time series input or a scalar from the
+corresponding graph-code argument. A parameter declared with `In<TS_T, ...>` is
+a time series input.
 
 ### active input
 
@@ -191,35 +202,68 @@ immediate items of the time series dictionary.
 The view reports an item becoming valid as an added key and an item becoming
 invalid as a removed key.
 
-### node signature
+### signature
 
-The contract of a node. It specifies the name and type of each node parameter,
-any constraint on its resolved category, its input activity and validity
-constraint when applicable, and the output time series type. A parameter
-category or type can be generic at this stage.
+The contract of a node or graph. It specifies the name and type of each
+parameter, any constraint on its resolved category, its input activity and
+validity constraint when applicable, and zero or one output time series type. A
+parameter category or type can be generic at this stage.
 
 A generic category or type is a placeholder that must be replaced before the
 node is wired.
 
-### resolved node signature
+### resolved signature
 
-A node signature in which every node parameter is classified as a time series
-input or scalar and every type has been resolved. It contains no generic
-category or type placeholders.
+A signature in which every parameter is classified as a time series input or
+scalar and every type has been resolved. It contains no generic category or
+type placeholders.
+
+### wiring template
+
+The common graph-code interface of node templates and graph templates. It
+provides a signature and defines how a checked call contributes to graph
+wiring.
 
 ### node template
 
-A node signature paired with the code that implements evaluation, start, and
-stop.
+A signature paired with the code that implements evaluation, start, and stop.
 
 In this project, `node template` does not mean a C++ language template.
 
+### graph template
+
+A signature paired with a graph function. Calling it checks its boundary and
+then invokes the graph function in a named wiring context.
+
 ### wired node
 
-A node template whose node signature is resolved, together with scalar values
+A node template whose signature is resolved, together with scalar values
 supplied while the graph is constructed and a record of the wired node that
 provides each input. The scalar values are immutable after graph construction. A
 wired node does not know how its output is used.
+
+### graph wiring
+
+The mutable graph-construction state that owns wired nodes and records their
+connections before graph compilation. The C++ type is `GraphWiring`.
+
+### wiring point
+
+A two-word value that identifies a wired node output by its owning `GraphWiring`
+and wired-node index. The C++ type is `WiringPoint`. `wp<TS_T>` adds a time
+series type for graph-signature inference without adding runtime storage.
+
+### wiring context
+
+A scope that makes one `GraphWiring` active for node calls on the current
+thread. Nested wiring contexts restore the previous active `GraphWiring` when
+they end. The C++ type is `WiringContext`.
+
+### wiring path
+
+The chain of names and labels that identifies where a wired node was created in
+graph code. Each entry refers to its parent entry. Labels describe calls and
+can repeat.
 
 ### compiled node
 
@@ -231,14 +275,20 @@ it.
 ### runtime node
 
 The mutable state that one runtime graph uses with one compiled node. Each
-runtime graph has separate state for that compiled node. The state includes the
-output time series and can include private mutable implementation state.
+runtime graph has separate state for that compiled node. The state includes an
+output time series when declared and can include private mutable implementation
+state.
 
 ### runtime graph
 
 A list of runtime nodes in topological dependency order. Every runtime node
 appears after the runtime nodes that it depends on. In a top-to-bottom display,
 dependencies are above the runtime nodes that depend on them.
+
+### simulation
+
+Evaluation that advances directly to the next scheduled evaluation time instead
+of waiting for wall-clock time.
 
 ### nested graph
 

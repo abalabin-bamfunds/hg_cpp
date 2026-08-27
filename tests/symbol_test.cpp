@@ -7,8 +7,7 @@
 
 namespace {
 
-template <bg::util::compile_time_string Text>
-inline constexpr auto text = Text.view();
+template <bg::util::compile_time_string Text> inline constexpr auto text = Text.view();
 
 static_assert(text<"value"> == std::string_view{"value"});
 static_assert(sizeof(bg::util::symbol) == sizeof(void *));

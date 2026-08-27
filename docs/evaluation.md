@@ -10,15 +10,19 @@ have the same evaluation time.
 
 The engine applies an external stop request between outer cycles.
 
+## Evaluation time
+
+`EvaluationTime` is `std::chrono::sys_time<std::chrono::microseconds>`.
+`MIN_DT` is reserved before every valid engine time.
+
 ## Evaluation order
 
 Graph compilation puts nodes in topological order. Every input source is before
-the node that receives it. A runtime graph scans scheduled nodes once in this
-order.
+the node that receives it. A runtime graph processes scheduled node indices once
+in increasing order.
 
 A node evaluates at most once in an outer cycle. Multiple input updates schedule
-one evaluation. The scan position identifies nodes that have already evaluated,
-so this rule requires no per-node evaluation marker.
+one evaluation.
 
 Inner graph execution and reference-bound inputs must preserve the same forward
 order.
@@ -29,14 +33,18 @@ When a node changes from all required inputs valid to at least one required
 input invalid, the engine applies its invalidation behavior once. Output
 invalidation schedules subscribers.
 
+The runtime records whether all required inputs were valid after the last
+check. An input validity change marks this result for refresh. Before node
+evaluation, the runtime refreshes it when required and uses the result to decide
+whether the node can run.
+
 The [node API](node-api.md#required-input-invalidation) defines the declaration
 and function interface. The [validity design](time-series-validity.md) defines
 the effects on time series and input views.
 
-Evaluation remains blocked while a required input is invalid. When all
-required inputs become valid, an active input transition schedules evaluation.
-Passive input transitions update validity gating and wait for another reason to
-schedule the node.
+Evaluation remains blocked while a required input is invalid. An update or
+revalidation of an active input schedules evaluation. The same changes on a
+passive input schedule nothing.
 
 ## Evaluation context
 
@@ -44,7 +52,7 @@ schedule the node.
 requests it explicitly as its first parameter:
 
 ```cpp
-[](bg::EvaluationContext& context, float value) {
+[](bg::EvaluationContext* context, float value) {
     // ...
 }
 ```
@@ -57,6 +65,7 @@ The context provides:
 - wall-clock time from the clock supplied to the evaluation engine
 - the current runtime graph and node
 - the current runtime graph's memory resource
+- the outer graph's [global state](global-state.md)
 - immediate and future scheduling
 - cancellation of future scheduling
 - on-demand cycle callback registration
@@ -65,8 +74,9 @@ The supplied wall clock allows tests and replay to control wall-clock results.
 
 ## Start
 
-Before the first node evaluation, a runtime graph invokes its declared start
-functions in topological order.
+`RuntimeGraph::start(time)` starts a runtime graph. It invokes declared start
+functions in topological order. The first outer cycle uses the same evaluation
+time.
 
 Start uses the same parameter packing as evaluation and the evaluation time of
 the runtime graph's first outer cycle. It can request the context, inputs,
@@ -84,7 +94,24 @@ coalesce because the node evaluates once in that outer cycle.
 `schedule_at` returns a handle. `cancel(handle)` cancels that pending evaluation
 if the handle still identifies it.
 
-The evaluation engine creates future-scheduling state on demand.
+An aggregate node that uses future scheduling declares:
+
+```cpp
+static constexpr bool uses_future_scheduling = true;
+```
+
+A graph has future-scheduling state only when a node declares its use. The
+runtime graph reports the earliest pending time. `evaluate(time)` schedules
+requests due at that time before it processes nodes.
+
+## Simulation
+
+`SimulationEvaluationEngine` starts a runtime graph and evaluates its first
+outer cycle. It then advances to each next scheduled time and calls
+`evaluate(time)`. It stops the runtime graph when no future evaluation remains.
+
+A later real-time evaluation engine can wait for each scheduled time while
+using the same runtime graph interface.
 
 ## Cycle callbacks
 
@@ -102,8 +129,8 @@ keeps required storage valid through the outer cycle.
 
 ## Stop
 
-When a runtime graph stops, it invokes declared stop functions in reverse
-topological order.
+`RuntimeGraph::stop()` stops a runtime graph. It invokes declared stop functions
+in reverse topological order.
 
 Stop uses the same parameter packing as evaluation. It can request the context,
 inputs, scalars, output, and private state. It cannot update outputs or schedule
@@ -149,7 +176,7 @@ the failure to its caller.
 
 ## Open implementation choices
 
-1. C++ representation of evaluation time and wall-clock time.
+1. C++ representation of wall-clock time.
 2. Layout of future scheduling handles and records.
 3. Storage layout for callback records.
 4. C++ types and storage for structured error values and nested graph paths.

@@ -9,8 +9,7 @@ namespace bg {
 
 class GuaranteeVariable final : public Variable {
   public:
-    explicit GuaranteeVariable(util::symbol name,
-                               std::optional<TimeSeriesGuarantee> minimum = std::nullopt)
+    explicit GuaranteeVariable(util::symbol name, std::optional<TimeSeriesGuarantee> minimum = std::nullopt)
         : Variable(name), minimum_(minimum) {}
 
     [[nodiscard]] bool match(TimeSeriesGuarantee supplied, TypeMap &bindings) const {
@@ -21,8 +20,7 @@ class GuaranteeVariable final : public Variable {
         if (const auto *binding = bindings.find(*this)) {
             const auto *guarantee = std::get_if<TimeSeriesGuarantee>(binding);
             if (guarantee == nullptr) {
-                throw TypeResolutionError{TypeResolutionErrorCode::invalid_binding,
-                                          name(),
+                throw TypeResolutionError{TypeResolutionErrorCode::invalid_binding, name(),
                                           "guarantee variable has a non-guarantee binding"};
             }
 
@@ -37,15 +35,13 @@ class GuaranteeVariable final : public Variable {
     [[nodiscard]] TimeSeriesGuarantee resolve(const TypeMap &bindings) const {
         const auto *binding = bindings.find(*this);
         if (binding == nullptr) {
-            throw TypeResolutionError{TypeResolutionErrorCode::unbound_variable,
-                                      name(),
+            throw TypeResolutionError{TypeResolutionErrorCode::unbound_variable, name(),
                                       "guarantee variable is unbound"};
         }
 
         const auto *guarantee = std::get_if<TimeSeriesGuarantee>(binding);
         if (guarantee == nullptr) {
-            throw TypeResolutionError{TypeResolutionErrorCode::invalid_binding,
-                                      name(),
+            throw TypeResolutionError{TypeResolutionErrorCode::invalid_binding, name(),
                                       "guarantee variable has a non-guarantee binding"};
         }
 

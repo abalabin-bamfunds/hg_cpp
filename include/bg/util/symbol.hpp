@@ -11,9 +11,7 @@ class symbol {
   public:
     explicit symbol(std::string_view text);
 
-    [[nodiscard]] std::string_view text() const noexcept {
-        return {text_->data(), text_->size()};
-    }
+    [[nodiscard]] std::string_view text() const noexcept { return {text_->data(), text_->size()}; }
 
     bool operator==(const symbol &) const noexcept = default;
 
@@ -25,8 +23,7 @@ class symbol {
 
 namespace literals {
 
-template <compile_time_string Text>
-[[nodiscard]] symbol operator""_sym() {
+template <compile_time_string Text> [[nodiscard]] symbol operator""_sym() {
     static const symbol value{Text.view()};
 
     return value;

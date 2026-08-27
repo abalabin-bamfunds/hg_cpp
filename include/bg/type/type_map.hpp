@@ -31,9 +31,7 @@ class TypeMap {
         return parent_ == nullptr ? nullptr : parent_->find(variable);
     }
 
-    void set(const Variable &variable, TypeBinding value) {
-        values_.insert_or_assign(&variable, std::move(value));
-    }
+    void set(const Variable &variable, TypeBinding value) { values_.insert_or_assign(&variable, std::move(value)); }
 
     [[nodiscard]] TypeMap overlay() const { return TypeMap{this}; }
 

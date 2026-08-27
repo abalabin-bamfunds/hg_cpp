@@ -21,7 +21,7 @@ types. `TSD<K, V>` remains a time series dictionary type before its components
 are resolved.
 
 `is_scalar()` and `is_time_series()` report the known category. A variable over
-`Type` reports neither until resolution. Every type in a resolved node signature
+`Type` reports neither until resolution. Every type in a resolved signature
 reports exactly one.
 
 Type objects are process-wide so modules can register types before an engine
@@ -30,8 +30,19 @@ same address, so exact equality is a pointer comparison. C++ and Python
 declarations use the same objects. A module that implements a registered type
 must remain loaded while the type can be used.
 
-A resolved type also provides its runtime layout and type-erased operations.
-Graph compilation uses these to select storage, input views, and entry points.
+Physical storage is separate from this hierarchy.
+
+## Storage representations
+
+A storage representation describes the typed objects and buffers used to store
+a graph type and construct its views. Its parts can occupy separate locations.
+A graph type can have several storage representations, and graph types can
+share one.
+
+Type resolution produces semantic types. Graph compilation selects storage
+representations and uses them to lay out values and select input views and entry
+points. A representation used in initial runtime storage provides a
+position-independent initial value that supports byte-copy initialization.
 
 ## Scalar types
 
@@ -40,7 +51,18 @@ storage. Each registered scalar type has a fully qualified `Symbol`. A C++
 type has one default graph type, while several graph types can share the
 same storage type.
 
+`EvaluationTime` is a scalar type. Graph code can use it directly and as a
+component of another scalar type, such as `List<EvaluationTime>`.
+
+`Opaque<T>` carries private C++ data as a wiring-time scalar. It has exact
+compatibility and provides no equality or hashing.
+
 A compound scalar has an ordered field schema and exact compatibility.
+
+A scalar list has one scalar item type. `List<SCALAR>` accepts any resolved
+scalar item type. Each list is homogeneous.
+
+The [scalar API](scalar-api.md) defines C++ access and ownership.
 
 A hierarchical scalar adds explicit graph inheritance. This inheritance is
 independent of C++ and Python inheritance. Direct bases are ordered and use the
@@ -100,8 +122,24 @@ compatible item schema. Graph compilation maps the item offsets directly.
 
 ## Variables
 
-Variables express relationships between types in one node signature. Reusing a
+Variables express relationships between types in one signature. Reusing a
 variable requires each occurrence to resolve to the same value.
+
+`ScalarVariable<Name>` declares a scalar type variable in C++ code. `SCALAR`
+is the default declaration. Declarations with different names bind
+independently. Additional template arguments constrain the accepted scalar
+types, as in `ScalarVariable<"Number", float, double>`.
+
+`EqualityComparable` and `Hashable` require the corresponding scalar
+operation. A scalar variable view exposes an operation when its declaration
+requires it:
+
+```cpp
+using Key = ScalarVariable<"Key", EqualityComparable, Hashable>;
+```
+
+C++ scalar types derive these properties from their value operations. A
+collection scalar has a property when its item type has that property.
 
 Each variable derives from `Variable`. `TypeVariable<Category>` also implements
 its type category, so `TypeVariable<ScalarType>` can be used wherever a scalar
@@ -129,7 +167,7 @@ lets another signature reuse the same variable independently.
 
 ## Signature resolution
 
-Resolution produces one concrete and internally consistent node signature
+Resolution produces one concrete and internally consistent signature
 before graph compilation:
 
 1. Match supplied argument types against generic parameter types and build
@@ -143,7 +181,7 @@ the graph-code argument selects the category.
 A node template can provide a function to resolve a variable that matching did
 not bind. The function returns a resolved value and can use the `TypeMap` and
 declared wiring-time scalars. A scalar requested by the function resolves its
-node parameter as a scalar. Functions are evaluated on demand, with dependency
+parameter as a scalar. Functions are evaluated on demand, with dependency
 cycle detection.
 
 Graph compilation uses the resolved signature to select direct, reference,
@@ -278,7 +316,7 @@ representation can have a different visible key set from the source.
 ## Errors
 
 A matching, variable resolution, or constraint failure throws a structured
-type-resolution exception. It identifies the affected node parameter or output
+type-resolution exception. It identifies the affected parameter or output
 and the incompatible types.
 
 ## Open choices

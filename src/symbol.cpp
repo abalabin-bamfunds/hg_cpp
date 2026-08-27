@@ -31,6 +31,8 @@ symbol_table &symbols() {
 
 symbol::symbol(std::string_view text) : text_(intern(text)) {}
 
-const std::string *symbol::intern(std::string_view text) { return symbols().intern(text); }
+const std::string *symbol::intern(std::string_view text) {
+    return symbols().intern(text);
+}
 
 } // namespace bg::util

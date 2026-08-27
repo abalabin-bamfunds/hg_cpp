@@ -1,0 +1,55 @@
+#include <bg/type/signature.hpp>
+
+namespace bg {
+
+ResolvedSignature Signature::resolve(std::span<const Type *const> arguments) const {
+    if (arguments.size() != parameters_.size()) {
+        throw TypeResolutionError{TypeResolutionErrorCode::argument_count, name_,
+                                  "signature received the wrong number of arguments"};
+    }
+
+    TypeMap bindings;
+
+    for (std::size_t i = 0; i < arguments.size(); ++i) {
+        if (!parameters_[i].type->match(*arguments[i], bindings)) {
+            throw TypeResolutionError{TypeResolutionErrorCode::mismatch, parameters_[i].name,
+                                      "argument does not satisfy its generic type"};
+        }
+    }
+
+    for (const VariableResolver &resolver : resolvers_) {
+        if (bindings.find(*resolver.variable) == nullptr) {
+            bindings.set(*resolver.variable, resolver.resolve(bindings));
+        }
+    }
+
+    std::vector<ResolvedParameter> parameters;
+    parameters.reserve(parameters_.size());
+
+    for (const Parameter &parameter : parameters_) {
+        const Type &type = parameter.type->resolve(bindings);
+
+        if (!type.is_scalar() && !type.is_time_series()) {
+            throw TypeResolutionError{TypeResolutionErrorCode::invalid_binding, parameter.name,
+                                      "parameter resolved outside its supported categories"};
+        }
+
+        parameters.push_back(
+            {parameter.name, &type, parameter.activity, parameter.validity, parameter.accepts_absent_scalar});
+    }
+
+    const TimeSeriesType *output = nullptr;
+    if (output_ != nullptr) {
+        const Type &resolved_output = output_->resolve(bindings);
+        if (!resolved_output.is_time_series()) {
+            throw TypeResolutionError{TypeResolutionErrorCode::invalid_binding, name_,
+                                      "output did not resolve to a time series type"};
+        }
+
+        output = static_cast<const TimeSeriesType *>(&resolved_output);
+    }
+
+    return {name_, std::move(parameters), output};
+}
+
+} // namespace bg

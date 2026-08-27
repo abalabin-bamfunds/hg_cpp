@@ -7,8 +7,11 @@ core entities.
 
 Current design documents cover the [node API](docs/node-api.md),
 [node object layout](docs/node-layout.md),
+[graph wiring](docs/graph-wiring.md),
 [evaluation](docs/evaluation.md),
 [type system](docs/type-system.md),
+[scalar API](docs/scalar-api.md),
+[global state](docs/global-state.md),
 [time series types](docs/time-series-types.md),
 [time series references](docs/time-series-references.md),
 [time series validity](docs/time-series-validity.md), and
@@ -26,7 +29,8 @@ cmake --build --preset dev
 ctest --test-dir build/dev --output-on-failure
 ```
 
-The project requires CMake 3.20 or newer, Ninja, Catch2 3, and a C++23 compiler.
+The project requires CMake 3.31 or newer, Ninja, Catch2 3, and a C++23 compiler.
+CMake downloads pinned `ddvisitor` and `tpack` releases during configuration.
 
 After installation, CMake consumers can use
 `find_package(bg CONFIG REQUIRED)` and link to `bg::bg`.
