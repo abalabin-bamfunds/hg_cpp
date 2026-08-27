@@ -12,6 +12,7 @@ Current design documents cover the [node API](docs/node-api.md),
 [type system](docs/type-system.md),
 [scalar API](docs/scalar-api.md),
 [global state](docs/global-state.md),
+[testing](docs/testing.md),
 [time series types](docs/time-series-types.md),
 [time series references](docs/time-series-references.md),
 [time series validity](docs/time-series-validity.md), and

@@ -28,6 +28,9 @@ construction, and generic list access.
 [docs/global-state.md](docs/global-state.md) defines scalar values shared by an
 outer graph and its inner graphs.
 
+[docs/testing.md](docs/testing.md) defines test organization and required
+coverage.
+
 [docs/time-series-references.md](docs/time-series-references.md) defines reference
 routing, dynamic subscriptions, nested graphs, and removal lifetime.
 
