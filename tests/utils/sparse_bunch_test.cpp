@@ -5,8 +5,25 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <array>
 #include <cstdint>
 #include <string>
+
+namespace {
+
+struct counted_value {
+    explicit counted_value(std::uint32_t value) : value{value} { ++live; }
+    ~counted_value() { --live; }
+
+    counted_value(const counted_value &) = delete;
+    counted_value &operator=(const counted_value &) = delete;
+
+    std::uint32_t value;
+
+    inline static std::uint32_t live{};
+};
+
+} // namespace
 
 TEST_CASE("sparse bunches share one occupancy index", "[sparse_bunch]") {
     auto memory = counting_memory_resource{};
@@ -61,5 +78,49 @@ TEST_CASE("a sparse bunch releases an empty element block", "[sparse_bunch]") {
 
     values.release(positions, memory);
     positions.release(memory);
+    CHECK(memory.allocations() == 0);
+}
+
+TEST_CASE("a sparse bunch handles growth and capped-block boundaries", "[sparse_bunch]") {
+    auto memory = counting_memory_resource{};
+    auto positions = bg::util::occupancy_index{};
+    auto values = bg::util::sparse_bunch<std::uint32_t>{};
+    constexpr auto selected = std::array{std::uint32_t{0},      std::uint32_t{7},       std::uint32_t{8},
+                                         std::uint32_t{23},     std::uint32_t{24},      std::uint32_t{65'527},
+                                         std::uint32_t{65'528}, std::uint32_t{131'063}, std::uint32_t{131'064}};
+
+    for (const auto position : selected) {
+        values.emplace_at(position, memory, position + 1);
+        CHECK(positions.set(position, memory));
+    }
+
+    for (const auto position : selected) {
+        REQUIRE(values.get(position, positions) != nullptr);
+        CHECK(*values.get(position, positions) == position + 1);
+    }
+
+    values.release(positions, memory);
+    positions.release(memory);
+    CHECK(memory.allocations() == 0);
+}
+
+TEST_CASE("a sparse bunch destroys each occupied value once", "[sparse_bunch]") {
+    auto memory = counting_memory_resource{};
+    auto positions = bg::util::occupancy_index{};
+    auto values = bg::util::sparse_bunch<counted_value>{};
+
+    for (const auto position : std::array{std::uint32_t{0}, std::uint32_t{8}, std::uint32_t{40}}) {
+        values.emplace_at(position, memory, position);
+        CHECK(positions.set(position, memory));
+    }
+    REQUIRE(counted_value::live == 3);
+
+    values.erase_at(8, memory);
+    CHECK(positions.reset(8));
+    CHECK(counted_value::live == 2);
+
+    values.release(positions, memory);
+    positions.release(memory);
+    CHECK(counted_value::live == 0);
     CHECK(memory.allocations() == 0);
 }

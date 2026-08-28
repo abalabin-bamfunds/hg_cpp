@@ -14,6 +14,7 @@ include(GNUInstallDirs)
 find_package(Threads REQUIRED)
 
 option(BG_BUILD_PYTHON "Build the Python extension module" OFF)
+option(BG_BUILD_BENCHMARKS "Build performance benchmarks" OFF)
 
 FetchContent_Declare(
     tpack
@@ -76,6 +77,10 @@ endif()
 
 if(BG_BUILD_PYTHON)
     add_subdirectory(bindings/python)
+endif()
+
+if(BG_BUILD_BENCHMARKS)
+    add_subdirectory(benchmarks)
 endif()
 
 include(CMakePackageConfigHelpers)

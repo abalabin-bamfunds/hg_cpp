@@ -5,14 +5,22 @@
 #include <bg/util/sparse_bunch.hpp>
 
 #include <array>
+#include <bit>
 #include <cassert>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <limits>
 #include <memory_resource>
 #include <optional>
 #include <utility>
+
+#if defined(__SSE2__) || defined(_M_X64)
+#include <emmintrin.h>
+#elif defined(__aarch64__) || defined(_M_ARM64)
+#include <arm_neon.h>
+#endif
 
 namespace bg::util {
 
@@ -47,6 +55,39 @@ class linear_hash_table {
             hashes[offset] = hashes[size];
             positions[offset] = positions[size];
         }
+
+        [[nodiscard]] size_type matching(hash_type hash) const noexcept {
+            // The second vector includes one word after the hash array. The size mask removes that lane.
+#if defined(__SSE2__) || defined(_M_X64)
+            const auto expected = _mm_set1_epi32(std::bit_cast<std::int32_t>(hash));
+            const auto first =
+                _mm_cmpeq_epi32(_mm_loadu_si128(reinterpret_cast<const __m128i *>(hashes.data())), expected);
+            auto second_values = __m128i{};
+            std::memcpy(&second_values, reinterpret_cast<const std::byte *>(this) + 4 * sizeof(hash_type),
+                        sizeof(second_values));
+            const auto second = _mm_cmpeq_epi32(second_values, expected);
+            const auto matches = static_cast<size_type>(_mm_movemask_ps(_mm_castsi128_ps(first))) |
+                                 static_cast<size_type>(_mm_movemask_ps(_mm_castsi128_ps(second)) << 4);
+#elif defined(__aarch64__) || defined(_M_ARM64)
+            constexpr auto bit_values = std::array<std::uint32_t, 4>{1, 2, 4, 8};
+            const auto expected = vdupq_n_u32(hash);
+            const auto first = vceqq_u32(vld1q_u32(hashes.data()), expected);
+            auto second_values = uint32x4_t{};
+            std::memcpy(&second_values, reinterpret_cast<const std::byte *>(this) + 4 * sizeof(hash_type),
+                        sizeof(second_values));
+            const auto second = vceqq_u32(second_values, expected);
+            const auto bits = vld1q_u32(bit_values.data());
+            const auto matches = static_cast<size_type>(vaddvq_u32(vandq_u32(first, bits))) |
+                                 static_cast<size_type>(vaddvq_u32(vandq_u32(second, bits)) << 4);
+#else
+            auto matches = size_type{};
+            for (auto offset = size_type{}; offset < entries_per_bucket; ++offset) {
+                matches |= static_cast<size_type>(hashes[offset] == hash) << offset;
+            }
+#endif
+
+            return matches & ((size_type{1} << size) - 1);
+        }
     };
 
     static_assert(sizeof(bucket) == 64);
@@ -67,10 +108,14 @@ class linear_hash_table {
 
         const auto *current = &primary_[bucket_for(hash)];
         while (true) {
-            for (auto i = size_type{}; i < current->size; ++i) {
-                if (current->hashes[i] == hash && equal(current->positions[i])) {
-                    return current->positions[i];
+            auto matching = current->matching(hash);
+            while (matching != 0) {
+                const auto offset = static_cast<size_type>(std::countr_zero(matching));
+                if (equal(current->positions[offset])) {
+                    return current->positions[offset];
                 }
+
+                matching &= matching - 1;
             }
 
             if (current->next == npos) {
@@ -188,17 +233,7 @@ class linear_hash_table {
 
     [[nodiscard]] static constexpr hash_type hash_code(std::size_t hash) noexcept {
         if constexpr (sizeof(std::size_t) > sizeof(hash_type)) {
-            hash ^= hash >> 33;
-            hash *= std::size_t{0xff51afd7ed558ccd};
-            hash ^= hash >> 33;
-            hash *= std::size_t{0xc4ceb9fe1a85ec53};
-            hash ^= hash >> 33;
-        } else {
-            hash ^= hash >> 16;
-            hash *= std::size_t{0x7feb352d};
-            hash ^= hash >> 15;
-            hash *= std::size_t{0x846ca68b};
-            hash ^= hash >> 16;
+            hash ^= hash >> 32;
         }
 
         return static_cast<hash_type>(hash);

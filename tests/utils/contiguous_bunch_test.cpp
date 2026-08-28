@@ -5,6 +5,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <cstdint>
+#include <stdexcept>
 
 namespace {
 
@@ -18,6 +19,10 @@ struct counted_value {
     std::uint32_t value;
 
     inline static std::uint32_t live{};
+};
+
+struct throwing_value {
+    throwing_value() { throw std::runtime_error{"construction failed"}; }
 };
 
 } // namespace
@@ -44,5 +49,17 @@ TEST_CASE("a contiguous bunch grows without moving its values", "[contiguous_bun
 
     values.release(memory);
     CHECK(counted_value::live == 0);
+    CHECK(memory.allocations() == 0);
+}
+
+TEST_CASE("a contiguous bunch releases storage after construction fails", "[contiguous_bunch]") {
+    auto memory = counting_memory_resource{};
+    auto values = bg::util::contiguous_bunch<throwing_value>{};
+
+    CHECK_THROWS_AS(values.emplace_back(memory), std::runtime_error);
+    CHECK(values.empty());
+    CHECK(values.allocated_block_count() == 0);
+
+    values.release(memory);
     CHECK(memory.allocations() == 0);
 }

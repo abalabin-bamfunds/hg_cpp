@@ -2,14 +2,30 @@
 
 #include <cstddef>
 #include <memory_resource>
+#include <new>
+#include <optional>
 
 class counting_memory_resource final : public std::pmr::memory_resource {
   public:
     [[nodiscard]] std::size_t allocations() const noexcept { return allocations_; }
     [[nodiscard]] std::size_t allocated_bytes() const noexcept { return allocated_bytes_; }
 
+    void fail_after(std::size_t successful_allocations) noexcept {
+        allocations_before_failure_ = successful_allocations;
+    }
+
+    void allow_allocations() noexcept { allocations_before_failure_.reset(); }
+
   private:
     void *do_allocate(std::size_t bytes, std::size_t alignment) override {
+        if (allocations_before_failure_) {
+            if (*allocations_before_failure_ == 0) {
+                throw std::bad_alloc{};
+            }
+
+            --*allocations_before_failure_;
+        }
+
         auto *result = upstream_->allocate(bytes, alignment);
         ++allocations_;
         allocated_bytes_ += bytes;
@@ -30,4 +46,5 @@ class counting_memory_resource final : public std::pmr::memory_resource {
     std::pmr::memory_resource *upstream_{std::pmr::new_delete_resource()};
     std::size_t allocations_{};
     std::size_t allocated_bytes_{};
+    std::optional<std::size_t> allocations_before_failure_;
 };

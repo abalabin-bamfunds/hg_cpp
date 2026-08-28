@@ -1,0 +1,2 @@
+add_executable(bg_container_benchmark container_benchmark.cpp)
+target_link_libraries(bg_container_benchmark PRIVATE bg::bg)

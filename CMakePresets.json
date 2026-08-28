@@ -26,6 +26,17 @@
         "CMAKE_BUILD_TYPE": "Release",
         "BUILD_TESTING": "ON"
       }
+    },
+    {
+      "name": "benchmark",
+      "displayName": "Benchmarks",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/benchmark",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "BUILD_TESTING": "OFF",
+        "BG_BUILD_BENCHMARKS": "ON"
+      }
     }
   ],
   "buildPresets": [
@@ -36,6 +47,10 @@
     {
       "name": "release",
       "configurePreset": "release"
+    },
+    {
+      "name": "benchmark",
+      "configurePreset": "benchmark"
     }
   ]
 }

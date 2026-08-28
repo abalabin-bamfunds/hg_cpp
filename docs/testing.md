@@ -154,3 +154,6 @@ For each reusable node and graph, test:
 - compiled and runtime storage size
 - scheduling, evaluation, reference, and collection benchmarks
 - supported compiler builds and sanitizer runs
+
+Build the `benchmark` preset and run `build/benchmark/benchmarks/bg_container_benchmark`
+to compare the custom hash dictionary with the standard library implementation.

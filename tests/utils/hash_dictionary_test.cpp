@@ -34,6 +34,25 @@ struct throwing_value {
     }
 };
 
+struct throwing_key {
+    explicit throwing_key(int source) : value{source} {
+        if (source < 0) {
+            throw std::runtime_error{"construction failed"};
+        }
+    }
+
+    int value;
+};
+
+struct throwing_key_hash {
+    [[nodiscard]] std::size_t operator()(int key) const noexcept { return std::hash<int>{}(key); }
+    [[nodiscard]] std::size_t operator()(const throwing_key &key) const noexcept { return std::hash<int>{}(key.value); }
+};
+
+struct throwing_key_equal {
+    [[nodiscard]] bool operator()(const throwing_key &left, int right) const noexcept { return left.value == right; }
+};
+
 } // namespace
 
 TEST_CASE("a hash dictionary inserts, replaces, and finds values", "[hash_dictionary]") {
@@ -93,6 +112,58 @@ TEST_CASE("a hash dictionary rolls back a failed value construction", "[hash_dic
 
     dictionary.release(memory);
     CHECK(memory.allocations() == 0);
+}
+
+TEST_CASE("a hash dictionary rolls back a failed key construction", "[hash_dictionary]") {
+    auto memory = counting_memory_resource{};
+    auto dictionary = bg::util::hash_dictionary<throwing_key, int, throwing_key_hash, throwing_key_equal>{};
+
+    CHECK_THROWS_AS(dictionary.try_emplace(-1, memory, 1), std::runtime_error);
+    CHECK(dictionary.empty());
+
+    const auto [value, inserted] = dictionary.try_emplace(1, memory, 2);
+    CHECK(inserted);
+    CHECK(*value == 2);
+
+    dictionary.release(memory);
+    CHECK(memory.allocations() == 0);
+}
+
+TEST_CASE("a hash dictionary retains committed values after each allocation failure", "[hash_dictionary]") {
+    auto failed_allocations = std::size_t{};
+
+    for (auto failure = std::size_t{};; ++failure) {
+        auto memory = counting_memory_resource{};
+        auto dictionary = bg::util::hash_dictionary<int, int, equal_hash>{};
+        auto inserted = 0;
+        auto failed = false;
+
+        memory.fail_after(failure);
+        try {
+            for (; inserted < 100; ++inserted) {
+                static_cast<void>(dictionary.try_emplace(inserted, memory, inserted * 2));
+            }
+        } catch (const std::bad_alloc &) {
+            failed = true;
+            ++failed_allocations;
+        }
+        memory.allow_allocations();
+
+        CHECK(dictionary.size() == static_cast<std::uint32_t>(inserted));
+        for (auto key = 0; key < inserted; ++key) {
+            REQUIRE(dictionary.find(key) != nullptr);
+            CHECK(*dictionary.find(key) == key * 2);
+        }
+
+        dictionary.release(memory);
+        CHECK(memory.allocations() == 0);
+
+        if (!failed) {
+            break;
+        }
+    }
+
+    CHECK(failed_allocations > 10);
 }
 
 TEST_CASE("a hash dictionary reuses one position for its key and value", "[hash_dictionary]") {

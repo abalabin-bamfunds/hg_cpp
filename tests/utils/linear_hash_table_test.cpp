@@ -4,6 +4,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <cstddef>
 #include <cstdint>
 
 TEST_CASE("a linear hash table finds and removes positions", "[linear_hash_table]") {
@@ -22,6 +23,16 @@ TEST_CASE("a linear hash table finds and removes positions", "[linear_hash_table
 
     table.release(memory);
     CHECK(memory.allocations() == 0);
+}
+
+TEST_CASE("a linear hash table retains high hash bits", "[linear_hash_table]") {
+    if constexpr (sizeof(std::size_t) > sizeof(std::uint32_t)) {
+        const auto low = bg::util::linear_hash_table::hash_code(std::size_t{1});
+        const auto high = bg::util::linear_hash_table::hash_code(std::size_t{1} << 32);
+
+        CHECK(low != 0);
+        CHECK(high != 0);
+    }
 }
 
 TEST_CASE("a linear hash table retains entries while splitting buckets", "[linear_hash_table]") {
@@ -92,6 +103,66 @@ TEST_CASE("a linear hash table merges one bucket at a time", "[linear_hash_table
         CHECK(table.find(bg::util::linear_hash_table::hash_code(position),
                          [position](auto candidate) { return candidate == position; }) == position);
     }
+
+    table.release(memory);
+    CHECK(memory.allocations() == 0);
+}
+
+TEST_CASE("a linear hash table reduces collision-heavy storage", "[linear_hash_table]") {
+    auto memory = counting_memory_resource{};
+    auto table = bg::util::linear_hash_table{};
+    constexpr auto hash = std::uint32_t{1};
+
+    for (auto position = std::uint32_t{}; position < 100; ++position) {
+        table.insert(hash, position, memory);
+    }
+    for (auto position = std::uint32_t{}; position < 90; ++position) {
+        CHECK(table.erase(hash, position, memory));
+    }
+
+    auto reductions = std::uint32_t{};
+    while (table.reduce(memory)) {
+        ++reductions;
+    }
+
+    CHECK(reductions > 0);
+    for (auto position = std::uint32_t{90}; position < 100; ++position) {
+        CHECK(table.find(hash, [position](auto candidate) { return candidate == position; }) == position);
+    }
+
+    table.release(memory);
+    CHECK(memory.allocations() == 0);
+}
+
+TEST_CASE("a linear hash table retains entries when reduction allocation fails", "[linear_hash_table]") {
+    auto memory = counting_memory_resource{};
+    auto table = bg::util::linear_hash_table{};
+
+    for (auto position = std::uint32_t{}; position < 500; ++position) {
+        table.insert(position, position, memory);
+    }
+
+    memory.fail_after(0);
+    auto first_remaining = std::uint32_t{};
+    auto allocation_failed = false;
+    for (; first_remaining < 500 && !allocation_failed; ++first_remaining) {
+        CHECK(table.erase(first_remaining, first_remaining, memory));
+
+        try {
+            while (table.reduce(memory)) {
+            }
+        } catch (const std::bad_alloc &) {
+            allocation_failed = true;
+        }
+    }
+    memory.allow_allocations();
+
+    REQUIRE(allocation_failed);
+    CHECK(table.size() == 500 - first_remaining);
+    for (auto position = first_remaining; position < 500; ++position) {
+        CHECK(table.find(position, [position](auto candidate) { return candidate == position; }) == position);
+    }
+    CHECK(table.reduce(memory));
 
     table.release(memory);
     CHECK(memory.allocations() == 0);
