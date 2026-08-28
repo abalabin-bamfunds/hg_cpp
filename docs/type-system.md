@@ -44,6 +44,9 @@ representations and uses them to lay out values and select input views and entry
 points. A representation used in initial runtime storage provides a
 position-independent initial value that supports byte-copy initialization.
 
+The process owns registered and composed storage representations. Graph
+compilation reuses them across graphs.
+
 ## Scalar types
 
 Scalar types separate graph identity and compatibility from C++ or Python
@@ -61,6 +64,9 @@ A compound scalar has an ordered field schema and exact compatibility.
 
 A scalar list has one scalar item type. `List<SCALAR>` accepts any resolved
 scalar item type. Each list is homogeneous.
+
+A scalar set has one hashable scalar item type, written `Set<T>`. A scalar
+dictionary maps hashable scalar keys to scalar values, written `Dict<K, V>`.
 
 The [scalar API](scalar-api.md) defines C++ access and ownership.
 

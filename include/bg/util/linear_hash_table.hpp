@@ -231,6 +231,15 @@ class linear_hash_table {
     [[nodiscard]] size_type bucket_count() const noexcept { return primary_.size(); }
     [[nodiscard]] size_type overflow_bucket_count() const noexcept { return overflow_positions_.size(); }
 
+    void swap(linear_hash_table &other) noexcept {
+        primary_.swap(other.primary_);
+        overflow_positions_.swap(other.overflow_positions_);
+        overflow_.swap(other.overflow_);
+        std::swap(base_, other.base_);
+        std::swap(split_, other.split_);
+        std::swap(size_, other.size_);
+    }
+
     [[nodiscard]] static constexpr hash_type hash_code(std::size_t hash) noexcept {
         if constexpr (sizeof(std::size_t) > sizeof(hash_type)) {
             hash ^= hash >> 32;

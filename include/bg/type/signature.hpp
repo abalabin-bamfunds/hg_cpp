@@ -40,6 +40,11 @@ struct ResolvedSignature {
     const TimeSeriesType *output;
 };
 
+struct SignatureResolution {
+    ResolvedSignature signature;
+    TypeMap bindings;
+};
+
 class Signature {
   public:
     Signature(util::symbol name, std::vector<Parameter> parameters, std::vector<VariableResolver> resolvers = {})
@@ -50,6 +55,7 @@ class Signature {
         : name_(name), parameters_(std::move(parameters)), output_(&output), resolvers_(std::move(resolvers)) {}
 
     [[nodiscard]] ResolvedSignature resolve(std::span<const Type *const> arguments) const;
+    [[nodiscard]] SignatureResolution resolve_with_bindings(std::span<const Type *const> arguments) const;
 
     [[nodiscard]] util::symbol name() const noexcept { return name_; }
 

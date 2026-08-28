@@ -1,5 +1,7 @@
-#include <bg/type/list_scalar_type.hpp>
+#include <bg/scalar/dict/scalar_type.hpp>
+#include <bg/scalar/list/scalar_type.hpp>
 #include <bg/type/scalar_type.hpp>
+#include <bg/scalar/set/scalar_type.hpp>
 #include <bg/type/signature.hpp>
 #include <bg/type/time_series_value_type.hpp>
 #include <bg/type/type_of.hpp>
@@ -234,4 +236,28 @@ TEST_CASE("a generic scalar list resolves its item type", "[type_system]") {
 
     REQUIRE(generic_list.match(float_list, bindings));
     CHECK(&generic_list.resolve(bindings) == &float_list);
+}
+
+TEST_CASE("generic set and dictionary types resolve their components", "[type_system]") {
+    bg::TypeVariable<bg::ScalarType> key{bg::util::symbol{"Key"}};
+    bg::TypeVariable<bg::ScalarType> value{bg::util::symbol{"Value"}};
+    const auto generic_set = bg::GenericSetScalarType{key};
+    const auto generic_dict = bg::GenericDictScalarType{key, value};
+    const auto &resolved_set = bg::set_scalar_type(bg::string_type());
+    const auto &resolved_dict = bg::dict_scalar_type(bg::string_type(), bg::int64_type());
+
+    auto set_bindings = bg::TypeMap{};
+    REQUIRE(generic_set.match(resolved_set, set_bindings));
+    CHECK(&generic_set.resolve(set_bindings) == &resolved_set);
+
+    auto dict_bindings = bg::TypeMap{};
+    REQUIRE(generic_dict.match(resolved_dict, dict_bindings));
+    CHECK(&generic_dict.resolve(dict_bindings) == &resolved_dict);
+}
+
+TEST_CASE("set items and dictionary keys require hashing", "[type_system][scalar][collection]") {
+    const auto &opaque = bg::cpp_scalar_type<bg::Opaque<int>>();
+
+    CHECK_THROWS_AS(bg::set_scalar_type(opaque), std::invalid_argument);
+    CHECK_THROWS_AS(bg::dict_scalar_type(opaque, bg::int64_type()), std::invalid_argument);
 }

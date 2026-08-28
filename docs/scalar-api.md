@@ -7,14 +7,16 @@ node code access to a value without fixing its resolved scalar type.
 
 ## Read-only access
 
-`Scalar<T>` is a borrowed, read-only view. Its owner defines its lifetime. A
-view supplied to a node is valid for that node invocation and must not be
-retained.
+`Scalar<T>` is a borrowed, read-only view. Copying it copies the view. Its owner
+defines its lifetime. A view supplied to a node is valid for that node
+invocation and must not be retained.
 
-A concrete `T` exposes its typed value API. `Scalar<SCALAR>` exposes any
-resolved scalar type accepted by that variable without assuming equality or
-hashing. `Scalar<Variable>` exposes either operation only when the variable
-requires it. `Scalar<>` is a view erased independently of a type variable.
+A concrete leaf scalar exposes `value()`. A collection scalar exposes its
+collection operations directly and has no `value()` operation. `Scalar<SCALAR>`
+exposes any resolved scalar type accepted by that variable without assuming
+equality or hashing. `Scalar<Variable>` exposes either operation only when the
+variable requires it. `Scalar<>` is a view erased independently of a type
+variable.
 
 `scalar_cast<T>()` checks the resolved type before narrowing a view.
 `unchecked_scalar_cast<T>()` requires the caller to prove compatibility. Both
@@ -25,6 +27,9 @@ operations retain the source lifetime.
 `ScalarValue<T>` owns its value and is move-only. Construction from `Scalar<T>`
 copies the current value. `ScalarValue<>` owns a value of any resolved scalar
 type. It can copy or replace its value from any `Scalar` or `ScalarValue`.
+
+`ScalarValue<T>::view()` returns a `Scalar<T>`. The returned view remains valid
+while the owner retains that value.
 
 Use `ScalarValue` when a value must outlive a borrowed view. A constructor can
 accept a memory resource for owned storage.
@@ -47,9 +52,24 @@ ownership of the pointed-to object remains with the caller.
 
 ## Lists
 
-`List<T>` is a borrowed view of a concrete, homogeneous scalar list.
-`ScalarValue<List<T>>` owns the list and its items.
+`List<T>` declares a homogeneous scalar list type. `Scalar<List<T>>` provides
+read-only access. `ScalarValue<List<T>>` owns the list and its items.
 
-`List<V>` is a type declaration when `V` is a scalar type variable. It has no
-runtime value. Node code uses `Scalar<List<V>>` to access the resolved list.
-Indexing it returns `Scalar<V>` for the concrete item at that position.
+Node code uses `Scalar<List<T>>` to access a resolved list. Indexing it returns
+`Scalar<T>`.
+
+## Collections
+
+`Set<T>` declares a homogeneous scalar set type. `Dict<K, V>` declares a scalar
+dictionary type. `Scalar<Set<T>>` and `Scalar<Dict<K, V>>` provide read-only
+access. Their storage receives a memory resource from its owner without
+retaining its pointer. Dictionary keys and values occupy separate columns.
+
+`MutableList<T>`, `MutableSet<T>`, and `MutableDict<K, V>` provide the matching
+mutation operations. `State` exposes these views during a node invocation. An
+operation that can allocate or release memory uses the active allocation
+context. Looking up a nested collection through a mutable list or dictionary
+returns its mutable view.
+
+Generic collection views use the resolved item types. This applies to scalar
+parameters and `State` declarations such as `State<Dict<K, SCALAR>>`.

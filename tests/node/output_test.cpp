@@ -72,8 +72,8 @@ TEST_CASE("a generic value output accepts a compatible erased scalar view", "[no
     const auto evaluation_time = bg::MIN_DT + std::chrono::microseconds{1};
     const auto source_value = 1.25F;
     const auto source = bg::Scalar<bg::SCALAR>::from<float>(source_value);
-    const auto &prototype = bg::cpp_scalar_storage_representation<float>().output_view_prototype();
-    const auto output = bg::Out<bg::TS<bg::SCALAR>>{last_updated, &value, prototype, evaluation_time};
+    const auto *prototype = bg::cpp_scalar_storage_representation<float>().output_view_prototype();
+    const auto output = bg::Out<bg::TS<bg::SCALAR>>{last_updated, &value, *prototype, evaluation_time};
 
     output.set_value(source);
 
@@ -87,8 +87,8 @@ TEST_CASE("an arbitrary time-series output accepts a compatible scalar view", "[
     const auto evaluation_time = bg::MIN_DT + std::chrono::microseconds{1};
     const auto source_value = 1.25F;
     const auto source = bg::Scalar<>::from<float>(source_value);
-    const auto &prototype = bg::cpp_scalar_storage_representation<float>().output_view_prototype();
-    const auto output = bg::Out<bg::TS_T>{last_updated, &value, prototype, evaluation_time};
+    const auto *prototype = bg::cpp_scalar_storage_representation<float>().output_view_prototype();
+    const auto output = bg::Out<bg::TS_T>{last_updated, &value, *prototype, evaluation_time};
 
     output.set_value(source);
 
@@ -102,8 +102,8 @@ TEST_CASE("a generic value output rejects an incompatible scalar view", "[node_a
     const auto evaluation_time = bg::MIN_DT + std::chrono::microseconds{1};
     const auto source_value = 1.25;
     const auto source = bg::Scalar<bg::SCALAR>::from<double>(source_value);
-    const auto &prototype = bg::cpp_scalar_storage_representation<float>().output_view_prototype();
-    const auto output = bg::Out<bg::TS<bg::SCALAR>>{last_updated, &value, prototype, evaluation_time};
+    const auto *prototype = bg::cpp_scalar_storage_representation<float>().output_view_prototype();
+    const auto output = bg::Out<bg::TS<bg::SCALAR>>{last_updated, &value, *prototype, evaluation_time};
 
     CHECK_THROWS_AS(output.set_value(source), std::invalid_argument);
     CHECK_FALSE(output.valid());

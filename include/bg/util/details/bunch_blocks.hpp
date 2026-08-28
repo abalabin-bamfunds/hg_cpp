@@ -56,8 +56,7 @@ template <typename T, std::uint32_t InitialElements = 8> class bunch_blocks {
         if (position < first_capped_position) {
             const auto scaled = position / initial_elements + 1;
             const auto block_index = static_cast<size_type>(std::bit_width(scaled) - 1);
-            const auto first = static_cast<std::uint64_t>(initial_elements) *
-                               ((std::uint64_t{1} << block_index) - 1);
+            const auto first = static_cast<std::uint64_t>(initial_elements) * ((std::uint64_t{1} << block_index) - 1);
 
             return {block_index, static_cast<size_type>(position - first)};
         }
@@ -141,6 +140,15 @@ template <typename T, std::uint32_t InitialElements = 8> class bunch_blocks {
     }
 
     [[nodiscard]] size_type allocated_block_count() const noexcept { return allocated_blocks_; }
+
+    void swap(bunch_blocks &other) noexcept {
+        using std::swap;
+        swap(first_, other.first_);
+        swap(additional_, other.additional_);
+        swap(additional_size_, other.additional_size_);
+        swap(additional_capacity_, other.additional_capacity_);
+        swap(allocated_blocks_, other.allocated_blocks_);
+    }
 
   private:
     [[nodiscard]] block &block_at(size_type block_index) noexcept {

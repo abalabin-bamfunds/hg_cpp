@@ -37,7 +37,15 @@ new code path, compatibility boundary, failure mode, or regression.
 
 Name a test file after the feature it covers. Split node and graph behavior by
 value type when the type changes the expected behavior. Keep each test case
-focused on one behavior.
+focused on one behavior. Define a test-only function, node, or graph in the test
+case that uses it. When an interface requires a namespace-scope type, place its
+declaration immediately before the test case. Keep other declarations at file
+scope only when multiple test cases share them.
+
+`test_graph` accepts a wiring template or a graph function. Each input range
+defines updates by outer cycle. An empty `std::optional` skips its cycle. The
+result has one position per cycle and uses an empty position when the output did
+not update.
 
 ## Test areas
 
@@ -56,7 +64,7 @@ focused on one behavior.
 - typed and erased scalar access, casts, equality, and hashing
 - fixed, variable, inline, and graph-accounted storage
 - construction, assignment, copy, and destruction
-- opaque values and scalar lists, including generic and nested lists
+- opaque values and scalar collections, including generic and nested types
 - time series validity, update time, mutation, and invalidation
 - global state ownership, replacement, lookup, and allocation
 

@@ -22,56 +22,6 @@ struct source_definition {
     void evaluate() const {}
 };
 
-struct passive_copy_definition {
-    bg::In<bg::TS<float>, bg::passive, bg::optional> input;
-    bg::Out<bg::TS<float>> output;
-
-    void evaluate() const { output.set(input.value()); }
-};
-
-inline const auto source = bg::node<source_definition>();
-inline const auto passive_copy = bg::node<passive_copy_definition>();
-
-struct evaluation_time_source_definition {
-    bg::Out<bg::TS<bg::EvaluationTime>> output;
-
-    void evaluate() const {}
-};
-
-inline const auto evaluation_time_source = bg::node<evaluation_time_source_definition>();
-
-struct private_data {
-    explicit private_data(int source) : value(source) {}
-    private_data(const private_data &) = default;
-    private_data &operator=(const private_data &) = delete;
-
-    int value;
-};
-
-struct opaque_sink_definition {
-    inline static private_data *observed{};
-    inline static int observed_value{};
-
-    bg::Scalar<bg::Opaque<private_data *>> pointer;
-    bg::Scalar<bg::Opaque<private_data>> object;
-
-    void evaluate() const {
-        observed = pointer->value();
-        observed_value = object->value().value;
-    }
-};
-
-struct unsupported_opaque_output {
-    bg::Out<bg::TS<bg::Opaque<private_data *>>> output;
-
-    void evaluate() const {}
-};
-
-inline const auto opaque_sink = bg::node<opaque_sink_definition>();
-
-static_assert(bg::AggregateNodeClass<opaque_sink_definition>);
-static_assert(!bg::AggregateNodeClass<unsupported_opaque_output>);
-
 class scale_template final : public bg::NodeTemplate {
   public:
     [[nodiscard]] const bg::Signature &signature() const override {
@@ -98,41 +48,17 @@ class scale_template final : public bg::NodeTemplate {
     static void evaluate(const bg::CompiledNode &, void *, bg::EvaluationContext *) {}
 };
 
-inline const scale_template scale;
-
-class counting_memory_resource final : public std::pmr::memory_resource {
-  public:
-    [[nodiscard]] std::size_t allocation_count() const noexcept { return allocation_count_; }
-
-  private:
-    void *do_allocate(std::size_t bytes, std::size_t alignment) override {
-        ++allocation_count_;
-        return std::pmr::new_delete_resource()->allocate(bytes, alignment);
-    }
-
-    void do_deallocate(void *data, std::size_t bytes, std::size_t alignment) override {
-        --allocation_count_;
-        std::pmr::new_delete_resource()->deallocate(data, bytes, alignment);
-    }
-
-    [[nodiscard]] bool do_is_equal(const std::pmr::memory_resource &other) const noexcept override {
-        return this == &other;
-    }
-
-    std::size_t allocation_count_{};
-};
-
-void wire_scale(bg::GraphWiring &wiring) {
-    bg::WiringContext context{wiring};
-    const bg::WiringPoint input = source();
-    (void)scale(input, 2.0F);
-}
-
 } // namespace
 
 TEST_CASE("compiled nodes keep hot data in node-local sections", "[compiled_graph]") {
+    const auto source = bg::node<source_definition>();
+    const auto scale = scale_template{};
     bg::GraphWiring wiring;
-    wire_scale(wiring);
+
+    {
+        bg::WiringContext context{wiring};
+        (void)scale(source(), 2.0F);
+    }
 
     bg::CompiledGraph graph{wiring};
 
@@ -164,8 +90,14 @@ TEST_CASE("compiled nodes keep hot data in node-local sections", "[compiled_grap
 }
 
 TEST_CASE("graph wiring can compile more than once", "[compiled_graph]") {
+    const auto source = bg::node<source_definition>();
+    const auto scale = scale_template{};
     bg::GraphWiring wiring;
-    wire_scale(wiring);
+
+    {
+        bg::WiringContext context{wiring};
+        (void)scale(source(), 2.0F);
+    }
 
     bg::CompiledGraph first{wiring};
     bg::CompiledGraph second{wiring};
@@ -178,7 +110,20 @@ TEST_CASE("graph wiring can compile more than once", "[compiled_graph]") {
     CHECK(*static_cast<const float *>(second_scalar) == 2.0F);
 }
 
+namespace {
+
+struct passive_copy_definition {
+    bg::In<bg::TS<float>, bg::passive, bg::optional> input;
+    bg::Out<bg::TS<float>> output;
+
+    void evaluate() const { output.set(input.value()); }
+};
+
+} // namespace
+
 TEST_CASE("compiled parameters retain validity without a passive subscription", "[compiled_graph]") {
+    const auto source = bg::node<source_definition>();
+    const auto passive_copy = bg::node<passive_copy_definition>();
     bg::GraphWiring wiring;
 
     {
@@ -193,11 +138,14 @@ TEST_CASE("compiled parameters retain validity without a passive subscription", 
 }
 
 TEST_CASE("a compiled graph owns its scalar copies", "[compiled_graph]") {
+    const auto source = bg::node<source_definition>();
+    const auto scale = scale_template{};
     std::unique_ptr<bg::CompiledGraph> graph;
 
     {
         bg::GraphWiring wiring;
-        wire_scale(wiring);
+        bg::WiringContext context{wiring};
+        (void)scale(source(), 2.0F);
         graph = std::make_unique<bg::CompiledGraph>(wiring);
     }
 
@@ -205,9 +153,42 @@ TEST_CASE("a compiled graph owns its scalar copies", "[compiled_graph]") {
     CHECK(*static_cast<const float *>(factor.scalar_data()) == 2.0F);
 }
 
+namespace {
+
+class counting_memory_resource final : public std::pmr::memory_resource {
+  public:
+    [[nodiscard]] std::size_t allocation_count() const noexcept { return allocation_count_; }
+
+  private:
+    void *do_allocate(std::size_t bytes, std::size_t alignment) override {
+        ++allocation_count_;
+        return std::pmr::new_delete_resource()->allocate(bytes, alignment);
+    }
+
+    void do_deallocate(void *data, std::size_t bytes, std::size_t alignment) override {
+        --allocation_count_;
+        std::pmr::new_delete_resource()->deallocate(data, bytes, alignment);
+    }
+
+    [[nodiscard]] bool do_is_equal(const std::pmr::memory_resource &other) const noexcept override {
+        return this == &other;
+    }
+
+    std::size_t allocation_count_{};
+};
+
+} // namespace
+
 TEST_CASE("compiled fixed storage uses one allocation", "[compiled_graph]") {
+    const auto source = bg::node<source_definition>();
+    const auto scale = scale_template{};
     bg::GraphWiring wiring;
-    wire_scale(wiring);
+
+    {
+        bg::WiringContext context{wiring};
+        (void)scale(source(), 2.0F);
+    }
+
     counting_memory_resource memory;
 
     {
@@ -220,7 +201,18 @@ TEST_CASE("compiled fixed storage uses one allocation", "[compiled_graph]") {
     CHECK(memory.allocation_count() == 0);
 }
 
+namespace {
+
+struct evaluation_time_source_definition {
+    bg::Out<bg::TS<bg::EvaluationTime>> output;
+
+    void evaluate() const {}
+};
+
+} // namespace
+
 TEST_CASE("a compiled graph stores an evaluation time output", "[compiled_graph]") {
+    const auto evaluation_time_source = bg::node<evaluation_time_source_definition>();
     bg::GraphWiring wiring;
 
     {
@@ -235,7 +227,42 @@ TEST_CASE("a compiled graph stores an evaluation time output", "[compiled_graph]
     CHECK(graph.node(0).output_last_updated_offset() != graph.node(0).output_value_offset());
 }
 
+namespace {
+
+struct private_data {
+    explicit private_data(int source) : value(source) {}
+    private_data(const private_data &) = default;
+    private_data &operator=(const private_data &) = delete;
+
+    int value;
+};
+
+struct opaque_sink_definition {
+    inline static private_data *observed{};
+    inline static int observed_value{};
+
+    bg::Scalar<bg::Opaque<private_data *>> pointer;
+    bg::Scalar<bg::Opaque<private_data>> object;
+
+    void evaluate() const {
+        observed = pointer->value();
+        observed_value = object->value().value;
+    }
+};
+
+struct unsupported_opaque_output {
+    bg::Out<bg::TS<bg::Opaque<private_data *>>> output;
+
+    void evaluate() const {}
+};
+
+static_assert(bg::AggregateNodeClass<opaque_sink_definition>);
+static_assert(!bg::AggregateNodeClass<unsupported_opaque_output>);
+
+} // namespace
+
 TEST_CASE("a compiled graph owns an opaque scalar copy", "[compiled_graph]") {
+    const auto opaque_sink = bg::node<opaque_sink_definition>();
     auto value = private_data{42};
     const auto pointer = bg::ScalarValue<bg::Opaque<private_data *>>{&value};
     const auto object = bg::ScalarValue<bg::Opaque<private_data>>{value};

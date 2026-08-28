@@ -123,6 +123,12 @@ class occupancy_index {
     [[nodiscard]] bool empty() const noexcept { return count_ == 0; }
     [[nodiscard]] size_type capacity() const noexcept { return words_.size() * bits_per_word; }
 
+    void swap(occupancy_index &other) noexcept {
+        words_.swap(other.words_);
+        std::swap(count_, other.count_);
+        std::swap(next_free_word_, other.next_free_word_);
+    }
+
     class iterator {
       public:
         using iterator_concept = std::forward_iterator_tag;
@@ -155,8 +161,7 @@ class occupancy_index {
       private:
         friend class occupancy_index;
 
-        iterator(const occupancy_index *index, size_type word_index) noexcept
-            : index_{index}, word_index_{word_index} {
+        iterator(const occupancy_index *index, size_type word_index) noexcept : index_{index}, word_index_{word_index} {
             if (word_index_ < index_->words_.size()) {
                 remaining_ = index_->words_[word_index_];
             }

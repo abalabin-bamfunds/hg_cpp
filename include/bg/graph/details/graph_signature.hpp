@@ -20,7 +20,8 @@
 namespace bg::details {
 
 template <typename T>
-concept scalar_declaration = scalar_variable<T> || (!is_opaque_v<T> && requires { cpp_scalar_type<T>(); });
+concept scalar_declaration = generic_scalar<T> ||
+                             (scalar_type_traits<T>::supports_time_series && requires { cpp_scalar_type<T>(); });
 
 template <typename T>
 concept time_series_declaration = requires {
@@ -36,15 +37,15 @@ template <typename Function, std::size_t Index> [[nodiscard]] const Type &graph_
         using TimeSeries = typename typed_wiring_point<Parameter>::time_series_type;
         static_assert(time_series_declaration<TimeSeries>, "wp requires a supported time series type");
 
-        if constexpr (scalar_variable<typename TimeSeries::value_type> && TimeSeries::has_explicit_guarantee) {
+        if constexpr (generic_scalar<typename TimeSeries::value_type> && TimeSeries::has_explicit_guarantee) {
             static const GenericTimeSeriesValueType type{
-                scalar_variable_instance<Function, typename TimeSeries::value_type>(), TimeSeries::guarantee};
+                scalar_type_for<Function, typename TimeSeries::value_type>(), TimeSeries::guarantee};
 
             return type;
-        } else if constexpr (scalar_variable<typename TimeSeries::value_type>) {
+        } else if constexpr (generic_scalar<typename TimeSeries::value_type>) {
             static const GuaranteeVariable guarantee{name};
             static const GenericTimeSeriesValueType type{
-                scalar_variable_instance<Function, typename TimeSeries::value_type>(), guarantee};
+                scalar_type_for<Function, typename TimeSeries::value_type>(), guarantee};
 
             return type;
         } else if constexpr (TimeSeries::has_explicit_guarantee) {
@@ -85,9 +86,9 @@ template <typename Function> [[nodiscard]] const TimeSeriesType &graph_output_ty
     using TimeSeries = typename typed_wiring_point<Result>::time_series_type;
     static_assert(time_series_declaration<TimeSeries>, "wp requires a supported time series type");
 
-    if constexpr (scalar_variable<typename TimeSeries::value_type>) {
+    if constexpr (generic_scalar<typename TimeSeries::value_type>) {
         static const GenericTimeSeriesValueType type{
-            scalar_variable_instance<Function, typename TimeSeries::value_type>(), TimeSeries::guarantee};
+            scalar_type_for<Function, typename TimeSeries::value_type>(), TimeSeries::guarantee};
 
         return type;
     } else {

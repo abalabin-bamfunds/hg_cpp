@@ -1,7 +1,6 @@
 #pragma once
 
 #include <bg/evaluation_time.hpp>
-#include <bg/scalar/list.hpp>
 #include <bg/scalar/string.hpp>
 
 #include <concepts>
@@ -55,10 +54,6 @@ struct canonical_scalar<T> {
     using type = std::remove_cvref_t<T>;
 };
 
-template <typename T> struct canonical_scalar<List<T>> {
-    using type = List<T>;
-};
-
 } // namespace details
 
 template <typename T> using canonical_scalar_t = typename details::canonical_scalar<T>::type;
@@ -84,10 +79,6 @@ template <std::same_as<float> T> [[nodiscard]] constexpr float canonical_scalar(
 }
 
 template <std::same_as<double> T> [[nodiscard]] constexpr double canonical_scalar(T value) noexcept {
-    return value;
-}
-
-template <typename T> [[nodiscard]] constexpr List<T> canonical_scalar(List<T> value) noexcept {
     return value;
 }
 

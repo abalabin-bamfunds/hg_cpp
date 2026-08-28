@@ -97,19 +97,32 @@ class AggregateNodeTemplate final : public NodeTemplate {
         return details::aggregate_uses_future_scheduling<Definition>();
     }
 
-    [[nodiscard]] std::size_t state_size(const ResolvedSignature &) const noexcept override {
-        return details::aggregate_state_size<Definition>(
+    [[nodiscard]] NodeStateLayout
+    state_layout(const ResolvedSignature &signature,
+                 std::span<const ScalarStorageRepresentation *const> parameter_storage_representations,
+                 std::span<const ScalarType *const> state_types) const override {
+        return details::aggregate_state_layout<Definition>(
+            signature, parameter_storage_representations, state_types,
             std::make_index_sequence<util::aggregate_member_count<Definition>>{});
     }
 
-    [[nodiscard]] std::size_t state_alignment(const ResolvedSignature &) const noexcept override {
-        return details::aggregate_state_alignment<Definition>(
-            std::make_index_sequence<util::aggregate_member_count<Definition>>{});
-    }
-
-    void construct_initial_state(const ResolvedSignature &, void *storage) const noexcept override {
+    void construct_initial_state(const NodeStateLayout &layout, void *storage) const noexcept override {
         details::construct_aggregate_state<Definition>(
-            storage, std::make_index_sequence<util::aggregate_member_count<Definition>>{});
+            layout, storage, std::make_index_sequence<util::aggregate_member_count<Definition>>{});
+    }
+
+    [[nodiscard]] EvaluationFunction state_destruction_function(const ResolvedSignature &) const noexcept override {
+        if constexpr (details::aggregate_state_requires_destruction<Definition>(
+                          std::make_index_sequence<util::aggregate_member_count<Definition>>{})) {
+            return &details::destroy_aggregate_state<Definition>;
+        } else {
+            return nullptr;
+        }
+    }
+
+    [[nodiscard]] std::vector<const ScalarType *> resolve_state_types(const TypeMap &bindings) const override {
+        return details::aggregate_state_types<Definition>(
+            bindings, std::make_index_sequence<util::aggregate_member_count<Definition>>{});
     }
 
   private:

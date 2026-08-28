@@ -2,18 +2,22 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <array>
 #include <cstdint>
 #include <string_view>
-#include <typeinfo>
 
 TEST_CASE("global state owns inserted scalar values", "[global_state][scalar]") {
     auto state = bg::GlobalState{};
     auto source = bg::ScalarValue{std::string_view{"value"}};
 
-    state.set(bg::util::symbol{"result"}, source);
+    {
+        auto values = state.write();
+        values.set(bg::util::symbol{"result"}, source);
+    }
     source = bg::ScalarValue{std::string_view{"changed"}};
 
-    const auto stored = bg::scalar_cast<bg::string>(state.at("result"));
+    const auto values = state.read();
+    const auto stored = bg::scalar_cast<bg::string>(values.at("result"));
     CHECK(stored->value() == "value");
 }
 
@@ -23,20 +27,28 @@ TEST_CASE("global state replaces values and supports heterogeneous lookup", "[gl
     const auto first = bg::ScalarValue{std::string_view{"first"}};
     const auto second = bg::ScalarValue{2};
 
-    state.set(key, first);
-    state.set(key, second);
+    auto values = state.write();
+    values.set(key, first);
+    values.set(key, second);
 
-    CHECK(state.contains("result"));
-    CHECK(bg::scalar_cast<std::int64_t>(state.at(key))->value() == 2);
-    CHECK(state.erase("result"));
-    CHECK_FALSE(state.contains(key));
+    CHECK(values.contains("result"));
+    CHECK(bg::scalar_cast<std::int64_t>(values.at(key))->value() == 2);
+    CHECK(values.erase("result"));
+    CHECK_FALSE(values.contains(key));
 }
 
-TEST_CASE("checked scalar casts reject an incompatible value", "[scalar]") {
-    const auto value = std::int64_t{42};
-    const auto erased = bg::Scalar<>::from<std::int64_t>(value);
+TEST_CASE("global state write access mutates collection values", "[global_state][scalar][collection]") {
+    auto state = bg::GlobalState{};
+    const auto initial = bg::ScalarValue<bg::List<std::int64_t>>{std::array<std::int64_t, 1>{1}};
 
-    CHECK(bg::scalar_cast<std::int64_t>(erased)->value() == value);
-    CHECK(bg::unchecked_scalar_cast<std::int64_t>(erased)->value() == value);
-    CHECK_THROWS_AS(bg::scalar_cast<double>(erased), std::bad_cast);
+    {
+        auto values = state.write();
+        values.set(bg::util::symbol{"items"}, initial);
+        values.mutable_at<bg::List<std::int64_t>>("items").append(2);
+    }
+
+    const auto values = state.read();
+    const auto items = bg::scalar_cast<bg::List<std::int64_t>>(values.at("items"));
+    CHECK(items.size() == 2);
+    CHECK(items[1].value() == 2);
 }

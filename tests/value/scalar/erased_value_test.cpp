@@ -1,5 +1,4 @@
 #include <bg/scalar/cpp_storage_representation.hpp>
-#include <bg/scalar/list.hpp>
 #include <bg/scalar/value.hpp>
 
 #include <catch2/catch_test_macros.hpp>
@@ -7,21 +6,11 @@
 #include <cstdint>
 #include <memory_resource>
 #include <string_view>
+#include <typeinfo>
 
 namespace {
 
-template <typename T>
-concept hashable_scalar_handle = requires(const T &value) { value->hash(); };
-
-template <typename T>
-concept equality_comparable_scalar_handle = requires(const T &left, const T &right) { left == right; };
-
 using Key = bg::ScalarVariable<"Key", bg::EqualityComparable, bg::Hashable>;
-
-static_assert(!hashable_scalar_handle<bg::Scalar<bg::SCALAR>>);
-static_assert(!equality_comparable_scalar_handle<bg::Scalar<bg::SCALAR>>);
-static_assert(hashable_scalar_handle<bg::Scalar<Key>>);
-static_assert(equality_comparable_scalar_handle<bg::Scalar<Key>>);
 
 } // namespace
 
@@ -32,10 +21,10 @@ TEST_CASE("an erased scalar value copies a borrowed value", "[value][scalar][era
 
     source.assign("changed");
 
-    CHECK(&value->type() == &bg::string_type());
+    CHECK(&value.input_view().type() == &bg::string_type());
 
     auto copy = std::pmr::string{};
-    value->assign(&copy, bg::cpp_scalar_storage_representation<bg::string>());
+    value.input_view().assign(&copy, bg::cpp_scalar_storage_representation<bg::string>());
     CHECK(copy == "value");
 }
 
@@ -46,7 +35,7 @@ TEST_CASE("an erased scalar value can replace its value", "[value][scalar][erase
 
     value = second;
 
-    const auto view = bg::Scalar<>::from(value.view());
+    const auto view = value.view();
     CHECK(bg::scalar_cast<std::int64_t>(view)->value() == 42);
 }
 
@@ -58,7 +47,7 @@ TEST_CASE("an erased scalar value can replace its value from a borrowed view", "
 
     value = source;
 
-    const auto view = bg::Scalar<>::from(value.view());
+    const auto view = value.view();
     CHECK(bg::scalar_cast<std::int64_t>(view)->value() == source_value);
 }
 
@@ -90,4 +79,13 @@ TEST_CASE("a constrained scalar variable exposes its required operations", "[val
     CHECK_FALSE(left == different);
     CHECK(left->hash() == equal->hash());
     CHECK(&left->type() == &bg::int64_type());
+}
+
+TEST_CASE("checked scalar casts reject an incompatible value", "[value][scalar][erased]") {
+    const auto value = std::int64_t{42};
+    const auto erased = bg::Scalar<>::from<std::int64_t>(value);
+
+    CHECK(bg::scalar_cast<std::int64_t>(erased)->value() == value);
+    CHECK(bg::unchecked_scalar_cast<std::int64_t>(erased)->value() == value);
+    CHECK_THROWS_AS(bg::scalar_cast<double>(erased), std::bad_cast);
 }

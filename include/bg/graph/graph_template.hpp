@@ -56,7 +56,7 @@ class GraphTemplate final : public WiringTemplate {
         }
     }
 
-    [[nodiscard]] std::optional<WiringPoint> wire(GraphWiring &, ResolvedSignature signature,
+    [[nodiscard]] std::optional<WiringPoint> wire(GraphWiring &, ResolvedSignature signature, const TypeMap &,
                                                   std::span<details::wiring_argument> arguments) const override {
         if (!details::wiring_parameters_match<Function>(signature)) {
             throw WiringError{"a graph function does not match its resolved signature"};

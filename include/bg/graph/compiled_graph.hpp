@@ -59,6 +59,11 @@ class CompiledGraph {
         std::span<const std::uint32_t> nodes;
     };
 
+    struct OutputDestruction {
+        std::span<const ScalarStorageRepresentation *const> representations;
+        std::span<const std::uint32_t> offsets;
+    };
+
     using ScheduleWord = details::ScheduleWord;
     using SchedulingInfo = details::SchedulingInfo;
 
@@ -100,6 +105,7 @@ class CompiledGraph {
     [[nodiscard]] NodeFunctions node_functions(std::uint32_t functions_offset, std::uint32_t count) const noexcept;
     [[nodiscard]] NodeFunctions start_functions() const noexcept;
     [[nodiscard]] NodeFunctions stop_functions() const noexcept;
+    [[nodiscard]] OutputDestruction output_destruction() const noexcept;
 
     [[nodiscard]] const details::CompiledStorageHeader &storage_header() const noexcept {
         return *reinterpret_cast<const details::CompiledStorageHeader *>(fixed_storage_);

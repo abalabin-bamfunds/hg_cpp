@@ -38,6 +38,7 @@ class GraphWiring {
     [[nodiscard]] std::optional<WiringPoint> invoke(const WiringTemplate &wiring_template,
                                                     std::span<details::wiring_argument> arguments);
     [[nodiscard]] std::optional<WiringPoint> add_node(const NodeTemplate &node_template, ResolvedSignature signature,
+                                                      std::vector<const ScalarType *> state_types,
                                                       std::span<details::wiring_argument> arguments);
 
     [[nodiscard]] const WiringPath &make_path(util::symbol name, util::symbol label);

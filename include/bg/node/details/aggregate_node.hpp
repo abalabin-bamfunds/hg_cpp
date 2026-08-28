@@ -5,6 +5,7 @@
 #include <bg/node/input.hpp>
 #include <bg/node/output.hpp>
 #include <bg/node/state.hpp>
+#include <bg/node/state_layout.hpp>
 #include <bg/scalar/cpp_storage_representation.hpp>
 #include <bg/type/scalar_type.hpp>
 #include <bg/type/scalar_variable.hpp>
@@ -51,8 +52,11 @@ template <typename TimeSeries> struct output_field<Out<TimeSeries>> {
     using time_series_type = TimeSeries;
 };
 
+template <typename T> inline constexpr bool generic_scalar_state = generic_scalar<T>;
+
 template <typename T> struct scalar_field {
-    static constexpr bool value = !is_opaque_v<T> && requires { cpp_scalar_type<T>(); };
+    static constexpr bool value =
+        scalar_type_traits<T>::supports_implicit_argument && requires { cpp_scalar_type<T>(); };
     static constexpr bool optional = false;
 
     using value_type = T;
@@ -66,7 +70,7 @@ template <typename T> struct scalar_field<std::optional<T>> {
 };
 
 template <typename T> struct scalar_field<Scalar<T>> {
-    static constexpr bool value = scalar_variable<T> || requires { cpp_scalar_type<T>(); };
+    static constexpr bool value = generic_scalar_state<T> || requires { cpp_scalar_type<T>(); };
     static constexpr bool optional = false;
 
     using value_type = T;
@@ -74,13 +78,43 @@ template <typename T> struct scalar_field<Scalar<T>> {
 
 template <typename T> struct state_field {
     static constexpr bool value = false;
+    static constexpr bool scalar_collection = false;
 };
 
 template <typename T> struct state_field<State<T>> {
     static constexpr bool value = true;
+    static constexpr bool scalar_collection = scalar_type_traits<T>::is_collection;
 
     using value_type = T;
+    using storage_type = std::conditional_t<scalar_collection, scalar_stored_t<T>, T>;
 };
+
+template <typename Definition, std::size_t... Index>
+[[nodiscard]] std::vector<const ScalarType *> aggregate_state_types(const TypeMap &bindings,
+                                                                    std::index_sequence<Index...>) {
+    auto result = std::vector<const ScalarType *>{};
+    result.reserve((std::size_t{} + ... +
+                    static_cast<std::size_t>(
+                        state_field<std::remove_cv_t<util::aggregate_member_type<Index, Definition>>>::value)));
+
+    (
+        [&] {
+            using Field = std::remove_cv_t<util::aggregate_member_type<Index, Definition>>;
+
+            if constexpr (state_field<Field>::value) {
+                using Value = typename state_field<Field>::value_type;
+                if constexpr (state_field<Field>::scalar_collection && generic_scalar_state<Value>) {
+                    result.push_back(
+                        &static_cast<const ScalarType &>(scalar_type_for<Definition, Value>().resolve(bindings)));
+                } else {
+                    result.push_back(nullptr);
+                }
+            }
+        }(),
+        ...);
+
+    return result;
+}
 
 template <typename T> struct time_series_value {
     using type = void;
@@ -94,8 +128,8 @@ template <typename T> struct generic_time_series : std::false_type {};
 
 template <> struct generic_time_series<TS_T> : std::true_type {};
 
-template <scalar_variable Variable, auto... Properties>
-struct generic_time_series<TS<Variable, Properties...>> : std::true_type {};
+template <typename T, auto... Properties>
+struct generic_time_series<TS<T, Properties...>> : std::bool_constant<generic_scalar<T>> {};
 
 template <typename T> struct generic_input_field : std::false_type {};
 
@@ -108,9 +142,7 @@ template <typename TimeSeries> struct generic_output_field<Out<TimeSeries>> : ge
 
 template <typename T> struct generic_scalar_input_field : std::false_type {};
 
-template <scalar_variable Variable> struct generic_scalar_input_field<Scalar<Variable>> : std::true_type {};
-
-template <scalar_variable Variable> struct generic_scalar_input_field<Scalar<List<Variable>>> : std::true_type {};
+template <typename T> struct generic_scalar_input_field<Scalar<T>> : std::bool_constant<generic_scalar_state<T>> {};
 
 template <typename T> struct scalar_variable_view : std::false_type {};
 
@@ -124,7 +156,8 @@ template <typename Field, bool = input_field<Field>::value> struct supported_inp
 
 template <typename Field>
 concept has_supported_input_scalar =
-    !is_opaque_v<typename time_series_value<typename input_field<Field>::time_series_type>::type> &&
+    scalar_type_traits<typename time_series_value<typename input_field<Field>::time_series_type>::type>::
+        supports_time_series &&
     requires { cpp_scalar_type<typename time_series_value<typename input_field<Field>::time_series_type>::type>(); };
 
 template <typename Field>
@@ -135,7 +168,8 @@ template <typename Field, bool = output_field<Field>::value> struct supported_ou
 
 template <typename Field>
 concept has_supported_output_scalar =
-    !is_opaque_v<typename time_series_value<typename output_field<Field>::time_series_type>::type> &&
+    scalar_type_traits<typename time_series_value<typename output_field<Field>::time_series_type>::type>::
+        supports_time_series &&
     requires { cpp_scalar_type<typename time_series_value<typename output_field<Field>::time_series_type>::type>(); };
 
 template <typename Field>
@@ -236,18 +270,17 @@ template <typename Definition, std::size_t Index> [[nodiscard]] const TimeSeries
 
     if constexpr (std::same_as<TimeSeries, TS_T>) {
         return aggregate_time_series_variable<Definition>();
-    } else if constexpr (TimeSeries::has_explicit_guarantee && scalar_variable<Value>) {
-        static const GenericTimeSeriesValueType type{scalar_variable_instance<Definition, Value>(),
-                                                     TimeSeries::guarantee};
+    } else if constexpr (TimeSeries::has_explicit_guarantee && generic_scalar<Value>) {
+        static const GenericTimeSeriesValueType type{scalar_type_for<Definition, Value>(), TimeSeries::guarantee};
 
         return type;
     } else if constexpr (TimeSeries::has_explicit_guarantee) {
         static const GenericTimeSeriesValueType type{cpp_scalar_type<Value>(), TimeSeries::guarantee};
 
         return type;
-    } else if constexpr (scalar_variable<Value>) {
+    } else if constexpr (generic_scalar<Value>) {
         static const GuaranteeVariable guarantee{util::symbol{util::aggregate_member_names<Definition>[Index]}};
-        static const GenericTimeSeriesValueType type{scalar_variable_instance<Definition, Value>(), guarantee};
+        static const GenericTimeSeriesValueType type{scalar_type_for<Definition, Value>(), guarantee};
 
         return type;
     } else {
@@ -262,15 +295,7 @@ template <typename Definition, std::size_t Index> [[nodiscard]] const ScalarType
     using Field = std::remove_cv_t<util::aggregate_member_type<Index, Definition>>;
     using Value = typename scalar_field<Field>::value_type;
 
-    if constexpr (scalar_variable<Value>) {
-        return scalar_variable_instance<Definition, Value>();
-    } else if constexpr (scalar_variable_list<Value>) {
-        static const GenericListScalarType type{scalar_variable_instance<Definition, typename Value::item_type>()};
-
-        return type;
-    } else {
-        return cpp_scalar_type<Value>();
-    }
+    return scalar_type_for<Definition, Value>();
 }
 
 template <typename Definition, std::size_t Index> [[nodiscard]] const TimeSeriesType &output_type() {
@@ -280,20 +305,19 @@ template <typename Definition, std::size_t Index> [[nodiscard]] const TimeSeries
 
     if constexpr (std::same_as<TimeSeries, TS_T>) {
         return aggregate_time_series_variable<Definition>();
-    } else if constexpr (scalar_variable<Value>) {
-        static const GenericTimeSeriesValueType type{scalar_variable_instance<Definition, Value>(),
-                                                     TimeSeries::guarantee};
+    } else if constexpr (generic_scalar<Value>) {
+        static const GenericTimeSeriesValueType type{scalar_type_for<Definition, Value>(), TimeSeries::guarantee};
 
         return type;
     } else {
-        return time_series_value_type(cpp_scalar_type<Value>(), TimeSeries::guarantee);
+        return time_series_value_type(scalar_type_for<Definition, Value>(), TimeSeries::guarantee);
     }
 }
 
 template <typename Definition, std::size_t... Index>
 [[nodiscard]] const ScalarStorageRepresentation *aggregate_output_storage_representation(
     const ResolvedSignature &signature,
-    std::span<const ScalarStorageRepresentation *const> parameter_storage_representations,
+    [[maybe_unused]] std::span<const ScalarStorageRepresentation *const> parameter_storage_representations,
     std::index_sequence<Index...>) {
     const ScalarStorageRepresentation *result = nullptr;
 
@@ -315,7 +339,7 @@ template <typename Definition, std::size_t... Index>
     }
 
     const auto &output_type = static_cast<const TimeSeriesValueType &>(*signature.output);
-    auto parameter_index = std::size_t{};
+    [[maybe_unused]] auto parameter_index = std::size_t{};
     (
         [&] {
             using Field = std::remove_cv_t<util::aggregate_member_type<Index, Definition>>;
@@ -331,15 +355,15 @@ template <typename Definition, std::size_t... Index>
                 using Value = typename scalar_field<Field>::value_type;
                 const auto *representation = parameter_storage_representations[parameter_index];
 
-                if constexpr (scalar_variable_list<Value>) {
+                if (representation != nullptr && &representation->type() == &output_type.value_type()) {
+                    result = representation;
+                } else if constexpr (scalar_variable_list<Value>) {
                     if (representation != nullptr) {
                         const auto &list = static_cast<const ScalarListStorageRepresentation &>(*representation);
                         if (&list.item_storage_representation().type() == &output_type.value_type()) {
                             result = &list.item_storage_representation();
                         }
                     }
-                } else if (representation != nullptr && &representation->type() == &output_type.value_type()) {
-                    result = representation;
                 }
                 ++parameter_index;
             }
@@ -350,9 +374,9 @@ template <typename Definition, std::size_t... Index>
 }
 
 template <typename Definition, std::size_t... Index>
-[[nodiscard]] constexpr bool aggregate_uses_generic_time_series_input_view(std::size_t parameter_index,
+[[nodiscard]] constexpr bool aggregate_uses_generic_time_series_input_view([[maybe_unused]] std::size_t parameter_index,
                                                                            std::index_sequence<Index...>) noexcept {
-    auto current_parameter = std::size_t{};
+    [[maybe_unused]] auto current_parameter = std::size_t{};
     auto result = false;
 
     (
@@ -372,9 +396,9 @@ template <typename Definition, std::size_t... Index>
 }
 
 template <typename Definition, std::size_t... Index>
-[[nodiscard]] constexpr bool aggregate_uses_generic_scalar_input_view(std::size_t parameter_index,
+[[nodiscard]] constexpr bool aggregate_uses_generic_scalar_input_view([[maybe_unused]] std::size_t parameter_index,
                                                                       std::index_sequence<Index...>) noexcept {
-    auto current_parameter = std::size_t{};
+    [[maybe_unused]] auto current_parameter = std::size_t{};
     auto result = false;
 
     (
@@ -475,6 +499,40 @@ consteval std::size_t parameter_index(std::index_sequence<Index...>) {
                 scalar_field<std::remove_cv_t<util::aggregate_member_type<Index, Definition>>>::value));
 }
 
+template <typename Definition, std::size_t... Index>
+[[nodiscard]] consteval bool aggregate_has_generic_state(std::index_sequence<Index...>) {
+    return (false || ... || [] {
+        using Field = std::remove_cv_t<util::aggregate_member_type<Index, Definition>>;
+
+        if constexpr (state_field<Field>::value && state_field<Field>::scalar_collection) {
+            return generic_scalar_state<typename state_field<Field>::value_type>;
+        }
+
+        return false;
+    }());
+}
+
+template <typename Definition, std::size_t Target, std::size_t... Index>
+[[nodiscard]] consteval std::size_t state_index(std::index_sequence<Index...>) {
+    return (
+        std::size_t{} + ... +
+        static_cast<std::size_t>(Index < Target &&
+                                 state_field<std::remove_cv_t<util::aggregate_member_type<Index, Definition>>>::value));
+}
+
+template <typename Definition, std::size_t Target, std::size_t... Index>
+[[nodiscard]] consteval std::size_t generic_state_index(std::index_sequence<Index...>) {
+    return (std::size_t{} + ... + static_cast<std::size_t>(Index < Target && [] {
+                using Field = std::remove_cv_t<util::aggregate_member_type<Index, Definition>>;
+
+                if constexpr (state_field<Field>::value && state_field<Field>::scalar_collection) {
+                    return generic_scalar_state<typename state_field<Field>::value_type>;
+                }
+
+                return false;
+            }()));
+}
+
 [[nodiscard]] constexpr std::size_t align_up(std::size_t offset, std::size_t alignment) noexcept {
     const auto remainder = offset % alignment;
 
@@ -491,7 +549,7 @@ template <typename Definition, std::size_t Target, std::size_t... Index>
             using Field = std::remove_cv_t<util::aggregate_member_type<Index, Definition>>;
 
             if constexpr (state_field<Field>::value) {
-                using Value = typename state_field<Field>::value_type;
+                using Value = typename state_field<Field>::storage_type;
                 offset = align_up(offset, alignof(Value));
 
                 if constexpr (Index == Target) {
@@ -545,8 +603,12 @@ template <typename Definition, std::size_t Index>
                 view->bind(data);
 
                 return Field::from(view);
-            } else {
+            } else if constexpr (is_list_v<Value>) {
                 return Field{static_cast<const ScalarListInputView &>(prototype), data};
+            } else if constexpr (is_set_v<Value>) {
+                return Field{static_cast<const ScalarSetInputView &>(prototype), data};
+            } else {
+                return Field{static_cast<const ScalarDictInputView &>(prototype), data};
             }
         } else {
             using Traits = scalar_storage_traits<Value>;
@@ -561,12 +623,27 @@ template <typename Definition, std::size_t Index>
             }
         }
     } else if constexpr (state_field<Field>::value) {
-        using Value = typename state_field<Field>::value_type;
-        constexpr auto StateOffset = aggregate_state_offset<Definition, Index>(
-            std::make_index_sequence<util::aggregate_member_count<Definition>>{});
-        auto &value = *reinterpret_cast<Value *>(runtime_storage + node.state_offset() + StateOffset);
+        using Declared = typename state_field<Field>::value_type;
+        constexpr auto MemberCount = util::aggregate_member_count<Definition>;
+        constexpr auto StateIndex = state_index<Definition, Index>(std::make_index_sequence<MemberCount>{});
+        const auto offset = [&] {
+            if constexpr (aggregate_has_generic_state<Definition>(std::make_index_sequence<MemberCount>{})) {
+                return node.state_field_offset(StateIndex);
+            } else {
+                return aggregate_state_offset<Definition, Index>(std::make_index_sequence<MemberCount>{});
+            }
+        }();
+        auto *value = runtime_storage + node.state_offset() + offset;
 
-        return Field{value};
+        if constexpr (state_field<Field>::scalar_collection && generic_scalar_state<Declared>) {
+            constexpr auto GenericStateIndex =
+                generic_state_index<Definition, Index>(std::make_index_sequence<MemberCount>{});
+            const auto &representation = node.generic_state_storage_representation(GenericStateIndex);
+            return Field{representation, value};
+        } else {
+            using Value = typename state_field<Field>::storage_type;
+            return Field{*reinterpret_cast<Value *>(value)};
+        }
     } else {
         auto &last_updated = node.output_last_updated(runtime_storage);
 
@@ -596,17 +673,41 @@ template <typename Definition, std::size_t Index>
 }
 
 template <typename Definition, std::size_t... Index>
-[[nodiscard]] consteval std::size_t aggregate_state_size(std::index_sequence<Index...>) {
-    auto result = std::size_t{};
+[[nodiscard]] NodeStateLayout
+aggregate_state_layout(const ResolvedSignature &,
+                       [[maybe_unused]] std::span<const ScalarStorageRepresentation *const> parameter_representations,
+                       [[maybe_unused]] std::span<const ScalarType *const> state_types, std::index_sequence<Index...>) {
+    auto result = NodeStateLayout{};
+    result.field_offsets.reserve(state_types.size());
+    [[maybe_unused]] auto state = std::size_t{};
 
     (
         [&] {
             using Field = std::remove_cv_t<util::aggregate_member_type<Index, Definition>>;
 
             if constexpr (state_field<Field>::value) {
-                using Value = typename state_field<Field>::value_type;
-                result = align_up(result, alignof(Value));
-                result += sizeof(Value);
+                using Declared = typename state_field<Field>::value_type;
+                auto size = std::size_t{};
+                auto alignment = std::size_t{};
+
+                if constexpr (state_field<Field>::scalar_collection && generic_scalar_state<Declared>) {
+                    const auto *type = state_types[state];
+                    const auto *representation =
+                        &resolve_scalar_storage_representation(*type, parameter_representations);
+                    size = representation->size();
+                    alignment = representation->alignment();
+                    result.generic_storage_representations.push_back(representation);
+                } else {
+                    using Stored = typename state_field<Field>::storage_type;
+                    size = sizeof(Stored);
+                    alignment = alignof(Stored);
+                }
+
+                result.size = align_up(result.size, alignment);
+                result.field_offsets.push_back(result.size);
+                result.size += size;
+                result.alignment = std::max(result.alignment, alignment);
+                ++state;
             }
         }(),
         ...);
@@ -615,43 +716,81 @@ template <typename Definition, std::size_t... Index>
 }
 
 template <typename Definition, std::size_t... Index>
-[[nodiscard]] consteval std::size_t aggregate_state_alignment(std::index_sequence<Index...>) {
-    auto result = std::size_t{1};
+void construct_aggregate_state(const NodeStateLayout &layout, [[maybe_unused]] void *storage,
+                               std::index_sequence<Index...>) noexcept {
+    [[maybe_unused]] auto state = std::size_t{};
+    [[maybe_unused]] auto generic = std::size_t{};
 
     (
         [&] {
             using Field = std::remove_cv_t<util::aggregate_member_type<Index, Definition>>;
 
             if constexpr (state_field<Field>::value) {
-                result = std::max(result, alignof(typename state_field<Field>::value_type));
+                using Declared = typename state_field<Field>::value_type;
+                auto *address = static_cast<std::byte *>(storage) + layout.field_offsets[state++];
+
+                if constexpr (state_field<Field>::scalar_collection && generic_scalar_state<Declared>) {
+                    layout.generic_storage_representations[generic++]->construct_initial_value(address);
+                } else {
+                    using Value = typename state_field<Field>::storage_type;
+                    std::construct_at(reinterpret_cast<Value *>(address));
+                }
             }
         }(),
         ...);
-
-    return result;
 }
 
 template <typename Definition, std::size_t... Index>
-void construct_aggregate_state(void *storage, std::index_sequence<Index...>) noexcept {
+void destroy_aggregate_state(const CompiledNode &node, void *runtime_storage, EvaluationContext *,
+                             std::index_sequence<Index...>) noexcept {
+    [[maybe_unused]] auto *storage = static_cast<std::byte *>(runtime_storage);
+    auto &memory = current_scalar_memory_resource();
+    constexpr auto MemberCount = util::aggregate_member_count<Definition>;
+
     (
         [&] {
             using Field = std::remove_cv_t<util::aggregate_member_type<Index, Definition>>;
 
-            if constexpr (state_field<Field>::value) {
-                using Value = typename state_field<Field>::value_type;
-                constexpr auto StateOffset = aggregate_state_offset<Definition, Index>(std::index_sequence<Index...>{});
-                auto *address = static_cast<std::byte *>(storage) + StateOffset;
+            if constexpr (state_field<Field>::value && state_field<Field>::scalar_collection) {
+                using Declared = typename state_field<Field>::value_type;
+                constexpr auto StateIndex = state_index<Definition, Index>(std::make_index_sequence<MemberCount>{});
+                const auto offset = [&] {
+                    if constexpr (aggregate_has_generic_state<Definition>(std::make_index_sequence<MemberCount>{})) {
+                        return node.state_field_offset(StateIndex);
+                    } else {
+                        return aggregate_state_offset<Definition, Index>(std::make_index_sequence<MemberCount>{});
+                    }
+                }();
+                auto *value = storage + node.state_offset() + offset;
 
-                std::construct_at(reinterpret_cast<Value *>(address));
+                if constexpr (generic_scalar_state<Declared>) {
+                    constexpr auto GenericStateIndex =
+                        generic_state_index<Definition, Index>(std::make_index_sequence<MemberCount>{});
+                    node.generic_state_storage_representation(GenericStateIndex).destroy(value, memory);
+                } else {
+                    using Stored = typename state_field<Field>::storage_type;
+                    scalar_storage_traits<Declared>::destroy(reinterpret_cast<Stored *>(value), memory);
+                }
             }
         }(),
         ...);
+}
+
+template <typename Definition>
+void destroy_aggregate_state(const CompiledNode &node, void *runtime_storage, EvaluationContext *context) noexcept {
+    destroy_aggregate_state<Definition>(node, runtime_storage, context,
+                                        std::make_index_sequence<util::aggregate_member_count<Definition>>{});
+}
+
+template <typename Definition, std::size_t... Index>
+[[nodiscard]] consteval bool aggregate_state_requires_destruction(std::index_sequence<Index...>) noexcept {
+    return (... || state_field<std::remove_cv_t<util::aggregate_member_type<Index, Definition>>>::scalar_collection);
 }
 
 template <typename Definition, auto Function, std::size_t... Index>
 void invoke_aggregate_node(const CompiledNode &node, void *runtime_storage, EvaluationContext *context,
                            std::index_sequence<Index...>) {
-    auto *storage = static_cast<std::byte *>(runtime_storage);
+    [[maybe_unused]] auto *storage = static_cast<std::byte *>(runtime_storage);
     auto definition = Definition{make_runtime_field<Definition, Index>(node, storage, context)...};
 
     if constexpr (std::invocable<decltype(Function), const Definition &, EvaluationContext *>) {

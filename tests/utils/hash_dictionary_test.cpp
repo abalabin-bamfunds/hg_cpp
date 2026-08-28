@@ -14,43 +14,20 @@
 
 namespace {
 
+struct equal_hash {
+    template <typename T> [[nodiscard]] std::size_t operator()(const T &) const noexcept { return 1; }
+};
+
+} // namespace
+
+namespace {
+
 struct string_hash {
     using is_transparent = void;
 
     [[nodiscard]] std::size_t operator()(std::string_view value) const noexcept {
         return std::hash<std::string_view>{}(value);
     }
-};
-
-struct equal_hash {
-    template <typename T> [[nodiscard]] std::size_t operator()(const T &) const noexcept { return 1; }
-};
-
-struct throwing_value {
-    explicit throwing_value(bool fail) {
-        if (fail) {
-            throw std::runtime_error{"construction failed"};
-        }
-    }
-};
-
-struct throwing_key {
-    explicit throwing_key(int source) : value{source} {
-        if (source < 0) {
-            throw std::runtime_error{"construction failed"};
-        }
-    }
-
-    int value;
-};
-
-struct throwing_key_hash {
-    [[nodiscard]] std::size_t operator()(int key) const noexcept { return std::hash<int>{}(key); }
-    [[nodiscard]] std::size_t operator()(const throwing_key &key) const noexcept { return std::hash<int>{}(key.value); }
-};
-
-struct throwing_key_equal {
-    [[nodiscard]] bool operator()(const throwing_key &left, int right) const noexcept { return left.value == right; }
 };
 
 } // namespace
@@ -98,6 +75,18 @@ TEST_CASE("a hash dictionary retains separate key and value addresses", "[hash_d
     CHECK(memory.allocations() == 0);
 }
 
+namespace {
+
+struct throwing_value {
+    explicit throwing_value(bool fail) {
+        if (fail) {
+            throw std::runtime_error{"construction failed"};
+        }
+    }
+};
+
+} // namespace
+
 TEST_CASE("a hash dictionary rolls back a failed value construction", "[hash_dictionary]") {
     auto memory = counting_memory_resource{};
     auto dictionary = bg::util::hash_dictionary<int, throwing_value>{};
@@ -113,6 +102,29 @@ TEST_CASE("a hash dictionary rolls back a failed value construction", "[hash_dic
     dictionary.release(memory);
     CHECK(memory.allocations() == 0);
 }
+
+namespace {
+
+struct throwing_key {
+    explicit throwing_key(int source) : value{source} {
+        if (source < 0) {
+            throw std::runtime_error{"construction failed"};
+        }
+    }
+
+    int value;
+};
+
+struct throwing_key_hash {
+    [[nodiscard]] std::size_t operator()(int key) const noexcept { return std::hash<int>{}(key); }
+    [[nodiscard]] std::size_t operator()(const throwing_key &key) const noexcept { return std::hash<int>{}(key.value); }
+};
+
+struct throwing_key_equal {
+    [[nodiscard]] bool operator()(const throwing_key &left, int right) const noexcept { return left.value == right; }
+};
+
+} // namespace
 
 TEST_CASE("a hash dictionary rolls back a failed key construction", "[hash_dictionary]") {
     auto memory = counting_memory_resource{};

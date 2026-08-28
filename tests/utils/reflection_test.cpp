@@ -12,6 +12,20 @@ struct reflected_values {
     float second;
 };
 
+} // namespace
+
+TEST_CASE("aggregate reflection exposes names and member types", "[reflection]") {
+    STATIC_CHECK(bg::util::aggregate_member_count<reflected_values> == 2);
+    STATIC_CHECK(bg::util::aggregate_member_names<reflected_values>[0] == "first");
+    STATIC_CHECK(bg::util::aggregate_member_names<reflected_values>[1] == "second");
+    STATIC_CHECK(std::same_as<bg::util::aggregate_member_type<0, reflected_values>, int>);
+    STATIC_CHECK(std::same_as<bg::util::aggregate_member_type<1, reflected_values>, float>);
+    STATIC_CHECK(bg::util::type_name<float>() == "float");
+    STATIC_CHECK(bg::util::unqualified_type_name<reflected_values>() == "reflected_values");
+}
+
+namespace {
+
 struct wide_node {
     int input_0;
     int input_1;
@@ -32,17 +46,9 @@ struct wide_node {
     int output;
 };
 
-static_assert(bg::util::aggregate_member_count<wide_node> == 17);
-static_assert(bg::util::aggregate_member_names<wide_node>[16] == "output");
-
 } // namespace
 
-TEST_CASE("aggregate reflection exposes names and member types", "[reflection]") {
-    STATIC_CHECK(bg::util::aggregate_member_count<reflected_values> == 2);
-    STATIC_CHECK(bg::util::aggregate_member_names<reflected_values>[0] == "first");
-    STATIC_CHECK(bg::util::aggregate_member_names<reflected_values>[1] == "second");
-    STATIC_CHECK(std::same_as<bg::util::aggregate_member_type<0, reflected_values>, int>);
-    STATIC_CHECK(std::same_as<bg::util::aggregate_member_type<1, reflected_values>, float>);
-    STATIC_CHECK(bg::util::type_name<float>() == "float");
-    STATIC_CHECK(bg::util::unqualified_type_name<reflected_values>() == "reflected_values");
+TEST_CASE("aggregate reflection supports seventeen members", "[reflection]") {
+    STATIC_CHECK(bg::util::aggregate_member_count<wide_node> == 17);
+    STATIC_CHECK(bg::util::aggregate_member_names<wide_node>[16] == "output");
 }

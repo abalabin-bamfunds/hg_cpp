@@ -1,9 +1,10 @@
 #include <bg/scalar/details/allocation_context.hpp>
 
-#include "thread_local_pointer.hpp"
+#include "../thread_local_pointer.hpp"
 
 #include <cassert>
 #include <mutex>
+#include <stdexcept>
 #include <unordered_map>
 
 namespace bg::details {
@@ -35,6 +36,15 @@ ScalarAllocationContext::~ScalarAllocationContext() {
 
 const ScalarAllocationOwner *current_scalar_allocation_owner() noexcept {
     return static_cast<const ScalarAllocationOwner *>(current_owner().get());
+}
+
+std::pmr::memory_resource &current_scalar_memory_resource() {
+    const auto *owner = current_scalar_allocation_owner();
+    if (owner == nullptr) {
+        throw std::logic_error{"scalar mutation requires an allocation context"};
+    }
+
+    return *owner->memory;
 }
 
 void record_context_scalar_allocation(const void *value) {

@@ -29,9 +29,12 @@ class ScalarView {
 
 class ScalarValueInputView;
 class ScalarListInputView;
+class ScalarSetInputView;
+class ScalarDictInputView;
 template <typename T> class TypedScalarValueInputView;
 
-using ScalarInputViewTypes = ddv::mux<ScalarListInputView, ScalarValueInputView>;
+using ScalarInputViewTypes =
+    ddv::mux<ScalarListInputView, ScalarSetInputView, ScalarDictInputView, ScalarValueInputView>;
 
 class ScalarInputView : public ScalarView, public ddv::visitable<ScalarInputView, ScalarInputViewTypes> {
   public:
@@ -46,7 +49,7 @@ class ScalarInputView : public ScalarView, public ddv::visitable<ScalarInputView
     virtual void copy_value(void *destination, std::pmr::memory_resource *memory) const = 0;
     virtual void release() noexcept = 0;
 
-  private:
+  protected:
     template <typename> friend class Scalar;
 
     [[nodiscard]] virtual std::size_t erased_hash() const noexcept = 0;
@@ -56,19 +59,9 @@ class ScalarInputView : public ScalarView, public ddv::visitable<ScalarInputView
 class ScalarValueInputView : public ScalarInputView {
   public:
     VISITOR_SUPPORT()
-};
 
-class ScalarListInputView : public ScalarValueInputView {
-  public:
-    VISITOR_SUPPORT(final)
-
-    struct Item {
-        const ScalarValueInputView &prototype;
-        const void *data;
-    };
-
-    [[nodiscard]] virtual std::size_t size() const noexcept = 0;
-    [[nodiscard]] virtual Item operator[](std::size_t index) const noexcept = 0;
+    [[nodiscard]] std::size_t hash() const noexcept { return erased_hash(); }
+    [[nodiscard]] bool equals(const ScalarValueInputView &other) const noexcept { return erased_equals(other); }
 };
 
 template <typename T, typename Base> class TypedScalarValueInputViewBase : public Base {
@@ -94,14 +87,12 @@ template <typename T, typename Base> class TypedScalarValueInputViewBase : publi
     void copy_construct(void *destination, const ScalarStorageRepresentation &representation,
                         std::pmr::memory_resource &memory) const final {
         require_compatible(representation);
-        decltype(auto) current = value();
-        representation.construct_from_value(destination, &current, memory);
+        representation.construct_from_input(destination, *this, memory);
     }
 
     void assign(void *destination, const ScalarStorageRepresentation &representation) const final {
         require_compatible(representation);
-        decltype(auto) current = value();
-        representation.assign_from_value(destination, &current);
+        representation.assign_from_input(destination, *this);
     }
 
     void copy_value(void *destination, std::pmr::memory_resource *memory) const final;
@@ -137,22 +128,12 @@ template <typename T, typename Base> class TypedScalarValueInputViewBase : publi
 template <typename T>
 class TypedScalarValueInputView : public TypedScalarValueInputViewBase<T, ScalarValueInputView> {};
 
-template <typename T>
-class TypedScalarValueInputView<List<T>> : public TypedScalarValueInputViewBase<List<T>, ScalarListInputView> {
-    using Stored = details::scalar_stored_t<List<T>>;
-
-  public:
-    [[nodiscard]] std::size_t size() const noexcept override { return storage().size(); }
-
-    [[nodiscard]] ScalarListInputView::Item operator[](std::size_t index) const noexcept override;
-
-  private:
-    [[nodiscard]] const Stored &storage() const noexcept { return *reinterpret_cast<const Stored *>(this->value_); }
-};
-
 static_assert(sizeof(ScalarView) == sizeof(void *));
 static_assert(sizeof(ScalarInputView) == 2 * sizeof(void *));
 static_assert(sizeof(ScalarValueInputView) == sizeof(ScalarInputView));
-static_assert(sizeof(ScalarListInputView) == sizeof(ScalarInputView));
 
 } // namespace bg
+
+#include <bg/scalar/dict/view.hpp>
+#include <bg/scalar/list/view.hpp>
+#include <bg/scalar/set/view.hpp>

@@ -1,10 +1,12 @@
 #include <bg/scalar/cpp_storage_representation.hpp>
+#include <bg/scalar/dict/type.hpp>
 #include <bg/scalar/string.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <memory_resource>
 #include <string>
 
@@ -54,4 +56,12 @@ TEST_CASE("evaluation time storage supports byte-copy initialization", "[scalar]
     representation.construct_initial_value(storage);
 
     CHECK(*reinterpret_cast<const bg::EvaluationTime *>(storage) == bg::MIN_DT);
+}
+
+TEST_CASE("resolved collection storage prefers a registered concrete representation", "[scalar][storage][collection]") {
+    const auto &concrete = bg::cpp_scalar_storage_representation<bg::Dict<std::int64_t, bg::string>>();
+
+    const auto &resolved = bg::resolve_scalar_storage_representation(concrete.type(), {});
+
+    CHECK(&resolved == &concrete);
 }

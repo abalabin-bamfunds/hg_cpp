@@ -26,10 +26,6 @@ static_assert(PassiveOptionalFloatInput::activity == bg::passive);
 static_assert(PassiveOptionalFloatInput::validity == bg::optional);
 static_assert(FinalFloatInput::time_series_type::guarantee == bg::TimeSeriesGuarantee::final);
 
-[[nodiscard]] bool read_generic(const bg::TimeSeriesValueInputView &input) {
-    return input.valid();
-}
-
 } // namespace
 
 TEST_CASE("a typed input reads its time-series value", "[node_api]") {
@@ -40,6 +36,7 @@ TEST_CASE("a typed input reads its time-series value", "[node_api]") {
     REQUIRE(input.valid());
     CHECK(input.last_updated() == updated);
     CHECK(input.value() == value);
+    const auto read_generic = [](const bg::TimeSeriesValueInputView &view) { return view.valid(); };
     CHECK(read_generic(input));
     CHECK(input->valid());
     CHECK(input->last_updated() == updated);
@@ -70,10 +67,10 @@ TEST_CASE("a default typed input is invalid", "[node_api]") {
 
 TEST_CASE("a generic value input returns an erased scalar value view", "[node_api]") {
     using Input = bg::In<bg::TS<bg::SCALAR>>;
-    const auto &prototype = bg::cpp_scalar_storage_representation<float>().input_view_prototype();
+    const auto *prototype = bg::cpp_scalar_storage_representation<float>().input_view_prototype();
     const auto updated = bg::MIN_DT + std::chrono::microseconds{1};
     const auto value = 1.25F;
-    const auto input = Input{updated, &value, prototype};
+    const auto input = Input{updated, &value, *prototype};
     const auto value_view = input.value_view();
 
     STATIC_CHECK(std::same_as<std::remove_cv_t<decltype(value_view)>, bg::Scalar<bg::SCALAR>>);
@@ -82,10 +79,10 @@ TEST_CASE("a generic value input returns an erased scalar value view", "[node_ap
 
 TEST_CASE("an arbitrary time-series input returns an erased scalar view", "[node_api]") {
     using Input = bg::In<bg::TS_T>;
-    const auto &prototype = bg::cpp_scalar_storage_representation<float>().input_view_prototype();
+    const auto *prototype = bg::cpp_scalar_storage_representation<float>().input_view_prototype();
     const auto updated = bg::MIN_DT + std::chrono::microseconds{1};
     const auto value = 1.25F;
-    const auto input = Input{updated, &value, prototype};
+    const auto input = Input{updated, &value, *prototype};
     const auto value_view = input.value_view();
 
     STATIC_CHECK(std::same_as<std::remove_cv_t<decltype(value_view)>, bg::Scalar<>>);

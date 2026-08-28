@@ -37,12 +37,15 @@ add_library(
     src/compiled_graph.cpp
     src/graph_wiring.cpp
     src/guarantee_parameter.cpp
-    src/list_scalar_type.cpp
     src/runtime_graph.cpp
-    src/scalar_allocation.cpp
+    src/scalar/allocation.cpp
+    src/scalar/dict/type.cpp
+    src/scalar/list/type.cpp
+    src/scalar/set/type.cpp
+    src/scalar/storage_representation.cpp
+    src/scalar/type.cpp
     src/signature.cpp
     src/simulation_evaluation_engine.cpp
-    src/scalar_type.cpp
     src/symbol.cpp
     src/time_series_value_type.cpp
     src/thread_local_pointer.cpp

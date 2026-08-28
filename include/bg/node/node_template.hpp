@@ -3,13 +3,15 @@
 #include <bg/graph/evaluation_function.hpp>
 #include <bg/graph/wiring_template.hpp>
 #include <bg/node/invalidation.hpp>
+#include <bg/node/state_layout.hpp>
 #include <bg/type/signature.hpp>
 
 #include <cstddef>
+#include <vector>
 
 namespace bg {
 
-class ScalarStorageRepresentation;
+class ScalarType;
 
 class NodeTemplate : public WiringTemplate {
   public:
@@ -28,12 +30,21 @@ class NodeTemplate : public WiringTemplate {
     [[nodiscard]] virtual bool uses_generic_scalar_input_view(std::size_t) const noexcept { return false; }
     [[nodiscard]] virtual bool uses_generic_output_view() const noexcept { return false; }
     [[nodiscard]] virtual bool uses_future_scheduling() const noexcept { return false; }
-    [[nodiscard]] virtual std::size_t state_size(const ResolvedSignature &) const noexcept { return 0; }
-    [[nodiscard]] virtual std::size_t state_alignment(const ResolvedSignature &) const noexcept { return 1; }
-    virtual void construct_initial_state(const ResolvedSignature &, void *) const noexcept {}
+    [[nodiscard]] virtual NodeStateLayout state_layout(const ResolvedSignature &,
+                                                       std::span<const ScalarStorageRepresentation *const>,
+                                                       std::span<const ScalarType *const>) const {
+        return {};
+    }
+    virtual void construct_initial_state(const NodeStateLayout &, void *) const noexcept {}
+    [[nodiscard]] virtual EvaluationFunction state_destruction_function(const ResolvedSignature &) const noexcept {
+        return nullptr;
+    }
+
+    [[nodiscard]] virtual std::vector<const ScalarType *> resolve_state_types(const TypeMap &) const { return {}; }
 
   private:
     [[nodiscard]] std::optional<WiringPoint> wire(GraphWiring &wiring, ResolvedSignature signature,
+                                                  const TypeMap &bindings,
                                                   std::span<details::wiring_argument> arguments) const final;
 };
 

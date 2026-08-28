@@ -33,6 +33,41 @@ struct add_definition {
     inline static float last_result{};
 };
 
+[[nodiscard]] bg::EvaluationTime time(std::int64_t microseconds) {
+    return bg::MIN_DT + std::chrono::microseconds{microseconds};
+}
+
+} // namespace
+
+TEST_CASE("a required input delays evaluation until it becomes valid", "[evaluation][validity]") {
+    const auto constant = bg::node<constant_definition>();
+    const auto add = bg::node<add_definition>();
+    bg::GraphWiring wiring;
+
+    {
+        bg::WiringContext context{wiring};
+        (void)add(constant(1.0F), constant(2.0F));
+    }
+
+    const bg::CompiledGraph compiled{wiring};
+    bg::RuntimeGraph runtime{compiled};
+    add_definition::evaluation_count = 0;
+
+    runtime.start(time(1));
+    runtime.schedule(0);
+    runtime.evaluate(time(1));
+
+    CHECK(add_definition::evaluation_count == 0);
+
+    runtime.schedule(1);
+    runtime.evaluate(time(2));
+
+    CHECK(add_definition::evaluation_count == 1);
+    CHECK(add_definition::last_result == 3.0F);
+}
+
+namespace {
+
 struct switchable_definition {
     bg::Out<bg::TS<float>> output;
 
@@ -53,6 +88,56 @@ struct copy_definition {
 
     void evaluate() const { output.set(input.value()); }
 };
+
+struct float_sink_definition {
+    bg::In<bg::TS<float>> input;
+
+    void evaluate() const {
+        ++evaluation_count;
+        last_value = input.value();
+    }
+
+    inline static int evaluation_count{};
+    inline static float last_value{};
+};
+
+} // namespace
+
+TEST_CASE("revalidating an active required input schedules normal evaluation", "[evaluation][validity]") {
+    const auto switchable = bg::node<switchable_definition>();
+    const auto copy = bg::node<copy_definition>();
+    const auto float_sink = bg::node<float_sink_definition>();
+    bg::GraphWiring wiring;
+
+    {
+        bg::WiringContext context{wiring};
+        float_sink(copy(switchable()));
+    }
+
+    const bg::CompiledGraph compiled{wiring};
+    bg::RuntimeGraph runtime{compiled};
+    switchable_definition::publish = true;
+    float_sink_definition::evaluation_count = 0;
+
+    runtime.start(time(1));
+    runtime.schedule(0);
+    runtime.evaluate(time(1));
+    REQUIRE(float_sink_definition::evaluation_count == 1);
+
+    switchable_definition::publish = false;
+    runtime.schedule(0);
+    runtime.evaluate(time(2));
+    REQUIRE(float_sink_definition::evaluation_count == 1);
+
+    switchable_definition::publish = true;
+    runtime.schedule(0);
+    runtime.evaluate(time(3));
+
+    CHECK(float_sink_definition::evaluation_count == 2);
+    CHECK(float_sink_definition::last_value == 4.0F);
+}
+
+namespace {
 
 struct paired_source_definition {
     int index;
@@ -86,89 +171,11 @@ struct required_pair_definition {
     inline static int invalidation_count{};
 };
 
-struct float_sink_definition {
-    bg::In<bg::TS<float>> input;
-
-    void evaluate() const {
-        ++evaluation_count;
-        last_value = input.value();
-    }
-
-    inline static int evaluation_count{};
-    inline static float last_value{};
-};
-
-inline const auto constant = bg::node<constant_definition>();
-inline const auto add = bg::node<add_definition>();
-inline const auto switchable = bg::node<switchable_definition>();
-inline const auto copy = bg::node<copy_definition>();
-inline const auto paired_source = bg::node<paired_source_definition>();
-inline const auto required_pair = bg::node<required_pair_definition>();
-inline const auto float_sink = bg::node<float_sink_definition>();
-
-void wire_add(bg::GraphWiring &wiring) {
-    bg::WiringContext context{wiring};
-    (void)add(constant(1.0F), constant(2.0F));
-}
-
-[[nodiscard]] bg::EvaluationTime time(std::int64_t microseconds) {
-    return bg::MIN_DT + std::chrono::microseconds{microseconds};
-}
-
 } // namespace
 
-TEST_CASE("a required input delays evaluation until it becomes valid", "[evaluation][validity]") {
-    bg::GraphWiring wiring;
-    wire_add(wiring);
-    const bg::CompiledGraph compiled{wiring};
-    bg::RuntimeGraph runtime{compiled};
-    add_definition::evaluation_count = 0;
-
-    runtime.start(time(1));
-    runtime.schedule(0);
-    runtime.evaluate(time(1));
-
-    CHECK(add_definition::evaluation_count == 0);
-
-    runtime.schedule(1);
-    runtime.evaluate(time(2));
-
-    CHECK(add_definition::evaluation_count == 1);
-    CHECK(add_definition::last_result == 3.0F);
-}
-
-TEST_CASE("revalidating an active required input schedules normal evaluation", "[evaluation][validity]") {
-    bg::GraphWiring wiring;
-
-    {
-        bg::WiringContext context{wiring};
-        float_sink(copy(switchable()));
-    }
-
-    const bg::CompiledGraph compiled{wiring};
-    bg::RuntimeGraph runtime{compiled};
-    switchable_definition::publish = true;
-    float_sink_definition::evaluation_count = 0;
-
-    runtime.start(time(1));
-    runtime.schedule(0);
-    runtime.evaluate(time(1));
-    REQUIRE(float_sink_definition::evaluation_count == 1);
-
-    switchable_definition::publish = false;
-    runtime.schedule(0);
-    runtime.evaluate(time(2));
-    REQUIRE(float_sink_definition::evaluation_count == 1);
-
-    switchable_definition::publish = true;
-    runtime.schedule(0);
-    runtime.evaluate(time(3));
-
-    CHECK(float_sink_definition::evaluation_count == 2);
-    CHECK(float_sink_definition::last_value == 4.0F);
-}
-
 TEST_CASE("a node resumes after all required inputs become valid", "[evaluation][validity]") {
+    const auto paired_source = bg::node<paired_source_definition>();
+    const auto required_pair = bg::node<required_pair_definition>();
     paired_source_definition::values = {1.0F, 2.0F};
     paired_source_definition::valid = {true, true};
     required_pair_definition::evaluation_count = 0;

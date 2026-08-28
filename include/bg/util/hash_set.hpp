@@ -31,6 +31,15 @@ template <typename Key, typename Hash = std::hash<Key>, typename Equal = std::eq
         return {&keys_.key_at(result.position), result.inserted};
     }
 
+    template <typename Lookup, typename Constructor, typename Destructor>
+    [[nodiscard]] std::pair<const Key *, bool> insert_with(const Lookup &key, std::pmr::memory_resource &memory,
+                                                           Constructor &&construct, Destructor &&destroy) {
+        const auto result =
+            keys_.insert_with(key, memory, std::forward<Constructor>(construct), std::forward<Destructor>(destroy));
+
+        return {&keys_.key_at(result.position), result.inserted};
+    }
+
     template <typename Lookup> [[nodiscard]] const Key *find(const Lookup &key) const {
         const auto position = keys_.find_position(key);
 
@@ -39,17 +48,27 @@ template <typename Key, typename Hash = std::hash<Key>, typename Equal = std::eq
 
     template <typename Lookup> [[nodiscard]] bool contains(const Lookup &key) const { return find(key) != nullptr; }
 
-    template <typename Lookup>
-    [[nodiscard]] bool erase(const Lookup &key, std::pmr::memory_resource &memory) {
+    template <typename Lookup> [[nodiscard]] bool erase(const Lookup &key, std::pmr::memory_resource &memory) {
         return keys_.erase(key, memory);
+    }
+
+    template <typename Lookup, typename Destructor>
+    [[nodiscard]] bool erase_with(const Lookup &key, std::pmr::memory_resource &memory, Destructor &&destroy) {
+        return keys_.erase_with(key, memory, std::forward<Destructor>(destroy));
     }
 
     [[nodiscard]] bool reduce(std::pmr::memory_resource &memory) { return keys_.reduce(memory); }
 
     void release(std::pmr::memory_resource &memory) noexcept { keys_.release(memory); }
 
+    template <typename Destructor> void release_with(std::pmr::memory_resource &memory, Destructor &&destroy) noexcept {
+        keys_.release_with(memory, std::forward<Destructor>(destroy));
+    }
+
     [[nodiscard]] size_type size() const noexcept { return keys_.size(); }
     [[nodiscard]] bool empty() const noexcept { return keys_.empty(); }
+
+    void swap(hash_set &other) noexcept(noexcept(keys_.swap(other.keys_))) { keys_.swap(other.keys_); }
 
     class iterator {
       public:

@@ -32,6 +32,11 @@ struct OutputViewPrototype {
     const TimeSeriesOutputView *view;
 };
 
+struct StateMetadataCounts {
+    std::uint16_t fields;
+    std::uint16_t generic_fields;
+};
+
 enum class ParameterBindingMode : std::uint8_t {
     time_series,
     scalar,
@@ -152,7 +157,30 @@ class CompiledNode {
         const auto subscriber_span = subscribers();
         const auto *offset = reinterpret_cast<const std::uint32_t *>(subscriber_span.data() + subscriber_span.size());
 
-        return *offset;
+        return *offset & state_offset_mask;
+    }
+
+    [[nodiscard]] EvaluationFunction state_destruction_function() const noexcept {
+        if (!state_requires_destruction()) {
+            return nullptr;
+        }
+
+        auto address = reinterpret_cast<std::uintptr_t>(subscribers().data() + subscribers().size());
+        address = align(address + sizeof(std::uint32_t), alignof(EvaluationFunction));
+
+        return *reinterpret_cast<const EvaluationFunction *>(address);
+    }
+
+    [[nodiscard]] std::size_t state_field_offset(std::size_t index) const noexcept {
+        return state_field_offsets_address()[index];
+    }
+
+    [[nodiscard]] const ScalarStorageRepresentation &
+    generic_state_storage_representation(std::size_t index) const noexcept {
+        auto address = reinterpret_cast<std::uintptr_t>(state_field_offsets_address() + state_metadata_counts().fields);
+        address = align(address, alignof(const ScalarStorageRepresentation *));
+
+        return **(reinterpret_cast<const ScalarStorageRepresentation *const *>(address) + index);
     }
 
     [[nodiscard]] EvaluationFunction invalidation_function() const noexcept {
@@ -198,6 +226,9 @@ class CompiledNode {
     static constexpr std::uint32_t state_flag = std::uint32_t{1} << 30;
     static constexpr std::uint32_t output_offset_mask = (std::uint32_t{1} << 30) - 1;
     static constexpr std::uint32_t invalidation_mode_shift = 30;
+    static constexpr std::uint32_t state_destruction_flag = std::uint32_t{1} << 30;
+    static constexpr std::uint32_t state_metadata_flag = std::uint32_t{1} << 31;
+    static constexpr std::uint32_t state_offset_mask = state_destruction_flag - 1;
 
     CompiledNode(EvaluationFunction evaluation_function, std::uint32_t output_last_updated_offset,
                  std::uint32_t output_value_offset, std::uint32_t parameter_count, std::uint32_t subscriber_count,
@@ -221,7 +252,52 @@ class CompiledNode {
         const auto subscriber_span = subscribers();
         auto address = reinterpret_cast<std::uintptr_t>(subscriber_span.data() + subscriber_span.size());
 
-        return address + (has_state() ? sizeof(std::uint32_t) : 0);
+        if (has_state()) {
+            address += sizeof(std::uint32_t);
+            if (state_requires_destruction()) {
+                address = align(address, alignof(EvaluationFunction)) + sizeof(EvaluationFunction);
+            }
+            if (has_state_metadata()) {
+                address += sizeof(StateMetadataCounts);
+                address = align(address, alignof(std::uint32_t));
+                address += state_metadata_counts().fields * sizeof(std::uint32_t);
+                address = align(address, alignof(const ScalarStorageRepresentation *));
+                address += state_metadata_counts().generic_fields * sizeof(const ScalarStorageRepresentation *);
+            }
+        }
+
+        return address;
+    }
+
+    [[nodiscard]] bool state_requires_destruction() const noexcept {
+        const auto subscriber_span = subscribers();
+        const auto *offset = reinterpret_cast<const std::uint32_t *>(subscriber_span.data() + subscriber_span.size());
+
+        return (*offset & state_destruction_flag) != 0;
+    }
+
+    [[nodiscard]] bool has_state_metadata() const noexcept {
+        const auto subscriber_span = subscribers();
+        const auto *offset = reinterpret_cast<const std::uint32_t *>(subscriber_span.data() + subscriber_span.size());
+
+        return (*offset & state_metadata_flag) != 0;
+    }
+
+    [[nodiscard]] const StateMetadataCounts &state_metadata_counts() const noexcept {
+        auto address = reinterpret_cast<std::uintptr_t>(subscribers().data() + subscribers().size());
+        address += sizeof(std::uint32_t);
+        if (state_requires_destruction()) {
+            address = align(address, alignof(EvaluationFunction)) + sizeof(EvaluationFunction);
+        }
+
+        return *reinterpret_cast<const StateMetadataCounts *>(address);
+    }
+
+    [[nodiscard]] const std::uint32_t *state_field_offsets_address() const noexcept {
+        auto address = reinterpret_cast<std::uintptr_t>(&state_metadata_counts() + 1);
+        address = align(address, alignof(std::uint32_t));
+
+        return reinterpret_cast<const std::uint32_t *>(address);
     }
 
     [[nodiscard]] std::uintptr_t input_view_prototypes_address() const noexcept {
@@ -244,6 +320,7 @@ static_assert(sizeof(Subscriber) == 4);
 static_assert(sizeof(TimeSeriesInputViewPrototype) == sizeof(void *));
 static_assert(sizeof(ScalarInputViewPrototype) == sizeof(void *));
 static_assert(sizeof(OutputViewPrototype) == sizeof(void *));
+static_assert(sizeof(StateMetadataCounts) == sizeof(std::uint32_t));
 static_assert(sizeof(CompiledNode) == 24);
 static_assert(static_cast<std::uint32_t>(InvalidationMode::invoke) < (std::uint32_t{1} << 2));
 static_assert(std::is_trivially_destructible_v<ParameterBinding>);

@@ -19,6 +19,23 @@ struct constant_definition {
     void evaluate() const { output.set(value); }
 };
 
+struct indexed_definition {
+    int index;
+
+    void evaluate() const { evaluation_order[evaluation_count++] = index; }
+
+    inline static std::array<int, 130> evaluation_order{};
+    inline static std::size_t evaluation_count{};
+};
+
+[[nodiscard]] bg::EvaluationTime time(std::int64_t microseconds) {
+    return bg::MIN_DT + std::chrono::microseconds{microseconds};
+}
+
+} // namespace
+
+namespace {
+
 struct add_definition {
     bg::In<bg::TS<float>> lhs;
     bg::In<bg::TS<float>> rhs;
@@ -34,46 +51,18 @@ struct add_definition {
     inline static float last_result{};
 };
 
-struct indexed_definition {
-    int index;
-
-    void evaluate() const { evaluation_order[evaluation_count++] = index; }
-
-    inline static std::array<int, 130> evaluation_order{};
-    inline static std::size_t evaluation_count{};
-};
-
-struct float_sink_definition {
-    bg::In<bg::TS<float>> input;
-
-    void evaluate() const {
-        ++evaluation_count;
-        last_value = input.value();
-    }
-
-    inline static int evaluation_count{};
-    inline static float last_value{};
-};
-
-inline const auto constant = bg::node<constant_definition>();
-inline const auto add = bg::node<add_definition>();
-inline const auto indexed = bg::node<indexed_definition>();
-inline const auto float_sink = bg::node<float_sink_definition>();
-
-void wire_add(bg::GraphWiring &wiring) {
-    bg::WiringContext context{wiring};
-    (void)add(constant(1.0F), constant(2.0F));
-}
-
-[[nodiscard]] bg::EvaluationTime time(std::int64_t microseconds) {
-    return bg::MIN_DT + std::chrono::microseconds{microseconds};
-}
-
 } // namespace
 
 TEST_CASE("a runtime graph evaluates scheduled nodes in topological order", "[evaluation][scheduling]") {
+    const auto constant = bg::node<constant_definition>();
+    const auto add = bg::node<add_definition>();
     bg::GraphWiring wiring;
-    wire_add(wiring);
+
+    {
+        bg::WiringContext context{wiring};
+        (void)add(constant(1.0F), constant(2.0F));
+    }
+
     const bg::CompiledGraph compiled{wiring};
     bg::RuntimeGraph runtime{compiled};
     add_definition::evaluation_count = 0;
@@ -95,6 +84,7 @@ TEST_CASE("a runtime graph evaluates scheduled nodes in topological order", "[ev
 }
 
 TEST_CASE("a runtime graph processes set scheduling bits in node order", "[evaluation][scheduling]") {
+    const auto indexed = bg::node<indexed_definition>();
     bg::GraphWiring wiring;
 
     {
@@ -120,7 +110,26 @@ TEST_CASE("a runtime graph processes set scheduling bits in node order", "[evalu
     CHECK(indexed_definition::evaluation_order[2] == 129);
 }
 
+namespace {
+
+struct float_sink_definition {
+    bg::In<bg::TS<float>> input;
+
+    void evaluate() const {
+        ++evaluation_count;
+        last_value = input.value();
+    }
+
+    inline static int evaluation_count{};
+    inline static float last_value{};
+};
+
+} // namespace
+
 TEST_CASE("scheduling during evaluation crosses a scheduling block boundary", "[evaluation][scheduling]") {
+    const auto constant = bg::node<constant_definition>();
+    const auto indexed = bg::node<indexed_definition>();
+    const auto float_sink = bg::node<float_sink_definition>();
     bg::GraphWiring wiring;
 
     {
@@ -146,6 +155,7 @@ TEST_CASE("scheduling during evaluation crosses a scheduling block boundary", "[
 }
 
 TEST_CASE("evaluation time must increase between outer cycles", "[evaluation][scheduling]") {
+    const auto indexed = bg::node<indexed_definition>();
     bg::GraphWiring wiring;
 
     {

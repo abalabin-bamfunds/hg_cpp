@@ -37,8 +37,7 @@ class hash_dictionary {
         }
 
         try {
-            auto &value = values_.emplace_at(result.position, memory,
-                                             std::forward<ValueArguments>(value_arguments)...);
+            auto &value = values_.emplace_at(result.position, memory, std::forward<ValueArguments>(value_arguments)...);
             return {&value, true};
         } catch (...) {
             keys_.erase_at(result.position, result.hash, memory);
@@ -46,10 +45,27 @@ class hash_dictionary {
         }
     }
 
+    template <typename KeyLookup, typename KeyConstructor, typename KeyDestructor, typename ValueConstructor>
+    [[nodiscard]] std::pair<Value *, bool> try_emplace_with(KeyLookup const &key, std::pmr::memory_resource &memory,
+                                                            KeyConstructor &&construct_key, KeyDestructor &&destroy_key,
+                                                            ValueConstructor &&construct_value) {
+        const auto result = keys_.insert_with(key, memory, std::forward<KeyConstructor>(construct_key), destroy_key);
+        if (!result.inserted) {
+            return {&values_[result.position], false};
+        }
+
+        try {
+            auto &value = values_.emplace_at_with(result.position, memory, construct_value);
+            return {&value, true};
+        } catch (...) {
+            keys_.erase_at_with(result.position, result.hash, memory, destroy_key);
+            throw;
+        }
+    }
+
     template <typename KeySource, typename ValueSource>
     Value &insert_or_assign(KeySource &&key, ValueSource &&value, std::pmr::memory_resource &memory) {
-        auto [stored, inserted] = try_emplace(std::forward<KeySource>(key), memory,
-                                             std::forward<ValueSource>(value));
+        auto [stored, inserted] = try_emplace(std::forward<KeySource>(key), memory, std::forward<ValueSource>(value));
         if (!inserted) {
             *stored = std::forward<ValueSource>(value);
         }
@@ -69,9 +85,7 @@ class hash_dictionary {
         return position == occupancy_index::npos ? nullptr : &values_[position];
     }
 
-    template <typename Lookup> [[nodiscard]] bool contains(const Lookup &key) const {
-        return find(key) != nullptr;
-    }
+    template <typename Lookup> [[nodiscard]] bool contains(const Lookup &key) const { return find(key) != nullptr; }
 
     template <typename Lookup> [[nodiscard]] Value &at(const Lookup &key) {
         auto *value = find(key);
@@ -91,8 +105,7 @@ class hash_dictionary {
         return *value;
     }
 
-    template <typename Lookup>
-    [[nodiscard]] bool erase(const Lookup &key, std::pmr::memory_resource &memory) {
+    template <typename Lookup> [[nodiscard]] bool erase(const Lookup &key, std::pmr::memory_resource &memory) {
         const auto found = keys_.find(key);
         if (!found) {
             return false;
@@ -104,6 +117,19 @@ class hash_dictionary {
         return true;
     }
 
+    template <typename Lookup, typename KeyDestructor, typename ValueDestructor>
+    [[nodiscard]] bool erase_with(const Lookup &key, std::pmr::memory_resource &memory, KeyDestructor &&destroy_key,
+                                  ValueDestructor &&destroy_value) {
+        const auto found = keys_.find(key);
+        if (!found) {
+            return false;
+        }
+
+        values_.erase_at_with(found->position, memory, destroy_value);
+        keys_.erase_at_with(found->position, found->hash, memory, destroy_key);
+        return true;
+    }
+
     [[nodiscard]] bool reduce(std::pmr::memory_resource &memory) { return keys_.reduce(memory); }
 
     void release(std::pmr::memory_resource &memory) noexcept {
@@ -111,8 +137,20 @@ class hash_dictionary {
         keys_.release(memory);
     }
 
+    template <typename KeyDestructor, typename ValueDestructor>
+    void release_with(std::pmr::memory_resource &memory, KeyDestructor &&destroy_key,
+                      ValueDestructor &&destroy_value) noexcept {
+        values_.release_with(keys_.positions(), memory, destroy_value);
+        keys_.release_with(memory, destroy_key);
+    }
+
     [[nodiscard]] size_type size() const noexcept { return keys_.size(); }
     [[nodiscard]] bool empty() const noexcept { return keys_.empty(); }
+
+    void swap(hash_dictionary &other) noexcept(noexcept(keys_.swap(other.keys_))) {
+        keys_.swap(other.keys_);
+        values_.swap(other.values_);
+    }
 
     struct entry {
         const Key &key;
@@ -133,7 +171,8 @@ class hash_dictionary {
 
         basic_iterator() = default;
 
-        basic_iterator(const basic_iterator<false> &other) requires Constant
+        basic_iterator(const basic_iterator<false> &other)
+            requires Constant
             : dictionary_{other.dictionary_}, position_{other.position_} {}
 
         [[nodiscard]] value_type operator*() const noexcept {

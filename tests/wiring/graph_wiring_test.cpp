@@ -29,8 +29,40 @@ struct copy_definition {
     void evaluate() const { output.set(input.value()); }
 };
 
-inline const auto source = bg::node<source_definition>();
-inline const auto copy = bg::node<copy_definition>();
+static_assert(sizeof(bg::WiringPoint) == 2 * sizeof(void *));
+static_assert(std::is_trivially_copyable_v<bg::WiringPoint>);
+
+} // namespace
+
+TEST_CASE("node calls add wired nodes to the active graph", "[graph_wiring]") {
+    const auto source = bg::node<source_definition>();
+    const auto copy = bg::node<copy_definition>();
+    bg::GraphWiring wiring;
+
+    {
+        bg::WiringContext context{wiring};
+        const bg::WiringPoint input = source();
+        const bg::WiringPoint output = copy(input);
+
+        CHECK(&input.graph() == &wiring);
+        CHECK(input.node_index() == 0);
+        CHECK(output.node_index() == 1);
+    }
+
+    const auto nodes = wiring.nodes();
+    REQUIRE(nodes.size() == 2);
+    CHECK(&nodes[0].node_template() == &source);
+    CHECK(&nodes[1].node_template() == &copy);
+    REQUIRE(nodes[1].input_sources().size() == 1);
+    CHECK(nodes[1].input_sources()[0] == 0);
+}
+
+TEST_CASE("a node call requires a wiring context", "[graph_wiring]") {
+    const auto source = bg::node<source_definition>();
+    CHECK_THROWS_AS(source(), bg::WiringError);
+}
+
+namespace {
 
 class scale_template final : public bg::NodeTemplate {
   public:
@@ -58,62 +90,11 @@ class scale_template final : public bg::NodeTemplate {
     static void evaluate(const bg::CompiledNode &, void *, bg::EvaluationContext *) {}
 };
 
-inline const scale_template scale;
-
-struct optional_scalar_definition {
-    std::optional<int> value;
-
-    void evaluate() const {}
-};
-
-struct required_scalar_definition {
-    int value;
-
-    void evaluate() const {}
-};
-
-inline const auto optional_scalar = bg::node<optional_scalar_definition>();
-inline const auto required_scalar = bg::node<required_scalar_definition>();
-
-struct scheduled_times_definition {
-    bg::List<bg::EvaluationTime> times;
-
-    void evaluate() const {}
-};
-
-inline const auto scheduled_times = bg::node<scheduled_times_definition>();
-
-static_assert(sizeof(bg::WiringPoint) == 2 * sizeof(void *));
-static_assert(std::is_trivially_copyable_v<bg::WiringPoint>);
-
 } // namespace
 
-TEST_CASE("node calls add wired nodes to the active graph", "[graph_wiring]") {
-    bg::GraphWiring wiring;
-
-    {
-        bg::WiringContext context{wiring};
-        const bg::WiringPoint input = source();
-        const bg::WiringPoint output = copy(input);
-
-        CHECK(&input.graph() == &wiring);
-        CHECK(input.node_index() == 0);
-        CHECK(output.node_index() == 1);
-    }
-
-    const auto nodes = wiring.nodes();
-    REQUIRE(nodes.size() == 2);
-    CHECK(&nodes[0].node_template() == &source);
-    CHECK(&nodes[1].node_template() == &copy);
-    REQUIRE(nodes[1].input_sources().size() == 1);
-    CHECK(nodes[1].input_sources()[0] == 0);
-}
-
-TEST_CASE("a node call requires a wiring context", "[graph_wiring]") {
-    CHECK_THROWS_AS(source(), bg::WiringError);
-}
-
 TEST_CASE("wired nodes retain scalar arguments", "[graph_wiring]") {
+    const auto source = bg::node<source_definition>();
+    const auto scale = scale_template{};
     bg::GraphWiring wiring;
 
     {
@@ -133,7 +114,18 @@ TEST_CASE("wired nodes retain scalar arguments", "[graph_wiring]") {
     CHECK(nodes[1].signature().parameters[1].type == &bg::float_type());
 }
 
+namespace {
+
+struct optional_scalar_definition {
+    std::optional<int> value;
+
+    void evaluate() const {}
+};
+
+} // namespace
+
 TEST_CASE("optional scalar parameters can record absence", "[graph_wiring]") {
+    const auto optional_scalar = bg::node<optional_scalar_definition>();
     bg::GraphWiring wiring;
 
     {
@@ -146,14 +138,36 @@ TEST_CASE("optional scalar parameters can record absence", "[graph_wiring]") {
     CHECK_FALSE(wiring.nodes()[0].scalar_values()[0].has_value());
 }
 
+namespace {
+
+struct required_scalar_definition {
+    int value;
+
+    void evaluate() const {}
+};
+
+} // namespace
+
 TEST_CASE("required scalar parameters reject absence", "[graph_wiring]") {
+    const auto required_scalar = bg::node<required_scalar_definition>();
     bg::GraphWiring wiring;
     bg::WiringContext context{wiring};
 
     CHECK_THROWS_AS(required_scalar(std::optional<int>{}), bg::WiringError);
 }
 
+namespace {
+
+struct scheduled_times_definition {
+    bg::Scalar<bg::List<bg::EvaluationTime>> times;
+
+    void evaluate() const {}
+};
+
+} // namespace
+
 TEST_CASE("evaluation time lists pass through normal wiring", "[graph_wiring]") {
+    const auto scheduled_times = bg::node<scheduled_times_definition>();
     const auto times =
         std::vector{bg::MIN_DT + std::chrono::microseconds{2}, bg::MIN_DT + std::chrono::microseconds{5}};
     const auto value = bg::ScalarValue<bg::List<bg::EvaluationTime>>{times};
@@ -171,6 +185,8 @@ TEST_CASE("evaluation time lists pass through normal wiring", "[graph_wiring]") 
 }
 
 TEST_CASE("nested wiring contexts keep graph connections explicit", "[graph_wiring]") {
+    const auto source = bg::node<source_definition>();
+    const auto copy = bg::node<copy_definition>();
     bg::GraphWiring outer;
     bg::GraphWiring inner;
 

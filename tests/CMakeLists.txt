@@ -17,6 +17,10 @@ add_executable(
     node/input_test.cpp
     node/node_template_test.cpp
     node/output_test.cpp
+    node/scalar/dict_test.cpp
+    node/scalar/list_test.cpp
+    node/scalar/set_test.cpp
+    node/scalar_state_test.cpp
     testing/test_graph_test.cpp
     type/type_system_test.cpp
     utils/polymorphic_value_test.cpp
@@ -26,16 +30,26 @@ add_executable(
     utils/linear_hash_table_test.cpp
     utils/occupancy_index_test.cpp
     utils/reflection_test.cpp
+    utils/runtime_bunch_test.cpp
     utils/sparse_bunch_test.cpp
     utils/symbol_test.cpp
     utils/version_test.cpp
-    value/erased_scalar_value_test.cpp
     value/global_state_test.cpp
-    value/opaque_scalar_value_test.cpp
-    value/scalar_list_value_test.cpp
-    value/scalar_storage_test.cpp
-    value/scalar_value_test.cpp
-    value/scalar_view_test.cpp
+    value/scalar/capability_test.cpp
+    value/scalar/dict/mutable_test.cpp
+    value/scalar/dict/storage_test.cpp
+    value/scalar/dict/value_test.cpp
+    value/scalar/erased_value_test.cpp
+    value/scalar/list/mutable_test.cpp
+    value/scalar/list/storage_test.cpp
+    value/scalar/list/value_test.cpp
+    value/scalar/opaque_test.cpp
+    value/scalar/set/mutable_test.cpp
+    value/scalar/set/storage_test.cpp
+    value/scalar/set/value_test.cpp
+    value/scalar/storage_test.cpp
+    value/scalar/value_test.cpp
+    value/scalar/view_test.cpp
     value/time_series_view_test.cpp
     wiring/graph_template_test.cpp
     wiring/graph_wiring_test.cpp

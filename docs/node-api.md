@@ -118,10 +118,19 @@ Each runtime graph owns one `T` object for each `State<T>` field.
 A plain function can request `State<T>` as a parameter. The engine supplies it
 independently of graph code.
 
-The initial implementation requires `T` to be nothrow default constructible and
-trivially copyable. Its default value must remain valid after byte copying to a
-different address. These requirements preserve the runtime graph construction
-defined by the [node layout](node-layout.md#packed-runtime-storage).
+An ordinary C++ state type must be nothrow default constructible and trivially
+copyable. Scalar collection state does not retain a memory resource. It uses the
+node allocation context and exposes a mutable scalar view.
+
+A collection state declaration can contain scalar type variables. Wiring
+resolves these variables with the node signature. Graph compilation selects the
+complete registered storage representation when one is available. Otherwise,
+it composes the collection representation from the resolved component
+representations.
+
+Each initial state must remain valid after byte copying to a different address.
+This is required for the runtime graph construction defined by the
+[node layout](node-layout.md#packed-runtime-storage).
 
 ## Complete time series access
 

@@ -13,21 +13,22 @@ struct global_state_source_definition {
 
     void start(bg::EvaluationContext *context) const {
         const auto value = bg::ScalarValue{42};
-        context->global_state().set(bg::util::symbol{"result"}, value);
+        auto state = context->global_state().write();
+        state.set(bg::util::symbol{"result"}, value);
         output.set(1);
     }
 
     void evaluate() const {}
 };
 
-inline const auto global_state_source = bg::node<global_state_source_definition>();
-
-} // namespace
-
 TEST_CASE("an evaluation context exposes the outer global state", "[evaluation][context][global_state]") {
+    const auto global_state_source = bg::node<global_state_source_definition>();
     auto state = bg::GlobalState{};
 
-    bg::run_graph([] { (void)global_state_source(); }, state);
+    bg::run_graph([&] { (void)global_state_source(); }, state);
 
-    CHECK(bg::scalar_cast<std::int64_t>(state.at("result"))->value() == 42);
+    const auto values = state.read();
+    CHECK(bg::scalar_cast<std::int64_t>(values.at("result"))->value() == 42);
 }
+
+} // namespace

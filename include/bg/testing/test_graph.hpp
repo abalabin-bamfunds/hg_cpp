@@ -1,150 +1,107 @@
 #pragma once
 
-#include <bg/evaluation_time.hpp>
-#include <bg/global_state.hpp>
-#include <bg/graph/compiled_graph.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/runtime_graph.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/graph/wiring_template.hpp>
-#include <bg/node.hpp>
-#include <bg/scalar/canonical.hpp>
-#include <bg/scalar/list.hpp>
 #include <bg/scalar/value.hpp>
-#include <bg/simulation_evaluation_engine.hpp>
+#include <bg/testing/details/test_graph.hpp>
 
-#include <array>
-#include <chrono>
 #include <cstddef>
+#include <initializer_list>
 #include <optional>
 #include <ranges>
-#include <span>
-#include <string>
+#include <tuple>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
 namespace bg::testing {
-namespace details {
 
-struct Source {
-    static constexpr bool uses_future_scheduling = true;
+template <typename T = void> class TestGraphResult {
+  public:
+    explicit TestGraphResult(std::vector<std::optional<ScalarValue<>>> values) : values_{std::move(values)} {}
 
-    Scalar<List<SCALAR>> values;
-    Scalar<List<EvaluationTime>> times;
-    State<std::size_t> next;
-    Out<TS<SCALAR>> output;
+    [[nodiscard]] std::size_t size() const noexcept { return values_.size(); }
 
-    void start(EvaluationContext *context) const { publish(context); }
-    void evaluate(EvaluationContext *context) const { publish(context); }
+    [[nodiscard]] auto operator[](std::size_t index) const {
+        if (!values_[index]) {
+            if constexpr (std::same_as<T, void>) {
+                return std::optional<Scalar<>>{};
+            } else {
+                return std::optional<Scalar<T>>{};
+            }
+        }
+
+        if constexpr (std::same_as<T, void>) {
+            return std::optional{values_[index]->view()};
+        } else {
+            return std::optional{scalar_cast<T>(*values_[index])};
+        }
+    }
+
+    template <typename Value = T>
+        requires(!std::same_as<Value, void>)
+    [[nodiscard]] bool equals(
+        std::initializer_list<std::optional<bg::details::scalar_value_t<Value>>> expected) const {
+        if (values_.size() != expected.size()) {
+            return false;
+        }
+
+        auto actual = values_.begin();
+        for (const auto &value : expected) {
+            if (actual->has_value() != value.has_value()) {
+                return false;
+            }
+            if (value && scalar_cast<Value>(**actual).value() != *value) {
+                return false;
+            }
+
+            ++actual;
+        }
+
+        return true;
+    }
+
+    template <typename Value = T>
+        requires(!std::same_as<Value, void>)
+    [[nodiscard]] bool operator==(
+        std::initializer_list<std::optional<bg::details::scalar_value_t<Value>>> expected) const {
+        return equals(expected);
+    }
 
   private:
-    void publish(EvaluationContext *context) const {
-        const auto scheduled_times = times->value();
-
-        if (*next < scheduled_times.size() && scheduled_times[*next] == context->evaluation_time()) {
-            output.set_value(values[*next]);
-            ++*next;
-        }
-
-        if (*next < scheduled_times.size()) {
-            (void)context->schedule_at(scheduled_times[*next]);
-        }
-    }
+    std::vector<std::optional<ScalarValue<>>> values_;
 };
-
-struct Sink {
-    In<TS<SCALAR>> input;
-    State<std::size_t> next;
-
-    void evaluate(EvaluationContext *context) const {
-        const auto key = util::symbol{"test_graph.output." + std::to_string(*next)};
-        context->global_state().set(key, input.value_view());
-        ++*next;
-    }
-};
-
-inline const auto source = node<Source>();
-inline const auto sink = node<Sink>();
-
-template <scalar_source T> [[nodiscard]] WiringPoint wire_source(std::span<const T> ticks, EvaluationTime start_time) {
-    using Value = canonical_scalar_t<T>;
-
-    auto values = std::vector<Value>{};
-    auto times = std::vector<EvaluationTime>{};
-    values.reserve(ticks.size());
-    times.reserve(ticks.size());
-
-    for (auto i = std::size_t{}; i < ticks.size(); ++i) {
-        values.push_back(canonical_scalar(ticks[i]));
-        times.push_back(start_time + std::chrono::microseconds{i});
-    }
-
-    const auto value_list = ScalarValue<List<Value>>{values};
-    const auto time_list = ScalarValue<List<EvaluationTime>>{times};
-
-    return source(value_list, time_list);
-}
-
-template <scalar_source T>
-[[nodiscard]] WiringPoint wire_source(std::span<const std::optional<T>> ticks, EvaluationTime start_time) {
-    using Value = canonical_scalar_t<T>;
-
-    auto values = std::vector<Value>{};
-    auto times = std::vector<EvaluationTime>{};
-    values.reserve(ticks.size());
-    times.reserve(ticks.size());
-
-    for (auto i = std::size_t{}; i < ticks.size(); ++i) {
-        if (!ticks[i]) {
-            continue;
-        }
-
-        values.push_back(canonical_scalar(*ticks[i]));
-        times.push_back(start_time + std::chrono::microseconds{i});
-    }
-
-    const auto value_list = ScalarValue<List<Value>>{values};
-    const auto time_list = ScalarValue<List<EvaluationTime>>{times};
-
-    return source(value_list, time_list);
-}
-
-} // namespace details
 
 // Each input range defines updates by outer cycle. An empty optional skips its cycle.
-// The returned values own each update published by the tested template.
+// Each result position owns the output update from the corresponding cycle, if any.
 template <std::ranges::contiguous_range... Inputs>
-[[nodiscard]] std::vector<ScalarValue<>> test_graph(const WiringTemplate &tested, const Inputs &...inputs) {
-    const auto start_time = MIN_DT + EvaluationTime::duration{1};
-    auto global_state = GlobalState{};
-    auto wiring = GraphWiring{};
+[[nodiscard]] TestGraphResult<> test_graph(const WiringTemplate &tested, const Inputs &...inputs) {
+    return TestGraphResult<>{details::run_template(tested, inputs...)};
+}
 
-    {
-        auto context = WiringContext{wiring};
-        const auto sources =
-            std::array<WiringPoint, sizeof...(Inputs)>{details::wire_source(std::span{inputs}, start_time)...};
-        const auto output = tested(std::span<const WiringPoint>{sources});
+template <typename Function, std::ranges::contiguous_range... Inputs>
+    requires(!std::derived_from<std::remove_cvref_t<Function>, WiringTemplate>)
+[[nodiscard]] auto test_graph(const Function &function, const Inputs &...inputs) {
+    using FunctionInfo = details::test_function<Function>;
+    static_assert(FunctionInfo::callable::argument_count == sizeof...(Inputs));
+    static_assert(bg::details::is_typed_wiring_point<typename FunctionInfo::result>);
 
-        if (output) {
-            details::sink(*output);
-        }
-    }
+    const auto ranges = std::tie(inputs...);
+    auto values = details::run_function(function, ranges, std::index_sequence_for<Inputs...>{});
 
-    auto compiled = CompiledGraph{wiring};
-    auto runtime = RuntimeGraph{compiled, global_state};
-    SimulationEvaluationEngine{}.run(runtime, start_time);
+    return TestGraphResult<typename FunctionInfo::output_scalar>{std::move(values)};
+}
 
-    auto result = std::vector<ScalarValue<>>{};
-    for (auto i = std::size_t{};; ++i) {
-        const auto key = "test_graph.output." + std::to_string(i);
-        const auto *value = global_state.find(key);
-        if (value == nullptr) {
-            break;
-        }
+template <typename Function>
+    requires(!std::derived_from<std::remove_cvref_t<Function>, WiringTemplate>)
+[[nodiscard]] auto test_graph(
+    const Function &function,
+    std::initializer_list<std::optional<typename details::test_function<Function>::template input_scalar<0>>> input) {
+    using FunctionInfo = details::test_function<Function>;
+    static_assert(FunctionInfo::callable::argument_count == 1);
 
-        result.emplace_back(global_state.at(key));
-    }
+    const auto inputs = std::tie(input);
+    auto values = details::run_function(function, inputs, std::index_sequence<0>{});
 
-    return result;
+    return TestGraphResult<typename FunctionInfo::output_scalar>{std::move(values)};
 }
 
 } // namespace bg::testing

@@ -24,27 +24,6 @@ struct switchable_definition {
     inline static bool publish{true};
 };
 
-struct copy_definition {
-    bg::In<bg::TS<float>> input;
-    bg::Out<bg::TS<float>> output;
-
-    void evaluate() const { output.set(input.value()); }
-};
-
-struct hold_definition {
-    static constexpr auto on_invalidation = bg::preserve_output;
-
-    bg::In<bg::TS<float>> input;
-    bg::Out<bg::TS<float>> output;
-
-    void evaluate() const {
-        ++evaluation_count;
-        output.set(input.value());
-    }
-
-    inline static int evaluation_count{};
-};
-
 struct fallback_definition {
     bg::In<bg::TS<float>> input;
     bg::Out<bg::TS<float>> output;
@@ -75,32 +54,21 @@ struct float_sink_definition {
     inline static float last_value{};
 };
 
-struct validity_observer_definition {
-    bg::In<bg::TS<float>, bg::optional> input;
-
-    void evaluate() const {
-        ++evaluation_count;
-        last_valid = input.valid();
-    }
-
-    inline static int evaluation_count{};
-    inline static bool last_valid{};
-};
-
-inline const auto switchable = bg::node<switchable_definition>();
-inline const auto copy = bg::node<copy_definition>();
-inline const auto hold = bg::node<hold_definition>();
-inline const auto fallback = bg::node<fallback_definition>();
-inline const auto float_sink = bg::node<float_sink_definition>();
-inline const auto validity_observer = bg::node<validity_observer_definition>();
-
 [[nodiscard]] bg::EvaluationTime time(std::int64_t microseconds) {
     return bg::MIN_DT + std::chrono::microseconds{microseconds};
 }
 
-} // namespace
+struct copy_definition {
+    bg::In<bg::TS<float>> input;
+    bg::Out<bg::TS<float>> output;
+
+    void evaluate() const { output.set(input.value()); }
+};
 
 TEST_CASE("required-input invalidation propagates through a graph", "[evaluation][invalidation]") {
+    const auto switchable = bg::node<switchable_definition>();
+    const auto copy = bg::node<copy_definition>();
+    const auto float_sink = bg::node<float_sink_definition>();
     bg::GraphWiring wiring;
 
     {
@@ -127,6 +95,8 @@ TEST_CASE("required-input invalidation propagates through a graph", "[evaluation
 
 TEST_CASE("required-input invalidation is applied once while the input remains invalid",
           "[evaluation][invalidation]") {
+    const auto switchable = bg::node<switchable_definition>();
+    const auto fallback = bg::node<fallback_definition>();
     bg::GraphWiring wiring;
 
     {
@@ -157,7 +127,36 @@ TEST_CASE("required-input invalidation is applied once while the input remains i
     CHECK(fallback_definition::invalidation_count == 1);
 }
 
+struct hold_definition {
+    static constexpr auto on_invalidation = bg::preserve_output;
+
+    bg::In<bg::TS<float>> input;
+    bg::Out<bg::TS<float>> output;
+
+    void evaluate() const {
+        ++evaluation_count;
+        output.set(input.value());
+    }
+
+    inline static int evaluation_count{};
+};
+
+struct validity_observer_definition {
+    bg::In<bg::TS<float>, bg::optional> input;
+
+    void evaluate() const {
+        ++evaluation_count;
+        last_valid = input.valid();
+    }
+
+    inline static int evaluation_count{};
+    inline static bool last_valid{};
+};
+
 TEST_CASE("a node can preserve its output when a required input becomes invalid", "[evaluation][invalidation]") {
+    const auto switchable = bg::node<switchable_definition>();
+    const auto hold = bg::node<hold_definition>();
+    const auto validity_observer = bg::node<validity_observer_definition>();
     bg::GraphWiring wiring;
 
     {
@@ -188,6 +187,9 @@ TEST_CASE("a node can preserve its output when a required input becomes invalid"
 }
 
 TEST_CASE("a node can produce an output when a required input becomes invalid", "[evaluation][invalidation]") {
+    const auto switchable = bg::node<switchable_definition>();
+    const auto fallback = bg::node<fallback_definition>();
+    const auto float_sink = bg::node<float_sink_definition>();
     bg::GraphWiring wiring;
 
     {
@@ -219,3 +221,5 @@ TEST_CASE("a node can produce an output when a required input becomes invalid", 
     CHECK(float_sink_definition::evaluation_count == 2);
     CHECK(float_sink_definition::last_value == -1.0F);
 }
+
+} // namespace

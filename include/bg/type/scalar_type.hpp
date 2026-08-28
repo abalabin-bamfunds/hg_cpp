@@ -1,8 +1,10 @@
 #pragma once
 
 #include <bg/evaluation_time.hpp>
-#include <bg/scalar/list.hpp>
+#include <bg/scalar/dict/type.hpp>
+#include <bg/scalar/list/type.hpp>
 #include <bg/scalar/opaque.hpp>
+#include <bg/scalar/set/type.hpp>
 #include <bg/scalar/string.hpp>
 #include <bg/type/type.hpp>
 
@@ -59,10 +61,42 @@ template <typename T>
 [[nodiscard]] const ScalarType &cpp_scalar_type() noexcept;
 
 template <typename T>
+    requires is_set_v<T>
+[[nodiscard]] const ScalarType &cpp_scalar_type() noexcept;
+
+template <typename T>
+    requires is_dict_v<T>
+[[nodiscard]] const ScalarType &cpp_scalar_type() noexcept;
+
+template <typename T>
     requires is_opaque_v<T>
 [[nodiscard]] const ScalarType &cpp_scalar_type() noexcept;
 
+namespace details {
+
+struct scalar_type_properties {
+    static constexpr bool is_collection = false;
+    static constexpr bool is_opaque = false;
+    static constexpr bool supports_implicit_argument = true;
+    static constexpr bool supports_time_series = true;
+};
+
+template <typename T> struct scalar_type_traits : scalar_type_properties {
+
+    template <typename Scope> [[nodiscard]] static const ScalarType &get() noexcept {
+        return cpp_scalar_type<T>();
+    }
+};
+
+template <typename Scope, typename T> [[nodiscard]] const ScalarType &scalar_type_for() {
+    return scalar_type_traits<T>::template get<Scope>();
+}
+
+} // namespace details
+
 } // namespace bg
 
-#include <bg/type/list_scalar_type.hpp>
+#include <bg/scalar/dict/scalar_type.hpp>
+#include <bg/scalar/list/scalar_type.hpp>
 #include <bg/type/opaque_scalar_type.hpp>
+#include <bg/scalar/set/scalar_type.hpp>

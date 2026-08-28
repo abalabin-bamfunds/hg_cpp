@@ -1,0 +1,87 @@
+#include <bg/scalar/dict/scalar_type.hpp>
+
+#include <bg/type/type_map.hpp>
+#include <bg/type/type_resolution_error.hpp>
+#include <bg/util/symbol.hpp>
+
+#include <algorithm>
+#include <memory>
+#include <mutex>
+#include <stdexcept>
+#include <utility>
+#include <vector>
+
+namespace bg {
+namespace {
+
+class ResolvedDictScalarType final : public DictScalarType {
+  public:
+    ResolvedDictScalarType(const ScalarType &key_type, const ScalarType &mapped_type) noexcept
+        : key_type_(&key_type), mapped_type_(&mapped_type) {}
+
+    [[nodiscard]] bool is_resolved() const noexcept override { return true; }
+    [[nodiscard]] bool match(const Type &supplied, TypeMap &) const override { return this == &supplied; }
+    [[nodiscard]] const Type &resolve(const TypeMap &) const override { return *this; }
+    [[nodiscard]] const ScalarType &key_type() const noexcept override { return *key_type_; }
+    [[nodiscard]] const ScalarType &mapped_type() const noexcept override { return *mapped_type_; }
+
+  private:
+    const ScalarType *key_type_;
+    const ScalarType *mapped_type_;
+};
+
+} // namespace
+
+bool GenericDictScalarType::match(const Type &supplied, TypeMap &bindings) const {
+    const auto *dict = dynamic_cast<const DictScalarType *>(&supplied);
+    if (dict == nullptr || !dict->is_resolved()) {
+        return false;
+    }
+
+    auto trial = bindings.overlay();
+    if (!key_type_->match(dict->key_type(), trial) || !mapped_type_->match(dict->mapped_type(), trial)) {
+        return false;
+    }
+
+    bindings.apply(std::move(trial));
+    return true;
+}
+
+const Type &GenericDictScalarType::resolve(const TypeMap &bindings) const {
+    const auto &key = key_type_->resolve(bindings);
+    const auto &mapped = mapped_type_->resolve(bindings);
+    const auto *key_scalar = dynamic_cast<const ScalarType *>(&key);
+    const auto *mapped_scalar = dynamic_cast<const ScalarType *>(&mapped);
+    if (key_scalar == nullptr || mapped_scalar == nullptr) {
+        throw TypeResolutionError{TypeResolutionErrorCode::invalid_binding, util::symbol{"Dict"},
+                                  "dictionary components did not resolve to scalar types"};
+    }
+    if (!key_scalar->supports_hash()) {
+        throw TypeResolutionError{TypeResolutionErrorCode::invalid_binding, util::symbol{"Dict"},
+                                  "dictionary key type does not support hashing"};
+    }
+
+    return dict_scalar_type(*key_scalar, *mapped_scalar);
+}
+
+const DictScalarType &dict_scalar_type(const ScalarType &key_type, const ScalarType &mapped_type) {
+    static auto mutex = std::mutex{};
+    static auto types = std::vector<std::unique_ptr<ResolvedDictScalarType>>{};
+
+    const auto lock = std::lock_guard{mutex};
+    const auto found = std::ranges::find_if(types, [&](const auto &type) {
+        return &type->key_type() == &key_type && &type->mapped_type() == &mapped_type;
+    });
+    if (found != types.end()) {
+        return **found;
+    }
+    if (!key_type.supports_hash()) {
+        throw std::invalid_argument{"dictionary key type does not support hashing"};
+    }
+
+    types.push_back(std::make_unique<ResolvedDictScalarType>(key_type, mapped_type));
+
+    return *types.back();
+}
+
+} // namespace bg

@@ -24,11 +24,12 @@ struct CompiledStorageHeader {
     std::uint32_t stop_functions_offset;
     std::uint32_t stop_count;
     std::uint32_t scalar_destruction_representations_offset;
+    std::uint32_t output_destruction_count;
     std::uint32_t variable_memory_offset;
     std::uint32_t initial_runtime_storage_offset;
 };
 
-static_assert(sizeof(CompiledStorageHeader) == 36);
+static_assert(sizeof(CompiledStorageHeader) == 40);
 static_assert(std::is_trivially_copyable_v<CompiledStorageHeader>);
 
 } // namespace bg::details

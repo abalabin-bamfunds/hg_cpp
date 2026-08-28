@@ -13,13 +13,56 @@
 namespace {
 
 struct list_source_definition {
-    bg::List<float> values;
+    bg::Scalar<bg::List<float>> values;
     bg::Out<bg::TS<float>> output;
 
-    void start() const { output.set(values[0]); }
+    void start() const { output.set(values[0].value()); }
 
     void evaluate() const {}
 };
+
+struct float_sink_definition {
+    bg::In<bg::TS<float>> input;
+
+    void evaluate() const {
+        ++evaluation_count;
+        last_value = input.value();
+    }
+
+    inline static int evaluation_count{};
+    inline static float last_value{};
+};
+
+[[nodiscard]] bg::EvaluationTime time(std::int64_t microseconds) {
+    return bg::MIN_DT + std::chrono::microseconds{microseconds};
+}
+
+} // namespace
+
+TEST_CASE("a scalar list passes values through compiled wiring", "[evaluation][views]") {
+    const auto list_source = bg::node<list_source_definition>();
+    const auto float_sink = bg::node<float_sink_definition>();
+    float_sink_definition::evaluation_count = 0;
+    auto values = std::vector{2.5F};
+    const auto list = bg::ScalarValue<bg::List<float>>{values};
+
+    bg::GraphWiring wiring;
+    {
+        bg::WiringContext context{wiring};
+        float_sink(list_source(list));
+    }
+    values[0] = 4.0F;
+
+    const bg::CompiledGraph compiled{wiring};
+    bg::RuntimeGraph runtime{compiled};
+    runtime.start(time(1));
+    runtime.evaluate(time(1));
+
+    CHECK(float_sink_definition::evaluation_count == 1);
+    CHECK(float_sink_definition::last_value == 2.5F);
+}
+
+namespace {
 
 struct generic_list_source_definition {
     bg::Scalar<bg::List<bg::SCALAR>> values;
@@ -29,6 +72,23 @@ struct generic_list_source_definition {
 
     void evaluate() const {}
 };
+
+} // namespace
+
+TEST_CASE("a generic scalar list resolves its item view", "[evaluation][views]") {
+    const auto generic_list_source = bg::node<generic_list_source_definition>();
+    const auto float_sink = bg::node<float_sink_definition>();
+    float_sink_definition::evaluation_count = 0;
+    const auto values = std::vector{2.5F};
+    const auto list = bg::ScalarValue<bg::List<float>>{values};
+
+    bg::run_graph([&] { float_sink(generic_list_source(list)); });
+
+    CHECK(float_sink_definition::evaluation_count == 1);
+    CHECK(float_sink_definition::last_value == 2.5F);
+}
+
+namespace {
 
 struct starting_source_definition {
     float value;
@@ -45,6 +105,22 @@ struct generic_value_copy_definition {
 
     void evaluate() const { output.set_value(input.value_view()); }
 };
+
+} // namespace
+
+TEST_CASE("a generic scalar time-series view preserves its resolved scalar type", "[evaluation][views]") {
+    const auto starting_source = bg::node<starting_source_definition>();
+    const auto generic_value_copy = bg::node<generic_value_copy_definition>();
+    const auto float_sink = bg::node<float_sink_definition>();
+    float_sink_definition::evaluation_count = 0;
+
+    bg::run_graph([&] { float_sink(generic_value_copy(starting_source(2.5F))); });
+
+    CHECK(float_sink_definition::evaluation_count == 1);
+    CHECK(float_sink_definition::last_value == 2.5F);
+}
+
+namespace {
 
 struct generic_copy_definition {
     bg::In<bg::TS_T> input;
@@ -71,75 +147,12 @@ struct double_sink_definition {
     inline static double last_value{};
 };
 
-struct float_sink_definition {
-    bg::In<bg::TS<float>> input;
-
-    void evaluate() const {
-        ++evaluation_count;
-        last_value = input.value();
-    }
-
-    inline static int evaluation_count{};
-    inline static float last_value{};
-};
-
-inline const auto list_source = bg::node<list_source_definition>();
-inline const auto generic_list_source = bg::node<generic_list_source_definition>();
-inline const auto starting_source = bg::node<starting_source_definition>();
-inline const auto generic_value_copy = bg::node<generic_value_copy_definition>();
-inline const auto generic_copy = bg::node<generic_copy_definition>();
-inline const auto double_source = bg::node<double_source_definition>();
-inline const auto double_sink = bg::node<double_sink_definition>();
-inline const auto float_sink = bg::node<float_sink_definition>();
-
-[[nodiscard]] bg::EvaluationTime time(std::int64_t microseconds) {
-    return bg::MIN_DT + std::chrono::microseconds{microseconds};
-}
-
 } // namespace
 
-TEST_CASE("a scalar list passes values through compiled wiring", "[evaluation][views]") {
-    float_sink_definition::evaluation_count = 0;
-    auto values = std::vector{2.5F};
-    const auto list = bg::ScalarValue<bg::List<float>>{values};
-
-    bg::GraphWiring wiring;
-    {
-        bg::WiringContext context{wiring};
-        float_sink(list_source(list));
-    }
-    values[0] = 4.0F;
-
-    const bg::CompiledGraph compiled{wiring};
-    bg::RuntimeGraph runtime{compiled};
-    runtime.start(time(1));
-    runtime.evaluate(time(1));
-
-    CHECK(float_sink_definition::evaluation_count == 1);
-    CHECK(float_sink_definition::last_value == 2.5F);
-}
-
-TEST_CASE("a generic scalar list resolves its item view", "[evaluation][views]") {
-    float_sink_definition::evaluation_count = 0;
-    const auto values = std::vector{2.5F};
-    const auto list = bg::ScalarValue<bg::List<float>>{values};
-
-    bg::run_graph([&] { float_sink(generic_list_source(list)); });
-
-    CHECK(float_sink_definition::evaluation_count == 1);
-    CHECK(float_sink_definition::last_value == 2.5F);
-}
-
-TEST_CASE("a generic scalar time-series view preserves its resolved scalar type", "[evaluation][views]") {
-    float_sink_definition::evaluation_count = 0;
-
-    bg::run_graph([] { float_sink(generic_value_copy(starting_source(2.5F))); });
-
-    CHECK(float_sink_definition::evaluation_count == 1);
-    CHECK(float_sink_definition::last_value == 2.5F);
-}
-
 TEST_CASE("a generic time-series view preserves its resolved time-series type", "[evaluation][views]") {
+    const auto generic_copy = bg::node<generic_copy_definition>();
+    const auto double_source = bg::node<double_source_definition>();
+    const auto double_sink = bg::node<double_sink_definition>();
     double_sink_definition::evaluation_count = 0;
 
     bg::GraphWiring wiring;

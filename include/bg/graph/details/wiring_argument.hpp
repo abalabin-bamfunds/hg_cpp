@@ -17,7 +17,8 @@ namespace bg::details {
 
 template <typename T>
 inline constexpr bool supported_scalar_argument =
-    !is_opaque_v<std::remove_cvref_t<T>> && requires { cpp_scalar_type<std::remove_cvref_t<T>>(); };
+    scalar_type_traits<std::remove_cvref_t<T>>::supports_implicit_argument &&
+    requires { cpp_scalar_type<std::remove_cvref_t<T>>(); };
 
 template <typename T> struct optional_scalar_argument : std::false_type {};
 
@@ -80,7 +81,7 @@ class wiring_argument {
         : value_(ScalarArgument{
               &cpp_scalar_type<typename scalar_value_argument<std::remove_cvref_t<T>>::scalar_type>(),
               &cpp_scalar_storage_representation<typename scalar_value_argument<std::remove_cvref_t<T>>::scalar_type>(),
-              nullptr, &value.view()}) {}
+              nullptr, &value.input_view()}) {}
 
     [[nodiscard]] bool is_wiring_point() const noexcept { return std::holds_alternative<WiringPoint>(value_); }
 

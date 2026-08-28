@@ -3,6 +3,10 @@
 namespace bg {
 
 ResolvedSignature Signature::resolve(std::span<const Type *const> arguments) const {
+    return std::move(resolve_with_bindings(arguments).signature);
+}
+
+SignatureResolution Signature::resolve_with_bindings(std::span<const Type *const> arguments) const {
     if (arguments.size() != parameters_.size()) {
         throw TypeResolutionError{TypeResolutionErrorCode::argument_count, name_,
                                   "signature received the wrong number of arguments"};
@@ -49,7 +53,7 @@ ResolvedSignature Signature::resolve(std::span<const Type *const> arguments) con
         output = static_cast<const TimeSeriesType *>(&resolved_output);
     }
 
-    return {name_, std::move(parameters), output};
+    return {{name_, std::move(parameters), output}, std::move(bindings)};
 }
 
 } // namespace bg

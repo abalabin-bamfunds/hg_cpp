@@ -2,6 +2,7 @@
 
 #include <bg/graph/compiled_node.hpp>
 #include <bg/scalar/details/allocation_context.hpp>
+#include <bg/scalar/storage_representation.hpp>
 
 #include <algorithm>
 #include <bit>
@@ -180,6 +181,26 @@ void RuntimeGraph::initialize_storage() {
 }
 
 RuntimeGraph::~RuntimeGraph() {
+    if (storage_ != nullptr) {
+        for (auto node_index = compiled_graph_->node_count(); node_index != 0;) {
+            --node_index;
+            const auto &node = compiled_graph_->node(node_index);
+            if (!node.has_state() || node.state_destruction_function() == nullptr) {
+                continue;
+            }
+
+            EvaluationContext context{evaluation_time_, *this, node_index};
+            const auto allocation_context = details::ScalarAllocationContext{*memory_, this, node_index};
+            node.state_destruction_function()(node, storage_, &context);
+        }
+
+        const auto output_destruction = compiled_graph_->output_destruction();
+        for (auto i = output_destruction.offsets.size(); i != 0; --i) {
+            output_destruction.representations[i - 1]->destroy(storage_ + output_destruction.offsets[i - 1],
+                                                               *memory_);
+        }
+    }
+
     if (compiled_graph_->has_future_scheduling() && future_schedule() != nullptr) {
         std::destroy_at(future_schedule());
         memory_->deallocate(future_schedule(), sizeof(FutureSchedule), alignof(FutureSchedule));

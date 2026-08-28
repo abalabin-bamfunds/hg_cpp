@@ -21,10 +21,6 @@ struct counted_value {
     inline static std::uint32_t live{};
 };
 
-struct throwing_value {
-    throwing_value() { throw std::runtime_error{"construction failed"}; }
-};
-
 } // namespace
 
 TEST_CASE("a contiguous bunch grows without moving its values", "[contiguous_bunch]") {
@@ -51,6 +47,14 @@ TEST_CASE("a contiguous bunch grows without moving its values", "[contiguous_bun
     CHECK(counted_value::live == 0);
     CHECK(memory.allocations() == 0);
 }
+
+namespace {
+
+struct throwing_value {
+    throwing_value() { throw std::runtime_error{"construction failed"}; }
+};
+
+} // namespace
 
 TEST_CASE("a contiguous bunch releases storage after construction fails", "[contiguous_bunch]") {
     auto memory = counting_memory_resource{};

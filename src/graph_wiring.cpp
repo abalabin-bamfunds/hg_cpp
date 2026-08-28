@@ -94,13 +94,14 @@ std::optional<WiringPoint> GraphWiring::invoke(const WiringTemplate &wiring_temp
         }
     }
 
-    auto signature = wiring_template.signature().resolve(argument_types);
+    auto resolution = wiring_template.signature().resolve_with_bindings(argument_types);
+    auto signature = std::move(resolution.signature);
     const auto *expected_output = signature.output;
     const auto label = wiring_template.label(signature, arguments, default_label());
     const auto &path = make_path(signature.name, label);
     auto context = WiringContext{*this, path};
 
-    auto output = wiring_template.wire(*this, std::move(signature), arguments);
+    auto output = wiring_template.wire(*this, std::move(signature), resolution.bindings, arguments);
 
     if ((expected_output == nullptr) != !output.has_value()) {
         throw WiringError{"a wiring-template result does not match its output declaration"};
@@ -122,6 +123,7 @@ std::optional<WiringPoint> GraphWiring::invoke(const WiringTemplate &wiring_temp
 }
 
 std::optional<WiringPoint> GraphWiring::add_node(const NodeTemplate &node_template, ResolvedSignature signature,
+                                                 std::vector<const ScalarType *> state_types,
                                                  std::span<details::wiring_argument> arguments) {
     std::vector<std::size_t> source_indices;
     std::size_t source_count = 0;
@@ -179,7 +181,11 @@ std::optional<WiringPoint> GraphWiring::add_node(const NodeTemplate &node_templa
 
     const auto has_output = signature.output != nullptr;
     const auto index = nodes_.size();
-    auto node = WiredNode{node_template, std::move(signature), std::move(source_indices), std::move(scalar_values),
+    auto node = WiredNode{node_template,
+                          std::move(signature),
+                          std::move(source_indices),
+                          std::move(scalar_values),
+                          std::move(state_types),
                           *WiringContext::current().path()};
 
     try {
@@ -197,9 +203,9 @@ std::optional<WiringPoint> GraphWiring::add_node(const NodeTemplate &node_templa
     return std::nullopt;
 }
 
-std::optional<WiringPoint> NodeTemplate::wire(GraphWiring &wiring, ResolvedSignature signature,
+std::optional<WiringPoint> NodeTemplate::wire(GraphWiring &wiring, ResolvedSignature signature, const TypeMap &bindings,
                                               std::span<details::wiring_argument> arguments) const {
-    return wiring.add_node(*this, std::move(signature), arguments);
+    return wiring.add_node(*this, std::move(signature), resolve_state_types(bindings), arguments);
 }
 
 } // namespace bg

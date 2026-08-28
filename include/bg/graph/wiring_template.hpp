@@ -47,6 +47,7 @@ class WiringTemplate {
     }
 
     [[nodiscard]] virtual std::optional<WiringPoint> wire(GraphWiring &wiring, ResolvedSignature signature,
+                                                          const TypeMap &bindings,
                                                           std::span<details::wiring_argument> arguments) const = 0;
 };
 

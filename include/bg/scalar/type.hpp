@@ -7,6 +7,8 @@
 namespace bg {
 
 template <typename T> class List;
+template <typename T> class Set;
+template <typename K, typename V> class Dict;
 
 struct EqualityComparable {};
 struct Hashable {};
@@ -27,12 +29,28 @@ struct is_scalar_variable<ScalarVariable<Name, Constraints...>> : std::true_type
 template <typename T>
 concept scalar_variable = is_scalar_variable<std::remove_cvref_t<T>>::value;
 
+template <typename T> inline constexpr bool generic_scalar = scalar_variable<T>;
+
+template <typename T> inline constexpr bool generic_scalar<List<T>> = generic_scalar<T>;
+
+template <typename T> inline constexpr bool generic_scalar<Set<T>> = generic_scalar<T>;
+
+template <typename K, typename V>
+inline constexpr bool generic_scalar<Dict<K, V>> = generic_scalar<K> || generic_scalar<V>;
+
 template <typename T> struct is_scalar_variable_list : std::false_type {};
 
 template <scalar_variable Variable> struct is_scalar_variable_list<List<Variable>> : std::true_type {};
 
 template <typename T>
 concept scalar_variable_list = is_scalar_variable_list<std::remove_cvref_t<T>>::value;
+
+template <typename T> struct is_scalar_variable_set : std::false_type {};
+
+template <scalar_variable Variable> struct is_scalar_variable_set<Set<Variable>> : std::true_type {};
+
+template <typename T>
+concept scalar_variable_set = is_scalar_variable_set<std::remove_cvref_t<T>>::value;
 
 template <typename T>
 concept scalar_property_constraint = std::same_as<T, EqualityComparable> || std::same_as<T, Hashable>;

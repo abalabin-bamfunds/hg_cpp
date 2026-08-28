@@ -10,6 +10,7 @@
 #include <functional>
 #include <memory_resource>
 #include <optional>
+#include <type_traits>
 #include <utility>
 
 namespace bg::util::details {
@@ -63,15 +64,26 @@ template <typename Key, typename Hash, typename Equal> class hash_key_table {
         requires std::constructible_from<Key, Source> && std::invocable<const Hash &, const Source &> &&
                  std::predicate<const Equal &, const Key &, const Source &>
     [[nodiscard]] insertion insert(Source &&key, std::pmr::memory_resource &memory) {
+        return insert_with(
+            key, memory, [&](Key *destination) { std::construct_at(destination, std::forward<Source>(key)); },
+            [](Key *value) noexcept { std::destroy_at(value); });
+    }
+
+    template <typename Lookup, typename Constructor, typename Destructor>
+        requires std::invocable<const Hash &, const Lookup &> &&
+                 std::predicate<const Equal &, const Key &, const Lookup &> && std::invocable<Constructor &, Key *> &&
+                 std::invocable<Destructor &, Key *>
+    [[nodiscard]] insertion insert_with(const Lookup &key, std::pmr::memory_resource &memory, Constructor &&construct,
+                                        Destructor &&destroy) {
         const auto hash = make_hash(key);
-        if (const auto found = lookup_.find(
-                hash, [&](auto position) { return std::invoke(equal_, keys_[position], key); })) {
+        if (const auto found =
+                lookup_.find(hash, [&](auto position) { return std::invoke(equal_, keys_[position], key); })) {
             return {*found, hash, false};
         }
 
         const auto position = positions_.acquire(memory);
         try {
-            keys_.emplace_at(position, memory, std::forward<Source>(key));
+            keys_.emplace_at_with(position, memory, construct);
         } catch (...) {
             const auto removed = positions_.reset(position);
             assert(removed);
@@ -82,7 +94,7 @@ template <typename Key, typename Hash, typename Equal> class hash_key_table {
         try {
             lookup_.insert(hash, position, memory);
         } catch (...) {
-            keys_.erase_at(position, memory);
+            keys_.erase_at_with(position, memory, destroy);
             const auto removed = positions_.reset(position);
             assert(removed);
             positions_.trim(memory);
@@ -106,12 +118,32 @@ template <typename Key, typename Hash, typename Equal> class hash_key_table {
         return true;
     }
 
+    template <typename Lookup, typename Destructor>
+        requires std::invocable<const Hash &, const Lookup &> &&
+                 std::predicate<const Equal &, const Key &, const Lookup &> && std::invocable<Destructor &, Key *>
+    [[nodiscard]] bool erase_with(const Lookup &key, std::pmr::memory_resource &memory, Destructor &&destroy) {
+        const auto found = find(key);
+        if (!found) {
+            return false;
+        }
+
+        erase_at_with(found->position, found->hash, memory, destroy);
+        return true;
+    }
+
     void erase_at(position_type position, linear_hash_table::hash_type hash,
                   std::pmr::memory_resource &memory) noexcept {
+        erase_at_with(position, hash, memory, [](Key *value) noexcept { std::destroy_at(value); });
+    }
+
+    template <typename Destructor>
+        requires std::invocable<Destructor &, Key *>
+    void erase_at_with(position_type position, linear_hash_table::hash_type hash, std::pmr::memory_resource &memory,
+                       Destructor &&destroy) noexcept {
         const auto removed_from_lookup = lookup_.erase(hash, position, memory);
         assert(removed_from_lookup);
 
-        keys_.erase_at(position, memory);
+        keys_.erase_at_with(position, memory, destroy);
         const auto removed_position = positions_.reset(position);
         assert(removed_position);
         positions_.trim(memory);
@@ -120,8 +152,14 @@ template <typename Key, typename Hash, typename Equal> class hash_key_table {
     [[nodiscard]] bool reduce(std::pmr::memory_resource &memory) { return lookup_.reduce(memory); }
 
     void release(std::pmr::memory_resource &memory) noexcept {
+        release_with(memory, [](Key *value) noexcept { std::destroy_at(value); });
+    }
+
+    template <typename Destructor>
+        requires std::invocable<Destructor &, Key *>
+    void release_with(std::pmr::memory_resource &memory, Destructor &&destroy) noexcept {
         lookup_.release(memory);
-        keys_.release(positions_, memory);
+        keys_.release_with(positions_, memory, destroy);
         positions_.release(memory);
     }
 
@@ -131,6 +169,14 @@ template <typename Key, typename Hash, typename Equal> class hash_key_table {
     [[nodiscard]] const occupancy_index &positions() const noexcept { return positions_; }
     [[nodiscard]] std::uint32_t size() const noexcept { return positions_.size(); }
     [[nodiscard]] bool empty() const noexcept { return positions_.empty(); }
+
+    void swap(hash_key_table &other) noexcept(std::is_nothrow_swappable_v<Hash> && std::is_nothrow_swappable_v<Equal>) {
+        positions_.swap(other.positions_);
+        keys_.swap(other.keys_);
+        lookup_.swap(other.lookup_);
+        std::swap(hash_, other.hash_);
+        std::swap(equal_, other.equal_);
+    }
 
   private:
     template <typename Lookup> [[nodiscard]] linear_hash_table::hash_type make_hash(const Lookup &key) const {

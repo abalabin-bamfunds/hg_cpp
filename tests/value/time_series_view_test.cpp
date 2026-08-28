@@ -5,21 +5,17 @@
 #include <chrono>
 #include <type_traits>
 
-namespace {
-
-class TestView : public bg::TimeSeriesView {
-  public:
-    void bind(const bg::EvaluationTime &last_updated, const void *value) noexcept {
-        TimeSeriesView::bind(last_updated, value);
-    }
-};
-
-} // namespace
-
 static_assert(std::is_trivially_copyable_v<bg::TimeSeriesView>);
 
 TEST_CASE("a time-series view reads validity and update time", "[time_series]") {
-    TestView view;
+    class test_view final : public bg::TimeSeriesView {
+      public:
+        void bind(const bg::EvaluationTime &last_updated, const void *value) noexcept {
+            TimeSeriesView::bind(last_updated, value);
+        }
+    };
+
+    test_view view;
 
     CHECK_FALSE(view.valid());
 

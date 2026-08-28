@@ -9,22 +9,6 @@
 #include <cstdint>
 #include <string>
 
-namespace {
-
-struct counted_value {
-    explicit counted_value(std::uint32_t value) : value{value} { ++live; }
-    ~counted_value() { --live; }
-
-    counted_value(const counted_value &) = delete;
-    counted_value &operator=(const counted_value &) = delete;
-
-    std::uint32_t value;
-
-    inline static std::uint32_t live{};
-};
-
-} // namespace
-
 TEST_CASE("sparse bunches share one occupancy index", "[sparse_bunch]") {
     auto memory = counting_memory_resource{};
     auto positions = bg::util::occupancy_index{};
@@ -103,6 +87,22 @@ TEST_CASE("a sparse bunch handles growth and capped-block boundaries", "[sparse_
     positions.release(memory);
     CHECK(memory.allocations() == 0);
 }
+
+namespace {
+
+struct counted_value {
+    explicit counted_value(std::uint32_t value) : value{value} { ++live; }
+    ~counted_value() { --live; }
+
+    counted_value(const counted_value &) = delete;
+    counted_value &operator=(const counted_value &) = delete;
+
+    std::uint32_t value;
+
+    inline static std::uint32_t live{};
+};
+
+} // namespace
 
 TEST_CASE("a sparse bunch destroys each occupied value once", "[sparse_bunch]") {
     auto memory = counting_memory_resource{};

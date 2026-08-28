@@ -34,3 +34,21 @@ const ScalarType &cpp_scalar_type() noexcept {
 }
 
 } // namespace bg
+
+namespace bg::details {
+
+template <typename T> struct scalar_type_traits<List<T>> : scalar_type_properties {
+    static constexpr bool is_collection = true;
+
+    template <typename Scope> [[nodiscard]] static const ScalarType &get() {
+        if constexpr (generic_scalar<T>) {
+            static const auto type = GenericListScalarType{scalar_type_for<Scope, T>()};
+
+            return type;
+        } else {
+            return cpp_scalar_type<List<T>>();
+        }
+    }
+};
+
+} // namespace bg::details

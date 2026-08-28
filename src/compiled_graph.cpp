@@ -115,6 +115,10 @@ struct FixedNodeLayout {
     StorageSection parameters;
     StorageSection subscribers;
     StorageSection state_offset;
+    StorageSection state_destruction_function;
+    StorageSection state_metadata_counts;
+    StorageSection state_field_offsets;
+    StorageSection generic_state_storage_representations;
     StorageSection invalidation_function;
     StorageSection time_series_input_view_prototypes;
     StorageSection scalar_input_view_prototypes;
@@ -132,7 +136,8 @@ struct OutputLayout {
 
 struct StateLayout {
     std::uint32_t offset{};
-    std::size_t size{};
+    NodeStateLayout node;
+    bool requires_destruction{};
 };
 
 struct RuntimeStorageLayout {
@@ -180,6 +185,8 @@ struct FixedStorageLayout {
     StorageSection wiring_paths;
     StorageSection scalar_destruction_representations;
     StorageSection scalar_destruction_offsets;
+    StorageSection output_destruction_representations;
+    StorageSection output_destruction_offsets;
     StorageSection variable_memory;
     StorageSection initial_runtime_storage;
     std::size_t size{};
@@ -195,6 +202,7 @@ struct CompilationPlan {
     RuntimeStorageLayout runtime;
     FixedStorageLayout fixed;
     std::size_t scalar_destruction_count{};
+    std::size_t output_destruction_count{};
     bool uses_variable_memory{};
     bool uses_future_scheduling{};
 
@@ -266,8 +274,8 @@ void plan_subscribers(std::span<const WiredNode> nodes, std::span<NodePlan> node
     }
 }
 
-[[nodiscard]] const ScalarStorageRepresentation *
-find_output_storage_representation(const WiredNode &node, std::span<const NodePlan> node_plans) {
+[[nodiscard]] std::vector<const ScalarStorageRepresentation *>
+parameter_storage_representations(const WiredNode &node, std::span<const NodePlan> node_plans) {
     auto parameter_storage_representations = std::vector<const ScalarStorageRepresentation *>{};
     parameter_storage_representations.reserve(node.signature().parameters.size());
     auto input_index = std::size_t{};
@@ -283,7 +291,14 @@ find_output_storage_representation(const WiredNode &node, std::span<const NodePl
         }
     }
 
-    return node.node_template().output_storage_representation(node.signature(), parameter_storage_representations);
+    return parameter_storage_representations;
+}
+
+[[nodiscard]] const ScalarStorageRepresentation *
+find_output_storage_representation(const WiredNode &node, std::span<const NodePlan> node_plans) {
+    const auto representations = parameter_storage_representations(node, node_plans);
+
+    return node.node_template().output_storage_representation(node.signature(), representations);
 }
 
 [[nodiscard]] OutputLayout add_output_layout(StorageLayout &storage, const WiredNode &node,
@@ -300,8 +315,7 @@ find_output_storage_representation(const WiredNode &node, std::span<const NodePl
     if (representation == nullptr) {
         throw std::logic_error{"node output has no storage representation"};
     }
-    if (!representation->supports_byte_copy_initialization() || representation->uses_variable_memory() ||
-        representation->requires_destruction()) {
+    if (!representation->supports_byte_copy_initialization()) {
         throw std::logic_error{"output storage does not support byte-copy initialization"};
     }
 
@@ -312,15 +326,18 @@ find_output_storage_representation(const WiredNode &node, std::span<const NodePl
             packed_offset(value.offset, "runtime storage reaches 1 GiB"), representation};
 }
 
-[[nodiscard]] StateLayout add_state_layout(StorageLayout &storage, const WiredNode &node) {
-    const auto size = node.node_template().state_size(node.signature());
-    if (size == 0) {
+[[nodiscard]] StateLayout add_state_layout(StorageLayout &storage, const WiredNode &node,
+                                           std::span<const NodePlan> node_plans) {
+    auto layout = node.node_template().state_layout(
+        node.signature(), parameter_storage_representations(node, node_plans), node.state_types());
+    if (layout.size == 0) {
         return {};
     }
 
-    const auto state = storage.add_bytes(size, node.node_template().state_alignment(node.signature()));
+    const auto state = storage.add_bytes(layout.size, layout.alignment);
 
-    return {packed_offset(state.offset, "runtime storage reaches 1 GiB"), size};
+    return {packed_offset(state.offset, "runtime storage reaches 1 GiB"), std::move(layout),
+            node.node_template().state_destruction_function(node.signature()) != nullptr};
 }
 
 void plan_runtime_storage(CompilationPlan &plan, std::size_t schedule_word_count) {
@@ -332,7 +349,7 @@ void plan_runtime_storage(CompilationPlan &plan, std::size_t schedule_word_count
 
     for (auto i = std::size_t{}; i < plan.nodes.size(); ++i) {
         plan.node_plans[i].output = add_output_layout(storage, plan.nodes[i], plan.node_plans);
-        plan.node_plans[i].state = add_state_layout(storage, plan.nodes[i]);
+        plan.node_plans[i].state = add_state_layout(storage, plan.nodes[i], plan.node_plans);
     }
 
     (void)packed_offset(storage.size(), "runtime storage reaches 1 GiB");
@@ -354,8 +371,17 @@ void plan_runtime_storage(CompilationPlan &plan, std::size_t schedule_word_count
     auto result = FixedNodeLayout{};
     result.parameters = storage.add<ParameterBinding>(node.signature().parameters.size());
     result.subscribers = storage.add<Subscriber>(node_plan.subscribers.size());
-    if (node_plan.state.size != 0) {
+    if (node_plan.state.node.size != 0) {
         result.state_offset = storage.add<std::uint32_t>();
+        if (node_plan.state.requires_destruction) {
+            result.state_destruction_function = storage.add<EvaluationFunction>();
+        }
+        if (!node_plan.state.node.generic_storage_representations.empty()) {
+            result.state_metadata_counts = storage.add<StateMetadataCounts>();
+            result.state_field_offsets = storage.add<std::uint32_t>(node_plan.state.node.field_offsets.size());
+            result.generic_state_storage_representations = storage.add<const ScalarStorageRepresentation *>(
+                node_plan.state.node.generic_storage_representations.size());
+        }
     }
     if (node_plan.invalidation.mode == InvalidationMode::invoke) {
         result.invalidation_function = storage.add<EvaluationFunction>();
@@ -413,6 +439,9 @@ void plan_fixed_storage(CompilationPlan &plan) {
     layout.scalar_destruction_representations =
         storage.add<const ScalarStorageRepresentation *>(plan.scalar_destruction_count);
     layout.scalar_destruction_offsets = storage.add<std::uint32_t>(plan.scalar_destruction_count);
+    layout.output_destruction_representations =
+        storage.add<const ScalarStorageRepresentation *>(plan.output_destruction_count);
+    layout.output_destruction_offsets = storage.add<std::uint32_t>(plan.output_destruction_count);
     if (plan.uses_variable_memory) {
         layout.variable_memory = storage.add<std::pmr::unsynchronized_pool_resource>();
     }
@@ -443,6 +472,12 @@ void plan_fixed_storage(CompilationPlan &plan) {
     }
 
     plan_runtime_storage(result, schedule_word_count);
+
+    result.output_destruction_count = static_cast<std::size_t>(std::ranges::count_if(
+        result.node_plans, [](const auto &node) {
+            return node.output.storage_representation != nullptr &&
+                   node.output.storage_representation->requires_destruction();
+        }));
 
     for (auto i = std::size_t{}; i < nodes.size(); ++i) {
         const auto &node = nodes[i];
@@ -534,6 +569,7 @@ class CompiledGraphBuilder {
             }
 
             construct_initial_runtime_storage(plan, storage);
+            construct_output_destruction(plan, storage);
             construct_nodes(plan, storage, *variable_memory, constructed_scalars);
         } catch (...) {
             for (auto scalar = constructed_scalars.rbegin(); scalar != constructed_scalars.rend(); ++scalar) {
@@ -563,6 +599,7 @@ class CompiledGraphBuilder {
                 .stop_functions_offset = offset(plan.fixed.stop_functions),
                 .stop_count = static_cast<std::uint32_t>(plan.stops.nodes.size()),
                 .scalar_destruction_representations_offset = offset(plan.fixed.scalar_destruction_representations),
+                .output_destruction_count = static_cast<std::uint32_t>(plan.output_destruction_count),
                 .variable_memory_offset = offset(plan.fixed.variable_memory),
                 .initial_runtime_storage_offset = offset(plan.fixed.initial_runtime_storage),
             });
@@ -627,12 +664,29 @@ class CompiledGraphBuilder {
 
         for (auto i = std::size_t{}; i < plan.nodes.size(); ++i) {
             const auto &state = plan.node_plans[i].state;
-            if (state.size == 0) {
+            if (state.node.size == 0) {
                 continue;
             }
 
             const auto &node = plan.nodes[i];
-            node.node_template().construct_initial_state(node.signature(), runtime_storage.data() + state.offset);
+            node.node_template().construct_initial_state(state.node, runtime_storage.data() + state.offset);
+        }
+    }
+
+    static void construct_output_destruction(const CompilationPlan &plan, std::byte *fixed_storage) {
+        auto representations = plan.fixed.output_destruction_representations
+                                   .objects<const ScalarStorageRepresentation *>(fixed_storage)
+                                   .begin();
+        auto offsets = plan.fixed.output_destruction_offsets.objects<std::uint32_t>(fixed_storage).begin();
+
+        for (const auto &node : plan.node_plans) {
+            const auto &output = node.output;
+            if (output.storage_representation == nullptr || !output.storage_representation->requires_destruction()) {
+                continue;
+            }
+
+            std::construct_at(std::to_address(representations++), output.storage_representation);
+            std::construct_at(std::to_address(offsets++), output.value_offset);
         }
     }
 
@@ -710,9 +764,9 @@ class CompiledGraphBuilder {
             if (!node.signature().parameters[parameter_index].type->is_time_series()) {
                 const auto &scalar = node.scalar_values()[scalar_index++];
                 if (node.node_template().uses_generic_scalar_input_view(parameter_index)) {
-                    const auto &prototype = scalar.storage_representation().scalar_input_view_prototype();
+                    const auto *prototype = scalar.storage_representation().scalar_input_view_prototype();
                     std::construct_at(scalar_input_views.data() + generic_scalar_input_index,
-                                      ScalarInputViewPrototype{&prototype});
+                                      ScalarInputViewPrototype{prototype});
                     ++generic_scalar_input_index;
                 }
                 continue;
@@ -725,14 +779,14 @@ class CompiledGraphBuilder {
 
             const auto *representation = plan.node_plans[source_index].output.storage_representation;
             std::construct_at(time_series_input_views.data() + generic_time_series_input_index,
-                              TimeSeriesInputViewPrototype{&representation->input_view_prototype()});
+                              TimeSeriesInputViewPrototype{representation->input_view_prototype()});
             ++generic_time_series_input_index;
         }
 
         if (node.node_template().uses_generic_output_view()) {
             const auto *representation = plan.node_plans[node_index].output.storage_representation;
             std::construct_at(layout.output_view_prototype.objects<OutputViewPrototype>(node_storage).data(),
-                              OutputViewPrototype{&representation->output_view_prototype()});
+                              OutputViewPrototype{representation->output_view_prototype()});
         }
     }
 
@@ -751,9 +805,34 @@ class CompiledGraphBuilder {
             construct_parameters(plan, i, storage, variable_memory, constructed_scalars, scalar_destruction_index);
             std::uninitialized_copy(node_plan.subscribers.begin(), node_plan.subscribers.end(),
                                     layout.subscribers.objects<Subscriber>(node_storage).data());
-            if (node_plan.state.size != 0) {
+            if (node_plan.state.node.size != 0) {
+                const auto has_state_metadata = !node_plan.state.node.generic_storage_representations.empty();
                 std::construct_at(layout.state_offset.objects<std::uint32_t>(node_storage).data(),
-                                  node_plan.state.offset);
+                                  node_plan.state.offset |
+                                      (node_plan.state.requires_destruction ? CompiledNode::state_destruction_flag
+                                                                            : std::uint32_t{}) |
+                                      (has_state_metadata ? CompiledNode::state_metadata_flag : std::uint32_t{}));
+                if (node_plan.state.requires_destruction) {
+                    std::construct_at(
+                        layout.state_destruction_function.objects<EvaluationFunction>(node_storage).data(),
+                        node.node_template().state_destruction_function(node.signature()));
+                }
+                if (has_state_metadata) {
+                    std::construct_at(
+                        layout.state_metadata_counts.objects<StateMetadataCounts>(node_storage).data(),
+                        StateMetadataCounts{
+                            static_cast<std::uint16_t>(node_plan.state.node.field_offsets.size()),
+                            static_cast<std::uint16_t>(node_plan.state.node.generic_storage_representations.size())});
+                    std::ranges::transform(
+                        node_plan.state.node.field_offsets,
+                        layout.state_field_offsets.objects<std::uint32_t>(node_storage).begin(),
+                        [](auto offset) { return packed_offset(offset, "node state reaches 1 GiB"); });
+                    std::uninitialized_copy(node_plan.state.node.generic_storage_representations.begin(),
+                                            node_plan.state.node.generic_storage_representations.end(),
+                                            layout.generic_state_storage_representations
+                                                .objects<const ScalarStorageRepresentation *>(node_storage)
+                                                .data());
+                }
             }
             if (node_plan.invalidation.mode == InvalidationMode::invoke) {
                 std::construct_at(layout.invalidation_function.objects<EvaluationFunction>(node_storage).data(),
@@ -766,7 +845,7 @@ class CompiledGraphBuilder {
                                            node_plan.output.last_updated_offset, node_plan.output.value_offset,
                                            static_cast<std::uint32_t>(node.signature().parameters.size()),
                                            static_cast<std::uint32_t>(node_plan.subscribers.size()),
-                                           node.signature().output != nullptr, node_plan.state.size != 0,
+                                           node.signature().output != nullptr, node_plan.state.node.size != 0,
                                            node_plan.invalidation.mode});
             std::construct_at(node_offsets.data() + i,
                               packed_offset(layout.offset, "compiled fixed storage reaches 1 GiB"));
@@ -809,6 +888,21 @@ CompiledGraph::NodeFunctions CompiledGraph::stop_functions() const noexcept {
     const auto &header = storage_header();
 
     return node_functions(header.stop_functions_offset, header.stop_count);
+}
+
+CompiledGraph::OutputDestruction CompiledGraph::output_destruction() const noexcept {
+    const auto &header = storage_header();
+    const auto representations_offset = static_cast<std::uint32_t>(align_up(
+        header.scalar_destruction_representations_offset +
+            scalar_destruction_count() * (sizeof(const ScalarStorageRepresentation *) + sizeof(std::uint32_t)),
+        alignof(const ScalarStorageRepresentation *)));
+    const auto representations = stored_objects<const ScalarStorageRepresentation *>(
+        fixed_storage_, representations_offset, header.output_destruction_count);
+    const auto offsets_offset = static_cast<std::uint32_t>(
+        representations_offset + header.output_destruction_count * sizeof(const ScalarStorageRepresentation *));
+
+    return {representations,
+            stored_objects<std::uint32_t>(fixed_storage_, offsets_offset, header.output_destruction_count)};
 }
 
 CompiledGraph::~CompiledGraph() {

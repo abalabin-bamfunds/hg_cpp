@@ -1,4 +1,4 @@
-#include <bg/type/list_scalar_type.hpp>
+#include <bg/scalar/list/scalar_type.hpp>
 
 #include <bg/type/type_map.hpp>
 #include <bg/type/type_resolution_error.hpp>

@@ -46,26 +46,6 @@ struct int_sink_definition {
     inline static std::vector<int> values;
 };
 
-struct unordered_schedule_definition {
-    static constexpr bool uses_future_scheduling = true;
-
-    int value;
-
-    void start(bg::EvaluationContext *context) const {
-        (void)context->schedule_at(context->evaluation_time() + std::chrono::microseconds{9});
-        (void)context->schedule_at(context->evaluation_time() + std::chrono::microseconds{2});
-        (void)context->schedule_at(context->evaluation_time() + std::chrono::microseconds{5});
-    }
-
-    void evaluate(bg::EvaluationContext *context) const { evaluation_times.push_back(context->evaluation_time()); }
-
-    inline static std::vector<bg::EvaluationTime> evaluation_times;
-};
-
-inline const auto scheduled_source = bg::node<scheduled_source_definition>();
-inline const auto int_sink = bg::node<int_sink_definition>();
-inline const auto unordered_schedule = bg::node<unordered_schedule_definition>();
-
 [[nodiscard]] bg::EvaluationTime time(std::int64_t microseconds) {
     return bg::MIN_DT + std::chrono::microseconds{microseconds};
 }
@@ -73,6 +53,8 @@ inline const auto unordered_schedule = bg::node<unordered_schedule_definition>()
 } // namespace
 
 TEST_CASE("a simulation evaluation engine runs until future scheduling is empty", "[evaluation][simulation]") {
+    const auto scheduled_source = bg::node<scheduled_source_definition>();
+    const auto int_sink = bg::node<int_sink_definition>();
     auto wiring = bg::GraphWiring{};
     {
         auto context = bg::WiringContext{wiring};
@@ -92,7 +74,28 @@ TEST_CASE("a simulation evaluation engine runs until future scheduling is empty"
     CHECK(scheduled_source_definition::stop_count == 1);
 }
 
+namespace {
+
+struct unordered_schedule_definition {
+    static constexpr bool uses_future_scheduling = true;
+
+    int value;
+
+    void start(bg::EvaluationContext *context) const {
+        (void)context->schedule_at(context->evaluation_time() + std::chrono::microseconds{9});
+        (void)context->schedule_at(context->evaluation_time() + std::chrono::microseconds{2});
+        (void)context->schedule_at(context->evaluation_time() + std::chrono::microseconds{5});
+    }
+
+    void evaluate(bg::EvaluationContext *context) const { evaluation_times.push_back(context->evaluation_time()); }
+
+    inline static std::vector<bg::EvaluationTime> evaluation_times;
+};
+
+} // namespace
+
 TEST_CASE("future scheduling orders requests by evaluation time", "[evaluation][simulation]") {
+    const auto unordered_schedule = bg::node<unordered_schedule_definition>();
     auto wiring = bg::GraphWiring{};
     {
         auto context = bg::WiringContext{wiring};

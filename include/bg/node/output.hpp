@@ -28,7 +28,7 @@ template <> class Out<TS_T> {
 
     [[nodiscard]] EvaluationTime last_updated() const noexcept { return view_->last_updated(); }
 
-    template <typename Value> void set_value(const Scalar<Value> &value) const { view_->set_value(value.view()); }
+    template <typename Value> void set_value(const Scalar<Value> &value) const { view_->set_value(value.input_view()); }
 
     void invalidate() const noexcept { view_->invalidate(); }
 
@@ -58,7 +58,7 @@ template <details::scalar_variable Variable, auto... Properties> class Out<TS<Va
 
     [[nodiscard]] EvaluationTime last_updated() const noexcept { return view_->last_updated(); }
 
-    template <typename Value> void set_value(const Scalar<Value> &value) const { view_->set_value(value.view()); }
+    template <typename Value> void set_value(const Scalar<Value> &value) const { view_->set_value(value.input_view()); }
 
     void invalidate() const noexcept { view_->invalidate(); }
 
@@ -99,7 +99,7 @@ template <typename T, auto... Properties> class Out<TS<T, Properties...>> {
         view_->set(std::forward<Value>(value));
     }
 
-    template <typename Value> void set_value(const Scalar<Value> &value) const { view_->set_value(value.view()); }
+    template <typename Value> void set_value(const Scalar<Value> &value) const { view_->set_value(value.input_view()); }
 
     void invalidate() const noexcept { view_->invalidate(); }
 

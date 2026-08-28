@@ -41,4 +41,12 @@ template <typename Scope, scalar_variable Declaration>
     return ScalarVariableInstance<Scope, Declaration>::get();
 }
 
+template <scalar_variable Declaration> struct scalar_type_traits<Declaration> : scalar_type_properties {
+    static constexpr bool supports_implicit_argument = false;
+
+    template <typename Scope> [[nodiscard]] static const ScalarType &get() {
+        return scalar_variable_instance<Scope, Declaration>();
+    }
+};
+
 } // namespace bg::details

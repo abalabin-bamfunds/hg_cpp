@@ -32,32 +32,16 @@ struct scale_definition {
     void evaluate() const { output.set(input.value() * factor); }
 };
 
-inline const auto source = bg::node<source_definition>();
-inline const auto scale = bg::node<scale_definition>(
+const auto source = bg::node<source_definition>();
+const auto scale = bg::node<scale_definition>(
     [](bg::WiringPoint, float factor) { return std::string{"node-factor="} + std::to_string(factor); });
 
-inline const auto scale_graph = bg::graph(
+const auto scale_graph = bg::graph(
     "name"_m = "scale_graph",
     "label"_m = [](bg::wp<bg::TS<float>>, float factor) { return std::string{"factor="} + std::to_string(factor); },
     [](bg::wp<bg::TS<float>> input, float factor) -> bg::wp<bg::TS<float>> { return scale(input, factor); });
 
-inline const auto scale_sink_graph = bg::graph(
-    "name"_m = "scale_sink_graph", [](bg::wp<bg::TS<float>> input, float factor) { (void)scale(input, factor); });
-
-struct struct_scale_graph {
-    bg::wp<bg::TS<float>> input;
-    float factor;
-
-    [[nodiscard]] bg::wp<bg::TS<float>> wire() const { return scale(input, factor); }
-};
-
-inline const auto reflected_scale_graph = bg::graph<struct_scale_graph>();
-
 using GraphScalar = bg::ScalarVariable<"GraphScalar">;
-
-inline const auto generic_identity_graph =
-    bg::graph("name"_m = "generic_identity_graph",
-              [](bg::wp<bg::TS<GraphScalar>> input) -> bg::wp<bg::TS<GraphScalar>> { return input; });
 
 static_assert(std::same_as<decltype(scale_graph(std::declval<bg::WiringPoint>(), 2.0F)), bg::wp<bg::TS<float>>>);
 
@@ -98,6 +82,8 @@ TEST_CASE("a graph template expands into the active graph", "[graph_template]") 
 }
 
 TEST_CASE("a graph template can omit its output", "[graph_template]") {
+    const auto scale_sink_graph = bg::graph(
+        "name"_m = "scale_sink_graph", [](bg::wp<bg::TS<float>> input, float factor) { (void)scale(input, factor); });
     bg::GraphWiring wiring;
 
     {
@@ -112,6 +98,9 @@ TEST_CASE("a graph template can omit its output", "[graph_template]") {
 }
 
 TEST_CASE("a graph signature resolves a scalar variable declaration", "[graph_template]") {
+    const auto generic_identity_graph =
+        bg::graph("name"_m = "generic_identity_graph",
+                  [](bg::wp<bg::TS<GraphScalar>> input) -> bg::wp<bg::TS<GraphScalar>> { return input; });
     const auto &time_series = bg::time_series_value_type(bg::double_type(), bg::TimeSeriesGuarantee::ordinary);
     const std::array<const bg::Type *, 1> arguments{&time_series};
 
@@ -121,7 +110,19 @@ TEST_CASE("a graph signature resolves a scalar variable declaration", "[graph_te
     CHECK(signature.output == &time_series);
 }
 
+namespace {
+
+struct struct_scale_graph {
+    bg::wp<bg::TS<float>> input;
+    float factor;
+
+    [[nodiscard]] bg::wp<bg::TS<float>> wire() const { return scale(input, factor); }
+};
+
+} // namespace
+
 TEST_CASE("a struct graph definition supplies its signature", "[graph_template]") {
+    const auto reflected_scale_graph = bg::graph<struct_scale_graph>();
     const auto &signature = reflected_scale_graph.signature();
     const auto &time_series = bg::time_series_value_type(bg::float_type(), bg::TimeSeriesGuarantee::ordinary);
     const bg::ResolvedSignature resolved =

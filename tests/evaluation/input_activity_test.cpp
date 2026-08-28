@@ -48,54 +48,15 @@ struct float_sink_definition {
     inline static float last_value{};
 };
 
-struct active_optional_observer_definition {
-    bg::In<bg::TS<float>, bg::optional> input;
-
-    void evaluate() const { observed[observation_count++] = input.valid(); }
-
-    inline static std::array<bool, 3> observed{};
-    inline static std::size_t observation_count{};
-};
-
-struct passive_optional_observer_definition {
-    bg::In<bg::TS<float>, bg::passive, bg::optional> input;
-
-    void evaluate() const {
-        ++evaluation_count;
-        last_valid = input.valid();
-    }
-
-    inline static int evaluation_count{};
-    inline static bool last_valid{};
-};
-
-struct passive_copy_definition {
-    bg::In<bg::TS<float>, bg::passive> input;
-    bg::Out<bg::TS<float>> output;
-
-    void evaluate() const {
-        ++evaluation_count;
-        output.set(input.value());
-    }
-
-    inline static int evaluation_count{};
-};
-
-inline const auto controlled_source = bg::node<controlled_source_definition>();
-inline const auto mixed_input = bg::node<mixed_input_definition>();
-inline const auto float_sink = bg::node<float_sink_definition>();
-inline const auto active_optional_observer = bg::node<active_optional_observer_definition>();
-inline const auto passive_optional_observer = bg::node<passive_optional_observer_definition>();
-inline const auto passive_copy = bg::node<passive_copy_definition>();
-
 [[nodiscard]] bg::EvaluationTime time(std::int64_t microseconds) {
     return bg::MIN_DT + std::chrono::microseconds{microseconds};
 }
 
-} // namespace
-
 TEST_CASE("an active input schedules evaluation and a passive input supplies its latest value",
           "[evaluation][input_activity]") {
+    const auto controlled_source = bg::node<controlled_source_definition>();
+    const auto mixed_input = bg::node<mixed_input_definition>();
+    const auto float_sink = bg::node<float_sink_definition>();
     controlled_source_definition::values = {1.0F, 10.0F};
     controlled_source_definition::valid = {true, true};
     mixed_input_definition::evaluation_count = 0;
@@ -133,8 +94,19 @@ TEST_CASE("an active input schedules evaluation and a passive input supplies its
     CHECK(float_sink_definition::last_value == 22.0F);
 }
 
+struct active_optional_observer_definition {
+    bg::In<bg::TS<float>, bg::optional> input;
+
+    void evaluate() const { observed[observation_count++] = input.valid(); }
+
+    inline static std::array<bool, 3> observed{};
+    inline static std::size_t observation_count{};
+};
+
 TEST_CASE("an active optional input schedules evaluation on invalidation and revalidation",
           "[evaluation][input_activity][validity]") {
+    const auto controlled_source = bg::node<controlled_source_definition>();
+    const auto active_optional_observer = bg::node<active_optional_observer_definition>();
     controlled_source_definition::values[0] = 1.0F;
     controlled_source_definition::valid[0] = true;
     active_optional_observer_definition::observation_count = 0;
@@ -163,7 +135,21 @@ TEST_CASE("an active optional input schedules evaluation on invalidation and rev
     CHECK(active_optional_observer_definition::observed == std::array{true, false, true});
 }
 
+struct passive_optional_observer_definition {
+    bg::In<bg::TS<float>, bg::passive, bg::optional> input;
+
+    void evaluate() const {
+        ++evaluation_count;
+        last_valid = input.valid();
+    }
+
+    inline static int evaluation_count{};
+    inline static bool last_valid{};
+};
+
 TEST_CASE("a passive optional input does not schedule evaluation", "[evaluation][input_activity][validity]") {
+    const auto controlled_source = bg::node<controlled_source_definition>();
+    const auto passive_optional_observer = bg::node<passive_optional_observer_definition>();
     controlled_source_definition::values[0] = 1.0F;
     controlled_source_definition::valid[0] = true;
     passive_optional_observer_definition::evaluation_count = 0;
@@ -195,8 +181,23 @@ TEST_CASE("a passive optional input does not schedule evaluation", "[evaluation]
     CHECK(passive_optional_observer_definition::evaluation_count == 1);
 }
 
+struct passive_copy_definition {
+    bg::In<bg::TS<float>, bg::passive> input;
+    bg::Out<bg::TS<float>> output;
+
+    void evaluate() const {
+        ++evaluation_count;
+        output.set(input.value());
+    }
+
+    inline static int evaluation_count{};
+};
+
 TEST_CASE("a passive required input propagates invalidation without evaluation",
           "[evaluation][input_activity][validity]") {
+    const auto controlled_source = bg::node<controlled_source_definition>();
+    const auto passive_copy = bg::node<passive_copy_definition>();
+    const auto active_optional_observer = bg::node<active_optional_observer_definition>();
     controlled_source_definition::values[0] = 1.0F;
     controlled_source_definition::valid[0] = true;
     passive_copy_definition::evaluation_count = 0;
@@ -239,3 +240,5 @@ TEST_CASE("a passive required input propagates invalidation without evaluation",
     REQUIRE(active_optional_observer_definition::observation_count == 3);
     CHECK(active_optional_observer_definition::observed[2]);
 }
+
+} // namespace
