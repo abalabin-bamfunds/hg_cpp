@@ -16,7 +16,17 @@
 namespace bg {
 
 class NodeTemplate;
+class TimeSeriesType;
 class WiringTemplate;
+
+struct WiringPointRecord {
+    static constexpr auto npos = static_cast<std::size_t>(-1);
+
+    std::size_t node_index;
+    std::size_t parent;
+    std::size_t item;
+    const TimeSeriesType *type;
+};
 
 class GraphWiring {
   public:
@@ -31,8 +41,11 @@ class GraphWiring {
 
     [[nodiscard]] std::span<const WiredNode> nodes() const noexcept { return nodes_; }
 
+    [[nodiscard]] std::span<const WiringPointRecord> wiring_points() const noexcept { return wiring_points_; }
+
   private:
     friend class NodeTemplate;
+    friend class WiringPoint;
     friend class WiringTemplate;
 
     [[nodiscard]] std::optional<WiringPoint> invoke(const WiringTemplate &wiring_template,
@@ -40,6 +53,7 @@ class GraphWiring {
     [[nodiscard]] std::optional<WiringPoint> add_node(const NodeTemplate &node_template, ResolvedSignature signature,
                                                       std::vector<const ScalarType *> state_types,
                                                       std::span<details::wiring_argument> arguments);
+    [[nodiscard]] WiringPoint select_item(WiringPoint source, std::size_t index);
 
     [[nodiscard]] const WiringPath &make_path(util::symbol name, util::symbol label);
     [[nodiscard]] util::symbol default_label() const;
@@ -52,6 +66,7 @@ class GraphWiring {
     std::pmr::unsynchronized_pool_resource fixed_memory_;
     std::optional<std::pmr::unsynchronized_pool_resource> variable_memory_;
     std::vector<WiredNode> nodes_;
+    std::vector<WiringPointRecord> wiring_points_;
     std::pmr::deque<WiringPath> paths_;
 };
 

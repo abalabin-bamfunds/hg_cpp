@@ -41,8 +41,6 @@ const auto scale_graph = bg::graph(
     "label"_m = [](bg::wp<bg::TS<float>>, float factor) { return std::string{"factor="} + std::to_string(factor); },
     [](bg::wp<bg::TS<float>> input, float factor) -> bg::wp<bg::TS<float>> { return scale(input, factor); });
 
-using GraphScalar = bg::ScalarVariable<"GraphScalar">;
-
 static_assert(std::same_as<decltype(scale_graph(std::declval<bg::WiringPoint>(), 2.0F)), bg::wp<bg::TS<float>>>);
 
 } // namespace
@@ -98,6 +96,8 @@ TEST_CASE("a graph template can omit its output", "[graph_template]") {
 }
 
 TEST_CASE("a graph signature resolves a scalar variable declaration", "[graph_template]") {
+    using GraphScalar = bg::ScalarVariable<"GraphScalar">;
+
     const auto generic_identity_graph =
         bg::graph("name"_m = "generic_identity_graph",
                   [](bg::wp<bg::TS<GraphScalar>> input) -> bg::wp<bg::TS<GraphScalar>> { return input; });

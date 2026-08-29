@@ -77,8 +77,7 @@ struct int_sink_definition {
     void evaluate() const {}
 };
 
-TEST_CASE("a runtime graph activates future scheduling at the start of evaluation",
-          "[evaluation][future_scheduling]") {
+TEST_CASE("a runtime graph activates future scheduling at the start of evaluation", "[evaluation][future_scheduling]") {
     const auto cancelling_source = bg::node<cancelling_source_definition>();
     const auto int_sink = bg::node<int_sink_definition>();
     auto wiring = bg::GraphWiring{};
@@ -225,8 +224,7 @@ struct invalid_time_definition {
     void evaluate() const {}
 };
 
-TEST_CASE("future scheduling requires a time after the current outer cycle",
-          "[evaluation][future_scheduling]") {
+TEST_CASE("future scheduling requires a time after the current outer cycle", "[evaluation][future_scheduling]") {
     const auto invalid_time = bg::node<invalid_time_definition>();
     bg::GraphWiring wiring;
     {

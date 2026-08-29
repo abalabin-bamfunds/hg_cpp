@@ -8,11 +8,11 @@
 
 namespace {
 
-using Dict = bg::Dict<std::int64_t, std::int64_t>;
-using Entry = std::pair<std::int64_t, std::int64_t>;
+using IntDictionary = bg::Dict<std::int64_t, std::int64_t>;
+using IntDictionaryEntry = std::pair<std::int64_t, std::int64_t>;
 
 struct inspect_scalar_dict {
-    bg::Scalar<Dict> values;
+    bg::Scalar<IntDictionary> values;
 
     void start(bg::EvaluationContext *context) const {
         auto result = std::int64_t{};
@@ -27,7 +27,7 @@ struct inspect_scalar_dict {
 
 TEST_CASE("a scalar dictionary is available from packed graph scalar storage", "[node][scalar][dict]") {
     const auto inspect = bg::node<inspect_scalar_dict>();
-    const auto input = bg::ScalarValue<Dict>{std::array{Entry{1, 2}, Entry{3, 4}}};
+    const auto input = bg::ScalarValue<IntDictionary>{std::array{IntDictionaryEntry{1, 2}, IntDictionaryEntry{3, 4}}};
     auto state = bg::GlobalState{};
 
     bg::run_graph([&] { inspect(input); }, state);
@@ -37,7 +37,7 @@ TEST_CASE("a scalar dictionary is available from packed graph scalar storage", "
 }
 
 struct inspect_scalar_dict_state {
-    bg::State<Dict> values;
+    bg::State<IntDictionary> values;
 
     void start(bg::EvaluationContext *context) const {
         values->insert_or_assign(1, 2);
@@ -61,15 +61,15 @@ TEST_CASE("scalar dictionary state is available during node start", "[node][stat
 }
 
 struct scalar_dict_source {
-    bg::Scalar<Dict> value;
-    bg::Out<bg::TS<Dict>> output;
+    bg::Scalar<IntDictionary> value;
+    bg::Out<bg::TS<IntDictionary>> output;
 
     void start() const { output.set_value(value); }
     void evaluate() const {}
 };
 
 struct scalar_dict_sink {
-    bg::In<bg::TS<Dict>> input;
+    bg::In<bg::TS<IntDictionary>> input;
 
     void evaluate(bg::EvaluationContext *context) const {
         auto result = std::int64_t{};
@@ -83,7 +83,7 @@ struct scalar_dict_sink {
 TEST_CASE("a scalar dictionary propagates through a value time series", "[node][time_series][scalar][dict]") {
     const auto source = bg::node<scalar_dict_source>();
     const auto sink = bg::node<scalar_dict_sink>();
-    const auto input = bg::ScalarValue<Dict>{std::array{Entry{1, 2}, Entry{3, 4}}};
+    const auto input = bg::ScalarValue<IntDictionary>{std::array{IntDictionaryEntry{1, 2}, IntDictionaryEntry{3, 4}}};
     auto state = bg::GlobalState{};
 
     bg::run_graph([&] { sink(source(input)); }, state);

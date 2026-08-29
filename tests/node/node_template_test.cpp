@@ -106,7 +106,7 @@ TEST_CASE("an aggregate node can omit its output", "[node_template]") {
     const bg::ResolvedSignature signature = sink_node.signature().resolve(arguments);
 
     CHECK(signature.output == nullptr);
-    CHECK(sink_node.output_storage_representation(signature, {}) == nullptr);
+    CHECK(sink_node.output_storage_representation(signature, {}, {}) == nullptr);
 }
 
 namespace {

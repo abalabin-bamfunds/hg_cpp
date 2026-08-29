@@ -14,14 +14,6 @@
 
 namespace {
 
-struct equal_hash {
-    template <typename T> [[nodiscard]] std::size_t operator()(const T &) const noexcept { return 1; }
-};
-
-} // namespace
-
-namespace {
-
 struct string_hash {
     using is_transparent = void;
 
@@ -140,6 +132,14 @@ TEST_CASE("a hash dictionary rolls back a failed key construction", "[hash_dicti
     dictionary.release(memory);
     CHECK(memory.allocations() == 0);
 }
+
+namespace {
+
+struct equal_hash {
+    template <typename T> [[nodiscard]] std::size_t operator()(const T &) const noexcept { return 1; }
+};
+
+} // namespace
 
 TEST_CASE("a hash dictionary retains committed values after each allocation failure", "[hash_dictionary]") {
     auto failed_allocations = std::size_t{};

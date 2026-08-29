@@ -335,6 +335,10 @@ class runtime_sparse_bunch {
         blocks_.release(layout, memory);
     }
 
+    void release(const runtime_item_layout &layout, std::pmr::memory_resource &memory) noexcept {
+        blocks_.release(layout, memory);
+    }
+
     [[nodiscard]] void *get(size_type position, const runtime_item_layout &layout) noexcept {
         return blocks_.get(position, layout);
     }

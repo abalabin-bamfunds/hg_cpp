@@ -27,6 +27,17 @@ one evaluation.
 Inner graph execution and reference-bound inputs must preserve the same forward
 order.
 
+## Output changes
+
+Collection output operations record changed item paths during the node
+invocation. After the function returns, the runtime schedules subscribers for
+the output and its changed items. It uses each path to locate compiled and
+runtime subscriber data directly.
+
+One evaluation scratch area serves the outer graph and its inner graphs. Nested
+node invocations use nested positions in this area. Parallel evaluation uses
+one scratch area per worker thread.
+
 ## Required input invalidation
 
 When a node changes from all required inputs valid to at least one required

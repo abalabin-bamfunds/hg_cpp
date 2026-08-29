@@ -1,5 +1,6 @@
 #include <bg/node/input.hpp>
 #include <bg/scalar/cpp_storage_representation.hpp>
+#include <bg/time_series/list/input_view.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -50,10 +51,11 @@ TEST_CASE("a typed input reads its time-series value", "[node_api]") {
     CHECK(&generic_value->type() == &bg::float_type());
 
     const bg::TimeSeriesInputView &any_input = generic_input;
-    const auto any_value = any_input.value_view();
+    const auto any_value = static_cast<const bg::TimeSeriesValueInputView &>(any_input).erased_value_view();
     CHECK(&any_value->type() == &bg::float_type());
 
-    const auto visited_valid = input->visit([](const bg::TimeSeriesValueInputView *view) { return view->valid(); });
+    const auto visited_valid = input->visit([](const bg::TimeSeriesValueInputView *view) { return view->valid(); },
+                                            [](const auto *) { return false; });
 
     REQUIRE(visited_valid);
     CHECK(*visited_valid);
@@ -83,7 +85,7 @@ TEST_CASE("an arbitrary time-series input returns an erased scalar view", "[node
     const auto updated = bg::MIN_DT + std::chrono::microseconds{1};
     const auto value = 1.25F;
     const auto input = Input{updated, &value, *prototype};
-    const auto value_view = input.value_view();
+    const auto value_view = static_cast<const bg::TimeSeriesValueInputView &>(*input.operator->()).erased_value_view();
 
     STATIC_CHECK(std::same_as<std::remove_cv_t<decltype(value_view)>, bg::Scalar<>>);
     CHECK(&value_view->type() == &bg::float_type());

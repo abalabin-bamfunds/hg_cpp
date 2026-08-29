@@ -26,6 +26,21 @@ TEST_CASE("an occupancy index allocates and reuses positions", "[occupancy_index
     CHECK(memory.allocations() == 0);
 }
 
+TEST_CASE("an occupancy index stores its first 56 positions without allocation", "[occupancy_index]") {
+    auto memory = counting_memory_resource{};
+    auto index = bg::util::occupancy_index{};
+
+    for (auto expected = std::uint32_t{}; expected < 56; ++expected) {
+        CHECK(index.acquire(memory) == expected);
+    }
+
+    CHECK(memory.allocations() == 0);
+    CHECK(index.acquire(memory) == 56);
+    CHECK(memory.allocations() == 1);
+
+    index.release(memory);
+}
+
 TEST_CASE("an occupancy index supports explicit sparse positions", "[occupancy_index]") {
     auto memory = counting_memory_resource{};
     auto index = bg::util::occupancy_index{};
@@ -39,7 +54,7 @@ TEST_CASE("an occupancy index supports explicit sparse positions", "[occupancy_i
 
     CHECK(index.reset(130));
     index.trim(memory);
-    CHECK(index.capacity() == 64);
+    CHECK(index.capacity() == 56);
 
     index.release(memory);
     CHECK(memory.allocations() == 0);

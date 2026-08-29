@@ -8,8 +8,12 @@
 namespace bg {
 
 class TimeSeriesValueInputView;
+class TimeSeriesListInputView;
+class TimeSeriesSetInputView;
+class TimeSeriesDictionaryInputView;
 
-using TimeSeriesInputViewTypes = ddv::mux<TimeSeriesValueInputView>;
+using TimeSeriesInputViewTypes =
+    ddv::mux<TimeSeriesValueInputView, TimeSeriesListInputView, TimeSeriesSetInputView, TimeSeriesDictionaryInputView>;
 
 class TimeSeriesInputView : public TimeSeriesView,
                             public ddv::visitable<TimeSeriesInputView, TimeSeriesInputViewTypes> {
@@ -19,11 +23,6 @@ class TimeSeriesInputView : public TimeSeriesView,
     }
 
     [[nodiscard]] const void *data() const noexcept { return value_; }
-
-    [[nodiscard]] Scalar<> value_view() const { return Scalar<>::from(scalar_view()); }
-
-  protected:
-    [[nodiscard]] virtual details::ErasedScalarView scalar_view() const = 0;
 };
 
 class TimeSeriesValueInputView : public TimeSeriesInputView {
@@ -35,6 +34,11 @@ class TimeSeriesValueInputView : public TimeSeriesInputView {
     template <details::scalar_variable Variable> [[nodiscard]] Scalar<Variable> value_view() const {
         return Scalar<Variable>::from(scalar_view());
     }
+
+    [[nodiscard]] Scalar<> erased_value_view() const { return Scalar<>::from(scalar_view()); }
+
+  protected:
+    [[nodiscard]] virtual details::ErasedScalarView scalar_view() const = 0;
 };
 
 template <typename T> class TypedTimeSeriesValueInputView final : public TimeSeriesValueInputView {

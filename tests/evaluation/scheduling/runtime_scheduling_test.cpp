@@ -19,15 +19,6 @@ struct constant_definition {
     void evaluate() const { output.set(value); }
 };
 
-struct indexed_definition {
-    int index;
-
-    void evaluate() const { evaluation_order[evaluation_count++] = index; }
-
-    inline static std::array<int, 130> evaluation_order{};
-    inline static std::size_t evaluation_count{};
-};
-
 [[nodiscard]] bg::EvaluationTime time(std::int64_t microseconds) {
     return bg::MIN_DT + std::chrono::microseconds{microseconds};
 }
@@ -82,6 +73,19 @@ TEST_CASE("a runtime graph evaluates scheduled nodes in topological order", "[ev
     runtime.evaluate(time(3));
     CHECK(add_definition::evaluation_count == 2);
 }
+
+namespace {
+
+struct indexed_definition {
+    int index;
+
+    void evaluate() const { evaluation_order[evaluation_count++] = index; }
+
+    inline static std::array<int, 130> evaluation_order{};
+    inline static std::size_t evaluation_count{};
+};
+
+} // namespace
 
 TEST_CASE("a runtime graph processes set scheduling bits in node order", "[evaluation][scheduling]") {
     const auto indexed = bg::node<indexed_definition>();

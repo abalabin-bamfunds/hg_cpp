@@ -49,13 +49,18 @@ Collection invalidation has these effects on an input view:
 
 - `TSS` reports every visible item as removed
 - `TSD` reports every visible key as removed
-- `TSL` and `TSB` make every item view invalid
+- `TSB` makes every item view invalid
 
 Contained time series storage and values remain unchanged. A `valid_items` TSD
 view reports only its visible keys.
 
 On revalidation, `TSS` and `TSD` report their visible entries as added. Each
-valid `TSL` and `TSB` item behaves as a first update.
+valid `TSB` item behaves as a first update.
+
+A TSL is valid when at least one item is valid. Invalidating a TSL invalidates
+its items. The last valid item becoming invalid invalidates the TSL. The first
+item becoming valid revalidates it. Each item validity change records that item
+as updated.
 
 ## Nodes
 

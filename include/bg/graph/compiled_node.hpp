@@ -4,6 +4,7 @@
 #include <bg/graph/evaluation_function.hpp>
 #include <bg/node/input_properties.hpp>
 #include <bg/node/invalidation.hpp>
+#include <bg/time_series/input_view.hpp>
 #include <bg/time_series/output_view.hpp>
 
 #include <cstddef>
@@ -17,11 +18,12 @@ namespace bg {
 class CompiledGraphBuilder;
 class ScalarStorageRepresentation;
 class ScalarInputView;
+class TimeSeriesInputView;
 class TimeSeriesValueInputView;
 class TimeSeriesOutputView;
 
 struct TimeSeriesInputViewPrototype {
-    const TimeSeriesValueInputView *view;
+    const TimeSeriesInputView *view;
 };
 
 struct ScalarInputViewPrototype {
@@ -63,6 +65,77 @@ class Subscriber {
     static constexpr std::uint32_t node_index_mask = active_optional_flag - 1;
 
     std::uint32_t node_index_and_flags_;
+};
+
+class ItemSubscribers {
+  public:
+    ItemSubscribers(std::uint32_t item, std::uint32_t subscriber_count, std::uint32_t subtree_size,
+                    std::uint32_t sampled_last_updated_offset) noexcept
+        : item_{item}, subscriber_count_{subscriber_count}, subtree_size_{subtree_size},
+          sampled_last_updated_offset_{sampled_last_updated_offset} {}
+
+    [[nodiscard]] std::size_t item() const noexcept { return item_; }
+
+    [[nodiscard]] std::span<const Subscriber> subscribers() const noexcept {
+        return {reinterpret_cast<const Subscriber *>(this + 1), subscriber_count_};
+    }
+
+    [[nodiscard]] std::size_t sampled_last_updated_offset() const noexcept { return sampled_last_updated_offset_; }
+
+    [[nodiscard]] const ItemSubscribers *first_item() const noexcept {
+        const auto subscribers = this->subscribers();
+        return reinterpret_cast<const ItemSubscribers *>(subscribers.data() + subscribers.size());
+    }
+
+    [[nodiscard]] const ItemSubscribers *next() const noexcept {
+        const auto *address = reinterpret_cast<const std::byte *>(this);
+        return reinterpret_cast<const ItemSubscribers *>(address + subtree_size_);
+    }
+
+    [[nodiscard]] const ItemSubscribers *find_item(std::size_t item) const noexcept {
+        auto *candidate = first_item();
+        while (candidate != next()) {
+            if (candidate->item() == item) {
+                return candidate;
+            }
+
+            candidate = candidate->next();
+        }
+
+        return nullptr;
+    }
+
+  private:
+    std::uint32_t item_;
+    std::uint32_t subscriber_count_;
+    std::uint32_t subtree_size_;
+    std::uint32_t sampled_last_updated_offset_;
+};
+
+struct ItemSubscriptionRoot {
+    std::uint32_t byte_size;
+
+    [[nodiscard]] const ItemSubscribers *first_item() const noexcept {
+        return reinterpret_cast<const ItemSubscribers *>(this + 1);
+    }
+
+    [[nodiscard]] const std::byte *end() const noexcept {
+        return reinterpret_cast<const std::byte *>(first_item()) + byte_size;
+    }
+
+    [[nodiscard]] const ItemSubscribers *find_item(std::size_t item) const noexcept {
+        auto *candidate = first_item();
+        const auto *last = reinterpret_cast<const ItemSubscribers *>(end());
+        while (candidate != last) {
+            if (candidate->item() == item) {
+                return candidate;
+            }
+
+            candidate = candidate->next();
+        }
+
+        return nullptr;
+    }
 };
 
 // Locates a time series in runtime storage or a scalar in the packed node record.
@@ -153,9 +226,18 @@ class CompiledNode {
         return {first, subscriber_count()};
     }
 
+    [[nodiscard]] const ItemSubscriptionRoot *item_subscriptions() const noexcept {
+        if ((counts_ & item_subscriptions_flag) == 0) {
+            return nullptr;
+        }
+
+        auto address = reinterpret_cast<std::uintptr_t>(subscribers().data() + subscribers().size());
+        address = align(address, alignof(ItemSubscriptionRoot));
+        return reinterpret_cast<const ItemSubscriptionRoot *>(address);
+    }
+
     [[nodiscard]] std::size_t state_offset() const noexcept {
-        const auto subscriber_span = subscribers();
-        const auto *offset = reinterpret_cast<const std::uint32_t *>(subscriber_span.data() + subscriber_span.size());
+        const auto *offset = reinterpret_cast<const std::uint32_t *>(state_address());
 
         return *offset & state_offset_mask;
     }
@@ -165,7 +247,7 @@ class CompiledNode {
             return nullptr;
         }
 
-        auto address = reinterpret_cast<std::uintptr_t>(subscribers().data() + subscribers().size());
+        auto address = state_address();
         address = align(address + sizeof(std::uint32_t), alignof(EvaluationFunction));
 
         return *reinterpret_cast<const EvaluationFunction *>(address);
@@ -189,8 +271,13 @@ class CompiledNode {
         return *reinterpret_cast<const EvaluationFunction *>(address);
     }
 
-    [[nodiscard]] const TimeSeriesValueInputView &time_series_input_view_prototype(std::size_t index) const noexcept {
+    [[nodiscard]] const TimeSeriesInputView &time_series_input_view_prototype(std::size_t index) const noexcept {
         return *reinterpret_cast<const TimeSeriesInputViewPrototype *>(input_view_prototypes_address())[index].view;
+    }
+
+    [[nodiscard]] const TimeSeriesValueInputView &
+    time_series_value_input_view_prototype(std::size_t index) const noexcept {
+        return static_cast<const TimeSeriesValueInputView &>(time_series_input_view_prototype(index));
     }
 
     [[nodiscard]] const ScalarInputView &scalar_input_view_prototype(std::size_t time_series_input_count,
@@ -222,6 +309,8 @@ class CompiledNode {
 
     static constexpr std::uint32_t parameter_count_bits = 10;
     static constexpr std::uint32_t parameter_count_mask = (std::uint32_t{1} << parameter_count_bits) - 1;
+    static constexpr std::uint32_t item_subscriptions_flag = std::uint32_t{1} << 31;
+    static constexpr std::uint32_t subscriber_count_mask = item_subscriptions_flag - 1;
     static constexpr std::uint32_t no_output_flag = std::uint32_t{1} << 31;
     static constexpr std::uint32_t state_flag = std::uint32_t{1} << 30;
     static constexpr std::uint32_t output_offset_mask = (std::uint32_t{1} << 30) - 1;
@@ -232,25 +321,28 @@ class CompiledNode {
 
     CompiledNode(EvaluationFunction evaluation_function, std::uint32_t output_last_updated_offset,
                  std::uint32_t output_value_offset, std::uint32_t parameter_count, std::uint32_t subscriber_count,
-                 bool has_output, bool has_state, InvalidationMode invalidation_mode) noexcept
+                 bool has_output, bool has_state, bool has_item_subscriptions,
+                 InvalidationMode invalidation_mode) noexcept
         : evaluation_function_(evaluation_function),
           output_last_updated_offset_(output_last_updated_offset | (has_output ? std::uint32_t{} : no_output_flag) |
                                       (has_state ? state_flag : std::uint32_t{})),
           output_value_offset_(output_value_offset |
                                (static_cast<std::uint32_t>(invalidation_mode) << invalidation_mode_shift)),
-          counts_(parameter_count | (subscriber_count << parameter_count_bits)) {}
+          counts_(parameter_count | (subscriber_count << parameter_count_bits) |
+                  (has_item_subscriptions ? item_subscriptions_flag : std::uint32_t{})) {}
 
     [[nodiscard]] std::uint32_t parameter_count() const noexcept { return counts_ & parameter_count_mask; }
 
-    [[nodiscard]] std::uint32_t subscriber_count() const noexcept { return counts_ >> parameter_count_bits; }
+    [[nodiscard]] std::uint32_t subscriber_count() const noexcept {
+        return (counts_ & subscriber_count_mask) >> parameter_count_bits;
+    }
 
     [[nodiscard]] static std::uintptr_t align(std::uintptr_t address, std::size_t alignment) noexcept {
         return (address + alignment - 1) & ~(alignment - 1);
     }
 
     [[nodiscard]] std::uintptr_t optional_metadata_address() const noexcept {
-        const auto subscriber_span = subscribers();
-        auto address = reinterpret_cast<std::uintptr_t>(subscriber_span.data() + subscriber_span.size());
+        auto address = state_address();
 
         if (has_state()) {
             address += sizeof(std::uint32_t);
@@ -270,21 +362,19 @@ class CompiledNode {
     }
 
     [[nodiscard]] bool state_requires_destruction() const noexcept {
-        const auto subscriber_span = subscribers();
-        const auto *offset = reinterpret_cast<const std::uint32_t *>(subscriber_span.data() + subscriber_span.size());
+        const auto *offset = reinterpret_cast<const std::uint32_t *>(state_address());
 
         return (*offset & state_destruction_flag) != 0;
     }
 
     [[nodiscard]] bool has_state_metadata() const noexcept {
-        const auto subscriber_span = subscribers();
-        const auto *offset = reinterpret_cast<const std::uint32_t *>(subscriber_span.data() + subscriber_span.size());
+        const auto *offset = reinterpret_cast<const std::uint32_t *>(state_address());
 
         return (*offset & state_metadata_flag) != 0;
     }
 
     [[nodiscard]] const StateMetadataCounts &state_metadata_counts() const noexcept {
-        auto address = reinterpret_cast<std::uintptr_t>(subscribers().data() + subscribers().size());
+        auto address = state_address();
         address += sizeof(std::uint32_t);
         if (state_requires_destruction()) {
             address = align(address, alignof(EvaluationFunction)) + sizeof(EvaluationFunction);
@@ -298,6 +388,16 @@ class CompiledNode {
         address = align(address, alignof(std::uint32_t));
 
         return reinterpret_cast<const std::uint32_t *>(address);
+    }
+
+    [[nodiscard]] std::uintptr_t state_address() const noexcept {
+        const auto subscriber_span = subscribers();
+        auto address = reinterpret_cast<std::uintptr_t>(subscriber_span.data() + subscriber_span.size());
+        if (const auto *root = item_subscriptions()) {
+            address = reinterpret_cast<std::uintptr_t>(root->end());
+        }
+
+        return address;
     }
 
     [[nodiscard]] std::uintptr_t input_view_prototypes_address() const noexcept {
@@ -317,6 +417,8 @@ class CompiledNode {
 
 static_assert(sizeof(ParameterBinding) == 8);
 static_assert(sizeof(Subscriber) == 4);
+static_assert(sizeof(ItemSubscribers) == 16);
+static_assert(sizeof(ItemSubscriptionRoot) == sizeof(std::uint32_t));
 static_assert(sizeof(TimeSeriesInputViewPrototype) == sizeof(void *));
 static_assert(sizeof(ScalarInputViewPrototype) == sizeof(void *));
 static_assert(sizeof(OutputViewPrototype) == sizeof(void *));

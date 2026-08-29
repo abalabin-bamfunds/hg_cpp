@@ -5,6 +5,7 @@
 #include <bg/node/node_template.hpp>
 #include <bg/scalar/storage_representation.hpp>
 #include <bg/scalar/view.hpp>
+#include <bg/time_series/storage_representation.hpp>
 #include <bg/type/signature.hpp>
 #include <bg/type/time_series_value_type.hpp>
 #include <bg/type/type.hpp>
@@ -15,6 +16,7 @@
 #include <cstdint>
 #include <limits>
 #include <memory>
+#include <ranges>
 #include <span>
 #include <stdexcept>
 #include <type_traits>
@@ -27,7 +29,7 @@ namespace {
 
 constexpr std::size_t max_packed_offset = (std::size_t{1} << 30) - 1;
 constexpr std::size_t max_parameter_count = (std::size_t{1} << 10) - 1;
-constexpr std::size_t max_subscriber_count = (std::size_t{1} << 22) - 1;
+constexpr std::size_t max_subscriber_count = (std::size_t{1} << 21) - 1;
 constexpr std::uint32_t no_wiring_path = std::numeric_limits<std::uint32_t>::max();
 
 using ScheduleWord = details::ScheduleWord;
@@ -36,6 +38,7 @@ using SchedulingInfo = details::SchedulingInfo;
 static_assert(std::is_trivially_copyable_v<EvaluationTime>);
 static_assert(alignof(EvaluationFunction) >= alignof(std::uint32_t));
 static_assert(alignof(const ScalarStorageRepresentation *) >= alignof(std::uint32_t));
+static_assert(alignof(const TimeSeriesStorageRepresentation *) >= alignof(std::uint32_t));
 
 [[nodiscard]] std::size_t align_up(std::size_t offset, std::size_t alignment) noexcept {
     const auto remainder = offset % alignment;
@@ -114,6 +117,8 @@ struct FixedNodeLayout {
     std::size_t offset{};
     StorageSection parameters;
     StorageSection subscribers;
+    StorageSection item_subscription_root;
+    StorageSection item_subscribers;
     StorageSection state_offset;
     StorageSection state_destruction_function;
     StorageSection state_metadata_counts;
@@ -128,10 +133,18 @@ struct FixedNodeLayout {
     std::size_t alignment{};
 };
 
+struct ItemSubscriptionPlan {
+    std::uint32_t item;
+    std::size_t wiring_point;
+    std::uint32_t sampled_last_updated_offset{};
+    std::vector<Subscriber> subscribers;
+    std::vector<ItemSubscriptionPlan> items;
+};
+
 struct OutputLayout {
     std::uint32_t last_updated_offset{};
     std::uint32_t value_offset{};
-    const ScalarStorageRepresentation *storage_representation{};
+    const TimeSeriesStorageRepresentation *storage_representation{};
 };
 
 struct StateLayout {
@@ -148,6 +161,7 @@ struct RuntimeStorageLayout {
 
 struct NodePlan {
     std::vector<Subscriber> subscribers;
+    std::vector<ItemSubscriptionPlan> item_subscriptions;
     InvalidationBehavior invalidation;
     OutputLayout output;
     StateLayout state;
@@ -195,6 +209,7 @@ struct FixedStorageLayout {
 
 struct CompilationPlan {
     std::span<const WiredNode> nodes;
+    std::span<const WiringPointRecord> wiring_points;
     std::vector<NodePlan> node_plans;
     WiringPathLayout wiring_paths;
     NodeFunctionLayout starts;
@@ -243,7 +258,73 @@ struct ConstructedScalar {
     return result;
 }
 
-void plan_subscribers(std::span<const WiredNode> nodes, std::span<NodePlan> node_plans) {
+[[nodiscard]] std::size_t root_source_node(std::size_t source, std::span<const WiringPointRecord> wiring_points) {
+    while (wiring_points[source].parent != WiringPointRecord::npos) {
+        source = wiring_points[source].parent;
+    }
+
+    return wiring_points[source].node_index;
+}
+
+[[nodiscard]] OutputLayout physical_source_output(std::size_t source, std::span<const WiringPointRecord> wiring_points,
+                                                  std::span<const NodePlan> node_plans) {
+    const auto &record = wiring_points[source];
+    if (record.parent == WiringPointRecord::npos) {
+        return node_plans[record.node_index].output;
+    }
+
+    const auto parent = physical_source_output(record.parent, wiring_points, node_plans);
+    const auto item = parent.storage_representation->fixed_item(record.item);
+
+    return {
+        packed_offset(parent.value_offset + item.last_updated_offset, "runtime storage reaches 1 GiB"),
+        packed_offset(parent.value_offset + item.value_offset, "runtime storage reaches 1 GiB"),
+        &item.representation,
+    };
+}
+
+[[nodiscard]] const ItemSubscriptionPlan *find_item_subscription(std::span<const ItemSubscriptionPlan> items,
+                                                                 std::size_t wiring_point) noexcept {
+    for (const auto &item : items) {
+        if (item.wiring_point == wiring_point) {
+            return &item;
+        }
+        if (const auto *result = find_item_subscription(item.items, wiring_point)) {
+            return result;
+        }
+    }
+
+    return nullptr;
+}
+
+[[nodiscard]] OutputLayout source_output(std::size_t source, std::span<const WiringPointRecord> wiring_points,
+                                         std::span<const NodePlan> node_plans) {
+    auto result = physical_source_output(source, wiring_points, node_plans);
+    if (wiring_points[source].parent == WiringPointRecord::npos) {
+        return result;
+    }
+
+    const auto source_node = root_source_node(source, wiring_points);
+    result.last_updated_offset =
+        find_item_subscription(node_plans[source_node].item_subscriptions, source)->sampled_last_updated_offset;
+    return result;
+}
+
+void plan_subscribers(std::span<const WiredNode> nodes, std::span<const WiringPointRecord> wiring_points,
+                      std::span<NodePlan> node_plans) {
+    const auto add_subscriber = [](std::vector<Subscriber> &subscribers, std::uint32_t node_index, bool is_active,
+                                   bool is_required) {
+        if (!subscribers.empty() && subscribers.back().node_index() == node_index) {
+            const auto &existing = subscribers.back();
+            subscribers.back() =
+                Subscriber{node_index, existing.active() || is_active, existing.required() || is_required,
+                           existing.active_optional() || (is_active && !is_required)};
+            return;
+        }
+
+        subscribers.emplace_back(node_index, is_active, is_required, is_active && !is_required);
+    };
+
     for (auto target_index = std::size_t{}; target_index < nodes.size(); ++target_index) {
         const auto &target = nodes[target_index];
         auto input_index = std::size_t{};
@@ -253,37 +334,60 @@ void plan_subscribers(std::span<const WiredNode> nodes, std::span<NodePlan> node
                 continue;
             }
 
-            const auto source_index = target.input_sources()[input_index++];
+            auto source = target.input_sources()[input_index++];
+            const auto source_index = root_source_node(source, wiring_points);
             const auto is_active = parameter.activity == active;
             const auto is_required = parameter.validity == required;
-            if (!is_active && !is_required) {
+            const auto subscriber_index = static_cast<std::uint32_t>(target_index);
+            if (wiring_points[source].parent == WiringPointRecord::npos) {
+                if (is_active || is_required) {
+                    add_subscriber(node_plans[source_index].subscribers, subscriber_index, is_active, is_required);
+                }
                 continue;
             }
 
-            auto &source_subscribers = node_plans[source_index].subscribers;
-            const auto subscriber_index = static_cast<std::uint32_t>(target_index);
-            if (!source_subscribers.empty() && source_subscribers.back().node_index() == subscriber_index) {
-                const auto &existing = source_subscribers.back();
-                source_subscribers.back() =
-                    Subscriber{subscriber_index, existing.active() || is_active, existing.required() || is_required,
-                               existing.active_optional() || (is_active && !is_required)};
-            } else {
-                source_subscribers.emplace_back(subscriber_index, is_active, is_required, is_active && !is_required);
+            auto path = std::vector<std::size_t>{};
+            while (wiring_points[source].parent != WiringPointRecord::npos) {
+                path.push_back(source);
+                source = wiring_points[source].parent;
+            }
+
+            auto *items = &node_plans[source_index].item_subscriptions;
+            ItemSubscriptionPlan *leaf = nullptr;
+            for (const auto wiring_point : path | std::views::reverse) {
+                const auto item = wiring_points[wiring_point].item;
+                auto entry = std::ranges::find(*items, item, &ItemSubscriptionPlan::item);
+                if (entry == items->end()) {
+                    entry = items->insert(entry, ItemSubscriptionPlan{
+                                                     .item = static_cast<std::uint32_t>(item),
+                                                     .wiring_point = wiring_point,
+                                                     .sampled_last_updated_offset = 0,
+                                                     .subscribers = {},
+                                                     .items = {},
+                                                 });
+                }
+                leaf = &*entry;
+                items = &entry->items;
+            }
+
+            if (is_active || is_required) {
+                add_subscriber(leaf->subscribers, subscriber_index, is_active, is_required);
             }
         }
     }
 }
 
 [[nodiscard]] std::vector<const ScalarStorageRepresentation *>
-parameter_storage_representations(const WiredNode &node, std::span<const NodePlan> node_plans) {
+parameter_storage_representations(const WiredNode &node, std::span<const WiringPointRecord> wiring_points,
+                                  std::span<const NodePlan> node_plans) {
     auto parameter_storage_representations = std::vector<const ScalarStorageRepresentation *>{};
     parameter_storage_representations.reserve(node.signature().parameters.size());
     auto input_index = std::size_t{};
     auto scalar_index = std::size_t{};
     for (const auto &parameter : node.signature().parameters) {
         if (parameter.type->is_time_series()) {
-            const auto source_index = node.input_sources()[input_index++];
-            parameter_storage_representations.push_back(node_plans[source_index].output.storage_representation);
+            const auto output = source_output(node.input_sources()[input_index++], wiring_points, node_plans);
+            parameter_storage_representations.push_back(output.storage_representation->scalar_storage_representation());
         } else {
             const auto &scalar = node.scalar_values()[scalar_index++];
             parameter_storage_representations.push_back(scalar.has_value() ? &scalar.storage_representation()
@@ -294,24 +398,28 @@ parameter_storage_representations(const WiredNode &node, std::span<const NodePla
     return parameter_storage_representations;
 }
 
-[[nodiscard]] const ScalarStorageRepresentation *
-find_output_storage_representation(const WiredNode &node, std::span<const NodePlan> node_plans) {
-    const auto representations = parameter_storage_representations(node, node_plans);
+[[nodiscard]] const TimeSeriesStorageRepresentation *
+find_output_storage_representation(const WiredNode &node, std::span<const WiringPointRecord> wiring_points,
+                                   std::span<const NodePlan> node_plans) {
+    const auto parameter_representations = parameter_storage_representations(node, wiring_points, node_plans);
+    auto input_representations = std::vector<const TimeSeriesStorageRepresentation *>{};
+    input_representations.reserve(node.input_sources().size());
+    for (const auto source : node.input_sources()) {
+        input_representations.push_back(source_output(source, wiring_points, node_plans).storage_representation);
+    }
 
-    return node.node_template().output_storage_representation(node.signature(), representations);
+    return node.node_template().output_storage_representation(node.signature(), parameter_representations,
+                                                              input_representations);
 }
 
 [[nodiscard]] OutputLayout add_output_layout(StorageLayout &storage, const WiredNode &node,
+                                             std::span<const WiringPointRecord> wiring_points,
                                              std::span<const NodePlan> node_plans) {
     if (node.signature().output == nullptr) {
         return {};
     }
 
-    if (dynamic_cast<const TimeSeriesValueType *>(node.signature().output) == nullptr) {
-        throw std::logic_error{"runtime storage requires a time series value output"};
-    }
-
-    const auto *representation = find_output_storage_representation(node, node_plans);
+    const auto *representation = find_output_storage_representation(node, wiring_points, node_plans);
     if (representation == nullptr) {
         throw std::logic_error{"node output has no storage representation"};
     }
@@ -320,16 +428,17 @@ find_output_storage_representation(const WiredNode &node, std::span<const NodePl
     }
 
     const auto last_updated = storage.add<EvaluationTime>();
-    const auto value = storage.add_bytes(representation->size(), representation->alignment());
+    const auto value = storage.add_bytes(representation->value_size(), representation->value_alignment());
 
     return {packed_offset(last_updated.offset, "runtime storage reaches 1 GiB"),
             packed_offset(value.offset, "runtime storage reaches 1 GiB"), representation};
 }
 
 [[nodiscard]] StateLayout add_state_layout(StorageLayout &storage, const WiredNode &node,
+                                           std::span<const WiringPointRecord> wiring_points,
                                            std::span<const NodePlan> node_plans) {
     auto layout = node.node_template().state_layout(
-        node.signature(), parameter_storage_representations(node, node_plans), node.state_types());
+        node.signature(), parameter_storage_representations(node, wiring_points, node_plans), node.state_types());
     if (layout.size == 0) {
         return {};
     }
@@ -347,14 +456,42 @@ void plan_runtime_storage(CompilationPlan &plan, std::size_t schedule_word_count
         (void)storage.add<void *>();
     }
 
+    const auto add_item_samples = [&](this const auto &self, std::span<ItemSubscriptionPlan> items) -> void {
+        for (auto &item : items) {
+            item.sampled_last_updated_offset =
+                packed_offset(storage.add<EvaluationTime>().offset, "runtime storage reaches 1 GiB");
+            self(item.items);
+        }
+    };
+
     for (auto i = std::size_t{}; i < plan.nodes.size(); ++i) {
-        plan.node_plans[i].output = add_output_layout(storage, plan.nodes[i], plan.node_plans);
-        plan.node_plans[i].state = add_state_layout(storage, plan.nodes[i], plan.node_plans);
+        plan.node_plans[i].output = add_output_layout(storage, plan.nodes[i], plan.wiring_points, plan.node_plans);
+        add_item_samples(plan.node_plans[i].item_subscriptions);
+        plan.node_plans[i].state = add_state_layout(storage, plan.nodes[i], plan.wiring_points, plan.node_plans);
     }
 
     (void)packed_offset(storage.size(), "runtime storage reaches 1 GiB");
 
     plan.runtime = {schedule_word_count, storage.size(), storage.alignment()};
+}
+
+[[nodiscard]] std::size_t item_subscriber_size(std::span<const ItemSubscriptionPlan> items) {
+    auto result = std::size_t{};
+    for (const auto &item : items) {
+        if (item.subscribers.size() > std::numeric_limits<std::uint32_t>::max() ||
+            item.items.size() > std::numeric_limits<std::uint32_t>::max()) {
+            throw std::length_error{"a time series item has too many subscriptions"};
+        }
+
+        result += sizeof(ItemSubscribers) + item.subscribers.size() * sizeof(Subscriber);
+        result += item_subscriber_size(item.items);
+    }
+
+    return result;
+}
+
+[[nodiscard]] std::size_t item_subscriber_size(const ItemSubscriptionPlan &item) {
+    return sizeof(ItemSubscribers) + item.subscribers.size() * sizeof(Subscriber) + item_subscriber_size(item.items);
 }
 
 [[nodiscard]] FixedNodeLayout make_node_layout(const WiredNode &node, const NodePlan &node_plan) {
@@ -371,6 +508,11 @@ void plan_runtime_storage(CompilationPlan &plan, std::size_t schedule_word_count
     auto result = FixedNodeLayout{};
     result.parameters = storage.add<ParameterBinding>(node.signature().parameters.size());
     result.subscribers = storage.add<Subscriber>(node_plan.subscribers.size());
+    if (!node_plan.item_subscriptions.empty()) {
+        result.item_subscription_root = storage.add<ItemSubscriptionRoot>();
+        result.item_subscribers =
+            storage.add_bytes(item_subscriber_size(node_plan.item_subscriptions), alignof(ItemSubscribers));
+    }
     if (node_plan.state.node.size != 0) {
         result.state_offset = storage.add<std::uint32_t>();
         if (node_plan.state.requires_destruction) {
@@ -440,7 +582,7 @@ void plan_fixed_storage(CompilationPlan &plan) {
         storage.add<const ScalarStorageRepresentation *>(plan.scalar_destruction_count);
     layout.scalar_destruction_offsets = storage.add<std::uint32_t>(plan.scalar_destruction_count);
     layout.output_destruction_representations =
-        storage.add<const ScalarStorageRepresentation *>(plan.output_destruction_count);
+        storage.add<const TimeSeriesStorageRepresentation *>(plan.output_destruction_count);
     layout.output_destruction_offsets = storage.add<std::uint32_t>(plan.output_destruction_count);
     if (plan.uses_variable_memory) {
         layout.variable_memory = storage.add<std::pmr::unsynchronized_pool_resource>();
@@ -456,15 +598,16 @@ void plan_fixed_storage(CompilationPlan &plan) {
     layout.alignment = storage.alignment();
 }
 
-[[nodiscard]] CompilationPlan make_compilation_plan(std::span<const WiredNode> nodes, std::size_t schedule_word_count) {
+[[nodiscard]] CompilationPlan make_compilation_plan(const GraphWiring &wiring, std::size_t schedule_word_count) {
     auto result = CompilationPlan{};
-    result.nodes = nodes;
-    result.node_plans.resize(nodes.size());
-    plan_subscribers(nodes, result.node_plans);
-    result.wiring_paths = make_wiring_path_layout(nodes);
+    result.nodes = wiring.nodes();
+    result.wiring_points = wiring.wiring_points();
+    result.node_plans.resize(result.nodes.size());
+    plan_subscribers(result.nodes, result.wiring_points, result.node_plans);
+    result.wiring_paths = make_wiring_path_layout(result.nodes);
 
-    for (auto i = std::size_t{}; i < nodes.size(); ++i) {
-        const auto &node = nodes[i];
+    for (auto i = std::size_t{}; i < result.nodes.size(); ++i) {
+        const auto &node = result.nodes[i];
         result.node_plans[i].invalidation = node.node_template().invalidation_behavior(node.signature());
         result.starts.add(node.node_template().start_function(node.signature()), static_cast<std::uint32_t>(i));
         result.stops.add(node.node_template().stop_function(node.signature()), static_cast<std::uint32_t>(i));
@@ -473,14 +616,14 @@ void plan_fixed_storage(CompilationPlan &plan) {
 
     plan_runtime_storage(result, schedule_word_count);
 
-    result.output_destruction_count = static_cast<std::size_t>(std::ranges::count_if(
-        result.node_plans, [](const auto &node) {
+    result.output_destruction_count =
+        static_cast<std::size_t>(std::ranges::count_if(result.node_plans, [](const auto &node) {
             return node.output.storage_representation != nullptr &&
                    node.output.storage_representation->requires_destruction();
         }));
 
-    for (auto i = std::size_t{}; i < nodes.size(); ++i) {
-        const auto &node = nodes[i];
+    for (auto i = std::size_t{}; i < result.nodes.size(); ++i) {
+        const auto &node = result.nodes[i];
         auto &node_plan = result.node_plans[i];
         node_plan.fixed = make_node_layout(node, node_plan);
 
@@ -510,7 +653,7 @@ class CompiledGraphBuilder {
             throw std::length_error{"a compiled graph has too many nodes"};
         }
 
-        auto plan = make_compilation_plan(nodes, CompiledGraph::schedule_word_count(nodes.size()));
+        auto plan = make_compilation_plan(wiring, CompiledGraph::schedule_word_count(nodes.size()));
         if (plan.scalar_destruction_count > CompiledGraph::count_mask) {
             throw std::length_error{"a compiled graph has too many scalars"};
         }
@@ -662,6 +805,19 @@ class CompiledGraphBuilder {
             output.storage_representation->construct_initial_value(runtime_storage.data() + output.value_offset);
         }
 
+        const auto initialize_item_samples = [&](this const auto &self,
+                                                 std::span<const ItemSubscriptionPlan> items) -> void {
+            for (const auto &item : items) {
+                std::construct_at(
+                    reinterpret_cast<EvaluationTime *>(runtime_storage.data() + item.sampled_last_updated_offset),
+                    MIN_DT);
+                self(item.items);
+            }
+        };
+        for (const auto &node : plan.node_plans) {
+            initialize_item_samples(node.item_subscriptions);
+        }
+
         for (auto i = std::size_t{}; i < plan.nodes.size(); ++i) {
             const auto &state = plan.node_plans[i].state;
             if (state.node.size == 0) {
@@ -675,7 +831,7 @@ class CompiledGraphBuilder {
 
     static void construct_output_destruction(const CompilationPlan &plan, std::byte *fixed_storage) {
         auto representations = plan.fixed.output_destruction_representations
-                                   .objects<const ScalarStorageRepresentation *>(fixed_storage)
+                                   .objects<const TimeSeriesStorageRepresentation *>(fixed_storage)
                                    .begin();
         auto offsets = plan.fixed.output_destruction_offsets.objects<std::uint32_t>(fixed_storage).begin();
 
@@ -709,10 +865,10 @@ class CompiledGraphBuilder {
             const auto &parameter = node.signature().parameters[parameter_index];
 
             if (parameter.type->is_time_series()) {
-                const auto source_index = node.input_sources()[input_index++];
-                const auto &source_output = plan.node_plans[source_index].output;
+                const auto resolved_output =
+                    source_output(node.input_sources()[input_index++], plan.wiring_points, plan.node_plans);
                 std::construct_at(parameters.data() + parameter_index,
-                                  ParameterBinding{source_output.last_updated_offset, source_output.value_offset,
+                                  ParameterBinding{resolved_output.last_updated_offset, resolved_output.value_offset,
                                                    parameter.validity});
                 continue;
             }
@@ -772,22 +928,38 @@ class CompiledGraphBuilder {
                 continue;
             }
 
-            const auto source_index = node.input_sources()[input_index++];
+            const auto source = node.input_sources()[input_index++];
             if (!node.node_template().uses_generic_time_series_input_view(parameter_index)) {
                 continue;
             }
 
-            const auto *representation = plan.node_plans[source_index].output.storage_representation;
+            const auto *representation =
+                source_output(source, plan.wiring_points, plan.node_plans).storage_representation;
             std::construct_at(time_series_input_views.data() + generic_time_series_input_index,
-                              TimeSeriesInputViewPrototype{representation->input_view_prototype()});
+                              TimeSeriesInputViewPrototype{&representation->input_view_prototype()});
             ++generic_time_series_input_index;
         }
 
         if (node.node_template().uses_generic_output_view()) {
             const auto *representation = plan.node_plans[node_index].output.storage_representation;
             std::construct_at(layout.output_view_prototype.objects<OutputViewPrototype>(node_storage).data(),
-                              OutputViewPrototype{representation->output_view_prototype()});
+                              OutputViewPrototype{&representation->output_view_prototype()});
         }
+    }
+
+    static std::byte *construct_item_subscribers(std::span<const ItemSubscriptionPlan> items, std::byte *destination) {
+        for (const auto &item : items) {
+            auto *compiled = std::construct_at(reinterpret_cast<ItemSubscribers *>(destination), item.item,
+                                               static_cast<std::uint32_t>(item.subscribers.size()),
+                                               static_cast<std::uint32_t>(item_subscriber_size(item)),
+                                               item.sampled_last_updated_offset);
+            auto *subscribers = reinterpret_cast<Subscriber *>(compiled + 1);
+            std::uninitialized_copy(item.subscribers.begin(), item.subscribers.end(), subscribers);
+            destination = reinterpret_cast<std::byte *>(subscribers + item.subscribers.size());
+            destination = construct_item_subscribers(item.items, destination);
+        }
+
+        return destination;
     }
 
     static void construct_nodes(const CompilationPlan &plan, std::byte *storage,
@@ -805,6 +977,12 @@ class CompiledGraphBuilder {
             construct_parameters(plan, i, storage, variable_memory, constructed_scalars, scalar_destruction_index);
             std::uninitialized_copy(node_plan.subscribers.begin(), node_plan.subscribers.end(),
                                     layout.subscribers.objects<Subscriber>(node_storage).data());
+            if (!node_plan.item_subscriptions.empty()) {
+                std::construct_at(layout.item_subscription_root.objects<ItemSubscriptionRoot>(node_storage).data(),
+                                  ItemSubscriptionRoot{
+                                      static_cast<std::uint32_t>(item_subscriber_size(node_plan.item_subscriptions))});
+                construct_item_subscribers(node_plan.item_subscriptions, node_storage + layout.item_subscribers.offset);
+            }
             if (node_plan.state.node.size != 0) {
                 const auto has_state_metadata = !node_plan.state.node.generic_storage_representations.empty();
                 std::construct_at(layout.state_offset.objects<std::uint32_t>(node_storage).data(),
@@ -846,7 +1024,7 @@ class CompiledGraphBuilder {
                                            static_cast<std::uint32_t>(node.signature().parameters.size()),
                                            static_cast<std::uint32_t>(node_plan.subscribers.size()),
                                            node.signature().output != nullptr, node_plan.state.node.size != 0,
-                                           node_plan.invalidation.mode});
+                                           !node_plan.item_subscriptions.empty(), node_plan.invalidation.mode});
             std::construct_at(node_offsets.data() + i,
                               packed_offset(layout.offset, "compiled fixed storage reaches 1 GiB"));
         }
@@ -892,14 +1070,14 @@ CompiledGraph::NodeFunctions CompiledGraph::stop_functions() const noexcept {
 
 CompiledGraph::OutputDestruction CompiledGraph::output_destruction() const noexcept {
     const auto &header = storage_header();
-    const auto representations_offset = static_cast<std::uint32_t>(align_up(
-        header.scalar_destruction_representations_offset +
-            scalar_destruction_count() * (sizeof(const ScalarStorageRepresentation *) + sizeof(std::uint32_t)),
-        alignof(const ScalarStorageRepresentation *)));
-    const auto representations = stored_objects<const ScalarStorageRepresentation *>(
+    const auto representations_offset = static_cast<std::uint32_t>(
+        align_up(header.scalar_destruction_representations_offset +
+                     scalar_destruction_count() * (sizeof(const ScalarStorageRepresentation *) + sizeof(std::uint32_t)),
+                 alignof(const TimeSeriesStorageRepresentation *)));
+    const auto representations = stored_objects<const TimeSeriesStorageRepresentation *>(
         fixed_storage_, representations_offset, header.output_destruction_count);
     const auto offsets_offset = static_cast<std::uint32_t>(
-        representations_offset + header.output_destruction_count * sizeof(const ScalarStorageRepresentation *));
+        representations_offset + header.output_destruction_count * sizeof(const TimeSeriesStorageRepresentation *));
 
     return {representations,
             stored_objects<std::uint32_t>(fixed_storage_, offsets_offset, header.output_destruction_count)};

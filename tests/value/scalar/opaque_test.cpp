@@ -16,12 +16,11 @@ struct private_data {
     private_data &operator=(const private_data &) = delete;
 };
 
-using PrivateDataValue = bg::ScalarValue<bg::Opaque<private_data>>;
-using PrivatePointerValue = bg::ScalarValue<bg::Opaque<private_data *>>;
-
 } // namespace
 
 TEST_CASE("an opaque scalar value owns a copy", "[value][scalar][opaque]") {
+    using PrivateDataValue = bg::ScalarValue<bg::Opaque<private_data>>;
+
     auto source = private_data{{1, 2, 3, 4}};
     const auto value = PrivateDataValue{source};
 
@@ -32,6 +31,8 @@ TEST_CASE("an opaque scalar value owns a copy", "[value][scalar][opaque]") {
 }
 
 TEST_CASE("a pointer-sized opaque scalar value uses inline storage", "[value][scalar][opaque]") {
+    using PrivatePointerValue = bg::ScalarValue<bg::Opaque<private_data *>>;
+
     auto source = private_data{{1, 2, 3, 4}};
     const auto value = PrivatePointerValue{&source, *std::pmr::null_memory_resource()};
 

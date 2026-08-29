@@ -8,12 +8,6 @@
 #include <string_view>
 #include <typeinfo>
 
-namespace {
-
-using Key = bg::ScalarVariable<"Key", bg::EqualityComparable, bg::Hashable>;
-
-} // namespace
-
 TEST_CASE("an erased scalar value copies a borrowed value", "[value][scalar][erased]") {
     auto source = std::pmr::string{"value"};
     const auto view = bg::Scalar<bg::SCALAR>::from<bg::string>(source);
@@ -68,6 +62,8 @@ TEST_CASE("scalar handles compare by type and value", "[value][scalar][erased]")
 }
 
 TEST_CASE("a constrained scalar variable exposes its required operations", "[value][scalar][erased]") {
+    using Key = bg::ScalarVariable<"Key", bg::EqualityComparable, bg::Hashable>;
+
     const auto left_value = std::int64_t{42};
     const auto equal_value = std::int64_t{42};
     const auto different_value = std::int64_t{43};

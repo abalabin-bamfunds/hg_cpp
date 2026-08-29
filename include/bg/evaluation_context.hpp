@@ -7,11 +7,18 @@
 
 namespace bg {
 
+namespace details {
+class EvaluationScratch;
+}
+
 class RuntimeGraph;
 class GlobalState;
+class TimeSeriesStorageRepresentation;
 
 class EvaluationContext {
   public:
+    ~EvaluationContext();
+
     [[nodiscard]] const EvaluationTime &evaluation_time() const noexcept { return evaluation_time_; }
 
     [[nodiscard]] RuntimeGraph &runtime_graph() const noexcept { return *runtime_graph_; }
@@ -26,13 +33,20 @@ class EvaluationContext {
 
   private:
     friend RuntimeGraph;
+    friend class TimeSeriesOutputView;
 
-    EvaluationContext(EvaluationTime evaluation_time, RuntimeGraph &runtime_graph, std::size_t node_index) noexcept
-        : evaluation_time_(evaluation_time), runtime_graph_(&runtime_graph), node_index_(node_index) {}
+    EvaluationContext(EvaluationTime evaluation_time, RuntimeGraph &runtime_graph, std::size_t node_index) noexcept;
+
+    [[nodiscard]] void *add_output_mutation(const TimeSeriesStorageRepresentation &representation,
+                                            EvaluationTime &last_updated, void *value, std::size_t item, void *parent);
+    [[nodiscard]] static EvaluationContext &output_mutation_context(void *mutation) noexcept;
+    void publish_output_mutation(void *mutation) const noexcept;
+    void schedule_output_mutations() const noexcept;
 
     EvaluationTime evaluation_time_;
     RuntimeGraph *runtime_graph_;
     std::size_t node_index_;
+    void *scratch_frame_{};
 };
 
 } // namespace bg

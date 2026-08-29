@@ -26,8 +26,9 @@ class AggregateNodeTemplate final : public NodeTemplate {
 
     template <typename... Arguments>
         requires((details::graph_code_argument<Arguments> && ...) && details::aggregate_node_has_output<Definition>())
-    [[nodiscard]] WiringPoint operator()(Arguments &&...arguments) const {
-        return *NodeTemplate::operator()(std::forward<Arguments>(arguments)...);
+    [[nodiscard]] auto operator()(Arguments &&...arguments) const {
+        using Output = details::aggregate_output_time_series_t<Definition>;
+        return wp<Output>{*NodeTemplate::operator()(std::forward<Arguments>(arguments)...)};
     }
 
     template <typename... Arguments>
@@ -65,16 +66,21 @@ class AggregateNodeTemplate final : public NodeTemplate {
             return {InvalidationMode::invoke, &details::invalidate_aggregate_node<Definition>};
         } else if constexpr (details::aggregate_node_preserves_output<Definition>) {
             return {InvalidationMode::preserve_output};
+        } else if constexpr (details::aggregate_output_requires_view_invalidation<Definition>(
+                                 std::make_index_sequence<util::aggregate_member_count<Definition>>{})) {
+            return {InvalidationMode::invoke, &details::invalidate_aggregate_output<Definition>};
         } else {
             return {};
         }
     }
 
-    [[nodiscard]] const ScalarStorageRepresentation *output_storage_representation(
-        const ResolvedSignature &signature,
-        std::span<const ScalarStorageRepresentation *const> parameter_storage_representations) const noexcept override {
+    [[nodiscard]] const TimeSeriesStorageRepresentation *
+    output_storage_representation(const ResolvedSignature &signature,
+                                  std::span<const ScalarStorageRepresentation *const> parameter_storage_representations,
+                                  std::span<const TimeSeriesStorageRepresentation *const>
+                                      time_series_input_storage_representations) const noexcept override {
         return details::aggregate_output_storage_representation<Definition>(
-            signature, parameter_storage_representations,
+            signature, parameter_storage_representations, time_series_input_storage_representations,
             std::make_index_sequence<util::aggregate_member_count<Definition>>{});
     }
 

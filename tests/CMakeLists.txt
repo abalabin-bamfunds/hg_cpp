@@ -2,16 +2,19 @@ find_package(Catch2 3 REQUIRED)
 
 add_executable(
     bg_tests
-    evaluation/evaluation_context_test.cpp
-    evaluation/future_scheduling_test.cpp
-    evaluation/input_activity_test.cpp
-    evaluation/invalidation_behavior_test.cpp
-    evaluation/runtime_lifecycle_test.cpp
-    evaluation/runtime_scheduling_test.cpp
-    evaluation/runtime_storage_test.cpp
-    evaluation/runtime_validity_test.cpp
-    evaluation/runtime_views_test.cpp
-    evaluation/simulation_evaluation_engine_test.cpp
+    evaluation/context/evaluation_context_test.cpp
+    evaluation/context/evaluation_scratch_test.cpp
+    evaluation/engine/simulation_evaluation_engine_test.cpp
+    evaluation/lifecycle/runtime_lifecycle_test.cpp
+    evaluation/scheduling/future_scheduling_test.cpp
+    evaluation/scheduling/runtime_scheduling_test.cpp
+    evaluation/storage/runtime_storage_test.cpp
+    evaluation/storage/runtime_views_test.cpp
+    evaluation/time_series/time_series_list_test.cpp
+    evaluation/time_series/time_series_dict_test.cpp
+    evaluation/validity/input_activity_test.cpp
+    evaluation/validity/invalidation_behavior_test.cpp
+    evaluation/validity/runtime_validity_test.cpp
     graph/compiled_graph_test.cpp
     node/aggregate_node_test.cpp
     node/input_test.cpp
@@ -23,10 +26,14 @@ add_executable(
     node/scalar_state_test.cpp
     testing/test_graph_test.cpp
     type/type_system_test.cpp
+    type/time_series_dict_type_test.cpp
+    type/time_series_list_type_test.cpp
+    type/time_series_set_type_test.cpp
     utils/polymorphic_value_test.cpp
     utils/contiguous_bunch_test.cpp
     utils/hash_dictionary_test.cpp
     utils/hash_set_test.cpp
+    utils/index_test.cpp
     utils/linear_hash_table_test.cpp
     utils/occupancy_index_test.cpp
     utils/reflection_test.cpp
@@ -51,8 +58,11 @@ add_executable(
     value/scalar/value_test.cpp
     value/scalar/view_test.cpp
     value/time_series_view_test.cpp
+    value/time_series/list/storage_test.cpp
     wiring/graph_template_test.cpp
     wiring/graph_wiring_test.cpp
+    wiring/time_series_list_wiring_test.cpp
+    wiring/time_series_dict_wiring_test.cpp
 )
 target_link_libraries(bg_tests PRIVATE bg::bg Catch2::Catch2WithMain)
 

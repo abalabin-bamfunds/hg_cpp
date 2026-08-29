@@ -3,6 +3,7 @@
 #include <bg/graph/wiring_error.hpp>
 #include <bg/graph/wiring_template.hpp>
 #include <bg/node/node_template.hpp>
+#include <bg/type/time_series_list_type.hpp>
 #include <bg/type/type_map.hpp>
 
 #include <array>
@@ -11,6 +12,18 @@
 #include <string_view>
 
 namespace bg {
+
+std::size_t WiringPoint::node_index() const noexcept {
+    return graph_->wiring_points()[record_index_].node_index;
+}
+
+const TimeSeriesType &WiringPoint::type() const noexcept {
+    return *graph_->wiring_points()[record_index_].type;
+}
+
+WiringPoint WiringPoint::item(std::size_t index) const {
+    return graph_->select_item(*this, index);
+}
 
 GraphWiring::GraphWiring() : GraphWiring(*std::pmr::get_default_resource()) {}
 
@@ -83,12 +96,7 @@ std::optional<WiringPoint> GraphWiring::invoke(const WiringTemplate &wiring_temp
                 throw WiringError{"a WiringPoint belongs to another GraphWiring"};
             }
 
-            const auto index = source.node_index();
-            if (nodes_[index].signature().output == nullptr) {
-                throw WiringError{"a WiringPoint has no output"};
-            }
-
-            argument_types.push_back(nodes_[index].signature().output);
+            argument_types.push_back(&source.type());
         } else {
             argument_types.push_back(&argument.scalar_type());
         }
@@ -113,7 +121,7 @@ std::optional<WiringPoint> GraphWiring::invoke(const WiringTemplate &wiring_temp
         throw WiringError{"a wiring-template returned a WiringPoint from another GraphWiring"};
     }
 
-    const auto *actual_output = nodes_[output->node_index()].signature().output;
+    const auto *actual_output = &output->type();
     auto bindings = TypeMap{};
     if (!expected_output->match(*actual_output, bindings)) {
         throw WiringError{"a wiring-template result does not satisfy its resolved output type"};
@@ -134,7 +142,7 @@ std::optional<WiringPoint> GraphWiring::add_node(const NodeTemplate &node_templa
 
     for (const details::wiring_argument &argument : arguments) {
         if (argument.is_wiring_point()) {
-            source_indices.push_back(argument.wiring_point().node_index());
+            source_indices.push_back(argument.wiring_point().record_index());
         }
     }
 
@@ -197,10 +205,35 @@ std::optional<WiringPoint> GraphWiring::add_node(const NodeTemplate &node_templa
     }
 
     if (has_output) {
-        return WiringPoint{*this, index};
+        const auto record = wiring_points_.size();
+        wiring_points_.push_back({index, WiringPointRecord::npos, 0, nodes_.back().signature().output});
+        return WiringPoint{*this, record};
     }
 
     return std::nullopt;
+}
+
+WiringPoint GraphWiring::select_item(WiringPoint source, std::size_t index) {
+    if (&source.graph() != this) {
+        throw WiringError{"a WiringPoint belongs to another GraphWiring"};
+    }
+
+    const auto *collection = dynamic_cast<const FixedItemTimeSeriesType *>(&source.type());
+    if (collection == nullptr) {
+        throw WiringError{"a WiringPoint does not identify a time series with fixed items"};
+    }
+
+    const auto &item_type = collection->item_type(index);
+    for (auto record = std::size_t{}; record < wiring_points_.size(); ++record) {
+        const auto &candidate = wiring_points_[record];
+        if (candidate.parent == source.record_index() && candidate.item == index) {
+            return WiringPoint{*this, record};
+        }
+    }
+
+    const auto record = wiring_points_.size();
+    wiring_points_.push_back({source.node_index(), source.record_index(), index, &item_type});
+    return WiringPoint{*this, record};
 }
 
 std::optional<WiringPoint> NodeTemplate::wire(GraphWiring &wiring, ResolvedSignature signature, const TypeMap &bindings,

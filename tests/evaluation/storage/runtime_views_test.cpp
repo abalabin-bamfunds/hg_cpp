@@ -4,6 +4,7 @@
 #include <bg/graph/wiring_context.hpp>
 #include <bg/node.hpp>
 #include <bg/run_graph.hpp>
+#include <bg/time_series/list/input_view.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -126,7 +127,14 @@ struct generic_copy_definition {
     bg::In<bg::TS_T> input;
     bg::Out<bg::TS_T> output;
 
-    void evaluate() const { output.set_value(input.value_view()); }
+    void evaluate() const {
+        input->visit(
+            [&](const bg::TimeSeriesValueInputView *value) {
+                const auto scalar = value->erased_value_view();
+                static_cast<const bg::TimeSeriesValueOutputView *>(output.operator->())->set_value(scalar.input_view());
+            },
+            [](const bg::TimeSeriesListInputView *) {}, ddv::noop);
+    }
 };
 
 struct double_source_definition {

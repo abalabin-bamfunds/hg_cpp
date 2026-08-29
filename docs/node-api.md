@@ -37,9 +37,8 @@ inline const auto add_node = bg::node<add>();
 An aggregate node class:
 
 - uses `In<>` fields for time series inputs
-- uses plain C++ fields for scalar parameters
+- uses plain C++ fields or Scalar<T> for scalar parameters
 - can contain `State<T>` fields and at most one `Out<>` field
-- omits names from `In<>` because field names supply them
 - defines `evaluate()` as a `const` function with a `void` return type
 - contains at most 32 fields
 
@@ -305,18 +304,11 @@ scalar type, so `TS<std::optional<T>>` is invalid.
 
 ### Collection item views
 
-An `Out<>` collection operation returns a fixed-size `Out<>` item view. The
-view data is allocated from stack-like storage provided through
-`EvaluationContext`. It contains:
+An `Out<>` collection operation returns a fixed-size `Out<>` item view.
+`EvaluationContext` provides stack-like storage for the path through containing
+collections. The engine releases this storage when the node function returns or
+throws. An item view is valid for one node invocation.
 
-- a pointer to the item time series
-- a pointer to the view of its containing collection
-- the item index in that collection
-
-The returned `Out<>` is a move-only handle to this data. Its destructor releases
-the allocation when it is at the top of the storage. The engine releases all
-remaining allocations when the node function returns or throws. An item view
-must not outlive its node invocation.
-
-An accepted item mutation follows the pointers to the containing collection
-views and records each affected item before the view is released.
+An accepted item mutation records each affected item in its containing
+collection. After the function returns, the runtime uses the recorded paths to
+schedule item subscribers directly.

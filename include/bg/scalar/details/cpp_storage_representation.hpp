@@ -69,6 +69,14 @@ template <typename T, typename Base> class CppScalarStorageRepresentationBase : 
         }
     }
 
+    void construct_runtime_value(void *destination, std::pmr::memory_resource &memory) const override {
+        if constexpr (std::default_initializable<Value>) {
+            Traits::construct(static_cast<Stored *>(destination), Value{}, memory);
+        } else {
+            this->construct_initial_value(destination);
+        }
+    }
+
     void construct_from_value(void *destination, const void *value, std::pmr::memory_resource &memory) const override {
         Traits::construct(static_cast<Stored *>(destination), *static_cast<const Value *>(value), memory);
     }

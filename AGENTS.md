@@ -83,8 +83,8 @@ Keep documentation brief and complete.
 
 Prefer the smallest clear implementation, the code should be elegant.
 
-- Use existing utilities and the standard library before adding project code or
-  a dependency.
+- Use existing utilities fromm this project and the standard library before adding project code or
+  a dependency. Prefer utility code already in the project
 - Write each operation in execution order and at one consistent level of
   detail. Use early returns and `continue` statements to keep nesting shallow.
 - Make each branch represent required behavior or a state transition. Prefer

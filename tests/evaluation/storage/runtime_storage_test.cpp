@@ -3,6 +3,10 @@
 #include <bg/graph/runtime_graph.hpp>
 #include <bg/graph/wiring_context.hpp>
 #include <bg/node.hpp>
+#include <bg/scalar/string.hpp>
+#include <bg/time_series/dict/type.hpp>
+
+#include "../../utils/counting_memory_resource.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -147,6 +151,41 @@ TEST_CASE("runtime graphs keep separate runtime storage", "[evaluation][storage]
     second.evaluate(time(1));
 
     CHECK(add_definition::evaluation_count == 0);
+}
+
+namespace {
+
+struct string_dictionary_source_definition {
+    bg::Out<bg::TSD<std::int64_t, bg::TS<bg::string>>> output;
+
+    void start() const {
+        for (auto key = std::int64_t{}; key != 16; ++key) {
+            output[key].set("a string long enough to require allocated storage");
+        }
+    }
+    void evaluate() const {}
+};
+
+} // namespace
+
+TEST_CASE("a runtime graph releases dictionary time-series storage", "[evaluation][storage][tsd]") {
+    const auto source = bg::node<string_dictionary_source_definition>();
+    auto wiring = bg::GraphWiring{};
+
+    {
+        const auto context = bg::WiringContext{wiring};
+        static_cast<void>(source());
+    }
+
+    const auto compiled = bg::CompiledGraph{wiring};
+    auto memory = counting_memory_resource{};
+    {
+        auto runtime = bg::RuntimeGraph{compiled, memory};
+        runtime.start(time(1));
+        CHECK(memory.allocations() > 1);
+    }
+
+    CHECK(memory.allocations() == 0);
 }
 
 namespace {

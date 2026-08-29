@@ -136,8 +136,7 @@ TEST_CASE("a start failure stops nodes whose start completed", "[evaluation][lif
     CHECK(lifecycle_definition::events == std::vector{1, 2, -1});
 }
 
-TEST_CASE("an evaluation failure stops nodes in reverse topological order",
-          "[evaluation][lifecycle][failure]") {
+TEST_CASE("an evaluation failure stops nodes in reverse topological order", "[evaluation][lifecycle][failure]") {
     const auto lifecycle = bg::node<lifecycle_definition>();
     lifecycle_definition::events.clear();
     lifecycle_definition::events.reserve(8);

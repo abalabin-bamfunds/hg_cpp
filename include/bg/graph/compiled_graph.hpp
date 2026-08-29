@@ -16,6 +16,7 @@ namespace bg {
 class GraphWiring;
 class RuntimeGraph;
 class CompiledGraphBuilder;
+class TimeSeriesStorageRepresentation;
 
 // Owns the immutable packed representation of a wired graph and the initial runtime storage image.
 class CompiledGraph {
@@ -60,7 +61,7 @@ class CompiledGraph {
     };
 
     struct OutputDestruction {
-        std::span<const ScalarStorageRepresentation *const> representations;
+        std::span<const TimeSeriesStorageRepresentation *const> representations;
         std::span<const std::uint32_t> offsets;
     };
 

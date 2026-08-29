@@ -29,7 +29,7 @@ new code path, compatibility boundary, failure mode, or regression.
 - `tests/type`: type matching and resolution
 - `tests/wiring`: graph construction and wiring-template calls
 - `tests/graph`: graph compilation and compiled layout
-- `tests/evaluation`: runtime graph behavior and evaluation engines
+- `tests/evaluation`: evaluation context, engines, lifecycle, scheduling, storage, time series, and validity
 - `tests/node`: node declaration and invocation interfaces
 - `tests/testing`: test utilities
 - `tests/nodes`: reusable node behavior
@@ -52,7 +52,9 @@ not update.
 ### Utilities
 
 - compile-time strings, symbols, named arguments, and reflection
-- constant-size polymorphic values and visitor dispatch
+- constant-size polymorphic values
+- visitor dispatch for concrete and generic scalar and time series views, including base-interface fallback and no
+  matching overload
 - thread-local context storage
 - scheduling bit iteration
 - stable-address storage, shared occupancy, and incremental hash containers

@@ -24,24 +24,6 @@ struct switchable_definition {
     inline static bool publish{true};
 };
 
-struct fallback_definition {
-    bg::In<bg::TS<float>> input;
-    bg::Out<bg::TS<float>> output;
-
-    void evaluate() const {
-        ++evaluation_count;
-        output.set(input.value());
-    }
-
-    void on_invalidation() const {
-        ++invalidation_count;
-        output.set(-1.0F);
-    }
-
-    inline static int evaluation_count{};
-    inline static int invalidation_count{};
-};
-
 struct float_sink_definition {
     bg::In<bg::TS<float>> input;
 
@@ -93,8 +75,29 @@ TEST_CASE("required-input invalidation propagates through a graph", "[evaluation
     CHECK(float_sink_definition::evaluation_count == 1);
 }
 
-TEST_CASE("required-input invalidation is applied once while the input remains invalid",
-          "[evaluation][invalidation]") {
+namespace {
+
+struct fallback_definition {
+    bg::In<bg::TS<float>> input;
+    bg::Out<bg::TS<float>> output;
+
+    void evaluate() const {
+        ++evaluation_count;
+        output.set(input.value());
+    }
+
+    void on_invalidation() const {
+        ++invalidation_count;
+        output.set(-1.0F);
+    }
+
+    inline static int evaluation_count{};
+    inline static int invalidation_count{};
+};
+
+} // namespace
+
+TEST_CASE("required-input invalidation is applied once while the input remains invalid", "[evaluation][invalidation]") {
     const auto switchable = bg::node<switchable_definition>();
     const auto fallback = bg::node<fallback_definition>();
     bg::GraphWiring wiring;

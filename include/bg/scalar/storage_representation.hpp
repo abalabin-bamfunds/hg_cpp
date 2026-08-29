@@ -41,6 +41,10 @@ class ScalarStorageRepresentation {
 
     virtual void construct_initial_value(void *destination) const noexcept = 0;
 
+    virtual void construct_runtime_value(void *destination, std::pmr::memory_resource &) const {
+        construct_initial_value(destination);
+    }
+
     virtual void construct_from_value(void *destination, const void *value,
                                       std::pmr::memory_resource &memory) const = 0;
 

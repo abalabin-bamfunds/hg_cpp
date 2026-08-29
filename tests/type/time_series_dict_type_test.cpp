@@ -1,0 +1,46 @@
+#include <bg/time_series/dict/type.hpp>
+#include <bg/time_series/type.hpp>
+#include <bg/type/scalar_type.hpp>
+#include <bg/type/time_series_dict_type.hpp>
+#include <bg/type/time_series_set_type.hpp>
+#include <bg/type/time_series_value_type.hpp>
+#include <bg/type/type_map.hpp>
+#include <bg/type/type_variable.hpp>
+
+#include <catch2/catch_test_macros.hpp>
+
+#include <concepts>
+
+TEST_CASE("time series dictionary annotations expose their key and item types", "[type_system][tsd]") {
+    using IntDictionary = bg::TSD<int, bg::TS<float>>;
+
+    STATIC_CHECK(std::same_as<IntDictionary::key_type, int>);
+    STATIC_CHECK(std::same_as<IntDictionary::item_type, bg::TS<float>>);
+    STATIC_CHECK(bg::details::is_time_series_dict<IntDictionary>);
+}
+
+TEST_CASE("resolved time series dictionary types are canonical", "[type_system][tsd]") {
+    const auto &value = bg::time_series_value_type(bg::float_type(), bg::TimeSeriesGuarantee::ordinary);
+    const auto &dictionary = bg::time_series_dictionary_type(bg::int_type(), value, bg::TimeSeriesGuarantee::ordinary);
+
+    CHECK(&dictionary == &bg::time_series_dictionary_type(bg::int_type(), value, bg::TimeSeriesGuarantee::ordinary));
+    CHECK(&dictionary.key_type() == &bg::int_type());
+    CHECK(&dictionary.value_type() == &value);
+    CHECK(&dictionary.key_set_type() == &bg::time_series_set_type(bg::int_type(), bg::TimeSeriesGuarantee::ordinary));
+    CHECK(&dictionary.item_type(0) == &dictionary.key_set_type());
+    CHECK_THROWS_AS(dictionary.item_type(1), std::out_of_range);
+}
+
+TEST_CASE("generic time series dictionary types resolve their components", "[type_system][tsd]") {
+    const auto &resolved_value = bg::time_series_value_type(bg::float_type(), bg::TimeSeriesGuarantee::final);
+    const auto &resolved =
+        bg::time_series_dictionary_type(bg::int_type(), resolved_value, bg::TimeSeriesGuarantee::final);
+    bg::TypeVariable<bg::ScalarType> key{bg::util::symbol{"K"}, {}, {&bg::supports_scalar_hash}};
+    bg::TypeVariable<bg::TimeSeriesType> value{bg::util::symbol{"V"}};
+    const bg::GenericTimeSeriesSetType key_set{key, bg::TimeSeriesGuarantee::final};
+    const bg::GenericTimeSeriesDictionaryType generic{key, value, key_set, bg::TimeSeriesGuarantee::final};
+    auto bindings = bg::TypeMap{};
+
+    REQUIRE(generic.match(resolved, bindings));
+    CHECK(&generic.resolve(bindings) == &resolved);
+}
