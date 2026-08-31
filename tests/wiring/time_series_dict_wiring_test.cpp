@@ -1,7 +1,7 @@
 #include <bg/graph/graph_wiring.hpp>
 #include <bg/graph/wiring_context.hpp>
 #include <bg/node.hpp>
-#include <bg/time_series/dict/type.hpp>
+#include <bg/time_series/tsd/tsd_type.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 

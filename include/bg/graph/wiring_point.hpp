@@ -1,8 +1,8 @@
 #pragma once
 
-#include <bg/time_series/dict/type.hpp>
-#include <bg/time_series/list/type.hpp>
-#include <bg/time_series/set/type.hpp>
+#include <bg/time_series/tsd/tsd_type.hpp>
+#include <bg/time_series/tsl/tsl_type.hpp>
+#include <bg/time_series/tss/tss_type.hpp>
 
 #include <cstddef>
 #include <type_traits>

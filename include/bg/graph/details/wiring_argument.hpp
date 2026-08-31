@@ -87,6 +87,8 @@ class wiring_argument {
 
     [[nodiscard]] WiringPoint wiring_point() const { return std::get<WiringPoint>(value_); }
 
+    void wiring_point(WiringPoint point) { value_ = point; }
+
     [[nodiscard]] const ScalarType &scalar_type() const noexcept { return *std::get<ScalarArgument>(value_).type; }
 
     [[nodiscard]] const ScalarStorageRepresentation &scalar_storage_representation() const noexcept {

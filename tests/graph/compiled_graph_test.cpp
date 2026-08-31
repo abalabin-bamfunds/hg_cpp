@@ -91,6 +91,65 @@ TEST_CASE("compiled nodes keep hot data in node-local sections", "[compiled_grap
     CHECK(graph.fixed_storage_size() == 236);
 }
 
+TEST_CASE("compiled dynamic subscribers address the complete runtime storage", "[compiled_graph][subscriptions]") {
+    constexpr auto offset = (std::size_t{1} << 30) - alignof(void *);
+    const auto subscriber = bg::Subscriber::dynamic_subscribers(static_cast<std::uint32_t>(offset));
+
+    CHECK(subscriber.has_dynamic_subscribers());
+    CHECK(subscriber.dynamic_subscribers_offset() == offset);
+}
+
+namespace {
+
+struct reference_subscription_source {
+    bg::Out<bg::TS<int>> output;
+    void evaluate() const {}
+};
+
+struct reference_subscription_pass {
+    bg::In<bg::REF<bg::TS<int>>> input;
+    bg::Out<bg::REF<bg::TS<int>>> output;
+    void evaluate() const { output.set(input); }
+};
+
+struct two_reference_input_sink {
+    bg::In<bg::TS<int>> left;
+    bg::In<bg::TS<int>> right;
+    void evaluate() const {}
+};
+
+} // namespace
+
+TEST_CASE("compiled reference subscriptions identify each receiving parameter", "[compiled_graph][subscriptions]") {
+    const auto source = bg::node<reference_subscription_source>();
+    const auto pass = bg::node<reference_subscription_pass>();
+    const auto sink = bg::node<two_reference_input_sink>();
+    auto wiring = bg::GraphWiring{};
+
+    {
+        const auto context = bg::WiringContext{wiring};
+        const auto reference = pass(source());
+        sink(reference, reference);
+    }
+
+    const auto graph = bg::CompiledGraph{wiring};
+    const auto &reference_node = graph.node(2);
+    const auto reference_subscribers = reference_node.reference_input_subscribers();
+
+    REQUIRE(reference_subscribers.size() == 2);
+    CHECK(reference_subscribers[0].node_index() == 3);
+    CHECK(reference_subscribers[0].parameter_index() == 0);
+    CHECK(reference_subscribers[1].node_index() == 3);
+    CHECK(reference_subscribers[1].parameter_index() == 1);
+
+    const auto node_subscribers = reference_node.subscribers();
+    REQUIRE(node_subscribers.size() == 1);
+    CHECK(node_subscribers[0].node_index() == 3);
+    CHECK(node_subscribers[0].active());
+    CHECK_FALSE(node_subscribers[0].required());
+    CHECK_FALSE(node_subscribers[0].active_optional());
+}
+
 TEST_CASE("graph wiring can compile more than once", "[compiled_graph]") {
     const auto source = bg::node<source_definition>();
     const auto scale = scale_template{};

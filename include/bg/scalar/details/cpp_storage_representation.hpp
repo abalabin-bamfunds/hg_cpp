@@ -6,8 +6,8 @@
 #include <bg/scalar/mutable_view.hpp>
 #include <bg/scalar/set/storage_representation.hpp>
 #include <bg/scalar/storage_representation.hpp>
-#include <bg/time_series/input_view.hpp>
-#include <bg/time_series/output_view.hpp>
+#include <bg/time_series/time_series_input_view.hpp>
+#include <bg/time_series/time_series_output_view.hpp>
 #include <bg/type/scalar_type.hpp>
 
 #include <exception>

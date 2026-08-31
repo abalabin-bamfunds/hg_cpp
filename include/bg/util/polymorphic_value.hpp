@@ -21,12 +21,22 @@ template <typename Interface> class polymorphic_value {
   public:
     template <typename Implementation>
         requires std::derived_from<Implementation, Interface>
+    [[nodiscard]] static Interface &copy_to(void *destination, const Implementation &prototype) noexcept {
+        static_assert(sizeof(Implementation) == sizeof(Interface));
+        static_assert(alignof(Implementation) == alignof(Interface));
+
+        std::memcpy(destination, std::addressof(prototype), sizeof(Interface));
+        return *std::launder(reinterpret_cast<Interface *>(destination));
+    }
+
+    template <typename Implementation>
+        requires std::derived_from<Implementation, Interface>
     [[nodiscard]] static polymorphic_value copy(const Implementation &prototype) noexcept {
         static_assert(sizeof(Implementation) == sizeof(Interface));
         static_assert(alignof(Implementation) == alignof(Interface));
 
         auto value = polymorphic_value{};
-        std::memcpy(value.bytes_, std::addressof(prototype), sizeof(value.bytes_));
+        static_cast<void>(copy_to(value.bytes_, prototype));
 
         return value;
     }

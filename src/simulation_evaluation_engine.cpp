@@ -14,7 +14,7 @@ void SimulationEvaluationEngine::run(RuntimeGraph &runtime_graph, EvaluationTime
         runtime_graph.evaluate(*time, scratch);
     }
 
-    runtime_graph.stop();
+    runtime_graph.stop(scratch);
 }
 
 } // namespace bg

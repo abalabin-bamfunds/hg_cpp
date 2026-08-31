@@ -7,18 +7,20 @@
 #include <bg/node/state.hpp>
 #include <bg/node/state_layout.hpp>
 #include <bg/scalar/cpp_storage_representation.hpp>
-#include <bg/time_series/dict/storage_representation.hpp>
-#include <bg/time_series/dict/type.hpp>
-#include <bg/time_series/list/storage_representation.hpp>
-#include <bg/time_series/list/type.hpp>
-#include <bg/time_series/set/storage_representation.hpp>
-#include <bg/time_series/set/type.hpp>
-#include <bg/time_series/storage_representation.hpp>
+#include <bg/time_series/ref/ref_storage_representation.hpp>
+#include <bg/time_series/time_series_storage_representation.hpp>
+#include <bg/time_series/tsd/tsd_storage_representation.hpp>
+#include <bg/time_series/tsd/tsd_type.hpp>
+#include <bg/time_series/tsl/tsl_storage_representation.hpp>
+#include <bg/time_series/tsl/tsl_type.hpp>
+#include <bg/time_series/tss/tss_storage_representation.hpp>
+#include <bg/time_series/tss/tss_type.hpp>
 #include <bg/type/scalar_type.hpp>
 #include <bg/type/scalar_variable.hpp>
 #include <bg/type/signature.hpp>
 #include <bg/type/time_series_dict_type.hpp>
 #include <bg/type/time_series_list_type.hpp>
+#include <bg/type/time_series_reference_type.hpp>
 #include <bg/type/time_series_set_type.hpp>
 #include <bg/type/time_series_value_type.hpp>
 #include <bg/type/type_variable.hpp>
@@ -154,6 +156,9 @@ template <> struct generic_time_series<TS_T> : std::true_type {};
 template <typename T, auto... Properties>
 struct generic_time_series<TS<T, Properties...>> : std::bool_constant<generic_scalar<T>> {};
 
+template <typename Target, auto... Properties>
+struct generic_time_series<REF<Target, Properties...>> : generic_time_series<Target> {};
+
 template <typename Item, std::size_t Size, auto... Properties>
 struct generic_time_series<TSL<Item, Size, Properties...>> : generic_time_series<Item> {};
 
@@ -196,6 +201,9 @@ template <typename T, auto... Properties>
 struct supported_time_series<TS<T, Properties...>>
     : std::bool_constant<generic_scalar<T> || (scalar_type_traits<T>::supports_time_series && has_cpp_scalar_type<T>)> {
 };
+
+template <typename Target, auto... Properties>
+struct supported_time_series<REF<Target, Properties...>> : supported_time_series<Target> {};
 
 template <typename Item, std::size_t Size, auto... Properties>
 struct supported_time_series<TSL<Item, Size, Properties...>> : supported_time_series<Item> {};
@@ -313,7 +321,22 @@ template <typename Definition, std::size_t Index, bool Input, typename TimeSerie
         const auto guarantee =
             TimeSeries::has_explicit_guarantee ? GuaranteeParameter{TimeSeries::guarantee} : inherited_guarantee;
 
-        if constexpr (is_time_series_dict<TimeSeries>) {
+        if constexpr (is_time_series_reference<TimeSeries>) {
+            using Target = typename time_series_reference<TimeSeries>::target_type;
+            const auto &target = time_series_type<Definition, Index, Input, Target>(TimeSeriesGuarantee::ordinary);
+
+            if constexpr (Input || generic_time_series<Target>::value) {
+                static const auto type = GenericTimeSeriesReferenceType{target, guarantee};
+                return type;
+            }
+
+            if (!guarantee.is_resolved()) {
+                static const auto type = GenericTimeSeriesReferenceType{target, guarantee};
+                return type;
+            }
+
+            return time_series_reference_type(target, *guarantee.value());
+        } else if constexpr (is_time_series_dict<TimeSeries>) {
             using DictionaryTraits = time_series_dict<TimeSeries>;
             using Key = typename DictionaryTraits::key_type;
             const auto &key = scalar_type_for<Definition, Key>();
@@ -424,8 +447,8 @@ template <typename Definition, std::size_t... Index>
 
             if constexpr (output_field<Field>::value && !generic_output_field<Field>::value) {
                 using TimeSeries = typename output_field<Field>::time_series_type;
-                if constexpr (is_time_series_list<TimeSeries> || is_time_series_set<TimeSeries> ||
-                              is_time_series_dict<TimeSeries>) {
+                if constexpr (is_time_series_reference<TimeSeries> || is_time_series_list<TimeSeries> ||
+                              is_time_series_set<TimeSeries> || is_time_series_dict<TimeSeries>) {
                     time_series_representation = &cpp_time_series_storage_representation<TimeSeries>();
                 } else {
                     using Value = typename time_series_value<TimeSeries>::type;
@@ -443,6 +466,26 @@ template <typename Definition, std::size_t... Index>
     }
     if (value_representation != nullptr) {
         return &time_series_value_storage_representation(*signature.output, *value_representation);
+    }
+
+    if (const auto *reference = dynamic_cast<const TimeSeriesReferenceType *>(signature.output)) {
+        auto input = std::size_t{};
+        for (const auto &parameter : signature.parameters) {
+            if (!parameter.type->is_time_series()) {
+                continue;
+            }
+
+            const auto *representation = time_series_input_storage_representations[input++];
+            const auto *target = representation->reference_target_representation();
+            if (&representation->type() == &reference->target_type()) {
+                return &time_series_reference_storage_representation(*reference, *representation);
+            }
+            if (target != nullptr && &target->type() == &reference->target_type()) {
+                return &time_series_reference_storage_representation(*reference, *target);
+            }
+        }
+
+        return nullptr;
     }
 
     if (dynamic_cast<const TimeSeriesValueType *>(signature.output) == nullptr) {
@@ -585,8 +628,8 @@ template <typename Definition, std::size_t... Index>
             return false;
         } else {
             using TimeSeries = typename output_field<Field>::time_series_type;
-            return std::same_as<TimeSeries, TS_T> || is_time_series_list<TimeSeries> ||
-                   is_time_series_set<TimeSeries> || is_time_series_dict<TimeSeries>;
+            return std::same_as<TimeSeries, TS_T> || is_time_series_reference<TimeSeries> ||
+                   is_time_series_list<TimeSeries> || is_time_series_set<TimeSeries> || is_time_series_dict<TimeSeries>;
         }
     }());
 }
@@ -712,7 +755,7 @@ template <typename Definition, std::size_t Index>
         const auto &binding = node.parameters()[ParameterIndex];
 
         const auto &last_updated = binding.last_updated(runtime_storage);
-        const auto *value = static_cast<const void *>(runtime_storage + binding.value_offset());
+        const auto *value = binding.value(runtime_storage);
 
         if constexpr (generic_input_field<Field>::value) {
             constexpr auto GenericInputIndex = aggregate_generic_input_index<Definition, Index>(
@@ -720,6 +763,10 @@ template <typename Definition, std::size_t Index>
 
             if constexpr (std::same_as<typename input_field<Field>::time_series_type, TS_T>) {
                 return Field{last_updated, value, node.time_series_input_view_prototype(GenericInputIndex)};
+            } else if constexpr (is_time_series_reference<typename input_field<Field>::time_series_type>) {
+                return Field{last_updated, value,
+                             static_cast<const TimeSeriesReferenceInputView &>(
+                                 node.time_series_input_view_prototype(GenericInputIndex))};
             } else if constexpr (is_time_series_dict<typename input_field<Field>::time_series_type>) {
                 return Field{last_updated, value,
                              static_cast<const TimeSeriesDictionaryInputView &>(
@@ -808,35 +855,14 @@ template <typename Definition, std::size_t Index>
                 std::make_index_sequence<util::aggregate_member_count<Definition>>{});
             auto *value = static_cast<void *>(runtime_storage + node.output_value_offset());
 
-            if constexpr (std::same_as<typename output_field<Field>::time_series_type, TS_T>) {
-                return Field{last_updated, value,
-                             node.output_view_prototype(GenericTimeSeriesInputCount, GenericScalarInputCount),
-                             *context};
-            } else if constexpr (is_time_series_dict<typename output_field<Field>::time_series_type>) {
-                return Field{last_updated, value,
-                             static_cast<const TimeSeriesDictionaryOutputView &>(
-                                 node.output_view_prototype(GenericTimeSeriesInputCount, GenericScalarInputCount)),
-                             *context};
-            } else if constexpr (is_time_series_set<typename output_field<Field>::time_series_type>) {
-                return Field{last_updated, value,
-                             static_cast<const TimeSeriesSetOutputView &>(
-                                 node.output_view_prototype(GenericTimeSeriesInputCount, GenericScalarInputCount)),
-                             *context};
-            } else if constexpr (is_time_series_list<typename output_field<Field>::time_series_type>) {
-                return Field{last_updated, value,
-                             static_cast<const TimeSeriesListOutputView &>(
-                                 node.output_view_prototype(GenericTimeSeriesInputCount, GenericScalarInputCount)),
-                             *context};
-            } else {
-                return Field{last_updated, value,
-                             node.value_output_view_prototype(GenericTimeSeriesInputCount, GenericScalarInputCount),
-                             *context};
-            }
+            return output_factory::make<typename Field::time_series_type>(
+                last_updated, value, node.output_view_prototype(GenericTimeSeriesInputCount, GenericScalarInputCount),
+                *context);
         } else {
             auto &value =
                 *reinterpret_cast<typename Field::storage_type *>(runtime_storage + node.output_value_offset());
 
-            return Field{last_updated, value, *context};
+            return output_factory::make<typename Field::time_series_type>(last_updated, value, *context);
         }
     }
 }

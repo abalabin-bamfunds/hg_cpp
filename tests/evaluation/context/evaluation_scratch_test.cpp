@@ -44,3 +44,16 @@ TEST_CASE("evaluation scratch restores nested frames", "[evaluation][scratch]") 
     scratch.pop_frame(replacement);
     scratch.pop_frame(outer);
 }
+
+TEST_CASE("evaluation scratch reuses its last released allocation", "[evaluation][scratch]") {
+    auto memory = counting_memory_resource{};
+    auto scratch = bg::details::EvaluationScratch{memory};
+    auto &frame = scratch.push_frame();
+
+    auto *first = scratch.allocate(frame, 48, alignof(void *));
+    scratch.release_last(frame, first, 48);
+    auto *replacement = scratch.allocate(frame, 48, alignof(void *));
+
+    CHECK(replacement == first);
+    scratch.pop_frame(frame);
+}

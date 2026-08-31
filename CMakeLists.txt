@@ -47,10 +47,12 @@ add_library(
     src/signature.cpp
     src/simulation_evaluation_engine.cpp
     src/symbol.cpp
-    src/time_series/list/type.cpp
-    src/time_series/dict/type.cpp
-    src/time_series/set/type.cpp
-    src/time_series/storage_representation.cpp
+    src/time_series/tsl/tsl_type.cpp
+    src/time_series/ref/ref_type.cpp
+    src/time_series/ref/ref_node.cpp
+    src/time_series/tsd/tsd_type.cpp
+    src/time_series/tss/tss_type.cpp
+    src/time_series/time_series_storage_representation.cpp
     src/time_series_value_type.cpp
     src/thread_local_pointer.cpp
     src/type_of.cpp

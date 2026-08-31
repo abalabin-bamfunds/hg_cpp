@@ -1,6 +1,6 @@
 #include <bg/node.hpp>
 #include <bg/run_graph.hpp>
-#include <bg/time_series/dict/type.hpp>
+#include <bg/time_series/tsd/tsd_type.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -222,6 +222,48 @@ TEST_CASE("resurrecting a dictionary item reports a modification", "[evaluation]
     CHECK(dict_sink_definition::removed == std::vector<std::size_t>{0, 0});
     CHECK(dict_sink_definition::modified == std::vector<std::size_t>{0, 1});
     CHECK(key_sink_definition::sizes == std::vector<std::size_t>{1});
+}
+
+namespace {
+
+struct nested_item_resurrecting_source_definition {
+    static constexpr bool uses_future_scheduling = true;
+
+    bg::Out<NestedIntDictionary> output;
+
+    void start(bg::EvaluationContext *context) const {
+        output[1][2].set(12);
+        (void)context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
+    }
+
+    void evaluate() const {
+        static_cast<void>(output.erase(1));
+        static_cast<void>(output[1]);
+    }
+};
+
+struct nested_item_resurrection_sink_definition {
+    bg::In<NestedIntDictionary> input;
+
+    void evaluate() const {
+        auto modified_count = std::size_t{};
+        input.for_each_modified([&](const auto &) { ++modified_count; });
+        modified.push_back(modified_count);
+    }
+
+    inline static std::vector<std::size_t> modified;
+};
+
+} // namespace
+
+TEST_CASE("resurrecting a dictionary collection item reports a modification", "[evaluation][tsd]") {
+    const auto source = bg::node<nested_item_resurrecting_source_definition>();
+    const auto sink = bg::node<nested_item_resurrection_sink_definition>();
+    nested_item_resurrection_sink_definition::modified.clear();
+
+    bg::run_graph([&] { sink(source()); });
+
+    CHECK(nested_item_resurrection_sink_definition::modified == std::vector<std::size_t>{0, 1});
 }
 
 namespace {

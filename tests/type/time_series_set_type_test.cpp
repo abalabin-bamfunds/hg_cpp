@@ -1,4 +1,4 @@
-#include <bg/time_series/set/type.hpp>
+#include <bg/time_series/tss/tss_type.hpp>
 #include <bg/type/scalar_type.hpp>
 #include <bg/type/scalar_variable.hpp>
 #include <bg/type/time_series_set_type.hpp>

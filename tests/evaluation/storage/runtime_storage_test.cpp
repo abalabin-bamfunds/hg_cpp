@@ -4,7 +4,7 @@
 #include <bg/graph/wiring_context.hpp>
 #include <bg/node.hpp>
 #include <bg/scalar/string.hpp>
-#include <bg/time_series/dict/type.hpp>
+#include <bg/time_series/tsd/tsd_type.hpp>
 
 #include "../../utils/counting_memory_resource.hpp"
 

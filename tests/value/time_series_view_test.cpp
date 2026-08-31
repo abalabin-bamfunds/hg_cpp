@@ -1,8 +1,8 @@
-#include <bg/time_series/dict/input_view.hpp>
-#include <bg/time_series/dict/storage_representation.hpp>
-#include <bg/time_series/set/input_view.hpp>
-#include <bg/time_series/set/storage_representation.hpp>
-#include <bg/time_series/view.hpp>
+#include <bg/time_series/time_series_view.hpp>
+#include <bg/time_series/tsd/tsd_input_view.hpp>
+#include <bg/time_series/tsd/tsd_storage_representation.hpp>
+#include <bg/time_series/tss/tss_input_view.hpp>
+#include <bg/time_series/tss/tss_storage_representation.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 

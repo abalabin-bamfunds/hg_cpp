@@ -4,15 +4,22 @@
 #include <bg/graph/wiring_template.hpp>
 #include <bg/node/invalidation.hpp>
 #include <bg/node/state_layout.hpp>
-#include <bg/time_series/storage_representation.hpp>
+#include <bg/time_series/time_series_storage_representation.hpp>
 #include <bg/type/signature.hpp>
 
 #include <cstddef>
+#include <optional>
 #include <vector>
 
 namespace bg {
 
 class ScalarType;
+
+// Routes changes from one time series input to a dynamic subscriber list stored in node state.
+struct DynamicSubscribersLayout {
+    std::size_t source_input;
+    std::size_t state_offset;
+};
 
 class NodeTemplate : public WiringTemplate {
   public:
@@ -33,6 +40,10 @@ class NodeTemplate : public WiringTemplate {
     [[nodiscard]] virtual bool uses_generic_scalar_input_view(std::size_t) const noexcept { return false; }
     [[nodiscard]] virtual bool uses_generic_output_view() const noexcept { return false; }
     [[nodiscard]] virtual bool uses_future_scheduling() const noexcept { return false; }
+    [[nodiscard]] virtual std::optional<DynamicSubscribersLayout>
+    dynamic_subscribers_layout(const ResolvedSignature &) const noexcept {
+        return std::nullopt;
+    }
     [[nodiscard]] virtual NodeStateLayout state_layout(const ResolvedSignature &,
                                                        std::span<const ScalarStorageRepresentation *const>,
                                                        std::span<const ScalarType *const>) const {

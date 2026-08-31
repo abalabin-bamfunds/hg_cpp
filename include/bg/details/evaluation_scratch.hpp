@@ -24,8 +24,6 @@ class EvaluationScratch {
   public:
     struct Frame {
         EvaluationScratch *scratch;
-        void *first{};
-        void *last{};
 
       private:
         friend EvaluationScratch;
@@ -60,6 +58,18 @@ class EvaluationScratch {
     }
 
     [[nodiscard]] void *allocate(Frame &, std::size_t size, std::size_t alignment) { return allocate(size, alignment); }
+
+    void release_last(Frame &, void *value, std::size_t size) noexcept {
+        if (blocks_.empty()) {
+            return;
+        }
+
+        const auto &block = blocks_[block_];
+        auto *allocation = static_cast<std::byte *>(value);
+        if (allocation + size == block.data + used_) {
+            used_ = static_cast<std::size_t>(allocation - block.data);
+        }
+    }
 
   private:
     struct Block {

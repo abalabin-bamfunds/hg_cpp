@@ -1,8 +1,12 @@
+#include <bg/graph/compiled_graph.hpp>
 #include <bg/graph/graph_wiring.hpp>
+#include <bg/graph/runtime_graph.hpp>
 #include <bg/graph/wiring_context.hpp>
 #include <bg/node.hpp>
 #include <bg/run_graph.hpp>
-#include <bg/time_series/list/type.hpp>
+#include <bg/time_series/tsl/tsl_type.hpp>
+
+#include "../../utils/counting_memory_resource.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -457,4 +461,119 @@ TEST_CASE("a passive optional list item observes validity when another item sche
 
     CHECK(passive_item_sink_definition::validity == std::vector{true, false, true});
     CHECK(passive_item_sink_definition::values == std::vector{10, 20});
+}
+
+namespace {
+
+using LargeIntTimeSeriesList = bg::TSL<bg::TS<int>, 2000>;
+
+struct sequential_item_access_definition {
+    bg::Out<LargeIntTimeSeriesList> output;
+
+    void start() const {
+        for (auto index = std::size_t{}; index < 2000; ++index) {
+            const auto item = output[index];
+            static_cast<void>(item.valid());
+        }
+    }
+
+    void evaluate() const {}
+};
+
+} // namespace
+
+TEST_CASE("sequential item views reuse evaluation scratch storage", "[evaluation][tsl][storage]") {
+    const auto source = bg::node<sequential_item_access_definition>();
+    auto wiring = bg::GraphWiring{};
+    {
+        const auto context = bg::WiringContext{wiring};
+        static_cast<void>(source());
+    }
+
+    const auto compiled = bg::CompiledGraph{wiring};
+    auto memory = counting_memory_resource{};
+    auto runtime = bg::RuntimeGraph{compiled, memory};
+    memory.fail_after(2);
+
+    CHECK_NOTHROW(runtime.start(bg::MIN_DT + bg::EvaluationTime::duration{1}));
+
+    memory.allow_allocations();
+    runtime.stop();
+}
+
+namespace {
+
+using IntTimeSeriesDictionary = bg::TSD<std::int64_t, bg::TS<int>>;
+using DictionaryTimeSeriesList = bg::TSL<IntTimeSeriesDictionary, 2>;
+
+struct canceled_nested_dictionary_source_definition {
+    static constexpr bool uses_future_scheduling = true;
+
+    bg::Out<DictionaryTimeSeriesList> output;
+
+    void start(bg::EvaluationContext *context) const {
+        output[1][0].set(1);
+        static_cast<void>(context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1}));
+    }
+
+    void evaluate() const {
+        output[0][0].set(10);
+        static_cast<void>(output[0].erase(0));
+    }
+};
+
+struct list_evaluation_count_sink_definition {
+    bg::In<DictionaryTimeSeriesList> input;
+
+    void evaluate() const { ++count; }
+
+    inline static std::size_t count{};
+};
+
+} // namespace
+
+TEST_CASE("a canceled nested dictionary change does not publish its containing list", "[evaluation][tsl][tsd]") {
+    const auto source = bg::node<canceled_nested_dictionary_source_definition>();
+    const auto sink = bg::node<list_evaluation_count_sink_definition>();
+    list_evaluation_count_sink_definition::count = 0;
+
+    bg::run_graph([&] { sink(source()); });
+
+    CHECK(list_evaluation_count_sink_definition::count == 1);
+}
+
+namespace {
+
+struct retained_nested_item_source_definition {
+    bg::Out<NestedIntTimeSeriesList> output;
+
+    void start() const {
+        auto item = [&] {
+            auto parent = output[0];
+            return parent[1];
+        }();
+        item.set(42);
+    }
+
+    void evaluate() const {}
+};
+
+struct retained_nested_item_sink_definition {
+    bg::In<bg::TS<int>> input;
+
+    void evaluate() const { value = input.value(); }
+
+    inline static int value{};
+};
+
+} // namespace
+
+TEST_CASE("a nested item view retains its containing path", "[evaluation][tsl][storage]") {
+    const auto source = bg::node<retained_nested_item_source_definition>();
+    const auto sink = bg::node<retained_nested_item_sink_definition>();
+    retained_nested_item_sink_definition::value = 0;
+
+    bg::run_graph([&] { sink(source()[0][1]); });
+
+    CHECK(retained_nested_item_sink_definition::value == 42);
 }

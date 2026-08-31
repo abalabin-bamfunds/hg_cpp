@@ -4,8 +4,12 @@
 #include <bg/graph/wiring_template.hpp>
 #include <bg/node/node_template.hpp>
 #include <bg/type/time_series_list_type.hpp>
+#include <bg/type/time_series_reference_type.hpp>
 #include <bg/type/type_map.hpp>
 
+#include "time_series/ref/ref_node.hpp"
+
+#include <algorithm>
 #include <array>
 #include <charconv>
 #include <limits>
@@ -104,6 +108,21 @@ std::optional<WiringPoint> GraphWiring::invoke(const WiringTemplate &wiring_temp
 
     auto resolution = wiring_template.signature().resolve_with_bindings(argument_types);
     auto signature = std::move(resolution.signature);
+
+    for (auto i = std::size_t{}; i < arguments.size(); ++i) {
+        if (!arguments[i].is_wiring_point()) {
+            continue;
+        }
+
+        const auto *reference = dynamic_cast<const TimeSeriesReferenceType *>(signature.parameters[i].type);
+        if (reference == nullptr ||
+            dynamic_cast<const TimeSeriesReferenceType *>(&arguments[i].wiring_point().type())) {
+            continue;
+        }
+
+        arguments[i].wiring_point(make_reference(arguments[i].wiring_point(), *reference));
+    }
+
     const auto *expected_output = signature.output;
     const auto label = wiring_template.label(signature, arguments, default_label());
     const auto &path = make_path(signature.name, label);
@@ -234,6 +253,24 @@ WiringPoint GraphWiring::select_item(WiringPoint source, std::size_t index) {
     const auto record = wiring_points_.size();
     wiring_points_.push_back({source.node_index(), source.record_index(), index, &item_type});
     return WiringPoint{*this, record};
+}
+
+WiringPoint GraphWiring::make_reference(WiringPoint source, const TimeSeriesType &reference_type) {
+    const auto existing = std::ranges::find_if(references_, [&](const auto &entry) {
+        return entry.source == source.record_index() && entry.type == &reference_type;
+    });
+    if (existing != references_.end()) {
+        return WiringPoint{*this, existing->reference};
+    }
+
+    const auto &type = static_cast<const TimeSeriesReferenceType &>(reference_type);
+    const auto result = details::reference_node_template(type)(source);
+    if (!result) {
+        throw WiringError{"a reference-making node produced no output"};
+    }
+
+    references_.push_back({source.record_index(), &reference_type, result->record_index()});
+    return *result;
 }
 
 std::optional<WiringPoint> NodeTemplate::wire(GraphWiring &wiring, ResolvedSignature signature, const TypeMap &bindings,

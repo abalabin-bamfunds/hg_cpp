@@ -54,6 +54,7 @@ class GraphWiring {
                                                       std::vector<const ScalarType *> state_types,
                                                       std::span<details::wiring_argument> arguments);
     [[nodiscard]] WiringPoint select_item(WiringPoint source, std::size_t index);
+    [[nodiscard]] WiringPoint make_reference(WiringPoint source, const TimeSeriesType &reference_type);
 
     [[nodiscard]] const WiringPath &make_path(util::symbol name, util::symbol label);
     [[nodiscard]] util::symbol default_label() const;
@@ -67,6 +68,12 @@ class GraphWiring {
     std::optional<std::pmr::unsynchronized_pool_resource> variable_memory_;
     std::vector<WiredNode> nodes_;
     std::vector<WiringPointRecord> wiring_points_;
+    struct ReferenceWiring {
+        std::size_t source;
+        const TimeSeriesType *type;
+        std::size_t reference;
+    };
+    std::vector<ReferenceWiring> references_;
     std::pmr::deque<WiringPath> paths_;
 };
 

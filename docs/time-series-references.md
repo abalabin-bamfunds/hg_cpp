@@ -17,15 +17,24 @@ The wiring layer selects one of these actions:
 | Binding | Action |
 | --- | --- |
 | Equal types | Use the output directly |
-| `REF<TS_T>` to its target `TS_T` | Use a runtime target pointer and sampling state |
+| `REF<TS_T>` to its target `TS_T` | Use a runtime target pointer and sampling |
 | Other compatible types | Insert or reuse a node that provides the requested representation |
 
 Wiring selects representations transparently. Node code receives the type
 declared by its signature.
 
+A node that handles a reference declares `In<REF<TS_T>>` or
+`Out<REF<TS_T>>`. A reference output selects or passes through an input
+reference. Wiring inserts the required reference-making node for a time series
+source.
+
 The inserted node belongs to the graph that owns the source. Wiring reuses one
 such node for each source output and records each representation requested by
 the complete wired graph.
+
+A reference value is a pointer to storage owned by the inserted node. That
+storage identifies the target time series and holds its dynamic subscribers.
+Passing a reference copies this pointer.
 
 For a source reached through a reference, the receiving binding sends its type
 request to the node associated with the target. The graph that owns the target
@@ -70,36 +79,45 @@ A TSD representation request records whether the receiving input requires
 when it changes the item type.
 
 When `REF<TS_T>` is bound to its exact target type, compiled-node data records
-the data needed to update the receiving input. Each runtime graph stores the
-mutable target pointer and sampling state used by that input.
+the reference output's last updated location. Each runtime graph stores the
+current target identity used by the receiving input.
 
 ## Subscriptions
 
 Direct wired subscriptions are stored in compiled arrays and shared by runtime
 graphs with the same wiring.
 
-When graph compilation inserts a node that provides representations, it adds a
-subscription entry for that node to the source output's compiled subscription
-array. The entry contains the runtime offset of that node's state.
+A `REF<TS_T>` to `TS_T` binding creates two subscriptions. The node
+subscription applies the input's activity. The reference input subscription
+identifies the receiving node and parameter and updates that parameter's target.
+Required-input validity is checked when the target changes.
+
+When graph compilation inserts a node that provides references or other
+representations, it adds a special entry to the source output's compiled
+subscription array. The entry contains the runtime-storage offset of its
+dynamic subscriber pointer.
 
 The source runtime graph owns the created representations and their subscriber
 arrays. Each subscriber buffer is allocated when its first subscriber is added.
 Subscriber records are contiguous. Each record identifies the destination
-runtime graph and the nodes to schedule.
+runtime graph, node, and parameter.
 
-When the source changes, scheduling processes this entry and updates the created
-representations affected by the change. It then schedules their subscribers.
+When an exact reference target changes, scheduling processes this entry and
+schedules the dynamic subscribers directly. Other representations update the
+affected representation before scheduling its subscribers.
 
 When a reference changes target:
 
-1. Remove an active receiving input's subscription from the old target.
+1. Remove any receiving input subscription from the old target.
 2. Update its runtime target pointer.
-3. Add an active receiving input's subscription to the new target.
+3. Add a subscription to the new target when the input is active or required.
 4. Sample the new target.
-5. Schedule the receiving node when the input is active.
+
+The node subscription schedules the receiving node when the input is active.
 
 For the receiving input, the reference update time becomes the sampled view's
-last updated time. The target retains its own last updated time. Later target
+last updated time. View construction selects the later of the reference and
+target update times. Target invalidity makes the view invalid. Later target
 updates schedule the destination directly.
 
 The [validity design](time-series-validity.md#references) defines reference
@@ -157,11 +175,9 @@ that runs concurrently. The engine reclaims removed storage after this point.
 
 ## Open implementation choices
 
-1. Representation of reference time series state.
-2. Creation, layout, lifetime, and removal of dynamically created
+1. Creation, layout, lifetime, and removal of dynamically created
    representations.
-3. Layout and removal method for compact subscriber records.
-4. Storage for receiving inputs created at runtime.
-5. How a time series dictionary locates an item's optional subscriber array.
-6. Synchronization of subscription and representation changes between runtime
+2. Storage for receiving inputs created at runtime.
+3. How a time series dictionary locates an item's optional subscriber array.
+4. Synchronization of subscription and representation changes between runtime
    graphs.

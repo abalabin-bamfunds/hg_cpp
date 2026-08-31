@@ -12,6 +12,7 @@ add_executable(
     evaluation/storage/runtime_views_test.cpp
     evaluation/time_series/time_series_list_test.cpp
     evaluation/time_series/time_series_dict_test.cpp
+    evaluation/time_series/time_series_reference_test.cpp
     evaluation/validity/input_activity_test.cpp
     evaluation/validity/invalidation_behavior_test.cpp
     evaluation/validity/runtime_validity_test.cpp
@@ -29,6 +30,7 @@ add_executable(
     type/time_series_dict_type_test.cpp
     type/time_series_list_type_test.cpp
     type/time_series_set_type_test.cpp
+    type/time_series_reference_type_test.cpp
     utils/polymorphic_value_test.cpp
     utils/contiguous_bunch_test.cpp
     utils/hash_dictionary_test.cpp
@@ -59,12 +61,21 @@ add_executable(
     value/scalar/view_test.cpp
     value/time_series_view_test.cpp
     value/time_series/list/storage_test.cpp
+    value/time_series/reference/storage_test.cpp
     wiring/graph_template_test.cpp
     wiring/graph_wiring_test.cpp
     wiring/time_series_list_wiring_test.cpp
     wiring/time_series_dict_wiring_test.cpp
+    wiring/time_series_reference_wiring_test.cpp
 )
 target_link_libraries(bg_tests PRIVATE bg::bg Catch2::Catch2WithMain)
 
 include(Catch)
-catch_discover_tests(bg_tests)
+
+# Keep Catch2 discovery files in the build tree because XDG_RUNTIME_DIR may be unavailable to sandboxed builds.
+set(catch2_environment "${CMAKE_CURRENT_BINARY_DIR}/catch2_environment.cmake")
+file(GENERATE OUTPUT "${catch2_environment}"
+     CONTENT "set(ENV{XDG_RUNTIME_DIR} [==[${CMAKE_CURRENT_BINARY_DIR}]==])\n")
+set_property(DIRECTORY APPEND PROPERTY TEST_INCLUDE_FILES "${catch2_environment}")
+
+catch_discover_tests(bg_tests DISCOVERY_MODE PRE_TEST)

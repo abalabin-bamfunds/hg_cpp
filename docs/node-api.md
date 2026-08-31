@@ -304,11 +304,12 @@ scalar type, so `TS<std::optional<T>>` is invalid.
 
 ### Collection item views
 
-An `Out<>` collection operation returns a fixed-size `Out<>` item view.
-`EvaluationContext` provides stack-like storage for the path through containing
-collections. The engine releases this storage when the node function returns or
-throws. An item view is valid for one node invocation.
+`Out<>` is a one-word, move-only proxy to an output view owned by the current
+node invocation. Root and collection item outputs use the same proxy. The engine
+reuses storage as temporary proxies are destroyed and releases the remaining
+storage when the node function returns or throws. A proxy is valid for one node
+invocation.
 
 An accepted item mutation records each affected item in its containing
-collection. After the function returns, the runtime uses the recorded paths to
-schedule item subscribers directly.
+collection. After the function returns, the runtime follows the collection change
+information and the compiled item subscriptions to schedule subscribers.

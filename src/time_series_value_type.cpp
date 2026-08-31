@@ -1,3 +1,4 @@
+#include <bg/type/time_series_reference_type.hpp>
 #include <bg/type/time_series_value_type.hpp>
 
 #include <cstddef>
@@ -73,7 +74,8 @@ const TimeSeriesValueType &time_series_value_type(const ScalarType &value_type, 
 }
 
 bool GenericTimeSeriesValueType::match(const Type &supplied, TypeMap &bindings) const {
-    const auto *time_series = dynamic_cast<const TimeSeriesValueType *>(&supplied);
+    const auto *time_series =
+        dynamic_cast<const TimeSeriesValueType *>(&details::unwrap_time_series_reference(supplied));
     if (time_series == nullptr || !time_series->is_resolved()) {
         return false;
     }

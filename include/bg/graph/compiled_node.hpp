@@ -4,8 +4,9 @@
 #include <bg/graph/evaluation_function.hpp>
 #include <bg/node/input_properties.hpp>
 #include <bg/node/invalidation.hpp>
-#include <bg/time_series/input_view.hpp>
-#include <bg/time_series/output_view.hpp>
+#include <bg/time_series/ref/ref_storage.hpp>
+#include <bg/time_series/time_series_input_view.hpp>
+#include <bg/time_series/time_series_output_view.hpp>
 
 #include <cstddef>
 #include <cstdint>
@@ -41,6 +42,7 @@ struct StateMetadataCounts {
 
 enum class ParameterBindingMode : std::uint8_t {
     time_series,
+    reference,
     scalar,
 };
 
@@ -50,6 +52,12 @@ class Subscriber {
         : node_index_and_flags_{node_index | (active ? active_flag : 0) | (required ? required_flag : 0) |
                                 (active_optional ? active_optional_flag : 0)} {}
 
+    // A dynamic entry stores a pointer-aligned runtime-storage offset instead of a node index.
+    [[nodiscard]] static Subscriber dynamic_subscribers(std::uint32_t offset) noexcept {
+        return Subscriber{dynamic_subscribers_flag |
+                          static_cast<std::uint32_t>(offset / dynamic_subscribers_alignment)};
+    }
+
     [[nodiscard]] std::size_t node_index() const noexcept { return node_index_and_flags_ & node_index_mask; }
 
     [[nodiscard]] bool active() const noexcept { return (node_index_and_flags_ & active_flag) != 0; }
@@ -58,33 +66,88 @@ class Subscriber {
 
     [[nodiscard]] bool active_optional() const noexcept { return (node_index_and_flags_ & active_optional_flag) != 0; }
 
+    [[nodiscard]] bool has_dynamic_subscribers() const noexcept {
+        return (node_index_and_flags_ & dynamic_subscribers_flag) != 0;
+    }
+
+    [[nodiscard]] std::size_t dynamic_subscribers_offset() const noexcept {
+        return (node_index_and_flags_ & dynamic_subscribers_offset_mask) * dynamic_subscribers_alignment;
+    }
+
   private:
     static constexpr std::uint32_t active_flag = std::uint32_t{1} << 31;
     static constexpr std::uint32_t required_flag = std::uint32_t{1} << 30;
     static constexpr std::uint32_t active_optional_flag = std::uint32_t{1} << 29;
-    static constexpr std::uint32_t node_index_mask = active_optional_flag - 1;
+    static constexpr std::uint32_t dynamic_subscribers_flag = std::uint32_t{1} << 28;
+    static constexpr std::uint32_t node_index_mask = dynamic_subscribers_flag - 1;
+    static constexpr std::uint32_t dynamic_subscribers_offset_mask = dynamic_subscribers_flag - 1;
+    static constexpr std::size_t dynamic_subscribers_alignment = alignof(void *);
+
+    explicit Subscriber(std::uint32_t value) noexcept : node_index_and_flags_{value} {}
 
     std::uint32_t node_index_and_flags_;
+};
+
+class ReferenceInputSubscriber {
+  public:
+    ReferenceInputSubscriber(std::uint32_t node_index, std::uint32_t parameter_index) noexcept
+        : node_index_{node_index}, parameter_index_{parameter_index} {}
+
+    [[nodiscard]] std::size_t node_index() const noexcept { return node_index_; }
+
+    [[nodiscard]] std::size_t parameter_index() const noexcept { return parameter_index_; }
+
+  private:
+    std::uint32_t node_index_;
+    std::uint32_t parameter_index_;
+};
+
+class ReferenceInputSubscriberRoot {
+  public:
+    explicit ReferenceInputSubscriberRoot(std::uint32_t count) noexcept : count_{count} {}
+
+    [[nodiscard]] std::span<const ReferenceInputSubscriber> subscribers() const noexcept {
+        return {reinterpret_cast<const ReferenceInputSubscriber *>(this + 1), count_};
+    }
+
+    [[nodiscard]] const std::byte *end() const noexcept {
+        const auto subscribers = this->subscribers();
+        return reinterpret_cast<const std::byte *>(subscribers.data() + subscribers.size());
+    }
+
+  private:
+    std::uint32_t count_;
 };
 
 class ItemSubscribers {
   public:
     ItemSubscribers(std::uint32_t item, std::uint32_t subscriber_count, std::uint32_t subtree_size,
-                    std::uint32_t sampled_last_updated_offset) noexcept
-        : item_{item}, subscriber_count_{subscriber_count}, subtree_size_{subtree_size},
-          sampled_last_updated_offset_{sampled_last_updated_offset} {}
+                    std::uint32_t sampled_last_updated_offset, bool has_reference_input_subscribers) noexcept
+        : item_{item},
+          subscriber_count_{subscriber_count |
+                            (has_reference_input_subscribers ? reference_input_subscribers_flag : std::uint32_t{})},
+          subtree_size_{subtree_size}, sampled_last_updated_offset_{sampled_last_updated_offset} {}
 
     [[nodiscard]] std::size_t item() const noexcept { return item_; }
 
     [[nodiscard]] std::span<const Subscriber> subscribers() const noexcept {
-        return {reinterpret_cast<const Subscriber *>(this + 1), subscriber_count_};
+        return {reinterpret_cast<const Subscriber *>(this + 1), subscriber_count()};
+    }
+
+    [[nodiscard]] std::span<const ReferenceInputSubscriber> reference_input_subscribers() const noexcept {
+        const auto *root = reference_input_subscriber_root();
+        return root == nullptr ? std::span<const ReferenceInputSubscriber>{} : root->subscribers();
     }
 
     [[nodiscard]] std::size_t sampled_last_updated_offset() const noexcept { return sampled_last_updated_offset_; }
 
     [[nodiscard]] const ItemSubscribers *first_item() const noexcept {
-        const auto subscribers = this->subscribers();
-        return reinterpret_cast<const ItemSubscribers *>(subscribers.data() + subscribers.size());
+        if (const auto *root = reference_input_subscriber_root()) {
+            return reinterpret_cast<const ItemSubscribers *>(root->end());
+        }
+
+        const auto node_subscribers = subscribers();
+        return reinterpret_cast<const ItemSubscribers *>(node_subscribers.data() + node_subscribers.size());
     }
 
     [[nodiscard]] const ItemSubscribers *next() const noexcept {
@@ -106,6 +169,21 @@ class ItemSubscribers {
     }
 
   private:
+    static constexpr std::uint32_t reference_input_subscribers_flag = std::uint32_t{1} << 31;
+    static constexpr std::uint32_t subscriber_count_mask = reference_input_subscribers_flag - 1;
+
+    [[nodiscard]] std::size_t subscriber_count() const noexcept { return subscriber_count_ & subscriber_count_mask; }
+
+    [[nodiscard]] const ReferenceInputSubscriberRoot *reference_input_subscriber_root() const noexcept {
+        if ((subscriber_count_ & reference_input_subscribers_flag) == 0) {
+            return nullptr;
+        }
+
+        const auto node_subscribers = subscribers();
+        return reinterpret_cast<const ReferenceInputSubscriberRoot *>(node_subscribers.data() +
+                                                                      node_subscribers.size());
+    }
+
     std::uint32_t item_;
     std::uint32_t subscriber_count_;
     std::uint32_t subtree_size_;
@@ -113,7 +191,11 @@ class ItemSubscribers {
 };
 
 struct ItemSubscriptionRoot {
+    const TimeSeriesStorageRepresentation *representation;
     std::uint32_t byte_size;
+
+    ItemSubscriptionRoot(const TimeSeriesStorageRepresentation &representation, std::uint32_t byte_size) noexcept
+        : representation{&representation}, byte_size{byte_size} {}
 
     [[nodiscard]] const ItemSubscribers *first_item() const noexcept {
         return reinterpret_cast<const ItemSubscribers *>(this + 1);
@@ -142,18 +224,57 @@ struct ItemSubscriptionRoot {
 class ParameterBinding {
   public:
     [[nodiscard]] ParameterBindingMode mode() const noexcept {
-        return (location_and_flags_ & scalar_flag) == 0 ? ParameterBindingMode::time_series
-                                                        : ParameterBindingMode::scalar;
+        if ((location_and_flags_ & scalar_flag) != 0) {
+            return ParameterBindingMode::scalar;
+        }
+        return (value_offset_ & reference_flag) == 0 ? ParameterBindingMode::time_series
+                                                     : ParameterBindingMode::reference;
     }
 
     [[nodiscard]] std::size_t last_updated_offset() const noexcept { return location_and_flags_ & location_mask; }
 
     [[nodiscard]] auto last_updated(const void *runtime_storage) const noexcept -> const EvaluationTime & {
         const auto *storage = static_cast<const std::byte *>(runtime_storage);
-        return *reinterpret_cast<const EvaluationTime *>(storage + last_updated_offset());
+        const auto &source_last_updated = *reinterpret_cast<const EvaluationTime *>(storage + last_updated_offset());
+        if (mode() != ParameterBindingMode::reference) {
+            return source_last_updated;
+        }
+
+        const auto *target = reference_input(runtime_storage).target;
+        if (target == nullptr) {
+            return MIN_DT;
+        }
+
+        const auto &target_last_updated = *target->target_last_updated;
+        if (target_last_updated <= MIN_DT) {
+            return target_last_updated;
+        }
+
+        return source_last_updated > target_last_updated ? source_last_updated : target_last_updated;
     }
 
-    [[nodiscard]] std::size_t value_offset() const noexcept { return value_offset_; }
+    [[nodiscard]] std::size_t value_offset() const noexcept { return value_offset_ & value_location_mask; }
+
+    [[nodiscard]] const void *value(const void *runtime_storage) const noexcept {
+        const auto *storage = static_cast<const std::byte *>(runtime_storage);
+        if (mode() == ParameterBindingMode::reference) {
+            const auto *target = reference_input(runtime_storage).target;
+            return target == nullptr ? nullptr : target->target_value;
+        }
+        return storage + value_offset();
+    }
+
+    [[nodiscard]] const details::ReferenceInputStorage &reference_input(const void *runtime_storage) const noexcept {
+        const auto *storage = static_cast<const std::byte *>(runtime_storage);
+        return *reinterpret_cast<const details::ReferenceInputStorage *>(storage + value_offset());
+    }
+
+    [[nodiscard]] details::ReferenceInputStorage &reference_input(void *runtime_storage) const noexcept {
+        auto *storage = static_cast<std::byte *>(runtime_storage);
+        return *reinterpret_cast<details::ReferenceInputStorage *>(storage + value_offset());
+    }
+
+    [[nodiscard]] bool active() const noexcept { return (value_offset_ & active_flag) != 0; }
 
     [[nodiscard]] const void *scalar_data() const noexcept {
         if ((location_and_flags_ & optional_flag) != 0) {
@@ -175,10 +296,18 @@ class ParameterBinding {
     static constexpr std::uint32_t scalar_flag = std::uint32_t{1} << 31;
     static constexpr std::uint32_t optional_flag = std::uint32_t{1} << 30;
     static constexpr std::uint32_t location_mask = optional_flag - 1;
+    static constexpr std::uint32_t reference_flag = std::uint32_t{1} << 31;
+    static constexpr std::uint32_t active_flag = std::uint32_t{1} << 30;
+    static constexpr std::uint32_t value_location_mask = active_flag - 1;
 
     ParameterBinding(std::uint32_t last_updated_offset, std::uint32_t value_offset, InputValidity validity) noexcept
         : location_and_flags_{last_updated_offset | (validity == optional ? optional_flag : std::uint32_t{})},
           value_offset_{value_offset} {}
+
+    ParameterBinding(std::uint32_t reference_last_updated_offset, std::uint32_t input_offset, InputActivity activity,
+                     InputValidity validity) noexcept
+        : location_and_flags_{reference_last_updated_offset | (validity == optional ? optional_flag : std::uint32_t{})},
+          value_offset_{input_offset | reference_flag | (activity == bg::active ? active_flag : std::uint32_t{})} {}
 
     explicit ParameterBinding(std::uint32_t scalar_offset) noexcept
         : location_and_flags_{scalar_offset | scalar_flag}, value_offset_{} {}
@@ -226,12 +355,17 @@ class CompiledNode {
         return {first, subscriber_count()};
     }
 
+    [[nodiscard]] std::span<const ReferenceInputSubscriber> reference_input_subscribers() const noexcept {
+        const auto *root = reference_input_subscriber_root();
+        return root == nullptr ? std::span<const ReferenceInputSubscriber>{} : root->subscribers();
+    }
+
     [[nodiscard]] const ItemSubscriptionRoot *item_subscriptions() const noexcept {
         if ((counts_ & item_subscriptions_flag) == 0) {
             return nullptr;
         }
 
-        auto address = reinterpret_cast<std::uintptr_t>(subscribers().data() + subscribers().size());
+        auto address = reference_input_subscriptions_end();
         address = align(address, alignof(ItemSubscriptionRoot));
         return reinterpret_cast<const ItemSubscriptionRoot *>(address);
     }
@@ -298,19 +432,14 @@ class CompiledNode {
         return *reinterpret_cast<const OutputViewPrototype *>(address)->view;
     }
 
-    [[nodiscard]] const TimeSeriesValueOutputView &
-    value_output_view_prototype(std::size_t time_series_input_count, std::size_t scalar_input_count) const noexcept {
-        return static_cast<const TimeSeriesValueOutputView &>(
-            output_view_prototype(time_series_input_count, scalar_input_count));
-    }
-
   private:
     friend class CompiledGraphBuilder;
 
     static constexpr std::uint32_t parameter_count_bits = 10;
     static constexpr std::uint32_t parameter_count_mask = (std::uint32_t{1} << parameter_count_bits) - 1;
     static constexpr std::uint32_t item_subscriptions_flag = std::uint32_t{1} << 31;
-    static constexpr std::uint32_t subscriber_count_mask = item_subscriptions_flag - 1;
+    static constexpr std::uint32_t reference_input_subscribers_flag = std::uint32_t{1} << 30;
+    static constexpr std::uint32_t subscriber_count_mask = reference_input_subscribers_flag - 1;
     static constexpr std::uint32_t no_output_flag = std::uint32_t{1} << 31;
     static constexpr std::uint32_t state_flag = std::uint32_t{1} << 30;
     static constexpr std::uint32_t output_offset_mask = (std::uint32_t{1} << 30) - 1;
@@ -321,7 +450,7 @@ class CompiledNode {
 
     CompiledNode(EvaluationFunction evaluation_function, std::uint32_t output_last_updated_offset,
                  std::uint32_t output_value_offset, std::uint32_t parameter_count, std::uint32_t subscriber_count,
-                 bool has_output, bool has_state, bool has_item_subscriptions,
+                 bool has_output, bool has_state, bool has_reference_input_subscribers, bool has_item_subscriptions,
                  InvalidationMode invalidation_mode) noexcept
         : evaluation_function_(evaluation_function),
           output_last_updated_offset_(output_last_updated_offset | (has_output ? std::uint32_t{} : no_output_flag) |
@@ -329,12 +458,32 @@ class CompiledNode {
           output_value_offset_(output_value_offset |
                                (static_cast<std::uint32_t>(invalidation_mode) << invalidation_mode_shift)),
           counts_(parameter_count | (subscriber_count << parameter_count_bits) |
+                  (has_reference_input_subscribers ? reference_input_subscribers_flag : std::uint32_t{}) |
                   (has_item_subscriptions ? item_subscriptions_flag : std::uint32_t{})) {}
 
     [[nodiscard]] std::uint32_t parameter_count() const noexcept { return counts_ & parameter_count_mask; }
 
     [[nodiscard]] std::uint32_t subscriber_count() const noexcept {
         return (counts_ & subscriber_count_mask) >> parameter_count_bits;
+    }
+
+    [[nodiscard]] const ReferenceInputSubscriberRoot *reference_input_subscriber_root() const noexcept {
+        if ((counts_ & reference_input_subscribers_flag) == 0) {
+            return nullptr;
+        }
+
+        const auto node_subscribers = subscribers();
+        return reinterpret_cast<const ReferenceInputSubscriberRoot *>(node_subscribers.data() +
+                                                                      node_subscribers.size());
+    }
+
+    [[nodiscard]] std::uintptr_t reference_input_subscriptions_end() const noexcept {
+        if (const auto *root = reference_input_subscriber_root()) {
+            return reinterpret_cast<std::uintptr_t>(root->end());
+        }
+
+        const auto node_subscribers = subscribers();
+        return reinterpret_cast<std::uintptr_t>(node_subscribers.data() + node_subscribers.size());
     }
 
     [[nodiscard]] static std::uintptr_t align(std::uintptr_t address, std::size_t alignment) noexcept {
@@ -391,8 +540,7 @@ class CompiledNode {
     }
 
     [[nodiscard]] std::uintptr_t state_address() const noexcept {
-        const auto subscriber_span = subscribers();
-        auto address = reinterpret_cast<std::uintptr_t>(subscriber_span.data() + subscriber_span.size());
+        auto address = reference_input_subscriptions_end();
         if (const auto *root = item_subscriptions()) {
             address = reinterpret_cast<std::uintptr_t>(root->end());
         }
@@ -417,8 +565,10 @@ class CompiledNode {
 
 static_assert(sizeof(ParameterBinding) == 8);
 static_assert(sizeof(Subscriber) == 4);
+static_assert(sizeof(ReferenceInputSubscriber) == 8);
+static_assert(sizeof(ReferenceInputSubscriberRoot) == sizeof(std::uint32_t));
 static_assert(sizeof(ItemSubscribers) == 16);
-static_assert(sizeof(ItemSubscriptionRoot) == sizeof(std::uint32_t));
+static_assert(sizeof(ItemSubscriptionRoot) == 2 * sizeof(void *));
 static_assert(sizeof(TimeSeriesInputViewPrototype) == sizeof(void *));
 static_assert(sizeof(ScalarInputViewPrototype) == sizeof(void *));
 static_assert(sizeof(OutputViewPrototype) == sizeof(void *));

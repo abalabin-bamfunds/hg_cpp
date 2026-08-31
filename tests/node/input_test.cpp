@@ -1,6 +1,6 @@
 #include <bg/node/input.hpp>
 #include <bg/scalar/cpp_storage_representation.hpp>
-#include <bg/time_series/list/input_view.hpp>
+#include <bg/time_series/tsl/tsl_input_view.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 

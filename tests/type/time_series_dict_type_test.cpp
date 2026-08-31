@@ -1,5 +1,5 @@
-#include <bg/time_series/dict/type.hpp>
-#include <bg/time_series/type.hpp>
+#include <bg/time_series/time_series_type.hpp>
+#include <bg/time_series/tsd/tsd_type.hpp>
 #include <bg/type/scalar_type.hpp>
 #include <bg/type/time_series_dict_type.hpp>
 #include <bg/type/time_series_set_type.hpp>

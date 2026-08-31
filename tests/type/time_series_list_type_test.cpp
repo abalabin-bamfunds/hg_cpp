@@ -1,5 +1,5 @@
-#include <bg/time_series/list/type.hpp>
-#include <bg/time_series/type.hpp>
+#include <bg/time_series/time_series_type.hpp>
+#include <bg/time_series/tsl/tsl_type.hpp>
 #include <bg/type/time_series_list_type.hpp>
 #include <bg/type/time_series_value_type.hpp>
 

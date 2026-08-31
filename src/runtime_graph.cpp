@@ -4,7 +4,9 @@
 #include <bg/graph/compiled_node.hpp>
 #include <bg/scalar/details/allocation_context.hpp>
 #include <bg/scalar/storage_representation.hpp>
-#include <bg/time_series/storage_representation.hpp>
+#include <bg/time_series/time_series_output_view.hpp>
+#include <bg/time_series/time_series_storage_representation.hpp>
+#include <bg/util/polymorphic_value.hpp>
 
 #include <algorithm>
 #include <bit>
@@ -168,6 +170,62 @@ class RuntimeGraph::ScheduledNodes {
     std::span<SchedulingInfo> scheduling_;
 };
 
+class RuntimeGraph::ModifiedItemScheduler {
+    struct Scope {
+        ModifiedItemScheduler *scheduler;
+        const ItemSubscriptionRoot *root;
+        const ItemSubscribers *parent;
+    };
+
+  public:
+    explicit ModifiedItemScheduler(RuntimeGraph &graph) noexcept : graph_{&graph} {}
+
+    void schedule(const CompiledNode &node) {
+        const auto *root = node.item_subscriptions();
+        if (root == nullptr) {
+            return;
+        }
+
+        auto scope = Scope{this, root, nullptr};
+        root->representation->for_each_modified_item(node.output_last_updated(graph_->storage_),
+                                                     graph_->storage_ + node.output_value_offset(),
+                                                     graph_->evaluation_time_, &scope, process);
+    }
+
+  private:
+    static void process(void *context, TimeSeriesStorageRepresentation::ModifiedItem item) {
+        auto &scope = *static_cast<Scope *>(context);
+        const auto *subscribers = scope.root != nullptr ? scope.root->find_item(item.item)
+                                                        : scope.parent->find_item(item.item);
+        if (subscribers == nullptr) {
+            return;
+        }
+
+        scope.scheduler->schedule(item, *subscribers);
+    }
+
+    void schedule(TimeSeriesStorageRepresentation::ModifiedItem item, const ItemSubscribers &subscribers) {
+        auto &sampled_last_updated =
+            *reinterpret_cast<EvaluationTime *>(graph_->storage_ + subscribers.sampled_last_updated_offset());
+        const auto was_valid = sampled_last_updated > MIN_DT;
+        const auto now_valid = *item.last_updated > MIN_DT;
+
+        if (was_valid || now_valid) {
+            sampled_last_updated = now_valid ? graph_->evaluation_time_ : MIN_DT;
+            const auto change = now_valid ? (was_valid ? OutputChange::update : OutputChange::revalidation)
+                                          : OutputChange::invalidation;
+            graph_->refresh_reference_inputs(subscribers.reference_input_subscribers(), item.value, change);
+            graph_->schedule_subscribers(subscribers.subscribers(), change);
+        }
+
+        auto scope = Scope{this, nullptr, &subscribers};
+        item.representation->for_each_modified_item(*item.last_updated, item.value, graph_->evaluation_time_, &scope,
+                                                    process);
+    }
+
+    RuntimeGraph *graph_;
+};
+
 RuntimeGraph::RuntimeGraph(const CompiledGraph &compiled_graph)
     : RuntimeGraph(compiled_graph, *std::pmr::get_default_resource()) {}
 
@@ -293,88 +351,58 @@ void RuntimeGraph::clear_future_schedule() noexcept {
     }
 }
 
-RuntimeGraph::OutputMutation *RuntimeGraph::add_output_mutation(EvaluationContext &context,
-                                                                const TimeSeriesStorageRepresentation &representation,
-                                                                EvaluationTime &last_updated, void *value,
-                                                                std::size_t item, OutputMutation *parent) {
-    const auto *subscribers = [&]() -> const ItemSubscribers * {
-        if (parent != nullptr) {
-            const auto *parent_subscribers = parent->subscribers;
-            return parent_subscribers == nullptr ? nullptr : parent_subscribers->find_item(item);
-        }
+RuntimeGraph::OutputPath *RuntimeGraph::add_output_path(EvaluationContext &context,
+                                                        const TimeSeriesStorageRepresentation &representation,
+                                                        EvaluationTime &last_updated, void *value, std::size_t item,
+                                                        OutputPath *parent) {
+    ensure_output_frame(context);
+    auto &frame = *static_cast<details::EvaluationScratch::Frame *>(context.scratch_frame_);
 
-        const auto *root = compiled_graph_->node(context.node_index()).item_subscriptions();
-        return root == nullptr ? nullptr : root->find_item(item);
-    }();
-
-    auto *frame = static_cast<details::EvaluationScratch::Frame *>(context.scratch_frame_);
-    if (frame == nullptr) {
-        frame = &scratch_->push_frame();
-        context.scratch_frame_ = frame;
-    }
-
-    auto *mutation = std::construct_at(
-        static_cast<OutputMutation *>(scratch_->allocate(*frame, sizeof(OutputMutation), alignof(OutputMutation))),
-        OutputMutation{&context, &representation, &last_updated, value, static_cast<std::uint32_t>(item), false, parent,
-                       nullptr, subscribers});
-
-    if (frame->last == nullptr) {
-        frame->first = mutation;
-    } else {
-        static_cast<OutputMutation *>(frame->last)->next = mutation;
-    }
-    frame->last = mutation;
-
-    return mutation;
+    return std::construct_at(
+        static_cast<OutputPath *>(scratch_->allocate(frame, sizeof(OutputPath), alignof(OutputPath))),
+        context, representation, last_updated, value, static_cast<std::uint32_t>(item), parent);
 }
 
-void RuntimeGraph::publish_output_mutation(OutputMutation &output_mutation) noexcept {
-    auto *mutation = &output_mutation;
-    while (mutation != nullptr) {
-        auto &entry = *mutation;
-        const auto modified =
-            entry.representation->mark_item_modified(entry.value, entry.item, evaluation_time_, *memory_);
-        entry.published |= modified;
-        if (modified) {
-            *entry.last_updated = entry.representation->collection_valid(entry.value) ? evaluation_time_ : MIN_DT;
-        }
-        mutation = entry.parent;
+void RuntimeGraph::ensure_output_frame(EvaluationContext &context) {
+    if (context.scratch_frame_ == nullptr) {
+        context.scratch_frame_ = &scratch_->push_frame();
     }
 }
 
-void RuntimeGraph::schedule_output_mutations(const EvaluationContext &context) noexcept {
-    const auto *frame = static_cast<const details::EvaluationScratch::Frame *>(context.scratch_frame_);
-    auto *mutation = frame == nullptr ? nullptr : static_cast<OutputMutation *>(frame->first);
+TimeSeriesOutputView &RuntimeGraph::add_output_view(EvaluationContext &context,
+                                                    const TimeSeriesOutputView &prototype) {
+    ensure_output_frame(context);
+    auto &frame = *static_cast<details::EvaluationScratch::Frame *>(context.scratch_frame_);
+    auto *storage = scratch_->allocate(frame, sizeof(TimeSeriesOutputView), alignof(TimeSeriesOutputView));
 
-    while (mutation != nullptr) {
-        if (!mutation->published || mutation->subscribers == nullptr ||
-            !mutation->representation->item_modified(mutation->value, mutation->item, evaluation_time_)) {
-            mutation = mutation->next;
-            continue;
+    return util::polymorphic_value<TimeSeriesOutputView>::copy_to(storage, prototype);
+}
+
+void RuntimeGraph::publish_output_path(OutputPath &output_path) noexcept {
+    auto *path = &output_path;
+    while (path != nullptr) {
+        auto &entry = *path;
+        const auto modified = entry.representation->mark_item_modified(
+            entry.value, entry.item, evaluation_time_, *entry.last_updated, *memory_);
+        *entry.last_updated = entry.representation->collection_valid(entry.value) ? evaluation_time_ : MIN_DT;
+        if (!modified) {
+            return;
         }
-
-        const auto item = mutation->representation->fixed_item(mutation->item);
-        const auto *value = static_cast<const std::byte *>(mutation->value);
-        const auto item_last_updated = *reinterpret_cast<const EvaluationTime *>(value + item.last_updated_offset);
-        auto &sampled_last_updated =
-            *reinterpret_cast<EvaluationTime *>(storage_ + mutation->subscribers->sampled_last_updated_offset());
-        const auto was_valid = sampled_last_updated > MIN_DT;
-        const auto now_valid = item_last_updated > MIN_DT;
-
-        if (!was_valid && !now_valid) {
-            mutation = mutation->next;
-            continue;
-        }
-
-        sampled_last_updated = now_valid ? evaluation_time_ : MIN_DT;
-        const auto change =
-            now_valid ? (was_valid ? OutputChange::update : OutputChange::revalidation) : OutputChange::invalidation;
-        schedule_subscribers(mutation->subscribers->subscribers(), change);
-        mutation = mutation->next;
+        path = entry.parent();
     }
 }
 
-void RuntimeGraph::release_output_mutations(EvaluationContext &context) noexcept {
+void RuntimeGraph::release_output_path(EvaluationContext &context, OutputPath &path) noexcept {
+    auto &frame = *static_cast<details::EvaluationScratch::Frame *>(context.scratch_frame_);
+    scratch_->release_last(frame, &path, sizeof(OutputPath));
+}
+
+void RuntimeGraph::release_output_view(EvaluationContext &context, TimeSeriesOutputView &view) noexcept {
+    auto &frame = *static_cast<details::EvaluationScratch::Frame *>(context.scratch_frame_);
+    scratch_->release_last(frame, &view, sizeof(TimeSeriesOutputView));
+}
+
+void RuntimeGraph::release_output_paths(EvaluationContext &context) noexcept {
     if (context.scratch_frame_ != nullptr) {
         auto &frame = *static_cast<details::EvaluationScratch::Frame *>(context.scratch_frame_);
         frame.scratch->pop_frame(frame);
@@ -390,21 +418,115 @@ std::optional<EvaluationTime> RuntimeGraph::next_scheduled_time() const noexcept
     return future_schedule()->next_time();
 }
 
-void RuntimeGraph::schedule_subscribers(std::span<const Subscriber> subscribers, OutputChange change) noexcept {
+void RuntimeGraph::schedule_subscribers(std::span<const Subscriber> subscribers, OutputChange change) {
     for (const auto &subscriber : subscribers) {
-        if ((change != OutputChange::invalidation && subscriber.active()) ||
-            (change == OutputChange::invalidation && subscriber.active_optional())) {
-            schedule(subscriber.node_index());
+        if (subscriber.has_dynamic_subscribers()) {
+            schedule_dynamic_subscribers(subscriber.dynamic_subscribers_offset(), change);
+            continue;
         }
 
-        if (change != OutputChange::update && subscriber.required()) {
+        schedule_node_subscriber(subscriber.node_index(), subscriber.active(), subscriber.required(),
+                                 subscriber.active_optional(), change);
+    }
+}
+
+void RuntimeGraph::schedule_node_subscriber(std::size_t node_index, bool is_active, bool is_required,
+                                            bool is_active_optional, OutputChange change) noexcept {
+    if ((change != OutputChange::invalidation && is_active) ||
+        (change == OutputChange::invalidation && is_active_optional)) {
+        schedule(node_index);
+    }
+
+    if (change != OutputChange::update && is_required) {
+        schedule_validity_check(node_index);
+    }
+}
+
+void RuntimeGraph::schedule_output_change(const CompiledNode &node, OutputChange change) {
+    schedule_modified_items(node);
+    refresh_reference_inputs(node.reference_input_subscribers(), storage_ + node.output_value_offset(), change);
+    schedule_subscribers(node.subscribers(), change);
+}
+
+void RuntimeGraph::schedule_modified_items(const CompiledNode &node) {
+    ModifiedItemScheduler{*this}.schedule(node);
+}
+
+void RuntimeGraph::refresh_reference_inputs(std::span<const ReferenceInputSubscriber> subscribers,
+                                            const void *changed_value, OutputChange change) {
+    if (subscribers.empty()) {
+        return;
+    }
+
+    auto *reference = change == OutputChange::invalidation
+                          ? nullptr
+                          : *static_cast<details::ReferenceStorage *const *>(changed_value);
+
+    for (const auto &subscriber : subscribers) {
+        const auto &binding = compiled_graph_->node(subscriber.node_index()).parameters()[subscriber.parameter_index()];
+        auto &input = binding.reference_input(storage_);
+        if (input.target != reference) {
+            if (input.target != nullptr && (binding.active() || binding.validity() == required)) {
+                input.target->owner->remove_dynamic_subscriber(input.target->subscribers, *this,
+                                                               subscriber.node_index(), subscriber.parameter_index());
+            }
+            if (reference != nullptr && (binding.active() || binding.validity() == required)) {
+                reference->owner->add_dynamic_subscriber(reference->subscribers, *this, subscriber.node_index(),
+                                                         subscriber.parameter_index(), binding.active(),
+                                                         binding.validity() == required);
+            }
+            input.target = reference;
+        }
+
+        if (binding.validity() == required) {
             schedule_validity_check(subscriber.node_index());
         }
     }
 }
 
-void RuntimeGraph::schedule_output_change(const CompiledNode &node, OutputChange change) noexcept {
-    schedule_subscribers(node.subscribers(), change);
+void RuntimeGraph::add_dynamic_subscriber(details::DynamicSubscribers *&subscribers, RuntimeGraph &destination,
+                                          std::size_t node_index, std::size_t parameter_index, bool is_active,
+                                          bool is_required) {
+    if (subscribers == nullptr) {
+        auto *storage = memory_->allocate(sizeof(details::DynamicSubscribers), alignof(details::DynamicSubscribers));
+        try {
+            subscribers = std::construct_at(static_cast<details::DynamicSubscribers *>(storage), *memory_);
+        } catch (...) {
+            memory_->deallocate(storage, sizeof(details::DynamicSubscribers), alignof(details::DynamicSubscribers));
+            throw;
+        }
+    }
+
+    subscribers->records.emplace_back(destination, static_cast<std::uint32_t>(parameter_index),
+                                      static_cast<std::uint32_t>(node_index), is_active, is_required);
+}
+
+void RuntimeGraph::remove_dynamic_subscriber(details::DynamicSubscribers *subscribers, RuntimeGraph &destination,
+                                             std::size_t node_index, std::size_t parameter_index) noexcept {
+    if (subscribers == nullptr) {
+        return;
+    }
+
+    const auto record = std::ranges::find_if(subscribers->records, [&](const auto &candidate) {
+        return candidate.graph == &destination && candidate.node_index() == node_index &&
+               candidate.parameter_index == parameter_index;
+    });
+    if (record != subscribers->records.end()) {
+        *record = subscribers->records.back();
+        subscribers->records.pop_back();
+    }
+}
+
+void RuntimeGraph::schedule_dynamic_subscribers(std::size_t offset, OutputChange change) noexcept {
+    auto *subscribers = *reinterpret_cast<details::DynamicSubscribers **>(storage_ + offset);
+    if (subscribers == nullptr) {
+        return;
+    }
+
+    for (const auto &subscriber : subscribers->records) {
+        subscriber.graph->schedule_node_subscriber(subscriber.node_index(), subscriber.active(), subscriber.required(),
+                                                   subscriber.active_optional(), change);
+    }
 }
 
 void RuntimeGraph::apply_invalidation(const CompiledNode &node, std::size_t node_index) {
@@ -430,7 +552,9 @@ void RuntimeGraph::apply_invalidation(const CompiledNode &node, std::size_t node
     EvaluationContext context{evaluation_time_, *this, node_index};
     const auto allocation_context = details::ScalarAllocationContext{*memory_, this, node_index};
     node.invalidation_function()(node, storage_, &context);
-    context.schedule_output_mutations();
+    if (node.has_output()) {
+        context.finalize_output(node.output_last_updated(storage_), storage_ + node.output_value_offset());
+    }
 
     if (!node.has_output()) {
         return;
@@ -465,7 +589,9 @@ void RuntimeGraph::start(EvaluationTime evaluation_time, details::EvaluationScra
             EvaluationContext context{evaluation_time, *this, node_index};
             const auto allocation_context = details::ScalarAllocationContext{*memory_, this, node_index};
             (*function)(node, storage_, &context);
-            context.schedule_output_mutations();
+            if (node.has_output()) {
+                context.finalize_output(node.output_last_updated(storage_), storage_ + node.output_value_offset());
+            }
             ++function;
             started_node_count = node_index + 1;
 
@@ -503,12 +629,18 @@ void RuntimeGraph::stop_nodes(std::size_t node_count) noexcept {
 }
 
 void RuntimeGraph::stop() noexcept {
+    auto scratch = details::EvaluationScratch{*memory_};
+    stop(scratch);
+}
+
+void RuntimeGraph::stop(details::EvaluationScratch &scratch) noexcept {
+    const auto scratch_use = ScratchUse{*this, scratch};
     stop_nodes(compiled_graph_->node_count());
 }
 
 bool RuntimeGraph::inputs_are_valid(const CompiledNode &node) const noexcept {
     for (const auto &parameter : node.parameters()) {
-        if (parameter.mode() != ParameterBindingMode::time_series || parameter.validity() != required) {
+        if (parameter.mode() == ParameterBindingMode::scalar || parameter.validity() != required) {
             continue;
         }
 
@@ -574,21 +706,20 @@ void RuntimeGraph::evaluate(EvaluationTime evaluation_time, details::EvaluationS
 
         try {
             node.evaluation_function()(node, storage_, &context);
+
+            if (has_output) {
+                context.finalize_output(node.output_last_updated(storage_), storage_ + node.output_value_offset());
+                const auto &last_updated = node.output_last_updated(storage_);
+                const auto now_valid = last_updated > MIN_DT;
+                if (last_updated == evaluation_time || output_was_valid != now_valid) {
+                    schedule_output_change(
+                        node, now_valid ? (output_was_valid ? OutputChange::update : OutputChange::revalidation)
+                                        : OutputChange::invalidation);
+                }
+            }
         } catch (...) {
             stop_nodes(compiled_graph_->node_count());
             throw;
-        }
-
-        context.schedule_output_mutations();
-
-        if (has_output) {
-            const auto &last_updated = node.output_last_updated(storage_);
-            const auto now_valid = last_updated > MIN_DT;
-            if (last_updated == evaluation_time || output_was_valid != now_valid) {
-                schedule_output_change(
-                    node, now_valid ? (output_was_valid ? OutputChange::update : OutputChange::revalidation)
-                                    : OutputChange::invalidation);
-            }
         }
     }
 }
@@ -614,26 +745,42 @@ EvaluationContext::EvaluationContext(EvaluationTime evaluation_time, RuntimeGrap
     : evaluation_time_(evaluation_time), runtime_graph_(&runtime_graph), node_index_(node_index) {}
 
 EvaluationContext::~EvaluationContext() {
-    runtime_graph_->release_output_mutations(*this);
+    runtime_graph_->release_output_paths(*this);
 }
 
-void *EvaluationContext::add_output_mutation(const TimeSeriesStorageRepresentation &representation,
-                                             EvaluationTime &last_updated, void *value, std::size_t item,
-                                             void *parent) {
-    return runtime_graph_->add_output_mutation(*this, representation, last_updated, value, item,
-                                               static_cast<RuntimeGraph::OutputMutation *>(parent));
+void *EvaluationContext::add_output_path(const TimeSeriesStorageRepresentation &representation,
+                                         EvaluationTime &last_updated, void *value, std::size_t item, void *parent) {
+    if (parent == nullptr) {
+        output_representation_ = &representation;
+    }
+    return runtime_graph_->add_output_path(*this, representation, last_updated, value, item,
+                                           static_cast<RuntimeGraph::OutputPath *>(parent));
 }
 
-EvaluationContext &EvaluationContext::output_mutation_context(void *mutation) noexcept {
-    return *static_cast<RuntimeGraph::OutputMutation *>(mutation)->context;
+TimeSeriesOutputView &EvaluationContext::add_output_view(const TimeSeriesOutputView &prototype) {
+    return runtime_graph_->add_output_view(*this, prototype);
 }
 
-void EvaluationContext::publish_output_mutation(void *mutation) const noexcept {
-    runtime_graph_->publish_output_mutation(*static_cast<RuntimeGraph::OutputMutation *>(mutation));
+EvaluationContext &EvaluationContext::output_path_context(void *path) noexcept {
+    return static_cast<RuntimeGraph::OutputPath *>(path)->context();
 }
 
-void EvaluationContext::schedule_output_mutations() const noexcept {
-    runtime_graph_->schedule_output_mutations(*this);
+void EvaluationContext::publish_output_path(void *path) const noexcept {
+    runtime_graph_->publish_output_path(*static_cast<RuntimeGraph::OutputPath *>(path));
+}
+
+void EvaluationContext::release_output_view(void *view) noexcept {
+    runtime_graph_->release_output_view(*this, *static_cast<TimeSeriesOutputView *>(view));
+}
+
+void EvaluationContext::release_output_path(void *path) noexcept {
+    runtime_graph_->release_output_path(*this, *static_cast<RuntimeGraph::OutputPath *>(path));
+}
+
+void EvaluationContext::finalize_output(EvaluationTime &last_updated, void *value) const noexcept {
+    if (output_representation_ != nullptr) {
+        static_cast<void>(output_representation_->finalize_modified_items(last_updated, value, evaluation_time_));
+    }
 }
 
 } // namespace bg

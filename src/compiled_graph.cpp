@@ -5,8 +5,10 @@
 #include <bg/node/node_template.hpp>
 #include <bg/scalar/storage_representation.hpp>
 #include <bg/scalar/view.hpp>
-#include <bg/time_series/storage_representation.hpp>
+#include <bg/time_series/ref/ref_storage.hpp>
+#include <bg/time_series/time_series_storage_representation.hpp>
 #include <bg/type/signature.hpp>
+#include <bg/type/time_series_reference_type.hpp>
 #include <bg/type/time_series_value_type.hpp>
 #include <bg/type/type.hpp>
 
@@ -29,7 +31,7 @@ namespace {
 
 constexpr std::size_t max_packed_offset = (std::size_t{1} << 30) - 1;
 constexpr std::size_t max_parameter_count = (std::size_t{1} << 10) - 1;
-constexpr std::size_t max_subscriber_count = (std::size_t{1} << 21) - 1;
+constexpr std::size_t max_subscriber_count = (std::size_t{1} << 20) - 1;
 constexpr std::uint32_t no_wiring_path = std::numeric_limits<std::uint32_t>::max();
 
 using ScheduleWord = details::ScheduleWord;
@@ -117,6 +119,8 @@ struct FixedNodeLayout {
     std::size_t offset{};
     StorageSection parameters;
     StorageSection subscribers;
+    StorageSection reference_input_subscriber_root;
+    StorageSection reference_input_subscribers;
     StorageSection item_subscription_root;
     StorageSection item_subscribers;
     StorageSection state_offset;
@@ -133,11 +137,16 @@ struct FixedNodeLayout {
     std::size_t alignment{};
 };
 
+struct SubscriptionPlan {
+    std::vector<Subscriber> nodes;
+    std::vector<ReferenceInputSubscriber> reference_inputs;
+};
+
 struct ItemSubscriptionPlan {
     std::uint32_t item;
     std::size_t wiring_point;
     std::uint32_t sampled_last_updated_offset{};
-    std::vector<Subscriber> subscribers;
+    SubscriptionPlan subscriptions;
     std::vector<ItemSubscriptionPlan> items;
 };
 
@@ -153,6 +162,12 @@ struct StateLayout {
     bool requires_destruction{};
 };
 
+struct ReferenceInputLayout {
+    std::uint32_t parameter;
+    std::uint32_t offset;
+    std::uint32_t source_last_updated_offset;
+};
+
 struct RuntimeStorageLayout {
     std::size_t schedule_word_count{};
     std::size_t size{};
@@ -160,11 +175,12 @@ struct RuntimeStorageLayout {
 };
 
 struct NodePlan {
-    std::vector<Subscriber> subscribers;
+    SubscriptionPlan subscriptions;
     std::vector<ItemSubscriptionPlan> item_subscriptions;
     InvalidationBehavior invalidation;
     OutputLayout output;
     StateLayout state;
+    std::vector<ReferenceInputLayout> reference_inputs;
     FixedNodeLayout fixed;
 };
 
@@ -207,6 +223,12 @@ struct FixedStorageLayout {
     std::size_t alignment{};
 };
 
+struct DynamicSubscribersPlan {
+    std::size_t source;
+    std::size_t node;
+    std::size_t state_offset;
+};
+
 struct CompilationPlan {
     std::span<const WiredNode> nodes;
     std::span<const WiringPointRecord> wiring_points;
@@ -214,6 +236,7 @@ struct CompilationPlan {
     WiringPathLayout wiring_paths;
     NodeFunctionLayout starts;
     NodeFunctionLayout stops;
+    std::vector<DynamicSubscribersPlan> dynamic_subscribers;
     RuntimeStorageLayout runtime;
     FixedStorageLayout fixed;
     std::size_t scalar_destruction_count{};
@@ -310,71 +333,131 @@ struct ConstructedScalar {
     return result;
 }
 
+[[nodiscard]] SubscriptionPlan &subscriber_list(std::size_t source, std::span<const WiringPointRecord> wiring_points,
+                                                std::span<NodePlan> node_plans) {
+    const auto source_index = root_source_node(source, wiring_points);
+    if (wiring_points[source].parent == WiringPointRecord::npos) {
+        return node_plans[source_index].subscriptions;
+    }
+
+    auto path = std::vector<std::size_t>{};
+    while (wiring_points[source].parent != WiringPointRecord::npos) {
+        path.push_back(source);
+        source = wiring_points[source].parent;
+    }
+
+    auto *items = &node_plans[source_index].item_subscriptions;
+    ItemSubscriptionPlan *leaf = nullptr;
+    for (const auto wiring_point : path | std::views::reverse) {
+        const auto item = wiring_points[wiring_point].item;
+        auto entry = std::ranges::find(*items, item, &ItemSubscriptionPlan::item);
+        if (entry == items->end()) {
+            entry = items->insert(entry, ItemSubscriptionPlan{
+                                             .item = static_cast<std::uint32_t>(item),
+                                             .wiring_point = wiring_point,
+                                             .sampled_last_updated_offset = 0,
+                                             .subscriptions = {},
+                                             .items = {},
+                                         });
+        }
+        leaf = &*entry;
+        items = &entry->items;
+    }
+
+    return leaf->subscriptions;
+}
+
 void plan_subscribers(std::span<const WiredNode> nodes, std::span<const WiringPointRecord> wiring_points,
                       std::span<NodePlan> node_plans) {
     const auto add_subscriber = [](std::vector<Subscriber> &subscribers, std::uint32_t node_index, bool is_active,
-                                   bool is_required) {
-        if (!subscribers.empty() && subscribers.back().node_index() == node_index) {
+                                   bool is_required, bool is_active_optional) {
+        if (!subscribers.empty() && !subscribers.back().has_dynamic_subscribers() &&
+            subscribers.back().node_index() == node_index) {
             const auto &existing = subscribers.back();
             subscribers.back() =
                 Subscriber{node_index, existing.active() || is_active, existing.required() || is_required,
-                           existing.active_optional() || (is_active && !is_required)};
+                           existing.active_optional() || is_active_optional};
             return;
         }
 
-        subscribers.emplace_back(node_index, is_active, is_required, is_active && !is_required);
+        subscribers.emplace_back(node_index, is_active, is_required, is_active_optional);
     };
 
     for (auto target_index = std::size_t{}; target_index < nodes.size(); ++target_index) {
         const auto &target = nodes[target_index];
         auto input_index = std::size_t{};
 
-        for (const auto &parameter : target.signature().parameters) {
+        for (auto parameter_index = std::size_t{}; parameter_index < target.signature().parameters.size();
+             ++parameter_index) {
+            const auto &parameter = target.signature().parameters[parameter_index];
             if (!parameter.type->is_time_series()) {
                 continue;
             }
 
             auto source = target.input_sources()[input_index++];
-            const auto source_index = root_source_node(source, wiring_points);
             const auto is_active = parameter.activity == active;
             const auto is_required = parameter.validity == required;
             const auto subscriber_index = static_cast<std::uint32_t>(target_index);
-            if (wiring_points[source].parent == WiringPointRecord::npos) {
-                if (is_active || is_required) {
-                    add_subscriber(node_plans[source_index].subscribers, subscriber_index, is_active, is_required);
+            const auto dereferences =
+                dynamic_cast<const TimeSeriesReferenceType *>(wiring_points[source].type) != nullptr &&
+                dynamic_cast<const TimeSeriesReferenceType *>(parameter.type) == nullptr;
+            auto &subscriptions = subscriber_list(source, wiring_points, node_plans);
+            if (dereferences) {
+                subscriptions.reference_inputs.emplace_back(subscriber_index,
+                                                            static_cast<std::uint32_t>(parameter_index));
+                if (is_active) {
+                    add_subscriber(subscriptions.nodes, subscriber_index, true, false, !is_required);
                 }
-                continue;
-            }
-
-            auto path = std::vector<std::size_t>{};
-            while (wiring_points[source].parent != WiringPointRecord::npos) {
-                path.push_back(source);
-                source = wiring_points[source].parent;
-            }
-
-            auto *items = &node_plans[source_index].item_subscriptions;
-            ItemSubscriptionPlan *leaf = nullptr;
-            for (const auto wiring_point : path | std::views::reverse) {
-                const auto item = wiring_points[wiring_point].item;
-                auto entry = std::ranges::find(*items, item, &ItemSubscriptionPlan::item);
-                if (entry == items->end()) {
-                    entry = items->insert(entry, ItemSubscriptionPlan{
-                                                     .item = static_cast<std::uint32_t>(item),
-                                                     .wiring_point = wiring_point,
-                                                     .sampled_last_updated_offset = 0,
-                                                     .subscribers = {},
-                                                     .items = {},
-                                                 });
-                }
-                leaf = &*entry;
-                items = &entry->items;
-            }
-
-            if (is_active || is_required) {
-                add_subscriber(leaf->subscribers, subscriber_index, is_active, is_required);
+            } else if (is_active || is_required) {
+                add_subscriber(subscriptions.nodes, subscriber_index, is_active, is_required,
+                               is_active && !is_required);
             }
         }
     }
+}
+
+void plan_dynamic_subscribers(CompilationPlan &plan) {
+    for (auto node_index = std::size_t{}; node_index < plan.nodes.size(); ++node_index) {
+        const auto &node = plan.nodes[node_index];
+        const auto layout = node.node_template().dynamic_subscribers_layout(node.signature());
+        if (!layout) {
+            continue;
+        }
+        if (layout->source_input >= node.input_sources().size()) {
+            throw std::logic_error{"dynamic subscriber source input is out of range"};
+        }
+
+        const auto source = node.input_sources()[layout->source_input];
+        (void)subscriber_list(source, plan.wiring_points, plan.node_plans);
+        plan.dynamic_subscribers.push_back({source, node_index, layout->state_offset});
+    }
+}
+
+void resolve_dynamic_subscribers(CompilationPlan &plan) {
+    for (const auto &dynamic : plan.dynamic_subscribers) {
+        const auto &state = plan.node_plans[dynamic.node].state;
+        if (dynamic.state_offset + sizeof(details::DynamicSubscribers *) > state.node.size) {
+            throw std::logic_error{"dynamic subscribers are outside node state"};
+        }
+
+        const auto offset = state.offset + dynamic.state_offset;
+        if (offset % alignof(details::DynamicSubscribers *) != 0) {
+            throw std::logic_error{"dynamic subscribers are not pointer-aligned"};
+        }
+
+        subscriber_list(dynamic.source, plan.wiring_points, plan.node_plans)
+            .nodes.push_back(Subscriber::dynamic_subscribers(packed_offset(offset, "runtime storage reaches 1 GiB")));
+    }
+}
+
+[[nodiscard]] const TimeSeriesStorageRepresentation *
+input_storage_representation(const Type &input_type, const TimeSeriesStorageRepresentation *source) {
+    if (dynamic_cast<const TimeSeriesReferenceType *>(&source->type()) != nullptr &&
+        dynamic_cast<const TimeSeriesReferenceType *>(&input_type) == nullptr) {
+        return source->reference_target_representation();
+    }
+
+    return source;
 }
 
 [[nodiscard]] std::vector<const ScalarStorageRepresentation *>
@@ -387,7 +470,8 @@ parameter_storage_representations(const WiredNode &node, std::span<const WiringP
     for (const auto &parameter : node.signature().parameters) {
         if (parameter.type->is_time_series()) {
             const auto output = source_output(node.input_sources()[input_index++], wiring_points, node_plans);
-            parameter_storage_representations.push_back(output.storage_representation->scalar_storage_representation());
+            const auto *representation = input_storage_representation(*parameter.type, output.storage_representation);
+            parameter_storage_representations.push_back(representation->scalar_storage_representation());
         } else {
             const auto &scalar = node.scalar_values()[scalar_index++];
             parameter_storage_representations.push_back(scalar.has_value() ? &scalar.storage_representation()
@@ -404,8 +488,16 @@ find_output_storage_representation(const WiredNode &node, std::span<const Wiring
     const auto parameter_representations = parameter_storage_representations(node, wiring_points, node_plans);
     auto input_representations = std::vector<const TimeSeriesStorageRepresentation *>{};
     input_representations.reserve(node.input_sources().size());
-    for (const auto source : node.input_sources()) {
-        input_representations.push_back(source_output(source, wiring_points, node_plans).storage_representation);
+    auto input = std::size_t{};
+    for (const auto &parameter : node.signature().parameters) {
+        if (!parameter.type->is_time_series()) {
+            continue;
+        }
+
+        const auto source = node.input_sources()[input++];
+        const auto *representation = input_storage_representation(
+            *parameter.type, source_output(source, wiring_points, node_plans).storage_representation);
+        input_representations.push_back(representation);
     }
 
     return node.node_template().output_storage_representation(node.signature(), parameter_representations,
@@ -467,6 +559,27 @@ void plan_runtime_storage(CompilationPlan &plan, std::size_t schedule_word_count
     for (auto i = std::size_t{}; i < plan.nodes.size(); ++i) {
         plan.node_plans[i].output = add_output_layout(storage, plan.nodes[i], plan.wiring_points, plan.node_plans);
         add_item_samples(plan.node_plans[i].item_subscriptions);
+
+        auto input = std::size_t{};
+        for (auto parameter = std::size_t{}; parameter < plan.nodes[i].signature().parameters.size(); ++parameter) {
+            const auto &parameter_type = *plan.nodes[i].signature().parameters[parameter].type;
+            if (!parameter_type.is_time_series()) {
+                continue;
+            }
+
+            const auto source = plan.nodes[i].input_sources()[input++];
+            if (dynamic_cast<const TimeSeriesReferenceType *>(plan.wiring_points[source].type) == nullptr ||
+                dynamic_cast<const TimeSeriesReferenceType *>(&parameter_type) != nullptr) {
+                continue;
+            }
+
+            const auto source_layout = source_output(source, plan.wiring_points, plan.node_plans);
+            const auto slot = storage.add<details::ReferenceInputStorage>();
+            plan.node_plans[i].reference_inputs.push_back({static_cast<std::uint32_t>(parameter),
+                                                           packed_offset(slot.offset, "runtime storage reaches 1 GiB"),
+                                                           source_layout.last_updated_offset});
+        }
+
         plan.node_plans[i].state = add_state_layout(storage, plan.nodes[i], plan.wiring_points, plan.node_plans);
     }
 
@@ -475,15 +588,26 @@ void plan_runtime_storage(CompilationPlan &plan, std::size_t schedule_word_count
     plan.runtime = {schedule_word_count, storage.size(), storage.alignment()};
 }
 
+[[nodiscard]] std::size_t subscription_size(const SubscriptionPlan &subscriptions) noexcept {
+    auto result = subscriptions.nodes.size() * sizeof(Subscriber);
+    if (!subscriptions.reference_inputs.empty()) {
+        result += sizeof(ReferenceInputSubscriberRoot) +
+                  subscriptions.reference_inputs.size() * sizeof(ReferenceInputSubscriber);
+    }
+
+    return result;
+}
+
 [[nodiscard]] std::size_t item_subscriber_size(std::span<const ItemSubscriptionPlan> items) {
     auto result = std::size_t{};
     for (const auto &item : items) {
-        if (item.subscribers.size() > std::numeric_limits<std::uint32_t>::max() ||
+        if (item.subscriptions.nodes.size() > max_subscriber_count ||
+            item.subscriptions.reference_inputs.size() > std::numeric_limits<std::uint32_t>::max() ||
             item.items.size() > std::numeric_limits<std::uint32_t>::max()) {
             throw std::length_error{"a time series item has too many subscriptions"};
         }
 
-        result += sizeof(ItemSubscribers) + item.subscribers.size() * sizeof(Subscriber);
+        result += sizeof(ItemSubscribers) + subscription_size(item.subscriptions);
         result += item_subscriber_size(item.items);
     }
 
@@ -491,15 +615,18 @@ void plan_runtime_storage(CompilationPlan &plan, std::size_t schedule_word_count
 }
 
 [[nodiscard]] std::size_t item_subscriber_size(const ItemSubscriptionPlan &item) {
-    return sizeof(ItemSubscribers) + item.subscribers.size() * sizeof(Subscriber) + item_subscriber_size(item.items);
+    return sizeof(ItemSubscribers) + subscription_size(item.subscriptions) + item_subscriber_size(item.items);
 }
 
 [[nodiscard]] FixedNodeLayout make_node_layout(const WiredNode &node, const NodePlan &node_plan) {
     if (node.signature().parameters.size() > max_parameter_count) {
         throw std::length_error{"a node has more than 1023 parameters"};
     }
-    if (node_plan.subscribers.size() > max_subscriber_count) {
-        throw std::length_error{"a node has more than 4194303 subscribers"};
+    if (node_plan.subscriptions.nodes.size() > max_subscriber_count) {
+        throw std::length_error{"a node has too many subscribers"};
+    }
+    if (node_plan.subscriptions.reference_inputs.size() > std::numeric_limits<std::uint32_t>::max()) {
+        throw std::length_error{"a node has too many reference input subscribers"};
     }
 
     auto storage = StorageLayout{};
@@ -507,7 +634,12 @@ void plan_runtime_storage(CompilationPlan &plan, std::size_t schedule_word_count
 
     auto result = FixedNodeLayout{};
     result.parameters = storage.add<ParameterBinding>(node.signature().parameters.size());
-    result.subscribers = storage.add<Subscriber>(node_plan.subscribers.size());
+    result.subscribers = storage.add<Subscriber>(node_plan.subscriptions.nodes.size());
+    if (!node_plan.subscriptions.reference_inputs.empty()) {
+        result.reference_input_subscriber_root = storage.add<ReferenceInputSubscriberRoot>();
+        result.reference_input_subscribers =
+            storage.add<ReferenceInputSubscriber>(node_plan.subscriptions.reference_inputs.size());
+    }
     if (!node_plan.item_subscriptions.empty()) {
         result.item_subscription_root = storage.add<ItemSubscriptionRoot>();
         result.item_subscribers =
@@ -604,6 +736,7 @@ void plan_fixed_storage(CompilationPlan &plan) {
     result.wiring_points = wiring.wiring_points();
     result.node_plans.resize(result.nodes.size());
     plan_subscribers(result.nodes, result.wiring_points, result.node_plans);
+    plan_dynamic_subscribers(result);
     result.wiring_paths = make_wiring_path_layout(result.nodes);
 
     for (auto i = std::size_t{}; i < result.nodes.size(); ++i) {
@@ -615,6 +748,7 @@ void plan_fixed_storage(CompilationPlan &plan) {
     }
 
     plan_runtime_storage(result, schedule_word_count);
+    resolve_dynamic_subscribers(result);
 
     result.output_destruction_count =
         static_cast<std::size_t>(std::ranges::count_if(result.node_plans, [](const auto &node) {
@@ -816,6 +950,10 @@ class CompiledGraphBuilder {
         };
         for (const auto &node : plan.node_plans) {
             initialize_item_samples(node.item_subscriptions);
+            for (const auto &reference : node.reference_inputs) {
+                std::construct_at(
+                    reinterpret_cast<details::ReferenceInputStorage *>(runtime_storage.data() + reference.offset));
+            }
         }
 
         for (auto i = std::size_t{}; i < plan.nodes.size(); ++i) {
@@ -867,9 +1005,17 @@ class CompiledGraphBuilder {
             if (parameter.type->is_time_series()) {
                 const auto resolved_output =
                     source_output(node.input_sources()[input_index++], plan.wiring_points, plan.node_plans);
-                std::construct_at(parameters.data() + parameter_index,
-                                  ParameterBinding{resolved_output.last_updated_offset, resolved_output.value_offset,
-                                                   parameter.validity});
+                const auto reference = std::ranges::find(plan.node_plans[node_index].reference_inputs, parameter_index,
+                                                         &ReferenceInputLayout::parameter);
+                if (reference != plan.node_plans[node_index].reference_inputs.end()) {
+                    std::construct_at(parameters.data() + parameter_index,
+                                      ParameterBinding{reference->source_last_updated_offset, reference->offset,
+                                                       parameter.activity, parameter.validity});
+                } else {
+                    std::construct_at(parameters.data() + parameter_index,
+                                      ParameterBinding{resolved_output.last_updated_offset,
+                                                       resolved_output.value_offset, parameter.validity});
+                }
                 continue;
             }
 
@@ -933,8 +1079,9 @@ class CompiledGraphBuilder {
                 continue;
             }
 
-            const auto *representation =
-                source_output(source, plan.wiring_points, plan.node_plans).storage_representation;
+            const auto *representation = input_storage_representation(
+                *node.signature().parameters[parameter_index].type,
+                source_output(source, plan.wiring_points, plan.node_plans).storage_representation);
             std::construct_at(time_series_input_views.data() + generic_time_series_input_index,
                               TimeSeriesInputViewPrototype{&representation->input_view_prototype()});
             ++generic_time_series_input_index;
@@ -949,13 +1096,24 @@ class CompiledGraphBuilder {
 
     static std::byte *construct_item_subscribers(std::span<const ItemSubscriptionPlan> items, std::byte *destination) {
         for (const auto &item : items) {
-            auto *compiled = std::construct_at(reinterpret_cast<ItemSubscribers *>(destination), item.item,
-                                               static_cast<std::uint32_t>(item.subscribers.size()),
-                                               static_cast<std::uint32_t>(item_subscriber_size(item)),
-                                               item.sampled_last_updated_offset);
+            auto *compiled =
+                std::construct_at(reinterpret_cast<ItemSubscribers *>(destination), item.item,
+                                  static_cast<std::uint32_t>(item.subscriptions.nodes.size()),
+                                  static_cast<std::uint32_t>(item_subscriber_size(item)),
+                                  item.sampled_last_updated_offset, !item.subscriptions.reference_inputs.empty());
             auto *subscribers = reinterpret_cast<Subscriber *>(compiled + 1);
-            std::uninitialized_copy(item.subscribers.begin(), item.subscribers.end(), subscribers);
-            destination = reinterpret_cast<std::byte *>(subscribers + item.subscribers.size());
+            std::uninitialized_copy(item.subscriptions.nodes.begin(), item.subscriptions.nodes.end(), subscribers);
+            destination = reinterpret_cast<std::byte *>(subscribers + item.subscriptions.nodes.size());
+            if (!item.subscriptions.reference_inputs.empty()) {
+                std::construct_at(reinterpret_cast<ReferenceInputSubscriberRoot *>(destination),
+                                  static_cast<std::uint32_t>(item.subscriptions.reference_inputs.size()));
+                auto *reference_input_subscribers =
+                    reinterpret_cast<ReferenceInputSubscriber *>(destination + sizeof(ReferenceInputSubscriberRoot));
+                std::uninitialized_copy(item.subscriptions.reference_inputs.begin(),
+                                        item.subscriptions.reference_inputs.end(), reference_input_subscribers);
+                destination = reinterpret_cast<std::byte *>(reference_input_subscribers +
+                                                            item.subscriptions.reference_inputs.size());
+            }
             destination = construct_item_subscribers(item.items, destination);
         }
 
@@ -975,12 +1133,21 @@ class CompiledGraphBuilder {
             auto *node_storage = storage + layout.offset;
 
             construct_parameters(plan, i, storage, variable_memory, constructed_scalars, scalar_destruction_index);
-            std::uninitialized_copy(node_plan.subscribers.begin(), node_plan.subscribers.end(),
+            std::uninitialized_copy(node_plan.subscriptions.nodes.begin(), node_plan.subscriptions.nodes.end(),
                                     layout.subscribers.objects<Subscriber>(node_storage).data());
+            if (!node_plan.subscriptions.reference_inputs.empty()) {
+                std::construct_at(
+                    layout.reference_input_subscriber_root.objects<ReferenceInputSubscriberRoot>(node_storage).data(),
+                    static_cast<std::uint32_t>(node_plan.subscriptions.reference_inputs.size()));
+                std::uninitialized_copy(
+                    node_plan.subscriptions.reference_inputs.begin(), node_plan.subscriptions.reference_inputs.end(),
+                    layout.reference_input_subscribers.objects<ReferenceInputSubscriber>(node_storage).data());
+            }
             if (!node_plan.item_subscriptions.empty()) {
-                std::construct_at(layout.item_subscription_root.objects<ItemSubscriptionRoot>(node_storage).data(),
-                                  ItemSubscriptionRoot{
-                                      static_cast<std::uint32_t>(item_subscriber_size(node_plan.item_subscriptions))});
+                std::construct_at(
+                    layout.item_subscription_root.objects<ItemSubscriptionRoot>(node_storage).data(),
+                    *node_plan.output.storage_representation,
+                    static_cast<std::uint32_t>(item_subscriber_size(node_plan.item_subscriptions)));
                 construct_item_subscribers(node_plan.item_subscriptions, node_storage + layout.item_subscribers.offset);
             }
             if (node_plan.state.node.size != 0) {
@@ -1022,8 +1189,9 @@ class CompiledGraphBuilder {
                               CompiledNode{node.node_template().evaluation_function(node.signature()),
                                            node_plan.output.last_updated_offset, node_plan.output.value_offset,
                                            static_cast<std::uint32_t>(node.signature().parameters.size()),
-                                           static_cast<std::uint32_t>(node_plan.subscribers.size()),
+                                           static_cast<std::uint32_t>(node_plan.subscriptions.nodes.size()),
                                            node.signature().output != nullptr, node_plan.state.node.size != 0,
+                                           !node_plan.subscriptions.reference_inputs.empty(),
                                            !node_plan.item_subscriptions.empty(), node_plan.invalidation.mode});
             std::construct_at(node_offsets.data() + i,
                               packed_offset(layout.offset, "compiled fixed storage reaches 1 GiB"));
