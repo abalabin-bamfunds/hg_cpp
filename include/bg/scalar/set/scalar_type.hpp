@@ -30,7 +30,7 @@ class GenericSetScalarType final : public SetScalarType {
 
 template <typename T>
     requires is_set_v<T>
-const ScalarType &cpp_scalar_type() noexcept {
+const ScalarType &cpp_scalar_type() {
     return set_scalar_type(cpp_scalar_type<typename T::item_type>());
 }
 

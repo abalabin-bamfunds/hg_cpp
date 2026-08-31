@@ -1,15 +1,16 @@
 #include <bg/scalar/details/allocation_context.hpp>
+#include <bg/scalar/dict/scalar_type.hpp>
 #include <bg/scalar/dict/storage_representation.hpp>
+#include <bg/scalar/list/scalar_type.hpp>
 #include <bg/scalar/list/storage_representation.hpp>
+#include <bg/scalar/set/scalar_type.hpp>
 #include <bg/scalar/set/storage_representation.hpp>
 #include <bg/scalar/view.hpp>
-#include <bg/scalar/dict/scalar_type.hpp>
-#include <bg/scalar/list/scalar_type.hpp>
-#include <bg/scalar/set/scalar_type.hpp>
 #include <bg/util/linear_hash_table.hpp>
 #include <bg/util/occupancy_index.hpp>
 #include <bg/util/polymorphic_value.hpp>
 #include <bg/util/runtime_bunch.hpp>
+#include <bg/util/scope_exit.hpp>
 
 #include <algorithm>
 #include <cassert>
@@ -32,7 +33,6 @@ class ComposedStorageRepresentation {
   public:
     [[nodiscard]] const ScalarType &type() const noexcept { return *type_; }
     [[nodiscard]] bool uses_variable_memory() const noexcept { return true; }
-    [[nodiscard]] bool requires_destruction() const noexcept { return true; }
     [[nodiscard]] bool supports_byte_copy_initialization() const noexcept { return true; }
 
     void construct_from_value(void *, const void *, std::pmr::memory_resource &) const { std::terminate(); }
@@ -48,6 +48,8 @@ struct RuntimeListStorage {
     void swap(RuntimeListStorage &other) noexcept { items.swap(other.items); }
 };
 
+static_assert(std::is_trivially_copyable_v<RuntimeListStorage>);
+
 class ComposedListStorageRepresentation final : public ScalarListStorageRepresentation,
                                                 private ComposedStorageRepresentation {
   public:
@@ -60,9 +62,7 @@ class ComposedListStorageRepresentation final : public ScalarListStorageRepresen
     [[nodiscard]] bool uses_variable_memory() const noexcept override {
         return ComposedStorageRepresentation::uses_variable_memory();
     }
-    [[nodiscard]] bool requires_destruction() const noexcept override {
-        return ComposedStorageRepresentation::requires_destruction();
-    }
+    [[nodiscard]] bool requires_finalization() const noexcept override { return item_->requires_finalization(); }
     [[nodiscard]] bool supports_byte_copy_initialization() const noexcept override {
         return ComposedStorageRepresentation::supports_byte_copy_initialization();
     }
@@ -79,30 +79,24 @@ class ComposedListStorageRepresentation final : public ScalarListStorageRepresen
                               std::pmr::memory_resource &memory) const override {
         construct_initial_value(destination);
         auto &source = static_cast<const ScalarListInputView &>(value);
-        try {
-            for (auto index = std::size_t{}; index < source.size(); ++index) {
-                const auto item = source[index];
-                append(destination, item.prototype, memory, item.data);
-            }
-        } catch (...) {
-            destroy(destination, memory);
-            throw;
+        auto rollback = util::scope_exit{[&]() noexcept { destroy(destination, memory); }};
+        for (auto index = std::size_t{}; index < source.size(); ++index) {
+            const auto item = source[index];
+            append(destination, item.prototype, memory, item.data);
         }
+        rollback.release();
     }
 
     void copy_construct(void *destination, const void *source, std::pmr::memory_resource &memory) const override {
         construct_initial_value(destination);
         const auto &items = static_cast<const RuntimeListStorage *>(source)->items;
-        try {
-            for (auto index = std::uint32_t{}; index < items.size(); ++index) {
-                storage(destination).items.emplace_back_with(item_layout_, memory, [&](void *item) {
-                    item_->copy_construct(item, items.get(index, item_layout_), memory);
-                });
-            }
-        } catch (...) {
-            destroy(destination, memory);
-            throw;
+        auto rollback = util::scope_exit{[&]() noexcept { destroy(destination, memory); }};
+        for (auto index = std::uint32_t{}; index < items.size(); ++index) {
+            storage(destination).items.emplace_back_with(item_layout_, memory, [&](void *item) {
+                item_->copy_construct(item, items.get(index, item_layout_), memory);
+            });
         }
+        rollback.release();
     }
 
     void assign_from_value(void *destination, const void *value) const override {
@@ -112,19 +106,14 @@ class ComposedListStorageRepresentation final : public ScalarListStorageRepresen
     void assign_from_input(void *destination, const ScalarValueInputView &value) const override {
         auto &memory = details::current_scalar_memory_resource();
         auto replacement = RuntimeListStorage{};
+        const auto release_replacement = util::scope_exit{[&]() noexcept { clear(&replacement, memory); }};
         const auto &source = static_cast<const ScalarListInputView &>(value);
-        try {
-            for (auto index = std::size_t{}; index < source.size(); ++index) {
-                const auto item = source[index];
-                append(&replacement, item.prototype, memory, item.data);
-            }
-        } catch (...) {
-            clear(&replacement, memory);
-            throw;
+        for (auto index = std::size_t{}; index < source.size(); ++index) {
+            const auto item = source[index];
+            append(&replacement, item.prototype, memory, item.data);
         }
 
         storage(destination).swap(replacement);
-        clear(&replacement, memory);
     }
 
     [[nodiscard]] std::size_t hash(const void *value) const noexcept override {
@@ -184,23 +173,18 @@ class ComposedListStorageRepresentation final : public ScalarListStorageRepresen
         auto &items = storage(value).items;
         const auto position = static_cast<std::uint32_t>(index);
         auto replacement = RuntimeListStorage{};
-        try {
-            for (auto current = std::uint32_t{}; current < items.size(); ++current) {
-                if (current == position) {
-                    continue;
-                }
-
-                replacement.items.emplace_back_with(item_layout_, memory, [&](void *target) {
-                    item_->copy_construct(target, items.get(current, item_layout_), memory);
-                });
+        const auto release_replacement = util::scope_exit{[&]() noexcept { clear(&replacement, memory); }};
+        for (auto current = std::uint32_t{}; current < items.size(); ++current) {
+            if (current == position) {
+                continue;
             }
-        } catch (...) {
-            clear(&replacement, memory);
-            throw;
+
+            replacement.items.emplace_back_with(item_layout_, memory, [&](void *target) {
+                item_->copy_construct(target, items.get(current, item_layout_), memory);
+            });
         }
 
         storage(value).swap(replacement);
-        clear(&replacement, memory);
     }
 
     void clear(void *value, std::pmr::memory_resource &memory) const noexcept override {
@@ -240,6 +224,8 @@ struct RuntimeSetStorage {
     }
 };
 
+static_assert(std::is_trivially_copyable_v<RuntimeSetStorage>);
+
 class ComposedSetStorageRepresentation final : public ScalarSetStorageRepresentation,
                                                private ComposedStorageRepresentation {
   public:
@@ -250,7 +236,7 @@ class ComposedSetStorageRepresentation final : public ScalarSetStorageRepresenta
     [[nodiscard]] std::size_t size() const noexcept override { return sizeof(RuntimeSetStorage); }
     [[nodiscard]] std::size_t alignment() const noexcept override { return alignof(RuntimeSetStorage); }
     [[nodiscard]] bool uses_variable_memory() const noexcept override { return true; }
-    [[nodiscard]] bool requires_destruction() const noexcept override { return true; }
+    [[nodiscard]] bool requires_finalization() const noexcept override { return item_->requires_finalization(); }
     [[nodiscard]] bool supports_byte_copy_initialization() const noexcept override { return true; }
 
     void construct_initial_value(void *destination) const noexcept override {
@@ -266,30 +252,24 @@ class ComposedSetStorageRepresentation final : public ScalarSetStorageRepresenta
         construct_initial_value(destination);
         const auto &source = static_cast<const ScalarSetInputView &>(value);
         auto copy = RuntimeSetCopy{this, destination, &memory};
-        try {
-            source.for_each(
-                &copy, +[](void *context, ScalarSetInputView::Item item) {
-                    auto &current = *static_cast<RuntimeSetCopy *>(context);
-                    auto bound = util::polymorphic_value<ScalarValueInputView>::copy(item.prototype);
-                    bound->bind(item.data);
-                    (void)current.representation->insert(current.storage, bound.get(), *current.memory);
-                });
-        } catch (...) {
-            destroy(destination, memory);
-            throw;
-        }
+        auto rollback = util::scope_exit{[&]() noexcept { destroy(destination, memory); }};
+        source.for_each(
+            &copy, +[](void *context, ScalarSetInputView::Item item) {
+                auto &current = *static_cast<RuntimeSetCopy *>(context);
+                auto bound = util::polymorphic_value<ScalarValueInputView>::copy(item.prototype);
+                bound->bind(item.data);
+                (void)current.representation->insert(current.storage, bound.get(), *current.memory);
+            });
+        rollback.release();
     }
 
     void copy_construct(void *destination, const void *source, std::pmr::memory_resource &memory) const override {
         construct_initial_value(destination);
-        try {
-            for (const auto position : storage(source).positions) {
-                insert_stored(destination, storage(source).items.get(position, item_layout_), memory);
-            }
-        } catch (...) {
-            destroy(destination, memory);
-            throw;
+        auto rollback = util::scope_exit{[&]() noexcept { destroy(destination, memory); }};
+        for (const auto position : storage(source).positions) {
+            insert_stored(destination, storage(source).items.get(position, item_layout_), memory);
         }
+        rollback.release();
     }
 
     void assign_from_value(void *destination, const void *value) const override {
@@ -299,22 +279,17 @@ class ComposedSetStorageRepresentation final : public ScalarSetStorageRepresenta
     void assign_from_input(void *destination, const ScalarValueInputView &value) const override {
         auto &memory = details::current_scalar_memory_resource();
         auto replacement = RuntimeSetStorage{};
+        const auto release_replacement = util::scope_exit{[&]() noexcept { clear(&replacement, memory); }};
         auto copy = RuntimeSetCopy{this, &replacement, &memory};
-        try {
-            static_cast<const ScalarSetInputView &>(value).for_each(
-                &copy, +[](void *context, ScalarSetInputView::Item item) {
-                    auto &current = *static_cast<RuntimeSetCopy *>(context);
-                    auto bound = util::polymorphic_value<ScalarValueInputView>::copy(item.prototype);
-                    bound->bind(item.data);
-                    (void)current.representation->insert(current.storage, bound.get(), *current.memory);
-                });
-        } catch (...) {
-            clear(&replacement, memory);
-            throw;
-        }
+        static_cast<const ScalarSetInputView &>(value).for_each(
+            &copy, +[](void *context, ScalarSetInputView::Item item) {
+                auto &current = *static_cast<RuntimeSetCopy *>(context);
+                auto bound = util::polymorphic_value<ScalarValueInputView>::copy(item.prototype);
+                bound->bind(item.data);
+                (void)current.representation->insert(current.storage, bound.get(), *current.memory);
+            });
 
         storage(destination).swap(replacement);
-        clear(&replacement, memory);
     }
 
     [[nodiscard]] std::size_t hash(const void *value) const noexcept override {
@@ -369,21 +344,19 @@ class ComposedSetStorageRepresentation final : public ScalarSetStorageRepresenta
         }
 
         const auto position = target.positions.acquire(memory);
-        auto item_constructed = false;
-        try {
-            target.items.emplace_at_with(position, item_layout_, memory,
-                                         [&](void *stored) { item.copy_construct(stored, *item_, memory); });
-            item_constructed = true;
-            target.lookup.insert(hash, position, memory);
-        } catch (...) {
-            if (item_constructed) {
-                target.items.erase_at_with(position, item_layout_, memory,
-                                           [&](void *stored) noexcept { item_->destroy(stored, memory); });
-            }
+        auto release_position = util::scope_exit{[&]() noexcept {
             (void)target.positions.reset(position);
             target.positions.trim(memory);
-            throw;
-        }
+        }};
+        target.items.emplace_at_with(position, item_layout_, memory,
+                                     [&](void *stored) { item.copy_construct(stored, *item_, memory); });
+        auto release_item = util::scope_exit{[&]() noexcept {
+            target.items.erase_at_with(position, item_layout_, memory,
+                                       [&](void *stored) noexcept { item_->destroy(stored, memory); });
+        }};
+        target.lookup.insert(hash, position, memory);
+        release_item.release();
+        release_position.release();
         return true;
     }
 
@@ -444,21 +417,19 @@ class ComposedSetStorageRepresentation final : public ScalarSetStorageRepresenta
         auto &target = storage(value);
         const auto hash = util::linear_hash_table::hash_code(item_->hash(item));
         const auto position = target.positions.acquire(memory);
-        auto item_constructed = false;
-        try {
-            target.items.emplace_at_with(position, item_layout_, memory,
-                                         [&](void *stored) { item_->copy_construct(stored, item, memory); });
-            item_constructed = true;
-            target.lookup.insert(hash, position, memory);
-        } catch (...) {
-            if (item_constructed) {
-                target.items.erase_at_with(position, item_layout_, memory,
-                                           [&](void *stored) noexcept { item_->destroy(stored, memory); });
-            }
+        auto release_position = util::scope_exit{[&]() noexcept {
             (void)target.positions.reset(position);
             target.positions.trim(memory);
-            throw;
-        }
+        }};
+        target.items.emplace_at_with(position, item_layout_, memory,
+                                     [&](void *stored) { item_->copy_construct(stored, item, memory); });
+        auto release_item = util::scope_exit{[&]() noexcept {
+            target.items.erase_at_with(position, item_layout_, memory,
+                                       [&](void *stored) noexcept { item_->destroy(stored, memory); });
+        }};
+        target.lookup.insert(hash, position, memory);
+        release_item.release();
+        release_position.release();
     }
 
     const ScalarStorageRepresentation *item_;
@@ -479,6 +450,8 @@ struct RuntimeDictStorage {
     }
 };
 
+static_assert(std::is_trivially_copyable_v<RuntimeDictStorage>);
+
 class ComposedDictStorageRepresentation final : public ScalarDictStorageRepresentation,
                                                 private ComposedStorageRepresentation {
   public:
@@ -491,7 +464,9 @@ class ComposedDictStorageRepresentation final : public ScalarDictStorageRepresen
     [[nodiscard]] std::size_t size() const noexcept override { return sizeof(RuntimeDictStorage); }
     [[nodiscard]] std::size_t alignment() const noexcept override { return alignof(RuntimeDictStorage); }
     [[nodiscard]] bool uses_variable_memory() const noexcept override { return true; }
-    [[nodiscard]] bool requires_destruction() const noexcept override { return true; }
+    [[nodiscard]] bool requires_finalization() const noexcept override {
+        return key_->requires_finalization() || mapped_->requires_finalization();
+    }
     [[nodiscard]] bool supports_byte_copy_initialization() const noexcept override { return true; }
 
     void construct_initial_value(void *destination) const noexcept override {
@@ -506,33 +481,27 @@ class ComposedDictStorageRepresentation final : public ScalarDictStorageRepresen
                               std::pmr::memory_resource &memory) const override {
         construct_initial_value(destination);
         auto copy = RuntimeDictCopy{this, destination, &memory};
-        try {
-            static_cast<const ScalarDictInputView &>(value).for_each(
-                &copy, +[](void *context, ScalarDictInputView::Entry entry) {
-                    auto &current = *static_cast<RuntimeDictCopy *>(context);
-                    auto key = util::polymorphic_value<ScalarValueInputView>::copy(entry.key.prototype);
-                    auto mapped = util::polymorphic_value<ScalarValueInputView>::copy(entry.value.prototype);
-                    key->bind(entry.key.data);
-                    mapped->bind(entry.value.data);
-                    current.representation->insert_or_assign(current.storage, key.get(), mapped.get(), *current.memory);
-                });
-        } catch (...) {
-            destroy(destination, memory);
-            throw;
-        }
+        auto rollback = util::scope_exit{[&]() noexcept { destroy(destination, memory); }};
+        static_cast<const ScalarDictInputView &>(value).for_each(
+            &copy, +[](void *context, ScalarDictInputView::Entry entry) {
+                auto &current = *static_cast<RuntimeDictCopy *>(context);
+                auto key = util::polymorphic_value<ScalarValueInputView>::copy(entry.key.prototype);
+                auto mapped = util::polymorphic_value<ScalarValueInputView>::copy(entry.value.prototype);
+                key->bind(entry.key.data);
+                mapped->bind(entry.value.data);
+                current.representation->insert_or_assign(current.storage, key.get(), mapped.get(), *current.memory);
+            });
+        rollback.release();
     }
 
     void copy_construct(void *destination, const void *source, std::pmr::memory_resource &memory) const override {
         construct_initial_value(destination);
-        try {
-            for (const auto position : storage(source).positions) {
-                insert_stored(destination, storage(source).keys.get(position, key_layout_),
-                              storage(source).values.get(position, mapped_layout_), memory);
-            }
-        } catch (...) {
-            destroy(destination, memory);
-            throw;
+        auto rollback = util::scope_exit{[&]() noexcept { destroy(destination, memory); }};
+        for (const auto position : storage(source).positions) {
+            insert_stored(destination, storage(source).keys.get(position, key_layout_),
+                          storage(source).values.get(position, mapped_layout_), memory);
         }
+        rollback.release();
     }
 
     void assign_from_value(void *destination, const void *value) const override {
@@ -542,24 +511,19 @@ class ComposedDictStorageRepresentation final : public ScalarDictStorageRepresen
     void assign_from_input(void *destination, const ScalarValueInputView &value) const override {
         auto &memory = details::current_scalar_memory_resource();
         auto replacement = RuntimeDictStorage{};
+        const auto release_replacement = util::scope_exit{[&]() noexcept { clear(&replacement, memory); }};
         auto copy = RuntimeDictCopy{this, &replacement, &memory};
-        try {
-            static_cast<const ScalarDictInputView &>(value).for_each(
-                &copy, +[](void *context, ScalarDictInputView::Entry entry) {
-                    auto &current = *static_cast<RuntimeDictCopy *>(context);
-                    auto key = util::polymorphic_value<ScalarValueInputView>::copy(entry.key.prototype);
-                    auto mapped = util::polymorphic_value<ScalarValueInputView>::copy(entry.value.prototype);
-                    key->bind(entry.key.data);
-                    mapped->bind(entry.value.data);
-                    current.representation->insert_or_assign(current.storage, key.get(), mapped.get(), *current.memory);
-                });
-        } catch (...) {
-            clear(&replacement, memory);
-            throw;
-        }
+        static_cast<const ScalarDictInputView &>(value).for_each(
+            &copy, +[](void *context, ScalarDictInputView::Entry entry) {
+                auto &current = *static_cast<RuntimeDictCopy *>(context);
+                auto key = util::polymorphic_value<ScalarValueInputView>::copy(entry.key.prototype);
+                auto mapped = util::polymorphic_value<ScalarValueInputView>::copy(entry.value.prototype);
+                key->bind(entry.key.data);
+                mapped->bind(entry.value.data);
+                current.representation->insert_or_assign(current.storage, key.get(), mapped.get(), *current.memory);
+            });
 
         storage(destination).swap(replacement);
-        clear(&replacement, memory);
     }
 
     [[nodiscard]] std::size_t hash(const void *value) const noexcept override {
@@ -636,29 +600,26 @@ class ComposedDictStorageRepresentation final : public ScalarDictStorageRepresen
         }
 
         const auto position = target.positions.acquire(memory);
-        auto key_constructed = false;
-        auto value_constructed = false;
-        try {
-            target.keys.emplace_at_with(position, key_layout_, memory,
-                                        [&](void *stored) { key.copy_construct(stored, *key_, memory); });
-            key_constructed = true;
-            target.values.emplace_at_with(position, mapped_layout_, memory,
-                                          [&](void *stored) { mapped.copy_construct(stored, *mapped_, memory); });
-            value_constructed = true;
-            target.lookup.insert(hash, position, memory);
-        } catch (...) {
-            if (value_constructed) {
-                target.values.erase_at_with(position, mapped_layout_, memory,
-                                            [&](void *stored) noexcept { mapped_->destroy(stored, memory); });
-            }
-            if (key_constructed) {
-                target.keys.erase_at_with(position, key_layout_, memory,
-                                          [&](void *stored) noexcept { key_->destroy(stored, memory); });
-            }
+        auto release_position = util::scope_exit{[&]() noexcept {
             (void)target.positions.reset(position);
             target.positions.trim(memory);
-            throw;
-        }
+        }};
+        target.keys.emplace_at_with(position, key_layout_, memory,
+                                    [&](void *stored) { key.copy_construct(stored, *key_, memory); });
+        auto release_key = util::scope_exit{[&]() noexcept {
+            target.keys.erase_at_with(position, key_layout_, memory,
+                                      [&](void *stored) noexcept { key_->destroy(stored, memory); });
+        }};
+        target.values.emplace_at_with(position, mapped_layout_, memory,
+                                      [&](void *stored) { mapped.copy_construct(stored, *mapped_, memory); });
+        auto release_value = util::scope_exit{[&]() noexcept {
+            target.values.erase_at_with(position, mapped_layout_, memory,
+                                        [&](void *stored) noexcept { mapped_->destroy(stored, memory); });
+        }};
+        target.lookup.insert(hash, position, memory);
+        release_value.release();
+        release_key.release();
+        release_position.release();
     }
 
     [[nodiscard]] bool erase(void *value, const ScalarValueInputView &key,
@@ -722,29 +683,26 @@ class ComposedDictStorageRepresentation final : public ScalarDictStorageRepresen
         auto &target = storage(value);
         const auto hash = util::linear_hash_table::hash_code(key_->hash(key));
         const auto position = target.positions.acquire(memory);
-        auto key_constructed = false;
-        auto value_constructed = false;
-        try {
-            target.keys.emplace_at_with(position, key_layout_, memory,
-                                        [&](void *stored) { key_->copy_construct(stored, key, memory); });
-            key_constructed = true;
-            target.values.emplace_at_with(position, mapped_layout_, memory,
-                                          [&](void *stored) { mapped_->copy_construct(stored, mapped, memory); });
-            value_constructed = true;
-            target.lookup.insert(hash, position, memory);
-        } catch (...) {
-            if (value_constructed) {
-                target.values.erase_at_with(position, mapped_layout_, memory,
-                                            [&](void *stored) noexcept { mapped_->destroy(stored, memory); });
-            }
-            if (key_constructed) {
-                target.keys.erase_at_with(position, key_layout_, memory,
-                                          [&](void *stored) noexcept { key_->destroy(stored, memory); });
-            }
+        auto release_position = util::scope_exit{[&]() noexcept {
             (void)target.positions.reset(position);
             target.positions.trim(memory);
-            throw;
-        }
+        }};
+        target.keys.emplace_at_with(position, key_layout_, memory,
+                                    [&](void *stored) { key_->copy_construct(stored, key, memory); });
+        auto release_key = util::scope_exit{[&]() noexcept {
+            target.keys.erase_at_with(position, key_layout_, memory,
+                                      [&](void *stored) noexcept { key_->destroy(stored, memory); });
+        }};
+        target.values.emplace_at_with(position, mapped_layout_, memory,
+                                      [&](void *stored) { mapped_->copy_construct(stored, mapped, memory); });
+        auto release_value = util::scope_exit{[&]() noexcept {
+            target.values.erase_at_with(position, mapped_layout_, memory,
+                                        [&](void *stored) noexcept { mapped_->destroy(stored, memory); });
+        }};
+        target.lookup.insert(hash, position, memory);
+        release_value.release();
+        release_key.release();
+        release_position.release();
     }
 
     const ScalarStorageRepresentation *key_;
@@ -780,7 +738,7 @@ struct StorageRepresentations {
 
 } // namespace
 
-void register_scalar_storage_representation(const ScalarStorageRepresentation &representation) noexcept {
+void register_scalar_storage_representation(const ScalarStorageRepresentation &representation) {
     auto &representations = storage_representations();
     const auto lock = std::lock_guard{representations.mutex};
     if (std::ranges::find(representations.native, &representation) == representations.native.end()) {

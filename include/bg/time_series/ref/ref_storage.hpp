@@ -1,7 +1,6 @@
 #pragma once
 
 #include <bg/evaluation_time.hpp>
-#include <bg/graph/dynamic_subscribers.hpp>
 
 #include <type_traits>
 
@@ -11,6 +10,7 @@ class RuntimeGraph;
 
 namespace details {
 
+struct DynamicSubscribers;
 struct ReferenceInputStorage;
 
 struct ReferenceStorage {

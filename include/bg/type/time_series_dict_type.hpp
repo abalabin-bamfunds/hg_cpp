@@ -14,6 +14,7 @@ class TimeSeriesDictionaryType : public FixedItemTimeSeriesType {
 
     [[nodiscard]] std::size_t item_count() const noexcept final { return 1; }
     [[nodiscard]] const TimeSeriesType &item_type(std::size_t index) const final;
+    [[nodiscard]] bool supports_invalidation() const noexcept final { return false; }
 
   protected:
     TimeSeriesDictionaryType(const ScalarType &key_type, const TimeSeriesType &value_type,

@@ -98,6 +98,7 @@ Prefer the smallest clear implementation, the code should be elegant.
 - Do not add ways to replace behavior, special object-creation code, or settings
   for an unconfirmed need.
 - Keep ownership and lifetime visible at the point of use.
+- Use scope-bound cleanup for rollback. Create the guard after acquisition and release it at the commit point.
 - Remove dead code and duplicated logic.
 - Do not compress logic into a dense expression to reduce the line count.
 - When existing code is larger than necessary, propose a specific reduction.

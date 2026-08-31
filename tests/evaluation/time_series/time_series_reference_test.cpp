@@ -17,7 +17,7 @@ struct changing_reference_target {
 
     void start(bg::EvaluationContext *context) const {
         output.set(10);
-        (void)context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
+        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
     }
 
     void evaluate(bg::EvaluationContext *context) const {
@@ -32,7 +32,7 @@ struct changing_reference_target {
         }
 
         ++*step;
-        (void)context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
+        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
     }
 };
 
@@ -107,7 +107,7 @@ struct sampled_condition_source {
 
     void start(bg::EvaluationContext *context) const {
         output.set(0);
-        (void)context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
+        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
     }
 
     void evaluate() const { output.set(1); }
@@ -219,7 +219,7 @@ struct referenced_list_source {
 
     void start(bg::EvaluationContext *context) const {
         output[0].set(10);
-        (void)context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
+        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
     }
 
     void evaluate() const { output[0].set(20); }
@@ -322,13 +322,13 @@ struct invalidating_reference {
 
     void start(bg::EvaluationContext *context) const {
         output.set(target);
-        (void)context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
+        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
     }
 
     void evaluate(bg::EvaluationContext *context) const {
         if (*step == 0) {
             output.invalidate();
-            (void)context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
+            context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
         } else {
             output.set(target);
         }

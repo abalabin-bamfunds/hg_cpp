@@ -2,6 +2,7 @@
 
 #include <bg/util/linear_hash_table.hpp>
 #include <bg/util/occupancy_index.hpp>
+#include <bg/util/scope_exit.hpp>
 #include <bg/util/sparse_bunch.hpp>
 
 #include <cassert>
@@ -82,24 +83,17 @@ template <typename Key, typename Hash, typename Equal> class hash_key_table {
         }
 
         const auto position = positions_.acquire(memory);
-        try {
-            keys_.emplace_at_with(position, memory, construct);
-        } catch (...) {
+        auto release_position = scope_exit{[&]() noexcept {
             const auto removed = positions_.reset(position);
             assert(removed);
             positions_.trim(memory);
-            throw;
-        }
+        }};
+        keys_.emplace_at_with(position, memory, construct);
 
-        try {
-            lookup_.insert(hash, position, memory);
-        } catch (...) {
-            keys_.erase_at_with(position, memory, destroy);
-            const auto removed = positions_.reset(position);
-            assert(removed);
-            positions_.trim(memory);
-            throw;
-        }
+        auto release_key = scope_exit{[&]() noexcept { keys_.erase_at_with(position, memory, destroy); }};
+        lookup_.insert(hash, position, memory);
+        release_key.release();
+        release_position.release();
 
         return {position, hash, true};
     }

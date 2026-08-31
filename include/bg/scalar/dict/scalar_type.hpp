@@ -39,7 +39,7 @@ class GenericDictScalarType final : public DictScalarType {
 
 template <typename T>
     requires is_dict_v<T>
-const ScalarType &cpp_scalar_type() noexcept {
+const ScalarType &cpp_scalar_type() {
     return dict_scalar_type(cpp_scalar_type<typename T::key_type>(), cpp_scalar_type<typename T::mapped_type>());
 }
 

@@ -54,6 +54,12 @@ A description of the typed objects and buffers used to store a graph type and
 construct its views. The objects and buffers can occupy separate locations.
 Graph compilation selects storage representations after type resolution.
 
+### finalization
+
+Cleanup of a stored value that must run even when its owner discards the complete
+memory resource. This includes releasing external resources and required
+application-specific destruction effects.
+
 ### time series
 
 A value that can change over time. A time series is valid when it has a current

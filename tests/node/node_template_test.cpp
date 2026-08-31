@@ -24,6 +24,13 @@ struct weighted_add {
 
 static_assert(bg::AggregateNodeClass<weighted_add>);
 
+template <typename Template>
+concept TemporaryWeightedAddCall = requires(Template &&node, bg::WiringPoint input) {
+    std::move(node)(input, input);
+};
+
+static_assert(!TemporaryWeightedAddCall<decltype(bg::node<weighted_add>())>);
+
 } // namespace
 
 TEST_CASE("an aggregate node class generates a signature", "[node_template]") {

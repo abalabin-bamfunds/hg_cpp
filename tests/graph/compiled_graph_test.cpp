@@ -4,10 +4,13 @@
 #include <bg/graph/wiring_context.hpp>
 #include <bg/node.hpp>
 #include <bg/node/node_template.hpp>
+#include <bg/time_series/ref/ref_notification.hpp>
 #include <bg/type/scalar_type.hpp>
 #include <bg/type/time_series_value_type.hpp>
 
 #include <catch2/catch_test_macros.hpp>
+
+#include "../runtime_graph_access.hpp"
 
 #include <chrono>
 #include <cstddef>
@@ -120,7 +123,7 @@ struct two_reference_input_sink {
 
 } // namespace
 
-TEST_CASE("compiled reference subscriptions identify each receiving parameter", "[compiled_graph][subscriptions]") {
+TEST_CASE("compiled reference notifications identify each receiving input slot", "[compiled_graph][subscriptions]") {
     const auto source = bg::node<reference_subscription_source>();
     const auto pass = bg::node<reference_subscription_pass>();
     const auto sink = bg::node<two_reference_input_sink>();
@@ -134,13 +137,20 @@ TEST_CASE("compiled reference subscriptions identify each receiving parameter", 
 
     const auto graph = bg::CompiledGraph{wiring};
     const auto &reference_node = graph.node(2);
-    const auto reference_subscribers = reference_node.reference_input_subscribers();
+    const auto *notification = reference_node.output_notification();
+    REQUIRE(notification != nullptr);
+    const auto bytes = notification->records();
+    const auto reference_subscribers = std::span{
+        reinterpret_cast<const bg::details::ReferenceInputSubscriber *>(bytes.data()),
+        bytes.size() / sizeof(bg::details::ReferenceInputSubscriber),
+    };
+    const auto sink_parameters = graph.node(3).parameters();
 
     REQUIRE(reference_subscribers.size() == 2);
     CHECK(reference_subscribers[0].node_index() == 3);
-    CHECK(reference_subscribers[0].parameter_index() == 0);
+    CHECK(reference_subscribers[0].input_offset() == sink_parameters[0].value_offset());
     CHECK(reference_subscribers[1].node_index() == 3);
-    CHECK(reference_subscribers[1].parameter_index() == 1);
+    CHECK(reference_subscribers[1].input_offset() == sink_parameters[1].value_offset());
 
     const auto node_subscribers = reference_node.subscribers();
     REQUIRE(node_subscribers.size() == 1);
@@ -341,7 +351,8 @@ TEST_CASE("a compiled graph owns an opaque scalar copy", "[compiled_graph]") {
 
     opaque_sink_definition::observed = nullptr;
     opaque_sink_definition::observed_value = 0;
-    runtime.schedule(0);
+    runtime.start(bg::MIN_DT + std::chrono::microseconds{1});
+    bg::testing::RuntimeGraphAccess::schedule(runtime, 0);
     runtime.evaluate(bg::MIN_DT + std::chrono::microseconds{1});
 
     CHECK(*stored_pointer == &value);

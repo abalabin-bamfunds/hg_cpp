@@ -58,15 +58,15 @@ template <> [[nodiscard]] const ScalarType &cpp_scalar_type<util::symbol>() noex
 
 template <typename T>
     requires is_list_v<T>
-[[nodiscard]] const ScalarType &cpp_scalar_type() noexcept;
+[[nodiscard]] const ScalarType &cpp_scalar_type();
 
 template <typename T>
     requires is_set_v<T>
-[[nodiscard]] const ScalarType &cpp_scalar_type() noexcept;
+[[nodiscard]] const ScalarType &cpp_scalar_type();
 
 template <typename T>
     requires is_dict_v<T>
-[[nodiscard]] const ScalarType &cpp_scalar_type() noexcept;
+[[nodiscard]] const ScalarType &cpp_scalar_type();
 
 template <typename T>
     requires is_opaque_v<T>

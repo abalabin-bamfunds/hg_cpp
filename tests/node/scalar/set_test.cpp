@@ -14,8 +14,8 @@ struct inspect_scalar_set {
         auto result = std::int64_t{};
         values.for_each([&](const auto value) { result += value.value(); });
 
-        auto state = context->global_state().write();
-        state.set(bg::util::symbol{"result"}, bg::ScalarValue{result});
+        context->global_state().write(
+            [&](auto &state) { state.set(bg::util::symbol{"result"}, bg::ScalarValue{result}); });
     }
 
     void evaluate() const {}
@@ -28,8 +28,7 @@ TEST_CASE("a scalar set is available from packed graph scalar storage", "[node][
 
     bg::run_graph([&] { inspect(input); }, state);
 
-    const auto values = state.read();
-    CHECK(bg::scalar_cast<std::int64_t>(values.at("result")).value() == 3);
+    state.read([](const auto &values) { CHECK(bg::scalar_cast<std::int64_t>(values.at("result")).value() == 3); });
 }
 
 struct inspect_scalar_set_state {
@@ -39,8 +38,9 @@ struct inspect_scalar_set_state {
         (void)values->insert(1);
         (void)values->insert(2);
 
-        auto state = context->global_state().write();
-        state.set(bg::util::symbol{"result"}, bg::ScalarValue{static_cast<std::int64_t>(values->size())});
+        context->global_state().write([&](auto &state) {
+            state.set(bg::util::symbol{"result"}, bg::ScalarValue{static_cast<std::int64_t>(values->size())});
+        });
     }
 
     void evaluate() const {}
@@ -52,8 +52,7 @@ TEST_CASE("scalar set state is available during node start", "[node][state][scal
 
     bg::run_graph([&] { inspect(); }, state);
 
-    const auto values = state.read();
-    CHECK(bg::scalar_cast<std::int64_t>(values.at("result")).value() == 2);
+    state.read([](const auto &values) { CHECK(bg::scalar_cast<std::int64_t>(values.at("result")).value() == 2); });
 }
 
 struct scalar_set_source {
@@ -71,8 +70,8 @@ struct scalar_set_sink {
         auto result = std::int64_t{};
         input.value_view().for_each([&](const auto value) { result += value.value(); });
 
-        auto state = context->global_state().write();
-        state.set(bg::util::symbol{"result"}, bg::ScalarValue{result});
+        context->global_state().write(
+            [&](auto &state) { state.set(bg::util::symbol{"result"}, bg::ScalarValue{result}); });
     }
 };
 
@@ -84,8 +83,7 @@ TEST_CASE("a scalar set propagates through a value time series", "[node][time_se
 
     bg::run_graph([&] { sink(source(input)); }, state);
 
-    const auto values = state.read();
-    CHECK(bg::scalar_cast<std::int64_t>(values.at("result")).value() == 3);
+    state.read([](const auto &values) { CHECK(bg::scalar_cast<std::int64_t>(values.at("result")).value() == 3); });
 }
 
 } // namespace

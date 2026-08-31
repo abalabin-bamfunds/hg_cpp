@@ -16,11 +16,19 @@ Each entry maps a symbol to an owning `ScalarValue<>`. Setting an entry copies
 the value into the global state's memory resource. Replacing or removing the
 entry ends the lifetime of views into its value.
 
-`read()` returns a scoped read access object. Its `at()` function returns a
-borrowed `Scalar<>` that remains valid for the scope. `write()` returns a scoped
-write access object and activates the global state's allocation context.
-`mutable_at<T>()` returns a mutable collection view from a write scope after
+`read(callback)` invokes the callback with read access. Its `at()` function
+returns a borrowed `Scalar<>` for use within the callback. `write(callback)`
+invokes the callback with write access and activates the global state's
+allocation context. `mutable_at<T>()` returns a mutable collection view after
 checking its type.
+
+Values that leave a callback require an owning `ScalarValue`. A callback must
+not retain borrowed scalar or collection views.
+
+```cpp
+state.read([](const GlobalState::ReadAccess &values) { /* read values */ });
+state.write([](GlobalState::WriteAccess &values) { /* modify values */ });
+```
 
 Use `scalar_cast<T>()` to check and narrow a view. Use
 `unchecked_scalar_cast<T>()` only when the caller has already proved
@@ -31,5 +39,5 @@ later node fails.
 
 ## Concurrency
 
-Read scopes can run concurrently. A write scope excludes other read and write
-scopes.
+Read callbacks can run concurrently. A write callback excludes other read and
+write callbacks.

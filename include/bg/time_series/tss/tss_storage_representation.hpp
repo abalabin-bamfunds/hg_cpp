@@ -9,6 +9,7 @@
 
 #include <memory>
 #include <mutex>
+#include <type_traits>
 #include <unordered_map>
 
 namespace bg::details {
@@ -18,15 +19,17 @@ template <typename TimeSeries> class CppTimeSeriesSetStorageRepresentation;
 template <typename K, auto... Properties>
 class CppTimeSeriesSetStorageRepresentation<TSS<K, Properties...>> final : public TimeSeriesStorageRepresentation {
     using Storage = time_series_set_storage<K>;
+    static_assert(std::is_trivially_copyable_v<Storage>);
 
   public:
-    explicit CppTimeSeriesSetStorageRepresentation(const TimeSeriesSetType &type) noexcept : type_{&type} {}
+    explicit CppTimeSeriesSetStorageRepresentation(const TimeSeriesSetType &type)
+        : type_{&type}, key_{&cpp_scalar_storage_representation<K>()} {}
 
     [[nodiscard]] const TimeSeriesType &type() const noexcept override { return *type_; }
     [[nodiscard]] std::size_t value_size() const noexcept override { return sizeof(Storage); }
     [[nodiscard]] std::size_t value_alignment() const noexcept override { return alignof(Storage); }
     [[nodiscard]] bool uses_variable_memory() const noexcept override { return true; }
-    [[nodiscard]] bool requires_destruction() const noexcept override { return true; }
+    [[nodiscard]] bool requires_finalization() const noexcept override { return key_->requires_finalization(); }
     [[nodiscard]] bool supports_byte_copy_initialization() const noexcept override { return true; }
 
     [[nodiscard]] const TimeSeriesInputView &input_view_prototype() const noexcept override {
@@ -47,16 +50,17 @@ class CppTimeSeriesSetStorageRepresentation<TSS<K, Properties...>> final : publi
 
     void destroy_value(void *value, std::pmr::memory_resource &memory) const noexcept override {
         auto *storage = static_cast<Storage *>(value);
-        storage->release(memory, [](std::uint32_t) {});
+        storage->release(memory, [](std::uint32_t) noexcept {});
         std::destroy_at(storage);
     }
 
   private:
     const TimeSeriesSetType *type_;
+    const ScalarStorageRepresentation *key_;
 };
 
 template <typename K, auto... Properties> struct CppTimeSeriesStorageRepresentation<TSS<K, Properties...>> {
-    [[nodiscard]] static const TimeSeriesStorageRepresentation &get(const TimeSeriesType &type) noexcept {
+    [[nodiscard]] static const TimeSeriesStorageRepresentation &get(const TimeSeriesType &type) {
         using TimeSeries = TSS<K, Properties...>;
         using Representation = CppTimeSeriesSetStorageRepresentation<TimeSeries>;
 

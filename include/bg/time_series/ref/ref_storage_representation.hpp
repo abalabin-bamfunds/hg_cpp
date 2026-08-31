@@ -22,7 +22,7 @@ class TimeSeriesReferenceStorageRepresentation final : public TimeSeriesStorageR
     [[nodiscard]] std::size_t value_size() const noexcept override { return sizeof(details::ReferenceStorage *); }
     [[nodiscard]] std::size_t value_alignment() const noexcept override { return alignof(details::ReferenceStorage *); }
     [[nodiscard]] bool uses_variable_memory() const noexcept override { return false; }
-    [[nodiscard]] bool requires_destruction() const noexcept override { return false; }
+    [[nodiscard]] bool requires_finalization() const noexcept override { return false; }
     [[nodiscard]] bool supports_byte_copy_initialization() const noexcept override { return true; }
     [[nodiscard]] const TimeSeriesStorageRepresentation *reference_target_representation() const noexcept override {
         return target_;

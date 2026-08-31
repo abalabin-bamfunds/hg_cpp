@@ -6,6 +6,7 @@
 #include <bg/type/time_series_list_type.hpp>
 #include <bg/type/time_series_reference_type.hpp>
 #include <bg/type/type_map.hpp>
+#include <bg/util/scope_exit.hpp>
 
 #include "time_series/ref/ref_node.hpp"
 
@@ -167,43 +168,39 @@ std::optional<WiringPoint> GraphWiring::add_node(const NodeTemplate &node_templa
 
     std::vector<WiredScalar> scalar_values;
     scalar_values.reserve(arguments.size() - source_count);
+    auto release_scalars = util::scope_exit{[&]() noexcept { destroy_scalars(scalar_values); }};
 
-    try {
-        for (auto i = std::size_t{}; i < arguments.size(); ++i) {
-            const auto &argument = arguments[i];
-            if (argument.is_wiring_point()) {
-                continue;
-            }
-
-            const auto &representation = argument.scalar_storage_representation();
-            if (!argument.scalar_has_value()) {
-                if (!signature.parameters[i].accepts_absent_scalar) {
-                    throw WiringError{"a required scalar parameter has no value"};
-                }
-
-                scalar_values.push_back(WiredScalar{representation, nullptr});
-                continue;
-            }
-
-            auto *data = fixed_memory_.allocate(representation.size(), representation.alignment());
-
-            try {
-                if (const auto *view = argument.scalar_view()) {
-                    view->copy_construct(data, representation, variable_memory(representation));
-                } else {
-                    representation.construct_from_value(data, argument.scalar_data(), variable_memory(representation));
-                }
-            } catch (...) {
-                fixed_memory_.deallocate(data, representation.size(), representation.alignment());
-                throw;
-            }
-
-            scalar_values.push_back(WiredScalar{representation, data});
+    for (auto i = std::size_t{}; i < arguments.size(); ++i) {
+        const auto &argument = arguments[i];
+        if (argument.is_wiring_point()) {
+            continue;
         }
-    } catch (...) {
-        destroy_scalars(scalar_values);
 
-        throw;
+        const auto &representation = argument.scalar_storage_representation();
+        if (!argument.scalar_has_value()) {
+            if (!signature.parameters[i].accepts_absent_scalar) {
+                throw WiringError{"a required scalar parameter has no value"};
+            }
+
+            scalar_values.push_back(WiredScalar{representation, nullptr});
+            continue;
+        }
+
+        auto &scalar_memory = variable_memory(representation);
+        auto *data = fixed_memory_.allocate(representation.size(), representation.alignment());
+        auto release_data = util::scope_exit{
+            [&]() noexcept { fixed_memory_.deallocate(data, representation.size(), representation.alignment()); }};
+
+        if (const auto *view = argument.scalar_view()) {
+            view->copy_construct(data, representation, scalar_memory);
+        } else {
+            representation.construct_from_value(data, argument.scalar_data(), scalar_memory);
+        }
+
+        auto destroy_data = util::scope_exit{[&]() noexcept { representation.destroy(data, scalar_memory); }};
+        scalar_values.push_back(WiredScalar{representation, data});
+        destroy_data.release();
+        release_data.release();
     }
 
     const auto has_output = signature.output != nullptr;
@@ -214,14 +211,11 @@ std::optional<WiringPoint> GraphWiring::add_node(const NodeTemplate &node_templa
                           std::move(scalar_values),
                           std::move(state_types),
                           *WiringContext::current().path()};
+    release_scalars.release();
 
-    try {
-        nodes_.push_back(std::move(node));
-    } catch (...) {
-        destroy_scalars(node.scalar_values());
-
-        throw;
-    }
+    auto release_node_scalars = util::scope_exit{[&]() noexcept { destroy_scalars(node.scalar_values()); }};
+    nodes_.push_back(std::move(node));
+    release_node_scalars.release();
 
     if (has_output) {
         const auto record = wiring_points_.size();

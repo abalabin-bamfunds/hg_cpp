@@ -20,6 +20,9 @@ bg::TS<float, bg::TimeSeriesGuarantee::final>
 The [validity design](time-series-validity.md) defines invalidation and
 revalidation for these types.
 
+TSS and TSD validity starts with their first tick and then remains valid. TSD
+item validity remains independent.
+
 ## Type summary
 
 | Type | Notation | Change queries |

@@ -69,6 +69,9 @@ call:
 A node template adds one wired node. A graph template invokes its graph function
 and can add any number of wired nodes.
 
+`GraphWiring` retains each node template used by a wired node. A node-template
+call therefore requires an lvalue whose lifetime includes graph compilation.
+
 ## Graph templates
 
 A graph function constructs graph code by invoking wiring templates. A graph
@@ -142,3 +145,7 @@ repeat.
 
 `GraphWiring` owns path entries in stable storage. A wired node refers to the
 entry for its node-template call.
+
+## Open implementation choices
+
+1. Recovery when a wiring-template call fails after adding wired nodes.

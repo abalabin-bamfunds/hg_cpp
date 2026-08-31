@@ -13,7 +13,7 @@ template <typename Scope, util::compile_time_string Name, typename... Constraint
 struct ScalarVariableInstance<Scope, ScalarVariable<Name, Constraints...>> {
     [[nodiscard]] static const TypeVariable<ScalarType> &get() {
         static const auto variable = [] {
-            auto alternatives = std::vector<const Type *>{};
+            auto alternatives = std::vector<const ScalarType *>{};
             auto property_constraints = std::vector<TypeVariable<ScalarType>::Constraint>{};
 
             (

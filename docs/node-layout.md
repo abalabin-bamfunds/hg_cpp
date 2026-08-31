@@ -81,7 +81,7 @@ It contains:
 - reference-bound input slot offsets and binding modes
 - active-input scheduling and input-validity data
 - required-input invalidation mode and an optional function entry point
-- subscribers and records for reference-bound inputs
+- subscribers and optional output-notification metadata
 - one concrete-view prototype pointer for each generic input
 - the selected storage-representation pointer for a generic output
 
@@ -96,6 +96,17 @@ function.
 
 Compilation copies scalar values and leaves graph wiring reusable. Variable
 scalar data uses a separate memory resource owned by the compiled graph.
+
+## Storage cleanup
+
+A storage representation reports variable-memory use and
+[finalization](terminology.md#finalization) separately. Collection
+representations require finalization when a contained representation requires
+it.
+
+Destroying one value performs its finalization and releases its variable
+memory. A graph can discard its complete memory resource without destroying
+values that do not require finalization.
 
 ## Runtime node
 
@@ -177,3 +188,4 @@ One thread evaluates a runtime graph at a time.
 
 1. Ownership of signatures, node templates, wired nodes, and compiled
    nodes.
+2. Attribution of wiring and compilation allocations to a graph and node.

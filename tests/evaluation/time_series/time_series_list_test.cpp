@@ -105,7 +105,7 @@ struct changing_list_source_definition {
     void start(bg::EvaluationContext *context) const {
         output[0].set(10);
         output[1].set(15);
-        (void)context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
+        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
     }
 
     void evaluate() const { output[1].set(20); }
@@ -157,7 +157,7 @@ struct nested_list_source_definition {
 
     void start(bg::EvaluationContext *context) const {
         output[0][0].set(10);
-        (void)context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
+        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
     }
 
     void evaluate() const { output[1][1].set(20); }
@@ -208,13 +208,13 @@ struct invalidating_list_source_definition {
 
     void start(bg::EvaluationContext *context) const {
         output[0].set(10);
-        (void)context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
+        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
     }
 
     void evaluate(bg::EvaluationContext *context) const {
         if (*step == 0) {
             output.invalidate();
-            (void)context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
+            context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
         } else {
             output[1].set(20);
         }
@@ -283,7 +283,7 @@ struct partially_invalidating_list_source_definition {
     void start(bg::EvaluationContext *context) const {
         output[0].set(10);
         output[1].set(20);
-        (void)context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
+        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
     }
 
     void evaluate() const { output[0].invalidate(); }
@@ -317,7 +317,7 @@ struct invalidating_value_source_definition {
 
     void start(bg::EvaluationContext *context) const {
         output.set(10);
-        (void)context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
+        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
     }
 
     void evaluate() const { output.invalidate(); }
@@ -353,13 +353,13 @@ struct invalidating_nested_list_source_definition {
 
     void start(bg::EvaluationContext *context) const {
         output[0][0].set(10);
-        (void)context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
+        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
     }
 
     void evaluate(bg::EvaluationContext *context) const {
         if (*step == 0) {
             output.invalidate();
-            (void)context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
+            context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
         } else {
             output[0][0].set(20);
         }
@@ -414,14 +414,14 @@ struct passive_item_source_definition {
     void start(bg::EvaluationContext *context) const {
         output[0].set(10);
         output[1].set(0);
-        (void)context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
+        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
     }
 
     void evaluate(bg::EvaluationContext *context) const {
         if (*step == 0) {
             output[0].invalidate();
             output[1].set(1);
-            (void)context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
+            context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
         } else {
             output[0].set(20);
             output[1].set(2);
@@ -513,12 +513,12 @@ struct canceled_nested_dictionary_source_definition {
 
     void start(bg::EvaluationContext *context) const {
         output[1][0].set(1);
-        static_cast<void>(context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1}));
+        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
     }
 
     void evaluate() const {
         output[0][0].set(10);
-        static_cast<void>(output[0].erase(0));
+        output[0].erase(0);
     }
 };
 

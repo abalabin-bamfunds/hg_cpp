@@ -629,7 +629,7 @@ template <typename Definition, std::size_t... Index>
         } else {
             using TimeSeries = typename output_field<Field>::time_series_type;
             return std::same_as<TimeSeries, TS_T> || is_time_series_reference<TimeSeries> ||
-                   is_time_series_list<TimeSeries> || is_time_series_set<TimeSeries> || is_time_series_dict<TimeSeries>;
+                   is_time_series_list<TimeSeries>;
         }
     }());
 }

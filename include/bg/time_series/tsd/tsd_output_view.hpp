@@ -19,7 +19,11 @@ class TimeSeriesDictionaryOutputView : public TimeSeriesOutputView {
     };
 
     [[nodiscard]] virtual Item item(const ScalarValueInputView &key) const = 0;
-    [[nodiscard]] virtual bool erase(const ScalarValueInputView &key) const = 0;
+    virtual bool erase(const ScalarValueInputView &key) const = 0;
+    virtual void clear() const = 0;
+
+  private:
+    void invalidate() const final {}
 };
 
 template <typename K, typename ItemTimeSeries>
@@ -31,7 +35,7 @@ class TypedTimeSeriesDictionaryOutputView final : public TimeSeriesDictionaryOut
     [[nodiscard]] TimeSeriesDictionaryOutputView::Item item(const ScalarValueInputView &key) const override {
         auto &memory = details::current_scalar_memory_resource();
         auto &value = storage();
-        
+
         value.reset_change_tracking(context().evaluation_time(), last_updated(), item_representation(), memory);
 
         const auto result = value.item(key, item_representation(), memory);
@@ -42,9 +46,6 @@ class TypedTimeSeriesDictionaryOutputView final : public TimeSeriesDictionaryOut
         } else if (result.change == details::time_series_set_change::restored) {
             value.mark_item_resurrected(result.position, context().evaluation_time(), memory);
             publish();
-        } else if (result.change == details::time_series_set_change::revalidated) {
-            value.key_storage().last_updated = context().evaluation_time();
-            publish_item(dictionary_representation(), key_set_item);
         }
 
         refresh_key_set_last_updated();
@@ -55,11 +56,11 @@ class TypedTimeSeriesDictionaryOutputView final : public TimeSeriesDictionaryOut
                 path};
     }
 
-    [[nodiscard]] bool erase(const ScalarValueInputView &key) const override {
+    bool erase(const ScalarValueInputView &key) const override {
         auto &memory = details::current_scalar_memory_resource();
         auto &value = storage();
         value.reset_change_tracking(context().evaluation_time(), last_updated(), item_representation(), memory);
-        const auto result = value.erase(key, memory);
+        const auto result = value.erase(key, item_representation(), memory);
 
         if (result.change == details::time_series_set_change::removed) {
             value.key_storage().last_updated = context().evaluation_time();
@@ -71,16 +72,19 @@ class TypedTimeSeriesDictionaryOutputView final : public TimeSeriesDictionaryOut
         return result.change != details::time_series_set_change::none;
     }
 
-    void invalidate() const override {
-        if (!valid()) {
-            return;
-        }
-
+    void clear() const override {
+        auto &memory = details::current_scalar_memory_resource();
         auto &value = storage();
-        value.reset_change_tracking(context().evaluation_time(), last_updated(), item_representation(),
-                                    details::current_scalar_memory_resource());
-        value.key_storage().last_updated = MIN_DT;
-        publish_item(dictionary_representation(), key_set_item);
+        value.reset_change_tracking(context().evaluation_time(), last_updated(), item_representation(), memory);
+        value.clear(item_representation(), memory);
+
+        if (value.previous_last_updated() <= MIN_DT || value.changed()) {
+            value.key_storage().last_updated = context().evaluation_time();
+            publish_item(dictionary_representation(), key_set_item);
+        } else {
+            refresh_key_set_last_updated();
+            refresh_last_updated();
+        }
     }
 
   private:

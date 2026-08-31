@@ -56,6 +56,7 @@ not update.
 - visitor dispatch for concrete and generic scalar and time series views, including base-interface fallback and no
   matching overload
 - thread-local context storage
+- scope-bound cleanup and release
 - scheduling bit iteration
 - stable-address storage, shared occupancy, and incremental hash containers
 

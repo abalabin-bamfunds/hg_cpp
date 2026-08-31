@@ -20,7 +20,7 @@ struct scheduled_source_definition {
 
     void start(bg::EvaluationContext *context) const {
         output.set(1);
-        (void)context->schedule_at(context->evaluation_time() + std::chrono::microseconds{2});
+        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{2});
     }
 
     void evaluate(bg::EvaluationContext *context) const {
@@ -28,7 +28,7 @@ struct scheduled_source_definition {
         output.set(static_cast<int>(evaluation_times.size()) + 1);
 
         if (evaluation_times.size() == 1) {
-            (void)context->schedule_at(context->evaluation_time() + std::chrono::microseconds{3});
+            context->schedule_at(context->evaluation_time() + std::chrono::microseconds{3});
         }
     }
 
@@ -82,9 +82,9 @@ struct unordered_schedule_definition {
     int value;
 
     void start(bg::EvaluationContext *context) const {
-        (void)context->schedule_at(context->evaluation_time() + std::chrono::microseconds{9});
-        (void)context->schedule_at(context->evaluation_time() + std::chrono::microseconds{2});
-        (void)context->schedule_at(context->evaluation_time() + std::chrono::microseconds{5});
+        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{9});
+        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{2});
+        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{5});
     }
 
     void evaluate(bg::EvaluationContext *context) const { evaluation_times.push_back(context->evaluation_time()); }

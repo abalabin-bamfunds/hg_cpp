@@ -11,16 +11,17 @@ TEST_CASE("a mutable scalar dictionary inserts and replaces entries", "[value][s
 
     auto state = bg::GlobalState{};
     const auto initial = bg::ScalarValue<bg::Dict<std::int64_t, std::int64_t>>{std::array{Entry{1, 2}}};
-    auto values = state.write();
-    values.set(bg::util::symbol{"items"}, initial);
+    state.write([&](bg::GlobalState::WriteAccess &values) {
+        values.set(bg::util::symbol{"items"}, initial);
 
-    const auto items = values.mutable_at<bg::Dict<std::int64_t, std::int64_t>>("items");
-    items.insert_or_assign(1, 3);
-    items.insert_or_assign(2, 4);
+        const auto items = values.mutable_at<bg::Dict<std::int64_t, std::int64_t>>("items");
+        items.insert_or_assign(1, 3);
+        items.insert_or_assign(2, 4);
 
-    CHECK(items.size() == 2);
-    CHECK(items.at(1) == 3);
-    CHECK(items.at(2) == 4);
+        CHECK(items.size() == 2);
+        CHECK(items.at(1) == 3);
+        CHECK(items.at(2) == 4);
+    });
 }
 
 TEST_CASE("a mutable scalar dictionary erases and clears entries", "[value][scalar][dict][mutable]") {
@@ -28,15 +29,15 @@ TEST_CASE("a mutable scalar dictionary erases and clears entries", "[value][scal
 
     auto state = bg::GlobalState{};
     const auto initial = bg::ScalarValue<bg::Dict<std::int64_t, std::int64_t>>{std::array{Entry{1, 2}, Entry{3, 4}}};
-    auto values = state.write();
-    values.set(bg::util::symbol{"items"}, initial);
+    state.write([&](bg::GlobalState::WriteAccess &values) {
+        values.set(bg::util::symbol{"items"}, initial);
 
-    const auto items = values.mutable_at<bg::Dict<std::int64_t, std::int64_t>>("items");
+        const auto items = values.mutable_at<bg::Dict<std::int64_t, std::int64_t>>("items");
+        CHECK(items.erase(1));
+        CHECK_FALSE(items.erase(1));
+        CHECK_FALSE(items.contains(1));
 
-    CHECK(items.erase(1));
-    CHECK_FALSE(items.erase(1));
-    CHECK_FALSE(items.contains(1));
-
-    items.clear();
-    CHECK(items.empty());
+        items.clear();
+        CHECK(items.empty());
+    });
 }

@@ -21,7 +21,7 @@ template <typename Interface> class polymorphic_value {
   public:
     template <typename Implementation>
         requires std::derived_from<Implementation, Interface>
-    [[nodiscard]] static Interface &copy_to(void *destination, const Implementation &prototype) noexcept {
+    static Interface &copy_to(void *destination, const Implementation &prototype) noexcept {
         static_assert(sizeof(Implementation) == sizeof(Interface));
         static_assert(alignof(Implementation) == alignof(Interface));
 
@@ -36,7 +36,7 @@ template <typename Interface> class polymorphic_value {
         static_assert(alignof(Implementation) == alignof(Interface));
 
         auto value = polymorphic_value{};
-        static_cast<void>(copy_to(value.bytes_, prototype));
+        copy_to(value.bytes_, prototype);
 
         return value;
     }

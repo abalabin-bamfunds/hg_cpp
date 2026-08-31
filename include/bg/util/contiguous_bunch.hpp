@@ -1,6 +1,7 @@
 #pragma once
 
 #include <bg/util/details/bunch_blocks.hpp>
+#include <bg/util/scope_exit.hpp>
 
 #include <cassert>
 #include <cstdint>
@@ -24,8 +25,6 @@ template <typename T, std::uint32_t InitialElements = 8> class contiguous_bunch 
     contiguous_bunch(contiguous_bunch &&) = delete;
     contiguous_bunch &operator=(contiguous_bunch &&) = delete;
 
-    ~contiguous_bunch() { assert(size_ == 0); }
-
     template <typename... Arguments> T &emplace_back(std::pmr::memory_resource &memory, Arguments &&...arguments) {
         return emplace_back_with(
             memory, [&](T *position) { std::construct_at(position, std::forward<Arguments>(arguments)...); });
@@ -35,13 +34,9 @@ template <typename T, std::uint32_t InitialElements = 8> class contiguous_bunch 
         requires std::invocable<Constructor &, T *>
     T &emplace_back_with(std::pmr::memory_resource &memory, Constructor &&construct) {
         auto *position = blocks_.ensure(size_, memory);
-
-        try {
-            std::invoke(construct, position);
-        } catch (...) {
-            blocks_.release_unused(size_, memory);
-            throw;
-        }
+        auto release = scope_exit{[&]() noexcept { blocks_.release_unused(size_, memory); }};
+        std::invoke(construct, position);
+        release.release();
 
         blocks_.added(size_);
         ++size_;

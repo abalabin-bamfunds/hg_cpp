@@ -2,6 +2,7 @@
 
 #include <bg/scalar/details/storage_traits.hpp>
 #include <bg/scalar/list/type.hpp>
+#include <bg/util/scope_exit.hpp>
 
 #include <memory>
 
@@ -15,6 +16,7 @@ template <typename T> struct scalar_storage_traits<List<T>> {
     static constexpr bool supports_equality = ItemTraits::supports_equality;
     static constexpr bool supports_hash = ItemTraits::supports_hash;
     static constexpr bool uses_variable_memory = true;
+    static constexpr bool requires_finalization = ItemTraits::requires_finalization;
 
     [[nodiscard]] static value_type read(const stored_type &value) noexcept { return value_type{value}; }
 
@@ -31,16 +33,12 @@ template <typename T> struct scalar_storage_traits<List<T>> {
 
     static void construct(stored_type *destination, value_type value, std::pmr::memory_resource &memory) {
         std::construct_at(destination);
-
-        try {
-            for (auto i = std::size_t{}; i < value.size(); ++i) {
-                destination->items.emplace_back_with(
-                    memory, [&](auto *item) { ItemTraits::construct(item, value[i], memory); });
-            }
-        } catch (...) {
-            destroy(destination, memory);
-            throw;
+        auto rollback = util::scope_exit{[&]() noexcept { destroy(destination, memory); }};
+        for (auto i = std::size_t{}; i < value.size(); ++i) {
+            destination->items.emplace_back_with(memory,
+                                                 [&](auto *item) { ItemTraits::construct(item, value[i], memory); });
         }
+        rollback.release();
     }
 
     template <std::ranges::contiguous_range Range>
@@ -48,21 +46,17 @@ template <typename T> struct scalar_storage_traits<List<T>> {
                  scalar_view_source_for<std::ranges::range_reference_t<const Range>, T>)
     static void construct(stored_type *destination, const Range &value, std::pmr::memory_resource &memory) {
         std::construct_at(destination);
-
-        try {
-            for (const auto &item : value) {
-                destination->items.emplace_back_with(memory, [&](auto *stored) {
-                    if constexpr (scalar_view_source_for<decltype(item), T>) {
-                        item.input_view().copy_construct(stored, cpp_scalar_storage_representation<T>(), memory);
-                    } else {
-                        ItemTraits::construct(stored, item, memory);
-                    }
-                });
-            }
-        } catch (...) {
-            destroy(destination, memory);
-            throw;
+        auto rollback = util::scope_exit{[&]() noexcept { destroy(destination, memory); }};
+        for (const auto &item : value) {
+            destination->items.emplace_back_with(memory, [&](auto *stored) {
+                if constexpr (scalar_view_source_for<decltype(item), T>) {
+                    item.input_view().copy_construct(stored, cpp_scalar_storage_representation<T>(), memory);
+                } else {
+                    ItemTraits::construct(stored, item, memory);
+                }
+            });
         }
+        rollback.release();
     }
 
     static void copy_construct(stored_type *destination, const stored_type &source, std::pmr::memory_resource &memory) {

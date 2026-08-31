@@ -1,4 +1,5 @@
 #include <bg/time_series/tsl/tsl_storage.hpp>
+#include <bg/time_series/tsl/tsl_storage_representation.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -30,4 +31,11 @@ TEST_CASE("fixed list validity is derived from its items", "[value][time_series]
 
     storage.items[1].last_updated = bg::MIN_DT;
     CHECK_FALSE(storage.valid());
+}
+
+TEST_CASE("fixed list storage reports item cleanup requirements", "[value][time_series][tsl][storage]") {
+    const auto &storage = bg::cpp_time_series_storage_representation<bg::TSL<bg::TS<int>, 2>>();
+
+    CHECK_FALSE(storage.uses_variable_memory());
+    CHECK_FALSE(storage.requires_finalization());
 }

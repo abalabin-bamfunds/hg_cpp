@@ -7,6 +7,7 @@
 #include <bg/util/symbol.hpp>
 
 #include <cstddef>
+#include <concepts>
 #include <functional>
 #include <memory_resource>
 #include <mutex>
@@ -14,6 +15,7 @@
 #include <stdexcept>
 #include <string_view>
 #include <typeinfo>
+#include <utility>
 
 namespace bg {
 
@@ -130,8 +132,21 @@ class GlobalState {
 
     ~GlobalState() { values_.release(memory_); }
 
-    [[nodiscard]] ReadAccess read() const { return ReadAccess{*this}; }
-    [[nodiscard]] WriteAccess write() { return WriteAccess{*this}; }
+    template <typename Function>
+        requires std::invocable<Function, const ReadAccess &> &&
+                 std::same_as<std::invoke_result_t<Function, const ReadAccess &>, void>
+    void read(Function &&function) const {
+        const auto access = ReadAccess{*this};
+        std::invoke(std::forward<Function>(function), access);
+    }
+
+    template <typename Function>
+        requires std::invocable<Function, WriteAccess &> &&
+                 std::same_as<std::invoke_result_t<Function, WriteAccess &>, void>
+    void write(Function &&function) {
+        auto access = WriteAccess{*this};
+        std::invoke(std::forward<Function>(function), access);
+    }
 
   private:
     [[nodiscard]] bool contains(util::symbol key) const noexcept { return values_.contains(key); }

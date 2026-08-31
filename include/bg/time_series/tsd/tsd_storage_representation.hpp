@@ -10,6 +10,7 @@
 #include <cstddef>
 #include <memory>
 #include <mutex>
+#include <type_traits>
 #include <unordered_map>
 
 namespace bg::details {
@@ -21,9 +22,10 @@ class CppTimeSeriesDictionaryStorageRepresentation<TSD<K, Item, Properties...>> 
     : public TimeSeriesStorageRepresentation {
     using TimeSeries = TSD<K, Item, Properties...>;
     using Storage = time_series_dict_storage<K, Item>;
+    static_assert(std::is_trivially_copyable_v<Storage>);
 
   public:
-    explicit CppTimeSeriesDictionaryStorageRepresentation(const TimeSeriesDictionaryType &type) noexcept
+    explicit CppTimeSeriesDictionaryStorageRepresentation(const TimeSeriesDictionaryType &type)
         : type_{&type}, keys_{&CppTimeSeriesStorageRepresentation<TSS<K>>::get(type.key_set_type())},
           item_{&CppTimeSeriesStorageRepresentation<Item>::get(type.value_type())} {}
 
@@ -31,7 +33,9 @@ class CppTimeSeriesDictionaryStorageRepresentation<TSD<K, Item, Properties...>> 
     [[nodiscard]] std::size_t value_size() const noexcept override { return sizeof(Storage); }
     [[nodiscard]] std::size_t value_alignment() const noexcept override { return alignof(Storage); }
     [[nodiscard]] bool uses_variable_memory() const noexcept override { return true; }
-    [[nodiscard]] bool requires_destruction() const noexcept override { return true; }
+    [[nodiscard]] bool requires_finalization() const noexcept override {
+        return keys_->requires_finalization() || item_->requires_finalization();
+    }
     [[nodiscard]] bool supports_byte_copy_initialization() const noexcept override { return true; }
 
     [[nodiscard]] const TimeSeriesInputView &input_view_prototype() const noexcept override {
@@ -75,7 +79,7 @@ class CppTimeSeriesDictionaryStorageRepresentation<TSD<K, Item, Properties...>> 
 
         if (last_updated <= MIN_DT) {
             function(context, {0, keys_, &MIN_DT, &storage.key_storage().value.value});
-            for (const auto position : keys.live()) {
+            for (const auto position : keys.removed()) {
                 const auto &item = storage.contained(position);
                 function(context, {static_cast<std::size_t>(position) + 1, item_, &MIN_DT, &item.value.value});
             }
@@ -85,18 +89,11 @@ class CppTimeSeriesDictionaryStorageRepresentation<TSD<K, Item, Properties...>> 
             return;
         }
 
-        if (keys.changed() || storage.revalidated()) {
+        const auto key_set_validity_changed =
+            (storage.key_storage().last_updated > MIN_DT) != (keys.previous_last_updated() > MIN_DT);
+        if (keys.changed() || key_set_validity_changed) {
             function(context,
                      {0, keys_, &storage.key_storage().last_updated, &storage.key_storage().value.value});
-        }
-
-        if (storage.revalidated()) {
-            for (const auto position : keys.live()) {
-                const auto &item = storage.contained(position);
-                function(context,
-                         {static_cast<std::size_t>(position) + 1, item_, &item.last_updated, &item.value.value});
-            }
-            return;
         }
 
         for (const auto position : keys.added()) {
@@ -118,8 +115,10 @@ class CppTimeSeriesDictionaryStorageRepresentation<TSD<K, Item, Properties...>> 
         }
     }
 
-    [[nodiscard]] bool finalize_modified_items(EvaluationTime &last_updated, void *value,
-                                               EvaluationTime evaluation_time) const noexcept override {
+    [[nodiscard]] bool requires_modified_item_finalization() const noexcept override { return true; }
+
+    bool finalize_modified_items(EvaluationTime &last_updated, void *value,
+                                 EvaluationTime evaluation_time) const noexcept override {
         auto &storage = *static_cast<Storage *>(value);
         if (storage.change_time() != evaluation_time) {
             return false;
@@ -138,7 +137,7 @@ class CppTimeSeriesDictionaryStorageRepresentation<TSD<K, Item, Properties...>> 
             }
         }
 
-        if (last_updated <= MIN_DT && storage.previous_last_updated() > MIN_DT) {
+        if ((last_updated > MIN_DT) != (storage.previous_last_updated() > MIN_DT)) {
             return true;
         }
         if (!storage.changed()) {
@@ -168,7 +167,7 @@ class CppTimeSeriesDictionaryStorageRepresentation<TSD<K, Item, Properties...>> 
 
 template <typename K, typename Item, auto... Properties>
 struct CppTimeSeriesStorageRepresentation<TSD<K, Item, Properties...>> {
-    [[nodiscard]] static const TimeSeriesStorageRepresentation &get(const TimeSeriesType &type) noexcept {
+    [[nodiscard]] static const TimeSeriesStorageRepresentation &get(const TimeSeriesType &type) {
         using TimeSeries = TSD<K, Item, Properties...>;
         using Representation = CppTimeSeriesDictionaryStorageRepresentation<TimeSeries>;
 

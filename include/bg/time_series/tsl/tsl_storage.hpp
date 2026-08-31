@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <limits>
 #include <ranges>
+#include <type_traits>
 
 namespace bg::details {
 
@@ -41,7 +42,7 @@ template <std::size_t Size> class fixed_time_series_list_changes {
 
     [[nodiscard]] EvaluationTime time() const noexcept { return time_; }
     [[nodiscard]] EvaluationTime previous_last_updated() const noexcept { return previous_last_updated_; }
-    [[nodiscard]] bool reset(std::size_t index) noexcept {
+    bool reset(std::size_t index) noexcept {
         return updated_.reset(static_cast<std::uint32_t>(index));
     }
     [[nodiscard]] bool any() const noexcept { return updated_.any(); }
@@ -56,7 +57,8 @@ template <std::size_t Size> class fixed_time_series_list_changes {
 
 template <typename T> union time_series_value_slot {
     constexpr time_series_value_slot() noexcept {}
-    ~time_series_value_slot() noexcept {}
+    ~time_series_value_slot() noexcept requires std::is_trivially_destructible_v<T> = default;
+    ~time_series_value_slot() noexcept requires(!std::is_trivially_destructible_v<T>) {}
 
     T value;
 };
@@ -93,5 +95,7 @@ template <typename Item, std::size_t Size> struct fixed_time_series_list_storage
         return std::ranges::any_of(items, [](const auto &item) { return item.last_updated > MIN_DT; });
     }
 };
+
+static_assert(std::is_trivially_copyable_v<fixed_time_series_list_storage<TS<int>, 1>>);
 
 } // namespace bg::details

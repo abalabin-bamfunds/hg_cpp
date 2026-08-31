@@ -18,7 +18,7 @@ class TypeVariable final : public Category, public Variable {
   public:
     using Constraint = bool (*)(const Category &) noexcept;
 
-    explicit TypeVariable(util::symbol name, std::vector<const Type *> alternatives = {},
+    explicit TypeVariable(util::symbol name, std::vector<const Category *> alternatives = {},
                           std::vector<Constraint> constraints = {})
         : Variable(name), alternatives_(std::move(alternatives)), constraints_(std::move(constraints)) {}
 
@@ -105,7 +105,7 @@ class TypeVariable final : public Category, public Variable {
         } else {
             return std::ranges::contains(constraints_, &supports_scalar_equality) ||
                    (!alternatives_.empty() && std::ranges::all_of(alternatives_, [](const auto *type) {
-                       return static_cast<const ScalarType *>(type)->supports_equality();
+                       return type->supports_equality();
                    }));
         }
     }
@@ -116,13 +116,13 @@ class TypeVariable final : public Category, public Variable {
         } else {
             return std::ranges::contains(constraints_, &supports_scalar_hash) ||
                    (!alternatives_.empty() && std::ranges::all_of(alternatives_, [](const auto *type) {
-                       return static_cast<const ScalarType *>(type)->supports_hash();
+                       return type->supports_hash();
                    }));
         }
     }
 
   private:
-    std::vector<const Type *> alternatives_;
+    std::vector<const Category *> alternatives_;
     std::vector<Constraint> constraints_;
 };
 

@@ -3,11 +3,11 @@
 #include <bg/util/index.hpp>
 
 #include <algorithm>
-#include <cassert>
 #include <cstdint>
 #include <limits>
 #include <memory_resource>
 #include <stdexcept>
+#include <type_traits>
 
 namespace bg::util {
 
@@ -27,22 +27,20 @@ class occupancy_index {
     occupancy_index(occupancy_index &&) = delete;
     occupancy_index &operator=(occupancy_index &&) = delete;
 
-    ~occupancy_index() { assert(count_ == 0); }
-
     [[nodiscard]] size_type acquire(std::pmr::memory_resource &memory) {
         const auto position = next_free_;
         if (position == npos) {
             throw std::length_error{"occupancy index is full"};
         }
 
-        static_cast<void>(positions_.set(position, memory));
+        positions_.set(position, memory);
         ++count_;
         next_free_ = positions_.first_unset(position + 1);
 
         return position;
     }
 
-    [[nodiscard]] bool set(size_type position, std::pmr::memory_resource &memory) {
+    bool set(size_type position, std::pmr::memory_resource &memory) {
         if (!positions_.set(position, memory)) {
             return false;
         }
@@ -55,7 +53,7 @@ class occupancy_index {
         return true;
     }
 
-    [[nodiscard]] bool reset(size_type position) noexcept {
+    bool reset(size_type position) noexcept {
         if (!positions_.reset(position)) {
             return false;
         }
@@ -96,5 +94,7 @@ class occupancy_index {
     size_type count_{};
     size_type next_free_{};
 };
+
+static_assert(std::is_trivially_copyable_v<occupancy_index>);
 
 } // namespace bg::util

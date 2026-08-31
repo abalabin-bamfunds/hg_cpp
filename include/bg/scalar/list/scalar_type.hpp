@@ -29,7 +29,7 @@ class GenericListScalarType final : public ListScalarType {
 
 template <typename T>
     requires is_list_v<T>
-const ScalarType &cpp_scalar_type() noexcept {
+const ScalarType &cpp_scalar_type() {
     return list_scalar_type(cpp_scalar_type<typename T::item_type>());
 }
 

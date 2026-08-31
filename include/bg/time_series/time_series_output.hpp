@@ -32,10 +32,6 @@ template <> class Out<TS_T> {
     [[nodiscard]] bool valid() const noexcept { return view_->valid(); }
     [[nodiscard]] EvaluationTime last_updated() const noexcept { return view_->last_updated(); }
 
-    template <typename Value> void set_value(const Scalar<Value> &value) const {
-        static_cast<const TimeSeriesValueOutputView &>(view_.get()).set_value(value.input_view());
-    }
-
     void invalidate() const { view_->invalidate(); }
 
     [[nodiscard]] const TimeSeriesOutputView *operator->() const noexcept { return view_.operator->(); }

@@ -9,6 +9,7 @@ namespace bg {
 class TimeSeriesSetType : public TimeSeriesType {
   public:
     [[nodiscard]] const ScalarType &item_type() const noexcept { return *item_type_; }
+    [[nodiscard]] bool supports_invalidation() const noexcept final { return false; }
 
   protected:
     TimeSeriesSetType(const ScalarType &item_type, GuaranteeParameter guarantee)

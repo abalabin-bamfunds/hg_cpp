@@ -12,10 +12,13 @@
 #include <array>
 #include <chrono>
 #include <concepts>
+#include <vector>
 
 namespace {
 
 static_assert(std::derived_from<bg::GenericTimeSeriesValueType, bg::TimeSeriesValueType>);
+static_assert(!std::constructible_from<bg::TypeVariable<bg::ScalarType>, bg::util::symbol,
+                                       std::vector<const bg::TimeSeriesType *>>);
 
 [[nodiscard]] bool is_value_type(const bg::Type *type, const bg::ScalarType &value_type,
                                  bg::TimeSeriesGuarantee guarantee) {

@@ -22,7 +22,10 @@ class ScalarStorageRepresentation {
     [[nodiscard]] virtual std::size_t size() const noexcept = 0;
     [[nodiscard]] virtual std::size_t alignment() const noexcept = 0;
     [[nodiscard]] virtual bool uses_variable_memory() const noexcept = 0;
-    [[nodiscard]] virtual bool requires_destruction() const noexcept = 0;
+    [[nodiscard]] virtual bool requires_finalization() const noexcept = 0;
+    [[nodiscard]] bool requires_destruction() const noexcept {
+        return uses_variable_memory() || requires_finalization();
+    }
     [[nodiscard]] virtual bool supports_byte_copy_initialization() const noexcept = 0;
 
     // A storage-only composed representation has no standalone view prototype.
@@ -67,8 +70,8 @@ class ScalarStorageRepresentation {
 resolve_scalar_storage_representation(const ScalarType &type,
                                       std::span<const ScalarStorageRepresentation *const> available);
 
-void register_scalar_storage_representation(const ScalarStorageRepresentation &representation) noexcept;
+void register_scalar_storage_representation(const ScalarStorageRepresentation &representation);
 
-template <typename T> [[nodiscard]] const ScalarStorageRepresentation &cpp_scalar_storage_representation() noexcept;
+template <typename T> [[nodiscard]] const ScalarStorageRepresentation &cpp_scalar_storage_representation();
 
 } // namespace bg

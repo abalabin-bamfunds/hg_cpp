@@ -14,8 +14,9 @@ struct inspect_scalar_list {
     bg::Scalar<bg::List<std::int64_t>> values;
 
     void start(bg::EvaluationContext *context) const {
-        auto state = context->global_state().write();
-        state.set(bg::util::symbol{"result"}, bg::ScalarValue{values[0].value() + values[1].value()});
+        context->global_state().write([&](auto &state) {
+            state.set(bg::util::symbol{"result"}, bg::ScalarValue{values[0].value() + values[1].value()});
+        });
     }
 
     void evaluate() const {}
@@ -28,8 +29,7 @@ TEST_CASE("a scalar list is available from packed graph scalar storage", "[node]
 
     bg::run_graph([&] { inspect(input); }, state);
 
-    const auto values = state.read();
-    CHECK(bg::scalar_cast<std::int64_t>(values.at("result")).value() == 3);
+    state.read([](const auto &values) { CHECK(bg::scalar_cast<std::int64_t>(values.at("result")).value() == 3); });
 }
 
 struct inspect_scalar_list_state {
@@ -39,8 +39,9 @@ struct inspect_scalar_list_state {
         values->append(1);
         values->append(2);
 
-        auto state = context->global_state().write();
-        state.set(bg::util::symbol{"result"}, bg::ScalarValue{(*values)[0] + (*values)[1]});
+        context->global_state().write([&](auto &state) {
+            state.set(bg::util::symbol{"result"}, bg::ScalarValue{(*values)[0] + (*values)[1]});
+        });
     }
 
     void evaluate() const {}
@@ -52,8 +53,7 @@ TEST_CASE("scalar list state is available during node start", "[node][state][sca
 
     bg::run_graph([&] { inspect(); }, state);
 
-    const auto values = state.read();
-    CHECK(bg::scalar_cast<std::int64_t>(values.at("result")).value() == 3);
+    state.read([](const auto &values) { CHECK(bg::scalar_cast<std::int64_t>(values.at("result")).value() == 3); });
 }
 
 struct scalar_list_source {
@@ -69,8 +69,9 @@ struct scalar_list_sink {
 
     void evaluate(bg::EvaluationContext *context) const {
         const auto values = input.value_view();
-        auto state = context->global_state().write();
-        state.set(bg::util::symbol{"result"}, bg::ScalarValue{values[0].value() + values[1].value()});
+        context->global_state().write([&](auto &state) {
+            state.set(bg::util::symbol{"result"}, bg::ScalarValue{values[0].value() + values[1].value()});
+        });
     }
 };
 
@@ -82,8 +83,7 @@ TEST_CASE("a scalar list propagates through a value time series", "[node][time_s
 
     bg::run_graph([&] { sink(source(input)); }, state);
 
-    const auto values = state.read();
-    CHECK(bg::scalar_cast<std::int64_t>(values.at("result")).value() == 3);
+    state.read([](const auto &values) { CHECK(bg::scalar_cast<std::int64_t>(values.at("result")).value() == 3); });
 }
 
 TEST_CASE("a runtime graph releases scalar list time-series storage",

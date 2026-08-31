@@ -60,7 +60,7 @@ struct cancelling_source_definition {
     void start(bg::EvaluationContext *context) const {
         const auto cancelled = context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
         context->cancel(cancelled);
-        (void)context->schedule_at(context->evaluation_time() + std::chrono::microseconds{2});
+        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{2});
     }
 
     void evaluate(bg::EvaluationContext *context) const {
@@ -105,8 +105,8 @@ struct coalescing_node_definition {
 
     void start(bg::EvaluationContext *context) const {
         const auto scheduled_time = context->evaluation_time() + std::chrono::microseconds{2};
-        (void)context->schedule_at(scheduled_time);
-        (void)context->schedule_at(scheduled_time);
+        context->schedule_at(scheduled_time);
+        context->schedule_at(scheduled_time);
     }
 
     void evaluate() const { ++evaluation_count; }
@@ -143,7 +143,7 @@ struct delayed_node_definition {
     int delay;
 
     void start(bg::EvaluationContext *context) const {
-        (void)context->schedule_at(context->evaluation_time() + std::chrono::microseconds{delay});
+        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{delay});
     }
 
     void evaluate() const { ++evaluation_counts[id]; }
@@ -219,7 +219,7 @@ TEST_CASE("a schedule handle identifies the node that created it", "[evaluation]
 struct invalid_time_definition {
     static constexpr bool uses_future_scheduling = true;
 
-    void start(bg::EvaluationContext *context) const { (void)context->schedule_at(context->evaluation_time()); }
+    void start(bg::EvaluationContext *context) const { context->schedule_at(context->evaluation_time()); }
 
     void evaluate() const {}
 };
@@ -240,7 +240,7 @@ TEST_CASE("future scheduling requires a time after the current outer cycle", "[e
 
 struct undeclared_scheduling_definition {
     void start(bg::EvaluationContext *context) const {
-        (void)context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
+        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
     }
 
     void evaluate() const {}

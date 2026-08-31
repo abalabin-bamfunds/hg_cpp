@@ -11,6 +11,7 @@ class TimeSeriesType : public Type {
     [[nodiscard]] bool is_time_series() const noexcept final { return true; }
 
     [[nodiscard]] const GuaranteeParameter &guarantee() const noexcept { return guarantee_; }
+    [[nodiscard]] virtual bool supports_invalidation() const noexcept { return true; }
 
   protected:
     TimeSeriesType() = default;

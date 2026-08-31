@@ -18,8 +18,8 @@ struct inspect_scalar_dict {
         auto result = std::int64_t{};
         values.for_each([&](const auto, const auto value) { result += value.value(); });
 
-        auto state = context->global_state().write();
-        state.set(bg::util::symbol{"result"}, bg::ScalarValue{result});
+        context->global_state().write(
+            [&](auto &state) { state.set(bg::util::symbol{"result"}, bg::ScalarValue{result}); });
     }
 
     void evaluate() const {}
@@ -32,8 +32,7 @@ TEST_CASE("a scalar dictionary is available from packed graph scalar storage", "
 
     bg::run_graph([&] { inspect(input); }, state);
 
-    const auto values = state.read();
-    CHECK(bg::scalar_cast<std::int64_t>(values.at("result")).value() == 6);
+    state.read([](const auto &values) { CHECK(bg::scalar_cast<std::int64_t>(values.at("result")).value() == 6); });
 }
 
 struct inspect_scalar_dict_state {
@@ -43,8 +42,9 @@ struct inspect_scalar_dict_state {
         values->insert_or_assign(1, 2);
         values->insert_or_assign(3, 4);
 
-        auto state = context->global_state().write();
-        state.set(bg::util::symbol{"result"}, bg::ScalarValue{values->at(1) + values->at(3)});
+        context->global_state().write([&](auto &state) {
+            state.set(bg::util::symbol{"result"}, bg::ScalarValue{values->at(1) + values->at(3)});
+        });
     }
 
     void evaluate() const {}
@@ -56,8 +56,7 @@ TEST_CASE("scalar dictionary state is available during node start", "[node][stat
 
     bg::run_graph([&] { inspect(); }, state);
 
-    const auto values = state.read();
-    CHECK(bg::scalar_cast<std::int64_t>(values.at("result")).value() == 6);
+    state.read([](const auto &values) { CHECK(bg::scalar_cast<std::int64_t>(values.at("result")).value() == 6); });
 }
 
 struct scalar_dict_source {
@@ -75,8 +74,8 @@ struct scalar_dict_sink {
         auto result = std::int64_t{};
         input.value_view().for_each([&](const auto, const auto value) { result += value.value(); });
 
-        auto state = context->global_state().write();
-        state.set(bg::util::symbol{"result"}, bg::ScalarValue{result});
+        context->global_state().write(
+            [&](auto &state) { state.set(bg::util::symbol{"result"}, bg::ScalarValue{result}); });
     }
 };
 
@@ -88,8 +87,7 @@ TEST_CASE("a scalar dictionary propagates through a value time series", "[node][
 
     bg::run_graph([&] { sink(source(input)); }, state);
 
-    const auto values = state.read();
-    CHECK(bg::scalar_cast<std::int64_t>(values.at("result")).value() == 6);
+    state.read([](const auto &values) { CHECK(bg::scalar_cast<std::int64_t>(values.at("result")).value() == 6); });
 }
 
 } // namespace

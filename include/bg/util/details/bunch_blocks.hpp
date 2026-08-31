@@ -47,11 +47,6 @@ template <typename T, std::uint32_t InitialElements = 8> class bunch_blocks {
     bunch_blocks(bunch_blocks &&) = delete;
     bunch_blocks &operator=(bunch_blocks &&) = delete;
 
-    ~bunch_blocks() {
-        assert(first_.data == nullptr);
-        assert(additional_ == nullptr);
-    }
-
     [[nodiscard]] static constexpr location locate(size_type position) noexcept {
         if (position < first_capped_position) {
             const auto scaled = position / initial_elements + 1;

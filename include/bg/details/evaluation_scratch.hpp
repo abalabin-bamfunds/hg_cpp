@@ -1,5 +1,7 @@
 #pragma once
 
+#include <bg/util/scope_exit.hpp>
+
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
@@ -106,12 +108,9 @@ class EvaluationScratch {
 
     void add_block(std::size_t size) {
         auto *data = static_cast<std::byte *>(memory_->allocate(size, alignof(std::max_align_t)));
-        try {
-            blocks_.push_back({data, size});
-        } catch (...) {
-            memory_->deallocate(data, size, alignof(std::max_align_t));
-            throw;
-        }
+        auto release = util::scope_exit{[&]() noexcept { memory_->deallocate(data, size, alignof(std::max_align_t)); }};
+        blocks_.push_back({data, size});
+        release.release();
     }
 
     std::pmr::memory_resource *memory_;

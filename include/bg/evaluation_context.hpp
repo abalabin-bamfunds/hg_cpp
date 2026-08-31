@@ -30,7 +30,7 @@ class EvaluationContext {
     [[nodiscard]] std::size_t node_index() const noexcept { return node_index_; }
 
     void schedule_now() const noexcept;
-    [[nodiscard]] ScheduleHandle schedule_at(EvaluationTime time) const;
+    ScheduleHandle schedule_at(EvaluationTime time) const;
     void cancel(ScheduleHandle handle) const noexcept;
 
   private:
@@ -47,13 +47,10 @@ class EvaluationContext {
     void publish_output_path(void *path) const noexcept;
     void release_output_view(void *view) noexcept;
     void release_output_path(void *path) noexcept;
-    void finalize_output(EvaluationTime &last_updated, void *value) const noexcept;
-
     EvaluationTime evaluation_time_;
     RuntimeGraph *runtime_graph_;
     std::size_t node_index_;
     void *scratch_frame_{};
-    const TimeSeriesStorageRepresentation *output_representation_{};
 };
 
 } // namespace bg

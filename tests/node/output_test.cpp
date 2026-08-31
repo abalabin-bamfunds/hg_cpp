@@ -20,6 +20,12 @@ static_assert(!std::is_constructible_v<FloatOutput, bg::TypedTimeSeriesValueOutp
 static_assert(!std::is_copy_constructible_v<FloatOutput>);
 static_assert(std::is_move_constructible_v<FloatOutput>);
 
+template <typename Output>
+concept ScalarWritableOutput = requires(const Output &output, const bg::Scalar<> &value) { output.set_value(value); };
+
+static_assert(!ScalarWritableOutput<bg::Out<bg::TS_T>>);
+static_assert(ScalarWritableOutput<bg::Out<bg::TS<bg::SCALAR>>>);
+
 } // namespace
 
 TEST_CASE("a value output publishes at the evaluation time", "[node_api]") {
@@ -97,23 +103,6 @@ TEST_CASE("a generic value output accepts a compatible erased scalar view", "[no
     view->bind(last_updated, &value, evaluation_time);
     const auto output = bg::details::output_factory::make<bg::TS<bg::SCALAR>>(
         static_cast<bg::TimeSeriesValueOutputView &>(view.get()));
-
-    output.set_value(source);
-
-    CHECK(value == 1.25F);
-    CHECK(last_updated == evaluation_time);
-}
-
-TEST_CASE("an arbitrary time-series output accepts a compatible scalar view", "[node_api]") {
-    bg::EvaluationTime last_updated = bg::MIN_DT;
-    float value{};
-    const auto evaluation_time = bg::MIN_DT + std::chrono::microseconds{1};
-    const auto source_value = 1.25F;
-    const auto source = bg::Scalar<>::from<float>(source_value);
-    const auto *prototype = bg::cpp_scalar_storage_representation<float>().output_view_prototype();
-    auto view = bg::util::polymorphic_value<bg::TimeSeriesOutputView>::copy(*prototype);
-    view->bind(last_updated, &value, evaluation_time);
-    const auto output = bg::details::output_factory::make<bg::TS_T>(view.get());
 
     output.set_value(source);
 

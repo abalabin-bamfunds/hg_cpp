@@ -50,7 +50,7 @@ TEST_CASE("a hash dictionary retains separate key and value addresses", "[hash_d
     const auto *first_key = &(*dictionary.begin()).key;
 
     for (auto key = 2; key < 500; ++key) {
-        static_cast<void>(dictionary.try_emplace(key, memory, std::to_string(key)));
+        dictionary.try_emplace(key, memory, std::to_string(key));
     }
 
     CHECK(dictionary.find(1) == first_value);
@@ -153,7 +153,7 @@ TEST_CASE("a hash dictionary retains committed values after each allocation fail
         memory.fail_after(failure);
         try {
             for (; inserted < 100; ++inserted) {
-                static_cast<void>(dictionary.try_emplace(inserted, memory, inserted * 2));
+                dictionary.try_emplace(inserted, memory, inserted * 2);
             }
         } catch (const std::bad_alloc &) {
             failed = true;
@@ -182,14 +182,14 @@ TEST_CASE("a hash dictionary reuses one position for its key and value", "[hash_
     auto memory = counting_memory_resource{};
     auto dictionary = bg::util::hash_dictionary<int, int>{};
 
-    static_cast<void>(dictionary.try_emplace(1, memory, 10));
-    static_cast<void>(dictionary.try_emplace(2, memory, 20));
+    dictionary.try_emplace(1, memory, 10);
+    dictionary.try_emplace(2, memory, 20);
     auto first = dictionary.begin();
     const auto *key_position = &(*first).key;
     const auto *value_position = &(*first).value;
 
     REQUIRE(dictionary.erase(1, memory));
-    static_cast<void>(dictionary.try_emplace(3, memory, 30));
+    dictionary.try_emplace(3, memory, 30);
 
     auto replacement = dictionary.begin();
     CHECK((*replacement).key == 3);
@@ -205,7 +205,7 @@ TEST_CASE("a hash dictionary supports move-only values and collisions", "[hash_d
     auto dictionary = bg::util::hash_dictionary<int, std::unique_ptr<int>, equal_hash>{};
 
     for (auto key = 0; key < 40; ++key) {
-        static_cast<void>(dictionary.try_emplace(key, memory, std::make_unique<int>(key)));
+        dictionary.try_emplace(key, memory, std::make_unique<int>(key));
     }
 
     auto replacement = std::make_unique<int>(100);
@@ -241,7 +241,7 @@ TEST_CASE("a hash dictionary remains consistent across incremental growth and re
             expected.insert_or_assign(key, value);
         } else {
             CHECK(dictionary.erase(key, memory) == (expected.erase(key) != 0));
-            static_cast<void>(dictionary.reduce(memory));
+            dictionary.reduce(memory);
         }
 
         CHECK(dictionary.size() == expected.size());

@@ -48,15 +48,15 @@ template <typename K> class TypedTimeSeriesSetInputView final : public TimeSerie
             return;
         }
 
-        apply(storage().revalidated() ? storage().live() : storage().added(), context, function);
+        apply(storage().added(), context, function);
     }
 
     void for_each_removed(void *context, ItemFunction function) const override {
         if (!valid()) {
-            apply(storage().live(), context, function);
+            apply(storage().removed(), context, function);
             return;
         }
-        if (storage().change_time() == last_updated() && !storage().revalidated()) {
+        if (storage().change_time() == last_updated()) {
             apply(storage().removed(), context, function);
         }
     }

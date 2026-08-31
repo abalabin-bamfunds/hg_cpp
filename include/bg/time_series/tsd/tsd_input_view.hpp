@@ -61,7 +61,7 @@ class TypedTimeSeriesDictionaryInputView final : public TimeSeriesDictionaryInpu
     }
 
     [[nodiscard]] bool item_modified(const ScalarValueInputView &key) const override {
-        if (!valid() || storage().change_time() != last_updated() || storage().revalidated()) {
+        if (!valid() || storage().change_time() != last_updated()) {
             return false;
         }
 
@@ -90,22 +90,22 @@ class TypedTimeSeriesDictionaryInputView final : public TimeSeriesDictionaryInpu
         }
 
         const auto &keys = storage().key_storage().value.value;
-        apply(storage().revalidated() ? keys.live() : keys.added(), context, function);
+        apply(keys.added(), context, function);
     }
 
     void for_each_removed(void *context, KeyFunction function) const override {
         const auto &keys = storage().key_storage().value.value;
         if (!valid()) {
-            apply(keys.live(), context, function);
+            apply(keys.removed(), context, function);
             return;
         }
-        if (storage().change_time() == last_updated() && !storage().revalidated()) {
+        if (storage().change_time() == last_updated()) {
             apply(keys.removed(), context, function);
         }
     }
 
     void for_each_modified(void *context, KeyFunction function) const override {
-        if (!valid() || storage().change_time() != last_updated() || storage().revalidated()) {
+        if (!valid() || storage().change_time() != last_updated()) {
             return;
         }
 

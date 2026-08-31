@@ -48,7 +48,7 @@ struct Source {
         }
 
         if (*next < times.size()) {
-            (void)context->schedule_at(times[*next].value());
+            context->schedule_at(times[*next].value());
         }
     }
 };

@@ -8,6 +8,7 @@
 #include <bg/scalar/view.hpp>
 #include <bg/type/type_map.hpp>
 #include <bg/util/polymorphic_value.hpp>
+#include <bg/util/scope_exit.hpp>
 
 #include <algorithm>
 #include <array>
@@ -156,12 +157,9 @@ class ScalarValueImplementation final : public TypedScalarValueInputView<T> {
         }
 
         auto *stored = reinterpret_cast<Stored *>(allocation + value_offset);
-        try {
-            Traits::construct(stored, std::forward<Source>(value), memory);
-        } catch (...) {
-            memory.deallocate(allocation, allocation_size, alignment);
-            throw;
-        }
+        auto release = util::scope_exit{[&]() noexcept { memory.deallocate(allocation, allocation_size, alignment); }};
+        Traits::construct(stored, std::forward<Source>(value), memory);
+        release.release();
 
         if constexpr (Mode == ScalarValueStorage::context_resource) {
 #ifndef NDEBUG

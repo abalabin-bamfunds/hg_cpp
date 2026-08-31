@@ -186,8 +186,9 @@ common interface.
 
 ## Required input invalidation
 
-By default, invalidation of a required input invalidates the node output. The
-evaluation function runs only with valid required inputs.
+By default, invalidation of a required input invalidates an invalidatable node
+output. A TSS or TSD output preserves its value. The evaluation function runs
+only with valid required inputs.
 
 A node can preserve its output by setting the `on_invalidation` named argument:
 
@@ -266,37 +267,32 @@ modifications. The `Out` parameter is last, and the function returns `void`.
 ```cpp
 using namespace bg::literals;
 
-using Prices = bg::TSD<std::string, bg::TS<float>>;
+using Prices = bg::TSD<bg::string, bg::TS<float>>;
 
 inline const auto copy_prices = bg::node(
     "copy_prices",
     [](bg::In<Prices, "source"_n> source,
        bg::Out<Prices> output) noexcept {
-        for (const auto& key : source.added()) {
-            output.set(key, source[key].value());
-        }
-
-        for (const auto& key : source.modified()) {
-            output.set(key, source[key].value());
-        }
-
-        for (const auto& key : source.removed()) {
-            output.remove(key);
-        }
+        source.for_each_added(
+            [&](const auto& key) { output[key].set(source[key].value()); });
+        source.for_each_modified(
+            [&](const auto& key) { output[key].set(source[key].value()); });
+        source.for_each_removed([&](const auto& key) { output.erase(key); });
     });
 ```
 
-`Out<TS_T>` provides the mutation interface for `TS_T`. An accepted mutation
-updates the affected timestamps and collection change records. After the
-function returns, the engine uses this information to schedule subscribers. If
-the function records no modification, the output remains unchanged.
+`Out<TS_T>` provides access to the resolved output interface. Each specific
+output type provides its mutation operations.
 
 `Out<TS<T>>::set(value)` assigns the value and sets its last updated time to the
-current evaluation time. `invalidate()` applies the invalidation defined by the
-[validity design](time-series-validity.md).
+current evaluation time. Invalidatable output types provide `invalidate()` with
+the behavior defined by the [validity design](time-series-validity.md).
 
-`set_value()` accepts a compatible scalar view. It assigns the value before it
-sets the last updated time.
+`Out<TSS<T>>::clear()` and `Out<TSD<K, TS_T>>::clear()` remove all entries and
+produce a valid empty collection.
+
+`Out<TS<T>>::set_value()` accepts a compatible scalar view. It assigns the value
+before it sets the last updated time.
 
 A node function has either a returned output or one `Out<TS_T>` parameter.
 `std::optional` controls node API access or publication. It is not a graph
@@ -309,6 +305,8 @@ node invocation. Root and collection item outputs use the same proxy. The engine
 reuses storage as temporary proxies are destroyed and releases the remaining
 storage when the node function returns or throws. A proxy is valid for one node
 invocation.
+
+A TSD item view is valid until its item is erased or the node invocation ends.
 
 An accepted item mutation records each affected item in its containing
 collection. After the function returns, the runtime follows the collection change

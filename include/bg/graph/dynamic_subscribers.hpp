@@ -1,7 +1,11 @@
 #pragma once
 
+#include <bg/util/scope_exit.hpp>
+
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <memory_resource>
 #include <vector>
 
@@ -12,9 +16,9 @@ class RuntimeGraph;
 namespace details {
 
 struct DynamicSubscriber {
-    DynamicSubscriber(RuntimeGraph &target_graph, std::uint32_t parameter_index, std::uint32_t node_index, bool active,
+    DynamicSubscriber(RuntimeGraph &target_graph, std::uint32_t input_offset, std::uint32_t node_index, bool active,
                       bool required) noexcept
-        : graph{&target_graph}, parameter_index{parameter_index},
+        : graph{&target_graph}, input_offset{input_offset},
           node_and_flags{node_index | (active ? active_flag : 0) | (required ? required_flag : 0) |
                          (active && !required ? active_optional_flag : 0)} {}
 
@@ -24,7 +28,7 @@ struct DynamicSubscriber {
     [[nodiscard]] bool active_optional() const noexcept { return (node_and_flags & active_optional_flag) != 0; }
 
     RuntimeGraph *graph;
-    std::uint32_t parameter_index;
+    std::uint32_t input_offset;
     std::uint32_t node_and_flags;
 
   private:
@@ -35,9 +39,56 @@ struct DynamicSubscriber {
 };
 
 struct DynamicSubscribers {
-    explicit DynamicSubscribers(std::pmr::memory_resource &memory) : records{&memory} {}
+    explicit DynamicSubscribers(std::pmr::memory_resource &memory) : records_{&memory} {}
 
-    std::pmr::vector<DynamicSubscriber> records;
+    [[nodiscard]] static DynamicSubscribers &ensure(DynamicSubscribers *&subscribers,
+                                                    std::pmr::memory_resource &memory) {
+        if (subscribers != nullptr) {
+            return *subscribers;
+        }
+
+        auto *storage = memory.allocate(sizeof(DynamicSubscribers), alignof(DynamicSubscribers));
+        auto release = util::scope_exit{
+            [&]() noexcept { memory.deallocate(storage, sizeof(DynamicSubscribers), alignof(DynamicSubscribers)); }};
+        subscribers = std::construct_at(static_cast<DynamicSubscribers *>(storage), memory);
+        release.release();
+        return *subscribers;
+    }
+
+    static void release(DynamicSubscribers *subscribers) noexcept {
+        if (subscribers == nullptr) {
+            return;
+        }
+
+        auto *memory = subscribers->records_.get_allocator().resource();
+        std::destroy_at(subscribers);
+        memory->deallocate(subscribers, sizeof(DynamicSubscribers), alignof(DynamicSubscribers));
+    }
+
+    void add(RuntimeGraph &graph, std::uint32_t input_offset, std::uint32_t node_index, bool active, bool required) {
+        records_.emplace_back(graph, input_offset, node_index, active, required);
+    }
+
+    void remove(RuntimeGraph &graph, std::size_t input_offset) noexcept {
+        const auto record = std::ranges::find_if(records_, [&](const auto &candidate) {
+            return candidate.graph == &graph && candidate.input_offset == input_offset;
+        });
+        if (record == records_.end()) {
+            return;
+        }
+
+        *record = records_.back();
+        records_.pop_back();
+    }
+
+    template <typename Function> void for_each(Function &&function) const {
+        for (const auto &record : records_) {
+            function(record);
+        }
+    }
+
+  private:
+    std::pmr::vector<DynamicSubscriber> records_;
 };
 
 static_assert(sizeof(DynamicSubscriber) == 2 * sizeof(void *));

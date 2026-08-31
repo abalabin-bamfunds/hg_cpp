@@ -3,13 +3,14 @@
 Status: working design.
 
 A time series is valid when its last updated time is greater than `MIN_DT`.
-Invalidation sets its last updated time to `MIN_DT`.
+An invalidatable time series becomes invalid when its last updated time is set
+to `MIN_DT`.
 
 ## Invalidation and revalidation
 
-`ordinary` and `deduplicated` time series support
-[invalidation](terminology.md#invalidation). `const` and `final` time series
-remain valid after their first update.
+`ordinary` and `deduplicated` time series types that support
+[invalidation](terminology.md#invalidation) can become invalid. `const` and
+`final` time series remain valid after their first update.
 
 Revalidation behaves as a first update. It supplies a current value, records
 the update time, and schedules subscribers. A `deduplicated` time series always
@@ -45,17 +46,25 @@ remaining lifetime of the reference.
 
 ## Collections
 
-Collection invalidation has these effects on an input view:
+`TSS` and `TSD` start invalid. Their first tick makes them valid, including a
+tick that publishes an empty collection. They remain valid after that tick.
+`TSD` item validity is independent of TSD validity.
 
-- `TSS` reports every visible item as removed
-- `TSD` reports every visible key as removed
-- `TSB` makes every item view invalid
+A TSS or TSD input view can become invalid when reference processing removes or
+retargets its source. The input view reports this change as follows:
 
-Contained time series storage and values remain unchanged. A `valid_items` TSD
-view reports only its visible keys.
+- `TSS` removes every item and reports it as removed
+- `TSD` removes every key and item and reports every key as removed
 
-On revalidation, `TSS` and `TSD` report their visible entries as added. Each
-valid `TSB` item behaves as a first update.
+Storage for removed entries follows the
+[outer-cycle lifetime](time-series-references.md#outer-cycle-boundary). A
+`valid_items` TSD view reports only its visible keys.
+
+`clear()` publishes a valid empty TSS or TSD. A TSS or TSD output preserves its
+value when a required input becomes invalid.
+
+Invalidating a TSB makes every item view invalid. Each item behaves as a first
+update when it becomes valid again.
 
 A TSL is valid when at least one item is valid. Invalidating a TSL invalidates
 its items. The last valid item becoming invalid invalidates the TSL. The first

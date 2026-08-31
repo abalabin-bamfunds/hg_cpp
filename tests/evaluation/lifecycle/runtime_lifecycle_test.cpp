@@ -70,10 +70,13 @@ TEST_CASE("run_graph starts, evaluates, and stops a graph", "[evaluation][lifecy
 struct lifecycle_definition {
     int id;
 
-    void start() const {
+    void start(bg::EvaluationContext *context) const {
         events.push_back(id);
         if (id == start_failure) {
             throw std::runtime_error{"start failure"};
+        }
+        if (id == scheduled_evaluation) {
+            context->schedule_now();
         }
     }
 
@@ -89,6 +92,7 @@ struct lifecycle_definition {
     inline static std::vector<int> events;
     inline static int start_failure{};
     inline static int evaluation_failure{};
+    inline static int scheduled_evaluation{};
 };
 
 TEST_CASE("start and stop follow topological order", "[evaluation][lifecycle]") {
@@ -97,6 +101,7 @@ TEST_CASE("start and stop follow topological order", "[evaluation][lifecycle]") 
     lifecycle_definition::events.reserve(6);
     lifecycle_definition::start_failure = 0;
     lifecycle_definition::evaluation_failure = 0;
+    lifecycle_definition::scheduled_evaluation = 0;
 
     bg::GraphWiring wiring;
     {
@@ -120,6 +125,7 @@ TEST_CASE("a start failure stops nodes whose start completed", "[evaluation][lif
     lifecycle_definition::events.reserve(4);
     lifecycle_definition::start_failure = 2;
     lifecycle_definition::evaluation_failure = 0;
+    lifecycle_definition::scheduled_evaluation = 0;
 
     bg::GraphWiring wiring;
     {
@@ -142,6 +148,7 @@ TEST_CASE("an evaluation failure stops nodes in reverse topological order", "[ev
     lifecycle_definition::events.reserve(8);
     lifecycle_definition::start_failure = 0;
     lifecycle_definition::evaluation_failure = 2;
+    lifecycle_definition::scheduled_evaluation = 2;
 
     bg::GraphWiring wiring;
     {
@@ -154,10 +161,33 @@ TEST_CASE("an evaluation failure stops nodes in reverse topological order", "[ev
     const bg::CompiledGraph compiled{wiring};
     bg::RuntimeGraph runtime{compiled};
     runtime.start(time(1));
-    runtime.schedule(1);
 
     CHECK_THROWS_AS(runtime.evaluate(time(1)), std::runtime_error);
     CHECK(lifecycle_definition::events == std::vector{1, 2, 3, 102, -3, -2, -1});
+}
+
+TEST_CASE("a runtime graph has one lifecycle", "[evaluation][lifecycle]") {
+    const auto lifecycle = bg::node<lifecycle_definition>();
+    lifecycle_definition::events.clear();
+    lifecycle_definition::start_failure = 0;
+    lifecycle_definition::evaluation_failure = 0;
+    lifecycle_definition::scheduled_evaluation = 0;
+
+    bg::GraphWiring wiring;
+    {
+        bg::WiringContext context{wiring};
+        lifecycle(1);
+    }
+
+    const bg::CompiledGraph compiled{wiring};
+    bg::RuntimeGraph runtime{compiled};
+
+    CHECK_THROWS_AS(runtime.evaluate(time(1)), std::logic_error);
+    runtime.start(time(1));
+    CHECK_THROWS_AS(runtime.start(time(1)), std::logic_error);
+    runtime.stop();
+    runtime.stop();
+    CHECK_THROWS_AS(runtime.evaluate(time(2)), std::logic_error);
 }
 
 struct immediate_definition {

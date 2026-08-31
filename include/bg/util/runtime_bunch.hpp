@@ -1,5 +1,7 @@
 #pragma once
 
+#include <bg/util/scope_exit.hpp>
+
 #include <algorithm>
 #include <bit>
 #include <cassert>
@@ -9,6 +11,7 @@
 #include <limits>
 #include <memory>
 #include <memory_resource>
+#include <type_traits>
 #include <utility>
 
 namespace bg::util {
@@ -55,11 +58,6 @@ class runtime_bunch_blocks {
     runtime_bunch_blocks &operator=(const runtime_bunch_blocks &) = delete;
     runtime_bunch_blocks(runtime_bunch_blocks &&) = delete;
     runtime_bunch_blocks &operator=(runtime_bunch_blocks &&) = delete;
-
-    ~runtime_bunch_blocks() {
-        assert(first_.data == nullptr);
-        assert(additional_ == nullptr);
-    }
 
     [[nodiscard]] void *get(size_type position, const runtime_item_layout &layout) noexcept {
         const auto [block_index, offset] = locate(position, layout);
@@ -232,6 +230,8 @@ class runtime_bunch_blocks {
     size_type allocated_blocks_{};
 };
 
+static_assert(std::is_trivially_copyable_v<runtime_bunch_blocks>);
+
 } // namespace details
 
 class runtime_contiguous_bunch {
@@ -242,12 +242,9 @@ class runtime_contiguous_bunch {
     void *emplace_back_with(const runtime_item_layout &layout, std::pmr::memory_resource &memory,
                             Constructor &&construct) {
         auto *item = blocks_.ensure(size_, layout, memory);
-        try {
-            std::invoke(construct, item);
-        } catch (...) {
-            blocks_.release_unused(size_, layout, memory);
-            throw;
-        }
+        auto release = scope_exit{[&]() noexcept { blocks_.release_unused(size_, layout, memory); }};
+        std::invoke(construct, item);
+        release.release();
 
         blocks_.added(size_, layout);
         ++size_;
@@ -304,12 +301,9 @@ class runtime_sparse_bunch {
     void *emplace_at_with(size_type position, const runtime_item_layout &layout, std::pmr::memory_resource &memory,
                           Constructor &&construct) {
         auto *item = blocks_.ensure(position, layout, memory);
-        try {
-            std::invoke(construct, item);
-        } catch (...) {
-            blocks_.release_unused(position, layout, memory);
-            throw;
-        }
+        auto release = scope_exit{[&]() noexcept { blocks_.release_unused(position, layout, memory); }};
+        std::invoke(construct, item);
+        release.release();
 
         blocks_.added(position, layout);
         return item;
@@ -354,5 +348,8 @@ class runtime_sparse_bunch {
   private:
     details::runtime_bunch_blocks blocks_;
 };
+
+static_assert(std::is_trivially_copyable_v<runtime_contiguous_bunch>);
+static_assert(std::is_trivially_copyable_v<runtime_sparse_bunch>);
 
 } // namespace bg::util

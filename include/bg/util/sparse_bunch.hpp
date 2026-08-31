@@ -2,6 +2,7 @@
 
 #include <bg/util/details/bunch_blocks.hpp>
 #include <bg/util/occupancy_index.hpp>
+#include <bg/util/scope_exit.hpp>
 
 #include <cassert>
 #include <cstdint>
@@ -35,13 +36,9 @@ template <typename T, std::uint32_t InitialElements = 8> class sparse_bunch {
         requires std::invocable<Constructor &, T *>
     T &emplace_at_with(size_type position, std::pmr::memory_resource &memory, Constructor &&construct) {
         auto *value = blocks_.ensure(position, memory);
-
-        try {
-            std::invoke(construct, value);
-        } catch (...) {
-            blocks_.release_unused(position, memory);
-            throw;
-        }
+        auto release = scope_exit{[&]() noexcept { blocks_.release_unused(position, memory); }};
+        std::invoke(construct, value);
+        release.release();
 
         blocks_.added(position);
 

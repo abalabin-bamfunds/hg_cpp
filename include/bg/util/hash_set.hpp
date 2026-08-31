@@ -25,15 +25,15 @@ template <typename Key, typename Hash = std::hash<Key>, typename Equal = std::eq
     hash_set &operator=(hash_set &&) = delete;
 
     template <typename Source>
-    [[nodiscard]] std::pair<const Key *, bool> insert(Source &&key, std::pmr::memory_resource &memory) {
+    std::pair<const Key *, bool> insert(Source &&key, std::pmr::memory_resource &memory) {
         const auto result = keys_.insert(std::forward<Source>(key), memory);
 
         return {&keys_.key_at(result.position), result.inserted};
     }
 
     template <typename Lookup, typename Constructor, typename Destructor>
-    [[nodiscard]] std::pair<const Key *, bool> insert_with(const Lookup &key, std::pmr::memory_resource &memory,
-                                                           Constructor &&construct, Destructor &&destroy) {
+    std::pair<const Key *, bool> insert_with(const Lookup &key, std::pmr::memory_resource &memory,
+                                             Constructor &&construct, Destructor &&destroy) {
         const auto result =
             keys_.insert_with(key, memory, std::forward<Constructor>(construct), std::forward<Destructor>(destroy));
 
@@ -48,16 +48,16 @@ template <typename Key, typename Hash = std::hash<Key>, typename Equal = std::eq
 
     template <typename Lookup> [[nodiscard]] bool contains(const Lookup &key) const { return find(key) != nullptr; }
 
-    template <typename Lookup> [[nodiscard]] bool erase(const Lookup &key, std::pmr::memory_resource &memory) {
+    template <typename Lookup> bool erase(const Lookup &key, std::pmr::memory_resource &memory) {
         return keys_.erase(key, memory);
     }
 
     template <typename Lookup, typename Destructor>
-    [[nodiscard]] bool erase_with(const Lookup &key, std::pmr::memory_resource &memory, Destructor &&destroy) {
+    bool erase_with(const Lookup &key, std::pmr::memory_resource &memory, Destructor &&destroy) {
         return keys_.erase_with(key, memory, std::forward<Destructor>(destroy));
     }
 
-    [[nodiscard]] bool reduce(std::pmr::memory_resource &memory) { return keys_.reduce(memory); }
+    bool reduce(std::pmr::memory_resource &memory) { return keys_.reduce(memory); }
 
     void release(std::pmr::memory_resource &memory) noexcept { keys_.release(memory); }
 

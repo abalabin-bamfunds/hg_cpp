@@ -48,6 +48,7 @@ add_library(
     src/simulation_evaluation_engine.cpp
     src/symbol.cpp
     src/time_series/tsl/tsl_type.cpp
+    src/time_series/ref/ref_notification.cpp
     src/time_series/ref/ref_type.cpp
     src/time_series/ref/ref_node.cpp
     src/time_series/tsd/tsd_type.cpp

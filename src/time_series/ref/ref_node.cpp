@@ -1,6 +1,7 @@
 #include "ref_node.hpp"
 
 #include <bg/graph/compiled_node.hpp>
+#include <bg/graph/dynamic_subscribers.hpp>
 #include <bg/node/node_template.hpp>
 #include <bg/time_series/ref/ref_storage_representation.hpp>
 #include <bg/type/time_series_reference_type.hpp>
@@ -78,11 +79,7 @@ class ReferenceNodeTemplate final : public NodeTemplate {
     static void destroy_state(const CompiledNode &node, void *runtime_storage, EvaluationContext *) noexcept {
         auto *storage = static_cast<std::byte *>(runtime_storage);
         auto &reference = *reinterpret_cast<ReferenceStorage *>(storage + node.state_offset());
-        if (reference.subscribers != nullptr) {
-            auto *memory = reference.subscribers->records.get_allocator().resource();
-            std::destroy_at(reference.subscribers);
-            memory->deallocate(reference.subscribers, sizeof(DynamicSubscribers), alignof(DynamicSubscribers));
-        }
+        DynamicSubscribers::release(reference.subscribers);
         std::destroy_at(&reference);
     }
 

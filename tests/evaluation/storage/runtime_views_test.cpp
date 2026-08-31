@@ -125,21 +125,18 @@ namespace {
 
 struct generic_copy_definition {
     bg::In<bg::TS_T> input;
-    bg::Out<bg::TS_T> output;
+    bg::Out<bg::TS<double>> output;
 
     void evaluate() const {
-        input->visit(
-            [&](const bg::TimeSeriesValueInputView *value) {
-                const auto scalar = value->erased_value_view();
-                static_cast<const bg::TimeSeriesValueOutputView *>(output.operator->())->set_value(scalar.input_view());
-            },
-            [](const bg::TimeSeriesListInputView *) {}, ddv::noop);
+        input->visit([&](const bg::TimeSeriesValueInputView *value) { output.set_value(value->erased_value_view()); },
+                     [](const bg::TimeSeriesListInputView *) {}, ddv::noop);
     }
 };
 
 struct double_source_definition {
     bg::Out<bg::TS<double>> output;
 
+    void start(bg::EvaluationContext *context) const { context->schedule_now(); }
     void evaluate() const { output.set(1.5); }
 };
 
@@ -172,7 +169,6 @@ TEST_CASE("a generic time-series view preserves its resolved time-series type", 
     const bg::CompiledGraph compiled{wiring};
     bg::RuntimeGraph runtime{compiled};
     runtime.start(time(1));
-    runtime.schedule(0);
     runtime.evaluate(time(1));
 
     CHECK(double_sink_definition::evaluation_count == 1);

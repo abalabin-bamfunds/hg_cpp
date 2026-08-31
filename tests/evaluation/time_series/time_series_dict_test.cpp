@@ -21,15 +21,15 @@ struct dict_source_definition {
     void start(bg::EvaluationContext *context) const {
         output[1].set(10);
         output[2].set(20);
-        (void)context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
+        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
     }
 
     void evaluate(bg::EvaluationContext *context) const {
         if (*step == 0) {
             output[1].set(11);
-            (void)context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
+            context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
         } else {
-            static_cast<void>(output.erase(2));
+            output.erase(2);
         }
         ++*step;
     }
@@ -152,7 +152,7 @@ struct canceled_add_source_definition {
 
     void start() const {
         output[1].set(10);
-        static_cast<void>(output.erase(1));
+        output.erase(1);
     }
 
     void evaluate() const {}
@@ -187,11 +187,11 @@ struct resurrecting_source_definition {
 
     void start(bg::EvaluationContext *context) const {
         output[1].set(10);
-        (void)context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
+        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
     }
 
     void evaluate() const {
-        static_cast<void>(output.erase(1));
+        output.erase(1);
         output[1].set(20);
     }
 };
@@ -233,12 +233,12 @@ struct nested_item_resurrecting_source_definition {
 
     void start(bg::EvaluationContext *context) const {
         output[1][2].set(12);
-        (void)context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
+        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
     }
 
     void evaluate() const {
-        static_cast<void>(output.erase(1));
-        static_cast<void>(output[1]);
+        output.erase(1);
+        output[1];
     }
 };
 
@@ -306,23 +306,27 @@ TEST_CASE("a generic dictionary view uses its resolved item type", "[evaluation]
 
 namespace {
 
-struct invalidating_dict_source_definition {
+struct empty_dict_source_definition {
     static constexpr bool uses_future_scheduling = true;
 
     bg::State<int> step;
     bg::Out<IntDictionary> output;
 
     void start(bg::EvaluationContext *context) const {
-        output[1].set(10);
-        (void)context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
+        output.clear();
+        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
     }
 
     void evaluate(bg::EvaluationContext *context) const {
         if (*step == 0) {
-            output.invalidate();
-            (void)context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
+            output[1].set(10);
+            output[2].set(20);
         } else {
-            output[1].set(20);
+            output.clear();
+        }
+
+        if (*step != 2) {
+            context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
         }
         ++*step;
     }
@@ -333,6 +337,7 @@ struct optional_dict_sink_definition {
 
     void evaluate() const {
         validity.push_back(input.valid());
+        sizes.push_back(input.size());
 
         auto added_count = std::size_t{};
         input.for_each_added([&](const auto &) { ++added_count; });
@@ -344,6 +349,7 @@ struct optional_dict_sink_definition {
     }
 
     inline static std::vector<bool> validity;
+    inline static std::vector<std::size_t> sizes;
     inline static std::vector<std::size_t> added;
     inline static std::vector<std::size_t> removed;
 };
@@ -358,11 +364,13 @@ struct optional_key_sink_definition {
 
 } // namespace
 
-TEST_CASE("dictionary invalidation and revalidation apply to its shared key set", "[evaluation][tsd][validity]") {
-    const auto source = bg::node<invalidating_dict_source_definition>();
+TEST_CASE("a dictionary and its key set become valid on their first empty tick and remain valid",
+          "[evaluation][tsd][validity]") {
+    const auto source = bg::node<empty_dict_source_definition>();
     const auto dict_sink = bg::node<optional_dict_sink_definition>();
     const auto key_sink = bg::node<optional_key_sink_definition>();
     optional_dict_sink_definition::validity.clear();
+    optional_dict_sink_definition::sizes.clear();
     optional_dict_sink_definition::added.clear();
     optional_dict_sink_definition::removed.clear();
     optional_key_sink_definition::validity.clear();
@@ -373,8 +381,48 @@ TEST_CASE("dictionary invalidation and revalidation apply to its shared key set"
         key_sink(bg::keys(dictionary));
     });
 
-    CHECK(optional_dict_sink_definition::validity == std::vector{true, false, true});
-    CHECK(optional_dict_sink_definition::added == std::vector<std::size_t>{1, 0, 1});
-    CHECK(optional_dict_sink_definition::removed == std::vector<std::size_t>{0, 1, 0});
-    CHECK(optional_key_sink_definition::validity == std::vector{true, false, true});
+    CHECK(optional_dict_sink_definition::validity == std::vector{true, true, true});
+    CHECK(optional_dict_sink_definition::sizes == std::vector<std::size_t>{0, 2, 0});
+    CHECK(optional_dict_sink_definition::added == std::vector<std::size_t>{0, 2, 0});
+    CHECK(optional_dict_sink_definition::removed == std::vector<std::size_t>{0, 0, 2});
+    CHECK(optional_key_sink_definition::validity == std::vector{true, true, true});
+}
+
+namespace {
+
+struct invalidating_dict_input_definition {
+    static constexpr bool uses_future_scheduling = true;
+
+    bg::Out<bg::TS<int>> output;
+
+    void start(bg::EvaluationContext *context) const {
+        output.set(1);
+        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
+    }
+
+    void evaluate() const { output.invalidate(); }
+};
+
+struct dict_from_value_definition {
+    bg::In<bg::TS<int>> input;
+    bg::Out<IntDictionary> output;
+
+    void evaluate() const { output[1].set(input.value()); }
+};
+
+} // namespace
+
+TEST_CASE("a dictionary preserves its value when a required input becomes invalid", "[evaluation][tsd][validity]") {
+    const auto source = bg::node<invalidating_dict_input_definition>();
+    const auto dict_from_value = bg::node<dict_from_value_definition>();
+    const auto sink = bg::node<optional_dict_sink_definition>();
+    optional_dict_sink_definition::validity.clear();
+    optional_dict_sink_definition::sizes.clear();
+    optional_dict_sink_definition::added.clear();
+    optional_dict_sink_definition::removed.clear();
+
+    bg::run_graph([&] { sink(dict_from_value(source())); });
+
+    CHECK(optional_dict_sink_definition::validity == std::vector{true});
+    CHECK(optional_dict_sink_definition::sizes == std::vector<std::size_t>{1});
 }

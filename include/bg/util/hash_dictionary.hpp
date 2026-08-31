@@ -1,6 +1,7 @@
 #pragma once
 
 #include <bg/util/details/hash_key_table.hpp>
+#include <bg/util/scope_exit.hpp>
 #include <bg/util/sparse_bunch.hpp>
 
 #include <cstddef>
@@ -29,38 +30,33 @@ class hash_dictionary {
     hash_dictionary &operator=(hash_dictionary &&) = delete;
 
     template <typename KeySource, typename... ValueArguments>
-    [[nodiscard]] std::pair<Value *, bool> try_emplace(KeySource &&key, std::pmr::memory_resource &memory,
-                                                       ValueArguments &&...value_arguments) {
+    std::pair<Value *, bool> try_emplace(KeySource &&key, std::pmr::memory_resource &memory,
+                                         ValueArguments &&...value_arguments) {
         const auto result = keys_.insert(std::forward<KeySource>(key), memory);
         if (!result.inserted) {
             return {&values_[result.position], false};
         }
 
-        try {
-            auto &value = values_.emplace_at(result.position, memory, std::forward<ValueArguments>(value_arguments)...);
-            return {&value, true};
-        } catch (...) {
-            keys_.erase_at(result.position, result.hash, memory);
-            throw;
-        }
+        auto rollback = scope_exit{[&]() noexcept { keys_.erase_at(result.position, result.hash, memory); }};
+        auto &value = values_.emplace_at(result.position, memory, std::forward<ValueArguments>(value_arguments)...);
+        rollback.release();
+        return {&value, true};
     }
 
     template <typename KeyLookup, typename KeyConstructor, typename KeyDestructor, typename ValueConstructor>
-    [[nodiscard]] std::pair<Value *, bool> try_emplace_with(KeyLookup const &key, std::pmr::memory_resource &memory,
-                                                            KeyConstructor &&construct_key, KeyDestructor &&destroy_key,
-                                                            ValueConstructor &&construct_value) {
+    std::pair<Value *, bool> try_emplace_with(KeyLookup const &key, std::pmr::memory_resource &memory,
+                                              KeyConstructor &&construct_key, KeyDestructor &&destroy_key,
+                                              ValueConstructor &&construct_value) {
         const auto result = keys_.insert_with(key, memory, std::forward<KeyConstructor>(construct_key), destroy_key);
         if (!result.inserted) {
             return {&values_[result.position], false};
         }
 
-        try {
-            auto &value = values_.emplace_at_with(result.position, memory, construct_value);
-            return {&value, true};
-        } catch (...) {
-            keys_.erase_at_with(result.position, result.hash, memory, destroy_key);
-            throw;
-        }
+        auto rollback =
+            scope_exit{[&]() noexcept { keys_.erase_at_with(result.position, result.hash, memory, destroy_key); }};
+        auto &value = values_.emplace_at_with(result.position, memory, construct_value);
+        rollback.release();
+        return {&value, true};
     }
 
     template <typename KeySource, typename ValueSource>
@@ -105,7 +101,7 @@ class hash_dictionary {
         return *value;
     }
 
-    template <typename Lookup> [[nodiscard]] bool erase(const Lookup &key, std::pmr::memory_resource &memory) {
+    template <typename Lookup> bool erase(const Lookup &key, std::pmr::memory_resource &memory) {
         const auto found = keys_.find(key);
         if (!found) {
             return false;
@@ -118,8 +114,8 @@ class hash_dictionary {
     }
 
     template <typename Lookup, typename KeyDestructor, typename ValueDestructor>
-    [[nodiscard]] bool erase_with(const Lookup &key, std::pmr::memory_resource &memory, KeyDestructor &&destroy_key,
-                                  ValueDestructor &&destroy_value) {
+    bool erase_with(const Lookup &key, std::pmr::memory_resource &memory, KeyDestructor &&destroy_key,
+                    ValueDestructor &&destroy_value) {
         const auto found = keys_.find(key);
         if (!found) {
             return false;
@@ -130,7 +126,7 @@ class hash_dictionary {
         return true;
     }
 
-    [[nodiscard]] bool reduce(std::pmr::memory_resource &memory) { return keys_.reduce(memory); }
+    bool reduce(std::pmr::memory_resource &memory) { return keys_.reduce(memory); }
 
     void release(std::pmr::memory_resource &memory) noexcept {
         values_.release(keys_.positions(), memory);

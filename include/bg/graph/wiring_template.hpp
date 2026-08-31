@@ -20,14 +20,14 @@ class WiringTemplate {
 
     template <typename... Arguments>
         requires(details::graph_code_argument<Arguments> && ...)
-    [[nodiscard]] std::optional<WiringPoint> operator()(Arguments &&...arguments) const {
+    [[nodiscard]] std::optional<WiringPoint> operator()(Arguments &&...arguments) const & {
         std::array<details::wiring_argument, sizeof...(Arguments)> values{
             details::wiring_argument{std::forward<Arguments>(arguments)}...};
 
         return WiringContext::current().wiring().invoke(*this, std::span<details::wiring_argument>{values});
     }
 
-    [[nodiscard]] std::optional<WiringPoint> operator()(std::span<const WiringPoint> arguments) const {
+    [[nodiscard]] std::optional<WiringPoint> operator()(std::span<const WiringPoint> arguments) const & {
         auto values = std::vector<details::wiring_argument>{};
         values.reserve(arguments.size());
 
@@ -37,6 +37,11 @@ class WiringTemplate {
 
         return WiringContext::current().wiring().invoke(*this, values);
     }
+
+    template <typename... Arguments>
+    [[nodiscard]] std::optional<WiringPoint> operator()(Arguments &&...) const && = delete;
+
+    [[nodiscard]] std::optional<WiringPoint> operator()(std::span<const WiringPoint>) const && = delete;
 
   private:
     friend class GraphWiring;

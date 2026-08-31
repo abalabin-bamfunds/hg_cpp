@@ -25,6 +25,7 @@ template <typename T> struct scalar_storage_traits {
     static constexpr bool supports_hash =
         std::same_as<T, EvaluationTime> || requires(value_type value) { std::hash<value_type>{}(value); };
     static constexpr bool uses_variable_memory = false;
+    static constexpr bool requires_finalization = !std::is_trivially_destructible_v<stored_type>;
 
     [[nodiscard]] static value_type read(const stored_type &value) noexcept { return value; }
 
@@ -52,6 +53,7 @@ template <> struct scalar_storage_traits<string> {
     static constexpr bool supports_equality = true;
     static constexpr bool supports_hash = true;
     static constexpr bool uses_variable_memory = true;
+    static constexpr bool requires_finalization = false;
 
     [[nodiscard]] static value_type read(const stored_type &value) noexcept { return value; }
 
@@ -73,6 +75,7 @@ template <typename T> struct scalar_storage_traits<Opaque<T>> {
     static constexpr bool supports_equality = false;
     static constexpr bool supports_hash = false;
     static constexpr bool uses_variable_memory = false;
+    static constexpr bool requires_finalization = !std::is_trivially_destructible_v<stored_type>;
 
     [[nodiscard]] static scalar_value_t<Opaque<T>> read(const stored_type &value) noexcept { return value; }
 

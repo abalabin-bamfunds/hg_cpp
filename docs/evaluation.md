@@ -29,14 +29,8 @@ order.
 
 ## Output changes
 
-Collection output operations record changed item paths during the node
-invocation. After the function returns, the runtime schedules subscribers for
-the output and its changed items. It uses each path to locate compiled and
-runtime subscriber data directly.
-
-One evaluation scratch area serves the outer graph and its inner graphs. Nested
-node invocations use nested positions in this area. Parallel evaluation uses
-one scratch area per worker thread.
+After a node function returns, the output storage representation enumerates its
+changes. The runtime schedules subscribers for the output and each changed item.
 
 ## Required input invalidation
 
@@ -87,7 +81,7 @@ The supplied wall clock allows tests and replay to control wall-clock results.
 
 `RuntimeGraph::start(time)` starts a runtime graph. It invokes declared start
 functions in topological order. The first outer cycle uses the same evaluation
-time.
+time. A runtime graph can start once.
 
 Start uses the same parameter packing as evaluation and the evaluation time of
 the runtime graph's first outer cycle. It can request the context, inputs,
@@ -141,7 +135,8 @@ keeps required storage valid through the outer cycle.
 ## Stop
 
 `RuntimeGraph::stop()` stops a runtime graph. It invokes declared stop functions
-in reverse topological order.
+in reverse topological order. Calling it before start or after stop has no
+effect.
 
 Stop uses the same parameter packing as evaluation. It can request the context,
 inputs, scalars, output, and private state. It cannot update outputs or schedule

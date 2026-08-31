@@ -39,12 +39,12 @@ template <typename K, auto... Properties> class Out<TSS<K, Properties...>> {
 
     [[nodiscard]] bool valid() const noexcept { return view_->valid(); }
     [[nodiscard]] EvaluationTime last_updated() const noexcept { return view_->last_updated(); }
-    [[nodiscard]] bool insert(const Scalar<K> &item) const { return view_->insert(item.input_view()); }
-    [[nodiscard]] bool erase(const Scalar<K> &item) const { return view_->erase(item.input_view()); }
+    bool insert(const Scalar<K> &item) const { return view_->insert(item.input_view()); }
+    bool erase(const Scalar<K> &item) const { return view_->erase(item.input_view()); }
 
     template <scalar_source Source>
         requires(!details::scalar_variable<K> && std::same_as<canonical_scalar_t<Source>, K>)
-    [[nodiscard]] bool insert(Source &&item) const {
+    bool insert(Source &&item) const {
         const auto value = canonical_scalar(std::forward<Source>(item));
         const auto view = details::make_borrowed_scalar_source<K>(value);
         return view_->insert(view.get());
@@ -52,13 +52,13 @@ template <typename K, auto... Properties> class Out<TSS<K, Properties...>> {
 
     template <scalar_source Source>
         requires(!details::scalar_variable<K> && std::same_as<canonical_scalar_t<Source>, K>)
-    [[nodiscard]] bool erase(Source &&item) const {
+    bool erase(Source &&item) const {
         const auto value = canonical_scalar(std::forward<Source>(item));
         const auto view = details::make_borrowed_scalar_source<K>(value);
         return view_->erase(view.get());
     }
 
-    void invalidate() const { view_->invalidate(); }
+    void clear() const { view_->clear(); }
 
     [[nodiscard]] const TimeSeriesSetOutputView *operator->() const noexcept { return view_.operator->(); }
 

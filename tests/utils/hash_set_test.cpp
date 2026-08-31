@@ -27,7 +27,7 @@ TEST_CASE("a hash set inserts, finds, and removes keys", "[hash_set]") {
 
     const auto [first, first_inserted] = set.insert(std::string{"one"}, memory);
     const auto [same, second_inserted] = set.insert(std::string{"one"}, memory);
-    static_cast<void>(set.insert(std::string{"two"}, memory));
+    set.insert(std::string{"two"}, memory);
 
     CHECK(first_inserted);
     CHECK_FALSE(second_inserted);
@@ -47,7 +47,7 @@ TEST_CASE("a hash set retains key addresses while it grows", "[hash_set]") {
     const auto *first = set.insert(1, memory).first;
 
     for (auto value = 2; value < 500; ++value) {
-        static_cast<void>(set.insert(value, memory));
+        set.insert(value, memory);
     }
 
     CHECK(set.find(1) == first);
@@ -72,7 +72,7 @@ TEST_CASE("a hash set resolves collisions", "[hash_set]") {
     auto set = bg::util::hash_set<int, equal_hash>{};
 
     for (auto value = 0; value < 40; ++value) {
-        static_cast<void>(set.insert(value, memory));
+        set.insert(value, memory);
     }
     for (auto value = 0; value < 40; ++value) {
         CHECK(set.contains(value));

@@ -26,16 +26,18 @@ class AggregateNodeTemplate final : public NodeTemplate {
 
     template <typename... Arguments>
         requires((details::graph_code_argument<Arguments> && ...) && details::aggregate_node_has_output<Definition>())
-    [[nodiscard]] auto operator()(Arguments &&...arguments) const {
+    [[nodiscard]] auto operator()(Arguments &&...arguments) const & {
         using Output = details::aggregate_output_time_series_t<Definition>;
         return wp<Output>{*NodeTemplate::operator()(std::forward<Arguments>(arguments)...)};
     }
 
     template <typename... Arguments>
         requires((details::graph_code_argument<Arguments> && ...) && !details::aggregate_node_has_output<Definition>())
-    void operator()(Arguments &&...arguments) const {
+    void operator()(Arguments &&...arguments) const & {
         (void)NodeTemplate::operator()(std::forward<Arguments>(arguments)...);
     }
+
+    template <typename... Arguments> void operator()(Arguments &&...) const && = delete;
 
     [[nodiscard]] const Signature &signature() const override {
         return details::aggregate_node_signature<Definition>();

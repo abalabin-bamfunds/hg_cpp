@@ -2,6 +2,7 @@
 
 #include <bg/util/contiguous_bunch.hpp>
 #include <bg/util/occupancy_index.hpp>
+#include <bg/util/scope_exit.hpp>
 #include <bg/util/sparse_bunch.hpp>
 
 #include <array>
@@ -139,7 +140,7 @@ class linear_hash_table {
         ++size_;
     }
 
-    [[nodiscard]] bool erase(hash_type hash, position_type position, std::pmr::memory_resource &memory) noexcept {
+    bool erase(hash_type hash, position_type position, std::pmr::memory_resource &memory) noexcept {
         if (primary_.empty()) {
             return false;
         }
@@ -181,7 +182,7 @@ class linear_hash_table {
     }
 
     // Merges only the final primary bucket. Returns false when the table cannot become smaller at its target load.
-    [[nodiscard]] bool reduce(std::pmr::memory_resource &memory) {
+    bool reduce(std::pmr::memory_resource &memory) {
         if (bucket_count() <= 1) {
             return false;
         }
@@ -275,15 +276,13 @@ class linear_hash_table {
         auto &source = primary_[source_index];
         const auto moving = count_split_entries(source);
         auto &destination = primary_.emplace_back(memory);
-
-        try {
-            ensure_capacity(destination, moving, memory);
-        } catch (...) {
+        auto rollback = scope_exit{[&]() noexcept {
             release_chain(destination.next, memory);
             destination.next = npos;
             primary_.pop_back(memory);
-            throw;
-        }
+        }};
+        ensure_capacity(destination, moving, memory);
+        rollback.release();
 
         move_split_entries(source, destination);
         remove_empty_overflow(source, memory);
@@ -381,15 +380,13 @@ class linear_hash_table {
 
     [[nodiscard]] size_type allocate_overflow(std::pmr::memory_resource &memory) {
         const auto position = overflow_positions_.acquire(memory);
-
-        try {
-            overflow_.emplace_at(position, memory);
-        } catch (...) {
+        auto release = scope_exit{[&]() noexcept {
             const auto removed = overflow_positions_.reset(position);
             assert(removed);
             overflow_positions_.trim(memory);
-            throw;
-        }
+        }};
+        overflow_.emplace_at(position, memory);
+        release.release();
 
         return position;
     }

@@ -22,7 +22,7 @@ class ValueStorageRepresentation final : public TimeSeriesStorageRepresentation 
     [[nodiscard]] std::size_t value_size() const noexcept override { return scalar_->size(); }
     [[nodiscard]] std::size_t value_alignment() const noexcept override { return scalar_->alignment(); }
     [[nodiscard]] bool uses_variable_memory() const noexcept override { return scalar_->uses_variable_memory(); }
-    [[nodiscard]] bool requires_destruction() const noexcept override { return scalar_->requires_destruction(); }
+    [[nodiscard]] bool requires_finalization() const noexcept override { return scalar_->requires_finalization(); }
     [[nodiscard]] bool supports_byte_copy_initialization() const noexcept override {
         return scalar_->supports_byte_copy_initialization();
     }

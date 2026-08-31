@@ -2,6 +2,7 @@
 
 #include <bg/scalar/details/storage_traits.hpp>
 #include <bg/scalar/dict/type.hpp>
+#include <bg/util/scope_exit.hpp>
 
 #include <memory>
 #include <utility>
@@ -17,6 +18,8 @@ template <typename K, typename V> struct scalar_storage_traits<Dict<K, V>> {
     static constexpr bool supports_equality = KeyTraits::supports_equality && ValueTraits::supports_equality;
     static constexpr bool supports_hash = KeyTraits::supports_hash && ValueTraits::supports_hash;
     static constexpr bool uses_variable_memory = true;
+    static constexpr bool requires_finalization =
+        KeyTraits::requires_finalization || ValueTraits::requires_finalization;
 
     [[nodiscard]] static value_type read(const stored_type &value) noexcept { return value_type{value}; }
 
@@ -31,17 +34,14 @@ template <typename K, typename V> struct scalar_storage_traits<Dict<K, V>> {
 
     static void construct(stored_type *destination, value_type value, std::pmr::memory_resource &memory) {
         std::construct_at(destination);
-        try {
-            for (const auto [key, item] : value) {
-                (void)destination->items.try_emplace_with(
-                    key, memory, [&](auto *stored) { KeyTraits::construct(stored, key, memory); },
-                    [&](auto *stored) noexcept { KeyTraits::destroy(stored, memory); },
-                    [&](auto *stored) { ValueTraits::construct(stored, item, memory); });
-            }
-        } catch (...) {
-            destroy(destination, memory);
-            throw;
+        auto rollback = util::scope_exit{[&]() noexcept { destroy(destination, memory); }};
+        for (const auto [key, item] : value) {
+            (void)destination->items.try_emplace_with(
+                key, memory, [&](auto *stored) { KeyTraits::construct(stored, key, memory); },
+                [&](auto *stored) noexcept { KeyTraits::destroy(stored, memory); },
+                [&](auto *stored) { ValueTraits::construct(stored, item, memory); });
         }
+        rollback.release();
     }
 
     template <std::ranges::input_range Range>
@@ -52,23 +52,20 @@ template <typename K, typename V> struct scalar_storage_traits<Dict<K, V>> {
               scalar_view_source_for<decltype(std::declval<std::ranges::range_reference_t<const Range>>().second), V>)
     static void construct(stored_type *destination, const Range &value, std::pmr::memory_resource &memory) {
         std::construct_at(destination);
-        try {
-            for (const auto &[key, item] : value) {
-                (void)destination->items.try_emplace_with(
-                    key, memory, [&](auto *stored) { KeyTraits::construct(stored, key, memory); },
-                    [&](auto *stored) noexcept { KeyTraits::destroy(stored, memory); },
-                    [&](auto *stored) {
-                        if constexpr (scalar_view_source_for<decltype(item), V>) {
-                            item.input_view().copy_construct(stored, cpp_scalar_storage_representation<V>(), memory);
-                        } else {
-                            ValueTraits::construct(stored, item, memory);
-                        }
-                    });
-            }
-        } catch (...) {
-            destroy(destination, memory);
-            throw;
+        auto rollback = util::scope_exit{[&]() noexcept { destroy(destination, memory); }};
+        for (const auto &[key, item] : value) {
+            (void)destination->items.try_emplace_with(
+                key, memory, [&](auto *stored) { KeyTraits::construct(stored, key, memory); },
+                [&](auto *stored) noexcept { KeyTraits::destroy(stored, memory); },
+                [&](auto *stored) {
+                    if constexpr (scalar_view_source_for<decltype(item), V>) {
+                        item.input_view().copy_construct(stored, cpp_scalar_storage_representation<V>(), memory);
+                    } else {
+                        ValueTraits::construct(stored, item, memory);
+                    }
+                });
         }
+        rollback.release();
     }
 
     static void copy_construct(stored_type *destination, const stored_type &source, std::pmr::memory_resource &memory) {

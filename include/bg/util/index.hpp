@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <array>
 #include <bit>
-#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <iterator>
@@ -112,9 +111,7 @@ template <> class index<dynamic_index_extent> {
     index(index &&) = delete;
     index &operator=(index &&) = delete;
 
-    ~index() { assert(!allocated()); }
-
-    [[nodiscard]] bool set(size_type position, std::pmr::memory_resource &memory) {
+    bool set(size_type position, std::pmr::memory_resource &memory) {
         if (position == dynamic_index_extent) {
             throw std::length_error{"index position exceeds the supported range"};
         }
@@ -136,7 +133,7 @@ template <> class index<dynamic_index_extent> {
         return inserted;
     }
 
-    [[nodiscard]] bool reset(size_type position) noexcept {
+    bool reset(size_type position) noexcept {
         if (position >= size()) {
             return false;
         }
@@ -383,7 +380,7 @@ template <std::uint32_t Extent> class index {
     using size_type = std::uint32_t;
     using iterator = details::index_iterator<index>;
 
-    [[nodiscard]] bool set(size_type position) {
+    bool set(size_type position) {
         require_position(position);
         const auto mask = std::uint64_t{1} << (position % bits_per_word);
         auto &target = words_[position / bits_per_word];
@@ -393,7 +390,7 @@ template <std::uint32_t Extent> class index {
         return inserted;
     }
 
-    [[nodiscard]] bool reset(size_type position) {
+    bool reset(size_type position) {
         require_position(position);
         const auto mask = std::uint64_t{1} << (position % bits_per_word);
         auto &target = words_[position / bits_per_word];
@@ -467,5 +464,6 @@ template <std::uint32_t Extent> class index {
 };
 
 static_assert(sizeof(index<>) == sizeof(void *));
+static_assert(std::is_trivially_copyable_v<index<>>);
 
 } // namespace bg::util

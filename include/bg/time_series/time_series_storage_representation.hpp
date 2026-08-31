@@ -35,7 +35,10 @@ class TimeSeriesStorageRepresentation {
     [[nodiscard]] virtual std::size_t value_size() const noexcept = 0;
     [[nodiscard]] virtual std::size_t value_alignment() const noexcept = 0;
     [[nodiscard]] virtual bool uses_variable_memory() const noexcept = 0;
-    [[nodiscard]] virtual bool requires_destruction() const noexcept = 0;
+    [[nodiscard]] virtual bool requires_finalization() const noexcept = 0;
+    [[nodiscard]] bool requires_destruction() const noexcept {
+        return uses_variable_memory() || requires_finalization();
+    }
     [[nodiscard]] virtual bool supports_byte_copy_initialization() const noexcept = 0;
     [[nodiscard]] virtual const ScalarStorageRepresentation *scalar_storage_representation() const noexcept {
         return nullptr;
@@ -53,7 +56,8 @@ class TimeSeriesStorageRepresentation {
     [[nodiscard]] virtual bool collection_valid(const void *) const noexcept { return false; }
     virtual void for_each_modified_item(const EvaluationTime &, const void *, EvaluationTime, void *,
                                         ModifiedItemFunction) const {}
-    [[nodiscard]] virtual bool finalize_modified_items(EvaluationTime &, void *, EvaluationTime) const noexcept {
+    [[nodiscard]] virtual bool requires_modified_item_finalization() const noexcept { return false; }
+    virtual bool finalize_modified_items(EvaluationTime &, void *, EvaluationTime) const noexcept {
         return true;
     }
 
@@ -69,6 +73,6 @@ time_series_value_storage_representation(const TimeSeriesType &type,
                                          const ScalarStorageRepresentation &scalar_representation);
 
 template <typename TimeSeries>
-[[nodiscard]] const TimeSeriesStorageRepresentation &cpp_time_series_storage_representation() noexcept;
+[[nodiscard]] const TimeSeriesStorageRepresentation &cpp_time_series_storage_representation();
 
 } // namespace bg

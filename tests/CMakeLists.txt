@@ -13,6 +13,7 @@ add_executable(
     evaluation/time_series/time_series_list_test.cpp
     evaluation/time_series/time_series_dict_test.cpp
     evaluation/time_series/time_series_reference_test.cpp
+    evaluation/time_series/time_series_set_test.cpp
     evaluation/validity/input_activity_test.cpp
     evaluation/validity/invalidation_behavior_test.cpp
     evaluation/validity/runtime_validity_test.cpp
@@ -40,6 +41,7 @@ add_executable(
     utils/occupancy_index_test.cpp
     utils/reflection_test.cpp
     utils/runtime_bunch_test.cpp
+    utils/scope_exit_test.cpp
     utils/sparse_bunch_test.cpp
     utils/symbol_test.cpp
     utils/version_test.cpp
@@ -62,6 +64,7 @@ add_executable(
     value/time_series_view_test.cpp
     value/time_series/list/storage_test.cpp
     value/time_series/reference/storage_test.cpp
+    value/time_series/set/storage_test.cpp
     wiring/graph_template_test.cpp
     wiring/graph_wiring_test.cpp
     wiring/time_series_list_wiring_test.cpp

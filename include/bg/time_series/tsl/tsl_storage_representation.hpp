@@ -3,18 +3,22 @@
 #include <bg/scalar/cpp_storage_representation.hpp>
 #include <bg/time_series/ref/ref_storage_representation.hpp>
 #include <bg/time_series/time_series_storage_representation.hpp>
+#include <bg/time_series/tsd/tsd_type.hpp>
 #include <bg/time_series/tsl/tsl_input_view.hpp>
 #include <bg/time_series/tsl/tsl_output_view.hpp>
+#include <bg/time_series/tss/tss_type.hpp>
 #include <bg/type/time_series_dict_type.hpp>
 #include <bg/type/time_series_list_type.hpp>
 #include <bg/type/time_series_reference_type.hpp>
 #include <bg/type/time_series_set_type.hpp>
 #include <bg/type/time_series_value_type.hpp>
 #include <bg/util/polymorphic_value.hpp>
+#include <bg/util/scope_exit.hpp>
 
 #include <cstddef>
 #include <memory>
 #include <mutex>
+#include <type_traits>
 #include <unordered_map>
 
 namespace bg::details {
@@ -48,13 +52,13 @@ template <typename TimeSeries>
 template <typename TimeSeries> struct CppTimeSeriesStorageRepresentation;
 
 template <typename T, auto... Properties> struct CppTimeSeriesStorageRepresentation<TS<T, Properties...>> {
-    [[nodiscard]] static const TimeSeriesStorageRepresentation &get(const TimeSeriesType &type) noexcept {
+    [[nodiscard]] static const TimeSeriesStorageRepresentation &get(const TimeSeriesType &type) {
         return time_series_value_storage_representation(type, cpp_scalar_storage_representation<T>());
     }
 };
 
 template <typename Target, auto... Properties> struct CppTimeSeriesStorageRepresentation<REF<Target, Properties...>> {
-    [[nodiscard]] static const TimeSeriesStorageRepresentation &get(const TimeSeriesType &type) noexcept {
+    [[nodiscard]] static const TimeSeriesStorageRepresentation &get(const TimeSeriesType &type) {
         const auto &reference = static_cast<const TimeSeriesReferenceType &>(type);
         return time_series_reference_storage_representation(
             reference, CppTimeSeriesStorageRepresentation<Target>::get(reference.target_type()));
@@ -68,16 +72,17 @@ class CppFixedTimeSeriesListStorageRepresentation<TSL<Item, Size, Properties...>
     : public TimeSeriesStorageRepresentation {
     using Storage = fixed_time_series_list_storage<Item, Size>;
     using Contained = contained_time_series_storage<Item>;
+    static_assert(std::is_trivially_copyable_v<Storage>);
 
   public:
-    explicit CppFixedTimeSeriesListStorageRepresentation(const TimeSeriesListType &type) noexcept
+    explicit CppFixedTimeSeriesListStorageRepresentation(const TimeSeriesListType &type)
         : type_{&type}, item_{&CppTimeSeriesStorageRepresentation<Item>::get(type.item_type())} {}
 
     [[nodiscard]] const TimeSeriesType &type() const noexcept override { return *type_; }
     [[nodiscard]] std::size_t value_size() const noexcept override { return sizeof(Storage); }
     [[nodiscard]] std::size_t value_alignment() const noexcept override { return alignof(Storage); }
     [[nodiscard]] bool uses_variable_memory() const noexcept override { return item_->uses_variable_memory(); }
-    [[nodiscard]] bool requires_destruction() const noexcept override { return true; }
+    [[nodiscard]] bool requires_finalization() const noexcept override { return item_->requires_finalization(); }
     [[nodiscard]] bool supports_byte_copy_initialization() const noexcept override {
         return item_->supports_byte_copy_initialization();
     }
@@ -113,9 +118,8 @@ class CppFixedTimeSeriesListStorageRepresentation<TSL<Item, Size, Properties...>
         return static_cast<const Storage *>(value)->valid();
     }
 
-    void for_each_modified_item(const EvaluationTime &last_updated, const void *value,
-                                EvaluationTime evaluation_time, void *context,
-                                ModifiedItemFunction function) const override {
+    void for_each_modified_item(const EvaluationTime &last_updated, const void *value, EvaluationTime evaluation_time,
+                                void *context, ModifiedItemFunction function) const override {
         const auto &storage = *static_cast<const Storage *>(value);
         if (last_updated <= MIN_DT) {
             for (auto index = std::size_t{}; index < Size; ++index) {
@@ -134,8 +138,10 @@ class CppFixedTimeSeriesListStorageRepresentation<TSL<Item, Size, Properties...>
         }
     }
 
-    [[nodiscard]] bool finalize_modified_items(EvaluationTime &last_updated, void *value,
-                                               EvaluationTime evaluation_time) const noexcept override {
+    [[nodiscard]] bool requires_modified_item_finalization() const noexcept override { return true; }
+
+    bool finalize_modified_items(EvaluationTime &last_updated, void *value,
+                                 EvaluationTime evaluation_time) const noexcept override {
         auto &storage = *static_cast<Storage *>(value);
         if (storage.changes.time() != evaluation_time) {
             return false;
@@ -144,7 +150,7 @@ class CppFixedTimeSeriesListStorageRepresentation<TSL<Item, Size, Properties...>
         for (const auto index : storage.changes) {
             auto &item = storage.items[index];
             if (!item_->finalize_modified_items(item.last_updated, &item.value.value, evaluation_time)) {
-                static_cast<void>(storage.changes.reset(index));
+                storage.changes.reset(index);
             }
         }
 
@@ -165,19 +171,18 @@ class CppFixedTimeSeriesListStorageRepresentation<TSL<Item, Size, Properties...>
     void construct_runtime_value(void *destination, std::pmr::memory_resource &memory) const override {
         auto *storage = std::construct_at(static_cast<Storage *>(destination));
         auto constructed = std::size_t{};
-        try {
-            for (auto &contained : storage->items) {
-                item_->construct_runtime_value(&contained.value.value, memory);
-                ++constructed;
-            }
-        } catch (...) {
+        auto rollback = util::scope_exit{[&]() noexcept {
             while (constructed != 0) {
                 --constructed;
                 item_->destroy_value(&storage->items[constructed].value.value, memory);
             }
             std::destroy_at(storage);
-            throw;
+        }};
+        for (auto &contained : storage->items) {
+            item_->construct_runtime_value(&contained.value.value, memory);
+            ++constructed;
         }
+        rollback.release();
     }
 
     void destroy_value(void *value, std::pmr::memory_resource &memory) const noexcept override {
@@ -195,7 +200,7 @@ class CppFixedTimeSeriesListStorageRepresentation<TSL<Item, Size, Properties...>
 
 template <typename Item, std::size_t Size, auto... Properties>
 struct CppTimeSeriesStorageRepresentation<TSL<Item, Size, Properties...>> {
-    [[nodiscard]] static const TimeSeriesStorageRepresentation &get(const TimeSeriesType &type) noexcept {
+    [[nodiscard]] static const TimeSeriesStorageRepresentation &get(const TimeSeriesType &type) {
         using TimeSeries = TSL<Item, Size, Properties...>;
         using Representation = CppFixedTimeSeriesListStorageRepresentation<TimeSeries>;
 
@@ -216,8 +221,7 @@ struct CppTimeSeriesStorageRepresentation<TSL<Item, Size, Properties...>> {
 
 namespace bg {
 
-template <typename TimeSeries>
-const TimeSeriesStorageRepresentation &cpp_time_series_storage_representation() noexcept {
+template <typename TimeSeries> const TimeSeriesStorageRepresentation &cpp_time_series_storage_representation() {
     const auto &type = details::concrete_time_series_type<TimeSeries>(TimeSeriesGuarantee::ordinary);
     return details::CppTimeSeriesStorageRepresentation<TimeSeries>::get(type);
 }

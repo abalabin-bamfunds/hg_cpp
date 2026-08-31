@@ -88,9 +88,14 @@ Direct wired subscriptions are stored in compiled arrays and shared by runtime
 graphs with the same wiring.
 
 A `REF<TS_T>` to `TS_T` binding creates two subscriptions. The node
-subscription applies the input's activity. The reference input subscription
-identifies the receiving node and parameter and updates that parameter's target.
-Required-input validity is checked when the target changes.
+subscription applies the input's activity. An output-notification record stores
+the receiving node, resolved input-slot offset, activity, and validity policy.
+
+The compiled output metadata associates these records with the REF notification
+handler. After the output changes, the runtime invokes the handler once for the
+complete record span. The handler updates target pointers and dynamic
+subscriptions, then requests required-input validity checks. The runtime does
+not interpret REF storage.
 
 When graph compilation inserts a node that provides references or other
 representations, it adds a special entry to the source output's compiled
@@ -100,7 +105,7 @@ dynamic subscriber pointer.
 The source runtime graph owns the created representations and their subscriber
 arrays. Each subscriber buffer is allocated when its first subscriber is added.
 Subscriber records are contiguous. Each record identifies the destination
-runtime graph, node, and parameter.
+runtime graph, node, and input slot.
 
 When an exact reference target changes, scheduling processes this entry and
 schedules the dynamic subscribers directly. Other representations update the
@@ -160,7 +165,8 @@ The shared set and its representations handle key removal:
    received its reference.
 3. The set and representations keep the key and item storage valid until the
    outer cycle ends.
-4. They reclaim the storage after removal work is complete.
+4. They reclaim the storage on the next collection mutation or graph
+   destruction.
 
 Removal notification applies to dynamic time series and the outputs of removable
 inner runtime graphs.
@@ -171,7 +177,8 @@ removed time series must be cleared during the cycle in which it is removed.
 ## Outer-cycle boundary
 
 An outer cycle ends after all outer and inner work has finished, including work
-that runs concurrently. The engine reclaims removed storage after this point.
+that runs concurrently. This is the earliest point at which removed storage can
+be reclaimed.
 
 ## Open implementation choices
 
@@ -181,3 +188,6 @@ that runs concurrently. The engine reclaims removed storage after this point.
 3. How a time series dictionary locates an item's optional subscriber array.
 4. Synchronization of subscription and representation changes between runtime
    graphs.
+5. Removal of a runtime graph's dynamic subscriptions from target graphs.
+6. Whether removed collection storage should be reclaimed at the outer-cycle
+   boundary.

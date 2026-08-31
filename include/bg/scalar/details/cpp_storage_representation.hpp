@@ -24,7 +24,9 @@ template <typename T, typename Base> class CppScalarStorageRepresentationBase : 
     static_assert(std::is_nothrow_destructible_v<Stored>);
 
   public:
-    [[nodiscard]] const ScalarType &type() const noexcept override { return cpp_scalar_type<T>(); }
+    CppScalarStorageRepresentationBase() : type_{&cpp_scalar_type<T>()} {}
+
+    [[nodiscard]] const ScalarType &type() const noexcept override { return *type_; }
 
     [[nodiscard]] std::size_t size() const noexcept override { return sizeof(Stored); }
 
@@ -32,8 +34,8 @@ template <typename T, typename Base> class CppScalarStorageRepresentationBase : 
 
     [[nodiscard]] bool uses_variable_memory() const noexcept override { return Traits::uses_variable_memory; }
 
-    [[nodiscard]] bool requires_destruction() const noexcept override {
-        return !std::is_trivially_destructible_v<Stored>;
+    [[nodiscard]] bool requires_finalization() const noexcept override {
+        return Traits::requires_finalization;
     }
 
     [[nodiscard]] bool supports_byte_copy_initialization() const noexcept override {
@@ -63,7 +65,7 @@ template <typename T, typename Base> class CppScalarStorageRepresentationBase : 
 
     void construct_initial_value(void *destination) const noexcept override {
         if constexpr (std::is_trivially_copyable_v<Stored> && std::is_default_constructible_v<Stored>) {
-            std::construct_at(static_cast<Stored *>(destination), Stored{});
+            std::construct_at(static_cast<Stored *>(destination));
         } else {
             std::terminate();
         }
@@ -139,6 +141,9 @@ template <typename T, typename Base> class CppScalarStorageRepresentationBase : 
     void destroy(void *value, std::pmr::memory_resource &memory) const noexcept override {
         Traits::destroy(static_cast<Stored *>(value), memory);
     }
+
+  private:
+    const ScalarType *type_;
 };
 
 template <typename T>
@@ -165,7 +170,11 @@ class CppScalarStorageRepresentation<Opaque<T>> final
 template <typename T>
 class CppScalarStorageRepresentation<List<T>> final
     : public CppScalarStorageRepresentationBase<List<T>, ScalarListStorageRepresentation> {
+    static_assert(std::is_trivially_copyable_v<details::scalar_list_storage<T>>);
+
   public:
+    CppScalarStorageRepresentation() : item_{&cpp_scalar_storage_representation<T>()} {}
+
     [[nodiscard]] bool supports_byte_copy_initialization() const noexcept override { return true; }
 
     void construct_initial_value(void *destination) const noexcept override {
@@ -173,7 +182,7 @@ class CppScalarStorageRepresentation<List<T>> final
     }
 
     [[nodiscard]] const ScalarStorageRepresentation &item_storage_representation() const noexcept override {
-        return cpp_scalar_storage_representation<T>();
+        return *item_;
     }
 
     [[nodiscard]] std::size_t item_count(const void *storage) const noexcept override {
@@ -216,12 +225,19 @@ class CppScalarStorageRepresentation<List<T>> final
 
         return &prototype.get();
     }
+
+  private:
+    const ScalarStorageRepresentation *item_;
 };
 
 template <typename T>
 class CppScalarStorageRepresentation<Set<T>> final
     : public CppScalarStorageRepresentationBase<Set<T>, ScalarSetStorageRepresentation> {
+    static_assert(std::is_trivially_copyable_v<details::scalar_set_storage<T>>);
+
   public:
+    CppScalarStorageRepresentation() : item_{&cpp_scalar_storage_representation<T>()} {}
+
     [[nodiscard]] bool supports_byte_copy_initialization() const noexcept override { return true; }
 
     void construct_initial_value(void *destination) const noexcept override {
@@ -229,7 +245,7 @@ class CppScalarStorageRepresentation<Set<T>> final
     }
 
     [[nodiscard]] const ScalarStorageRepresentation &item_storage_representation() const noexcept override {
-        return cpp_scalar_storage_representation<T>();
+        return *item_;
     }
 
     [[nodiscard]] std::size_t item_count(const void *storage) const noexcept override {
@@ -271,12 +287,20 @@ class CppScalarStorageRepresentation<Set<T>> final
 
         return &prototype.get();
     }
+
+  private:
+    const ScalarStorageRepresentation *item_;
 };
 
 template <typename K, typename V>
 class CppScalarStorageRepresentation<Dict<K, V>> final
     : public CppScalarStorageRepresentationBase<Dict<K, V>, ScalarDictStorageRepresentation> {
+    static_assert(std::is_trivially_copyable_v<details::scalar_dict_storage<K, V>>);
+
   public:
+    CppScalarStorageRepresentation()
+        : key_{&cpp_scalar_storage_representation<K>()}, mapped_{&cpp_scalar_storage_representation<V>()} {}
+
     [[nodiscard]] bool supports_byte_copy_initialization() const noexcept override { return true; }
 
     void construct_initial_value(void *destination) const noexcept override {
@@ -284,11 +308,11 @@ class CppScalarStorageRepresentation<Dict<K, V>> final
     }
 
     [[nodiscard]] const ScalarStorageRepresentation &key_storage_representation() const noexcept override {
-        return cpp_scalar_storage_representation<K>();
+        return *key_;
     }
 
     [[nodiscard]] const ScalarStorageRepresentation &mapped_storage_representation() const noexcept override {
-        return cpp_scalar_storage_representation<V>();
+        return *mapped_;
     }
 
     [[nodiscard]] std::size_t item_count(const void *storage) const noexcept override {
@@ -341,13 +365,17 @@ class CppScalarStorageRepresentation<Dict<K, V>> final
 
         return &prototype.get();
     }
+
+  private:
+    const ScalarStorageRepresentation *key_;
+    const ScalarStorageRepresentation *mapped_;
 };
 
 } // namespace bg::details
 
 namespace bg {
 
-template <typename T> const ScalarStorageRepresentation &cpp_scalar_storage_representation() noexcept {
+template <typename T> const ScalarStorageRepresentation &cpp_scalar_storage_representation() {
     static const details::CppScalarStorageRepresentation<T> representation;
     static const auto registered = (register_scalar_storage_representation(representation), true);
     (void)registered;
