@@ -1,9 +1,12 @@
+#include <bg/graph.hpp>
 #include <bg/graph/compiled_graph.hpp>
 #include <bg/graph/graph_wiring.hpp>
 #include <bg/graph/runtime_graph.hpp>
 #include <bg/graph/wiring_context.hpp>
 #include <bg/node.hpp>
 #include <bg/run_graph.hpp>
+#include <bg/testing/test_graph.hpp>
+#include <bg/time_series/tsl/tsl.hpp>
 #include <bg/time_series/tsl/tsl_type.hpp>
 
 #include "../../utils/counting_memory_resource.hpp"
@@ -93,6 +96,76 @@ TEST_CASE("a fixed time series list publishes changed items", "[evaluation][tsl]
     CHECK(list_sink_definition::updated == std::array{true, false, true});
     CHECK(item_sink_definition::evaluation_count == 1);
     CHECK(item_sink_definition::value == 30);
+}
+
+namespace {
+
+struct aliased_list_sum_definition {
+    bg::In<bg::TSL<bg::TS<int>, 2>> input;
+    bg::Out<bg::TS<int>> output;
+
+    void evaluate() const {
+        updates.push_back({input.item_updated(0), input.item_updated(1)});
+        output.set(input[0].value() + input[1].value());
+    }
+
+    inline static std::vector<std::array<bool, 2>> updates;
+};
+
+struct aliased_list_reference_definition {
+    bg::In<bg::REF<bg::TS<int>>> input;
+    bg::Out<bg::REF<bg::TS<int>>> output;
+
+    void evaluate() const { output.set(input); }
+};
+
+} // namespace
+
+TEST_CASE("an aliased fixed time series list coalesces source changes", "[evaluation][tsl][alias]") {
+    const auto sum = bg::node<aliased_list_sum_definition>();
+    aliased_list_sum_definition::updates.clear();
+    const auto graph = [&](bg::wp<bg::TS<int>> first, bg::wp<bg::TS<int>> second) {
+        return sum(bg::tsl(first, second));
+    };
+
+    const auto first = std::vector{1, 2};
+    const auto second = std::vector<std::optional<int>>{10, std::nullopt};
+    const auto result = bg::testing::test_graph(graph, first, second);
+
+    CHECK(result.equals({11, 12}));
+    CHECK(aliased_list_sum_definition::updates == std::vector<std::array<bool, 2>>{{true, true}, {true, false}});
+}
+
+TEST_CASE("a free fixed time series list follows the receiving item representation",
+          "[evaluation][tsl][alias][reference]") {
+    const auto reference = bg::node<aliased_list_reference_definition>();
+    const auto sum = bg::node<aliased_list_sum_definition>();
+    const auto graph = [&](bg::wp<bg::TS<int>> first, bg::wp<bg::TS<int>> second) {
+        return sum(bg::tsl(reference(first), second));
+    };
+    const auto first = std::vector{1, 2};
+    const auto second = std::vector{10, 20};
+
+    const auto result = bg::testing::test_graph(graph, first, second);
+
+    CHECK(result.equals({11, 22}));
+}
+
+TEST_CASE("a graph can select the original item from a free fixed time series list",
+          "[evaluation][tsl][alias][wiring]") {
+    using namespace bg::literals;
+    const auto second =
+        bg::graph("name"_m = "second_item",
+                  [](bg::wp<bg::TSL<bg::TS<int>, 2>> input) -> bg::wp<bg::TS<int>> { return input[1]; });
+    const auto graph = [&](bg::wp<bg::TS<int>> first, bg::wp<bg::TS<int>> second_value) {
+        return second(bg::tsl(first, second_value));
+    };
+    const auto first = std::vector{1, 2};
+    const auto second_values = std::vector{10, 20};
+
+    const auto result = bg::testing::test_graph(graph, first, second_values);
+
+    CHECK(result.equals({10, 20}));
 }
 
 namespace {
@@ -532,14 +605,14 @@ struct list_evaluation_count_sink_definition {
 
 } // namespace
 
-TEST_CASE("a canceled nested dictionary change does not publish its containing list", "[evaluation][tsl][tsd]") {
+TEST_CASE("inverse nested dictionary mutations publish their containing list", "[evaluation][tsl][tsd]") {
     const auto source = bg::node<canceled_nested_dictionary_source_definition>();
     const auto sink = bg::node<list_evaluation_count_sink_definition>();
     list_evaluation_count_sink_definition::count = 0;
 
     bg::run_graph([&] { sink(source()); });
 
-    CHECK(list_evaluation_count_sink_definition::count == 1);
+    CHECK(list_evaluation_count_sink_definition::count == 2);
 }
 
 namespace {

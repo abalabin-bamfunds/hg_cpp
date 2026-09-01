@@ -36,6 +36,8 @@ add_library(
     bg SHARED
     src/compiled_graph.cpp
     src/graph_wiring.cpp
+    src/nested_graph.cpp
+    src/nested.cpp
     src/guarantee_parameter.cpp
     src/runtime_graph.cpp
     src/scalar/allocation.cpp
@@ -54,8 +56,11 @@ add_library(
     src/time_series/tsd/tsd_type.cpp
     src/time_series/tss/tss_type.cpp
     src/time_series/time_series_storage_representation.cpp
+    src/time_series_type.cpp
+    src/time_series_variable.cpp
     src/time_series_value_type.cpp
     src/thread_local_pointer.cpp
+    src/type.cpp
     src/type_of.cpp
     src/version.cpp
     src/wiring_context.cpp

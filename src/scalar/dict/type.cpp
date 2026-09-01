@@ -20,7 +20,6 @@ class ResolvedDictScalarType final : public DictScalarType {
         : key_type_(&key_type), mapped_type_(&mapped_type) {}
 
     [[nodiscard]] bool is_resolved() const noexcept override { return true; }
-    [[nodiscard]] bool match(const Type &supplied, TypeMap &) const override { return this == &supplied; }
     [[nodiscard]] const Type &resolve(const TypeMap &) const override { return *this; }
     [[nodiscard]] const ScalarType &key_type() const noexcept override { return *key_type_; }
     [[nodiscard]] const ScalarType &mapped_type() const noexcept override { return *mapped_type_; }
@@ -32,7 +31,7 @@ class ResolvedDictScalarType final : public DictScalarType {
 
 } // namespace
 
-bool GenericDictScalarType::match(const Type &supplied, TypeMap &bindings) const {
+bool GenericDictScalarType::do_match(const Type &supplied, TypeMap &bindings) const {
     const auto *dict = dynamic_cast<const DictScalarType *>(&supplied);
     if (dict == nullptr || !dict->is_resolved()) {
         return false;

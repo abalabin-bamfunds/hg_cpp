@@ -28,11 +28,14 @@ construction, and generic list access.
 [docs/global-state.md](docs/global-state.md) defines scalar values shared by an
 outer graph and its inner graphs.
 
+[docs/nested-graphs.md](docs/nested-graphs.md) defines nested graph boundaries,
+ownership, lifecycle, and scheduling.
+
 [docs/testing.md](docs/testing.md) defines test organization and required
 coverage.
 
 [docs/time-series-references.md](docs/time-series-references.md) defines reference
-routing, dynamic subscriptions, nested graphs, and removal lifetime.
+routing, dynamic subscriptions, and removal lifetime.
 
 [docs/time-series-validity.md](docs/time-series-validity.md) defines invalidation,
 revalidation, and their effects on references, collections, and nodes.

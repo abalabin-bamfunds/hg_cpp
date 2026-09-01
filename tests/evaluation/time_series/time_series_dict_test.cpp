@@ -168,14 +168,14 @@ struct evaluation_count_sink_definition {
 
 } // namespace
 
-TEST_CASE("adding and removing a new dictionary item in one invocation produces no change", "[evaluation][tsd]") {
+TEST_CASE("adding and removing a new dictionary item in one invocation produces a tick", "[evaluation][tsd]") {
     const auto source = bg::node<canceled_add_source_definition>();
     const auto sink = bg::node<evaluation_count_sink_definition>();
     evaluation_count_sink_definition::count = 0;
 
     bg::run_graph([&] { sink(source()); });
 
-    CHECK(evaluation_count_sink_definition::count == 0);
+    CHECK(evaluation_count_sink_definition::count == 1);
 }
 
 namespace {
@@ -221,7 +221,9 @@ TEST_CASE("resurrecting a dictionary item reports a modification", "[evaluation]
     CHECK(dict_sink_definition::added == std::vector<std::size_t>{1, 0});
     CHECK(dict_sink_definition::removed == std::vector<std::size_t>{0, 0});
     CHECK(dict_sink_definition::modified == std::vector<std::size_t>{0, 1});
-    CHECK(key_sink_definition::sizes == std::vector<std::size_t>{1});
+    CHECK(key_sink_definition::sizes == std::vector<std::size_t>{1, 1});
+    CHECK(key_sink_definition::added == std::vector<std::size_t>{1, 0});
+    CHECK(key_sink_definition::removed == std::vector<std::size_t>{0, 0});
 }
 
 namespace {

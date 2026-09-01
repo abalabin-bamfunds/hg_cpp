@@ -15,6 +15,7 @@
 #include <bg/time_series/tsl/tsl_type.hpp>
 #include <bg/time_series/tss/tss_storage_representation.hpp>
 #include <bg/time_series/tss/tss_type.hpp>
+#include <bg/type/details/time_series_type.hpp>
 #include <bg/type/scalar_type.hpp>
 #include <bg/type/scalar_variable.hpp>
 #include <bg/type/signature.hpp>
@@ -23,6 +24,7 @@
 #include <bg/type/time_series_reference_type.hpp>
 #include <bg/type/time_series_set_type.hpp>
 #include <bg/type/time_series_value_type.hpp>
+#include <bg/type/time_series_variable.hpp>
 #include <bg/type/type_variable.hpp>
 #include <bg/util/reflection.hpp>
 
@@ -149,30 +151,16 @@ template <typename Definition, std::size_t... Index>
     return result;
 }
 
-template <typename T> struct generic_time_series : std::false_type {};
-
-template <> struct generic_time_series<TS_T> : std::true_type {};
-
-template <typename T, auto... Properties>
-struct generic_time_series<TS<T, Properties...>> : std::bool_constant<generic_scalar<T>> {};
-
-template <typename Target, auto... Properties>
-struct generic_time_series<REF<Target, Properties...>> : generic_time_series<Target> {};
-
-template <typename Item, std::size_t Size, auto... Properties>
-struct generic_time_series<TSL<Item, Size, Properties...>> : generic_time_series<Item> {};
-
-template <typename Item, auto... Properties>
-struct generic_time_series<TSS<Item, Properties...>> : std::bool_constant<generic_scalar<Item>> {};
-
-template <typename K, typename Item, auto... Properties>
-struct generic_time_series<TSD<K, Item, Properties...>>
-    : std::bool_constant<generic_scalar<K> || generic_time_series<Item>::value> {};
-
 template <typename T> struct generic_input_field : std::false_type {};
 
 template <typename TimeSeries, auto... Properties>
 struct generic_input_field<In<TimeSeries, Properties...>> : generic_time_series<TimeSeries> {};
+
+template <typename T> struct input_view_field : std::false_type {};
+
+template <typename TimeSeries, auto... Properties>
+struct input_view_field<In<TimeSeries, Properties...>>
+    : std::bool_constant<generic_time_series<TimeSeries>::value || is_time_series_list<TimeSeries>> {};
 
 template <typename T> struct generic_output_field : std::false_type {};
 
@@ -189,32 +177,6 @@ template <scalar_variable Variable> struct scalar_variable_view<Scalar<Variable>
 template <typename T> struct scalar_view : std::false_type {};
 
 template <typename T> struct scalar_view<Scalar<T>> : std::true_type {};
-
-template <typename TimeSeries> struct supported_time_series : std::false_type {};
-
-template <typename T>
-concept has_cpp_scalar_type = requires { cpp_scalar_type<T>(); };
-
-template <> struct supported_time_series<TS_T> : std::true_type {};
-
-template <typename T, auto... Properties>
-struct supported_time_series<TS<T, Properties...>>
-    : std::bool_constant<generic_scalar<T> || (scalar_type_traits<T>::supports_time_series && has_cpp_scalar_type<T>)> {
-};
-
-template <typename Target, auto... Properties>
-struct supported_time_series<REF<Target, Properties...>> : supported_time_series<Target> {};
-
-template <typename Item, std::size_t Size, auto... Properties>
-struct supported_time_series<TSL<Item, Size, Properties...>> : supported_time_series<Item> {};
-
-template <typename Item, auto... Properties>
-struct supported_time_series<TSS<Item, Properties...>>
-    : std::bool_constant<generic_scalar<Item> || has_cpp_scalar_type<Item>> {};
-
-template <typename K, typename Item, auto... Properties>
-struct supported_time_series<TSD<K, Item, Properties...>>
-    : std::bool_constant<(generic_scalar<K> || has_cpp_scalar_type<K>) && supported_time_series<Item>::value> {};
 
 template <typename Field, bool = input_field<Field>::value> struct supported_input : std::false_type {};
 
@@ -248,11 +210,12 @@ template <typename Definition> consteval bool aggregate_node_has_output() {
     return output_field_count<Definition>(Index{}) != 0;
 }
 
-template <typename Definition> [[nodiscard]] const TypeVariable<TimeSeriesType> &aggregate_time_series_variable() {
-    static const TypeVariable<TimeSeriesType> variable{util::symbol{"TS_T"}};
-
-    return variable;
-}
+template <typename Definition>
+inline constexpr bool aggregate_node_has_evaluate = requires(const Definition &definition) {
+    { definition.evaluate() } -> std::same_as<void>;
+} || requires(const Definition &definition, EvaluationContext *context) {
+    { definition.evaluate(context) } -> std::same_as<void>;
+};
 
 template <typename Definition>
 inline constexpr bool aggregate_node_has_start = requires(const Definition &definition) {
@@ -306,111 +269,21 @@ template <typename Definition> struct aggregate_node_class<Definition, true> {
     static constexpr bool value =
         supported_node_fields<Definition>(Index{}) && output_field_count<Definition>(Index{}) <= 1 &&
         input_fields_use_reflected_names<Definition>(Index{}) &&
-        (requires(const Definition &definition) {
-            { definition.evaluate() } -> std::same_as<void>;
-        } || requires(const Definition &definition, EvaluationContext *context) {
-            { definition.evaluate(context) } -> std::same_as<void>;
-        });
+        (aggregate_node_has_evaluate<Definition> || aggregate_node_has_start<Definition>);
 };
-
-template <typename Definition, std::size_t Index, bool Input, typename TimeSeries>
-[[nodiscard]] const TimeSeriesType &time_series_type(GuaranteeParameter inherited_guarantee) {
-    if constexpr (std::same_as<TimeSeries, TS_T>) {
-        return aggregate_time_series_variable<Definition>();
-    } else {
-        const auto guarantee =
-            TimeSeries::has_explicit_guarantee ? GuaranteeParameter{TimeSeries::guarantee} : inherited_guarantee;
-
-        if constexpr (is_time_series_reference<TimeSeries>) {
-            using Target = typename time_series_reference<TimeSeries>::target_type;
-            const auto &target = time_series_type<Definition, Index, Input, Target>(TimeSeriesGuarantee::ordinary);
-
-            if constexpr (Input || generic_time_series<Target>::value) {
-                static const auto type = GenericTimeSeriesReferenceType{target, guarantee};
-                return type;
-            }
-
-            if (!guarantee.is_resolved()) {
-                static const auto type = GenericTimeSeriesReferenceType{target, guarantee};
-                return type;
-            }
-
-            return time_series_reference_type(target, *guarantee.value());
-        } else if constexpr (is_time_series_dict<TimeSeries>) {
-            using DictionaryTraits = time_series_dict<TimeSeries>;
-            using Key = typename DictionaryTraits::key_type;
-            const auto &key = scalar_type_for<Definition, Key>();
-            const auto &value =
-                time_series_type<Definition, Index, Input, typename DictionaryTraits::item_type>(guarantee);
-            static const auto key_set = GenericTimeSeriesSetType{key, guarantee};
-
-            if constexpr (Input || generic_scalar<Key>) {
-                static const auto type = GenericTimeSeriesDictionaryType{key, value, key_set, guarantee};
-                return type;
-            } else if (!value.is_resolved() || !guarantee.is_resolved()) {
-                static const auto type = GenericTimeSeriesDictionaryType{key, value, key_set, guarantee};
-                return type;
-            }
-
-            return time_series_dictionary_type(key, value, *guarantee.value());
-        } else if constexpr (is_time_series_set<TimeSeries>) {
-            using SetTraits = time_series_set<TimeSeries>;
-            using Item = typename SetTraits::item_type;
-            const auto &item = scalar_type_for<Definition, Item>();
-
-            if constexpr (Input || generic_scalar<Item>) {
-                static const auto type = GenericTimeSeriesSetType{item, guarantee};
-                return type;
-            } else if (!guarantee.is_resolved()) {
-                static const auto type = GenericTimeSeriesSetType{item, guarantee};
-                return type;
-            }
-
-            return time_series_set_type(item, *guarantee.value());
-        } else if constexpr (is_time_series_list<TimeSeries>) {
-            using ListTraits = time_series_list<TimeSeries>;
-            static_assert(ListTraits::size != std::dynamic_extent,
-                          "variable-size time series lists are not implemented");
-
-            const auto &item = time_series_type<Definition, Index, Input, typename ListTraits::item_type>(guarantee);
-            if constexpr (Input) {
-                static const auto type = GenericTimeSeriesListType{item, ListTraits::size, guarantee};
-                return type;
-            } else if (!item.is_resolved() || !guarantee.is_resolved()) {
-                static const auto type = GenericTimeSeriesListType{item, ListTraits::size, guarantee};
-                return type;
-            }
-
-            return time_series_list_type(item, ListTraits::size, *guarantee.value());
-        } else {
-            using Value = typename time_series_value<TimeSeries>::type;
-            const auto &value_type = scalar_type_for<Definition, Value>();
-            if constexpr (Input || generic_scalar<Value>) {
-                static const auto type = GenericTimeSeriesValueType{value_type, guarantee};
-                return type;
-            } else {
-                if (!guarantee.is_resolved()) {
-                    static const auto type = GenericTimeSeriesValueType{value_type, guarantee};
-                    return type;
-                }
-
-                return time_series_value_type(value_type, *guarantee.value());
-            }
-        }
-    }
-}
 
 template <typename Definition, std::size_t Index> [[nodiscard]] const TimeSeriesType &input_type() {
     using Field = std::remove_cv_t<util::aggregate_member_type<Index, Definition>>;
     using TimeSeries = typename input_field<Field>::time_series_type;
 
-    if constexpr (std::same_as<TimeSeries, TS_T>) {
-        return aggregate_time_series_variable<Definition>();
+    if constexpr (time_series_variable<TimeSeries>) {
+        return time_series_variable_instance<Definition, TimeSeries>();
     } else if constexpr (TimeSeries::has_explicit_guarantee) {
-        return time_series_type<Definition, Index, true, TimeSeries>(TimeSeries::guarantee);
+        return time_series_type_for<Definition, Index, true, TimeSeries>(
+            guarantee_parameter<Definition, TimeSeries::guarantee>());
     } else {
         static const auto guarantee = GuaranteeVariable{util::symbol{util::aggregate_member_names<Definition>[Index]}};
-        return time_series_type<Definition, Index, true, TimeSeries>(guarantee);
+        return time_series_type_for<Definition, Index, true, TimeSeries>(guarantee);
     }
 }
 
@@ -425,10 +298,10 @@ template <typename Definition, std::size_t Index> [[nodiscard]] const TimeSeries
     using Field = std::remove_cv_t<util::aggregate_member_type<Index, Definition>>;
     using TimeSeries = typename output_field<Field>::time_series_type;
 
-    if constexpr (std::same_as<TimeSeries, TS_T>) {
-        return aggregate_time_series_variable<Definition>();
+    if constexpr (time_series_variable<TimeSeries>) {
+        return time_series_variable_instance<Definition, TimeSeries>();
     } else {
-        return time_series_type<Definition, Index, false, TimeSeries>(TimeSeriesGuarantee::ordinary);
+        return time_series_type_for<Definition, Index, false, TimeSeries>(TimeSeriesGuarantee::ordinary);
     }
 }
 
@@ -449,7 +322,7 @@ template <typename Definition, std::size_t... Index>
                 using TimeSeries = typename output_field<Field>::time_series_type;
                 if constexpr (is_time_series_reference<TimeSeries> || is_time_series_list<TimeSeries> ||
                               is_time_series_set<TimeSeries> || is_time_series_dict<TimeSeries>) {
-                    time_series_representation = &cpp_time_series_storage_representation<TimeSeries>();
+                    time_series_representation = &cpp_time_series_storage_representation<TimeSeries>(*signature.output);
                 } else {
                     using Value = typename time_series_value<TimeSeries>::type;
                     value_representation = &cpp_scalar_storage_representation<Value>();
@@ -483,6 +356,13 @@ template <typename Definition, std::size_t... Index>
             if (target != nullptr && &target->type() == &reference->target_type()) {
                 return &time_series_reference_storage_representation(*reference, *target);
             }
+        }
+
+        const auto *value = dynamic_cast<const TimeSeriesValueType *>(&reference->target_type());
+        if (value != nullptr) {
+            const auto &scalar = resolve_scalar_storage_representation(value->value_type(), {});
+            const auto &target = time_series_value_storage_representation(reference->target_type(), scalar);
+            return &time_series_reference_storage_representation(*reference, target);
         }
 
         return nullptr;
@@ -552,7 +432,7 @@ template <typename Definition, std::size_t... Index>
 
             if constexpr (input_field<Field>::value || scalar_field<Field>::value) {
                 if (current_parameter == parameter_index) {
-                    result = generic_input_field<Field>::value;
+                    result = input_view_field<Field>::value;
                 }
                 ++current_parameter;
             }
@@ -585,18 +465,18 @@ template <typename Definition, std::size_t... Index>
 }
 
 template <typename Definition, std::size_t... Index>
-[[nodiscard]] consteval std::size_t aggregate_generic_input_count(std::index_sequence<Index...>) {
+[[nodiscard]] consteval std::size_t aggregate_time_series_input_view_count(std::index_sequence<Index...>) {
     return (std::size_t{} + ... +
             static_cast<std::size_t>(
-                generic_input_field<std::remove_cv_t<util::aggregate_member_type<Index, Definition>>>::value));
+                input_view_field<std::remove_cv_t<util::aggregate_member_type<Index, Definition>>>::value));
 }
 
 template <typename Definition, std::size_t Target, std::size_t... Index>
-[[nodiscard]] consteval std::size_t aggregate_generic_input_index(std::index_sequence<Index...>) {
+[[nodiscard]] consteval std::size_t aggregate_time_series_input_view_index(std::index_sequence<Index...>) {
     return (std::size_t{} + ... +
             static_cast<std::size_t>(
                 Index < Target &&
-                generic_input_field<std::remove_cv_t<util::aggregate_member_type<Index, Definition>>>::value));
+                input_view_field<std::remove_cv_t<util::aggregate_member_type<Index, Definition>>>::value));
 }
 
 template <typename Definition, std::size_t... Index>
@@ -628,7 +508,7 @@ template <typename Definition, std::size_t... Index>
             return false;
         } else {
             using TimeSeries = typename output_field<Field>::time_series_type;
-            return std::same_as<TimeSeries, TS_T> || is_time_series_reference<TimeSeries> ||
+            return time_series_variable<TimeSeries> || is_time_series_reference<TimeSeries> ||
                    is_time_series_list<TimeSeries>;
         }
     }());
@@ -757,30 +637,31 @@ template <typename Definition, std::size_t Index>
         const auto &last_updated = binding.last_updated(runtime_storage);
         const auto *value = binding.value(runtime_storage);
 
-        if constexpr (generic_input_field<Field>::value) {
-            constexpr auto GenericInputIndex = aggregate_generic_input_index<Definition, Index>(
+        if constexpr (input_view_field<Field>::value) {
+            constexpr auto InputViewIndex = aggregate_time_series_input_view_index<Definition, Index>(
                 std::make_index_sequence<util::aggregate_member_count<Definition>>{});
+            const auto &prototype = [&]() -> const TimeSeriesInputView & {
+                if (binding.mode() == ParameterBindingMode::reference) {
+                    const auto *target = binding.reference_input(runtime_storage).target;
+                    if (target != nullptr) {
+                        return target->target_representation->input_view_prototype();
+                    }
+                }
+                return node.time_series_input_view_prototype(InputViewIndex);
+            }();
 
-            if constexpr (std::same_as<typename input_field<Field>::time_series_type, TS_T>) {
-                return Field{last_updated, value, node.time_series_input_view_prototype(GenericInputIndex)};
+            if constexpr (time_series_variable<typename input_field<Field>::time_series_type>) {
+                return Field{last_updated, value, prototype};
             } else if constexpr (is_time_series_reference<typename input_field<Field>::time_series_type>) {
-                return Field{last_updated, value,
-                             static_cast<const TimeSeriesReferenceInputView &>(
-                                 node.time_series_input_view_prototype(GenericInputIndex))};
+                return Field{last_updated, value, static_cast<const TimeSeriesReferenceInputView &>(prototype)};
             } else if constexpr (is_time_series_dict<typename input_field<Field>::time_series_type>) {
-                return Field{last_updated, value,
-                             static_cast<const TimeSeriesDictionaryInputView &>(
-                                 node.time_series_input_view_prototype(GenericInputIndex))};
+                return Field{last_updated, value, static_cast<const TimeSeriesDictionaryInputView &>(prototype)};
             } else if constexpr (is_time_series_set<typename input_field<Field>::time_series_type>) {
-                return Field{last_updated, value,
-                             static_cast<const TimeSeriesSetInputView &>(
-                                 node.time_series_input_view_prototype(GenericInputIndex))};
+                return Field{last_updated, value, static_cast<const TimeSeriesSetInputView &>(prototype)};
             } else if constexpr (is_time_series_list<typename input_field<Field>::time_series_type>) {
-                return Field{last_updated, value,
-                             static_cast<const TimeSeriesListInputView &>(
-                                 node.time_series_input_view_prototype(GenericInputIndex))};
+                return Field{last_updated, value, static_cast<const TimeSeriesListInputView &>(prototype)};
             } else {
-                return Field{last_updated, value, node.time_series_value_input_view_prototype(GenericInputIndex)};
+                return Field{last_updated, value, static_cast<const TimeSeriesValueInputView &>(prototype)};
             }
         } else {
             return Field{last_updated, static_cast<const typename Field::storage_type *>(value)};
@@ -791,7 +672,7 @@ template <typename Definition, std::size_t Index>
         using Value = typename scalar_field<Field>::value_type;
 
         if constexpr (generic_scalar_input_field<Field>::value) {
-            constexpr auto GenericTimeSeriesInputCount = aggregate_generic_input_count<Definition>(
+            constexpr auto GenericTimeSeriesInputCount = aggregate_time_series_input_view_count<Definition>(
                 std::make_index_sequence<util::aggregate_member_count<Definition>>{});
             constexpr auto GenericScalarInputIndex = aggregate_generic_scalar_input_index<Definition, Index>(
                 std::make_index_sequence<util::aggregate_member_count<Definition>>{});
@@ -849,7 +730,7 @@ template <typename Definition, std::size_t Index>
         auto &last_updated = node.output_last_updated(runtime_storage);
 
         if constexpr (generic_output_field<Field>::value) {
-            constexpr auto GenericTimeSeriesInputCount = aggregate_generic_input_count<Definition>(
+            constexpr auto GenericTimeSeriesInputCount = aggregate_time_series_input_view_count<Definition>(
                 std::make_index_sequence<util::aggregate_member_count<Definition>>{});
             constexpr auto GenericScalarInputCount = aggregate_generic_scalar_input_count<Definition>(
                 std::make_index_sequence<util::aggregate_member_count<Definition>>{});

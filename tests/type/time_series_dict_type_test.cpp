@@ -2,6 +2,7 @@
 #include <bg/time_series/tsd/tsd_type.hpp>
 #include <bg/type/scalar_type.hpp>
 #include <bg/type/time_series_dict_type.hpp>
+#include <bg/type/time_series_reference_type.hpp>
 #include <bg/type/time_series_set_type.hpp>
 #include <bg/type/time_series_value_type.hpp>
 #include <bg/type/type_map.hpp>
@@ -43,4 +44,22 @@ TEST_CASE("generic time series dictionary types resolve their components", "[typ
 
     REQUIRE(generic.match(resolved, bindings));
     CHECK(&generic.resolve(bindings) == &resolved);
+}
+
+TEST_CASE("dictionary item matching is reference transparent", "[type_system][tsd][reference]") {
+    const auto &item = bg::time_series_value_type(bg::float_type(), bg::TimeSeriesGuarantee::ordinary);
+    const auto &reference = bg::time_series_reference_type(item, bg::TimeSeriesGuarantee::ordinary);
+    const auto &key_set = bg::time_series_set_type(bg::int_type(), bg::TimeSeriesGuarantee::ordinary);
+    const auto direct_dictionary =
+        bg::GenericTimeSeriesDictionaryType{bg::int_type(), item, key_set, bg::TimeSeriesGuarantee::ordinary};
+    const auto reference_dictionary =
+        bg::GenericTimeSeriesDictionaryType{bg::int_type(), reference, key_set, bg::TimeSeriesGuarantee::ordinary};
+    const auto &direct = bg::time_series_dictionary_type(bg::int_type(), item, bg::TimeSeriesGuarantee::ordinary);
+    const auto &references =
+        bg::time_series_dictionary_type(bg::int_type(), reference, bg::TimeSeriesGuarantee::ordinary);
+    auto bindings = bg::TypeMap{};
+
+    CHECK(direct_dictionary.match(references, bindings));
+    bindings = bg::TypeMap{};
+    CHECK(reference_dictionary.match(direct, bindings));
 }

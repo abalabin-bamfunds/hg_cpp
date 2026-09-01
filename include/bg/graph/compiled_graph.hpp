@@ -76,6 +76,7 @@ class CompiledGraph {
 
     static constexpr std::uint32_t variable_memory_flag = std::uint32_t{1} << 31;
     static constexpr std::uint32_t future_scheduling_flag = std::uint32_t{1} << 30;
+    static constexpr std::uint32_t cycle_callbacks_flag = std::uint32_t{1} << 31;
     static constexpr std::uint32_t fixed_storage_size_mask = future_scheduling_flag - 1;
     static constexpr std::uint32_t alignment_shift = 26;
     static constexpr std::uint32_t count_mask = (std::uint32_t{1} << alignment_shift) - 1;
@@ -88,10 +89,28 @@ class CompiledGraph {
         return (fixed_storage_size_and_flags_ & future_scheduling_flag) != 0;
     }
 
+    [[nodiscard]] bool has_cycle_callbacks() const noexcept {
+        return (storage_header().variable_memory_offset & cycle_callbacks_flag) != 0;
+    }
+
+    [[nodiscard]] std::size_t variable_memory_offset() const noexcept {
+        return storage_header().variable_memory_offset & ~cycle_callbacks_flag;
+    }
+
     [[nodiscard]] std::size_t future_schedule_offset() const noexcept {
         const auto scheduling_size = schedule_word_count() * sizeof(SchedulingInfo);
 
         return (scheduling_size + alignof(void *) - 1) & ~(alignof(void *) - 1);
+    }
+
+    [[nodiscard]] std::size_t cycle_callbacks_offset() const noexcept {
+        auto offset = schedule_word_count() * sizeof(SchedulingInfo);
+        if (has_future_scheduling()) {
+            offset = (offset + alignof(void *) - 1) & ~(alignof(void *) - 1);
+            offset += sizeof(void *);
+        }
+
+        return (offset + alignof(void *) - 1) & ~(alignof(void *) - 1);
     }
 
     [[nodiscard]] std::size_t fixed_storage_alignment() const noexcept {

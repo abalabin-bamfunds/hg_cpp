@@ -1,6 +1,5 @@
 #include <bg/type/time_series_list_type.hpp>
 
-#include <bg/type/time_series_reference_type.hpp>
 #include <bg/type/type_map.hpp>
 #include <bg/type/type_resolution_error.hpp>
 #include <bg/util/symbol.hpp>
@@ -19,7 +18,6 @@ class ResolvedTimeSeriesListType final : public TimeSeriesListType {
         : TimeSeriesListType(item_type, size, guarantee) {}
 
     [[nodiscard]] bool is_resolved() const noexcept override { return true; }
-    [[nodiscard]] bool match(const Type &supplied, TypeMap &) const override { return this == &supplied; }
     [[nodiscard]] const Type &resolve(const TypeMap &) const override { return *this; }
 };
 
@@ -51,8 +49,12 @@ const TimeSeriesType &TimeSeriesListType::item_type(std::size_t index) const {
     return item_type();
 }
 
-bool GenericTimeSeriesListType::match(const Type &supplied, TypeMap &bindings) const {
-    const auto *list = dynamic_cast<const TimeSeriesListType *>(&details::unwrap_time_series_reference(supplied));
+const TimeSeriesType &TimeSeriesListType::with_guarantee(TimeSeriesGuarantee guarantee) const {
+    return time_series_list_type(item_type(), item_count(), guarantee);
+}
+
+bool TimeSeriesListType::do_match(const Type &supplied, TypeMap &bindings) const {
+    const auto *list = dynamic_cast<const TimeSeriesListType *>(&supplied);
     if (list == nullptr || !list->is_resolved() || list->item_count() != item_count()) {
         return false;
     }

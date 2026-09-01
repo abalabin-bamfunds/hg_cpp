@@ -7,6 +7,7 @@
 
 #include <array>
 #include <deque>
+#include <memory>
 #include <memory_resource>
 #include <optional>
 #include <span>
@@ -43,13 +44,16 @@ class GraphWiring {
 
     [[nodiscard]] std::span<const WiringPointRecord> wiring_points() const noexcept { return wiring_points_; }
 
+    [[nodiscard]] const NodeTemplate &own_node_template(std::unique_ptr<NodeTemplate> node_template);
+
   private:
     friend class NodeTemplate;
     friend class WiringPoint;
     friend class WiringTemplate;
 
     [[nodiscard]] std::optional<WiringPoint> invoke(const WiringTemplate &wiring_template,
-                                                    std::span<details::wiring_argument> arguments);
+                                                    std::span<details::wiring_argument> arguments,
+                                                    const TypeMap *seed_bindings = nullptr);
     [[nodiscard]] std::optional<WiringPoint> add_node(const NodeTemplate &node_template, ResolvedSignature signature,
                                                       std::vector<const ScalarType *> state_types,
                                                       std::span<details::wiring_argument> arguments);
@@ -66,6 +70,7 @@ class GraphWiring {
     std::pmr::memory_resource *memory_;
     std::pmr::unsynchronized_pool_resource fixed_memory_;
     std::optional<std::pmr::unsynchronized_pool_resource> variable_memory_;
+    std::vector<std::unique_ptr<NodeTemplate>> node_templates_;
     std::vector<WiredNode> nodes_;
     std::vector<WiringPointRecord> wiring_points_;
     struct ReferenceWiring {

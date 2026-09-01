@@ -13,15 +13,14 @@ TEST_CASE("canceling a time series set addition reclaims its position immediatel
     const auto key = bg::ScalarValue<std::int64_t>{1};
     auto constructed_items = 0;
 
-    storage.reset_change_tracking(bg::MIN_DT + bg::EvaluationTime::duration{1}, bg::MIN_DT, memory,
+    storage.reset_change_tracking(bg::MIN_DT + bg::EvaluationTime::duration{1}, memory,
                                   [&](std::uint32_t) noexcept { --constructed_items; });
     const auto inserted = storage.insert(
         key.input_view(), memory, [&](std::uint32_t) { ++constructed_items; },
         [&](std::uint32_t) noexcept { --constructed_items; });
     REQUIRE(inserted.change == bg::details::time_series_set_change::added);
 
-    const auto erased =
-        storage.erase(key.input_view(), memory, [&](std::uint32_t) noexcept { --constructed_items; });
+    const auto erased = storage.erase(key.input_view(), memory, [&](std::uint32_t) noexcept { --constructed_items; });
 
     CHECK(erased.change == bg::details::time_series_set_change::canceled);
     CHECK(constructed_items == 0);
@@ -46,16 +45,14 @@ TEST_CASE("removing an existing time series set item retains it until reclamatio
     auto constructed_items = 0;
     const auto first_time = bg::MIN_DT + bg::EvaluationTime::duration{1};
 
-    storage.reset_change_tracking(first_time, bg::MIN_DT, memory,
-                                  [&](std::uint32_t) noexcept { --constructed_items; });
+    storage.reset_change_tracking(first_time, memory, [&](std::uint32_t) noexcept { --constructed_items; });
     const auto inserted = storage.insert(
         key.input_view(), memory, [&](std::uint32_t) { ++constructed_items; },
         [&](std::uint32_t) noexcept { --constructed_items; });
-    storage.reset_change_tracking(first_time + bg::EvaluationTime::duration{1}, first_time, memory,
+    storage.reset_change_tracking(first_time + bg::EvaluationTime::duration{1}, memory,
                                   [&](std::uint32_t) noexcept { --constructed_items; });
 
-    const auto removed =
-        storage.erase(key.input_view(), memory, [&](std::uint32_t) noexcept { --constructed_items; });
+    const auto removed = storage.erase(key.input_view(), memory, [&](std::uint32_t) noexcept { --constructed_items; });
     REQUIRE(removed.change == bg::details::time_series_set_change::removed);
     CHECK(constructed_items == 1);
     CHECK(storage.find_position(key.input_view()) == inserted.position);
@@ -70,7 +67,7 @@ TEST_CASE("removing an existing time series set item retains it until reclamatio
     const auto removed_again =
         storage.erase(key.input_view(), memory, [&](std::uint32_t) noexcept { --constructed_items; });
     REQUIRE(removed_again.change == bg::details::time_series_set_change::removed);
-    storage.reset_change_tracking(first_time + bg::EvaluationTime::duration{2}, first_time, memory,
+    storage.reset_change_tracking(first_time + bg::EvaluationTime::duration{2}, memory,
                                   [&](std::uint32_t) noexcept { --constructed_items; });
     CHECK(constructed_items == 0);
     CHECK(storage.find_position(key.input_view()) == bg::util::occupancy_index::npos);
@@ -87,12 +84,11 @@ TEST_CASE("clearing time series set storage retains only previously visible item
     auto constructed_items = 0;
     const auto first_time = bg::MIN_DT + bg::EvaluationTime::duration{1};
 
-    storage.reset_change_tracking(first_time, bg::MIN_DT, memory,
-                                  [&](std::uint32_t) noexcept { --constructed_items; });
+    storage.reset_change_tracking(first_time, memory, [&](std::uint32_t) noexcept { --constructed_items; });
     const auto existing = storage.insert(
         existing_key.input_view(), memory, [&](std::uint32_t) { ++constructed_items; },
         [&](std::uint32_t) noexcept { --constructed_items; });
-    storage.reset_change_tracking(first_time + bg::EvaluationTime::duration{1}, first_time, memory,
+    storage.reset_change_tracking(first_time + bg::EvaluationTime::duration{1}, memory,
                                   [&](std::uint32_t) noexcept { --constructed_items; });
     const auto added = storage.insert(
         new_key.input_view(), memory, [&](std::uint32_t) { ++constructed_items; },
@@ -107,7 +103,7 @@ TEST_CASE("clearing time series set storage retains only previously visible item
     CHECK_FALSE(storage.removed().contains(added.position));
     CHECK(constructed_items == 1);
 
-    storage.reset_change_tracking(first_time + bg::EvaluationTime::duration{2}, first_time, memory,
+    storage.reset_change_tracking(first_time + bg::EvaluationTime::duration{2}, memory,
                                   [&](std::uint32_t) noexcept { --constructed_items; });
     CHECK(constructed_items == 0);
 

@@ -24,7 +24,8 @@ class TypeVariable final : public Category, public Variable {
 
     [[nodiscard]] bool is_resolved() const noexcept override { return false; }
 
-    [[nodiscard]] bool match(const Type &supplied, TypeMap &bindings) const override {
+  protected:
+    [[nodiscard]] bool do_match(const Type &supplied, TypeMap &bindings) const override {
         const Category *candidate;
         if constexpr (!std::same_as<Category, Type>) {
             candidate = dynamic_cast<const Category *>(&supplied);
@@ -84,6 +85,7 @@ class TypeVariable final : public Category, public Variable {
         return true;
     }
 
+  public:
     [[nodiscard]] const Type &resolve(const TypeMap &bindings) const override {
         const auto *binding = bindings.find(*this);
         if (binding == nullptr) {
@@ -104,9 +106,8 @@ class TypeVariable final : public Category, public Variable {
             return false;
         } else {
             return std::ranges::contains(constraints_, &supports_scalar_equality) ||
-                   (!alternatives_.empty() && std::ranges::all_of(alternatives_, [](const auto *type) {
-                       return type->supports_equality();
-                   }));
+                   (!alternatives_.empty() &&
+                    std::ranges::all_of(alternatives_, [](const auto *type) { return type->supports_equality(); }));
         }
     }
 
@@ -115,9 +116,8 @@ class TypeVariable final : public Category, public Variable {
             return false;
         } else {
             return std::ranges::contains(constraints_, &supports_scalar_hash) ||
-                   (!alternatives_.empty() && std::ranges::all_of(alternatives_, [](const auto *type) {
-                       return type->supports_hash();
-                   }));
+                   (!alternatives_.empty() &&
+                    std::ranges::all_of(alternatives_, [](const auto *type) { return type->supports_hash(); }));
         }
     }
 

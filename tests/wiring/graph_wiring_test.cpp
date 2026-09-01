@@ -3,7 +3,9 @@
 #include <bg/graph/wiring_error.hpp>
 #include <bg/node.hpp>
 #include <bg/scalar/value.hpp>
+#include <bg/time_series/time_series_variable.hpp>
 #include <bg/type/scalar_type.hpp>
+#include <bg/type/time_series_reference_type.hpp>
 #include <bg/type/time_series_value_type.hpp>
 
 #include <catch2/catch_test_macros.hpp>
@@ -60,6 +62,32 @@ TEST_CASE("node calls add wired nodes to the active graph", "[graph_wiring]") {
 TEST_CASE("a node call requires a wiring context", "[graph_wiring]") {
     const auto source = bg::node<source_definition>();
     CHECK_THROWS_AS(source(), bg::WiringError);
+}
+
+namespace {
+
+using BoundTimeSeries = bg::TimeSeriesVariable<"BoundTimeSeries">;
+
+struct bound_reference_source {
+    bg::Out<bg::REF<BoundTimeSeries>> output;
+
+    void evaluate() const noexcept {}
+};
+
+} // namespace
+
+TEST_CASE("a node call can seed type resolution", "[graph_wiring][type_system]") {
+    const auto source = bg::node<bound_reference_source>();
+    const auto &target = bg::time_series_value_type(bg::int64_type(), bg::TimeSeriesGuarantee::ordinary);
+    const auto &expected = bg::time_series_reference_type(target, bg::TimeSeriesGuarantee::ordinary);
+    auto bindings = bg::TypeMap{};
+    bindings.set(bg::details::TimeSeriesVariableInstance<bound_reference_source, BoundTimeSeries>::get(), &target);
+    auto wiring = bg::GraphWiring{};
+
+    auto context = bg::WiringContext{wiring};
+    const auto output = static_cast<bg::WiringPoint>(source(bindings));
+
+    CHECK(&output.type() == &expected);
 }
 
 namespace {

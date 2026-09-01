@@ -3,6 +3,7 @@
 #include <bg/node/node_template.hpp>
 #include <bg/time_series/time_series_type.hpp>
 #include <bg/time_series/tsl/tsl_type.hpp>
+#include <bg/time_series/tsl/tsl.hpp>
 #include <bg/type/time_series_list_type.hpp>
 #include <bg/type/time_series_value_type.hpp>
 
@@ -41,6 +42,30 @@ class float_sink_template final : public bg::NodeTemplate {
         static const auto &input = bg::time_series_value_type(bg::float_type(), bg::TimeSeriesGuarantee::ordinary);
         static const auto value = bg::Signature{bg::util::symbol{"float_sink"}, {{bg::util::symbol{"input"}, &input}}};
 
+        return value;
+    }
+
+    [[nodiscard]] bg::EvaluationFunction evaluation_function(const bg::ResolvedSignature &) const noexcept override {
+        return &evaluate;
+    }
+
+    [[nodiscard]] const bg::TimeSeriesStorageRepresentation *
+    output_storage_representation(const bg::ResolvedSignature &,
+                                  std::span<const bg::ScalarStorageRepresentation *const>,
+                                  std::span<const bg::TimeSeriesStorageRepresentation *const>) const noexcept override {
+        return nullptr;
+    }
+
+  private:
+    static void evaluate(const bg::CompiledNode &, void *, bg::EvaluationContext *) {}
+};
+
+class list_sink_template final : public bg::NodeTemplate {
+  public:
+    [[nodiscard]] const bg::Signature &signature() const override {
+        static const auto &item = bg::time_series_value_type(bg::float_type(), bg::TimeSeriesGuarantee::ordinary);
+        static const auto &list = bg::time_series_list_type(item, 2, bg::TimeSeriesGuarantee::ordinary);
+        static const auto value = bg::Signature{bg::util::symbol{"list_sink"}, {{bg::util::symbol{"input"}, &list}}};
         return value;
     }
 
@@ -99,4 +124,21 @@ TEST_CASE("fixed time series list selection checks its index", "[wiring][tsl]") 
     const auto list = bg::wp<bg::TSL<bg::TS<float>, 3>>{*source()};
 
     CHECK_THROWS_AS(list[3], std::out_of_range);
+}
+
+TEST_CASE("a free fixed time series list is materialized when consumed", "[wiring][tsl][alias]") {
+    const auto first_source = list_source_template{};
+    const auto second_source = list_source_template{};
+    const auto sink = list_sink_template{};
+    auto wiring = bg::GraphWiring{};
+
+    const auto context = bg::WiringContext{wiring};
+    const auto first = bg::wp<bg::TSL<bg::TS<float>, 3>>{*first_source()}[0];
+    const auto second = bg::wp<bg::TSL<bg::TS<float>, 3>>{*second_source()}[1];
+    const auto list = bg::tsl(first, second);
+    REQUIRE(wiring.nodes().size() == 2);
+    (void)sink(list);
+
+    REQUIRE(wiring.nodes().size() == 4);
+    CHECK(wiring.nodes()[2].input_sources().size() == 2);
 }

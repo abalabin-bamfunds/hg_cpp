@@ -136,6 +136,20 @@ is the default declaration. Declarations with different names bind
 independently. Additional template arguments constrain the accepted scalar
 types, as in `ScalarVariable<"Number", float, double>`.
 
+`TimeSeriesVariable<Name>` declares a time series type variable. `TS_T` is the
+default declaration. A variable can expose its top-level guarantee as a
+separate variable:
+
+```cpp
+inline constexpr auto G = guarantee_variable<"G">;
+using T = TimeSeriesVariable<"T">;
+
+In<T::with<G>> input;
+```
+
+`T` and `G` retain separate bindings. A literal guarantee in `T::with<G>`
+requires that guarantee or a stronger one.
+
 `EqualityComparable` and `Hashable` require the corresponding scalar
 operation. A scalar variable view exposes an operation when its declaration
 requires it:
@@ -179,6 +193,19 @@ before graph compilation:
 1. Match supplied argument types against generic parameter types and build
    the `TypeMap`.
 2. Resolve every parameter and output type from that map.
+
+A wiring template call can seed the `TypeMap`. Argument matching must agree
+with each seeded binding. This resolves variables that appear only in outputs.
+
+Reference matching is transparent at every level of a type. A non-reference
+parameter matches a reference target. A reference parameter matches the same
+target and also matches its own guarantee. A direct source contributes a
+`const` reference guarantee because its generated reference never changes
+target.
+
+Resolution retains the original argument type for graph compilation. This lets
+compilation preserve, create, or dereference a reference after type variables
+have been resolved from its target.
 
 This also classifies each plain C++ function parameter as a scalar or time
 series input. A plain `float` parameter can accept `float` or `TS<float, G>`;
@@ -301,9 +328,10 @@ guarantee. A suppressed mutation keeps the current last updated time and does
 not schedule subscribers. Scalar types provide equality for deduplication;
 collections use their change records.
 
-An accepted mutation records a change. Restoring the previous value later in
-the same invocation does not remove that record. Collection storage enforces
-effective child guarantees before it notifies subscribers.
+An accepted mutation schedules publication. Restoring the previous value later
+in the same invocation does not cancel publication. A collection can therefore
+tick with empty final change sets. Collection storage enforces effective child
+guarantees before it notifies subscribers.
 
 ## `valid_items`
 

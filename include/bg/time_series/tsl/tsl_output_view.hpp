@@ -35,7 +35,7 @@ class TypedTimeSeriesListOutputView final : public TimeSeriesListOutputView {
         auto &item = static_cast<Storage *>(mutable_value())->items.at(index);
         const auto output_path = add_output_path(cpp_time_series_storage_representation<TimeSeries>(), index);
 
-        return {item_representation.output_view_prototype(), item.last_updated, &item.value.value, output_path};
+        return {*item_representation.output_view_prototype(), item.last_updated, &item.value.value, output_path};
     }
 
     void invalidate() const override {

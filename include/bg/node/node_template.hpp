@@ -1,6 +1,7 @@
 #pragma once
 
 #include <bg/graph/evaluation_function.hpp>
+#include <bg/graph/output_notification.hpp>
 #include <bg/graph/wiring_template.hpp>
 #include <bg/node/invalidation.hpp>
 #include <bg/node/state_layout.hpp>
@@ -8,12 +9,21 @@
 #include <bg/type/signature.hpp>
 
 #include <cstddef>
+#include <memory_resource>
 #include <optional>
 #include <vector>
 
 namespace bg {
 
 class ScalarType;
+
+using CompiledNodeDataDestructionFunction = void (*)(void *) noexcept;
+
+struct CompiledNodeDataLayout {
+    std::size_t size{};
+    std::size_t alignment{1};
+    CompiledNodeDataDestructionFunction destruction_function{};
+};
 
 // Routes changes from one time series input to a dynamic subscriber list stored in node state.
 struct DynamicSubscribersLayout {
@@ -31,15 +41,22 @@ class NodeTemplate : public WiringTemplate {
     [[nodiscard]] virtual InvalidationBehavior invalidation_behavior(const ResolvedSignature &) const noexcept {
         return {};
     }
-    [[nodiscard]] virtual const TimeSeriesStorageRepresentation *
-    output_storage_representation(const ResolvedSignature &signature,
-                                  std::span<const ScalarStorageRepresentation *const> parameter_storage_representations,
-                                  std::span<const TimeSeriesStorageRepresentation *const>
-                                      time_series_input_storage_representations) const noexcept = 0;
+    [[nodiscard]] virtual const TimeSeriesStorageRepresentation *output_storage_representation(
+        const ResolvedSignature &signature,
+        std::span<const ScalarStorageRepresentation *const> parameter_storage_representations,
+        std::span<const TimeSeriesStorageRepresentation *const> time_series_input_storage_representations) const = 0;
     [[nodiscard]] virtual bool uses_generic_time_series_input_view(std::size_t) const noexcept { return false; }
     [[nodiscard]] virtual bool uses_generic_scalar_input_view(std::size_t) const noexcept { return false; }
     [[nodiscard]] virtual bool uses_generic_output_view() const noexcept { return false; }
+    [[nodiscard]] virtual bool uses_node_invocation() const noexcept { return false; }
     [[nodiscard]] virtual bool uses_future_scheduling() const noexcept { return false; }
+    [[nodiscard]] virtual bool uses_cycle_callbacks() const noexcept { return false; }
+    [[nodiscard]] virtual InputNotificationCallback input_notification(std::size_t) const noexcept {
+        return {};
+    }
+    [[nodiscard]] virtual std::optional<std::size_t> output_item_source(std::size_t) const noexcept {
+        return std::nullopt;
+    }
     [[nodiscard]] virtual std::optional<DynamicSubscribersLayout>
     dynamic_subscribers_layout(const ResolvedSignature &) const noexcept {
         return std::nullopt;
@@ -55,6 +72,11 @@ class NodeTemplate : public WiringTemplate {
     }
 
     [[nodiscard]] virtual std::vector<const ScalarType *> resolve_state_types(const TypeMap &) const { return {}; }
+
+    [[nodiscard]] virtual CompiledNodeDataLayout compiled_data_layout(const ResolvedSignature &) const noexcept {
+        return {};
+    }
+    virtual void construct_compiled_data(const ResolvedSignature &, void *, std::pmr::memory_resource &) const {}
 
   private:
     [[nodiscard]] std::optional<WiringPoint> wire(GraphWiring &wiring, ResolvedSignature signature,

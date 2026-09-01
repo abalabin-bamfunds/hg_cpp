@@ -41,7 +41,7 @@ class In<TSL<Item, Size, TimeSeriesProperties...>, Properties...> {
     [[nodiscard]] auto operator[](std::size_t index) const {
         const auto item = view_->item(index);
 
-        if constexpr (std::same_as<Item, TS_T>) {
+        if constexpr (details::time_series_variable<Item>) {
             return In<Item>{item.last_updated, item.value, item.prototype};
         } else if constexpr (details::is_time_series_reference<Item>) {
             return In<Item>{item.last_updated, item.value,

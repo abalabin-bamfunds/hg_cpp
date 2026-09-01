@@ -35,6 +35,12 @@ class TypeMap {
 
     [[nodiscard]] TypeMap overlay() const { return TypeMap{this}; }
 
+    [[nodiscard]] TypeMap copy() const {
+        auto result = TypeMap{};
+        copy_into(result);
+        return result;
+    }
+
     void apply(TypeMap &&overlay) {
         for (auto &[variable, value] : overlay.values_) {
             set(*variable, std::move(value));
@@ -43,6 +49,15 @@ class TypeMap {
 
   private:
     explicit TypeMap(const TypeMap *parent) : parent_(parent) {}
+
+    void copy_into(TypeMap &destination) const {
+        if (parent_ != nullptr) {
+            parent_->copy_into(destination);
+        }
+        for (const auto &[variable, value] : values_) {
+            destination.set(*variable, value);
+        }
+    }
 
     const TypeMap *parent_{};
     std::unordered_map<const Variable *, TypeBinding> values_;

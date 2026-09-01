@@ -1,5 +1,7 @@
 #include <bg/node.hpp>
 #include <bg/run_graph.hpp>
+#include <bg/testing/test_graph.hpp>
+#include <bg/time_series/tsl/tsl.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -298,6 +300,62 @@ TEST_CASE("a generic fixed collection input uses the referenced target represent
     bg::run_graph([&] { sink(pass(source())); });
 
     CHECK(generic_referenced_list_sink::values == std::vector{10, 20});
+}
+
+namespace {
+
+using IntPairTimeSeriesList = bg::TSL<bg::TS<int>, 2>;
+
+struct owned_pair_definition {
+    bg::In<bg::TS<int>> first;
+    bg::In<bg::TS<int>> second;
+    bg::Out<IntPairTimeSeriesList> output;
+
+    void evaluate() const {
+        output[0].set(first.value());
+        output[1].set(second.value());
+    }
+};
+
+struct pair_reference_selector_definition {
+    bg::In<bg::TS<int>> condition;
+    bg::In<bg::REF<IntPairTimeSeriesList>, bg::passive, bg::optional> owned;
+    bg::In<bg::REF<IntPairTimeSeriesList>, bg::passive, bg::optional> aliased;
+    bg::Out<bg::REF<IntPairTimeSeriesList>> output;
+
+    void evaluate() const { condition.value() == 0 ? output.set(owned) : output.set(aliased); }
+};
+
+struct pair_sum_definition {
+    bg::In<IntPairTimeSeriesList> input;
+    bg::Out<bg::TS<int>> output;
+
+    void evaluate() const { output.set(input[0].value() + input[1].value()); }
+};
+
+} // namespace
+
+TEST_CASE("a dereferenced list reference selects the current target representation",
+          "[evaluation][reference][tsl][alias]") {
+    const auto owned_pair = bg::node<owned_pair_definition>();
+    const auto select = bg::node<pair_reference_selector_definition>();
+    const auto sum = bg::node<pair_sum_definition>();
+    const auto graph = [&](bg::wp<bg::TS<int>> condition, bg::wp<bg::TS<int>> first_owned,
+                           bg::wp<bg::TS<int>> second_owned, bg::wp<bg::TS<int>> first_alias,
+                           bg::wp<bg::TS<int>> second_alias) {
+        const auto owned = owned_pair(first_owned, second_owned);
+        const auto aliased = bg::tsl(first_alias, second_alias);
+        return sum(select(condition, owned, aliased));
+    };
+    const auto condition = std::vector{0, 1, 0};
+    const auto first_owned = std::vector{1, 3, 5};
+    const auto second_owned = std::vector{2, 4, 6};
+    const auto first_alias = std::vector{10, 20, 30};
+    const auto second_alias = std::vector{20, 40, 60};
+
+    const auto result = bg::testing::test_graph(graph, condition, first_owned, second_owned, first_alias, second_alias);
+
+    CHECK(result.equals({3, 60, 11}));
 }
 
 TEST_CASE("a reference stored in a fixed collection item updates its consumer", "[evaluation][reference][tsl]") {

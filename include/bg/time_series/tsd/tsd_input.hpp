@@ -95,7 +95,7 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...> {
     using Apply = void (TimeSeriesDictionaryInputView::*)(void *, TimeSeriesDictionaryInputView::KeyFunction) const;
 
     [[nodiscard]] static auto make_item(TimeSeriesDictionaryInputView::Item item) {
-        if constexpr (std::same_as<Item, TS_T>) {
+        if constexpr (details::time_series_variable<Item>) {
             return In<Item>{item.last_updated, item.value, item.prototype};
         } else if constexpr (details::is_time_series_dict<Item>) {
             return In<Item>{item.last_updated, item.value,

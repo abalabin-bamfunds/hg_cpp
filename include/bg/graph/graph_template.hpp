@@ -17,6 +17,8 @@ class GraphTemplate final : public WiringTemplate {
     static_assert(std::same_as<Result, void> || details::is_typed_wiring_point<Result>);
 
   public:
+    using result_type = Result;
+
     GraphTemplate(Signature signature, Function function, Label label = {})
         : signature_(std::move(signature)), function_(std::move(function)), label_(std::move(label)) {
         if (signature_.parameter_count() != FunctionInfo::argument_count) {
@@ -37,6 +39,17 @@ class GraphTemplate final : public WiringTemplate {
             (void)WiringTemplate::operator()(std::forward<Arguments>(arguments)...);
         } else {
             return std::remove_cvref_t<Result>{*WiringTemplate::operator()(std::forward<Arguments>(arguments)...)};
+        }
+    }
+
+    template <typename... Arguments>
+        requires(details::graph_code_argument<Arguments> && ...)
+    [[nodiscard]] auto operator()(const TypeMap &bindings, Arguments &&...arguments) const {
+        if constexpr (std::same_as<Result, void>) {
+            (void)WiringTemplate::operator()(bindings, std::forward<Arguments>(arguments)...);
+        } else {
+            return std::remove_cvref_t<Result>{
+                *WiringTemplate::operator()(bindings, std::forward<Arguments>(arguments)...)};
         }
     }
 

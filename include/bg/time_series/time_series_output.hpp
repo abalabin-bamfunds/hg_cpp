@@ -8,14 +8,13 @@
 
 namespace bg {
 
-template <> class Out<TS_T> {
+template <details::time_series_variable Variable> class Out<Variable> {
   private:
     friend details::output_factory;
 
     explicit Out(TimeSeriesOutputView &view) noexcept : view_(view) {}
 
-    Out(EvaluationTime &last_updated, void *value, const TimeSeriesOutputView &prototype,
-        EvaluationContext &context)
+    Out(EvaluationTime &last_updated, void *value, const TimeSeriesOutputView &prototype, EvaluationContext &context)
         : view_(view_type::copy(prototype, context)) {
         view_->bind(last_updated, value, context);
     }
@@ -36,7 +35,7 @@ template <> class Out<TS_T> {
 
     [[nodiscard]] const TimeSeriesOutputView *operator->() const noexcept { return view_.operator->(); }
 
-    using time_series_type = TS_T;
+    using time_series_type = Variable;
 
   private:
     using view_type = details::output_view_proxy<TimeSeriesOutputView>;

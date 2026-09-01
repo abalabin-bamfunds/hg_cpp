@@ -23,8 +23,10 @@ class GenericTypeScalarType final : public TypeScalarType {
     explicit GenericTypeScalarType(const Type &type) : TypeScalarType(type) {}
 
     [[nodiscard]] bool is_resolved() const noexcept override { return false; }
-    [[nodiscard]] bool match(const Type &supplied, TypeMap &bindings) const override;
     [[nodiscard]] const Type &resolve(const TypeMap &bindings) const override;
+
+  protected:
+    [[nodiscard]] bool do_match(const Type &supplied, TypeMap &bindings) const override;
 };
 
 } // namespace bg

@@ -9,6 +9,7 @@ namespace bg {
 class TimeSeriesValueType : public TimeSeriesType {
   public:
     [[nodiscard]] const ScalarType &value_type() const noexcept { return *value_type_; }
+    [[nodiscard]] const TimeSeriesType &with_guarantee(TimeSeriesGuarantee guarantee) const override;
 
   protected:
     TimeSeriesValueType(const ScalarType &value_type, GuaranteeParameter guarantee)
@@ -27,8 +28,10 @@ class GenericTimeSeriesValueType final : public TimeSeriesValueType {
         : TimeSeriesValueType(value_type, guarantee) {}
 
     [[nodiscard]] bool is_resolved() const noexcept override { return false; }
-    [[nodiscard]] bool match(const Type &supplied, TypeMap &bindings) const override;
     [[nodiscard]] const Type &resolve(const TypeMap &bindings) const override;
+
+  protected:
+    [[nodiscard]] bool do_match(const Type &supplied, TypeMap &bindings) const override;
 };
 
 } // namespace bg

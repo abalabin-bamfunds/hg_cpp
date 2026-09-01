@@ -1,10 +1,12 @@
 #pragma once
 
 #include <bg/graph/details/wiring_callable.hpp>
+#include <bg/type/details/time_series_type.hpp>
 #include <bg/type/guarantee_variable.hpp>
 #include <bg/type/scalar_variable.hpp>
 #include <bg/type/signature.hpp>
 #include <bg/type/time_series_value_type.hpp>
+#include <bg/type/time_series_variable.hpp>
 #include <bg/type/type_variable.hpp>
 
 #include <concepts>
@@ -20,15 +22,7 @@
 namespace bg::details {
 
 template <typename T>
-concept scalar_declaration = generic_scalar<T> ||
-                             (scalar_type_traits<T>::supports_time_series && requires { cpp_scalar_type<T>(); });
-
-template <typename T>
-concept time_series_declaration = requires {
-    typename T::value_type;
-    { T::has_explicit_guarantee } -> std::convertible_to<bool>;
-    { T::guarantee } -> std::convertible_to<TimeSeriesGuarantee>;
-} && scalar_declaration<typename T::value_type>;
+concept time_series_declaration = supported_time_series<T>::value;
 
 template <typename Function, std::size_t Index> [[nodiscard]] const Type &graph_parameter_type(util::symbol name) {
     using Parameter = std::remove_cvref_t<typename callable<Function>::template argument_type<Index>>;
@@ -37,27 +31,14 @@ template <typename Function, std::size_t Index> [[nodiscard]] const Type &graph_
         using TimeSeries = typename typed_wiring_point<Parameter>::time_series_type;
         static_assert(time_series_declaration<TimeSeries>, "wp requires a supported time series type");
 
-        if constexpr (generic_scalar<typename TimeSeries::value_type> && TimeSeries::has_explicit_guarantee) {
-            static const GenericTimeSeriesValueType type{
-                scalar_type_for<Function, typename TimeSeries::value_type>(), TimeSeries::guarantee};
-
-            return type;
-        } else if constexpr (generic_scalar<typename TimeSeries::value_type>) {
-            static const GuaranteeVariable guarantee{name};
-            static const GenericTimeSeriesValueType type{
-                scalar_type_for<Function, typename TimeSeries::value_type>(), guarantee};
-
-            return type;
+        if constexpr (time_series_variable<TimeSeries>) {
+            return time_series_variable_instance<Function, TimeSeries>();
         } else if constexpr (TimeSeries::has_explicit_guarantee) {
-            static const GenericTimeSeriesValueType type{cpp_scalar_type<typename TimeSeries::value_type>(),
-                                                         TimeSeries::guarantee};
-
-            return type;
+            return time_series_type_for<Function, Index, true, TimeSeries>(
+                guarantee_parameter<Function, TimeSeries::guarantee>());
         } else {
             static const GuaranteeVariable guarantee{name};
-            static const GenericTimeSeriesValueType type{cpp_scalar_type<typename TimeSeries::value_type>(), guarantee};
-
-            return type;
+            return time_series_type_for<Function, Index, true, TimeSeries>(guarantee);
         }
     } else if constexpr (supported_optional_scalar_argument<Parameter>) {
         using Scalar = typename optional_scalar_argument<Parameter>::value_type;
@@ -86,13 +67,11 @@ template <typename Function> [[nodiscard]] const TimeSeriesType &graph_output_ty
     using TimeSeries = typename typed_wiring_point<Result>::time_series_type;
     static_assert(time_series_declaration<TimeSeries>, "wp requires a supported time series type");
 
-    if constexpr (generic_scalar<typename TimeSeries::value_type>) {
-        static const GenericTimeSeriesValueType type{
-            scalar_type_for<Function, typename TimeSeries::value_type>(), TimeSeries::guarantee};
-
-        return type;
+    if constexpr (time_series_variable<TimeSeries>) {
+        return time_series_variable_instance<Function, TimeSeries>();
     } else {
-        return time_series_value_type(cpp_scalar_type<typename TimeSeries::value_type>(), TimeSeries::guarantee);
+        return time_series_type_for<Function, callable<Function>::argument_count, false, TimeSeries>(
+            TimeSeriesGuarantee::ordinary);
     }
 }
 

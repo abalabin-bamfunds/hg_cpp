@@ -1,6 +1,7 @@
 #include <bg/time_series/time_series_type.hpp>
 #include <bg/time_series/tsl/tsl_type.hpp>
 #include <bg/type/time_series_list_type.hpp>
+#include <bg/type/time_series_reference_type.hpp>
 #include <bg/type/time_series_value_type.hpp>
 
 #include <catch2/catch_test_macros.hpp>
@@ -35,4 +36,15 @@ TEST_CASE("generic time series list types resolve their item and guarantee", "[t
 
     REQUIRE(generic_list.match(resolved_list, bindings));
     CHECK(&generic_list.resolve(bindings) == &resolved_list);
+}
+
+TEST_CASE("fixed time series list matching applies reference transparency to its items", "[type_system][tsl]") {
+    const auto &item = bg::time_series_value_type(bg::float_type(), bg::TimeSeriesGuarantee::ordinary);
+    const auto &reference = bg::time_series_reference_type(item, bg::TimeSeriesGuarantee::const_);
+    const auto &values = bg::time_series_list_type(item, 2, bg::TimeSeriesGuarantee::ordinary);
+    const auto &references = bg::time_series_list_type(reference, 2, bg::TimeSeriesGuarantee::ordinary);
+    auto bindings = bg::TypeMap{};
+
+    CHECK(references.match(values, bindings));
+    CHECK(values.match(references, bindings));
 }

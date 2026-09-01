@@ -5,9 +5,11 @@
 #include <bg/graph/output_notification.hpp>
 #include <bg/node/input_properties.hpp>
 #include <bg/node/invalidation.hpp>
+#include <bg/node/node_template.hpp>
 #include <bg/time_series/ref/ref_storage.hpp>
 #include <bg/time_series/time_series_input_view.hpp>
 #include <bg/time_series/time_series_output_view.hpp>
+#include <bg/util/symbol.hpp>
 
 #include <cstddef>
 #include <cstdint>
@@ -18,15 +20,31 @@
 namespace bg {
 
 class CompiledGraphBuilder;
+class CompiledNode;
 class ScalarStorageRepresentation;
 class ScalarInputView;
 class TimeSeriesInputView;
 class TimeSeriesValueInputView;
 class TimeSeriesOutputView;
 class ItemSubscriptionRange;
+class Type;
+
+struct NodeInvocationParameterMetadata {
+    util::symbol name;
+    const Type *type;
+};
+
+struct NodeInvocationMetadata {
+    std::uint32_t parameters_offset;
+    std::uint32_t compiled_data_offset;
+    CompiledNodeDataDestructionFunction destruction_function;
+
+    [[nodiscard]] std::span<const NodeInvocationParameterMetadata> parameters(const CompiledNode &node) const noexcept;
+    [[nodiscard]] const void *compiled_data(const CompiledNode &node) const noexcept;
+};
 
 struct TimeSeriesInputViewPrototype {
-    const TimeSeriesInputView *view;
+    const TimeSeriesStorageRepresentation *representation;
 };
 
 struct ScalarInputViewPrototype {
@@ -390,21 +408,14 @@ class CompiledNode {
         return *reinterpret_cast<const EvaluationFunction *>(address);
     }
 
-    [[nodiscard]] const TimeSeriesStorageRepresentation *output_finalization_representation() const noexcept {
-        if (const auto *subscriptions = item_subscriptions()) {
-            return subscriptions->representation;
-        }
-        if ((flags_ & output_finalization_flag) == 0) {
-            return nullptr;
-        }
-
-        auto address = after_invalidation_metadata_address();
-        address = align(address, alignof(const TimeSeriesStorageRepresentation *));
-        return *reinterpret_cast<const TimeSeriesStorageRepresentation *const *>(address);
+    [[nodiscard]] const TimeSeriesInputView &time_series_input_view_prototype(std::size_t index) const noexcept {
+        return time_series_input_storage_representation(index).input_view_prototype();
     }
 
-    [[nodiscard]] const TimeSeriesInputView &time_series_input_view_prototype(std::size_t index) const noexcept {
-        return *reinterpret_cast<const TimeSeriesInputViewPrototype *>(input_view_prototypes_address())[index].view;
+    [[nodiscard]] const TimeSeriesStorageRepresentation &
+    time_series_input_storage_representation(std::size_t index) const noexcept {
+        return *reinterpret_cast<const TimeSeriesInputViewPrototype *>(input_view_prototypes_address())[index]
+                    .representation;
     }
 
     [[nodiscard]] const TimeSeriesValueInputView &
@@ -430,6 +441,25 @@ class CompiledNode {
         return *reinterpret_cast<const OutputViewPrototype *>(address)->view;
     }
 
+    [[nodiscard]] const TimeSeriesOutputView &node_invocation_output_view_prototype() const noexcept {
+        const auto time_series_inputs = node_invocation_time_series_input_count();
+        return output_view_prototype(time_series_inputs, parameters().size() - time_series_inputs);
+    }
+
+    [[nodiscard]] std::size_t node_invocation_time_series_input_count() const noexcept {
+        return (flags_ & node_invocation_time_series_input_count_mask) >> node_invocation_time_series_input_count_shift;
+    }
+
+    [[nodiscard]] const NodeInvocationMetadata *node_invocation_metadata() const noexcept {
+        if ((flags_ & node_invocation_flag) == 0) {
+            return nullptr;
+        }
+
+        auto address = after_invalidation_metadata_address();
+        address = align(address, alignof(NodeInvocationMetadata));
+        return reinterpret_cast<const NodeInvocationMetadata *>(address);
+    }
+
   private:
     friend class CompiledGraphBuilder;
 
@@ -445,12 +475,16 @@ class CompiledNode {
     static constexpr std::uint32_t state_destruction_flag = std::uint32_t{1} << 30;
     static constexpr std::uint32_t state_metadata_flag = std::uint32_t{1} << 31;
     static constexpr std::uint32_t state_offset_mask = state_destruction_flag - 1;
-    static constexpr std::uint32_t output_finalization_flag = std::uint32_t{1};
+    static constexpr std::uint32_t node_invocation_flag = std::uint32_t{1};
+    static constexpr std::uint32_t node_invocation_time_series_input_count_shift = 1;
+    static constexpr std::uint32_t node_invocation_time_series_input_count_mask =
+        parameter_count_mask << node_invocation_time_series_input_count_shift;
 
     CompiledNode(EvaluationFunction evaluation_function, std::uint32_t output_last_updated_offset,
                  std::uint32_t output_value_offset, std::uint32_t parameter_count, std::uint32_t subscriber_count,
                  bool has_output, bool has_state, bool has_output_notification, bool has_item_subscriptions,
-                 bool requires_output_finalization, InvalidationMode invalidation_mode) noexcept
+                 bool uses_node_invocation, std::uint32_t time_series_input_count,
+                 InvalidationMode invalidation_mode) noexcept
         : evaluation_function_(evaluation_function),
           output_last_updated_offset_(output_last_updated_offset | (has_output ? std::uint32_t{} : no_output_flag) |
                                       (has_state ? state_flag : std::uint32_t{})),
@@ -459,7 +493,9 @@ class CompiledNode {
           counts_(parameter_count | (subscriber_count << parameter_count_bits) |
                   (has_output_notification ? output_notification_flag : std::uint32_t{}) |
                   (has_item_subscriptions ? item_subscriptions_flag : std::uint32_t{})),
-          flags_(requires_output_finalization ? output_finalization_flag : std::uint32_t{}) {}
+          flags_((uses_node_invocation ? node_invocation_flag : std::uint32_t{}) |
+                 (uses_node_invocation ? time_series_input_count << node_invocation_time_series_input_count_shift
+                                       : std::uint32_t{})) {}
 
     [[nodiscard]] std::uint32_t parameter_count() const noexcept { return counts_ & parameter_count_mask; }
 
@@ -540,9 +576,8 @@ class CompiledNode {
 
     [[nodiscard]] std::uintptr_t input_view_prototypes_address() const noexcept {
         auto address = after_invalidation_metadata_address();
-        if ((flags_ & output_finalization_flag) != 0) {
-            address = align(address, alignof(const TimeSeriesStorageRepresentation *)) +
-                      sizeof(const TimeSeriesStorageRepresentation *);
+        if ((flags_ & node_invocation_flag) != 0) {
+            address = align(address, alignof(NodeInvocationMetadata)) + sizeof(NodeInvocationMetadata);
         }
 
         return align(address, alignof(TimeSeriesInputViewPrototype));
@@ -573,11 +608,28 @@ static_assert(sizeof(TimeSeriesInputViewPrototype) == sizeof(void *));
 static_assert(sizeof(ScalarInputViewPrototype) == sizeof(void *));
 static_assert(sizeof(OutputViewPrototype) == sizeof(void *));
 static_assert(sizeof(StateMetadataCounts) == sizeof(std::uint32_t));
+static_assert(sizeof(NodeInvocationParameterMetadata) == 2 * sizeof(void *));
+static_assert(sizeof(NodeInvocationMetadata) == 2 * sizeof(void *));
 static_assert(sizeof(CompiledNode) == 24);
 static_assert(static_cast<std::uint32_t>(InvalidationMode::invoke) < (std::uint32_t{1} << 2));
 static_assert(std::is_trivially_destructible_v<ParameterBinding>);
 static_assert(std::is_trivially_destructible_v<CompiledNode>);
 static_assert(sizeof(CompiledNode) % alignof(ParameterBinding) == 0);
 static_assert(sizeof(ParameterBinding) % alignof(Subscriber) == 0);
+
+inline std::span<const NodeInvocationParameterMetadata>
+NodeInvocationMetadata::parameters(const CompiledNode &node) const noexcept {
+    const auto *storage = reinterpret_cast<const std::byte *>(&node);
+    return {reinterpret_cast<const NodeInvocationParameterMetadata *>(storage + parameters_offset),
+            node.parameters().size()};
+}
+
+inline const void *NodeInvocationMetadata::compiled_data(const CompiledNode &node) const noexcept {
+    if (compiled_data_offset == 0) {
+        return nullptr;
+    }
+
+    return reinterpret_cast<const std::byte *>(&node) + compiled_data_offset;
+}
 
 } // namespace bg

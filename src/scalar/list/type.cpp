@@ -17,8 +17,6 @@ class ResolvedListScalarType final : public ListScalarType {
 
     [[nodiscard]] bool is_resolved() const noexcept override { return true; }
 
-    [[nodiscard]] bool match(const Type &supplied, TypeMap &) const override { return this == &supplied; }
-
     [[nodiscard]] const Type &resolve(const TypeMap &) const override { return *this; }
 
     [[nodiscard]] const ScalarType &item_type() const noexcept override { return *item_type_; }
@@ -29,7 +27,7 @@ class ResolvedListScalarType final : public ListScalarType {
 
 } // namespace
 
-bool GenericListScalarType::match(const Type &supplied, TypeMap &bindings) const {
+bool GenericListScalarType::do_match(const Type &supplied, TypeMap &bindings) const {
     const auto *list = dynamic_cast<const ListScalarType *>(&supplied);
 
     return list != nullptr && list->is_resolved() && item_type_->match(list->item_type(), bindings);

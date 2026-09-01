@@ -1,5 +1,6 @@
 #include <bg/node.hpp>
 #include <bg/type/scalar_type.hpp>
+#include <bg/type/time_series_list_type.hpp>
 #include <bg/type/time_series_value_type.hpp>
 
 #include <catch2/catch_test_macros.hpp>
@@ -25,9 +26,7 @@ struct weighted_add {
 static_assert(bg::AggregateNodeClass<weighted_add>);
 
 template <typename Template>
-concept TemporaryWeightedAddCall = requires(Template &&node, bg::WiringPoint input) {
-    std::move(node)(input, input);
-};
+concept TemporaryWeightedAddCall = requires(Template &&node, bg::WiringPoint input) { std::move(node)(input, input); };
 
 static_assert(!TemporaryWeightedAddCall<decltype(bg::node<weighted_add>())>);
 
@@ -218,6 +217,55 @@ TEST_CASE("scalar variable declarations retain their identity", "[node_template]
     CHECK(signature.parameters[1].type == &ts_float);
     CHECK(signature.parameters[2].type == &ts_double);
     CHECK(signature.output == &ts_float);
+}
+
+namespace {
+
+inline constexpr auto captured_guarantee = bg::guarantee_variable<"G">;
+using CapturedTimeSeries = bg::TimeSeriesVariable<"T">;
+
+struct time_series_variable_guarantee {
+    bg::In<CapturedTimeSeries::with<captured_guarantee>> input;
+    bg::Out<bg::TS<int, captured_guarantee>> output;
+
+    void evaluate() const {}
+};
+
+static_assert(bg::AggregateNodeClass<time_series_variable_guarantee>);
+
+struct generic_guarantee_collection {
+    bg::In<bg::TS<int, captured_guarantee>> input;
+    bg::Out<bg::TSL<bg::TS<int>, 2, captured_guarantee>> output;
+
+    void evaluate() const {}
+};
+
+static_assert(bg::AggregateNodeClass<generic_guarantee_collection>);
+
+} // namespace
+
+TEST_CASE("a time series variable can expose its guarantee as another variable", "[node_template][type_system]") {
+    const auto node = bg::node<time_series_variable_guarantee>();
+    const auto &item = bg::time_series_value_type(bg::float_type(), bg::TimeSeriesGuarantee::ordinary);
+    const auto &list = bg::time_series_list_type(item, 2, bg::TimeSeriesGuarantee::final);
+    const auto arguments = std::array<const bg::Type *, 1>{&list};
+
+    const auto signature = node.signature().resolve(arguments);
+
+    CHECK(signature.parameters[0].type == &list);
+    CHECK(signature.output == &bg::time_series_value_type(bg::int_type(), bg::TimeSeriesGuarantee::final));
+}
+
+TEST_CASE("a collection output uses its resolved guarantee", "[node_template][type_system]") {
+    const auto node = bg::node<generic_guarantee_collection>();
+    const auto &input = bg::time_series_value_type(bg::int_type(), bg::TimeSeriesGuarantee::final);
+    const auto arguments = std::array<const bg::Type *, 1>{&input};
+    const auto signature = node.signature().resolve(arguments);
+
+    const auto *representation = node.output_storage_representation(signature, {}, {});
+
+    REQUIRE(representation != nullptr);
+    CHECK(&representation->type() == signature.output);
 }
 
 namespace {

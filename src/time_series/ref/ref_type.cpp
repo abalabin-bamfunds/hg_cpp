@@ -17,7 +17,6 @@ class ResolvedTimeSeriesReferenceType final : public TimeSeriesReferenceType {
         : TimeSeriesReferenceType(target_type, guarantee) {}
 
     [[nodiscard]] bool is_resolved() const noexcept override { return true; }
-    [[nodiscard]] bool match(const Type &supplied, TypeMap &) const override { return this == &supplied; }
     [[nodiscard]] const Type &resolve(const TypeMap &) const override { return *this; }
 };
 
@@ -57,23 +56,8 @@ const TimeSeriesReferenceType &time_series_reference_type(const TimeSeriesType &
     return *entry->second;
 }
 
-bool GenericTimeSeriesReferenceType::match(const Type &supplied, TypeMap &bindings) const {
-    const auto *reference = dynamic_cast<const TimeSeriesReferenceType *>(&supplied);
-    const auto *target =
-        reference == nullptr ? dynamic_cast<const TimeSeriesType *>(&supplied) : &reference->target_type();
-    if (target == nullptr || !target->is_resolved()) {
-        return false;
-    }
-
-    auto trial = bindings.overlay();
-    const auto supplied_guarantee =
-        reference == nullptr ? TimeSeriesGuarantee::const_ : *reference->guarantee().value();
-    if (!target_type().match(*target, trial) || !guarantee().match(supplied_guarantee, trial)) {
-        return false;
-    }
-
-    bindings.apply(std::move(trial));
-    return true;
+const TimeSeriesType &TimeSeriesReferenceType::with_guarantee(TimeSeriesGuarantee guarantee) const {
+    return time_series_reference_type(target_type(), guarantee);
 }
 
 const Type &GenericTimeSeriesReferenceType::resolve(const TypeMap &bindings) const {

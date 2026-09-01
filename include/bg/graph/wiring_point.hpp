@@ -42,6 +42,9 @@ template <typename TimeSeries> class wp {
   public:
     wp(WiringPoint point) noexcept : point_(point) {}
 
+    // Re-annotation retains the actual wiring type. Signature resolution validates it at the next wiring boundary.
+    template <typename Source> explicit wp(wp<Source> source) noexcept : point_(static_cast<WiringPoint>(source)) {}
+
     [[nodiscard]] operator WiringPoint() const noexcept { return point_; }
 
     template <typename T = TimeSeries>

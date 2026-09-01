@@ -14,8 +14,6 @@ class ResolvedTypeScalarType final : public TypeScalarType {
 
     [[nodiscard]] bool is_resolved() const noexcept override { return true; }
 
-    [[nodiscard]] bool match(const Type &supplied, TypeMap &) const override { return this == &supplied; }
-
     [[nodiscard]] const Type &resolve(const TypeMap &) const override { return *this; }
 };
 
@@ -52,7 +50,7 @@ const TypeScalarType &type_of(const Type &type) {
     return type_scalar_types().get(type);
 }
 
-bool GenericTypeScalarType::match(const Type &supplied, TypeMap &bindings) const {
+bool GenericTypeScalarType::do_match(const Type &supplied, TypeMap &bindings) const {
     const auto *type_of = dynamic_cast<const TypeScalarType *>(&supplied);
     if (type_of == nullptr || !type_of->is_resolved()) {
         return false;

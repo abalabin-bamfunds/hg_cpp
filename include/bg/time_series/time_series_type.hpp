@@ -1,12 +1,11 @@
 #pragma once
 
 #include <bg/time_series/details/time_series_properties.hpp>
+#include <bg/time_series/time_series_variable.hpp>
 
 #include <type_traits>
 
 namespace bg {
-
-struct TS_T {};
 
 template <typename Target, auto... Properties> struct REF {
   private:
@@ -17,7 +16,7 @@ template <typename Target, auto... Properties> struct REF {
     using target_type = Target;
 
     static constexpr bool has_explicit_guarantee = ParsedProperties::has_guarantee;
-    static constexpr TimeSeriesGuarantee guarantee = ParsedProperties::guarantee;
+    static constexpr auto guarantee = ParsedProperties::guarantee;
 };
 
 template <typename T, auto... Properties> struct TS {
@@ -29,7 +28,7 @@ template <typename T, auto... Properties> struct TS {
     using value_type = T;
 
     static constexpr bool has_explicit_guarantee = ParsedProperties::has_guarantee;
-    static constexpr TimeSeriesGuarantee guarantee = ParsedProperties::guarantee;
+    static constexpr auto guarantee = ParsedProperties::guarantee;
 };
 
 namespace details {

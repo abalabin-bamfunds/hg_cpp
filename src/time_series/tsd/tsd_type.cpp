@@ -1,6 +1,5 @@
 #include <bg/type/time_series_dict_type.hpp>
 
-#include <bg/type/time_series_reference_type.hpp>
 #include <bg/type/time_series_set_type.hpp>
 #include <bg/type/type_map.hpp>
 #include <bg/type/type_resolution_error.hpp>
@@ -22,7 +21,6 @@ class ResolvedTimeSeriesDictionaryType final : public TimeSeriesDictionaryType {
         : TimeSeriesDictionaryType(key_type, value_type, key_set_type, guarantee) {}
 
     [[nodiscard]] bool is_resolved() const noexcept override { return true; }
-    [[nodiscard]] bool match(const Type &supplied, TypeMap &) const override { return this == &supplied; }
     [[nodiscard]] const Type &resolve(const TypeMap &) const override { return *this; }
 };
 
@@ -36,9 +34,12 @@ const TimeSeriesType &TimeSeriesDictionaryType::item_type(std::size_t index) con
     return key_set_type();
 }
 
-bool GenericTimeSeriesDictionaryType::match(const Type &supplied, TypeMap &bindings) const {
-    const auto *dictionary =
-        dynamic_cast<const TimeSeriesDictionaryType *>(&details::unwrap_time_series_reference(supplied));
+const TimeSeriesType &TimeSeriesDictionaryType::with_guarantee(TimeSeriesGuarantee guarantee) const {
+    return time_series_dictionary_type(key_type(), value_type(), guarantee);
+}
+
+bool GenericTimeSeriesDictionaryType::do_match(const Type &supplied, TypeMap &bindings) const {
+    const auto *dictionary = dynamic_cast<const TimeSeriesDictionaryType *>(&supplied);
     if (dictionary == nullptr || !dictionary->is_resolved()) {
         return false;
     }

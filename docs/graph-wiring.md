@@ -20,6 +20,14 @@ declared inputs.
 size as `WiringPoint` and converts to `WiringPoint`. Graph definitions use it to
 declare time series parameter and output types.
 
+`bg::tsl(a, b, ...)` groups wiring points without creating time series storage.
+The receiving parameter determines whether each item is a value or a reference.
+Wiring then creates one logical TSL output that aliases the selected sources.
+Selecting an item from that output returns the original source wiring point.
+
+The logical output preserves dependency ordering. Source changes schedule it as
+a normal node. It combines changes from the same cycle and copies no item value.
+
 ## Wiring context
 
 `WiringContext` makes one `GraphWiring` active on the current thread:
@@ -69,8 +77,10 @@ call:
 A node template adds one wired node. A graph template invokes its graph function
 and can add any number of wired nodes.
 
-`GraphWiring` retains each node template used by a wired node. A node-template
-call therefore requires an lvalue whose lifetime includes graph compilation.
+`GraphWiring` retains a reference to each supplied node template. A
+node-template call therefore requires an lvalue whose lifetime includes graph
+compilation. A runtime-signature node template can be called as a temporary;
+the active `GraphWiring` owns it.
 
 ## Graph templates
 

@@ -15,7 +15,7 @@ template <typename T, auto... Properties> struct TSS {
     using item_type = T;
 
     static constexpr bool has_explicit_guarantee = ParsedProperties::has_guarantee;
-    static constexpr TimeSeriesGuarantee guarantee = ParsedProperties::guarantee;
+    static constexpr auto guarantee = ParsedProperties::guarantee;
 };
 
 namespace details {

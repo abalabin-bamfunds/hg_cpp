@@ -16,7 +16,7 @@ template <typename K, typename Item, auto... Properties> struct TSD {
     using item_type = Item;
 
     static constexpr bool has_explicit_guarantee = ParsedProperties::has_guarantee;
-    static constexpr TimeSeriesGuarantee guarantee = ParsedProperties::guarantee;
+    static constexpr auto guarantee = ParsedProperties::guarantee;
 };
 
 namespace details {

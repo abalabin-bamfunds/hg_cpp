@@ -22,7 +22,7 @@ class ReferenceNodeTemplate final : public NodeTemplate {
     [[nodiscard]] const Signature &signature() const override { return signature_; }
 
     [[nodiscard]] EvaluationFunction evaluation_function(const ResolvedSignature &) const noexcept override {
-        return &evaluate;
+        return nullptr;
     }
 
     [[nodiscard]] EvaluationFunction start_function(const ResolvedSignature &) const noexcept override {
@@ -53,6 +53,8 @@ class ReferenceNodeTemplate final : public NodeTemplate {
         return DynamicSubscribersLayout{.source_input = 0, .state_offset = offsetof(ReferenceStorage, subscribers)};
     }
 
+    [[nodiscard]] bool uses_generic_time_series_input_view(std::size_t) const noexcept override { return true; }
+
     [[nodiscard]] const TimeSeriesStorageRepresentation *output_storage_representation(
         const ResolvedSignature &signature, std::span<const ScalarStorageRepresentation *const>,
         std::span<const TimeSeriesStorageRepresentation *const> inputs) const noexcept override {
@@ -61,8 +63,6 @@ class ReferenceNodeTemplate final : public NodeTemplate {
     }
 
   private:
-    static void evaluate(const CompiledNode &, void *, EvaluationContext *) {}
-
     static void start(const CompiledNode &node, void *runtime_storage, EvaluationContext *context) {
         const auto &target = node.parameters().front();
         auto *storage = static_cast<std::byte *>(runtime_storage);
@@ -72,6 +72,7 @@ class ReferenceNodeTemplate final : public NodeTemplate {
         reference.owner = &context->runtime_graph();
         reference.target_last_updated = &target.last_updated(runtime_storage);
         reference.target_value = target.value(runtime_storage);
+        reference.target_representation = &node.time_series_input_storage_representation(0);
         output = &reference;
         node.output_last_updated(runtime_storage) = context->evaluation_time();
     }

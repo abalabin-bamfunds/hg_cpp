@@ -1,5 +1,6 @@
 #pragma once
 
+#include <bg/graph/details/free_time_series_list.hpp>
 #include <bg/graph/wiring_point.hpp>
 #include <bg/scalar/cpp_storage_representation.hpp>
 #include <bg/scalar/value.hpp>
@@ -42,7 +43,7 @@ inline constexpr bool supported_scalar_value_argument = scalar_value_argument<st
 template <typename T>
 concept graph_code_argument =
     std::same_as<std::remove_cvref_t<T>, WiringPoint> || is_typed_wiring_point<T> || supported_scalar_argument<T> ||
-    supported_optional_scalar_argument<T> || supported_scalar_value_argument<T>;
+    supported_optional_scalar_argument<T> || supported_scalar_value_argument<T> || free_time_series_list<T>;
 
 class wiring_argument {
     struct ScalarArgument {
@@ -58,6 +59,8 @@ class wiring_argument {
     template <typename T>
         requires is_typed_wiring_point<T>
     wiring_argument(T point) : value_(static_cast<WiringPoint>(point)) {}
+
+    template <free_time_series_list T> wiring_argument(const T &value) : value_(value.wiring_argument()) {}
 
     template <typename T>
         requires supported_scalar_argument<T>
@@ -85,9 +88,17 @@ class wiring_argument {
 
     [[nodiscard]] bool is_wiring_point() const noexcept { return std::holds_alternative<WiringPoint>(value_); }
 
+    [[nodiscard]] bool is_free_time_series_list() const noexcept {
+        return std::holds_alternative<FreeTimeSeriesListArgument>(value_);
+    }
+
     [[nodiscard]] WiringPoint wiring_point() const { return std::get<WiringPoint>(value_); }
 
     void wiring_point(WiringPoint point) { value_ = point; }
+
+    [[nodiscard]] const FreeTimeSeriesListArgument &free_time_series_list() const {
+        return std::get<FreeTimeSeriesListArgument>(value_);
+    }
 
     [[nodiscard]] const ScalarType &scalar_type() const noexcept { return *std::get<ScalarArgument>(value_).type; }
 
@@ -104,7 +115,7 @@ class wiring_argument {
     }
 
   private:
-    std::variant<WiringPoint, ScalarArgument> value_;
+    std::variant<WiringPoint, ScalarArgument, FreeTimeSeriesListArgument> value_;
 };
 
 } // namespace bg::details

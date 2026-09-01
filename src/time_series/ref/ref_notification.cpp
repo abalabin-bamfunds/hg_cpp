@@ -5,6 +5,37 @@
 
 namespace bg::details {
 
+namespace {
+
+void update_reference_input(OutputNotificationContext &context, ReferenceStorage *reference,
+                            const ReferenceInputSubscriber &subscriber, std::size_t data,
+                            InputNotificationFunction callback, OutputChange change) {
+    auto &input = *static_cast<ReferenceInputStorage *>(context.runtime_storage_at(subscriber.input_offset()));
+    if (input.target != reference) {
+        const auto subscribes_to_target = subscriber.active() || subscriber.required() || callback != nullptr;
+        if (input.target != nullptr && subscribes_to_target) {
+            input.target->subscribers->remove(context.runtime_graph(), subscriber.input_offset());
+        }
+        if (reference != nullptr && subscribes_to_target) {
+            auto &subscribers =
+                DynamicSubscribers::ensure(reference->subscribers, context.memory_resource(*reference->owner));
+            subscribers.add(context.runtime_graph(), static_cast<std::uint32_t>(subscriber.input_offset()), data,
+                            static_cast<std::uint32_t>(subscriber.node_index()), subscriber.active(),
+                            subscriber.required(), callback);
+        }
+        input.target = reference;
+    }
+
+    if (subscriber.required()) {
+        context.schedule_validity_check(context.runtime_graph(), subscriber.node_index());
+    }
+    if (callback != nullptr) {
+        callback(context, subscriber.node_index(), data, change);
+    }
+}
+
+} // namespace
+
 void notify_reference_inputs(OutputNotificationContext &context, const void *value, OutputChange change,
                              std::span<const std::byte> record_bytes) {
     const auto records = std::span{
@@ -14,24 +45,21 @@ void notify_reference_inputs(OutputNotificationContext &context, const void *val
     auto *reference = change == OutputChange::invalidation ? nullptr : *static_cast<ReferenceStorage *const *>(value);
 
     for (const auto &subscriber : records) {
-        auto &input = *static_cast<ReferenceInputStorage *>(context.runtime_storage_at(subscriber.input_offset()));
-        if (input.target != reference) {
-            if (input.target != nullptr && (subscriber.active() || subscriber.required())) {
-                input.target->subscribers->remove(context.runtime_graph(), subscriber.input_offset());
-            }
-            if (reference != nullptr && (subscriber.active() || subscriber.required())) {
-                auto &subscribers =
-                    DynamicSubscribers::ensure(reference->subscribers, context.memory_resource(*reference->owner));
-                subscribers.add(context.runtime_graph(), static_cast<std::uint32_t>(subscriber.input_offset()),
-                                static_cast<std::uint32_t>(subscriber.node_index()), subscriber.active(),
-                                subscriber.required());
-            }
-            input.target = reference;
-        }
+        update_reference_input(context, reference, subscriber, 0, nullptr, change);
+    }
+}
 
-        if (subscriber.required()) {
-            context.schedule_validity_check(context.runtime_graph(), subscriber.node_index());
-        }
+void notify_callback_reference_inputs(OutputNotificationContext &context, const void *value, OutputChange change,
+                                      std::span<const std::byte> record_bytes) {
+    const auto records = std::span{
+        reinterpret_cast<const CallbackReferenceInputSubscriber *>(record_bytes.data()),
+        record_bytes.size() / sizeof(CallbackReferenceInputSubscriber),
+    };
+    auto *reference = change == OutputChange::invalidation ? nullptr : *static_cast<ReferenceStorage *const *>(value);
+
+    for (const auto &subscriber : records) {
+        update_reference_input(context, reference, subscriber.subscription(), subscriber.data(), subscriber.callback(),
+                               change);
     }
 }
 

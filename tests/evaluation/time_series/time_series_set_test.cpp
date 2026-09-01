@@ -86,6 +86,37 @@ TEST_CASE("a time series set becomes valid on its first empty tick and remains v
 
 namespace {
 
+struct inverse_set_mutation_source_definition {
+    bg::Out<IntSet> output;
+
+    void start() const {
+        output.insert(1);
+        output.erase(1);
+    }
+
+    void evaluate() const {}
+};
+
+} // namespace
+
+TEST_CASE("adding and removing a set item in one invocation produces a tick", "[evaluation][tss]") {
+    const auto source = bg::node<inverse_set_mutation_source_definition>();
+    const auto sink = bg::node<set_sink_definition>();
+    set_sink_definition::validity.clear();
+    set_sink_definition::sizes.clear();
+    set_sink_definition::added.clear();
+    set_sink_definition::removed.clear();
+
+    bg::run_graph([&] { sink(source()); });
+
+    CHECK(set_sink_definition::validity == std::vector{true});
+    CHECK(set_sink_definition::sizes == std::vector<std::size_t>{0});
+    CHECK(set_sink_definition::added == std::vector<std::size_t>{0});
+    CHECK(set_sink_definition::removed == std::vector<std::size_t>{0});
+}
+
+namespace {
+
 struct invalidating_value_source_definition {
     static constexpr bool uses_future_scheduling = true;
 

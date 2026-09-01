@@ -32,9 +32,22 @@ class AggregateNodeTemplate final : public NodeTemplate {
     }
 
     template <typename... Arguments>
+        requires((details::graph_code_argument<Arguments> && ...) && details::aggregate_node_has_output<Definition>())
+    [[nodiscard]] auto operator()(const TypeMap &bindings, Arguments &&...arguments) const & {
+        using Output = details::aggregate_output_time_series_t<Definition>;
+        return wp<Output>{*NodeTemplate::operator()(bindings, std::forward<Arguments>(arguments)...)};
+    }
+
+    template <typename... Arguments>
         requires((details::graph_code_argument<Arguments> && ...) && !details::aggregate_node_has_output<Definition>())
     void operator()(Arguments &&...arguments) const & {
         (void)NodeTemplate::operator()(std::forward<Arguments>(arguments)...);
+    }
+
+    template <typename... Arguments>
+        requires((details::graph_code_argument<Arguments> && ...) && !details::aggregate_node_has_output<Definition>())
+    void operator()(const TypeMap &bindings, Arguments &&...arguments) const & {
+        (void)NodeTemplate::operator()(bindings, std::forward<Arguments>(arguments)...);
     }
 
     template <typename... Arguments> void operator()(Arguments &&...) const && = delete;
@@ -44,7 +57,11 @@ class AggregateNodeTemplate final : public NodeTemplate {
     }
 
     [[nodiscard]] EvaluationFunction evaluation_function(const ResolvedSignature &) const noexcept override {
-        return &details::evaluate_aggregate_node<Definition>;
+        if constexpr (details::aggregate_node_has_evaluate<Definition>) {
+            return &details::evaluate_aggregate_node<Definition>;
+        } else {
+            return nullptr;
+        }
     }
 
     [[nodiscard]] EvaluationFunction start_function(const ResolvedSignature &) const noexcept override {
@@ -80,7 +97,7 @@ class AggregateNodeTemplate final : public NodeTemplate {
     output_storage_representation(const ResolvedSignature &signature,
                                   std::span<const ScalarStorageRepresentation *const> parameter_storage_representations,
                                   std::span<const TimeSeriesStorageRepresentation *const>
-                                      time_series_input_storage_representations) const noexcept override {
+                                      time_series_input_storage_representations) const override {
         return details::aggregate_output_storage_representation<Definition>(
             signature, parameter_storage_representations, time_series_input_storage_representations,
             std::make_index_sequence<util::aggregate_member_count<Definition>>{});

@@ -31,6 +31,34 @@ TEST_CASE("a generic reference accepts a reference or its target", "[type][refer
     CHECK(generic_reference.match(target, bindings));
 }
 
+TEST_CASE("reference matching binds target and reference guarantees separately", "[type][reference][resolution]") {
+    const auto &target = bg::time_series_value_type(bg::int64_type(), bg::TimeSeriesGuarantee::final);
+    const auto &reference = bg::time_series_reference_type(target, bg::TimeSeriesGuarantee::deduplicated);
+    auto target_guarantee = bg::GuaranteeVariable{bg::util::symbol{"target guarantee"}};
+    auto reference_guarantee = bg::GuaranteeVariable{bg::util::symbol{"reference guarantee"}};
+    const auto generic_target = bg::GenericTimeSeriesValueType{bg::int64_type(), target_guarantee};
+    const auto generic_reference = bg::GenericTimeSeriesReferenceType{generic_target, reference_guarantee};
+    auto bindings = bg::TypeMap{};
+
+    REQUIRE(generic_reference.match(reference, bindings));
+    const auto &resolved = static_cast<const bg::TimeSeriesReferenceType &>(generic_reference.resolve(bindings));
+
+    CHECK(resolved.guarantee().value() == bg::TimeSeriesGuarantee::deduplicated);
+    CHECK(resolved.target_type().guarantee().value() == bg::TimeSeriesGuarantee::final);
+}
+
+TEST_CASE("reference matching enforces the reference guarantee", "[type][reference][resolution]") {
+    const auto &target = bg::time_series_value_type(bg::int64_type(), bg::TimeSeriesGuarantee::ordinary);
+    const auto &required = bg::time_series_reference_type(target, bg::TimeSeriesGuarantee::final);
+    const auto &ordinary = bg::time_series_reference_type(target, bg::TimeSeriesGuarantee::ordinary);
+    auto bindings = bg::TypeMap{};
+
+    CHECK_FALSE(required.match(ordinary, bindings));
+
+    bindings = bg::TypeMap{};
+    CHECK(required.match(target, bindings));
+}
+
 TEST_CASE("a reference cannot target another reference", "[type][reference]") {
     const auto &target = bg::time_series_value_type(bg::int64_type(), bg::TimeSeriesGuarantee::ordinary);
     const auto &reference = bg::time_series_reference_type(target, bg::TimeSeriesGuarantee::ordinary);

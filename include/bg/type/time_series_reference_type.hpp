@@ -8,6 +8,7 @@ namespace bg {
 class TimeSeriesReferenceType : public TimeSeriesType {
   public:
     [[nodiscard]] const TimeSeriesType &target_type() const noexcept { return *target_type_; }
+    [[nodiscard]] const TimeSeriesType &with_guarantee(TimeSeriesGuarantee guarantee) const override;
 
   protected:
     TimeSeriesReferenceType(const TimeSeriesType &target_type, GuaranteeParameter guarantee)
@@ -26,17 +27,7 @@ class GenericTimeSeriesReferenceType final : public TimeSeriesReferenceType {
         : TimeSeriesReferenceType(target_type, guarantee) {}
 
     [[nodiscard]] bool is_resolved() const noexcept override { return false; }
-    [[nodiscard]] bool match(const Type &supplied, TypeMap &bindings) const override;
     [[nodiscard]] const Type &resolve(const TypeMap &bindings) const override;
 };
-
-namespace details {
-
-[[nodiscard]] inline const Type &unwrap_time_series_reference(const Type &type) noexcept {
-    const auto *reference = dynamic_cast<const TimeSeriesReferenceType *>(&type);
-    return reference == nullptr ? type : reference->target_type();
-}
-
-} // namespace details
 
 } // namespace bg

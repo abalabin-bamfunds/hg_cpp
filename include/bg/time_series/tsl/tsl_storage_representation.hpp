@@ -93,10 +93,10 @@ class CppFixedTimeSeriesListStorageRepresentation<TSL<Item, Size, Properties...>
         return prototype.get();
     }
 
-    [[nodiscard]] const TimeSeriesOutputView &output_view_prototype() const noexcept override {
+    [[nodiscard]] const TimeSeriesOutputView *output_view_prototype() const noexcept override {
         static const auto prototype =
             util::polymorphic_value<TimeSeriesOutputView>::template make<TypedTimeSeriesListOutputView<Item, Size>>();
-        return prototype.get();
+        return &prototype.get();
     }
 
     [[nodiscard]] FixedItem fixed_item(std::size_t index) const override {
@@ -108,10 +108,9 @@ class CppFixedTimeSeriesListStorageRepresentation<TSL<Item, Size, Properties...>
         return {*item_, item + offsetof(Contained, last_updated), item + offsetof(Contained, value)};
     }
 
-    [[nodiscard]] bool mark_item_modified(void *value, std::size_t item, EvaluationTime evaluation_time,
-                                          EvaluationTime previous_last_updated,
+    [[nodiscard]] bool mark_item_modified(void *value, std::size_t item, EvaluationTime evaluation_time, EvaluationTime,
                                           std::pmr::memory_resource &) const noexcept override {
-        return static_cast<Storage *>(value)->changes.mark(item, evaluation_time, previous_last_updated);
+        return static_cast<Storage *>(value)->changes.mark(item, evaluation_time);
     }
 
     [[nodiscard]] bool collection_valid(const void *value) const noexcept override {
@@ -136,29 +135,6 @@ class CppFixedTimeSeriesListStorageRepresentation<TSL<Item, Size, Properties...>
             const auto &item = storage.items[index];
             function(context, {index, item_, &item.last_updated, &item.value.value});
         }
-    }
-
-    [[nodiscard]] bool requires_modified_item_finalization() const noexcept override { return true; }
-
-    bool finalize_modified_items(EvaluationTime &last_updated, void *value,
-                                 EvaluationTime evaluation_time) const noexcept override {
-        auto &storage = *static_cast<Storage *>(value);
-        if (storage.changes.time() != evaluation_time) {
-            return false;
-        }
-
-        for (const auto index : storage.changes) {
-            auto &item = storage.items[index];
-            if (!item_->finalize_modified_items(item.last_updated, &item.value.value, evaluation_time)) {
-                storage.changes.reset(index);
-            }
-        }
-
-        if (!storage.changes.any()) {
-            last_updated = storage.changes.previous_last_updated();
-            return false;
-        }
-        return true;
     }
 
     void construct_initial_value(void *destination) const noexcept override {
@@ -221,9 +197,14 @@ struct CppTimeSeriesStorageRepresentation<TSL<Item, Size, Properties...>> {
 
 namespace bg {
 
+template <typename TimeSeries>
+const TimeSeriesStorageRepresentation &cpp_time_series_storage_representation(const TimeSeriesType &type) {
+    return details::CppTimeSeriesStorageRepresentation<TimeSeries>::get(type);
+}
+
 template <typename TimeSeries> const TimeSeriesStorageRepresentation &cpp_time_series_storage_representation() {
     const auto &type = details::concrete_time_series_type<TimeSeries>(TimeSeriesGuarantee::ordinary);
-    return details::CppTimeSeriesStorageRepresentation<TimeSeries>::get(type);
+    return cpp_time_series_storage_representation<TimeSeries>(type);
 }
 
 } // namespace bg

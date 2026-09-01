@@ -7,6 +7,7 @@
 namespace bg {
 
 class RuntimeGraph;
+class TimeSeriesStorageRepresentation;
 
 namespace details {
 
@@ -17,6 +18,7 @@ struct ReferenceStorage {
     RuntimeGraph *owner{};
     const EvaluationTime *target_last_updated{};
     const void *target_value{};
+    const TimeSeriesStorageRepresentation *target_representation{};
     DynamicSubscribers *subscribers{};
 };
 
@@ -24,7 +26,7 @@ struct ReferenceInputStorage {
     ReferenceStorage *target{};
 };
 
-static_assert(sizeof(ReferenceStorage) == 4 * sizeof(void *));
+static_assert(sizeof(ReferenceStorage) == 5 * sizeof(void *));
 static_assert(sizeof(ReferenceInputStorage) == sizeof(void *));
 static_assert(std::is_trivially_copyable_v<ReferenceStorage>);
 static_assert(std::is_trivially_copyable_v<ReferenceInputStorage>);

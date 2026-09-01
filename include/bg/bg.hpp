@@ -7,6 +7,7 @@
 #include <bg/graph/compiled_graph.hpp>
 #include <bg/graph/compiled_node.hpp>
 #include <bg/graph/graph_wiring.hpp>
+#include <bg/graph/nested_graph.hpp>
 #include <bg/graph/runtime_graph.hpp>
 #include <bg/graph/wired_node.hpp>
 #include <bg/graph/wired_scalar.hpp>
@@ -14,9 +15,11 @@
 #include <bg/graph/wiring_error.hpp>
 #include <bg/graph/wiring_point.hpp>
 #include <bg/graph/wiring_template.hpp>
+#include <bg/nested.hpp>
 #include <bg/node.hpp>
 #include <bg/node/input.hpp>
 #include <bg/node/input_properties.hpp>
+#include <bg/node/node_invocation.hpp>
 #include <bg/node/node_template.hpp>
 #include <bg/node/output.hpp>
 #include <bg/node/state.hpp>
@@ -42,6 +45,7 @@
 #include <bg/scalar/view.hpp>
 #include <bg/schedule_handle.hpp>
 #include <bg/simulation_evaluation_engine.hpp>
+#include <bg/time_series/guarantee_variable.hpp>
 #include <bg/time_series/ref/ref_input_view.hpp>
 #include <bg/time_series/ref/ref_output_view.hpp>
 #include <bg/time_series/ref/ref_storage_representation.hpp>
@@ -49,6 +53,7 @@
 #include <bg/time_series/time_series_output_view.hpp>
 #include <bg/time_series/time_series_storage_representation.hpp>
 #include <bg/time_series/time_series_type.hpp>
+#include <bg/time_series/time_series_variable.hpp>
 #include <bg/time_series/time_series_view.hpp>
 #include <bg/time_series/tsd/tsd_input_view.hpp>
 #include <bg/time_series/tsd/tsd_output_view.hpp>
@@ -57,6 +62,7 @@
 #include <bg/time_series/tsl/tsl_input_view.hpp>
 #include <bg/time_series/tsl/tsl_output_view.hpp>
 #include <bg/time_series/tsl/tsl_storage_representation.hpp>
+#include <bg/time_series/tsl/tsl.hpp>
 #include <bg/time_series/tsl/tsl_type.hpp>
 #include <bg/time_series/tss/tss_input_view.hpp>
 #include <bg/time_series/tss/tss_output_view.hpp>
@@ -75,6 +81,7 @@
 #include <bg/type/time_series_set_type.hpp>
 #include <bg/type/time_series_type.hpp>
 #include <bg/type/time_series_value_type.hpp>
+#include <bg/type/time_series_variable.hpp>
 #include <bg/type/type.hpp>
 #include <bg/type/type_map.hpp>
 #include <bg/type/type_of.hpp>

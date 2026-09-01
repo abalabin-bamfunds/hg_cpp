@@ -84,6 +84,7 @@ It contains:
 - subscribers and optional output-notification metadata
 - one concrete-view prototype pointer for each generic input
 - the selected storage-representation pointer for a generic output
+- optional data required by a runtime-signature node definition
 
 The data is immutable and shared by runtime graphs with the same wiring. Each
 compiled node starts one aligned section of the compiled graph's fixed
@@ -160,8 +161,8 @@ Invocation passes the runtime storage base, compiled-node data, and
 `EvaluationContext*` to the raw function pointer selected during graph
 compilation.
 
-The function uses compiled offsets to locate inputs, output, and private state. It
-then calls the typed implementation.
+The function uses compiled offsets to locate inputs, output, and private state. It calls the typed implementation when
+the node defines one.
 
 For a plain C++ function, compiled parameter records retain callable order and
 identify shared scalar data, a direct runtime input, or a reference-bound
@@ -172,9 +173,14 @@ For an aggregate class declaration, the evaluation entry point constructs a
 temporary class value. It binds each `In<>` field from the corresponding
 compiled parameter record, copies each scalar field from compiled scalar data,
 binds `State<T>` to private runtime state, and binds the `Out<>` field to the
-runtime output. It then calls the typed `evaluate()` method directly. The method
-can be inlined into the entry point, and the temporary value can be replaced by
-its individual fields during optimisation.
+runtime output. It then calls the typed `evaluate()` method when present. The method can be inlined into the entry
+point, and the temporary value can be replaced by its individual fields during optimisation.
+
+For a runtime-signature declaration, the evaluation entry point creates a
+`NodeInvocation`. It exposes lazy ranges over input and scalar parameter
+bindings and binds views as the implementation requests them. Parameter names
+and immutable implementation data are stored only for nodes that use this
+declaration form.
 
 ## Concurrency
 

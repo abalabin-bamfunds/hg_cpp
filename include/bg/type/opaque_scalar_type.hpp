@@ -9,9 +9,6 @@ namespace bg::details {
 template <typename T> class OpaqueScalarType final : public ScalarType {
   public:
     [[nodiscard]] bool is_resolved() const noexcept override { return true; }
-
-    [[nodiscard]] bool match(const Type &supplied, TypeMap &) const override { return this == &supplied; }
-
     [[nodiscard]] const Type &resolve(const TypeMap &) const override { return *this; }
 };
 

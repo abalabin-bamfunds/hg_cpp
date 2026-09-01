@@ -14,14 +14,16 @@ reference to that type. For example, `REF<TS<T>>` refers to a time series value.
 
 The wiring layer selects one of these actions:
 
-| Binding | Action |
-| --- | --- |
-| Equal types | Use the output directly |
-| `REF<TS_T>` to its target `TS_T` | Use a runtime target pointer and sampling |
-| Other compatible types | Insert or reuse a node that provides the requested representation |
+| Argument | Parameter | Action |
+| --- | --- | --- |
+| `TS_T` | `TS_T` | Use the output directly |
+| `REF<TS_T>` | `TS_T` | Dereference and sample the target |
+| `TS_T` | `REF<TS_T>` | Insert or reuse a reference-making node |
+| `REF<TS_T>` | `REF<TS_T>` | Preserve the reference |
 
-Wiring selects representations transparently. Node code receives the type
-declared by its signature.
+Type resolution matches reference arguments through their targets. Wiring
+retains the original argument and selects the action after resolution. Node
+code receives the type declared by its signature.
 
 A node that handles a reference declares `In<REF<TS_T>>` or
 `Out<REF<TS_T>>`. A reference output selects or passes through an input
@@ -33,8 +35,8 @@ such node for each source output and records each representation requested by
 the complete wired graph.
 
 A reference value is a pointer to storage owned by the inserted node. That
-storage identifies the target time series and holds its dynamic subscribers.
-Passing a reference copies this pointer.
+storage identifies the target time series, its storage representation, and its
+dynamic subscribers. Passing a reference copies this pointer.
 
 For a source reached through a reference, the receiving binding sends its type
 request to the node associated with the target. The graph that owns the target
@@ -115,7 +117,8 @@ When a reference changes target:
 
 1. Remove any receiving input subscription from the old target.
 2. Update its runtime target pointer.
-3. Add a subscription to the new target when the input is active or required.
+3. Add a subscription to the new target when the input is active, required, or
+   updates another logical output.
 4. Sample the new target.
 
 The node subscription schedules the receiving node when the input is active.
@@ -125,29 +128,31 @@ last updated time. View construction selects the later of the reference and
 target update times. Target invalidity makes the view invalid. Later target
 updates schedule the destination directly.
 
+View construction uses the current target's storage representation. A reference
+can therefore select between different representations of the same time series
+type. An update for an inner graph is applied when that graph enters the current
+outer cycle.
+
 The [validity design](time-series-validity.md#references) defines reference
 invalidation, target invalidation, and target removal.
 
-## Nested graphs
+## Nested graph boundaries
 
 An inner graph input can receive a reference to an outer-graph output. The
-boundary subscription schedules the affected inner nodes directly.
+owning node applies changes to the boundary reference. Target updates schedule
+the affected inner nodes through their dynamic subscriptions.
 
 An inner graph can return a reference to an inner or outer time series. Outer
 consumers subscribe directly to the target. Passing an input reference through
 an inner graph copies the target pointer and removes the inner graph from the
 value-update path.
 
-An inner graph failure invalidates its reference output and unbinds its
-subscribers. The [evaluation design](evaluation.md#exceptions) defines the
-complete failure sequence.
-
-The engine creates boundary subscriptions for each inner runtime graph. Runtime
-creation is required because wiring cannot determine their number.
-
 When an outer consumer requests a compatible type that the inner graph did not
 request during compilation, the runtime graph that owns the source creates or
 returns the shared representation for that type.
+
+The [nested graph design](nested-graphs.md) defines boundary isolation,
+scheduling, and lifecycle.
 
 ## Dynamic collections
 

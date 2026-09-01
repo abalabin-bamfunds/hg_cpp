@@ -10,8 +10,6 @@ template <typename T> class CppScalarType final : public ScalarType {
   public:
     [[nodiscard]] bool is_resolved() const noexcept override { return true; }
 
-    [[nodiscard]] bool match(const Type &supplied, TypeMap &) const override { return this == &supplied; }
-
     [[nodiscard]] const Type &resolve(const TypeMap &) const override { return *this; }
 
     [[nodiscard]] bool supports_equality() const noexcept override {
@@ -27,6 +25,12 @@ template <typename T> class CppScalarType final : public ScalarType {
 
 const ScalarType &int_type() noexcept {
     static const CppScalarType<int> type;
+
+    return type;
+}
+
+const ScalarType &bool_type() noexcept {
+    static const CppScalarType<bool> type;
 
     return type;
 }
@@ -69,6 +73,10 @@ const ScalarType &symbol_type() noexcept {
 
 template <> const ScalarType &cpp_scalar_type<int>() noexcept {
     return int_type();
+}
+
+template <> const ScalarType &cpp_scalar_type<bool>() noexcept {
+    return bool_type();
 }
 
 template <> const ScalarType &cpp_scalar_type<std::int64_t>() noexcept {

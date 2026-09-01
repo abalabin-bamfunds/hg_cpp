@@ -2,9 +2,8 @@
 
 ## Purpose
 
-The node API defines a signature and its evaluation function together. It
-supports plain value access, complete time series access, and tracked output
-modification.
+The node API defines a signature and the functions that implement a node. It supports plain value access, complete
+time series access, and tracked output modification.
 
 ## Aggregate class declaration
 
@@ -39,17 +38,55 @@ An aggregate node class:
 - uses `In<>` fields for time series inputs
 - uses plain C++ fields or Scalar<T> for scalar parameters
 - can contain `State<T>` fields and at most one `Out<>` field
-- defines `evaluate()` as a `const` function with a `void` return type
+- defines `evaluate()` or `start()` as a `const` function with a `void` return type
 - contains at most 32 fields
 
 The aggregate is a read-only view created for one invocation. `State<T>` and
 `Out<>` modify the runtime objects that they reference. Activity and validity
 are properties of each `In<>` type.
 
+`evaluate()` can be omitted when a node performs no evaluation. The compiled node then has a null evaluation function.
+
 Calling a node template inside a `WiringContext` creates a wired node and
 returns its output as a `WiringPoint`. A call returns `void` when the node has
 no output. The [graph wiring design](graph-wiring.md) defines ownership and
 nested contexts.
+
+## Runtime-signature declaration
+
+A definition object can provide its signature as runtime data. Use this form
+when the parameter count or parameter types cannot be encoded in one C++ type.
+`node()` creates a node template for the definition.
+
+The definition can declare two C++ types:
+
+- `compiled_data_type` is immutable, belongs to the compiled graph, and is
+  shared by its runtime graphs
+- `state_type` is mutable and belongs to one runtime graph
+
+The definition constructs its compiled data during graph compilation. Initial
+state follows the byte-copy requirement in [Private state](#private-state).
+Either type can be omitted.
+
+The definition declares `evaluate()` or `start()`. Each function receives a
+`NodeInvocation<CompiledData, State>` by value. The same value is available to declared stop and invalidation
+functions. It provides `context()`, `output()`, and the resolved parameters. `output()` is
+available when the signature has an output. The invocation also provides
+`compiled_data()` and `state()` when the definition declares those types.
+
+`inputs()` enumerates time series inputs in signature order. `scalars()`
+enumerates scalar parameters in signature order. Every entry provides
+`parameter_index()`, `parameter_name()`, and `parameter_type()`. An input entry
+provides a generic `In<TS_T>` view. A scalar entry provides `has_value()` and a
+generic `Scalar<>` view. An absent optional scalar remains in the range with
+`has_value() == false`.
+
+The ranges are lazy and allocate no storage. Views are returned by value and
+are valid for one node invocation. They use the generic view visitor and
+conversion APIs.
+
+The node framework alone accesses compiled parameter bindings and runtime
+storage.
 
 ## Plain C++ parameters
 

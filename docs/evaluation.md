@@ -24,6 +24,8 @@ in increasing order.
 A node evaluates at most once in an outer cycle. Multiple input updates schedule
 one evaluation.
 
+A scheduled node without an evaluation function still processes input validity, invalidation, and output publication.
+
 Inner graph execution and reference-bound inputs must preserve the same forward
 order.
 
@@ -127,6 +129,9 @@ identifies the target, callback function, and owning runtime graph.
 A beginning-of-cycle callback runs before new input updates. An end-of-cycle
 callback runs after all outer and inner evaluation work and before deferred
 storage reclamation.
+
+Beginning-of-cycle callbacks run in reverse registration order. This releases
+downstream objects before objects that they can reference.
 
 A failed or stopped runtime graph discards its pending cycle callbacks. Its stop
 code performs cleanup. [Deferred reclamation](time-series-references.md#outer-cycle-boundary)

@@ -18,9 +18,11 @@ class GenericSetScalarType final : public SetScalarType {
     explicit GenericSetScalarType(const ScalarType &item_type) noexcept : item_type_(&item_type) {}
 
     [[nodiscard]] bool is_resolved() const noexcept override { return false; }
-    [[nodiscard]] bool match(const Type &supplied, TypeMap &bindings) const override;
     [[nodiscard]] const Type &resolve(const TypeMap &bindings) const override;
     [[nodiscard]] const ScalarType &item_type() const noexcept override { return *item_type_; }
+
+  protected:
+    [[nodiscard]] bool do_match(const Type &supplied, TypeMap &bindings) const override;
 
   private:
     const ScalarType *item_type_;

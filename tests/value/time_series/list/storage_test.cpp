@@ -10,15 +10,14 @@ TEST_CASE("fixed list changes cross bitset word boundaries", "[value][time_serie
     auto changes = bg::details::fixed_time_series_list_changes<65>{};
     const auto first_time = bg::MIN_DT + std::chrono::microseconds{1};
 
-    CHECK(changes.mark(0, first_time, bg::MIN_DT));
-    CHECK(changes.mark(63, first_time, bg::MIN_DT));
-    CHECK(changes.mark(64, first_time, bg::MIN_DT));
-    CHECK_FALSE(changes.mark(64, first_time, bg::MIN_DT));
+    CHECK(changes.mark(0, first_time));
+    CHECK(changes.mark(63, first_time));
+    CHECK(changes.mark(64, first_time));
+    CHECK_FALSE(changes.mark(64, first_time));
     CHECK(std::vector<std::size_t>{changes.begin(), changes.end()} == std::vector<std::size_t>{0, 63, 64});
 
     const auto second_time = first_time + std::chrono::microseconds{1};
-    CHECK(changes.mark(1, second_time, first_time));
-    CHECK(changes.previous_last_updated() == first_time);
+    CHECK(changes.mark(1, second_time));
     CHECK(std::vector<std::size_t>{changes.begin(), changes.end()} == std::vector<std::size_t>{1});
 }
 

@@ -25,10 +25,12 @@ class GenericDictScalarType final : public DictScalarType {
         : key_type_(&key_type), mapped_type_(&mapped_type) {}
 
     [[nodiscard]] bool is_resolved() const noexcept override { return false; }
-    [[nodiscard]] bool match(const Type &supplied, TypeMap &bindings) const override;
     [[nodiscard]] const Type &resolve(const TypeMap &bindings) const override;
     [[nodiscard]] const ScalarType &key_type() const noexcept override { return *key_type_; }
     [[nodiscard]] const ScalarType &mapped_type() const noexcept override { return *mapped_type_; }
+
+  protected:
+    [[nodiscard]] bool do_match(const Type &supplied, TypeMap &bindings) const override;
 
   private:
     const ScalarType *key_type_;

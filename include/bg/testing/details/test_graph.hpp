@@ -1,8 +1,8 @@
 #pragma once
 
 #include <bg/evaluation_time.hpp>
-#include <bg/graph/details/wiring_callable.hpp>
 #include <bg/graph/compiled_graph.hpp>
+#include <bg/graph/details/wiring_callable.hpp>
 #include <bg/graph/graph_wiring.hpp>
 #include <bg/graph/runtime_graph.hpp>
 #include <bg/graph/wiring_context.hpp>
@@ -18,6 +18,7 @@
 #include <array>
 #include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <optional>
 #include <ranges>
@@ -98,12 +99,22 @@ template <typename T> struct canonical_tick<std::optional<T>> {
 
 template <typename T> using canonical_tick_t = typename canonical_tick<T>::type;
 
+template <typename TimeSeries> struct test_output_scalar;
+
+template <typename T, auto... Properties> struct test_output_scalar<TS<T, Properties...>> {
+    using type = T;
+};
+
+template <typename Target, auto... Properties>
+struct test_output_scalar<REF<Target, Properties...>> : test_output_scalar<Target> {};
+
 template <typename Scalar, std::ranges::input_range Range>
 [[nodiscard]] WiringPoint wire_source(const Range &ticks, EvaluationTime start_time) {
     using Tick = std::remove_cvref_t<std::ranges::range_value_t<Range>>;
     using Value = bg::details::scalar_value_t<Scalar>;
+    using StoredValue = std::conditional_t<std::same_as<Value, bool>, std::uint8_t, Value>;
 
-    auto values = std::vector<Value>{};
+    auto values = std::vector<StoredValue>{};
     auto times = std::vector<EvaluationTime>{};
     values.reserve(std::ranges::size(ticks));
     times.reserve(std::ranges::size(ticks));
@@ -112,11 +123,11 @@ template <typename Scalar, std::ranges::input_range Range>
     for (const auto &tick : ticks) {
         if constexpr (optional_value<Tick>::value) {
             if (tick) {
-                values.emplace_back(static_cast<Value>(*tick));
+                values.emplace_back(static_cast<StoredValue>(*tick));
                 times.push_back(start_time + std::chrono::microseconds{index});
             }
         } else {
-            values.emplace_back(static_cast<Value>(tick));
+            values.emplace_back(static_cast<StoredValue>(tick));
             times.push_back(start_time + std::chrono::microseconds{index});
         }
 
@@ -130,10 +141,9 @@ template <typename Function> struct test_function {
     using callable = bg::details::callable<std::remove_cvref_t<Function>>;
     using result = std::remove_cvref_t<typename callable::result_type>;
     using output_time_series = typename bg::details::typed_wiring_point<result>::time_series_type;
-    using output_scalar = typename output_time_series::value_type;
+    using output_scalar = typename test_output_scalar<output_time_series>::type;
 
-    template <std::size_t Index>
-    using argument = std::remove_cvref_t<typename callable::template argument_type<Index>>;
+    template <std::size_t Index> using argument = std::remove_cvref_t<typename callable::template argument_type<Index>>;
 
     template <std::size_t Index>
     using input_time_series = typename bg::details::typed_wiring_point<argument<Index>>::time_series_type;

@@ -1,6 +1,5 @@
 #include <bg/type/time_series_set_type.hpp>
 
-#include <bg/type/time_series_reference_type.hpp>
 #include <bg/type/type_map.hpp>
 #include <bg/type/type_resolution_error.hpp>
 #include <bg/util/symbol.hpp>
@@ -20,14 +19,17 @@ class ResolvedTimeSeriesSetType final : public TimeSeriesSetType {
         : TimeSeriesSetType(item_type, guarantee) {}
 
     [[nodiscard]] bool is_resolved() const noexcept override { return true; }
-    [[nodiscard]] bool match(const Type &supplied, TypeMap &) const override { return this == &supplied; }
     [[nodiscard]] const Type &resolve(const TypeMap &) const override { return *this; }
 };
 
 } // namespace
 
-bool GenericTimeSeriesSetType::match(const Type &supplied, TypeMap &bindings) const {
-    const auto *set = dynamic_cast<const TimeSeriesSetType *>(&details::unwrap_time_series_reference(supplied));
+const TimeSeriesType &TimeSeriesSetType::with_guarantee(TimeSeriesGuarantee guarantee) const {
+    return time_series_set_type(item_type(), guarantee);
+}
+
+bool GenericTimeSeriesSetType::do_match(const Type &supplied, TypeMap &bindings) const {
+    const auto *set = dynamic_cast<const TimeSeriesSetType *>(&supplied);
     if (set == nullptr || !set->is_resolved()) {
         return false;
     }

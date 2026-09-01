@@ -18,12 +18,10 @@ namespace bg::details {
 
 template <std::size_t Size> class fixed_time_series_list_changes {
   public:
-    [[nodiscard]] bool mark(std::size_t index, EvaluationTime evaluation_time,
-                            EvaluationTime previous_last_updated) noexcept {
+    bool mark(std::size_t index, EvaluationTime evaluation_time) noexcept {
         if (time_ != evaluation_time) {
             updated_.clear();
             time_ = evaluation_time;
-            previous_last_updated_ = previous_last_updated;
         }
 
         return updated_.set(static_cast<std::uint32_t>(index));
@@ -41,24 +39,22 @@ template <std::size_t Size> class fixed_time_series_list_changes {
     [[nodiscard]] auto end() const noexcept { return updated_.end(); }
 
     [[nodiscard]] EvaluationTime time() const noexcept { return time_; }
-    [[nodiscard]] EvaluationTime previous_last_updated() const noexcept { return previous_last_updated_; }
-    bool reset(std::size_t index) noexcept {
-        return updated_.reset(static_cast<std::uint32_t>(index));
-    }
-    [[nodiscard]] bool any() const noexcept { return updated_.any(); }
 
   private:
     static_assert(Size < util::dynamic_index_extent);
 
     EvaluationTime time_{MIN_DT};
-    EvaluationTime previous_last_updated_{MIN_DT};
     util::index<static_cast<std::uint32_t>(Size)> updated_;
 };
 
 template <typename T> union time_series_value_slot {
     constexpr time_series_value_slot() noexcept {}
-    ~time_series_value_slot() noexcept requires std::is_trivially_destructible_v<T> = default;
-    ~time_series_value_slot() noexcept requires(!std::is_trivially_destructible_v<T>) {}
+    ~time_series_value_slot() noexcept
+        requires std::is_trivially_destructible_v<T>
+    = default;
+    ~time_series_value_slot() noexcept
+        requires(!std::is_trivially_destructible_v<T>)
+    {}
 
     T value;
 };

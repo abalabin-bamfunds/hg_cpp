@@ -24,6 +24,7 @@ class RuntimeGraphAccess;
 class TimeSeriesStorageRepresentation;
 class ItemSubscribers;
 class SimulationEvaluationEngine;
+class NestedGraph;
 
 class RuntimeGraph {
   public:
@@ -48,6 +49,7 @@ class RuntimeGraph {
     friend EvaluationContext;
     friend OutputNotificationContext;
     friend SimulationEvaluationEngine;
+    friend NestedGraph;
     friend testing::RuntimeGraphAccess;
 
     using ScheduleWord = CompiledGraph::ScheduleWord;
@@ -55,9 +57,11 @@ class RuntimeGraph {
 
     class ScheduledNodes;
     class FutureSchedule;
+    class CycleCallbacks;
     class ScratchUse;
     class ModifiedItemPropagator;
     struct OutputPath;
+    struct PendingInputNotifications;
 
     [[nodiscard]] auto scheduling_info() noexcept -> std::span<SchedulingInfo>;
     void initialize_storage();
@@ -70,6 +74,12 @@ class RuntimeGraph {
     [[nodiscard]] FutureSchedule *future_schedule() const noexcept;
     void activate_scheduled(EvaluationTime evaluation_time) noexcept;
     void clear_future_schedule() noexcept;
+    void mirror_future_schedule();
+    [[nodiscard]] CycleCallbacks *&cycle_callbacks() noexcept;
+    [[nodiscard]] CycleCallbacks *cycle_callbacks() const noexcept;
+    void add_cycle_callback(void *target, void (*function)(void *) noexcept);
+    void run_cycle_callbacks() noexcept;
+    void clear_cycle_callbacks() noexcept;
     [[nodiscard]] OutputPath *add_output_path(EvaluationContext &context,
                                               const TimeSeriesStorageRepresentation &representation,
                                               EvaluationTime &last_updated, void *value, std::size_t item,
@@ -88,7 +98,10 @@ class RuntimeGraph {
     void notify_output(const OutputNotification *notification, const void *value, OutputChange change);
     void propagate_output_change(const CompiledNode &node, OutputChange change);
     void publish_output_changes(const CompiledNode &node, bool output_was_valid);
-    void schedule_dynamic_subscribers(std::size_t offset, OutputChange change) noexcept;
+    void schedule_dynamic_subscribers(std::size_t offset, OutputChange change);
+    void queue_input_notification(InputNotificationFunction function, std::size_t node_index, std::size_t data,
+                                  OutputChange change);
+    void run_input_notifications();
     void apply_invalidation(const CompiledNode &node, std::size_t node_index);
     void stop_nodes(std::size_t node_count) noexcept;
     [[nodiscard]] bool inputs_are_valid(const CompiledNode &node) const noexcept;
@@ -104,6 +117,12 @@ class RuntimeGraph {
     EvaluationTime last_evaluation_time_{MIN_DT};
     EvaluationTime evaluation_time_{MIN_DT};
     details::EvaluationScratch *scratch_{};
+    RuntimeGraph *parent_{};
+    std::size_t owner_node_index_{};
+    ScheduleHandle parent_schedule_{};
+    std::optional<EvaluationTime> parent_schedule_time_;
+    PendingInputNotifications *pending_input_notifications_{};
+    bool suppress_parent_scheduling_ : 1 {};
     bool started_ : 1 {};
     bool stopped_ : 1 {};
 };

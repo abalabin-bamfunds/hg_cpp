@@ -1,9 +1,12 @@
 #include <bg/scalar/dict/scalar_type.hpp>
 #include <bg/scalar/list/scalar_type.hpp>
-#include <bg/type/scalar_type.hpp>
 #include <bg/scalar/set/scalar_type.hpp>
+#include <bg/type/scalar_type.hpp>
 #include <bg/type/signature.hpp>
+#include <bg/type/time_series_list_type.hpp>
+#include <bg/type/time_series_reference_type.hpp>
 #include <bg/type/time_series_value_type.hpp>
+#include <bg/type/time_series_variable.hpp>
 #include <bg/type/type_of.hpp>
 #include <bg/type/type_variable.hpp>
 
@@ -57,11 +60,55 @@ TEST_CASE("a generic time-series type retains its guarantee variable", "[type_sy
     CHECK(ts_float.guarantee().variable() == &guarantee);
 }
 
+TEST_CASE("a time series variable and its guarantee resolve independently", "[type_system]") {
+    auto left = bg::TypeVariable<bg::TimeSeriesType>{bg::util::symbol{"Left"}};
+    auto right = bg::TypeVariable<bg::TimeSeriesType>{bg::util::symbol{"Right"}};
+    auto guarantee = bg::GuaranteeVariable{bg::util::symbol{"G"}};
+    const auto generic_left = bg::GenericTimeSeriesVariableType{left, guarantee};
+    const auto generic_right = bg::GenericTimeSeriesVariableType{right, guarantee};
+    const auto &item = bg::time_series_value_type(bg::float_type(), bg::TimeSeriesGuarantee::ordinary);
+    const auto &list = bg::time_series_list_type(item, 2, bg::TimeSeriesGuarantee::final);
+    const auto &value = bg::time_series_value_type(bg::int_type(), bg::TimeSeriesGuarantee::ordinary);
+    auto bindings = bg::TypeMap{};
+
+    REQUIRE(generic_left.match(list, bindings));
+    REQUIRE(generic_right.match(value, bindings));
+
+    CHECK(&generic_left.resolve(bindings) == &bg::time_series_list_type(item, 2, bg::TimeSeriesGuarantee::ordinary));
+    CHECK(&generic_right.resolve(bindings) == &value);
+}
+
+TEST_CASE("a time series variable ignores the guarantees captured separately", "[type_system]") {
+    auto variable = bg::TypeVariable<bg::TimeSeriesType>{bg::util::symbol{"T"}};
+    auto guarantee = bg::GuaranteeVariable{bg::util::symbol{"G"}};
+    const auto generic = bg::GenericTimeSeriesVariableType{variable, guarantee};
+    const auto &final = bg::time_series_value_type(bg::float_type(), bg::TimeSeriesGuarantee::final);
+    const auto &deduplicated = bg::time_series_value_type(bg::float_type(), bg::TimeSeriesGuarantee::deduplicated);
+    auto bindings = bg::TypeMap{};
+
+    REQUIRE(generic.match(final, bindings));
+    REQUIRE(generic.match(deduplicated, bindings));
+
+    CHECK(&generic.resolve(bindings) == &deduplicated);
+}
+
 TEST_CASE("resolved time-series value types are reused", "[type_system]") {
     const bg::ScalarType &float_type = bg::float_type();
     const auto &ts_final = bg::time_series_value_type(float_type, bg::TimeSeriesGuarantee::final);
 
     CHECK(&ts_final == &bg::time_series_value_type(float_type, bg::TimeSeriesGuarantee::final));
+}
+
+TEST_CASE("signature resolution uses reference target types", "[type_system][reference]") {
+    const auto &target = bg::time_series_value_type(bg::int64_type(), bg::TimeSeriesGuarantee::ordinary);
+    const auto &reference = bg::time_series_reference_type(target, bg::TimeSeriesGuarantee::ordinary);
+    const auto value_input = bg::Signature{bg::util::symbol{"value_input"}, {{bg::util::symbol{"value"}, &target}}};
+    const auto reference_input =
+        bg::Signature{bg::util::symbol{"reference_input"}, {{bg::util::symbol{"value"}, &reference}}};
+    const auto arguments = std::array<const bg::Type *, 1>{&reference};
+
+    CHECK(value_input.resolve(arguments).parameters[0].type == &target);
+    CHECK(reference_input.resolve(arguments).parameters[0].type == &reference);
 }
 
 TEST_CASE("a signature resolves scalar parameters", "[type_system]") {

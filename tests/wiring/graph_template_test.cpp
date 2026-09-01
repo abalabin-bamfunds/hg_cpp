@@ -4,6 +4,7 @@
 #include <bg/graph/wiring_context.hpp>
 #include <bg/node.hpp>
 #include <bg/type/scalar_type.hpp>
+#include <bg/type/time_series_list_type.hpp>
 #include <bg/type/time_series_value_type.hpp>
 
 #include <catch2/catch_test_macros.hpp>
@@ -95,6 +96,16 @@ TEST_CASE("a graph template can omit its output", "[graph_template]") {
     CHECK(nodes[1].path().parent->name.text() == "scale_sink_graph");
 }
 
+TEST_CASE("graph output re-annotation is checked by wiring", "[graph_template]") {
+    const auto invalid =
+        bg::graph("name"_m = "invalid_output",
+                  [](bg::wp<bg::TS<float>> input) -> bg::wp<bg::TS<double>> { return bg::wp<bg::TS<double>>{input}; });
+    auto wiring = bg::GraphWiring{};
+    const auto context = bg::WiringContext{wiring};
+
+    CHECK_THROWS_AS(invalid(source()), bg::WiringError);
+}
+
 TEST_CASE("a graph signature resolves a scalar variable declaration", "[graph_template]") {
     using GraphScalar = bg::ScalarVariable<"GraphScalar">;
 
@@ -108,6 +119,21 @@ TEST_CASE("a graph signature resolves a scalar variable declaration", "[graph_te
 
     CHECK(signature.parameters[0].type == &time_series);
     CHECK(signature.output == &time_series);
+}
+
+TEST_CASE("a graph signature resolves a time series variable declaration", "[graph_template][type_system]") {
+    using T = bg::TimeSeriesVariable<"T">;
+    constexpr auto G = bg::guarantee_variable<"G">;
+    const auto identity = bg::graph("name"_m = "generic_time_series_identity",
+                                    [](bg::wp<T::with<G>> input) -> bg::wp<T::with<G>> { return input; });
+    const auto &item = bg::time_series_value_type(bg::double_type(), bg::TimeSeriesGuarantee::ordinary);
+    const auto &list = bg::time_series_list_type(item, 2, bg::TimeSeriesGuarantee::final);
+    const auto arguments = std::array<const bg::Type *, 1>{&list};
+
+    const auto signature = identity.signature().resolve(arguments);
+
+    CHECK(signature.parameters[0].type == &list);
+    CHECK(signature.output == &list);
 }
 
 namespace {

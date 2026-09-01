@@ -56,12 +56,21 @@ class Signature {
 
     [[nodiscard]] ResolvedSignature resolve(std::span<const Type *const> arguments) const;
     [[nodiscard]] SignatureResolution resolve_with_bindings(std::span<const Type *const> arguments) const;
+    [[nodiscard]] SignatureResolution resolve_with_bindings(std::span<const Type *const> arguments,
+                                                            const TypeMap &bindings) const;
 
     [[nodiscard]] util::symbol name() const noexcept { return name_; }
 
     [[nodiscard]] std::size_t parameter_count() const noexcept { return parameters_.size(); }
 
+    [[nodiscard]] const Parameter &parameter(std::size_t index) const noexcept { return parameters_[index]; }
+
+    [[nodiscard]] bool has_output() const noexcept { return output_ != nullptr; }
+
   private:
+    [[nodiscard]] SignatureResolution resolve_seeded(std::span<const Type *const> arguments, TypeMap bindings) const;
+    [[nodiscard]] SignatureResolution resolve(TypeMap bindings) const;
+
     util::symbol name_;
     std::vector<Parameter> parameters_;
     const TimeSeriesType *output_;

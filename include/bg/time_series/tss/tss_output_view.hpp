@@ -23,11 +23,9 @@ template <typename K> class TypedTimeSeriesSetOutputView final : public TimeSeri
     bool insert(const ScalarValueInputView &item) const override {
         auto &memory = details::current_scalar_memory_resource();
         auto &value = storage();
-        value.reset_change_tracking(context().evaluation_time(), last_updated(), memory,
-                                    [](std::uint32_t) noexcept {});
+        value.reset_change_tracking(context().evaluation_time(), memory, [](std::uint32_t) noexcept {});
         const auto result = value.insert(item, memory, [](std::uint32_t) {}, [](std::uint32_t) {});
-        refresh_last_updated();
-        if (value.changed()) {
+        if (result.change != details::time_series_set_change::none) {
             publish();
         }
         return result.change != details::time_series_set_change::none;
@@ -36,11 +34,9 @@ template <typename K> class TypedTimeSeriesSetOutputView final : public TimeSeri
     bool erase(const ScalarValueInputView &item) const override {
         auto &memory = details::current_scalar_memory_resource();
         auto &value = storage();
-        value.reset_change_tracking(context().evaluation_time(), last_updated(), memory,
-                                    [](std::uint32_t) noexcept {});
+        value.reset_change_tracking(context().evaluation_time(), memory, [](std::uint32_t) noexcept {});
         const auto result = value.erase(item, memory, [](std::uint32_t) noexcept {});
-        refresh_last_updated();
-        if (value.changed()) {
+        if (result.change != details::time_series_set_change::none) {
             publish();
         }
         return result.change != details::time_series_set_change::none;
@@ -49,24 +45,17 @@ template <typename K> class TypedTimeSeriesSetOutputView final : public TimeSeri
     void clear() const override {
         auto &memory = details::current_scalar_memory_resource();
         auto &value = storage();
-        value.reset_change_tracking(context().evaluation_time(), last_updated(), memory,
-                                    [](std::uint32_t) noexcept {});
+        const auto should_publish = !valid() || value.size() != 0;
+        value.reset_change_tracking(context().evaluation_time(), memory, [](std::uint32_t) noexcept {});
         value.clear(memory, [](std::uint32_t) noexcept {});
 
-        if (value.previous_last_updated() <= MIN_DT || value.changed()) {
+        if (should_publish) {
             publish();
-        } else {
-            refresh_last_updated();
         }
     }
 
   private:
     [[nodiscard]] Storage &storage() const noexcept { return *static_cast<Storage *>(mutable_value()); }
-
-    void refresh_last_updated() const noexcept {
-        auto &value = storage();
-        *mutable_last_updated() = value.changed() ? context().evaluation_time() : value.previous_last_updated();
-    }
 };
 
 static_assert(sizeof(TimeSeriesSetOutputView) == sizeof(TimeSeriesOutputView));

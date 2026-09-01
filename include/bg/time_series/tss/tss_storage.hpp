@@ -44,8 +44,7 @@ template <typename K> class time_series_set_storage {
 
     template <typename Reclaim>
         requires std::is_nothrow_invocable_v<Reclaim &, Position>
-    void reset_change_tracking(EvaluationTime evaluation_time, EvaluationTime previous_last_updated,
-                               std::pmr::memory_resource &memory, Reclaim &&reclaim) {
+    void reset_change_tracking(EvaluationTime evaluation_time, std::pmr::memory_resource &memory, Reclaim &&reclaim) {
         if (change_time_ == evaluation_time) {
             return;
         }
@@ -58,7 +57,6 @@ template <typename K> class time_series_set_storage {
         added_.clear();
         removed_.clear();
         change_time_ = evaluation_time;
-        previous_last_updated_ = previous_last_updated;
     }
 
     template <typename ConstructItem, typename DestroyItem>
@@ -172,7 +170,6 @@ template <typename K> class time_series_set_storage {
     [[nodiscard]] std::size_t size() const noexcept { return live_.count(); }
     [[nodiscard]] bool changed() const noexcept { return added_.any() || removed_.any(); }
     [[nodiscard]] EvaluationTime change_time() const noexcept { return change_time_; }
-    [[nodiscard]] EvaluationTime previous_last_updated() const noexcept { return previous_last_updated_; }
     [[nodiscard]] const util::index<> &live() const noexcept { return live_; }
     [[nodiscard]] const util::index<> &added() const noexcept { return added_; }
     [[nodiscard]] const util::index<> &removed() const noexcept { return removed_; }
@@ -213,7 +210,6 @@ template <typename K> class time_series_set_storage {
     util::index<> added_;
     util::index<> removed_;
     EvaluationTime change_time_{MIN_DT};
-    EvaluationTime previous_last_updated_{MIN_DT};
 };
 
 template <typename K, auto... Properties> struct time_series_value_storage<TSS<K, Properties...>> {

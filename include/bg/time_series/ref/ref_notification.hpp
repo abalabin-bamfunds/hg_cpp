@@ -28,9 +28,28 @@ class ReferenceInputSubscriber {
     std::uint32_t node_index_and_flags_;
 };
 
+class CallbackReferenceInputSubscriber {
+  public:
+    CallbackReferenceInputSubscriber(std::uint32_t input_offset, std::size_t data, std::uint32_t node_index,
+                                     bool active, bool required, InputNotificationFunction callback) noexcept
+        : subscription_{input_offset, node_index, active, required}, data_{data}, callback_{callback} {}
+
+    [[nodiscard]] const ReferenceInputSubscriber &subscription() const noexcept { return subscription_; }
+    [[nodiscard]] std::size_t data() const noexcept { return data_; }
+    [[nodiscard]] InputNotificationFunction callback() const noexcept { return callback_; }
+
+  private:
+    ReferenceInputSubscriber subscription_;
+    std::size_t data_;
+    InputNotificationFunction callback_;
+};
+
 void notify_reference_inputs(OutputNotificationContext &context, const void *value, OutputChange change,
                              std::span<const std::byte> records);
+void notify_callback_reference_inputs(OutputNotificationContext &context, const void *value, OutputChange change,
+                                      std::span<const std::byte> records);
 
-static_assert(sizeof(ReferenceInputSubscriber) == 2 * sizeof(std::uint32_t));
+static_assert(sizeof(ReferenceInputSubscriber) == sizeof(void *));
+static_assert(sizeof(CallbackReferenceInputSubscriber) == 3 * sizeof(void *));
 
 } // namespace bg::details

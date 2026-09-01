@@ -44,10 +44,10 @@ class CppTimeSeriesDictionaryStorageRepresentation<TSD<K, Item, Properties...>> 
         return prototype.get();
     }
 
-    [[nodiscard]] const TimeSeriesOutputView &output_view_prototype() const noexcept override {
+    [[nodiscard]] const TimeSeriesOutputView *output_view_prototype() const noexcept override {
         static const auto prototype = util::polymorphic_value<TimeSeriesOutputView>::template make<
             TypedTimeSeriesDictionaryOutputView<K, Item>>();
-        return prototype.get();
+        return &prototype.get();
     }
 
     [[nodiscard]] FixedItem fixed_item(std::size_t index) const override {
@@ -58,8 +58,8 @@ class CppTimeSeriesDictionaryStorageRepresentation<TSD<K, Item, Properties...>> 
         return {*keys_, Storage::key_last_updated_offset(), Storage::key_value_offset()};
     }
 
-    [[nodiscard]] bool mark_item_modified(void *value, std::size_t item, EvaluationTime evaluation_time,
-                                          EvaluationTime, std::pmr::memory_resource &memory) const noexcept override {
+    [[nodiscard]] bool mark_item_modified(void *value, std::size_t item, EvaluationTime evaluation_time, EvaluationTime,
+                                          std::pmr::memory_resource &memory) const noexcept override {
         if (item == 0) {
             return true;
         }
@@ -71,9 +71,8 @@ class CppTimeSeriesDictionaryStorageRepresentation<TSD<K, Item, Properties...>> 
         return static_cast<const Storage *>(value)->key_storage().last_updated > MIN_DT;
     }
 
-    void for_each_modified_item(const EvaluationTime &last_updated, const void *value,
-                                EvaluationTime evaluation_time, void *context,
-                                ModifiedItemFunction function) const override {
+    void for_each_modified_item(const EvaluationTime &last_updated, const void *value, EvaluationTime evaluation_time,
+                                void *context, ModifiedItemFunction function) const override {
         const auto &storage = *static_cast<const Storage *>(value);
         const auto &keys = storage.key_storage().value.value;
 
@@ -89,62 +88,25 @@ class CppTimeSeriesDictionaryStorageRepresentation<TSD<K, Item, Properties...>> 
             return;
         }
 
-        const auto key_set_validity_changed =
-            (storage.key_storage().last_updated > MIN_DT) != (keys.previous_last_updated() > MIN_DT);
-        if (keys.changed() || key_set_validity_changed) {
-            function(context,
-                     {0, keys_, &storage.key_storage().last_updated, &storage.key_storage().value.value});
+        if (storage.key_storage().last_updated == evaluation_time) {
+            function(context, {0, keys_, &storage.key_storage().last_updated, &storage.key_storage().value.value});
         }
 
         for (const auto position : keys.added()) {
             const auto &item = storage.contained(position);
-            function(context,
-                     {static_cast<std::size_t>(position) + 1, item_, &item.last_updated, &item.value.value});
+            function(context, {static_cast<std::size_t>(position) + 1, item_, &item.last_updated, &item.value.value});
         }
         for (const auto position : storage.modified()) {
             if (keys.added().contains(position)) {
                 continue;
             }
             const auto &item = storage.contained(position);
-            function(context,
-                     {static_cast<std::size_t>(position) + 1, item_, &item.last_updated, &item.value.value});
+            function(context, {static_cast<std::size_t>(position) + 1, item_, &item.last_updated, &item.value.value});
         }
         for (const auto position : keys.removed()) {
             const auto &item = storage.contained(position);
             function(context, {static_cast<std::size_t>(position) + 1, item_, &MIN_DT, &item.value.value});
         }
-    }
-
-    [[nodiscard]] bool requires_modified_item_finalization() const noexcept override { return true; }
-
-    bool finalize_modified_items(EvaluationTime &last_updated, void *value,
-                                 EvaluationTime evaluation_time) const noexcept override {
-        auto &storage = *static_cast<Storage *>(value);
-        if (storage.change_time() != evaluation_time) {
-            return false;
-        }
-
-        const auto &added = storage.key_storage().value.value.added();
-        for (const auto position : storage.modified()) {
-            if (storage.resurrected().contains(position)) {
-                continue;
-            }
-
-            auto &item = storage.contained(position);
-            if (!item_->finalize_modified_items(item.last_updated, &item.value.value, evaluation_time) &&
-                !added.contains(position)) {
-                storage.clear_item_modified(position);
-            }
-        }
-
-        if ((last_updated > MIN_DT) != (storage.previous_last_updated() > MIN_DT)) {
-            return true;
-        }
-        if (!storage.changed()) {
-            last_updated = storage.previous_last_updated();
-            return false;
-        }
-        return true;
     }
 
     void construct_initial_value(void *destination) const noexcept override {

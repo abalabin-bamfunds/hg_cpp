@@ -24,12 +24,31 @@ void *OutputNotificationContext::runtime_storage_at(std::size_t offset) const no
     return runtime_graph_->storage_ + offset;
 }
 
+EvaluationTime OutputNotificationContext::evaluation_time() const noexcept {
+    return runtime_graph_->evaluation_time_;
+}
+
+const CompiledNode &OutputNotificationContext::compiled_node(std::size_t node_index) const noexcept {
+    return runtime_graph_->compiled_graph_->node(node_index);
+}
+
 std::pmr::memory_resource &OutputNotificationContext::memory_resource(RuntimeGraph &graph) const noexcept {
     return *graph.memory_;
 }
 
 void OutputNotificationContext::schedule_validity_check(RuntimeGraph &graph, std::size_t node_index) const noexcept {
     graph.schedule_validity_check(node_index);
+}
+
+void notify_callback_inputs(OutputNotificationContext &context, const void *, OutputChange change,
+                            std::span<const std::byte> record_bytes) {
+    const auto records = std::span{
+        reinterpret_cast<const CallbackInputSubscriber *>(record_bytes.data()),
+        record_bytes.size() / sizeof(CallbackInputSubscriber),
+    };
+    for (const auto &record : records) {
+        record.notify(context, change);
+    }
 }
 
 class RuntimeGraph::FutureSchedule {
@@ -88,6 +107,31 @@ class RuntimeGraph::FutureSchedule {
     std::uint64_t next_id_{1};
 };
 
+class RuntimeGraph::CycleCallbacks {
+    struct Record {
+        void *target;
+        void (*function)(void *) noexcept;
+    };
+
+  public:
+    explicit CycleCallbacks(std::pmr::memory_resource &memory) : records_{&memory} {}
+
+    void add(void *target, void (*function)(void *) noexcept) { records_.push_back({target, function}); }
+
+    void run() noexcept {
+        const auto count = records_.size();
+        for (auto i = count; i != 0; --i) {
+            records_[i - 1].function(records_[i - 1].target);
+        }
+        records_.erase(records_.begin(), records_.begin() + static_cast<std::ptrdiff_t>(count));
+    }
+
+    void clear() noexcept { records_.clear(); }
+
+  private:
+    std::pmr::vector<Record> records_;
+};
+
 class RuntimeGraph::ScratchUse {
   public:
     ScratchUse(RuntimeGraph &graph, details::EvaluationScratch &scratch) noexcept
@@ -127,6 +171,20 @@ struct RuntimeGraph::OutputPath {
     EvaluationTime *last_updated;
     void *value;
     std::uint32_t item;
+};
+
+struct RuntimeGraph::PendingInputNotifications {
+    // A target graph applies cross-graph input reactions after entering the source's outer cycle.
+    struct Record {
+        InputNotificationFunction function;
+        std::size_t node_index;
+        std::size_t data;
+        OutputChange change;
+    };
+
+    explicit PendingInputNotifications(std::pmr::memory_resource &memory) : records{&memory} {}
+
+    std::pmr::vector<Record> records;
 };
 
 static_assert(alignof(EvaluationContext) >= 2);
@@ -295,7 +353,25 @@ void RuntimeGraph::initialize_storage() {
 }
 
 RuntimeGraph::~RuntimeGraph() {
+    if (parent_ != nullptr && parent_schedule_time_) {
+        parent_->cancel(owner_node_index_, parent_schedule_);
+    }
+
     if (storage_ != nullptr) {
+        for (auto node_index = compiled_graph_->node_count(); node_index != 0;) {
+            const auto &node = compiled_graph_->node(--node_index);
+            for (const auto &parameter : node.parameters()) {
+                if (parameter.mode() != ParameterBindingMode::reference) {
+                    continue;
+                }
+
+                auto &input = parameter.reference_input(storage_);
+                if (input.target != nullptr && input.target->subscribers != nullptr) {
+                    input.target->subscribers->remove(*this, parameter.value_offset());
+                }
+            }
+        }
+
         for (auto node_index = compiled_graph_->node_count(); node_index != 0;) {
             --node_index;
             const auto &node = compiled_graph_->node(node_index);
@@ -320,6 +396,17 @@ RuntimeGraph::~RuntimeGraph() {
         memory_->deallocate(future_schedule(), sizeof(FutureSchedule), alignof(FutureSchedule));
     }
 
+    if (compiled_graph_->has_cycle_callbacks() && cycle_callbacks() != nullptr) {
+        std::destroy_at(cycle_callbacks());
+        memory_->deallocate(cycle_callbacks(), sizeof(CycleCallbacks), alignof(CycleCallbacks));
+    }
+
+    if (pending_input_notifications_ != nullptr) {
+        std::destroy_at(pending_input_notifications_);
+        memory_->deallocate(pending_input_notifications_, sizeof(PendingInputNotifications),
+                            alignof(PendingInputNotifications));
+    }
+
     if (storage_ != nullptr) {
         memory_->deallocate(storage_, compiled_graph_->runtime_storage_size(),
                             compiled_graph_->runtime_storage_alignment());
@@ -335,12 +422,20 @@ void RuntimeGraph::schedule(std::size_t node_index) noexcept {
     auto scheduling = scheduling_info();
     auto &word = scheduling[word_index].evaluation;
     word |= ScheduleWord{1} << (node_index % CompiledGraph::schedule_word_bits);
+
+    if (parent_ != nullptr && !suppress_parent_scheduling_) {
+        parent_->schedule(owner_node_index_);
+    }
 }
 
 void RuntimeGraph::schedule_validity_check(std::size_t node_index) noexcept {
     auto scheduling = scheduling_info();
     auto &word = scheduling[node_index / CompiledGraph::schedule_word_bits].validity_check;
     word |= ScheduleWord{1} << (node_index % CompiledGraph::schedule_word_bits);
+
+    if (parent_ != nullptr && !suppress_parent_scheduling_) {
+        parent_->schedule(owner_node_index_);
+    }
 }
 
 ScheduleHandle RuntimeGraph::schedule_at(std::size_t node_index, EvaluationTime time) {
@@ -360,12 +455,15 @@ ScheduleHandle RuntimeGraph::schedule_at(std::size_t node_index, EvaluationTime 
         release.release();
     }
 
-    return ScheduleHandle{future_schedule()->add(time, node_index)};
+    auto result = ScheduleHandle{future_schedule()->add(time, node_index)};
+    mirror_future_schedule();
+    return result;
 }
 
 void RuntimeGraph::cancel(std::size_t node_index, ScheduleHandle handle) noexcept {
     if (compiled_graph_->has_future_scheduling() && future_schedule() != nullptr && handle.id_ != 0) {
         future_schedule()->cancel(node_index, handle.id_);
+        mirror_future_schedule();
     }
 }
 
@@ -380,12 +478,72 @@ RuntimeGraph::FutureSchedule *RuntimeGraph::future_schedule() const noexcept {
 void RuntimeGraph::activate_scheduled(EvaluationTime evaluation_time) noexcept {
     if (compiled_graph_->has_future_scheduling() && future_schedule() != nullptr) {
         future_schedule()->activate(*this, evaluation_time);
+        mirror_future_schedule();
     }
 }
 
 void RuntimeGraph::clear_future_schedule() noexcept {
     if (compiled_graph_->has_future_scheduling() && future_schedule() != nullptr) {
         future_schedule()->clear();
+        mirror_future_schedule();
+    }
+}
+
+void RuntimeGraph::mirror_future_schedule() {
+    if (parent_ == nullptr) {
+        return;
+    }
+
+    const auto next = next_scheduled_time();
+    if (next == parent_schedule_time_) {
+        return;
+    }
+
+    if (parent_schedule_time_) {
+        parent_->cancel(owner_node_index_, parent_schedule_);
+        parent_schedule_ = {};
+        parent_schedule_time_.reset();
+    }
+
+    if (next) {
+        parent_schedule_ = parent_->schedule_at(owner_node_index_, *next);
+        parent_schedule_time_ = next;
+    }
+}
+
+RuntimeGraph::CycleCallbacks *&RuntimeGraph::cycle_callbacks() noexcept {
+    return *reinterpret_cast<CycleCallbacks **>(storage_ + compiled_graph_->cycle_callbacks_offset());
+}
+
+RuntimeGraph::CycleCallbacks *RuntimeGraph::cycle_callbacks() const noexcept {
+    return *reinterpret_cast<CycleCallbacks *const *>(storage_ + compiled_graph_->cycle_callbacks_offset());
+}
+
+void RuntimeGraph::add_cycle_callback(void *target, void (*function)(void *) noexcept) {
+    if (!compiled_graph_->has_cycle_callbacks()) {
+        throw std::logic_error{"the graph does not declare cycle callbacks"};
+    }
+
+    if (cycle_callbacks() == nullptr) {
+        auto *storage = memory_->allocate(sizeof(CycleCallbacks), alignof(CycleCallbacks));
+        auto release = util::scope_exit{
+            [&]() noexcept { memory_->deallocate(storage, sizeof(CycleCallbacks), alignof(CycleCallbacks)); }};
+        cycle_callbacks() = std::construct_at(static_cast<CycleCallbacks *>(storage), *memory_);
+        release.release();
+    }
+
+    cycle_callbacks()->add(target, function);
+}
+
+void RuntimeGraph::run_cycle_callbacks() noexcept {
+    if (compiled_graph_->has_cycle_callbacks() && cycle_callbacks() != nullptr) {
+        cycle_callbacks()->run();
+    }
+}
+
+void RuntimeGraph::clear_cycle_callbacks() noexcept {
+    if (compiled_graph_->has_cycle_callbacks() && cycle_callbacks() != nullptr) {
+        cycle_callbacks()->clear();
     }
 }
 
@@ -498,10 +656,6 @@ void RuntimeGraph::propagate_output_change(const CompiledNode &node, OutputChang
 
 void RuntimeGraph::publish_output_changes(const CompiledNode &node, bool output_was_valid) {
     auto &last_updated = node.output_last_updated(storage_);
-    if (const auto *representation = node.output_finalization_representation()) {
-        representation->finalize_modified_items(last_updated, storage_ + node.output_value_offset(), evaluation_time_);
-    }
-
     const auto now_valid = last_updated > MIN_DT;
     if (last_updated != evaluation_time_ && output_was_valid == now_valid) {
         return;
@@ -515,7 +669,7 @@ void RuntimeGraph::propagate_modified_items(const CompiledNode &node) {
     ModifiedItemPropagator{*this}.propagate(node);
 }
 
-void RuntimeGraph::schedule_dynamic_subscribers(std::size_t offset, OutputChange change) noexcept {
+void RuntimeGraph::schedule_dynamic_subscribers(std::size_t offset, OutputChange change) {
     auto *subscribers = *reinterpret_cast<details::DynamicSubscribers **>(storage_ + offset);
     if (subscribers == nullptr) {
         return;
@@ -525,6 +679,46 @@ void RuntimeGraph::schedule_dynamic_subscribers(std::size_t offset, OutputChange
         subscriber.graph->schedule_node_subscriber(subscriber.node_index(), subscriber.active(), subscriber.required(),
                                                    subscriber.active_optional(), change);
     });
+
+    subscribers->for_each_callback([&](const auto &subscriber) {
+        if (subscriber.graph == this) {
+            auto context = OutputNotificationContext{*this};
+            subscriber.callback(context, subscriber.node_index, subscriber.data, change);
+            return;
+        }
+
+        subscriber.graph->queue_input_notification(subscriber.callback, subscriber.node_index, subscriber.data, change);
+    });
+}
+
+void RuntimeGraph::queue_input_notification(InputNotificationFunction function, std::size_t node_index,
+                                            std::size_t data, OutputChange change) {
+    if (pending_input_notifications_ == nullptr) {
+        auto *storage = memory_->allocate(sizeof(PendingInputNotifications), alignof(PendingInputNotifications));
+        auto release = util::scope_exit{[&]() noexcept {
+            memory_->deallocate(storage, sizeof(PendingInputNotifications), alignof(PendingInputNotifications));
+        }};
+        pending_input_notifications_ = std::construct_at(static_cast<PendingInputNotifications *>(storage), *memory_);
+        release.release();
+    }
+
+    pending_input_notifications_->records.push_back({function, node_index, data, change});
+    if (parent_ != nullptr && !suppress_parent_scheduling_) {
+        parent_->schedule(owner_node_index_);
+    }
+}
+
+void RuntimeGraph::run_input_notifications() {
+    if (pending_input_notifications_ == nullptr || pending_input_notifications_->records.empty()) {
+        return;
+    }
+
+    auto records = std::move(pending_input_notifications_->records);
+    pending_input_notifications_->records.clear();
+    auto context = OutputNotificationContext{*this};
+    for (const auto &record : records) {
+        record.function(context, record.node_index, record.data, record.change);
+    }
 }
 
 void RuntimeGraph::apply_invalidation(const CompiledNode &node, std::size_t node_index) {
@@ -610,6 +804,7 @@ void RuntimeGraph::stop_nodes(std::size_t node_count) noexcept {
     }
 
     clear_future_schedule();
+    clear_cycle_callbacks();
 }
 
 void RuntimeGraph::stop() noexcept {
@@ -656,8 +851,10 @@ void RuntimeGraph::evaluate(EvaluationTime evaluation_time, details::EvaluationS
     }
 
     const auto scratch_use = ScratchUse{*this, scratch};
+    run_cycle_callbacks();
     last_evaluation_time_ = evaluation_time;
     evaluation_time_ = evaluation_time;
+    run_input_notifications();
     activate_scheduled(evaluation_time);
 
     auto scheduling = scheduling_info();
@@ -693,10 +890,11 @@ void RuntimeGraph::evaluate(EvaluationTime evaluation_time, details::EvaluationS
         }
 
         const auto output_was_valid = has_output && node.output_last_updated(storage_) > MIN_DT;
-        EvaluationContext context{evaluation_time, *this, node_index};
-        const auto allocation_context = details::ScalarAllocationContext{*memory_, this, node_index};
-
-        node.evaluation_function()(node, storage_, &context);
+        if (const auto evaluate = node.evaluation_function(); evaluate != nullptr) {
+            EvaluationContext context{evaluation_time, *this, node_index};
+            const auto allocation_context = details::ScalarAllocationContext{*memory_, this, node_index};
+            evaluate(node, storage_, &context);
+        }
 
         if (has_output) {
             publish_output_changes(node, output_was_valid);

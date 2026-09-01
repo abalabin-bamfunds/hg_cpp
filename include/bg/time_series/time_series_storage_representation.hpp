@@ -47,7 +47,7 @@ class TimeSeriesStorageRepresentation {
         return nullptr;
     }
     [[nodiscard]] virtual const TimeSeriesInputView &input_view_prototype() const noexcept = 0;
-    [[nodiscard]] virtual const TimeSeriesOutputView &output_view_prototype() const noexcept = 0;
+    [[nodiscard]] virtual const TimeSeriesOutputView *output_view_prototype() const noexcept = 0;
     [[nodiscard]] virtual FixedItem fixed_item(std::size_t) const;
     [[nodiscard]] virtual bool mark_item_modified(void *, std::size_t, EvaluationTime, EvaluationTime,
                                                   std::pmr::memory_resource &) const noexcept {
@@ -56,11 +56,6 @@ class TimeSeriesStorageRepresentation {
     [[nodiscard]] virtual bool collection_valid(const void *) const noexcept { return false; }
     virtual void for_each_modified_item(const EvaluationTime &, const void *, EvaluationTime, void *,
                                         ModifiedItemFunction) const {}
-    [[nodiscard]] virtual bool requires_modified_item_finalization() const noexcept { return false; }
-    virtual bool finalize_modified_items(EvaluationTime &, void *, EvaluationTime) const noexcept {
-        return true;
-    }
-
     virtual void construct_initial_value(void *destination) const noexcept = 0;
     virtual void construct_runtime_value(void *destination, std::pmr::memory_resource &) const {
         construct_initial_value(destination);

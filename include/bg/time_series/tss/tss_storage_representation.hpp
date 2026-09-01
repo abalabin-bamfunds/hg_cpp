@@ -38,10 +38,10 @@ class CppTimeSeriesSetStorageRepresentation<TSS<K, Properties...>> final : publi
         return prototype.get();
     }
 
-    [[nodiscard]] const TimeSeriesOutputView &output_view_prototype() const noexcept override {
+    [[nodiscard]] const TimeSeriesOutputView *output_view_prototype() const noexcept override {
         static const auto prototype =
             util::polymorphic_value<TimeSeriesOutputView>::template make<TypedTimeSeriesSetOutputView<K>>();
-        return prototype.get();
+        return &prototype.get();
     }
 
     void construct_initial_value(void *destination) const noexcept override {

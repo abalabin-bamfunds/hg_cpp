@@ -33,6 +33,7 @@ class ScalarType : public Type {
 }
 
 [[nodiscard]] const ScalarType &int_type() noexcept;
+[[nodiscard]] const ScalarType &bool_type() noexcept;
 [[nodiscard]] const ScalarType &int64_type() noexcept;
 [[nodiscard]] const ScalarType &float_type() noexcept;
 [[nodiscard]] const ScalarType &double_type() noexcept;
@@ -41,6 +42,8 @@ class ScalarType : public Type {
 [[nodiscard]] const ScalarType &symbol_type() noexcept;
 
 template <typename T> [[nodiscard]] const ScalarType &cpp_scalar_type() noexcept = delete;
+
+template <> [[nodiscard]] const ScalarType &cpp_scalar_type<bool>() noexcept;
 
 template <> [[nodiscard]] const ScalarType &cpp_scalar_type<int>() noexcept;
 
@@ -83,9 +86,7 @@ struct scalar_type_properties {
 
 template <typename T> struct scalar_type_traits : scalar_type_properties {
 
-    template <typename Scope> [[nodiscard]] static const ScalarType &get() noexcept {
-        return cpp_scalar_type<T>();
-    }
+    template <typename Scope> [[nodiscard]] static const ScalarType &get() noexcept { return cpp_scalar_type<T>(); }
 };
 
 template <typename Scope, typename T> [[nodiscard]] const ScalarType &scalar_type_for() {
@@ -98,5 +99,5 @@ template <typename Scope, typename T> [[nodiscard]] const ScalarType &scalar_typ
 
 #include <bg/scalar/dict/scalar_type.hpp>
 #include <bg/scalar/list/scalar_type.hpp>
-#include <bg/type/opaque_scalar_type.hpp>
 #include <bg/scalar/set/scalar_type.hpp>
+#include <bg/type/opaque_scalar_type.hpp>

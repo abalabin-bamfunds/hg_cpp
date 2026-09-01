@@ -32,8 +32,8 @@ class ValueStorageRepresentation final : public TimeSeriesStorageRepresentation 
     [[nodiscard]] const TimeSeriesInputView &input_view_prototype() const noexcept override {
         return *scalar_->input_view_prototype();
     }
-    [[nodiscard]] const TimeSeriesOutputView &output_view_prototype() const noexcept override {
-        return *scalar_->output_view_prototype();
+    [[nodiscard]] const TimeSeriesOutputView *output_view_prototype() const noexcept override {
+        return scalar_->output_view_prototype();
     }
 
     void construct_initial_value(void *destination) const noexcept override {

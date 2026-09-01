@@ -21,6 +21,9 @@ concept canonical_integer_source =
     !std::same_as<std::remove_cvref_t<T>, unsigned char> &&
     (std::numeric_limits<std::remove_cvref_t<T>>::digits <= std::numeric_limits<std::int64_t>::digits);
 
+template <typename T>
+concept canonical_boolean_source = std::same_as<std::remove_cvref_t<T>, bool>;
+
 template <typename T> struct is_character_string : std::false_type {};
 
 template <typename Traits, typename Allocator>
@@ -36,6 +39,10 @@ template <typename T> struct canonical_scalar;
 
 template <canonical_integer_source T> struct canonical_scalar<T> {
     using type = std::int64_t;
+};
+
+template <canonical_boolean_source T> struct canonical_scalar<T> {
+    using type = bool;
 };
 
 template <canonical_string_source T> struct canonical_scalar<T> {
@@ -63,6 +70,10 @@ concept scalar_source = requires { typename canonical_scalar_t<T>; };
 
 template <details::canonical_integer_source T> [[nodiscard]] constexpr std::int64_t canonical_scalar(T value) noexcept {
     return static_cast<std::int64_t>(value);
+}
+
+template <details::canonical_boolean_source T> [[nodiscard]] constexpr bool canonical_scalar(T value) noexcept {
+    return value;
 }
 
 template <details::canonical_string_source T>

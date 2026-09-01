@@ -7,14 +7,23 @@ namespace bg {
 
 class TimeSeriesReferenceOutputView final : public TimeSeriesOutputView {
   public:
+    void set_target(details::ReferenceStorage *target) const {
+        if (target == nullptr) {
+            invalidate();
+            return;
+        }
+
+        reference() = target;
+        publish();
+    }
+
     void set_reference(const TimeSeriesReferenceInputView &source) const {
         if (!source.valid()) {
             invalidate();
             return;
         }
 
-        reference() = source.target();
-        publish();
+        set_target(source.target());
     }
 
     void invalidate() const override {

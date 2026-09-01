@@ -6,21 +6,33 @@ ResolvedSignature Signature::resolve(std::span<const Type *const> arguments) con
     return std::move(resolve_with_bindings(arguments).signature);
 }
 
-SignatureResolution Signature::resolve_with_bindings(std::span<const Type *const> arguments) const {
+SignatureResolution Signature::resolve_seeded(std::span<const Type *const> arguments, TypeMap bindings) const {
     if (arguments.size() != parameters_.size()) {
         throw TypeResolutionError{TypeResolutionErrorCode::argument_count, name_,
                                   "signature received the wrong number of arguments"};
     }
 
-    TypeMap bindings;
-
     for (std::size_t i = 0; i < arguments.size(); ++i) {
-        if (!parameters_[i].type->match(*arguments[i], bindings)) {
-            throw TypeResolutionError{TypeResolutionErrorCode::mismatch, parameters_[i].name,
+        const auto &parameter = parameters_[i];
+        if (!parameter.type->match(*arguments[i], bindings)) {
+            throw TypeResolutionError{TypeResolutionErrorCode::mismatch, parameter.name,
                                       "argument does not satisfy its generic type"};
         }
     }
 
+    return resolve(std::move(bindings));
+}
+
+SignatureResolution Signature::resolve_with_bindings(std::span<const Type *const> arguments) const {
+    return resolve_seeded(arguments, TypeMap{});
+}
+
+SignatureResolution Signature::resolve_with_bindings(std::span<const Type *const> arguments,
+                                                     const TypeMap &bindings) const {
+    return resolve_seeded(arguments, bindings.copy());
+}
+
+SignatureResolution Signature::resolve(TypeMap bindings) const {
     for (const VariableResolver &resolver : resolvers_) {
         if (bindings.find(*resolver.variable) == nullptr) {
             bindings.set(*resolver.variable, resolver.resolve(bindings));

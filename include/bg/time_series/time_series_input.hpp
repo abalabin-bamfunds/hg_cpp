@@ -11,7 +11,7 @@
 
 namespace bg {
 
-template <auto... Properties> class In<TS_T, Properties...> {
+template <details::time_series_variable Variable, auto... Properties> class In<Variable, Properties...> {
     using ParsedProperties = details::input_properties<Properties...>;
     static_assert(ParsedProperties::valid);
 
@@ -27,7 +27,7 @@ template <auto... Properties> class In<TS_T, Properties...> {
     [[nodiscard]] EvaluationTime last_updated() const noexcept { return view_->last_updated(); }
     [[nodiscard]] const TimeSeriesInputView *operator->() const noexcept { return view_.operator->(); }
 
-    using time_series_type = TS_T;
+    using time_series_type = Variable;
 
     static constexpr std::string_view name = ParsedProperties::name;
     static constexpr InputActivity activity = ParsedProperties::activity;

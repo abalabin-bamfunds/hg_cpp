@@ -1,4 +1,3 @@
-#include <bg/type/time_series_reference_type.hpp>
 #include <bg/type/time_series_value_type.hpp>
 
 #include <cstddef>
@@ -16,8 +15,6 @@ class ResolvedTimeSeriesValueType final : public TimeSeriesValueType {
         : TimeSeriesValueType(value_type, guarantee) {}
 
     [[nodiscard]] bool is_resolved() const noexcept override { return true; }
-
-    [[nodiscard]] bool match(const Type &supplied, TypeMap &) const override { return this == &supplied; }
 
     [[nodiscard]] const Type &resolve(const TypeMap &) const override { return *this; }
 };
@@ -73,9 +70,12 @@ const TimeSeriesValueType &time_series_value_type(const ScalarType &value_type, 
     return time_series_value_types().get(value_type, guarantee);
 }
 
-bool GenericTimeSeriesValueType::match(const Type &supplied, TypeMap &bindings) const {
-    const auto *time_series =
-        dynamic_cast<const TimeSeriesValueType *>(&details::unwrap_time_series_reference(supplied));
+const TimeSeriesType &TimeSeriesValueType::with_guarantee(TimeSeriesGuarantee guarantee) const {
+    return time_series_value_type(value_type(), guarantee);
+}
+
+bool GenericTimeSeriesValueType::do_match(const Type &supplied, TypeMap &bindings) const {
+    const auto *time_series = dynamic_cast<const TimeSeriesValueType *>(&supplied);
     if (time_series == nullptr || !time_series->is_resolved()) {
         return false;
     }

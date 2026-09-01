@@ -78,6 +78,55 @@ TEST_CASE("a runtime graph evaluates scheduled nodes in topological order", "[ev
 
 namespace {
 
+struct start_only_definition {
+    bg::Out<bg::TS<float>> output;
+
+    void start() const { output.set(3.0F); }
+};
+
+struct start_only_sink_definition {
+    bg::In<bg::TS<float>> input;
+
+    void evaluate() const {
+        ++evaluation_count;
+        last_value = input.value();
+    }
+
+    inline static int evaluation_count{};
+    inline static float last_value{};
+};
+
+} // namespace
+
+TEST_CASE("a scheduled node can omit evaluation", "[evaluation][scheduling]") {
+    const auto source = bg::node<start_only_definition>();
+    const auto sink = bg::node<start_only_sink_definition>();
+    auto wiring = bg::GraphWiring{};
+
+    {
+        const auto context = bg::WiringContext{wiring};
+        sink(source());
+    }
+
+    const auto compiled = bg::CompiledGraph{wiring};
+    auto runtime = bg::RuntimeGraph{compiled};
+    start_only_sink_definition::evaluation_count = 0;
+    start_only_sink_definition::last_value = 0.0F;
+
+    CHECK(compiled.node(0).evaluation_function() == nullptr);
+
+    runtime.start(time(1));
+    runtime.evaluate(time(1));
+    CHECK(start_only_sink_definition::evaluation_count == 1);
+    CHECK(start_only_sink_definition::last_value == 3.0F);
+
+    bg::testing::RuntimeGraphAccess::schedule(runtime, 0);
+    runtime.evaluate(time(2));
+    CHECK(start_only_sink_definition::evaluation_count == 1);
+}
+
+namespace {
+
 struct indexed_definition {
     int index;
 

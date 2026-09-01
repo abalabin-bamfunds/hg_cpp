@@ -29,20 +29,18 @@ template <typename K, typename Item> class time_series_dict_storage {
         return offsetof(time_series_dict_storage, keys) + offsetof(KeyStorage, value);
     }
 
-    void reset_change_tracking(EvaluationTime evaluation_time, EvaluationTime previous_last_updated,
+    void reset_change_tracking(EvaluationTime evaluation_time,
                                const TimeSeriesStorageRepresentation &item_representation,
                                std::pmr::memory_resource &memory) {
         if (change_time_ == evaluation_time) {
             return;
         }
 
-        keys.value.value.reset_change_tracking(
-            evaluation_time, keys.last_updated, memory,
-            [&](Position position) noexcept { destroy_item(position, item_representation, memory); });
+        keys.value.value.reset_change_tracking(evaluation_time, memory, [&](Position position) noexcept {
+            destroy_item(position, item_representation, memory);
+        });
         modified_.clear();
-        resurrected_.clear();
         change_time_ = evaluation_time;
-        previous_last_updated_ = previous_last_updated;
     }
 
     [[nodiscard]] typename time_series_set_storage<K>::InsertResult
@@ -59,17 +57,14 @@ template <typename K, typename Item> class time_series_dict_storage {
                     rollback.release();
                 });
             },
-            [&](Position position) noexcept {
-                destroy_item(position, item_representation, memory);
-            });
+            [&](Position position) noexcept { destroy_item(position, item_representation, memory); });
     }
 
     [[nodiscard]] typename time_series_set_storage<K>::EraseResult
     erase(const ScalarValueInputView &key, const TimeSeriesStorageRepresentation &item_representation,
           std::pmr::memory_resource &memory) {
-        const auto result = keys.value.value.erase(key, memory, [&](Position position) noexcept {
-            destroy_item(position, item_representation, memory);
-        });
+        const auto result = keys.value.value.erase(
+            key, memory, [&](Position position) noexcept { destroy_item(position, item_representation, memory); });
         if (result.position != util::occupancy_index::npos) {
             modified_.reset(result.position);
         }
@@ -79,12 +74,10 @@ template <typename K, typename Item> class time_series_dict_storage {
     void clear(const TimeSeriesStorageRepresentation &item_representation, std::pmr::memory_resource &memory) {
         keys.value.value.clear(memory, [&](Position position) noexcept {
             modified_.reset(position);
-            resurrected_.reset(position);
             destroy_item(position, item_representation, memory);
         });
         for (const auto position : keys.value.value.removed()) {
             modified_.reset(position);
-            resurrected_.reset(position);
         }
     }
 
@@ -101,19 +94,13 @@ template <typename K, typename Item> class time_series_dict_storage {
             return;
         }
 
-        resurrected_.set(position, memory);
         modified_.set(position, memory);
     }
 
-    void clear_item_modified(Position position) noexcept { modified_.reset(position); }
-
-    [[nodiscard]] bool changed() const noexcept { return keys.value.value.changed() || modified_.any(); }
     [[nodiscard]] EvaluationTime change_time() const noexcept { return change_time_; }
-    [[nodiscard]] EvaluationTime previous_last_updated() const noexcept { return previous_last_updated_; }
     [[nodiscard]] KeyStorage &key_storage() noexcept { return keys; }
     [[nodiscard]] const KeyStorage &key_storage() const noexcept { return keys; }
     [[nodiscard]] const util::index<> &modified() const noexcept { return modified_; }
-    [[nodiscard]] const util::index<> &resurrected() const noexcept { return resurrected_; }
 
     [[nodiscard]] Contained &contained(Position position) noexcept {
         return *static_cast<Contained *>(items_.get(position, item_layout()));
@@ -125,12 +112,10 @@ template <typename K, typename Item> class time_series_dict_storage {
 
     void release(const TimeSeriesStorageRepresentation &item_representation,
                  std::pmr::memory_resource &memory) noexcept {
-        keys.value.value.release(memory, [&](Position position) noexcept {
-            destroy_item(position, item_representation, memory);
-        });
+        keys.value.value.release(
+            memory, [&](Position position) noexcept { destroy_item(position, item_representation, memory); });
         items_.release(item_layout(), memory);
         modified_.release(memory);
-        resurrected_.release(memory);
     }
 
   private:
@@ -151,9 +136,7 @@ template <typename K, typename Item> class time_series_dict_storage {
     KeyStorage keys;
     util::runtime_sparse_bunch items_;
     util::index<> modified_;
-    util::index<> resurrected_;
     EvaluationTime change_time_{MIN_DT};
-    EvaluationTime previous_last_updated_{MIN_DT};
 };
 
 template <typename K, typename Item, auto... Properties> struct time_series_value_storage<TSD<K, Item, Properties...>> {

@@ -18,7 +18,7 @@ template <typename Item, std::size_t Size = std::dynamic_extent, auto... Propert
 
     static constexpr std::size_t size = Size;
     static constexpr bool has_explicit_guarantee = ParsedProperties::has_guarantee;
-    static constexpr TimeSeriesGuarantee guarantee = ParsedProperties::guarantee;
+    static constexpr auto guarantee = ParsedProperties::guarantee;
 };
 
 namespace details {

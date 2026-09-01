@@ -61,6 +61,12 @@ GraphWiring::~GraphWiring() {
     }
 }
 
+const NodeTemplate &GraphWiring::own_node_template(std::unique_ptr<NodeTemplate> node_template) {
+    auto &result = *node_template;
+    node_templates_.push_back(std::move(node_template));
+    return result;
+}
+
 void GraphWiring::destroy_scalars(std::span<const WiredScalar> scalars) noexcept {
     for (const auto &scalar : scalars) {
         if (!scalar.has_value()) {
@@ -90,7 +96,8 @@ const WiringPath &GraphWiring::make_path(util::symbol name, util::symbol label) 
 }
 
 std::optional<WiringPoint> GraphWiring::invoke(const WiringTemplate &wiring_template,
-                                               std::span<details::wiring_argument> arguments) {
+                                               std::span<details::wiring_argument> arguments,
+                                               const TypeMap *seed_bindings) {
     std::vector<const Type *> argument_types;
     argument_types.reserve(arguments.size());
 
@@ -100,15 +107,36 @@ std::optional<WiringPoint> GraphWiring::invoke(const WiringTemplate &wiring_temp
             if (&source.graph() != this) {
                 throw WiringError{"a WiringPoint belongs to another GraphWiring"};
             }
-
             argument_types.push_back(&source.type());
+        } else if (argument.is_free_time_series_list()) {
+            argument_types.push_back(argument.free_time_series_list().type);
         } else {
             argument_types.push_back(&argument.scalar_type());
         }
     }
 
-    auto resolution = wiring_template.signature().resolve_with_bindings(argument_types);
+    auto resolution = seed_bindings == nullptr
+                          ? wiring_template.signature().resolve_with_bindings(argument_types)
+                          : wiring_template.signature().resolve_with_bindings(argument_types, *seed_bindings);
     auto signature = std::move(resolution.signature);
+
+    for (auto i = std::size_t{}; i < arguments.size(); ++i) {
+        if (!arguments[i].is_free_time_series_list()) {
+            continue;
+        }
+
+        const auto &argument = arguments[i].free_time_series_list();
+        const auto *parameter = static_cast<const TimeSeriesType *>(signature.parameters[i].type);
+        if (const auto *reference = dynamic_cast<const TimeSeriesReferenceType *>(parameter)) {
+            parameter = &reference->target_type();
+        }
+        const auto *list = dynamic_cast<const TimeSeriesListType *>(parameter);
+        if (list == nullptr || list->item_count() != argument.items.size()) {
+            throw WiringError{"a free time series list requires a matching fixed TSL parameter"};
+        }
+
+        arguments[i].wiring_point(argument.materialize(argument.items, *list));
+    }
 
     for (auto i = std::size_t{}; i < arguments.size(); ++i) {
         if (!arguments[i].is_wiring_point()) {
@@ -141,9 +169,8 @@ std::optional<WiringPoint> GraphWiring::invoke(const WiringTemplate &wiring_temp
         throw WiringError{"a wiring-template returned a WiringPoint from another GraphWiring"};
     }
 
-    const auto *actual_output = &output->type();
-    auto bindings = TypeMap{};
-    if (!expected_output->match(*actual_output, bindings)) {
+    auto output_bindings = TypeMap{};
+    if (!expected_output->match(output->type(), output_bindings)) {
         throw WiringError{"a wiring-template result does not satisfy its resolved output type"};
     }
 
@@ -237,6 +264,14 @@ WiringPoint GraphWiring::select_item(WiringPoint source, std::size_t index) {
     }
 
     const auto &item_type = collection->item_type(index);
+    const auto &source_record = wiring_points_[source.record_index()];
+    if (source_record.parent == WiringPointRecord::npos) {
+        const auto &node = nodes_[source_record.node_index];
+        if (const auto input = node.node_template().output_item_source(index)) {
+            return WiringPoint{*this, node.input_sources()[*input]};
+        }
+    }
+
     for (auto record = std::size_t{}; record < wiring_points_.size(); ++record) {
         const auto &candidate = wiring_points_[record];
         if (candidate.parent == source.record_index() && candidate.item == index) {
