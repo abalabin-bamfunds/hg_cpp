@@ -3,6 +3,7 @@
 #include <bg/graph/wiring_error.hpp>
 #include <bg/graph/wiring_template.hpp>
 #include <bg/node/node_template.hpp>
+#include <bg/type/time_series_bundle_type.hpp>
 #include <bg/type/time_series_list_type.hpp>
 #include <bg/type/time_series_reference_type.hpp>
 #include <bg/type/type_map.hpp>
@@ -110,6 +111,8 @@ std::optional<WiringPoint> GraphWiring::invoke(const WiringTemplate &wiring_temp
             argument_types.push_back(&source.type());
         } else if (argument.is_free_time_series_list()) {
             argument_types.push_back(argument.free_time_series_list().type);
+        } else if (argument.is_free_time_series_bundle()) {
+            argument_types.push_back(argument.free_time_series_bundle().type);
         } else {
             argument_types.push_back(&argument.scalar_type());
         }
@@ -136,6 +139,24 @@ std::optional<WiringPoint> GraphWiring::invoke(const WiringTemplate &wiring_temp
         }
 
         arguments[i].wiring_point(argument.materialize(argument.items, *list));
+    }
+
+    for (auto i = std::size_t{}; i < arguments.size(); ++i) {
+        if (!arguments[i].is_free_time_series_bundle()) {
+            continue;
+        }
+
+        const auto &argument = arguments[i].free_time_series_bundle();
+        const auto *parameter = static_cast<const TimeSeriesType *>(signature.parameters[i].type);
+        if (const auto *reference = dynamic_cast<const TimeSeriesReferenceType *>(parameter)) {
+            parameter = &reference->target_type();
+        }
+        const auto *bundle = dynamic_cast<const TimeSeriesBundleType *>(parameter);
+        if (bundle == nullptr) {
+            throw WiringError{"a free time series bundle requires a TSB parameter"};
+        }
+
+        arguments[i].wiring_point(argument.materialize(argument.fields, *bundle));
     }
 
     for (auto i = std::size_t{}; i < arguments.size(); ++i) {

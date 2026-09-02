@@ -3,6 +3,7 @@
 #include <bg/time_series/time_series_variable.hpp>
 #include <bg/type/guarantee_variable_instance.hpp>
 #include <bg/type/scalar_type.hpp>
+#include <bg/type/scalar_variable.hpp>
 #include <bg/type/time_series_type.hpp>
 #include <bg/type/time_series_variable.hpp>
 
@@ -46,6 +47,7 @@ template <typename Scope, std::size_t Index, bool Input, typename TimeSeries>
 
 } // namespace bg::details
 
+#include <bg/type/details/time_series_bundle_type_traits.hpp>
 #include <bg/type/details/time_series_dict_type_traits.hpp>
 #include <bg/type/details/time_series_list_type_traits.hpp>
 #include <bg/type/details/time_series_reference_type_traits.hpp>

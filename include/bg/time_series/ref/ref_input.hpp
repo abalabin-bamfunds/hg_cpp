@@ -26,8 +26,8 @@ class In<REF<Target, TimeSeriesProperties...>, Properties...> {
         view_->bind(last_updated, value);
     }
 
-    In(const EvaluationTime &last_updated, const void *value, const TimeSeriesReferenceInputView &prototype) noexcept
-        : view_(View::copy(prototype)) {
+    In(const EvaluationTime &last_updated, const void *value, const TimeSeriesInputView &prototype) noexcept
+        : view_(View::copy(static_cast<const TimeSeriesReferenceInputView &>(prototype))) {
         view_->bind(last_updated, value);
     }
 

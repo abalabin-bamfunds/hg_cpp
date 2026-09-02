@@ -8,6 +8,7 @@
 #include <bg/time_series/ts/ts_input.hpp>
 #include <bg/time_series/tsl/tsl_input_view.hpp>
 #include <bg/time_series/tsl/tsl_storage.hpp>
+#include <bg/time_series/tsl/tsl_storage_representation.hpp>
 #include <bg/time_series/tsl/tsl_type.hpp>
 #include <bg/util/polymorphic_value.hpp>
 
@@ -22,7 +23,7 @@ class In<TSL<Item, Size, TimeSeriesProperties...>, Properties...> {
     static_assert(Size != std::dynamic_extent, "variable-size time series lists are not implemented");
 
   public:
-    using storage_type = details::fixed_time_series_list_storage<Item, Size>;
+    using storage_type = details::time_series_list_storage;
 
     In() noexcept : view_(prototype_) {}
 
@@ -30,8 +31,8 @@ class In<TSL<Item, Size, TimeSeriesProperties...>, Properties...> {
         view_->bind(last_updated, value);
     }
 
-    In(const EvaluationTime &last_updated, const void *value, const TimeSeriesListInputView &prototype) noexcept
-        : view_(View::copy(prototype)) {
+    In(const EvaluationTime &last_updated, const void *value, const TimeSeriesInputView &prototype) noexcept
+        : view_(View::copy(static_cast<const TimeSeriesListInputView &>(prototype))) {
         view_->bind(last_updated, value);
     }
 
@@ -41,21 +42,7 @@ class In<TSL<Item, Size, TimeSeriesProperties...>, Properties...> {
     [[nodiscard]] auto operator[](std::size_t index) const {
         const auto item = view_->item(index);
 
-        if constexpr (details::time_series_variable<Item>) {
-            return In<Item>{item.last_updated, item.value, item.prototype};
-        } else if constexpr (details::is_time_series_reference<Item>) {
-            return In<Item>{item.last_updated, item.value,
-                            static_cast<const TimeSeriesReferenceInputView &>(item.prototype)};
-        } else if constexpr (details::is_time_series_list<Item>) {
-            return In<Item>{item.last_updated, item.value,
-                            static_cast<const TimeSeriesListInputView &>(item.prototype)};
-        } else if constexpr (details::scalar_variable<details::time_series_value_t<Item>>) {
-            return In<Item>{item.last_updated, item.value,
-                            static_cast<const TimeSeriesValueInputView &>(item.prototype)};
-        } else {
-            using ItemInput = In<Item>;
-            return ItemInput{item.last_updated, static_cast<const typename ItemInput::storage_type *>(item.value)};
-        }
+        return In<Item>{item.last_updated, item.value, item.prototype};
     }
 
     [[nodiscard]] bool item_updated(std::size_t index) const noexcept { return view_->item_updated(index); }
@@ -80,7 +67,8 @@ class In<TSL<Item, Size, TimeSeriesProperties...>, Properties...> {
   private:
     using View = util::polymorphic_value<TimeSeriesListInputView>;
 
-    inline static const View prototype_ = View::template make<TypedTimeSeriesListInputView<Item, Size>>();
+    inline static const View prototype_ = View::copy(static_cast<const TimeSeriesListInputView &>(
+        cpp_time_series_storage_representation<TSL<Item, Size, TimeSeriesProperties...>>().input_view_prototype()));
     View view_;
 };
 

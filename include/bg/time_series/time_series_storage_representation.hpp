@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <memory_resource>
+#include <span>
 
 namespace bg {
 
@@ -43,6 +44,12 @@ class TimeSeriesStorageRepresentation {
     [[nodiscard]] virtual const ScalarStorageRepresentation *scalar_storage_representation() const noexcept {
         return nullptr;
     }
+    [[nodiscard]] virtual const ScalarStorageRepresentation *key_storage_representation() const noexcept {
+        return nullptr;
+    }
+    [[nodiscard]] virtual const TimeSeriesStorageRepresentation *contained_item_representation() const noexcept {
+        return nullptr;
+    }
     [[nodiscard]] virtual const TimeSeriesStorageRepresentation *reference_target_representation() const noexcept {
         return nullptr;
     }
@@ -66,6 +73,11 @@ class TimeSeriesStorageRepresentation {
 [[nodiscard]] const TimeSeriesStorageRepresentation &
 time_series_value_storage_representation(const TimeSeriesType &type,
                                          const ScalarStorageRepresentation &scalar_representation);
+
+[[nodiscard]] const TimeSeriesStorageRepresentation &resolve_time_series_storage_representation(
+    const TimeSeriesType &type,
+    std::span<const TimeSeriesStorageRepresentation *const> available_time_series = {},
+    std::span<const ScalarStorageRepresentation *const> available_scalars = {});
 
 template <typename TimeSeries>
 [[nodiscard]] const TimeSeriesStorageRepresentation &cpp_time_series_storage_representation();

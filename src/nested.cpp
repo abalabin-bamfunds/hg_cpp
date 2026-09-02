@@ -22,8 +22,6 @@
 
 namespace bg::details {
 
-const TimeSeriesStorageRepresentation &resolved_time_series_storage_representation(const TimeSeriesType &type);
-
 namespace {
 
 struct NestedInput {
@@ -77,7 +75,7 @@ class NestedNodeDefinition {
         reference_output_ = &time_series_reference_type(*output_type_, TimeSeriesGuarantee::ordinary);
         signature_ = std::make_unique<Signature>(util::symbol{"nested"}, std::move(parameters), *reference_output_);
         output_representation_ = &time_series_reference_storage_representation(
-            *reference_output_, resolved_time_series_storage_representation(*output_type_));
+            *reference_output_, resolve_time_series_storage_representation(*output_type_));
     }
 
     [[nodiscard]] const Signature &signature() const { return *signature_; }
@@ -159,16 +157,6 @@ class NestedNodeDefinition {
 };
 
 } // namespace
-
-const TimeSeriesStorageRepresentation &resolved_time_series_storage_representation(const TimeSeriesType &type) {
-    const auto *value = dynamic_cast<const TimeSeriesValueType *>(&type);
-    if (value == nullptr) {
-        throw std::logic_error{"nested graph boundaries currently require time series value types"};
-    }
-
-    const auto &scalar = resolve_scalar_storage_representation(value->value_type(), {});
-    return time_series_value_storage_representation(type, scalar);
-}
 
 WiringPoint wire_nested_input(const TimeSeriesType &type) {
     auto bindings = TypeMap{};

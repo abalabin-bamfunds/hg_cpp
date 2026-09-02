@@ -45,6 +45,7 @@
 #include <bg/scalar/view.hpp>
 #include <bg/schedule_handle.hpp>
 #include <bg/simulation_evaluation_engine.hpp>
+#include <bg/time_series/cpp_storage_representation.hpp>
 #include <bg/time_series/guarantee_variable.hpp>
 #include <bg/time_series/ref/ref_input_view.hpp>
 #include <bg/time_series/ref/ref_output_view.hpp>
@@ -55,14 +56,19 @@
 #include <bg/time_series/time_series_type.hpp>
 #include <bg/time_series/time_series_variable.hpp>
 #include <bg/time_series/time_series_view.hpp>
+#include <bg/time_series/tsb/tsb.hpp>
+#include <bg/time_series/tsb/tsb_input_view.hpp>
+#include <bg/time_series/tsb/tsb_output_view.hpp>
+#include <bg/time_series/tsb/tsb_storage_representation.hpp>
+#include <bg/time_series/tsb/tsb_type.hpp>
 #include <bg/time_series/tsd/tsd_input_view.hpp>
 #include <bg/time_series/tsd/tsd_output_view.hpp>
 #include <bg/time_series/tsd/tsd_storage_representation.hpp>
 #include <bg/time_series/tsd/tsd_type.hpp>
+#include <bg/time_series/tsl/tsl.hpp>
 #include <bg/time_series/tsl/tsl_input_view.hpp>
 #include <bg/time_series/tsl/tsl_output_view.hpp>
 #include <bg/time_series/tsl/tsl_storage_representation.hpp>
-#include <bg/time_series/tsl/tsl.hpp>
 #include <bg/time_series/tsl/tsl_type.hpp>
 #include <bg/time_series/tss/tss_input_view.hpp>
 #include <bg/time_series/tss/tss_output_view.hpp>
@@ -75,6 +81,7 @@
 #include <bg/type/scalar_variable.hpp>
 #include <bg/type/signature.hpp>
 #include <bg/type/size.hpp>
+#include <bg/type/time_series_bundle_type.hpp>
 #include <bg/type/time_series_dict_type.hpp>
 #include <bg/type/time_series_guarantee.hpp>
 #include <bg/type/time_series_list_type.hpp>

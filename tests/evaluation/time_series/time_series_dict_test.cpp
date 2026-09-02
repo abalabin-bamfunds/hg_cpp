@@ -147,6 +147,40 @@ TEST_CASE("time series dictionaries can contain time series dictionaries", "[eva
 
 namespace {
 
+template <template <typename> typename Field> struct DictionaryBundle {
+    Field<bg::TS<int>> value;
+};
+
+using BundleDictionary = bg::TSD<std::int64_t, bg::TSB<DictionaryBundle>>;
+
+struct bundle_dict_source_definition {
+    bg::Out<BundleDictionary> output;
+
+    void start() const { output[1]->value.set(12); }
+};
+
+struct bundle_dict_sink_definition {
+    bg::In<BundleDictionary> input;
+
+    void evaluate() const { value = input[1]->value.value(); }
+
+    inline static int value{};
+};
+
+} // namespace
+
+TEST_CASE("time series dictionaries can contain runtime-sized time series", "[evaluation][tsd][tsb]") {
+    const auto source = bg::node<bundle_dict_source_definition>();
+    const auto sink = bg::node<bundle_dict_sink_definition>();
+    bundle_dict_sink_definition::value = 0;
+
+    bg::run_graph([&] { sink(source()); });
+
+    CHECK(bundle_dict_sink_definition::value == 12);
+}
+
+namespace {
+
 struct canceled_add_source_definition {
     bg::Out<IntDictionary> output;
 

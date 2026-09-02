@@ -3,8 +3,6 @@
 #include <bg/evaluation_time.hpp>
 #include <bg/scalar/storage_representation.hpp>
 #include <bg/scalar/view.hpp>
-#include <bg/time_series/tsl/tsl_storage.hpp>
-#include <bg/time_series/tss/tss_type.hpp>
 #include <bg/util/index.hpp>
 #include <bg/util/linear_hash_table.hpp>
 #include <bg/util/occupancy_index.hpp>
@@ -28,7 +26,7 @@ enum class time_series_set_change {
     canceled,
 };
 
-template <typename K> class time_series_set_storage {
+class time_series_set_storage {
     using Position = std::uint32_t;
 
   public:
@@ -44,13 +42,15 @@ template <typename K> class time_series_set_storage {
 
     template <typename Reclaim>
         requires std::is_nothrow_invocable_v<Reclaim &, Position>
-    void reset_change_tracking(EvaluationTime evaluation_time, std::pmr::memory_resource &memory, Reclaim &&reclaim) {
+    void reset_change_tracking(EvaluationTime evaluation_time, const ScalarStorageRepresentation &key_representation,
+                               const util::runtime_item_layout &key_layout, std::pmr::memory_resource &memory,
+                               Reclaim &&reclaim) {
         if (change_time_ == evaluation_time) {
             return;
         }
 
         for (const auto position : removed_) {
-            reclaim_position(position, memory, reclaim);
+            reclaim_position(position, key_representation, key_layout, memory, reclaim);
         }
         positions_.trim(memory);
 
@@ -60,9 +60,12 @@ template <typename K> class time_series_set_storage {
     }
 
     template <typename ConstructItem, typename DestroyItem>
-    [[nodiscard]] InsertResult insert(const ScalarValueInputView &key, std::pmr::memory_resource &memory,
+    [[nodiscard]] InsertResult insert(const ScalarValueInputView &key,
+                                      const ScalarStorageRepresentation &key_representation,
+                                      const util::runtime_item_layout &key_layout, std::pmr::memory_resource &memory,
                                       ConstructItem &&construct_item, DestroyItem &&destroy_item) {
-        if (const auto position = find_position(key); position != util::occupancy_index::npos) {
+        if (const auto position = find_position(key, key_representation, key_layout);
+            position != util::occupancy_index::npos) {
             if (live_.contains(position)) {
                 return {position, time_series_set_change::none};
             }
@@ -76,12 +79,12 @@ template <typename K> class time_series_set_storage {
         auto release_position = util::scope_exit{[&]() noexcept { positions_.reset(position); }};
         grow_indices(position + 1, memory);
 
-        keys_.emplace_at_with(position, key_layout(), memory, [&](void *destination) {
-            key.copy_construct(destination, key_representation(), memory);
+        keys_.emplace_at_with(position, key_layout, memory, [&](void *destination) {
+            key.copy_construct(destination, key_representation, memory);
         });
         auto release_key = util::scope_exit{[&]() noexcept {
-            keys_.erase_at_with(position, key_layout(), memory,
-                                [&](void *value) noexcept { key_representation().destroy(value, memory); });
+            keys_.erase_at_with(position, key_layout, memory,
+                                [&](void *value) noexcept { key_representation.destroy(value, memory); });
         }};
 
         std::invoke(construct_item, position);
@@ -106,16 +109,18 @@ template <typename K> class time_series_set_storage {
 
     template <typename Reclaim>
         requires std::is_nothrow_invocable_v<Reclaim &, Position>
-    [[nodiscard]] EraseResult erase(const ScalarValueInputView &key, std::pmr::memory_resource &memory,
+    [[nodiscard]] EraseResult erase(const ScalarValueInputView &key,
+                                    const ScalarStorageRepresentation &key_representation,
+                                    const util::runtime_item_layout &key_layout, std::pmr::memory_resource &memory,
                                     Reclaim &&reclaim) {
-        const auto position = find_position(key);
+        const auto position = find_position(key, key_representation, key_layout);
         if (position == util::occupancy_index::npos || !live_.contains(position)) {
             return {util::occupancy_index::npos, time_series_set_change::none};
         }
 
         live_.reset(position);
         if (added_.reset(position)) {
-            reclaim_position(position, memory, reclaim);
+            reclaim_position(position, key_representation, key_layout, memory, reclaim);
             positions_.trim(memory);
             return {position, time_series_set_change::canceled};
         }
@@ -126,11 +131,12 @@ template <typename K> class time_series_set_storage {
 
     template <typename Reclaim>
         requires std::is_nothrow_invocable_v<Reclaim &, Position>
-    void clear(std::pmr::memory_resource &memory, Reclaim &&reclaim) {
+    void clear(const ScalarStorageRepresentation &key_representation, const util::runtime_item_layout &key_layout,
+               std::pmr::memory_resource &memory, Reclaim &&reclaim) {
         for (const auto position : live_) {
             live_.reset(position);
             if (added_.reset(position)) {
-                reclaim_position(position, memory, reclaim);
+                reclaim_position(position, key_representation, key_layout, memory, reclaim);
             } else {
                 removed_.set(position, memory);
             }
@@ -140,12 +146,14 @@ template <typename K> class time_series_set_storage {
 
     template <typename ReleaseItem>
         requires std::is_nothrow_invocable_v<ReleaseItem &, Position>
-    void release(std::pmr::memory_resource &memory, ReleaseItem &&release_item) noexcept {
+    void release(const ScalarStorageRepresentation &key_representation,
+                 const util::runtime_item_layout &key_layout, std::pmr::memory_resource &memory,
+                 ReleaseItem &&release_item) noexcept {
         for (const auto position : positions_) {
             std::invoke(release_item, position);
         }
-        keys_.release_with(positions_, key_layout(), memory,
-                           [&](void *value) noexcept { key_representation().destroy(value, memory); });
+        keys_.release_with(positions_, key_layout, memory,
+                           [&](void *value) noexcept { key_representation.destroy(value, memory); });
         lookup_.release(memory);
         positions_.release(memory);
         live_.release(memory);
@@ -153,20 +161,26 @@ template <typename K> class time_series_set_storage {
         removed_.release(memory);
     }
 
-    [[nodiscard]] Position find_position(const ScalarValueInputView &key) const {
+    [[nodiscard]] Position find_position(const ScalarValueInputView &key,
+                                         const ScalarStorageRepresentation &key_representation,
+                                         const util::runtime_item_layout &key_layout) const {
         const auto hash = util::linear_hash_table::hash_code(key.hash());
         const auto position = lookup_.find(hash, [&](Position candidate) {
-            return key_representation().equals(keys_.get(candidate, key_layout()), key);
+            return key_representation.equals(keys_.get(candidate, key_layout), key);
         });
         return position.value_or(util::occupancy_index::npos);
     }
 
-    [[nodiscard]] bool contains(const ScalarValueInputView &key) const {
-        const auto position = find_position(key);
+    [[nodiscard]] bool contains(const ScalarValueInputView &key,
+                                const ScalarStorageRepresentation &key_representation,
+                                const util::runtime_item_layout &key_layout) const {
+        const auto position = find_position(key, key_representation, key_layout);
         return position != util::occupancy_index::npos && live_.contains(position);
     }
 
-    [[nodiscard]] const void *key(Position position) const noexcept { return keys_.get(position, key_layout()); }
+    [[nodiscard]] const void *key(Position position, const util::runtime_item_layout &key_layout) const noexcept {
+        return keys_.get(position, key_layout);
+    }
     [[nodiscard]] std::size_t size() const noexcept { return live_.count(); }
     [[nodiscard]] bool changed() const noexcept { return added_.any() || removed_.any(); }
     [[nodiscard]] EvaluationTime change_time() const noexcept { return change_time_; }
@@ -175,16 +189,6 @@ template <typename K> class time_series_set_storage {
     [[nodiscard]] const util::index<> &removed() const noexcept { return removed_; }
 
   private:
-    [[nodiscard]] static const ScalarStorageRepresentation &key_representation() noexcept {
-        return cpp_scalar_storage_representation<K>();
-    }
-
-    [[nodiscard]] static const util::runtime_item_layout &key_layout() noexcept {
-        static const auto value =
-            util::runtime_item_layout{key_representation().size(), key_representation().alignment()};
-        return value;
-    }
-
     void grow_indices(Position size, std::pmr::memory_resource &memory) {
         live_.grow(size, memory);
         added_.grow(size, memory);
@@ -193,13 +197,15 @@ template <typename K> class time_series_set_storage {
 
     template <typename Reclaim>
         requires std::is_nothrow_invocable_v<Reclaim &, Position>
-    void reclaim_position(Position position, std::pmr::memory_resource &memory, Reclaim &&reclaim) noexcept {
-        auto *key = keys_.get(position, key_layout());
-        const auto hash = util::linear_hash_table::hash_code(key_representation().hash(key));
+    void reclaim_position(Position position, const ScalarStorageRepresentation &key_representation,
+                          const util::runtime_item_layout &key_layout, std::pmr::memory_resource &memory,
+                          Reclaim &&reclaim) noexcept {
+        auto *key = keys_.get(position, key_layout);
+        const auto hash = util::linear_hash_table::hash_code(key_representation.hash(key));
         lookup_.erase(hash, position, memory);
         std::invoke(reclaim, position);
-        keys_.erase_at_with(position, key_layout(), memory,
-                            [&](void *value) noexcept { key_representation().destroy(value, memory); });
+        keys_.erase_at_with(position, key_layout, memory,
+                            [&](void *value) noexcept { key_representation.destroy(value, memory); });
         positions_.reset(position);
     }
 
@@ -212,10 +218,6 @@ template <typename K> class time_series_set_storage {
     EvaluationTime change_time_{MIN_DT};
 };
 
-template <typename K, auto... Properties> struct time_series_value_storage<TSS<K, Properties...>> {
-    using type = time_series_set_storage<K>;
-};
-
-static_assert(std::is_trivially_copyable_v<time_series_set_storage<int>>);
+static_assert(std::is_trivially_copyable_v<time_series_set_storage>);
 
 } // namespace bg::details

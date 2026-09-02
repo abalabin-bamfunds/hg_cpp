@@ -119,12 +119,29 @@ signature.
 ### Time series bundles
 
 A named `TSB` uses nominal compatibility through declared bundle inheritance.
-Bundle inheritance uses ordered direct bases and the C3 method resolution
-order. Its item inheritance and narrowing rules match hierarchical scalar field
-rules.
+A schema can declare one base. A derived schema can add fields or redefine an
+inherited field with a compatible narrower type. A redefined field keeps its
+inherited position.
 
 A named `TSB` input also accepts an unnamed, automatically bound `TSB` with a
 compatible item schema. Graph compilation maps the item offsets directly.
+
+`BundleSchema` is the runtime description of a TSB. It records the ordered field
+names and time series types. A C++ schema supplies the same information and
+produces typed input and output access:
+
+```cpp
+template<template<typename> class Field>
+struct Quote {
+    Field<TS<symbol>> name;
+    Field<TS<float>> value;
+};
+
+In<TSB<Quote>> quote;
+```
+
+A derived schema uses `bundle_extends<Base, Field>`. Schema discovery reads the
+base and direct fields separately.
 
 ## Variables
 

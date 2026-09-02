@@ -5,6 +5,7 @@
 #include <bg/node/input_properties.hpp>
 #include <bg/time_series/tss/tss_input_view.hpp>
 #include <bg/time_series/tss/tss_storage.hpp>
+#include <bg/time_series/tss/tss_storage_representation.hpp>
 #include <bg/time_series/tss/tss_type.hpp>
 #include <bg/util/polymorphic_value.hpp>
 
@@ -19,7 +20,7 @@ class In<TSS<K, TimeSeriesProperties...>, Properties...> {
     static_assert(ParsedProperties::valid);
 
   public:
-    using storage_type = details::time_series_set_storage<K>;
+    using storage_type = details::time_series_set_storage;
 
     In() noexcept : view_(prototype_) {}
 
@@ -27,8 +28,8 @@ class In<TSS<K, TimeSeriesProperties...>, Properties...> {
         view_->bind(last_updated, value);
     }
 
-    In(const EvaluationTime &last_updated, const void *value, const TimeSeriesSetInputView &prototype) noexcept
-        : view_(View::copy(prototype)) {
+    In(const EvaluationTime &last_updated, const void *value, const TimeSeriesInputView &prototype) noexcept
+        : view_(View::copy(static_cast<const TimeSeriesSetInputView &>(prototype))) {
         view_->bind(last_updated, value);
     }
 
@@ -78,7 +79,8 @@ class In<TSS<K, TimeSeriesProperties...>, Properties...> {
         });
     }
 
-    inline static const View prototype_ = View::template make<TypedTimeSeriesSetInputView<K>>();
+    inline static const View prototype_ = View::copy(static_cast<const TimeSeriesSetInputView &>(
+        cpp_time_series_storage_representation<TSS<K, TimeSeriesProperties...>>().input_view_prototype()));
     View view_;
 };
 

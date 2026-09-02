@@ -1,8 +1,10 @@
 #pragma once
 
+#include <bg/time_series/tsb/tsb_type.hpp>
 #include <bg/time_series/tsd/tsd_type.hpp>
 #include <bg/time_series/tsl/tsl_type.hpp>
 #include <bg/time_series/tss/tss_type.hpp>
+#include <bg/util/named_argument.hpp>
 
 #include <cstddef>
 #include <type_traits>
@@ -51,6 +53,16 @@ template <typename TimeSeries> class wp {
         requires details::is_time_series_list<T>
     [[nodiscard]] auto operator[](std::size_t index) const -> wp<typename details::time_series_list<T>::item_type> {
         return point_.item(index);
+    }
+
+    template <util::compile_time_string Name, typename T = TimeSeries>
+        requires details::is_time_series_bundle<T>
+    [[nodiscard]] auto operator[](details::named_argument_name<Name>) const {
+        using Bundle = details::time_series_bundle<T>;
+        constexpr auto Index = details::bundle_field_index<Name, Bundle::template schema_type>;
+        static_assert(Index != details::missing_bundle_field, "bundle schema has no field with this name");
+        using Item = details::bundle_field_time_series<Name, Bundle::template schema_type>;
+        return wp<Item>{point_.item(Index)};
     }
 
     using time_series_type = TimeSeries;

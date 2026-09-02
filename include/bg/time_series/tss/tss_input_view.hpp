@@ -25,16 +25,22 @@ class TimeSeriesSetInputView : public TimeSeriesInputView {
     virtual void for_each(void *context, ItemFunction function) const = 0;
     virtual void for_each_added(void *context, ItemFunction function) const = 0;
     virtual void for_each_removed(void *context, ItemFunction function) const = 0;
+
+  protected:
+    TimeSeriesSetInputView() = default;
+    explicit TimeSeriesSetInputView(const TimeSeriesStorageRepresentation &representation) noexcept
+        : TimeSeriesInputView{representation} {}
 };
 
-template <typename K> class TypedTimeSeriesSetInputView final : public TimeSeriesSetInputView {
-    using Storage = details::time_series_set_storage<K>;
-
+class RuntimeTimeSeriesSetInputView final : public TimeSeriesSetInputView {
   public:
+    explicit RuntimeTimeSeriesSetInputView(const TimeSeriesStorageRepresentation &representation) noexcept
+        : TimeSeriesSetInputView{representation} {}
+
     [[nodiscard]] std::size_t size() const noexcept override { return valid() ? storage().size() : 0; }
 
     [[nodiscard]] bool contains(const ScalarValueInputView &item) const override {
-        return valid() && storage().contains(item);
+        return valid() && storage().contains(item, key_representation(), key_layout());
     }
 
     void for_each(void *context, ItemFunction function) const override {
@@ -62,13 +68,22 @@ template <typename K> class TypedTimeSeriesSetInputView final : public TimeSerie
     }
 
   private:
-    [[nodiscard]] const Storage &storage() const noexcept { return *static_cast<const Storage *>(value_); }
+    [[nodiscard]] const details::time_series_set_storage &storage() const noexcept {
+        return *static_cast<const details::time_series_set_storage *>(value_);
+    }
+
+    [[nodiscard]] const ScalarStorageRepresentation &key_representation() const noexcept {
+        return *storage_representation().key_storage_representation();
+    }
+
+    [[nodiscard]] util::runtime_item_layout key_layout() const noexcept {
+        return {key_representation().size(), key_representation().alignment()};
+    }
 
     void apply(const util::index<> &positions, void *context, ItemFunction function) const {
-        const auto &representation = cpp_scalar_storage_representation<K>();
-        const auto &prototype = *representation.scalar_input_view_prototype();
+        const auto &prototype = *key_representation().scalar_input_view_prototype();
         for (const auto position : positions) {
-            function(context, {prototype, storage().key(position)});
+            function(context, {prototype, storage().key(position, key_layout())});
         }
     }
 };

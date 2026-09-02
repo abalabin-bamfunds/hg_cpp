@@ -3,12 +3,24 @@
 #include <bg/scalar/storage_representation.hpp>
 #include <bg/time_series/time_series_input_view.hpp>
 #include <bg/time_series/time_series_output_view.hpp>
+#include <bg/time_series/ref/ref_storage_representation.hpp>
+#include <bg/time_series/tsb/tsb_storage_representation.hpp>
+#include <bg/time_series/tsd/tsd_storage_representation.hpp>
+#include <bg/time_series/tsl/tsl_storage_representation.hpp>
+#include <bg/time_series/tss/tss_storage_representation.hpp>
+#include <bg/type/time_series_bundle_type.hpp>
+#include <bg/type/time_series_dict_type.hpp>
+#include <bg/type/time_series_list_type.hpp>
+#include <bg/type/time_series_reference_type.hpp>
+#include <bg/type/time_series_set_type.hpp>
 #include <bg/type/time_series_value_type.hpp>
 
 #include <memory>
 #include <mutex>
+#include <ranges>
 #include <stdexcept>
 #include <unordered_map>
+#include <vector>
 
 namespace bg {
 namespace {
@@ -95,6 +107,69 @@ time_series_value_storage_representation(const TimeSeriesType &type,
     }
 
     return *entry->second;
+}
+
+const TimeSeriesStorageRepresentation &resolve_time_series_storage_representation(
+    const TimeSeriesType &type,
+    std::span<const TimeSeriesStorageRepresentation *const> available_time_series,
+    std::span<const ScalarStorageRepresentation *const> available_scalars) {
+    const auto supplied = std::ranges::find_if(available_time_series, [&](const auto *representation) {
+        return representation != nullptr && &representation->type() == &type;
+    });
+    if (supplied != available_time_series.end()) {
+        return **supplied;
+    }
+
+    auto scalar_representations = std::vector<const ScalarStorageRepresentation *>{available_scalars.begin(),
+                                                                                   available_scalars.end()};
+    for (const auto *representation : available_time_series) {
+        if (representation != nullptr && representation->scalar_storage_representation() != nullptr) {
+            scalar_representations.push_back(representation->scalar_storage_representation());
+        }
+    }
+
+    if (const auto *value = dynamic_cast<const TimeSeriesValueType *>(&type)) {
+        const auto &scalar = resolve_scalar_storage_representation(value->value_type(), scalar_representations);
+        return time_series_value_storage_representation(type, scalar);
+    }
+    if (const auto *reference = dynamic_cast<const TimeSeriesReferenceType *>(&type)) {
+        const auto &target = resolve_time_series_storage_representation(reference->target_type(),
+                                                                        available_time_series,
+                                                                        scalar_representations);
+        return time_series_reference_storage_representation(*reference, target);
+    }
+    if (const auto *list = dynamic_cast<const TimeSeriesListType *>(&type)) {
+        if (list->item_count() == std::dynamic_extent) {
+            throw std::invalid_argument{"variable-size time series lists are not implemented"};
+        }
+
+        const auto &item = resolve_time_series_storage_representation(list->item_type(), available_time_series,
+                                                                      scalar_representations);
+        return details::fixed_time_series_list_storage_representation(*list, item);
+    }
+    if (const auto *set = dynamic_cast<const TimeSeriesSetType *>(&type)) {
+        const auto &key = resolve_scalar_storage_representation(set->item_type(), scalar_representations);
+        return details::time_series_set_storage_representation(*set, key);
+    }
+    if (const auto *dictionary = dynamic_cast<const TimeSeriesDictionaryType *>(&type)) {
+        const auto &key = resolve_scalar_storage_representation(dictionary->key_type(), scalar_representations);
+        const auto &item = resolve_time_series_storage_representation(dictionary->value_type(),
+                                                                      available_time_series,
+                                                                      scalar_representations);
+        return details::time_series_dictionary_storage_representation(*dictionary, key, item);
+    }
+    if (const auto *bundle = dynamic_cast<const TimeSeriesBundleType *>(&type)) {
+        auto items = std::vector<const TimeSeriesStorageRepresentation *>{};
+        items.reserve(bundle->item_count());
+        for (auto index = std::size_t{}; index < bundle->item_count(); ++index) {
+            items.push_back(&resolve_time_series_storage_representation(bundle->item_type(index),
+                                                                        available_time_series,
+                                                                        scalar_representations));
+        }
+        return details::time_series_bundle_storage_representation(*bundle, items);
+    }
+
+    throw std::logic_error{"resolved time series type has no storage representation"};
 }
 
 } // namespace bg

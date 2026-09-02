@@ -8,13 +8,16 @@
 namespace bg {
 
 class TimeSeriesValueInputView;
+class TimeSeriesStorageRepresentation;
 class TimeSeriesListInputView;
+class TimeSeriesBundleInputView;
 class TimeSeriesSetInputView;
 class TimeSeriesDictionaryInputView;
 class TimeSeriesReferenceInputView;
 
-using TimeSeriesInputViewTypes = ddv::mux<TimeSeriesValueInputView, TimeSeriesListInputView, TimeSeriesSetInputView,
-                                          TimeSeriesDictionaryInputView, TimeSeriesReferenceInputView>;
+using TimeSeriesInputViewTypes =
+    ddv::mux<TimeSeriesValueInputView, TimeSeriesListInputView, TimeSeriesBundleInputView, TimeSeriesSetInputView,
+             TimeSeriesDictionaryInputView, TimeSeriesReferenceInputView>;
 
 class TimeSeriesInputView : public TimeSeriesView,
                             public ddv::visitable<TimeSeriesInputView, TimeSeriesInputViewTypes> {
@@ -24,6 +27,11 @@ class TimeSeriesInputView : public TimeSeriesView,
     }
 
     [[nodiscard]] const void *data() const noexcept { return value_; }
+
+  protected:
+    TimeSeriesInputView() = default;
+    explicit TimeSeriesInputView(const TimeSeriesStorageRepresentation &representation) noexcept
+        : TimeSeriesView{representation} {}
 };
 
 class TimeSeriesValueInputView : public TimeSeriesInputView {
@@ -61,7 +69,7 @@ template <typename T> class TypedTimeSeriesValueInputView final : public TimeSer
     }
 };
 
-static_assert(sizeof(TimeSeriesInputView) == 3 * sizeof(void *));
+static_assert(sizeof(TimeSeriesInputView) == 4 * sizeof(void *));
 static_assert(sizeof(TimeSeriesValueInputView) == sizeof(TimeSeriesInputView));
 
 } // namespace bg

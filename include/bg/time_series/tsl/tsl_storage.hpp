@@ -1,18 +1,11 @@
 #pragma once
 
 #include <bg/evaluation_time.hpp>
-#include <bg/scalar/details/storage_traits.hpp>
-#include <bg/time_series/ref/ref_storage.hpp>
-#include <bg/time_series/time_series_type.hpp>
-#include <bg/time_series/tsl/tsl_type.hpp>
 #include <bg/util/index.hpp>
 
-#include <array>
 #include <cstddef>
 #include <cstdint>
-#include <limits>
-#include <ranges>
-#include <type_traits>
+#include <memory_resource>
 
 namespace bg::details {
 
@@ -47,51 +40,21 @@ template <std::size_t Size> class fixed_time_series_list_changes {
     util::index<static_cast<std::uint32_t>(Size)> updated_;
 };
 
-template <typename T> union time_series_value_slot {
-    constexpr time_series_value_slot() noexcept {}
-    ~time_series_value_slot() noexcept
-        requires std::is_trivially_destructible_v<T>
-    = default;
-    ~time_series_value_slot() noexcept
-        requires(!std::is_trivially_destructible_v<T>)
-    {}
+struct time_series_list_storage {
+    EvaluationTime change_time{MIN_DT};
+    util::index<> updated;
 
-    T value;
-};
+    [[nodiscard]] bool mark(std::size_t index, EvaluationTime evaluation_time,
+                            std::pmr::memory_resource &memory) noexcept {
+        if (change_time != evaluation_time) {
+            updated.clear();
+            change_time = evaluation_time;
+        }
 
-template <typename TimeSeries> struct time_series_value_storage;
-
-template <typename T, auto... Properties> struct time_series_value_storage<TS<T, Properties...>> {
-    using type = scalar_stored_t<T>;
-};
-
-template <typename Target, auto... Properties> struct time_series_value_storage<REF<Target, Properties...>> {
-    using type = ReferenceStorage *;
-};
-
-template <typename Item, std::size_t Size> struct fixed_time_series_list_storage;
-
-template <typename Item, std::size_t Size, auto... Properties>
-struct time_series_value_storage<TSL<Item, Size, Properties...>> {
-    using type = fixed_time_series_list_storage<Item, Size>;
-};
-
-template <typename TimeSeries> using time_series_value_storage_t = typename time_series_value_storage<TimeSeries>::type;
-
-template <typename TimeSeries> struct contained_time_series_storage {
-    EvaluationTime last_updated{MIN_DT};
-    time_series_value_slot<time_series_value_storage_t<TimeSeries>> value;
-};
-
-template <typename Item, std::size_t Size> struct fixed_time_series_list_storage {
-    fixed_time_series_list_changes<Size> changes;
-    std::array<contained_time_series_storage<Item>, Size> items;
-
-    [[nodiscard]] bool valid() const noexcept {
-        return std::ranges::any_of(items, [](const auto &item) { return item.last_updated > MIN_DT; });
+        return updated.set(static_cast<std::uint32_t>(index), memory);
     }
 };
 
-static_assert(std::is_trivially_copyable_v<fixed_time_series_list_storage<TS<int>, 1>>);
+static_assert(std::is_trivially_copyable_v<time_series_list_storage>);
 
 } // namespace bg::details

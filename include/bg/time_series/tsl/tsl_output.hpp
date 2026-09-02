@@ -5,6 +5,7 @@
 #include <bg/node/details/output_view_proxy.hpp>
 #include <bg/time_series/tsl/tsl_output_view.hpp>
 #include <bg/time_series/tsl/tsl_storage.hpp>
+#include <bg/time_series/tsl/tsl_storage_representation.hpp>
 #include <bg/time_series/tsl/tsl_type.hpp>
 #include <bg/util/polymorphic_value.hpp>
 
@@ -14,7 +15,7 @@ template <typename Item, std::size_t Size, auto... Properties> class Out<TSL<Ite
     static_assert(Size != std::dynamic_extent, "variable-size time series lists are not implemented");
 
   public:
-    using storage_type = details::fixed_time_series_list_storage<Item, Size>;
+    using storage_type = details::time_series_list_storage;
 
   private:
     friend details::output_factory;
@@ -65,8 +66,9 @@ template <typename Item, std::size_t Size, auto... Properties> class Out<TSL<Ite
     using View = details::output_view_proxy<TimeSeriesListOutputView>;
 
     [[nodiscard]] static const auto &prototype() noexcept {
-        static const auto value = util::polymorphic_value<TimeSeriesListOutputView>::template make<
-            TypedTimeSeriesListOutputView<Item, Size>>();
+        static const auto value = util::polymorphic_value<TimeSeriesListOutputView>::copy(
+            static_cast<const TimeSeriesListOutputView &>(
+                *cpp_time_series_storage_representation<TSL<Item, Size, Properties...>>().output_view_prototype()));
         return value;
     }
 

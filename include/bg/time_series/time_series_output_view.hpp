@@ -57,6 +57,10 @@ class TimeSeriesOutputView : public TimeSeriesView {
     }
 
   protected:
+    TimeSeriesOutputView() = default;
+    explicit TimeSeriesOutputView(const TimeSeriesStorageRepresentation &representation) noexcept
+        : TimeSeriesView{representation} {}
+
     [[nodiscard]] EvaluationTime *mutable_last_updated() const noexcept {
         return const_cast<EvaluationTime *>(last_updated_);
     }
@@ -146,7 +150,7 @@ template <typename T> class TypedTimeSeriesValueOutputView final : public TimeSe
     void set_value(const ScalarInputView &value) const override;
 };
 
-static_assert(sizeof(TimeSeriesOutputView) == 4 * sizeof(void *));
+static_assert(sizeof(TimeSeriesOutputView) == 5 * sizeof(void *));
 static_assert(sizeof(TimeSeriesValueOutputView) == sizeof(TimeSeriesOutputView));
 static_assert(alignof(EvaluationContext) >= 4);
 static_assert(alignof(EvaluationTime) >= 4);

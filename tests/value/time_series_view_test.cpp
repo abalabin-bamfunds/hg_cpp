@@ -1,4 +1,6 @@
 #include <bg/time_series/time_series_view.hpp>
+#include <bg/time_series/tsb/tsb_input_view.hpp>
+#include <bg/time_series/tsb/tsb_storage_representation.hpp>
 #include <bg/time_series/tsd/tsd_input_view.hpp>
 #include <bg/time_series/tsd/tsd_storage_representation.hpp>
 #include <bg/time_series/tss/tss_input_view.hpp>
@@ -36,16 +38,28 @@ TEST_CASE("a time-series view reads validity and update time", "[time_series]") 
     CHECK_FALSE(view.valid());
 }
 
+namespace {
+
+template <template <typename> typename Field> struct VisitorBundle {
+    Field<bg::TS<int>> value;
+};
+
+} // namespace
+
 TEST_CASE("time series collection views support generic visitor dispatch", "[time_series][visitor]") {
     const auto &set = bg::cpp_time_series_storage_representation<bg::TSS<std::int64_t>>().input_view_prototype();
     const auto &dict =
         bg::cpp_time_series_storage_representation<bg::TSD<std::int64_t, bg::TS<int>>>().input_view_prototype();
+    const auto &bundle = bg::cpp_time_series_storage_representation<bg::TSB<VisitorBundle>>().input_view_prototype();
     auto set_visited = false;
     auto dict_visited = false;
+    auto bundle_visited = false;
 
     set.visit([&](const bg::TimeSeriesSetInputView *) { set_visited = true; }, ddv::noop);
     dict.visit([&](const bg::TimeSeriesDictionaryInputView *) { dict_visited = true; }, ddv::noop);
+    bundle.visit([&](const bg::TimeSeriesBundleInputView *) { bundle_visited = true; }, ddv::noop);
 
     CHECK(set_visited);
     CHECK(dict_visited);
+    CHECK(bundle_visited);
 }

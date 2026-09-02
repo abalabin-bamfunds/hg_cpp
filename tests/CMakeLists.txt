@@ -12,6 +12,7 @@ add_executable(
     evaluation/storage/runtime_storage_test.cpp
     evaluation/storage/runtime_views_test.cpp
     evaluation/time_series/time_series_list_test.cpp
+    evaluation/time_series/time_series_bundle_test.cpp
     evaluation/time_series/time_series_dict_test.cpp
     evaluation/time_series/time_series_reference_test.cpp
     evaluation/time_series/time_series_set_test.cpp
@@ -31,6 +32,7 @@ add_executable(
     testing/test_graph_test.cpp
     type/type_system_test.cpp
     type/time_series_dict_type_test.cpp
+    type/time_series_bundle_type_test.cpp
     type/time_series_list_type_test.cpp
     type/time_series_set_type_test.cpp
     type/time_series_reference_type_test.cpp

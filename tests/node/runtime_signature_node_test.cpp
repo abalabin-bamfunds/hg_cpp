@@ -1,6 +1,10 @@
 #include <bg/graph.hpp>
 #include <bg/node.hpp>
+#include <bg/run_graph.hpp>
 #include <bg/testing/test_graph.hpp>
+#include <bg/time_series/tsd/tsd_input_view.hpp>
+#include <bg/time_series/tsd/tsd_output_view.hpp>
+#include <bg/time_series/tsd/tsd_type.hpp>
 #include <bg/time_series/time_series_storage_representation.hpp>
 
 #include <catch2/catch_test_macros.hpp>
@@ -152,6 +156,57 @@ TEST_CASE("an absent optional scalar remains enumerable", "[node][runtime-signat
     };
 
     CHECK(bg::testing::test_graph(graph, {1, 2}).equals({1, 2}));
+}
+
+struct RuntimeDictionarySourceDefinition {
+    RuntimeDictionarySourceDefinition()
+        : output_type_{&bg::time_series_dictionary_type(
+              bg::cpp_scalar_type<std::int64_t>(),
+              bg::time_series_value_type(bg::cpp_scalar_type<std::int64_t>(), bg::TimeSeriesGuarantee::ordinary),
+              bg::TimeSeriesGuarantee::ordinary)},
+          signature_{bg::util::symbol{"runtime_dictionary_source"}, {}, *output_type_} {}
+
+    [[nodiscard]] const bg::Signature &signature() const { return signature_; }
+
+    [[nodiscard]] const bg::TimeSeriesStorageRepresentation *
+    output_storage_representation(const bg::ResolvedSignature &signature,
+                                  std::span<const bg::ScalarStorageRepresentation *const> scalars,
+                                  std::span<const bg::TimeSeriesStorageRepresentation *const> inputs) const noexcept {
+        return &bg::resolve_time_series_storage_representation(*signature.output, inputs, scalars);
+    }
+
+    static void start(bg::NodeInvocation<> invocation) {
+        auto output = invocation.output();
+        const auto &dictionary = static_cast<const bg::TimeSeriesDictionaryOutputView &>(*output.operator->());
+        const auto key = bg::ScalarValue<std::int64_t>{1};
+        const auto item = dictionary.item(key.input_view());
+        auto item_view = bg::util::polymorphic_value<bg::TimeSeriesOutputView>::copy(item.prototype);
+        item_view->bind(item.last_updated, item.value, item.output_path);
+        static_cast<const bg::TypedTimeSeriesValueOutputView<std::int64_t> &>(item_view.get()).set(42);
+        item_view->release_output_path();
+    }
+
+    const bg::TimeSeriesDictionaryType *output_type_;
+    bg::Signature signature_;
+};
+
+struct RuntimeDictionarySinkDefinition {
+    bg::In<bg::TSD<std::int64_t, bg::TS<std::int64_t>>> input;
+
+    void evaluate() const { value = input[1].value(); }
+
+    inline static std::int64_t value{};
+};
+
+TEST_CASE("a runtime-signature node constructs runtime-defined dictionary storage",
+          "[node][runtime-signature][tsd]") {
+    const auto source = bg::node(RuntimeDictionarySourceDefinition{});
+    const auto sink = bg::node<RuntimeDictionarySinkDefinition>();
+    RuntimeDictionarySinkDefinition::value = 0;
+
+    bg::run_graph([&] { sink(bg::wp<bg::TSD<std::int64_t, bg::TS<std::int64_t>>>{*source()}); });
+
+    CHECK(RuntimeDictionarySinkDefinition::value == 42);
 }
 
 } // namespace

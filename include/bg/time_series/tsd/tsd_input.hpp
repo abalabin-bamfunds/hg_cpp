@@ -8,6 +8,7 @@
 #include <bg/time_series/ts/ts_input.hpp>
 #include <bg/time_series/tsd/tsd_input_view.hpp>
 #include <bg/time_series/tsd/tsd_storage.hpp>
+#include <bg/time_series/tsd/tsd_storage_representation.hpp>
 #include <bg/time_series/tsd/tsd_type.hpp>
 #include <bg/time_series/tsl/tsl_input.hpp>
 #include <bg/time_series/tss/tss_input.hpp>
@@ -24,7 +25,7 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...> {
     static_assert(ParsedProperties::valid);
 
   public:
-    using storage_type = details::time_series_dict_storage<K, Item>;
+    using storage_type = details::time_series_dict_storage;
 
     In() noexcept : view_(prototype_) {}
 
@@ -32,8 +33,8 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...> {
         view_->bind(last_updated, value);
     }
 
-    In(const EvaluationTime &last_updated, const void *value, const TimeSeriesDictionaryInputView &prototype) noexcept
-        : view_(View::copy(prototype)) {
+    In(const EvaluationTime &last_updated, const void *value, const TimeSeriesInputView &prototype) noexcept
+        : view_(View::copy(static_cast<const TimeSeriesDictionaryInputView &>(prototype))) {
         view_->bind(last_updated, value);
     }
 
@@ -95,23 +96,7 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...> {
     using Apply = void (TimeSeriesDictionaryInputView::*)(void *, TimeSeriesDictionaryInputView::KeyFunction) const;
 
     [[nodiscard]] static auto make_item(TimeSeriesDictionaryInputView::Item item) {
-        if constexpr (details::time_series_variable<Item>) {
-            return In<Item>{item.last_updated, item.value, item.prototype};
-        } else if constexpr (details::is_time_series_dict<Item>) {
-            return In<Item>{item.last_updated, item.value,
-                            static_cast<const TimeSeriesDictionaryInputView &>(item.prototype)};
-        } else if constexpr (details::is_time_series_set<Item>) {
-            return In<Item>{item.last_updated, item.value, static_cast<const TimeSeriesSetInputView &>(item.prototype)};
-        } else if constexpr (details::is_time_series_list<Item>) {
-            return In<Item>{item.last_updated, item.value,
-                            static_cast<const TimeSeriesListInputView &>(item.prototype)};
-        } else if constexpr (details::scalar_variable<details::time_series_value_t<Item>>) {
-            return In<Item>{item.last_updated, item.value,
-                            static_cast<const TimeSeriesValueInputView &>(item.prototype)};
-        } else {
-            using ItemInput = In<Item>;
-            return ItemInput{item.last_updated, static_cast<const typename ItemInput::storage_type *>(item.value)};
-        }
+        return In<Item>{item.last_updated, item.value, item.prototype};
     }
 
     template <typename Function> void apply(Apply operation, Function &function) const {
@@ -121,7 +106,8 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...> {
         });
     }
 
-    inline static const View prototype_ = View::template make<TypedTimeSeriesDictionaryInputView<K, Item>>();
+    inline static const View prototype_ = View::copy(static_cast<const TimeSeriesDictionaryInputView &>(
+        cpp_time_series_storage_representation<TSD<K, Item, TimeSeriesProperties...>>().input_view_prototype()));
     View view_;
 };
 

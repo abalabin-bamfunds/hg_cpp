@@ -5,6 +5,7 @@
 #include <bg/node/details/output_view_proxy.hpp>
 #include <bg/time_series/tss/tss_output_view.hpp>
 #include <bg/time_series/tss/tss_storage.hpp>
+#include <bg/time_series/tss/tss_storage_representation.hpp>
 #include <bg/time_series/tss/tss_type.hpp>
 #include <bg/util/polymorphic_value.hpp>
 
@@ -12,7 +13,7 @@ namespace bg {
 
 template <typename K, auto... Properties> class Out<TSS<K, Properties...>> {
   public:
-    using storage_type = details::time_series_set_storage<K>;
+    using storage_type = details::time_series_set_storage;
 
   private:
     friend details::output_factory;
@@ -69,8 +70,9 @@ template <typename K, auto... Properties> class Out<TSS<K, Properties...>> {
     using View = details::output_view_proxy<TimeSeriesSetOutputView>;
 
     [[nodiscard]] static const auto &prototype() noexcept {
-        static const auto value =
-            util::polymorphic_value<TimeSeriesSetOutputView>::template make<TypedTimeSeriesSetOutputView<K>>();
+        static const auto value = util::polymorphic_value<TimeSeriesSetOutputView>::copy(
+            static_cast<const TimeSeriesSetOutputView &>(
+                *cpp_time_series_storage_representation<TSS<K, Properties...>>().output_view_prototype()));
         return value;
     }
 

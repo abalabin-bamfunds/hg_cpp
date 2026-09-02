@@ -17,7 +17,7 @@ using PassiveOptionalFloatInput = bg::In<bg::TS<float>, bg::optional, "value"_n,
 using FinalFloatInput = bg::In<bg::TS<float, bg::TimeSeriesGuarantee::final>>;
 
 static_assert(sizeof(FloatInput) == sizeof(bg::TimeSeriesValueInputView));
-static_assert(sizeof(FloatInput) == 3 * sizeof(void *));
+static_assert(sizeof(FloatInput) == 4 * sizeof(void *));
 static_assert(std::is_trivially_copyable_v<FloatInput>);
 static_assert(FloatInput::name == "value");
 static_assert(UnnamedFloatInput::name.empty());

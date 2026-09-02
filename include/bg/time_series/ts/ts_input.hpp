@@ -19,8 +19,8 @@ class In<TS<Variable, TimeSeriesProperties...>, Properties...> {
   public:
     using view_type = util::polymorphic_value<TimeSeriesValueInputView>;
 
-    In(const EvaluationTime &last_updated, const void *value, const TimeSeriesValueInputView &prototype) noexcept
-        : view_(view_type::copy(prototype)) {
+    In(const EvaluationTime &last_updated, const void *value, const TimeSeriesInputView &prototype) noexcept
+        : view_(view_type::copy(static_cast<const TimeSeriesValueInputView &>(prototype))) {
         view_->bind(last_updated, value);
     }
 
@@ -53,6 +53,11 @@ class In<TS<T, TimeSeriesProperties...>, Properties...> {
     In() noexcept : view_(prototype_) {}
 
     In(const EvaluationTime &last_updated, const Stored *value) noexcept : In() { view_->bind(last_updated, value); }
+
+    In(const EvaluationTime &last_updated, const void *value, const TimeSeriesInputView &prototype) noexcept
+        : view_(View::copy(static_cast<const TimeSeriesValueInputView &>(prototype))) {
+        view_->bind(last_updated, value);
+    }
 
     [[nodiscard]] bool valid() const noexcept { return view_->valid(); }
     [[nodiscard]] EvaluationTime last_updated() const noexcept { return view_->last_updated(); }

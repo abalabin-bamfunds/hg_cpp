@@ -28,6 +28,13 @@ Selecting an item from that output returns the original source wiring point.
 The logical output preserves dependency ordering. Source changes schedule it as
 a normal node. It combines changes from the same cycle and copies no item value.
 
+`bg::bundle("name"_m = a, "value"_m = b)` groups wiring points into an
+unnamed TSB. A named TSB parameter accepts a compatible field set. The logical
+TSB output aliases the selected sources and reports their field changes.
+
+Graph code selects a named field with `bundle["name"_m]`. Selection returns the
+field's original wiring point when the TSB was created by `bg::bundle`.
+
 ## Wiring context
 
 `WiringContext` makes one `GraphWiring` active on the current thread:

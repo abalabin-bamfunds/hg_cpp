@@ -24,6 +24,8 @@ decltype(auto) nested_graph_argument(Argument &argument, const std::vector<std::
         return *inputs[Index];
     } else if constexpr (free_time_series_list<Argument>) {
         return *inputs[Index];
+    } else if constexpr (free_time_series_bundle<Argument>) {
+        return *inputs[Index];
     } else {
         return (argument);
     }
@@ -55,6 +57,8 @@ template <typename Graph, details::graph_code_argument Run, details::graph_code_
             argument_types.push_back(&argument.wiring_point().type());
         } else if (argument.is_free_time_series_list()) {
             argument_types.push_back(argument.free_time_series_list().type);
+        } else if (argument.is_free_time_series_bundle()) {
+            argument_types.push_back(argument.free_time_series_bundle().type);
         } else {
             argument_types.push_back(&argument.scalar_type());
         }
