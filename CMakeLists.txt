@@ -40,6 +40,7 @@ add_library(
     src/nested.cpp
     src/guarantee_parameter.cpp
     src/runtime_graph.cpp
+    src/scratch_pad.cpp
     src/scalar/allocation.cpp
     src/scalar/dict/type.cpp
     src/scalar/list/type.cpp
@@ -56,6 +57,7 @@ add_library(
     src/time_series/ref/ref_node.cpp
     src/time_series/tsd/tsd_type.cpp
     src/time_series/tss/tss_type.cpp
+    src/time_series/output_path.cpp
     src/time_series/time_series_storage_representation.cpp
     src/time_series_type.cpp
     src/time_series_variable.cpp

@@ -72,6 +72,7 @@ The context provides:
 - wall-clock time from the clock supplied to the evaluation engine
 - the current runtime graph and node
 - the current runtime graph's memory resource
+- temporary scratch storage for the current node invocation
 - the outer graph's [global state](global-state.md)
 - immediate and future scheduling
 - cancellation of future scheduling

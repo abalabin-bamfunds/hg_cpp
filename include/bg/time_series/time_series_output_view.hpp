@@ -2,6 +2,7 @@
 
 #include <bg/evaluation_context.hpp>
 #include <bg/scalar/value.hpp>
+#include <bg/time_series/details/output_path.hpp>
 #include <bg/time_series/time_series_view.hpp>
 
 #include <cstdint>
@@ -35,15 +36,15 @@ class TimeSeriesOutputView : public TimeSeriesView {
 
         auto &evaluation_context = context();
         auto *path = tag() == path_tag ? reinterpret_cast<void *>(owner_) : nullptr;
-        evaluation_context.release_output_view(this);
+        evaluation_context.scratch().release_last(this, sizeof(TimeSeriesOutputView));
         if (path != nullptr) {
-            evaluation_context.release_output_path(path);
+            details::release_output_path(path);
         }
     }
 
     void release_output_path() noexcept {
         if (tag() == path_tag && owner_ != 0) {
-            context().release_output_path(reinterpret_cast<void *>(owner_));
+            details::release_output_path(reinterpret_cast<void *>(owner_));
         }
     }
 
@@ -74,13 +75,14 @@ class TimeSeriesOutputView : public TimeSeriesView {
 
     [[nodiscard]] void *add_output_path(const TimeSeriesStorageRepresentation &representation, std::size_t item) const {
         auto *parent = tag() == path_tag ? reinterpret_cast<void *>(owner_) : nullptr;
-        return context().add_output_path(representation, *mutable_last_updated(), mutable_value(), item, parent);
+        return details::add_output_path(context(), representation, *mutable_last_updated(), mutable_value(), item,
+                                        parent);
     }
 
     void publish_item(const TimeSeriesStorageRepresentation &representation, std::size_t item) const {
         auto *path = add_output_path(representation, item);
-        context().publish_output_path(path);
-        context().release_output_path(path);
+        details::publish_output_path(path);
+        details::release_output_path(path);
     }
 
     [[nodiscard]] EvaluationContext &context() const noexcept {
@@ -88,13 +90,13 @@ class TimeSeriesOutputView : public TimeSeriesView {
             return *untagged<EvaluationContext>();
         }
 
-        return EvaluationContext::output_path_context(reinterpret_cast<void *>(owner_));
+        return details::output_path_context(reinterpret_cast<void *>(owner_));
     }
 
   private:
     void publish_containing_collections() const noexcept {
         if (tag() == path_tag && owner_ != 0) {
-            context().publish_output_path(reinterpret_cast<void *>(owner_));
+            details::publish_output_path(reinterpret_cast<void *>(owner_));
         }
     }
 

@@ -5,9 +5,7 @@
 #include <bg/graph/dynamic_subscribers.hpp>
 #include <bg/scalar/details/allocation_context.hpp>
 #include <bg/scalar/storage_representation.hpp>
-#include <bg/time_series/time_series_output_view.hpp>
 #include <bg/time_series/time_series_storage_representation.hpp>
-#include <bg/util/polymorphic_value.hpp>
 #include <bg/util/scope_exit.hpp>
 
 #include <algorithm>
@@ -146,33 +144,6 @@ class RuntimeGraph::ScratchUse {
     details::EvaluationScratch *previous_;
 };
 
-struct RuntimeGraph::OutputPath {
-    OutputPath(EvaluationContext &context, const TimeSeriesStorageRepresentation &representation,
-               EvaluationTime &last_updated, void *value, std::uint32_t item, OutputPath *parent) noexcept
-        : owner{parent == nullptr ? reinterpret_cast<std::uintptr_t>(&context) | context_tag
-                                  : reinterpret_cast<std::uintptr_t>(parent)},
-          representation{&representation}, last_updated{&last_updated}, value{value}, item{item} {}
-
-    [[nodiscard]] EvaluationContext &context() const noexcept {
-        if ((owner & context_tag) != 0) {
-            return *reinterpret_cast<EvaluationContext *>(owner & ~context_tag);
-        }
-        return reinterpret_cast<OutputPath *>(owner)->context();
-    }
-
-    [[nodiscard]] OutputPath *parent() const noexcept {
-        return (owner & context_tag) == 0 ? reinterpret_cast<OutputPath *>(owner) : nullptr;
-    }
-
-    static constexpr auto context_tag = std::uintptr_t{1};
-
-    std::uintptr_t owner;
-    const TimeSeriesStorageRepresentation *representation;
-    EvaluationTime *last_updated;
-    void *value;
-    std::uint32_t item;
-};
-
 struct RuntimeGraph::PendingInputNotifications {
     // A target graph applies cross-graph input reactions after entering the source's outer cycle.
     struct Record {
@@ -186,8 +157,6 @@ struct RuntimeGraph::PendingInputNotifications {
 
     std::pmr::vector<Record> records;
 };
-
-static_assert(alignof(EvaluationContext) >= 2);
 
 class RuntimeGraph::ScheduledNodes {
     // Iterates evaluation and validity requests together in node order. A scheduling block remains live until all
@@ -547,66 +516,6 @@ void RuntimeGraph::clear_cycle_callbacks() noexcept {
     }
 }
 
-RuntimeGraph::OutputPath *RuntimeGraph::add_output_path(EvaluationContext &context,
-                                                        const TimeSeriesStorageRepresentation &representation,
-                                                        EvaluationTime &last_updated, void *value, std::size_t item,
-                                                        OutputPath *parent) {
-    static_assert(sizeof(OutputPath) == 40);
-
-    ensure_output_frame(context);
-    auto &frame = *static_cast<details::EvaluationScratch::Frame *>(context.scratch_frame_);
-
-    return std::construct_at(
-        static_cast<OutputPath *>(scratch_->allocate(frame, sizeof(OutputPath), alignof(OutputPath))), context,
-        representation, last_updated, value, static_cast<std::uint32_t>(item), parent);
-}
-
-void RuntimeGraph::ensure_output_frame(EvaluationContext &context) {
-    if (context.scratch_frame_ == nullptr) {
-        context.scratch_frame_ = &scratch_->push_frame();
-    }
-}
-
-TimeSeriesOutputView &RuntimeGraph::add_output_view(EvaluationContext &context, const TimeSeriesOutputView &prototype) {
-    ensure_output_frame(context);
-    auto &frame = *static_cast<details::EvaluationScratch::Frame *>(context.scratch_frame_);
-    auto *storage = scratch_->allocate(frame, sizeof(TimeSeriesOutputView), alignof(TimeSeriesOutputView));
-
-    return util::polymorphic_value<TimeSeriesOutputView>::copy_to(storage, prototype);
-}
-
-void RuntimeGraph::publish_output_path(OutputPath &output_path) noexcept {
-    auto *path = &output_path;
-    while (path != nullptr) {
-        auto &entry = *path;
-        const auto modified = entry.representation->mark_item_modified(entry.value, entry.item, evaluation_time_,
-                                                                       *entry.last_updated, *memory_);
-        *entry.last_updated = entry.representation->collection_valid(entry.value) ? evaluation_time_ : MIN_DT;
-        if (!modified) {
-            return;
-        }
-        path = entry.parent();
-    }
-}
-
-void RuntimeGraph::release_output_path(EvaluationContext &context, OutputPath &path) noexcept {
-    auto &frame = *static_cast<details::EvaluationScratch::Frame *>(context.scratch_frame_);
-    scratch_->release_last(frame, &path, sizeof(OutputPath));
-}
-
-void RuntimeGraph::release_output_view(EvaluationContext &context, TimeSeriesOutputView &view) noexcept {
-    auto &frame = *static_cast<details::EvaluationScratch::Frame *>(context.scratch_frame_);
-    scratch_->release_last(frame, &view, sizeof(TimeSeriesOutputView));
-}
-
-void RuntimeGraph::release_output_paths(EvaluationContext &context) noexcept {
-    if (context.scratch_frame_ != nullptr) {
-        auto &frame = *static_cast<details::EvaluationScratch::Frame *>(context.scratch_frame_);
-        frame.scratch->pop_frame(frame);
-        context.scratch_frame_ = nullptr;
-    }
-}
-
 std::optional<EvaluationTime> RuntimeGraph::next_scheduled_time() const noexcept {
     if (!compiled_graph_->has_future_scheduling() || future_schedule() == nullptr) {
         return std::nullopt;
@@ -921,36 +830,9 @@ GlobalState &EvaluationContext::global_state() const noexcept {
 
 EvaluationContext::EvaluationContext(EvaluationTime evaluation_time, RuntimeGraph &runtime_graph,
                                      std::size_t node_index) noexcept
-    : evaluation_time_(evaluation_time), runtime_graph_(&runtime_graph), node_index_(node_index) {}
+    : evaluation_time_(evaluation_time), runtime_graph_(&runtime_graph), node_index_(node_index),
+      scratch_{runtime_graph.scratch_} {}
 
-EvaluationContext::~EvaluationContext() {
-    runtime_graph_->release_output_paths(*this);
-}
-
-void *EvaluationContext::add_output_path(const TimeSeriesStorageRepresentation &representation,
-                                         EvaluationTime &last_updated, void *value, std::size_t item, void *parent) {
-    return runtime_graph_->add_output_path(*this, representation, last_updated, value, item,
-                                           static_cast<RuntimeGraph::OutputPath *>(parent));
-}
-
-TimeSeriesOutputView &EvaluationContext::add_output_view(const TimeSeriesOutputView &prototype) {
-    return runtime_graph_->add_output_view(*this, prototype);
-}
-
-EvaluationContext &EvaluationContext::output_path_context(void *path) noexcept {
-    return static_cast<RuntimeGraph::OutputPath *>(path)->context();
-}
-
-void EvaluationContext::publish_output_path(void *path) const noexcept {
-    runtime_graph_->publish_output_path(*static_cast<RuntimeGraph::OutputPath *>(path));
-}
-
-void EvaluationContext::release_output_view(void *view) noexcept {
-    runtime_graph_->release_output_view(*this, *static_cast<TimeSeriesOutputView *>(view));
-}
-
-void EvaluationContext::release_output_path(void *path) noexcept {
-    runtime_graph_->release_output_path(*this, *static_cast<RuntimeGraph::OutputPath *>(path));
-}
+EvaluationContext::~EvaluationContext() = default;
 
 } // namespace bg

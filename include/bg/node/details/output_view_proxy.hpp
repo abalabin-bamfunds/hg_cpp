@@ -1,6 +1,8 @@
 #pragma once
 
 #include <bg/evaluation_context.hpp>
+#include <bg/time_series/details/output_path.hpp>
+#include <bg/util/polymorphic_value.hpp>
 
 #include <utility>
 
@@ -9,11 +11,12 @@ namespace bg::details {
 template <typename View> class output_view_proxy {
   public:
     [[nodiscard]] static output_view_proxy copy(const View &prototype, EvaluationContext &context) {
-        return output_view_proxy{static_cast<View &>(context.add_output_view(prototype))};
+        auto *storage = context.scratch().allocate(sizeof(View), alignof(View));
+        return output_view_proxy{static_cast<View &>(util::polymorphic_value<View>::copy_to(storage, prototype))};
     }
 
     [[nodiscard]] static output_view_proxy copy(const View &prototype, void *output_path) {
-        auto &context = EvaluationContext::output_path_context(output_path);
+        auto &context = output_path_context(output_path);
         return copy(prototype, context);
     }
 

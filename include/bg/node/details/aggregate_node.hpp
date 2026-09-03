@@ -219,6 +219,22 @@ template <typename Definition> consteval bool aggregate_node_has_output() {
     return output_field_count<Definition>(Index{}) != 0;
 }
 
+// Holds the root output view in the aggregate invocation; item views continue to use evaluation scratch storage.
+template <bool HasOutput> class aggregate_output_view_storage {
+  public:
+    explicit aggregate_output_view_storage(EvaluationContext *) noexcept {}
+};
+
+template <> class aggregate_output_view_storage<true> {
+  public:
+    explicit aggregate_output_view_storage(EvaluationContext *context) noexcept
+        : local_storage_{context->scratch().use_local_storage(storage_)} {}
+
+  private:
+    alignas(TimeSeriesOutputView) std::byte storage_[sizeof(TimeSeriesOutputView)];
+    ScratchPad::LocalStorageScope local_storage_;
+};
+
 template <typename Definition>
 inline constexpr bool aggregate_node_has_evaluate = requires(const Definition &definition) {
     { definition.evaluate() } -> std::same_as<void>;
@@ -884,6 +900,7 @@ template <typename Definition, auto Function, std::size_t... Index>
 void invoke_aggregate_node(const CompiledNode &node, void *runtime_storage, EvaluationContext *context,
                            std::index_sequence<Index...>) {
     [[maybe_unused]] auto *storage = static_cast<std::byte *>(runtime_storage);
+    auto output_view_storage = aggregate_output_view_storage<aggregate_node_has_output<Definition>()>{context};
     auto definition = Definition{make_runtime_field<Definition, Index>(node, storage, context)...};
 
     if constexpr (std::invocable<decltype(Function), const Definition &, EvaluationContext *>) {
@@ -923,6 +940,7 @@ template <typename Definition, std::size_t... Index>
 void invalidate_aggregate_output(const CompiledNode &node, void *runtime_storage, EvaluationContext *context,
                                  std::index_sequence<Index...>) {
     auto *storage = static_cast<std::byte *>(runtime_storage);
+    auto output_view_storage = aggregate_output_view_storage<aggregate_node_has_output<Definition>()>{context};
     auto definition = Definition{make_runtime_field<Definition, Index>(node, storage, context)...};
     auto fields = util::detail::aggregate_tie<sizeof...(Index)>::apply(definition);
 

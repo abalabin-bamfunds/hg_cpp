@@ -60,7 +60,6 @@ class RuntimeGraph {
     class CycleCallbacks;
     class ScratchUse;
     class ModifiedItemPropagator;
-    struct OutputPath;
     struct PendingInputNotifications;
 
     [[nodiscard]] auto scheduling_info() noexcept -> std::span<SchedulingInfo>;
@@ -80,17 +79,6 @@ class RuntimeGraph {
     void add_cycle_callback(void *target, void (*function)(void *) noexcept);
     void run_cycle_callbacks() noexcept;
     void clear_cycle_callbacks() noexcept;
-    [[nodiscard]] OutputPath *add_output_path(EvaluationContext &context,
-                                              const TimeSeriesStorageRepresentation &representation,
-                                              EvaluationTime &last_updated, void *value, std::size_t item,
-                                              OutputPath *parent);
-    void ensure_output_frame(EvaluationContext &context);
-    [[nodiscard]] TimeSeriesOutputView &add_output_view(EvaluationContext &context,
-                                                        const TimeSeriesOutputView &prototype);
-    void publish_output_path(OutputPath &path) noexcept;
-    void release_output_view(EvaluationContext &context, TimeSeriesOutputView &view) noexcept;
-    void release_output_path(EvaluationContext &context, OutputPath &path) noexcept;
-    void release_output_paths(EvaluationContext &context) noexcept;
     void propagate_modified_items(const CompiledNode &node);
     void schedule_subscribers(std::span<const Subscriber> subscribers, OutputChange change);
     void schedule_node_subscriber(std::size_t node_index, bool active, bool required, bool active_optional,
