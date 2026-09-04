@@ -11,6 +11,9 @@ namespace bg {
 
 class RuntimeGraph;
 class Node;
+namespace details {
+struct DynamicSubscribers;
+}
 
 enum class OutputChange : std::uint8_t {
     update,
@@ -27,6 +30,7 @@ class OutputNotificationContext {
     [[nodiscard]] std::pmr::memory_resource &memory_resource(RuntimeGraph &graph) const noexcept;
 
     void schedule_validity_check(RuntimeGraph &graph, std::size_t node_index) const noexcept;
+    void notify(details::DynamicSubscribers *subscribers, OutputChange change) const;
 
   private:
     friend class RuntimeGraph;
@@ -39,6 +43,7 @@ class OutputNotificationContext {
 using OutputNotificationFunction = void (*)(OutputNotificationContext &, const void *, OutputChange,
                                             std::span<const std::byte>);
 using InputNotificationFunction = void (*)(OutputNotificationContext &, std::size_t, std::size_t, OutputChange);
+using DynamicObserverFunction = void (*)(OutputNotificationContext &, void *, OutputChange);
 
 struct InputNotificationCallback {
     InputNotificationFunction function{};

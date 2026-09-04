@@ -38,7 +38,7 @@ const TimeSeriesType &TimeSeriesDictionaryType::with_guarantee(TimeSeriesGuarant
     return time_series_dictionary_type(key_type(), value_type(), guarantee);
 }
 
-bool GenericTimeSeriesDictionaryType::do_match(const Type &supplied, TypeMap &bindings) const {
+bool TimeSeriesDictionaryType::do_match(const Type &supplied, TypeMap &bindings) const {
     const auto *dictionary = dynamic_cast<const TimeSeriesDictionaryType *>(&supplied);
     if (dictionary == nullptr || !dictionary->is_resolved()) {
         return false;

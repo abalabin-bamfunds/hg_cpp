@@ -68,7 +68,9 @@ struct set_sink_definition {
 
 } // namespace
 
-TEST_CASE("a time series set becomes valid on its first empty tick and remains valid", "[evaluation][tss][validity]") {
+TEST_CASE("a time series set becomes valid on its first empty tick and remains valid",
+          "[evaluation][tss][series:tss][validity][feature:collection-change][transition:first-tick]"
+          "[scalar:integer][representation:native][declaration:concrete][binding:direct]") {
     const auto source = bg::node<set_source_definition>();
     const auto sink = bg::node<set_sink_definition>();
     set_sink_definition::validity.clear();
@@ -99,7 +101,10 @@ struct inverse_set_mutation_source_definition {
 
 } // namespace
 
-TEST_CASE("adding and removing a set item in one invocation produces a tick", "[evaluation][tss]") {
+TEST_CASE("adding and removing a set item in one invocation produces a tick",
+          "[evaluation][tss][series:tss][feature:collection-change][transition:removal]"
+          "[transition:update][scalar:integer][representation:native][declaration:concrete]"
+          "[binding:direct][transition:addition]") {
     const auto source = bg::node<inverse_set_mutation_source_definition>();
     const auto sink = bg::node<set_sink_definition>();
     set_sink_definition::validity.clear();
@@ -134,13 +139,14 @@ struct set_from_value_definition {
     bg::In<bg::TS<int>> input;
     bg::Out<IntSet> output;
 
-    void evaluate() const { output.insert(input.value()); }
+    void evaluate() const { output.insert(*input); }
 };
 
 } // namespace
 
 TEST_CASE("a time series set preserves its value when a required input becomes invalid",
-          "[evaluation][tss][validity]") {
+          "[evaluation][tss][series:tss][validity][feature:collection-change][validity:required]"
+          "[scalar:integer][representation:native][declaration:concrete][binding:direct]") {
     const auto source = bg::node<invalidating_value_source_definition>();
     const auto set_from_value = bg::node<set_from_value_definition>();
     const auto sink = bg::node<set_sink_definition>();

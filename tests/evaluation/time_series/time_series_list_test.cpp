@@ -53,7 +53,7 @@ struct list_sink_definition {
     bg::In<IntTimeSeriesList> input;
 
     void evaluate() const {
-        values = {input[0].value(), 0, input[2].value()};
+        values = {*input[0], 0, *input[2]};
         updated = {input.item_updated(0), input.item_updated(1), input.item_updated(2)};
         ++evaluation_count;
     }
@@ -67,7 +67,7 @@ struct item_sink_definition {
     bg::In<bg::TS<int>> input;
 
     void evaluate() const {
-        value = input.value();
+        value = *input;
         ++evaluation_count;
     }
 
@@ -77,7 +77,9 @@ struct item_sink_definition {
 
 } // namespace
 
-TEST_CASE("a fixed time series list publishes changed items", "[evaluation][tsl]") {
+TEST_CASE("a fixed time series list publishes changed items",
+          "[evaluation][tsl][series:fixed-tsl][feature:collection-change][transition:update]"
+          "[scalar:integer][representation:native][declaration:concrete][binding:direct]") {
     const auto source = bg::node<list_source_definition>();
     const auto copy = bg::node<generic_list_copy_definition>();
     const auto list_sink = bg::node<list_sink_definition>();
@@ -106,7 +108,7 @@ struct free_list_sum_definition {
 
     void evaluate() const {
         updates.push_back({input.item_updated(0), input.item_updated(1)});
-        output.set(input[0].value() + input[1].value());
+        output.set(*input[0] + *input[1]);
     }
 
     inline static std::vector<std::array<bool, 2>> updates;
@@ -121,7 +123,9 @@ struct free_list_reference_definition {
 
 } // namespace
 
-TEST_CASE("a free fixed time series list coalesces source changes", "[evaluation][tsl][free]") {
+TEST_CASE("a free fixed time series list coalesces source changes",
+          "[evaluation][tsl][series:fixed-tsl][free][representation:free][feature:collection-change]"
+          "[transition:update][scalar:integer][declaration:concrete][binding:direct]") {
     const auto sum = bg::node<free_list_sum_definition>();
     free_list_sum_definition::updates.clear();
     const auto graph = [&](bg::wp<bg::TS<int>> first, bg::wp<bg::TS<int>> second) {
@@ -137,7 +141,8 @@ TEST_CASE("a free fixed time series list coalesces source changes", "[evaluation
 }
 
 TEST_CASE("a free fixed time series list follows the receiving item runtime_type",
-          "[evaluation][tsl][free][reference]") {
+          "[evaluation][tsl][series:fixed-tsl][free][representation:free][reference]"
+          "[feature:collection-change][scalar:integer][declaration:concrete][binding:direct]") {
     const auto reference = bg::node<free_list_reference_definition>();
     const auto sum = bg::node<free_list_sum_definition>();
     const auto graph = [&](bg::wp<bg::TS<int>> first, bg::wp<bg::TS<int>> second) {
@@ -152,7 +157,8 @@ TEST_CASE("a free fixed time series list follows the receiving item runtime_type
 }
 
 TEST_CASE("a graph can select the original item from a free fixed time series list",
-          "[evaluation][tsl][free][wiring]") {
+          "[evaluation][tsl][series:fixed-tsl][free][representation:free][wiring][scalar:integer]"
+          "[declaration:concrete][binding:direct][feature:wiring]") {
     using namespace bg::literals;
     const auto second =
         bg::graph("name"_m = "second_item",
@@ -202,7 +208,10 @@ struct second_item_sink_definition {
 
 } // namespace
 
-TEST_CASE("a fixed time series list schedules subscribers of changed items", "[evaluation][tsl][scheduling]") {
+TEST_CASE("a fixed time series list schedules subscribers of changed items",
+          "[evaluation][tsl][series:fixed-tsl][scheduling][feature:collection-change]"
+          "[transition:update][scalar:integer][representation:native][declaration:concrete]"
+          "[binding:direct]") {
     const auto source = bg::node<changing_list_source_definition>();
     const auto first_sink = bg::node<first_item_sink_definition>();
     const auto second_sink = bg::node<second_item_sink_definition>();
@@ -254,7 +263,10 @@ struct nested_second_sink_definition {
 
 } // namespace
 
-TEST_CASE("nested time series lists schedule subscribers of changed items", "[evaluation][tsl][scheduling]") {
+TEST_CASE("nested time series lists schedule subscribers of changed items",
+          "[evaluation][tsl][series:fixed-tsl][scheduling][feature:collection-change]"
+          "[transition:update][scalar:integer][representation:native][declaration:concrete]"
+          "[binding:direct]") {
     const auto source = bg::node<nested_list_source_definition>();
     const auto first_sink = bg::node<nested_first_sink_definition>();
     const auto second_sink = bg::node<nested_second_sink_definition>();
@@ -325,7 +337,10 @@ struct revalidation_list_sink_definition {
 
 } // namespace
 
-TEST_CASE("invalidating a list invalidates its items", "[evaluation][tsl][validity]") {
+TEST_CASE("invalidating a list invalidates its items",
+          "[evaluation][tsl][series:fixed-tsl][validity][feature:collection-change]"
+          "[transition:invalidation][scalar:integer][representation:native][declaration:concrete]"
+          "[binding:direct]") {
     const auto source = bg::node<invalidating_list_source_definition>();
     const auto optional_sink = bg::node<optional_item_sink_definition>();
     const auto required_sink = bg::node<required_item_sink_definition>();
@@ -364,7 +379,9 @@ struct partially_invalidating_list_source_definition {
 
 } // namespace
 
-TEST_CASE("a list remains valid while one item remains valid", "[evaluation][tsl][validity]") {
+TEST_CASE("a list remains valid while one item remains valid",
+          "[evaluation][tsl][series:fixed-tsl][validity][feature:collection-change][scalar:integer]"
+          "[representation:native][declaration:concrete][binding:direct]") {
     const auto source = bg::node<partially_invalidating_list_source_definition>();
     const auto item_sink = bg::node<optional_item_sink_definition>();
     const auto list_sink = bg::node<revalidation_list_sink_definition>();
@@ -400,12 +417,15 @@ struct list_from_value_definition {
     bg::In<bg::TS<int>> input;
     bg::Out<IntTimeSeriesList> output;
 
-    void evaluate() const { output[0].set(input.value()); }
+    void evaluate() const { output[0].set(*input); }
 };
 
 } // namespace
 
-TEST_CASE("required-input invalidation invalidates list items", "[evaluation][tsl][validity]") {
+TEST_CASE("required-input invalidation invalidates list items",
+          "[evaluation][tsl][series:fixed-tsl][validity][feature:collection-change][validity:required]"
+          "[transition:invalidation][scalar:integer][representation:native][declaration:concrete]"
+          "[binding:direct]") {
     const auto source = bg::node<invalidating_value_source_definition>();
     const auto list = bg::node<list_from_value_definition>();
     const auto sink = bg::node<optional_item_sink_definition>();
@@ -450,7 +470,10 @@ template <typename TimeSeries> struct validity_sink_definition {
 
 } // namespace
 
-TEST_CASE("nested list invalidation and revalidation propagate through each level", "[evaluation][tsl][validity]") {
+TEST_CASE("nested list invalidation and revalidation propagate through each level",
+          "[evaluation][tsl][series:fixed-tsl][validity][feature:collection-change]"
+          "[transition:invalidation][transition:revalidation][scalar:integer][representation:native]"
+          "[declaration:concrete][binding:direct]") {
     using InnerIntTimeSeriesList = bg::TSL<bg::TS<int>, 2>;
     using InnerValiditySink = validity_sink_definition<InnerIntTimeSeriesList>;
     using OuterValiditySink = validity_sink_definition<NestedIntTimeSeriesList>;
@@ -510,7 +533,7 @@ struct passive_item_sink_definition {
     void evaluate() const {
         validity.push_back(item.valid());
         if (item.valid()) {
-            values.push_back(item.value());
+            values.push_back(*item);
         }
     }
 
@@ -521,7 +544,9 @@ struct passive_item_sink_definition {
 } // namespace
 
 TEST_CASE("a passive optional list item observes validity when another item schedules its node",
-          "[evaluation][tsl][scheduling][validity]") {
+          "[evaluation][tsl][series:fixed-tsl][scheduling][validity][feature:collection-change]"
+          "[activity:passive][validity:optional][scalar:integer][representation:native]"
+          "[declaration:concrete][binding:direct]") {
     const auto source = bg::node<passive_item_source_definition>();
     const auto sink = bg::node<passive_item_sink_definition>();
     passive_item_sink_definition::validity.clear();
@@ -555,7 +580,9 @@ struct sequential_item_access_definition {
 
 } // namespace
 
-TEST_CASE("sequential item views reuse evaluation scratch storage", "[evaluation][tsl][storage]") {
+TEST_CASE("sequential item views reuse evaluation scratch storage",
+          "[evaluation][tsl][series:fixed-tsl][storage][feature:collection-change][scalar:integer]"
+          "[representation:native][declaration:concrete][binding:direct]") {
     const auto source = bg::node<sequential_item_access_definition>();
     auto wiring = bg::GraphWiring{};
     {
@@ -605,7 +632,10 @@ struct list_evaluation_count_sink_definition {
 
 } // namespace
 
-TEST_CASE("inverse nested dictionary mutations publish their containing list", "[evaluation][tsl][tsd]") {
+TEST_CASE("inverse nested dictionary mutations publish their containing list",
+          "[evaluation][tsl][series:fixed-tsl][tsd][series:tsd][feature:collection-change]"
+          "[transition:update][scalar:integer][representation:native][declaration:concrete]"
+          "[binding:direct]") {
     const auto source = bg::node<canceled_nested_dictionary_source_definition>();
     const auto sink = bg::node<list_evaluation_count_sink_definition>();
     list_evaluation_count_sink_definition::count = 0;
@@ -634,14 +664,16 @@ struct retained_nested_item_source_definition {
 struct retained_nested_item_sink_definition {
     bg::In<bg::TS<int>> input;
 
-    void evaluate() const { value = input.value(); }
+    void evaluate() const { value = *input; }
 
     inline static int value{};
 };
 
 } // namespace
 
-TEST_CASE("a nested item view retains its containing path", "[evaluation][tsl][storage]") {
+TEST_CASE("a nested item view retains its containing path",
+          "[evaluation][tsl][series:fixed-tsl][storage][feature:collection-change][scalar:integer]"
+          "[representation:native][declaration:concrete][binding:direct]") {
     const auto source = bg::node<retained_nested_item_source_definition>();
     const auto sink = bg::node<retained_nested_item_sink_definition>();
     retained_nested_item_sink_definition::value = 0;

@@ -4,6 +4,8 @@
 #include <bg/time_series/tsd/tsd_type.hpp>
 #include <bg/time_series/tsl/tsl_type.hpp>
 #include <bg/time_series/tss/tss_type.hpp>
+#include <bg/time_series/time_series_type.hpp>
+#include <bg/scalar/canonical.hpp>
 #include <bg/util/named_argument.hpp>
 
 #include <cstddef>
@@ -15,6 +17,30 @@ class GraphWiring;
 class TimeSeriesType;
 
 template <typename TimeSeries> class wp;
+
+namespace details {
+
+template <typename T> struct referenced_wiring_time_series {
+    using type = T;
+};
+
+template <typename T, auto... Properties> struct referenced_wiring_time_series<REF<T, Properties...>> {
+    using type = T;
+};
+
+template <typename T>
+using referenced_wiring_time_series_t = typename referenced_wiring_time_series<std::remove_cv_t<T>>::type;
+
+template <typename T>
+concept dictionary_wiring_type = is_time_series_dict<referenced_wiring_time_series_t<T>>;
+
+template <typename T>
+using dictionary_wiring_item_t = typename time_series_dict<referenced_wiring_time_series_t<T>>::item_type;
+
+template <typename T>
+using selected_time_series_t = referenced_wiring_time_series_t<dictionary_wiring_item_t<T>>;
+
+} // namespace details
 
 template <typename K, typename Item, auto... Properties>
 [[nodiscard]] auto keys(wp<TSD<K, Item, Properties...>> source) -> wp<TSS<K, Properties...>>;
@@ -64,6 +90,18 @@ template <typename TimeSeries> class wp {
         using Item = details::bundle_field_time_series<Name, Bundle::template schema_type>;
         return wp<Item>{point_.item(Index)};
     }
+
+    template <scalar_source Key, typename T = TimeSeries>
+        requires details::dictionary_wiring_type<T> &&
+                 std::same_as<canonical_scalar_t<Key>,
+                              typename details::time_series_dict<details::referenced_wiring_time_series_t<T>>::key_type>
+    [[nodiscard]] auto operator[](Key &&key) const -> wp<REF<details::selected_time_series_t<T>>>;
+
+    template <typename KeyTimeSeries, typename T = TimeSeries>
+        requires details::dictionary_wiring_type<T> &&
+                 std::same_as<details::time_series_value_t<details::referenced_wiring_time_series_t<KeyTimeSeries>>,
+                              typename details::time_series_dict<details::referenced_wiring_time_series_t<T>>::key_type>
+    [[nodiscard]] auto operator[](wp<KeyTimeSeries> key) const -> wp<REF<details::selected_time_series_t<T>>>;
 
     using time_series_type = TimeSeries;
 

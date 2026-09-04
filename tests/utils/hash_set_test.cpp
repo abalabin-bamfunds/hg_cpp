@@ -21,7 +21,8 @@ struct string_hash {
 
 } // namespace
 
-TEST_CASE("a hash set inserts, finds, and removes keys", "[hash_set]") {
+TEST_CASE("a hash set inserts, finds, and removes keys",
+          "[hash_set][coverage-exempt]") {
     auto memory = counting_memory_resource{};
     auto set = bg::util::hash_set<std::string, string_hash>{};
 
@@ -41,7 +42,7 @@ TEST_CASE("a hash set inserts, finds, and removes keys", "[hash_set]") {
     CHECK(memory.allocations() == 0);
 }
 
-TEST_CASE("a hash set retains key addresses while it grows", "[hash_set]") {
+TEST_CASE("a hash set retains key addresses while it grows", "[hash_set][coverage-exempt]") {
     auto memory = counting_memory_resource{};
     auto set = bg::util::hash_set<int>{};
     const auto *first = set.insert(1, memory).first;
@@ -67,7 +68,7 @@ struct equal_hash {
 
 } // namespace
 
-TEST_CASE("a hash set resolves collisions", "[hash_set]") {
+TEST_CASE("a hash set resolves collisions", "[hash_set][coverage-exempt]") {
     auto memory = counting_memory_resource{};
     auto set = bg::util::hash_set<int, equal_hash>{};
 

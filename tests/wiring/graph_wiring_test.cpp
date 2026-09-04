@@ -28,7 +28,7 @@ struct copy_definition {
     bg::In<bg::TS<float>> input;
     bg::Out<bg::TS<float>> output;
 
-    void evaluate() const { output.set(input.value()); }
+    void evaluate() const { output.set(*input); }
 };
 
 static_assert(sizeof(bg::WiringPoint) == 2 * sizeof(void *));
@@ -36,7 +36,7 @@ static_assert(std::is_trivially_copyable_v<bg::WiringPoint>);
 
 } // namespace
 
-TEST_CASE("node calls add wired nodes to the active graph", "[graph_wiring]") {
+TEST_CASE("node calls add wired nodes to the active graph", "[graph_wiring][feature:wiring]") {
     const auto source = bg::node<source_definition>();
     const auto copy = bg::node<copy_definition>();
     bg::GraphWiring wiring;
@@ -59,7 +59,7 @@ TEST_CASE("node calls add wired nodes to the active graph", "[graph_wiring]") {
     CHECK(nodes[1].input_sources()[0] == 0);
 }
 
-TEST_CASE("a node call requires a wiring context", "[graph_wiring]") {
+TEST_CASE("a node call requires a wiring context", "[graph_wiring][feature:wiring]") {
     const auto source = bg::node<source_definition>();
     CHECK_THROWS_AS(source(), bg::WiringError);
 }
@@ -76,7 +76,7 @@ struct bound_reference_source {
 
 } // namespace
 
-TEST_CASE("a node call can seed type resolution", "[graph_wiring][type_system]") {
+TEST_CASE("a node call can seed type resolution", "[graph_wiring][type_system][feature:wiring]") {
     const auto source = bg::node<bound_reference_source>();
     const auto &target = bg::time_series_value_type(bg::int64_type(), bg::TimeSeriesGuarantee::ordinary);
     const auto &expected = bg::time_series_reference_type(target, bg::TimeSeriesGuarantee::ordinary);
@@ -120,7 +120,7 @@ class scale_template final : public bg::NodeTemplate {
 
 } // namespace
 
-TEST_CASE("wired nodes retain scalar arguments", "[graph_wiring]") {
+TEST_CASE("wired nodes retain scalar arguments", "[graph_wiring][feature:wiring]") {
     const auto source = bg::node<source_definition>();
     const auto scale = scale_template{};
     bg::GraphWiring wiring;
@@ -152,7 +152,7 @@ struct optional_scalar_definition {
 
 } // namespace
 
-TEST_CASE("optional scalar parameters can record absence", "[graph_wiring]") {
+TEST_CASE("optional scalar parameters can record absence", "[graph_wiring][feature:wiring]") {
     const auto optional_scalar = bg::node<optional_scalar_definition>();
     bg::GraphWiring wiring;
 
@@ -176,7 +176,7 @@ struct required_scalar_definition {
 
 } // namespace
 
-TEST_CASE("required scalar parameters reject absence", "[graph_wiring]") {
+TEST_CASE("required scalar parameters reject absence", "[graph_wiring][feature:wiring]") {
     const auto required_scalar = bg::node<required_scalar_definition>();
     bg::GraphWiring wiring;
     bg::WiringContext context{wiring};
@@ -194,7 +194,7 @@ struct scheduled_times_definition {
 
 } // namespace
 
-TEST_CASE("evaluation time lists pass through normal wiring", "[graph_wiring]") {
+TEST_CASE("evaluation time lists pass through normal wiring", "[graph_wiring][feature:wiring]") {
     const auto scheduled_times = bg::node<scheduled_times_definition>();
     const auto times =
         std::vector{bg::MIN_DT + std::chrono::microseconds{2}, bg::MIN_DT + std::chrono::microseconds{5}};
@@ -212,7 +212,7 @@ TEST_CASE("evaluation time lists pass through normal wiring", "[graph_wiring]") 
           &bg::cpp_scalar_type<bg::List<bg::EvaluationTime>>());
 }
 
-TEST_CASE("nested wiring contexts keep graph connections explicit", "[graph_wiring]") {
+TEST_CASE("nested wiring contexts keep graph connections explicit", "[graph_wiring][feature:wiring]") {
     const auto source = bg::node<source_definition>();
     const auto copy = bg::node<copy_definition>();
     bg::GraphWiring outer;
@@ -238,7 +238,7 @@ TEST_CASE("nested wiring contexts keep graph connections explicit", "[graph_wiri
     CHECK(inner.nodes().size() == 2);
 }
 
-TEST_CASE("wiring contexts are local to one thread", "[graph_wiring]") {
+TEST_CASE("wiring contexts are local to one thread", "[graph_wiring][feature:wiring]") {
     bg::GraphWiring wiring;
     bg::WiringContext context{wiring};
     bool child_has_context = true;

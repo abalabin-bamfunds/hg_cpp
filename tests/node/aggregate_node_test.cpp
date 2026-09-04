@@ -13,7 +13,7 @@ struct add {
     bg::In<bg::TS<float>> rhs;
     bg::Out<bg::TS<float>> output;
 
-    void evaluate() const { output.set(lhs.value() + rhs.value()); }
+    void evaluate() const { output.set(*lhs + *rhs); }
 };
 
 static_assert(bg::util::unqualified_type_name<add>() == "add");
@@ -23,7 +23,8 @@ static_assert(bg::util::aggregate_member_names<add>[2] == "output");
 
 } // namespace
 
-TEST_CASE("an aggregate node declaration evaluates through its fields", "[node_api]") {
+TEST_CASE("an aggregate node declaration evaluates through its fields",
+          "[node_api][feature:node-api][definition:aggregate]") {
     const bg::EvaluationTime input_time = bg::MIN_DT + std::chrono::microseconds{1};
     const bg::EvaluationTime evaluation_time = bg::MIN_DT + std::chrono::microseconds{2};
     const float lhs = 1.25F;

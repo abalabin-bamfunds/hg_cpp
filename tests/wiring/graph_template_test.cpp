@@ -30,7 +30,7 @@ struct scale_definition {
     float factor;
     bg::Out<bg::TS<float>> output;
 
-    void evaluate() const { output.set(input.value() * factor); }
+    void evaluate() const { output.set(*input * factor); }
 };
 
 const auto source = bg::node<source_definition>();
@@ -46,7 +46,7 @@ static_assert(std::same_as<decltype(scale_graph(std::declval<bg::WiringPoint>(),
 
 } // namespace
 
-TEST_CASE("a lambda graph function supplies its signature", "[graph_template]") {
+TEST_CASE("a lambda graph function supplies its signature", "[graph_template][feature:wiring][definition:function]") {
     const auto &time_series = bg::time_series_value_type(bg::float_type(), bg::TimeSeriesGuarantee::ordinary);
     const bg::ResolvedSignature resolved =
         scale_graph.signature().resolve(std::array<const bg::Type *, 2>{&time_series, &bg::float_type()});
@@ -58,7 +58,7 @@ TEST_CASE("a lambda graph function supplies its signature", "[graph_template]") 
     CHECK(resolved.output == &time_series);
 }
 
-TEST_CASE("a graph template expands into the active graph", "[graph_template]") {
+TEST_CASE("a graph template expands into the active graph", "[graph_template][feature:wiring]") {
     bg::GraphWiring wiring;
 
     {
@@ -80,7 +80,7 @@ TEST_CASE("a graph template expands into the active graph", "[graph_template]") 
     CHECK(node_path.parent->label.text() == "factor=2.000000");
 }
 
-TEST_CASE("a graph template can omit its output", "[graph_template]") {
+TEST_CASE("a graph template can omit its output", "[graph_template][feature:wiring]") {
     const auto scale_sink_graph = bg::graph(
         "name"_m = "scale_sink_graph", [](bg::wp<bg::TS<float>> input, float factor) { (void)scale(input, factor); });
     bg::GraphWiring wiring;
@@ -96,7 +96,7 @@ TEST_CASE("a graph template can omit its output", "[graph_template]") {
     CHECK(nodes[1].path().parent->name.text() == "scale_sink_graph");
 }
 
-TEST_CASE("graph output re-annotation is checked by wiring", "[graph_template]") {
+TEST_CASE("graph output re-annotation is checked by wiring", "[graph_template][feature:wiring]") {
     const auto invalid =
         bg::graph("name"_m = "invalid_output",
                   [](bg::wp<bg::TS<float>> input) -> bg::wp<bg::TS<double>> { return bg::wp<bg::TS<double>>{input}; });
@@ -106,7 +106,7 @@ TEST_CASE("graph output re-annotation is checked by wiring", "[graph_template]")
     CHECK_THROWS_AS(invalid(source()), bg::WiringError);
 }
 
-TEST_CASE("a graph signature resolves a scalar variable declaration", "[graph_template]") {
+TEST_CASE("a graph signature resolves a scalar variable declaration", "[graph_template][feature:wiring]") {
     using GraphScalar = bg::ScalarVariable<"GraphScalar">;
 
     const auto generic_identity_graph =
@@ -121,7 +121,8 @@ TEST_CASE("a graph signature resolves a scalar variable declaration", "[graph_te
     CHECK(signature.output == &time_series);
 }
 
-TEST_CASE("a graph signature resolves a time series variable declaration", "[graph_template][type_system]") {
+TEST_CASE("a graph signature resolves a time series variable declaration",
+          "[graph_template][type_system][feature:wiring]") {
     using T = bg::TimeSeriesVariable<"T">;
     constexpr auto G = bg::guarantee_variable<"G">;
     const auto identity = bg::graph("name"_m = "generic_time_series_identity",
@@ -147,7 +148,7 @@ struct struct_scale_graph {
 
 } // namespace
 
-TEST_CASE("a struct graph definition supplies its signature", "[graph_template]") {
+TEST_CASE("a struct graph definition supplies its signature", "[graph_template][feature:wiring]") {
     const auto reflected_scale_graph = bg::graph<struct_scale_graph>();
     const auto &signature = reflected_scale_graph.signature();
     const auto &time_series = bg::time_series_value_type(bg::float_type(), bg::TimeSeriesGuarantee::ordinary);
@@ -170,7 +171,7 @@ TEST_CASE("a struct graph definition supplies its signature", "[graph_template]"
     CHECK(wiring.nodes()[1].path().parent->name.text() == "struct_scale_graph");
 }
 
-TEST_CASE("node and graph templates share the wiring interface", "[graph_template]") {
+TEST_CASE("node and graph templates share the wiring interface", "[graph_template][feature:wiring]") {
     bg::GraphWiring wiring;
 
     {
@@ -186,7 +187,7 @@ TEST_CASE("node and graph templates share the wiring interface", "[graph_templat
     CHECK(wiring.nodes().size() == 3);
 }
 
-TEST_CASE("custom wiring labels can repeat", "[graph_template]") {
+TEST_CASE("custom wiring labels can repeat", "[graph_template][feature:wiring]") {
     bg::GraphWiring wiring;
 
     {
@@ -203,7 +204,7 @@ TEST_CASE("custom wiring labels can repeat", "[graph_template]") {
     CHECK(nodes[1].path().parent->label == nodes[2].path().parent->label);
 }
 
-TEST_CASE("a compiled graph owns its wiring paths", "[graph_template]") {
+TEST_CASE("a compiled graph owns its wiring paths", "[graph_template][feature:wiring]") {
     std::unique_ptr<bg::CompiledGraph> compiled;
 
     {

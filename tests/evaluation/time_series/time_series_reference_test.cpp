@@ -53,7 +53,7 @@ struct reference_pass {
 struct optional_reference_sink {
     bg::In<bg::TS<int>, bg::optional> input;
 
-    void evaluate() const { values.push_back(input.valid() ? std::optional{input.value()} : std::nullopt); }
+    void evaluate() const { values.push_back(input.valid() ? std::optional{*input} : std::nullopt); }
 
     inline static std::vector<std::optional<int>> values;
 };
@@ -61,14 +61,16 @@ struct optional_reference_sink {
 struct required_reference_sink {
     bg::In<bg::TS<int>> input;
 
-    void evaluate() const { values.push_back(input.value()); }
+    void evaluate() const { values.push_back(*input); }
 
     inline static std::vector<int> values;
 };
 
 } // namespace
 
-TEST_CASE("a dereferenced input subscribes directly to a fixed target", "[evaluation][reference]") {
+TEST_CASE("a dereferenced input subscribes directly to a fixed target",
+          "[evaluation][reference][feature:reference][series:value][scalar:integer]"
+          "[binding:value-to-reference][binding:reference-to-value]") {
     const auto source = bg::node<changing_reference_target>();
     const auto pass = bg::node<reference_pass>();
     const auto optional_sink = bg::node<optional_reference_sink>();
@@ -121,14 +123,14 @@ struct reference_selector {
     bg::In<bg::REF<bg::TS<int>>, bg::passive, bg::optional> right;
     bg::Out<bg::REF<bg::TS<int>>> output;
 
-    void evaluate() const { condition.value() ? output.set(right) : output.set(left); }
+    void evaluate() const { *condition ? output.set(right) : output.set(left); }
 };
 
 struct sampled_reference_sink {
     bg::In<bg::TS<int>> input;
 
     void evaluate(bg::EvaluationContext *context) const {
-        values.push_back(input.value());
+        values.push_back(*input);
         sample_times.push_back(input.last_updated());
         evaluation_times.push_back(context->evaluation_time());
     }
@@ -142,14 +144,16 @@ struct passive_reference_sink {
     bg::In<bg::TS<int>, bg::passive, bg::optional> input;
     bg::In<bg::TS<int>> trigger;
 
-    void evaluate() const { values.push_back(input.value()); }
+    void evaluate() const { values.push_back(*input); }
 
     inline static std::vector<int> values;
 };
 
 } // namespace
 
-TEST_CASE("changing a reference samples its target", "[evaluation][reference][sampling]") {
+TEST_CASE("changing a reference samples its target",
+          "[evaluation][reference][sampling][feature:reference][scalar:integer]"
+          "[binding:value-to-reference][binding:reference-to-value][series:value]") {
     const auto left = bg::node<sampled_left_source>();
     const auto right = bg::node<sampled_right_source>();
     const auto condition = bg::node<sampled_condition_source>();
@@ -165,7 +169,9 @@ TEST_CASE("changing a reference samples its target", "[evaluation][reference][sa
     CHECK(sampled_reference_sink::sample_times == sampled_reference_sink::evaluation_times);
 }
 
-TEST_CASE("a passive dereferenced input observes its current target", "[evaluation][reference][activity]") {
+TEST_CASE("a passive dereferenced input observes its current target",
+          "[evaluation][reference][activity][feature:reference][series:value][scalar:integer]"
+          "[binding:value-to-reference][binding:reference-to-value][activity:passive]") {
     const auto left = bg::node<sampled_left_source>();
     const auto right = bg::node<sampled_right_source>();
     const auto condition = bg::node<sampled_condition_source>();
@@ -192,13 +198,15 @@ struct required_reference_forward {
     bg::In<bg::TS<int>> input;
     bg::Out<bg::TS<int>> output;
 
-    void evaluate() const { output.set(input.value()); }
+    void evaluate() const { output.set(*input); }
 };
 
 } // namespace
 
 TEST_CASE("changing a reference to an invalid target invalidates required consumers",
-          "[evaluation][reference][validity]") {
+          "[evaluation][reference][validity][feature:reference][validity:required]"
+          "[transition:invalidation][scalar:integer][binding:value-to-reference]"
+          "[binding:reference-to-value][series:value]") {
     const auto left = bg::node<sampled_left_source>();
     const auto right = bg::node<invalid_reference_target>();
     const auto condition = bg::node<sampled_condition_source>();
@@ -237,7 +245,7 @@ struct list_reference_pass {
 struct referenced_list_sink {
     bg::In<bg::TSL<bg::TS<int>, 2>> input;
 
-    void evaluate() const { values.push_back(input[0].value()); }
+    void evaluate() const { values.push_back(*input[0]); }
 
     inline static std::vector<int> values;
 };
@@ -266,7 +274,9 @@ struct reference_list {
 
 } // namespace
 
-TEST_CASE("a dereferenced input subscribes directly to a fixed collection item", "[evaluation][reference][tsl]") {
+TEST_CASE("a dereferenced input subscribes directly to a fixed collection item",
+          "[evaluation][reference][tsl][feature:reference][series:fixed-tsl][scalar:integer]"
+          "[binding:value-to-reference][binding:reference-to-value]") {
     const auto source = bg::node<referenced_list_source>();
     const auto pass = bg::node<reference_pass>();
     const auto sink = bg::node<required_reference_sink>();
@@ -279,7 +289,9 @@ TEST_CASE("a dereferenced input subscribes directly to a fixed collection item",
     CHECK(required_reference_sink::values == std::vector{10, 20});
 }
 
-TEST_CASE("a fixed collection can pass through a reference", "[evaluation][reference][tsl]") {
+TEST_CASE("a fixed collection can pass through a reference",
+          "[evaluation][reference][tsl][series:fixed-tsl][feature:reference][scalar:integer]"
+          "[binding:value-to-reference][binding:reference-to-value]") {
     const auto source = bg::node<referenced_list_source>();
     const auto pass = bg::node<list_reference_pass>();
     const auto sink = bg::node<referenced_list_sink>();
@@ -290,7 +302,9 @@ TEST_CASE("a fixed collection can pass through a reference", "[evaluation][refer
     CHECK(referenced_list_sink::values == std::vector{10, 20});
 }
 
-TEST_CASE("a generic fixed collection input uses the referenced target runtime_type", "[evaluation][reference][tsl]") {
+TEST_CASE("a generic fixed collection input uses the referenced target runtime_type",
+          "[evaluation][reference][tsl][series:fixed-tsl][feature:reference][declaration:generic]"
+          "[scalar:integer][binding:value-to-reference][binding:reference-to-value]") {
     const auto source = bg::node<referenced_list_source>();
     const auto pass = bg::node<generic_list_reference_pass>();
     const auto sink = bg::node<generic_referenced_list_sink>();
@@ -311,8 +325,8 @@ struct owned_pair_definition {
     bg::Out<IntPairTimeSeriesList> output;
 
     void evaluate() const {
-        output[0].set(first.value());
-        output[1].set(second.value());
+        output[0].set(*first);
+        output[1].set(*second);
     }
 };
 
@@ -322,20 +336,21 @@ struct pair_reference_selector_definition {
     bg::In<bg::REF<IntPairTimeSeriesList>, bg::passive, bg::optional> free;
     bg::Out<bg::REF<IntPairTimeSeriesList>> output;
 
-    void evaluate() const { condition.value() == 0 ? output.set(owned) : output.set(free); }
+    void evaluate() const { *condition == 0 ? output.set(owned) : output.set(free); }
 };
 
 struct pair_sum_definition {
     bg::In<IntPairTimeSeriesList> input;
     bg::Out<bg::TS<int>> output;
 
-    void evaluate() const { output.set(input[0].value() + input[1].value()); }
+    void evaluate() const { output.set(*input[0] + *input[1]); }
 };
 
 } // namespace
 
 TEST_CASE("a dereferenced list reference selects the current target runtime_type",
-          "[evaluation][reference][tsl][free]") {
+          "[evaluation][reference][tsl][free][feature:reference][series:fixed-tsl][representation:free]"
+          "[scalar:integer][binding:value-to-reference][binding:reference-to-value]") {
     const auto owned_pair = bg::node<owned_pair_definition>();
     const auto select = bg::node<pair_reference_selector_definition>();
     const auto sum = bg::node<pair_sum_definition>();
@@ -358,7 +373,9 @@ TEST_CASE("a dereferenced list reference selects the current target runtime_type
     CHECK(result.equals({3, 60, 11}));
 }
 
-TEST_CASE("a reference stored in a fixed collection item updates its consumer", "[evaluation][reference][tsl]") {
+TEST_CASE("a reference stored in a fixed collection item updates its consumer",
+          "[evaluation][reference][tsl][series:fixed-tsl][feature:reference][transition:update]"
+          "[scalar:integer][binding:value-to-reference][binding:reference-to-value]") {
     const auto source = bg::node<changing_reference_target>();
     const auto list = bg::node<reference_list>();
     const auto sink = bg::node<optional_reference_sink>();
@@ -396,7 +413,10 @@ struct invalidating_reference {
 
 } // namespace
 
-TEST_CASE("reference invalidation unbinds and revalidation resamples consumers", "[evaluation][reference][validity]") {
+TEST_CASE("reference invalidation unbinds and revalidation resamples consumers",
+          "[evaluation][reference][validity][feature:reference][transition:invalidation]"
+          "[transition:revalidation][scalar:integer][binding:value-to-reference]"
+          "[binding:reference-to-value][series:value]") {
     const auto source = bg::node<sampled_left_source>();
     const auto reference = bg::node<invalidating_reference>();
     const auto optional_sink = bg::node<optional_reference_sink>();

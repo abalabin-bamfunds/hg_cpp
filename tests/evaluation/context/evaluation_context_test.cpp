@@ -22,7 +22,8 @@ struct global_state_source_definition {
     void evaluate() const {}
 };
 
-TEST_CASE("an evaluation context exposes the outer global state", "[evaluation][context][global_state]") {
+TEST_CASE("an evaluation context exposes the outer global state",
+          "[evaluation][context][global_state][feature:evaluation-context]") {
     const auto global_state_source = bg::node<global_state_source_definition>();
     auto state = bg::GlobalState{};
 
@@ -49,7 +50,8 @@ struct scratch_pad_source_definition {
     }
 };
 
-TEST_CASE("an evaluation context scratch pad uses caller-owned storage first", "[evaluation][context][scratch]") {
+TEST_CASE("an evaluation context scratch pad uses caller-owned storage first",
+          "[evaluation][context][scratch][feature:evaluation-context]") {
     const auto scratch_pad_source = bg::node<scratch_pad_source_definition>();
 
     bg::run_graph([&] { scratch_pad_source(); });

@@ -8,8 +8,10 @@
 #include <bg/time_series/time_series_input.hpp>
 #include <bg/time_series/time_series_runtime_type.hpp>
 #include <bg/time_series/time_series_type.hpp>
+#include <bg/time_series/ts/details/value_access.hpp>
 
 #include <string_view>
+#include <utility>
 
 namespace bg {
 
@@ -74,6 +76,18 @@ class In<TS<T, TimeSeriesProperties...>, Properties...> {
         return Traits::read(*static_cast<const Stored *>(data_.data()));
     }
 
+    [[nodiscard]] details::scalar_value_t<T> operator*() const noexcept
+        requires(!details::scalar_type_traits<T>::is_collection)
+    {
+        return value();
+    }
+
+    [[nodiscard]] auto operator->() const noexcept
+        requires(!details::scalar_type_traits<T>::is_collection && details::scalar_value_supports_arrow<T>)
+    {
+        return details::scalar_value_arrow<T>(value());
+    }
+
     [[nodiscard]] Scalar<T> value_view() const {
         return Scalar<T>::from(
             static_cast<const TimeSeriesValueRuntimeType &>(data_.runtime_type()).scalar_runtime_type(), data_.data());
@@ -81,7 +95,6 @@ class In<TS<T, TimeSeriesProperties...>, Properties...> {
 
     [[nodiscard]] const TimeSeriesRuntimeType &runtime_type() const noexcept { return data_.runtime_type(); }
     [[nodiscard]] const void *data() const noexcept { return data_.data(); }
-    [[nodiscard]] const In *operator->() const noexcept { return this; }
 
     template <typename... Functions> decltype(auto) visit(Functions &&...functions) const {
         return In<TS_T>{data_.last_updated_ref(), data_.data(), data_.runtime_type()}.visit(

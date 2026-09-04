@@ -14,7 +14,7 @@ static_assert(sizeof(bg::util::symbol) == sizeof(void *));
 
 } // namespace
 
-TEST_CASE("symbols with the same text compare equal", "[symbol]") {
+TEST_CASE("symbols with the same text compare equal", "[symbol][coverage-exempt]") {
     using namespace bg::util::literals;
 
     const auto literal = "value"_sym;

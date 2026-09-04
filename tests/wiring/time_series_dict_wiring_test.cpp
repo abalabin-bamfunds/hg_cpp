@@ -26,7 +26,7 @@ struct key_sink_definition {
 
 } // namespace
 
-TEST_CASE("dictionary key selection records its shared key set", "[wiring][tsd]") {
+TEST_CASE("dictionary key selection records its shared key set", "[wiring][tsd][series:tsd][feature:wiring]") {
     const auto source = bg::node<dict_source_definition>();
     const auto sink = bg::node<key_sink_definition>();
     auto wiring = bg::GraphWiring{};

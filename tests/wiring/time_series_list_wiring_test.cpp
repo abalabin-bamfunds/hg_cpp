@@ -83,7 +83,8 @@ class list_sink_template final : public bg::NodeTemplate {
 
 } // namespace
 
-TEST_CASE("graph wiring records fixed time series list item selection", "[wiring][tsl]") {
+TEST_CASE("graph wiring records fixed time series list item selection",
+          "[wiring][tsl][series:fixed-tsl][feature:wiring]") {
     const auto source = list_source_template{};
     const auto consume = float_sink_template{};
     auto wiring = bg::GraphWiring{};
@@ -114,7 +115,7 @@ TEST_CASE("graph wiring records fixed time series list item selection", "[wiring
     CHECK(wiring.nodes()[2].input_sources()[0] == 1);
 }
 
-TEST_CASE("fixed time series list selection checks its index", "[wiring][tsl]") {
+TEST_CASE("fixed time series list selection checks its index", "[wiring][tsl][series:fixed-tsl][feature:wiring]") {
     const auto source = list_source_template{};
     auto wiring = bg::GraphWiring{};
     const auto context = bg::WiringContext{wiring};
@@ -123,7 +124,9 @@ TEST_CASE("fixed time series list selection checks its index", "[wiring][tsl]") 
     CHECK_THROWS_AS(list[3], std::out_of_range);
 }
 
-TEST_CASE("a free fixed time series list is materialized when consumed", "[wiring][tsl][free]") {
+TEST_CASE("a free fixed time series list is materialized when consumed",
+          "[wiring][tsl][series:fixed-tsl][free][representation:free][feature:wiring]"
+          "[binding:representation]") {
     const auto first_source = list_source_template{};
     const auto second_source = list_source_template{};
     const auto sink = list_sink_template{};

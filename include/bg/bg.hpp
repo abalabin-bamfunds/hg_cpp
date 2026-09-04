@@ -57,6 +57,7 @@
 #include <bg/time_series/tsb/tsb_type.hpp>
 #include <bg/time_series/tsd/tsd_runtime_type.hpp>
 #include <bg/time_series/tsd/tsd_type.hpp>
+#include <bg/time_series/tsd/tsd_wiring.hpp>
 #include <bg/time_series/tsl/tsl.hpp>
 #include <bg/time_series/tsl/tsl_runtime_type.hpp>
 #include <bg/time_series/tsl/tsl_type.hpp>

@@ -28,7 +28,7 @@ struct finalizable_value {
 
 } // namespace
 
-TEST_CASE("C++ scalar storage copies into graph-owned memory", "[scalar]") {
+TEST_CASE("C++ scalar storage copies into graph-owned memory", "[scalar][feature:scalar-storage]") {
     std::pmr::unsynchronized_pool_resource source_memory;
     std::pmr::unsynchronized_pool_resource graph_memory;
     const std::pmr::string source{"a scalar value long enough to require allocated storage", &source_memory};
@@ -45,7 +45,7 @@ TEST_CASE("C++ scalar storage copies into graph-owned memory", "[scalar]") {
     graph_memory.deallocate(storage, runtime_type.size(), runtime_type.alignment());
 }
 
-TEST_CASE("C++ scalar storage reports its destruction requirements", "[scalar]") {
+TEST_CASE("C++ scalar storage reports its destruction requirements", "[scalar][feature:scalar-storage]") {
     const bg::ScalarRuntimeType &float_runtime_type = bg::cpp_scalar_runtime_type<float>();
     const bg::ScalarRuntimeType &string_runtime_type = bg::cpp_scalar_runtime_type<bg::string>();
 
@@ -59,7 +59,8 @@ TEST_CASE("C++ scalar storage reports its destruction requirements", "[scalar]")
     CHECK_FALSE(string_runtime_type.supports_byte_copy_initialization());
 }
 
-TEST_CASE("scalar storage distinguishes variable memory from finalization", "[scalar][storage]") {
+TEST_CASE("scalar storage distinguishes variable memory from finalization",
+          "[scalar][storage][feature:scalar-storage]") {
     const auto &opaque = bg::cpp_scalar_runtime_type<bg::Opaque<finalizable_value>>();
     const auto &strings = bg::cpp_scalar_runtime_type<bg::List<bg::string>>();
     const auto &opaque_values = bg::cpp_scalar_runtime_type<bg::List<bg::Opaque<finalizable_value>>>();
@@ -80,7 +81,7 @@ TEST_CASE("scalar storage distinguishes variable memory from finalization", "[sc
     CHECK(finalization_count == 1);
 }
 
-TEST_CASE("C++ scalar storage constructs an initial runtime value", "[scalar]") {
+TEST_CASE("C++ scalar storage constructs an initial runtime value", "[scalar][feature:scalar-storage]") {
     const bg::ScalarRuntimeType &runtime_type = bg::cpp_scalar_runtime_type<double>();
     alignas(double) std::byte storage[sizeof(double)];
 
@@ -89,7 +90,8 @@ TEST_CASE("C++ scalar storage constructs an initial runtime value", "[scalar]") 
     CHECK(*reinterpret_cast<const double *>(storage) == 0.0);
 }
 
-TEST_CASE("evaluation time storage supports byte-copy initialization", "[scalar]") {
+TEST_CASE("evaluation time storage supports byte-copy initialization",
+          "[scalar][feature:scalar-storage][scalar:evaluation-time]") {
     const auto &runtime_type = bg::cpp_scalar_runtime_type<bg::EvaluationTime>();
     alignas(bg::EvaluationTime) std::byte storage[sizeof(bg::EvaluationTime)];
 
@@ -99,7 +101,8 @@ TEST_CASE("evaluation time storage supports byte-copy initialization", "[scalar]
     CHECK(*reinterpret_cast<const bg::EvaluationTime *>(storage) == bg::MIN_DT);
 }
 
-TEST_CASE("resolved collection storage prefers a registered concrete runtime_type", "[scalar][storage][collection]") {
+TEST_CASE("resolved collection storage prefers a registered concrete runtime_type",
+          "[scalar][storage][collection][feature:scalar-storage]") {
     const auto &concrete = bg::cpp_scalar_runtime_type<bg::Dict<std::int64_t, bg::string>>();
 
     const auto &resolved = bg::resolve_scalar_runtime_type(concrete.type(), {});

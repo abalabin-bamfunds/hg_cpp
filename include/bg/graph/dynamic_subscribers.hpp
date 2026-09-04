@@ -51,6 +51,15 @@ struct DynamicCallbackSubscriber {
     std::uint32_t node_index;
 };
 
+struct DynamicObserver {
+    DynamicObserver(RuntimeGraph &target_graph, void *target, DynamicObserverFunction function) noexcept
+        : graph{&target_graph}, target{target}, function{function} {}
+
+    RuntimeGraph *graph;
+    void *target;
+    DynamicObserverFunction function;
+};
+
 struct DynamicSubscribers {
     explicit DynamicSubscribers(std::pmr::memory_resource &memory) : records_{&memory} {}
 
@@ -77,6 +86,10 @@ struct DynamicSubscribers {
         if (subscribers->callback_records_ != nullptr) {
             std::destroy_at(subscribers->callback_records_);
             memory->deallocate(subscribers->callback_records_, sizeof(CallbackRecords), alignof(CallbackRecords));
+        }
+        if (subscribers->observer_records_ != nullptr) {
+            std::destroy_at(subscribers->observer_records_);
+            memory->deallocate(subscribers->observer_records_, sizeof(ObserverRecords), alignof(ObserverRecords));
         }
         std::destroy_at(subscribers);
         memory->deallocate(subscribers, sizeof(DynamicSubscribers), alignof(DynamicSubscribers));
@@ -113,6 +126,24 @@ struct DynamicSubscribers {
         }
     }
 
+    void add_observer(RuntimeGraph &graph, void *target, DynamicObserverFunction function) {
+        observer_records().records.emplace_back(graph, target, function);
+    }
+
+    void remove_observer(RuntimeGraph &graph, const void *target) noexcept {
+        if (observer_records_ == nullptr) {
+            return;
+        }
+
+        const auto record = std::ranges::find_if(observer_records_->records, [&](const auto &candidate) {
+            return candidate.graph == &graph && candidate.target == target;
+        });
+        if (record != observer_records_->records.end()) {
+            *record = observer_records_->records.back();
+            observer_records_->records.pop_back();
+        }
+    }
+
     template <typename Function> void for_each(Function &&function) const {
         for (const auto &record : records_) {
             function(record);
@@ -128,10 +159,29 @@ struct DynamicSubscribers {
         }
     }
 
+    template <typename Function> void for_each_observer(Function &&function) const {
+        if (observer_records_ == nullptr) {
+            return;
+        }
+        for (const auto &record : observer_records_->records) {
+            function(record);
+        }
+    }
+
+    [[nodiscard]] bool empty() const noexcept {
+        return records_.empty() && (callback_records_ == nullptr || callback_records_->records.empty()) &&
+               (observer_records_ == nullptr || observer_records_->records.empty());
+    }
+
   private:
     struct CallbackRecords {
         explicit CallbackRecords(std::pmr::memory_resource &memory) : records{&memory} {}
         std::pmr::vector<DynamicCallbackSubscriber> records;
+    };
+
+    struct ObserverRecords {
+        explicit ObserverRecords(std::pmr::memory_resource &memory) : records{&memory} {}
+        std::pmr::vector<DynamicObserver> records;
     };
 
     [[nodiscard]] CallbackRecords &callback_records() {
@@ -146,12 +196,26 @@ struct DynamicSubscribers {
         return *callback_records_;
     }
 
+    [[nodiscard]] ObserverRecords &observer_records() {
+        if (observer_records_ == nullptr) {
+            auto *memory = records_.get_allocator().resource();
+            auto *storage = memory->allocate(sizeof(ObserverRecords), alignof(ObserverRecords));
+            auto release = util::scope_exit{
+                [&]() noexcept { memory->deallocate(storage, sizeof(ObserverRecords), alignof(ObserverRecords)); }};
+            observer_records_ = std::construct_at(static_cast<ObserverRecords *>(storage), *memory);
+            release.release();
+        }
+        return *observer_records_;
+    }
+
     std::pmr::vector<DynamicSubscriber> records_;
     CallbackRecords *callback_records_{};
+    ObserverRecords *observer_records_{};
 };
 
 static_assert(sizeof(DynamicSubscriber) == 2 * sizeof(void *));
 static_assert(sizeof(DynamicCallbackSubscriber) == 4 * sizeof(void *));
+static_assert(sizeof(DynamicObserver) == 3 * sizeof(void *));
 
 } // namespace details
 } // namespace bg

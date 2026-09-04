@@ -22,7 +22,8 @@ struct inspect_scalar_list {
     void evaluate() const {}
 };
 
-TEST_CASE("a scalar list is available from packed graph scalar storage", "[node][scalar][list]") {
+TEST_CASE("a scalar list is available from packed graph scalar storage",
+          "[node][scalar][list][scalar:list][feature:state]") {
     const auto inspect = bg::node<inspect_scalar_list>();
     const auto input = bg::ScalarValue<bg::List<std::int64_t>>{std::array<std::int64_t, 2>{1, 2}};
     auto state = bg::GlobalState{};
@@ -47,7 +48,8 @@ struct inspect_scalar_list_state {
     void evaluate() const {}
 };
 
-TEST_CASE("scalar list state is available during node start", "[node][state][scalar][list]") {
+TEST_CASE("scalar list state is available during node start",
+          "[node][state][scalar][list][scalar:list][feature:state][transition:start]") {
     const auto inspect = bg::node<inspect_scalar_list_state>();
     auto state = bg::GlobalState{};
 
@@ -75,7 +77,8 @@ struct scalar_list_sink {
     }
 };
 
-TEST_CASE("a scalar list propagates through a value time series", "[node][time_series][scalar][list]") {
+TEST_CASE("a scalar list propagates through a value time series",
+          "[node][time_series][scalar][list][scalar:list][feature:state]") {
     const auto source = bg::node<scalar_list_source>();
     const auto sink = bg::node<scalar_list_sink>();
     const auto input = bg::ScalarValue<bg::List<std::int64_t>>{std::array<std::int64_t, 2>{1, 2}};
@@ -87,7 +90,7 @@ TEST_CASE("a scalar list propagates through a value time series", "[node][time_s
 }
 
 TEST_CASE("a runtime graph releases scalar list time-series storage",
-          "[node][time_series][scalar][list][allocation]") {
+          "[node][time_series][scalar][list][scalar:list][allocation][feature:state]") {
     const auto source = bg::node<scalar_list_source>();
     const auto input = bg::ScalarValue<bg::List<std::int64_t>>{std::array<std::int64_t, 2>{1, 2}};
     auto wiring = bg::GraphWiring{};

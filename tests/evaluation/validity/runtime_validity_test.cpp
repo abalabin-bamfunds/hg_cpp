@@ -27,7 +27,7 @@ struct add_definition {
 
     void evaluate() const {
         ++evaluation_count;
-        last_result = lhs.value() + rhs.value();
+        last_result = *lhs + *rhs;
         output.set(last_result);
     }
 
@@ -41,7 +41,9 @@ struct add_definition {
 
 } // namespace
 
-TEST_CASE("a required input delays evaluation until it becomes valid", "[evaluation][validity]") {
+TEST_CASE("a required input delays evaluation until it becomes valid",
+          "[evaluation][validity][feature:validity][validity:required][transition:first-tick]"
+          "[series:value][scalar:floating-point]") {
     const auto constant = bg::node<constant_definition>();
     const auto add = bg::node<add_definition>();
     bg::GraphWiring wiring;
@@ -88,7 +90,7 @@ struct copy_definition {
     bg::In<bg::TS<float>> input;
     bg::Out<bg::TS<float>> output;
 
-    void evaluate() const { output.set(input.value()); }
+    void evaluate() const { output.set(*input); }
 };
 
 struct float_sink_definition {
@@ -96,7 +98,7 @@ struct float_sink_definition {
 
     void evaluate() const {
         ++evaluation_count;
-        last_value = input.value();
+        last_value = *input;
     }
 
     inline static int evaluation_count{};
@@ -105,7 +107,9 @@ struct float_sink_definition {
 
 } // namespace
 
-TEST_CASE("revalidating an active required input schedules normal evaluation", "[evaluation][validity]") {
+TEST_CASE("revalidating an active required input schedules normal evaluation",
+          "[evaluation][validity][feature:validity][validity:required][transition:revalidation]"
+          "[series:value][scalar:floating-point]") {
     const auto switchable = bg::node<switchable_definition>();
     const auto copy = bg::node<copy_definition>();
     const auto float_sink = bg::node<float_sink_definition>();
@@ -164,7 +168,7 @@ struct required_pair_definition {
 
     void evaluate() const {
         ++evaluation_count;
-        output.set(lhs.value() + rhs.value());
+        output.set(*lhs + *rhs);
     }
 
     void on_invalidation() const { ++invalidation_count; }
@@ -175,7 +179,9 @@ struct required_pair_definition {
 
 } // namespace
 
-TEST_CASE("a node resumes after all required inputs become valid", "[evaluation][validity]") {
+TEST_CASE("a node resumes after all required inputs become valid",
+          "[evaluation][validity][feature:validity][validity:required][transition:revalidation]"
+          "[series:value][scalar:floating-point]") {
     const auto paired_source = bg::node<paired_source_definition>();
     const auto required_pair = bg::node<required_pair_definition>();
     paired_source_definition::values = {1.0F, 2.0F};

@@ -25,7 +25,8 @@ struct inspect_scalar_dict {
     void evaluate() const {}
 };
 
-TEST_CASE("a scalar dictionary is available from packed graph scalar storage", "[node][scalar][dict]") {
+TEST_CASE("a scalar dictionary is available from packed graph scalar storage",
+          "[node][scalar][dict][scalar:dict][feature:state]") {
     const auto inspect = bg::node<inspect_scalar_dict>();
     const auto input = bg::ScalarValue<IntDictionary>{std::array{IntDictionaryEntry{1, 2}, IntDictionaryEntry{3, 4}}};
     auto state = bg::GlobalState{};
@@ -50,7 +51,8 @@ struct inspect_scalar_dict_state {
     void evaluate() const {}
 };
 
-TEST_CASE("scalar dictionary state is available during node start", "[node][state][scalar][dict]") {
+TEST_CASE("scalar dictionary state is available during node start",
+          "[node][state][scalar][dict][scalar:dict][feature:state][transition:start]") {
     const auto inspect = bg::node<inspect_scalar_dict_state>();
     auto state = bg::GlobalState{};
 
@@ -79,7 +81,8 @@ struct scalar_dict_sink {
     }
 };
 
-TEST_CASE("a scalar dictionary propagates through a value time series", "[node][time_series][scalar][dict]") {
+TEST_CASE("a scalar dictionary propagates through a value time series",
+          "[node][time_series][scalar][dict][scalar:dict][feature:state]") {
     const auto source = bg::node<scalar_dict_source>();
     const auto sink = bg::node<scalar_dict_sink>();
     const auto input = bg::ScalarValue<IntDictionary>{std::array{IntDictionaryEntry{1, 2}, IntDictionaryEntry{3, 4}}};

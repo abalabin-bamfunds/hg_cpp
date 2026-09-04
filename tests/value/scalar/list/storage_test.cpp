@@ -10,7 +10,8 @@
 #include <memory_resource>
 #include <vector>
 
-TEST_CASE("resolved scalar list storage supports mutation", "[value][scalar][list][storage]") {
+TEST_CASE("resolved scalar list storage supports mutation",
+          "[value][scalar][list][scalar:list][storage][feature:scalar-storage]") {
     const auto &item = bg::cpp_scalar_runtime_type<bg::string>();
     const auto &type = bg::list_scalar_type(item.type());
     const auto available = std::array<const bg::ScalarRuntimeType *, 1>{&item};
@@ -45,7 +46,8 @@ struct RuntimeListItem {
 
 } // namespace
 
-TEST_CASE("a scalar list copies between composed and C++ storage", "[value][scalar][list][storage]") {
+TEST_CASE("a scalar list copies between composed and C++ storage",
+          "[value][scalar][list][scalar:list][storage][feature:scalar-storage]") {
     using Item = bg::Opaque<RuntimeListItem>;
     using List = bg::List<Item>;
 

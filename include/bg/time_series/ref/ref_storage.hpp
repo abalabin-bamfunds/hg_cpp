@@ -12,10 +12,11 @@ class TimeSeriesRuntimeType;
 namespace details {
 
 struct DynamicSubscribers;
+class ReferenceProvider;
 struct ReferenceInputStorage;
 
 struct ReferenceStorage {
-    RuntimeGraph *owner{};
+    ReferenceProvider *provider{};
     const EvaluationTime *target_last_updated{};
     const void *target_value{};
     const TimeSeriesRuntimeType *target_runtime_type{};

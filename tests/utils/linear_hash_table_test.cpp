@@ -7,7 +7,8 @@
 #include <cstddef>
 #include <cstdint>
 
-TEST_CASE("a linear hash table finds and removes positions", "[linear_hash_table]") {
+TEST_CASE("a linear hash table finds and removes positions",
+          "[linear_hash_table][coverage-exempt]") {
     auto memory = counting_memory_resource{};
     auto table = bg::util::linear_hash_table{};
 
@@ -25,7 +26,7 @@ TEST_CASE("a linear hash table finds and removes positions", "[linear_hash_table
     CHECK(memory.allocations() == 0);
 }
 
-TEST_CASE("a linear hash table retains high hash bits", "[linear_hash_table]") {
+TEST_CASE("a linear hash table retains high hash bits", "[linear_hash_table][coverage-exempt]") {
     if constexpr (sizeof(std::size_t) > sizeof(std::uint32_t)) {
         const auto low = bg::util::linear_hash_table::hash_code(std::size_t{1});
         const auto high = bg::util::linear_hash_table::hash_code(std::size_t{1} << 32);
@@ -35,7 +36,7 @@ TEST_CASE("a linear hash table retains high hash bits", "[linear_hash_table]") {
     }
 }
 
-TEST_CASE("a linear hash table retains entries while splitting buckets", "[linear_hash_table]") {
+TEST_CASE("a linear hash table retains entries while splitting buckets", "[linear_hash_table][coverage-exempt]") {
     auto memory = counting_memory_resource{};
     auto table = bg::util::linear_hash_table{};
 
@@ -56,7 +57,8 @@ TEST_CASE("a linear hash table retains entries while splitting buckets", "[linea
     CHECK(memory.allocations() == 0);
 }
 
-TEST_CASE("a linear hash table uses compact overflow buckets for equal hashes", "[linear_hash_table]") {
+TEST_CASE("a linear hash table uses compact overflow buckets for equal hashes",
+          "[linear_hash_table][coverage-exempt]") {
     auto memory = counting_memory_resource{};
     auto table = bg::util::linear_hash_table{};
     constexpr auto hash = std::uint32_t{42};
@@ -79,7 +81,7 @@ TEST_CASE("a linear hash table uses compact overflow buckets for equal hashes", 
     CHECK(memory.allocations() == 0);
 }
 
-TEST_CASE("a linear hash table merges one bucket at a time", "[linear_hash_table]") {
+TEST_CASE("a linear hash table merges one bucket at a time", "[linear_hash_table][coverage-exempt]") {
     auto memory = counting_memory_resource{};
     auto table = bg::util::linear_hash_table{};
 
@@ -108,7 +110,7 @@ TEST_CASE("a linear hash table merges one bucket at a time", "[linear_hash_table
     CHECK(memory.allocations() == 0);
 }
 
-TEST_CASE("a linear hash table reduces collision-heavy storage", "[linear_hash_table]") {
+TEST_CASE("a linear hash table reduces collision-heavy storage", "[linear_hash_table][coverage-exempt]") {
     auto memory = counting_memory_resource{};
     auto table = bg::util::linear_hash_table{};
     constexpr auto hash = std::uint32_t{1};
@@ -134,7 +136,8 @@ TEST_CASE("a linear hash table reduces collision-heavy storage", "[linear_hash_t
     CHECK(memory.allocations() == 0);
 }
 
-TEST_CASE("a linear hash table retains entries when reduction allocation fails", "[linear_hash_table]") {
+TEST_CASE("a linear hash table retains entries when reduction allocation fails",
+          "[linear_hash_table][coverage-exempt]") {
     auto memory = counting_memory_resource{};
     auto table = bg::util::linear_hash_table{};
 

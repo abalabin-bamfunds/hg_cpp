@@ -6,7 +6,8 @@
 #include <utility>
 #include <vector>
 
-TEST_CASE("a scalar visitor identifies a scalar value", "[value][scalar][visitor]") {
+TEST_CASE("a scalar visitor identifies a scalar value",
+          "[value][scalar][visitor][feature:visitor][scalar:integer]") {
     const auto value = bg::ScalarValue{42};
     auto called = false;
 
@@ -20,7 +21,8 @@ TEST_CASE("a scalar visitor identifies a scalar value", "[value][scalar][visitor
     CHECK(called);
 }
 
-TEST_CASE("a scalar visitor identifies each collection type", "[value][scalar][visitor]") {
+TEST_CASE("a scalar visitor identifies each collection type",
+          "[value][scalar][visitor][feature:visitor][scalar:list][scalar:set][scalar:dict]") {
     const auto list = bg::ScalarValue<bg::List<std::int64_t>>{std::vector<std::int64_t>{1}};
     const auto set = bg::ScalarValue<bg::Set<std::int64_t>>{std::vector<std::int64_t>{2}};
     const auto dict = bg::ScalarValue<bg::Dict<std::int64_t, std::int64_t>>{
@@ -53,7 +55,8 @@ TEST_CASE("a scalar visitor identifies each collection type", "[value][scalar][v
     CHECK(dict_called);
 }
 
-TEST_CASE("a scalar visitor supports a base-view fallback", "[value][scalar][visitor]") {
+TEST_CASE("a scalar visitor supports a base-view fallback",
+          "[value][scalar][visitor][feature:visitor][scalar:integer]") {
     const auto value = bg::ScalarValue{42};
     auto called = false;
 
@@ -67,7 +70,8 @@ TEST_CASE("a scalar visitor supports a base-view fallback", "[value][scalar][vis
     CHECK(called);
 }
 
-TEST_CASE("a scalar visitor can ignore an unmatched view", "[value][scalar][visitor]") {
+TEST_CASE("a scalar visitor can ignore an unmatched view",
+          "[value][scalar][visitor][feature:visitor][scalar:integer]") {
     const auto value = bg::ScalarValue{42};
     auto called = false;
 

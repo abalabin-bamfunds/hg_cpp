@@ -6,7 +6,8 @@
 #include <cstdint>
 #include <string_view>
 
-TEST_CASE("global state owns inserted scalar values", "[global_state][scalar]") {
+TEST_CASE("global state owns inserted scalar values",
+          "[global_state][scalar][feature:global-state][transition:addition]") {
     auto state = bg::GlobalState{};
     auto source = bg::ScalarValue{std::string_view{"value"}};
 
@@ -21,7 +22,8 @@ TEST_CASE("global state owns inserted scalar values", "[global_state][scalar]") 
     });
 }
 
-TEST_CASE("global state replaces values and supports heterogeneous lookup", "[global_state][scalar]") {
+TEST_CASE("global state replaces values and supports heterogeneous lookup",
+          "[global_state][scalar][feature:global-state]") {
     auto state = bg::GlobalState{};
     const auto key = bg::util::symbol{"result"};
     const auto first = bg::ScalarValue{std::string_view{"first"}};
@@ -38,7 +40,8 @@ TEST_CASE("global state replaces values and supports heterogeneous lookup", "[gl
     });
 }
 
-TEST_CASE("global state write access mutates collection values", "[global_state][scalar][collection]") {
+TEST_CASE("global state write access mutates collection values",
+          "[global_state][scalar][collection][feature:global-state]") {
     auto state = bg::GlobalState{};
     const auto initial = bg::ScalarValue<bg::List<std::int64_t>>{std::array<std::int64_t, 1>{1}};
 

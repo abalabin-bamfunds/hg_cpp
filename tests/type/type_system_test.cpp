@@ -33,12 +33,12 @@ static_assert(!std::constructible_from<bg::TypeVariable<bg::ScalarType>, bg::uti
 
 } // namespace
 
-TEST_CASE("evaluation time has a scalar graph type", "[type_system]") {
+TEST_CASE("evaluation time has a scalar graph type", "[type_system][feature:type-system]") {
     CHECK(&bg::cpp_scalar_type<bg::EvaluationTime>() == &bg::evaluation_time_type());
     CHECK(&bg::cpp_scalar_type<bg::List<bg::EvaluationTime>>() == &bg::list_scalar_type(bg::evaluation_time_type()));
 }
 
-TEST_CASE("scalar graph types report equality and hashing", "[type_system]") {
+TEST_CASE("scalar graph types report equality and hashing", "[type_system][feature:type-system]") {
     CHECK(bg::int64_type().supports_equality());
     CHECK(bg::int64_type().supports_hash());
     CHECK(bg::list_scalar_type(bg::int64_type()).supports_equality());
@@ -49,7 +49,8 @@ TEST_CASE("scalar graph types report equality and hashing", "[type_system]") {
     CHECK_FALSE(opaque.supports_hash());
 }
 
-TEST_CASE("a generic time-series type retains its guarantee variable", "[type_system]") {
+TEST_CASE("a generic time-series type retains its guarantee variable",
+          "[type_system][feature:type-system][declaration:generic]") {
     const bg::ScalarType &float_type = bg::float_type();
 
     bg::GuaranteeVariable guarantee{bg::util::symbol{"G"}};
@@ -60,7 +61,8 @@ TEST_CASE("a generic time-series type retains its guarantee variable", "[type_sy
     CHECK(ts_float.guarantee().variable() == &guarantee);
 }
 
-TEST_CASE("a time series variable and its guarantee resolve independently", "[type_system]") {
+TEST_CASE("a time series variable and its guarantee resolve independently",
+          "[type_system][feature:type-system][declaration:generic][guarantee:ordinary][guarantee:final]") {
     auto left = bg::TypeVariable<bg::TimeSeriesType>{bg::util::symbol{"Left"}};
     auto right = bg::TypeVariable<bg::TimeSeriesType>{bg::util::symbol{"Right"}};
     auto guarantee = bg::GuaranteeVariable{bg::util::symbol{"G"}};
@@ -78,7 +80,9 @@ TEST_CASE("a time series variable and its guarantee resolve independently", "[ty
     CHECK(&generic_right.resolve(bindings) == &value);
 }
 
-TEST_CASE("a time series variable ignores the guarantees captured separately", "[type_system]") {
+TEST_CASE("a time series variable ignores the guarantees captured separately",
+          "[type_system][feature:type-system][declaration:generic][guarantee:deduplicated]"
+          "[guarantee:final]") {
     auto variable = bg::TypeVariable<bg::TimeSeriesType>{bg::util::symbol{"T"}};
     auto guarantee = bg::GuaranteeVariable{bg::util::symbol{"G"}};
     const auto generic = bg::GenericTimeSeriesVariableType{variable, guarantee};
@@ -92,14 +96,15 @@ TEST_CASE("a time series variable ignores the guarantees captured separately", "
     CHECK(&generic.resolve(bindings) == &deduplicated);
 }
 
-TEST_CASE("resolved time-series value types are reused", "[type_system]") {
+TEST_CASE("resolved time-series value types are reused", "[type_system][feature:type-system][guarantee:final]") {
     const bg::ScalarType &float_type = bg::float_type();
     const auto &ts_final = bg::time_series_value_type(float_type, bg::TimeSeriesGuarantee::final);
 
     CHECK(&ts_final == &bg::time_series_value_type(float_type, bg::TimeSeriesGuarantee::final));
 }
 
-TEST_CASE("signature resolution uses reference target types", "[type_system][reference]") {
+TEST_CASE("signature resolution uses reference target types",
+          "[type_system][reference][feature:type-system][binding:reference-to-value]") {
     const auto &target = bg::time_series_value_type(bg::int64_type(), bg::TimeSeriesGuarantee::ordinary);
     const auto &reference = bg::time_series_reference_type(target, bg::TimeSeriesGuarantee::ordinary);
     const auto value_input = bg::Signature{bg::util::symbol{"value_input"}, {{bg::util::symbol{"value"}, &target}}};
@@ -111,7 +116,7 @@ TEST_CASE("signature resolution uses reference target types", "[type_system][ref
     CHECK(reference_input.resolve(arguments).parameters[0].type == &reference);
 }
 
-TEST_CASE("a signature resolves scalar parameters", "[type_system]") {
+TEST_CASE("a signature resolves scalar parameters", "[type_system][feature:type-system]") {
     const bg::ScalarType &float_type = bg::float_type();
 
     bg::GuaranteeVariable guarantee{bg::util::symbol{"G"}};
@@ -134,7 +139,7 @@ TEST_CASE("a signature resolves scalar parameters", "[type_system]") {
     CHECK(is_value_type(scalar_add.output, float_type, bg::TimeSeriesGuarantee::const_));
 }
 
-TEST_CASE("a signature resolves scalar and time-series parameters", "[type_system]") {
+TEST_CASE("a signature resolves scalar and time-series parameters", "[type_system][feature:type-system]") {
     const bg::ScalarType &float_type = bg::float_type();
 
     bg::GuaranteeVariable guarantee{bg::util::symbol{"G"}};
@@ -155,7 +160,9 @@ TEST_CASE("a signature resolves scalar and time-series parameters", "[type_syste
     CHECK(is_value_type(mixed_add.output, float_type, bg::TimeSeriesGuarantee::final));
 }
 
-TEST_CASE("a shared guarantee variable resolves to the weakest input guarantee", "[type_system]") {
+TEST_CASE("a shared guarantee variable resolves to the weakest input guarantee",
+          "[type_system][feature:type-system][declaration:generic][guarantee:deduplicated]"
+          "[guarantee:final]") {
     const bg::ScalarType &float_type = bg::float_type();
 
     bg::GuaranteeVariable guarantee{bg::util::symbol{"G"}};
@@ -176,7 +183,9 @@ TEST_CASE("a shared guarantee variable resolves to the weakest input guarantee",
     CHECK(is_value_type(series_add.output, float_type, bg::TimeSeriesGuarantee::deduplicated));
 }
 
-TEST_CASE("a guarantee variable enforces its lower bound", "[type_system]") {
+TEST_CASE("a guarantee variable enforces its lower bound",
+          "[type_system][feature:type-system][declaration:generic][guarantee:ordinary]"
+          "[guarantee:deduplicated][guarantee:final]") {
     const bg::ScalarType &float_type = bg::float_type();
 
     bg::GuaranteeVariable stable_guarantee{bg::util::symbol{"Stable"}, bg::TimeSeriesGuarantee::deduplicated};
@@ -202,7 +211,8 @@ TEST_CASE("a guarantee variable enforces its lower bound", "[type_system]") {
     CHECK(is_value_type(resolved_stable_input.output, float_type, bg::TimeSeriesGuarantee::final));
 }
 
-TEST_CASE("repeated use of a type variable requires one resolved type", "[type_system]") {
+TEST_CASE("repeated use of a type variable requires one resolved type",
+          "[type_system][feature:type-system][declaration:generic]") {
     const bg::ScalarType &float_type = bg::float_type();
     const auto &ts_final = bg::time_series_value_type(float_type, bg::TimeSeriesGuarantee::final);
     const auto &ts_ordinary = bg::time_series_value_type(float_type, bg::TimeSeriesGuarantee::ordinary);
@@ -222,7 +232,8 @@ TEST_CASE("repeated use of a type variable requires one resolved type", "[type_s
     }
 }
 
-TEST_CASE("a type parameter binds a time-series type variable", "[type_system]") {
+TEST_CASE("a type parameter binds a time-series type variable",
+          "[type_system][feature:type-system][declaration:generic]") {
     const bg::ScalarType &float_type = bg::float_type();
     const auto &ts_final = bg::time_series_value_type(float_type, bg::TimeSeriesGuarantee::final);
 
@@ -239,7 +250,8 @@ TEST_CASE("a type parameter binds a time-series type variable", "[type_system]")
     CHECK(selected_final.output == &ts_final);
 }
 
-TEST_CASE("a type parameter binds a nested guarantee variable", "[type_system]") {
+TEST_CASE("a type parameter binds a nested guarantee variable",
+          "[type_system][feature:type-system][declaration:generic]") {
     const bg::ScalarType &float_type = bg::float_type();
     const auto &ts_deduplicated = bg::time_series_value_type(float_type, bg::TimeSeriesGuarantee::deduplicated);
 
@@ -256,7 +268,7 @@ TEST_CASE("a type parameter binds a nested guarantee variable", "[type_system]")
     CHECK(is_value_type(selected_deduplicated.output, float_type, bg::TimeSeriesGuarantee::deduplicated));
 }
 
-TEST_CASE("a time-series type parameter rejects a scalar type", "[type_system]") {
+TEST_CASE("a time-series type parameter rejects a scalar type", "[type_system][feature:type-system]") {
     const bg::ScalarType &float_type = bg::float_type();
 
     bg::GuaranteeVariable selected_guarantee{bg::util::symbol{"SelectedGuarantee"}};
@@ -278,7 +290,7 @@ TEST_CASE("a time-series type parameter rejects a scalar type", "[type_system]")
     }
 }
 
-TEST_CASE("a generic scalar list resolves its item type", "[type_system]") {
+TEST_CASE("a generic scalar list resolves its item type", "[type_system][feature:type-system][declaration:generic]") {
     bg::TypeVariable<bg::ScalarType> item{bg::util::symbol{"Item"}};
     const auto generic_list = bg::GenericListScalarType{item};
     const auto &float_list = bg::list_scalar_type(bg::float_type());
@@ -288,7 +300,8 @@ TEST_CASE("a generic scalar list resolves its item type", "[type_system]") {
     CHECK(&generic_list.resolve(bindings) == &float_list);
 }
 
-TEST_CASE("generic set and dictionary types resolve their components", "[type_system]") {
+TEST_CASE("generic set and dictionary types resolve their components",
+          "[type_system][feature:type-system][declaration:generic]") {
     bg::TypeVariable<bg::ScalarType> key{bg::util::symbol{"Key"}};
     bg::TypeVariable<bg::ScalarType> value{bg::util::symbol{"Value"}};
     const auto generic_set = bg::GenericSetScalarType{key};
@@ -305,7 +318,7 @@ TEST_CASE("generic set and dictionary types resolve their components", "[type_sy
     CHECK(&generic_dict.resolve(dict_bindings) == &resolved_dict);
 }
 
-TEST_CASE("set items and dictionary keys require hashing", "[type_system][scalar][collection]") {
+TEST_CASE("set items and dictionary keys require hashing", "[type_system][scalar][collection][feature:type-system]") {
     const auto &opaque = bg::cpp_scalar_type<bg::Opaque<int>>();
 
     CHECK_THROWS_AS(bg::set_scalar_type(opaque), std::invalid_argument);

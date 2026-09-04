@@ -4,6 +4,7 @@
 #include <bg/graph/wiring_template.hpp>
 #include <bg/node/node_template.hpp>
 #include <bg/type/time_series_bundle_type.hpp>
+#include <bg/type/time_series_dict_type.hpp>
 #include <bg/type/time_series_list_type.hpp>
 #include <bg/type/time_series_reference_type.hpp>
 #include <bg/type/type_map.hpp>
@@ -18,6 +19,29 @@
 #include <string_view>
 
 namespace bg {
+
+namespace {
+
+[[nodiscard]] bool requires_reference_representation(const TimeSeriesType &parameter,
+                                                     const TimeSeriesType &argument) noexcept {
+    const auto *parameter_dictionary = dynamic_cast<const TimeSeriesDictionaryType *>(&parameter);
+    const auto *argument_dictionary = dynamic_cast<const TimeSeriesDictionaryType *>(&argument);
+    if (parameter_dictionary == nullptr || argument_dictionary == nullptr) {
+        return false;
+    }
+
+    const auto &parameter_item = parameter_dictionary->value_type();
+    const auto &argument_item = argument_dictionary->value_type();
+    const auto parameter_is_reference = dynamic_cast<const TimeSeriesReferenceType *>(&parameter_item) != nullptr;
+    const auto argument_is_reference = dynamic_cast<const TimeSeriesReferenceType *>(&argument_item) != nullptr;
+    if (parameter_is_reference != argument_is_reference) {
+        return true;
+    }
+
+    return requires_reference_representation(parameter_item, argument_item);
+}
+
+} // namespace
 
 std::size_t WiringPoint::node_index() const noexcept {
     return graph_->wiring_points()[record_index_].node_index;
@@ -163,13 +187,22 @@ std::optional<WiringPoint> GraphWiring::invoke(const WiringTemplate &wiring_temp
             continue;
         }
 
-        const auto *reference = dynamic_cast<const TimeSeriesReferenceType *>(signature.parameters[i].type);
-        if (reference == nullptr ||
-            dynamic_cast<const TimeSeriesReferenceType *>(&arguments[i].wiring_point().type())) {
+        const auto &parameter = static_cast<const TimeSeriesType &>(*signature.parameters[i].type);
+        const auto &argument = arguments[i].wiring_point().type();
+        const auto *parameter_reference = dynamic_cast<const TimeSeriesReferenceType *>(&parameter);
+        const auto *argument_reference = dynamic_cast<const TimeSeriesReferenceType *>(&argument);
+
+        if (parameter_reference != nullptr) {
+            if (argument_reference == nullptr) {
+                arguments[i].wiring_point(make_reference(arguments[i].wiring_point(), *parameter_reference));
+            }
             continue;
         }
 
-        arguments[i].wiring_point(make_reference(arguments[i].wiring_point(), *reference));
+        if (argument_reference == nullptr && requires_reference_representation(parameter, argument)) {
+            const auto &reference = time_series_reference_type(parameter, TimeSeriesGuarantee::const_);
+            arguments[i].wiring_point(make_reference(arguments[i].wiring_point(), reference));
+        }
     }
 
     const auto *expected_output = signature.output;
@@ -314,7 +347,7 @@ WiringPoint GraphWiring::make_reference(WiringPoint source, const TimeSeriesType
     }
 
     const auto &type = static_cast<const TimeSeriesReferenceType &>(reference_type);
-    const auto result = details::reference_node_template(type)(source);
+    const auto result = details::reference_node_template(source.type(), type)(source);
     if (!result) {
         throw WiringError{"a reference-making node produced no output"};
     }

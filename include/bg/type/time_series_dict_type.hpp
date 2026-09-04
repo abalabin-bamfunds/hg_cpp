@@ -26,6 +26,8 @@ class TimeSeriesDictionaryType : public FixedItemTimeSeriesType {
         : FixedItemTimeSeriesType(guarantee), key_type_(&key_type), value_type_(&value_type),
           key_set_type_(&key_set_type) {}
 
+    [[nodiscard]] bool do_match(const Type &supplied, TypeMap &bindings) const override;
+
   private:
     const ScalarType *key_type_;
     const TimeSeriesType *value_type_;
@@ -41,8 +43,6 @@ class GenericTimeSeriesDictionaryType final : public TimeSeriesDictionaryType {
     [[nodiscard]] bool is_resolved() const noexcept override { return false; }
     [[nodiscard]] const Type &resolve(const TypeMap &bindings) const override;
 
-  protected:
-    [[nodiscard]] bool do_match(const Type &supplied, TypeMap &bindings) const override;
 };
 
 [[nodiscard]] const TimeSeriesDictionaryType &time_series_dictionary_type(const ScalarType &key_type,

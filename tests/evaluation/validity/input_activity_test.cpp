@@ -36,7 +36,7 @@ struct mixed_input_definition {
 
     void evaluate() const {
         ++evaluation_count;
-        output.set(trigger.value() + sampled.value());
+        output.set(*trigger + *sampled);
     }
 
     inline static int evaluation_count{};
@@ -45,7 +45,7 @@ struct mixed_input_definition {
 struct float_sink_definition {
     bg::In<bg::TS<float>> input;
 
-    void evaluate() const { last_value = input.value(); }
+    void evaluate() const { last_value = *input; }
 
     inline static float last_value{};
 };
@@ -55,7 +55,7 @@ struct float_sink_definition {
 }
 
 TEST_CASE("an active input schedules evaluation and a passive input supplies its latest value",
-          "[evaluation][input_activity]") {
+          "[evaluation][input_activity][feature:input-activity][activity:active][activity:passive]") {
     const auto controlled_source = bg::node<controlled_source_definition>();
     const auto mixed_input = bg::node<mixed_input_definition>();
     const auto float_sink = bg::node<float_sink_definition>();
@@ -106,7 +106,8 @@ struct active_optional_observer_definition {
 };
 
 TEST_CASE("an active optional input schedules evaluation on invalidation and revalidation",
-          "[evaluation][input_activity][validity]") {
+          "[evaluation][input_activity][validity][feature:input-activity][activity:active]"
+          "[validity:optional][transition:invalidation][transition:revalidation]") {
     const auto controlled_source = bg::node<controlled_source_definition>();
     const auto active_optional_observer = bg::node<active_optional_observer_definition>();
     controlled_source_definition::values[0] = 1.0F;
@@ -149,7 +150,9 @@ struct passive_optional_observer_definition {
     inline static bool last_valid{};
 };
 
-TEST_CASE("a passive optional input does not schedule evaluation", "[evaluation][input_activity][validity]") {
+TEST_CASE("a passive optional input does not schedule evaluation",
+          "[evaluation][input_activity][validity][feature:input-activity][activity:passive]"
+          "[validity:optional]") {
     const auto controlled_source = bg::node<controlled_source_definition>();
     const auto passive_optional_observer = bg::node<passive_optional_observer_definition>();
     controlled_source_definition::values[0] = 1.0F;
@@ -189,14 +192,15 @@ struct passive_copy_definition {
 
     void evaluate() const {
         ++evaluation_count;
-        output.set(input.value());
+        output.set(*input);
     }
 
     inline static int evaluation_count{};
 };
 
 TEST_CASE("a passive required input propagates invalidation without evaluation",
-          "[evaluation][input_activity][validity]") {
+          "[evaluation][input_activity][validity][feature:input-activity][activity:passive]"
+          "[validity:required][transition:invalidation]") {
     const auto controlled_source = bg::node<controlled_source_definition>();
     const auto passive_copy = bg::node<passive_copy_definition>();
     const auto active_optional_observer = bg::node<active_optional_observer_definition>();

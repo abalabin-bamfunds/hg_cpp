@@ -2,6 +2,7 @@
 
 #include <bg/scalar/runtime_type.hpp>
 #include <bg/time_series/details/output_state.hpp>
+#include <bg/time_series/ref/ref_provider.hpp>
 #include <bg/time_series/ref/ref_runtime_type.hpp>
 #include <bg/time_series/tsb/tsb_runtime_type.hpp>
 #include <bg/time_series/tsd/tsd_runtime_type.hpp>
@@ -113,6 +114,12 @@ bool TimeSeriesRuntimeType::item_updated(const EvaluationTime &, const void *, T
 
 void TimeSeriesRuntimeType::for_each_updated_item(const EvaluationTime &, const void *, void *,
                                                   ItemIdFunction) const {}
+
+details::ReferenceRepresentation *TimeSeriesRuntimeType::create_reference_representation(
+    details::ReferenceProvider &, details::ReferenceStorage &, const TimeSeriesType &,
+    std::pmr::memory_resource &) const {
+    throw std::invalid_argument{"the requested time series representation is not implemented"};
+}
 
 const TimeSeriesRuntimeType &time_series_value_runtime_type(const TimeSeriesType &type,
                                                             const ScalarRuntimeType &scalar_runtime_type) {

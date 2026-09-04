@@ -9,7 +9,8 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-TEST_CASE("a time series reference value is one pointer", "[value][time-series][reference]") {
+TEST_CASE("a time series reference value is one pointer",
+          "[value][time-series][reference][feature:time-series-storage]") {
     const auto &target_type = bg::time_series_value_type(bg::cpp_scalar_type<int>(), bg::TimeSeriesGuarantee::ordinary);
     const auto &target_runtime_type =
         bg::time_series_value_runtime_type(target_type, bg::cpp_scalar_runtime_type<int>());
@@ -20,7 +21,8 @@ TEST_CASE("a time series reference value is one pointer", "[value][time-series][
     CHECK(runtime_type.value_alignment() == alignof(bg::details::ReferenceStorage *));
 }
 
-TEST_CASE("a time series reference propagates its storage pointer", "[value][time-series][reference]") {
+TEST_CASE("a time series reference propagates its storage pointer",
+          "[value][time-series][reference][feature:time-series-storage]") {
     auto target = bg::details::ReferenceStorage{};
     auto *source_value = &target;
     auto *output_value = static_cast<bg::details::ReferenceStorage *>(nullptr);

@@ -9,7 +9,7 @@
 #include <stdexcept>
 #include <vector>
 
-TEST_CASE("an empty fixed-size index has no set positions", "[index]") {
+TEST_CASE("an empty fixed-size index has no set positions", "[index][coverage-exempt]") {
     const auto index = bg::util::index<0>{};
 
     CHECK(index.empty());
@@ -17,7 +17,7 @@ TEST_CASE("an empty fixed-size index has no set positions", "[index]") {
     CHECK(index.begin() == index.end());
 }
 
-TEST_CASE("a runtime-sized index stores up to 56 positions without allocation", "[index]") {
+TEST_CASE("a runtime-sized index stores up to 56 positions without allocation", "[index][coverage-exempt]") {
     auto memory = counting_memory_resource{};
     auto index = bg::util::index<>{};
 
@@ -33,7 +33,8 @@ TEST_CASE("a runtime-sized index stores up to 56 positions without allocation", 
     index.release(memory);
 }
 
-TEST_CASE("a runtime-sized index preserves bits when it starts using allocated storage", "[index]") {
+TEST_CASE("a runtime-sized index preserves bits when it starts using allocated storage",
+          "[index][coverage-exempt]") {
     auto memory = counting_memory_resource{};
     auto index = bg::util::index<>{};
 
@@ -52,7 +53,8 @@ TEST_CASE("a runtime-sized index preserves bits when it starts using allocated s
     CHECK(memory.allocations() == 0);
 }
 
-TEST_CASE("a runtime-sized index grows, resets, clears, and iterates set positions", "[index]") {
+TEST_CASE("a runtime-sized index grows, resets, clears, and iterates set positions",
+          "[index][coverage-exempt]") {
     auto memory = counting_memory_resource{};
     auto index = bg::util::index<>{};
 
@@ -75,7 +77,7 @@ TEST_CASE("a runtime-sized index grows, resets, clears, and iterates set positio
     CHECK(memory.allocations() == 0);
 }
 
-TEST_CASE("a runtime-sized index retains its state when growth fails", "[index]") {
+TEST_CASE("a runtime-sized index retains its state when growth fails", "[index][coverage-exempt]") {
     auto memory = counting_memory_resource{};
     auto index = bg::util::index<>{};
 
@@ -92,7 +94,8 @@ TEST_CASE("a runtime-sized index retains its state when growth fails", "[index]"
     index.release(memory);
 }
 
-TEST_CASE("a runtime-sized index returns to inline storage after trimming", "[index]") {
+TEST_CASE("a runtime-sized index returns to inline storage after trimming",
+          "[index][coverage-exempt]") {
     auto memory = counting_memory_resource{};
     auto index = bg::util::index<>{};
 
@@ -109,7 +112,7 @@ TEST_CASE("a runtime-sized index returns to inline storage after trimming", "[in
     index.release(memory);
 }
 
-TEST_CASE("a fixed-size index crosses word boundaries without allocation", "[index]") {
+TEST_CASE("a fixed-size index crosses word boundaries without allocation", "[index][coverage-exempt]") {
     auto index = bg::util::index<129>{};
 
     CHECK(index.set(0));

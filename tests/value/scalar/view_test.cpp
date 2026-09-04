@@ -11,7 +11,7 @@ static_assert(std::is_trivially_copyable_v<bg::details::ScalarData>);
 
 } // namespace
 
-TEST_CASE("a scalar input view reads a typed value", "[scalar]") {
+TEST_CASE("a scalar input view reads a typed value", "[scalar][feature:scalar-api]") {
     const float value = 1.25F;
     const auto view = bg::Scalar<float>::from(bg::cpp_scalar_runtime_type<float>(), &value);
 
@@ -19,7 +19,7 @@ TEST_CASE("a scalar input view reads a typed value", "[scalar]") {
     CHECK(view.value() == value);
 }
 
-TEST_CASE("a scalar input view supports constant-size polymorphism", "[scalar]") {
+TEST_CASE("a scalar input view supports constant-size polymorphism", "[scalar][feature:scalar-api]") {
     const float value = 1.25F;
     const auto view = bg::Scalar<>::from(bg::cpp_scalar_runtime_type<float>(), &value);
 

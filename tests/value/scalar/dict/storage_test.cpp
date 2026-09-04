@@ -14,7 +14,8 @@
 #include <utility>
 #include <vector>
 
-TEST_CASE("resolved scalar dictionary storage supports mutation", "[value][scalar][dict][storage]") {
+TEST_CASE("resolved scalar dictionary storage supports mutation",
+          "[value][scalar][dict][scalar:dict][storage][feature:scalar-storage]") {
     const auto &key_storage = bg::cpp_scalar_runtime_type<std::int64_t>();
     const auto &value_storage = bg::cpp_scalar_runtime_type<bg::string>();
     const auto available = std::array<const bg::ScalarRuntimeType *, 2>{&key_storage, &value_storage};
@@ -43,7 +44,8 @@ TEST_CASE("resolved scalar dictionary storage supports mutation", "[value][scala
     memory.deallocate(storage, dict.size(), dict.alignment());
 }
 
-TEST_CASE("resolved dictionary storage owns nested collection values", "[value][scalar][dict][storage]") {
+TEST_CASE("resolved dictionary storage owns nested collection values",
+          "[value][scalar][dict][scalar:dict][storage][feature:scalar-storage]") {
     const auto &key_storage = bg::cpp_scalar_runtime_type<std::int64_t>();
     const auto &item_storage = bg::cpp_scalar_runtime_type<bg::string>();
     const auto available = std::array<const bg::ScalarRuntimeType *, 2>{&key_storage, &item_storage};
@@ -77,7 +79,8 @@ struct RuntimeDictValue {
 
 } // namespace
 
-TEST_CASE("a scalar dictionary copies between composed and C++ storage", "[value][scalar][dict][storage]") {
+TEST_CASE("a scalar dictionary copies between composed and C++ storage",
+          "[value][scalar][dict][scalar:dict][storage][feature:scalar-storage]") {
     using Value = bg::Opaque<RuntimeDictValue>;
     using Dict = bg::Dict<std::int64_t, Value>;
 
@@ -104,7 +107,8 @@ TEST_CASE("a scalar dictionary copies between composed and C++ storage", "[value
     memory.deallocate(storage, composed.size(), composed.alignment());
 }
 
-TEST_CASE("a scalar dictionary copies nested keys between composed and C++ storage", "[value][scalar][dict][storage]") {
+TEST_CASE("a scalar dictionary copies nested keys between composed and C++ storage",
+          "[value][scalar][dict][scalar:dict][storage][feature:scalar-storage]") {
     using InnerKey = bg::List<bg::EvaluationTime>;
     using Key = bg::List<InnerKey>;
     using Dict = bg::Dict<Key, std::int64_t>;

@@ -10,7 +10,8 @@
 #include <memory_resource>
 #include <vector>
 
-TEST_CASE("dictionary runtime items use stable sparse IDs", "[value][time_series][tsd][runtime_type]") {
+TEST_CASE("dictionary runtime items use stable sparse IDs",
+          "[value][time_series][tsd][series:tsd][runtime_type][feature:time-series-storage]") {
     using Dictionary = bg::TSD<std::int64_t, bg::TS<int>>;
 
     const auto &runtime_type = bg::cpp_time_series_runtime_type<Dictionary>();

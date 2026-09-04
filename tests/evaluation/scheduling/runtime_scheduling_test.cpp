@@ -36,7 +36,7 @@ struct add_definition {
 
     void evaluate() const {
         ++evaluation_count;
-        last_result = lhs.value() + rhs.value();
+        last_result = *lhs + *rhs;
         output.set(last_result);
     }
 
@@ -46,7 +46,9 @@ struct add_definition {
 
 } // namespace
 
-TEST_CASE("a runtime graph evaluates scheduled nodes in topological order", "[evaluation][scheduling]") {
+TEST_CASE("a runtime graph evaluates scheduled nodes in topological order",
+          "[evaluation][scheduling][feature:scheduling][shape:chain][series:value]"
+          "[scalar:floating-point]") {
     const auto constant = bg::node<constant_definition>();
     const auto add = bg::node<add_definition>();
     bg::GraphWiring wiring;
@@ -89,7 +91,7 @@ struct start_only_sink_definition {
 
     void evaluate() const {
         ++evaluation_count;
-        last_value = input.value();
+        last_value = *input;
     }
 
     inline static int evaluation_count{};
@@ -98,7 +100,8 @@ struct start_only_sink_definition {
 
 } // namespace
 
-TEST_CASE("a scheduled node can omit evaluation", "[evaluation][scheduling]") {
+TEST_CASE("a scheduled node can omit evaluation",
+          "[evaluation][scheduling][feature:scheduling][series:value][scalar:floating-point]") {
     const auto source = bg::node<start_only_definition>();
     const auto sink = bg::node<start_only_sink_definition>();
     auto wiring = bg::GraphWiring{};
@@ -138,7 +141,8 @@ struct indexed_definition {
 
 } // namespace
 
-TEST_CASE("a runtime graph processes set scheduling bits in node order", "[evaluation][scheduling]") {
+TEST_CASE("a runtime graph processes set scheduling bits in node order",
+          "[evaluation][scheduling][feature:scheduling][series:value][scalar:floating-point]") {
     const auto indexed = bg::node<indexed_definition>();
     bg::GraphWiring wiring;
 
@@ -172,7 +176,7 @@ struct float_sink_definition {
 
     void evaluate() const {
         ++evaluation_count;
-        last_value = input.value();
+        last_value = *input;
     }
 
     inline static int evaluation_count{};
@@ -181,7 +185,8 @@ struct float_sink_definition {
 
 } // namespace
 
-TEST_CASE("scheduling during evaluation crosses a scheduling block boundary", "[evaluation][scheduling]") {
+TEST_CASE("scheduling during evaluation crosses a scheduling block boundary",
+          "[evaluation][scheduling][feature:scheduling][series:value][scalar:floating-point]") {
     const auto constant = bg::node<constant_definition>();
     const auto indexed = bg::node<indexed_definition>();
     const auto float_sink = bg::node<float_sink_definition>();
@@ -209,7 +214,8 @@ TEST_CASE("scheduling during evaluation crosses a scheduling block boundary", "[
     CHECK(float_sink_definition::last_value == 1.0F);
 }
 
-TEST_CASE("evaluation time must increase between outer cycles", "[evaluation][scheduling]") {
+TEST_CASE("evaluation time must increase between outer cycles",
+          "[evaluation][scheduling][feature:scheduling][series:value][scalar:floating-point]") {
     const auto indexed = bg::node<indexed_definition>();
     bg::GraphWiring wiring;
 

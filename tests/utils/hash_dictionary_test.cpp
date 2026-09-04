@@ -24,7 +24,8 @@ struct string_hash {
 
 } // namespace
 
-TEST_CASE("a hash dictionary inserts, replaces, and finds values", "[hash_dictionary]") {
+TEST_CASE("a hash dictionary inserts, replaces, and finds values",
+          "[hash_dictionary][coverage-exempt]") {
     auto memory = counting_memory_resource{};
     auto dictionary = bg::util::hash_dictionary<std::string, int, string_hash>{};
 
@@ -43,7 +44,7 @@ TEST_CASE("a hash dictionary inserts, replaces, and finds values", "[hash_dictio
     CHECK(memory.allocations() == 0);
 }
 
-TEST_CASE("a hash dictionary retains separate key and value addresses", "[hash_dictionary]") {
+TEST_CASE("a hash dictionary retains separate key and value addresses", "[hash_dictionary][coverage-exempt]") {
     auto memory = counting_memory_resource{};
     auto dictionary = bg::util::hash_dictionary<int, std::string>{};
     auto *first_value = dictionary.try_emplace(1, memory, "one").first;
@@ -79,7 +80,7 @@ struct throwing_value {
 
 } // namespace
 
-TEST_CASE("a hash dictionary rolls back a failed value construction", "[hash_dictionary]") {
+TEST_CASE("a hash dictionary rolls back a failed value construction", "[hash_dictionary][coverage-exempt]") {
     auto memory = counting_memory_resource{};
     auto dictionary = bg::util::hash_dictionary<int, throwing_value>{};
 
@@ -118,7 +119,7 @@ struct throwing_key_equal {
 
 } // namespace
 
-TEST_CASE("a hash dictionary rolls back a failed key construction", "[hash_dictionary]") {
+TEST_CASE("a hash dictionary rolls back a failed key construction", "[hash_dictionary][coverage-exempt]") {
     auto memory = counting_memory_resource{};
     auto dictionary = bg::util::hash_dictionary<throwing_key, int, throwing_key_hash, throwing_key_equal>{};
 
@@ -141,7 +142,8 @@ struct equal_hash {
 
 } // namespace
 
-TEST_CASE("a hash dictionary retains committed values after each allocation failure", "[hash_dictionary]") {
+TEST_CASE("a hash dictionary retains committed values after each allocation failure",
+          "[hash_dictionary][coverage-exempt]") {
     auto failed_allocations = std::size_t{};
 
     for (auto failure = std::size_t{};; ++failure) {
@@ -178,7 +180,7 @@ TEST_CASE("a hash dictionary retains committed values after each allocation fail
     CHECK(failed_allocations > 10);
 }
 
-TEST_CASE("a hash dictionary reuses one position for its key and value", "[hash_dictionary]") {
+TEST_CASE("a hash dictionary reuses one position for its key and value", "[hash_dictionary][coverage-exempt]") {
     auto memory = counting_memory_resource{};
     auto dictionary = bg::util::hash_dictionary<int, int>{};
 
@@ -200,7 +202,7 @@ TEST_CASE("a hash dictionary reuses one position for its key and value", "[hash_
     CHECK(memory.allocations() == 0);
 }
 
-TEST_CASE("a hash dictionary supports move-only values and collisions", "[hash_dictionary]") {
+TEST_CASE("a hash dictionary supports move-only values and collisions", "[hash_dictionary][coverage-exempt]") {
     auto memory = counting_memory_resource{};
     auto dictionary = bg::util::hash_dictionary<int, std::unique_ptr<int>, equal_hash>{};
 
@@ -226,7 +228,8 @@ TEST_CASE("a hash dictionary supports move-only values and collisions", "[hash_d
     CHECK(memory.allocations() == 0);
 }
 
-TEST_CASE("a hash dictionary remains consistent across incremental growth and reduction", "[hash_dictionary]") {
+TEST_CASE("a hash dictionary remains consistent across incremental growth and reduction",
+          "[hash_dictionary][coverage-exempt]") {
     auto memory = counting_memory_resource{};
     auto dictionary = bg::util::hash_dictionary<int, int>{};
     auto expected = std::unordered_map<int, int>{};

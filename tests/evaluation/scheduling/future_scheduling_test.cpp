@@ -31,7 +31,8 @@ struct scheduling_node_definition {
     void evaluate() const {}
 };
 
-TEST_CASE("future scheduling adds storage only to graphs that declare it", "[evaluation][future_scheduling]") {
+TEST_CASE("future scheduling adds storage only to graphs that declare it",
+          "[evaluation][future_scheduling][feature:future-scheduling][transition:addition]") {
     const auto unscheduled_node = bg::node<unscheduled_node_definition>();
     const auto scheduling_node = bg::node<scheduling_node_definition>();
     auto unscheduled_wiring = bg::GraphWiring{};
@@ -77,7 +78,8 @@ struct int_sink_definition {
     void evaluate() const {}
 };
 
-TEST_CASE("a runtime graph activates future scheduling at the start of evaluation", "[evaluation][future_scheduling]") {
+TEST_CASE("a runtime graph activates future scheduling at the start of evaluation",
+          "[evaluation][future_scheduling][feature:future-scheduling][transition:start]") {
     const auto cancelling_source = bg::node<cancelling_source_definition>();
     const auto int_sink = bg::node<int_sink_definition>();
     auto wiring = bg::GraphWiring{};
@@ -114,7 +116,8 @@ struct coalescing_node_definition {
     inline static int evaluation_count{};
 };
 
-TEST_CASE("future requests for one node at the same time coalesce", "[evaluation][future_scheduling]") {
+TEST_CASE("future requests for one node at the same time coalesce",
+          "[evaluation][future_scheduling][feature:future-scheduling]") {
     const auto coalescing_node = bg::node<coalescing_node_definition>();
     bg::GraphWiring wiring;
     {
@@ -151,7 +154,8 @@ struct delayed_node_definition {
     inline static std::array<int, 2> evaluation_counts{};
 };
 
-TEST_CASE("evaluation activates every overdue future request", "[evaluation][future_scheduling]") {
+TEST_CASE("evaluation activates every overdue future request",
+          "[evaluation][future_scheduling][feature:future-scheduling]") {
     const auto delayed_node = bg::node<delayed_node_definition>();
     bg::GraphWiring wiring;
     {
@@ -193,7 +197,8 @@ struct foreign_canceller_definition {
     void evaluate() const {}
 };
 
-TEST_CASE("a schedule handle identifies the node that created it", "[evaluation][future_scheduling]") {
+TEST_CASE("a schedule handle identifies the node that created it",
+          "[evaluation][future_scheduling][feature:future-scheduling]") {
     const auto schedule_owner = bg::node<schedule_owner_definition>();
     const auto foreign_canceller = bg::node<foreign_canceller_definition>();
     bg::GraphWiring wiring;
@@ -224,7 +229,8 @@ struct invalid_time_definition {
     void evaluate() const {}
 };
 
-TEST_CASE("future scheduling requires a time after the current outer cycle", "[evaluation][future_scheduling]") {
+TEST_CASE("future scheduling requires a time after the current outer cycle",
+          "[evaluation][future_scheduling][feature:future-scheduling]") {
     const auto invalid_time = bg::node<invalid_time_definition>();
     bg::GraphWiring wiring;
     {
@@ -246,7 +252,7 @@ struct undeclared_scheduling_definition {
     void evaluate() const {}
 };
 
-TEST_CASE("a node must declare future scheduling", "[evaluation][future_scheduling]") {
+TEST_CASE("a node must declare future scheduling", "[evaluation][future_scheduling][feature:future-scheduling]") {
     const auto undeclared_scheduling = bg::node<undeclared_scheduling_definition>();
     bg::GraphWiring wiring;
     {
@@ -260,7 +266,9 @@ TEST_CASE("a node must declare future scheduling", "[evaluation][future_scheduli
     CHECK_THROWS_AS(runtime.start(time(1)), std::logic_error);
 }
 
-TEST_CASE("stopping a runtime graph clears future requests", "[evaluation][future_scheduling][lifecycle]") {
+TEST_CASE("stopping a runtime graph clears future requests",
+          "[evaluation][future_scheduling][lifecycle][feature:future-scheduling][transition:removal]"
+          "[transition:stop]") {
     const auto coalescing_node = bg::node<coalescing_node_definition>();
     bg::GraphWiring wiring;
     {

@@ -38,6 +38,12 @@ void OutputNotificationContext::schedule_validity_check(RuntimeGraph &graph, std
     graph.schedule_validity_check(node_index);
 }
 
+void OutputNotificationContext::notify(details::DynamicSubscribers *subscribers, OutputChange change) const {
+    if (subscribers != nullptr) {
+        runtime_graph_->schedule_dynamic_subscribers(*subscribers, change);
+    }
+}
+
 void notify_callback_inputs(OutputNotificationContext &context, const void *, OutputChange change,
                             std::span<const std::byte> record_bytes) {
     const auto records = std::span{
@@ -147,7 +153,7 @@ class RuntimeGraph::ScratchUse {
 struct RuntimeGraph::PendingInputNotifications {
     // A target graph applies cross-graph input reactions after entering the source's outer cycle.
     struct Record {
-        InputNotificationFunction function;
+        InputNotificationFunction input_function;
         std::size_t node_index;
         std::size_t data;
         OutputChange change;
@@ -588,12 +594,16 @@ void RuntimeGraph::schedule_dynamic_subscribers(std::size_t offset, OutputChange
         return;
     }
 
-    subscribers->for_each([&](const auto &subscriber) {
+    schedule_dynamic_subscribers(*subscribers, change);
+}
+
+void RuntimeGraph::schedule_dynamic_subscribers(details::DynamicSubscribers &subscribers, OutputChange change) {
+    subscribers.for_each([&](const auto &subscriber) {
         subscriber.graph->schedule_node_subscriber(subscriber.node_index(), subscriber.active(), subscriber.required(),
                                                    subscriber.active_optional(), change);
     });
 
-    subscribers->for_each_callback([&](const auto &subscriber) {
+    subscribers.for_each_callback([&](const auto &subscriber) {
         if (subscriber.graph == this) {
             auto context = OutputNotificationContext{*this};
             subscriber.callback(context, subscriber.node_index, subscriber.data, change);
@@ -601,6 +611,11 @@ void RuntimeGraph::schedule_dynamic_subscribers(std::size_t offset, OutputChange
         }
 
         subscriber.graph->queue_input_notification(subscriber.callback, subscriber.node_index, subscriber.data, change);
+    });
+
+    subscribers.for_each_observer([&](const auto &observer) {
+        auto context = OutputNotificationContext{*this};
+        observer.function(context, observer.target, change);
     });
 }
 
@@ -630,7 +645,7 @@ void RuntimeGraph::run_input_notifications() {
     pending_input_notifications_->records.clear();
     auto context = OutputNotificationContext{*this};
     for (const auto &record : records) {
-        record.function(context, record.node_index, record.data, record.change);
+        record.input_function(context, record.node_index, record.data, record.change);
     }
 }
 

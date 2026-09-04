@@ -31,7 +31,7 @@ struct float_sink_definition {
 
     void evaluate() const {
         ++evaluation_count;
-        last_value = input.value();
+        last_value = *input;
     }
 
     inline static int evaluation_count{};
@@ -46,10 +46,12 @@ struct copy_definition {
     bg::In<bg::TS<float>> input;
     bg::Out<bg::TS<float>> output;
 
-    void evaluate() const { output.set(input.value()); }
+    void evaluate() const { output.set(*input); }
 };
 
-TEST_CASE("required-input invalidation propagates through a graph", "[evaluation][invalidation]") {
+TEST_CASE("required-input invalidation propagates through a graph",
+          "[evaluation][invalidation][feature:invalidation][shape:chain][validity:required]"
+          "[transition:invalidation][series:value][scalar:floating-point]") {
     const auto switchable = bg::node<switchable_definition>();
     const auto copy = bg::node<copy_definition>();
     const auto float_sink = bg::node<float_sink_definition>();
@@ -85,7 +87,7 @@ struct fallback_definition {
 
     void evaluate() const {
         ++evaluation_count;
-        output.set(input.value());
+        output.set(*input);
     }
 
     void on_invalidation() const {
@@ -99,7 +101,9 @@ struct fallback_definition {
 
 } // namespace
 
-TEST_CASE("required-input invalidation is applied once while the input remains invalid", "[evaluation][invalidation]") {
+TEST_CASE("required-input invalidation is applied once while the input remains invalid",
+          "[evaluation][invalidation][feature:invalidation][validity:required][transition:invalidation]"
+          "[series:value][scalar:floating-point]") {
     const auto switchable = bg::node<switchable_definition>();
     const auto fallback = bg::node<fallback_definition>();
     bg::GraphWiring wiring;
@@ -140,7 +144,7 @@ struct hold_definition {
 
     void evaluate() const {
         ++evaluation_count;
-        output.set(input.value());
+        output.set(*input);
     }
 
     inline static int evaluation_count{};
@@ -158,7 +162,9 @@ struct validity_observer_definition {
     inline static bool last_valid{};
 };
 
-TEST_CASE("a node can preserve its output when a required input becomes invalid", "[evaluation][invalidation]") {
+TEST_CASE("a node can preserve its output when a required input becomes invalid",
+          "[evaluation][invalidation][feature:invalidation][validity:required][series:value]"
+          "[scalar:floating-point]") {
     const auto switchable = bg::node<switchable_definition>();
     const auto hold = bg::node<hold_definition>();
     const auto validity_observer = bg::node<validity_observer_definition>();
@@ -191,7 +197,9 @@ TEST_CASE("a node can preserve its output when a required input becomes invalid"
     CHECK(validity_observer_definition::evaluation_count == 1);
 }
 
-TEST_CASE("a node can produce an output when a required input becomes invalid", "[evaluation][invalidation]") {
+TEST_CASE("a node can produce an output when a required input becomes invalid",
+          "[evaluation][invalidation][feature:invalidation][validity:required][series:value]"
+          "[scalar:floating-point]") {
     const auto switchable = bg::node<switchable_definition>();
     const auto fallback = bg::node<fallback_definition>();
     const auto float_sink = bg::node<float_sink_definition>();
@@ -241,7 +249,9 @@ struct throwing_invalidation_definition {
 
 } // namespace
 
-TEST_CASE("an invalidation failure stops the runtime graph", "[evaluation][invalidation][lifecycle]") {
+TEST_CASE("an invalidation failure stops the runtime graph",
+          "[evaluation][invalidation][lifecycle][feature:invalidation][transition:invalidation]"
+          "[transition:stop][series:value][scalar:floating-point]") {
     const auto switchable = bg::node<switchable_definition>();
     const auto throwing_invalidation = bg::node<throwing_invalidation_definition>();
     bg::GraphWiring wiring;

@@ -7,7 +7,8 @@
 #include <cstddef>
 #include <memory>
 
-TEST_CASE("evaluation scratch retains record addresses while it grows", "[evaluation][scratch]") {
+TEST_CASE("evaluation scratch retains record addresses while it grows",
+          "[evaluation][scratch][feature:evaluation-scratch]") {
     auto memory = counting_memory_resource{};
 
     {
@@ -27,7 +28,7 @@ TEST_CASE("evaluation scratch retains record addresses while it grows", "[evalua
     CHECK(memory.allocations() == 0);
 }
 
-TEST_CASE("evaluation scratch restores nested frames", "[evaluation][scratch]") {
+TEST_CASE("evaluation scratch restores nested frames", "[evaluation][scratch][feature:evaluation-scratch]") {
     auto memory = counting_memory_resource{};
     auto scratch = bg::details::EvaluationScratch{memory};
     auto &outer = scratch.push_frame();
@@ -45,7 +46,8 @@ TEST_CASE("evaluation scratch restores nested frames", "[evaluation][scratch]") 
     scratch.pop_frame(outer);
 }
 
-TEST_CASE("evaluation scratch reuses its last released allocation", "[evaluation][scratch]") {
+TEST_CASE("evaluation scratch reuses its last released allocation",
+          "[evaluation][scratch][feature:evaluation-scratch]") {
     auto memory = counting_memory_resource{};
     auto scratch = bg::details::EvaluationScratch{memory};
     auto &frame = scratch.push_frame();

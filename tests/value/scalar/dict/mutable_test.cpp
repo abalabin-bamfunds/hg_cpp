@@ -6,7 +6,8 @@
 #include <cstdint>
 #include <utility>
 
-TEST_CASE("a mutable scalar dictionary inserts and replaces entries", "[value][scalar][dict][mutable]") {
+TEST_CASE("a mutable scalar dictionary inserts and replaces entries",
+          "[value][scalar][dict][scalar:dict][mutable][feature:scalar-collection][transition:addition]") {
     using Entry = std::pair<std::int64_t, std::int64_t>;
 
     auto state = bg::GlobalState{};
@@ -24,7 +25,8 @@ TEST_CASE("a mutable scalar dictionary inserts and replaces entries", "[value][s
     });
 }
 
-TEST_CASE("a mutable scalar dictionary erases and clears entries", "[value][scalar][dict][mutable]") {
+TEST_CASE("a mutable scalar dictionary erases and clears entries",
+          "[value][scalar][dict][scalar:dict][mutable][feature:scalar-collection][transition:removal]") {
     using Entry = std::pair<std::int64_t, std::int64_t>;
 
     auto state = bg::GlobalState{};

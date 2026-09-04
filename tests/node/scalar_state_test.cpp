@@ -37,7 +37,7 @@ struct collection_state_node {
 
 } // namespace
 
-TEST_CASE("collection state is mutable during a node invocation", "[node][state][scalar]") {
+TEST_CASE("collection state is mutable during a node invocation", "[node][state][scalar][feature:state]") {
     const auto collection_state = bg::node<collection_state_node>();
     auto state = bg::GlobalState{};
 
@@ -48,7 +48,7 @@ TEST_CASE("collection state is mutable during a node invocation", "[node][state]
     });
 }
 
-TEST_CASE("a runtime graph releases collection state storage", "[node][state][scalar][allocation]") {
+TEST_CASE("a runtime graph releases collection state storage", "[node][state][scalar][allocation][feature:state]") {
     const auto collection_state = bg::node<collection_state_node>();
     auto wiring = bg::GraphWiring{};
     {
@@ -91,7 +91,8 @@ using V = bg::ScalarVariable<"V">;
 
 } // namespace
 
-TEST_CASE("generic collection state uses its resolved storage", "[node][state][scalar][generic]") {
+TEST_CASE("generic collection state uses its resolved storage",
+          "[node][state][scalar][generic][declaration:generic][feature:state][scalar:generic]") {
     const auto generic_list_state = bg::node<generic_list_state_node>();
     const auto input = bg::ScalarValue<bg::List<std::int64_t>>{std::array<std::int64_t, 2>{3, 4}};
     auto state = bg::GlobalState{};
@@ -138,7 +139,9 @@ struct generic_set_dict_state_node {
 
 } // namespace
 
-TEST_CASE("generic set and dictionary state use resolved storage", "[node][state][scalar][generic]") {
+TEST_CASE("generic set and dictionary state use resolved storage",
+          "[node][state][scalar][generic][declaration:generic][feature:state][scalar:set][scalar:dict]"
+          "[scalar:generic]") {
     const auto generic_set_dict_state = bg::node<generic_set_dict_state_node>();
     const auto set_type = bg::ScalarValue<bg::Set<std::int64_t>>{std::array<std::int64_t, 1>{2}};
     const auto dict_type = bg::ScalarValue<bg::Dict<std::int64_t, bg::string>>{
@@ -176,7 +179,9 @@ struct composed_dict_state_node {
 
 } // namespace
 
-TEST_CASE("generic dictionary state composes storage from separate resolved types", "[node][state][scalar][generic]") {
+TEST_CASE("generic dictionary state composes storage from separate resolved types",
+          "[node][state][scalar][generic][declaration:generic][feature:state][scalar:dict]"
+          "[scalar:generic]") {
     const auto composed_dict_state = bg::node<composed_dict_state_node>();
     const auto key = bg::ScalarValue{std::int64_t{2}};
     const auto value = bg::ScalarValue{"two"};
@@ -215,7 +220,8 @@ struct composed_list_set_state_node {
 } // namespace
 
 TEST_CASE("generic list and set state compose storage from their resolved item type",
-          "[node][state][scalar][generic]") {
+          "[node][state][scalar][generic][declaration:generic][feature:state][scalar:list][scalar:set]"
+          "[scalar:generic]") {
     const auto composed_list_set_state = bg::node<composed_list_set_state_node>();
     const auto value = bg::ScalarValue{std::int64_t{3}};
     auto state = bg::GlobalState{};
@@ -227,7 +233,8 @@ TEST_CASE("generic list and set state compose storage from their resolved item t
     });
 }
 
-TEST_CASE("a runtime graph releases composed collection state storage", "[node][state][scalar][generic][allocation]") {
+TEST_CASE("a runtime graph releases composed collection state storage",
+          "[node][state][scalar][generic][declaration:generic][allocation][feature:state]") {
     const auto composed_dict_state = bg::node<composed_dict_state_node>();
     const auto key = bg::ScalarValue{std::int64_t{2}};
     const auto value = bg::ScalarValue{"two"};
@@ -272,7 +279,8 @@ struct generic_nested_state_node {
 } // namespace
 
 TEST_CASE("generic nested collection state returns mutable resolved items",
-          "[node][state][scalar][generic][collection]") {
+          "[node][state][scalar][generic][declaration:generic][collection][feature:state]"
+          "[scalar:generic]") {
     const auto generic_nested_state = bg::node<generic_nested_state_node>();
     const auto key = bg::ScalarValue{std::int64_t{2}};
     const auto items = bg::ScalarValue<bg::List<bg::string>>{std::array<std::string_view, 2>{"one", "two"}};
@@ -307,7 +315,7 @@ struct nested_collection_state_node {
 
 } // namespace
 
-TEST_CASE("nested collection state returns mutable child views", "[node][state][scalar][collection]") {
+TEST_CASE("nested collection state returns mutable child views", "[node][state][scalar][collection][feature:state]") {
     const auto nested_collection_state = bg::node<nested_collection_state_node>();
     const auto initial = bg::ScalarValue<bg::List<std::int64_t>>{std::array<std::int64_t, 1>{7}};
     auto state = bg::GlobalState{};
@@ -319,7 +327,8 @@ TEST_CASE("nested collection state returns mutable child views", "[node][state][
     });
 }
 
-TEST_CASE("runtime graphs have independent generic collection state", "[node][state][scalar][generic][runtime]") {
+TEST_CASE("runtime graphs have independent generic collection state",
+          "[node][state][scalar][generic][declaration:generic][runtime][feature:state][scalar:generic]") {
     const auto generic_list_state = bg::node<generic_list_state_node>();
     const auto input = bg::ScalarValue<bg::List<std::int64_t>>{std::array<std::int64_t, 2>{3, 4}};
     auto wiring = bg::GraphWiring{};

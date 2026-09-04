@@ -88,3 +88,17 @@ file(GENERATE OUTPUT "${catch2_environment}"
 set_property(DIRECTORY APPEND PROPERTY TEST_INCLUDE_FILES "${catch2_environment}")
 
 catch_discover_tests(bg_tests DISCOVERY_MODE PRE_TEST)
+
+find_package(Python3 3.10 COMPONENTS Interpreter QUIET)
+if(Python3_Interpreter_FOUND)
+    add_custom_target(
+        test-coverage-report
+        COMMAND
+            "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/tools/test_coverage.py" "$<TARGET_FILE:bg_tests>"
+            --dimensions "${PROJECT_SOURCE_DIR}/docs/testing.md"
+            --output "${PROJECT_BINARY_DIR}/test-coverage.md"
+            --check
+        DEPENDS bg_tests
+        VERBATIM
+    )
+endif()

@@ -27,7 +27,7 @@ struct float_sink_definition {
 
     void evaluate() const {
         ++evaluation_count;
-        last_value = input.value();
+        last_value = *input;
     }
 
     inline static int evaluation_count{};
@@ -40,7 +40,7 @@ struct float_sink_definition {
 
 } // namespace
 
-TEST_CASE("a scalar list passes values through compiled wiring", "[evaluation][views]") {
+TEST_CASE("a scalar list passes values through compiled wiring", "[evaluation][views][feature:time-series-view]") {
     const auto list_source = bg::node<list_source_definition>();
     const auto float_sink = bg::node<float_sink_definition>();
     float_sink_definition::evaluation_count = 0;
@@ -76,7 +76,8 @@ struct generic_list_source_definition {
 
 } // namespace
 
-TEST_CASE("a generic scalar list resolves its item view", "[evaluation][views]") {
+TEST_CASE("a generic scalar list resolves its item view",
+          "[evaluation][views][feature:time-series-view][declaration:generic]") {
     const auto generic_list_source = bg::node<generic_list_source_definition>();
     const auto float_sink = bg::node<float_sink_definition>();
     float_sink_definition::evaluation_count = 0;
@@ -109,7 +110,8 @@ struct generic_value_copy_definition {
 
 } // namespace
 
-TEST_CASE("a generic scalar time-series view preserves its resolved scalar type", "[evaluation][views]") {
+TEST_CASE("a generic scalar time-series view preserves its resolved scalar type",
+          "[evaluation][views][feature:time-series-view][declaration:generic]") {
     const auto starting_source = bg::node<starting_source_definition>();
     const auto generic_value_copy = bg::node<generic_value_copy_definition>();
     const auto float_sink = bg::node<float_sink_definition>();
@@ -145,7 +147,7 @@ struct double_sink_definition {
 
     void evaluate() const {
         ++evaluation_count;
-        last_value = input.value();
+        last_value = *input;
     }
 
     inline static int evaluation_count{};
@@ -154,7 +156,8 @@ struct double_sink_definition {
 
 } // namespace
 
-TEST_CASE("a generic time-series view preserves its resolved time-series type", "[evaluation][views]") {
+TEST_CASE("a generic time-series view preserves its resolved time-series type",
+          "[evaluation][views][feature:time-series-view][declaration:generic]") {
     const auto generic_copy = bg::node<generic_copy_definition>();
     const auto double_source = bg::node<double_source_definition>();
     const auto double_sink = bg::node<double_sink_definition>();
@@ -212,14 +215,15 @@ struct generic_list_view_copy_definition {
 struct generic_list_view_sink_definition {
     bg::In<bg::TSL<bg::TS<int>, 2>> input;
 
-    void evaluate() const { value = input[0].value(); }
+    void evaluate() const { value = *input[0]; }
 
     inline static int value{};
 };
 
 } // namespace
 
-TEST_CASE("generic time-series list views expose their resolved size and items", "[evaluation][views][tsl]") {
+TEST_CASE("generic time-series list views expose their resolved size and items",
+          "[evaluation][views][tsl][series:fixed-tsl][feature:time-series-view][declaration:generic]") {
     const auto source = bg::node<generic_list_view_source_definition>();
     const auto copy = bg::node<generic_list_view_copy_definition>();
     const auto sink = bg::node<generic_list_view_sink_definition>();
@@ -280,14 +284,16 @@ struct generic_bundle_view_copy_definition {
 struct generic_bundle_view_sink_definition {
     bg::In<bg::TSB<RuntimeViewBundle>> input;
 
-    void evaluate() const { count = input->count.value(); }
+    void evaluate() const { count = *input->count; }
 
     inline static int count{};
 };
 
 } // namespace
 
-TEST_CASE("generic bundle views expose their resolved schema and items", "[evaluation][views][tsb]") {
+TEST_CASE("generic bundle views expose their resolved schema and items",
+          "[evaluation][views][tsb][series:tsb][feature:time-series-view][declaration:generic]"
+          "[schema:generic]") {
     const auto source = bg::node<generic_bundle_view_source_definition>();
     const auto copy = bg::node<generic_bundle_view_copy_definition>();
     const auto sink = bg::node<generic_bundle_view_sink_definition>();

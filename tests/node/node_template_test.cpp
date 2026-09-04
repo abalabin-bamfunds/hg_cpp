@@ -20,7 +20,7 @@ struct weighted_add {
     bg::In<bg::TS<float>, bg::optional, bg::passive> rhs;
     bg::Out<bg::TS<float>> output;
 
-    void evaluate() const { output.set(lhs.value() + rhs.value()); }
+    void evaluate() const { output.set(*lhs + *rhs); }
 };
 
 static_assert(bg::AggregateNodeClass<weighted_add>);
@@ -32,7 +32,7 @@ static_assert(!TemporaryWeightedAddCall<decltype(bg::node<weighted_add>())>);
 
 } // namespace
 
-TEST_CASE("an aggregate node class generates a signature", "[node_template]") {
+TEST_CASE("an aggregate node class generates a signature", "[node_template][feature:node-api][definition:aggregate]") {
     const auto weighted_add_node = bg::node<weighted_add>();
     static_assert(std::derived_from<std::remove_cv_t<decltype(weighted_add_node)>, bg::NodeTemplate>);
 
@@ -72,7 +72,7 @@ static_assert(bg::AggregateNodeClass<key_sink>);
 
 } // namespace
 
-TEST_CASE("a scalar variable enforces required operations", "[node_template]") {
+TEST_CASE("a scalar variable enforces required operations", "[node_template][feature:node-api]") {
     const auto key_sink_node = bg::node<key_sink>();
     const std::array<const bg::Type *, 1> hashable_argument{&bg::int64_type()};
     const auto signature = key_sink_node.signature().resolve(hashable_argument);
@@ -84,7 +84,8 @@ TEST_CASE("a scalar variable enforces required operations", "[node_template]") {
     CHECK_THROWS_AS(key_sink_node.signature().resolve(opaque_argument), bg::TypeResolutionError);
 }
 
-TEST_CASE("an aggregate node template exposes its polymorphic interface", "[node_template]") {
+TEST_CASE("an aggregate node template exposes its polymorphic interface",
+          "[node_template][feature:node-api][definition:aggregate]") {
     const auto weighted_add_node = bg::node<weighted_add>();
     const bg::NodeTemplate &node_template = weighted_add_node;
 
@@ -103,7 +104,7 @@ static_assert(bg::AggregateNodeClass<sink>);
 
 } // namespace
 
-TEST_CASE("an aggregate node can omit its output", "[node_template]") {
+TEST_CASE("an aggregate node can omit its output", "[node_template][feature:node-api][definition:aggregate]") {
     const auto sink_node = bg::node<sink>();
     static_assert(std::same_as<decltype(sink_node(std::declval<bg::WiringPoint>())), void>);
 
@@ -121,12 +122,13 @@ struct final_identity {
     bg::In<bg::TS<float, bg::TimeSeriesGuarantee::final>> input;
     bg::Out<bg::TS<float, bg::TimeSeriesGuarantee::final>> output;
 
-    void evaluate() const { output.set(input.value()); }
+    void evaluate() const { output.set(*input); }
 };
 
 } // namespace
 
-TEST_CASE("an aggregate signature retains specified guarantees", "[node_template]") {
+TEST_CASE("an aggregate signature retains specified guarantees",
+          "[node_template][feature:node-api][definition:aggregate][guarantee:const][guarantee:final]") {
     const auto final_identity_node = bg::node<final_identity>();
     const auto &ts_const = bg::time_series_value_type(bg::float_type(), bg::TimeSeriesGuarantee::const_);
     const auto &ts_final = bg::time_series_value_type(bg::float_type(), bg::TimeSeriesGuarantee::final);
@@ -168,7 +170,8 @@ static_assert(bg::AggregateNodeClass<scalar_state_node>);
 
 } // namespace
 
-TEST_CASE("aggregate scalar and state fields have distinct roles", "[node_template]") {
+TEST_CASE("aggregate scalar and state fields have distinct roles",
+          "[node_template][feature:node-api][definition:aggregate][scalar:symbol]") {
     const auto scalar_state = bg::node<scalar_state_node>();
     const std::array<const bg::Type *, 3> arguments{&bg::float_type(), &bg::symbol_type(), &bg::int_type()};
     const bg::ResolvedSignature signature = scalar_state.signature().resolve(arguments);
@@ -205,7 +208,7 @@ static_assert(bg::AggregateNodeClass<generic_pair>);
 
 } // namespace
 
-TEST_CASE("scalar variable declarations retain their identity", "[node_template]") {
+TEST_CASE("scalar variable declarations retain their identity", "[node_template][feature:node-api]") {
     const auto generic_pair_node = bg::node<generic_pair>();
     const auto &ts_float = bg::time_series_value_type(bg::float_type(), bg::TimeSeriesGuarantee::ordinary);
     const auto &ts_double = bg::time_series_value_type(bg::double_type(), bg::TimeSeriesGuarantee::ordinary);
@@ -244,7 +247,8 @@ static_assert(bg::AggregateNodeClass<generic_guarantee_collection>);
 
 } // namespace
 
-TEST_CASE("a time series variable can expose its guarantee as another variable", "[node_template][type_system]") {
+TEST_CASE("a time series variable can expose its guarantee as another variable",
+          "[node_template][type_system][feature:node-api]") {
     const auto node = bg::node<time_series_variable_guarantee>();
     const auto &item = bg::time_series_value_type(bg::float_type(), bg::TimeSeriesGuarantee::ordinary);
     const auto &list = bg::time_series_list_type(item, 2, bg::TimeSeriesGuarantee::final);
@@ -256,7 +260,7 @@ TEST_CASE("a time series variable can expose its guarantee as another variable",
     CHECK(signature.output == &bg::time_series_value_type(bg::int_type(), bg::TimeSeriesGuarantee::final));
 }
 
-TEST_CASE("a collection output uses its resolved guarantee", "[node_template][type_system]") {
+TEST_CASE("a collection output uses its resolved guarantee", "[node_template][type_system][feature:node-api]") {
     const auto node = bg::node<generic_guarantee_collection>();
     const auto &input = bg::time_series_value_type(bg::int_type(), bg::TimeSeriesGuarantee::final);
     const auto arguments = std::array<const bg::Type *, 1>{&input};
@@ -281,7 +285,7 @@ static_assert(bg::AggregateNodeClass<generic_scalar_source>);
 
 } // namespace
 
-TEST_CASE("a scalar variable can declare a scalar view field", "[node_template]") {
+TEST_CASE("a scalar variable can declare a scalar view field", "[node_template][feature:node-api]") {
     const auto generic_scalar_source_node = bg::node<generic_scalar_source>();
     const std::array<const bg::Type *, 1> arguments{&bg::float_type()};
 
@@ -302,7 +306,7 @@ struct runtime_layout_collection_sink {
 
 } // namespace
 
-TEST_CASE("collection inputs retain their resolved runtime layout", "[node_template][time_series]") {
+TEST_CASE("collection inputs retain their resolved runtime layout", "[node_template][time_series][feature:node-api]") {
     const auto sink = bg::node<runtime_layout_collection_sink>();
 
     CHECK(sink.uses_time_series_input_runtime_type(0));
@@ -323,7 +327,7 @@ static_assert(bg::AggregateNodeClass<numeric_sink>);
 
 } // namespace
 
-TEST_CASE("a scalar variable declaration constrains its resolved type", "[node_template]") {
+TEST_CASE("a scalar variable declaration constrains its resolved type", "[node_template][feature:node-api]") {
     const auto numeric_sink_node = bg::node<numeric_sink>();
     const auto &ts_double = bg::time_series_value_type(bg::double_type(), bg::TimeSeriesGuarantee::ordinary);
     const auto &ts_int = bg::time_series_value_type(bg::int_type(), bg::TimeSeriesGuarantee::ordinary);
@@ -360,12 +364,13 @@ struct int_identity {
     bg::In<bg::TS<int>> input;
     bg::Out<bg::TS<int>> output;
 
-    void evaluate() const { output.set(input.value()); }
+    void evaluate() const { output.set(*input); }
 };
 
 } // namespace
 
-TEST_CASE("aggregate node validation rejects ambiguous output definitions", "[node_template]") {
+TEST_CASE("aggregate node validation rejects ambiguous output definitions",
+          "[node_template][feature:node-api][definition:aggregate]") {
     STATIC_CHECK_FALSE(bg::AggregateNodeClass<repeated_output>);
     STATIC_CHECK_FALSE(bg::AggregateNodeClass<returned_output>);
     STATIC_CHECK_FALSE(bg::AggregateNodeClass<repeated_input_name>);

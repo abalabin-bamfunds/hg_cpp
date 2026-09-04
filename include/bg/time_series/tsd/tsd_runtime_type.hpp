@@ -5,6 +5,7 @@
 #include <bg/time_series/tsd/tsd_storage.hpp>
 #include <bg/time_series/tss/tss_runtime_type.hpp>
 #include <bg/type/time_series_dict_type.hpp>
+#include <bg/util/occupancy_index.hpp>
 #include <memory>
 #include <mutex>
 #include <ranges>
@@ -12,7 +13,7 @@
 
 namespace bg::details {
 
-class TimeSeriesDictionaryRuntimeType final : public TimeSeriesRuntimeType {
+class TimeSeriesDictionaryRuntimeType : public TimeSeriesRuntimeType {
   public:
     TimeSeriesDictionaryRuntimeType(const TimeSeriesDictionaryType &type, const ScalarRuntimeType &key,
                                     const TimeSeriesRuntimeType &item)
@@ -29,6 +30,59 @@ class TimeSeriesDictionaryRuntimeType final : public TimeSeriesRuntimeType {
 
     [[nodiscard]] const ScalarRuntimeType &key_runtime_type() const noexcept { return *key_; }
     [[nodiscard]] const TimeSeriesRuntimeType &item_runtime_type() const noexcept { return *item_; }
+
+    [[nodiscard]] virtual TimeSeriesItemId find_item(const void *value, const ScalarData &key) const {
+        const auto &keys = static_cast<const time_series_dict_storage *>(value)->key_storage().value;
+        const auto id = keys.find_position(key, *key_, key_layout_);
+        return id != util::occupancy_index::npos && keys.live().contains(id) ? id : util::occupancy_index::npos;
+    }
+
+    [[nodiscard]] virtual const void *key(const void *value, TimeSeriesItemId id) const noexcept {
+        return static_cast<const time_series_dict_storage *>(value)->key_storage().value.key(id, key_layout_);
+    }
+
+    virtual void for_each_added(const EvaluationTime &last_updated, const void *value, void *context,
+                                ItemIdFunction function) const {
+        const auto &storage = *static_cast<const time_series_dict_storage *>(value);
+        if (storage.change_time() != last_updated) {
+            return;
+        }
+        for (const auto id : storage.key_storage().value.added()) {
+            function(context, id);
+        }
+    }
+
+    virtual void for_each_removed(const EvaluationTime &last_updated, const void *value, void *context,
+                                  ItemIdFunction function) const {
+        const auto &storage = *static_cast<const time_series_dict_storage *>(value);
+        if (last_updated <= MIN_DT || storage.change_time() != last_updated) {
+            return;
+        }
+        for (const auto id : storage.key_storage().value.removed()) {
+            function(context, id);
+        }
+    }
+
+    virtual void for_each_modified(const EvaluationTime &last_updated, const void *value, void *context,
+                                   ItemIdFunction function) const {
+        const auto &storage = *static_cast<const time_series_dict_storage *>(value);
+        if (last_updated <= MIN_DT || storage.change_time() != last_updated) {
+            return;
+        }
+        const auto &keys = storage.key_storage().value;
+        for (const auto id : storage.modified()) {
+            if (!keys.added().contains(id)) {
+                function(context, id);
+            }
+        }
+    }
+
+    [[nodiscard]] virtual bool item_modified(const EvaluationTime &last_updated, const void *value,
+                                             TimeSeriesItemId id) const noexcept {
+        const auto &storage = *static_cast<const time_series_dict_storage *>(value);
+        return last_updated > MIN_DT && storage.change_time() == last_updated &&
+               storage.modified().contains(id) && !storage.key_storage().value.added().contains(id);
+    }
 
     [[nodiscard]] ItemLayout item_layout(TimeSeriesItemId id) const override {
         if (id != key_set_item_id) {
@@ -164,6 +218,10 @@ class TimeSeriesDictionaryRuntimeType final : public TimeSeriesRuntimeType {
         storage->release(*key_, key_layout_, *item_, item_layout_, item_value_offset_, memory);
         std::destroy_at(storage);
     }
+
+    [[nodiscard]] ReferenceRepresentation *create_reference_representation(
+        ReferenceProvider &provider, ReferenceStorage &source, const TimeSeriesType &requested_type,
+        std::pmr::memory_resource &memory) const override;
 
   private:
     const ScalarRuntimeType *key_;

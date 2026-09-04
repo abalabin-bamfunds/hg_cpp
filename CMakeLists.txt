@@ -53,10 +53,13 @@ add_library(
     src/time_series/tsl/tsl_type.cpp
     src/time_series/tsb/tsb_type.cpp
     src/time_series/ref/ref_notification.cpp
+    src/time_series/ref/ref_provider.cpp
     src/time_series/ref/ref_runtime_type.cpp
     src/time_series/ref/ref_type.cpp
     src/time_series/ref/ref_node.cpp
     src/time_series/tsd/tsd_type.cpp
+    src/time_series/tsd/tsd_reference_representation.cpp
+    src/time_series/tsd/tsd_getitem.cpp
     src/time_series/tss/tss_type.cpp
     src/time_series/output_path.cpp
     src/time_series/time_series_runtime_type.cpp

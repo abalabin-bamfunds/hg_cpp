@@ -19,7 +19,8 @@ struct reference_wiring_pass {
 
 } // namespace
 
-TEST_CASE("wiring inserts and reuses a reference-making node", "[wiring][reference]") {
+TEST_CASE("wiring inserts and reuses a reference-making node",
+          "[wiring][reference][feature:wiring][binding:value-to-reference]") {
     const auto source = bg::node<reference_wiring_source>();
     const auto pass = bg::node<reference_wiring_pass>();
     auto wiring = bg::GraphWiring{};
@@ -36,7 +37,8 @@ TEST_CASE("wiring inserts and reuses a reference-making node", "[wiring][referen
     CHECK(wiring.nodes()[1].signature().name == bg::util::symbol{"reference"});
 }
 
-TEST_CASE("wiring preserves an existing reference", "[wiring][reference]") {
+TEST_CASE("wiring preserves an existing reference",
+          "[wiring][reference][feature:wiring][binding:reference-to-reference]") {
     const auto source = bg::node<reference_wiring_source>();
     const auto pass = bg::node<reference_wiring_pass>();
     auto wiring = bg::GraphWiring{};

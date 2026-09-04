@@ -23,7 +23,7 @@ struct counted_value {
 
 } // namespace
 
-TEST_CASE("a contiguous bunch grows without moving its values", "[contiguous_bunch]") {
+TEST_CASE("a contiguous bunch grows without moving its values", "[contiguous_bunch][coverage-exempt]") {
     auto memory = counting_memory_resource{};
     auto values = bg::util::contiguous_bunch<counted_value>{};
 
@@ -56,7 +56,7 @@ struct throwing_value {
 
 } // namespace
 
-TEST_CASE("a contiguous bunch releases storage after construction fails", "[contiguous_bunch]") {
+TEST_CASE("a contiguous bunch releases storage after construction fails", "[contiguous_bunch][coverage-exempt]") {
     auto memory = counting_memory_resource{};
     auto values = bg::util::contiguous_bunch<throwing_value>{};
 

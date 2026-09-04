@@ -41,7 +41,7 @@ struct scheduled_source_definition {
 struct int_sink_definition {
     bg::In<bg::TS<int>> input;
 
-    void evaluate() const { values.push_back(input.value()); }
+    void evaluate() const { values.push_back(*input); }
 
     inline static std::vector<int> values;
 };
@@ -52,7 +52,8 @@ struct int_sink_definition {
 
 } // namespace
 
-TEST_CASE("a simulation evaluation engine runs until future scheduling is empty", "[evaluation][simulation]") {
+TEST_CASE("a simulation evaluation engine runs until future scheduling is empty",
+          "[evaluation][simulation][feature:simulation][series:value][scalar:integer]") {
     const auto scheduled_source = bg::node<scheduled_source_definition>();
     const auto int_sink = bg::node<int_sink_definition>();
     auto wiring = bg::GraphWiring{};
@@ -94,7 +95,8 @@ struct unordered_schedule_definition {
 
 } // namespace
 
-TEST_CASE("future scheduling orders requests by evaluation time", "[evaluation][simulation]") {
+TEST_CASE("future scheduling orders requests by evaluation time",
+          "[evaluation][simulation][feature:simulation][series:value][scalar:integer]") {
     const auto unordered_schedule = bg::node<unordered_schedule_definition>();
     auto wiring = bg::GraphWiring{};
     {

@@ -72,6 +72,14 @@ static_assert(alignof(const TimeSeriesRuntimeType *) >= alignof(std::uint32_t));
     return exponent;
 }
 
+[[nodiscard]] const TimeSeriesType &reference_input_target_type(const Type &parameter_type) noexcept {
+    const auto &time_series_type = static_cast<const TimeSeriesType &>(parameter_type);
+    if (const auto *reference = dynamic_cast<const TimeSeriesReferenceType *>(&time_series_type)) {
+        return reference->target_type();
+    }
+    return time_series_type;
+}
+
 template <typename T>
 [[nodiscard]] std::span<const T> stored_objects(const std::byte *storage, std::uint32_t offset,
                                                 std::size_t count) noexcept {
@@ -1249,7 +1257,9 @@ class CompiledGraphBuilder {
 
                 const auto &input = plan.node_plans[subscriber.node_index].time_series_inputs[subscriber.input_index];
                 std::construct_at(records++, input.offset, subscriber.node_index, subscriber.active,
-                                  subscriber.required);
+                                  subscriber.required,
+                                  reference_input_target_type(
+                                      *plan.nodes[subscriber.node_index].signature().parameters[input.parameter].type));
             }
             block += reference_block;
         }
@@ -1268,7 +1278,10 @@ class CompiledGraphBuilder {
 
                 const auto &input = plan.node_plans[subscriber.node_index].time_series_inputs[subscriber.input_index];
                 std::construct_at(records++, input.offset, subscriber.notification.data, subscriber.node_index,
-                                  subscriber.active, subscriber.required, subscriber.notification.function);
+                                  subscriber.active, subscriber.required,
+                                  reference_input_target_type(
+                                      *plan.nodes[subscriber.node_index].signature().parameters[input.parameter].type),
+                                  subscriber.notification.function);
             }
             block += callback_reference_block;
         }

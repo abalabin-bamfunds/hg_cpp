@@ -25,14 +25,16 @@ using Key = bg::ScalarVariable<"Key", bg::EqualityComparable, bg::Hashable>;
 
 } // namespace
 
-TEST_CASE("scalar variable constraints select handle operations", "[value][scalar][capability]") {
+TEST_CASE("scalar variable constraints select handle operations",
+          "[value][scalar][capability][feature:scalar-api][scalar:generic]") {
     STATIC_CHECK_FALSE(HashableScalarHandle<bg::Scalar<bg::SCALAR>>);
     STATIC_CHECK_FALSE(EqualityComparableScalarHandle<bg::Scalar<bg::SCALAR>>);
     STATIC_CHECK(HashableScalarHandle<bg::Scalar<Key>>);
     STATIC_CHECK(EqualityComparableScalarHandle<bg::Scalar<Key>>);
 }
 
-TEST_CASE("scalar collection handles propagate item capabilities", "[value][scalar][capability][collection]") {
+TEST_CASE("scalar collection handles propagate item capabilities",
+          "[value][scalar][capability][collection][feature:scalar-api]") {
     STATIC_CHECK(HashableScalarHandle<bg::Scalar<bg::List<Key>>>);
     STATIC_CHECK(EqualityComparableScalarHandle<bg::Scalar<bg::List<Key>>>);
     STATIC_CHECK(HashableScalarHandle<bg::Scalar<bg::Set<Key>>>);
@@ -41,7 +43,8 @@ TEST_CASE("scalar collection handles propagate item capabilities", "[value][scal
     STATIC_CHECK((EqualityComparableScalarHandle<bg::Scalar<bg::Dict<Key, Key>>>));
 }
 
-TEST_CASE("mutable collection views require a resolved scalar type", "[value][scalar][capability][collection]") {
+TEST_CASE("mutable collection views require a resolved scalar type",
+          "[value][scalar][capability][collection][feature:scalar-api]") {
     STATIC_CHECK(bg::details::mutable_scalar<bg::List<std::int64_t>>);
     STATIC_CHECK(bg::details::mutable_scalar<bg::Set<std::int64_t>>);
     STATIC_CHECK((bg::details::mutable_scalar<bg::Dict<std::int64_t, std::int64_t>>));
@@ -51,7 +54,8 @@ TEST_CASE("mutable collection views require a resolved scalar type", "[value][sc
     STATIC_CHECK_FALSE((bg::details::mutable_scalar<bg::Dict<bg::SCALAR, bg::SCALAR>>));
 }
 
-TEST_CASE("scalar type interfaces expose only supported operations", "[value][scalar][capability]") {
+TEST_CASE("scalar type interfaces expose only supported operations",
+          "[value][scalar][capability][feature:scalar-api]") {
     STATIC_CHECK_FALSE(HashableScalarHandle<bg::Scalar<bg::Opaque<int>>>);
     STATIC_CHECK_FALSE(EqualityComparableScalarHandle<bg::Scalar<bg::Opaque<int>>>);
     STATIC_CHECK_FALSE(HasValueMember<bg::Scalar<bg::List<std::int64_t>>>);

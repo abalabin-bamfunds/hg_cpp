@@ -11,6 +11,7 @@
 
 #include <functional>
 #include <string_view>
+#include <utility>
 
 namespace bg {
 
@@ -55,42 +56,37 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...> {
 
     [[nodiscard]] bool item_modified(const Scalar<K> &key) const { return item_modified(key.input_view()); }
 
+    template <scalar_source Source>
+        requires(!details::scalar_variable<K> && std::same_as<canonical_scalar_t<Source>, K>)
+    [[nodiscard]] bool item_modified(Source &&key) const {
+        const auto value = canonical_scalar(std::forward<Source>(key));
+        return item_modified(details::make_scalar_source<K>(value));
+    }
+
     template <typename Function> void for_each(Function &&function) const {
         if (!valid()) {
             return;
         }
 
-        const auto &keys = storage().key_storage().value;
-        for (const auto position : keys.live()) {
-            std::invoke(function, Scalar<K>::from(key_runtime_type(), keys.key(position, key_layout())),
-                        make_item(position));
-        }
+        auto callback = [&](TimeSeriesItemId id) {
+            std::invoke(function, Scalar<K>::from(key_runtime_type(), dictionary_runtime_type().key(data_.data(), id)),
+                        make_item(id));
+        };
+        data_.runtime_type().for_each_item_id(data_.data(), &callback, invoke_with_id<decltype(callback)>);
     }
 
     template <typename Function> void for_each_added(Function &&function) const {
-        if (valid() && storage().change_time() == last_updated()) {
-            apply(storage().key_storage().value.added(), function);
+        if (valid()) {
+            apply_changes(&details::TimeSeriesDictionaryRuntimeType::for_each_added, function);
         }
     }
 
     template <typename Function> void for_each_removed(Function &&function) const {
-        const auto &keys = storage().key_storage().value;
-        if (!valid() || storage().change_time() == last_updated()) {
-            apply(keys.removed(), function);
-        }
+        apply_changes(&details::TimeSeriesDictionaryRuntimeType::for_each_removed, function);
     }
 
     template <typename Function> void for_each_modified(Function &&function) const {
-        if (!valid() || storage().change_time() != last_updated()) {
-            return;
-        }
-
-        const auto &keys = storage().key_storage().value;
-        for (const auto position : storage().modified()) {
-            if (!keys.added().contains(position)) {
-                std::invoke(function, Scalar<K>::from(key_runtime_type(), keys.key(position, key_layout())));
-            }
-        }
+        apply_changes(&details::TimeSeriesDictionaryRuntimeType::for_each_modified, function);
     }
 
     [[nodiscard]] const TimeSeriesRuntimeType &runtime_type() const noexcept { return data_.runtime_type(); }
@@ -111,29 +107,27 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...> {
     static constexpr InputValidity validity = ParsedProperties::validity;
 
   private:
-    [[nodiscard]] const details::time_series_dict_storage &storage() const noexcept {
-        return *static_cast<const details::time_series_dict_storage *>(data_.data());
+    [[nodiscard]] const details::TimeSeriesDictionaryRuntimeType &dictionary_runtime_type() const noexcept {
+        return static_cast<const details::TimeSeriesDictionaryRuntimeType &>(data_.runtime_type());
     }
 
     [[nodiscard]] const ScalarRuntimeType &key_runtime_type() const noexcept {
         return static_cast<const details::TimeSeriesDictionaryRuntimeType &>(data_.runtime_type()).key_runtime_type();
     }
 
-    [[nodiscard]] util::runtime_item_layout key_layout() const noexcept {
-        return {key_runtime_type().size(), key_runtime_type().alignment()};
-    }
-
     [[nodiscard]] bool contains(const details::ScalarData &key) const {
-        return valid() && storage().key_storage().value.contains(key, key_runtime_type(), key_layout());
+        return valid() && dictionary_runtime_type().find_item(data_.data(), key) != util::occupancy_index::npos;
     }
 
     [[nodiscard]] std::uint32_t require_position(const details::ScalarData &key) const {
-        const auto position = storage().key_storage().value.find_position(key, key_runtime_type(), key_layout());
-        if (!valid() || position == util::occupancy_index::npos ||
-            !storage().key_storage().value.live().contains(position)) {
+        if (!valid()) {
             throw std::out_of_range{"time series dictionary key was not found"};
         }
-        return position;
+        const auto id = dictionary_runtime_type().find_item(data_.data(), key);
+        if (id == util::occupancy_index::npos) {
+            throw std::out_of_range{"time series dictionary key was not found"};
+        }
+        return id;
     }
 
     [[nodiscard]] In<Item> item(const details::ScalarData &key) const { return make_item(require_position(key)); }
@@ -144,18 +138,28 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...> {
     }
 
     [[nodiscard]] bool item_modified(const details::ScalarData &key) const {
-        if (!valid() || storage().change_time() != last_updated()) {
+        if (!valid()) {
             return false;
         }
-        const auto position = storage().key_storage().value.find_position(key, key_runtime_type(), key_layout());
-        return position != util::occupancy_index::npos && storage().modified().contains(position);
+        const auto id = dictionary_runtime_type().find_item(data_.data(), key);
+        return id != util::occupancy_index::npos &&
+               dictionary_runtime_type().item_modified(last_updated(), data_.data(), id);
     }
 
-    template <typename Function> void apply(const util::index<> &positions, Function &function) const {
-        const auto &keys = storage().key_storage().value;
-        for (const auto position : positions) {
-            std::invoke(function, Scalar<K>::from(key_runtime_type(), keys.key(position, key_layout())));
-        }
+    template <typename Function> static void invoke_with_id(void *context, TimeSeriesItemId id) {
+        std::invoke(*static_cast<Function *>(context), id);
+    }
+
+    using ChangeFunction = void (details::TimeSeriesDictionaryRuntimeType::*)(
+        const EvaluationTime &, const void *, void *, TimeSeriesRuntimeType::ItemIdFunction) const;
+
+    template <typename Function> void apply_changes(ChangeFunction changes, Function &function) const {
+        auto callback = [&](TimeSeriesItemId id) {
+            std::invoke(function,
+                        Scalar<K>::from(key_runtime_type(), dictionary_runtime_type().key(data_.data(), id)));
+        };
+        (dictionary_runtime_type().*changes)(last_updated(), data_.data(), &callback,
+                                             invoke_with_id<decltype(callback)>);
     }
 
     details::TimeSeriesInputData data_;

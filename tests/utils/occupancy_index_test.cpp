@@ -10,7 +10,7 @@
 #include <stdexcept>
 #include <vector>
 
-TEST_CASE("an occupancy index allocates and reuses positions", "[occupancy_index]") {
+TEST_CASE("an occupancy index allocates and reuses positions", "[occupancy_index][coverage-exempt]") {
     auto memory = counting_memory_resource{};
     auto index = bg::util::occupancy_index{};
 
@@ -26,7 +26,7 @@ TEST_CASE("an occupancy index allocates and reuses positions", "[occupancy_index
     CHECK(memory.allocations() == 0);
 }
 
-TEST_CASE("an occupancy index stores its first 56 positions without allocation", "[occupancy_index]") {
+TEST_CASE("an occupancy index stores its first 56 positions without allocation", "[occupancy_index][coverage-exempt]") {
     auto memory = counting_memory_resource{};
     auto index = bg::util::occupancy_index{};
 
@@ -41,7 +41,7 @@ TEST_CASE("an occupancy index stores its first 56 positions without allocation",
     index.release(memory);
 }
 
-TEST_CASE("an occupancy index supports explicit sparse positions", "[occupancy_index]") {
+TEST_CASE("an occupancy index supports explicit sparse positions", "[occupancy_index][coverage-exempt]") {
     auto memory = counting_memory_resource{};
     auto index = bg::util::occupancy_index{};
 
@@ -60,7 +60,7 @@ TEST_CASE("an occupancy index supports explicit sparse positions", "[occupancy_i
     CHECK(memory.allocations() == 0);
 }
 
-TEST_CASE("an occupancy index handles distant positions and word boundaries", "[occupancy_index]") {
+TEST_CASE("an occupancy index handles distant positions and word boundaries", "[occupancy_index][coverage-exempt]") {
     auto memory = counting_memory_resource{};
     auto index = bg::util::occupancy_index{};
 
@@ -83,7 +83,7 @@ TEST_CASE("an occupancy index handles distant positions and word boundaries", "[
     CHECK(memory.allocations() == 0);
 }
 
-TEST_CASE("an occupancy index retains its state when allocation fails", "[occupancy_index]") {
+TEST_CASE("an occupancy index retains its state when allocation fails", "[occupancy_index][coverage-exempt]") {
     auto memory = counting_memory_resource{};
     auto index = bg::util::occupancy_index{};
 

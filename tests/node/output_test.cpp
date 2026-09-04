@@ -28,7 +28,7 @@ static_assert(ScalarWritableOutput<bg::Out<bg::TS<bg::SCALAR>>>);
 
 } // namespace
 
-TEST_CASE("a value output publishes at the evaluation time", "[node_api]") {
+TEST_CASE("a value output publishes at the evaluation time", "[node_api][feature:node-api]") {
     bg::EvaluationTime last_updated = bg::MIN_DT;
     float value{};
     const bg::EvaluationTime evaluation_time = bg::MIN_DT + std::chrono::microseconds{1};
@@ -43,7 +43,7 @@ TEST_CASE("a value output publishes at the evaluation time", "[node_api]") {
     CHECK(output.value() == 1.25F);
 }
 
-TEST_CASE("invalidating a value output retains its storage", "[node_api]") {
+TEST_CASE("invalidating a value output retains its storage", "[node_api][feature:node-api]") {
     bg::EvaluationTime last_updated = bg::MIN_DT + std::chrono::microseconds{1};
     float value = 1.25F;
     const bg::EvaluationTime evaluation_time = bg::MIN_DT + std::chrono::microseconds{2};
@@ -58,7 +58,7 @@ TEST_CASE("invalidating a value output retains its storage", "[node_api]") {
     CHECK(value == 1.25F);
 }
 
-TEST_CASE("a value output accepts a compatible scalar view", "[node_api]") {
+TEST_CASE("a value output accepts a compatible scalar view", "[node_api][feature:node-api]") {
     bg::EvaluationTime last_updated = bg::MIN_DT;
     float value{};
     const bg::EvaluationTime evaluation_time = bg::MIN_DT + std::chrono::microseconds{1};
@@ -74,7 +74,7 @@ TEST_CASE("a value output accepts a compatible scalar view", "[node_api]") {
     CHECK(output.last_updated() == evaluation_time);
 }
 
-TEST_CASE("a value output rejects an incompatible scalar view", "[node_api]") {
+TEST_CASE("a value output rejects an incompatible scalar view", "[node_api][feature:node-api]") {
     bg::EvaluationTime last_updated = bg::MIN_DT;
     float value{};
     const bg::EvaluationTime evaluation_time = bg::MIN_DT + std::chrono::microseconds{1};
@@ -88,7 +88,8 @@ TEST_CASE("a value output rejects an incompatible scalar view", "[node_api]") {
     CHECK_FALSE(output.valid());
 }
 
-TEST_CASE("a generic value output accepts a compatible erased scalar view", "[node_api]") {
+TEST_CASE("a generic value output accepts a compatible erased scalar view",
+          "[node_api][feature:node-api][declaration:generic]") {
     bg::EvaluationTime last_updated = bg::MIN_DT;
     float value{};
     const auto evaluation_time = bg::MIN_DT + std::chrono::microseconds{1};
@@ -104,7 +105,8 @@ TEST_CASE("a generic value output accepts a compatible erased scalar view", "[no
     CHECK(last_updated == evaluation_time);
 }
 
-TEST_CASE("a generic value output rejects an incompatible scalar view", "[node_api]") {
+TEST_CASE("a generic value output rejects an incompatible scalar view",
+          "[node_api][feature:node-api][declaration:generic]") {
     bg::EvaluationTime last_updated = bg::MIN_DT;
     float value{};
     const auto evaluation_time = bg::MIN_DT + std::chrono::microseconds{1};

@@ -38,7 +38,7 @@ struct add_definition {
 
     void evaluate() const {
         ++evaluation_count;
-        last_result = lhs.value() + rhs.value();
+        last_result = *lhs + *rhs;
         output.set(last_result);
     }
 
@@ -50,7 +50,9 @@ struct add_definition {
     return bg::MIN_DT + std::chrono::microseconds{microseconds};
 }
 
-TEST_CASE("run_graph starts, evaluates, and stops a graph", "[evaluation][lifecycle]") {
+TEST_CASE("run_graph starts, evaluates, and stops a graph",
+          "[evaluation][lifecycle][feature:lifecycle][transition:start][transition:stop][series:value]"
+          "[scalar:floating-point]") {
     const auto starting_source = bg::node<starting_source_definition>();
     const auto add = bg::node<add_definition>();
     starting_source_definition::start_count = 0;
@@ -95,7 +97,9 @@ struct lifecycle_definition {
     inline static int scheduled_evaluation{};
 };
 
-TEST_CASE("start and stop follow topological order", "[evaluation][lifecycle]") {
+TEST_CASE("start and stop follow topological order",
+          "[evaluation][lifecycle][feature:lifecycle][shape:chain][transition:stop][series:value]"
+          "[scalar:floating-point]") {
     const auto lifecycle = bg::node<lifecycle_definition>();
     lifecycle_definition::events.clear();
     lifecycle_definition::events.reserve(6);
@@ -119,7 +123,9 @@ TEST_CASE("start and stop follow topological order", "[evaluation][lifecycle]") 
     CHECK(lifecycle_definition::events == std::vector{1, 2, 3, -3, -2, -1});
 }
 
-TEST_CASE("a start failure stops nodes whose start completed", "[evaluation][lifecycle][failure]") {
+TEST_CASE("a start failure stops nodes whose start completed",
+          "[evaluation][lifecycle][failure][feature:lifecycle][transition:start][transition:stop]"
+          "[series:value][scalar:floating-point]") {
     const auto lifecycle = bg::node<lifecycle_definition>();
     lifecycle_definition::events.clear();
     lifecycle_definition::events.reserve(4);
@@ -142,7 +148,9 @@ TEST_CASE("a start failure stops nodes whose start completed", "[evaluation][lif
     CHECK(lifecycle_definition::events == std::vector{1, 2, -1});
 }
 
-TEST_CASE("an evaluation failure stops nodes in reverse topological order", "[evaluation][lifecycle][failure]") {
+TEST_CASE("an evaluation failure stops nodes in reverse topological order",
+          "[evaluation][lifecycle][failure][feature:lifecycle][shape:chain][transition:stop]"
+          "[series:value][scalar:floating-point]") {
     const auto lifecycle = bg::node<lifecycle_definition>();
     lifecycle_definition::events.clear();
     lifecycle_definition::events.reserve(8);
@@ -166,7 +174,9 @@ TEST_CASE("an evaluation failure stops nodes in reverse topological order", "[ev
     CHECK(lifecycle_definition::events == std::vector{1, 2, 3, 102, -3, -2, -1});
 }
 
-TEST_CASE("a runtime graph has one lifecycle", "[evaluation][lifecycle]") {
+TEST_CASE("a runtime graph has one lifecycle",
+          "[evaluation][lifecycle][feature:lifecycle][transition:restart][series:value]"
+          "[scalar:floating-point]") {
     const auto lifecycle = bg::node<lifecycle_definition>();
     lifecycle_definition::events.clear();
     lifecycle_definition::start_failure = 0;
@@ -206,7 +216,8 @@ struct immediate_definition {
     inline static int evaluation_count{};
 };
 
-TEST_CASE("start can schedule evaluation in the first outer cycle", "[evaluation][lifecycle][scheduling]") {
+TEST_CASE("start can schedule evaluation in the first outer cycle",
+          "[evaluation][lifecycle][scheduling][feature:lifecycle][series:value][scalar:floating-point]") {
     const auto immediate = bg::node<immediate_definition>();
     immediate_definition::start_time = bg::MIN_DT;
     immediate_definition::evaluation_time = bg::MIN_DT;

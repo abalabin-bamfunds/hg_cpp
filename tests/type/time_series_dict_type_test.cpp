@@ -12,7 +12,8 @@
 
 #include <concepts>
 
-TEST_CASE("time series dictionary annotations expose their key and item types", "[type_system][tsd]") {
+TEST_CASE("time series dictionary annotations expose their key and item types",
+          "[type_system][tsd][series:tsd][feature:type-system]") {
     using IntDictionary = bg::TSD<int, bg::TS<float>>;
 
     STATIC_CHECK(std::same_as<IntDictionary::key_type, int>);
@@ -20,7 +21,8 @@ TEST_CASE("time series dictionary annotations expose their key and item types", 
     STATIC_CHECK(bg::details::is_time_series_dict<IntDictionary>);
 }
 
-TEST_CASE("resolved time series dictionary types are canonical", "[type_system][tsd]") {
+TEST_CASE("resolved time series dictionary types are canonical",
+          "[type_system][tsd][series:tsd][feature:type-system]") {
     const auto &value = bg::time_series_value_type(bg::float_type(), bg::TimeSeriesGuarantee::ordinary);
     const auto &dictionary = bg::time_series_dictionary_type(bg::int_type(), value, bg::TimeSeriesGuarantee::ordinary);
 
@@ -32,7 +34,8 @@ TEST_CASE("resolved time series dictionary types are canonical", "[type_system][
     CHECK_THROWS_AS(dictionary.item_type(1), std::out_of_range);
 }
 
-TEST_CASE("generic time series dictionary types resolve their components", "[type_system][tsd]") {
+TEST_CASE("generic time series dictionary types resolve their components",
+          "[type_system][tsd][series:tsd][feature:type-system][declaration:generic][guarantee:final]") {
     const auto &resolved_value = bg::time_series_value_type(bg::float_type(), bg::TimeSeriesGuarantee::final);
     const auto &resolved =
         bg::time_series_dictionary_type(bg::int_type(), resolved_value, bg::TimeSeriesGuarantee::final);
@@ -46,7 +49,8 @@ TEST_CASE("generic time series dictionary types resolve their components", "[typ
     CHECK(&generic.resolve(bindings) == &resolved);
 }
 
-TEST_CASE("dictionary item matching is reference transparent", "[type_system][tsd][reference]") {
+TEST_CASE("dictionary item matching is reference transparent",
+          "[type_system][tsd][series:tsd][reference][feature:type-system][binding:reference-to-value]") {
     const auto &item = bg::time_series_value_type(bg::float_type(), bg::TimeSeriesGuarantee::ordinary);
     const auto &reference = bg::time_series_reference_type(item, bg::TimeSeriesGuarantee::ordinary);
     const auto &key_set = bg::time_series_set_type(bg::int_type(), bg::TimeSeriesGuarantee::ordinary);

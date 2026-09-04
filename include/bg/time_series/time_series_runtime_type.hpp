@@ -14,6 +14,9 @@ namespace bg {
 class ScalarRuntimeType;
 namespace details {
 class OutputState;
+class ReferenceProvider;
+class ReferenceRepresentation;
+struct ReferenceStorage;
 }
 
 class TimeSeriesRuntimeType : public RuntimeType {
@@ -82,6 +85,9 @@ class TimeSeriesRuntimeType : public RuntimeType {
     [[nodiscard]] virtual bool collection_valid(const void *) const noexcept { return false; }
     virtual void for_each_modified_item(const EvaluationTime &, const void *, EvaluationTime, void *,
                                         ModifiedItemFunction) const {}
+    [[nodiscard]] virtual details::ReferenceRepresentation *create_reference_representation(
+        details::ReferenceProvider &, details::ReferenceStorage &, const TimeSeriesType &,
+        std::pmr::memory_resource &) const;
     virtual void construct_initial_value(void *destination) const noexcept = 0;
     virtual void construct_runtime_value(void *destination, std::pmr::memory_resource &) const {
         construct_initial_value(destination);

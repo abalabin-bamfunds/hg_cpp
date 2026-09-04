@@ -9,7 +9,7 @@
 #include <cstdint>
 #include <string>
 
-TEST_CASE("sparse bunches share one occupancy index", "[sparse_bunch]") {
+TEST_CASE("sparse bunches share one occupancy index", "[sparse_bunch][coverage-exempt]") {
     auto memory = counting_memory_resource{};
     auto positions = bg::util::occupancy_index{};
     auto keys = bg::util::sparse_bunch<std::uint32_t>{};
@@ -45,7 +45,7 @@ TEST_CASE("sparse bunches share one occupancy index", "[sparse_bunch]") {
     CHECK(memory.allocations() == 0);
 }
 
-TEST_CASE("a sparse bunch releases an empty element block", "[sparse_bunch]") {
+TEST_CASE("a sparse bunch releases an empty element block", "[sparse_bunch][coverage-exempt]") {
     auto memory = counting_memory_resource{};
     auto positions = bg::util::occupancy_index{};
     auto values = bg::util::sparse_bunch<std::uint32_t>{};
@@ -65,7 +65,7 @@ TEST_CASE("a sparse bunch releases an empty element block", "[sparse_bunch]") {
     CHECK(memory.allocations() == 0);
 }
 
-TEST_CASE("a sparse bunch handles growth and capped-block boundaries", "[sparse_bunch]") {
+TEST_CASE("a sparse bunch handles growth and capped-block boundaries", "[sparse_bunch][coverage-exempt]") {
     auto memory = counting_memory_resource{};
     auto positions = bg::util::occupancy_index{};
     auto values = bg::util::sparse_bunch<std::uint32_t>{};
@@ -104,7 +104,7 @@ struct counted_value {
 
 } // namespace
 
-TEST_CASE("a sparse bunch destroys each occupied value once", "[sparse_bunch]") {
+TEST_CASE("a sparse bunch destroys each occupied value once", "[sparse_bunch][coverage-exempt]") {
     auto memory = counting_memory_resource{};
     auto positions = bg::util::occupancy_index{};
     auto values = bg::util::sparse_bunch<counted_value>{};

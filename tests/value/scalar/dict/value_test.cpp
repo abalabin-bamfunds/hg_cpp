@@ -10,7 +10,8 @@
 #include <utility>
 #include <vector>
 
-TEST_CASE("a scalar dictionary owns and exposes its entries", "[value][scalar][dict]") {
+TEST_CASE("a scalar dictionary owns and exposes its entries",
+          "[value][scalar][dict][scalar:dict][feature:scalar-collection]") {
     const auto items = std::vector<std::pair<std::string_view, std::int64_t>>{{"one", 1}, {"two", 2}};
     const auto value = bg::ScalarValue<bg::Dict<bg::string, std::int64_t>>{items};
     const auto dict = value.view();
@@ -25,7 +26,8 @@ TEST_CASE("a scalar dictionary owns and exposes its entries", "[value][scalar][d
     CHECK(sum == 3);
 }
 
-TEST_CASE("scalar dictionary equality is independent of insertion order", "[value][scalar][dict]") {
+TEST_CASE("scalar dictionary equality is independent of insertion order",
+          "[value][scalar][dict][scalar:dict][feature:scalar-collection]") {
     using Entry = std::pair<std::int64_t, std::string_view>;
     using Value = bg::ScalarValue<bg::Dict<std::int64_t, bg::string>>;
 
@@ -38,7 +40,8 @@ TEST_CASE("scalar dictionary equality is independent of insertion order", "[valu
     CHECK(first.view().hash() == second.view().hash());
 }
 
-TEST_CASE("a scalar dictionary owns variable-size keys and values", "[value][scalar][dict]") {
+TEST_CASE("a scalar dictionary owns variable-size keys and values",
+          "[value][scalar][dict][scalar:dict][feature:scalar-collection][storage:variable]") {
     auto key = std::string{"key"};
     auto item = std::string{"value"};
     const auto value = bg::ScalarValue<bg::Dict<bg::string, bg::string>>{
@@ -52,7 +55,8 @@ TEST_CASE("a scalar dictionary owns variable-size keys and values", "[value][sca
     CHECK(dict.at("key").value() == "value");
 }
 
-TEST_CASE("a scalar dictionary owns nested collection values", "[value][scalar][dict]") {
+TEST_CASE("a scalar dictionary owns nested collection values",
+          "[value][scalar][dict][scalar:dict][feature:scalar-collection]") {
     const auto first = bg::ScalarValue<bg::List<std::int64_t>>{std::vector<std::int64_t>{1, 2}};
     const auto second = bg::ScalarValue<bg::List<std::int64_t>>{std::vector<std::int64_t>{3}};
     const auto items = std::vector<std::pair<std::string_view, bg::Scalar<bg::List<std::int64_t>>>>{
@@ -66,7 +70,9 @@ TEST_CASE("a scalar dictionary owns nested collection values", "[value][scalar][
     CHECK(dict.at("second")[0].value() == 3);
 }
 
-TEST_CASE("a generic scalar dictionary exposes its declared comparison operations", "[value][scalar][dict][generic]") {
+TEST_CASE("a generic scalar dictionary exposes its declared comparison operations",
+          "[value][scalar][dict][scalar:dict][generic][declaration:generic][feature:scalar-collection]"
+          "[scalar:generic]") {
     using Item = bg::ScalarVariable<"Item", bg::EqualityComparable, bg::Hashable>;
     using Entry = std::pair<std::int64_t, std::int64_t>;
 

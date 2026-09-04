@@ -10,7 +10,7 @@
 #include <string_view>
 #include <vector>
 
-TEST_CASE("a scalar list owns its items", "[value][scalar][list]") {
+TEST_CASE("a scalar list owns its items", "[value][scalar][list][scalar:list][feature:scalar-collection]") {
     auto source = std::vector{1.0F, 2.0F};
     auto value = bg::ScalarValue<bg::List<float>>{source};
 
@@ -24,7 +24,8 @@ TEST_CASE("a scalar list owns its items", "[value][scalar][list]") {
     CHECK(&type.item_type() == &bg::float_type());
 }
 
-TEST_CASE("a scalar list owns variable-size items", "[value][scalar][list]") {
+TEST_CASE("a scalar list owns variable-size items",
+          "[value][scalar][list][scalar:list][feature:scalar-collection][storage:variable]") {
     auto source_text = std::string{"first"};
     const auto source = std::vector<std::string_view>{source_text, "second"};
     const auto value = bg::ScalarValue<bg::List<bg::string>>{source};
@@ -37,7 +38,7 @@ TEST_CASE("a scalar list owns variable-size items", "[value][scalar][list]") {
     CHECK(list[1].value() == "second");
 }
 
-TEST_CASE("a scalar list can contain scalar lists", "[value][scalar][list]") {
+TEST_CASE("a scalar list can contain scalar lists", "[value][scalar][list][scalar:list][feature:scalar-collection]") {
     const auto first = std::vector{1.0F, 2.0F};
     const auto second = std::vector{3.0F};
     const auto first_value = bg::ScalarValue<bg::List<float>>{first};
@@ -51,7 +52,8 @@ TEST_CASE("a scalar list can contain scalar lists", "[value][scalar][list]") {
     CHECK(list[1] == second_value.view());
 }
 
-TEST_CASE("a scalar list can contain evaluation times", "[value][scalar][list]") {
+TEST_CASE("a scalar list can contain evaluation times",
+          "[value][scalar][list][scalar:list][feature:scalar-collection][scalar:evaluation-time]") {
     const auto source =
         std::vector{bg::MIN_DT + std::chrono::microseconds{2}, bg::MIN_DT + std::chrono::microseconds{5}};
     const auto value = bg::ScalarValue<bg::List<bg::EvaluationTime>>{source};
@@ -65,7 +67,9 @@ TEST_CASE("a scalar list can contain evaluation times", "[value][scalar][list]")
     CHECK(value.view().hash() == equal.view().hash());
 }
 
-TEST_CASE("a generic scalar list exposes its declared comparison operations", "[value][scalar][list][generic]") {
+TEST_CASE("a generic scalar list exposes its declared comparison operations",
+          "[value][scalar][list][scalar:list][generic][declaration:generic][feature:scalar-collection]"
+          "[scalar:generic]") {
     using Item = bg::ScalarVariable<"Item", bg::EqualityComparable, bg::Hashable>;
 
     const auto first = bg::ScalarValue<bg::List<std::int64_t>>{std::vector<std::int64_t>{1, 2}};

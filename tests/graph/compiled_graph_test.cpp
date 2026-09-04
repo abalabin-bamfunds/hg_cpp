@@ -53,7 +53,7 @@ class scale_template final : public bg::NodeTemplate {
 
 } // namespace
 
-TEST_CASE("compiled nodes keep hot data in node-local sections", "[compiled_graph]") {
+TEST_CASE("compiled nodes keep hot data in node-local sections", "[compiled_graph][feature:graph-compilation]") {
     const auto source = bg::node<source_definition>();
     const auto scale = scale_template{};
     bg::GraphWiring wiring;
@@ -92,7 +92,8 @@ TEST_CASE("compiled nodes keep hot data in node-local sections", "[compiled_grap
     CHECK(graph.fixed_storage_size() == 236);
 }
 
-TEST_CASE("compiled dynamic subscribers address the complete runtime storage", "[compiled_graph][subscriptions]") {
+TEST_CASE("compiled dynamic subscribers address the complete runtime storage",
+          "[compiled_graph][subscriptions][feature:graph-compilation]") {
     constexpr auto offset = (std::size_t{1} << 30) - alignof(void *);
     const auto subscriber = bg::Subscriber::dynamic_subscribers(static_cast<std::uint32_t>(offset));
 
@@ -121,7 +122,8 @@ struct two_reference_input_sink {
 
 } // namespace
 
-TEST_CASE("compiled reference notifications identify each receiving input slot", "[compiled_graph][subscriptions]") {
+TEST_CASE("compiled reference notifications identify each receiving input slot",
+          "[compiled_graph][subscriptions][feature:graph-compilation]") {
     const auto source = bg::node<reference_subscription_source>();
     const auto pass = bg::node<reference_subscription_pass>();
     const auto sink = bg::node<two_reference_input_sink>();
@@ -158,7 +160,7 @@ TEST_CASE("compiled reference notifications identify each receiving input slot",
     CHECK_FALSE(node_subscribers[0].active_optional());
 }
 
-TEST_CASE("graph wiring can compile more than once", "[compiled_graph]") {
+TEST_CASE("graph wiring can compile more than once", "[compiled_graph][feature:graph-compilation]") {
     const auto source = bg::node<source_definition>();
     const auto scale = scale_template{};
     bg::GraphWiring wiring;
@@ -185,12 +187,13 @@ struct passive_copy_definition {
     bg::In<bg::TS<float>, bg::passive, bg::optional> input;
     bg::Out<bg::TS<float>> output;
 
-    void evaluate() const { output.set(input.value()); }
+    void evaluate() const { output.set(*input); }
 };
 
 } // namespace
 
-TEST_CASE("compiled parameters retain validity without a passive subscription", "[compiled_graph]") {
+TEST_CASE("compiled parameters retain validity without a passive subscription",
+          "[compiled_graph][feature:graph-compilation]") {
     const auto source = bg::node<source_definition>();
     const auto passive_copy = bg::node<passive_copy_definition>();
     bg::GraphWiring wiring;
@@ -206,7 +209,7 @@ TEST_CASE("compiled parameters retain validity without a passive subscription", 
     CHECK(graph.node(1).parameters()[0].validity() == bg::optional);
 }
 
-TEST_CASE("a compiled graph owns its scalar copies", "[compiled_graph]") {
+TEST_CASE("a compiled graph owns its scalar copies", "[compiled_graph][feature:graph-compilation]") {
     const auto source = bg::node<source_definition>();
     const auto scale = scale_template{};
     std::unique_ptr<bg::CompiledGraph> graph;
@@ -248,7 +251,7 @@ class counting_memory_resource final : public std::pmr::memory_resource {
 
 } // namespace
 
-TEST_CASE("compiled fixed storage uses one allocation", "[compiled_graph]") {
+TEST_CASE("compiled fixed storage uses one allocation", "[compiled_graph][feature:graph-compilation][storage:fixed]") {
     const auto source = bg::node<source_definition>();
     const auto scale = scale_template{};
     bg::GraphWiring wiring;
@@ -280,7 +283,7 @@ struct evaluation_time_source_definition {
 
 } // namespace
 
-TEST_CASE("a compiled graph stores an evaluation time output", "[compiled_graph]") {
+TEST_CASE("a compiled graph stores an evaluation time output", "[compiled_graph][feature:graph-compilation]") {
     const auto evaluation_time_source = bg::node<evaluation_time_source_definition>();
     bg::GraphWiring wiring;
 
@@ -330,7 +333,7 @@ static_assert(!bg::AggregateNodeClass<unsupported_opaque_output>);
 
 } // namespace
 
-TEST_CASE("a compiled graph owns an opaque scalar copy", "[compiled_graph]") {
+TEST_CASE("a compiled graph owns an opaque scalar copy", "[compiled_graph][feature:graph-compilation]") {
     const auto opaque_sink = bg::node<opaque_sink_definition>();
     auto value = private_data{42};
     const auto pointer = bg::ScalarValue<bg::Opaque<private_data *>>{&value};

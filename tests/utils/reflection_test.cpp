@@ -14,7 +14,8 @@ struct reflected_values {
 
 } // namespace
 
-TEST_CASE("aggregate reflection exposes names and member types", "[reflection]") {
+TEST_CASE("aggregate reflection exposes names and member types",
+          "[reflection][coverage-exempt]") {
     STATIC_CHECK(bg::util::aggregate_member_count<reflected_values> == 2);
     STATIC_CHECK(bg::util::aggregate_member_names<reflected_values>[0] == "first");
     STATIC_CHECK(bg::util::aggregate_member_names<reflected_values>[1] == "second");
@@ -48,7 +49,7 @@ struct wide_node {
 
 } // namespace
 
-TEST_CASE("aggregate reflection supports seventeen members", "[reflection]") {
+TEST_CASE("aggregate reflection supports seventeen members", "[reflection][coverage-exempt]") {
     STATIC_CHECK(bg::util::aggregate_member_count<wide_node> == 17);
     STATIC_CHECK(bg::util::aggregate_member_names<wide_node>[16] == "output");
 }

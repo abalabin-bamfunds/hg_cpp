@@ -15,7 +15,8 @@
 
 static_assert(std::is_trivially_copyable_v<bg::In<bg::TS_T>>);
 
-TEST_CASE("a time-series input reads validity and update time", "[time_series]") {
+TEST_CASE("a time-series input reads validity and update time",
+          "[time_series][feature:time-series-view][series:value][scalar:floating-point][transition:update]") {
     const auto value = 1.25F;
     const auto invalid = bg::In<bg::TS<float>>{};
 
@@ -36,7 +37,9 @@ template <template <typename> typename Field> struct VisitorBundle {
 
 } // namespace
 
-TEST_CASE("time series input visitors select every resolved interface", "[time_series][visitor]") {
+TEST_CASE("time series input visitors select every resolved interface",
+          "[time_series][visitor][feature:time-series-view][feature:visitor][declaration:generic]"
+          "[series:generic][series:value][series:reference][series:fixed-tsl][series:tss][series:tsd][series:tsb]") {
     const auto value = bg::In<bg::TS_T>{bg::MIN_DT, nullptr, bg::cpp_time_series_runtime_type<bg::TS<std::int64_t>>()};
     const auto reference =
         bg::In<bg::TS_T>{bg::MIN_DT, nullptr, bg::cpp_time_series_runtime_type<bg::REF<bg::TS<std::int64_t>>>()};
@@ -69,7 +72,9 @@ TEST_CASE("time series input visitors select every resolved interface", "[time_s
     CHECK(bundle_visited);
 }
 
-TEST_CASE("a time series visitor returns its result by value", "[time_series][visitor]") {
+TEST_CASE("a time series visitor returns its result by value",
+          "[time_series][visitor][feature:time-series-view][feature:visitor][declaration:generic]"
+          "[series:generic][series:value]") {
     const auto updated = bg::MIN_DT + std::chrono::microseconds{1};
     const auto input = bg::In<bg::TS_T>{updated, nullptr, bg::cpp_time_series_runtime_type<bg::TS<std::int64_t>>()};
 
@@ -80,7 +85,9 @@ TEST_CASE("a time series visitor returns its result by value", "[time_series][vi
     CHECK(*result == updated);
 }
 
-TEST_CASE("time series output visitors select every resolved interface", "[time_series][visitor]") {
+TEST_CASE("time series output visitors select every resolved interface",
+          "[time_series][visitor][feature:time-series-view][feature:visitor][declaration:generic]"
+          "[series:generic][series:value][series:reference][series:fixed-tsl][series:tss][series:tsd][series:tsb]") {
     auto value_state = bg::details::OutputState{bg::cpp_time_series_runtime_type<bg::TS<std::int64_t>>()};
     auto reference_state = bg::details::OutputState{bg::cpp_time_series_runtime_type<bg::REF<bg::TS<std::int64_t>>>()};
     auto list_state = bg::details::OutputState{bg::cpp_time_series_runtime_type<bg::TSL<bg::TS<std::int64_t>, 2>>()};
@@ -105,7 +112,9 @@ TEST_CASE("time series output visitors select every resolved interface", "[time_
     CHECK(visited == 6);
 }
 
-TEST_CASE("a time series output visitor exposes the resolved output interface", "[time_series][visitor]") {
+TEST_CASE("a time series output visitor exposes the resolved output interface",
+          "[time_series][visitor][feature:time-series-view][feature:visitor][declaration:generic]"
+          "[series:generic][series:value]") {
     const auto evaluation_time = bg::MIN_DT + std::chrono::microseconds{1};
     auto last_updated = bg::MIN_DT;
     auto stored = std::int64_t{};

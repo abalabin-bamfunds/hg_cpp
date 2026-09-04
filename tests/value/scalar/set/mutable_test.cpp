@@ -5,7 +5,8 @@
 #include <array>
 #include <cstdint>
 
-TEST_CASE("a mutable scalar set inserts unique items", "[value][scalar][set][mutable]") {
+TEST_CASE("a mutable scalar set inserts unique items",
+          "[value][scalar][set][scalar:set][mutable][feature:scalar-collection][transition:addition]") {
     auto state = bg::GlobalState{};
     const auto initial = bg::ScalarValue<bg::Set<std::int64_t>>{std::array<std::int64_t, 1>{1}};
     state.write([&](bg::GlobalState::WriteAccess &values) {
@@ -20,7 +21,8 @@ TEST_CASE("a mutable scalar set inserts unique items", "[value][scalar][set][mut
     });
 }
 
-TEST_CASE("a mutable scalar set erases and clears items", "[value][scalar][set][mutable]") {
+TEST_CASE("a mutable scalar set erases and clears items",
+          "[value][scalar][set][scalar:set][mutable][feature:scalar-collection][transition:removal]") {
     auto state = bg::GlobalState{};
     const auto initial = bg::ScalarValue<bg::Set<std::int64_t>>{std::array<std::int64_t, 2>{1, 2}};
     state.write([&](bg::GlobalState::WriteAccess &values) {

@@ -27,7 +27,7 @@ struct double_sink_definition {
 
     void evaluate() const {
         ++evaluation_count;
-        last_value = input.value();
+        last_value = *input;
     }
 
     inline static int evaluation_count{};
@@ -40,7 +40,7 @@ struct double_sink_definition {
 
 } // namespace
 
-TEST_CASE("runtime storage uses the output scalar runtime_type", "[evaluation][storage]") {
+TEST_CASE("runtime storage uses the output scalar runtime_type", "[evaluation][storage][feature:graph-compilation]") {
     const auto double_source = bg::node<double_source_definition>();
     const auto double_sink = bg::node<double_sink_definition>();
     bg::GraphWiring wiring;
@@ -76,7 +76,7 @@ struct float_sink_definition {
 
     void evaluate() const {
         ++evaluation_count;
-        last_value = input.value();
+        last_value = *input;
     }
 
     inline static int evaluation_count{};
@@ -85,7 +85,7 @@ struct float_sink_definition {
 
 } // namespace
 
-TEST_CASE("a node without output uses no output storage", "[evaluation][storage]") {
+TEST_CASE("a node without output uses no output storage", "[evaluation][storage][feature:graph-compilation]") {
     const auto constant = bg::node<constant_definition>();
     const auto float_sink = bg::node<float_sink_definition>();
     bg::GraphWiring wiring;
@@ -119,7 +119,7 @@ struct add_definition {
 
     void evaluate() const {
         ++evaluation_count;
-        output.set(lhs.value() + rhs.value());
+        output.set(*lhs + *rhs);
     }
 
     inline static int evaluation_count{};
@@ -127,7 +127,7 @@ struct add_definition {
 
 } // namespace
 
-TEST_CASE("runtime graphs keep separate runtime storage", "[evaluation][storage]") {
+TEST_CASE("runtime graphs keep separate runtime storage", "[evaluation][storage][feature:graph-compilation]") {
     const auto constant = bg::node<constant_definition>();
     const auto add = bg::node<add_definition>();
     bg::GraphWiring wiring;
@@ -169,7 +169,8 @@ struct string_dictionary_source_definition {
 
 } // namespace
 
-TEST_CASE("a runtime graph releases dictionary time-series storage", "[evaluation][storage][tsd]") {
+TEST_CASE("a runtime graph releases dictionary time-series storage",
+          "[evaluation][storage][tsd][series:tsd][feature:graph-compilation]") {
     const auto source = bg::node<string_dictionary_source_definition>();
     auto wiring = bg::GraphWiring{};
 
@@ -216,14 +217,14 @@ struct stateful_scalar_definition {
 struct int_sink_definition {
     bg::In<bg::TS<int>> input;
 
-    void evaluate() const { last_value = input.value(); }
+    void evaluate() const { last_value = *input; }
 
     inline static int last_value{};
 };
 
 } // namespace
 
-TEST_CASE("scalar fields and state bind to their storage", "[evaluation][storage]") {
+TEST_CASE("scalar fields and state bind to their storage", "[evaluation][storage][feature:graph-compilation]") {
     const auto stateful_scalar = bg::node<stateful_scalar_definition>();
     const auto int_sink = bg::node<int_sink_definition>();
     bg::GraphWiring wiring;

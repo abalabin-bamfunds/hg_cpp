@@ -25,7 +25,7 @@ struct add {
 
     void evaluate() const noexcept {
         ++state->evaluation_count;
-        output.set((lhs.value() + rhs.value()) * scale);
+        output.set((*lhs + *rhs) * scale);
     }
 };
 
@@ -180,7 +180,7 @@ inline const auto value_or_zero = bg::node(
     [](bg::In<bg::TS<float>,
               bg::optional,
               "value"_n> value) noexcept {
-        return value.valid() ? value.value() : 0.0F;
+        return value.valid() ? *value : 0.0F;
     });
 ```
 
@@ -213,9 +213,9 @@ An `In` value is valid for one function call. Its last-updated time includes
 through a reference.
 
 Fully specified and generic inputs expose the same common interface to helper
-functions and visitors. A fully specified input also provides direct typed
-operations such as `value()`. The arrow operator provides const access to the
-common interface.
+functions and visitors. A fully specified value input also provides `value()`
+and `operator*`. `operator->` provides member access when the C++ value type
+supports it. Use dot notation to access the time series itself.
 
 `value_view()` returns `Scalar<>` for `TS_T`, `Scalar<SCALAR>` for
 `TS<SCALAR>`, and `Scalar<T>` for `TS<T>`.
@@ -310,9 +310,9 @@ inline const auto copy_prices = bg::node(
     [](bg::In<Prices, "source"_n> source,
        bg::Out<Prices> output) noexcept {
         source.for_each_added(
-            [&](const auto& key) { output[key].set(source[key].value()); });
+            [&](const auto& key) { output[key].set(*source[key]); });
         source.for_each_modified(
-            [&](const auto& key) { output[key].set(source[key].value()); });
+            [&](const auto& key) { output[key].set(*source[key]); });
         source.for_each_removed([&](const auto& key) { output.erase(key); });
     });
 ```

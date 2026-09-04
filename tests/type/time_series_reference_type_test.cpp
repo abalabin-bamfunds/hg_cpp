@@ -7,7 +7,8 @@
 
 #include <stdexcept>
 
-TEST_CASE("time series reference types retain their target and guarantee", "[type][reference]") {
+TEST_CASE("time series reference types retain their target and guarantee",
+          "[type][reference][feature:type-system][guarantee:ordinary][guarantee:const]") {
     const auto &target = bg::time_series_value_type(bg::int64_type(), bg::TimeSeriesGuarantee::ordinary);
     const auto &reference = bg::time_series_reference_type(target, bg::TimeSeriesGuarantee::const_);
 
@@ -16,7 +17,9 @@ TEST_CASE("time series reference types retain their target and guarantee", "[typ
     CHECK(&bg::time_series_reference_type(target, bg::TimeSeriesGuarantee::const_) == &reference);
 }
 
-TEST_CASE("a generic reference accepts a reference or its target", "[type][reference][resolution]") {
+TEST_CASE("a generic reference accepts a reference or its target",
+          "[type][reference][resolution][feature:type-system][declaration:generic][guarantee:ordinary]"
+          "[guarantee:const][binding:value-to-reference][binding:reference-to-reference]") {
     const auto &target = bg::time_series_value_type(bg::int64_type(), bg::TimeSeriesGuarantee::ordinary);
     const auto &reference = bg::time_series_reference_type(target, bg::TimeSeriesGuarantee::const_);
     const auto generic_target =
@@ -31,7 +34,9 @@ TEST_CASE("a generic reference accepts a reference or its target", "[type][refer
     CHECK(generic_reference.match(target, bindings));
 }
 
-TEST_CASE("reference matching binds target and reference guarantees separately", "[type][reference][resolution]") {
+TEST_CASE("reference matching binds target and reference guarantees separately",
+          "[type][reference][resolution][feature:type-system][guarantee:deduplicated][guarantee:final]"
+          "[binding:reference-to-reference]") {
     const auto &target = bg::time_series_value_type(bg::int64_type(), bg::TimeSeriesGuarantee::final);
     const auto &reference = bg::time_series_reference_type(target, bg::TimeSeriesGuarantee::deduplicated);
     auto target_guarantee = bg::GuaranteeVariable{bg::util::symbol{"target guarantee"}};
@@ -47,7 +52,9 @@ TEST_CASE("reference matching binds target and reference guarantees separately",
     CHECK(resolved.target_type().guarantee().value() == bg::TimeSeriesGuarantee::final);
 }
 
-TEST_CASE("reference matching enforces the reference guarantee", "[type][reference][resolution]") {
+TEST_CASE("reference matching enforces the reference guarantee",
+          "[type][reference][resolution][feature:type-system][guarantee:ordinary][guarantee:final]"
+          "[binding:value-to-reference][binding:reference-to-reference]") {
     const auto &target = bg::time_series_value_type(bg::int64_type(), bg::TimeSeriesGuarantee::ordinary);
     const auto &required = bg::time_series_reference_type(target, bg::TimeSeriesGuarantee::final);
     const auto &ordinary = bg::time_series_reference_type(target, bg::TimeSeriesGuarantee::ordinary);
@@ -59,7 +66,7 @@ TEST_CASE("reference matching enforces the reference guarantee", "[type][referen
     CHECK(required.match(target, bindings));
 }
 
-TEST_CASE("a reference cannot target another reference", "[type][reference]") {
+TEST_CASE("a reference cannot target another reference", "[type][reference][feature:type-system]") {
     const auto &target = bg::time_series_value_type(bg::int64_type(), bg::TimeSeriesGuarantee::ordinary);
     const auto &reference = bg::time_series_reference_type(target, bg::TimeSeriesGuarantee::ordinary);
 

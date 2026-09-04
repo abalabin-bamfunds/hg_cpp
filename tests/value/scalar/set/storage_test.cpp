@@ -11,7 +11,8 @@
 #include <cstdint>
 #include <memory_resource>
 
-TEST_CASE("resolved scalar set storage supports mutation", "[value][scalar][set][storage]") {
+TEST_CASE("resolved scalar set storage supports mutation",
+          "[value][scalar][set][scalar:set][storage][feature:scalar-storage]") {
     const auto &item = bg::cpp_scalar_runtime_type<std::int64_t>();
     const auto &type = bg::set_scalar_type(item.type());
     const auto available = std::array<const bg::ScalarRuntimeType *, 1>{&item};
@@ -36,7 +37,8 @@ TEST_CASE("resolved scalar set storage supports mutation", "[value][scalar][set]
     memory.deallocate(storage, set.size(), set.alignment());
 }
 
-TEST_CASE("a scalar set copies nested items between composed and C++ storage", "[value][scalar][set][storage]") {
+TEST_CASE("a scalar set copies nested items between composed and C++ storage",
+          "[value][scalar][set][scalar:set][storage][feature:scalar-storage]") {
     using Item = bg::List<bg::EvaluationTime>;
     using Set = bg::Set<Item>;
 

@@ -1,6 +1,7 @@
 #include <bg/time_series/ref/ref_notification.hpp>
 
 #include <bg/graph/dynamic_subscribers.hpp>
+#include <bg/time_series/ref/ref_provider.hpp>
 #include <bg/time_series/ref/ref_storage.hpp>
 
 namespace bg::details {
@@ -10,6 +11,10 @@ namespace {
 void update_reference_input(OutputNotificationContext &context, ReferenceStorage *reference,
                             const ReferenceInputSubscriber &subscriber, std::size_t data,
                             InputNotificationFunction callback, OutputChange change) {
+    if (reference != nullptr) {
+        reference = &reference->provider->representation(*reference, subscriber.requested_type());
+    }
+
     auto &input = *static_cast<ReferenceInputStorage *>(context.runtime_storage_at(subscriber.input_offset()));
     if (input.target != reference) {
         const auto subscribes_to_target = subscriber.active() || subscriber.required() || callback != nullptr;
@@ -17,8 +22,8 @@ void update_reference_input(OutputNotificationContext &context, ReferenceStorage
             input.target->subscribers->remove(context.runtime_graph(), subscriber.input_offset());
         }
         if (reference != nullptr && subscribes_to_target) {
-            auto &subscribers =
-                DynamicSubscribers::ensure(reference->subscribers, context.memory_resource(*reference->owner));
+            auto &owner = reference->provider->owner();
+            auto &subscribers = DynamicSubscribers::ensure(reference->subscribers, context.memory_resource(owner));
             subscribers.add(context.runtime_graph(), static_cast<std::uint32_t>(subscriber.input_offset()), data,
                             static_cast<std::uint32_t>(subscriber.node_index()), subscriber.active(),
                             subscriber.required(), callback);

@@ -8,7 +8,8 @@
 
 #include <cstdint>
 
-TEST_CASE("canceling a time series set addition reclaims its position immediately", "[value][tss][storage]") {
+TEST_CASE("canceling a time series set addition reclaims its position immediately",
+          "[value][tss][series:tss][storage][feature:time-series-storage][transition:addition]") {
     auto memory = counting_memory_resource{};
     auto storage = bg::details::time_series_set_storage{};
     const auto &key_runtime_type = bg::cpp_scalar_runtime_type<std::int64_t>();
@@ -42,7 +43,8 @@ TEST_CASE("canceling a time series set addition reclaims its position immediatel
     CHECK(memory.allocations() == 0);
 }
 
-TEST_CASE("removing an existing time series set item retains it until reclamation", "[value][tss][storage]") {
+TEST_CASE("removing an existing time series set item retains it until reclamation",
+          "[value][tss][series:tss][storage][feature:time-series-storage][transition:removal]") {
     auto memory = counting_memory_resource{};
     auto storage = bg::details::time_series_set_storage{};
     const auto &key_runtime_type = bg::cpp_scalar_runtime_type<std::int64_t>();
@@ -84,7 +86,8 @@ TEST_CASE("removing an existing time series set item retains it until reclamatio
     CHECK(memory.allocations() == 0);
 }
 
-TEST_CASE("clearing time series set storage retains only previously visible items", "[value][tss][storage]") {
+TEST_CASE("clearing time series set storage retains only previously visible items",
+          "[value][tss][series:tss][storage][feature:time-series-storage][transition:removal]") {
     auto memory = counting_memory_resource{};
     auto storage = bg::details::time_series_set_storage{};
     const auto &key_runtime_type = bg::cpp_scalar_runtime_type<std::int64_t>();

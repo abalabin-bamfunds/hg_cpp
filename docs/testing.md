@@ -8,19 +8,53 @@ test. Node and graph behavior tests use `test_graph`.
 
 ## Coverage model
 
-Consider each feature across these dimensions:
+Structured Catch2 tags are the source of coverage information. Generated
+coverage reports read these tags. Do not maintain a separate list of covered
+combinations.
 
-- scalar or time series type
-- concrete or generic type declaration
-- graph shape and nesting depth
-- input activity and validity constraint
-- time series guarantee
-- lifecycle stage and state transition
-- C++ or Python definition
-- runtime type
+Use `[dimension:value]` for each applicable dimension:
 
-Select combinations that exercise distinct behavior. Add a combination for a
-new code path, compatibility boundary, failure mode, or regression.
+- `feature`: `scalar-api`, `scalar-storage`, `scalar-collection`, `global-state`, `visitor`, `type-system`,
+  `node-api`, `state`, `wiring`, `graph-compilation`, `test-graph`, `evaluation-context`, `evaluation-scratch`,
+  `lifecycle`, `scheduling`, `future-scheduling`, `simulation`, `input-activity`, `validity`, `invalidation`,
+  `time-series-storage`, `time-series-view`, `collection-change`, `reference`, `getitem`, or `nested-graph`
+- `series`: `value`, `fixed-tsl`, `sparse-tsl`, `tss`, `tsd`, `tsb`, `reference`, or `generic`
+- `schema`: `named`, `unnamed`, or `generic`
+- `representation`: `native`, `free`, `filtered`, or `covariant`
+- `scalar`: `integer`, `floating-point`, `boolean`, `string`, `symbol`, `evaluation-time`, `compound`,
+  `hierarchical`, `opaque`, `list`, `set`, `dict`, or `generic`
+- `storage`: `inline`, `fixed`, or `variable`
+- `declaration`: `concrete`, `partially-generic`, `generic`, or `runtime`
+- `binding`: `direct`, `value-to-reference`, `reference-to-value`, `reference-to-reference`, `covariant`, or
+  `representation`
+- `shape`: `single-node`, `chain`, `fan-out`, `diamond`, `nested`, or `doubly-nested`
+- `activity`: `active` or `passive`
+- `validity`: `required` or `optional`
+- `guarantee`: `ordinary`, `deduplicated`, `final`, or `const`
+- `input-guarantee`: `valid-items`
+- `transition`: `first-tick`, `update`, `invalidation`, `revalidation`, `addition`, `removal`, `resurrection`,
+  `start`, `stop`, or `restart`
+- `definition`: `aggregate`, `function`, `runtime`, or `python`
+
+Use lower-case kebab-case values in tags. For example:
+
+```cpp
+TEST_CASE("a reference input samples its target",
+          "[feature:reference][series:value][binding:reference-to-value][shape:single-node]")
+```
+
+A test can omit a dimension that cannot affect the behavior at its test level.
+If values from two tagged dimensions do not form a complete combination, split
+the test. Mark utility tests that do not participate in graph coverage with
+`[coverage-exempt]` instead of structured coverage tags.
+
+Add each feature and its applicable dimensions to the test areas below before
+implementing it. Select combinations that exercise each code path,
+compatibility boundary, failure mode, and regression. Use pairwise combinations
+for independent dimensions and explicit combinations for higher-order behavior.
+
+With Python 3.10 or newer, build the `test-coverage-report` target to validate
+the tags and write `test-coverage.md` to the build directory.
 
 ## Test layout
 
@@ -128,6 +162,8 @@ not update.
 - references across inner graph boundaries
 - dynamic collection items and outer-cycle removal lifetime
 - representation creation and reuse
+- dictionary item selection with scalar and time series keys
+- keyed subscriptions for present, missing, removed, and restored items
 
 ### Collection time series
 

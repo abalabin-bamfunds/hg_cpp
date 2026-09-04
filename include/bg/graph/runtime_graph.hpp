@@ -89,6 +89,7 @@ class RuntimeGraph {
     void propagate_output_change(const CompiledNode &node, OutputChange change);
     void publish_output_changes(const CompiledNode &node, bool output_was_valid);
     void schedule_dynamic_subscribers(std::size_t offset, OutputChange change);
+    void schedule_dynamic_subscribers(details::DynamicSubscribers &subscribers, OutputChange change);
     void queue_input_notification(InputNotificationFunction function, std::size_t node_index, std::size_t data,
                                   OutputChange change);
     void run_input_notifications();

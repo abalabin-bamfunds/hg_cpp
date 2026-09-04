@@ -8,7 +8,7 @@
 #include <string_view>
 #include <vector>
 
-TEST_CASE("a scalar set owns its unique items", "[value][scalar][set]") {
+TEST_CASE("a scalar set owns its unique items", "[value][scalar][set][scalar:set][feature:scalar-collection]") {
     const auto items = std::vector<std::int64_t>{3, 1, 3, 2};
     const auto value = bg::ScalarValue<bg::Set<std::int64_t>>{items};
     const auto set = value.view();
@@ -24,7 +24,8 @@ TEST_CASE("a scalar set owns its unique items", "[value][scalar][set]") {
     CHECK(sum == 6);
 }
 
-TEST_CASE("scalar set equality is independent of insertion order", "[value][scalar][set]") {
+TEST_CASE("scalar set equality is independent of insertion order",
+          "[value][scalar][set][scalar:set][feature:scalar-collection]") {
     const auto first = bg::ScalarValue<bg::Set<std::int64_t>>{std::vector<std::int64_t>{1, 2, 3}};
     const auto second = bg::ScalarValue<bg::Set<std::int64_t>>{std::vector<std::int64_t>{3, 1, 2}};
     const auto different = bg::ScalarValue<bg::Set<std::int64_t>>{std::vector<std::int64_t>{1, 2, 4}};
@@ -34,7 +35,8 @@ TEST_CASE("scalar set equality is independent of insertion order", "[value][scal
     CHECK(first.view().hash() == second.view().hash());
 }
 
-TEST_CASE("a scalar set owns variable-size items", "[value][scalar][set]") {
+TEST_CASE("a scalar set owns variable-size items",
+          "[value][scalar][set][scalar:set][feature:scalar-collection][storage:variable]") {
     auto source = std::string{"first"};
     const auto value = bg::ScalarValue<bg::Set<bg::string>>{std::vector<std::string_view>{source, "second"}};
 
@@ -46,7 +48,9 @@ TEST_CASE("a scalar set owns variable-size items", "[value][scalar][set]") {
     CHECK_FALSE(set.contains("changed"));
 }
 
-TEST_CASE("a generic scalar set exposes its declared comparison operations", "[value][scalar][set][generic]") {
+TEST_CASE("a generic scalar set exposes its declared comparison operations",
+          "[value][scalar][set][scalar:set][generic][declaration:generic][feature:scalar-collection]"
+          "[scalar:generic]") {
     using Item = bg::ScalarVariable<"Item", bg::EqualityComparable, bg::Hashable>;
 
     const auto first = bg::ScalarValue<bg::Set<std::int64_t>>{std::vector<std::int64_t>{1, 2}};

@@ -21,7 +21,8 @@ struct inspect_scalar_set {
     void evaluate() const {}
 };
 
-TEST_CASE("a scalar set is available from packed graph scalar storage", "[node][scalar][set]") {
+TEST_CASE("a scalar set is available from packed graph scalar storage",
+          "[node][scalar][set][scalar:set][feature:state]") {
     const auto inspect = bg::node<inspect_scalar_set>();
     const auto input = bg::ScalarValue<bg::Set<std::int64_t>>{std::array<std::int64_t, 2>{1, 2}};
     auto state = bg::GlobalState{};
@@ -46,7 +47,8 @@ struct inspect_scalar_set_state {
     void evaluate() const {}
 };
 
-TEST_CASE("scalar set state is available during node start", "[node][state][scalar][set]") {
+TEST_CASE("scalar set state is available during node start",
+          "[node][state][scalar][set][scalar:set][feature:state][transition:start]") {
     const auto inspect = bg::node<inspect_scalar_set_state>();
     auto state = bg::GlobalState{};
 
@@ -75,7 +77,8 @@ struct scalar_set_sink {
     }
 };
 
-TEST_CASE("a scalar set propagates through a value time series", "[node][time_series][scalar][set]") {
+TEST_CASE("a scalar set propagates through a value time series",
+          "[node][time_series][scalar][set][scalar:set][feature:state]") {
     const auto source = bg::node<scalar_set_source>();
     const auto sink = bg::node<scalar_set_sink>();
     const auto input = bg::ScalarValue<bg::Set<std::int64_t>>{std::array<std::int64_t, 2>{1, 2}};

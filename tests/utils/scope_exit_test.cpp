@@ -5,7 +5,8 @@
 #include <stdexcept>
 #include <utility>
 
-TEST_CASE("a scope exit function runs when its scope ends", "[utils][scope_exit]") {
+TEST_CASE("a scope exit function runs when its scope ends",
+          "[utils][scope_exit][coverage-exempt]") {
     auto calls = 0;
     {
         const auto cleanup = bg::util::scope_exit{[&]() noexcept { ++calls; }};
@@ -14,7 +15,7 @@ TEST_CASE("a scope exit function runs when its scope ends", "[utils][scope_exit]
     CHECK(calls == 1);
 }
 
-TEST_CASE("a released scope exit function does not run", "[utils][scope_exit]") {
+TEST_CASE("a released scope exit function does not run", "[utils][scope_exit][coverage-exempt]") {
     auto calls = 0;
     {
         auto cleanup = bg::util::scope_exit{[&]() noexcept { ++calls; }};
@@ -24,7 +25,8 @@ TEST_CASE("a released scope exit function does not run", "[utils][scope_exit]") 
     CHECK(calls == 0);
 }
 
-TEST_CASE("a scope exit function runs during exception cleanup", "[utils][scope_exit]") {
+TEST_CASE("a scope exit function runs during exception cleanup",
+          "[utils][scope_exit][coverage-exempt]") {
     auto calls = 0;
 
     CHECK_THROWS_AS(
@@ -36,7 +38,8 @@ TEST_CASE("a scope exit function runs during exception cleanup", "[utils][scope_
     CHECK(calls == 1);
 }
 
-TEST_CASE("moving a scope exit function transfers cleanup", "[utils][scope_exit]") {
+TEST_CASE("moving a scope exit function transfers cleanup",
+          "[utils][scope_exit][coverage-exempt]") {
     auto calls = 0;
     {
         auto first = bg::util::scope_exit{[&]() noexcept { ++calls; }};

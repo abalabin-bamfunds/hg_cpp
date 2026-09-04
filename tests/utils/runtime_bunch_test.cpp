@@ -21,7 +21,7 @@ constexpr auto item_layout = bg::util::runtime_item_layout{sizeof(item), alignof
 
 } // namespace
 
-TEST_CASE("a runtime contiguous bunch stores a resolved item layout", "[util][bunch]") {
+TEST_CASE("a runtime contiguous bunch stores a resolved item layout", "[util][bunch][coverage-exempt]") {
     auto memory = std::pmr::unsynchronized_pool_resource{};
     auto bunch = bg::util::runtime_contiguous_bunch{};
     auto addresses = std::vector<const void *>{};
@@ -41,7 +41,7 @@ TEST_CASE("a runtime contiguous bunch stores a resolved item layout", "[util][bu
                        [](void *storage) noexcept { std::destroy_at(static_cast<item *>(storage)); });
 }
 
-TEST_CASE("a runtime sparse bunch shares external positions", "[util][bunch]") {
+TEST_CASE("a runtime sparse bunch shares external positions", "[util][bunch][coverage-exempt]") {
     auto memory = std::pmr::unsynchronized_pool_resource{};
     auto positions = bg::util::occupancy_index{};
     auto bunch = bg::util::runtime_sparse_bunch{};
@@ -60,7 +60,7 @@ TEST_CASE("a runtime sparse bunch shares external positions", "[util][bunch]") {
     positions.release(memory);
 }
 
-TEST_CASE("a runtime bunch releases storage after construction fails", "[util][bunch]") {
+TEST_CASE("a runtime bunch releases storage after construction fails", "[util][bunch][coverage-exempt]") {
     auto memory = std::pmr::unsynchronized_pool_resource{};
     auto bunch = bg::util::runtime_contiguous_bunch{};
 

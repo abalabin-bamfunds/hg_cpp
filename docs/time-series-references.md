@@ -1,7 +1,5 @@
 # Time series references
 
-Status: working design. Open choices are listed at the end.
-
 ## Purpose
 
 A time series reference lets a node route a time series without reading or
@@ -45,28 +43,13 @@ creates the representation.
 ## Dynamic representations
 
 The inserted node owns dynamically created time series. This is required because
-a reference from a nested graph can receive compatible type requests after the
+a reference from a nested graph can receive a compatible type request after the
 target graph has been compiled.
 
-Compiled data contains creation and update information for types requested by
-the complete wired graph. The node also provides an interface that accepts a
-compatible resolved type at runtime.
-
-The node's runtime state stores a compact array of created representations. Each
-entry contains:
-
-- the requested resolved type
-- a pointer to the created time series
-- its update operation
-
 An exact-type request returns the source time series. A repeated request returns
-the existing representation. A new compatible request allocates its time series
-through the runtime graph that owns the source and adds it to the array. Runtime
-storage is therefore proportional to the representations that are used.
-
-Build every representation from the original source. This provides one update
-path for each source and requested type. All consumers of that pair share the
-same time series.
+the existing representation for the source and requested type. A new compatible
+request allocates its representation through the runtime graph that owns the
+source. Runtime storage is proportional to the representations that are used.
 
 The same process applies recursively to collection time series. Examples include:
 
@@ -74,11 +57,18 @@ The same process applies recursively to collection time series. Examples include
 | --- | --- |
 | `TSD<K, TS_T>` | `TSD<K, REF<TS_T>>` |
 | `TSD<K, REF<TS_T>>` | `TSD<K, TS_T>` |
-| `TSD<K, TSD<K1, TS_T>>` | `TSD<K, TSD<K1, REF<TS_T>>>` |
 
-A TSD representation request records whether the receiving input requires
-`valid_items`. The node that provides representations applies the guarantee
-when it changes the item type.
+A `TSD<K, REF<TS_T>>` representation of `TSD<K, TS_T>` shares the source key
+storage and item IDs. Its item references identify the source items. Converting
+that representation back to `TSD<K, TS_T>` returns the source dictionary.
+Source item updates notify consumers of the item references without updating
+the reference dictionary itself.
+
+A `TSD<K, REF<TS_T>>` constructed by a node has no source dictionary.
+Converting it to `TSD<K, TS_T>` creates a representation that retains every
+key and exposes the current reference target as its item. An empty reference
+produces an invalid item. Target changes and target updates modify the
+corresponding item without evaluating an intermediate node.
 
 When `REF<TS_T>` is bound to its exact target type, compiled-node data records
 the reference output's last updated location. Each runtime graph stores the
@@ -163,6 +153,24 @@ When an item is first used through a reference, its owning representation
 creates and owns its dynamic subscriber array. Item updates iterate this array
 directly.
 
+A dictionary creates keyed subscription storage only when it is used. The
+storage maps each watched key to its subscribers. Key-set processing looks up
+only keys added or removed in the current cycle. A subscription to a missing
+key owns a copy of the key and remains until the key is added or the subscriber
+leaves.
+
+Graph code can select an item with a wiring-time scalar key or a time series
+key. Selection returns `REF<TS_T>`. Selecting from
+`TSD<K, REF<TS_T>>` returns the contained reference rather than creating a
+nested reference. A missing key, invalid key input, or invalid dictionary input
+makes the result invalid.
+
+A selected source item update schedules consumers of the returned reference
+directly. It does not evaluate the selection node. A key input change, source
+retarget, selected reference change, or selected key addition or removal
+updates the selected reference. Other key-set changes do not evaluate the
+selection node.
+
 The shared set and its representations handle key removal:
 
 1. The set marks the key and sparse index as removed.
@@ -184,15 +192,3 @@ removed time series must be cleared during the cycle in which it is removed.
 An outer cycle ends after all outer and inner work has finished, including work
 that runs concurrently. This is the earliest point at which removed storage can
 be reclaimed.
-
-## Open implementation choices
-
-1. Creation, layout, lifetime, and removal of dynamically created
-   representations.
-2. Storage for receiving inputs created at runtime.
-3. How a time series dictionary locates an item's optional subscriber array.
-4. Synchronization of subscription and representation changes between runtime
-   graphs.
-5. Removal of a runtime graph's dynamic subscriptions from target graphs.
-6. Whether removed collection storage should be reclaimed at the outer-cycle
-   boundary.
