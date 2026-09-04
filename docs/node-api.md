@@ -159,10 +159,9 @@ copyable. Scalar collection state does not retain a memory resource. It uses the
 node allocation context and exposes a mutable scalar view.
 
 A collection state declaration can contain scalar type variables. Wiring
-resolves these variables with the node signature. Graph compilation selects the
-complete registered storage representation when one is available. Otherwise,
-it composes the collection representation from the resolved component
-representations.
+resolves these variables with the node signature. Graph compilation selects a
+registered runtime type when one matches the resolved type. Otherwise, it
+composes a runtime type from the resolved component runtime types.
 
 Each initial state must remain valid after byte copying to a different address.
 This is required for the runtime graph construction defined by the
@@ -337,11 +336,11 @@ scalar type, so `TS<std::optional<T>>` is invalid.
 
 ### Collection item views
 
-`Out<>` is a one-word, move-only proxy to an output view owned by the current
-node invocation. Root and collection item outputs use the same proxy. The engine
-reuses storage as temporary proxies are destroyed and releases the remaining
-storage when the node function returns or throws. A proxy is valid for one node
-invocation.
+`Out<>` is a one-word, move-only view. Root and collection item outputs use the
+same type. It points to mutation state owned by the current node invocation.
+The engine reuses mutation state as temporary views are destroyed and releases
+the remaining state when the node function returns or throws. An `Out<>` value
+is valid for one node invocation.
 
 A TSD item view is valid until its item is erased or the node invocation ends.
 

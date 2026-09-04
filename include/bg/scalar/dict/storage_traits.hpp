@@ -1,7 +1,9 @@
 #pragma once
 
-#include <bg/scalar/details/storage_traits.hpp>
+#include <bg/scalar/details/capability_traits.hpp>
+#include <bg/scalar/details/collection_storage.hpp>
 #include <bg/scalar/dict/type.hpp>
+#include <bg/scalar/runtime_type.hpp>
 #include <bg/util/scope_exit.hpp>
 
 #include <memory>
@@ -15,11 +17,14 @@ template <typename K, typename V> struct scalar_storage_traits<Dict<K, V>> {
     using stored_type = scalar_dict_storage<K, V>;
     using value_type = Dict<K, V>;
 
-    static constexpr bool supports_equality = KeyTraits::supports_equality && ValueTraits::supports_equality;
-    static constexpr bool supports_hash = KeyTraits::supports_hash && ValueTraits::supports_hash;
+    static constexpr bool supports_equality =
+        scalar_capability_traits<K>::supports_equality && scalar_capability_traits<V>::supports_equality;
+    static constexpr bool supports_hash =
+        scalar_capability_traits<K>::supports_hash && scalar_capability_traits<V>::supports_hash;
     static constexpr bool uses_variable_memory = true;
     static constexpr bool requires_finalization =
         KeyTraits::requires_finalization || ValueTraits::requires_finalization;
+    static constexpr bool assign_uses_memory_resource = true;
 
     [[nodiscard]] static value_type read(const stored_type &value) noexcept { return value_type{value}; }
 
@@ -59,7 +64,7 @@ template <typename K, typename V> struct scalar_storage_traits<Dict<K, V>> {
                 [&](auto *stored) noexcept { KeyTraits::destroy(stored, memory); },
                 [&](auto *stored) {
                     if constexpr (scalar_view_source_for<decltype(item), V>) {
-                        item.input_view().copy_construct(stored, cpp_scalar_storage_representation<V>(), memory);
+                        item.input_view().copy_construct(stored, cpp_scalar_runtime_type<V>(), memory);
                     } else {
                         ValueTraits::construct(stored, item, memory);
                     }
@@ -82,6 +87,13 @@ template <typename K, typename V> struct scalar_storage_traits<Dict<K, V>> {
             [&](auto *item) noexcept { ValueTraits::destroy(item, memory); });
         std::destroy_at(value);
     }
+};
+
+template <typename K, typename V> struct scalar_capability_traits<Dict<K, V>> {
+    static constexpr bool supports_equality =
+        scalar_capability_traits<K>::supports_equality && scalar_capability_traits<V>::supports_equality;
+    static constexpr bool supports_hash =
+        scalar_capability_traits<K>::supports_hash && scalar_capability_traits<V>::supports_hash;
 };
 
 } // namespace bg::details

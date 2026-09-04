@@ -108,3 +108,9 @@ template <typename T> struct is_set<Set<T>> : std::true_type {};
 template <typename T> inline constexpr bool is_set_v = is_set<T>::value;
 
 } // namespace bg
+
+namespace bg::details {
+
+template <typename T> inline constexpr bool generic_scalar<Set<T>> = generic_scalar<T>;
+
+} // namespace bg::details

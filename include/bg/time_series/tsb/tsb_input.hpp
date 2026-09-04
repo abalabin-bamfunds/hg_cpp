@@ -3,18 +3,12 @@
 #include <bg/node/details/input_properties.hpp>
 #include <bg/node/input_fwd.hpp>
 #include <bg/node/input_properties.hpp>
-#include <bg/time_series/ref/ref_input.hpp>
+#include <bg/time_series/details/input_data.hpp>
 #include <bg/time_series/time_series_input.hpp>
-#include <bg/time_series/ts/ts_input.hpp>
-#include <bg/time_series/tsb/tsb_input_view.hpp>
 #include <bg/time_series/tsb/tsb_type.hpp>
-#include <bg/time_series/tsd/tsd_input.hpp>
-#include <bg/time_series/tsl/tsl_input.hpp>
-#include <bg/time_series/tss/tss_input.hpp>
-#include <bg/util/polymorphic_value.hpp>
+#include <bg/type/time_series_bundle_type.hpp>
 
 #include <string_view>
-#include <type_traits>
 
 namespace bg {
 namespace details {
@@ -23,26 +17,27 @@ template <typename TimeSeries> using bundle_input_field = In<TimeSeries>;
 
 class bundle_input_factory {
   public:
-    explicit bundle_input_factory(const TimeSeriesBundleInputView &view) noexcept : view_{&view} {}
+    explicit bundle_input_factory(const TimeSeriesInputData &data) noexcept : data_{&data} {}
 
-    template <typename Item> [[nodiscard]] auto make(std::size_t index) const {
-        const auto item = view_->item(index);
-        return In<Item>{item.last_updated, item.value, item.prototype};
+    template <typename Item> [[nodiscard]] In<Item> make(std::size_t index) const {
+        const auto item = data_->runtime_type().item(data_->data(), static_cast<TimeSeriesItemId>(index));
+        return {item.last_updated, item.value, item.runtime_type};
     }
 
   private:
-    const TimeSeriesBundleInputView *view_;
+    const TimeSeriesInputData *data_;
 };
 
 template <template <template <typename> typename> typename Schema>
-[[nodiscard]] auto make_bundle_inputs(const TimeSeriesBundleInputView &view) {
-    auto factory = bundle_input_factory{view};
+[[nodiscard]] auto make_bundle_inputs(const TimeSeriesInputData &data) {
+    auto factory = bundle_input_factory{data};
     return make_bundle_fields<Schema, bundle_input_field>(factory);
 }
 
 } // namespace details
 
 template <template <template <typename> typename> typename Schema, auto... TimeSeriesProperties, auto... Properties>
+    requires(!details::bundle_schema_variable_declaration<Schema<details::bundle_schema_field>>)
 class In<TSB<Schema, TimeSeriesProperties...>, Properties...> {
     using ParsedProperties = details::input_properties<Properties...>;
     static_assert(ParsedProperties::valid);
@@ -51,21 +46,28 @@ class In<TSB<Schema, TimeSeriesProperties...>, Properties...> {
     using time_series_type = TSB<Schema, TimeSeriesProperties...>;
     using fields_type = Schema<details::bundle_input_field>;
 
-    In(const EvaluationTime &last_updated, const void *value, const TimeSeriesInputView &prototype) noexcept
-        : view_(View::copy(static_cast<const TimeSeriesBundleInputView &>(prototype))),
-          fields_{bind(last_updated, value)} {}
+    In(const EvaluationTime &last_updated, const void *value, const TimeSeriesRuntimeType &runtime_type) noexcept
+        : data_{runtime_type, last_updated, value}, fields_{details::make_bundle_inputs<Schema>(data_)} {}
 
-    [[nodiscard]] bool valid() const noexcept { return view_->valid(); }
-    [[nodiscard]] EvaluationTime last_updated() const noexcept { return view_->last_updated(); }
+    [[nodiscard]] bool valid() const noexcept { return data_.valid(); }
+    [[nodiscard]] EvaluationTime last_updated() const noexcept { return data_.last_updated(); }
     [[nodiscard]] const fields_type *operator->() const noexcept { return &fields_; }
     [[nodiscard]] const fields_type &fields() const noexcept { return fields_; }
-    [[nodiscard]] bool item_updated(std::size_t index) const noexcept { return view_->item_updated(index); }
+    [[nodiscard]] bool item_updated(std::size_t index) const noexcept {
+        return data_.runtime_type().item_updated(data_.last_updated_ref(), data_.data(),
+                                                 static_cast<TimeSeriesItemId>(index));
+    }
 
     template <typename Function> void for_each_updated(Function &&function) const {
-        auto callback = [](void *context, std::size_t index) {
-            (*static_cast<std::remove_reference_t<Function> *>(context))(index);
-        };
-        view_->for_each_updated(&function, callback);
+        data_.runtime_type().for_each_updated_item(
+            data_.last_updated_ref(), data_.data(), std::addressof(function), [](void *context, TimeSeriesItemId id) {
+                (*static_cast<std::remove_reference_t<Function> *>(context))(id);
+            });
+    }
+
+    template <typename... Functions> decltype(auto) visit(Functions &&...functions) const {
+        return In<TS_T>{data_.last_updated_ref(), data_.data(), data_.runtime_type()}.visit(
+            std::forward<Functions>(functions)...);
     }
 
     static constexpr std::string_view name = ParsedProperties::name;
@@ -73,15 +75,59 @@ class In<TSB<Schema, TimeSeriesProperties...>, Properties...> {
     static constexpr InputValidity validity = ParsedProperties::validity;
 
   private:
-    using View = util::polymorphic_value<TimeSeriesBundleInputView>;
+    details::TimeSeriesInputData data_;
+    fields_type fields_;
+};
 
-    [[nodiscard]] fields_type bind(const EvaluationTime &last_updated, const void *value) {
-        view_->bind(last_updated, value);
-        return details::make_bundle_inputs<Schema>(view_.get());
+template <template <template <typename> typename> typename Schema, auto... TimeSeriesProperties, auto... Properties>
+    requires details::bundle_schema_variable_declaration<Schema<details::bundle_schema_field>>
+class In<TSB<Schema, TimeSeriesProperties...>, Properties...> {
+    using ParsedProperties = details::input_properties<Properties...>;
+    static_assert(ParsedProperties::valid);
+
+  public:
+    In(const EvaluationTime &last_updated, const void *value, const TimeSeriesRuntimeType &runtime_type) noexcept
+        : data_{runtime_type, last_updated, value} {}
+
+    [[nodiscard]] bool valid() const noexcept { return data_.valid(); }
+    [[nodiscard]] EvaluationTime last_updated() const noexcept { return data_.last_updated(); }
+    [[nodiscard]] std::size_t size() const noexcept { return data_.runtime_type().item_count(data_.data()); }
+    [[nodiscard]] util::symbol item_name(std::size_t index) const {
+        return static_cast<const TimeSeriesBundleType &>(data_.runtime_type().type()).item_name(index);
+    }
+    [[nodiscard]] In<TS_T> operator[](std::size_t index) const {
+        const auto item = data_.runtime_type().item(data_.data(), static_cast<TimeSeriesItemId>(index));
+        return {item.last_updated, item.value, item.runtime_type};
+    }
+    [[nodiscard]] bool item_updated(std::size_t index) const noexcept {
+        return data_.runtime_type().item_updated(data_.last_updated_ref(), data_.data(),
+                                                 static_cast<TimeSeriesItemId>(index));
     }
 
-    View view_;
-    fields_type fields_;
+    template <typename Function> void for_each_updated(Function &&function) const {
+        data_.runtime_type().for_each_updated_item(
+            data_.last_updated_ref(), data_.data(), std::addressof(function), [](void *context, TimeSeriesItemId id) {
+                (*static_cast<std::remove_reference_t<Function> *>(context))(id);
+            });
+    }
+
+    [[nodiscard]] const TimeSeriesRuntimeType &runtime_type() const noexcept { return data_.runtime_type(); }
+    [[nodiscard]] const void *data() const noexcept { return data_.data(); }
+    [[nodiscard]] const In *operator->() const noexcept { return this; }
+
+    template <typename... Functions> decltype(auto) visit(Functions &&...functions) const {
+        return In<TS_T>{data_.last_updated_ref(), data_.data(), data_.runtime_type()}.visit(
+            std::forward<Functions>(functions)...);
+    }
+
+    using time_series_type = TSB<Schema, TimeSeriesProperties...>;
+
+    static constexpr std::string_view name = ParsedProperties::name;
+    static constexpr InputActivity activity = ParsedProperties::activity;
+    static constexpr InputValidity validity = ParsedProperties::validity;
+
+  private:
+    details::TimeSeriesInputData data_;
 };
 
 } // namespace bg

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <bg/time_series/tsd/tsd_type.hpp>
-#include <bg/type/details/time_series_type.hpp>
+#include <bg/type/details/time_series_type_traits.hpp>
 #include <bg/type/time_series_dict_type.hpp>
 #include <bg/type/time_series_set_type.hpp>
 
@@ -9,9 +9,8 @@ namespace bg::details {
 
 template <typename Key, typename Item, auto... Properties>
 struct time_series_type_traits<TSD<Key, Item, Properties...>> {
-    static constexpr bool generic = generic_scalar<Key> || generic_time_series<Item>::value;
-    static constexpr bool supported =
-        (generic_scalar<Key> || has_cpp_scalar_type<Key>) && supported_time_series<Item>::value;
+    static constexpr bool generic = generic_scalar<Key> || generic_time_series<Item>;
+    static constexpr bool supported = (generic_scalar<Key> || has_cpp_scalar_type<Key>) && supported_time_series<Item>;
 
     template <typename Scope, std::size_t Index, bool Input>
     [[nodiscard]] static const TimeSeriesType &get(GuaranteeParameter guarantee) {

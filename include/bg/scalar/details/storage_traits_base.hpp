@@ -17,6 +17,7 @@
 
 namespace bg::details {
 
+// Defines the C++ value, stored object, capabilities, and lifecycle operations for a scalar type.
 template <typename T> struct scalar_storage_traits {
     using stored_type = T;
     using value_type = scalar_value_t<T>;
@@ -26,6 +27,7 @@ template <typename T> struct scalar_storage_traits {
         std::same_as<T, EvaluationTime> || requires(value_type value) { std::hash<value_type>{}(value); };
     static constexpr bool uses_variable_memory = false;
     static constexpr bool requires_finalization = !std::is_trivially_destructible_v<stored_type>;
+    static constexpr bool assign_uses_memory_resource = false;
 
     [[nodiscard]] static value_type read(const stored_type &value) noexcept { return value; }
 
@@ -41,7 +43,11 @@ template <typename T> struct scalar_storage_traits {
         std::construct_at(destination, std::move(value));
     }
 
-    static void assign(stored_type &destination, value_type value) { destination = std::move(value); }
+    static void assign(stored_type &destination, value_type value, std::pmr::memory_resource &)
+        requires std::assignable_from<stored_type &, value_type>
+    {
+        destination = std::move(value);
+    }
 
     static void destroy(stored_type *value, std::pmr::memory_resource &) noexcept { std::destroy_at(value); }
 };
@@ -54,6 +60,7 @@ template <> struct scalar_storage_traits<string> {
     static constexpr bool supports_hash = true;
     static constexpr bool uses_variable_memory = true;
     static constexpr bool requires_finalization = false;
+    static constexpr bool assign_uses_memory_resource = false;
 
     [[nodiscard]] static value_type read(const stored_type &value) noexcept { return value; }
 
@@ -63,7 +70,9 @@ template <> struct scalar_storage_traits<string> {
         std::construct_at(destination, value, &memory);
     }
 
-    static void assign(stored_type &destination, value_type value) { destination.assign(value); }
+    static void assign(stored_type &destination, value_type value, std::pmr::memory_resource &) {
+        destination.assign(value);
+    }
 
     static void destroy(stored_type *value, std::pmr::memory_resource &) noexcept { std::destroy_at(value); }
 };
@@ -76,12 +85,19 @@ template <typename T> struct scalar_storage_traits<Opaque<T>> {
     static constexpr bool supports_hash = false;
     static constexpr bool uses_variable_memory = false;
     static constexpr bool requires_finalization = !std::is_trivially_destructible_v<stored_type>;
+    static constexpr bool assign_uses_memory_resource = false;
 
     [[nodiscard]] static scalar_value_t<Opaque<T>> read(const stored_type &value) noexcept { return value; }
 
     template <typename Source>
     static void construct(stored_type *destination, Source &&value, std::pmr::memory_resource &) {
         std::construct_at(destination, std::forward<Source>(value));
+    }
+
+    static void assign(stored_type &destination, const stored_type &value, std::pmr::memory_resource &)
+        requires std::is_copy_assignable_v<stored_type>
+    {
+        destination = value;
     }
 
     static void destroy(stored_type *value, std::pmr::memory_resource &) noexcept { std::destroy_at(value); }

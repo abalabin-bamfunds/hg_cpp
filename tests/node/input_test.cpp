@@ -1,6 +1,5 @@
 #include <bg/node/input.hpp>
-#include <bg/scalar/cpp_storage_representation.hpp>
-#include <bg/time_series/tsl/tsl_input_view.hpp>
+#include <bg/scalar/cpp_runtime_type.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -16,8 +15,7 @@ using UnnamedFloatInput = bg::In<bg::TS<float>>;
 using PassiveOptionalFloatInput = bg::In<bg::TS<float>, bg::optional, "value"_n, bg::passive>;
 using FinalFloatInput = bg::In<bg::TS<float, bg::TimeSeriesGuarantee::final>>;
 
-static_assert(sizeof(FloatInput) == sizeof(bg::TimeSeriesValueInputView));
-static_assert(sizeof(FloatInput) == 4 * sizeof(void *));
+static_assert(sizeof(FloatInput) == 3 * sizeof(void *));
 static_assert(std::is_trivially_copyable_v<FloatInput>);
 static_assert(FloatInput::name == "value");
 static_assert(UnnamedFloatInput::name.empty());
@@ -37,7 +35,7 @@ TEST_CASE("a typed input reads its time-series value", "[node_api]") {
     REQUIRE(input.valid());
     CHECK(input.last_updated() == updated);
     CHECK(input.value() == value);
-    const auto read_generic = [](const bg::TimeSeriesValueInputView &view) { return view.valid(); };
+    const auto read_generic = [](const FloatInput &view) { return view.valid(); };
     CHECK(read_generic(input));
     CHECK(input->valid());
     CHECK(input->last_updated() == updated);
@@ -46,15 +44,11 @@ TEST_CASE("a typed input reads its time-series value", "[node_api]") {
     CHECK(&value_view->type() == &bg::float_type());
     CHECK(value_view->value() == 1.25F);
 
-    const bg::TimeSeriesValueInputView &generic_input = *input.operator->();
+    const auto generic_input = bg::In<bg::TS<bg::SCALAR>>{updated, &value, input.runtime_type()};
     const auto generic_value = generic_input.value_view();
     CHECK(&generic_value->type() == &bg::float_type());
 
-    const bg::TimeSeriesInputView &any_input = generic_input;
-    const auto any_value = static_cast<const bg::TimeSeriesValueInputView &>(any_input).erased_value_view();
-    CHECK(&any_value->type() == &bg::float_type());
-
-    const auto visited_valid = input->visit([](const bg::TimeSeriesValueInputView *view) { return view->valid(); },
+    const auto visited_valid = input->visit([](const bg::In<bg::TS<bg::SCALAR>> *view) { return view->valid(); },
                                             [](const auto *) { return false; });
 
     REQUIRE(visited_valid);
@@ -69,24 +63,25 @@ TEST_CASE("a default typed input is invalid", "[node_api]") {
 
 TEST_CASE("a generic value input returns an erased scalar value view", "[node_api]") {
     using Input = bg::In<bg::TS<bg::SCALAR>>;
-    const auto *prototype = bg::cpp_scalar_storage_representation<float>().input_view_prototype();
+    const auto &runtime_type = bg::cpp_time_series_runtime_type<bg::TS<float>>();
     const auto updated = bg::MIN_DT + std::chrono::microseconds{1};
     const auto value = 1.25F;
-    const auto input = Input{updated, &value, *prototype};
+    const auto input = Input{updated, &value, runtime_type};
     const auto value_view = input.value_view();
 
     STATIC_CHECK(std::same_as<std::remove_cv_t<decltype(value_view)>, bg::Scalar<bg::SCALAR>>);
     CHECK(&value_view->type() == &bg::float_type());
 }
 
-TEST_CASE("an arbitrary time-series input returns an erased scalar view", "[node_api]") {
+TEST_CASE("an arbitrary time-series input provides its category view", "[node_api]") {
     using Input = bg::In<bg::TS_T>;
-    const auto *prototype = bg::cpp_scalar_storage_representation<float>().input_view_prototype();
+    const auto &runtime_type = bg::cpp_time_series_runtime_type<bg::TS<float>>();
     const auto updated = bg::MIN_DT + std::chrono::microseconds{1};
     const auto value = 1.25F;
-    const auto input = Input{updated, &value, *prototype};
-    const auto value_view = static_cast<const bg::TimeSeriesValueInputView &>(*input.operator->()).erased_value_view();
+    const auto input = Input{updated, &value, runtime_type};
+    const auto value_view =
+        input.visit([](const bg::In<bg::TS<bg::SCALAR>> *value_input) { return value_input->value_view(); }, ddv::noop);
 
-    STATIC_CHECK(std::same_as<std::remove_cv_t<decltype(value_view)>, bg::Scalar<>>);
-    CHECK(&value_view->type() == &bg::float_type());
+    REQUIRE(value_view);
+    CHECK(&(*value_view)->type() == &bg::float_type());
 }

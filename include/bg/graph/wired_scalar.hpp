@@ -1,6 +1,6 @@
 #pragma once
 
-#include <bg/scalar/storage_representation.hpp>
+#include <bg/scalar/runtime_type.hpp>
 
 namespace bg {
 
@@ -8,9 +8,7 @@ class GraphWiring;
 
 class WiredScalar {
   public:
-    [[nodiscard]] const ScalarStorageRepresentation &storage_representation() const noexcept {
-        return *storage_representation_;
-    }
+    [[nodiscard]] const ScalarRuntimeType &runtime_type() const noexcept { return *runtime_type_; }
 
     [[nodiscard]] const void *data() const noexcept { return data_; }
 
@@ -19,10 +17,10 @@ class WiredScalar {
   private:
     friend GraphWiring;
 
-    WiredScalar(const ScalarStorageRepresentation &storage_representation, void *data) noexcept
-        : storage_representation_(&storage_representation), data_(data) {}
+    WiredScalar(const ScalarRuntimeType &runtime_type, void *data) noexcept
+        : runtime_type_(&runtime_type), data_(data) {}
 
-    const ScalarStorageRepresentation *storage_representation_;
+    const ScalarRuntimeType *runtime_type_;
     void *data_;
 };
 

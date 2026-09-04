@@ -1,9 +1,10 @@
 #include "ref_node.hpp"
 
-#include <bg/graph/compiled_node.hpp>
+#include <bg/evaluation_context.hpp>
 #include <bg/graph/dynamic_subscribers.hpp>
+#include <bg/graph/node.hpp>
 #include <bg/node/node_template.hpp>
-#include <bg/time_series/ref/ref_storage_representation.hpp>
+#include <bg/time_series/ref/ref_runtime_type.hpp>
 #include <bg/type/time_series_reference_type.hpp>
 
 #include <memory>
@@ -29,14 +30,13 @@ class ReferenceNodeTemplate final : public NodeTemplate {
         return &start;
     }
 
-    [[nodiscard]] NodeStateLayout state_layout(const ResolvedSignature &,
-                                               std::span<const ScalarStorageRepresentation *const>,
+    [[nodiscard]] NodeStateLayout state_layout(const ResolvedSignature &, std::span<const ScalarRuntimeType *const>,
                                                std::span<const ScalarType *const>) const override {
         return {
             .size = sizeof(ReferenceStorage),
             .alignment = alignof(ReferenceStorage),
             .field_offsets = {},
-            .generic_storage_representations = {},
+            .generic_runtime_types = {},
         };
     }
 
@@ -53,33 +53,31 @@ class ReferenceNodeTemplate final : public NodeTemplate {
         return DynamicSubscribersLayout{.source_input = 0, .state_offset = offsetof(ReferenceStorage, subscribers)};
     }
 
-    [[nodiscard]] bool uses_generic_time_series_input_view(std::size_t) const noexcept override { return true; }
+    [[nodiscard]] bool uses_time_series_input_runtime_type(std::size_t) const noexcept override { return true; }
 
-    [[nodiscard]] const TimeSeriesStorageRepresentation *output_storage_representation(
-        const ResolvedSignature &signature, std::span<const ScalarStorageRepresentation *const>,
-        std::span<const TimeSeriesStorageRepresentation *const> inputs) const noexcept override {
-        return &time_series_reference_storage_representation(
-            static_cast<const TimeSeriesReferenceType &>(*signature.output), *inputs.front());
+    [[nodiscard]] const TimeSeriesRuntimeType *
+    output_runtime_type(const ResolvedSignature &signature, std::span<const ScalarRuntimeType *const>,
+                        std::span<const TimeSeriesRuntimeType *const> inputs) const noexcept override {
+        return &time_series_reference_runtime_type(static_cast<const TimeSeriesReferenceType &>(*signature.output),
+                                                   *inputs.front());
     }
 
   private:
     static void start(const CompiledNode &node, void *runtime_storage, EvaluationContext *context) {
-        const auto &target = node.parameters().front();
-        auto *storage = static_cast<std::byte *>(runtime_storage);
-        auto &reference = *reinterpret_cast<ReferenceStorage *>(storage + node.state_offset());
-        auto &output = *reinterpret_cast<ReferenceStorage **>(storage + node.output_value_offset());
+        const auto runtime_node = Node{node, runtime_storage};
+        auto &reference = *static_cast<ReferenceStorage *>(runtime_node.state());
+        auto &output = *static_cast<ReferenceStorage **>(runtime_node.output_value());
 
         reference.owner = &context->runtime_graph();
-        reference.target_last_updated = &target.last_updated(runtime_storage);
-        reference.target_value = target.value(runtime_storage);
-        reference.target_representation = &node.time_series_input_storage_representation(0);
+        reference.target_last_updated = &runtime_node.input_last_updated(0);
+        reference.target_value = runtime_node.input_value(0);
+        reference.target_runtime_type = &runtime_node.time_series_input_runtime_type(0, 0);
         output = &reference;
-        node.output_last_updated(runtime_storage) = context->evaluation_time();
+        runtime_node.output_last_updated() = context->evaluation_time();
     }
 
     static void destroy_state(const CompiledNode &node, void *runtime_storage, EvaluationContext *) noexcept {
-        auto *storage = static_cast<std::byte *>(runtime_storage);
-        auto &reference = *reinterpret_cast<ReferenceStorage *>(storage + node.state_offset());
+        auto &reference = *static_cast<ReferenceStorage *>(Node{node, runtime_storage}.state());
         DynamicSubscribers::release(reference.subscribers);
         std::destroy_at(&reference);
     }

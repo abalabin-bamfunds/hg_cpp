@@ -3,73 +3,76 @@
 #include <bg/node/details/input_properties.hpp>
 #include <bg/node/input_fwd.hpp>
 #include <bg/node/input_properties.hpp>
+#include <bg/time_series/details/input_data.hpp>
 #include <bg/time_series/ref/ref_input.hpp>
 #include <bg/time_series/time_series_input.hpp>
 #include <bg/time_series/ts/ts_input.hpp>
-#include <bg/time_series/tsl/tsl_input_view.hpp>
+#include <bg/time_series/tsl/tsl_runtime_type.hpp>
 #include <bg/time_series/tsl/tsl_storage.hpp>
-#include <bg/time_series/tsl/tsl_storage_representation.hpp>
 #include <bg/time_series/tsl/tsl_type.hpp>
-#include <bg/util/polymorphic_value.hpp>
 
 #include <string_view>
 
 namespace bg {
 
-template <typename Item, std::size_t Size, auto... TimeSeriesProperties, auto... Properties>
+template <typename Item, auto Size, auto... TimeSeriesProperties, auto... Properties>
 class In<TSL<Item, Size, TimeSeriesProperties...>, Properties...> {
     using ParsedProperties = details::input_properties<Properties...>;
     static_assert(ParsedProperties::valid);
-    static_assert(Size != std::dynamic_extent, "variable-size time series lists are not implemented");
 
   public:
     using storage_type = details::time_series_list_storage;
 
-    In() noexcept : view_(prototype_) {}
+    In() noexcept
+        requires(!details::size_variable_declaration<decltype(Size)>)
+        : data_{cpp_time_series_runtime_type<TSL<Item, Size, TimeSeriesProperties...>>(), MIN_DT, nullptr} {}
 
-    In(const EvaluationTime &last_updated, const storage_type *value) noexcept : In() {
-        view_->bind(last_updated, value);
+    In(const EvaluationTime &last_updated, const storage_type *value) noexcept
+        requires(!details::size_variable_declaration<decltype(Size)>)
+        : data_{cpp_time_series_runtime_type<TSL<Item, Size, TimeSeriesProperties...>>(), last_updated, value} {}
+
+    In(const EvaluationTime &last_updated, const void *value, const TimeSeriesRuntimeType &runtime_type) noexcept
+        : data_{runtime_type, last_updated, value} {}
+
+    [[nodiscard]] bool valid() const noexcept { return data_.valid(); }
+    [[nodiscard]] EvaluationTime last_updated() const noexcept { return data_.last_updated(); }
+    [[nodiscard]] std::size_t size() const noexcept { return data_.runtime_type().item_count(data_.data()); }
+
+    [[nodiscard]] In<Item> operator[](std::size_t index) const {
+        const auto item = data_.runtime_type().item(data_.data(), static_cast<TimeSeriesItemId>(index));
+        return {item.last_updated, item.value, item.runtime_type};
     }
 
-    In(const EvaluationTime &last_updated, const void *value, const TimeSeriesInputView &prototype) noexcept
-        : view_(View::copy(static_cast<const TimeSeriesListInputView &>(prototype))) {
-        view_->bind(last_updated, value);
+    [[nodiscard]] bool item_updated(std::size_t index) const noexcept {
+        return data_.runtime_type().item_updated(data_.last_updated_ref(), data_.data(),
+                                                 static_cast<TimeSeriesItemId>(index));
     }
-
-    [[nodiscard]] bool valid() const noexcept { return view_->valid(); }
-    [[nodiscard]] EvaluationTime last_updated() const noexcept { return view_->last_updated(); }
-
-    [[nodiscard]] auto operator[](std::size_t index) const {
-        const auto item = view_->item(index);
-
-        return In<Item>{item.last_updated, item.value, item.prototype};
-    }
-
-    [[nodiscard]] bool item_updated(std::size_t index) const noexcept { return view_->item_updated(index); }
 
     template <typename Function> void for_each_updated(Function &&function) const {
-        auto callback = [](void *context, std::size_t index) {
-            (*static_cast<std::remove_reference_t<Function> *>(context))(index);
-        };
-        view_->for_each_updated(&function, callback);
+        data_.runtime_type().for_each_updated_item(
+            data_.last_updated_ref(), data_.data(), std::addressof(function), [](void *context, TimeSeriesItemId id) {
+                (*static_cast<std::remove_reference_t<Function> *>(context))(id);
+            });
     }
 
-    [[nodiscard]] const TimeSeriesListInputView *operator->() const noexcept { return view_.operator->(); }
+    [[nodiscard]] const TimeSeriesRuntimeType &runtime_type() const noexcept { return data_.runtime_type(); }
+    [[nodiscard]] const void *data() const noexcept { return data_.data(); }
+    [[nodiscard]] const In *operator->() const noexcept { return this; }
+
+    template <typename... Functions> decltype(auto) visit(Functions &&...functions) const {
+        return In<TS_T>{data_.last_updated_ref(), data_.data(), data_.runtime_type()}.visit(
+            std::forward<Functions>(functions)...);
+    }
 
     using time_series_type = TSL<Item, Size, TimeSeriesProperties...>;
     using item_type = Item;
 
-    static constexpr std::size_t size = Size;
     static constexpr std::string_view name = ParsedProperties::name;
     static constexpr InputActivity activity = ParsedProperties::activity;
     static constexpr InputValidity validity = ParsedProperties::validity;
 
   private:
-    using View = util::polymorphic_value<TimeSeriesListInputView>;
-
-    inline static const View prototype_ = View::copy(static_cast<const TimeSeriesListInputView &>(
-        cpp_time_series_storage_representation<TSL<Item, Size, TimeSeriesProperties...>>().input_view_prototype()));
-    View view_;
+    details::TimeSeriesInputData data_;
 };
 
 } // namespace bg

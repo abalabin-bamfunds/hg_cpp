@@ -1,7 +1,7 @@
 #pragma once
 
 #include <bg/time_series/tss/tss_type.hpp>
-#include <bg/type/details/time_series_type.hpp>
+#include <bg/type/details/time_series_type_traits.hpp>
 #include <bg/type/time_series_set_type.hpp>
 
 namespace bg::details {

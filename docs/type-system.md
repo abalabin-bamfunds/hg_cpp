@@ -30,22 +30,22 @@ same address, so exact equality is a pointer comparison. C++ and Python
 declarations use the same objects. A module that implements a registered type
 must remain loaded while the type can be used.
 
-Physical storage is separate from this hierarchy.
+Runtime types define physical storage separately from this hierarchy.
 
-## Storage representations
+## Runtime types
 
-A storage representation describes the typed objects and buffers used to store
-a graph type and construct its views. Its parts can occupy separate locations.
-A graph type can have several storage representations, and graph types can
-share one.
+A runtime type pairs a semantic type with a physical layout and the operations
+that interpret and manage its data. Its data can occupy separate locations. A
+semantic type can have several runtime types. Runtime types for different
+semantic types can share an implementation and physical layout.
 
-Type resolution produces semantic types. Graph compilation selects storage
-representations and uses them to lay out values and select input views and entry
-points. A representation used in initial runtime storage provides a
-position-independent initial value that supports byte-copy initialization.
+Type resolution produces semantic types. Graph compilation selects runtime
+types and uses them to lay out values and select entry points. A runtime type
+used in initial runtime storage provides a position-independent initial value
+that supports byte-copy initialization.
 
-The process owns registered and composed storage representations. Graph
-compilation reuses them across graphs.
+The process owns registered and composed runtime types. Graph compilation
+reuses them across graphs.
 
 ## Scalar types
 
@@ -87,13 +87,13 @@ storage can be inline.
 ## Covariance
 
 Covariance lets an input accept hierarchical values without creating another
-time series representation. If `Derived` inherits from `Base`, compatibility
+time series. If `Derived` inherits from `Base`, compatibility
 applies recursively:
 
 ```text
 Derived <: Base
 List<Derived> <: List<Base>
-Dictionary<Derived, V> <: Dictionary<Base, V>
+Dict<Derived, V> <: Dict<Base, V>
 TS<Derived> <: TS<Base>
 ```
 
@@ -115,6 +115,11 @@ A variable scalar component provides a type-erased scalar view. A variable time
 series component provides a type-erased time series view. This lets one compiled
 node implementation work with any resolved component type accepted by its
 signature.
+
+The public borrowed views are `Scalar<T>` for scalars and `In<T>` for time
+series. `Out<T>` provides time series mutation. The template argument controls
+the available typed or generic operations; separate public view hierarchies are
+not required.
 
 ### Time series bundles
 
@@ -167,6 +172,15 @@ In<T::with<G>> input;
 `T` and `G` retain separate bindings. A literal guarantee in `T::with<G>`
 requires that guarantee or a stronger one.
 
+`SizeVariableDeclaration<Name>` declares a fixed time series list size
+variable. `SIZE` is the default declaration. For example,
+`TSL<TS_T, SIZE>` captures both the item time series type and the list size.
+
+`BundleSchemaVariableDeclaration<Name, Field>` declares a bundle schema
+variable. `SCHEMA` is the default declaration. `TSB<SCHEMA>` captures the
+resolved `BundleSchemaType`, including its ordered field names and time series
+types.
+
 `EqualityComparable` and `Hashable` require the corresponding scalar
 operation. A scalar variable view exposes an operation when its declaration
 requires it:
@@ -180,7 +194,8 @@ collection scalar has a property when its item type has that property.
 
 Each variable derives from `Variable`. `TypeVariable<Category>` also implements
 its type category, so `TypeVariable<ScalarType>` can be used wherever a scalar
-type is required. Size and guarantee variables derive only from `Variable`.
+type is required. A schema variable is a `TypeVariable<BundleSchemaType>`.
+Size and guarantee variables derive only from `Variable`.
 
 A type variable can restrict its value to alternative generic types:
 

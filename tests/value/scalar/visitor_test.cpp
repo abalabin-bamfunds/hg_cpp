@@ -1,0 +1,77 @@
+#include <bg/scalar/value.hpp>
+
+#include <catch2/catch_test_macros.hpp>
+
+#include <cstdint>
+#include <utility>
+#include <vector>
+
+TEST_CASE("a scalar visitor identifies a scalar value", "[value][scalar][visitor]") {
+    const auto value = bg::ScalarValue{42};
+    auto called = false;
+
+    value.view().visit(
+        [&](const bg::Scalar<> *view) {
+            called = true;
+            CHECK(&view->type() == &bg::int64_type());
+        },
+        ddv::noop);
+
+    CHECK(called);
+}
+
+TEST_CASE("a scalar visitor identifies each collection type", "[value][scalar][visitor]") {
+    const auto list = bg::ScalarValue<bg::List<std::int64_t>>{std::vector<std::int64_t>{1}};
+    const auto set = bg::ScalarValue<bg::Set<std::int64_t>>{std::vector<std::int64_t>{2}};
+    const auto dict = bg::ScalarValue<bg::Dict<std::int64_t, std::int64_t>>{
+        std::vector<std::pair<std::int64_t, std::int64_t>>{{3, 4}}};
+    auto list_called = false;
+    auto set_called = false;
+    auto dict_called = false;
+
+    list.view().visit(
+        [&](const bg::Scalar<bg::List<bg::SCALAR>> *view) {
+            list_called = true;
+            CHECK(view->size() == 1);
+        },
+        ddv::noop);
+    set.view().visit(
+        [&](const bg::Scalar<bg::Set<bg::SCALAR>> *view) {
+            set_called = true;
+            CHECK(view->size() == 1);
+        },
+        ddv::noop);
+    dict.view().visit(
+        [&](const bg::Scalar<bg::Dict<bg::SCALAR, bg::SCALAR>> *view) {
+            dict_called = true;
+            CHECK(view->size() == 1);
+        },
+        ddv::noop);
+
+    CHECK(list_called);
+    CHECK(set_called);
+    CHECK(dict_called);
+}
+
+TEST_CASE("a scalar visitor supports a base-view fallback", "[value][scalar][visitor]") {
+    const auto value = bg::ScalarValue{42};
+    auto called = false;
+
+    value.view().visit(
+        [&](const bg::Scalar<> *view) {
+            called = true;
+            CHECK(&view->type() == &bg::int64_type());
+        },
+        ddv::noop);
+
+    CHECK(called);
+}
+
+TEST_CASE("a scalar visitor can ignore an unmatched view", "[value][scalar][visitor]") {
+    const auto value = bg::ScalarValue{42};
+    auto called = false;
+
+    value.view().visit([&](const bg::Scalar<bg::List<bg::SCALAR>> *) { called = true; }, ddv::noop);
+
+    CHECK_FALSE(called);
+}

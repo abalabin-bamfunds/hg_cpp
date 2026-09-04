@@ -2,7 +2,7 @@
 
 #include <bg/evaluation_context.hpp>
 #include <bg/graph/compiled_graph.hpp>
-#include <bg/graph/compiled_node.hpp>
+#include <bg/graph/node.hpp>
 #include <bg/graph/runtime_graph.hpp>
 #include <bg/time_series/ref/ref_storage.hpp>
 #include <bg/util/scope_exit.hpp>
@@ -51,8 +51,9 @@ void NestedGraph::update_inputs(const CompiledNestedGraph &compiled, std::span<c
 
 void NestedGraph::bind_input(std::size_t node_index, const NestedGraphInput &input) {
     const auto &node = active_->compiled_graph_->node(node_index);
-    auto &last_updated = node.output_last_updated(active_->storage_);
-    auto &target = *reinterpret_cast<details::ReferenceStorage **>(active_->storage_ + node.output_value_offset());
+    const auto runtime_node = active_->node(node_index);
+    auto &last_updated = runtime_node.output_last_updated();
+    auto &target = *static_cast<details::ReferenceStorage **>(runtime_node.output_value());
 
     if (target == input.target && last_updated == input.last_updated) {
         return;
@@ -94,12 +95,12 @@ details::ReferenceStorage *NestedGraph::output(const CompiledNestedGraph &compil
         return nullptr;
     }
 
-    const auto &node = active_->compiled_graph_->node(compiled.output_node);
-    if (node.output_last_updated(active_->storage_) <= MIN_DT) {
+    const auto node = active_->node(compiled.output_node);
+    if (node.output_last_updated() <= MIN_DT) {
         return nullptr;
     }
 
-    return *reinterpret_cast<details::ReferenceStorage **>(active_->storage_ + node.output_value_offset());
+    return *static_cast<details::ReferenceStorage **>(node.output_value());
 }
 
 void NestedGraph::destroy_retired_callback(void *target) noexcept {

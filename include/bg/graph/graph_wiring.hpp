@@ -4,6 +4,7 @@
 #include <bg/graph/wired_node.hpp>
 #include <bg/graph/wiring_path.hpp>
 #include <bg/graph/wiring_point.hpp>
+#include <bg/time_series/item_id.hpp>
 
 #include <array>
 #include <deque>
@@ -25,7 +26,7 @@ struct WiringPointRecord {
 
     std::size_t node_index;
     std::size_t parent;
-    std::size_t item;
+    TimeSeriesItemId item;
     const TimeSeriesType *type;
 };
 
@@ -65,7 +66,7 @@ class GraphWiring {
 
     void destroy_scalars(std::span<const WiredScalar> scalars) noexcept;
     [[nodiscard]] std::pmr::memory_resource &variable_memory() noexcept;
-    [[nodiscard]] std::pmr::memory_resource &variable_memory(const ScalarStorageRepresentation &representation);
+    [[nodiscard]] std::pmr::memory_resource &variable_memory(const ScalarRuntimeType &runtime_type);
 
     std::pmr::memory_resource *memory_;
     std::pmr::unsynchronized_pool_resource fixed_memory_;

@@ -2,8 +2,8 @@
 #include <bg/graph/wiring_context.hpp>
 #include <bg/node/node_template.hpp>
 #include <bg/time_series/time_series_type.hpp>
-#include <bg/time_series/tsl/tsl_type.hpp>
 #include <bg/time_series/tsl/tsl.hpp>
+#include <bg/time_series/tsl/tsl_type.hpp>
 #include <bg/type/time_series_list_type.hpp>
 #include <bg/type/time_series_value_type.hpp>
 
@@ -25,10 +25,9 @@ class list_source_template final : public bg::NodeTemplate {
         return &evaluate;
     }
 
-    [[nodiscard]] const bg::TimeSeriesStorageRepresentation *
-    output_storage_representation(const bg::ResolvedSignature &,
-                                  std::span<const bg::ScalarStorageRepresentation *const>,
-                                  std::span<const bg::TimeSeriesStorageRepresentation *const>) const noexcept override {
+    [[nodiscard]] const bg::TimeSeriesRuntimeType *
+    output_runtime_type(const bg::ResolvedSignature &, std::span<const bg::ScalarRuntimeType *const>,
+                        std::span<const bg::TimeSeriesRuntimeType *const>) const noexcept override {
         return nullptr;
     }
 
@@ -49,10 +48,9 @@ class float_sink_template final : public bg::NodeTemplate {
         return &evaluate;
     }
 
-    [[nodiscard]] const bg::TimeSeriesStorageRepresentation *
-    output_storage_representation(const bg::ResolvedSignature &,
-                                  std::span<const bg::ScalarStorageRepresentation *const>,
-                                  std::span<const bg::TimeSeriesStorageRepresentation *const>) const noexcept override {
+    [[nodiscard]] const bg::TimeSeriesRuntimeType *
+    output_runtime_type(const bg::ResolvedSignature &, std::span<const bg::ScalarRuntimeType *const>,
+                        std::span<const bg::TimeSeriesRuntimeType *const>) const noexcept override {
         return nullptr;
     }
 
@@ -73,10 +71,9 @@ class list_sink_template final : public bg::NodeTemplate {
         return &evaluate;
     }
 
-    [[nodiscard]] const bg::TimeSeriesStorageRepresentation *
-    output_storage_representation(const bg::ResolvedSignature &,
-                                  std::span<const bg::ScalarStorageRepresentation *const>,
-                                  std::span<const bg::TimeSeriesStorageRepresentation *const>) const noexcept override {
+    [[nodiscard]] const bg::TimeSeriesRuntimeType *
+    output_runtime_type(const bg::ResolvedSignature &, std::span<const bg::ScalarRuntimeType *const>,
+                        std::span<const bg::TimeSeriesRuntimeType *const>) const noexcept override {
         return nullptr;
     }
 
@@ -126,7 +123,7 @@ TEST_CASE("fixed time series list selection checks its index", "[wiring][tsl]") 
     CHECK_THROWS_AS(list[3], std::out_of_range);
 }
 
-TEST_CASE("a free fixed time series list is materialized when consumed", "[wiring][tsl][alias]") {
+TEST_CASE("a free fixed time series list is materialized when consumed", "[wiring][tsl][free]") {
     const auto first_source = list_source_template{};
     const auto second_source = list_source_template{};
     const auto sink = list_sink_template{};

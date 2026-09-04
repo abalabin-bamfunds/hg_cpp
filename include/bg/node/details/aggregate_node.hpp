@@ -1,21 +1,21 @@
 #pragma once
 
 #include <bg/evaluation_context.hpp>
-#include <bg/graph/compiled_node.hpp>
+#include <bg/graph/node.hpp>
 #include <bg/node/input.hpp>
 #include <bg/node/output.hpp>
 #include <bg/node/state.hpp>
 #include <bg/node/state_layout.hpp>
-#include <bg/scalar/cpp_storage_representation.hpp>
-#include <bg/time_series/ref/ref_storage_representation.hpp>
-#include <bg/time_series/time_series_storage_representation.hpp>
-#include <bg/time_series/tsb/tsb_storage_representation.hpp>
+#include <bg/scalar/cpp_runtime_type.hpp>
+#include <bg/time_series/ref/ref_runtime_type.hpp>
+#include <bg/time_series/time_series_runtime_type.hpp>
+#include <bg/time_series/tsb/tsb_runtime_type.hpp>
 #include <bg/time_series/tsb/tsb_type.hpp>
-#include <bg/time_series/tsd/tsd_storage_representation.hpp>
+#include <bg/time_series/tsd/tsd_runtime_type.hpp>
 #include <bg/time_series/tsd/tsd_type.hpp>
-#include <bg/time_series/tsl/tsl_storage_representation.hpp>
+#include <bg/time_series/tsl/tsl_runtime_type.hpp>
 #include <bg/time_series/tsl/tsl_type.hpp>
-#include <bg/time_series/tss/tss_storage_representation.hpp>
+#include <bg/time_series/tss/tss_runtime_type.hpp>
 #include <bg/time_series/tss/tss_type.hpp>
 #include <bg/type/details/time_series_type.hpp>
 #include <bg/type/scalar_type.hpp>
@@ -156,24 +156,32 @@ template <typename Definition, std::size_t... Index>
 template <typename T> struct generic_input_field : std::false_type {};
 
 template <typename TimeSeries, auto... Properties>
-struct generic_input_field<In<TimeSeries, Properties...>> : generic_time_series<TimeSeries> {};
+struct generic_input_field<In<TimeSeries, Properties...>> : std::bool_constant<generic_time_series<TimeSeries>> {};
 
 template <typename T> struct input_view_field : std::false_type {};
 
+template <typename T> struct time_series_value_has_runtime_layout : std::false_type {};
+
+template <typename T, auto... Properties>
+struct time_series_value_has_runtime_layout<TS<T, Properties...>>
+    : std::bool_constant<scalar_type_traits<T>::is_collection> {};
+
 template <typename TimeSeries, auto... Properties>
 struct input_view_field<In<TimeSeries, Properties...>>
-    : std::bool_constant<generic_time_series<TimeSeries>::value || is_time_series_list<TimeSeries> ||
-                         is_time_series_bundle<TimeSeries>> {};
+    : std::bool_constant<generic_time_series<TimeSeries> || is_time_series_list<TimeSeries> ||
+                         is_time_series_bundle<TimeSeries> || is_time_series_set<TimeSeries> ||
+                         is_time_series_dict<TimeSeries> || time_series_value_has_runtime_layout<TimeSeries>::value> {};
 
 template <typename T> struct generic_output_field : std::false_type {};
 
-template <typename TimeSeries> struct generic_output_field<Out<TimeSeries>> : generic_time_series<TimeSeries> {};
+template <typename TimeSeries>
+struct generic_output_field<Out<TimeSeries>> : std::bool_constant<generic_time_series<TimeSeries>> {};
 
 template <typename T> struct output_view_field : std::false_type {};
 
 template <typename TimeSeries>
 struct output_view_field<Out<TimeSeries>>
-    : std::bool_constant<generic_time_series<TimeSeries>::value || is_time_series_bundle<TimeSeries>> {};
+    : std::bool_constant<generic_time_series<TimeSeries> || is_time_series_bundle<TimeSeries>> {};
 
 template <typename T> struct generic_scalar_input_field : std::false_type {};
 
@@ -190,12 +198,14 @@ template <typename T> struct scalar_view<Scalar<T>> : std::true_type {};
 template <typename Field, bool = input_field<Field>::value> struct supported_input : std::false_type {};
 
 template <typename Field>
-struct supported_input<Field, true> : supported_time_series<typename input_field<Field>::time_series_type> {};
+struct supported_input<Field, true>
+    : std::bool_constant<supported_time_series<typename input_field<Field>::time_series_type>> {};
 
 template <typename Field, bool = output_field<Field>::value> struct supported_output : std::false_type {};
 
 template <typename Field>
-struct supported_output<Field, true> : supported_time_series<typename output_field<Field>::time_series_type> {};
+struct supported_output<Field, true>
+    : std::bool_constant<supported_time_series<typename output_field<Field>::time_series_type>> {};
 
 template <typename Field>
 inline constexpr bool supported_node_field = supported_input<Field>::value || supported_output<Field>::value ||
@@ -231,7 +241,7 @@ template <> class aggregate_output_view_storage<true> {
         : local_storage_{context->scratch().use_local_storage(storage_)} {}
 
   private:
-    alignas(TimeSeriesOutputView) std::byte storage_[sizeof(TimeSeriesOutputView)];
+    alignas(OutputState) std::byte storage_[sizeof(OutputState)];
     ScratchPad::LocalStorageScope local_storage_;
 };
 
@@ -331,13 +341,13 @@ template <typename Definition, std::size_t Index> [[nodiscard]] const TimeSeries
 }
 
 template <typename Definition, std::size_t... Index>
-[[nodiscard]] const TimeSeriesStorageRepresentation *aggregate_output_storage_representation(
+[[nodiscard]] const TimeSeriesRuntimeType *aggregate_output_runtime_type(
     const ResolvedSignature &signature,
-    [[maybe_unused]] std::span<const ScalarStorageRepresentation *const> parameter_storage_representations,
-    [[maybe_unused]] std::span<const TimeSeriesStorageRepresentation *const> time_series_input_storage_representations,
+    [[maybe_unused]] std::span<const ScalarRuntimeType *const> parameter_runtime_types,
+    [[maybe_unused]] std::span<const TimeSeriesRuntimeType *const> time_series_input_runtime_types,
     std::index_sequence<Index...>) {
-    const ScalarStorageRepresentation *value_representation = nullptr;
-    const TimeSeriesStorageRepresentation *time_series_representation = nullptr;
+    const ScalarRuntimeType *value_runtime_type = nullptr;
+    const TimeSeriesRuntimeType *time_series_runtime_type = nullptr;
 
     (
         [&] {
@@ -345,14 +355,7 @@ template <typename Definition, std::size_t... Index>
 
             if constexpr (output_field<Field>::value && !generic_output_field<Field>::value) {
                 using TimeSeries = typename output_field<Field>::time_series_type;
-                if constexpr (is_time_series_reference<TimeSeries> || is_time_series_list<TimeSeries> ||
-                              is_time_series_bundle<TimeSeries> || is_time_series_set<TimeSeries> ||
-                              is_time_series_dict<TimeSeries>) {
-                    time_series_representation = &cpp_time_series_storage_representation<TimeSeries>(*signature.output);
-                } else {
-                    using Value = typename time_series_value<TimeSeries>::type;
-                    value_representation = &cpp_scalar_storage_representation<Value>();
-                }
+                time_series_runtime_type = &cpp_time_series_runtime_type<TimeSeries>(*signature.output);
             }
         }(),
         ...);
@@ -360,82 +363,89 @@ template <typename Definition, std::size_t... Index>
     if (signature.output == nullptr) {
         return nullptr;
     }
-    if (time_series_representation != nullptr) {
-        return time_series_representation;
+    if (time_series_runtime_type != nullptr) {
+        return time_series_runtime_type;
     }
-    if (value_representation != nullptr) {
-        return &time_series_value_storage_representation(*signature.output, *value_representation);
+    if (value_runtime_type != nullptr) {
+        return &time_series_value_runtime_type(*signature.output, *value_runtime_type);
     }
 
-    if (const auto *reference = dynamic_cast<const TimeSeriesReferenceType *>(signature.output)) {
+    const TimeSeriesReferenceType *reference{};
+    const TimeSeriesValueType *output_value{};
+    signature.output->visit([&](const TimeSeriesReferenceType *type) { reference = type; },
+                            [&](const TimeSeriesValueType *type) { output_value = type; }, ddv::noop);
+
+    if (reference != nullptr) {
         auto input = std::size_t{};
         for (const auto &parameter : signature.parameters) {
             if (!parameter.type->is_time_series()) {
                 continue;
             }
 
-            const auto *representation = time_series_input_storage_representations[input++];
-            const auto *target = representation->reference_target_representation();
-            if (&representation->type() == &reference->target_type()) {
-                return &time_series_reference_storage_representation(*reference, *representation);
+            const auto *runtime_type = time_series_input_runtime_types[input++];
+            if (&runtime_type->type() == &reference->target_type()) {
+                return &time_series_reference_runtime_type(*reference, *runtime_type);
             }
+
+            const TimeSeriesRuntimeType *target{};
+            runtime_type->type().visit(
+                [&](const TimeSeriesReferenceType *) {
+                    target = &static_cast<const TimeSeriesReferenceRuntimeType &>(*runtime_type).target_runtime_type();
+                },
+                ddv::noop);
             if (target != nullptr && &target->type() == &reference->target_type()) {
-                return &time_series_reference_storage_representation(*reference, *target);
+                return &time_series_reference_runtime_type(*reference, *target);
             }
         }
 
-        const auto *value = dynamic_cast<const TimeSeriesValueType *>(&reference->target_type());
+        const TimeSeriesValueType *value{};
+        reference->target_type().visit([&](const TimeSeriesValueType *type) { value = type; }, ddv::noop);
         if (value != nullptr) {
-            const auto &scalar = resolve_scalar_storage_representation(value->value_type(), {});
-            const auto &target = time_series_value_storage_representation(reference->target_type(), scalar);
-            return &time_series_reference_storage_representation(*reference, target);
+            const auto &scalar = resolve_scalar_runtime_type(value->value_type(), {});
+            const auto &target = time_series_value_runtime_type(reference->target_type(), scalar);
+            return &time_series_reference_runtime_type(*reference, target);
         }
 
-        return &resolve_time_series_storage_representation(*signature.output, time_series_input_storage_representations,
-                                                           parameter_storage_representations);
+        return &resolve_time_series_runtime_type(*signature.output, time_series_input_runtime_types,
+                                                 parameter_runtime_types);
     }
 
-    if (dynamic_cast<const TimeSeriesValueType *>(signature.output) == nullptr) {
+    if (output_value == nullptr) {
         auto time_series_input = std::size_t{};
         for (const auto &parameter : signature.parameters) {
             if (!parameter.type->is_time_series()) {
                 continue;
             }
             if (parameter.type == signature.output) {
-                return time_series_input_storage_representations[time_series_input];
+                return time_series_input_runtime_types[time_series_input];
             }
             ++time_series_input;
         }
 
-        return &resolve_time_series_storage_representation(*signature.output, time_series_input_storage_representations,
-                                                           parameter_storage_representations);
+        return &resolve_time_series_runtime_type(*signature.output, time_series_input_runtime_types,
+                                                 parameter_runtime_types);
     }
 
-    const auto &output_type = static_cast<const TimeSeriesValueType &>(*signature.output);
+    const auto &output_type = *output_value;
     [[maybe_unused]] auto parameter_index = std::size_t{};
     (
         [&] {
             using Field = std::remove_cv_t<util::aggregate_member_type<Index, Definition>>;
 
             if constexpr (input_field<Field>::value) {
-                const auto &input_type =
-                    static_cast<const TimeSeriesValueType &>(*signature.parameters[parameter_index].type);
-                if (&input_type.value_type() == &output_type.value_type()) {
-                    value_representation = parameter_storage_representations[parameter_index];
+                const TimeSeriesValueType *input_type{};
+                signature.parameters[parameter_index].type->visit(
+                    [&](const TimeSeriesValueType *type) { input_type = type; }, ddv::noop);
+                if (input_type != nullptr && &input_type->value_type() == &output_type.value_type()) {
+                    value_runtime_type = parameter_runtime_types[parameter_index];
                 }
                 ++parameter_index;
             } else if constexpr (scalar_field<Field>::value) {
-                using Value = typename scalar_field<Field>::value_type;
-                const auto *representation = parameter_storage_representations[parameter_index];
+                const auto *runtime_type = parameter_runtime_types[parameter_index];
 
-                if (representation != nullptr && &representation->type() == &output_type.value_type()) {
-                    value_representation = representation;
-                } else if constexpr (scalar_variable_list<Value>) {
-                    if (representation != nullptr) {
-                        const auto &list = static_cast<const ScalarListStorageRepresentation &>(*representation);
-                        if (&list.item_storage_representation().type() == &output_type.value_type()) {
-                            value_representation = &list.item_storage_representation();
-                        }
+                if (runtime_type != nullptr) {
+                    if (const auto *candidate = runtime_type->runtime_type_for(output_type.value_type())) {
+                        value_runtime_type = candidate;
                     }
                 }
                 ++parameter_index;
@@ -443,16 +453,16 @@ template <typename Definition, std::size_t... Index>
         }(),
         ...);
 
-    if (value_representation != nullptr) {
-        return &time_series_value_storage_representation(*signature.output, *value_representation);
+    if (value_runtime_type != nullptr) {
+        return &time_series_value_runtime_type(*signature.output, *value_runtime_type);
     }
 
-    return &resolve_time_series_storage_representation(*signature.output, time_series_input_storage_representations,
-                                                       parameter_storage_representations);
+    return &resolve_time_series_runtime_type(*signature.output, time_series_input_runtime_types,
+                                             parameter_runtime_types);
 }
 
 template <typename Definition, std::size_t... Index>
-[[nodiscard]] constexpr bool aggregate_uses_generic_time_series_input_view([[maybe_unused]] std::size_t parameter_index,
+[[nodiscard]] constexpr bool aggregate_uses_time_series_input_runtime_type([[maybe_unused]] std::size_t parameter_index,
                                                                            std::index_sequence<Index...>) noexcept {
     [[maybe_unused]] auto current_parameter = std::size_t{};
     auto result = false;
@@ -474,7 +484,7 @@ template <typename Definition, std::size_t... Index>
 }
 
 template <typename Definition, std::size_t... Index>
-[[nodiscard]] constexpr bool aggregate_uses_generic_scalar_input_view([[maybe_unused]] std::size_t parameter_index,
+[[nodiscard]] constexpr bool aggregate_uses_scalar_input_runtime_type([[maybe_unused]] std::size_t parameter_index,
                                                                       std::index_sequence<Index...>) noexcept {
     [[maybe_unused]] auto current_parameter = std::size_t{};
     auto result = false;
@@ -496,14 +506,14 @@ template <typename Definition, std::size_t... Index>
 }
 
 template <typename Definition, std::size_t... Index>
-[[nodiscard]] consteval std::size_t aggregate_time_series_input_view_count(std::index_sequence<Index...>) {
+[[nodiscard]] consteval std::size_t aggregate_time_series_runtime_type_count(std::index_sequence<Index...>) {
     return (std::size_t{} + ... +
             static_cast<std::size_t>(
                 input_view_field<std::remove_cv_t<util::aggregate_member_type<Index, Definition>>>::value));
 }
 
 template <typename Definition, std::size_t Target, std::size_t... Index>
-[[nodiscard]] consteval std::size_t aggregate_time_series_input_view_index(std::index_sequence<Index...>) {
+[[nodiscard]] consteval std::size_t aggregate_time_series_runtime_type_index(std::index_sequence<Index...>) {
     return (std::size_t{} + ... +
             static_cast<std::size_t>(
                 Index < Target &&
@@ -526,9 +536,8 @@ template <typename Definition, std::size_t Target, std::size_t... Index>
 }
 
 template <typename Definition, std::size_t... Index>
-[[nodiscard]] consteval bool aggregate_uses_generic_output_view(std::index_sequence<Index...>) {
-    return (false || ... ||
-            output_view_field<std::remove_cv_t<util::aggregate_member_type<Index, Definition>>>::value);
+[[nodiscard]] consteval bool aggregate_uses_output_runtime_type(std::index_sequence<Index...>) {
+    return (false || ... || output_view_field<std::remove_cv_t<util::aggregate_member_type<Index, Definition>>>::value);
 }
 
 template <typename Definition, std::size_t... Index>
@@ -660,42 +669,18 @@ template <typename Definition, std::size_t Index>
 [[nodiscard]] auto make_runtime_field(const CompiledNode &node, std::byte *runtime_storage,
                                       EvaluationContext *context) {
     using Field = std::remove_cv_t<util::aggregate_member_type<Index, Definition>>;
+    const auto runtime_node = Node{node, runtime_storage};
 
     if constexpr (input_field<Field>::value) {
         constexpr auto ParameterIndex = parameter_index<Definition>(std::make_index_sequence<Index>{});
-        const auto &binding = node.parameters()[ParameterIndex];
-
-        const auto &last_updated = binding.last_updated(runtime_storage);
-        const auto *value = binding.value(runtime_storage);
+        const auto &last_updated = runtime_node.input_last_updated(ParameterIndex);
+        const auto *value = runtime_node.input_value(ParameterIndex);
 
         if constexpr (input_view_field<Field>::value) {
-            constexpr auto InputViewIndex = aggregate_time_series_input_view_index<Definition, Index>(
+            constexpr auto RuntimeTypeIndex = aggregate_time_series_runtime_type_index<Definition, Index>(
                 std::make_index_sequence<util::aggregate_member_count<Definition>>{});
-            const auto &prototype = [&]() -> const TimeSeriesInputView & {
-                if (binding.mode() == ParameterBindingMode::reference) {
-                    const auto *target = binding.reference_input(runtime_storage).target;
-                    if (target != nullptr) {
-                        return target->target_representation->input_view_prototype();
-                    }
-                }
-                return node.time_series_input_view_prototype(InputViewIndex);
-            }();
-
-            if constexpr (time_series_variable<typename input_field<Field>::time_series_type>) {
-                return Field{last_updated, value, prototype};
-            } else if constexpr (is_time_series_reference<typename input_field<Field>::time_series_type>) {
-                return Field{last_updated, value, static_cast<const TimeSeriesReferenceInputView &>(prototype)};
-            } else if constexpr (is_time_series_bundle<typename input_field<Field>::time_series_type>) {
-                return Field{last_updated, value, static_cast<const TimeSeriesBundleInputView &>(prototype)};
-            } else if constexpr (is_time_series_dict<typename input_field<Field>::time_series_type>) {
-                return Field{last_updated, value, static_cast<const TimeSeriesDictionaryInputView &>(prototype)};
-            } else if constexpr (is_time_series_set<typename input_field<Field>::time_series_type>) {
-                return Field{last_updated, value, static_cast<const TimeSeriesSetInputView &>(prototype)};
-            } else if constexpr (is_time_series_list<typename input_field<Field>::time_series_type>) {
-                return Field{last_updated, value, static_cast<const TimeSeriesListInputView &>(prototype)};
-            } else {
-                return Field{last_updated, value, static_cast<const TimeSeriesValueInputView &>(prototype)};
-            }
+            const auto &runtime_type = runtime_node.time_series_input_runtime_type(ParameterIndex, RuntimeTypeIndex);
+            return Field{last_updated, value, runtime_type};
         } else {
             return Field{last_updated, static_cast<const typename Field::storage_type *>(value)};
         }
@@ -705,26 +690,14 @@ template <typename Definition, std::size_t Index>
         using Value = typename scalar_field<Field>::value_type;
 
         if constexpr (generic_scalar_input_field<Field>::value) {
-            constexpr auto GenericTimeSeriesInputCount = aggregate_time_series_input_view_count<Definition>(
+            constexpr auto TimeSeriesRuntimeTypeCount = aggregate_time_series_runtime_type_count<Definition>(
                 std::make_index_sequence<util::aggregate_member_count<Definition>>{});
             constexpr auto GenericScalarInputIndex = aggregate_generic_scalar_input_index<Definition, Index>(
                 std::make_index_sequence<util::aggregate_member_count<Definition>>{});
 
-            const auto &prototype =
-                node.scalar_input_view_prototype(GenericTimeSeriesInputCount, GenericScalarInputIndex);
-
-            if constexpr (scalar_variable_view<Field>::value) {
-                auto view = ErasedScalarView::copy(static_cast<const ScalarValueInputView &>(prototype));
-                view->bind(data);
-
-                return Field::from(view);
-            } else if constexpr (is_list_v<Value>) {
-                return Field{static_cast<const ScalarListInputView &>(prototype), data};
-            } else if constexpr (is_set_v<Value>) {
-                return Field{static_cast<const ScalarSetInputView &>(prototype), data};
-            } else {
-                return Field{static_cast<const ScalarDictInputView &>(prototype), data};
-            }
+            const auto &runtime_type =
+                node.scalar_input_runtime_type(TimeSeriesRuntimeTypeCount, GenericScalarInputIndex);
+            return Field::from(runtime_type, data);
         } else {
             using Traits = scalar_storage_traits<Value>;
 
@@ -748,33 +721,30 @@ template <typename Definition, std::size_t Index>
                 return aggregate_state_offset<Definition, Index>(std::make_index_sequence<MemberCount>{});
             }
         }();
-        auto *value = runtime_storage + node.state_offset() + offset;
+        auto *value = static_cast<std::byte *>(runtime_node.state()) + offset;
 
         if constexpr (state_field<Field>::scalar_collection && generic_scalar_state<Declared>) {
             constexpr auto GenericStateIndex =
                 generic_state_index<Definition, Index>(std::make_index_sequence<MemberCount>{});
-            const auto &representation = node.generic_state_storage_representation(GenericStateIndex);
-            return Field{representation, value};
+            const auto &runtime_type = node.generic_state_runtime_type(GenericStateIndex);
+            return Field{runtime_type, value};
         } else {
             using Value = typename state_field<Field>::storage_type;
             return Field{*reinterpret_cast<Value *>(value)};
         }
     } else {
-        auto &last_updated = node.output_last_updated(runtime_storage);
+        auto &last_updated = runtime_node.output_last_updated();
 
         if constexpr (output_view_field<Field>::value) {
-            constexpr auto GenericTimeSeriesInputCount = aggregate_time_series_input_view_count<Definition>(
+            constexpr auto TimeSeriesRuntimeTypeCount = aggregate_time_series_runtime_type_count<Definition>(
                 std::make_index_sequence<util::aggregate_member_count<Definition>>{});
             constexpr auto GenericScalarInputCount = aggregate_generic_scalar_input_count<Definition>(
                 std::make_index_sequence<util::aggregate_member_count<Definition>>{});
-            auto *value = static_cast<void *>(runtime_storage + node.output_value_offset());
-
             return output_factory::make<typename Field::time_series_type>(
-                last_updated, value, node.output_view_prototype(GenericTimeSeriesInputCount, GenericScalarInputCount),
-                *context);
+                last_updated, runtime_node.output_value(),
+                node.output_runtime_type(TimeSeriesRuntimeTypeCount, GenericScalarInputCount), *context);
         } else {
-            auto &value =
-                *reinterpret_cast<typename Field::storage_type *>(runtime_storage + node.output_value_offset());
+            auto &value = *static_cast<typename Field::storage_type *>(runtime_node.output_value());
 
             return output_factory::make<typename Field::time_series_type>(last_updated, value, *context);
         }
@@ -784,7 +754,7 @@ template <typename Definition, std::size_t Index>
 template <typename Definition, std::size_t... Index>
 [[nodiscard]] NodeStateLayout
 aggregate_state_layout(const ResolvedSignature &,
-                       [[maybe_unused]] std::span<const ScalarStorageRepresentation *const> parameter_representations,
+                       [[maybe_unused]] std::span<const ScalarRuntimeType *const> parameter_runtime_types,
                        [[maybe_unused]] std::span<const ScalarType *const> state_types, std::index_sequence<Index...>) {
     auto result = NodeStateLayout{};
     result.field_offsets.reserve(state_types.size());
@@ -801,11 +771,10 @@ aggregate_state_layout(const ResolvedSignature &,
 
                 if constexpr (state_field<Field>::scalar_collection && generic_scalar_state<Declared>) {
                     const auto *type = state_types[state];
-                    const auto *representation =
-                        &resolve_scalar_storage_representation(*type, parameter_representations);
-                    size = representation->size();
-                    alignment = representation->alignment();
-                    result.generic_storage_representations.push_back(representation);
+                    const auto *runtime_type = &resolve_scalar_runtime_type(*type, parameter_runtime_types);
+                    size = runtime_type->size();
+                    alignment = runtime_type->alignment();
+                    result.generic_runtime_types.push_back(runtime_type);
                 } else {
                     using Stored = typename state_field<Field>::storage_type;
                     size = sizeof(Stored);
@@ -839,7 +808,7 @@ void construct_aggregate_state(const NodeStateLayout &layout, [[maybe_unused]] v
                 auto *address = static_cast<std::byte *>(storage) + layout.field_offsets[state++];
 
                 if constexpr (state_field<Field>::scalar_collection && generic_scalar_state<Declared>) {
-                    layout.generic_storage_representations[generic++]->construct_initial_value(address);
+                    layout.generic_runtime_types[generic++]->construct_initial_value(address);
                 } else {
                     using Value = typename state_field<Field>::storage_type;
                     std::construct_at(reinterpret_cast<Value *>(address));
@@ -852,7 +821,7 @@ void construct_aggregate_state(const NodeStateLayout &layout, [[maybe_unused]] v
 template <typename Definition, std::size_t... Index>
 void destroy_aggregate_state(const CompiledNode &node, void *runtime_storage, EvaluationContext *,
                              std::index_sequence<Index...>) noexcept {
-    [[maybe_unused]] auto *storage = static_cast<std::byte *>(runtime_storage);
+    const auto runtime_node = Node{node, runtime_storage};
     auto &memory = current_scalar_memory_resource();
     constexpr auto MemberCount = util::aggregate_member_count<Definition>;
 
@@ -870,12 +839,12 @@ void destroy_aggregate_state(const CompiledNode &node, void *runtime_storage, Ev
                         return aggregate_state_offset<Definition, Index>(std::make_index_sequence<MemberCount>{});
                     }
                 }();
-                auto *value = storage + node.state_offset() + offset;
+                auto *value = static_cast<std::byte *>(runtime_node.state()) + offset;
 
                 if constexpr (generic_scalar_state<Declared>) {
                     constexpr auto GenericStateIndex =
                         generic_state_index<Definition, Index>(std::make_index_sequence<MemberCount>{});
-                    node.generic_state_storage_representation(GenericStateIndex).destroy(value, memory);
+                    node.generic_state_runtime_type(GenericStateIndex).destroy(value, memory);
                 } else {
                     using Stored = typename state_field<Field>::storage_type;
                     scalar_storage_traits<Declared>::destroy(reinterpret_cast<Stored *>(value), memory);
@@ -900,7 +869,8 @@ template <typename Definition, auto Function, std::size_t... Index>
 void invoke_aggregate_node(const CompiledNode &node, void *runtime_storage, EvaluationContext *context,
                            std::index_sequence<Index...>) {
     [[maybe_unused]] auto *storage = static_cast<std::byte *>(runtime_storage);
-    auto output_view_storage = aggregate_output_view_storage<aggregate_node_has_output<Definition>()>{context};
+    [[maybe_unused]] auto output_view_storage =
+        aggregate_output_view_storage<aggregate_node_has_output<Definition>()>{context};
     auto definition = Definition{make_runtime_field<Definition, Index>(node, storage, context)...};
 
     if constexpr (std::invocable<decltype(Function), const Definition &, EvaluationContext *>) {
@@ -940,7 +910,8 @@ template <typename Definition, std::size_t... Index>
 void invalidate_aggregate_output(const CompiledNode &node, void *runtime_storage, EvaluationContext *context,
                                  std::index_sequence<Index...>) {
     auto *storage = static_cast<std::byte *>(runtime_storage);
-    auto output_view_storage = aggregate_output_view_storage<aggregate_node_has_output<Definition>()>{context};
+    [[maybe_unused]] auto output_view_storage =
+        aggregate_output_view_storage<aggregate_node_has_output<Definition>()>{context};
     auto definition = Definition{make_runtime_field<Definition, Index>(node, storage, context)...};
     auto fields = util::detail::aggregate_tie<sizeof...(Index)>::apply(definition);
 

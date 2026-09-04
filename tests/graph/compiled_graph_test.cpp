@@ -41,12 +41,10 @@ class scale_template final : public bg::NodeTemplate {
         return &evaluate;
     }
 
-    [[nodiscard]] const bg::TimeSeriesStorageRepresentation *
-    output_storage_representation(const bg::ResolvedSignature &signature,
-                                  std::span<const bg::ScalarStorageRepresentation *const>,
-                                  std::span<const bg::TimeSeriesStorageRepresentation *const>) const noexcept override {
-        return &bg::time_series_value_storage_representation(*signature.output,
-                                                             bg::cpp_scalar_storage_representation<float>());
+    [[nodiscard]] const bg::TimeSeriesRuntimeType *
+    output_runtime_type(const bg::ResolvedSignature &signature, std::span<const bg::ScalarRuntimeType *const>,
+                        std::span<const bg::TimeSeriesRuntimeType *const>) const noexcept override {
+        return &bg::time_series_value_runtime_type(*signature.output, bg::cpp_scalar_runtime_type<float>());
     }
 
   private:

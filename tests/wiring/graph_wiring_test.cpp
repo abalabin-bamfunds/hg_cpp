@@ -108,12 +108,10 @@ class scale_template final : public bg::NodeTemplate {
         return &evaluate;
     }
 
-    [[nodiscard]] const bg::TimeSeriesStorageRepresentation *
-    output_storage_representation(const bg::ResolvedSignature &signature,
-                                  std::span<const bg::ScalarStorageRepresentation *const>,
-                                  std::span<const bg::TimeSeriesStorageRepresentation *const>) const noexcept override {
-        return &bg::time_series_value_storage_representation(*signature.output,
-                                                             bg::cpp_scalar_storage_representation<float>());
+    [[nodiscard]] const bg::TimeSeriesRuntimeType *
+    output_runtime_type(const bg::ResolvedSignature &signature, std::span<const bg::ScalarRuntimeType *const>,
+                        std::span<const bg::TimeSeriesRuntimeType *const>) const noexcept override {
+        return &bg::time_series_value_runtime_type(*signature.output, bg::cpp_scalar_runtime_type<float>());
     }
 
   private:
@@ -140,7 +138,7 @@ TEST_CASE("wired nodes retain scalar arguments", "[graph_wiring]") {
     REQUIRE(nodes[1].scalar_values().size() == 1);
     const bg::WiredScalar &factor = nodes[1].scalar_values()[0];
     CHECK(*static_cast<const float *>(factor.data()) == 2.0F);
-    CHECK(factor.storage_representation().size() == sizeof(float));
+    CHECK(factor.runtime_type().size() == sizeof(float));
     CHECK(nodes[1].signature().parameters[1].type == &bg::float_type());
 }
 
@@ -210,7 +208,7 @@ TEST_CASE("evaluation time lists pass through normal wiring", "[graph_wiring]") 
 
     REQUIRE(wiring.nodes().size() == 1);
     REQUIRE(wiring.nodes()[0].scalar_values().size() == 1);
-    CHECK(&wiring.nodes()[0].scalar_values()[0].storage_representation().type() ==
+    CHECK(&wiring.nodes()[0].scalar_values()[0].runtime_type().type() ==
           &bg::cpp_scalar_type<bg::List<bg::EvaluationTime>>());
 }
 

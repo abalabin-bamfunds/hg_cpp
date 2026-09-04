@@ -290,8 +290,7 @@ TEST_CASE("a fixed collection can pass through a reference", "[evaluation][refer
     CHECK(referenced_list_sink::values == std::vector{10, 20});
 }
 
-TEST_CASE("a generic fixed collection input uses the referenced target representation",
-          "[evaluation][reference][tsl]") {
+TEST_CASE("a generic fixed collection input uses the referenced target runtime_type", "[evaluation][reference][tsl]") {
     const auto source = bg::node<referenced_list_source>();
     const auto pass = bg::node<generic_list_reference_pass>();
     const auto sink = bg::node<generic_referenced_list_sink>();
@@ -320,10 +319,10 @@ struct owned_pair_definition {
 struct pair_reference_selector_definition {
     bg::In<bg::TS<int>> condition;
     bg::In<bg::REF<IntPairTimeSeriesList>, bg::passive, bg::optional> owned;
-    bg::In<bg::REF<IntPairTimeSeriesList>, bg::passive, bg::optional> aliased;
+    bg::In<bg::REF<IntPairTimeSeriesList>, bg::passive, bg::optional> free;
     bg::Out<bg::REF<IntPairTimeSeriesList>> output;
 
-    void evaluate() const { condition.value() == 0 ? output.set(owned) : output.set(aliased); }
+    void evaluate() const { condition.value() == 0 ? output.set(owned) : output.set(free); }
 };
 
 struct pair_sum_definition {
@@ -335,25 +334,26 @@ struct pair_sum_definition {
 
 } // namespace
 
-TEST_CASE("a dereferenced list reference selects the current target representation",
-          "[evaluation][reference][tsl][alias]") {
+TEST_CASE("a dereferenced list reference selects the current target runtime_type",
+          "[evaluation][reference][tsl][free]") {
     const auto owned_pair = bg::node<owned_pair_definition>();
     const auto select = bg::node<pair_reference_selector_definition>();
     const auto sum = bg::node<pair_sum_definition>();
     const auto graph = [&](bg::wp<bg::TS<int>> condition, bg::wp<bg::TS<int>> first_owned,
-                           bg::wp<bg::TS<int>> second_owned, bg::wp<bg::TS<int>> first_alias,
-                           bg::wp<bg::TS<int>> second_alias) {
+                           bg::wp<bg::TS<int>> second_owned, bg::wp<bg::TS<int>> first_free_item,
+                           bg::wp<bg::TS<int>> second_free_item) {
         const auto owned = owned_pair(first_owned, second_owned);
-        const auto aliased = bg::tsl(first_alias, second_alias);
-        return sum(select(condition, owned, aliased));
+        const auto free = bg::tsl(first_free_item, second_free_item);
+        return sum(select(condition, owned, free));
     };
     const auto condition = std::vector{0, 1, 0};
     const auto first_owned = std::vector{1, 3, 5};
     const auto second_owned = std::vector{2, 4, 6};
-    const auto first_alias = std::vector{10, 20, 30};
-    const auto second_alias = std::vector{20, 40, 60};
+    const auto first_free_item = std::vector{10, 20, 30};
+    const auto second_free_item = std::vector{20, 40, 60};
 
-    const auto result = bg::testing::test_graph(graph, condition, first_owned, second_owned, first_alias, second_alias);
+    const auto result =
+        bg::testing::test_graph(graph, condition, first_owned, second_owned, first_free_item, second_free_item);
 
     CHECK(result.equals({3, 60, 11}));
 }

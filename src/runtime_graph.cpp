@@ -4,8 +4,8 @@
 #include <bg/graph/compiled_node.hpp>
 #include <bg/graph/dynamic_subscribers.hpp>
 #include <bg/scalar/details/allocation_context.hpp>
-#include <bg/scalar/storage_representation.hpp>
-#include <bg/time_series/time_series_storage_representation.hpp>
+#include <bg/scalar/runtime_type.hpp>
+#include <bg/time_series/time_series_runtime_type.hpp>
 #include <bg/util/scope_exit.hpp>
 
 #include <algorithm>
@@ -26,8 +26,8 @@ EvaluationTime OutputNotificationContext::evaluation_time() const noexcept {
     return runtime_graph_->evaluation_time_;
 }
 
-const CompiledNode &OutputNotificationContext::compiled_node(std::size_t node_index) const noexcept {
-    return runtime_graph_->compiled_graph_->node(node_index);
+Node OutputNotificationContext::node(std::size_t node_index) const noexcept {
+    return runtime_graph_->node(node_index);
 }
 
 std::pmr::memory_resource &OutputNotificationContext::memory_resource(RuntimeGraph &graph) const noexcept {
@@ -254,16 +254,16 @@ class RuntimeGraph::ModifiedItemPropagator {
             return;
         }
 
+        const auto runtime_node = Node{node, graph_->storage_};
         auto scope = Scope{this, root->children()};
-        root->representation->for_each_modified_item(node.output_last_updated(graph_->storage_),
-                                                     graph_->storage_ + node.output_value_offset(),
-                                                     graph_->evaluation_time_, &scope, propagate_item);
+        root->runtime_type->for_each_modified_item(runtime_node.output_last_updated(), runtime_node.output_value(),
+                                                   graph_->evaluation_time_, &scope, propagate_item);
     }
 
   private:
-    static void propagate_item(void *context, TimeSeriesStorageRepresentation::ModifiedItem item) {
+    static void propagate_item(void *context, TimeSeriesRuntimeType::ModifiedItem item) {
         auto &scope = *static_cast<Scope *>(context);
-        const auto *subscribers = scope.subscriptions.find(item.item);
+        const auto *subscribers = scope.subscriptions.find(item.id);
         if (subscribers == nullptr) {
             return;
         }
@@ -271,7 +271,7 @@ class RuntimeGraph::ModifiedItemPropagator {
         scope.propagator->propagate(item, *subscribers);
     }
 
-    void propagate(TimeSeriesStorageRepresentation::ModifiedItem item, const ItemSubscribers &subscribers) {
+    void propagate(TimeSeriesRuntimeType::ModifiedItem item, const ItemSubscribers &subscribers) {
         auto &sampled_last_updated =
             *reinterpret_cast<EvaluationTime *>(graph_->storage_ + subscribers.sampled_last_updated_offset());
         const auto was_valid = sampled_last_updated > MIN_DT;
@@ -286,8 +286,8 @@ class RuntimeGraph::ModifiedItemPropagator {
         }
 
         auto scope = Scope{this, subscribers.children()};
-        item.representation->for_each_modified_item(*item.last_updated, item.value, graph_->evaluation_time_, &scope,
-                                                    propagate_item);
+        item.runtime_type->for_each_modified_item(*item.last_updated, item.value, graph_->evaluation_time_, &scope,
+                                                  propagate_item);
     }
 
     RuntimeGraph *graph_;
@@ -329,12 +329,15 @@ RuntimeGraph::~RuntimeGraph() {
     if (storage_ != nullptr) {
         for (auto node_index = compiled_graph_->node_count(); node_index != 0;) {
             const auto &node = compiled_graph_->node(--node_index);
-            for (const auto &parameter : node.parameters()) {
+            const auto runtime_node = Node{node, storage_};
+            for (auto parameter_index = std::size_t{}; parameter_index < runtime_node.input_count();
+                 ++parameter_index) {
+                const auto &parameter = node.parameters()[parameter_index];
                 if (parameter.mode() != ParameterBindingMode::reference) {
                     continue;
                 }
 
-                auto &input = parameter.reference_input(storage_);
+                auto &input = runtime_node.reference_input(parameter_index);
                 if (input.target != nullptr && input.target->subscribers != nullptr) {
                     input.target->subscribers->remove(*this, parameter.value_offset());
                 }
@@ -355,8 +358,8 @@ RuntimeGraph::~RuntimeGraph() {
 
         const auto output_destruction = compiled_graph_->output_destruction();
         for (auto i = output_destruction.offsets.size(); i != 0; --i) {
-            output_destruction.representations[i - 1]->destroy_value(storage_ + output_destruction.offsets[i - 1],
-                                                                     *memory_);
+            output_destruction.runtime_types[i - 1]->destroy_value(storage_ + output_destruction.offsets[i - 1],
+                                                                   *memory_);
         }
     }
 
@@ -558,13 +561,14 @@ void RuntimeGraph::notify_output(const OutputNotification *notification, const v
 }
 
 void RuntimeGraph::propagate_output_change(const CompiledNode &node, OutputChange change) {
+    const auto runtime_node = Node{node, storage_};
     propagate_modified_items(node);
-    notify_output(node.output_notification(), storage_ + node.output_value_offset(), change);
+    notify_output(node.output_notification(), runtime_node.output_value(), change);
     schedule_subscribers(node.subscribers(), change);
 }
 
 void RuntimeGraph::publish_output_changes(const CompiledNode &node, bool output_was_valid) {
-    auto &last_updated = node.output_last_updated(storage_);
+    auto &last_updated = Node{node, storage_}.output_last_updated();
     const auto now_valid = last_updated > MIN_DT;
     if (last_updated != evaluation_time_ && output_was_valid == now_valid) {
         return;
@@ -634,7 +638,7 @@ void RuntimeGraph::apply_invalidation(const CompiledNode &node, std::size_t node
     switch (node.invalidation_mode()) {
     case InvalidationMode::invalidate_output:
         if (node.has_output()) {
-            auto &last_updated = node.output_last_updated(storage_);
+            auto &last_updated = Node{node, storage_}.output_last_updated();
             if (last_updated > MIN_DT) {
                 last_updated = MIN_DT;
                 propagate_output_change(node, OutputChange::invalidation);
@@ -649,7 +653,7 @@ void RuntimeGraph::apply_invalidation(const CompiledNode &node, std::size_t node
         break;
     }
 
-    const auto output_was_valid = node.has_output() && node.output_last_updated(storage_) > MIN_DT;
+    const auto output_was_valid = node.has_output() && Node{node, storage_}.output_last_updated() > MIN_DT;
     EvaluationContext context{evaluation_time_, *this, node_index};
     const auto allocation_context = details::ScalarAllocationContext{*memory_, this, node_index};
     node.invalidation_function()(node, storage_, &context);
@@ -683,7 +687,7 @@ void RuntimeGraph::start(EvaluationTime evaluation_time, details::EvaluationScra
     for (const auto node_index : starts.nodes) {
         started_node_count = node_index;
         const auto &node = compiled_graph_->node(node_index);
-        const auto output_was_valid = node.has_output() && node.output_last_updated(storage_) > MIN_DT;
+        const auto output_was_valid = node.has_output() && Node{node, storage_}.output_last_updated() > MIN_DT;
 
         EvaluationContext context{evaluation_time, *this, node_index};
         const auto allocation_context = details::ScalarAllocationContext{*memory_, this, node_index};
@@ -732,12 +736,14 @@ void RuntimeGraph::stop(details::EvaluationScratch &scratch) noexcept {
 }
 
 bool RuntimeGraph::inputs_are_valid(const CompiledNode &node) const noexcept {
-    for (const auto &parameter : node.parameters()) {
+    const auto runtime_node = Node{node, storage_};
+    for (auto parameter_index = std::size_t{}; parameter_index < runtime_node.input_count(); ++parameter_index) {
+        const auto &parameter = node.parameters()[parameter_index];
         if (parameter.mode() == ParameterBindingMode::scalar || parameter.validity() != required) {
             continue;
         }
 
-        if (parameter.last_updated(storage_) <= MIN_DT) {
+        if (runtime_node.input_last_updated(parameter_index) <= MIN_DT) {
             return false;
         }
     }
@@ -798,7 +804,7 @@ void RuntimeGraph::evaluate(EvaluationTime evaluation_time, details::EvaluationS
             continue;
         }
 
-        const auto output_was_valid = has_output && node.output_last_updated(storage_) > MIN_DT;
+        const auto output_was_valid = has_output && Node{node, storage_}.output_last_updated() > MIN_DT;
         if (const auto evaluate = node.evaluation_function(); evaluate != nullptr) {
             EvaluationContext context{evaluation_time, *this, node_index};
             const auto allocation_context = details::ScalarAllocationContext{*memory_, this, node_index};

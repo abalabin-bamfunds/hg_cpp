@@ -1,6 +1,7 @@
 #pragma once
 
 #include <bg/scalar/details/allocation_context.hpp>
+#include <bg/scalar/details/mutable_traits.hpp>
 #include <bg/scalar/details/storage_traits.hpp>
 #include <bg/scalar/list/type.hpp>
 
@@ -29,12 +30,7 @@ template <typename T> class MutableList : public List<T> {
 
     void set(std::size_t index, typename Traits::value_type value) const {
         auto &memory = details::current_scalar_memory_resource();
-        if constexpr (requires(typename Traits::stored_type &target, typename Traits::value_type source,
-                               std::pmr::memory_resource &resource) { Traits::assign(target, source, resource); }) {
-            Traits::assign(mutable_storage().items[static_cast<std::uint32_t>(index)], value, memory);
-        } else {
-            Traits::assign(mutable_storage().items[static_cast<std::uint32_t>(index)], value);
-        }
+        Traits::assign(mutable_storage().items[static_cast<std::uint32_t>(index)], value, memory);
     }
 
     void erase(std::size_t index) const {
@@ -53,7 +49,19 @@ template <typename T> class MutableList : public List<T> {
     }
 
   private:
+    // MutableList is constructed from mutable storage; List retains the same pointer for read-only access.
     [[nodiscard]] Storage &mutable_storage() const noexcept { return const_cast<Storage &>(Base::storage()); }
 };
 
 } // namespace bg
+
+namespace bg::details {
+
+template <typename T>
+    requires(!generic_scalar<List<T>>)
+struct scalar_mutable_traits<List<T>> {
+    using storage_type = scalar_list_storage<T>;
+    using view_type = MutableList<T>;
+};
+
+} // namespace bg::details

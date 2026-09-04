@@ -2,13 +2,12 @@
 #include <bg/node.hpp>
 #include <bg/run_graph.hpp>
 #include <bg/testing/test_graph.hpp>
-#include <bg/time_series/tsd/tsd_input_view.hpp>
-#include <bg/time_series/tsd/tsd_output_view.hpp>
+#include <bg/time_series/time_series_runtime_type.hpp>
 #include <bg/time_series/tsd/tsd_type.hpp>
-#include <bg/time_series/time_series_storage_representation.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <array>
 #include <cstdint>
 #include <optional>
 
@@ -39,10 +38,9 @@ struct RuntimeNodeDefinition {
         return {.factor = 2};
     }
 
-    [[nodiscard]] const bg::TimeSeriesStorageRepresentation *
-    output_storage_representation(const bg::ResolvedSignature &,
-                                  std::span<const bg::ScalarStorageRepresentation *const>,
-                                  std::span<const bg::TimeSeriesStorageRepresentation *const> inputs) const noexcept {
+    [[nodiscard]] const bg::TimeSeriesRuntimeType *
+    output_runtime_type(const bg::ResolvedSignature &, std::span<const bg::ScalarRuntimeType *const>,
+                        std::span<const bg::TimeSeriesRuntimeType *const> inputs) const noexcept {
         return inputs.front();
     }
 
@@ -53,11 +51,14 @@ struct RuntimeNodeDefinition {
         CHECK(input.parameter_type().is_time_series());
 
         const auto value = input.value();
-        const auto &view = static_cast<const bg::TimeSeriesValueInputView &>(*value.operator->());
-        const auto number = bg::scalar_cast<std::int64_t>(view.value_view()).value();
+        const auto number = *value.visit(
+            [](const bg::In<bg::TS<bg::SCALAR>> *input) {
+                return bg::scalar_cast<std::int64_t>(input->value_view()).value();
+            },
+            ddv::noop);
         const auto result = number * invocation.compiled_data().factor + ++invocation.state().evaluations;
-        static_cast<const bg::TypedTimeSeriesValueOutputView<std::int64_t> &>(*invocation.output().operator->())
-            .set(result);
+        const auto scalar = bg::Scalar<std::int64_t>::from(result);
+        invocation.output().visit([&](bg::Out<bg::TS<bg::SCALAR>> *output) { output->set_value(scalar); }, ddv::noop);
     }
 
     bg::Signature signature_;
@@ -90,10 +91,9 @@ struct RuntimeSinkDefinition {
 
     [[nodiscard]] const bg::Signature &signature() const { return signature_; }
 
-    [[nodiscard]] const bg::TimeSeriesStorageRepresentation *
-    output_storage_representation(const bg::ResolvedSignature &,
-                                  std::span<const bg::ScalarStorageRepresentation *const>,
-                                  std::span<const bg::TimeSeriesStorageRepresentation *const>) const noexcept {
+    [[nodiscard]] const bg::TimeSeriesRuntimeType *
+    output_runtime_type(const bg::ResolvedSignature &, std::span<const bg::ScalarRuntimeType *const>,
+                        std::span<const bg::TimeSeriesRuntimeType *const>) const noexcept {
         return nullptr;
     }
 
@@ -125,10 +125,9 @@ struct OptionalScalarDefinition {
 
     [[nodiscard]] const bg::Signature &signature() const { return signature_; }
 
-    [[nodiscard]] const bg::TimeSeriesStorageRepresentation *
-    output_storage_representation(const bg::ResolvedSignature &,
-                                  std::span<const bg::ScalarStorageRepresentation *const>,
-                                  std::span<const bg::TimeSeriesStorageRepresentation *const> inputs) const noexcept {
+    [[nodiscard]] const bg::TimeSeriesRuntimeType *
+    output_runtime_type(const bg::ResolvedSignature &, std::span<const bg::ScalarRuntimeType *const>,
+                        std::span<const bg::TimeSeriesRuntimeType *const> inputs) const noexcept {
         return inputs.front();
     }
 
@@ -138,11 +137,14 @@ struct OptionalScalarDefinition {
         CHECK(scalar.parameter_name() == bg::util::symbol{"fallback"});
 
         const auto input = (*invocation.inputs().begin()).value();
-        const auto &view = static_cast<const bg::TimeSeriesValueInputView &>(*input.operator->());
-        const auto number = bg::scalar_cast<std::int64_t>(view.value_view()).value();
+        const auto number = *input.visit(
+            [](const bg::In<bg::TS<bg::SCALAR>> *value) {
+                return bg::scalar_cast<std::int64_t>(value->value_view()).value();
+            },
+            ddv::noop);
         const auto result = scalar.has_value() ? -1 : number;
-        static_cast<const bg::TypedTimeSeriesValueOutputView<std::int64_t> &>(*invocation.output().operator->())
-            .set(result);
+        const auto value = bg::Scalar<std::int64_t>::from(result);
+        invocation.output().visit([&](bg::Out<bg::TS<bg::SCALAR>> *output) { output->set_value(value); }, ddv::noop);
     }
 
     bg::Signature signature_;
@@ -168,22 +170,25 @@ struct RuntimeDictionarySourceDefinition {
 
     [[nodiscard]] const bg::Signature &signature() const { return signature_; }
 
-    [[nodiscard]] const bg::TimeSeriesStorageRepresentation *
-    output_storage_representation(const bg::ResolvedSignature &signature,
-                                  std::span<const bg::ScalarStorageRepresentation *const> scalars,
-                                  std::span<const bg::TimeSeriesStorageRepresentation *const> inputs) const noexcept {
-        return &bg::resolve_time_series_storage_representation(*signature.output, inputs, scalars);
+    [[nodiscard]] const bg::TimeSeriesRuntimeType *
+    output_runtime_type(const bg::ResolvedSignature &signature, std::span<const bg::ScalarRuntimeType *const> scalars,
+                        std::span<const bg::TimeSeriesRuntimeType *const> inputs) const noexcept {
+        const auto integer = &bg::cpp_scalar_runtime_type<std::int64_t>();
+        const auto available = std::array<const bg::ScalarRuntimeType *, 1>{integer};
+        return &bg::resolve_time_series_runtime_type(*signature.output, inputs, scalars.empty() ? available : scalars);
     }
 
     static void start(bg::NodeInvocation<> invocation) {
         auto output = invocation.output();
-        const auto &dictionary = static_cast<const bg::TimeSeriesDictionaryOutputView &>(*output.operator->());
         const auto key = bg::ScalarValue<std::int64_t>{1};
-        const auto item = dictionary.item(key.input_view());
-        auto item_view = bg::util::polymorphic_value<bg::TimeSeriesOutputView>::copy(item.prototype);
-        item_view->bind(item.last_updated, item.value, item.output_path);
-        static_cast<const bg::TypedTimeSeriesValueOutputView<std::int64_t> &>(item_view.get()).set(42);
-        item_view->release_output_path();
+        const auto value = bg::ScalarValue<std::int64_t>{42};
+        output.visit(
+            [&](bg::Out<bg::TSD<bg::SCALAR, bg::TS_T>> *dictionary) {
+                auto item = (*dictionary)[bg::Scalar<bg::SCALAR>::from(key.input_view())];
+                item.visit([&](bg::Out<bg::TS<bg::SCALAR>> *item_output) { item_output->set_value(value.view()); },
+                           ddv::noop);
+            },
+            ddv::noop);
     }
 
     const bg::TimeSeriesDictionaryType *output_type_;
@@ -198,8 +203,7 @@ struct RuntimeDictionarySinkDefinition {
     inline static std::int64_t value{};
 };
 
-TEST_CASE("a runtime-signature node constructs runtime-defined dictionary storage",
-          "[node][runtime-signature][tsd]") {
+TEST_CASE("a runtime-signature node constructs runtime-defined dictionary storage", "[node][runtime-signature][tsd]") {
     const auto source = bg::node(RuntimeDictionarySourceDefinition{});
     const auto sink = bg::node<RuntimeDictionarySinkDefinition>();
     RuntimeDictionarySinkDefinition::value = 0;

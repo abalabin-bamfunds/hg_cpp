@@ -7,6 +7,8 @@ namespace bg {
 
 class SetScalarType : public ScalarType {
   public:
+    VISITOR_SUPPORT()
+
     [[nodiscard]] virtual const ScalarType &item_type() const noexcept = 0;
 
     [[nodiscard]] bool supports_equality() const noexcept final { return item_type().supports_equality(); }
@@ -31,9 +33,9 @@ class GenericSetScalarType final : public SetScalarType {
 [[nodiscard]] const SetScalarType &set_scalar_type(const ScalarType &item_type);
 
 template <typename T>
-    requires is_set_v<T>
+    requires is_set_v<T> && (!details::generic_scalar<T>)
 const ScalarType &cpp_scalar_type() {
-    return set_scalar_type(cpp_scalar_type<typename T::item_type>());
+    return set_scalar_type(details::scalar_type_for<void, typename T::item_type>());
 }
 
 } // namespace bg

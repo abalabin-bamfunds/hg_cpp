@@ -45,7 +45,7 @@ A node template contains:
 
 - a reference to its signature
 - the evaluation implementation
-- output storage representation selection when the node has an output
+- output runtime type selection when the node has an output
 - private-state size, alignment, and initial-value construction when required
 - the required-input invalidation behavior
 - the start implementation
@@ -82,8 +82,8 @@ It contains:
 - active-input scheduling and input-validity data
 - required-input invalidation mode and an optional function entry point
 - subscribers and optional output-notification metadata
-- one concrete-view prototype pointer for each generic input
-- the selected storage-representation pointer for a generic output
+- one runtime type pointer for each input whose layout is selected during graph compilation
+- the selected runtime type pointer for an output whose layout is selected during graph compilation
 - optional data required by a runtime-signature node definition
 
 The data is immutable and shared by runtime graphs with the same wiring. Each
@@ -100,10 +100,9 @@ scalar data uses a separate memory resource owned by the compiled graph.
 
 ## Storage cleanup
 
-A storage representation reports variable-memory use and
-[finalization](terminology.md#finalization) separately. Collection
-representations require finalization when a contained representation requires
-it.
+A runtime type reports variable-memory use and
+[finalization](terminology.md#finalization) separately. A collection runtime
+type requires finalization when a contained runtime type requires it.
 
 Destroying one value performs its finalization and releases its variable
 memory. A graph can discard its complete memory resource without destroying
@@ -142,15 +141,15 @@ reference-input state into one aligned allocation:
 - allocate one state block for each runtime graph and copy the initial block
 
 The initial runtime storage contains position-independent data. Relationships
-use offsets or indices. Runtime storage representations support byte-copy
-initialization. After the copy, node start functions perform graph-specific
-startup work.
+use offsets or indices. Every runtime type selected for this storage supports
+byte-copy initialization. After the copy, node start functions perform
+graph-specific startup work.
 
 One node's private-state fields share an aligned range and one compiled base
 offset. Field offsets within the range are compile-time constants.
 
-A runtime node can be a temporary view of a compiled node and its state in the
-runtime graph.
+`Node` is a two-pointer view of a compiled node and its state in one runtime
+graph. It resolves compiled offsets to runtime addresses.
 
 The packed block contains fixed output state. Dynamic collection items and inner
 runtime graphs use separate storage owned by their parent objects.

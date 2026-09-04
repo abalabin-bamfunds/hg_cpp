@@ -1,6 +1,6 @@
 #pragma once
 
-#include <bg/type/scalar_type.hpp>
+#include <bg/type/details/scalar_type.hpp>
 #include <bg/type/type_map.hpp>
 
 namespace bg {

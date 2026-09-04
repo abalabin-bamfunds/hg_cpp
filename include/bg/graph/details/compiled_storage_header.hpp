@@ -23,7 +23,7 @@ struct CompiledStorageHeader {
     std::uint32_t start_count;
     std::uint32_t stop_functions_offset;
     std::uint32_t stop_count;
-    std::uint32_t scalar_destruction_representations_offset;
+    std::uint32_t scalar_destruction_runtime_types_offset;
     std::uint32_t output_destruction_count;
     std::uint32_t variable_memory_offset;
     std::uint32_t initial_runtime_storage_offset;

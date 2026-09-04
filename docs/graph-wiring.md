@@ -20,17 +20,18 @@ declared inputs.
 size as `WiringPoint` and converts to `WiringPoint`. Graph definitions use it to
 declare time series parameter and output types.
 
-`bg::tsl(a, b, ...)` groups wiring points without creating time series storage.
-The receiving parameter determines whether each item is a value or a reference.
-Wiring then creates one logical TSL output that aliases the selected sources.
-Selecting an item from that output returns the original source wiring point.
+`bg::tsl(a, b, ...)` groups wiring points without creating item storage. The
+receiving parameter determines whether each item is a value or a reference.
+Wiring then creates one free TSL output over the selected sources. Selecting an
+item from that output returns the original source wiring point.
 
 The logical output preserves dependency ordering. Source changes schedule it as
 a normal node. It combines changes from the same cycle and copies no item value.
 
 `bg::bundle("name"_m = a, "value"_m = b)` groups wiring points into an
-unnamed TSB. A named TSB parameter accepts a compatible field set. The logical
-TSB output aliases the selected sources and reports their field changes.
+unnamed TSB. A named TSB parameter accepts a compatible field set. Wiring
+creates one free TSB output over the selected sources and reports their field
+changes.
 
 Graph code selects a named field with `bundle["name"_m]`. Selection returns the
 field's original wiring point when the TSB was created by `bg::bundle`.

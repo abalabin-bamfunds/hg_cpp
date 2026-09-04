@@ -1,7 +1,9 @@
 #pragma once
 
-#include <bg/scalar/details/storage_traits.hpp>
+#include <bg/scalar/details/capability_traits.hpp>
+#include <bg/scalar/details/collection_storage.hpp>
 #include <bg/scalar/list/type.hpp>
+#include <bg/scalar/runtime_type.hpp>
 #include <bg/util/scope_exit.hpp>
 
 #include <memory>
@@ -13,10 +15,11 @@ template <typename T> struct scalar_storage_traits<List<T>> {
     using stored_type = scalar_list_storage<T>;
     using value_type = List<T>;
 
-    static constexpr bool supports_equality = ItemTraits::supports_equality;
-    static constexpr bool supports_hash = ItemTraits::supports_hash;
+    static constexpr bool supports_equality = scalar_capability_traits<T>::supports_equality;
+    static constexpr bool supports_hash = scalar_capability_traits<T>::supports_hash;
     static constexpr bool uses_variable_memory = true;
     static constexpr bool requires_finalization = ItemTraits::requires_finalization;
+    static constexpr bool assign_uses_memory_resource = true;
 
     [[nodiscard]] static value_type read(const stored_type &value) noexcept { return value_type{value}; }
 
@@ -50,7 +53,7 @@ template <typename T> struct scalar_storage_traits<List<T>> {
         for (const auto &item : value) {
             destination->items.emplace_back_with(memory, [&](auto *stored) {
                 if constexpr (scalar_view_source_for<decltype(item), T>) {
-                    item.input_view().copy_construct(stored, cpp_scalar_storage_representation<T>(), memory);
+                    item.input_view().copy_construct(stored, cpp_scalar_runtime_type<T>(), memory);
                 } else {
                     ItemTraits::construct(stored, item, memory);
                 }
@@ -71,6 +74,11 @@ template <typename T> struct scalar_storage_traits<List<T>> {
         value->items.release_with(memory, [&](auto *item) noexcept { ItemTraits::destroy(item, memory); });
         std::destroy_at(value);
     }
+};
+
+template <typename T> struct scalar_capability_traits<List<T>> {
+    static constexpr bool supports_equality = scalar_capability_traits<T>::supports_equality;
+    static constexpr bool supports_hash = scalar_capability_traits<T>::supports_hash;
 };
 
 } // namespace bg::details

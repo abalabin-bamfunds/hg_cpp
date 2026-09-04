@@ -74,5 +74,7 @@ TEST_CASE("a generic scalar list exposes its declared comparison operations", "[
     const auto right = bg::Scalar<bg::List<Item>>::from(second.input_view());
 
     CHECK(left == right);
+    CHECK(left == second);
+    CHECK(second == left);
     CHECK(left.hash() == right.hash());
 }

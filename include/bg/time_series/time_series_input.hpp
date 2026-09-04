@@ -3,11 +3,16 @@
 #include <bg/node/details/input_properties.hpp>
 #include <bg/node/input_fwd.hpp>
 #include <bg/node/input_properties.hpp>
-#include <bg/time_series/time_series_input_view.hpp>
+#include <bg/time_series/details/input_data.hpp>
+#include <bg/time_series/time_series_runtime_type.hpp>
 #include <bg/time_series/time_series_type.hpp>
-#include <bg/util/polymorphic_value.hpp>
+
+#include <ddv/serial_visitor.h>
+#include <ddv/visitable.h>
 
 #include <string_view>
+#include <type_traits>
+#include <utility>
 
 namespace bg {
 
@@ -16,16 +21,23 @@ template <details::time_series_variable Variable, auto... Properties> class In<V
     static_assert(ParsedProperties::valid);
 
   public:
-    using view_type = util::polymorphic_value<TimeSeriesInputView>;
+    In(const EvaluationTime &last_updated, const void *value, const TimeSeriesRuntimeType &runtime_type) noexcept
+        : data_{runtime_type, last_updated, value} {}
 
-    In(const EvaluationTime &last_updated, const void *value, const TimeSeriesInputView &prototype) noexcept
-        : view_(view_type::copy(prototype)) {
-        view_->bind(last_updated, value);
+    [[nodiscard]] bool valid() const noexcept { return data_.valid(); }
+    [[nodiscard]] EvaluationTime last_updated() const noexcept { return data_.last_updated(); }
+    [[nodiscard]] const TimeSeriesRuntimeType &runtime_type() const noexcept { return data_.runtime_type(); }
+    [[nodiscard]] const void *data() const noexcept { return data_.data(); }
+    [[nodiscard]] const In *operator->() const noexcept { return this; }
+
+    template <typename Visitor, typename... Arguments>
+        requires ddv::SerialVisitorType<std::remove_cvref_t<Visitor>>
+    auto visit(Visitor &&visitor, Arguments &&...arguments) const;
+
+    template <typename Function, typename... Functions>
+    decltype(auto) visit(Function &&function, Functions &&...functions) const {
+        return visit(ddv::serial{std::forward<Function>(function), std::forward<Functions>(functions)...});
     }
-
-    [[nodiscard]] bool valid() const noexcept { return view_->valid(); }
-    [[nodiscard]] EvaluationTime last_updated() const noexcept { return view_->last_updated(); }
-    [[nodiscard]] const TimeSeriesInputView *operator->() const noexcept { return view_.operator->(); }
 
     using time_series_type = Variable;
 
@@ -34,7 +46,62 @@ template <details::time_series_variable Variable, auto... Properties> class In<V
     static constexpr InputValidity validity = ParsedProperties::validity;
 
   private:
-    view_type view_;
+    details::TimeSeriesInputData data_;
 };
+
+static_assert(sizeof(In<TS_T>) == 3 * sizeof(void *));
+
+} // namespace bg
+
+#include <bg/time_series/ref/ref_input.hpp>
+#include <bg/time_series/ts/ts_input.hpp>
+#include <bg/time_series/tsb/tsb_input.hpp>
+#include <bg/time_series/tsd/tsd_input.hpp>
+#include <bg/time_series/tsl/tsl_input.hpp>
+#include <bg/time_series/tss/tss_input.hpp>
+
+namespace bg {
+
+using TimeSeriesInputTypes = ddv::mux<In<TS<SCALAR>>, In<TSL<TS_T, SIZE>>, In<TSB<SCHEMA>>, In<TSS<SCALAR>>,
+                                      In<TSD<SCALAR, TS_T>>, In<REF<TS_T>>>;
+
+template <details::time_series_variable Variable, auto... Properties>
+template <typename Visitor, typename... Arguments>
+    requires ddv::SerialVisitorType<std::remove_cvref_t<Visitor>>
+auto In<Variable, Properties...>::visit(Visitor &&visitor, Arguments &&...arguments) const {
+    auto dispatch = ddv::make_visitable_visitor<TimeSeriesInputTypes>(
+        std::forward_as_tuple(std::forward<Arguments>(arguments)...), std::forward<Visitor>(visitor));
+    auto &types = static_cast<TimeSeriesInputTypes &>(dispatch);
+    runtime_type().type().visit(
+        [&](const TimeSeriesValueType *) {
+            auto input = In<TS<SCALAR>>{data_.last_updated_ref(), data(), runtime_type()};
+            types.visit(&input);
+        },
+        [&](const TimeSeriesListType *) {
+            auto input = In<TSL<TS_T, SIZE>>{data_.last_updated_ref(), data(), runtime_type()};
+            types.visit(&input);
+        },
+        [&](const TimeSeriesBundleType *) {
+            auto input = In<TSB<SCHEMA>>{data_.last_updated_ref(), data(), runtime_type()};
+            types.visit(&input);
+        },
+        [&](const TimeSeriesSetType *) {
+            auto input = In<TSS<SCALAR>>{data_.last_updated_ref(), data(), runtime_type()};
+            types.visit(&input);
+        },
+        [&](const TimeSeriesDictionaryType *) {
+            auto input = In<TSD<SCALAR, TS_T>>{data_.last_updated_ref(), data(), runtime_type()};
+            types.visit(&input);
+        },
+        [&](const TimeSeriesReferenceType *) {
+            auto input = In<REF<TS_T>>{data_.last_updated_ref(), data(), runtime_type()};
+            types.visit(&input);
+        },
+        ddv::noop);
+
+    if constexpr (!decltype(dispatch)::is_result_void) {
+        return *dispatch;
+    }
+}
 
 } // namespace bg

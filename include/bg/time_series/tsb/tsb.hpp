@@ -5,7 +5,7 @@
 #include <bg/graph/details/free_time_series_bundle.hpp>
 #include <bg/graph/wiring_context.hpp>
 #include <bg/node/node_template.hpp>
-#include <bg/time_series/tsb/tsb_alias_storage_representation.hpp>
+#include <bg/time_series/tsb/tsb_free_runtime_type.hpp>
 #include <bg/type/time_series_bundle_type.hpp>
 #include <bg/util/named_argument.hpp>
 
@@ -20,10 +20,10 @@
 
 namespace bg::details {
 
-class AliasedTimeSeriesBundleNodeTemplate final : public NodeTemplate {
+class FreeTimeSeriesBundleNodeTemplate final : public NodeTemplate {
   public:
-    explicit AliasedTimeSeriesBundleNodeTemplate(const TimeSeriesBundleType &type)
-        : representation_{&aliased_time_series_bundle_storage_representation(type)}, signature_{make_signature(type)} {}
+    explicit FreeTimeSeriesBundleNodeTemplate(const TimeSeriesBundleType &type)
+        : runtime_type_{&free_time_series_bundle_runtime_type(type)}, signature_{make_signature(type)} {}
 
     [[nodiscard]] const Signature &signature() const override { return signature_; }
     [[nodiscard]] EvaluationFunction evaluation_function(const ResolvedSignature &) const noexcept override {
@@ -32,12 +32,12 @@ class AliasedTimeSeriesBundleNodeTemplate final : public NodeTemplate {
     [[nodiscard]] EvaluationFunction start_function(const ResolvedSignature &) const noexcept override {
         return &start;
     }
-    [[nodiscard]] const TimeSeriesStorageRepresentation *
-    output_storage_representation(const ResolvedSignature &, std::span<const ScalarStorageRepresentation *const>,
-                                  std::span<const TimeSeriesStorageRepresentation *const>) const noexcept override {
-        return representation_;
+    [[nodiscard]] const TimeSeriesRuntimeType *
+    output_runtime_type(const ResolvedSignature &, std::span<const ScalarRuntimeType *const>,
+                        std::span<const TimeSeriesRuntimeType *const>) const noexcept override {
+        return runtime_type_;
     }
-    [[nodiscard]] bool uses_generic_time_series_input_view(std::size_t) const noexcept override { return true; }
+    [[nodiscard]] bool uses_time_series_input_runtime_type(std::size_t) const noexcept override { return true; }
     [[nodiscard]] InputNotificationCallback input_notification(std::size_t input_index) const noexcept override {
         return {&input_changed, input_index};
     }
@@ -55,16 +55,14 @@ class AliasedTimeSeriesBundleNodeTemplate final : public NodeTemplate {
         return {util::symbol{"bundle"}, std::move(parameters), type};
     }
 
-    static aliased_time_series_bundle_storage &storage(const CompiledNode &node,
-                                                       OutputNotificationContext &context) noexcept {
-        return *static_cast<aliased_time_series_bundle_storage *>(
-            context.runtime_storage_at(node.output_value_offset()));
+    static free_time_series_bundle_storage &storage(OutputNotificationContext &context,
+                                                    std::size_t node_index) noexcept {
+        return *static_cast<free_time_series_bundle_storage *>(context.node(node_index).output_value());
     }
 
     static void input_changed(OutputNotificationContext &context, std::size_t node_index, std::size_t input_index,
                               OutputChange) {
-        const auto &node = context.compiled_node(node_index);
-        auto &value = storage(node, context);
+        auto &value = storage(context, node_index);
         if (value.change_time != context.evaluation_time()) {
             value.modified.clear();
             value.change_time = context.evaluation_time();
@@ -73,18 +71,16 @@ class AliasedTimeSeriesBundleNodeTemplate final : public NodeTemplate {
     }
 
     static void start(const CompiledNode &node, void *runtime_storage, EvaluationContext *) noexcept {
-        auto *bytes = static_cast<std::byte *>(runtime_storage);
-        reinterpret_cast<aliased_time_series_bundle_storage *>(bytes + node.output_value_offset())->node = &node;
+        static_cast<free_time_series_bundle_storage *>(Node{node, runtime_storage}.output_value())->node = &node;
     }
 
     static void evaluate(const CompiledNode &node, void *runtime_storage, EvaluationContext *context) noexcept {
-        auto *bytes = static_cast<std::byte *>(runtime_storage);
-        const auto &value =
-            *reinterpret_cast<const aliased_time_series_bundle_storage *>(bytes + node.output_value_offset());
-        node.output_last_updated(runtime_storage) = aliased_bundle_valid(value) ? context->evaluation_time() : MIN_DT;
+        const auto runtime_node = Node{node, runtime_storage};
+        const auto &value = *static_cast<const free_time_series_bundle_storage *>(runtime_node.output_value());
+        runtime_node.output_last_updated() = free_bundle_valid(value) ? context->evaluation_time() : MIN_DT;
     }
 
-    const TimeSeriesStorageRepresentation *representation_;
+    const TimeSeriesRuntimeType *runtime_type_;
     Signature signature_;
 };
 
@@ -101,7 +97,7 @@ class AliasedTimeSeriesBundleNodeTemplate final : public NodeTemplate {
         ordered.push_back(field->point);
     }
 
-    auto node = std::make_unique<AliasedTimeSeriesBundleNodeTemplate>(type);
+    auto node = std::make_unique<FreeTimeSeriesBundleNodeTemplate>(type);
     const auto &owned = WiringContext::current().wiring().own_node_template(std::move(node));
     return *owned(ordered);
 }

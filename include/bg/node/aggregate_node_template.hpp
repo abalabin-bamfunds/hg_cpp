@@ -93,28 +93,27 @@ class AggregateNodeTemplate final : public NodeTemplate {
         }
     }
 
-    [[nodiscard]] const TimeSeriesStorageRepresentation *
-    output_storage_representation(const ResolvedSignature &signature,
-                                  std::span<const ScalarStorageRepresentation *const> parameter_storage_representations,
-                                  std::span<const TimeSeriesStorageRepresentation *const>
-                                      time_series_input_storage_representations) const override {
-        return details::aggregate_output_storage_representation<Definition>(
-            signature, parameter_storage_representations, time_series_input_storage_representations,
+    [[nodiscard]] const TimeSeriesRuntimeType *
+    output_runtime_type(const ResolvedSignature &signature,
+                        std::span<const ScalarRuntimeType *const> parameter_runtime_types,
+                        std::span<const TimeSeriesRuntimeType *const> time_series_input_runtime_types) const override {
+        return details::aggregate_output_runtime_type<Definition>(
+            signature, parameter_runtime_types, time_series_input_runtime_types,
             std::make_index_sequence<util::aggregate_member_count<Definition>>{});
     }
 
-    [[nodiscard]] bool uses_generic_time_series_input_view(std::size_t parameter_index) const noexcept override {
-        return details::aggregate_uses_generic_time_series_input_view<Definition>(
+    [[nodiscard]] bool uses_time_series_input_runtime_type(std::size_t parameter_index) const noexcept override {
+        return details::aggregate_uses_time_series_input_runtime_type<Definition>(
             parameter_index, std::make_index_sequence<util::aggregate_member_count<Definition>>{});
     }
 
-    [[nodiscard]] bool uses_generic_scalar_input_view(std::size_t parameter_index) const noexcept override {
-        return details::aggregate_uses_generic_scalar_input_view<Definition>(
+    [[nodiscard]] bool uses_scalar_input_runtime_type(std::size_t parameter_index) const noexcept override {
+        return details::aggregate_uses_scalar_input_runtime_type<Definition>(
             parameter_index, std::make_index_sequence<util::aggregate_member_count<Definition>>{});
     }
 
-    [[nodiscard]] bool uses_generic_output_view() const noexcept override {
-        return details::aggregate_uses_generic_output_view<Definition>(
+    [[nodiscard]] bool uses_output_runtime_type() const noexcept override {
+        return details::aggregate_uses_output_runtime_type<Definition>(
             std::make_index_sequence<util::aggregate_member_count<Definition>>{});
     }
 
@@ -122,12 +121,11 @@ class AggregateNodeTemplate final : public NodeTemplate {
         return details::aggregate_uses_future_scheduling<Definition>();
     }
 
-    [[nodiscard]] NodeStateLayout
-    state_layout(const ResolvedSignature &signature,
-                 std::span<const ScalarStorageRepresentation *const> parameter_storage_representations,
-                 std::span<const ScalarType *const> state_types) const override {
+    [[nodiscard]] NodeStateLayout state_layout(const ResolvedSignature &signature,
+                                               std::span<const ScalarRuntimeType *const> parameter_runtime_types,
+                                               std::span<const ScalarType *const> state_types) const override {
         return details::aggregate_state_layout<Definition>(
-            signature, parameter_storage_representations, state_types,
+            signature, parameter_runtime_types, state_types,
             std::make_index_sequence<util::aggregate_member_count<Definition>>{});
     }
 

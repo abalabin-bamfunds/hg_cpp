@@ -43,13 +43,49 @@ template <typename Key, typename Hash, typename Equal> class hash_key_table {
                  std::predicate<const Equal &, const Key &, const Lookup &>
     [[nodiscard]] std::optional<match> find(const Lookup &key) const {
         const auto hash = make_hash(key);
-        const auto found = lookup_.find(hash, [&](auto position) { return std::invoke(equal_, keys_[position], key); });
+        return find_with_hash(hash, [&](const auto &stored) { return std::invoke(equal_, stored, key); });
+    }
 
-        if (!found) {
-            return std::nullopt;
+    template <typename Predicate>
+        requires std::predicate<Predicate &, const Key &>
+    [[nodiscard]] std::optional<match> find_with(std::size_t hash, Predicate &&matches) const {
+        return find_with_hash(linear_hash_table::hash_code(hash), std::forward<Predicate>(matches));
+    }
+
+    template <typename Predicate>
+        requires std::predicate<Predicate &, const Key &>
+    [[nodiscard]] position_type find_position_with(std::size_t hash, Predicate &&matches) const {
+        const auto found = find_with(hash, std::forward<Predicate>(matches));
+
+        return found ? found->position : occupancy_index::npos;
+    }
+
+    template <typename Predicate, typename Constructor, typename Destructor>
+        requires std::predicate<Predicate &, const Key &> && std::invocable<Constructor &, Key *> &&
+                 std::invocable<Destructor &, Key *>
+    [[nodiscard]] insertion insert_with(std::size_t hash, Predicate &&matches, std::pmr::memory_resource &memory,
+                                        Constructor &&construct, Destructor &&destroy) {
+        const auto normalized_hash = linear_hash_table::hash_code(hash);
+        if (const auto found =
+                lookup_.find(normalized_hash, [&](auto position) { return std::invoke(matches, keys_[position]); })) {
+            return {*found, normalized_hash, false};
         }
 
-        return match{*found, hash};
+        return insert_new(normalized_hash, memory, std::forward<Constructor>(construct),
+                          std::forward<Destructor>(destroy));
+    }
+
+    template <typename Predicate, typename Destructor>
+        requires std::predicate<Predicate &, const Key &> && std::invocable<Destructor &, Key *>
+    [[nodiscard]] bool erase_with(std::size_t hash, Predicate &&matches, std::pmr::memory_resource &memory,
+                                  Destructor &&destroy) {
+        const auto found = find_with(hash, std::forward<Predicate>(matches));
+        if (!found) {
+            return false;
+        }
+
+        erase_at_with(found->position, found->hash, memory, std::forward<Destructor>(destroy));
+        return true;
     }
 
     template <typename Lookup>
@@ -82,6 +118,12 @@ template <typename Key, typename Hash, typename Equal> class hash_key_table {
             return {*found, hash, false};
         }
 
+        return insert_new(hash, memory, std::forward<Constructor>(construct), std::forward<Destructor>(destroy));
+    }
+
+    template <typename Constructor, typename Destructor>
+    [[nodiscard]] insertion insert_new(linear_hash_table::hash_type hash, std::pmr::memory_resource &memory,
+                                       Constructor &&construct, Destructor &&destroy) {
         const auto position = positions_.acquire(memory);
         auto release_position = scope_exit{[&]() noexcept {
             const auto removed = positions_.reset(position);
@@ -173,6 +215,17 @@ template <typename Key, typename Hash, typename Equal> class hash_key_table {
     }
 
   private:
+    template <typename Predicate>
+    [[nodiscard]] std::optional<match> find_with_hash(linear_hash_table::hash_type hash, Predicate &&matches) const {
+        const auto found = lookup_.find(hash, [&](auto position) { return std::invoke(matches, keys_[position]); });
+
+        if (!found) {
+            return std::nullopt;
+        }
+
+        return match{*found, hash};
+    }
+
     template <typename Lookup> [[nodiscard]] linear_hash_table::hash_type make_hash(const Lookup &key) const {
         return linear_hash_table::hash_code(std::invoke(hash_, key));
     }

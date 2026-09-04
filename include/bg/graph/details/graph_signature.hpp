@@ -22,7 +22,7 @@
 namespace bg::details {
 
 template <typename T>
-concept time_series_declaration = supported_time_series<T>::value;
+concept time_series_declaration = supported_time_series<T>;
 
 template <typename Function, std::size_t Index> [[nodiscard]] const Type &graph_parameter_type(util::symbol name) {
     using Parameter = std::remove_cvref_t<typename callable<Function>::template argument_type<Index>>;

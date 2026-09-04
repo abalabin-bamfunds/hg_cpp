@@ -10,7 +10,7 @@
 namespace bg {
 
 class RuntimeGraph;
-class CompiledNode;
+class Node;
 
 enum class OutputChange : std::uint8_t {
     update,
@@ -22,7 +22,7 @@ class OutputNotificationContext {
   public:
     [[nodiscard]] RuntimeGraph &runtime_graph() const noexcept { return *runtime_graph_; }
     [[nodiscard]] EvaluationTime evaluation_time() const noexcept;
-    [[nodiscard]] const CompiledNode &compiled_node(std::size_t node_index) const noexcept;
+    [[nodiscard]] Node node(std::size_t node_index) const noexcept;
     [[nodiscard]] void *runtime_storage_at(std::size_t offset) const noexcept;
     [[nodiscard]] std::pmr::memory_resource &memory_resource(RuntimeGraph &graph) const noexcept;
 

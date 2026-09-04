@@ -100,15 +100,15 @@ template <details::runtime_signature_node Definition> class RuntimeSignatureNode
         return {};
     }
 
-    [[nodiscard]] bool uses_generic_time_series_input_view(std::size_t parameter_index) const noexcept override {
+    [[nodiscard]] bool uses_time_series_input_runtime_type(std::size_t parameter_index) const noexcept override {
         return signature_parameter(parameter_index).type->is_time_series();
     }
 
-    [[nodiscard]] bool uses_generic_scalar_input_view(std::size_t parameter_index) const noexcept override {
+    [[nodiscard]] bool uses_scalar_input_runtime_type(std::size_t parameter_index) const noexcept override {
         return signature_parameter(parameter_index).type->is_scalar();
     }
 
-    [[nodiscard]] bool uses_generic_output_view() const noexcept override {
+    [[nodiscard]] bool uses_output_runtime_type() const noexcept override {
         return definition_.signature().has_output();
     }
     [[nodiscard]] bool uses_node_invocation() const noexcept override { return true; }
@@ -127,16 +127,14 @@ template <details::runtime_signature_node Definition> class RuntimeSignatureNode
         return false;
     }
 
-    [[nodiscard]] const TimeSeriesStorageRepresentation *output_storage_representation(
-        const ResolvedSignature &signature,
-        std::span<const ScalarStorageRepresentation *const> parameter_storage_representations,
-        std::span<const TimeSeriesStorageRepresentation *const> input_storage_representations) const noexcept override {
-        return definition_.output_storage_representation(signature, parameter_storage_representations,
-                                                         input_storage_representations);
+    [[nodiscard]] const TimeSeriesRuntimeType *
+    output_runtime_type(const ResolvedSignature &signature,
+                        std::span<const ScalarRuntimeType *const> parameter_runtime_types,
+                        std::span<const TimeSeriesRuntimeType *const> input_runtime_types) const noexcept override {
+        return definition_.output_runtime_type(signature, parameter_runtime_types, input_runtime_types);
     }
 
-    [[nodiscard]] NodeStateLayout state_layout(const ResolvedSignature &,
-                                               std::span<const ScalarStorageRepresentation *const>,
+    [[nodiscard]] NodeStateLayout state_layout(const ResolvedSignature &, std::span<const ScalarRuntimeType *const>,
                                                std::span<const ScalarType *const>) const override {
         if constexpr (std::is_void_v<State>) {
             return {};
@@ -145,7 +143,7 @@ template <details::runtime_signature_node Definition> class RuntimeSignatureNode
                 .size = sizeof(State),
                 .alignment = alignof(State),
                 .field_offsets = {},
-                .generic_storage_representations = {},
+                .generic_runtime_types = {},
             };
         }
     }

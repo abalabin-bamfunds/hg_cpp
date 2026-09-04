@@ -59,6 +59,23 @@ class hash_dictionary {
         return {&value, true};
     }
 
+    template <typename Predicate, typename KeyConstructor, typename KeyDestructor, typename ValueConstructor>
+    std::pair<Value *, bool> try_emplace_with(std::size_t hash, Predicate &&matches, std::pmr::memory_resource &memory,
+                                              KeyConstructor &&construct_key, KeyDestructor &&destroy_key,
+                                              ValueConstructor &&construct_value) {
+        const auto result = keys_.insert_with(hash, std::forward<Predicate>(matches), memory,
+                                              std::forward<KeyConstructor>(construct_key), destroy_key);
+        if (!result.inserted) {
+            return {&values_[result.position], false};
+        }
+
+        auto rollback =
+            scope_exit{[&]() noexcept { keys_.erase_at_with(result.position, result.hash, memory, destroy_key); }};
+        auto &value = values_.emplace_at_with(result.position, memory, construct_value);
+        rollback.release();
+        return {&value, true};
+    }
+
     template <typename KeySource, typename ValueSource>
     Value &insert_or_assign(KeySource &&key, ValueSource &&value, std::pmr::memory_resource &memory) {
         auto [stored, inserted] = try_emplace(std::forward<KeySource>(key), memory, std::forward<ValueSource>(value));
@@ -82,6 +99,18 @@ class hash_dictionary {
     }
 
     template <typename Lookup> [[nodiscard]] bool contains(const Lookup &key) const { return find(key) != nullptr; }
+
+    template <typename Predicate> [[nodiscard]] Value *find_with(std::size_t hash, Predicate &&matches) {
+        const auto position = keys_.find_position_with(hash, std::forward<Predicate>(matches));
+
+        return position == occupancy_index::npos ? nullptr : &values_[position];
+    }
+
+    template <typename Predicate> [[nodiscard]] const Value *find_with(std::size_t hash, Predicate &&matches) const {
+        const auto position = keys_.find_position_with(hash, std::forward<Predicate>(matches));
+
+        return position == occupancy_index::npos ? nullptr : &values_[position];
+    }
 
     template <typename Lookup> [[nodiscard]] Value &at(const Lookup &key) {
         auto *value = find(key);
@@ -117,6 +146,19 @@ class hash_dictionary {
     bool erase_with(const Lookup &key, std::pmr::memory_resource &memory, KeyDestructor &&destroy_key,
                     ValueDestructor &&destroy_value) {
         const auto found = keys_.find(key);
+        if (!found) {
+            return false;
+        }
+
+        values_.erase_at_with(found->position, memory, destroy_value);
+        keys_.erase_at_with(found->position, found->hash, memory, destroy_key);
+        return true;
+    }
+
+    template <typename Predicate, typename KeyDestructor, typename ValueDestructor>
+    bool erase_with(std::size_t hash, Predicate &&matches, std::pmr::memory_resource &memory,
+                    KeyDestructor &&destroy_key, ValueDestructor &&destroy_value) {
+        const auto found = keys_.find_with(hash, std::forward<Predicate>(matches));
         if (!found) {
             return false;
         }

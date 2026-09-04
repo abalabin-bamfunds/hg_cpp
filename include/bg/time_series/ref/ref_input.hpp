@@ -3,10 +3,11 @@
 #include <bg/node/details/input_properties.hpp>
 #include <bg/node/input_fwd.hpp>
 #include <bg/node/input_properties.hpp>
-#include <bg/time_series/ref/ref_input_view.hpp>
+#include <bg/time_series/details/input_data.hpp>
 #include <bg/time_series/ref/ref_storage.hpp>
+#include <bg/time_series/time_series_input.hpp>
+#include <bg/time_series/time_series_runtime_type.hpp>
 #include <bg/time_series/time_series_type.hpp>
-#include <bg/util/polymorphic_value.hpp>
 
 #include <string_view>
 
@@ -20,21 +21,27 @@ class In<REF<Target, TimeSeriesProperties...>, Properties...> {
   public:
     using storage_type = details::ReferenceStorage *;
 
-    In() noexcept : view_(prototype_) {}
+    In() noexcept : data_{cpp_time_series_runtime_type<REF<Target, TimeSeriesProperties...>>(), MIN_DT, nullptr} {}
 
-    In(const EvaluationTime &last_updated, const storage_type *value) noexcept : In() {
-        view_->bind(last_updated, value);
+    In(const EvaluationTime &last_updated, const storage_type *value) noexcept
+        : data_{cpp_time_series_runtime_type<REF<Target, TimeSeriesProperties...>>(), last_updated, value} {}
+
+    In(const EvaluationTime &last_updated, const void *value, const TimeSeriesRuntimeType &runtime_type) noexcept
+        : data_{runtime_type, last_updated, value} {}
+
+    [[nodiscard]] bool valid() const noexcept { return data_.valid(); }
+    [[nodiscard]] EvaluationTime last_updated() const noexcept { return data_.last_updated(); }
+    [[nodiscard]] details::ReferenceStorage *target() const noexcept {
+        return *static_cast<details::ReferenceStorage *const *>(data_.data());
     }
+    [[nodiscard]] const TimeSeriesRuntimeType &runtime_type() const noexcept { return data_.runtime_type(); }
+    [[nodiscard]] const void *data() const noexcept { return data_.data(); }
+    [[nodiscard]] const In *operator->() const noexcept { return this; }
 
-    In(const EvaluationTime &last_updated, const void *value, const TimeSeriesInputView &prototype) noexcept
-        : view_(View::copy(static_cast<const TimeSeriesReferenceInputView &>(prototype))) {
-        view_->bind(last_updated, value);
+    template <typename... Functions> decltype(auto) visit(Functions &&...functions) const {
+        return In<TS_T>{data_.last_updated_ref(), data_.data(), data_.runtime_type()}.visit(
+            std::forward<Functions>(functions)...);
     }
-
-    [[nodiscard]] bool valid() const noexcept { return view_->valid(); }
-    [[nodiscard]] EvaluationTime last_updated() const noexcept { return view_->last_updated(); }
-    [[nodiscard]] const TimeSeriesReferenceInputView *operator->() const noexcept { return view_.operator->(); }
-    [[nodiscard]] operator const TimeSeriesReferenceInputView &() const noexcept { return view_.get(); }
 
     using time_series_type = REF<Target, TimeSeriesProperties...>;
     using target_type = Target;
@@ -44,10 +51,7 @@ class In<REF<Target, TimeSeriesProperties...>, Properties...> {
     static constexpr InputValidity validity = ParsedProperties::validity;
 
   private:
-    using View = util::polymorphic_value<TimeSeriesReferenceInputView>;
-
-    inline static const View prototype_ = View::template make<TimeSeriesReferenceInputView>();
-    View view_;
+    details::TimeSeriesInputData data_;
 };
 
 } // namespace bg

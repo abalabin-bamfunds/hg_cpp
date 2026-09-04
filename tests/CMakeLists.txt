@@ -11,6 +11,7 @@ add_executable(
     evaluation/scheduling/runtime_scheduling_test.cpp
     evaluation/storage/runtime_storage_test.cpp
     evaluation/storage/runtime_views_test.cpp
+    evaluation/storage/node_test.cpp
     evaluation/time_series/time_series_list_test.cpp
     evaluation/time_series/time_series_bundle_test.cpp
     evaluation/time_series/time_series_dict_test.cpp
@@ -36,7 +37,6 @@ add_executable(
     type/time_series_list_type_test.cpp
     type/time_series_set_type_test.cpp
     type/time_series_reference_type_test.cpp
-    utils/polymorphic_value_test.cpp
     utils/contiguous_bunch_test.cpp
     utils/hash_dictionary_test.cpp
     utils/hash_set_test.cpp
@@ -64,8 +64,10 @@ add_executable(
     value/scalar/set/value_test.cpp
     value/scalar/storage_test.cpp
     value/scalar/value_test.cpp
+    value/scalar/visitor_test.cpp
     value/scalar/view_test.cpp
     value/time_series_view_test.cpp
+    value/time_series/dict/storage_test.cpp
     value/time_series/list/storage_test.cpp
     value/time_series/reference/storage_test.cpp
     value/time_series/set/storage_test.cpp

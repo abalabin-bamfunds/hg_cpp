@@ -8,6 +8,8 @@ namespace bg {
 
 class TimeSeriesValueType : public TimeSeriesType {
   public:
+    VISITOR_SUPPORT()
+
     [[nodiscard]] const ScalarType &value_type() const noexcept { return *value_type_; }
     [[nodiscard]] const TimeSeriesType &with_guarantee(TimeSeriesGuarantee guarantee) const override;
 

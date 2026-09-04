@@ -7,6 +7,8 @@ namespace bg {
 
 class TimeSeriesType : public Type {
   public:
+    VISITOR_SUPPORT()
+
     [[nodiscard]] bool is_scalar() const noexcept final { return false; }
     [[nodiscard]] bool is_time_series() const noexcept final { return true; }
 

@@ -37,13 +37,32 @@ item validity remains independent.
 
 ## Layout
 
-A time series value stores its last updated time and value independently. A
-storage representation can co-locate them or use separate typed objects and
-buffers. An invalid view points to `MIN_DT` as its last updated time.
+A time series value stores its last updated time and value independently. Its
+runtime type describes the value storage. An invalid view points to `MIN_DT` as
+its last updated time.
 
-Collection storage uses the resolved storage representation of each contained
-time series. Runtime-defined collection types therefore support the same
-contained time series as C++-defined collection types.
+`TimeSeriesRuntimeType` is the runtime type used by `In<>` and `Out<>`. It
+provides the semantic type, physical layout, contained-item access, and runtime
+operations. One semantic time series type can have multiple runtime types,
+including normal and free collection layouts.
+
+`In<>` contains a runtime type pointer, last-updated pointer, and data pointer.
+`Out<>` is a one-word view of an internal mutation record. References retain the
+target runtime type because the target layout can change when the reference
+changes.
+
+`In<>` and `Out<>` visitors select value, reference, list, bundle, set, or
+dictionary access. The selected view is valid for the visitor callback. Fully
+specified views use their typed operations directly.
+
+Collection storage uses the resolved runtime type of each contained time
+series. Runtime-defined collection types therefore support the same contained
+time series as C++-defined collection types.
+
+Collection runtime types identify items with 32-bit item IDs. TSL and TSB use
+the item position. TSD uses its stable sparse-storage position and reserves
+`key_set_item_id` for its key set. Item enumeration returns current collection
+items. Packed output storage also provides each item's storage layout.
 
 The [TSD layout](tsd-layout.md) defines dictionary storage, shared
 representations, and tabular buffers.

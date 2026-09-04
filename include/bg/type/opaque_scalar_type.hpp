@@ -12,15 +12,10 @@ template <typename T> class OpaqueScalarType final : public ScalarType {
     [[nodiscard]] const Type &resolve(const TypeMap &) const override { return *this; }
 };
 
-template <typename T> struct scalar_type_traits<Opaque<T>> : scalar_type_properties {
-    static constexpr bool is_opaque = true;
-    static constexpr bool supports_implicit_argument = false;
-    static constexpr bool supports_time_series = false;
-
-    template <typename Scope> [[nodiscard]] static const ScalarType &get() noexcept {
-        return cpp_scalar_type<Opaque<T>>();
-    }
-};
+template <typename T> [[nodiscard]] const ScalarType &opaque_scalar_type() noexcept {
+    static const OpaqueScalarType<T> type;
+    return type;
+}
 
 } // namespace bg::details
 
@@ -29,9 +24,18 @@ namespace bg {
 template <typename T>
     requires is_opaque_v<T>
 const ScalarType &cpp_scalar_type() noexcept {
-    static const details::OpaqueScalarType<T> type;
-
-    return type;
+    return details::opaque_scalar_type<typename T::value_type>();
 }
 
 } // namespace bg
+
+namespace bg::details {
+
+template <typename T> struct scalar_type_traits<Opaque<T>> : scalar_type_properties {
+    static constexpr bool supports_implicit_argument = false;
+    static constexpr bool supports_time_series = false;
+
+    template <typename Scope> [[nodiscard]] static const ScalarType &get() noexcept { return opaque_scalar_type<T>(); }
+};
+
+} // namespace bg::details

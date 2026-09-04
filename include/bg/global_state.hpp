@@ -6,8 +6,8 @@
 #include <bg/util/hash_dictionary.hpp>
 #include <bg/util/symbol.hpp>
 
-#include <cstddef>
 #include <concepts>
+#include <cstddef>
 #include <functional>
 #include <memory_resource>
 #include <mutex>
@@ -85,23 +85,23 @@ class GlobalState {
         [[nodiscard]] Scalar<> at(std::string_view) const && = delete;
 
         template <typename T>
-            requires(is_list_v<T> || is_set_v<T> || is_dict_v<T>)
+            requires details::mutable_scalar<T>
         [[nodiscard]] auto mutable_at(util::symbol key) const & {
             return state_->template mutable_at<T>(key);
         }
 
         template <typename T>
-            requires(is_list_v<T> || is_set_v<T> || is_dict_v<T>)
+            requires details::mutable_scalar<T>
         [[nodiscard]] auto mutable_at(std::string_view key) const & {
             return state_->template mutable_at<T>(key);
         }
 
         template <typename T>
-            requires(is_list_v<T> || is_set_v<T> || is_dict_v<T>)
+            requires details::mutable_scalar<T>
         [[nodiscard]] auto mutable_at(util::symbol) const && = delete;
 
         template <typename T>
-            requires(is_list_v<T> || is_set_v<T> || is_dict_v<T>)
+            requires details::mutable_scalar<T>
         [[nodiscard]] auto mutable_at(std::string_view) const && = delete;
 
         template <details::ScalarHandle Value> void set(util::symbol key, const Value &value) {
@@ -183,7 +183,7 @@ class GlobalState {
     }
 
     template <typename T, typename Key>
-        requires(is_list_v<T> || is_set_v<T> || is_dict_v<T>)
+        requires details::mutable_scalar<T>
     [[nodiscard]] auto mutable_at(Key key) {
         auto *value = find(key);
         if (value == nullptr) {
@@ -193,15 +193,9 @@ class GlobalState {
             throw std::bad_cast{};
         }
 
-        using Stored = details::scalar_stored_t<T>;
+        using Stored = typename details::scalar_mutable_traits<T>::storage_type;
         auto &storage = *static_cast<Stored *>(const_cast<void *>(value->input_view().data()));
-        if constexpr (is_list_v<T>) {
-            return MutableList<typename T::item_type>{storage};
-        } else if constexpr (is_set_v<T>) {
-            return MutableSet<typename T::item_type>{storage};
-        } else {
-            return MutableDict<typename T::key_type, typename T::mapped_type>{storage};
-        }
+        return details::mutable_scalar_view<T>(storage);
     }
 
     bool erase(util::symbol key) { return values_.erase(key, memory_); }

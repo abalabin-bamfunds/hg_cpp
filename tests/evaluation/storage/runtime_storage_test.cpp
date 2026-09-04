@@ -6,8 +6,8 @@
 #include <bg/scalar/string.hpp>
 #include <bg/time_series/tsd/tsd_type.hpp>
 
-#include "../../utils/counting_memory_resource.hpp"
 #include "../../runtime_graph_access.hpp"
+#include "../../utils/counting_memory_resource.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -40,7 +40,7 @@ struct double_sink_definition {
 
 } // namespace
 
-TEST_CASE("runtime storage uses the output scalar representation", "[evaluation][storage]") {
+TEST_CASE("runtime storage uses the output scalar runtime_type", "[evaluation][storage]") {
     const auto double_source = bg::node<double_source_definition>();
     const auto double_sink = bg::node<double_sink_definition>();
     bg::GraphWiring wiring;

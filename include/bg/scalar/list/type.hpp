@@ -35,7 +35,7 @@ template <typename T> class List {
 
   private:
     template <typename> friend struct details::scalar_storage_traits;
-    template <typename> friend class TypedScalarValueInputView;
+    template <typename> friend class Scalar;
     friend class MutableList<T>;
 
     [[nodiscard]] std::size_t size() const noexcept { return storage_->items.size(); }
@@ -81,6 +81,12 @@ template <typename T> struct is_list<List<T>> : std::true_type {};
 template <typename T> inline constexpr bool is_list_v = is_list<T>::value;
 
 } // namespace bg
+
+namespace bg::details {
+
+template <typename T> inline constexpr bool generic_scalar<List<T>> = generic_scalar<T>;
+
+} // namespace bg::details
 
 template <typename T> struct std::hash<bg::List<T>> {
     [[nodiscard]] std::size_t operator()(const bg::List<T> &value) const noexcept {

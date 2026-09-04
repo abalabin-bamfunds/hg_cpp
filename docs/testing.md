@@ -17,7 +17,7 @@ Consider each feature across these dimensions:
 - time series guarantee
 - lifecycle stage and state transition
 - C++ or Python definition
-- storage representation
+- runtime type
 
 Select combinations that exercise distinct behavior. Add a combination for a
 new code path, compatibility boundary, failure mode, or regression.
@@ -52,7 +52,7 @@ not update.
 ### Utilities
 
 - compile-time strings, symbols, named arguments, and reflection
-- constant-size polymorphic values
+- constant-size scalar value handles
 - visitor dispatch for concrete and generic scalar and time series views, including base-interface fallback and no
   matching overload
 - thread-local context storage

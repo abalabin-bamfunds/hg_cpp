@@ -6,9 +6,6 @@
 #include <bg/node/input_properties.hpp>
 #include <bg/node/invalidation.hpp>
 #include <bg/node/node_template.hpp>
-#include <bg/time_series/ref/ref_storage.hpp>
-#include <bg/time_series/time_series_input_view.hpp>
-#include <bg/time_series/time_series_output_view.hpp>
 #include <bg/util/symbol.hpp>
 
 #include <cstddef>
@@ -21,11 +18,11 @@ namespace bg {
 
 class CompiledGraphBuilder;
 class CompiledNode;
-class ScalarStorageRepresentation;
-class ScalarInputView;
-class TimeSeriesInputView;
-class TimeSeriesValueInputView;
-class TimeSeriesOutputView;
+class RuntimeType;
+class ScalarRuntimeType;
+namespace details {
+class ScalarData;
+}
 class ItemSubscriptionRange;
 class Type;
 
@@ -41,18 +38,6 @@ struct NodeInvocationMetadata {
 
     [[nodiscard]] std::span<const NodeInvocationParameterMetadata> parameters(const CompiledNode &node) const noexcept;
     [[nodiscard]] const void *compiled_data(const CompiledNode &node) const noexcept;
-};
-
-struct TimeSeriesInputViewPrototype {
-    const TimeSeriesStorageRepresentation *representation;
-};
-
-struct ScalarInputViewPrototype {
-    const ScalarInputView *view;
-};
-
-struct OutputViewPrototype {
-    const TimeSeriesOutputView *view;
 };
 
 struct StateMetadataCounts {
@@ -198,11 +183,11 @@ inline ItemSubscriptionRange ItemSubscribers::children() const noexcept {
 }
 
 struct ItemSubscriptionRoot {
-    const TimeSeriesStorageRepresentation *representation;
+    const TimeSeriesRuntimeType *runtime_type;
     std::uint32_t byte_size;
 
-    ItemSubscriptionRoot(const TimeSeriesStorageRepresentation &representation, std::uint32_t byte_size) noexcept
-        : representation{&representation}, byte_size{byte_size} {}
+    ItemSubscriptionRoot(const TimeSeriesRuntimeType &runtime_type, std::uint32_t byte_size) noexcept
+        : runtime_type{&runtime_type}, byte_size{byte_size} {}
 
     [[nodiscard]] const ItemSubscribers *first_item() const noexcept {
         return reinterpret_cast<const ItemSubscribers *>(this + 1);
@@ -230,46 +215,7 @@ class ParameterBinding {
 
     [[nodiscard]] std::size_t last_updated_offset() const noexcept { return location_and_flags_ & location_mask; }
 
-    [[nodiscard]] auto last_updated(const void *runtime_storage) const noexcept -> const EvaluationTime & {
-        const auto *storage = static_cast<const std::byte *>(runtime_storage);
-        const auto &source_last_updated = *reinterpret_cast<const EvaluationTime *>(storage + last_updated_offset());
-        if (mode() != ParameterBindingMode::reference) {
-            return source_last_updated;
-        }
-
-        const auto *target = reference_input(runtime_storage).target;
-        if (target == nullptr) {
-            return MIN_DT;
-        }
-
-        const auto &target_last_updated = *target->target_last_updated;
-        if (target_last_updated <= MIN_DT) {
-            return target_last_updated;
-        }
-
-        return source_last_updated > target_last_updated ? source_last_updated : target_last_updated;
-    }
-
     [[nodiscard]] std::size_t value_offset() const noexcept { return value_offset_ & value_location_mask; }
-
-    [[nodiscard]] const void *value(const void *runtime_storage) const noexcept {
-        const auto *storage = static_cast<const std::byte *>(runtime_storage);
-        if (mode() == ParameterBindingMode::reference) {
-            const auto *target = reference_input(runtime_storage).target;
-            return target == nullptr ? nullptr : target->target_value;
-        }
-        return storage + value_offset();
-    }
-
-    [[nodiscard]] const details::ReferenceInputStorage &reference_input(const void *runtime_storage) const noexcept {
-        const auto *storage = static_cast<const std::byte *>(runtime_storage);
-        return *reinterpret_cast<const details::ReferenceInputStorage *>(storage + value_offset());
-    }
-
-    [[nodiscard]] details::ReferenceInputStorage &reference_input(void *runtime_storage) const noexcept {
-        auto *storage = static_cast<std::byte *>(runtime_storage);
-        return *reinterpret_cast<details::ReferenceInputStorage *>(storage + value_offset());
-    }
 
     [[nodiscard]] bool active() const noexcept { return (value_offset_ & active_flag) != 0; }
 
@@ -326,11 +272,6 @@ class CompiledNode {
 
     [[nodiscard]] std::size_t output_last_updated_offset() const noexcept {
         return output_last_updated_offset_ & output_offset_mask;
-    }
-
-    [[nodiscard]] auto output_last_updated(void *runtime_storage) const noexcept -> EvaluationTime & {
-        auto *storage = static_cast<std::byte *>(runtime_storage);
-        return *reinterpret_cast<EvaluationTime *>(storage + output_last_updated_offset());
     }
 
     [[nodiscard]] std::size_t output_value_offset() const noexcept { return output_value_offset_ & output_offset_mask; }
@@ -394,12 +335,11 @@ class CompiledNode {
         return state_field_offsets_address()[index];
     }
 
-    [[nodiscard]] const ScalarStorageRepresentation &
-    generic_state_storage_representation(std::size_t index) const noexcept {
+    [[nodiscard]] const ScalarRuntimeType &generic_state_runtime_type(std::size_t index) const noexcept {
         auto address = reinterpret_cast<std::uintptr_t>(state_field_offsets_address() + state_metadata_counts().fields);
-        address = align(address, alignof(const ScalarStorageRepresentation *));
+        address = align(address, alignof(const ScalarRuntimeType *));
 
-        return **(reinterpret_cast<const ScalarStorageRepresentation *const *>(address) + index);
+        return **(reinterpret_cast<const ScalarRuntimeType *const *>(address) + index);
     }
 
     [[nodiscard]] EvaluationFunction invalidation_function() const noexcept {
@@ -408,42 +348,23 @@ class CompiledNode {
         return *reinterpret_cast<const EvaluationFunction *>(address);
     }
 
-    [[nodiscard]] const TimeSeriesInputView &time_series_input_view_prototype(std::size_t index) const noexcept {
-        return time_series_input_storage_representation(index).input_view_prototype();
+    [[nodiscard]] const TimeSeriesRuntimeType &time_series_input_runtime_type(std::size_t index) const noexcept {
+        return static_cast<const TimeSeriesRuntimeType &>(runtime_type(index));
     }
 
-    [[nodiscard]] const TimeSeriesStorageRepresentation &
-    time_series_input_storage_representation(std::size_t index) const noexcept {
-        return *reinterpret_cast<const TimeSeriesInputViewPrototype *>(input_view_prototypes_address())[index]
-                    .representation;
-    }
-
-    [[nodiscard]] const TimeSeriesValueInputView &
-    time_series_value_input_view_prototype(std::size_t index) const noexcept {
-        return static_cast<const TimeSeriesValueInputView &>(time_series_input_view_prototype(index));
-    }
-
-    [[nodiscard]] const ScalarInputView &scalar_input_view_prototype(std::size_t time_series_input_count,
+    [[nodiscard]] const ScalarRuntimeType &scalar_input_runtime_type(std::size_t time_series_input_count,
                                                                      std::size_t index) const noexcept {
-        auto address = input_view_prototypes_address() + time_series_input_count * sizeof(TimeSeriesInputViewPrototype);
-        address = align(address, alignof(ScalarInputViewPrototype));
-
-        return *reinterpret_cast<const ScalarInputViewPrototype *>(address)[index].view;
+        return static_cast<const ScalarRuntimeType &>(runtime_type(time_series_input_count + index));
     }
 
-    [[nodiscard]] const TimeSeriesOutputView &output_view_prototype(std::size_t time_series_input_count,
-                                                                    std::size_t scalar_input_count) const noexcept {
-        auto address = input_view_prototypes_address() + time_series_input_count * sizeof(TimeSeriesInputViewPrototype);
-        address = align(address, alignof(ScalarInputViewPrototype));
-        address += scalar_input_count * sizeof(ScalarInputViewPrototype);
-        address = align(address, alignof(OutputViewPrototype));
-
-        return *reinterpret_cast<const OutputViewPrototype *>(address)->view;
+    [[nodiscard]] const TimeSeriesRuntimeType &output_runtime_type(std::size_t time_series_input_count,
+                                                                   std::size_t scalar_input_count) const noexcept {
+        return static_cast<const TimeSeriesRuntimeType &>(runtime_type(time_series_input_count + scalar_input_count));
     }
 
-    [[nodiscard]] const TimeSeriesOutputView &node_invocation_output_view_prototype() const noexcept {
+    [[nodiscard]] const TimeSeriesRuntimeType &node_invocation_output_runtime_type() const noexcept {
         const auto time_series_inputs = node_invocation_time_series_input_count();
-        return output_view_prototype(time_series_inputs, parameters().size() - time_series_inputs);
+        return output_runtime_type(time_series_inputs, parameters().size() - time_series_inputs);
     }
 
     [[nodiscard]] std::size_t node_invocation_time_series_input_count() const noexcept {
@@ -528,8 +449,8 @@ class CompiledNode {
                 address += sizeof(StateMetadataCounts);
                 address = align(address, alignof(std::uint32_t));
                 address += state_metadata_counts().fields * sizeof(std::uint32_t);
-                address = align(address, alignof(const ScalarStorageRepresentation *));
-                address += state_metadata_counts().generic_fields * sizeof(const ScalarStorageRepresentation *);
+                address = align(address, alignof(const ScalarRuntimeType *));
+                address += state_metadata_counts().generic_fields * sizeof(const ScalarRuntimeType *);
             }
         }
 
@@ -574,13 +495,17 @@ class CompiledNode {
         return address;
     }
 
-    [[nodiscard]] std::uintptr_t input_view_prototypes_address() const noexcept {
+    [[nodiscard]] const RuntimeType &runtime_type(std::size_t index) const noexcept {
+        return *reinterpret_cast<const RuntimeType *const *>(runtime_types_address())[index];
+    }
+
+    [[nodiscard]] std::uintptr_t runtime_types_address() const noexcept {
         auto address = after_invalidation_metadata_address();
         if ((flags_ & node_invocation_flag) != 0) {
             address = align(address, alignof(NodeInvocationMetadata)) + sizeof(NodeInvocationMetadata);
         }
 
-        return align(address, alignof(TimeSeriesInputViewPrototype));
+        return align(address, alignof(const RuntimeType *));
     }
 
     [[nodiscard]] std::uintptr_t after_invalidation_metadata_address() const noexcept {
@@ -604,9 +529,6 @@ static_assert(sizeof(Subscriber) == 4);
 static_assert(sizeof(ItemSubscribers) == 16);
 static_assert(sizeof(ItemSubscriptionRange) == 2 * sizeof(void *));
 static_assert(sizeof(ItemSubscriptionRoot) == 2 * sizeof(void *));
-static_assert(sizeof(TimeSeriesInputViewPrototype) == sizeof(void *));
-static_assert(sizeof(ScalarInputViewPrototype) == sizeof(void *));
-static_assert(sizeof(OutputViewPrototype) == sizeof(void *));
 static_assert(sizeof(StateMetadataCounts) == sizeof(std::uint32_t));
 static_assert(sizeof(NodeInvocationParameterMetadata) == 2 * sizeof(void *));
 static_assert(sizeof(NodeInvocationMetadata) == 2 * sizeof(void *));

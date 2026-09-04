@@ -1,6 +1,7 @@
 #include <bg/graph/graph_wiring.hpp>
 #include <bg/graph/wiring_context.hpp>
 #include <bg/node.hpp>
+#include <bg/time_series/item_id.hpp>
 #include <bg/time_series/tsd/tsd_type.hpp>
 
 #include <catch2/catch_test_macros.hpp>
@@ -38,5 +39,5 @@ TEST_CASE("dictionary key selection records its shared key set", "[wiring][tsd]"
     REQUIRE(wiring.nodes().size() == 2);
     REQUIRE(wiring.wiring_points().size() == 2);
     CHECK(wiring.wiring_points()[1].parent == 0);
-    CHECK(wiring.wiring_points()[1].item == 0);
+    CHECK(wiring.wiring_points()[1].item == bg::key_set_item_id);
 }

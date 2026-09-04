@@ -2,6 +2,7 @@
 
 #include <bg/type/type_map.hpp>
 #include <bg/type/type_resolution_error.hpp>
+#include <bg/type/variable.hpp>
 
 #include <algorithm>
 #include <memory>
@@ -110,6 +111,38 @@ bool BundleSchema::derives_from(const BundleSchema &schema) const noexcept {
     return false;
 }
 
+bool BundleSchema::is_resolved() const noexcept {
+    return (base_ == nullptr || base_->is_resolved()) &&
+           std::ranges::all_of(fields_, [](const auto &field) { return field.type->is_resolved(); });
+}
+
+const Type &BundleSchema::resolve(const TypeMap &bindings) const {
+    return is_resolved() ? *this : resolved_schema(*this, bindings);
+}
+
+const BundleSchema &TimeSeriesBundleType::schema() const {
+    const auto *schema = dynamic_cast<const BundleSchema *>(schema_);
+    if (schema == nullptr) {
+        const auto &variable = dynamic_cast<const Variable &>(*schema_);
+        throw TypeResolutionError{TypeResolutionErrorCode::unbound_variable, variable.name(),
+                                  "bundle schema variable is unbound"};
+    }
+    return *schema;
+}
+
+std::size_t TimeSeriesBundleType::item_count() const noexcept {
+    const auto *schema = dynamic_cast<const BundleSchema *>(schema_);
+    return schema == nullptr ? std::dynamic_extent : schema->field_count();
+}
+
+const TimeSeriesType &TimeSeriesBundleType::item_type(std::size_t index) const {
+    return *schema().field(index).type;
+}
+
+util::symbol TimeSeriesBundleType::item_name(std::size_t index) const {
+    return schema().field(index).name;
+}
+
 const TimeSeriesType &TimeSeriesBundleType::with_guarantee(TimeSeriesGuarantee guarantee) const {
     return time_series_bundle_type(schema(), guarantee);
 }
@@ -119,17 +152,22 @@ bool TimeSeriesBundleType::do_match(const Type &supplied, TypeMap &bindings) con
     if (bundle == nullptr || !bundle->is_resolved()) {
         return false;
     }
-    if (schema().named() && bundle->schema().named() && !bundle->schema().derives_from(schema())) {
-        return false;
-    }
-
     auto trial = bindings.overlay();
-    for (auto index = std::size_t{}; index < schema().field_count(); ++index) {
-        const auto &parameter = schema().field(index);
-        const auto *argument = bundle->schema().find(parameter.name);
-        if (argument == nullptr || !parameter.type->match(*argument->type, trial)) {
+    if (const auto *parameter_schema = dynamic_cast<const BundleSchema *>(schema_)) {
+        if (parameter_schema->named() && bundle->schema().named() &&
+            !bundle->schema().derives_from(*parameter_schema)) {
             return false;
         }
+
+        for (auto index = std::size_t{}; index < parameter_schema->field_count(); ++index) {
+            const auto &parameter = parameter_schema->field(index);
+            const auto *argument = bundle->schema().find(parameter.name);
+            if (argument == nullptr || !parameter.type->match(*argument->type, trial)) {
+                return false;
+            }
+        }
+    } else if (!schema_->match(bundle->schema(), trial)) {
+        return false;
     }
     if (!guarantee().match(*bundle->guarantee().value(), trial)) {
         return false;
@@ -140,7 +178,14 @@ bool TimeSeriesBundleType::do_match(const Type &supplied, TypeMap &bindings) con
 }
 
 const Type &GenericTimeSeriesBundleType::resolve(const TypeMap &bindings) const {
-    return time_series_bundle_type(resolved_schema(schema(), bindings), guarantee().resolve(bindings));
+    const auto &resolved = schema_type().resolve(bindings);
+    const auto *schema = dynamic_cast<const BundleSchema *>(&resolved);
+    if (schema == nullptr || !schema->is_resolved()) {
+        const auto &variable = dynamic_cast<const Variable &>(schema_type());
+        throw TypeResolutionError{TypeResolutionErrorCode::invalid_binding, variable.name(),
+                                  "bundle schema did not resolve to a concrete schema"};
+    }
+    return time_series_bundle_type(*schema, guarantee().resolve(bindings));
 }
 
 const BundleSchema &bundle_schema(util::symbol name, const void *identity, const BundleSchema *base,

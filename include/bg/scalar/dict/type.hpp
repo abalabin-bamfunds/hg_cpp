@@ -148,3 +148,10 @@ template <typename K, typename V> struct is_dict<Dict<K, V>> : std::true_type {}
 template <typename T> inline constexpr bool is_dict_v = is_dict<T>::value;
 
 } // namespace bg
+
+namespace bg::details {
+
+template <typename K, typename V>
+inline constexpr bool generic_scalar<Dict<K, V>> = generic_scalar<K> || generic_scalar<V>;
+
+} // namespace bg::details

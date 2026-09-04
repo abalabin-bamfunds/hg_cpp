@@ -3,8 +3,8 @@
 #include <bg/graph/runtime_graph.hpp>
 #include <bg/graph/wiring_context.hpp>
 #include <bg/node.hpp>
+#include <bg/node/input.hpp>
 #include <bg/run_graph.hpp>
-#include <bg/time_series/tsl/tsl_input_view.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -128,8 +128,8 @@ struct generic_copy_definition {
     bg::Out<bg::TS<double>> output;
 
     void evaluate() const {
-        input->visit([&](const bg::TimeSeriesValueInputView *value) { output.set_value(value->erased_value_view()); },
-                     [](const bg::TimeSeriesListInputView *) {}, ddv::noop);
+        input->visit([&](const bg::In<bg::TS<bg::SCALAR>> *value) { output.set_value(value->value_view()); },
+                     [](const bg::In<bg::TSL<bg::TS_T, bg::SIZE>> *) {}, ddv::noop);
     }
 };
 
@@ -173,4 +173,135 @@ TEST_CASE("a generic time-series view preserves its resolved time-series type", 
 
     CHECK(double_sink_definition::evaluation_count == 1);
     CHECK(double_sink_definition::last_value == 1.5);
+}
+
+namespace {
+
+struct generic_list_view_source_definition {
+    bg::Out<bg::TSL<bg::TS<int>, 2>> output;
+
+    void start() const {
+        output[0].set(3);
+        output[1].set(7);
+    }
+};
+
+struct generic_list_view_copy_definition {
+    bg::In<bg::TSL<bg::TS_T, bg::SIZE>> input;
+    bg::Out<bg::TSL<bg::TS_T, bg::SIZE>> output;
+
+    void evaluate() const {
+        input_size = input.size();
+        output_size = output.size();
+
+        input[1].visit(
+            [&](const bg::In<bg::TS<bg::SCALAR>> *source) {
+                output[0].visit(
+                    [&](const bg::Out<bg::TS<bg::SCALAR>> *destination) {
+                        destination->set_value(source->value_view());
+                    },
+                    ddv::noop);
+            },
+            ddv::noop);
+    }
+
+    inline static std::size_t input_size{};
+    inline static std::size_t output_size{};
+};
+
+struct generic_list_view_sink_definition {
+    bg::In<bg::TSL<bg::TS<int>, 2>> input;
+
+    void evaluate() const { value = input[0].value(); }
+
+    inline static int value{};
+};
+
+} // namespace
+
+TEST_CASE("generic time-series list views expose their resolved size and items", "[evaluation][views][tsl]") {
+    const auto source = bg::node<generic_list_view_source_definition>();
+    const auto copy = bg::node<generic_list_view_copy_definition>();
+    const auto sink = bg::node<generic_list_view_sink_definition>();
+    generic_list_view_copy_definition::input_size = 0;
+    generic_list_view_copy_definition::output_size = 0;
+    generic_list_view_sink_definition::value = 0;
+
+    bg::run_graph([&] { sink(copy(source())); });
+
+    CHECK(generic_list_view_copy_definition::input_size == 2);
+    CHECK(generic_list_view_copy_definition::output_size == 2);
+    CHECK(generic_list_view_sink_definition::value == 7);
+}
+
+namespace {
+
+template <template <typename> typename Field> struct RuntimeViewBundle {
+    Field<bg::TS<int>> count;
+    Field<bg::TS<float>> value;
+};
+
+struct generic_bundle_view_source_definition {
+    bg::Out<bg::TSB<RuntimeViewBundle>> output;
+
+    void start() const {
+        output->count.set(4);
+        output->value.set(2.5F);
+    }
+};
+
+struct generic_bundle_view_copy_definition {
+    bg::In<bg::TSB<bg::SCHEMA>> input;
+    bg::Out<bg::TSB<bg::SCHEMA>> output;
+
+    void evaluate() const {
+        input_size = input.size();
+        output_size = output.size();
+        first_name = input.item_name(0);
+        second_name = output.item_name(1);
+
+        input[0].visit(
+            [&](const bg::In<bg::TS<bg::SCALAR>> *source) {
+                output[0].visit(
+                    [&](const bg::Out<bg::TS<bg::SCALAR>> *destination) {
+                        destination->set_value(source->value_view());
+                    },
+                    ddv::noop);
+            },
+            ddv::noop);
+    }
+
+    inline static std::size_t input_size{};
+    inline static std::size_t output_size{};
+    inline static bg::util::symbol first_name{""};
+    inline static bg::util::symbol second_name{""};
+};
+
+struct generic_bundle_view_sink_definition {
+    bg::In<bg::TSB<RuntimeViewBundle>> input;
+
+    void evaluate() const { count = input->count.value(); }
+
+    inline static int count{};
+};
+
+} // namespace
+
+TEST_CASE("generic bundle views expose their resolved schema and items", "[evaluation][views][tsb]") {
+    const auto source = bg::node<generic_bundle_view_source_definition>();
+    const auto copy = bg::node<generic_bundle_view_copy_definition>();
+    const auto sink = bg::node<generic_bundle_view_sink_definition>();
+    generic_bundle_view_copy_definition::input_size = 0;
+    generic_bundle_view_copy_definition::output_size = 0;
+    generic_bundle_view_copy_definition::first_name = bg::util::symbol{""};
+    generic_bundle_view_copy_definition::second_name = bg::util::symbol{""};
+    generic_bundle_view_sink_definition::count = 0;
+
+    bg::run_graph([&] { sink(copy(source())); });
+
+    CHECK(generic_bundle_view_copy_definition::input_size == 2);
+    CHECK(generic_bundle_view_copy_definition::output_size == 2);
+    CHECK(generic_bundle_view_copy_definition::first_name.text() == "count");
+    CHECK(generic_bundle_view_copy_definition::second_name.text() == "value");
+    CHECK(generic_bundle_view_sink_definition::count == 4);
 }

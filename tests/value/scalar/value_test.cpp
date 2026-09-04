@@ -27,7 +27,26 @@ TEST_CASE("a scalar value accepts lossless unsigned integer conversion", "[value
 TEST_CASE("a pointer-sized scalar value uses inline storage", "[value][scalar]") {
     const auto value = bg::ScalarValue{42, *std::pmr::null_memory_resource()};
 
+    CHECK(&value.view().runtime_type() == &bg::cpp_scalar_runtime_type<std::int64_t>());
     CHECK(value.view().value() == 42);
+}
+
+TEST_CASE("a pointer-sized scalar value copies a borrowed value inline", "[value][scalar]") {
+    const auto source_value = std::int64_t{42};
+    const auto source = bg::Scalar<std::int64_t>::from(source_value);
+    const auto value = bg::ScalarValue<std::int64_t>{source, *std::pmr::null_memory_resource()};
+
+    CHECK(value.view().value() == source_value);
+}
+
+TEST_CASE("pointer-sized scalar values compare and hash from inline storage", "[value][scalar]") {
+    const auto left = bg::ScalarValue{42};
+    const auto equal = bg::ScalarValue{42};
+    const auto different = bg::ScalarValue{43};
+
+    CHECK(left == equal);
+    CHECK_FALSE(left == different);
+    CHECK(left.view().hash() == equal.view().hash());
 }
 
 TEST_CASE("an evaluation time scalar value retains its graph type", "[value][scalar]") {
@@ -93,12 +112,16 @@ TEST_CASE("a scalar value uses the supplied memory resource", "[value][scalar]")
 }
 
 TEST_CASE("a scalar value uses the current node memory resource", "[value][scalar]") {
-    auto memory = std::pmr::unsynchronized_pool_resource{};
+    auto memory = counting_memory_resource{};
     const auto graph = 1;
-    const auto context = bg::details::ScalarAllocationContext{memory, &graph, 2};
-    const auto value = bg::ScalarValue{"value"};
+    {
+        const auto context = bg::details::ScalarAllocationContext{memory, &graph, 2};
+        const auto value = bg::ScalarValue{"long enough to require separate character storage"};
 
-    CHECK(value.view().value() == "value");
+        CHECK(value.view().value() == "long enough to require separate character storage");
+    }
+
+    CHECK(memory.allocations == memory.deallocations);
 }
 
 TEST_CASE("a scalar value transfers ownership when moved", "[value][scalar]") {

@@ -55,5 +55,7 @@ TEST_CASE("a generic scalar set exposes its declared comparison operations", "[v
     const auto right = bg::Scalar<bg::Set<Item>>::from(second.input_view());
 
     CHECK(left == right);
+    CHECK(left == second);
+    CHECK(second == left);
     CHECK(left.hash() == right.hash());
 }

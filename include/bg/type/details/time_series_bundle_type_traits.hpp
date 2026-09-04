@@ -1,7 +1,8 @@
 #pragma once
 
 #include <bg/time_series/tsb/tsb_type.hpp>
-#include <bg/type/details/time_series_type.hpp>
+#include <bg/type/details/time_series_type_traits.hpp>
+#include <bg/type/schema_variable_instance.hpp>
 #include <bg/type/time_series_bundle_type.hpp>
 
 #include <vector>
@@ -38,48 +39,71 @@ template <typename Scope, bool Input, template <template <typename> typename> ty
 
 template <template <template <typename> typename> typename Schema, auto... Properties>
 struct time_series_type_traits<TSB<Schema, Properties...>> {
+    static constexpr bool schema_variable = bundle_schema_variable_declaration<Schema<bundle_schema_field>>;
+
     template <std::size_t... Index> [[nodiscard]] static consteval bool fields_generic(std::index_sequence<Index...>) {
-        return (false || ... || generic_time_series<direct_bundle_field_time_series<Index, Schema>>::value);
+        return (false || ... || generic_time_series<direct_bundle_field_time_series<Index, Schema>>);
     }
 
     template <std::size_t... Index>
     [[nodiscard]] static consteval bool fields_supported(std::index_sequence<Index...>) {
-        return (true && ... && supported_time_series<direct_bundle_field_time_series<Index, Schema>>::value);
+        return (true && ... && supported_time_series<direct_bundle_field_time_series<Index, Schema>>);
     }
 
     static constexpr bool base_generic = [] {
-        if constexpr (bundle_has_base<Schema>) {
+        if constexpr (schema_variable) {
+            return false;
+        } else if constexpr (bundle_has_base<Schema>) {
             using Base = bundle_base_t<Schema>;
             return time_series_type_traits<TSB<Base::template apply>>::generic;
+        } else {
+            return false;
         }
-        return false;
     }();
 
     static constexpr bool base_supported = [] {
-        if constexpr (bundle_has_base<Schema>) {
+        if constexpr (schema_variable) {
+            return true;
+        } else if constexpr (bundle_has_base<Schema>) {
             using Base = bundle_base_t<Schema>;
             return time_series_type_traits<TSB<Base::template apply>>::supported;
+        } else {
+            return true;
         }
-        return true;
     }();
 
-    static constexpr bool generic =
-        base_generic || fields_generic(std::make_index_sequence<direct_bundle_field_count<Schema>>{});
-    static constexpr bool supported =
-        base_supported && fields_supported(std::make_index_sequence<direct_bundle_field_count<Schema>>{});
+    static constexpr bool generic = [] {
+        if constexpr (schema_variable) {
+            return true;
+        } else {
+            return base_generic || fields_generic(std::make_index_sequence<direct_bundle_field_count<Schema>>{});
+        }
+    }();
+    static constexpr bool supported = [] {
+        if constexpr (schema_variable) {
+            return true;
+        } else {
+            return base_supported && fields_supported(std::make_index_sequence<direct_bundle_field_count<Schema>>{});
+        }
+    }();
 
     template <typename Scope, std::size_t, bool Input>
     [[nodiscard]] static const TimeSeriesType &get(GuaranteeParameter guarantee) {
-        const auto &schema = cpp_bundle_schema<Scope, Input, Schema>(guarantee);
-        if constexpr (Input || generic) {
-            static const auto type = GenericTimeSeriesBundleType{schema, guarantee};
+        if constexpr (schema_variable) {
+            static const auto type = GenericTimeSeriesBundleType{schema_variable_instance<Scope, Schema>(), guarantee};
             return type;
+        } else {
+            const auto &schema = cpp_bundle_schema<Scope, Input, Schema>(guarantee);
+            if constexpr (Input || generic) {
+                static const auto type = GenericTimeSeriesBundleType{schema, guarantee};
+                return type;
+            }
+            if (!guarantee.is_resolved()) {
+                static const auto type = GenericTimeSeriesBundleType{schema, guarantee};
+                return type;
+            }
+            return time_series_bundle_type(schema, *guarantee.value());
         }
-        if (!guarantee.is_resolved()) {
-            static const auto type = GenericTimeSeriesBundleType{schema, guarantee};
-            return type;
-        }
-        return time_series_bundle_type(schema, *guarantee.value());
     }
 };
 

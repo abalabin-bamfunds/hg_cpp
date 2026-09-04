@@ -31,12 +31,10 @@ TEST_CASE("an aggregate node declaration evaluates through its fields", "[node_a
 
     bg::EvaluationTime output_time = bg::MIN_DT;
     float output_value{};
-    auto output_view = bg::util::polymorphic_value<bg::TypedTimeSeriesValueOutputView<float>>::make<
-        bg::TypedTimeSeriesValueOutputView<float>>();
-    output_view->bind(output_time, &output_value, evaluation_time);
+    auto output_state = bg::details::OutputState{bg::cpp_time_series_runtime_type<bg::TS<float>>()};
+    output_state.bind(output_time, &output_value, evaluation_time);
 
-    add value{{input_time, &lhs}, {input_time, &rhs},
-              bg::details::output_factory::make<bg::TS<float>>(output_view.get())};
+    add value{{input_time, &lhs}, {input_time, &rhs}, bg::details::output_factory::make<bg::TS<float>>(output_state)};
 
     value.evaluate();
 

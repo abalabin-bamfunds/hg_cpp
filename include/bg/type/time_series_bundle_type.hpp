@@ -16,7 +16,9 @@ struct BundleField {
     const TimeSeriesType *type;
 };
 
-class BundleSchema {
+class BundleSchemaType : public Type {};
+
+class BundleSchema : public BundleSchemaType {
   public:
     BundleSchema(util::symbol name, const void *identity, const BundleSchema *base, std::vector<BundleField> fields);
 
@@ -29,6 +31,8 @@ class BundleSchema {
     [[nodiscard]] const BundleField &field(std::size_t index) const;
     [[nodiscard]] const BundleField *find(util::symbol name) const noexcept;
     [[nodiscard]] bool derives_from(const BundleSchema &schema) const noexcept;
+    [[nodiscard]] bool is_resolved() const noexcept override;
+    [[nodiscard]] const Type &resolve(const TypeMap &bindings) const override;
 
   private:
     util::symbol name_;
@@ -40,25 +44,28 @@ class BundleSchema {
 
 class TimeSeriesBundleType : public FixedItemTimeSeriesType {
   public:
-    [[nodiscard]] const BundleSchema &schema() const noexcept { return *schema_; }
-    [[nodiscard]] std::size_t item_count() const noexcept final { return schema_->field_count(); }
-    [[nodiscard]] const TimeSeriesType &item_type(std::size_t index) const final { return *schema_->field(index).type; }
-    [[nodiscard]] util::symbol item_name(std::size_t index) const { return schema_->field(index).name; }
+    VISITOR_SUPPORT()
+
+    [[nodiscard]] const BundleSchemaType &schema_type() const noexcept { return *schema_; }
+    [[nodiscard]] const BundleSchema &schema() const;
+    [[nodiscard]] std::size_t item_count() const noexcept final;
+    [[nodiscard]] const TimeSeriesType &item_type(std::size_t index) const final;
+    [[nodiscard]] util::symbol item_name(std::size_t index) const;
     [[nodiscard]] const TimeSeriesType &with_guarantee(TimeSeriesGuarantee guarantee) const override;
 
   protected:
-    TimeSeriesBundleType(const BundleSchema &schema, GuaranteeParameter guarantee)
+    TimeSeriesBundleType(const BundleSchemaType &schema, GuaranteeParameter guarantee)
         : FixedItemTimeSeriesType(guarantee), schema_{&schema} {}
 
     [[nodiscard]] bool do_match(const Type &supplied, TypeMap &bindings) const override;
 
   private:
-    const BundleSchema *schema_;
+    const BundleSchemaType *schema_;
 };
 
 class GenericTimeSeriesBundleType final : public TimeSeriesBundleType {
   public:
-    GenericTimeSeriesBundleType(const BundleSchema &schema, GuaranteeParameter guarantee)
+    GenericTimeSeriesBundleType(const BundleSchemaType &schema, GuaranteeParameter guarantee)
         : TimeSeriesBundleType(schema, guarantee) {}
 
     [[nodiscard]] bool is_resolved() const noexcept override { return false; }

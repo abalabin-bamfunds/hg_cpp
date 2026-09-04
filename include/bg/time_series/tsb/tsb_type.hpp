@@ -1,6 +1,7 @@
 #pragma once
 
 #include <bg/time_series/details/time_series_properties.hpp>
+#include <bg/time_series/schema_variable.hpp>
 
 namespace bg {
 

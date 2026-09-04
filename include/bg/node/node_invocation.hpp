@@ -1,6 +1,6 @@
 #pragma once
 
-#include <bg/graph/compiled_node.hpp>
+#include <bg/graph/node.hpp>
 #include <bg/node/details/output_factory.hpp>
 #include <bg/node/input.hpp>
 #include <bg/node/output.hpp>
@@ -19,7 +19,7 @@ class NodeInvocationParameter {
     [[nodiscard]] const Type &parameter_type() const noexcept { return *metadata().type; }
 
   protected:
-    NodeInvocationParameter(const CompiledNode &node, const std::byte *runtime_storage, std::size_t parameter_index,
+    NodeInvocationParameter(const CompiledNode &node, std::byte *runtime_storage, std::size_t parameter_index,
                             std::size_t view_index) noexcept
         : node_{&node}, runtime_storage_{runtime_storage}, parameter_index_{parameter_index}, view_index_{view_index} {}
 
@@ -30,34 +30,25 @@ class NodeInvocationParameter {
     }
 
     const CompiledNode *node_;
-    const std::byte *runtime_storage_;
+    std::byte *runtime_storage_;
     std::size_t parameter_index_;
     std::size_t view_index_;
 };
 
 class NodeInvocationInput final : public NodeInvocationParameter {
   public:
-    NodeInvocationInput(const CompiledNode &node, const std::byte *runtime_storage, std::size_t parameter_index,
+    NodeInvocationInput(const CompiledNode &node, std::byte *runtime_storage, std::size_t parameter_index,
                         std::size_t view_index) noexcept
         : NodeInvocationParameter{node, runtime_storage, parameter_index, view_index} {}
 
     [[nodiscard]] In<TS_T> value() const {
-        const auto &prototype = [&]() -> const TimeSeriesInputView & {
-            if (binding().mode() == ParameterBindingMode::reference) {
-                const auto *target = binding().reference_input(runtime_storage_).target;
-                if (target != nullptr) {
-                    return target->target_representation->input_view_prototype();
-                }
-            }
-            return node_->time_series_input_view_prototype(view_index_);
-        }();
-        return In<TS_T>{binding().last_updated(runtime_storage_), binding().value(runtime_storage_), prototype};
+        return Node{*node_, runtime_storage_}.time_series_input(parameter_index_, view_index_);
     }
 };
 
 class NodeInvocationScalar final : public NodeInvocationParameter {
   public:
-    NodeInvocationScalar(const CompiledNode &node, const std::byte *runtime_storage, std::size_t parameter_index,
+    NodeInvocationScalar(const CompiledNode &node, std::byte *runtime_storage, std::size_t parameter_index,
                          std::size_t view_index, std::size_t time_series_input_count) noexcept
         : NodeInvocationParameter{node, runtime_storage, parameter_index, view_index},
           time_series_input_count_{time_series_input_count} {}
@@ -65,9 +56,8 @@ class NodeInvocationScalar final : public NodeInvocationParameter {
     [[nodiscard]] bool has_value() const noexcept { return binding().scalar_data() != nullptr; }
 
     [[nodiscard]] Scalar<> value() const {
-        const auto &prototype = static_cast<const ScalarValueInputView &>(
-            node_->scalar_input_view_prototype(time_series_input_count_, view_index_));
-        return Scalar<>::from(prototype, binding().scalar_data());
+        return Scalar<>::from(node_->scalar_input_runtime_type(time_series_input_count_, view_index_),
+                              binding().scalar_data());
     }
 
   private:
@@ -83,7 +73,7 @@ template <bool TimeSeries> class NodeInvocationParameterRange {
         using difference_type = std::ptrdiff_t;
         using iterator_category = std::input_iterator_tag;
 
-        Iterator(const CompiledNode &node, const std::byte *runtime_storage, std::size_t time_series_input_count,
+        Iterator(const CompiledNode &node, std::byte *runtime_storage, std::size_t time_series_input_count,
                  std::size_t parameter_index, std::size_t view_index) noexcept
             : node_{&node}, runtime_storage_{runtime_storage}, time_series_input_count_{time_series_input_count},
               parameter_index_{parameter_index}, view_index_{view_index} {
@@ -119,7 +109,7 @@ template <bool TimeSeries> class NodeInvocationParameterRange {
         }
 
         const CompiledNode *node_;
-        const std::byte *runtime_storage_;
+        std::byte *runtime_storage_;
         std::size_t time_series_input_count_;
         std::size_t parameter_index_;
         std::size_t view_index_;
@@ -133,12 +123,12 @@ template <bool TimeSeries> class NodeInvocationParameterRange {
   private:
     template <typename, typename> friend class NodeInvocation;
 
-    NodeInvocationParameterRange(const CompiledNode &node, const std::byte *runtime_storage,
+    NodeInvocationParameterRange(const CompiledNode &node, std::byte *runtime_storage,
                                  std::size_t time_series_input_count) noexcept
         : node_{&node}, runtime_storage_{runtime_storage}, time_series_input_count_{time_series_input_count} {}
 
     const CompiledNode *node_;
-    const std::byte *runtime_storage_;
+    std::byte *runtime_storage_;
     std::size_t time_series_input_count_;
 };
 
@@ -158,9 +148,9 @@ template <typename CompiledData = void, typename State = void> class NodeInvocat
     }
 
     [[nodiscard]] Out<TS_T> output() const {
-        return details::output_factory::make<TS_T>(node_->output_last_updated(runtime_storage_),
-                                                   runtime_storage_ + node_->output_value_offset(),
-                                                   node_->node_invocation_output_view_prototype(), *context_);
+        const auto runtime_node = Node{*node_, runtime_storage_};
+        return details::output_factory::make<TS_T>(runtime_node.output_last_updated(), runtime_node.output_value(),
+                                                   node_->node_invocation_output_runtime_type(), *context_);
     }
 
     template <typename Value = CompiledData>
@@ -172,7 +162,7 @@ template <typename CompiledData = void, typename State = void> class NodeInvocat
     template <typename Value = State>
         requires(!std::is_void_v<Value>)
     [[nodiscard]] Value &state() const noexcept {
-        return *reinterpret_cast<Value *>(runtime_storage_ + node_->state_offset());
+        return *static_cast<Value *>(Node{*node_, runtime_storage_}.state());
     }
 
   private:

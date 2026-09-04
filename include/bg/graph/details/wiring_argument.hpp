@@ -3,7 +3,7 @@
 #include <bg/graph/details/free_time_series_bundle.hpp>
 #include <bg/graph/details/free_time_series_list.hpp>
 #include <bg/graph/wiring_point.hpp>
-#include <bg/scalar/cpp_storage_representation.hpp>
+#include <bg/scalar/cpp_runtime_type.hpp>
 #include <bg/scalar/value.hpp>
 #include <bg/type/scalar_type.hpp>
 #include <bg/type/type.hpp>
@@ -50,9 +50,9 @@ concept graph_code_argument =
 class wiring_argument {
     struct ScalarArgument {
         const ScalarType *type;
-        const ScalarStorageRepresentation *storage_representation;
+        const ScalarRuntimeType *runtime_type;
         const void *data;
-        const ScalarInputView *view;
+        const details::ScalarData *view;
     };
 
   public:
@@ -70,25 +70,23 @@ class wiring_argument {
         requires supported_scalar_argument<T>
     wiring_argument(T &&value)
         : value_(ScalarArgument{&cpp_scalar_type<std::remove_cvref_t<T>>(),
-                                &cpp_scalar_storage_representation<std::remove_cvref_t<T>>(), std::addressof(value),
-                                nullptr}) {}
+                                &cpp_scalar_runtime_type<std::remove_cvref_t<T>>(), std::addressof(value), nullptr}) {}
 
     template <typename T>
         requires supported_optional_scalar_argument<T>
     wiring_argument(T &&value)
-        : value_(
-              ScalarArgument{&cpp_scalar_type<typename optional_scalar_argument<std::remove_cvref_t<T>>::value_type>(),
-                             &cpp_scalar_storage_representation<
-                                 typename optional_scalar_argument<std::remove_cvref_t<T>>::value_type>(),
-                             value ? std::addressof(*value) : nullptr, nullptr}) {}
+        : value_(ScalarArgument{
+              &cpp_scalar_type<typename optional_scalar_argument<std::remove_cvref_t<T>>::value_type>(),
+              &cpp_scalar_runtime_type<typename optional_scalar_argument<std::remove_cvref_t<T>>::value_type>(),
+              value ? std::addressof(*value) : nullptr, nullptr}) {}
 
     template <typename T>
         requires supported_scalar_value_argument<T>
     wiring_argument(const T &value)
         : value_(ScalarArgument{
               &cpp_scalar_type<typename scalar_value_argument<std::remove_cvref_t<T>>::scalar_type>(),
-              &cpp_scalar_storage_representation<typename scalar_value_argument<std::remove_cvref_t<T>>::scalar_type>(),
-              nullptr, &value.input_view()}) {}
+              &cpp_scalar_runtime_type<typename scalar_value_argument<std::remove_cvref_t<T>>::scalar_type>(), nullptr,
+              &value.input_view()}) {}
 
     [[nodiscard]] bool is_wiring_point() const noexcept { return std::holds_alternative<WiringPoint>(value_); }
 
@@ -114,13 +112,15 @@ class wiring_argument {
 
     [[nodiscard]] const ScalarType &scalar_type() const noexcept { return *std::get<ScalarArgument>(value_).type; }
 
-    [[nodiscard]] const ScalarStorageRepresentation &scalar_storage_representation() const noexcept {
-        return *std::get<ScalarArgument>(value_).storage_representation;
+    [[nodiscard]] const ScalarRuntimeType &scalar_runtime_type() const noexcept {
+        return *std::get<ScalarArgument>(value_).runtime_type;
     }
 
     [[nodiscard]] const void *scalar_data() const noexcept { return std::get<ScalarArgument>(value_).data; }
 
-    [[nodiscard]] const ScalarInputView *scalar_view() const noexcept { return std::get<ScalarArgument>(value_).view; }
+    [[nodiscard]] const details::ScalarData *scalar_view() const noexcept {
+        return std::get<ScalarArgument>(value_).view;
+    }
 
     [[nodiscard]] bool scalar_has_value() const noexcept {
         return scalar_data() != nullptr || scalar_view() != nullptr;

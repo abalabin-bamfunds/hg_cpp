@@ -100,7 +100,7 @@ TEST_CASE("a fixed time series list publishes changed items", "[evaluation][tsl]
 
 namespace {
 
-struct aliased_list_sum_definition {
+struct free_list_sum_definition {
     bg::In<bg::TSL<bg::TS<int>, 2>> input;
     bg::Out<bg::TS<int>> output;
 
@@ -112,7 +112,7 @@ struct aliased_list_sum_definition {
     inline static std::vector<std::array<bool, 2>> updates;
 };
 
-struct aliased_list_reference_definition {
+struct free_list_reference_definition {
     bg::In<bg::REF<bg::TS<int>>> input;
     bg::Out<bg::REF<bg::TS<int>>> output;
 
@@ -121,9 +121,9 @@ struct aliased_list_reference_definition {
 
 } // namespace
 
-TEST_CASE("an aliased fixed time series list coalesces source changes", "[evaluation][tsl][alias]") {
-    const auto sum = bg::node<aliased_list_sum_definition>();
-    aliased_list_sum_definition::updates.clear();
+TEST_CASE("a free fixed time series list coalesces source changes", "[evaluation][tsl][free]") {
+    const auto sum = bg::node<free_list_sum_definition>();
+    free_list_sum_definition::updates.clear();
     const auto graph = [&](bg::wp<bg::TS<int>> first, bg::wp<bg::TS<int>> second) {
         return sum(bg::tsl(first, second));
     };
@@ -133,13 +133,13 @@ TEST_CASE("an aliased fixed time series list coalesces source changes", "[evalua
     const auto result = bg::testing::test_graph(graph, first, second);
 
     CHECK(result.equals({11, 12}));
-    CHECK(aliased_list_sum_definition::updates == std::vector<std::array<bool, 2>>{{true, true}, {true, false}});
+    CHECK(free_list_sum_definition::updates == std::vector<std::array<bool, 2>>{{true, true}, {true, false}});
 }
 
-TEST_CASE("a free fixed time series list follows the receiving item representation",
-          "[evaluation][tsl][alias][reference]") {
-    const auto reference = bg::node<aliased_list_reference_definition>();
-    const auto sum = bg::node<aliased_list_sum_definition>();
+TEST_CASE("a free fixed time series list follows the receiving item runtime_type",
+          "[evaluation][tsl][free][reference]") {
+    const auto reference = bg::node<free_list_reference_definition>();
+    const auto sum = bg::node<free_list_sum_definition>();
     const auto graph = [&](bg::wp<bg::TS<int>> first, bg::wp<bg::TS<int>> second) {
         return sum(bg::tsl(reference(first), second));
     };
@@ -152,7 +152,7 @@ TEST_CASE("a free fixed time series list follows the receiving item representati
 }
 
 TEST_CASE("a graph can select the original item from a free fixed time series list",
-          "[evaluation][tsl][alias][wiring]") {
+          "[evaluation][tsl][free][wiring]") {
     using namespace bg::literals;
     const auto second =
         bg::graph("name"_m = "second_item",

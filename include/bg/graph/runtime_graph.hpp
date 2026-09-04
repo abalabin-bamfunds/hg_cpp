@@ -3,6 +3,7 @@
 #include <bg/evaluation_context.hpp>
 #include <bg/global_state.hpp>
 #include <bg/graph/compiled_graph.hpp>
+#include <bg/graph/node.hpp>
 
 #include <cstddef>
 #include <memory>
@@ -21,7 +22,7 @@ namespace testing {
 class RuntimeGraphAccess;
 }
 
-class TimeSeriesStorageRepresentation;
+class TimeSeriesRuntimeType;
 class ItemSubscribers;
 class SimulationEvaluationEngine;
 class NestedGraph;
@@ -44,6 +45,7 @@ class RuntimeGraph {
     void evaluate(EvaluationTime evaluation_time);
     [[nodiscard]] std::optional<EvaluationTime> next_scheduled_time() const noexcept;
     [[nodiscard]] GlobalState &global_state() const noexcept { return *global_state_; }
+    [[nodiscard]] Node node(std::size_t index) noexcept { return {compiled_graph_->node(index), storage_}; }
 
   private:
     friend EvaluationContext;

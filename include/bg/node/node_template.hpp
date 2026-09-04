@@ -5,7 +5,7 @@
 #include <bg/graph/wiring_template.hpp>
 #include <bg/node/invalidation.hpp>
 #include <bg/node/state_layout.hpp>
-#include <bg/time_series/time_series_storage_representation.hpp>
+#include <bg/time_series/time_series_runtime_type.hpp>
 #include <bg/type/signature.hpp>
 
 #include <cstddef>
@@ -41,19 +41,17 @@ class NodeTemplate : public WiringTemplate {
     [[nodiscard]] virtual InvalidationBehavior invalidation_behavior(const ResolvedSignature &) const noexcept {
         return {};
     }
-    [[nodiscard]] virtual const TimeSeriesStorageRepresentation *output_storage_representation(
-        const ResolvedSignature &signature,
-        std::span<const ScalarStorageRepresentation *const> parameter_storage_representations,
-        std::span<const TimeSeriesStorageRepresentation *const> time_series_input_storage_representations) const = 0;
-    [[nodiscard]] virtual bool uses_generic_time_series_input_view(std::size_t) const noexcept { return false; }
-    [[nodiscard]] virtual bool uses_generic_scalar_input_view(std::size_t) const noexcept { return false; }
-    [[nodiscard]] virtual bool uses_generic_output_view() const noexcept { return false; }
+    [[nodiscard]] virtual const TimeSeriesRuntimeType *
+    output_runtime_type(const ResolvedSignature &signature,
+                        std::span<const ScalarRuntimeType *const> parameter_runtime_types,
+                        std::span<const TimeSeriesRuntimeType *const> time_series_input_runtime_types) const = 0;
+    [[nodiscard]] virtual bool uses_time_series_input_runtime_type(std::size_t) const noexcept { return false; }
+    [[nodiscard]] virtual bool uses_scalar_input_runtime_type(std::size_t) const noexcept { return false; }
+    [[nodiscard]] virtual bool uses_output_runtime_type() const noexcept { return false; }
     [[nodiscard]] virtual bool uses_node_invocation() const noexcept { return false; }
     [[nodiscard]] virtual bool uses_future_scheduling() const noexcept { return false; }
     [[nodiscard]] virtual bool uses_cycle_callbacks() const noexcept { return false; }
-    [[nodiscard]] virtual InputNotificationCallback input_notification(std::size_t) const noexcept {
-        return {};
-    }
+    [[nodiscard]] virtual InputNotificationCallback input_notification(std::size_t) const noexcept { return {}; }
     [[nodiscard]] virtual std::optional<std::size_t> output_item_source(std::size_t) const noexcept {
         return std::nullopt;
     }
@@ -62,7 +60,7 @@ class NodeTemplate : public WiringTemplate {
         return std::nullopt;
     }
     [[nodiscard]] virtual NodeStateLayout state_layout(const ResolvedSignature &,
-                                                       std::span<const ScalarStorageRepresentation *const>,
+                                                       std::span<const ScalarRuntimeType *const>,
                                                        std::span<const ScalarType *const>) const {
         return {};
     }

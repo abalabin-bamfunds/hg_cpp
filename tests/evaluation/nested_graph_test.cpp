@@ -2,6 +2,7 @@
 #include <bg/nested.hpp>
 #include <bg/node.hpp>
 #include <bg/testing/test_graph.hpp>
+#include <bg/time_series/tsb/tsb.hpp>
 #include <bg/time_series/tsl/tsl.hpp>
 
 #include <catch2/catch_test_macros.hpp>
@@ -190,18 +191,18 @@ TEST_CASE("future inner scheduling selects an outer cycle", "[evaluation][nested
     CHECK(actual.equals({10, 11, 12}));
 }
 
-struct NestedAliasedListSum {
+struct NestedFreeListSum {
     bg::In<bg::TSL<bg::TS<std::int64_t>, 2>> input;
     bg::Out<bg::TS<std::int64_t>> output;
 
     void evaluate() const { output.set(input[0].value() + input[1].value()); }
 };
 
-TEST_CASE("an aliased list processes reference changes in a nested graph",
-          "[evaluation][nested][reference][tsl][alias]") {
-    const auto sum = bg::node<NestedAliasedListSum>();
+TEST_CASE("a free list processes reference changes in a nested graph",
+          "[evaluation][nested][reference][tsl][free]") {
+    const auto sum = bg::node<NestedFreeListSum>();
     const auto inner = bg::graph(
-        "name"_m = "inner_aliased_list",
+        "name"_m = "inner_free_list",
         [&](bg::wp<bg::TS<std::int64_t>> first,
             bg::wp<bg::TS<std::int64_t>> second) -> bg::wp<bg::TS<std::int64_t>> {
             return sum(bg::tsl(first, second));
@@ -215,6 +216,143 @@ TEST_CASE("an aliased list processes reference changes in a nested graph",
     const auto actual = bg::testing::test_graph(outer, first, second, running);
 
     CHECK(actual.equals({11, 22, 33}));
+}
+
+using NestedIntList = bg::TSL<bg::TS<std::int64_t>, 2>;
+
+struct NestedListSum {
+    bg::In<NestedIntList> input;
+    bg::Out<bg::TS<std::int64_t>> output;
+
+    void evaluate() const { output.set(input[0].value() + input[1].value()); }
+};
+
+TEST_CASE("a reference to an outer free list works in a nested graph",
+          "[evaluation][nested][reference][tsl][free][boundary]") {
+    const auto sum = bg::node<NestedListSum>();
+    const auto inner = bg::graph(
+        "name"_m = "consume_outer_free_list",
+        [&](bg::wp<NestedIntList> input) -> bg::wp<bg::TS<std::int64_t>> { return sum(input); });
+    const auto outer = [&](bg::wp<bg::TS<std::int64_t>> first, bg::wp<bg::TS<std::int64_t>> second,
+                           bg::wp<bg::TS<bool>> run) { return bg::nested(inner, run, bg::tsl(first, second)); };
+
+    const auto actual = bg::testing::test_graph(outer, std::array<std::int64_t, 4>{1, 2, 3, 4},
+                                                std::array<std::int64_t, 4>{10, 20, 30, 40},
+                                                std::array{true, true, false, true});
+
+    CHECK(actual.equals({11, 22, std::nullopt, 44}));
+}
+
+TEST_CASE("a reference to an inner free list works in the outer graph",
+          "[evaluation][nested][reference][tsl][free][boundary]") {
+    const auto sum = bg::node<NestedListSum>();
+    const auto materialize = bg::graph(
+        "name"_m = "materialize_free_list",
+        [](bg::wp<NestedIntList> input) -> bg::wp<NestedIntList> { return input; });
+    const auto inner = bg::graph(
+        "name"_m = "produce_inner_free_list",
+        [&](bg::wp<bg::TS<std::int64_t>> first,
+            bg::wp<bg::TS<std::int64_t>> second) -> bg::wp<NestedIntList> {
+            return materialize(bg::tsl(first, second));
+        });
+    const auto outer = [&](bg::wp<bg::TS<std::int64_t>> first, bg::wp<bg::TS<std::int64_t>> second,
+                           bg::wp<bg::TS<bool>> run) { return sum(bg::nested(inner, run, first, second)); };
+
+    const auto actual = bg::testing::test_graph(outer, std::array<std::int64_t, 4>{1, 2, 3, 4},
+                                                std::array<std::int64_t, 4>{10, 20, 30, 40},
+                                                std::array{true, true, false, true});
+
+    CHECK(actual.equals({11, 22, std::nullopt, 44}));
+}
+
+TEST_CASE("a free list reference passes through a nested graph",
+          "[evaluation][nested][reference][tsl][free][boundary]") {
+    const auto sum = bg::node<NestedListSum>();
+    const auto inner = bg::graph(
+        "name"_m = "pass_free_list",
+        [](bg::wp<NestedIntList> input) -> bg::wp<NestedIntList> { return input; });
+    const auto outer = [&](bg::wp<bg::TS<std::int64_t>> first, bg::wp<bg::TS<std::int64_t>> second,
+                           bg::wp<bg::TS<bool>> run) {
+        return sum(bg::nested(inner, run, bg::tsl(first, second)));
+    };
+
+    const auto actual = bg::testing::test_graph(outer, std::array<std::int64_t, 4>{1, 2, 3, 4},
+                                                std::array<std::int64_t, 4>{10, 20, 30, 40},
+                                                std::array{true, true, false, true});
+
+    CHECK(actual.equals({11, 22, std::nullopt, 44}));
+}
+
+template <template <typename> typename Field> struct NestedIntBundle {
+    Field<bg::TS<std::int64_t>> first;
+    Field<bg::TS<std::int64_t>> second;
+};
+
+using NestedIntBundleTimeSeries = bg::TSB<NestedIntBundle>;
+
+struct NestedBundleSum {
+    bg::In<NestedIntBundleTimeSeries> input;
+    bg::Out<bg::TS<std::int64_t>> output;
+
+    void evaluate() const { output.set(input->first.value() + input->second.value()); }
+};
+
+TEST_CASE("a reference to an outer free bundle works in a nested graph",
+          "[evaluation][nested][reference][tsb][free][boundary]") {
+    const auto sum = bg::node<NestedBundleSum>();
+    const auto inner = bg::graph(
+        "name"_m = "consume_outer_free_bundle",
+        [&](bg::wp<NestedIntBundleTimeSeries> input) -> bg::wp<bg::TS<std::int64_t>> { return sum(input); });
+    const auto outer = [&](bg::wp<bg::TS<std::int64_t>> first, bg::wp<bg::TS<std::int64_t>> second,
+                           bg::wp<bg::TS<bool>> run) {
+        return bg::nested(inner, run, bg::bundle("first"_m = first, "second"_m = second));
+    };
+
+    const auto actual = bg::testing::test_graph(outer, std::array<std::int64_t, 4>{1, 2, 3, 4},
+                                                std::array<std::int64_t, 4>{10, 20, 30, 40},
+                                                std::array{true, true, false, true});
+
+    CHECK(actual.equals({11, 22, std::nullopt, 44}));
+}
+
+TEST_CASE("a reference to an inner free bundle works in the outer graph",
+          "[evaluation][nested][reference][tsb][free][boundary]") {
+    const auto sum = bg::node<NestedBundleSum>();
+    const auto materialize = bg::graph(
+        "name"_m = "materialize_free_bundle",
+        [](bg::wp<NestedIntBundleTimeSeries> input) -> bg::wp<NestedIntBundleTimeSeries> { return input; });
+    const auto inner = bg::graph(
+        "name"_m = "produce_inner_free_bundle",
+        [&](bg::wp<bg::TS<std::int64_t>> first,
+            bg::wp<bg::TS<std::int64_t>> second) -> bg::wp<NestedIntBundleTimeSeries> {
+            return materialize(bg::bundle("first"_m = first, "second"_m = second));
+        });
+    const auto outer = [&](bg::wp<bg::TS<std::int64_t>> first, bg::wp<bg::TS<std::int64_t>> second,
+                           bg::wp<bg::TS<bool>> run) { return sum(bg::nested(inner, run, first, second)); };
+
+    const auto actual = bg::testing::test_graph(outer, std::array<std::int64_t, 4>{1, 2, 3, 4},
+                                                std::array<std::int64_t, 4>{10, 20, 30, 40},
+                                                std::array{true, true, false, true});
+
+    CHECK(actual.equals({11, 22, std::nullopt, 44}));
+}
+
+TEST_CASE("a free bundle reference passes through a nested graph",
+          "[evaluation][nested][reference][tsb][free][boundary]") {
+    const auto sum = bg::node<NestedBundleSum>();
+    const auto inner = bg::graph(
+        "name"_m = "pass_free_bundle",
+        [](bg::wp<NestedIntBundleTimeSeries> input) -> bg::wp<NestedIntBundleTimeSeries> { return input; });
+    const auto outer = [&](bg::wp<bg::TS<std::int64_t>> first, bg::wp<bg::TS<std::int64_t>> second,
+                           bg::wp<bg::TS<bool>> run) {
+        return sum(bg::nested(inner, run, bg::bundle("first"_m = first, "second"_m = second)));
+    };
+
+    const auto actual = bg::testing::test_graph(outer, std::array<std::int64_t, 4>{1, 2, 3, 4},
+                                                std::array<std::int64_t, 4>{10, 20, 30, 40},
+                                                std::array{true, true, false, true});
+
+    CHECK(actual.equals({11, 22, std::nullopt, 44}));
 }
 
 } // namespace

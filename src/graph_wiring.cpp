@@ -44,8 +44,8 @@ std::pmr::memory_resource &GraphWiring::variable_memory() noexcept {
     return *std::pmr::null_memory_resource();
 }
 
-std::pmr::memory_resource &GraphWiring::variable_memory(const ScalarStorageRepresentation &representation) {
-    if (representation.uses_variable_memory() && !variable_memory_) {
+std::pmr::memory_resource &GraphWiring::variable_memory(const ScalarRuntimeType &runtime_type) {
+    if (runtime_type.uses_variable_memory() && !variable_memory_) {
         variable_memory_.emplace(memory_);
     }
 
@@ -55,8 +55,8 @@ std::pmr::memory_resource &GraphWiring::variable_memory(const ScalarStorageRepre
 GraphWiring::~GraphWiring() {
     for (const auto &node : nodes_) {
         for (const auto &scalar : node.scalar_values()) {
-            if (scalar.has_value() && scalar.storage_representation_->requires_destruction()) {
-                scalar.storage_representation_->destroy(scalar.data_, variable_memory());
+            if (scalar.has_value() && scalar.runtime_type_->requires_destruction()) {
+                scalar.runtime_type_->destroy(scalar.data_, variable_memory());
             }
         }
     }
@@ -74,9 +74,8 @@ void GraphWiring::destroy_scalars(std::span<const WiredScalar> scalars) noexcept
             continue;
         }
 
-        scalar.storage_representation_->destroy(scalar.data_, variable_memory());
-        fixed_memory_.deallocate(scalar.data_, scalar.storage_representation_->size(),
-                                 scalar.storage_representation_->alignment());
+        scalar.runtime_type_->destroy(scalar.data_, variable_memory());
+        fixed_memory_.deallocate(scalar.data_, scalar.runtime_type_->size(), scalar.runtime_type_->alignment());
     }
 }
 
@@ -224,29 +223,29 @@ std::optional<WiringPoint> GraphWiring::add_node(const NodeTemplate &node_templa
             continue;
         }
 
-        const auto &representation = argument.scalar_storage_representation();
+        const auto &runtime_type = argument.scalar_runtime_type();
         if (!argument.scalar_has_value()) {
             if (!signature.parameters[i].accepts_absent_scalar) {
                 throw WiringError{"a required scalar parameter has no value"};
             }
 
-            scalar_values.push_back(WiredScalar{representation, nullptr});
+            scalar_values.push_back(WiredScalar{runtime_type, nullptr});
             continue;
         }
 
-        auto &scalar_memory = variable_memory(representation);
-        auto *data = fixed_memory_.allocate(representation.size(), representation.alignment());
+        auto &scalar_memory = variable_memory(runtime_type);
+        auto *data = fixed_memory_.allocate(runtime_type.size(), runtime_type.alignment());
         auto release_data = util::scope_exit{
-            [&]() noexcept { fixed_memory_.deallocate(data, representation.size(), representation.alignment()); }};
+            [&]() noexcept { fixed_memory_.deallocate(data, runtime_type.size(), runtime_type.alignment()); }};
 
         if (const auto *view = argument.scalar_view()) {
-            view->copy_construct(data, representation, scalar_memory);
+            view->copy_construct(data, runtime_type, scalar_memory);
         } else {
-            representation.construct_from_value(data, argument.scalar_data(), scalar_memory);
+            runtime_type.construct_from_value(data, argument.scalar_data(), scalar_memory);
         }
 
-        auto destroy_data = util::scope_exit{[&]() noexcept { representation.destroy(data, scalar_memory); }};
-        scalar_values.push_back(WiredScalar{representation, data});
+        auto destroy_data = util::scope_exit{[&]() noexcept { runtime_type.destroy(data, scalar_memory); }};
+        scalar_values.push_back(WiredScalar{runtime_type, data});
         destroy_data.release();
         release_data.release();
     }
@@ -285,6 +284,7 @@ WiringPoint GraphWiring::select_item(WiringPoint source, std::size_t index) {
     }
 
     const auto &item_type = collection->item_type(index);
+    const auto item = collection->item_id(index);
     const auto &source_record = wiring_points_[source.record_index()];
     if (source_record.parent == WiringPointRecord::npos) {
         const auto &node = nodes_[source_record.node_index];
@@ -295,13 +295,13 @@ WiringPoint GraphWiring::select_item(WiringPoint source, std::size_t index) {
 
     for (auto record = std::size_t{}; record < wiring_points_.size(); ++record) {
         const auto &candidate = wiring_points_[record];
-        if (candidate.parent == source.record_index() && candidate.item == index) {
+        if (candidate.parent == source.record_index() && candidate.item == item) {
             return WiringPoint{*this, record};
         }
     }
 
     const auto record = wiring_points_.size();
-    wiring_points_.push_back({source.node_index(), source.record_index(), index, &item_type});
+    wiring_points_.push_back({source.node_index(), source.record_index(), item, &item_type});
     return WiringPoint{*this, record};
 }
 

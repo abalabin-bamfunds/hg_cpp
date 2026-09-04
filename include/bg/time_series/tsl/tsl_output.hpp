@@ -2,77 +2,80 @@
 
 #include <bg/evaluation_context.hpp>
 #include <bg/node/details/output_factory.hpp>
-#include <bg/node/details/output_view_proxy.hpp>
-#include <bg/time_series/tsl/tsl_output_view.hpp>
+#include <bg/node/details/output_proxy.hpp>
+#include <bg/time_series/details/output_state.hpp>
+#include <bg/time_series/time_series_output.hpp>
+#include <bg/time_series/tsl/tsl_runtime_type.hpp>
 #include <bg/time_series/tsl/tsl_storage.hpp>
-#include <bg/time_series/tsl/tsl_storage_representation.hpp>
 #include <bg/time_series/tsl/tsl_type.hpp>
-#include <bg/util/polymorphic_value.hpp>
 
 namespace bg {
 
-template <typename Item, std::size_t Size, auto... Properties> class Out<TSL<Item, Size, Properties...>> {
-    static_assert(Size != std::dynamic_extent, "variable-size time series lists are not implemented");
-
+template <typename Item, auto Size, auto... Properties> class Out<TSL<Item, Size, Properties...>> {
   public:
     using storage_type = details::time_series_list_storage;
 
   private:
     friend details::output_factory;
 
+    explicit Out(details::OutputState &state) noexcept : state_(Proxy::borrow(state)) {}
+
     Out(EvaluationTime &last_updated, storage_type &value, EvaluationContext &context)
-        : view_(View::copy(prototype().get(), context)) {
-        view_->bind(last_updated, &value, context);
-    }
-
-    Out(EvaluationTime &last_updated, void *value, const TimeSeriesOutputView &prototype,
-        EvaluationContext &context)
-        : view_(View::copy(static_cast<const TimeSeriesListOutputView &>(prototype), context)) {
-        view_->bind(last_updated, value, context);
-    }
-
-    Out(EvaluationTime &last_updated, void *value, const TimeSeriesOutputView &prototype, void *output_path)
-        : view_(View::copy(static_cast<const TimeSeriesListOutputView &>(prototype), output_path)) {
-        view_->bind(last_updated, value, output_path);
+        requires(!details::size_variable_declaration<decltype(Size)>)
+        : state_(Proxy::copy(details::OutputState{cpp_time_series_runtime_type<TSL<Item, Size, Properties...>>()},
+                             context)) {
+        state_->bind(last_updated, &value, context);
     }
 
     Out(EvaluationTime &last_updated, storage_type &value, void *output_path)
-        : view_(View::copy(prototype().get(), output_path)) {
-        view_->bind(last_updated, &value, output_path);
+        requires(!details::size_variable_declaration<decltype(Size)>)
+        : state_(Proxy::copy(details::OutputState{cpp_time_series_runtime_type<TSL<Item, Size, Properties...>>()},
+                             output_path)) {
+        state_->bind(last_updated, &value, output_path);
+    }
+
+    Out(EvaluationTime &last_updated, void *value, const TimeSeriesRuntimeType &runtime_type,
+        EvaluationContext &context)
+        : state_(Proxy::copy(details::OutputState{runtime_type}, context)) {
+        state_->bind(last_updated, value, context);
+    }
+
+    Out(EvaluationTime &last_updated, void *value, const TimeSeriesRuntimeType &runtime_type, void *output_path)
+        : state_(Proxy::copy(details::OutputState{runtime_type}, output_path)) {
+        state_->bind(last_updated, value, output_path);
     }
 
   public:
     Out(Out &&) noexcept = default;
     Out(const Out &) = delete;
 
-    [[nodiscard]] bool valid() const noexcept { return view_->valid(); }
-    [[nodiscard]] EvaluationTime last_updated() const noexcept { return view_->last_updated(); }
+    [[nodiscard]] bool valid() const noexcept { return state_->valid(); }
+    [[nodiscard]] EvaluationTime last_updated() const noexcept { return state_->last_updated(); }
+    [[nodiscard]] std::size_t size() const noexcept { return state_->runtime_type().item_count(state_->data()); }
 
-    [[nodiscard]] auto operator[](std::size_t index) const {
-        const auto item = view_->item(index);
-        return details::output_factory::make<Item>(item.last_updated, item.value, item.prototype, item.output_path);
+    [[nodiscard]] Out<Item> operator[](std::size_t index) const {
+        const auto id = static_cast<TimeSeriesItemId>(index);
+        const auto item = state_->runtime_type().item(state_->mutable_data(), id);
+        auto *path = state_->add_path(state_->runtime_type(), id);
+        return details::output_factory::make<Item>(item.last_updated, item.value, item.runtime_type, path);
     }
 
-    void invalidate() const { view_->invalidate(); }
+    void invalidate() const { state_->invalidate(); }
 
-    [[nodiscard]] const TimeSeriesListOutputView *operator->() const noexcept { return view_.operator->(); }
+    [[nodiscard]] const Out *operator->() const noexcept { return this; }
+
+    template <typename... Functions> decltype(auto) visit(Functions &&...functions) const {
+        auto output = details::output_factory::make<TS_T>(state_.get());
+        return output.visit(std::forward<Functions>(functions)...);
+    }
 
     using time_series_type = TSL<Item, Size, Properties...>;
     using item_type = Item;
 
-    static constexpr std::size_t size = Size;
-
   private:
-    using View = details::output_view_proxy<TimeSeriesListOutputView>;
+    using Proxy = details::output_proxy<details::OutputState>;
 
-    [[nodiscard]] static const auto &prototype() noexcept {
-        static const auto value = util::polymorphic_value<TimeSeriesListOutputView>::copy(
-            static_cast<const TimeSeriesListOutputView &>(
-                *cpp_time_series_storage_representation<TSL<Item, Size, Properties...>>().output_view_prototype()));
-        return value;
-    }
-
-    View view_;
+    Proxy state_;
 };
 
 } // namespace bg

@@ -7,11 +7,9 @@
 #include <bg/node/input.hpp>
 #include <bg/node/output.hpp>
 #include <bg/node/runtime_signature_node_template.hpp>
-#include <bg/scalar/storage_representation.hpp>
-#include <bg/time_series/ref/ref_input_view.hpp>
-#include <bg/time_series/ref/ref_output_view.hpp>
-#include <bg/time_series/ref/ref_storage_representation.hpp>
-#include <bg/time_series/time_series_storage_representation.hpp>
+#include <bg/scalar/runtime_type.hpp>
+#include <bg/time_series/ref/ref_runtime_type.hpp>
+#include <bg/time_series/time_series_runtime_type.hpp>
 #include <bg/time_series/time_series_variable.hpp>
 #include <bg/type/time_series_reference_type.hpp>
 #include <bg/type/time_series_value_type.hpp>
@@ -74,8 +72,8 @@ class NestedNodeDefinition {
 
         reference_output_ = &time_series_reference_type(*output_type_, TimeSeriesGuarantee::ordinary);
         signature_ = std::make_unique<Signature>(util::symbol{"nested"}, std::move(parameters), *reference_output_);
-        output_representation_ = &time_series_reference_storage_representation(
-            *reference_output_, resolve_time_series_storage_representation(*output_type_));
+        output_runtime_type_ =
+            &time_series_reference_runtime_type(*reference_output_, resolve_time_series_runtime_type(*output_type_));
     }
 
     [[nodiscard]] const Signature &signature() const { return *signature_; }
@@ -92,18 +90,18 @@ class NestedNodeDefinition {
         return result;
     }
 
-    [[nodiscard]] const TimeSeriesStorageRepresentation *
-    output_storage_representation(const ResolvedSignature &, std::span<const ScalarStorageRepresentation *const>,
-                                  std::span<const TimeSeriesStorageRepresentation *const>) const noexcept {
-        return output_representation_;
+    [[nodiscard]] const TimeSeriesRuntimeType *
+    output_runtime_type(const ResolvedSignature &, std::span<const ScalarRuntimeType *const>,
+                        std::span<const TimeSeriesRuntimeType *const>) const noexcept {
+        return output_runtime_type_;
     }
 
     static void evaluate(NodeInvocation<compiled_data_type, state_type> invocation) {
         const auto inputs = invocation.inputs();
         auto input = inputs.begin();
         const auto run_input = (*input).value();
-        const auto &run_view = static_cast<const TimeSeriesValueInputView &>(*run_input.operator->());
-        const auto run = scalar_cast<bool>(run_view.value_view()).value();
+        const auto run = *run_input.visit(
+            [](const In<TS<SCALAR>> *value) { return scalar_cast<bool>(value->value_view()).value(); }, ddv::noop);
         ++input;
 
         if (!run) {
@@ -116,9 +114,9 @@ class NestedNodeDefinition {
         values.reserve(invocation.compiled_data().input_nodes.size());
         for (; input != inputs.end(); ++input) {
             const auto value = (*input).value();
-            const auto &reference = static_cast<const TimeSeriesReferenceInputView &>(*value.operator->());
-            values.push_back(
-                {value.valid() ? reference.target() : nullptr, value.valid() ? value.last_updated() : MIN_DT});
+            const auto target =
+                *value.visit([](const In<REF<TS_T>> *reference) { return reference->target(); }, ddv::noop);
+            values.push_back({value.valid() ? target : nullptr, value.valid() ? value.last_updated() : MIN_DT});
         }
 
         auto &graph = invocation.state().graph;
@@ -130,8 +128,9 @@ class NestedNodeDefinition {
         graph.evaluate(invocation.context());
 
         auto output = invocation.output();
-        static_cast<const TimeSeriesReferenceOutputView &>(*output.operator->())
-            .set_target(graph.output(invocation.compiled_data()));
+        output.visit(
+            [&](Out<REF<TS_T>> *reference) { reference->set_target(graph.output(invocation.compiled_data())); },
+            ddv::noop);
     }
 
     static void on_invalidation(NodeInvocation<compiled_data_type, state_type> invocation) {
@@ -152,7 +151,7 @@ class NestedNodeDefinition {
     const TimeSeriesType *output_type_;
     std::vector<std::unique_ptr<GenericTimeSeriesReferenceType>> parameter_types_;
     const TimeSeriesReferenceType *reference_output_{};
-    const TimeSeriesStorageRepresentation *output_representation_{};
+    const TimeSeriesRuntimeType *output_runtime_type_{};
     std::unique_ptr<Signature> signature_;
 };
 

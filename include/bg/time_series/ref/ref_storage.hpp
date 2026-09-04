@@ -7,7 +7,7 @@
 namespace bg {
 
 class RuntimeGraph;
-class TimeSeriesStorageRepresentation;
+class TimeSeriesRuntimeType;
 
 namespace details {
 
@@ -18,7 +18,7 @@ struct ReferenceStorage {
     RuntimeGraph *owner{};
     const EvaluationTime *target_last_updated{};
     const void *target_value{};
-    const TimeSeriesStorageRepresentation *target_representation{};
+    const TimeSeriesRuntimeType *target_runtime_type{};
     DynamicSubscribers *subscribers{};
 };
 

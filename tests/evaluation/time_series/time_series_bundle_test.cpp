@@ -172,7 +172,7 @@ TEST_CASE("a bundle schedules only subscribers of changed fields", "[evaluation]
     CHECK(count_updates_definition::count == 1);
 }
 
-TEST_CASE("a free bundle follows the receiving named schema", "[evaluation][tsb][alias]") {
+TEST_CASE("a free bundle follows the receiving named schema", "[evaluation][tsb][free]") {
     using namespace bg::literals;
     const auto sum = bg::node<bundle_sum_definition>();
     const auto graph = [&](bg::wp<bg::TS<int>> count, bg::wp<bg::TS<float>> value) {

@@ -50,17 +50,21 @@ const TimeSeriesType &TimeSeriesListType::item_type(std::size_t index) const {
 }
 
 const TimeSeriesType &TimeSeriesListType::with_guarantee(TimeSeriesGuarantee guarantee) const {
-    return time_series_list_type(item_type(), item_count(), guarantee);
+    if (const auto resolved_size = size().value()) {
+        return time_series_list_type(item_type(), *resolved_size, guarantee);
+    }
+    return TimeSeriesType::with_guarantee(guarantee);
 }
 
 bool TimeSeriesListType::do_match(const Type &supplied, TypeMap &bindings) const {
     const auto *list = dynamic_cast<const TimeSeriesListType *>(&supplied);
-    if (list == nullptr || !list->is_resolved() || list->item_count() != item_count()) {
+    if (list == nullptr || !list->is_resolved()) {
         return false;
     }
 
     auto trial = bindings.overlay();
-    if (!item_type().match(list->item_type(), trial) || !guarantee().match(*list->guarantee().value(), trial)) {
+    if (!size().match(list->item_count(), trial) || !item_type().match(list->item_type(), trial) ||
+        !guarantee().match(*list->guarantee().value(), trial)) {
         return false;
     }
 
@@ -76,7 +80,7 @@ const Type &GenericTimeSeriesListType::resolve(const TypeMap &bindings) const {
                                   "time series list item did not resolve to a time series type"};
     }
 
-    return time_series_list_type(*time_series, item_count(), guarantee().resolve(bindings));
+    return time_series_list_type(*time_series, size().resolve(bindings), guarantee().resolve(bindings));
 }
 
 const TimeSeriesListType &time_series_list_type(const TimeSeriesType &item_type, std::size_t size,

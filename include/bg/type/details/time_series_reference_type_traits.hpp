@@ -1,20 +1,20 @@
 #pragma once
 
 #include <bg/time_series/time_series_type.hpp>
-#include <bg/type/details/time_series_type.hpp>
+#include <bg/type/details/time_series_type_traits.hpp>
 #include <bg/type/time_series_reference_type.hpp>
 
 namespace bg::details {
 
 template <typename Target, auto... Properties> struct time_series_type_traits<REF<Target, Properties...>> {
-    static constexpr bool generic = generic_time_series<Target>::value;
-    static constexpr bool supported = supported_time_series<Target>::value;
+    static constexpr bool generic = generic_time_series<Target>;
+    static constexpr bool supported = supported_time_series<Target>;
 
     template <typename Scope, std::size_t Index, bool Input>
     [[nodiscard]] static const TimeSeriesType &get(GuaranteeParameter guarantee) {
         const auto &target = time_series_type_for<Scope, Index, Input, Target>(TimeSeriesGuarantee::ordinary);
 
-        if constexpr (Input || generic_time_series<Target>::value) {
+        if constexpr (Input || generic_time_series<Target>) {
             static const auto type = GenericTimeSeriesReferenceType{target, guarantee};
             return type;
         }

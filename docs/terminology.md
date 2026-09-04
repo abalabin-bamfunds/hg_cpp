@@ -48,11 +48,11 @@ A scalar with an ordered schema of named fields and explicitly declared base
 types. It accepts values of its declared type and derived types. Compatibility
 is covariant through containers.
 
-### storage representation
+### runtime type
 
-A description of the typed objects and buffers used to store a graph type and
-construct its views. The objects and buffers can occupy separate locations.
-Graph compilation selects storage representations after type resolution.
+An object that identifies a semantic type, describes one physical layout, and
+provides the operations required to interpret and manage data in that layout.
+One semantic type can have multiple runtime types.
 
 ### finalization
 

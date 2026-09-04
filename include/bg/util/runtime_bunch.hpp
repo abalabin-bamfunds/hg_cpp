@@ -21,19 +21,29 @@ struct runtime_item_layout {
     static constexpr auto initial_element_count = std::uint32_t{8};
 
     constexpr runtime_item_layout(std::size_t item_size, std::size_t item_alignment) noexcept
-        : size{item_size}, alignment{item_alignment},
+        : size{static_cast<std::uint32_t>(item_size)},
           maximum_elements{static_cast<std::uint32_t>(std::bit_floor(std::max(maximum_block_bytes / size, 1UZ)))},
-          growth_levels{static_cast<std::uint32_t>(
-              std::countr_zero(maximum_elements / std::min(initial_element_count, maximum_elements)))},
-          first_capped_position{static_cast<std::uint64_t>(std::min(initial_element_count, maximum_elements)) *
-                                ((std::uint64_t{1} << growth_levels) - 1)} {}
+          first_capped_position{std::min(initial_element_count, maximum_elements) *
+                                ((std::uint32_t{1} << growth_level_count(maximum_elements)) - 1)},
+          alignment_log2{static_cast<std::uint8_t>(std::countr_zero(item_alignment))},
+          growth_levels{growth_level_count(maximum_elements)} {}
 
-    const std::size_t size;
-    const std::size_t alignment;
+    [[nodiscard]] constexpr std::size_t alignment() const noexcept { return std::size_t{1} << alignment_log2; }
+
+    const std::uint32_t size;
     const std::uint32_t maximum_elements;
-    const std::uint32_t growth_levels;
-    const std::uint64_t first_capped_position;
+    const std::uint32_t first_capped_position;
+    const std::uint8_t alignment_log2;
+    const std::uint8_t growth_levels;
+
+  private:
+    [[nodiscard]] static constexpr std::uint8_t growth_level_count(std::uint32_t maximum_elements) noexcept {
+        return static_cast<std::uint8_t>(
+            std::countr_zero(maximum_elements / std::min(initial_element_count, maximum_elements)));
+    }
 };
+
+static_assert(sizeof(runtime_item_layout) == 16);
 
 namespace details {
 
@@ -80,7 +90,7 @@ class runtime_bunch_blocks {
 
         if (current.data == nullptr) {
             const auto bytes = layout.size * block_capacity(block_index, layout);
-            current.data = static_cast<std::byte *>(memory.allocate(bytes, layout.alignment));
+            current.data = static_cast<std::byte *>(memory.allocate(bytes, layout.alignment()));
             ++allocated_blocks_;
         }
 
@@ -218,7 +228,7 @@ class runtime_bunch_blocks {
         }
 
         assert(current.constructed == 0);
-        memory.deallocate(current.data, layout.size * block_capacity(block_index, layout), layout.alignment);
+        memory.deallocate(current.data, layout.size * block_capacity(block_index, layout), layout.alignment());
         current.data = nullptr;
         --allocated_blocks_;
     }

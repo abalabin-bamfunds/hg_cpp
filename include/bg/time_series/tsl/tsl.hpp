@@ -5,7 +5,7 @@
 #include <bg/graph/details/free_time_series_list.hpp>
 #include <bg/graph/wiring_context.hpp>
 #include <bg/node/node_template.hpp>
-#include <bg/time_series/tsl/tsl_alias_storage_representation.hpp>
+#include <bg/time_series/tsl/tsl_free_runtime_type.hpp>
 #include <bg/time_series/tsl/tsl_type.hpp>
 #include <bg/type/time_series_reference_type.hpp>
 
@@ -18,13 +18,12 @@
 
 namespace bg::details {
 
-template <std::size_t Size> class AliasedFixedTimeSeriesListNodeTemplate final : public NodeTemplate {
-    using Storage = aliased_fixed_time_series_list_storage<Size>;
+template <std::size_t Size> class FreeFixedTimeSeriesListNodeTemplate final : public NodeTemplate {
+    using Storage = free_fixed_time_series_list_storage<Size>;
 
   public:
-    explicit AliasedFixedTimeSeriesListNodeTemplate(const TimeSeriesListType &type)
-        : representation_{&aliased_fixed_time_series_list_storage_representation<Size>(type)},
-          signature_{make_signature(type)} {}
+    explicit FreeFixedTimeSeriesListNodeTemplate(const TimeSeriesListType &type)
+        : runtime_type_{&free_fixed_time_series_list_runtime_type<Size>(type)}, signature_{make_signature(type)} {}
 
     [[nodiscard]] const Signature &signature() const override { return signature_; }
     [[nodiscard]] EvaluationFunction evaluation_function(const ResolvedSignature &) const noexcept override {
@@ -33,12 +32,12 @@ template <std::size_t Size> class AliasedFixedTimeSeriesListNodeTemplate final :
     [[nodiscard]] EvaluationFunction start_function(const ResolvedSignature &) const noexcept override {
         return &start;
     }
-    [[nodiscard]] const TimeSeriesStorageRepresentation *
-    output_storage_representation(const ResolvedSignature &, std::span<const ScalarStorageRepresentation *const>,
-                                  std::span<const TimeSeriesStorageRepresentation *const>) const noexcept override {
-        return representation_;
+    [[nodiscard]] const TimeSeriesRuntimeType *
+    output_runtime_type(const ResolvedSignature &, std::span<const ScalarRuntimeType *const>,
+                        std::span<const TimeSeriesRuntimeType *const>) const noexcept override {
+        return runtime_type_;
     }
-    [[nodiscard]] bool uses_generic_time_series_input_view(std::size_t) const noexcept override { return true; }
+    [[nodiscard]] bool uses_time_series_input_runtime_type(std::size_t) const noexcept override { return true; }
     [[nodiscard]] InputNotificationCallback input_notification(std::size_t input_index) const noexcept override {
         return {&input_changed, input_index};
     }
@@ -62,36 +61,34 @@ template <std::size_t Size> class AliasedFixedTimeSeriesListNodeTemplate final :
         return {util::symbol{"tsl"}, std::move(parameters), type};
     }
 
-    static Storage &storage(const CompiledNode &node, OutputNotificationContext &context) noexcept {
-        return *static_cast<Storage *>(context.runtime_storage_at(node.output_value_offset()));
+    static Storage &storage(OutputNotificationContext &context, std::size_t node_index) noexcept {
+        return *static_cast<Storage *>(context.node(node_index).output_value());
     }
 
     static void input_changed(OutputNotificationContext &context, std::size_t node_index, std::size_t input_index,
                               OutputChange) {
-        const auto &node = context.compiled_node(node_index);
-        auto &value = storage(node, context);
+        auto &value = storage(context, node_index);
         value.changes.mark(input_index, context.evaluation_time());
     }
 
     static void start(const CompiledNode &node, void *runtime_storage, EvaluationContext *) noexcept {
-        auto *bytes = static_cast<std::byte *>(runtime_storage);
-        reinterpret_cast<Storage *>(bytes + node.output_value_offset())->node = &node;
+        static_cast<Storage *>(Node{node, runtime_storage}.output_value())->node = &node;
     }
 
     static void evaluate(const CompiledNode &node, void *runtime_storage, EvaluationContext *context) noexcept {
-        auto *bytes = static_cast<std::byte *>(runtime_storage);
-        const auto &value = *reinterpret_cast<const Storage *>(bytes + node.output_value_offset());
-        node.output_last_updated(runtime_storage) = aliased_list_valid(value) ? context->evaluation_time() : MIN_DT;
+        const auto runtime_node = Node{node, runtime_storage};
+        const auto &value = *static_cast<const Storage *>(runtime_node.output_value());
+        runtime_node.output_last_updated() = free_list_valid(value) ? context->evaluation_time() : MIN_DT;
     }
 
-    const TimeSeriesStorageRepresentation *representation_;
+    const TimeSeriesRuntimeType *runtime_type_;
     Signature signature_;
 };
 
 template <std::size_t Size>
 [[nodiscard]] WiringPoint materialize_fixed_time_series_list(std::span<const WiringPoint> items,
                                                              const TimeSeriesListType &type) {
-    auto node = std::make_unique<AliasedFixedTimeSeriesListNodeTemplate<Size>>(type);
+    auto node = std::make_unique<FreeFixedTimeSeriesListNodeTemplate<Size>>(type);
     const auto &owned = WiringContext::current().wiring().own_node_template(std::move(node));
     return *owned(items);
 }

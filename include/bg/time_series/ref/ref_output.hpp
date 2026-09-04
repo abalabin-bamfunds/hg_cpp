@@ -2,12 +2,13 @@
 
 #include <bg/evaluation_context.hpp>
 #include <bg/node/details/output_factory.hpp>
-#include <bg/node/details/output_view_proxy.hpp>
+#include <bg/node/details/output_proxy.hpp>
 #include <bg/node/input_fwd.hpp>
-#include <bg/time_series/ref/ref_output_view.hpp>
+#include <bg/time_series/cpp_runtime_type.hpp>
+#include <bg/time_series/details/output_state.hpp>
 #include <bg/time_series/ref/ref_storage.hpp>
+#include <bg/time_series/time_series_output.hpp>
 #include <bg/time_series/time_series_type.hpp>
-#include <bg/util/polymorphic_value.hpp>
 
 namespace bg {
 
@@ -18,56 +19,79 @@ template <typename Target, auto... Properties> class Out<REF<Target, Properties.
   private:
     friend details::output_factory;
 
+    explicit Out(details::OutputState &state) noexcept : state_(Proxy::borrow(state)) {}
+
     Out(EvaluationTime &last_updated, storage_type &value, EvaluationContext &context)
-        : view_(View::copy(prototype().get(), context)) {
-        view_->bind(last_updated, &value, context);
+        : state_(
+              Proxy::copy(details::OutputState{cpp_time_series_runtime_type<REF<Target, Properties...>>()}, context)) {
+        state_->bind(last_updated, &value, context);
     }
 
-    Out(EvaluationTime &last_updated, void *value, const TimeSeriesOutputView &prototype,
+    Out(EvaluationTime &last_updated, void *value, const TimeSeriesRuntimeType &runtime_type,
         EvaluationContext &context)
-        : view_(View::copy(static_cast<const TimeSeriesReferenceOutputView &>(prototype), context)) {
-        view_->bind(last_updated, value, context);
+        : state_(Proxy::copy(details::OutputState{runtime_type}, context)) {
+        state_->bind(last_updated, value, context);
     }
 
     Out(EvaluationTime &last_updated, storage_type &value, void *output_path)
-        : view_(View::copy(prototype().get(), output_path)) {
-        view_->bind(last_updated, &value, output_path);
+        : state_(Proxy::copy(details::OutputState{cpp_time_series_runtime_type<REF<Target, Properties...>>()},
+                             output_path)) {
+        state_->bind(last_updated, &value, output_path);
     }
 
-    Out(EvaluationTime &last_updated, void *value, const TimeSeriesOutputView &prototype, void *output_path)
-        : view_(View::copy(static_cast<const TimeSeriesReferenceOutputView &>(prototype), output_path)) {
-        view_->bind(last_updated, value, output_path);
+    Out(EvaluationTime &last_updated, void *value, const TimeSeriesRuntimeType &runtime_type, void *output_path)
+        : state_(Proxy::copy(details::OutputState{runtime_type}, output_path)) {
+        state_->bind(last_updated, value, output_path);
     }
 
   public:
     Out(Out &&) noexcept = default;
     Out(const Out &) = delete;
 
-    [[nodiscard]] bool valid() const noexcept { return view_->valid(); }
-    [[nodiscard]] EvaluationTime last_updated() const noexcept { return view_->last_updated(); }
+    [[nodiscard]] bool valid() const noexcept { return state_->valid(); }
+    [[nodiscard]] EvaluationTime last_updated() const noexcept { return state_->last_updated(); }
 
     template <auto... ReferenceProperties, auto... InputProperties>
     void set(const In<REF<Target, ReferenceProperties...>, InputProperties...> &source) const {
-        view_->set_reference(*source.operator->());
+        if (!source.valid()) {
+            invalidate();
+            return;
+        }
+        set_target(source.target());
     }
 
-    void invalidate() const { view_->invalidate(); }
+    void set_target(details::ReferenceStorage *target) const {
+        if (target == nullptr) {
+            invalidate();
+            return;
+        }
+        reference() = target;
+        state_->publish();
+    }
 
-    [[nodiscard]] const TimeSeriesReferenceOutputView *operator->() const noexcept { return view_.operator->(); }
+    void invalidate() const {
+        reference() = nullptr;
+        state_->invalidate_value();
+    }
+
+    [[nodiscard]] const Out *operator->() const noexcept { return this; }
+
+    template <typename... Functions> decltype(auto) visit(Functions &&...functions) const {
+        auto output = details::output_factory::make<TS_T>(state_.get());
+        return output.visit(std::forward<Functions>(functions)...);
+    }
 
     using time_series_type = REF<Target, Properties...>;
     using target_type = Target;
 
   private:
-    using View = details::output_view_proxy<TimeSeriesReferenceOutputView>;
-
-    [[nodiscard]] static const auto &prototype() noexcept {
-        static const auto value =
-            util::polymorphic_value<TimeSeriesReferenceOutputView>::template make<TimeSeriesReferenceOutputView>();
-        return value;
+    [[nodiscard]] details::ReferenceStorage *&reference() const noexcept {
+        return *static_cast<details::ReferenceStorage **>(state_->mutable_data());
     }
 
-    View view_;
+    using Proxy = details::output_proxy<details::OutputState>;
+
+    Proxy state_;
 };
 
 } // namespace bg

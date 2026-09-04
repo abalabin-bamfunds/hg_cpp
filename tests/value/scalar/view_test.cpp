@@ -1,5 +1,4 @@
 #include <bg/scalar/value.hpp>
-#include <bg/util/polymorphic_value.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -7,32 +6,25 @@
 
 namespace {
 
-using FloatView = bg::details::BorrowedScalarValue<float>;
-using GenericView = bg::util::polymorphic_value<bg::ScalarValueInputView>;
-
-static_assert(sizeof(FloatView) == sizeof(bg::ScalarValueInputView));
-static_assert(std::is_trivially_copyable_v<GenericView>);
+static_assert(sizeof(bg::Scalar<float>) == sizeof(bg::details::ScalarData));
+static_assert(std::is_trivially_copyable_v<bg::details::ScalarData>);
 
 } // namespace
 
 TEST_CASE("a scalar input view reads a typed value", "[scalar]") {
     const float value = 1.25F;
-    FloatView view;
-    view.bind(&value);
+    const auto view = bg::Scalar<float>::from(bg::cpp_scalar_runtime_type<float>(), &value);
 
     CHECK(view.data() == &value);
     CHECK(view.value() == value);
 }
 
 TEST_CASE("a scalar input view supports constant-size polymorphism", "[scalar]") {
-    const auto prototype = GenericView::make<FloatView>();
     const float value = 1.25F;
+    const auto view = bg::Scalar<>::from(bg::cpp_scalar_runtime_type<float>(), &value);
 
-    auto view = prototype;
-    view->bind(&value);
-
-    CHECK(view->data() == &value);
-    const auto visited = view->visit([](const bg::ScalarValueInputView *input) { return input->data(); });
+    CHECK(view.data() == &value);
+    const auto visited = view.visit([](const bg::Scalar<> *input) { return input->data(); }, ddv::noop);
 
     REQUIRE(visited);
     CHECK(*visited == &value);

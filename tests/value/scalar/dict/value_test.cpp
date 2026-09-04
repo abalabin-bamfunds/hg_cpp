@@ -76,5 +76,7 @@ TEST_CASE("a generic scalar dictionary exposes its declared comparison operation
     const auto right = bg::Scalar<bg::Dict<Item, Item>>::from(second.input_view());
 
     CHECK(left == right);
+    CHECK(left == second);
+    CHECK(second == left);
     CHECK(left.hash() == right.hash());
 }

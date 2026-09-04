@@ -22,11 +22,26 @@ variable.
 `unchecked_scalar_cast<T>()` requires the caller to prove compatibility. Both
 operations retain the source lifetime.
 
+Each scalar view contains a `ScalarRuntimeType` pointer and one data word. The
+runtime type provides the semantic type, data access, and operations required
+by the view. The data word identifies stored data. An owning value can use that
+word for a small inline value. Every `Scalar` and `ScalarValue` is two words.
+
+A scalar type can have more than one runtime type. Copy, assignment, equality,
+and keyed lookup operate through both runtime types. Native and composed
+collection layouts therefore interoperate without converting a view to a C++
+collection object.
+
+The view visitor selects value, list, set, or dictionary access. Generic node
+code can use this interface without inspecting the semantic type. The selected
+view is valid for the visitor callback.
+
 ## Ownership
 
-`ScalarValue<T>` owns its value and is move-only. Construction from `Scalar<T>`
-copies the current value. `ScalarValue<>` owns a value of any resolved scalar
-type. It can copy or replace its value from any `Scalar` or `ScalarValue`.
+`ScalarValue<T>` owns its value and is not copy constructible. Moving it
+transfers ownership. Construction from `Scalar<T>` copies the current value.
+`ScalarValue<>` owns a value of any resolved scalar type. It can copy or replace
+its value from any `Scalar` or `ScalarValue`.
 
 `ScalarValue<T>::view()` returns a `Scalar<T>`. The returned view remains valid
 while the owner retains that value.

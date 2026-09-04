@@ -1,6 +1,7 @@
 #pragma once
 
-#include <bg/scalar/details/storage_traits.hpp>
+#include <bg/scalar/details/capability_traits.hpp>
+#include <bg/scalar/details/collection_storage.hpp>
 #include <bg/scalar/set/type.hpp>
 #include <bg/util/scope_exit.hpp>
 
@@ -13,10 +14,11 @@ template <typename T> struct scalar_storage_traits<Set<T>> {
     using stored_type = scalar_set_storage<T>;
     using value_type = Set<T>;
 
-    static constexpr bool supports_equality = ItemTraits::supports_equality;
-    static constexpr bool supports_hash = ItemTraits::supports_hash;
+    static constexpr bool supports_equality = scalar_capability_traits<T>::supports_equality;
+    static constexpr bool supports_hash = scalar_capability_traits<T>::supports_hash;
     static constexpr bool uses_variable_memory = true;
     static constexpr bool requires_finalization = ItemTraits::requires_finalization;
+    static constexpr bool assign_uses_memory_resource = true;
 
     [[nodiscard]] static value_type read(const stored_type &value) noexcept { return value_type{value}; }
 
@@ -65,6 +67,11 @@ template <typename T> struct scalar_storage_traits<Set<T>> {
         value->items.release_with(memory, [&](auto *item) noexcept { ItemTraits::destroy(item, memory); });
         std::destroy_at(value);
     }
+};
+
+template <typename T> struct scalar_capability_traits<Set<T>> {
+    static constexpr bool supports_equality = scalar_capability_traits<T>::supports_equality;
+    static constexpr bool supports_hash = scalar_capability_traits<T>::supports_hash;
 };
 
 } // namespace bg::details

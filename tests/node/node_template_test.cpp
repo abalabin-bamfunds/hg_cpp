@@ -112,7 +112,7 @@ TEST_CASE("an aggregate node can omit its output", "[node_template]") {
     const bg::ResolvedSignature signature = sink_node.signature().resolve(arguments);
 
     CHECK(signature.output == nullptr);
-    CHECK(sink_node.output_storage_representation(signature, {}, {}) == nullptr);
+    CHECK(sink_node.output_runtime_type(signature, {}, {}) == nullptr);
 }
 
 namespace {
@@ -262,10 +262,10 @@ TEST_CASE("a collection output uses its resolved guarantee", "[node_template][ty
     const auto arguments = std::array<const bg::Type *, 1>{&input};
     const auto signature = node.signature().resolve(arguments);
 
-    const auto *representation = node.output_storage_representation(signature, {}, {});
+    const auto *runtime_type = node.output_runtime_type(signature, {}, {});
 
-    REQUIRE(representation != nullptr);
-    CHECK(&representation->type() == signature.output);
+    REQUIRE(runtime_type != nullptr);
+    CHECK(&runtime_type->type() == signature.output);
 }
 
 namespace {
@@ -289,6 +289,24 @@ TEST_CASE("a scalar variable can declare a scalar view field", "[node_template]"
 
     CHECK(signature.parameters[0].type == &bg::float_type());
     CHECK(signature.output == &bg::time_series_value_type(bg::float_type(), bg::TimeSeriesGuarantee::ordinary));
+}
+
+namespace {
+
+struct runtime_layout_collection_sink {
+    bg::In<bg::TSS<int>> set;
+    bg::In<bg::TSD<int, bg::TS<int>>> dictionary;
+
+    void evaluate() const {}
+};
+
+} // namespace
+
+TEST_CASE("collection inputs retain their resolved runtime layout", "[node_template][time_series]") {
+    const auto sink = bg::node<runtime_layout_collection_sink>();
+
+    CHECK(sink.uses_time_series_input_runtime_type(0));
+    CHECK(sink.uses_time_series_input_runtime_type(1));
 }
 
 namespace {

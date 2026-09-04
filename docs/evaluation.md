@@ -31,7 +31,7 @@ order.
 
 ## Output changes
 
-After a node function returns, the output storage representation enumerates its
+After a node function returns, the output runtime type enumerates its
 changes. The runtime schedules subscribers for the output and each changed item.
 
 ## Required input invalidation

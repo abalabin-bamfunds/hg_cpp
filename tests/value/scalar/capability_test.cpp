@@ -1,5 +1,6 @@
 #include <bg/scalar/dict/type.hpp>
 #include <bg/scalar/list/type.hpp>
+#include <bg/scalar/mutable_collection.hpp>
 #include <bg/scalar/opaque.hpp>
 #include <bg/scalar/set/type.hpp>
 #include <bg/scalar/value.hpp>
@@ -38,6 +39,16 @@ TEST_CASE("scalar collection handles propagate item capabilities", "[value][scal
     STATIC_CHECK(EqualityComparableScalarHandle<bg::Scalar<bg::Set<Key>>>);
     STATIC_CHECK((HashableScalarHandle<bg::Scalar<bg::Dict<Key, Key>>>));
     STATIC_CHECK((EqualityComparableScalarHandle<bg::Scalar<bg::Dict<Key, Key>>>));
+}
+
+TEST_CASE("mutable collection views require a resolved scalar type", "[value][scalar][capability][collection]") {
+    STATIC_CHECK(bg::details::mutable_scalar<bg::List<std::int64_t>>);
+    STATIC_CHECK(bg::details::mutable_scalar<bg::Set<std::int64_t>>);
+    STATIC_CHECK((bg::details::mutable_scalar<bg::Dict<std::int64_t, std::int64_t>>));
+
+    STATIC_CHECK_FALSE(bg::details::mutable_scalar<bg::List<bg::SCALAR>>);
+    STATIC_CHECK_FALSE(bg::details::mutable_scalar<bg::Set<bg::SCALAR>>);
+    STATIC_CHECK_FALSE((bg::details::mutable_scalar<bg::Dict<bg::SCALAR, bg::SCALAR>>));
 }
 
 TEST_CASE("scalar type interfaces expose only supported operations", "[value][scalar][capability]") {

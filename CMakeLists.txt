@@ -45,7 +45,7 @@ add_library(
     src/scalar/dict/type.cpp
     src/scalar/list/type.cpp
     src/scalar/set/type.cpp
-    src/scalar/storage_representation.cpp
+    src/scalar/runtime_type.cpp
     src/scalar/type.cpp
     src/signature.cpp
     src/simulation_evaluation_engine.cpp
@@ -53,12 +53,13 @@ add_library(
     src/time_series/tsl/tsl_type.cpp
     src/time_series/tsb/tsb_type.cpp
     src/time_series/ref/ref_notification.cpp
+    src/time_series/ref/ref_runtime_type.cpp
     src/time_series/ref/ref_type.cpp
     src/time_series/ref/ref_node.cpp
     src/time_series/tsd/tsd_type.cpp
     src/time_series/tss/tss_type.cpp
     src/time_series/output_path.cpp
-    src/time_series/time_series_storage_representation.cpp
+    src/time_series/time_series_runtime_type.cpp
     src/time_series_type.cpp
     src/time_series_variable.cpp
     src/time_series_value_type.cpp

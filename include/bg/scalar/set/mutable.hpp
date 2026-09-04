@@ -1,6 +1,7 @@
 #pragma once
 
 #include <bg/scalar/details/allocation_context.hpp>
+#include <bg/scalar/details/mutable_traits.hpp>
 #include <bg/scalar/details/storage_traits.hpp>
 #include <bg/scalar/set/type.hpp>
 
@@ -40,7 +41,19 @@ template <typename T> class MutableSet : public Set<T> {
     }
 
   private:
+    // MutableSet is constructed from mutable storage; Set retains the same pointer for read-only access.
     [[nodiscard]] Storage &mutable_storage() const noexcept { return const_cast<Storage &>(Base::storage()); }
 };
 
 } // namespace bg
+
+namespace bg::details {
+
+template <typename T>
+    requires(!generic_scalar<Set<T>>)
+struct scalar_mutable_traits<Set<T>> {
+    using storage_type = scalar_set_storage<T>;
+    using view_type = MutableSet<T>;
+};
+
+} // namespace bg::details

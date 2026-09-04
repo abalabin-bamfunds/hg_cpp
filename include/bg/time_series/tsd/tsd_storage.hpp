@@ -1,6 +1,6 @@
 #pragma once
 
-#include <bg/time_series/time_series_storage_representation.hpp>
+#include <bg/time_series/time_series_runtime_type.hpp>
 #include <bg/time_series/tss/tss_storage.hpp>
 #include <bg/util/index.hpp>
 #include <bg/util/runtime_bunch.hpp>
@@ -14,18 +14,18 @@
 
 namespace bg::details {
 
-[[nodiscard]] inline std::size_t contained_time_series_value_offset(
-    const TimeSeriesStorageRepresentation &representation) noexcept {
-    const auto alignment = representation.value_alignment();
+[[nodiscard]] inline std::size_t
+contained_time_series_value_offset(const TimeSeriesRuntimeType &runtime_type) noexcept {
+    const auto alignment = runtime_type.value_alignment();
     const auto remainder = sizeof(EvaluationTime) % alignment;
     return remainder == 0 ? sizeof(EvaluationTime) : sizeof(EvaluationTime) + alignment - remainder;
 }
 
-[[nodiscard]] inline util::runtime_item_layout contained_time_series_layout(
-    const TimeSeriesStorageRepresentation &representation) noexcept {
-    const auto alignment = std::max(alignof(EvaluationTime), representation.value_alignment());
-    const auto value_offset = contained_time_series_value_offset(representation);
-    const auto size = value_offset + representation.value_size();
+[[nodiscard]] inline util::runtime_item_layout
+contained_time_series_layout(const TimeSeriesRuntimeType &runtime_type) noexcept {
+    const auto alignment = std::max(alignof(EvaluationTime), runtime_type.value_alignment());
+    const auto value_offset = contained_time_series_value_offset(runtime_type);
+    const auto size = value_offset + runtime_type.value_size();
     const auto remainder = size % alignment;
     return {remainder == 0 ? size : size + alignment - remainder, alignment};
 }
@@ -47,56 +47,54 @@ class time_series_dict_storage {
         return offsetof(time_series_dict_storage, keys) + offsetof(time_series_set_slot, value);
     }
 
-    void reset_change_tracking(EvaluationTime evaluation_time, const ScalarStorageRepresentation &key_representation,
+    void reset_change_tracking(EvaluationTime evaluation_time, const ScalarRuntimeType &key_runtime_type,
                                const util::runtime_item_layout &key_layout,
-                               const TimeSeriesStorageRepresentation &item_representation,
+                               const TimeSeriesRuntimeType &item_runtime_type,
                                const util::runtime_item_layout &item_layout, std::size_t item_value_offset,
                                std::pmr::memory_resource &memory) {
         if (change_time_ == evaluation_time) {
             return;
         }
 
-        keys.value.reset_change_tracking(evaluation_time, key_representation, key_layout, memory,
-                                         [&](Position position) noexcept {
-                                             destroy_item(position, item_representation, item_layout,
-                                                          item_value_offset, memory);
-                                         });
+        keys.value.reset_change_tracking(
+            evaluation_time, key_runtime_type, key_layout, memory, [&](Position position) noexcept {
+                destroy_item(position, item_runtime_type, item_layout, item_value_offset, memory);
+            });
         modified_.clear();
         change_time_ = evaluation_time;
     }
 
     [[nodiscard]] time_series_set_storage::InsertResult
-    item(const ScalarValueInputView &key, const ScalarStorageRepresentation &key_representation,
-         const util::runtime_item_layout &key_layout, const TimeSeriesStorageRepresentation &item_representation,
+    item(const details::ScalarData &key, const ScalarRuntimeType &key_runtime_type,
+         const util::runtime_item_layout &key_layout, const TimeSeriesRuntimeType &item_runtime_type,
          const util::runtime_item_layout &item_layout, std::size_t item_value_offset,
          std::pmr::memory_resource &memory) {
         return keys.value.insert(
-            key, key_representation, key_layout, memory,
+            key, key_runtime_type, key_layout, memory,
             [&](Position position) {
                 modified_.grow(position + 1, memory);
                 items_.emplace_at_with(position, item_layout, memory, [&](void *item) {
                     auto *bytes = static_cast<std::byte *>(item);
                     std::construct_at(reinterpret_cast<EvaluationTime *>(bytes), MIN_DT);
-                    auto rollback = util::scope_exit{[&]() noexcept {
-                        std::destroy_at(reinterpret_cast<EvaluationTime *>(bytes));
-                    }};
-                    item_representation.construct_runtime_value(bytes + item_value_offset, memory);
+                    auto rollback = util::scope_exit{
+                        [&]() noexcept { std::destroy_at(reinterpret_cast<EvaluationTime *>(bytes)); }};
+                    item_runtime_type.construct_runtime_value(bytes + item_value_offset, memory);
                     rollback.release();
                 });
             },
             [&](Position position) noexcept {
-                destroy_item(position, item_representation, item_layout, item_value_offset, memory);
+                destroy_item(position, item_runtime_type, item_layout, item_value_offset, memory);
             });
     }
 
     [[nodiscard]] time_series_set_storage::EraseResult
-    erase(const ScalarValueInputView &key, const ScalarStorageRepresentation &key_representation,
-          const util::runtime_item_layout &key_layout, const TimeSeriesStorageRepresentation &item_representation,
+    erase(const details::ScalarData &key, const ScalarRuntimeType &key_runtime_type,
+          const util::runtime_item_layout &key_layout, const TimeSeriesRuntimeType &item_runtime_type,
           const util::runtime_item_layout &item_layout, std::size_t item_value_offset,
           std::pmr::memory_resource &memory) {
-        const auto result = keys.value.erase(
-            key, key_representation, key_layout, memory, [&](Position position) noexcept {
-                destroy_item(position, item_representation, item_layout, item_value_offset, memory);
+        const auto result =
+            keys.value.erase(key, key_runtime_type, key_layout, memory, [&](Position position) noexcept {
+                destroy_item(position, item_runtime_type, item_layout, item_value_offset, memory);
             });
         if (result.position != util::occupancy_index::npos) {
             modified_.reset(result.position);
@@ -104,13 +102,12 @@ class time_series_dict_storage {
         return result;
     }
 
-    void clear(const ScalarStorageRepresentation &key_representation, const util::runtime_item_layout &key_layout,
-               const TimeSeriesStorageRepresentation &item_representation,
-               const util::runtime_item_layout &item_layout, std::size_t item_value_offset,
-               std::pmr::memory_resource &memory) {
-        keys.value.clear(key_representation, key_layout, memory, [&](Position position) noexcept {
+    void clear(const ScalarRuntimeType &key_runtime_type, const util::runtime_item_layout &key_layout,
+               const TimeSeriesRuntimeType &item_runtime_type, const util::runtime_item_layout &item_layout,
+               std::size_t item_value_offset, std::pmr::memory_resource &memory) {
+        keys.value.clear(key_runtime_type, key_layout, memory, [&](Position position) noexcept {
             modified_.reset(position);
-            destroy_item(position, item_representation, item_layout, item_value_offset, memory);
+            destroy_item(position, item_runtime_type, item_layout, item_value_offset, memory);
         });
         for (const auto position : keys.value.removed()) {
             modified_.reset(position);
@@ -156,24 +153,23 @@ class time_series_dict_storage {
         return static_cast<const std::byte *>(items_.get(position, layout)) + value_offset;
     }
 
-    void release(const ScalarStorageRepresentation &key_representation, const util::runtime_item_layout &key_layout,
-                 const TimeSeriesStorageRepresentation &item_representation,
-                 const util::runtime_item_layout &item_layout, std::size_t item_value_offset,
-                 std::pmr::memory_resource &memory) noexcept {
-        keys.value.release(key_representation, key_layout, memory, [&](Position position) noexcept {
-            destroy_item(position, item_representation, item_layout, item_value_offset, memory);
+    void release(const ScalarRuntimeType &key_runtime_type, const util::runtime_item_layout &key_layout,
+                 const TimeSeriesRuntimeType &item_runtime_type, const util::runtime_item_layout &item_layout,
+                 std::size_t item_value_offset, std::pmr::memory_resource &memory) noexcept {
+        keys.value.release(key_runtime_type, key_layout, memory, [&](Position position) noexcept {
+            destroy_item(position, item_runtime_type, item_layout, item_value_offset, memory);
         });
         items_.release(item_layout, memory);
         modified_.release(memory);
     }
 
   private:
-    void destroy_item(Position position, const TimeSeriesStorageRepresentation &item_representation,
+    void destroy_item(Position position, const TimeSeriesRuntimeType &item_runtime_type,
                       const util::runtime_item_layout &item_layout, std::size_t item_value_offset,
                       std::pmr::memory_resource &memory) noexcept {
         items_.erase_at_with(position, item_layout, memory, [&](void *item) noexcept {
             auto *bytes = static_cast<std::byte *>(item);
-            item_representation.destroy_value(bytes + item_value_offset, memory);
+            item_runtime_type.destroy_value(bytes + item_value_offset, memory);
             std::destroy_at(reinterpret_cast<EvaluationTime *>(bytes));
         });
     }

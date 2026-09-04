@@ -35,7 +35,7 @@ such node for each source output and records each representation requested by
 the complete wired graph.
 
 A reference value is a pointer to storage owned by the inserted node. That
-storage identifies the target time series, its storage representation, and its
+storage identifies the target time series, its runtime type, and its
 dynamic subscribers. Passing a reference copies this pointer.
 
 For a source reached through a reference, the receiving binding sends its type
@@ -128,8 +128,8 @@ last updated time. View construction selects the later of the reference and
 target update times. Target invalidity makes the view invalid. Later target
 updates schedule the destination directly.
 
-View construction uses the current target's storage representation. A reference
-can therefore select between different representations of the same time series
+View construction uses the current target's runtime type. A reference
+can therefore select between different runtime types of the same time series
 type. An update for an inner graph is applied when that graph enters the current
 outer cycle.
 

@@ -24,8 +24,7 @@ template <typename Key, typename Hash = std::hash<Key>, typename Equal = std::eq
     hash_set(hash_set &&) = delete;
     hash_set &operator=(hash_set &&) = delete;
 
-    template <typename Source>
-    std::pair<const Key *, bool> insert(Source &&key, std::pmr::memory_resource &memory) {
+    template <typename Source> std::pair<const Key *, bool> insert(Source &&key, std::pmr::memory_resource &memory) {
         const auto result = keys_.insert(std::forward<Source>(key), memory);
 
         return {&keys_.key_at(result.position), result.inserted};
@@ -48,6 +47,19 @@ template <typename Key, typename Hash = std::hash<Key>, typename Equal = std::eq
 
     template <typename Lookup> [[nodiscard]] bool contains(const Lookup &key) const { return find(key) != nullptr; }
 
+    template <typename Predicate> [[nodiscard]] bool contains_with(std::size_t hash, Predicate &&matches) const {
+        return keys_.find_position_with(hash, std::forward<Predicate>(matches)) != occupancy_index::npos;
+    }
+
+    template <typename Predicate, typename Constructor, typename Destructor>
+    std::pair<const Key *, bool> insert_with(std::size_t hash, Predicate &&matches, std::pmr::memory_resource &memory,
+                                             Constructor &&construct, Destructor &&destroy) {
+        const auto result = keys_.insert_with(hash, std::forward<Predicate>(matches), memory,
+                                              std::forward<Constructor>(construct), std::forward<Destructor>(destroy));
+
+        return {&keys_.key_at(result.position), result.inserted};
+    }
+
     template <typename Lookup> bool erase(const Lookup &key, std::pmr::memory_resource &memory) {
         return keys_.erase(key, memory);
     }
@@ -55,6 +67,11 @@ template <typename Key, typename Hash = std::hash<Key>, typename Equal = std::eq
     template <typename Lookup, typename Destructor>
     bool erase_with(const Lookup &key, std::pmr::memory_resource &memory, Destructor &&destroy) {
         return keys_.erase_with(key, memory, std::forward<Destructor>(destroy));
+    }
+
+    template <typename Predicate, typename Destructor>
+    bool erase_with(std::size_t hash, Predicate &&matches, std::pmr::memory_resource &memory, Destructor &&destroy) {
+        return keys_.erase_with(hash, std::forward<Predicate>(matches), memory, std::forward<Destructor>(destroy));
     }
 
     bool reduce(std::pmr::memory_resource &memory) { return keys_.reduce(memory); }

@@ -1,12 +1,32 @@
 #pragma once
 
+#include <ddv/visitable.h>
+
 namespace bg {
 
+class DictScalarType;
+class ListScalarType;
+class ScalarType;
+class SetScalarType;
+class TimeSeriesBundleType;
+class TimeSeriesDictionaryType;
+class TimeSeriesListType;
+class TimeSeriesReferenceType;
+class TimeSeriesSetType;
+class TimeSeriesType;
+class TimeSeriesValueType;
+class Type;
 class TypeMap;
 
-class Type {
+using TypeVisitor = ddv::mux<Type, ScalarType, ListScalarType, SetScalarType, DictScalarType, TimeSeriesType,
+                             TimeSeriesValueType, TimeSeriesReferenceType, TimeSeriesListType, TimeSeriesBundleType,
+                             TimeSeriesSetType, TimeSeriesDictionaryType>;
+
+class Type : public ddv::visitable<Type, TypeVisitor> {
   public:
     virtual ~Type() = default;
+
+    VISITOR_SUPPORT()
 
     [[nodiscard]] virtual bool is_resolved() const noexcept = 0;
     [[nodiscard]] virtual bool is_scalar() const noexcept { return false; }

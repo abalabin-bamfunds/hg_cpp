@@ -21,7 +21,7 @@ class ScalarAllocationContext {
 
   private:
     ScalarAllocationOwner owner_;
-    const ScalarAllocationOwner *previous_;
+    ScalarAllocationOwner *previous_;
 };
 
 [[nodiscard]] const ScalarAllocationOwner *current_scalar_allocation_owner() noexcept;

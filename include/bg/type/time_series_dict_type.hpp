@@ -8,6 +8,8 @@ namespace bg {
 
 class TimeSeriesDictionaryType : public FixedItemTimeSeriesType {
   public:
+    VISITOR_SUPPORT()
+
     [[nodiscard]] const ScalarType &key_type() const noexcept { return *key_type_; }
     [[nodiscard]] const TimeSeriesType &value_type() const noexcept { return *value_type_; }
     [[nodiscard]] const TimeSeriesType &key_set_type() const noexcept { return *key_set_type_; }
@@ -15,6 +17,7 @@ class TimeSeriesDictionaryType : public FixedItemTimeSeriesType {
 
     [[nodiscard]] std::size_t item_count() const noexcept final { return 1; }
     [[nodiscard]] const TimeSeriesType &item_type(std::size_t index) const final;
+    [[nodiscard]] TimeSeriesItemId item_id(std::size_t) const noexcept final { return key_set_item_id; }
     [[nodiscard]] bool supports_invalidation() const noexcept final { return false; }
 
   protected:

@@ -3,11 +3,12 @@
 #include <bg/evaluation_time.hpp>
 #include <bg/graph/graph_wiring.hpp>
 #include <bg/node/node_template.hpp>
-#include <bg/scalar/storage_representation.hpp>
-#include <bg/scalar/view.hpp>
+#include <bg/scalar/runtime_type.hpp>
+#include <bg/scalar/scalar.hpp>
 #include <bg/time_series/ref/ref_notification.hpp>
+#include <bg/time_series/ref/ref_runtime_type.hpp>
 #include <bg/time_series/ref/ref_storage.hpp>
-#include <bg/time_series/time_series_storage_representation.hpp>
+#include <bg/time_series/time_series_runtime_type.hpp>
 #include <bg/type/signature.hpp>
 #include <bg/type/time_series_reference_type.hpp>
 #include <bg/type/time_series_value_type.hpp>
@@ -41,8 +42,8 @@ using SchedulingInfo = details::SchedulingInfo;
 
 static_assert(std::is_trivially_copyable_v<EvaluationTime>);
 static_assert(alignof(EvaluationFunction) >= alignof(std::uint32_t));
-static_assert(alignof(const ScalarStorageRepresentation *) >= alignof(std::uint32_t));
-static_assert(alignof(const TimeSeriesStorageRepresentation *) >= alignof(std::uint32_t));
+static_assert(alignof(const ScalarRuntimeType *) >= alignof(std::uint32_t));
+static_assert(alignof(const TimeSeriesRuntimeType *) >= alignof(std::uint32_t));
 
 [[nodiscard]] std::size_t align_up(std::size_t offset, std::size_t alignment) noexcept {
     const auto remainder = offset % alignment;
@@ -128,12 +129,10 @@ struct FixedNodeLayout {
     StorageSection state_destruction_function;
     StorageSection state_metadata_counts;
     StorageSection state_field_offsets;
-    StorageSection generic_state_storage_representations;
+    StorageSection generic_state_runtime_types;
     StorageSection invalidation_function;
     StorageSection node_invocation_metadata;
-    StorageSection time_series_input_view_prototypes;
-    StorageSection scalar_input_view_prototypes;
-    StorageSection output_view_prototype;
+    StorageSection runtime_types;
     StorageSection node_invocation_parameters;
     StorageSection compiled_data;
     std::vector<std::size_t> scalar_offsets;
@@ -172,7 +171,7 @@ struct ItemSubscriptionPlan {
 struct OutputLayout {
     std::uint32_t last_updated_offset{};
     std::uint32_t value_offset{};
-    const TimeSeriesStorageRepresentation *storage_representation{};
+    const TimeSeriesRuntimeType *runtime_type{};
 };
 
 struct StateLayout {
@@ -235,9 +234,9 @@ struct FixedStorageLayout {
     StorageSection stop_functions;
     StorageSection stop_nodes;
     StorageSection wiring_paths;
-    StorageSection scalar_destruction_representations;
+    StorageSection scalar_destruction_runtime_types;
     StorageSection scalar_destruction_offsets;
-    StorageSection output_destruction_representations;
+    StorageSection output_destruction_runtime_types;
     StorageSection output_destruction_offsets;
     StorageSection variable_memory;
     StorageSection initial_runtime_storage;
@@ -271,7 +270,7 @@ struct CompilationPlan {
 };
 
 struct ConstructedScalar {
-    const ScalarStorageRepresentation *storage_representation;
+    const ScalarRuntimeType *runtime_type;
     void *data;
 };
 
@@ -325,12 +324,12 @@ struct ConstructedNodeData {
     }
 
     const auto parent = physical_source_output(record.parent, wiring_points, node_plans);
-    const auto item = parent.storage_representation->fixed_item(record.item);
+    const auto item = parent.runtime_type->item_layout(static_cast<TimeSeriesItemId>(record.item));
 
     return {
         packed_offset(parent.value_offset + item.last_updated_offset, "runtime storage reaches 1 GiB"),
         packed_offset(parent.value_offset + item.value_offset, "runtime storage reaches 1 GiB"),
-        &item.representation,
+        &item.runtime_type,
     };
 }
 
@@ -511,55 +510,57 @@ void resolve_dynamic_subscribers(CompilationPlan &plan) {
     }
 }
 
-[[nodiscard]] const TimeSeriesStorageRepresentation *
-input_storage_representation(const TimeSeriesInputPlan &input, const TimeSeriesStorageRepresentation *source) {
+[[nodiscard]] const TimeSeriesRuntimeType *input_runtime_type(const TimeSeriesInputPlan &input,
+                                                              const TimeSeriesRuntimeType *source) {
     if (input.dereferences_reference) {
-        return source->reference_target_representation();
+        return &static_cast<const TimeSeriesReferenceRuntimeType &>(*source).target_runtime_type();
     }
 
     return source;
 }
 
-[[nodiscard]] std::vector<const ScalarStorageRepresentation *>
-parameter_storage_representations(const WiredNode &node, const NodePlan &node_plan,
-                                  std::span<const WiringPointRecord> wiring_points,
-                                  std::span<const NodePlan> node_plans) {
-    auto parameter_storage_representations = std::vector<const ScalarStorageRepresentation *>{};
-    parameter_storage_representations.reserve(node.signature().parameters.size());
+[[nodiscard]] std::vector<const ScalarRuntimeType *>
+parameter_runtime_types(const WiredNode &node, const NodePlan &node_plan,
+                        std::span<const WiringPointRecord> wiring_points, std::span<const NodePlan> node_plans) {
+    auto result = std::vector<const ScalarRuntimeType *>{};
+    result.reserve(node.signature().parameters.size());
     auto input_index = std::size_t{};
     auto scalar_index = std::size_t{};
     for (const auto &parameter : node.signature().parameters) {
         if (parameter.type->is_time_series()) {
             const auto &input = node_plan.time_series_inputs[input_index++];
             const auto output = source_output(input.source, wiring_points, node_plans);
-            const auto *representation = input_storage_representation(input, output.storage_representation);
-            parameter_storage_representations.push_back(representation->scalar_storage_representation());
+            const auto *runtime_type = input_runtime_type(input, output.runtime_type);
+            const ScalarRuntimeType *scalar_runtime_type{};
+            runtime_type->type().visit(
+                [&](const TimeSeriesValueType *) {
+                    scalar_runtime_type =
+                        &static_cast<const TimeSeriesValueRuntimeType &>(*runtime_type).scalar_runtime_type();
+                },
+                ddv::noop);
+            result.push_back(scalar_runtime_type);
         } else {
             const auto &scalar = node.scalar_values()[scalar_index++];
-            parameter_storage_representations.push_back(scalar.has_value() ? &scalar.storage_representation()
-                                                                           : nullptr);
+            result.push_back(scalar.has_value() ? &scalar.runtime_type() : nullptr);
         }
     }
 
-    return parameter_storage_representations;
+    return result;
 }
 
-[[nodiscard]] const TimeSeriesStorageRepresentation *
-find_output_storage_representation(const WiredNode &node, const NodePlan &node_plan,
-                                   std::span<const WiringPointRecord> wiring_points,
-                                   std::span<const NodePlan> node_plans) {
-    const auto parameter_representations =
-        parameter_storage_representations(node, node_plan, wiring_points, node_plans);
-    auto input_representations = std::vector<const TimeSeriesStorageRepresentation *>{};
-    input_representations.reserve(node.input_sources().size());
+[[nodiscard]] const TimeSeriesRuntimeType *find_output_runtime_type(const WiredNode &node, const NodePlan &node_plan,
+                                                                    std::span<const WiringPointRecord> wiring_points,
+                                                                    std::span<const NodePlan> node_plans) {
+    const auto parameter_types = parameter_runtime_types(node, node_plan, wiring_points, node_plans);
+    auto input_runtime_types = std::vector<const TimeSeriesRuntimeType *>{};
+    input_runtime_types.reserve(node.input_sources().size());
     for (const auto &input : node_plan.time_series_inputs) {
         const auto source = source_output(input.source, wiring_points, node_plans);
-        const auto *representation = input_storage_representation(input, source.storage_representation);
-        input_representations.push_back(representation);
+        const auto *runtime_type = input_runtime_type(input, source.runtime_type);
+        input_runtime_types.push_back(runtime_type);
     }
 
-    return node.node_template().output_storage_representation(node.signature(), parameter_representations,
-                                                              input_representations);
+    return node.node_template().output_runtime_type(node.signature(), parameter_types, input_runtime_types);
 }
 
 [[nodiscard]] OutputLayout add_output_layout(StorageLayout &storage, const WiredNode &node, const NodePlan &node_plan,
@@ -569,27 +570,26 @@ find_output_storage_representation(const WiredNode &node, const NodePlan &node_p
         return {};
     }
 
-    const auto *representation = find_output_storage_representation(node, node_plan, wiring_points, node_plans);
-    if (representation == nullptr) {
-        throw std::logic_error{"node output has no storage representation"};
+    const auto *runtime_type = find_output_runtime_type(node, node_plan, wiring_points, node_plans);
+    if (runtime_type == nullptr) {
+        throw std::logic_error{"node output has no runtime type"};
     }
-    if (!representation->supports_byte_copy_initialization()) {
+    if (!runtime_type->supports_byte_copy_initialization()) {
         throw std::logic_error{"output storage does not support byte-copy initialization"};
     }
 
     const auto last_updated = storage.add<EvaluationTime>();
-    const auto value = storage.add_bytes(representation->value_size(), representation->value_alignment());
+    const auto value = storage.add_bytes(runtime_type->value_size(), runtime_type->value_alignment());
 
     return {packed_offset(last_updated.offset, "runtime storage reaches 1 GiB"),
-            packed_offset(value.offset, "runtime storage reaches 1 GiB"), representation};
+            packed_offset(value.offset, "runtime storage reaches 1 GiB"), runtime_type};
 }
 
 [[nodiscard]] StateLayout add_state_layout(StorageLayout &storage, const WiredNode &node, const NodePlan &node_plan,
                                            std::span<const WiringPointRecord> wiring_points,
                                            std::span<const NodePlan> node_plans) {
     auto layout = node.node_template().state_layout(
-        node.signature(), parameter_storage_representations(node, node_plan, wiring_points, node_plans),
-        node.state_types());
+        node.signature(), parameter_runtime_types(node, node_plan, wiring_points, node_plans), node.state_types());
     if (layout.size == 0) {
         return {};
     }
@@ -643,9 +643,9 @@ void plan_runtime_storage(CompilationPlan &plan, std::size_t schedule_word_count
 }
 
 [[nodiscard]] std::size_t output_notification_size(const SubscriptionPlan &subscriptions) noexcept {
-    const auto callback_reference_count = std::ranges::count_if(
-        subscriptions.reference_inputs,
-        [](const auto &subscriber) { return subscriber.notification.function != nullptr; });
+    const auto callback_reference_count =
+        std::ranges::count_if(subscriptions.reference_inputs,
+                              [](const auto &subscriber) { return subscriber.notification.function != nullptr; });
     const auto reference_count = subscriptions.reference_inputs.size() - callback_reference_count;
 
     auto result = std::size_t{};
@@ -702,6 +702,27 @@ void plan_runtime_storage(CompilationPlan &plan, std::size_t schedule_word_count
     return align_up(result, alignof(ItemSubscribers));
 }
 
+struct RuntimeTypeCounts {
+    std::size_t time_series_inputs{};
+    std::size_t scalar_inputs{};
+    bool output{};
+
+    [[nodiscard]] std::size_t total() const noexcept {
+        return time_series_inputs + scalar_inputs + static_cast<std::size_t>(output);
+    }
+};
+
+[[nodiscard]] RuntimeTypeCounts runtime_type_counts(const WiredNode &node) {
+    auto result = RuntimeTypeCounts{.output = node.node_template().uses_output_runtime_type()};
+    for (auto parameter = std::size_t{}; parameter < node.signature().parameters.size(); ++parameter) {
+        result.time_series_inputs +=
+            static_cast<std::size_t>(node.node_template().uses_time_series_input_runtime_type(parameter));
+        result.scalar_inputs +=
+            static_cast<std::size_t>(node.node_template().uses_scalar_input_runtime_type(parameter));
+    }
+    return result;
+}
+
 [[nodiscard]] FixedNodeLayout make_node_layout(const WiredNode &node, const NodePlan &node_plan) {
     if (node.signature().parameters.size() > max_parameter_count) {
         throw std::length_error{"a node has more than 1023 parameters"};
@@ -734,11 +755,11 @@ void plan_runtime_storage(CompilationPlan &plan, std::size_t schedule_word_count
         if (node_plan.state.requires_destruction) {
             result.state_destruction_function = storage.add<EvaluationFunction>();
         }
-        if (!node_plan.state.node.generic_storage_representations.empty()) {
+        if (!node_plan.state.node.generic_runtime_types.empty()) {
             result.state_metadata_counts = storage.add<StateMetadataCounts>();
             result.state_field_offsets = storage.add<std::uint32_t>(node_plan.state.node.field_offsets.size());
-            result.generic_state_storage_representations = storage.add<const ScalarStorageRepresentation *>(
-                node_plan.state.node.generic_storage_representations.size());
+            result.generic_state_runtime_types =
+                storage.add<const ScalarRuntimeType *>(node_plan.state.node.generic_runtime_types.size());
         }
     }
     if (node_plan.invalidation.mode == InvalidationMode::invoke) {
@@ -748,22 +769,9 @@ void plan_runtime_storage(CompilationPlan &plan, std::size_t schedule_word_count
         result.node_invocation_metadata = storage.add<NodeInvocationMetadata>();
     }
 
-    auto generic_time_series_input_count = std::size_t{};
-    auto generic_scalar_input_count = std::size_t{};
-    for (auto i = std::size_t{}; i < node.signature().parameters.size(); ++i) {
-        generic_time_series_input_count +=
-            static_cast<std::size_t>(node.node_template().uses_generic_time_series_input_view(i));
-        generic_scalar_input_count += static_cast<std::size_t>(node.node_template().uses_generic_scalar_input_view(i));
-    }
-    if (generic_time_series_input_count != 0) {
-        result.time_series_input_view_prototypes =
-            storage.add<TimeSeriesInputViewPrototype>(generic_time_series_input_count);
-    }
-    if (generic_scalar_input_count != 0) {
-        result.scalar_input_view_prototypes = storage.add<ScalarInputViewPrototype>(generic_scalar_input_count);
-    }
-    if (node.node_template().uses_generic_output_view()) {
-        result.output_view_prototype = storage.add<OutputViewPrototype>();
+    const auto runtime_types = runtime_type_counts(node);
+    if (runtime_types.total() != 0) {
+        result.runtime_types = storage.add<const RuntimeType *>(runtime_types.total());
     }
 
     result.scalar_offsets.reserve(node.scalar_values().size());
@@ -773,8 +781,8 @@ void plan_runtime_storage(CompilationPlan &plan, std::size_t schedule_word_count
             continue;
         }
 
-        const auto &representation = scalar.storage_representation();
-        const auto value = storage.add_bytes(representation.size(), representation.alignment());
+        const auto &runtime_type = scalar.runtime_type();
+        const auto value = storage.add_bytes(runtime_type.size(), runtime_type.alignment());
         result.scalar_offsets.push_back(value.offset);
     }
 
@@ -805,11 +813,9 @@ void plan_fixed_storage(CompilationPlan &plan) {
         layout.stop_nodes = storage.add<std::uint32_t>(plan.stops.nodes.size());
     }
     layout.wiring_paths = storage.add<WiringPath>(plan.wiring_paths.paths.size());
-    layout.scalar_destruction_representations =
-        storage.add<const ScalarStorageRepresentation *>(plan.scalar_destruction_count);
+    layout.scalar_destruction_runtime_types = storage.add<const ScalarRuntimeType *>(plan.scalar_destruction_count);
     layout.scalar_destruction_offsets = storage.add<std::uint32_t>(plan.scalar_destruction_count);
-    layout.output_destruction_representations =
-        storage.add<const TimeSeriesStorageRepresentation *>(plan.output_destruction_count);
+    layout.output_destruction_runtime_types = storage.add<const TimeSeriesRuntimeType *>(plan.output_destruction_count);
     layout.output_destruction_offsets = storage.add<std::uint32_t>(plan.output_destruction_count);
     if (plan.uses_variable_memory) {
         layout.variable_memory = storage.add<std::pmr::unsynchronized_pool_resource>();
@@ -858,8 +864,7 @@ void plan_fixed_storage(CompilationPlan &plan) {
 
     result.output_destruction_count =
         static_cast<std::size_t>(std::ranges::count_if(result.node_plans, [](const auto &node) {
-            return node.output.storage_representation != nullptr &&
-                   node.output.storage_representation->requires_destruction();
+            return node.output.runtime_type != nullptr && node.output.runtime_type->requires_destruction();
         }));
 
     for (auto i = std::size_t{}; i < result.nodes.size(); ++i) {
@@ -872,9 +877,9 @@ void plan_fixed_storage(CompilationPlan &plan) {
                 continue;
             }
 
-            const auto &representation = scalar.storage_representation();
-            result.scalar_destruction_count += static_cast<std::size_t>(representation.requires_destruction());
-            result.uses_variable_memory |= representation.uses_variable_memory();
+            const auto &runtime_type = scalar.runtime_type();
+            result.scalar_destruction_count += static_cast<std::size_t>(runtime_type.requires_destruction());
+            result.uses_variable_memory |= runtime_type.uses_variable_memory();
         }
     }
 
@@ -947,7 +952,7 @@ class CompiledGraphBuilder {
                 data->destruction_function(data->data);
             }
             for (auto scalar = constructed_scalars.rbegin(); scalar != constructed_scalars.rend(); ++scalar) {
-                scalar->storage_representation->destroy(scalar->data, *variable_memory);
+                scalar->runtime_type->destroy(scalar->data, *variable_memory);
             }
 
             if (variable_pool != nullptr) {
@@ -982,7 +987,7 @@ class CompiledGraphBuilder {
                 .start_count = static_cast<std::uint32_t>(plan.starts.nodes.size()),
                 .stop_functions_offset = offset(plan.fixed.stop_functions),
                 .stop_count = static_cast<std::uint32_t>(plan.stops.nodes.size()),
-                .scalar_destruction_representations_offset = offset(plan.fixed.scalar_destruction_representations),
+                .scalar_destruction_runtime_types_offset = offset(plan.fixed.scalar_destruction_runtime_types),
                 .output_destruction_count = static_cast<std::uint32_t>(plan.output_destruction_count),
                 .variable_memory_offset =
                     offset(plan.fixed.variable_memory) |
@@ -1039,13 +1044,13 @@ class CompiledGraphBuilder {
 
         for (const auto &node : plan.node_plans) {
             const auto &output = node.output;
-            if (output.storage_representation == nullptr) {
+            if (output.runtime_type == nullptr) {
                 continue;
             }
 
             std::construct_at(reinterpret_cast<EvaluationTime *>(runtime_storage.data() + output.last_updated_offset),
                               MIN_DT);
-            output.storage_representation->construct_initial_value(runtime_storage.data() + output.value_offset);
+            output.runtime_type->construct_initial_value(runtime_storage.data() + output.value_offset);
         }
 
         const auto initialize_item_samples = [&](this const auto &self,
@@ -1080,18 +1085,17 @@ class CompiledGraphBuilder {
     }
 
     static void construct_output_destruction(const CompilationPlan &plan, std::byte *fixed_storage) {
-        auto representations = plan.fixed.output_destruction_representations
-                                   .objects<const TimeSeriesStorageRepresentation *>(fixed_storage)
-                                   .begin();
+        auto runtime_types =
+            plan.fixed.output_destruction_runtime_types.objects<const TimeSeriesRuntimeType *>(fixed_storage).begin();
         auto offsets = plan.fixed.output_destruction_offsets.objects<std::uint32_t>(fixed_storage).begin();
 
         for (const auto &node : plan.node_plans) {
             const auto &output = node.output;
-            if (output.storage_representation == nullptr || !output.storage_representation->requires_destruction()) {
+            if (output.runtime_type == nullptr || !output.runtime_type->requires_destruction()) {
                 continue;
             }
 
-            std::construct_at(std::to_address(representations++), output.storage_representation);
+            std::construct_at(std::to_address(runtime_types++), output.runtime_type);
             std::construct_at(std::to_address(offsets++), output.value_offset);
         }
     }
@@ -1104,8 +1108,8 @@ class CompiledGraphBuilder {
         const auto &layout = plan.node_plans[node_index].fixed;
         auto *node_storage = storage + layout.offset;
         auto parameters = layout.parameters.objects<ParameterBinding>(node_storage);
-        auto destruction_representations =
-            plan.fixed.scalar_destruction_representations.objects<const ScalarStorageRepresentation *>(storage);
+        auto destruction_runtime_types =
+            plan.fixed.scalar_destruction_runtime_types.objects<const ScalarRuntimeType *>(storage);
         auto destruction_offsets = plan.fixed.scalar_destruction_offsets.objects<std::uint32_t>(storage);
 
         auto input_index = std::size_t{};
@@ -1136,22 +1140,22 @@ class CompiledGraphBuilder {
                 continue;
             }
 
-            const auto &representation = scalar.storage_representation();
+            const auto &runtime_type = scalar.runtime_type();
             const auto scalar_offset = layout.scalar_offsets[current_scalar_index];
             auto *scalar_data = node_storage + scalar_offset;
-            representation.copy_construct(scalar_data, scalar.data(), variable_memory);
+            runtime_type.copy_construct(scalar_data, scalar.data(), variable_memory);
 
             const auto parameter_offset = layout.parameters.offset + parameter_index * sizeof(ParameterBinding);
             std::construct_at(parameters.data() + parameter_index,
                               ParameterBinding{packed_offset(scalar_offset - parameter_offset,
                                                              "a scalar is more than 1 GiB from its parameter")});
 
-            if (!representation.requires_destruction()) {
+            if (!runtime_type.requires_destruction()) {
                 continue;
             }
 
-            constructed_scalars.push_back({&representation, scalar_data});
-            std::construct_at(destruction_representations.data() + scalar_destruction_index, &representation);
+            constructed_scalars.push_back({&runtime_type, scalar_data});
+            std::construct_at(destruction_runtime_types.data() + scalar_destruction_index, &runtime_type);
             std::construct_at(destruction_offsets.data() + scalar_destruction_index,
                               packed_offset(static_cast<std::size_t>(static_cast<std::byte *>(scalar_data) - storage),
                                             "compiled fixed storage reaches 1 GiB"));
@@ -1159,15 +1163,14 @@ class CompiledGraphBuilder {
         }
     }
 
-    static void construct_view_prototypes(const CompilationPlan &plan, std::size_t node_index, std::byte *storage) {
+    static void construct_runtime_types(const CompilationPlan &plan, std::size_t node_index, std::byte *storage) {
         const auto &node = plan.nodes[node_index];
         const auto &layout = plan.node_plans[node_index].fixed;
         auto *node_storage = storage + layout.offset;
-        auto time_series_input_views =
-            layout.time_series_input_view_prototypes.objects<TimeSeriesInputViewPrototype>(node_storage);
-        auto scalar_input_views = layout.scalar_input_view_prototypes.objects<ScalarInputViewPrototype>(node_storage);
-        auto generic_time_series_input_index = std::size_t{};
-        auto generic_scalar_input_index = std::size_t{};
+        auto runtime_types = layout.runtime_types.objects<const RuntimeType *>(node_storage);
+        const auto runtime_type_count = runtime_type_counts(node);
+        auto time_series_runtime_type_index = std::size_t{};
+        auto scalar_runtime_type_index = std::size_t{};
         auto input_index = std::size_t{};
         auto scalar_index = std::size_t{};
 
@@ -1175,43 +1178,36 @@ class CompiledGraphBuilder {
              ++parameter_index) {
             if (!node.signature().parameters[parameter_index].type->is_time_series()) {
                 const auto &scalar = node.scalar_values()[scalar_index++];
-                if (node.node_template().uses_generic_scalar_input_view(parameter_index)) {
-                    const auto *prototype = [&] {
+                if (node.node_template().uses_scalar_input_runtime_type(parameter_index)) {
+                    const auto *runtime_type = [&] {
                         if (scalar.has_value()) {
-                            return scalar.storage_representation().scalar_input_view_prototype();
+                            return &scalar.runtime_type();
                         }
 
                         const auto &type =
                             static_cast<const ScalarType &>(*node.signature().parameters[parameter_index].type);
-                        return resolve_scalar_storage_representation(type, {}).scalar_input_view_prototype();
+                        return &resolve_scalar_runtime_type(type, {});
                     }();
-                    std::construct_at(scalar_input_views.data() + generic_scalar_input_index,
-                                      ScalarInputViewPrototype{prototype});
-                    ++generic_scalar_input_index;
+                    runtime_types[runtime_type_count.time_series_inputs + scalar_runtime_type_index] = runtime_type;
+                    ++scalar_runtime_type_index;
                 }
                 continue;
             }
 
             const auto &input = plan.node_plans[node_index].time_series_inputs[input_index++];
-            if (!node.node_template().uses_generic_time_series_input_view(parameter_index)) {
+            if (!node.node_template().uses_time_series_input_runtime_type(parameter_index)) {
                 continue;
             }
 
             const auto source = source_output(input.source, plan.wiring_points, plan.node_plans);
-            const auto *representation = input_storage_representation(input, source.storage_representation);
-            std::construct_at(time_series_input_views.data() + generic_time_series_input_index,
-                              TimeSeriesInputViewPrototype{representation});
-            ++generic_time_series_input_index;
+            const auto *runtime_type = input_runtime_type(input, source.runtime_type);
+            runtime_types[time_series_runtime_type_index] = runtime_type;
+            ++time_series_runtime_type_index;
         }
 
-        if (node.node_template().uses_generic_output_view()) {
-            const auto *representation = plan.node_plans[node_index].output.storage_representation;
-            const auto *prototype = representation->output_view_prototype();
-            if (prototype == nullptr) {
-                throw std::logic_error{"node output storage does not provide a mutable view"};
-            }
-            std::construct_at(layout.output_view_prototype.objects<OutputViewPrototype>(node_storage).data(),
-                              OutputViewPrototype{prototype});
+        if (node.node_template().uses_output_runtime_type()) {
+            const auto *runtime_type = plan.node_plans[node_index].output.runtime_type;
+            runtime_types.back() = runtime_type;
         }
     }
 
@@ -1219,9 +1215,9 @@ class CompiledGraphBuilder {
                                                      std::byte *destination) {
         destination = reinterpret_cast<std::byte *>(
             align_up(reinterpret_cast<std::uintptr_t>(destination), alignof(OutputNotification)));
-        const auto callback_reference_count = std::ranges::count_if(
-            subscribers.reference_inputs,
-            [](const auto &subscriber) { return subscriber.notification.function != nullptr; });
+        const auto callback_reference_count =
+            std::ranges::count_if(subscribers.reference_inputs,
+                                  [](const auto &subscriber) { return subscriber.notification.function != nullptr; });
         const auto reference_count = subscribers.reference_inputs.size() - callback_reference_count;
         const auto reference_bytes = reference_count * sizeof(details::ReferenceInputSubscriber);
         const auto callback_reference_bytes =
@@ -1331,20 +1327,19 @@ class CompiledGraphBuilder {
             construct_parameters(plan, i, storage, variable_memory, constructed_scalars, scalar_destruction_index);
             std::uninitialized_copy(node_plan.subscriptions.nodes.begin(), node_plan.subscriptions.nodes.end(),
                                     layout.subscribers.objects<Subscriber>(node_storage).data());
-            if (!node_plan.subscriptions.reference_inputs.empty() ||
-                !node_plan.subscriptions.callback_inputs.empty()) {
+            if (!node_plan.subscriptions.reference_inputs.empty() || !node_plan.subscriptions.callback_inputs.empty()) {
                 construct_output_notifications(plan, node_plan.subscriptions,
                                                node_storage + layout.output_notification.offset);
             }
             if (!node_plan.item_subscriptions.empty()) {
                 std::construct_at(layout.item_subscription_root.objects<ItemSubscriptionRoot>(node_storage).data(),
-                                  *node_plan.output.storage_representation,
+                                  *node_plan.output.runtime_type,
                                   static_cast<std::uint32_t>(item_subscriber_size(node_plan.item_subscriptions)));
                 construct_item_subscribers(plan, node_plan.item_subscriptions,
                                            node_storage + layout.item_subscribers.offset);
             }
             if (node_plan.state.node.size != 0) {
-                const auto has_state_metadata = !node_plan.state.node.generic_storage_representations.empty();
+                const auto has_state_metadata = !node_plan.state.node.generic_runtime_types.empty();
                 std::construct_at(layout.state_offset.objects<std::uint32_t>(node_storage).data(),
                                   node_plan.state.offset |
                                       (node_plan.state.requires_destruction ? CompiledNode::state_destruction_flag
@@ -1360,16 +1355,15 @@ class CompiledGraphBuilder {
                         layout.state_metadata_counts.objects<StateMetadataCounts>(node_storage).data(),
                         StateMetadataCounts{
                             static_cast<std::uint16_t>(node_plan.state.node.field_offsets.size()),
-                            static_cast<std::uint16_t>(node_plan.state.node.generic_storage_representations.size())});
+                            static_cast<std::uint16_t>(node_plan.state.node.generic_runtime_types.size())});
                     std::ranges::transform(
                         node_plan.state.node.field_offsets,
                         layout.state_field_offsets.objects<std::uint32_t>(node_storage).begin(),
                         [](auto offset) { return packed_offset(offset, "node state reaches 1 GiB"); });
-                    std::uninitialized_copy(node_plan.state.node.generic_storage_representations.begin(),
-                                            node_plan.state.node.generic_storage_representations.end(),
-                                            layout.generic_state_storage_representations
-                                                .objects<const ScalarStorageRepresentation *>(node_storage)
-                                                .data());
+                    std::uninitialized_copy(
+                        node_plan.state.node.generic_runtime_types.begin(),
+                        node_plan.state.node.generic_runtime_types.end(),
+                        layout.generic_state_runtime_types.objects<const ScalarRuntimeType *>(node_storage).data());
                 }
             }
             if (node_plan.invalidation.mode == InvalidationMode::invoke) {
@@ -1403,7 +1397,7 @@ class CompiledGraphBuilder {
                     }
                 }
             }
-            construct_view_prototypes(plan, i, storage);
+            construct_runtime_types(plan, i, storage);
 
             std::construct_at(
                 reinterpret_cast<CompiledNode *>(node_storage),
@@ -1461,16 +1455,16 @@ CompiledGraph::NodeFunctions CompiledGraph::stop_functions() const noexcept {
 
 CompiledGraph::OutputDestruction CompiledGraph::output_destruction() const noexcept {
     const auto &header = storage_header();
-    const auto representations_offset = static_cast<std::uint32_t>(
-        align_up(header.scalar_destruction_representations_offset +
-                     scalar_destruction_count() * (sizeof(const ScalarStorageRepresentation *) + sizeof(std::uint32_t)),
-                 alignof(const TimeSeriesStorageRepresentation *)));
-    const auto representations = stored_objects<const TimeSeriesStorageRepresentation *>(
-        fixed_storage_, representations_offset, header.output_destruction_count);
+    const auto runtime_types_offset = static_cast<std::uint32_t>(
+        align_up(header.scalar_destruction_runtime_types_offset +
+                     scalar_destruction_count() * (sizeof(const ScalarRuntimeType *) + sizeof(std::uint32_t)),
+                 alignof(const TimeSeriesRuntimeType *)));
+    const auto runtime_types = stored_objects<const TimeSeriesRuntimeType *>(fixed_storage_, runtime_types_offset,
+                                                                             header.output_destruction_count);
     const auto offsets_offset = static_cast<std::uint32_t>(
-        representations_offset + header.output_destruction_count * sizeof(const TimeSeriesStorageRepresentation *));
+        runtime_types_offset + header.output_destruction_count * sizeof(const TimeSeriesRuntimeType *));
 
-    return {representations,
+    return {runtime_types,
             stored_objects<std::uint32_t>(fixed_storage_, offsets_offset, header.output_destruction_count)};
 }
 
@@ -1500,13 +1494,13 @@ CompiledGraph::~CompiledGraph() {
     }
 
     const auto count = scalar_destruction_count();
-    const auto representations = stored_objects<const ScalarStorageRepresentation *>(
-        fixed_storage_, header.scalar_destruction_representations_offset, count);
-    const auto offsets_offset = static_cast<std::uint32_t>(header.scalar_destruction_representations_offset +
-                                                           count * sizeof(const ScalarStorageRepresentation *));
+    const auto runtime_types = stored_objects<const ScalarRuntimeType *>(
+        fixed_storage_, header.scalar_destruction_runtime_types_offset, count);
+    const auto offsets_offset = static_cast<std::uint32_t>(header.scalar_destruction_runtime_types_offset +
+                                                           count * sizeof(const ScalarRuntimeType *));
     const auto offsets = stored_objects<std::uint32_t>(fixed_storage_, offsets_offset, count);
     for (auto i = count; i > 0; --i) {
-        representations[i - 1]->destroy(fixed_storage_ + offsets[i - 1], *variable_memory);
+        runtime_types[i - 1]->destroy(fixed_storage_ + offsets[i - 1], *variable_memory);
     }
 
     if (variable_pool != nullptr) {
