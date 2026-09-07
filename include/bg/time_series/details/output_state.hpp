@@ -3,6 +3,7 @@
 #include <bg/evaluation_context.hpp>
 #include <bg/time_series/details/output_path.hpp>
 #include <bg/time_series/time_series_runtime_type.hpp>
+#include <bg/util/tagged_ptr.hpp>
 
 #include <cstdint>
 
@@ -17,28 +18,28 @@ class OutputState {
     void bind(EvaluationTime &last_updated, void *data, const EvaluationTime &evaluation_time) noexcept {
         last_updated_ = &last_updated;
         data_ = data;
-        owner_ = tagged(evaluation_time, evaluation_time_tag);
+        owner_.reset(&evaluation_time, Owner::evaluation_time);
     }
 
     void bind(EvaluationTime &last_updated, void *data, EvaluationContext &context) noexcept {
         last_updated_ = &last_updated;
         data_ = data;
-        owner_ = tagged(context, context_tag);
+        owner_.reset(&context, Owner::context);
     }
 
     void bind(EvaluationTime &last_updated, void *data, void *output_path) noexcept {
         last_updated_ = &last_updated;
         data_ = data;
-        owner_ = reinterpret_cast<std::uintptr_t>(output_path);
+        owner_.reset(output_path, Owner::path);
     }
 
     void release() noexcept {
-        if (tag() == evaluation_time_tag) {
+        if (owner_.tag() == Owner::evaluation_time) {
             return;
         }
 
         auto &evaluation_context = context();
-        auto *path = tag() == path_tag ? reinterpret_cast<void *>(owner_) : nullptr;
+        auto *path = owner_.tag() == Owner::path ? owner_.get<void>() : nullptr;
         evaluation_context.scratch().release_last(this, sizeof(OutputState));
         if (path != nullptr) {
             release_output_path(path);
@@ -46,17 +47,17 @@ class OutputState {
     }
 
     void release_path() noexcept {
-        if (tag() == path_tag && owner_ != 0) {
-            release_output_path(reinterpret_cast<void *>(owner_));
+        if (owner_.tag() == Owner::path && owner_) {
+            release_output_path(owner_.get<void>());
         }
     }
 
-    [[nodiscard]] bool valid() const noexcept { return *last_updated_ > MIN_DT; }
-    [[nodiscard]] EvaluationTime last_updated() const noexcept { return *last_updated_; }
-    [[nodiscard]] const TimeSeriesRuntimeType &runtime_type() const noexcept { return *runtime_type_; }
-    [[nodiscard]] const void *data() const noexcept { return data_; }
-    [[nodiscard]] void *mutable_data() const noexcept { return const_cast<void *>(data_); }
-    [[nodiscard]] EvaluationTime &mutable_last_updated() const noexcept {
+    bool valid() const noexcept { return *last_updated_ > MIN_DT; }
+    EvaluationTime last_updated() const noexcept { return *last_updated_; }
+    const TimeSeriesRuntimeType &runtime_type() const noexcept { return *runtime_type_; }
+    const void *data() const noexcept { return data_; }
+    void *mutable_data() const noexcept { return const_cast<void *>(data_); }
+    EvaluationTime &mutable_last_updated() const noexcept {
         return *const_cast<EvaluationTime *>(last_updated_);
     }
 
@@ -76,7 +77,7 @@ class OutputState {
     }
 
     [[nodiscard]] void *add_path(const TimeSeriesRuntimeType &runtime_type, TimeSeriesItemId id) const {
-        auto *parent = tag() == path_tag ? reinterpret_cast<void *>(owner_) : nullptr;
+        auto *parent = owner_.tag() == Owner::path ? owner_.get<void>() : nullptr;
         return add_output_path(context(), runtime_type, mutable_last_updated(), mutable_data(), id, parent);
     }
 
@@ -86,46 +87,37 @@ class OutputState {
         release_output_path(path);
     }
 
-    [[nodiscard]] EvaluationContext &context() const noexcept {
-        if (tag() == context_tag) {
-            return *untagged<EvaluationContext>();
+    EvaluationContext &context() const noexcept {
+        if (owner_.tag() == Owner::context) {
+            return *owner_.get<EvaluationContext>();
         }
-        return output_path_context(reinterpret_cast<void *>(owner_));
+        return output_path_context(owner_.get<void>());
     }
 
   private:
     void publish_containing_collections() const noexcept {
-        if (tag() == path_tag && owner_ != 0) {
-            publish_output_path(reinterpret_cast<void *>(owner_));
+        if (owner_.tag() == Owner::path && owner_) {
+            publish_output_path(owner_.get<void>());
         }
     }
 
-    [[nodiscard]] const EvaluationTime &evaluation_time() const noexcept {
-        if (tag() == evaluation_time_tag) {
-            return *untagged<EvaluationTime>();
+    const EvaluationTime &evaluation_time() const noexcept {
+        if (owner_.tag() == Owner::evaluation_time) {
+            return *owner_.get<const EvaluationTime>();
         }
         return context().evaluation_time();
     }
 
-    template <typename T> [[nodiscard]] static std::uintptr_t tagged(const T &value, std::uintptr_t tag) noexcept {
-        return reinterpret_cast<std::uintptr_t>(&value) | tag;
-    }
-
-    template <typename T> [[nodiscard]] T *untagged() const noexcept {
-        return reinterpret_cast<T *>(owner_ & ~tag_mask);
-    }
-
-    [[nodiscard]] std::uintptr_t tag() const noexcept { return owner_ & tag_mask; }
-
-    static constexpr auto path_tag = std::uintptr_t{};
-    static constexpr auto context_tag = std::uintptr_t{1};
-    static constexpr auto evaluation_time_tag = std::uintptr_t{2};
-    static constexpr auto tag_mask = std::uintptr_t{3};
+    enum class Owner : std::uintptr_t {
+        path,
+        context,
+        evaluation_time,
+    };
 
     const TimeSeriesRuntimeType *runtime_type_{};
     const EvaluationTime *last_updated_{&MIN_DT};
     const void *data_{};
-    std::uintptr_t owner_{tagged(MIN_DT, evaluation_time_tag)};
+    util::erased_tagged_ptr<4, 2, Owner> owner_{&MIN_DT, Owner::evaluation_time};
 };
 
 static_assert(sizeof(OutputState) == 4 * sizeof(void *));

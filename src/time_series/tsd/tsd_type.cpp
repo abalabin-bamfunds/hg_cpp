@@ -20,7 +20,7 @@ class ResolvedTimeSeriesDictionaryType final : public TimeSeriesDictionaryType {
                                      const TimeSeriesType &key_set_type, TimeSeriesGuarantee guarantee)
         : TimeSeriesDictionaryType(key_type, value_type, key_set_type, guarantee) {}
 
-    [[nodiscard]] bool is_resolved() const noexcept override { return true; }
+    bool is_resolved() const noexcept override { return true; }
     [[nodiscard]] const Type &resolve(const TypeMap &) const override { return *this; }
 };
 

@@ -86,33 +86,33 @@ class hash_dictionary {
         return *stored;
     }
 
-    template <typename Lookup> [[nodiscard]] Value *find(const Lookup &key) {
+    template <typename Lookup> Value *find(const Lookup &key) {
         const auto position = keys_.find_position(key);
 
         return position == occupancy_index::npos ? nullptr : &values_[position];
     }
 
-    template <typename Lookup> [[nodiscard]] const Value *find(const Lookup &key) const {
+    template <typename Lookup> const Value *find(const Lookup &key) const {
         const auto position = keys_.find_position(key);
 
         return position == occupancy_index::npos ? nullptr : &values_[position];
     }
 
-    template <typename Lookup> [[nodiscard]] bool contains(const Lookup &key) const { return find(key) != nullptr; }
+    template <typename Lookup> bool contains(const Lookup &key) const { return find(key) != nullptr; }
 
-    template <typename Predicate> [[nodiscard]] Value *find_with(std::size_t hash, Predicate &&matches) {
+    template <typename Predicate> Value *find_with(std::size_t hash, Predicate &&matches) {
         const auto position = keys_.find_position_with(hash, std::forward<Predicate>(matches));
 
         return position == occupancy_index::npos ? nullptr : &values_[position];
     }
 
-    template <typename Predicate> [[nodiscard]] const Value *find_with(std::size_t hash, Predicate &&matches) const {
+    template <typename Predicate> const Value *find_with(std::size_t hash, Predicate &&matches) const {
         const auto position = keys_.find_position_with(hash, std::forward<Predicate>(matches));
 
         return position == occupancy_index::npos ? nullptr : &values_[position];
     }
 
-    template <typename Lookup> [[nodiscard]] Value &at(const Lookup &key) {
+    template <typename Lookup> Value &at(const Lookup &key) {
         auto *value = find(key);
         if (value == nullptr) {
             throw std::out_of_range{"dictionary key was not found"};
@@ -121,7 +121,7 @@ class hash_dictionary {
         return *value;
     }
 
-    template <typename Lookup> [[nodiscard]] const Value &at(const Lookup &key) const {
+    template <typename Lookup> const Value &at(const Lookup &key) const {
         const auto *value = find(key);
         if (value == nullptr) {
             throw std::out_of_range{"dictionary key was not found"};
@@ -182,8 +182,8 @@ class hash_dictionary {
         keys_.release_with(memory, destroy_key);
     }
 
-    [[nodiscard]] size_type size() const noexcept { return keys_.size(); }
-    [[nodiscard]] bool empty() const noexcept { return keys_.empty(); }
+    size_type size() const noexcept { return keys_.size(); }
+    bool empty() const noexcept { return keys_.empty(); }
 
     void swap(hash_dictionary &other) noexcept(noexcept(keys_.swap(other.keys_))) {
         keys_.swap(other.keys_);
@@ -213,7 +213,7 @@ class hash_dictionary {
             requires Constant
             : dictionary_{other.dictionary_}, position_{other.position_} {}
 
-        [[nodiscard]] value_type operator*() const noexcept {
+        value_type operator*() const noexcept {
             const auto position = *position_;
             return {dictionary_->keys_.key_at(position), dictionary_->values_[position]};
         }
@@ -244,12 +244,12 @@ class hash_dictionary {
     using iterator = basic_iterator<false>;
     using const_iterator = basic_iterator<true>;
 
-    [[nodiscard]] iterator begin() noexcept { return {this, keys_.positions().begin()}; }
-    [[nodiscard]] iterator end() noexcept { return {this, keys_.positions().end()}; }
-    [[nodiscard]] const_iterator begin() const noexcept { return {this, keys_.positions().begin()}; }
-    [[nodiscard]] const_iterator end() const noexcept { return {this, keys_.positions().end()}; }
-    [[nodiscard]] const_iterator cbegin() const noexcept { return begin(); }
-    [[nodiscard]] const_iterator cend() const noexcept { return end(); }
+    iterator begin() noexcept { return {this, keys_.positions().begin()}; }
+    iterator end() noexcept { return {this, keys_.positions().end()}; }
+    const_iterator begin() const noexcept { return {this, keys_.positions().begin()}; }
+    const_iterator end() const noexcept { return {this, keys_.positions().end()}; }
+    const_iterator cbegin() const noexcept { return begin(); }
+    const_iterator cend() const noexcept { return end(); }
 
   private:
     details::hash_key_table<Key, Hash, Equal> keys_;

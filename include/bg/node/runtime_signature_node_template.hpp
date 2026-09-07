@@ -69,23 +69,23 @@ template <details::runtime_signature_node Definition> class RuntimeSignatureNode
         return owned(std::forward<Arguments>(arguments)...);
     }
 
-    [[nodiscard]] const Signature &signature() const override { return definition_.signature(); }
+    const Signature &signature() const override { return definition_.signature(); }
 
-    [[nodiscard]] EvaluationFunction evaluation_function(const ResolvedSignature &) const noexcept override {
+    EvaluationFunction evaluation_function(const ResolvedSignature &) const noexcept override {
         if constexpr (requires(Invocation invocation) { Definition::evaluate(invocation); }) {
             return &evaluate;
         }
         return nullptr;
     }
 
-    [[nodiscard]] EvaluationFunction start_function(const ResolvedSignature &) const noexcept override {
+    EvaluationFunction start_function(const ResolvedSignature &) const noexcept override {
         if constexpr (requires(Invocation invocation) { Definition::start(invocation); }) {
             return &start;
         }
         return nullptr;
     }
 
-    [[nodiscard]] EvaluationFunction stop_function(const ResolvedSignature &) const noexcept override {
+    EvaluationFunction stop_function(const ResolvedSignature &) const noexcept override {
         if constexpr (requires(Invocation invocation) { Definition::stop(invocation); }) {
             static_assert(noexcept(Definition::stop(std::declval<Invocation>())));
             return &stop;
@@ -93,48 +93,48 @@ template <details::runtime_signature_node Definition> class RuntimeSignatureNode
         return nullptr;
     }
 
-    [[nodiscard]] InvalidationBehavior invalidation_behavior(const ResolvedSignature &) const noexcept override {
+    InvalidationBehavior invalidation_behavior(const ResolvedSignature &) const noexcept override {
         if constexpr (requires(Invocation invocation) { Definition::on_invalidation(invocation); }) {
             return {InvalidationMode::invoke, &invalidate};
         }
         return {};
     }
 
-    [[nodiscard]] bool uses_time_series_input_runtime_type(std::size_t parameter_index) const noexcept override {
+    bool uses_time_series_input_runtime_type(std::size_t parameter_index) const noexcept override {
         return signature_parameter(parameter_index).type->is_time_series();
     }
 
-    [[nodiscard]] bool uses_scalar_input_runtime_type(std::size_t parameter_index) const noexcept override {
+    bool uses_scalar_input_runtime_type(std::size_t parameter_index) const noexcept override {
         return signature_parameter(parameter_index).type->is_scalar();
     }
 
-    [[nodiscard]] bool uses_output_runtime_type() const noexcept override {
+    bool uses_output_runtime_type() const noexcept override {
         return definition_.signature().has_output();
     }
-    [[nodiscard]] bool uses_node_invocation() const noexcept override { return true; }
+    bool uses_node_invocation() const noexcept override { return true; }
 
-    [[nodiscard]] bool uses_future_scheduling() const noexcept override {
+    bool uses_future_scheduling() const noexcept override {
         if constexpr (requires { Definition::uses_future_scheduling; }) {
             return Definition::uses_future_scheduling;
         }
         return false;
     }
 
-    [[nodiscard]] bool uses_cycle_callbacks() const noexcept override {
+    bool uses_cycle_callbacks() const noexcept override {
         if constexpr (requires { Definition::uses_cycle_callbacks; }) {
             return Definition::uses_cycle_callbacks;
         }
         return false;
     }
 
-    [[nodiscard]] const TimeSeriesRuntimeType *
+    const TimeSeriesRuntimeType *
     output_runtime_type(const ResolvedSignature &signature,
                         std::span<const ScalarRuntimeType *const> parameter_runtime_types,
                         std::span<const TimeSeriesRuntimeType *const> input_runtime_types) const noexcept override {
         return definition_.output_runtime_type(signature, parameter_runtime_types, input_runtime_types);
     }
 
-    [[nodiscard]] NodeStateLayout state_layout(const ResolvedSignature &, std::span<const ScalarRuntimeType *const>,
+    NodeStateLayout state_layout(const ResolvedSignature &, std::span<const ScalarRuntimeType *const>,
                                                std::span<const ScalarType *const>) const override {
         if constexpr (std::is_void_v<State>) {
             return {};
@@ -154,7 +154,7 @@ template <details::runtime_signature_node Definition> class RuntimeSignatureNode
         }
     }
 
-    [[nodiscard]] EvaluationFunction state_destruction_function(const ResolvedSignature &) const noexcept override {
+    EvaluationFunction state_destruction_function(const ResolvedSignature &) const noexcept override {
         if constexpr (requires(Invocation invocation) { Definition::destroy_state(invocation); }) {
             static_assert(noexcept(Definition::destroy_state(std::declval<Invocation>())));
             return &destroy_state;
@@ -162,7 +162,7 @@ template <details::runtime_signature_node Definition> class RuntimeSignatureNode
         return nullptr;
     }
 
-    [[nodiscard]] CompiledNodeDataLayout compiled_data_layout(const ResolvedSignature &) const noexcept override {
+    CompiledNodeDataLayout compiled_data_layout(const ResolvedSignature &) const noexcept override {
         if constexpr (std::is_void_v<CompiledData>) {
             return {};
         } else {

@@ -4,7 +4,7 @@
 #include <bg/graph/wiring_context.hpp>
 #include <bg/node.hpp>
 #include <bg/node/input.hpp>
-#include <bg/run_graph.hpp>
+#include <bg/testing/test_graph.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -79,15 +79,13 @@ struct generic_list_source_definition {
 TEST_CASE("a generic scalar list resolves its item view",
           "[evaluation][views][feature:time-series-view][declaration:generic]") {
     const auto generic_list_source = bg::node<generic_list_source_definition>();
-    const auto float_sink = bg::node<float_sink_definition>();
-    float_sink_definition::evaluation_count = 0;
     const auto values = std::vector{2.5F};
     const auto list = bg::ScalarValue<bg::List<float>>{values};
+    const auto graph = [&] { return generic_list_source(list); };
 
-    bg::run_graph([&] { float_sink(generic_list_source(list)); });
+    const auto actual = bg::testing::test_graph(graph);
 
-    CHECK(float_sink_definition::evaluation_count == 1);
-    CHECK(float_sink_definition::last_value == 2.5F);
+    CHECK(actual.equals<float>({2.5F}));
 }
 
 namespace {
@@ -114,13 +112,11 @@ TEST_CASE("a generic scalar time-series view preserves its resolved scalar type"
           "[evaluation][views][feature:time-series-view][declaration:generic]") {
     const auto starting_source = bg::node<starting_source_definition>();
     const auto generic_value_copy = bg::node<generic_value_copy_definition>();
-    const auto float_sink = bg::node<float_sink_definition>();
-    float_sink_definition::evaluation_count = 0;
+    const auto graph = [&] { return generic_value_copy(starting_source(2.5F)); };
 
-    bg::run_graph([&] { float_sink(generic_value_copy(starting_source(2.5F))); });
+    const auto actual = bg::testing::test_graph(graph);
 
-    CHECK(float_sink_definition::evaluation_count == 1);
-    CHECK(float_sink_definition::last_value == 2.5F);
+    CHECK(actual.equals<float>({2.5F}));
 }
 
 namespace {
@@ -142,40 +138,17 @@ struct double_source_definition {
     void evaluate() const { output.set(1.5); }
 };
 
-struct double_sink_definition {
-    bg::In<bg::TS<double>> input;
-
-    void evaluate() const {
-        ++evaluation_count;
-        last_value = *input;
-    }
-
-    inline static int evaluation_count{};
-    inline static double last_value{};
-};
-
 } // namespace
 
 TEST_CASE("a generic time-series view preserves its resolved time-series type",
           "[evaluation][views][feature:time-series-view][declaration:generic]") {
     const auto generic_copy = bg::node<generic_copy_definition>();
     const auto double_source = bg::node<double_source_definition>();
-    const auto double_sink = bg::node<double_sink_definition>();
-    double_sink_definition::evaluation_count = 0;
+    const auto graph = [&] { return generic_copy(double_source()); };
 
-    bg::GraphWiring wiring;
-    {
-        bg::WiringContext context{wiring};
-        double_sink(generic_copy(double_source()));
-    }
+    const auto actual = bg::testing::test_graph(graph);
 
-    const bg::CompiledGraph compiled{wiring};
-    bg::RuntimeGraph runtime{compiled};
-    runtime.start(time(1));
-    runtime.evaluate(time(1));
-
-    CHECK(double_sink_definition::evaluation_count == 1);
-    CHECK(double_sink_definition::last_value == 1.5);
+    CHECK(actual.equals({1.5}));
 }
 
 namespace {
@@ -212,12 +185,11 @@ struct generic_list_view_copy_definition {
     inline static std::size_t output_size{};
 };
 
-struct generic_list_view_sink_definition {
+struct generic_list_view_value_definition {
     bg::In<bg::TSL<bg::TS<int>, 2>> input;
+    bg::Out<bg::TS<int>> output;
 
-    void evaluate() const { value = *input[0]; }
-
-    inline static int value{};
+    void evaluate() const { output.set(*input[0]); }
 };
 
 } // namespace
@@ -226,16 +198,16 @@ TEST_CASE("generic time-series list views expose their resolved size and items",
           "[evaluation][views][tsl][series:fixed-tsl][feature:time-series-view][declaration:generic]") {
     const auto source = bg::node<generic_list_view_source_definition>();
     const auto copy = bg::node<generic_list_view_copy_definition>();
-    const auto sink = bg::node<generic_list_view_sink_definition>();
+    const auto value = bg::node<generic_list_view_value_definition>();
     generic_list_view_copy_definition::input_size = 0;
     generic_list_view_copy_definition::output_size = 0;
-    generic_list_view_sink_definition::value = 0;
+    const auto graph = [&] { return value(copy(source())); };
 
-    bg::run_graph([&] { sink(copy(source())); });
+    const auto actual = bg::testing::test_graph(graph);
 
     CHECK(generic_list_view_copy_definition::input_size == 2);
     CHECK(generic_list_view_copy_definition::output_size == 2);
-    CHECK(generic_list_view_sink_definition::value == 7);
+    CHECK(actual.equals<int>({7}));
 }
 
 namespace {
@@ -281,12 +253,11 @@ struct generic_bundle_view_copy_definition {
     inline static bg::util::symbol second_name{""};
 };
 
-struct generic_bundle_view_sink_definition {
+struct generic_bundle_view_value_definition {
     bg::In<bg::TSB<RuntimeViewBundle>> input;
+    bg::Out<bg::TS<int>> output;
 
-    void evaluate() const { count = *input->count; }
-
-    inline static int count{};
+    void evaluate() const { output.set(*input->count); }
 };
 
 } // namespace
@@ -296,18 +267,18 @@ TEST_CASE("generic bundle views expose their resolved schema and items",
           "[schema:generic]") {
     const auto source = bg::node<generic_bundle_view_source_definition>();
     const auto copy = bg::node<generic_bundle_view_copy_definition>();
-    const auto sink = bg::node<generic_bundle_view_sink_definition>();
+    const auto value = bg::node<generic_bundle_view_value_definition>();
     generic_bundle_view_copy_definition::input_size = 0;
     generic_bundle_view_copy_definition::output_size = 0;
     generic_bundle_view_copy_definition::first_name = bg::util::symbol{""};
     generic_bundle_view_copy_definition::second_name = bg::util::symbol{""};
-    generic_bundle_view_sink_definition::count = 0;
+    const auto graph = [&] { return value(copy(source())); };
 
-    bg::run_graph([&] { sink(copy(source())); });
+    const auto actual = bg::testing::test_graph(graph);
 
     CHECK(generic_bundle_view_copy_definition::input_size == 2);
     CHECK(generic_bundle_view_copy_definition::output_size == 2);
     CHECK(generic_bundle_view_copy_definition::first_name.text() == "count");
     CHECK(generic_bundle_view_copy_definition::second_name.text() == "value");
-    CHECK(generic_bundle_view_sink_definition::count == 4);
+    CHECK(actual.equals<int>({4}));
 }

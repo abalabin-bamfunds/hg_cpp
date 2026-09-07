@@ -24,7 +24,7 @@ namespace bg::details {
 template <typename T>
 concept time_series_declaration = supported_time_series<T>;
 
-template <typename Function, std::size_t Index> [[nodiscard]] const Type &graph_parameter_type(util::symbol name) {
+template <typename Function, std::size_t Index> const Type &graph_parameter_type(util::symbol name) {
     using Parameter = std::remove_cvref_t<typename callable<Function>::template argument_type<Index>>;
 
     if constexpr (is_typed_wiring_point<Parameter>) {
@@ -61,7 +61,7 @@ void add_graph_parameter(std::vector<Parameter> &parameters, std::span<const std
                           supported_optional_scalar_argument<Value>});
 }
 
-template <typename Function> [[nodiscard]] const TimeSeriesType &graph_output_type() {
+template <typename Function> const TimeSeriesType &graph_output_type() {
     using Result = std::remove_cvref_t<typename callable<Function>::result_type>;
     static_assert(is_typed_wiring_point<Result>, "a graph function must return void or wp");
     using TimeSeries = typename typed_wiring_point<Result>::time_series_type;

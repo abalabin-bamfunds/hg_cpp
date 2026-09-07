@@ -51,7 +51,7 @@ template <typename T, typename Base> class CppScalarRuntimeTypeBase : public Bas
                           scalar_data_value<T>(ScalarData{*this, data, mode}));
     }
 
-    [[nodiscard]] std::size_t hash(ScalarDataMode mode, std::uintptr_t data) const noexcept override {
+    std::size_t hash(ScalarDataMode mode, std::uintptr_t data) const noexcept override {
         if constexpr (Traits::supports_hash) {
             return Traits::hash(scalar_data_value<T>(ScalarData{*this, data, mode}));
         } else {
@@ -59,7 +59,7 @@ template <typename T, typename Base> class CppScalarRuntimeTypeBase : public Bas
         }
     }
 
-    [[nodiscard]] bool equals(ScalarDataMode mode, std::uintptr_t data,
+    bool equals(ScalarDataMode mode, std::uintptr_t data,
                               const details::ScalarData &other) const noexcept override {
         if constexpr (Traits::supports_equality) {
             return &this->type() == &other.type() &&
@@ -126,7 +126,7 @@ template <typename T, typename Base> class CppScalarRuntimeTypeBase : public Bas
         assign_from_value(destination, std::addressof(current));
     }
 
-    [[nodiscard]] std::size_t hash(const void *value) const noexcept override {
+    std::size_t hash(const void *value) const noexcept override {
         if constexpr (Traits::supports_hash) {
             return Traits::hash(Traits::read(*static_cast<const Stored *>(value)));
         } else {
@@ -134,7 +134,7 @@ template <typename T, typename Base> class CppScalarRuntimeTypeBase : public Bas
         }
     }
 
-    [[nodiscard]] bool equals_same_type(const void *value, const details::ScalarData &other) const noexcept override {
+    bool equals_same_type(const void *value, const details::ScalarData &other) const noexcept override {
         if constexpr (Traits::supports_equality) {
             return Traits::read(*static_cast<const Stored *>(value)) == scalar_data_value<T>(other);
         } else {
@@ -170,5 +170,14 @@ template <typename T> const ScalarRuntimeType &cpp_scalar_runtime_type() {
 
     return runtime_type;
 }
+
+extern template const ScalarRuntimeType &cpp_scalar_runtime_type<bool>();
+extern template const ScalarRuntimeType &cpp_scalar_runtime_type<int>();
+extern template const ScalarRuntimeType &cpp_scalar_runtime_type<std::int64_t>();
+extern template const ScalarRuntimeType &cpp_scalar_runtime_type<float>();
+extern template const ScalarRuntimeType &cpp_scalar_runtime_type<double>();
+extern template const ScalarRuntimeType &cpp_scalar_runtime_type<EvaluationTime>();
+extern template const ScalarRuntimeType &cpp_scalar_runtime_type<string>();
+extern template const ScalarRuntimeType &cpp_scalar_runtime_type<util::symbol>();
 
 } // namespace bg

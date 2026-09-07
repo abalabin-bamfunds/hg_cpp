@@ -194,9 +194,11 @@ bg::In<bg::TS<float>, "value"_n>
 Property order has no meaning. A property can be omitted without spelling the
 properties before it. Repeating a property category is a compile error.
 
-All time series types provide `valid()` and `last_updated()`. `TS<T>::value()`
-returns `const T&`. `value()` and `last_updated()` require a valid time series.
-Collection time series provide their type-specific change queries.
+All time series types provide `valid()`, `modified()`, and `last_updated()`.
+`modified()` reports whether the visible last-updated time is the current
+evaluation time. `TS<T>::value()` returns `const T&`. `value()` and
+`last_updated()` require a valid time series. Collection time series provide
+their type-specific change queries.
 
 A time series dictionary input can request the `valid_items` guarantee. Its
 view exposes only keys whose item time series are valid. It reports:
@@ -209,7 +211,7 @@ The view derives these changes from the source dictionary. An equal-type
 binding selects this view directly.
 
 An `In` value is valid for one function call. Its last-updated time includes
-[sampling](time-series-references.md#subscriptions) when the input is bound
+[sampling](time-series-references.md#input-sampling) when the input is bound
 through a reference.
 
 Fully specified and generic inputs expose the same common interface to helper

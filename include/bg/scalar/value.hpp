@@ -72,10 +72,10 @@ template <typename T> class ScalarValue {
         return *this;
     }
 
-    [[nodiscard]] Scalar<T> view() const & noexcept { return Scalar<T>::from(value_); }
-    [[nodiscard]] Scalar<T> view() const && = delete;
-    [[nodiscard]] const View &input_view() const & noexcept { return value_; }
-    [[nodiscard]] const View &input_view() const && = delete;
+    Scalar<T> view() const & noexcept { return Scalar<T>::from(value_); }
+    Scalar<T> view() const && = delete;
+    const View &input_view() const & noexcept { return value_; }
+    const View &input_view() const && = delete;
 
     using scalar_type = T;
 
@@ -143,10 +143,10 @@ template <> class ScalarValue<> {
         return *this;
     }
 
-    [[nodiscard]] Scalar<> view() const & noexcept { return Scalar<>::from(value_); }
-    [[nodiscard]] Scalar<> view() const && = delete;
-    [[nodiscard]] const details::ScalarData &input_view() const & noexcept { return value_; }
-    [[nodiscard]] const details::ScalarData &input_view() const && = delete;
+    Scalar<> view() const & noexcept { return Scalar<>::from(value_); }
+    Scalar<> view() const && = delete;
+    const details::ScalarData &input_view() const & noexcept { return value_; }
+    const details::ScalarData &input_view() const && = delete;
 
     using scalar_type = void;
 
@@ -195,7 +195,7 @@ concept EqualityComparableScalarHandle = ScalarHandle<T> && scalar_handle_suppor
 } // namespace details
 
 template <details::EqualityComparableScalarHandle Left, details::EqualityComparableScalarHandle Right>
-[[nodiscard]] bool operator==(const Left &left, const Right &right) noexcept {
+bool operator==(const Left &left, const Right &right) noexcept {
     using LeftScalar = typename std::remove_cvref_t<Left>::scalar_type;
     using RightScalar = typename std::remove_cvref_t<Right>::scalar_type;
 

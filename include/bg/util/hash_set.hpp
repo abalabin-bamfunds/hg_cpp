@@ -39,15 +39,15 @@ template <typename Key, typename Hash = std::hash<Key>, typename Equal = std::eq
         return {&keys_.key_at(result.position), result.inserted};
     }
 
-    template <typename Lookup> [[nodiscard]] const Key *find(const Lookup &key) const {
+    template <typename Lookup> const Key *find(const Lookup &key) const {
         const auto position = keys_.find_position(key);
 
         return position == occupancy_index::npos ? nullptr : &keys_.key_at(position);
     }
 
-    template <typename Lookup> [[nodiscard]] bool contains(const Lookup &key) const { return find(key) != nullptr; }
+    template <typename Lookup> bool contains(const Lookup &key) const { return find(key) != nullptr; }
 
-    template <typename Predicate> [[nodiscard]] bool contains_with(std::size_t hash, Predicate &&matches) const {
+    template <typename Predicate> bool contains_with(std::size_t hash, Predicate &&matches) const {
         return keys_.find_position_with(hash, std::forward<Predicate>(matches)) != occupancy_index::npos;
     }
 
@@ -82,8 +82,8 @@ template <typename Key, typename Hash = std::hash<Key>, typename Equal = std::eq
         keys_.release_with(memory, std::forward<Destructor>(destroy));
     }
 
-    [[nodiscard]] size_type size() const noexcept { return keys_.size(); }
-    [[nodiscard]] bool empty() const noexcept { return keys_.empty(); }
+    size_type size() const noexcept { return keys_.size(); }
+    bool empty() const noexcept { return keys_.empty(); }
 
     void swap(hash_set &other) noexcept(noexcept(keys_.swap(other.keys_))) { keys_.swap(other.keys_); }
 
@@ -97,7 +97,7 @@ template <typename Key, typename Hash = std::hash<Key>, typename Equal = std::eq
 
         iterator() = default;
 
-        [[nodiscard]] reference operator*() const noexcept { return set_->keys_.key_at(*position_); }
+        reference operator*() const noexcept { return set_->keys_.key_at(*position_); }
         iterator &operator++() noexcept {
             ++position_;
             return *this;
@@ -118,8 +118,8 @@ template <typename Key, typename Hash = std::hash<Key>, typename Equal = std::eq
         occupancy_index::iterator position_;
     };
 
-    [[nodiscard]] iterator begin() const noexcept { return {this, keys_.positions().begin()}; }
-    [[nodiscard]] iterator end() const noexcept { return {this, keys_.positions().end()}; }
+    iterator begin() const noexcept { return {this, keys_.positions().begin()}; }
+    iterator end() const noexcept { return {this, keys_.positions().end()}; }
 
   private:
     details::hash_key_table<Key, Hash, Equal> keys_;

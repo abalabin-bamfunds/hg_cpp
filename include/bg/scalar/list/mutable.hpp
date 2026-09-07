@@ -18,9 +18,9 @@ template <typename T> class MutableList : public List<T> {
   public:
     explicit MutableList(Storage &storage) noexcept : Base{storage} {}
 
-    [[nodiscard]] std::size_t size() const noexcept { return Base::size(); }
-    [[nodiscard]] bool empty() const noexcept { return Base::empty(); }
-    [[nodiscard]] decltype(auto) operator[](std::size_t index) const noexcept;
+    std::size_t size() const noexcept { return Base::size(); }
+    bool empty() const noexcept { return Base::empty(); }
+    decltype(auto) operator[](std::size_t index) const noexcept;
 
     void append(typename Traits::value_type value) const {
         auto &memory = details::current_scalar_memory_resource();
@@ -50,7 +50,7 @@ template <typename T> class MutableList : public List<T> {
 
   private:
     // MutableList is constructed from mutable storage; List retains the same pointer for read-only access.
-    [[nodiscard]] Storage &mutable_storage() const noexcept { return const_cast<Storage &>(Base::storage()); }
+    Storage &mutable_storage() const noexcept { return const_cast<Storage &>(Base::storage()); }
 };
 
 } // namespace bg

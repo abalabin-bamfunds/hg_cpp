@@ -12,14 +12,14 @@ class ResolvedTypeScalarType final : public TypeScalarType {
   public:
     explicit ResolvedTypeScalarType(const Type &type) : TypeScalarType(type) {}
 
-    [[nodiscard]] bool is_resolved() const noexcept override { return true; }
+    bool is_resolved() const noexcept override { return true; }
 
     [[nodiscard]] const Type &resolve(const TypeMap &) const override { return *this; }
 };
 
 class TypeScalarTypes {
   public:
-    [[nodiscard]] const TypeScalarType &get(const Type &type) {
+    const TypeScalarType &get(const Type &type) {
         const std::lock_guard lock(mutex_);
 
         if (const auto found = types_.find(&type); found != types_.end()) {

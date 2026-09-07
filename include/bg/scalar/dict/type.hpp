@@ -45,11 +45,11 @@ template <typename K, typename V> class Dict {
     template <typename> friend struct details::scalar_storage_traits;
     friend class MutableDict<K, V>;
 
-    [[nodiscard]] std::size_t size() const noexcept { return storage_->items.size(); }
-    [[nodiscard]] bool empty() const noexcept { return storage_->items.empty(); }
-    [[nodiscard]] bool contains(key_value_type key) const { return storage_->items.contains(key); }
+    std::size_t size() const noexcept { return storage_->items.size(); }
+    bool empty() const noexcept { return storage_->items.empty(); }
+    bool contains(key_value_type key) const { return storage_->items.contains(key); }
 
-    [[nodiscard]] mapped_value_type at(key_value_type key) const {
+    mapped_value_type at(key_value_type key) const {
         const auto *value = storage_->items.find(key);
         if (value == nullptr) {
             throw std::out_of_range{"dictionary key was not found"};
@@ -72,7 +72,7 @@ template <typename K, typename V> class Dict {
 
         iterator() = default;
 
-        [[nodiscard]] value_type operator*() const noexcept {
+        value_type operator*() const noexcept {
             const auto [key, value] = *position_;
             return {KeyTraits::read(key), ValueTraits::read(value)};
         }
@@ -95,8 +95,8 @@ template <typename K, typename V> class Dict {
         typename Storage::Items::const_iterator position_;
     };
 
-    [[nodiscard]] iterator begin() const noexcept { return iterator{storage_->items.begin()}; }
-    [[nodiscard]] iterator end() const noexcept { return iterator{storage_->items.end()}; }
+    iterator begin() const noexcept { return iterator{storage_->items.begin()}; }
+    iterator end() const noexcept { return iterator{storage_->items.end()}; }
 
     friend bool operator==(const Dict &left, const Dict &right) {
         if (left.size() != right.size()) {
@@ -114,7 +114,7 @@ template <typename K, typename V> class Dict {
 
     explicit Dict(const Storage &storage) noexcept : storage_(&storage) {}
 
-    [[nodiscard]] const Storage &storage() const noexcept { return *storage_; }
+    const Storage &storage() const noexcept { return *storage_; }
 
     const Storage *storage_{};
 };

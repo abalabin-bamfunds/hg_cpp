@@ -8,6 +8,8 @@
 
 namespace bg {
 
+Type::~Type() = default;
+
 bool Type::match(const Type &supplied, TypeMap &bindings) const {
     const auto *parameter_reference = dynamic_cast<const TimeSeriesReferenceType *>(this);
     const auto *argument_reference = dynamic_cast<const TimeSeriesReferenceType *>(&supplied);

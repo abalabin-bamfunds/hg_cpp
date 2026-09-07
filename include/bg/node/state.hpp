@@ -17,8 +17,8 @@ template <typename T> class State {
   public:
     explicit State(T &value) noexcept : value_(&value) {}
 
-    [[nodiscard]] T *operator->() const noexcept { return value_; }
-    [[nodiscard]] T &operator*() const noexcept { return *value_; }
+    T *operator->() const noexcept { return value_; }
+    T &operator*() const noexcept { return *value_; }
 
     using value_type = T;
 
@@ -33,10 +33,10 @@ template <details::mutable_scalar T> class State<T> {
   public:
     explicit State(typename Traits::storage_type &value) noexcept : value_{value} {}
 
-    [[nodiscard]] View *operator->() noexcept { return &value_; }
-    [[nodiscard]] const View *operator->() const noexcept { return &value_; }
-    [[nodiscard]] View &operator*() noexcept { return value_; }
-    [[nodiscard]] const View &operator*() const noexcept { return value_; }
+    View *operator->() noexcept { return &value_; }
+    const View *operator->() const noexcept { return &value_; }
+    View &operator*() noexcept { return value_; }
+    const View &operator*() const noexcept { return value_; }
 
     using value_type = T;
 
@@ -51,13 +51,13 @@ class State<List<T>> {
     State(const ScalarRuntimeType &runtime_type, void *value) noexcept
         : runtime_type_{&static_cast<const ScalarListRuntimeType &>(runtime_type)}, value_{value} {}
 
-    [[nodiscard]] State *operator->() noexcept { return this; }
-    [[nodiscard]] const State *operator->() const noexcept { return this; }
+    State *operator->() noexcept { return this; }
+    const State *operator->() const noexcept { return this; }
 
-    [[nodiscard]] std::size_t size() const noexcept { return runtime_type_->item_count(value_); }
-    [[nodiscard]] bool empty() const noexcept { return size() == 0; }
+    std::size_t size() const noexcept { return runtime_type_->item_count(value_); }
+    bool empty() const noexcept { return size() == 0; }
 
-    [[nodiscard]] auto operator[](std::size_t index) const {
+    auto operator[](std::size_t index) const {
         auto *data = runtime_type_->item(value_, index);
         const auto &item = runtime_type_->item_runtime_type();
         if constexpr (details::scalar_type_traits<T>::is_collection) {
@@ -90,11 +90,11 @@ class State<Set<T>> {
     State(const ScalarRuntimeType &runtime_type, void *value) noexcept
         : runtime_type_{&static_cast<const ScalarSetRuntimeType &>(runtime_type)}, value_{value} {}
 
-    [[nodiscard]] State *operator->() noexcept { return this; }
-    [[nodiscard]] const State *operator->() const noexcept { return this; }
-    [[nodiscard]] std::size_t size() const noexcept { return runtime_type_->item_count(value_); }
-    [[nodiscard]] bool empty() const noexcept { return size() == 0; }
-    [[nodiscard]] bool contains(const Scalar<T> &value) const {
+    State *operator->() noexcept { return this; }
+    const State *operator->() const noexcept { return this; }
+    std::size_t size() const noexcept { return runtime_type_->item_count(value_); }
+    bool empty() const noexcept { return size() == 0; }
+    bool contains(const Scalar<T> &value) const {
         return runtime_type_->contains(value_, value.input_view());
     }
     [[nodiscard]] bool insert(const Scalar<T> &value) const {
@@ -119,15 +119,15 @@ class State<Dict<K, V>> {
     State(const ScalarRuntimeType &runtime_type, void *value) noexcept
         : runtime_type_{&static_cast<const ScalarDictRuntimeType &>(runtime_type)}, value_{value} {}
 
-    [[nodiscard]] State *operator->() noexcept { return this; }
-    [[nodiscard]] const State *operator->() const noexcept { return this; }
-    [[nodiscard]] std::size_t size() const noexcept { return runtime_type_->item_count(value_); }
-    [[nodiscard]] bool empty() const noexcept { return size() == 0; }
-    [[nodiscard]] bool contains(const Scalar<K> &key) const {
+    State *operator->() noexcept { return this; }
+    const State *operator->() const noexcept { return this; }
+    std::size_t size() const noexcept { return runtime_type_->item_count(value_); }
+    bool empty() const noexcept { return size() == 0; }
+    bool contains(const Scalar<K> &key) const {
         return runtime_type_->contains(value_, key.input_view());
     }
 
-    [[nodiscard]] auto at(const Scalar<K> &key) const {
+    auto at(const Scalar<K> &key) const {
         const auto item = runtime_type_->at(value_, key.input_view());
         if constexpr (details::scalar_type_traits<V>::is_collection) {
             if constexpr (details::generic_scalar<V>) {

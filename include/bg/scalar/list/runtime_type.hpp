@@ -17,10 +17,10 @@ class ScalarListRuntimeType : public ScalarRuntimeType {
           item_{&item} {}
 
   public:
-    [[nodiscard]] const ScalarRuntimeType &item_runtime_type() const noexcept { return *item_; }
-    [[nodiscard]] virtual std::size_t item_count(const void *storage) const noexcept = 0;
-    [[nodiscard]] virtual const void *item(const void *storage, std::size_t index) const noexcept = 0;
-    [[nodiscard]] virtual void *item(void *storage, std::size_t index) const noexcept = 0;
+    const ScalarRuntimeType &item_runtime_type() const noexcept { return *item_; }
+    virtual std::size_t item_count(const void *storage) const noexcept = 0;
+    virtual const void *item(const void *storage, std::size_t index) const noexcept = 0;
+    virtual void *item(void *storage, std::size_t index) const noexcept = 0;
 
     virtual void append(void *storage, const details::ScalarData &value, std::pmr::memory_resource &memory) const = 0;
     virtual void set(void *storage, std::size_t index, const details::ScalarData &value) const = 0;
@@ -28,7 +28,7 @@ class ScalarListRuntimeType : public ScalarRuntimeType {
     virtual void clear(void *storage, std::pmr::memory_resource &memory) const noexcept = 0;
 
   private:
-    [[nodiscard]] const ScalarRuntimeType *contained_runtime_type_for(const ScalarType &type) const noexcept override {
+    const ScalarRuntimeType *contained_runtime_type_for(const ScalarType &type) const noexcept override {
         return item_->runtime_type_for(type);
     }
 

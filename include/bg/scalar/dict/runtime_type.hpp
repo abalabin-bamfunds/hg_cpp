@@ -34,12 +34,12 @@ class ScalarDictRuntimeType : public ScalarRuntimeType {
 
     using EntryFunction = void (*)(void *, Entry);
 
-    [[nodiscard]] const ScalarRuntimeType &key_runtime_type() const noexcept { return *key_; }
-    [[nodiscard]] const ScalarRuntimeType &mapped_runtime_type() const noexcept { return *mapped_; }
-    [[nodiscard]] virtual std::size_t item_count(const void *storage) const noexcept = 0;
-    [[nodiscard]] virtual bool contains(const void *storage, const details::ScalarData &key) const = 0;
-    [[nodiscard]] virtual ConstItem at(const void *storage, const details::ScalarData &key) const = 0;
-    [[nodiscard]] virtual Item at(void *storage, const details::ScalarData &key) const = 0;
+    const ScalarRuntimeType &key_runtime_type() const noexcept { return *key_; }
+    const ScalarRuntimeType &mapped_runtime_type() const noexcept { return *mapped_; }
+    virtual std::size_t item_count(const void *storage) const noexcept = 0;
+    virtual bool contains(const void *storage, const details::ScalarData &key) const = 0;
+    virtual ConstItem at(const void *storage, const details::ScalarData &key) const = 0;
+    virtual Item at(void *storage, const details::ScalarData &key) const = 0;
     virtual void for_each(const void *storage, void *context, EntryFunction function) const = 0;
 
     virtual void insert_or_assign(void *storage, const details::ScalarData &key, const details::ScalarData &value,
@@ -49,7 +49,7 @@ class ScalarDictRuntimeType : public ScalarRuntimeType {
     virtual void clear(void *storage, std::pmr::memory_resource &memory) const noexcept = 0;
 
   private:
-    [[nodiscard]] const ScalarRuntimeType *contained_runtime_type_for(const ScalarType &type) const noexcept override {
+    const ScalarRuntimeType *contained_runtime_type_for(const ScalarType &type) const noexcept override {
         if (const auto *runtime_type = key_->runtime_type_for(type)) {
             return runtime_type;
         }

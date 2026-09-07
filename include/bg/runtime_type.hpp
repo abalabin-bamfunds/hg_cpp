@@ -10,9 +10,9 @@ class Type;
 
 class RuntimeType {
   public:
-    virtual ~RuntimeType() = default;
+    virtual ~RuntimeType();
 
-    [[nodiscard]] const Type &type() const noexcept { return *type_; }
+    const Type &type() const noexcept { return *type_; }
 
   protected:
     RuntimeType(const Type &type, std::size_t size, std::size_t alignment, bool uses_variable_memory,
@@ -23,11 +23,11 @@ class RuntimeType {
                                            (requires_finalization ? finalization_flag : 0U) |
                                            (supports_byte_copy_initialization ? byte_copy_flag : 0U))} {}
 
-    [[nodiscard]] std::size_t storage_size() const noexcept { return size_; }
-    [[nodiscard]] std::size_t storage_alignment() const noexcept { return std::size_t{1} << alignment_log2_; }
-    [[nodiscard]] bool storage_uses_variable_memory() const noexcept { return flags_ & variable_memory_flag; }
-    [[nodiscard]] bool storage_requires_finalization() const noexcept { return flags_ & finalization_flag; }
-    [[nodiscard]] bool storage_supports_byte_copy_initialization() const noexcept { return flags_ & byte_copy_flag; }
+    std::size_t storage_size() const noexcept { return size_; }
+    std::size_t storage_alignment() const noexcept { return std::size_t{1} << alignment_log2_; }
+    bool storage_uses_variable_memory() const noexcept { return flags_ & variable_memory_flag; }
+    bool storage_requires_finalization() const noexcept { return flags_ & finalization_flag; }
+    bool storage_supports_byte_copy_initialization() const noexcept { return flags_ & byte_copy_flag; }
 
     void set_storage_layout(std::size_t size, std::size_t alignment, bool uses_variable_memory,
                             bool requires_finalization, bool supports_byte_copy_initialization) noexcept {

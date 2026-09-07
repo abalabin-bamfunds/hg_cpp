@@ -21,9 +21,9 @@ template <typename T> struct scalar_storage_traits<List<T>> {
     static constexpr bool requires_finalization = ItemTraits::requires_finalization;
     static constexpr bool assign_uses_memory_resource = true;
 
-    [[nodiscard]] static value_type read(const stored_type &value) noexcept { return value_type{value}; }
+    static value_type read(const stored_type &value) noexcept { return value_type{value}; }
 
-    [[nodiscard]] static std::size_t hash(value_type value) noexcept {
+    static std::size_t hash(value_type value) noexcept {
         constexpr auto combine_constant = std::size_t{0x9e3779b9};
         auto result = std::size_t{};
 

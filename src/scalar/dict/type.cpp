@@ -19,10 +19,10 @@ class ResolvedDictScalarType final : public DictScalarType {
     ResolvedDictScalarType(const ScalarType &key_type, const ScalarType &mapped_type) noexcept
         : key_type_(&key_type), mapped_type_(&mapped_type) {}
 
-    [[nodiscard]] bool is_resolved() const noexcept override { return true; }
+    bool is_resolved() const noexcept override { return true; }
     [[nodiscard]] const Type &resolve(const TypeMap &) const override { return *this; }
-    [[nodiscard]] const ScalarType &key_type() const noexcept override { return *key_type_; }
-    [[nodiscard]] const ScalarType &mapped_type() const noexcept override { return *mapped_type_; }
+    const ScalarType &key_type() const noexcept override { return *key_type_; }
+    const ScalarType &mapped_type() const noexcept override { return *mapped_type_; }
 
   private:
     const ScalarType *key_type_;

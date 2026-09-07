@@ -2,6 +2,7 @@
 
 #include <bg/scalar/details/value_type.hpp>
 #include <bg/scalar/runtime_type.hpp>
+#include <bg/util/tagged_ptr.hpp>
 
 #include <cstddef>
 #include <cstdint>
@@ -34,25 +35,20 @@ class ScalarData {
 
     ScalarData(const ScalarRuntimeType &runtime_type, std::uintptr_t data,
                ScalarDataMode mode = ScalarDataMode::stored_view) noexcept
-        : runtime_type_{tag(runtime_type, mode)}, data_{data} {}
+        : runtime_type_{&runtime_type, mode}, data_{data} {}
 
-    [[nodiscard]] const ScalarRuntimeType &runtime_type() const noexcept {
-        return *reinterpret_cast<const ScalarRuntimeType *>(reinterpret_cast<std::uintptr_t>(runtime_type_) &
-                                                            ~scalar_data_mode_mask);
-    }
+    const ScalarRuntimeType &runtime_type() const noexcept { return *runtime_type_; }
 
-    [[nodiscard]] ScalarDataMode mode() const noexcept {
-        return static_cast<ScalarDataMode>(reinterpret_cast<std::uintptr_t>(runtime_type_) & scalar_data_mode_mask);
-    }
-    [[nodiscard]] const void *data() const noexcept {
+    ScalarDataMode mode() const noexcept { return runtime_type_.tag(); }
+    const void *data() const noexcept {
         return mode() == ScalarDataMode::inline_value ? std::addressof(data_) : reinterpret_cast<const void *>(data_);
     }
-    [[nodiscard]] const ScalarType &type() const noexcept { return runtime_type().type(); }
-    [[nodiscard]] bool empty() const noexcept { return runtime_type_ == nullptr; }
-    [[nodiscard]] std::uintptr_t data_word() const noexcept { return data_; }
+    const ScalarType &type() const noexcept { return runtime_type().type(); }
+    bool empty() const noexcept { return !runtime_type_; }
+    std::uintptr_t data_word() const noexcept { return data_; }
 
-    [[nodiscard]] std::size_t hash() const noexcept { return runtime_type().hash(mode(), data_); }
-    [[nodiscard]] bool equals(const ScalarData &other) const noexcept {
+    std::size_t hash() const noexcept { return runtime_type().hash(mode(), data_); }
+    bool equals(const ScalarData &other) const noexcept {
         return runtime_type().equals(mode(), data_, other);
     }
 
@@ -72,18 +68,12 @@ class ScalarData {
     }
 
   private:
-    [[nodiscard]] static const ScalarRuntimeType *tag(const ScalarRuntimeType &runtime_type,
-                                                      ScalarDataMode mode) noexcept {
-        const auto pointer = reinterpret_cast<std::uintptr_t>(std::addressof(runtime_type));
-        return reinterpret_cast<const ScalarRuntimeType *>(pointer | std::to_underlying(mode));
-    }
-
-    const ScalarRuntimeType *runtime_type_{};
+    util::tagged_ptr<const ScalarRuntimeType, 3, ScalarDataMode> runtime_type_;
     std::uintptr_t data_{};
 };
 
 static_assert(sizeof(ScalarData) == 2 * sizeof(void *));
 
-template <typename T> [[nodiscard]] scalar_value_t<T> scalar_data_value(const ScalarData &source);
+template <typename T> scalar_value_t<T> scalar_data_value(const ScalarData &source);
 
 } // namespace bg::details

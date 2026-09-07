@@ -23,11 +23,11 @@ class GlobalState {
     struct SymbolHash {
         using is_transparent = void;
 
-        [[nodiscard]] std::size_t operator()(util::symbol value) const noexcept {
+        std::size_t operator()(util::symbol value) const noexcept {
             return std::hash<std::string_view>{}(value.text());
         }
 
-        [[nodiscard]] std::size_t operator()(std::string_view value) const noexcept {
+        std::size_t operator()(std::string_view value) const noexcept {
             return std::hash<std::string_view>{}(value);
         }
     };
@@ -35,13 +35,13 @@ class GlobalState {
     struct SymbolEqual {
         using is_transparent = void;
 
-        [[nodiscard]] bool operator()(util::symbol left, util::symbol right) const noexcept { return left == right; }
+        bool operator()(util::symbol left, util::symbol right) const noexcept { return left == right; }
 
-        [[nodiscard]] bool operator()(util::symbol left, std::string_view right) const noexcept {
+        bool operator()(util::symbol left, std::string_view right) const noexcept {
             return left.text() == right;
         }
 
-        [[nodiscard]] bool operator()(std::string_view left, util::symbol right) const noexcept {
+        bool operator()(std::string_view left, util::symbol right) const noexcept {
             return left == right.text();
         }
     };
@@ -54,13 +54,13 @@ class GlobalState {
         ReadAccess(const ReadAccess &) = delete;
         ReadAccess &operator=(const ReadAccess &) = delete;
 
-        [[nodiscard]] bool contains(util::symbol key) const noexcept { return state_->contains(key); }
-        [[nodiscard]] bool contains(std::string_view key) const noexcept { return state_->contains(key); }
+        bool contains(util::symbol key) const noexcept { return state_->contains(key); }
+        bool contains(std::string_view key) const noexcept { return state_->contains(key); }
 
-        [[nodiscard]] Scalar<> at(util::symbol key) const & { return state_->at(key); }
-        [[nodiscard]] Scalar<> at(std::string_view key) const & { return state_->at(key); }
-        [[nodiscard]] Scalar<> at(util::symbol) const && = delete;
-        [[nodiscard]] Scalar<> at(std::string_view) const && = delete;
+        Scalar<> at(util::symbol key) const & { return state_->at(key); }
+        Scalar<> at(std::string_view key) const & { return state_->at(key); }
+        Scalar<> at(util::symbol) const && = delete;
+        Scalar<> at(std::string_view) const && = delete;
 
       private:
         friend GlobalState;
@@ -76,33 +76,33 @@ class GlobalState {
         WriteAccess(const WriteAccess &) = delete;
         WriteAccess &operator=(const WriteAccess &) = delete;
 
-        [[nodiscard]] bool contains(util::symbol key) const noexcept { return state_->contains(key); }
-        [[nodiscard]] bool contains(std::string_view key) const noexcept { return state_->contains(key); }
+        bool contains(util::symbol key) const noexcept { return state_->contains(key); }
+        bool contains(std::string_view key) const noexcept { return state_->contains(key); }
 
-        [[nodiscard]] Scalar<> at(util::symbol key) const & { return state_->at(key); }
-        [[nodiscard]] Scalar<> at(std::string_view key) const & { return state_->at(key); }
-        [[nodiscard]] Scalar<> at(util::symbol) const && = delete;
-        [[nodiscard]] Scalar<> at(std::string_view) const && = delete;
+        Scalar<> at(util::symbol key) const & { return state_->at(key); }
+        Scalar<> at(std::string_view key) const & { return state_->at(key); }
+        Scalar<> at(util::symbol) const && = delete;
+        Scalar<> at(std::string_view) const && = delete;
 
         template <typename T>
             requires details::mutable_scalar<T>
-        [[nodiscard]] auto mutable_at(util::symbol key) const & {
+        auto mutable_at(util::symbol key) const & {
             return state_->template mutable_at<T>(key);
         }
 
         template <typename T>
             requires details::mutable_scalar<T>
-        [[nodiscard]] auto mutable_at(std::string_view key) const & {
+        auto mutable_at(std::string_view key) const & {
             return state_->template mutable_at<T>(key);
         }
 
         template <typename T>
             requires details::mutable_scalar<T>
-        [[nodiscard]] auto mutable_at(util::symbol) const && = delete;
+        auto mutable_at(util::symbol) const && = delete;
 
         template <typename T>
             requires details::mutable_scalar<T>
-        [[nodiscard]] auto mutable_at(std::string_view) const && = delete;
+        auto mutable_at(std::string_view) const && = delete;
 
         template <details::ScalarHandle Value> void set(util::symbol key, const Value &value) {
             state_->set(key, value);
@@ -149,18 +149,18 @@ class GlobalState {
     }
 
   private:
-    [[nodiscard]] bool contains(util::symbol key) const noexcept { return values_.contains(key); }
-    [[nodiscard]] bool contains(std::string_view key) const noexcept { return values_.contains(key); }
+    bool contains(util::symbol key) const noexcept { return values_.contains(key); }
+    bool contains(std::string_view key) const noexcept { return values_.contains(key); }
 
-    [[nodiscard]] const ScalarValue<> *find(util::symbol key) const noexcept { return values_.find(key); }
+    const ScalarValue<> *find(util::symbol key) const noexcept { return values_.find(key); }
 
-    [[nodiscard]] const ScalarValue<> *find(std::string_view key) const noexcept { return values_.find(key); }
+    const ScalarValue<> *find(std::string_view key) const noexcept { return values_.find(key); }
 
-    [[nodiscard]] ScalarValue<> *find(util::symbol key) noexcept { return values_.find(key); }
+    ScalarValue<> *find(util::symbol key) noexcept { return values_.find(key); }
 
-    [[nodiscard]] ScalarValue<> *find(std::string_view key) noexcept { return values_.find(key); }
+    ScalarValue<> *find(std::string_view key) noexcept { return values_.find(key); }
 
-    [[nodiscard]] Scalar<> at(util::symbol key) const {
+    Scalar<> at(util::symbol key) const {
         const auto *value = find(key);
         if (value == nullptr) {
             throw std::out_of_range{"global state key was not found"};
@@ -169,7 +169,7 @@ class GlobalState {
         return value->view();
     }
 
-    [[nodiscard]] Scalar<> at(std::string_view key) const {
+    Scalar<> at(std::string_view key) const {
         const auto *value = find(key);
         if (value == nullptr) {
             throw std::out_of_range{"global state key was not found"};
@@ -184,7 +184,7 @@ class GlobalState {
 
     template <typename T, typename Key>
         requires details::mutable_scalar<T>
-    [[nodiscard]] auto mutable_at(Key key) {
+    auto mutable_at(Key key) {
         auto *value = find(key);
         if (value == nullptr) {
             throw std::out_of_range{"global state key was not found"};

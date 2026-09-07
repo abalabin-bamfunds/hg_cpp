@@ -39,9 +39,9 @@ template <typename T> class Set {
     template <typename> friend struct details::scalar_storage_traits;
     friend class MutableSet<T>;
 
-    [[nodiscard]] std::size_t size() const noexcept { return storage_->items.size(); }
-    [[nodiscard]] bool empty() const noexcept { return storage_->items.empty(); }
-    [[nodiscard]] bool contains(value_type value) const { return storage_->items.contains(value); }
+    std::size_t size() const noexcept { return storage_->items.size(); }
+    bool empty() const noexcept { return storage_->items.empty(); }
+    bool contains(value_type value) const { return storage_->items.contains(value); }
 
     class iterator {
       public:
@@ -52,7 +52,7 @@ template <typename T> class Set {
 
         iterator() = default;
 
-        [[nodiscard]] value_type operator*() const noexcept { return ItemTraits::read(*position_); }
+        value_type operator*() const noexcept { return ItemTraits::read(*position_); }
         iterator &operator++() noexcept {
             ++position_;
             return *this;
@@ -72,8 +72,8 @@ template <typename T> class Set {
         typename Storage::Items::iterator position_;
     };
 
-    [[nodiscard]] iterator begin() const noexcept { return iterator{storage_->items.begin()}; }
-    [[nodiscard]] iterator end() const noexcept { return iterator{storage_->items.end()}; }
+    iterator begin() const noexcept { return iterator{storage_->items.begin()}; }
+    iterator end() const noexcept { return iterator{storage_->items.end()}; }
 
     friend bool operator==(const Set &left, const Set &right) {
         if (left.size() != right.size()) {
@@ -91,7 +91,7 @@ template <typename T> class Set {
 
     explicit Set(const Storage &storage) noexcept : storage_(&storage) {}
 
-    [[nodiscard]] const Storage &storage() const noexcept { return *storage_; }
+    const Storage &storage() const noexcept { return *storage_; }
 
     const Storage *storage_{};
 };

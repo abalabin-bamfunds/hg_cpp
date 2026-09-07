@@ -12,7 +12,7 @@ class GenericTimeSeriesVariableType final : public TimeSeriesType {
     GenericTimeSeriesVariableType(const TypeVariable<TimeSeriesType> &variable, GuaranteeParameter guarantee)
         : TimeSeriesType(guarantee), variable_(&variable) {}
 
-    [[nodiscard]] bool is_resolved() const noexcept override { return false; }
+    bool is_resolved() const noexcept override { return false; }
     [[nodiscard]] const Type &resolve(const TypeMap &bindings) const override;
 
   protected:
@@ -28,7 +28,7 @@ template <typename Scope, typename Declaration> struct TimeSeriesVariableInstanc
 
 template <typename Scope, util::compile_time_string Name>
 struct TimeSeriesVariableInstance<Scope, TimeSeriesVariable<Name>> {
-    [[nodiscard]] static const TypeVariable<TimeSeriesType> &get() {
+    static const TypeVariable<TimeSeriesType> &get() {
         static const auto variable = TypeVariable<TimeSeriesType>{util::symbol{Name.view()}};
 
         return variable;
@@ -37,7 +37,7 @@ struct TimeSeriesVariableInstance<Scope, TimeSeriesVariable<Name>> {
 
 template <typename Scope, typename Variable, auto Guarantee>
 struct TimeSeriesVariableInstance<Scope, TimeSeriesVariableWithGuarantee<Variable, Guarantee>> {
-    [[nodiscard]] static const GenericTimeSeriesVariableType &get() {
+    static const GenericTimeSeriesVariableType &get() {
         static const auto type = GenericTimeSeriesVariableType{TimeSeriesVariableInstance<Scope, Variable>::get(),
                                                                guarantee_parameter<Scope, Guarantee>()};
 
@@ -46,7 +46,7 @@ struct TimeSeriesVariableInstance<Scope, TimeSeriesVariableWithGuarantee<Variabl
 };
 
 template <typename Scope, time_series_variable Declaration>
-[[nodiscard]] const TimeSeriesType &time_series_variable_instance() {
+const TimeSeriesType &time_series_variable_instance() {
     return TimeSeriesVariableInstance<Scope, Declaration>::get();
 }
 

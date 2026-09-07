@@ -17,7 +17,7 @@ class ResolvedTimeSeriesListType final : public TimeSeriesListType {
     ResolvedTimeSeriesListType(const TimeSeriesType &item_type, std::size_t size, TimeSeriesGuarantee guarantee)
         : TimeSeriesListType(item_type, size, guarantee) {}
 
-    [[nodiscard]] bool is_resolved() const noexcept override { return true; }
+    bool is_resolved() const noexcept override { return true; }
     [[nodiscard]] const Type &resolve(const TypeMap &) const override { return *this; }
 };
 
@@ -30,7 +30,7 @@ struct ListTypeKey {
 };
 
 struct ListTypeKeyHash {
-    [[nodiscard]] std::size_t operator()(const ListTypeKey &key) const noexcept {
+    std::size_t operator()(const ListTypeKey &key) const noexcept {
         auto result = std::hash<const TimeSeriesType *>{}(key.item_type);
         result ^= std::hash<std::size_t>{}(key.size) + (result << 6) + (result >> 2);
         result ^= std::hash<int>{}(static_cast<int>(key.guarantee)) + (result << 6) + (result >> 2);

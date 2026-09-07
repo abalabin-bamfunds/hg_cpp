@@ -32,9 +32,15 @@ The inserted node belongs to the graph that owns the source. Wiring reuses one
 such node for each source output and records each representation requested by
 the complete wired graph.
 
-A reference value is a pointer to storage owned by the inserted node. That
-storage identifies the target time series, its runtime type, and its
-dynamic subscribers. Passing a reference copies this pointer.
+A reference value is one word that identifies either a root time series or a
+contained route. Passing a reference copies this word. An ordinary reference
+uses its root directly. Collection representations and item routes create
+provider data only when they are requested.
+
+A contained route retains its parent reference and an item or representation
+identifier. Operations follow parent references to the root and obtain provider
+data there. This preserves provenance through nested collection routes without
+storing a provider pointer in each route.
 
 For a source reached through a reference, the receiving binding sends its type
 request to the node associated with the target. The graph that owns the target
@@ -89,19 +95,19 @@ complete record span. The handler updates target pointers and dynamic
 subscriptions, then requests required-input validity checks. The runtime does
 not interpret REF storage.
 
-When graph compilation inserts a node that provides references or other
-representations, it adds a special entry to the source output's compiled
-subscription array. The entry contains the runtime-storage offset of its
-dynamic subscriber pointer.
+The reference-making node receives source changes through a compiled callback
+subscription. Its root notifies ordinary subscribers directly. If the root has
+provider data, the provider first updates the affected representations and
+then notifies their subscriber groups.
 
-The source runtime graph owns the created representations and their subscriber
-arrays. Each subscriber buffer is allocated when its first subscriber is added.
-Subscriber records are contiguous. Each record identifies the destination
-runtime graph, node, and input slot.
+The source runtime graph owns the created representations and subscriber
+groups. A group is allocated when its route receives its first subscriber.
+Subscriber records identify the destination runtime graph, node, and input
+slot.
 
-When an exact reference target changes, scheduling processes this entry and
-schedules the dynamic subscribers directly. Other representations update the
-affected representation before scheduling its subscribers.
+When an exact reference target changes, the root schedules its dynamic
+subscribers directly. Other representations update the affected representation
+before scheduling its subscribers.
 
 When a reference changes target:
 
@@ -122,6 +128,30 @@ View construction uses the current target's runtime type. A reference
 can therefore select between different runtime types of the same time series
 type. An update for an inner graph is applied when that graph enters the current
 outer cycle.
+
+### Input sampling
+
+A dereferenced input distinguishes an ordinary target update from a change of
+target. Binding its first target samples that target as a first update. Removing
+the target reports the previous collection as removed.
+
+Switching from collection `A` to collection `B` reports the transition that the
+node observes:
+
+- TSS and TSD additions are the keys or items in `B` but not `A`.
+- TSS and TSD removals are the keys or items in `A` but not `B`.
+- A TSD item present in both is modified unless both entries identify the same
+  item time series.
+- A contained collection applies the same rules recursively.
+
+An initial sample reports every current key or item as added. A removed sample
+reports every previous key or item as removed. The previous target remains
+accessible for the sampled invocation. Multiple target changes before that
+invocation compare the target last observed by the node with the final target.
+
+An input view reports whether its visible last-updated time is the current
+evaluation time without requiring evaluation-context access. Sampling reports
+the sampling time as the visible last-updated time.
 
 The [validity design](time-series-validity.md#references) defines reference
 invalidation, target invalidation, and target removal.
@@ -149,9 +179,8 @@ scheduling, and lifecycle.
 Dictionary representations use the shared-key structure defined by the
 [TSD layout](tsd-layout.md#shared-representations).
 
-When an item is first used through a reference, its owning representation
-creates and owns its dynamic subscriber array. Item updates iterate this array
-directly.
+When an item is first used through a reference, its route receives a subscriber
+group from the source provider. Item updates notify that route directly.
 
 A dictionary creates keyed subscription storage only when it is used. The
 storage maps each watched key to its subscribers. Key-set processing looks up
@@ -184,8 +213,9 @@ The shared set and its representations handle key removal:
 Removal notification applies to dynamic time series and the outputs of removable
 inner runtime graphs.
 
-References to live time series can persist across outer cycles. References to a
-removed time series must be cleared during the cycle in which it is removed.
+References to live time series can persist across outer cycles. A node that
+produces a reference value is responsible for replacing or invalidating it when
+its selected target changes.
 
 ## Outer-cycle boundary
 

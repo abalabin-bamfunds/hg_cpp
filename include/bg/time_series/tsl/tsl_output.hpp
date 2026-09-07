@@ -49,11 +49,11 @@ template <typename Item, auto Size, auto... Properties> class Out<TSL<Item, Size
     Out(Out &&) noexcept = default;
     Out(const Out &) = delete;
 
-    [[nodiscard]] bool valid() const noexcept { return state_->valid(); }
-    [[nodiscard]] EvaluationTime last_updated() const noexcept { return state_->last_updated(); }
-    [[nodiscard]] std::size_t size() const noexcept { return state_->runtime_type().item_count(state_->data()); }
+    bool valid() const noexcept { return state_->valid(); }
+    EvaluationTime last_updated() const noexcept { return state_->last_updated(); }
+    std::size_t size() const noexcept { return state_->runtime_type().item_count(state_->data()); }
 
-    [[nodiscard]] Out<Item> operator[](std::size_t index) const {
+    Out<Item> operator[](std::size_t index) const {
         const auto id = static_cast<TimeSeriesItemId>(index);
         const auto item = state_->runtime_type().item(state_->mutable_data(), id);
         auto *path = state_->add_path(state_->runtime_type(), id);
@@ -62,7 +62,7 @@ template <typename Item, auto Size, auto... Properties> class Out<TSL<Item, Size
 
     void invalidate() const { state_->invalidate(); }
 
-    [[nodiscard]] const Out *operator->() const noexcept { return this; }
+    const Out *operator->() const noexcept { return this; }
 
     template <typename... Functions> decltype(auto) visit(Functions &&...functions) const {
         auto output = details::output_factory::make<TS_T>(state_.get());

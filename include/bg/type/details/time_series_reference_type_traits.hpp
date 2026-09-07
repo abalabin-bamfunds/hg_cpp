@@ -11,7 +11,7 @@ template <typename Target, auto... Properties> struct time_series_type_traits<RE
     static constexpr bool supported = supported_time_series<Target>;
 
     template <typename Scope, std::size_t Index, bool Input>
-    [[nodiscard]] static const TimeSeriesType &get(GuaranteeParameter guarantee) {
+    static const TimeSeriesType &get(GuaranteeParameter guarantee) {
         const auto &target = time_series_type_for<Scope, Index, Input, Target>(TimeSeriesGuarantee::ordinary);
 
         if constexpr (Input || generic_time_series<Target>) {

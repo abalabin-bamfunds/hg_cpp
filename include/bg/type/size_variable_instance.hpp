@@ -7,7 +7,7 @@ namespace bg::details {
 
 template <typename Scope, auto Declaration>
     requires size_variable_declaration<decltype(Declaration)>
-[[nodiscard]] const SizeVariable &size_variable_instance() {
+const SizeVariable &size_variable_instance() {
     using Variable = std::remove_cv_t<decltype(Declaration)>;
     static const auto variable = SizeVariable{util::symbol{Variable::name.view()}};
     return variable;

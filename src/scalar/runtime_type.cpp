@@ -23,6 +23,9 @@
 #include <vector>
 
 namespace bg {
+
+ScalarRuntimeType::~ScalarRuntimeType() = default;
+
 namespace {
 
 struct RuntimeListStorage {
@@ -86,7 +89,7 @@ class ComposedListRuntimeType final : public ScalarListRuntimeType {
         storage(destination).swap(replacement);
     }
 
-    [[nodiscard]] std::size_t hash(const void *value) const noexcept override {
+    std::size_t hash(const void *value) const noexcept override {
         constexpr auto combine_constant = std::size_t{0x9e3779b9};
         const auto &items = storage(value).items;
         auto result = std::size_t{};
@@ -97,7 +100,7 @@ class ComposedListRuntimeType final : public ScalarListRuntimeType {
         return result;
     }
 
-    [[nodiscard]] bool equals_same_type(const void *value, const details::ScalarData &other) const noexcept override {
+    bool equals_same_type(const void *value, const details::ScalarData &other) const noexcept override {
         const auto source = Scalar<List<SCALAR>>::from(other);
         const auto &items = storage(value).items;
         if (items.size() != source.size()) {
@@ -118,15 +121,15 @@ class ComposedListRuntimeType final : public ScalarListRuntimeType {
         std::destroy_at(static_cast<RuntimeListStorage *>(value));
     }
 
-    [[nodiscard]] std::size_t item_count(const void *value) const noexcept override {
+    std::size_t item_count(const void *value) const noexcept override {
         return storage(value).items.size();
     }
 
-    [[nodiscard]] const void *item(const void *value, std::size_t index) const noexcept override {
+    const void *item(const void *value, std::size_t index) const noexcept override {
         return storage(value).items.get(static_cast<std::uint32_t>(index), item_layout_);
     }
 
-    [[nodiscard]] void *item(void *value, std::size_t index) const noexcept override {
+    void *item(void *value, std::size_t index) const noexcept override {
         return storage(value).items.get(static_cast<std::uint32_t>(index), item_layout_);
     }
 
@@ -162,10 +165,10 @@ class ComposedListRuntimeType final : public ScalarListRuntimeType {
     }
 
   private:
-    [[nodiscard]] static RuntimeListStorage &storage(void *value) noexcept {
+    static RuntimeListStorage &storage(void *value) noexcept {
         return *static_cast<RuntimeListStorage *>(value);
     }
-    [[nodiscard]] static const RuntimeListStorage &storage(const void *value) noexcept {
+    static const RuntimeListStorage &storage(const void *value) noexcept {
         return *static_cast<const RuntimeListStorage *>(value);
     }
 
@@ -242,7 +245,7 @@ class ComposedSetRuntimeType final : public ScalarSetRuntimeType {
         storage(destination).swap(replacement);
     }
 
-    [[nodiscard]] std::size_t hash(const void *value) const noexcept override {
+    std::size_t hash(const void *value) const noexcept override {
         auto result = std::size_t{};
         for (const auto position : storage(value).positions) {
             result ^= item_runtime_type().hash(storage(value).items.get(position, item_layout_));
@@ -250,7 +253,7 @@ class ComposedSetRuntimeType final : public ScalarSetRuntimeType {
         return result;
     }
 
-    [[nodiscard]] bool equals_same_type(const void *value, const details::ScalarData &other) const noexcept override {
+    bool equals_same_type(const void *value, const details::ScalarData &other) const noexcept override {
         const auto source = Scalar<Set<SCALAR>>::from(other);
         if (item_count(value) != source.size()) {
             return false;
@@ -268,11 +271,11 @@ class ComposedSetRuntimeType final : public ScalarSetRuntimeType {
         std::destroy_at(static_cast<RuntimeSetStorage *>(value));
     }
 
-    [[nodiscard]] std::size_t item_count(const void *value) const noexcept override {
+    std::size_t item_count(const void *value) const noexcept override {
         return storage(value).positions.size();
     }
 
-    [[nodiscard]] bool contains(const void *value, const details::ScalarData &item) const override {
+    bool contains(const void *value, const details::ScalarData &item) const override {
         return find(storage(value), item) != util::occupancy_index::npos;
     }
 
@@ -349,14 +352,14 @@ class ComposedSetRuntimeType final : public ScalarSetRuntimeType {
         bool equal;
     };
 
-    [[nodiscard]] static RuntimeSetStorage &storage(void *value) noexcept {
+    static RuntimeSetStorage &storage(void *value) noexcept {
         return *static_cast<RuntimeSetStorage *>(value);
     }
-    [[nodiscard]] static const RuntimeSetStorage &storage(const void *value) noexcept {
+    static const RuntimeSetStorage &storage(const void *value) noexcept {
         return *static_cast<const RuntimeSetStorage *>(value);
     }
 
-    [[nodiscard]] std::uint32_t find(const RuntimeSetStorage &source, const details::ScalarData &item) const noexcept {
+    std::uint32_t find(const RuntimeSetStorage &source, const details::ScalarData &item) const noexcept {
         const auto hash = util::linear_hash_table::hash_code(item.hash());
         const auto result = source.lookup.find(hash, [&](auto position) {
             return item_runtime_type().equals(source.items.get(position, item_layout_), item);
@@ -459,7 +462,7 @@ class ComposedDictRuntimeType final : public ScalarDictRuntimeType {
         storage(destination).swap(replacement);
     }
 
-    [[nodiscard]] std::size_t hash(const void *value) const noexcept override {
+    std::size_t hash(const void *value) const noexcept override {
         auto result = std::size_t{};
         for (const auto position : storage(value).positions) {
             result ^= key_runtime_type().hash(storage(value).keys.get(position, key_layout_)) ^
@@ -468,7 +471,7 @@ class ComposedDictRuntimeType final : public ScalarDictRuntimeType {
         return result;
     }
 
-    [[nodiscard]] bool equals_same_type(const void *value, const details::ScalarData &other) const noexcept override {
+    bool equals_same_type(const void *value, const details::ScalarData &other) const noexcept override {
         const auto source = Scalar<Dict<SCALAR, SCALAR>>::from(other);
         if (item_count(value) != source.size()) {
             return false;
@@ -491,15 +494,15 @@ class ComposedDictRuntimeType final : public ScalarDictRuntimeType {
         std::destroy_at(static_cast<RuntimeDictStorage *>(value));
     }
 
-    [[nodiscard]] std::size_t item_count(const void *value) const noexcept override {
+    std::size_t item_count(const void *value) const noexcept override {
         return storage(value).positions.size();
     }
 
-    [[nodiscard]] bool contains(const void *value, const details::ScalarData &key) const override {
+    bool contains(const void *value, const details::ScalarData &key) const override {
         return find(storage(value), key) != util::occupancy_index::npos;
     }
 
-    [[nodiscard]] ScalarDictRuntimeType::ConstItem at(const void *value,
+    ScalarDictRuntimeType::ConstItem at(const void *value,
                                                       const details::ScalarData &key) const override {
         const auto position = find(storage(value), key);
         if (position == util::occupancy_index::npos) {
@@ -508,7 +511,7 @@ class ComposedDictRuntimeType final : public ScalarDictRuntimeType {
         return {mapped_runtime_type(), storage(value).values.get(position, mapped_layout_)};
     }
 
-    [[nodiscard]] ScalarDictRuntimeType::Item at(void *value, const details::ScalarData &key) const override {
+    ScalarDictRuntimeType::Item at(void *value, const details::ScalarData &key) const override {
         const auto position = find(storage(value), key);
         if (position == util::occupancy_index::npos) {
             throw std::out_of_range{"dictionary key was not found"};
@@ -602,14 +605,14 @@ class ComposedDictRuntimeType final : public ScalarDictRuntimeType {
         bool equal;
     };
 
-    [[nodiscard]] static RuntimeDictStorage &storage(void *value) noexcept {
+    static RuntimeDictStorage &storage(void *value) noexcept {
         return *static_cast<RuntimeDictStorage *>(value);
     }
-    [[nodiscard]] static const RuntimeDictStorage &storage(const void *value) noexcept {
+    static const RuntimeDictStorage &storage(const void *value) noexcept {
         return *static_cast<const RuntimeDictStorage *>(value);
     }
 
-    [[nodiscard]] std::uint32_t find(const RuntimeDictStorage &source, const details::ScalarData &key) const noexcept {
+    std::uint32_t find(const RuntimeDictStorage &source, const details::ScalarData &key) const noexcept {
         const auto hash = util::linear_hash_table::hash_code(key.hash());
         const auto result = source.lookup.find(hash, [&](auto position) {
             return key_runtime_type().equals(source.keys.get(position, key_layout_), key);
@@ -654,12 +657,12 @@ struct ScalarRuntimeTypes {
     std::vector<std::unique_ptr<ScalarRuntimeType>> composed;
 };
 
-[[nodiscard]] ScalarRuntimeTypes &scalar_runtime_types() {
+ScalarRuntimeTypes &scalar_runtime_types() {
     static auto value = ScalarRuntimeTypes{};
     return value;
 }
 
-[[nodiscard]] const ScalarRuntimeType *registered_runtime_type(const ScalarType &type, bool native) {
+const ScalarRuntimeType *registered_runtime_type(const ScalarType &type, bool native) {
     auto &runtime_types = scalar_runtime_types();
     const auto lock = std::lock_guard{runtime_types.mutex};
     if (native) {

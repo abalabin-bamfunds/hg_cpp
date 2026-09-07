@@ -9,12 +9,12 @@ class TimeSeriesType : public Type {
   public:
     VISITOR_SUPPORT()
 
-    [[nodiscard]] bool is_scalar() const noexcept final { return false; }
-    [[nodiscard]] bool is_time_series() const noexcept final { return true; }
+    bool is_scalar() const noexcept final { return false; }
+    bool is_time_series() const noexcept final { return true; }
 
-    [[nodiscard]] const GuaranteeParameter &guarantee() const noexcept { return guarantee_; }
+    const GuaranteeParameter &guarantee() const noexcept { return guarantee_; }
     [[nodiscard]] virtual const TimeSeriesType &with_guarantee(TimeSeriesGuarantee guarantee) const;
-    [[nodiscard]] virtual bool supports_invalidation() const noexcept { return true; }
+    virtual bool supports_invalidation() const noexcept { return true; }
 
   protected:
     TimeSeriesType() = default;

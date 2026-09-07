@@ -16,7 +16,7 @@ class ResolvedTimeSeriesReferenceType final : public TimeSeriesReferenceType {
     ResolvedTimeSeriesReferenceType(const TimeSeriesType &target_type, TimeSeriesGuarantee guarantee)
         : TimeSeriesReferenceType(target_type, guarantee) {}
 
-    [[nodiscard]] bool is_resolved() const noexcept override { return true; }
+    bool is_resolved() const noexcept override { return true; }
     [[nodiscard]] const Type &resolve(const TypeMap &) const override { return *this; }
 };
 
@@ -28,7 +28,7 @@ struct ReferenceTypeKey {
 };
 
 struct ReferenceTypeKeyHash {
-    [[nodiscard]] std::size_t operator()(const ReferenceTypeKey &key) const noexcept {
+    std::size_t operator()(const ReferenceTypeKey &key) const noexcept {
         const auto target = std::hash<const TimeSeriesType *>{}(key.target_type);
         const auto guarantee = std::hash<int>{}(static_cast<int>(key.guarantee));
         return target ^ (guarantee << 1U);

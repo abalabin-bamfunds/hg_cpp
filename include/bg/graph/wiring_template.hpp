@@ -14,9 +14,9 @@ namespace bg {
 
 class WiringTemplate {
   public:
-    virtual ~WiringTemplate() = default;
+    virtual ~WiringTemplate();
 
-    [[nodiscard]] virtual const Signature &signature() const = 0;
+    virtual const Signature &signature() const = 0;
 
     template <typename... Arguments>
         requires(details::graph_code_argument<Arguments> && ...)
@@ -71,7 +71,7 @@ class WiringTemplate {
   private:
     friend class GraphWiring;
 
-    [[nodiscard]] virtual util::symbol label(const ResolvedSignature &, std::span<details::wiring_argument>,
+    virtual util::symbol label(const ResolvedSignature &, std::span<details::wiring_argument>,
                                              util::symbol default_label) const {
         return default_label;
     }

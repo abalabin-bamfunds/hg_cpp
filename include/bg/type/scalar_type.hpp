@@ -16,30 +16,30 @@ class ScalarType : public Type {
   public:
     VISITOR_SUPPORT()
 
-    [[nodiscard]] bool is_scalar() const noexcept final { return true; }
-    [[nodiscard]] bool is_time_series() const noexcept final { return false; }
-    [[nodiscard]] virtual bool supports_equality() const noexcept { return false; }
-    [[nodiscard]] virtual bool supports_hash() const noexcept { return false; }
+    bool is_scalar() const noexcept final { return true; }
+    bool is_time_series() const noexcept final { return false; }
+    virtual bool supports_equality() const noexcept { return false; }
+    virtual bool supports_hash() const noexcept { return false; }
 };
 
-[[nodiscard]] inline bool supports_scalar_equality(const ScalarType &type) noexcept {
+inline bool supports_scalar_equality(const ScalarType &type) noexcept {
     return type.supports_equality();
 }
 
-[[nodiscard]] inline bool supports_scalar_hash(const ScalarType &type) noexcept {
+inline bool supports_scalar_hash(const ScalarType &type) noexcept {
     return type.supports_hash();
 }
 
-[[nodiscard]] const ScalarType &int_type() noexcept;
-[[nodiscard]] const ScalarType &bool_type() noexcept;
-[[nodiscard]] const ScalarType &int64_type() noexcept;
-[[nodiscard]] const ScalarType &float_type() noexcept;
-[[nodiscard]] const ScalarType &double_type() noexcept;
-[[nodiscard]] const ScalarType &evaluation_time_type() noexcept;
-[[nodiscard]] const ScalarType &string_type() noexcept;
-[[nodiscard]] const ScalarType &symbol_type() noexcept;
+const ScalarType &int_type() noexcept;
+const ScalarType &bool_type() noexcept;
+const ScalarType &int64_type() noexcept;
+const ScalarType &float_type() noexcept;
+const ScalarType &double_type() noexcept;
+const ScalarType &evaluation_time_type() noexcept;
+const ScalarType &string_type() noexcept;
+const ScalarType &symbol_type() noexcept;
 
-template <typename T> [[nodiscard]] const ScalarType &cpp_scalar_type() noexcept = delete;
+template <typename T> const ScalarType &cpp_scalar_type() noexcept = delete;
 
 template <> [[nodiscard]] const ScalarType &cpp_scalar_type<bool>() noexcept;
 
@@ -68,10 +68,10 @@ struct scalar_type_properties {
 
 template <typename T> struct scalar_type_traits : scalar_type_properties {
 
-    template <typename Scope> [[nodiscard]] static const ScalarType &get() noexcept { return cpp_scalar_type<T>(); }
+    template <typename Scope> static const ScalarType &get() noexcept { return cpp_scalar_type<T>(); }
 };
 
-template <typename Scope, typename T> [[nodiscard]] const ScalarType &scalar_type_for() {
+template <typename Scope, typename T> const ScalarType &scalar_type_for() {
     return scalar_type_traits<T>::template get<Scope>();
 }
 

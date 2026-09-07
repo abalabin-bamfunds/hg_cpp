@@ -72,19 +72,19 @@ template <typename T, std::uint32_t InitialElements = 8> class contiguous_bunch 
         blocks_.release(memory);
     }
 
-    [[nodiscard]] T &operator[](size_type position) noexcept {
+    T &operator[](size_type position) noexcept {
         assert(position < size_);
         return *blocks_.get(position);
     }
 
-    [[nodiscard]] const T &operator[](size_type position) const noexcept {
+    const T &operator[](size_type position) const noexcept {
         assert(position < size_);
         return *blocks_.get(position);
     }
 
-    [[nodiscard]] size_type size() const noexcept { return size_; }
-    [[nodiscard]] bool empty() const noexcept { return size_ == 0; }
-    [[nodiscard]] size_type allocated_block_count() const noexcept { return blocks_.allocated_block_count(); }
+    size_type size() const noexcept { return size_; }
+    bool empty() const noexcept { return size_ == 0; }
+    size_type allocated_block_count() const noexcept { return blocks_.allocated_block_count(); }
 
     void swap(contiguous_bunch &other) noexcept {
         blocks_.swap(other.blocks_);

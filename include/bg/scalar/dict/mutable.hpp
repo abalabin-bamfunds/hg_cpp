@@ -18,10 +18,10 @@ template <typename K, typename V> class MutableDict : public Dict<K, V> {
   public:
     explicit MutableDict(Storage &storage) noexcept : Base{storage} {}
 
-    [[nodiscard]] std::size_t size() const noexcept { return Base::size(); }
-    [[nodiscard]] bool empty() const noexcept { return Base::empty(); }
-    [[nodiscard]] bool contains(typename KeyTraits::value_type key) const { return Base::contains(key); }
-    [[nodiscard]] decltype(auto) at(typename KeyTraits::value_type key) const;
+    std::size_t size() const noexcept { return Base::size(); }
+    bool empty() const noexcept { return Base::empty(); }
+    bool contains(typename KeyTraits::value_type key) const { return Base::contains(key); }
+    decltype(auto) at(typename KeyTraits::value_type key) const;
 
     void insert_or_assign(typename KeyTraits::value_type key, typename ValueTraits::value_type value) const {
         auto &memory = details::current_scalar_memory_resource();
@@ -70,7 +70,7 @@ template <typename K, typename V> class MutableDict : public Dict<K, V> {
 
   private:
     // MutableDict is constructed from mutable storage; Dict retains the same pointer for read-only access.
-    [[nodiscard]] Storage &mutable_storage() const noexcept { return const_cast<Storage &>(Base::storage()); }
+    Storage &mutable_storage() const noexcept { return const_cast<Storage &>(Base::storage()); }
 };
 
 } // namespace bg

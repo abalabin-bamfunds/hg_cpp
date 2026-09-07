@@ -41,9 +41,9 @@ class GraphWiring {
     GraphWiring(GraphWiring &&) = delete;
     GraphWiring &operator=(GraphWiring &&) = delete;
 
-    [[nodiscard]] std::span<const WiredNode> nodes() const noexcept { return nodes_; }
+    std::span<const WiredNode> nodes() const noexcept { return nodes_; }
 
-    [[nodiscard]] std::span<const WiringPointRecord> wiring_points() const noexcept { return wiring_points_; }
+    std::span<const WiringPointRecord> wiring_points() const noexcept { return wiring_points_; }
 
     [[nodiscard]] const NodeTemplate &own_node_template(std::unique_ptr<NodeTemplate> node_template);
 
@@ -62,11 +62,11 @@ class GraphWiring {
     [[nodiscard]] WiringPoint make_reference(WiringPoint source, const TimeSeriesType &reference_type);
 
     [[nodiscard]] const WiringPath &make_path(util::symbol name, util::symbol label);
-    [[nodiscard]] util::symbol default_label() const;
+    util::symbol default_label() const;
 
     void destroy_scalars(std::span<const WiredScalar> scalars) noexcept;
-    [[nodiscard]] std::pmr::memory_resource &variable_memory() noexcept;
-    [[nodiscard]] std::pmr::memory_resource &variable_memory(const ScalarRuntimeType &runtime_type);
+    std::pmr::memory_resource &variable_memory() noexcept;
+    std::pmr::memory_resource &variable_memory(const ScalarRuntimeType &runtime_type);
 
     std::pmr::memory_resource *memory_;
     std::pmr::unsynchronized_pool_resource fixed_memory_;

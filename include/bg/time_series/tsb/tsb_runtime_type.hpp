@@ -10,7 +10,6 @@
 #include <algorithm>
 #include <cstddef>
 #include <memory>
-#include <mutex>
 #include <ranges>
 #include <span>
 #include <stdexcept>
@@ -44,18 +43,18 @@ class TimeSeriesBundleRuntimeTypeBase : public TimeSeriesRuntimeType {
                            std::ranges::all_of(items, &TimeSeriesRuntimeType::supports_byte_copy_initialization));
     }
 
-    [[nodiscard]] ItemLayout item_layout(TimeSeriesItemId id) const final { return fields_.at(id); }
+    ItemLayout item_layout(TimeSeriesItemId id) const final { return fields_.at(id); }
 
-    [[nodiscard]] std::size_t item_count(const void *) const final { return fields_.size(); }
+    std::size_t item_count(const void *) const final { return fields_.size(); }
 
-    [[nodiscard]] ConstItem item(const void *value, TimeSeriesItemId id) const final {
+    ConstItem item(const void *value, TimeSeriesItemId id) const final {
         const auto &field = fields_.at(id);
         const auto *bytes = static_cast<const std::byte *>(value);
         return {field.runtime_type, *reinterpret_cast<const EvaluationTime *>(bytes + field.last_updated_offset),
                 bytes + field.value_offset};
     }
 
-    [[nodiscard]] MutableItem item(void *value, TimeSeriesItemId id) const final {
+    MutableItem item(void *value, TimeSeriesItemId id) const final {
         const auto &field = fields_.at(id);
         auto *bytes = static_cast<std::byte *>(value);
         return {field.runtime_type, *reinterpret_cast<EvaluationTime *>(bytes + field.last_updated_offset),
@@ -68,7 +67,7 @@ class TimeSeriesBundleRuntimeTypeBase : public TimeSeriesRuntimeType {
         }
     }
 
-    [[nodiscard]] bool item_updated(const EvaluationTime &last_updated, const void *value,
+    bool item_updated(const EvaluationTime &last_updated, const void *value,
                                     TimeSeriesItemId id) const noexcept final {
         const auto &storage = *static_cast<const time_series_bundle_storage *>(value);
         return last_updated > MIN_DT && storage.change_time == last_updated && storage.modified.contains(id);
@@ -97,7 +96,7 @@ class TimeSeriesBundleRuntimeTypeBase : public TimeSeriesRuntimeType {
         return storage.modified.set(id, memory);
     }
 
-    [[nodiscard]] bool collection_valid(const void *value) const noexcept final {
+    bool collection_valid(const void *value) const noexcept final {
         const auto *bytes = static_cast<const std::byte *>(value);
         return std::ranges::any_of(fields_, [&](const auto &field) {
             return *reinterpret_cast<const EvaluationTime *>(bytes + field.last_updated_offset) > MIN_DT;
@@ -187,29 +186,9 @@ class RuntimeTimeSeriesBundleRuntimeType final : public TimeSeriesBundleRuntimeT
         : TimeSeriesBundleRuntimeTypeBase{type, items} {}
 };
 
-[[nodiscard]] inline const TimeSeriesRuntimeType &
-time_series_bundle_runtime_type(const TimeSeriesBundleType &type, std::span<const TimeSeriesRuntimeType *const> items) {
-    struct Entry {
-        const TimeSeriesBundleType *type;
-        std::vector<const TimeSeriesRuntimeType *> items;
-        std::unique_ptr<RuntimeTimeSeriesBundleRuntimeType> runtime_type;
-    };
-
-    static auto mutex = std::mutex{};
-    static auto entries = std::vector<Entry>{};
-
-    const auto lock = std::lock_guard{mutex};
-    const auto found = std::ranges::find_if(
-        entries, [&](const auto &entry) { return entry.type == &type && std::ranges::equal(entry.items, items); });
-    if (found != entries.end()) {
-        return *found->runtime_type;
-    }
-
-    auto runtime_type = std::make_unique<RuntimeTimeSeriesBundleRuntimeType>(type, items);
-    auto &result = *runtime_type;
-    entries.push_back({&type, {items.begin(), items.end()}, std::move(runtime_type)});
-    return result;
-}
+const TimeSeriesRuntimeType &
+time_series_bundle_runtime_type(const TimeSeriesBundleType &type,
+                                std::span<const TimeSeriesRuntimeType *const> items);
 
 template <template <template <typename> typename> typename Schema, std::size_t... Index>
 void append_bundle_item_runtime_types(const TimeSeriesBundleType &type,
@@ -235,7 +214,7 @@ void append_bundle_item_runtime_types(const TimeSeriesBundleType &type,
 
 template <template <template <typename> typename> typename Schema, auto... Properties>
 struct CppTimeSeriesRuntimeType<TSB<Schema, Properties...>> {
-    [[nodiscard]] static const TimeSeriesRuntimeType &get(const TimeSeriesType &type) {
+    static const TimeSeriesRuntimeType &get(const TimeSeriesType &type) {
         const auto &bundle = static_cast<const TimeSeriesBundleType &>(type);
         auto items = std::vector<const TimeSeriesRuntimeType *>{};
         items.reserve(bundle.item_count());

@@ -28,13 +28,7 @@ TEST_CASE("test_graph evaluates a node over input ticks",
 
     const auto actual = bg::testing::test_graph(add, lhs, rhs);
 
-    REQUIRE(actual.size() == 3);
-    REQUIRE(actual[0]);
-    REQUIRE(actual[1]);
-    REQUIRE(actual[2]);
-    CHECK(bg::scalar_cast<float>(*actual[0])->value() == 11.0F);
-    CHECK(bg::scalar_cast<float>(*actual[1])->value() == 22.0F);
-    CHECK(bg::scalar_cast<float>(*actual[2])->value() == 33.0F);
+    CHECK(actual.equals<float>({11.0F, 22.0F, 33.0F}));
 }
 
 TEST_CASE("test_graph supports skipped input ticks",
@@ -47,13 +41,7 @@ TEST_CASE("test_graph supports skipped input ticks",
 
     const auto actual = bg::testing::test_graph(add_graph, lhs, rhs);
 
-    REQUIRE(actual.size() == 3);
-    REQUIRE(actual[0]);
-    REQUIRE(actual[1]);
-    REQUIRE(actual[2]);
-    CHECK(bg::scalar_cast<float>(*actual[0])->value() == 11.0F);
-    CHECK(bg::scalar_cast<float>(*actual[1])->value() == 21.0F);
-    CHECK(bg::scalar_cast<float>(*actual[2])->value() == 33.0F);
+    CHECK(actual.equals<float>({11.0F, 21.0F, 33.0F}));
 }
 
 struct Increment {

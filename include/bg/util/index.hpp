@@ -31,7 +31,7 @@ template <typename Index> class index_iterator {
 
     index_iterator() noexcept = default;
 
-    [[nodiscard]] value_type operator*() const noexcept {
+    value_type operator*() const noexcept {
         return word_ * bits_per_word + static_cast<value_type>(std::countr_zero(remaining_));
     }
 
@@ -77,7 +77,7 @@ template <typename Index> class index_iterator {
     std::uint64_t remaining_{};
 };
 
-[[nodiscard]] constexpr std::uint64_t low_bits(std::uint32_t count) noexcept {
+constexpr std::uint64_t low_bits(std::uint32_t count) noexcept {
     if (count == 0) {
         return 0;
     }
@@ -154,7 +154,7 @@ template <> class index<dynamic_index_extent> {
         return removed;
     }
 
-    [[nodiscard]] bool contains(size_type position) const noexcept {
+    bool contains(size_type position) const noexcept {
         return position < size() &&
                (word(position / bits_per_word) & (std::uint64_t{1} << (position % bits_per_word))) != 0;
     }
@@ -212,11 +212,11 @@ template <> class index<dynamic_index_extent> {
 
     void swap(index &other) noexcept { std::swap(raw_, other.raw_); }
 
-    [[nodiscard]] size_type size() const noexcept { return allocated() ? storage()->size : inline_size(); }
+    size_type size() const noexcept { return allocated() ? storage()->size : inline_size(); }
 
-    [[nodiscard]] size_type capacity() const noexcept { return allocated() ? storage()->capacity : inline_capacity; }
+    size_type capacity() const noexcept { return allocated() ? storage()->capacity : inline_capacity; }
 
-    [[nodiscard]] std::size_t count() const noexcept {
+    std::size_t count() const noexcept {
         auto result = std::size_t{};
         for (auto word_index = size_type{}; word_index < word_count(); ++word_index) {
             result += std::popcount(word(word_index));
@@ -225,7 +225,7 @@ template <> class index<dynamic_index_extent> {
         return result;
     }
 
-    [[nodiscard]] bool any() const noexcept {
+    bool any() const noexcept {
         for (auto word_index = size_type{}; word_index < word_count(); ++word_index) {
             if (word(word_index) != 0) {
                 return true;
@@ -235,10 +235,10 @@ template <> class index<dynamic_index_extent> {
         return false;
     }
 
-    [[nodiscard]] bool empty() const noexcept { return !any(); }
-    [[nodiscard]] bool all() const noexcept { return count() == size(); }
+    bool empty() const noexcept { return !any(); }
+    bool all() const noexcept { return count() == size(); }
 
-    [[nodiscard]] size_type first_set() const noexcept {
+    size_type first_set() const noexcept {
         for (auto word_index = size_type{}; word_index < word_count(); ++word_index) {
             const auto bits = word(word_index);
             if (bits != 0) {
@@ -249,7 +249,7 @@ template <> class index<dynamic_index_extent> {
         return size();
     }
 
-    [[nodiscard]] size_type first_unset(size_type start = 0) const noexcept {
+    size_type first_unset(size_type start = 0) const noexcept {
         if (start >= size()) {
             return size();
         }
@@ -273,8 +273,8 @@ template <> class index<dynamic_index_extent> {
         }
     }
 
-    [[nodiscard]] iterator begin() const noexcept { return iterator{*this, 0}; }
-    [[nodiscard]] iterator end() const noexcept { return iterator{*this, word_count()}; }
+    iterator begin() const noexcept { return iterator{*this, 0}; }
+    iterator end() const noexcept { return iterator{*this, word_count()}; }
 
   private:
     friend class details::index_iterator<index>;
@@ -288,35 +288,35 @@ template <> class index<dynamic_index_extent> {
 
     static_assert(alignof(AllocatedStorage) >= 2);
 
-    [[nodiscard]] bool allocated() const noexcept { return (raw_ & allocated_tag) != 0; }
+    bool allocated() const noexcept { return (raw_ & allocated_tag) != 0; }
 
-    [[nodiscard]] size_type inline_size() const noexcept {
+    size_type inline_size() const noexcept {
         return static_cast<size_type>((raw_ & inline_size_mask) >> inline_size_shift);
     }
 
-    [[nodiscard]] std::uint64_t inline_word() const noexcept { return raw_ >> inline_bits_shift; }
+    std::uint64_t inline_word() const noexcept { return raw_ >> inline_bits_shift; }
 
-    [[nodiscard]] AllocatedStorage *storage() noexcept {
+    AllocatedStorage *storage() noexcept {
         return reinterpret_cast<AllocatedStorage *>(raw_ & ~allocated_tag);
     }
 
-    [[nodiscard]] const AllocatedStorage *storage() const noexcept {
+    const AllocatedStorage *storage() const noexcept {
         return reinterpret_cast<const AllocatedStorage *>(raw_ & ~allocated_tag);
     }
 
-    [[nodiscard]] std::uint64_t *allocated_words() noexcept { return reinterpret_cast<std::uint64_t *>(storage() + 1); }
+    std::uint64_t *allocated_words() noexcept { return reinterpret_cast<std::uint64_t *>(storage() + 1); }
 
-    [[nodiscard]] const std::uint64_t *allocated_words() const noexcept {
+    const std::uint64_t *allocated_words() const noexcept {
         return reinterpret_cast<const std::uint64_t *>(storage() + 1);
     }
 
-    [[nodiscard]] std::uint64_t word(size_type word_index) const noexcept {
+    std::uint64_t word(size_type word_index) const noexcept {
         return allocated() ? allocated_words()[word_index] : inline_word();
     }
 
-    [[nodiscard]] size_type word_count() const noexcept { return static_cast<size_type>(word_count(size())); }
+    size_type word_count() const noexcept { return static_cast<size_type>(word_count(size())); }
 
-    [[nodiscard]] size_type last_set() const noexcept {
+    size_type last_set() const noexcept {
         for (auto word_index = word_count(); word_index != 0; --word_index) {
             const auto bits = word(word_index - 1);
             if (bits != 0) {
@@ -328,15 +328,15 @@ template <> class index<dynamic_index_extent> {
         return 0;
     }
 
-    [[nodiscard]] static constexpr std::size_t word_count(size_type size) noexcept {
+    static constexpr std::size_t word_count(size_type size) noexcept {
         return (static_cast<std::size_t>(size) + bits_per_word - 1) / bits_per_word;
     }
 
-    [[nodiscard]] static std::size_t allocation_size(size_type capacity) noexcept {
+    static std::size_t allocation_size(size_type capacity) noexcept {
         return sizeof(AllocatedStorage) + word_count(capacity) * sizeof(std::uint64_t);
     }
 
-    [[nodiscard]] static size_type allocation_capacity(std::size_t bytes) noexcept {
+    static size_type allocation_capacity(std::size_t bytes) noexcept {
         const auto bits = (bytes - sizeof(AllocatedStorage)) / sizeof(std::uint64_t) * bits_per_word;
         return static_cast<size_type>(std::min<std::size_t>(bits, dynamic_index_extent));
     }
@@ -400,14 +400,14 @@ template <std::uint32_t Extent> class index {
         return removed;
     }
 
-    [[nodiscard]] bool contains(size_type position) const noexcept {
+    bool contains(size_type position) const noexcept {
         return position < Extent &&
                (words_[position / bits_per_word] & (std::uint64_t{1} << (position % bits_per_word))) != 0;
     }
 
     void clear() noexcept { words_.fill(0); }
 
-    [[nodiscard]] std::size_t count() const noexcept {
+    std::size_t count() const noexcept {
         auto result = std::size_t{};
         for (const auto word : words_) {
             result += std::popcount(word);
@@ -416,7 +416,7 @@ template <std::uint32_t Extent> class index {
         return result;
     }
 
-    [[nodiscard]] bool any() const noexcept {
+    bool any() const noexcept {
         for (const auto word : words_) {
             if (word != 0) {
                 return true;
@@ -426,10 +426,10 @@ template <std::uint32_t Extent> class index {
         return false;
     }
 
-    [[nodiscard]] bool empty() const noexcept { return !any(); }
-    [[nodiscard]] bool all() const noexcept { return count() == Extent; }
+    bool empty() const noexcept { return !any(); }
+    bool all() const noexcept { return count() == Extent; }
 
-    [[nodiscard]] size_type first_set() const noexcept {
+    size_type first_set() const noexcept {
         for (auto word_index = size_type{}; word_index < word_count(); ++word_index) {
             if (words_[word_index] != 0) {
                 return word_index * bits_per_word + static_cast<size_type>(std::countr_zero(words_[word_index]));
@@ -439,10 +439,10 @@ template <std::uint32_t Extent> class index {
         return Extent;
     }
 
-    [[nodiscard]] static constexpr size_type size() noexcept { return Extent; }
+    static constexpr size_type size() noexcept { return Extent; }
 
-    [[nodiscard]] iterator begin() const noexcept { return iterator{*this, 0}; }
-    [[nodiscard]] iterator end() const noexcept { return iterator{*this, word_count()}; }
+    iterator begin() const noexcept { return iterator{*this, 0}; }
+    iterator end() const noexcept { return iterator{*this, word_count()}; }
 
   private:
     friend class details::index_iterator<index>;
@@ -456,9 +456,9 @@ template <std::uint32_t Extent> class index {
         }
     }
 
-    [[nodiscard]] static constexpr size_type word_count() noexcept { return words; }
+    static constexpr size_type word_count() noexcept { return words; }
 
-    [[nodiscard]] std::uint64_t word(size_type word_index) const noexcept { return words_[word_index]; }
+    std::uint64_t word(size_type word_index) const noexcept { return words_[word_index]; }
 
     std::array<std::uint64_t, words> words_{};
 };

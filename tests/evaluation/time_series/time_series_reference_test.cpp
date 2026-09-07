@@ -1,6 +1,7 @@
 #include <bg/node.hpp>
 #include <bg/run_graph.hpp>
 #include <bg/testing/test_graph.hpp>
+#include <bg/time_series/ref/ref_storage.hpp>
 #include <bg/time_series/tsl/tsl.hpp>
 
 #include <catch2/catch_test_macros.hpp>
@@ -50,20 +51,10 @@ struct reference_pass {
     inline static int evaluation_count{};
 };
 
-struct optional_reference_sink {
+struct optional_reference_consumer {
     bg::In<bg::TS<int>, bg::optional> input;
 
-    void evaluate() const { values.push_back(input.valid() ? std::optional{*input} : std::nullopt); }
-
-    inline static std::vector<std::optional<int>> values;
-};
-
-struct required_reference_sink {
-    bg::In<bg::TS<int>> input;
-
-    void evaluate() const { values.push_back(*input); }
-
-    inline static std::vector<int> values;
+    void evaluate() const {}
 };
 
 } // namespace
@@ -73,21 +64,38 @@ TEST_CASE("a dereferenced input subscribes directly to a fixed target",
           "[binding:value-to-reference][binding:reference-to-value]") {
     const auto source = bg::node<changing_reference_target>();
     const auto pass = bg::node<reference_pass>();
-    const auto optional_sink = bg::node<optional_reference_sink>();
-    const auto required_sink = bg::node<required_reference_sink>();
     reference_pass::evaluation_count = 0;
-    optional_reference_sink::values.clear();
-    required_reference_sink::values.clear();
+    const auto graph = [&] { return pass(source()); };
 
-    bg::run_graph([&] {
-        const auto reference = pass(source());
-        optional_sink(reference);
-        required_sink(reference);
-    });
+    const auto actual = bg::testing::test_graph(graph);
 
     CHECK(reference_pass::evaluation_count == 1);
-    CHECK(optional_reference_sink::values == std::vector<std::optional<int>>{10, 20, std::nullopt, 30});
-    CHECK(required_reference_sink::values == std::vector{10, 20, 30});
+    CHECK(actual.equals({10, 20, std::nullopt, 30}));
+}
+
+TEST_CASE("an ordinary reference does not create a reference provider",
+          "[evaluation][reference][feature:reference][series:value][scalar:integer]"
+          "[binding:value-to-reference][binding:reference-to-value]") {
+    const auto source = bg::node<changing_reference_target>();
+    const auto pass = bg::node<reference_pass>();
+    const auto sink = bg::node<optional_reference_consumer>();
+    auto wiring = bg::GraphWiring{};
+
+    {
+        const auto context = bg::WiringContext{wiring};
+        sink(pass(source()));
+    }
+
+    const auto compiled = bg::CompiledGraph{wiring};
+    auto runtime = bg::RuntimeGraph{compiled};
+    runtime.start(bg::MIN_DT + std::chrono::microseconds{1});
+    runtime.evaluate(bg::MIN_DT + std::chrono::microseconds{2});
+
+    auto &root = *static_cast<bg::details::ReferenceRoot *>(runtime.node(1).state());
+    CHECK(root.data.holds<bg::details::DynamicSubscribers>());
+    CHECK_FALSE(root.data.holds<bg::details::ReferenceProvider>());
+
+    runtime.stop();
 }
 
 namespace {
@@ -140,13 +148,12 @@ struct sampled_reference_sink {
     inline static std::vector<bg::EvaluationTime> evaluation_times;
 };
 
-struct passive_reference_sink {
+struct passive_reference_value {
     bg::In<bg::TS<int>, bg::passive, bg::optional> input;
     bg::In<bg::TS<int>> trigger;
+    bg::Out<bg::TS<int>> output;
 
-    void evaluate() const { values.push_back(*input); }
-
-    inline static std::vector<int> values;
+    void evaluate() const { output.set(*input); }
 };
 
 } // namespace
@@ -176,15 +183,15 @@ TEST_CASE("a passive dereferenced input observes its current target",
     const auto right = bg::node<sampled_right_source>();
     const auto condition = bg::node<sampled_condition_source>();
     const auto select = bg::node<reference_selector>();
-    const auto sink = bg::node<passive_reference_sink>();
-    passive_reference_sink::values.clear();
-
-    bg::run_graph([&] {
+    const auto value = bg::node<passive_reference_value>();
+    const auto graph = [&] {
         const auto trigger = condition();
-        sink(select(trigger, left(), right()), trigger);
-    });
+        return value(select(trigger, left(), right()), trigger);
+    };
 
-    CHECK(passive_reference_sink::values == std::vector{10, 20});
+    const auto actual = bg::testing::test_graph(graph);
+
+    CHECK(actual.equals({10, 20}));
 }
 
 namespace {
@@ -212,12 +219,11 @@ TEST_CASE("changing a reference to an invalid target invalidates required consum
     const auto condition = bg::node<sampled_condition_source>();
     const auto select = bg::node<reference_selector>();
     const auto forward = bg::node<required_reference_forward>();
-    const auto sink = bg::node<optional_reference_sink>();
-    optional_reference_sink::values.clear();
+    const auto graph = [&] { return forward(select(condition(), left(), right())); };
 
-    bg::run_graph([&] { sink(forward(select(condition(), left(), right()))); });
+    const auto actual = bg::testing::test_graph(graph);
 
-    CHECK(optional_reference_sink::values == std::vector<std::optional<int>>{10, std::nullopt});
+    CHECK(actual.equals({10, std::nullopt}));
 }
 
 namespace {
@@ -242,12 +248,11 @@ struct list_reference_pass {
     void evaluate() const { output.set(input); }
 };
 
-struct referenced_list_sink {
+struct referenced_list_value {
     bg::In<bg::TSL<bg::TS<int>, 2>> input;
+    bg::Out<bg::TS<int>> output;
 
-    void evaluate() const { values.push_back(*input[0]); }
-
-    inline static std::vector<int> values;
+    void evaluate() const { output.set(*input[0]); }
 };
 
 struct generic_list_reference_pass {
@@ -257,12 +262,11 @@ struct generic_list_reference_pass {
     void evaluate() const { output.set(input); }
 };
 
-struct generic_referenced_list_sink {
+struct generic_referenced_list_value {
     bg::In<bg::TSL<bg::TS<bg::SCALAR>, 2>> input;
+    bg::Out<bg::TS<int>> output;
 
-    void evaluate() const { values.push_back(bg::scalar_cast<int>(input[0].value_view())->value()); }
-
-    inline static std::vector<int> values;
+    void evaluate() const { output.set(bg::scalar_cast<int>(input[0].value_view())->value()); }
 };
 
 struct reference_list {
@@ -279,14 +283,13 @@ TEST_CASE("a dereferenced input subscribes directly to a fixed collection item",
           "[binding:value-to-reference][binding:reference-to-value]") {
     const auto source = bg::node<referenced_list_source>();
     const auto pass = bg::node<reference_pass>();
-    const auto sink = bg::node<required_reference_sink>();
+    const auto graph = [&] { return pass(source()[0]); };
     reference_pass::evaluation_count = 0;
-    required_reference_sink::values.clear();
 
-    bg::run_graph([&] { sink(pass(source()[0])); });
+    const auto actual = bg::testing::test_graph(graph);
 
     CHECK(reference_pass::evaluation_count == 1);
-    CHECK(required_reference_sink::values == std::vector{10, 20});
+    CHECK(actual.equals({10, 20}));
 }
 
 TEST_CASE("a fixed collection can pass through a reference",
@@ -294,12 +297,12 @@ TEST_CASE("a fixed collection can pass through a reference",
           "[binding:value-to-reference][binding:reference-to-value]") {
     const auto source = bg::node<referenced_list_source>();
     const auto pass = bg::node<list_reference_pass>();
-    const auto sink = bg::node<referenced_list_sink>();
-    referenced_list_sink::values.clear();
+    const auto value = bg::node<referenced_list_value>();
+    const auto graph = [&] { return value(pass(source())); };
 
-    bg::run_graph([&] { sink(pass(source())); });
+    const auto actual = bg::testing::test_graph(graph);
 
-    CHECK(referenced_list_sink::values == std::vector{10, 20});
+    CHECK(actual.equals({10, 20}));
 }
 
 TEST_CASE("a generic fixed collection input uses the referenced target runtime_type",
@@ -307,12 +310,12 @@ TEST_CASE("a generic fixed collection input uses the referenced target runtime_t
           "[scalar:integer][binding:value-to-reference][binding:reference-to-value]") {
     const auto source = bg::node<referenced_list_source>();
     const auto pass = bg::node<generic_list_reference_pass>();
-    const auto sink = bg::node<generic_referenced_list_sink>();
-    generic_referenced_list_sink::values.clear();
+    const auto value = bg::node<generic_referenced_list_value>();
+    const auto graph = [&] { return value(pass(source())); };
 
-    bg::run_graph([&] { sink(pass(source())); });
+    const auto actual = bg::testing::test_graph(graph);
 
-    CHECK(generic_referenced_list_sink::values == std::vector{10, 20});
+    CHECK(actual.equals({10, 20}));
 }
 
 namespace {
@@ -378,12 +381,11 @@ TEST_CASE("a reference stored in a fixed collection item updates its consumer",
           "[scalar:integer][binding:value-to-reference][binding:reference-to-value]") {
     const auto source = bg::node<changing_reference_target>();
     const auto list = bg::node<reference_list>();
-    const auto sink = bg::node<optional_reference_sink>();
-    optional_reference_sink::values.clear();
+    const auto graph = [&] { return list(source())[0]; };
 
-    bg::run_graph([&] { sink(list(source())[0]); });
+    const auto actual = bg::testing::test_graph(graph);
 
-    CHECK(optional_reference_sink::values == std::vector<std::optional<int>>{10, 20, std::nullopt, 30});
+    CHECK(actual.equals({10, 20, std::nullopt, 30}));
 }
 
 namespace {
@@ -419,17 +421,9 @@ TEST_CASE("reference invalidation unbinds and revalidation resamples consumers",
           "[binding:reference-to-value][series:value]") {
     const auto source = bg::node<sampled_left_source>();
     const auto reference = bg::node<invalidating_reference>();
-    const auto optional_sink = bg::node<optional_reference_sink>();
-    const auto required_sink = bg::node<required_reference_sink>();
-    optional_reference_sink::values.clear();
-    required_reference_sink::values.clear();
+    const auto graph = [&] { return reference(source()); };
 
-    bg::run_graph([&] {
-        const auto value = reference(source());
-        optional_sink(value);
-        required_sink(value);
-    });
+    const auto actual = bg::testing::test_graph(graph);
 
-    CHECK(optional_reference_sink::values == std::vector<std::optional<int>>{10, std::nullopt, 10});
-    CHECK(required_reference_sink::values == std::vector{10, 10});
+    CHECK(actual.equals({10, std::nullopt, 10}));
 }

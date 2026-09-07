@@ -16,11 +16,11 @@ class WiringContext {
     WiringContext(WiringContext &&) = delete;
     WiringContext &operator=(WiringContext &&) = delete;
 
-    [[nodiscard]] static WiringContext &current();
+    static WiringContext &current();
 
-    [[nodiscard]] GraphWiring &wiring() const noexcept { return *wiring_; }
+    GraphWiring &wiring() const noexcept { return *wiring_; }
 
-    [[nodiscard]] const WiringPath *path() const noexcept { return path_; }
+    const WiringPath *path() const noexcept { return path_; }
 
   private:
     friend class GraphWiring;

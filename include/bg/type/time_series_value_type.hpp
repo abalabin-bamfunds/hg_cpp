@@ -10,7 +10,7 @@ class TimeSeriesValueType : public TimeSeriesType {
   public:
     VISITOR_SUPPORT()
 
-    [[nodiscard]] const ScalarType &value_type() const noexcept { return *value_type_; }
+    const ScalarType &value_type() const noexcept { return *value_type_; }
     [[nodiscard]] const TimeSeriesType &with_guarantee(TimeSeriesGuarantee guarantee) const override;
 
   protected:
@@ -21,7 +21,7 @@ class TimeSeriesValueType : public TimeSeriesType {
     const ScalarType *value_type_;
 };
 
-[[nodiscard]] const TimeSeriesValueType &time_series_value_type(const ScalarType &value_type,
+const TimeSeriesValueType &time_series_value_type(const ScalarType &value_type,
                                                                 TimeSeriesGuarantee guarantee);
 
 class GenericTimeSeriesValueType final : public TimeSeriesValueType {
@@ -29,7 +29,7 @@ class GenericTimeSeriesValueType final : public TimeSeriesValueType {
     GenericTimeSeriesValueType(const ScalarType &value_type, GuaranteeParameter guarantee)
         : TimeSeriesValueType(value_type, guarantee) {}
 
-    [[nodiscard]] bool is_resolved() const noexcept override { return false; }
+    bool is_resolved() const noexcept override { return false; }
     [[nodiscard]] const Type &resolve(const TypeMap &bindings) const override;
 
   protected:

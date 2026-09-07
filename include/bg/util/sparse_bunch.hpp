@@ -75,18 +75,18 @@ template <typename T, std::uint32_t InitialElements = 8> class sparse_bunch {
         blocks_.release(memory);
     }
 
-    [[nodiscard]] T *get(size_type position, const occupancy_index &positions) noexcept {
+    T *get(size_type position, const occupancy_index &positions) noexcept {
         return positions.contains(position) ? blocks_.get(position) : nullptr;
     }
 
-    [[nodiscard]] const T *get(size_type position, const occupancy_index &positions) const noexcept {
+    const T *get(size_type position, const occupancy_index &positions) const noexcept {
         return positions.contains(position) ? blocks_.get(position) : nullptr;
     }
 
-    [[nodiscard]] T &operator[](size_type position) noexcept { return *blocks_.get(position); }
-    [[nodiscard]] const T &operator[](size_type position) const noexcept { return *blocks_.get(position); }
+    T &operator[](size_type position) noexcept { return *blocks_.get(position); }
+    const T &operator[](size_type position) const noexcept { return *blocks_.get(position); }
 
-    [[nodiscard]] size_type allocated_block_count() const noexcept { return blocks_.allocated_block_count(); }
+    size_type allocated_block_count() const noexcept { return blocks_.allocated_block_count(); }
 
     void swap(sparse_bunch &other) noexcept { blocks_.swap(other.blocks_); }
 

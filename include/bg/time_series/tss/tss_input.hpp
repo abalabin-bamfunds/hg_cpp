@@ -30,14 +30,14 @@ class In<TSS<K, TimeSeriesProperties...>, Properties...> {
     In(const EvaluationTime &last_updated, const void *value, const TimeSeriesRuntimeType &runtime_type) noexcept
         : data_{runtime_type, last_updated, value} {}
 
-    [[nodiscard]] bool valid() const noexcept { return data_.valid(); }
-    [[nodiscard]] EvaluationTime last_updated() const noexcept { return data_.last_updated(); }
-    [[nodiscard]] std::size_t size() const noexcept { return valid() ? storage().size() : 0; }
-    [[nodiscard]] bool contains(const Scalar<K> &item) const { return contains(item.input_view()); }
+    bool valid() const noexcept { return data_.valid(); }
+    EvaluationTime last_updated() const noexcept { return data_.last_updated(); }
+    std::size_t size() const noexcept { return valid() ? storage().size() : 0; }
+    bool contains(const Scalar<K> &item) const { return contains(item.input_view()); }
 
     template <scalar_source Source>
         requires(!details::scalar_variable<K> && std::same_as<canonical_scalar_t<Source>, K>)
-    [[nodiscard]] bool contains(Source &&item) const {
+    bool contains(Source &&item) const {
         const auto value = canonical_scalar(std::forward<Source>(item));
         return contains(details::make_scalar_source<K>(value));
     }
@@ -60,9 +60,9 @@ class In<TSS<K, TimeSeriesProperties...>, Properties...> {
         }
     }
 
-    [[nodiscard]] const TimeSeriesRuntimeType &runtime_type() const noexcept { return data_.runtime_type(); }
-    [[nodiscard]] const void *data() const noexcept { return data_.data(); }
-    [[nodiscard]] const In *operator->() const noexcept { return this; }
+    const TimeSeriesRuntimeType &runtime_type() const noexcept { return data_.runtime_type(); }
+    const void *data() const noexcept { return data_.data(); }
+    const In *operator->() const noexcept { return this; }
 
     template <typename... Functions> decltype(auto) visit(Functions &&...functions) const {
         return In<TS_T>{data_.last_updated_ref(), data_.data(), data_.runtime_type()}.visit(
@@ -77,19 +77,19 @@ class In<TSS<K, TimeSeriesProperties...>, Properties...> {
     static constexpr InputValidity validity = ParsedProperties::validity;
 
   private:
-    [[nodiscard]] const details::time_series_set_storage &storage() const noexcept {
+    const details::time_series_set_storage &storage() const noexcept {
         return *static_cast<const details::time_series_set_storage *>(data_.data());
     }
 
-    [[nodiscard]] const ScalarRuntimeType &key_runtime_type() const noexcept {
+    const ScalarRuntimeType &key_runtime_type() const noexcept {
         return static_cast<const details::TimeSeriesSetRuntimeType &>(data_.runtime_type()).key_runtime_type();
     }
 
-    [[nodiscard]] util::runtime_item_layout key_layout() const noexcept {
+    util::runtime_item_layout key_layout() const noexcept {
         return {key_runtime_type().size(), key_runtime_type().alignment()};
     }
 
-    [[nodiscard]] bool contains(const details::ScalarData &item) const {
+    bool contains(const details::ScalarData &item) const {
         return valid() && storage().contains(item, key_runtime_type(), key_layout());
     }
 

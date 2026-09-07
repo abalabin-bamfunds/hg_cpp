@@ -24,13 +24,13 @@ using TypeVisitor = ddv::mux<Type, ScalarType, ListScalarType, SetScalarType, Di
 
 class Type : public ddv::visitable<Type, TypeVisitor> {
   public:
-    virtual ~Type() = default;
+    virtual ~Type();
 
     VISITOR_SUPPORT()
 
-    [[nodiscard]] virtual bool is_resolved() const noexcept = 0;
-    [[nodiscard]] virtual bool is_scalar() const noexcept { return false; }
-    [[nodiscard]] virtual bool is_time_series() const noexcept { return false; }
+    virtual bool is_resolved() const noexcept = 0;
+    virtual bool is_scalar() const noexcept { return false; }
+    virtual bool is_time_series() const noexcept { return false; }
     [[nodiscard]] bool match(const Type &supplied, TypeMap &bindings) const;
     [[nodiscard]] virtual const Type &resolve(const TypeMap &bindings) const = 0;
 

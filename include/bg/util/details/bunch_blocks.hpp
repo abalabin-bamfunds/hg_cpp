@@ -47,7 +47,7 @@ template <typename T, std::uint32_t InitialElements = 8> class bunch_blocks {
     bunch_blocks(bunch_blocks &&) = delete;
     bunch_blocks &operator=(bunch_blocks &&) = delete;
 
-    [[nodiscard]] static constexpr location locate(size_type position) noexcept {
+    static constexpr location locate(size_type position) noexcept {
         if (position < first_capped_position) {
             const auto scaled = position / initial_elements + 1;
             const auto block_index = static_cast<size_type>(std::bit_width(scaled) - 1);
@@ -62,7 +62,7 @@ template <typename T, std::uint32_t InitialElements = 8> class bunch_blocks {
         return {static_cast<size_type>(block_index), static_cast<size_type>(after_growth % maximum_elements)};
     }
 
-    [[nodiscard]] static constexpr size_type block_capacity(size_type block_index) noexcept {
+    static constexpr size_type block_capacity(size_type block_index) noexcept {
         if (block_index < growth_levels) {
             return initial_elements << block_index;
         }
@@ -70,14 +70,14 @@ template <typename T, std::uint32_t InitialElements = 8> class bunch_blocks {
         return maximum_elements;
     }
 
-    [[nodiscard]] T *get(size_type position) noexcept {
+    T *get(size_type position) noexcept {
         const auto [block_index, offset] = locate(position);
         auto &current = block_at(block_index);
 
         return current.data == nullptr ? nullptr : current.data + offset;
     }
 
-    [[nodiscard]] const T *get(size_type position) const noexcept {
+    const T *get(size_type position) const noexcept {
         const auto [block_index, offset] = locate(position);
         const auto &current = block_at(block_index);
 
@@ -134,7 +134,7 @@ template <typename T, std::uint32_t InitialElements = 8> class bunch_blocks {
         additional_capacity_ = 0;
     }
 
-    [[nodiscard]] size_type allocated_block_count() const noexcept { return allocated_blocks_; }
+    size_type allocated_block_count() const noexcept { return allocated_blocks_; }
 
     void swap(bunch_blocks &other) noexcept {
         using std::swap;
@@ -146,7 +146,7 @@ template <typename T, std::uint32_t InitialElements = 8> class bunch_blocks {
     }
 
   private:
-    [[nodiscard]] block &block_at(size_type block_index) noexcept {
+    block &block_at(size_type block_index) noexcept {
         if (block_index == 0) {
             return first_;
         }
@@ -155,7 +155,7 @@ template <typename T, std::uint32_t InitialElements = 8> class bunch_blocks {
         return additional_[block_index - 1];
     }
 
-    [[nodiscard]] const block &block_at(size_type block_index) const noexcept {
+    const block &block_at(size_type block_index) const noexcept {
         if (block_index == 0) {
             return first_;
         }

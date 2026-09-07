@@ -19,7 +19,7 @@ template <typename T> class ScalarValueArrowProxy {
     explicit ScalarValueArrowProxy(T value) noexcept(std::is_nothrow_move_constructible_v<T>)
         : value_{std::move(value)} {}
 
-    [[nodiscard]] const T *operator->() const noexcept { return std::addressof(value_); }
+    const T *operator->() const noexcept { return std::addressof(value_); }
 
   private:
     T value_;

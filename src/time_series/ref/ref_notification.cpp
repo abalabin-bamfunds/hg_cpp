@@ -8,25 +8,24 @@ namespace bg::details {
 
 namespace {
 
-void update_reference_input(OutputNotificationContext &context, ReferenceStorage *reference,
+void update_reference_input(OutputNotificationContext &context, ReferenceAddress reference,
                             const ReferenceInputSubscriber &subscriber, std::size_t data,
                             InputNotificationFunction callback, OutputChange change) {
-    if (reference != nullptr) {
-        reference = &reference->provider->representation(*reference, subscriber.requested_type());
+    if (reference) {
+        reference = reference_representation(reference, subscriber.requested_type());
     }
 
     auto &input = *static_cast<ReferenceInputStorage *>(context.runtime_storage_at(subscriber.input_offset()));
     if (input.target != reference) {
         const auto subscribes_to_target = subscriber.active() || subscriber.required() || callback != nullptr;
-        if (input.target != nullptr && subscribes_to_target) {
-            input.target->subscribers->remove(context.runtime_graph(), subscriber.input_offset());
+        if (input.target && subscribes_to_target) {
+            remove_reference_subscriber(input.target, context.runtime_graph(), subscriber.input_offset());
         }
-        if (reference != nullptr && subscribes_to_target) {
-            auto &owner = reference->provider->owner();
-            auto &subscribers = DynamicSubscribers::ensure(reference->subscribers, context.memory_resource(owner));
-            subscribers.add(context.runtime_graph(), static_cast<std::uint32_t>(subscriber.input_offset()), data,
-                            static_cast<std::uint32_t>(subscriber.node_index()), subscriber.active(),
-                            subscriber.required(), callback);
+        if (reference && subscribes_to_target) {
+            add_reference_subscriber(reference, context.runtime_graph(),
+                                     static_cast<std::uint32_t>(subscriber.input_offset()), data,
+                                    static_cast<std::uint32_t>(subscriber.node_index()), subscriber.active(),
+                                    subscriber.required(), callback);
         }
         input.target = reference;
     }
@@ -47,7 +46,8 @@ void notify_reference_inputs(OutputNotificationContext &context, const void *val
         reinterpret_cast<const ReferenceInputSubscriber *>(record_bytes.data()),
         record_bytes.size() / sizeof(ReferenceInputSubscriber),
     };
-    auto *reference = change == OutputChange::invalidation ? nullptr : *static_cast<ReferenceStorage *const *>(value);
+    const auto reference =
+        change == OutputChange::invalidation ? ReferenceAddress{} : *static_cast<const ReferenceAddress *>(value);
 
     for (const auto &subscriber : records) {
         update_reference_input(context, reference, subscriber, 0, nullptr, change);
@@ -60,7 +60,8 @@ void notify_callback_reference_inputs(OutputNotificationContext &context, const 
         reinterpret_cast<const CallbackReferenceInputSubscriber *>(record_bytes.data()),
         record_bytes.size() / sizeof(CallbackReferenceInputSubscriber),
     };
-    auto *reference = change == OutputChange::invalidation ? nullptr : *static_cast<ReferenceStorage *const *>(value);
+    const auto reference =
+        change == OutputChange::invalidation ? ReferenceAddress{} : *static_cast<const ReferenceAddress *>(value);
 
     for (const auto &subscriber : records) {
         update_reference_input(context, reference, subscriber.subscription(), subscriber.data(), subscriber.callback(),

@@ -16,7 +16,7 @@ concept mutable_scalar =
                                  typename scalar_mutable_traits<T>::storage_type &>;
 
 template <mutable_scalar T>
-[[nodiscard]] auto mutable_scalar_view(typename scalar_mutable_traits<T>::storage_type &storage) noexcept {
+auto mutable_scalar_view(typename scalar_mutable_traits<T>::storage_type &storage) noexcept {
     return typename scalar_mutable_traits<T>::view_type{storage};
 }
 

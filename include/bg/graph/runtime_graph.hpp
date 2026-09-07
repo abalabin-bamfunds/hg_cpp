@@ -43,9 +43,11 @@ class RuntimeGraph {
     void start(EvaluationTime evaluation_time);
     void stop() noexcept;
     void evaluate(EvaluationTime evaluation_time);
-    [[nodiscard]] std::optional<EvaluationTime> next_scheduled_time() const noexcept;
-    [[nodiscard]] GlobalState &global_state() const noexcept { return *global_state_; }
-    [[nodiscard]] Node node(std::size_t index) noexcept { return {compiled_graph_->node(index), storage_}; }
+    std::optional<EvaluationTime> next_scheduled_time() const noexcept;
+    GlobalState &global_state() const noexcept { return *global_state_; }
+    std::pmr::memory_resource &memory_resource() const noexcept { return *memory_; }
+    Node node(std::size_t index) noexcept { return {compiled_graph_->node(index), storage_}; }
+    Node node(const CompiledNode &compiled_node) noexcept { return {compiled_node, storage_}; }
 
   private:
     friend EvaluationContext;
@@ -64,20 +66,20 @@ class RuntimeGraph {
     class ModifiedItemPropagator;
     struct PendingInputNotifications;
 
-    [[nodiscard]] auto scheduling_info() noexcept -> std::span<SchedulingInfo>;
+    auto scheduling_info() noexcept -> std::span<SchedulingInfo>;
     void initialize_storage();
 
     void schedule(std::size_t node_index) noexcept;
     void schedule_validity_check(std::size_t node_index) noexcept;
     ScheduleHandle schedule_at(std::size_t node_index, EvaluationTime time);
     void cancel(std::size_t node_index, ScheduleHandle handle) noexcept;
-    [[nodiscard]] FutureSchedule *&future_schedule() noexcept;
-    [[nodiscard]] FutureSchedule *future_schedule() const noexcept;
+    FutureSchedule *&future_schedule() noexcept;
+    FutureSchedule *future_schedule() const noexcept;
     void activate_scheduled(EvaluationTime evaluation_time) noexcept;
     void clear_future_schedule() noexcept;
     void mirror_future_schedule();
-    [[nodiscard]] CycleCallbacks *&cycle_callbacks() noexcept;
-    [[nodiscard]] CycleCallbacks *cycle_callbacks() const noexcept;
+    CycleCallbacks *&cycle_callbacks() noexcept;
+    CycleCallbacks *cycle_callbacks() const noexcept;
     void add_cycle_callback(void *target, void (*function)(void *) noexcept);
     void run_cycle_callbacks() noexcept;
     void clear_cycle_callbacks() noexcept;
@@ -95,7 +97,7 @@ class RuntimeGraph {
     void run_input_notifications();
     void apply_invalidation(const CompiledNode &node, std::size_t node_index);
     void stop_nodes(std::size_t node_count) noexcept;
-    [[nodiscard]] bool inputs_are_valid(const CompiledNode &node) const noexcept;
+    bool inputs_are_valid(const CompiledNode &node) const noexcept;
     void start(EvaluationTime evaluation_time, details::EvaluationScratch &scratch);
     void evaluate(EvaluationTime evaluation_time, details::EvaluationScratch &scratch);
     void stop(details::EvaluationScratch &scratch) noexcept;

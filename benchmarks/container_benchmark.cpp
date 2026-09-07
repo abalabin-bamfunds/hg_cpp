@@ -154,7 +154,7 @@ void benchmark_custom_dictionary(std::span<const std::uint64_t> keys, std::span<
 
     const auto erasure = measure([&] {
         for (const auto key : keys) {
-            static_cast<void>(values.erase(key, memory));
+            values.erase(key, memory);
         }
     });
 

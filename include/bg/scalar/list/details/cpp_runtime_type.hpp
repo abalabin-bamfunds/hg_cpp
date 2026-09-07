@@ -43,7 +43,7 @@ class CppScalarRuntimeType<List<T>> final : public CppScalarRuntimeTypeBase<List
         static_cast<details::scalar_list_storage<T> *>(destination)->items.swap(replacement.items);
     }
 
-    [[nodiscard]] bool equals_same_type(const void *storage, const details::ScalarData &other) const noexcept override {
+    bool equals_same_type(const void *storage, const details::ScalarData &other) const noexcept override {
         const auto &source_type = static_cast<const ScalarListRuntimeType &>(other.runtime_type());
         const auto &items = static_cast<const details::scalar_list_storage<T> *>(storage)->items;
         if (items.size() != source_type.item_count(other.data())) {
@@ -59,16 +59,16 @@ class CppScalarRuntimeType<List<T>> final : public CppScalarRuntimeTypeBase<List
         return true;
     }
 
-    [[nodiscard]] std::size_t item_count(const void *storage) const noexcept override {
+    std::size_t item_count(const void *storage) const noexcept override {
         return static_cast<const details::scalar_list_storage<T> *>(storage)->items.size();
     }
 
-    [[nodiscard]] const void *item(const void *storage, std::size_t index) const noexcept override {
+    const void *item(const void *storage, std::size_t index) const noexcept override {
         const auto &items = static_cast<const details::scalar_list_storage<T> *>(storage)->items;
         return std::addressof(items[static_cast<std::uint32_t>(index)]);
     }
 
-    [[nodiscard]] void *item(void *storage, std::size_t index) const noexcept override {
+    void *item(void *storage, std::size_t index) const noexcept override {
         auto &items = static_cast<details::scalar_list_storage<T> *>(storage)->items;
         return std::addressof(items[static_cast<std::uint32_t>(index)]);
     }

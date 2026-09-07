@@ -79,7 +79,7 @@ class EvaluationScratch {
         std::size_t size;
     };
 
-    [[nodiscard]] Position current_position() const noexcept {
+    Position current_position() const noexcept {
         return blocks_.empty() ? Position{no_block, 0} : Position{block_, used_};
     }
 

@@ -8,15 +8,15 @@ namespace {
 
 template <typename T> class CppScalarType final : public ScalarType {
   public:
-    [[nodiscard]] bool is_resolved() const noexcept override { return true; }
+    bool is_resolved() const noexcept override { return true; }
 
     [[nodiscard]] const Type &resolve(const TypeMap &) const override { return *this; }
 
-    [[nodiscard]] bool supports_equality() const noexcept override {
+    bool supports_equality() const noexcept override {
         return details::scalar_storage_traits<T>::supports_equality;
     }
 
-    [[nodiscard]] bool supports_hash() const noexcept override {
+    bool supports_hash() const noexcept override {
         return details::scalar_storage_traits<T>::supports_hash;
     }
 };

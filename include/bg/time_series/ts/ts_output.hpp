@@ -35,8 +35,8 @@ template <details::scalar_variable Variable, auto... Properties> class Out<TS<Va
     Out(Out &&) noexcept = default;
     Out(const Out &) = delete;
 
-    [[nodiscard]] bool valid() const noexcept { return state_->valid(); }
-    [[nodiscard]] EvaluationTime last_updated() const noexcept { return state_->last_updated(); }
+    bool valid() const noexcept { return state_->valid(); }
+    EvaluationTime last_updated() const noexcept { return state_->last_updated(); }
 
     template <typename Value> void set_value(const Scalar<Value> &value) const {
         value.input_view().assign(
@@ -47,7 +47,7 @@ template <details::scalar_variable Variable, auto... Properties> class Out<TS<Va
 
     void invalidate() const { state_->invalidate(); }
 
-    [[nodiscard]] const Out *operator->() const noexcept { return this; }
+    const Out *operator->() const noexcept { return this; }
 
     template <typename... Functions> decltype(auto) visit(Functions &&...functions) const {
         auto output = details::output_factory::make<TS_T>(state_.get());
@@ -93,9 +93,9 @@ template <typename T, auto... Properties> class Out<TS<T, Properties...>> {
     Out(Out &&) noexcept = default;
     Out(const Out &) = delete;
 
-    [[nodiscard]] bool valid() const noexcept { return state_->valid(); }
-    [[nodiscard]] EvaluationTime last_updated() const noexcept { return state_->last_updated(); }
-    [[nodiscard]] value_type value() const noexcept
+    bool valid() const noexcept { return state_->valid(); }
+    EvaluationTime last_updated() const noexcept { return state_->last_updated(); }
+    value_type value() const noexcept
         requires(!details::scalar_type_traits<T>::is_collection)
     {
         return Traits::read(*static_cast<const storage_type *>(state_->data()));
@@ -119,7 +119,7 @@ template <typename T, auto... Properties> class Out<TS<T, Properties...>> {
 
     void invalidate() const { state_->invalidate(); }
 
-    [[nodiscard]] const Out *operator->() const noexcept { return this; }
+    const Out *operator->() const noexcept { return this; }
 
     template <typename... Functions> decltype(auto) visit(Functions &&...functions) const {
         auto output = details::output_factory::make<TS_T>(state_.get());

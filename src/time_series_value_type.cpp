@@ -14,7 +14,7 @@ class ResolvedTimeSeriesValueType final : public TimeSeriesValueType {
     ResolvedTimeSeriesValueType(const ScalarType &value_type, TimeSeriesGuarantee guarantee)
         : TimeSeriesValueType(value_type, guarantee) {}
 
-    [[nodiscard]] bool is_resolved() const noexcept override { return true; }
+    bool is_resolved() const noexcept override { return true; }
 
     [[nodiscard]] const Type &resolve(const TypeMap &) const override { return *this; }
 };
@@ -27,7 +27,7 @@ struct TimeSeriesValueTypeKey {
 };
 
 struct TimeSeriesValueTypeKeyHash {
-    [[nodiscard]] std::size_t operator()(const TimeSeriesValueTypeKey &key) const noexcept {
+    std::size_t operator()(const TimeSeriesValueTypeKey &key) const noexcept {
         const auto type = std::hash<const ScalarType *>{}(key.value_type);
         const auto guarantee = std::hash<int>{}(static_cast<int>(key.guarantee));
 
@@ -37,7 +37,7 @@ struct TimeSeriesValueTypeKeyHash {
 
 class TimeSeriesValueTypes {
   public:
-    [[nodiscard]] const TimeSeriesValueType &get(const ScalarType &value_type, TimeSeriesGuarantee guarantee) {
+    const TimeSeriesValueType &get(const ScalarType &value_type, TimeSeriesGuarantee guarantee) {
         const std::lock_guard lock(mutex_);
         const auto key = TimeSeriesValueTypeKey{&value_type, guarantee};
 

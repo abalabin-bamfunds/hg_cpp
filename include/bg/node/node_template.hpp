@@ -33,45 +33,45 @@ struct DynamicSubscribersLayout {
 
 class NodeTemplate : public WiringTemplate {
   public:
-    [[nodiscard]] virtual EvaluationFunction evaluation_function(const ResolvedSignature &signature) const noexcept = 0;
-    [[nodiscard]] virtual EvaluationFunction start_function(const ResolvedSignature &) const noexcept {
+    virtual EvaluationFunction evaluation_function(const ResolvedSignature &signature) const noexcept = 0;
+    virtual EvaluationFunction start_function(const ResolvedSignature &) const noexcept {
         return nullptr;
     }
-    [[nodiscard]] virtual EvaluationFunction stop_function(const ResolvedSignature &) const noexcept { return nullptr; }
-    [[nodiscard]] virtual InvalidationBehavior invalidation_behavior(const ResolvedSignature &) const noexcept {
+    virtual EvaluationFunction stop_function(const ResolvedSignature &) const noexcept { return nullptr; }
+    virtual InvalidationBehavior invalidation_behavior(const ResolvedSignature &) const noexcept {
         return {};
     }
-    [[nodiscard]] virtual const TimeSeriesRuntimeType *
+    virtual const TimeSeriesRuntimeType *
     output_runtime_type(const ResolvedSignature &signature,
                         std::span<const ScalarRuntimeType *const> parameter_runtime_types,
                         std::span<const TimeSeriesRuntimeType *const> time_series_input_runtime_types) const = 0;
-    [[nodiscard]] virtual bool uses_time_series_input_runtime_type(std::size_t) const noexcept { return false; }
-    [[nodiscard]] virtual bool uses_scalar_input_runtime_type(std::size_t) const noexcept { return false; }
-    [[nodiscard]] virtual bool uses_output_runtime_type() const noexcept { return false; }
-    [[nodiscard]] virtual bool uses_node_invocation() const noexcept { return false; }
-    [[nodiscard]] virtual bool uses_future_scheduling() const noexcept { return false; }
-    [[nodiscard]] virtual bool uses_cycle_callbacks() const noexcept { return false; }
-    [[nodiscard]] virtual InputNotificationCallback input_notification(std::size_t) const noexcept { return {}; }
-    [[nodiscard]] virtual std::optional<std::size_t> output_item_source(std::size_t) const noexcept {
+    virtual bool uses_time_series_input_runtime_type(std::size_t) const noexcept { return false; }
+    virtual bool uses_scalar_input_runtime_type(std::size_t) const noexcept { return false; }
+    virtual bool uses_output_runtime_type() const noexcept { return false; }
+    virtual bool uses_node_invocation() const noexcept { return false; }
+    virtual bool uses_future_scheduling() const noexcept { return false; }
+    virtual bool uses_cycle_callbacks() const noexcept { return false; }
+    virtual InputNotificationCallback input_notification(std::size_t) const noexcept { return {}; }
+    virtual std::optional<std::size_t> output_item_source(std::size_t) const noexcept {
         return std::nullopt;
     }
-    [[nodiscard]] virtual std::optional<DynamicSubscribersLayout>
+    virtual std::optional<DynamicSubscribersLayout>
     dynamic_subscribers_layout(const ResolvedSignature &) const noexcept {
         return std::nullopt;
     }
-    [[nodiscard]] virtual NodeStateLayout state_layout(const ResolvedSignature &,
+    virtual NodeStateLayout state_layout(const ResolvedSignature &,
                                                        std::span<const ScalarRuntimeType *const>,
                                                        std::span<const ScalarType *const>) const {
         return {};
     }
     virtual void construct_initial_state(const NodeStateLayout &, void *) const noexcept {}
-    [[nodiscard]] virtual EvaluationFunction state_destruction_function(const ResolvedSignature &) const noexcept {
+    virtual EvaluationFunction state_destruction_function(const ResolvedSignature &) const noexcept {
         return nullptr;
     }
 
     [[nodiscard]] virtual std::vector<const ScalarType *> resolve_state_types(const TypeMap &) const { return {}; }
 
-    [[nodiscard]] virtual CompiledNodeDataLayout compiled_data_layout(const ResolvedSignature &) const noexcept {
+    virtual CompiledNodeDataLayout compiled_data_layout(const ResolvedSignature &) const noexcept {
         return {};
     }
     virtual void construct_compiled_data(const ResolvedSignature &, void *, std::pmr::memory_resource &) const {}

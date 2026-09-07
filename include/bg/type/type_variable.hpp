@@ -22,7 +22,7 @@ class TypeVariable final : public Category, public Variable {
                           std::vector<Constraint> constraints = {})
         : Variable(name), alternatives_(std::move(alternatives)), constraints_(std::move(constraints)) {}
 
-    [[nodiscard]] bool is_resolved() const noexcept override { return false; }
+    bool is_resolved() const noexcept override { return false; }
 
   protected:
     [[nodiscard]] bool do_match(const Type &supplied, TypeMap &bindings) const override {
@@ -101,7 +101,7 @@ class TypeVariable final : public Category, public Variable {
         return **type;
     }
 
-    [[nodiscard]] bool supports_equality() const noexcept {
+    bool supports_equality() const noexcept {
         if constexpr (!std::same_as<Category, ScalarType>) {
             return false;
         } else {
@@ -111,7 +111,7 @@ class TypeVariable final : public Category, public Variable {
         }
     }
 
-    [[nodiscard]] bool supports_hash() const noexcept {
+    bool supports_hash() const noexcept {
         if constexpr (!std::same_as<Category, ScalarType>) {
             return false;
         } else {

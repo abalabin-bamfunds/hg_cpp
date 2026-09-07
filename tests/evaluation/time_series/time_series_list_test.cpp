@@ -15,6 +15,7 @@
 
 #include <array>
 #include <chrono>
+#include <optional>
 #include <vector>
 
 namespace {
@@ -428,12 +429,11 @@ TEST_CASE("required-input invalidation invalidates list items",
           "[binding:direct]") {
     const auto source = bg::node<invalidating_value_source_definition>();
     const auto list = bg::node<list_from_value_definition>();
-    const auto sink = bg::node<optional_item_sink_definition>();
-    optional_item_sink_definition::validity.clear();
+    const auto graph = [&] { return list(source())[0]; };
 
-    bg::run_graph([&] { sink(list(source())[0]); });
+    const auto actual = bg::testing::test_graph(graph);
 
-    CHECK(optional_item_sink_definition::validity == std::vector{true, false});
+    CHECK(actual.equals({10, std::nullopt}));
 }
 
 namespace {
@@ -570,8 +570,7 @@ struct sequential_item_access_definition {
 
     void start() const {
         for (auto index = std::size_t{}; index < 2000; ++index) {
-            const auto item = output[index];
-            static_cast<void>(item.valid());
+            [[maybe_unused]] const auto item = output[index];
         }
     }
 
@@ -622,12 +621,11 @@ struct canceled_nested_dictionary_source_definition {
     }
 };
 
-struct list_evaluation_count_sink_definition {
+struct list_evaluation_marker_definition {
     bg::In<DictionaryTimeSeriesList> input;
+    bg::Out<bg::TS<bool>> output;
 
-    void evaluate() const { ++count; }
-
-    inline static std::size_t count{};
+    void evaluate() const { output.set(true); }
 };
 
 } // namespace
@@ -637,12 +635,12 @@ TEST_CASE("inverse nested dictionary mutations publish their containing list",
           "[transition:update][scalar:integer][representation:native][declaration:concrete]"
           "[binding:direct]") {
     const auto source = bg::node<canceled_nested_dictionary_source_definition>();
-    const auto sink = bg::node<list_evaluation_count_sink_definition>();
-    list_evaluation_count_sink_definition::count = 0;
+    const auto marker = bg::node<list_evaluation_marker_definition>();
+    const auto graph = [&] { return marker(source()); };
 
-    bg::run_graph([&] { sink(source()); });
+    const auto actual = bg::testing::test_graph(graph);
 
-    CHECK(list_evaluation_count_sink_definition::count == 2);
+    CHECK(actual.equals({true, true}));
 }
 
 namespace {
@@ -661,24 +659,15 @@ struct retained_nested_item_source_definition {
     void evaluate() const {}
 };
 
-struct retained_nested_item_sink_definition {
-    bg::In<bg::TS<int>> input;
-
-    void evaluate() const { value = *input; }
-
-    inline static int value{};
-};
-
 } // namespace
 
 TEST_CASE("a nested item view retains its containing path",
           "[evaluation][tsl][series:fixed-tsl][storage][feature:collection-change][scalar:integer]"
           "[representation:native][declaration:concrete][binding:direct]") {
     const auto source = bg::node<retained_nested_item_source_definition>();
-    const auto sink = bg::node<retained_nested_item_sink_definition>();
-    retained_nested_item_sink_definition::value = 0;
+    const auto graph = [&] { return source()[0][1]; };
 
-    bg::run_graph([&] { sink(source()[0][1]); });
+    const auto actual = bg::testing::test_graph(graph);
 
-    CHECK(retained_nested_item_sink_definition::value == 42);
+    CHECK(actual.equals({42}));
 }

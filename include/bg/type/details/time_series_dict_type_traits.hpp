@@ -13,7 +13,7 @@ struct time_series_type_traits<TSD<Key, Item, Properties...>> {
     static constexpr bool supported = (generic_scalar<Key> || has_cpp_scalar_type<Key>) && supported_time_series<Item>;
 
     template <typename Scope, std::size_t Index, bool Input>
-    [[nodiscard]] static const TimeSeriesType &get(GuaranteeParameter guarantee) {
+    static const TimeSeriesType &get(GuaranteeParameter guarantee) {
         const auto &key = scalar_type_for<Scope, Key>();
         const auto &value = time_series_type_for<Scope, Index, Input, Item>(guarantee);
         static const auto key_set = GenericTimeSeriesSetType{key, guarantee};

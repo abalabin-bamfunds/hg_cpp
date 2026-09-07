@@ -43,7 +43,7 @@ class CppScalarRuntimeType<Set<T>> final : public CppScalarRuntimeTypeBase<Set<T
         static_cast<details::scalar_set_storage<T> *>(destination)->items.swap(replacement.items);
     }
 
-    [[nodiscard]] bool equals_same_type(const void *storage, const details::ScalarData &other) const noexcept override {
+    bool equals_same_type(const void *storage, const details::ScalarData &other) const noexcept override {
         const auto &source_type = static_cast<const ScalarSetRuntimeType &>(other.runtime_type());
         if (item_count(storage) != source_type.item_count(other.data())) {
             return false;
@@ -54,11 +54,11 @@ class CppScalarRuntimeType<Set<T>> final : public CppScalarRuntimeTypeBase<Set<T
         return comparison.equal;
     }
 
-    [[nodiscard]] std::size_t item_count(const void *storage) const noexcept override {
+    std::size_t item_count(const void *storage) const noexcept override {
         return static_cast<const details::scalar_set_storage<T> *>(storage)->items.size();
     }
 
-    [[nodiscard]] bool contains(const void *storage, const details::ScalarData &value) const override {
+    bool contains(const void *storage, const details::ScalarData &value) const override {
         const auto &items = static_cast<const details::scalar_set_storage<T> *>(storage)->items;
         return items.contains_with(value.hash(), [&](const auto &item) {
             return this->item_runtime_type().equals(std::addressof(item), value);

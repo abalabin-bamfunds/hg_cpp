@@ -15,9 +15,9 @@ template <typename T> class MutableSet : public Set<T> {
   public:
     explicit MutableSet(Storage &storage) noexcept : Base{storage} {}
 
-    [[nodiscard]] std::size_t size() const noexcept { return Base::size(); }
-    [[nodiscard]] bool empty() const noexcept { return Base::empty(); }
-    [[nodiscard]] bool contains(typename Traits::value_type value) const { return Base::contains(value); }
+    std::size_t size() const noexcept { return Base::size(); }
+    bool empty() const noexcept { return Base::empty(); }
+    bool contains(typename Traits::value_type value) const { return Base::contains(value); }
 
     [[nodiscard]] bool insert(typename Traits::value_type value) const {
         auto &memory = details::current_scalar_memory_resource();
@@ -42,7 +42,7 @@ template <typename T> class MutableSet : public Set<T> {
 
   private:
     // MutableSet is constructed from mutable storage; Set retains the same pointer for read-only access.
-    [[nodiscard]] Storage &mutable_storage() const noexcept { return const_cast<Storage &>(Base::storage()); }
+    Storage &mutable_storage() const noexcept { return const_cast<Storage &>(Base::storage()); }
 };
 
 } // namespace bg

@@ -51,7 +51,7 @@ static_assert(alignof(const TimeSeriesRuntimeType *) >= alignof(std::uint32_t));
     return remainder == 0 ? offset : offset + alignment - remainder;
 }
 
-[[nodiscard]] std::uint32_t packed_offset(std::size_t value, const char *description) {
+std::uint32_t packed_offset(std::size_t value, const char *description) {
     if (value > max_packed_offset) {
         throw std::length_error{description};
     }
@@ -72,7 +72,7 @@ static_assert(alignof(const TimeSeriesRuntimeType *) >= alignof(std::uint32_t));
     return exponent;
 }
 
-[[nodiscard]] const TimeSeriesType &reference_input_target_type(const Type &parameter_type) noexcept {
+const TimeSeriesType &reference_input_target_type(const Type &parameter_type) noexcept {
     const auto &time_series_type = static_cast<const TimeSeriesType &>(parameter_type);
     if (const auto *reference = dynamic_cast<const TimeSeriesReferenceType *>(&time_series_type)) {
         return reference->target_type();
@@ -81,7 +81,7 @@ static_assert(alignof(const TimeSeriesRuntimeType *) >= alignof(std::uint32_t));
 }
 
 template <typename T>
-[[nodiscard]] std::span<const T> stored_objects(const std::byte *storage, std::uint32_t offset,
+std::span<const T> stored_objects(const std::byte *storage, std::uint32_t offset,
                                                 std::size_t count) noexcept {
     if (count == 0) {
         return {};
@@ -94,11 +94,11 @@ struct StorageSection {
     std::size_t offset{};
     std::size_t count{};
 
-    template <typename T> [[nodiscard]] std::span<T> objects(std::byte *storage) const noexcept {
+    template <typename T> std::span<T> objects(std::byte *storage) const noexcept {
         return {reinterpret_cast<T *>(storage + offset), count};
     }
 
-    template <typename T> [[nodiscard]] std::span<const T> objects(const std::byte *storage) const noexcept {
+    template <typename T> std::span<const T> objects(const std::byte *storage) const noexcept {
         return {reinterpret_cast<const T *>(storage + offset), count};
     }
 };
@@ -118,8 +118,8 @@ class StorageLayout {
         return result;
     }
 
-    [[nodiscard]] std::size_t size() const noexcept { return size_; }
-    [[nodiscard]] std::size_t alignment() const noexcept { return alignment_; }
+    std::size_t size() const noexcept { return size_; }
+    std::size_t alignment() const noexcept { return alignment_; }
 
   private:
     std::size_t size_{};
@@ -274,7 +274,7 @@ struct CompilationPlan {
     bool uses_future_scheduling{};
     bool uses_cycle_callbacks{};
 
-    [[nodiscard]] bool has_lifecycle() const noexcept { return !starts.nodes.empty() || !stops.nodes.empty(); }
+    bool has_lifecycle() const noexcept { return !starts.nodes.empty() || !stops.nodes.empty(); }
 };
 
 struct ConstructedScalar {
@@ -316,7 +316,7 @@ struct ConstructedNodeData {
     return result;
 }
 
-[[nodiscard]] std::size_t root_source_node(std::size_t source, std::span<const WiringPointRecord> wiring_points) {
+std::size_t root_source_node(std::size_t source, std::span<const WiringPointRecord> wiring_points) {
     while (wiring_points[source].parent != WiringPointRecord::npos) {
         source = wiring_points[source].parent;
     }
@@ -324,7 +324,7 @@ struct ConstructedNodeData {
     return wiring_points[source].node_index;
 }
 
-[[nodiscard]] OutputLayout physical_source_output(std::size_t source, std::span<const WiringPointRecord> wiring_points,
+OutputLayout physical_source_output(std::size_t source, std::span<const WiringPointRecord> wiring_points,
                                                   std::span<const NodePlan> node_plans) {
     const auto &record = wiring_points[source];
     if (record.parent == WiringPointRecord::npos) {
@@ -355,7 +355,7 @@ struct ConstructedNodeData {
     return nullptr;
 }
 
-[[nodiscard]] OutputLayout source_output(std::size_t source, std::span<const WiringPointRecord> wiring_points,
+OutputLayout source_output(std::size_t source, std::span<const WiringPointRecord> wiring_points,
                                          std::span<const NodePlan> node_plans) {
     auto result = physical_source_output(source, wiring_points, node_plans);
     if (wiring_points[source].parent == WiringPointRecord::npos) {
@@ -368,7 +368,7 @@ struct ConstructedNodeData {
     return result;
 }
 
-[[nodiscard]] SubscriptionPlan &subscriber_list(std::size_t source, std::span<const WiringPointRecord> wiring_points,
+SubscriptionPlan &subscriber_list(std::size_t source, std::span<const WiringPointRecord> wiring_points,
                                                 std::span<NodePlan> node_plans) {
     const auto source_index = root_source_node(source, wiring_points);
     if (wiring_points[source].parent == WiringPointRecord::npos) {
@@ -518,7 +518,7 @@ void resolve_dynamic_subscribers(CompilationPlan &plan) {
     }
 }
 
-[[nodiscard]] const TimeSeriesRuntimeType *input_runtime_type(const TimeSeriesInputPlan &input,
+const TimeSeriesRuntimeType *input_runtime_type(const TimeSeriesInputPlan &input,
                                                               const TimeSeriesRuntimeType *source) {
     if (input.dereferences_reference) {
         return &static_cast<const TimeSeriesReferenceRuntimeType &>(*source).target_runtime_type();
@@ -527,7 +527,7 @@ void resolve_dynamic_subscribers(CompilationPlan &plan) {
     return source;
 }
 
-[[nodiscard]] std::vector<const ScalarRuntimeType *>
+std::vector<const ScalarRuntimeType *>
 parameter_runtime_types(const WiredNode &node, const NodePlan &node_plan,
                         std::span<const WiringPointRecord> wiring_points, std::span<const NodePlan> node_plans) {
     auto result = std::vector<const ScalarRuntimeType *>{};
@@ -556,7 +556,7 @@ parameter_runtime_types(const WiredNode &node, const NodePlan &node_plan,
     return result;
 }
 
-[[nodiscard]] const TimeSeriesRuntimeType *find_output_runtime_type(const WiredNode &node, const NodePlan &node_plan,
+const TimeSeriesRuntimeType *find_output_runtime_type(const WiredNode &node, const NodePlan &node_plan,
                                                                     std::span<const WiringPointRecord> wiring_points,
                                                                     std::span<const NodePlan> node_plans) {
     const auto parameter_types = parameter_runtime_types(node, node_plan, wiring_points, node_plans);
@@ -650,7 +650,7 @@ void plan_runtime_storage(CompilationPlan &plan, std::size_t schedule_word_count
     plan.runtime = {schedule_word_count, storage.size(), storage.alignment()};
 }
 
-[[nodiscard]] std::size_t output_notification_size(const SubscriptionPlan &subscriptions) noexcept {
+std::size_t output_notification_size(const SubscriptionPlan &subscriptions) noexcept {
     const auto callback_reference_count =
         std::ranges::count_if(subscriptions.reference_inputs,
                               [](const auto &subscriber) { return subscriber.notification.function != nullptr; });
@@ -675,7 +675,7 @@ void plan_runtime_storage(CompilationPlan &plan, std::size_t schedule_word_count
     return result;
 }
 
-[[nodiscard]] std::size_t subscription_size(const SubscriptionPlan &subscriptions) noexcept {
+std::size_t subscription_size(const SubscriptionPlan &subscriptions) noexcept {
     auto result = subscriptions.nodes.size() * sizeof(Subscriber);
     if (const auto notifications = output_notification_size(subscriptions); notifications != 0) {
         result = align_up(result, alignof(OutputNotification));
@@ -685,9 +685,9 @@ void plan_runtime_storage(CompilationPlan &plan, std::size_t schedule_word_count
     return result;
 }
 
-[[nodiscard]] std::size_t item_subscriber_size(const ItemSubscriptionPlan &item);
+std::size_t item_subscriber_size(const ItemSubscriptionPlan &item);
 
-[[nodiscard]] std::size_t item_subscriber_size(std::span<const ItemSubscriptionPlan> items) {
+std::size_t item_subscriber_size(std::span<const ItemSubscriptionPlan> items) {
     auto result = std::size_t{};
     for (const auto &item : items) {
         if (item.subscriptions.nodes.size() > max_subscriber_count ||
@@ -703,7 +703,7 @@ void plan_runtime_storage(CompilationPlan &plan, std::size_t schedule_word_count
     return result;
 }
 
-[[nodiscard]] std::size_t item_subscriber_size(const ItemSubscriptionPlan &item) {
+std::size_t item_subscriber_size(const ItemSubscriptionPlan &item) {
     auto result = sizeof(ItemSubscribers) + subscription_size(item.subscriptions);
     result = align_up(result, alignof(ItemSubscribers));
     result += item_subscriber_size(item.items);
@@ -715,12 +715,12 @@ struct RuntimeTypeCounts {
     std::size_t scalar_inputs{};
     bool output{};
 
-    [[nodiscard]] std::size_t total() const noexcept {
+    std::size_t total() const noexcept {
         return time_series_inputs + scalar_inputs + static_cast<std::size_t>(output);
     }
 };
 
-[[nodiscard]] RuntimeTypeCounts runtime_type_counts(const WiredNode &node) {
+RuntimeTypeCounts runtime_type_counts(const WiredNode &node) {
     auto result = RuntimeTypeCounts{.output = node.node_template().uses_output_runtime_type()};
     for (auto parameter = std::size_t{}; parameter < node.signature().parameters.size(); ++parameter) {
         result.time_series_inputs +=
@@ -1013,7 +1013,7 @@ class CompiledGraphBuilder {
             const auto &source = *plan.wiring_paths.paths[i];
             const auto *parent = plan.wiring_paths.parents[i] == no_wiring_path
                                      ? nullptr
-                                     : compiled_paths.data() + plan.wiring_paths.parents[i];
+                                    : compiled_paths.data() + plan.wiring_paths.parents[i];
             std::construct_at(compiled_paths.data() + i, WiringPath{parent, source.name, source.label});
         }
     }

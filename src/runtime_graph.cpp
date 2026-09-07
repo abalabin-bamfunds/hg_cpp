@@ -5,6 +5,7 @@
 #include <bg/graph/dynamic_subscribers.hpp>
 #include <bg/scalar/details/allocation_context.hpp>
 #include <bg/scalar/runtime_type.hpp>
+#include <bg/time_series/ref/ref_provider.hpp>
 #include <bg/time_series/time_series_runtime_type.hpp>
 #include <bg/util/scope_exit.hpp>
 
@@ -63,7 +64,7 @@ class RuntimeGraph::FutureSchedule {
     };
 
     struct Later {
-        [[nodiscard]] bool operator()(const Record &left, const Record &right) const noexcept {
+        bool operator()(const Record &left, const Record &right) const noexcept {
             return left.time > right.time;
         }
     };
@@ -96,7 +97,7 @@ class RuntimeGraph::FutureSchedule {
         }
     }
 
-    [[nodiscard]] std::optional<EvaluationTime> next_time() const noexcept {
+    std::optional<EvaluationTime> next_time() const noexcept {
         if (records_.empty()) {
             return std::nullopt;
         }
@@ -179,14 +180,14 @@ class RuntimeGraph::ScheduledNodes {
       public:
         explicit Iterator(ScheduledNodes &nodes) noexcept : nodes_(&nodes) { advance(); }
 
-        [[nodiscard]] auto operator*() const noexcept -> ScheduledNode { return current_; }
+        auto operator*() const noexcept -> ScheduledNode { return current_; }
 
         auto operator++() noexcept -> Iterator & {
             advance();
             return *this;
         }
 
-        [[nodiscard]] auto operator==(std::default_sentinel_t) const noexcept -> bool {
+        auto operator==(std::default_sentinel_t) const noexcept -> bool {
             return word_index_ == nodes_->word_count();
         }
 
@@ -225,15 +226,15 @@ class RuntimeGraph::ScheduledNodes {
 
     explicit ScheduledNodes(std::span<SchedulingInfo> scheduling) noexcept : scheduling_(scheduling) {}
 
-    [[nodiscard]] auto begin() noexcept -> Iterator { return Iterator{*this}; }
-    [[nodiscard]] auto end() const noexcept -> std::default_sentinel_t { return {}; }
+    auto begin() noexcept -> Iterator { return Iterator{*this}; }
+    auto end() const noexcept -> std::default_sentinel_t { return {}; }
 
   private:
-    [[nodiscard]] std::size_t word_count() const noexcept { return scheduling_.size(); }
+    std::size_t word_count() const noexcept { return scheduling_.size(); }
 
-    [[nodiscard]] ScheduleWord evaluation(std::size_t index) const noexcept { return scheduling_[index].evaluation; }
+    ScheduleWord evaluation(std::size_t index) const noexcept { return scheduling_[index].evaluation; }
 
-    [[nodiscard]] ScheduleWord validity_check(std::size_t index) const noexcept {
+    ScheduleWord validity_check(std::size_t index) const noexcept {
         return scheduling_[index].validity_check;
     }
 
@@ -344,8 +345,8 @@ RuntimeGraph::~RuntimeGraph() {
                 }
 
                 auto &input = runtime_node.reference_input(parameter_index);
-                if (input.target != nullptr && input.target->subscribers != nullptr) {
-                    input.target->subscribers->remove(*this, parameter.value_offset());
+                if (input.target) {
+                    details::remove_reference_subscriber(input.target, *this, parameter.value_offset());
                 }
             }
         }

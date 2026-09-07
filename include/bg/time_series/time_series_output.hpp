@@ -32,11 +32,11 @@ template <details::time_series_variable Variable> class Out<Variable> {
     Out(Out &&) noexcept = default;
     Out(const Out &) = delete;
 
-    [[nodiscard]] bool valid() const noexcept { return state_->valid(); }
-    [[nodiscard]] EvaluationTime last_updated() const noexcept { return state_->last_updated(); }
-    [[nodiscard]] const TimeSeriesRuntimeType &runtime_type() const noexcept { return state_->runtime_type(); }
-    [[nodiscard]] const void *data() const noexcept { return state_->data(); }
-    [[nodiscard]] const Out *operator->() const noexcept { return this; }
+    bool valid() const noexcept { return state_->valid(); }
+    EvaluationTime last_updated() const noexcept { return state_->last_updated(); }
+    const TimeSeriesRuntimeType &runtime_type() const noexcept { return state_->runtime_type(); }
+    const void *data() const noexcept { return state_->data(); }
+    const Out *operator->() const noexcept { return this; }
 
     void invalidate() const { state_->invalidate(); }
 

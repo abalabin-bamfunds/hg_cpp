@@ -14,15 +14,15 @@ class EvaluationContext {
   public:
     ~EvaluationContext();
 
-    [[nodiscard]] const EvaluationTime &evaluation_time() const noexcept { return evaluation_time_; }
+    const EvaluationTime &evaluation_time() const noexcept { return evaluation_time_; }
 
-    [[nodiscard]] RuntimeGraph &runtime_graph() const noexcept { return *runtime_graph_; }
+    RuntimeGraph &runtime_graph() const noexcept { return *runtime_graph_; }
 
-    [[nodiscard]] GlobalState &global_state() const noexcept;
+    GlobalState &global_state() const noexcept;
 
-    [[nodiscard]] std::size_t node_index() const noexcept { return node_index_; }
+    std::size_t node_index() const noexcept { return node_index_; }
 
-    [[nodiscard]] ScratchPad &scratch() noexcept { return scratch_; }
+    ScratchPad &scratch() noexcept { return scratch_; }
 
     void schedule_now() const noexcept;
     ScheduleHandle schedule_at(EvaluationTime time) const;

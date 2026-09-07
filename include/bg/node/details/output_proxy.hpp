@@ -2,10 +2,10 @@
 
 #include <bg/evaluation_context.hpp>
 #include <bg/time_series/details/output_path.hpp>
+#include <bg/util/tagged_ptr.hpp>
 
 #include <cstdint>
 #include <memory>
-#include <utility>
 
 namespace bg::details {
 
@@ -21,35 +21,35 @@ template <typename State> class output_proxy {
         return copy(prototype, output_path_context(output_path));
     }
 
-    [[nodiscard]] static output_proxy borrow(State &state) noexcept {
-        return output_proxy{reinterpret_cast<std::uintptr_t>(&state) | borrowed_tag};
-    }
+    [[nodiscard]] static output_proxy borrow(State &state) noexcept { return output_proxy{state, Ownership::borrowed}; }
 
     output_proxy(const output_proxy &) = delete;
     output_proxy &operator=(const output_proxy &) = delete;
 
-    output_proxy(output_proxy &&other) noexcept : state_{std::exchange(other.state_, 0)} {}
+    output_proxy(output_proxy &&other) noexcept : state_{other.state_} { other.state_.reset(); }
     output_proxy &operator=(output_proxy &&) = delete;
 
     ~output_proxy() {
-        if (state_ != 0 && (state_ & borrowed_tag) == 0) {
+        if (state_ && state_.tag() == Ownership::owned) {
             get().release();
         }
     }
 
-    [[nodiscard]] State &get() const noexcept { return *pointer(); }
-    [[nodiscard]] State *operator->() noexcept { return pointer(); }
-    [[nodiscard]] State *operator->() const noexcept { return pointer(); }
+    State &get() const noexcept { return *pointer(); }
+    State *operator->() noexcept { return pointer(); }
+    State *operator->() const noexcept { return pointer(); }
 
   private:
-    explicit output_proxy(State &state) noexcept : state_{reinterpret_cast<std::uintptr_t>(&state)} {}
-    explicit output_proxy(std::uintptr_t state) noexcept : state_{state} {}
+    enum class Ownership : std::uintptr_t {
+        owned,
+        borrowed,
+    };
 
-    [[nodiscard]] State *pointer() const noexcept { return reinterpret_cast<State *>(state_ & ~borrowed_tag); }
+    explicit output_proxy(State &state, Ownership ownership = Ownership::owned) noexcept : state_{&state, ownership} {}
 
-    static constexpr auto borrowed_tag = std::uintptr_t{1};
+    State *pointer() const noexcept { return state_.get(); }
 
-    std::uintptr_t state_;
+    util::tagged_ptr<State, 1, Ownership> state_;
 };
 
 } // namespace bg::details

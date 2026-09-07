@@ -59,13 +59,13 @@ class Signature {
     [[nodiscard]] SignatureResolution resolve_with_bindings(std::span<const Type *const> arguments,
                                                             const TypeMap &bindings) const;
 
-    [[nodiscard]] util::symbol name() const noexcept { return name_; }
+    util::symbol name() const noexcept { return name_; }
 
-    [[nodiscard]] std::size_t parameter_count() const noexcept { return parameters_.size(); }
+    std::size_t parameter_count() const noexcept { return parameters_.size(); }
 
-    [[nodiscard]] const Parameter &parameter(std::size_t index) const noexcept { return parameters_[index]; }
+    const Parameter &parameter(std::size_t index) const noexcept { return parameters_[index]; }
 
-    [[nodiscard]] bool has_output() const noexcept { return output_ != nullptr; }
+    bool has_output() const noexcept { return output_ != nullptr; }
 
   private:
     [[nodiscard]] SignatureResolution resolve_seeded(std::span<const Type *const> arguments, TypeMap bindings) const;

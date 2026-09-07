@@ -19,7 +19,7 @@ class In<REF<Target, TimeSeriesProperties...>, Properties...> {
     static_assert(ParsedProperties::valid);
 
   public:
-    using storage_type = details::ReferenceStorage *;
+    using storage_type = details::ReferenceAddress;
 
     In() noexcept : data_{cpp_time_series_runtime_type<REF<Target, TimeSeriesProperties...>>(), MIN_DT, nullptr} {}
 
@@ -29,14 +29,14 @@ class In<REF<Target, TimeSeriesProperties...>, Properties...> {
     In(const EvaluationTime &last_updated, const void *value, const TimeSeriesRuntimeType &runtime_type) noexcept
         : data_{runtime_type, last_updated, value} {}
 
-    [[nodiscard]] bool valid() const noexcept { return data_.valid(); }
-    [[nodiscard]] EvaluationTime last_updated() const noexcept { return data_.last_updated(); }
-    [[nodiscard]] details::ReferenceStorage *target() const noexcept {
-        return *static_cast<details::ReferenceStorage *const *>(data_.data());
+    bool valid() const noexcept { return data_.valid(); }
+    EvaluationTime last_updated() const noexcept { return data_.last_updated(); }
+    details::ReferenceAddress target() const noexcept {
+        return *static_cast<const details::ReferenceAddress *>(data_.data());
     }
-    [[nodiscard]] const TimeSeriesRuntimeType &runtime_type() const noexcept { return data_.runtime_type(); }
-    [[nodiscard]] const void *data() const noexcept { return data_.data(); }
-    [[nodiscard]] const In *operator->() const noexcept { return this; }
+    const TimeSeriesRuntimeType &runtime_type() const noexcept { return data_.runtime_type(); }
+    const void *data() const noexcept { return data_.data(); }
+    const In *operator->() const noexcept { return this; }
 
     template <typename... Functions> decltype(auto) visit(Functions &&...functions) const {
         return In<TS_T>{data_.last_updated_ref(), data_.data(), data_.runtime_type()}.visit(

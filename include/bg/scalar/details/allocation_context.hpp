@@ -24,8 +24,8 @@ class ScalarAllocationContext {
     ScalarAllocationOwner *previous_;
 };
 
-[[nodiscard]] const ScalarAllocationOwner *current_scalar_allocation_owner() noexcept;
-[[nodiscard]] std::pmr::memory_resource &current_scalar_memory_resource();
+const ScalarAllocationOwner *current_scalar_allocation_owner() noexcept;
+std::pmr::memory_resource &current_scalar_memory_resource();
 
 void record_context_scalar_allocation(const void *value);
 void check_context_scalar_deallocation(const void *value);

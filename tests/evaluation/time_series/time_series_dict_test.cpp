@@ -6,9 +6,10 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include <chrono>
 #include <array>
+#include <chrono>
 #include <cstdint>
+#include <optional>
 #include <vector>
 
 namespace {
@@ -121,12 +122,11 @@ TEST_CASE("a time series dictionary publishes item and key changes",
 
 namespace {
 
-struct item_modified_sink_definition {
+struct item_modified_value_definition {
     bg::In<IntDictionary> input;
+    bg::Out<bg::TS<bool>> output;
 
-    void evaluate() const { modified.push_back(input.item_modified(1)); }
-
-    inline static std::vector<bool> modified;
+    void evaluate() const { output.set(input.item_modified(1)); }
 };
 
 } // namespace
@@ -135,29 +135,26 @@ TEST_CASE("dictionary item queries distinguish addition from modification",
           "[evaluation][tsd][feature:collection-change][series:tsd][scalar:integer]"
           "[transition:addition][transition:update][binding:direct]") {
     const auto source = bg::node<dict_source_definition>();
-    const auto sink = bg::node<item_modified_sink_definition>();
-    item_modified_sink_definition::modified.clear();
+    const auto modified = bg::node<item_modified_value_definition>();
+    const auto graph = [&] { return modified(source()); };
 
-    bg::run_graph([&] { sink(source()); });
+    const auto actual = bg::testing::test_graph(graph);
 
-    CHECK(item_modified_sink_definition::modified == std::vector{false, true, false});
+    CHECK(actual.equals({false, true, false}));
 }
 
 namespace {
 
 using IntReferenceDictionary = bg::TSD<std::int64_t, bg::REF<bg::TS<int>>>;
 
-struct reference_dictionary_sink_definition {
+struct reference_dictionary_summary_definition {
     bg::In<IntReferenceDictionary> input;
+    bg::Out<bg::TS<int>> output;
 
     void evaluate() const {
-        sizes.push_back(input.size());
-        const auto *target = input[1].target();
-        values.push_back(*static_cast<const int *>(target->target_value));
+        const auto target = bg::details::reference_target(input[1].target());
+        output.set(static_cast<int>(input.size() * 100) + *static_cast<const int *>(target.value));
     }
-
-    inline static std::vector<std::size_t> sizes;
-    inline static std::vector<int> values;
 };
 
 } // namespace
@@ -166,14 +163,12 @@ TEST_CASE("a value dictionary provides a source-backed reference representation"
           "[evaluation][tsd][reference][feature:reference][series:tsd][scalar:integer]"
           "[binding:value-to-reference][transition:update]") {
     const auto source = bg::node<dict_source_definition>();
-    const auto sink = bg::node<reference_dictionary_sink_definition>();
-    reference_dictionary_sink_definition::sizes.clear();
-    reference_dictionary_sink_definition::values.clear();
+    const auto summarize = bg::node<reference_dictionary_summary_definition>();
+    const auto graph = [&] { return summarize(source()); };
 
-    bg::run_graph([&] { sink(source()); });
+    const auto actual = bg::testing::test_graph(graph);
 
-    CHECK(reference_dictionary_sink_definition::sizes == std::vector<std::size_t>{2, 1});
-    CHECK(reference_dictionary_sink_definition::values == std::vector{10, 11});
+    CHECK(actual.equals({210, std::nullopt, 111}));
 }
 
 namespace {
@@ -188,16 +183,11 @@ struct reference_dictionary_rekey_definition {
     }
 };
 
-struct dereferenced_dictionary_sink_definition {
+struct dereferenced_dictionary_summary_definition {
     bg::In<IntDictionary> input;
+    bg::Out<bg::TS<int>> output;
 
-    void evaluate() const {
-        sizes.push_back(input.size());
-        values.push_back(input.contains(10) ? *input[10] : -1);
-    }
-
-    inline static std::vector<std::size_t> sizes;
-    inline static std::vector<int> values;
+    void evaluate() const { output.set(static_cast<int>(input.size() * 100) + (input.contains(10) ? *input[10] : -1)); }
 };
 
 struct explicit_reference_dictionary_pass_definition {
@@ -207,21 +197,76 @@ struct explicit_reference_dictionary_pass_definition {
     void evaluate() const { output.set(input); }
 };
 
+struct dictionary_summary_definition {
+    bg::In<IntDictionary> input;
+    bg::Out<bg::TS<int>> output;
+
+    void evaluate() const { output.set(static_cast<int>(input.size() * 100) + *input[1]); }
+};
+
 } // namespace
 
-TEST_CASE("an independently built reference dictionary dereferences without intermediate evaluations",
+TEST_CASE("rekeying a reference dictionary preserves item updates and removals",
           "[evaluation][tsd][reference][feature:reference][series:tsd][scalar:integer]"
           "[binding:reference-to-value][binding:value-to-reference][transition:update][transition:removal]") {
     const auto source = bg::node<dict_source_definition>();
     const auto rekey = bg::node<reference_dictionary_rekey_definition>();
-    const auto sink = bg::node<dereferenced_dictionary_sink_definition>();
-    dereferenced_dictionary_sink_definition::sizes.clear();
-    dereferenced_dictionary_sink_definition::values.clear();
+    const auto summarize = bg::node<dereferenced_dictionary_summary_definition>();
+    const auto graph = [&] { return summarize(rekey(source())); };
 
-    bg::run_graph([&] { sink(rekey(source())); });
+    const auto actual = bg::testing::test_graph(graph);
 
-    CHECK(dereferenced_dictionary_sink_definition::sizes == std::vector<std::size_t>{2, 2, 1});
-    CHECK(dereferenced_dictionary_sink_definition::values == std::vector{10, 11, 11});
+    CHECK(actual.equals({210, 211, 111}));
+}
+
+namespace {
+
+struct increment_reference_target_definition {
+    bg::In<bg::TS<int>> input;
+    bg::Out<bg::TS<int>> output;
+
+    void evaluate() const { output.set(*input + 1); }
+};
+
+struct scale_reference_target_definition {
+    bg::In<bg::TS<int>> input;
+    bg::Out<bg::TS<int>> output;
+
+    void evaluate() const { output.set(*input * 10); }
+};
+
+struct standalone_reference_dictionary_definition {
+    bg::In<bg::REF<bg::TS<int>>> first;
+    bg::In<bg::REF<bg::TS<int>>> second;
+    bg::Out<IntReferenceDictionary> output;
+
+    void evaluate() const {
+        output[1].set(first);
+        output[2].set(second);
+    }
+};
+
+struct sum_dictionary_definition {
+    bg::In<IntDictionary> input;
+    bg::Out<bg::TS<int>> output;
+
+    void evaluate() const { output.set(*input[1] + *input[2]); }
+};
+
+} // namespace
+
+TEST_CASE("a reference dictionary dereferences unrelated node outputs",
+          "[evaluation][tsd][reference][feature:reference][series:tsd][series:value][scalar:integer]"
+          "[binding:value-to-reference][binding:reference-to-value][transition:update]") {
+    const auto increment = bg::node<increment_reference_target_definition>();
+    const auto scale = bg::node<scale_reference_target_definition>();
+    const auto references = bg::node<standalone_reference_dictionary_definition>();
+    const auto sum = bg::node<sum_dictionary_definition>();
+    const auto graph = [&](bg::wp<bg::TS<int>> input) { return sum(references(increment(input), scale(input))); };
+
+    const auto actual = bg::testing::test_graph(graph, std::array{1, 2, 3});
+
+    CHECK(actual.equals({12, 23, 34}));
 }
 
 TEST_CASE("an explicit dictionary reference input receives a recursively adapted target",
@@ -230,41 +275,23 @@ TEST_CASE("an explicit dictionary reference input receives a recursively adapted
           "[transition:update][transition:removal]") {
     const auto source = bg::node<dict_source_definition>();
     const auto pass = bg::node<explicit_reference_dictionary_pass_definition>();
-    const auto sink = bg::node<dict_sink_definition>();
-    dict_sink_definition::sizes.clear();
-    dict_sink_definition::values.clear();
-    dict_sink_definition::added.clear();
-    dict_sink_definition::removed.clear();
-    dict_sink_definition::modified.clear();
+    const auto summarize = bg::node<dictionary_summary_definition>();
+    const auto graph = [&] { return summarize(pass(source())); };
 
-    bg::run_graph([&] { sink(pass(source())); });
+    const auto actual = bg::testing::test_graph(graph);
 
-    CHECK(dict_sink_definition::sizes == std::vector<std::size_t>{2, 2, 1});
-    CHECK(dict_sink_definition::values == std::vector{10, 11, 11});
+    CHECK(actual.equals({210, 211, 111}));
 }
-
-namespace {
-
-struct selected_value_sink_definition {
-    bg::In<bg::TS<int>, bg::optional> input;
-
-    void evaluate() const { values.push_back(input.valid() ? *input : -1); }
-
-    inline static std::vector<int> values;
-};
-
-} // namespace
 
 TEST_CASE("dictionary item selection ignores changes to other keys",
           "[evaluation][tsd][reference][feature:getitem][series:tsd][scalar:integer]"
           "[binding:value-to-reference][binding:reference-to-value][transition:update]") {
     const auto source = bg::node<dict_source_definition>();
-    const auto sink = bg::node<selected_value_sink_definition>();
-    selected_value_sink_definition::values.clear();
+    const auto graph = [&] { return source()[1]; };
 
-    bg::run_graph([&] { sink(source()[1]); });
+    const auto actual = bg::testing::test_graph(graph);
 
-    CHECK(selected_value_sink_definition::values == std::vector{10, 11});
+    CHECK(actual.equals({10, 11}));
 }
 
 namespace {
@@ -302,12 +329,11 @@ TEST_CASE("dictionary item selection follows a missing key through addition, rem
           "[binding:value-to-reference][binding:reference-to-value][transition:addition]"
           "[transition:removal][transition:resurrection]") {
     const auto source = bg::node<delayed_selected_item_definition>();
-    const auto sink = bg::node<selected_value_sink_definition>();
-    selected_value_sink_definition::values.clear();
+    const auto graph = [&] { return source()[3]; };
 
-    bg::run_graph([&] { sink(source()[3]); });
+    const auto actual = bg::testing::test_graph(graph);
 
-    CHECK(selected_value_sink_definition::values == std::vector{30, -1, 31});
+    CHECK(actual.equals({std::nullopt, 30, std::nullopt, 31}));
 }
 
 TEST_CASE("dictionary item selection flattens a contained reference",
@@ -315,12 +341,11 @@ TEST_CASE("dictionary item selection flattens a contained reference",
           "[binding:value-to-reference][binding:reference-to-value][transition:update]") {
     const auto source = bg::node<dict_source_definition>();
     const auto rekey = bg::node<reference_dictionary_rekey_definition>();
-    const auto sink = bg::node<selected_value_sink_definition>();
-    selected_value_sink_definition::values.clear();
+    const auto graph = [&] { return rekey(source())[10]; };
 
-    bg::run_graph([&] { sink(rekey(source())[10]); });
+    const auto actual = bg::testing::test_graph(graph);
 
-    CHECK(selected_value_sink_definition::values == std::vector{10, 11});
+    CHECK(actual.equals({10, 11}));
 }
 
 namespace {
@@ -341,12 +366,11 @@ struct list_dictionary_source_definition {
     void evaluate() const { output[1][0].set(11); }
 };
 
-struct selected_list_sink_definition {
+struct selected_list_sum_definition {
     bg::In<bg::TSL<bg::TS<int>, 2>> input;
+    bg::Out<bg::TS<int>> output;
 
-    void evaluate() const { values.push_back(*input[0] + *input[1]); }
-
-    inline static std::vector<int> values;
+    void evaluate() const { output.set(*input[0] + *input[1]); }
 };
 
 } // namespace
@@ -355,12 +379,12 @@ TEST_CASE("dictionary item selection supports collection items",
           "[evaluation][tsd][tsl][reference][feature:getitem][series:tsd][series:fixed-tsl]"
           "[scalar:integer][binding:value-to-reference][binding:reference-to-value][transition:update]") {
     const auto source = bg::node<list_dictionary_source_definition>();
-    const auto sink = bg::node<selected_list_sink_definition>();
-    selected_list_sink_definition::values.clear();
+    const auto sum = bg::node<selected_list_sum_definition>();
+    const auto graph = [&] { return sum(source()[1]); };
 
-    bg::run_graph([&] { sink(source()[1]); });
+    const auto actual = bg::testing::test_graph(graph);
 
-    CHECK(selected_list_sink_definition::values == std::vector{30, 31});
+    CHECK(actual.equals({30, 31}));
 }
 
 namespace {
@@ -386,8 +410,7 @@ TEST_CASE("a time series key retargets dictionary item selection",
         return dictionary(input)[key];
     };
 
-    const auto actual = bg::testing::test_graph(graph, std::array{10, 11, 12},
-                                                std::array<std::int64_t, 3>{1, 2, 1});
+    const auto actual = bg::testing::test_graph(graph, std::array{10, 11, 12}, std::array<std::int64_t, 3>{1, 2, 1});
     CHECK(actual.equals({10, 110, 12}));
 }
 
@@ -409,26 +432,17 @@ struct resurrecting_selected_item_definition {
     }
 };
 
-struct selected_reference_sink_definition {
-    bg::In<bg::REF<bg::TS<int>>, bg::optional> input;
-
-    void evaluate() const { validity.push_back(input.valid()); }
-
-    inline static std::vector<bool> validity;
-};
-
 } // namespace
 
 TEST_CASE("same-cycle item resurrection retains the selected reference",
           "[evaluation][tsd][reference][feature:getitem][series:tsd][scalar:integer]"
           "[binding:value-to-reference][binding:reference-to-reference][transition:resurrection]") {
     const auto source = bg::node<resurrecting_selected_item_definition>();
-    const auto sink = bg::node<selected_reference_sink_definition>();
-    selected_reference_sink_definition::validity.clear();
+    const auto graph = [&] { return source()[3]; };
 
-    bg::run_graph([&] { sink(source()[3]); });
+    const auto actual = bg::testing::test_graph(graph);
 
-    CHECK(selected_reference_sink_definition::validity == std::vector{true});
+    CHECK(actual.equals({30, 31}));
 }
 
 namespace {
@@ -442,26 +456,17 @@ struct nested_dict_source_definition {
     void evaluate() const {}
 };
 
-struct nested_dict_sink_definition {
-    bg::In<NestedIntDictionary> input;
-
-    void evaluate() const { value = *input[1][2]; }
-
-    inline static int value{};
-};
-
 } // namespace
 
 TEST_CASE("time series dictionaries can contain time series dictionaries",
           "[evaluation][tsd][series:tsd][feature:collection-change][scalar:integer]"
           "[representation:native][declaration:concrete][binding:direct]") {
     const auto source = bg::node<nested_dict_source_definition>();
-    const auto sink = bg::node<nested_dict_sink_definition>();
-    nested_dict_sink_definition::value = 0;
+    const auto graph = [&] { return source()[1][2]; };
 
-    bg::run_graph([&] { sink(source()); });
+    const auto actual = bg::testing::test_graph(graph);
 
-    CHECK(nested_dict_sink_definition::value == 12);
+    CHECK(actual.equals({12}));
 }
 
 namespace {
@@ -478,12 +483,11 @@ struct bundle_dict_source_definition {
     void start() const { output[1]->value.set(12); }
 };
 
-struct bundle_dict_sink_definition {
+struct bundle_dict_value_definition {
     bg::In<BundleDictionary> input;
+    bg::Out<bg::TS<int>> output;
 
-    void evaluate() const { value = *input[1]->value; }
-
-    inline static int value{};
+    void evaluate() const { output.set(*input[1]->value); }
 };
 
 } // namespace
@@ -492,12 +496,12 @@ TEST_CASE("time series dictionaries can contain runtime-sized time series",
           "[evaluation][tsd][series:tsd][tsb][series:tsb][feature:collection-change][scalar:integer]"
           "[representation:native][declaration:concrete][binding:direct][schema:named]") {
     const auto source = bg::node<bundle_dict_source_definition>();
-    const auto sink = bg::node<bundle_dict_sink_definition>();
-    bundle_dict_sink_definition::value = 0;
+    const auto extract = bg::node<bundle_dict_value_definition>();
+    const auto graph = [&] { return extract(source()); };
 
-    bg::run_graph([&] { sink(source()); });
+    const auto actual = bg::testing::test_graph(graph);
 
-    CHECK(bundle_dict_sink_definition::value == 12);
+    CHECK(actual.equals({12}));
 }
 
 namespace {
@@ -513,12 +517,11 @@ struct canceled_add_source_definition {
     void evaluate() const {}
 };
 
-struct evaluation_count_sink_definition {
+struct evaluation_marker_definition {
     bg::In<IntDictionary> input;
+    bg::Out<bg::TS<bool>> output;
 
-    void evaluate() const { ++count; }
-
-    inline static int count{};
+    void evaluate() const { output.set(true); }
 };
 
 } // namespace
@@ -528,12 +531,12 @@ TEST_CASE("adding and removing a new dictionary item in one invocation produces 
           "[transition:update][scalar:integer][representation:native][declaration:concrete]"
           "[binding:direct][transition:addition]") {
     const auto source = bg::node<canceled_add_source_definition>();
-    const auto sink = bg::node<evaluation_count_sink_definition>();
-    evaluation_count_sink_definition::count = 0;
+    const auto marker = bg::node<evaluation_marker_definition>();
+    const auto graph = [&] { return marker(source()); };
 
-    bg::run_graph([&] { sink(source()); });
+    const auto actual = bg::testing::test_graph(graph);
 
-    CHECK(evaluation_count_sink_definition::count == 1);
+    CHECK(actual.equals({true}));
 }
 
 namespace {
@@ -604,16 +607,15 @@ struct nested_item_resurrecting_source_definition {
     }
 };
 
-struct nested_item_resurrection_sink_definition {
+struct nested_item_resurrection_count_definition {
     bg::In<NestedIntDictionary> input;
+    bg::Out<bg::TS<int>> output;
 
     void evaluate() const {
-        auto modified_count = std::size_t{};
+        auto modified_count = int{};
         input.for_each_modified([&](const auto &) { ++modified_count; });
-        modified.push_back(modified_count);
+        output.set(modified_count);
     }
-
-    inline static std::vector<std::size_t> modified;
 };
 
 } // namespace
@@ -622,12 +624,12 @@ TEST_CASE("resurrecting a dictionary collection item reports a modification",
           "[evaluation][tsd][series:tsd][feature:collection-change][transition:resurrection]"
           "[scalar:integer][representation:native][declaration:concrete][binding:direct]") {
     const auto source = bg::node<nested_item_resurrecting_source_definition>();
-    const auto sink = bg::node<nested_item_resurrection_sink_definition>();
-    nested_item_resurrection_sink_definition::modified.clear();
+    const auto count = bg::node<nested_item_resurrection_count_definition>();
+    const auto graph = [&] { return count(source()); };
 
-    bg::run_graph([&] { sink(source()); });
+    const auto actual = bg::testing::test_graph(graph);
 
-    CHECK(nested_item_resurrection_sink_definition::modified == std::vector<std::size_t>{0, 1});
+    CHECK(actual.equals({0, 1}));
 }
 
 namespace {
@@ -657,17 +659,11 @@ TEST_CASE("a generic dictionary view uses its resolved item type",
           "[scalar:integer][representation:native][binding:direct]") {
     const auto source = bg::node<one_item_dict_source_definition>();
     const auto copy = bg::node<generic_dict_copy_definition>();
-    const auto sink = bg::node<dict_sink_definition>();
-    dict_sink_definition::sizes.clear();
-    dict_sink_definition::values.clear();
-    dict_sink_definition::added.clear();
-    dict_sink_definition::removed.clear();
-    dict_sink_definition::modified.clear();
+    const auto graph = [&] { return copy(source())[1]; };
 
-    bg::run_graph([&] { sink(copy(source())); });
+    const auto actual = bg::testing::test_graph(graph);
 
-    CHECK(dict_sink_definition::sizes == std::vector<std::size_t>{1});
-    CHECK(dict_sink_definition::values == std::vector{10});
+    CHECK(actual.equals<int>({10}));
 }
 
 namespace {
@@ -784,14 +780,9 @@ TEST_CASE("a dictionary preserves its value when a required input becomes invali
           "[scalar:integer][representation:native][declaration:concrete][binding:direct]") {
     const auto source = bg::node<invalidating_dict_input_definition>();
     const auto dict_from_value = bg::node<dict_from_value_definition>();
-    const auto sink = bg::node<optional_dict_sink_definition>();
-    optional_dict_sink_definition::validity.clear();
-    optional_dict_sink_definition::sizes.clear();
-    optional_dict_sink_definition::added.clear();
-    optional_dict_sink_definition::removed.clear();
+    const auto graph = [&] { return dict_from_value(source())[1]; };
 
-    bg::run_graph([&] { sink(dict_from_value(source())); });
+    const auto actual = bg::testing::test_graph(graph);
 
-    CHECK(optional_dict_sink_definition::validity == std::vector{true});
-    CHECK(optional_dict_sink_definition::sizes == std::vector<std::size_t>{1});
+    CHECK(actual.equals({1}));
 }

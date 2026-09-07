@@ -31,34 +31,34 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...> {
     In(const EvaluationTime &last_updated, const void *value, const TimeSeriesRuntimeType &runtime_type) noexcept
         : data_{runtime_type, last_updated, value} {}
 
-    [[nodiscard]] bool valid() const noexcept { return data_.valid(); }
-    [[nodiscard]] EvaluationTime last_updated() const noexcept { return data_.last_updated(); }
-    [[nodiscard]] std::size_t size() const noexcept {
+    bool valid() const noexcept { return data_.valid(); }
+    EvaluationTime last_updated() const noexcept { return data_.last_updated(); }
+    std::size_t size() const noexcept {
         return valid() ? data_.runtime_type().item_count(data_.data()) : 0;
     }
-    [[nodiscard]] bool contains(const Scalar<K> &key) const { return contains(key.input_view()); }
+    bool contains(const Scalar<K> &key) const { return contains(key.input_view()); }
 
     template <scalar_source Source>
         requires(!details::scalar_variable<K> && std::same_as<canonical_scalar_t<Source>, K>)
-    [[nodiscard]] bool contains(Source &&key) const {
+    bool contains(Source &&key) const {
         const auto value = canonical_scalar(std::forward<Source>(key));
         return contains(details::make_scalar_source<K>(value));
     }
 
-    [[nodiscard]] In<Item> operator[](const Scalar<K> &key) const { return item(key.input_view()); }
+    In<Item> operator[](const Scalar<K> &key) const { return item(key.input_view()); }
 
     template <scalar_source Source>
         requires(!details::scalar_variable<K> && std::same_as<canonical_scalar_t<Source>, K>)
-    [[nodiscard]] In<Item> operator[](Source &&key) const {
+    In<Item> operator[](Source &&key) const {
         const auto value = canonical_scalar(std::forward<Source>(key));
         return item(details::make_scalar_source<K>(value));
     }
 
-    [[nodiscard]] bool item_modified(const Scalar<K> &key) const { return item_modified(key.input_view()); }
+    bool item_modified(const Scalar<K> &key) const { return item_modified(key.input_view()); }
 
     template <scalar_source Source>
         requires(!details::scalar_variable<K> && std::same_as<canonical_scalar_t<Source>, K>)
-    [[nodiscard]] bool item_modified(Source &&key) const {
+    bool item_modified(Source &&key) const {
         const auto value = canonical_scalar(std::forward<Source>(key));
         return item_modified(details::make_scalar_source<K>(value));
     }
@@ -89,9 +89,9 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...> {
         apply_changes(&details::TimeSeriesDictionaryRuntimeType::for_each_modified, function);
     }
 
-    [[nodiscard]] const TimeSeriesRuntimeType &runtime_type() const noexcept { return data_.runtime_type(); }
-    [[nodiscard]] const void *data() const noexcept { return data_.data(); }
-    [[nodiscard]] const In *operator->() const noexcept { return this; }
+    const TimeSeriesRuntimeType &runtime_type() const noexcept { return data_.runtime_type(); }
+    const void *data() const noexcept { return data_.data(); }
+    const In *operator->() const noexcept { return this; }
 
     template <typename... Functions> decltype(auto) visit(Functions &&...functions) const {
         return In<TS_T>{data_.last_updated_ref(), data_.data(), data_.runtime_type()}.visit(
@@ -107,19 +107,19 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...> {
     static constexpr InputValidity validity = ParsedProperties::validity;
 
   private:
-    [[nodiscard]] const details::TimeSeriesDictionaryRuntimeType &dictionary_runtime_type() const noexcept {
+    const details::TimeSeriesDictionaryRuntimeType &dictionary_runtime_type() const noexcept {
         return static_cast<const details::TimeSeriesDictionaryRuntimeType &>(data_.runtime_type());
     }
 
-    [[nodiscard]] const ScalarRuntimeType &key_runtime_type() const noexcept {
+    const ScalarRuntimeType &key_runtime_type() const noexcept {
         return static_cast<const details::TimeSeriesDictionaryRuntimeType &>(data_.runtime_type()).key_runtime_type();
     }
 
-    [[nodiscard]] bool contains(const details::ScalarData &key) const {
+    bool contains(const details::ScalarData &key) const {
         return valid() && dictionary_runtime_type().find_item(data_.data(), key) != util::occupancy_index::npos;
     }
 
-    [[nodiscard]] std::uint32_t require_position(const details::ScalarData &key) const {
+    std::uint32_t require_position(const details::ScalarData &key) const {
         if (!valid()) {
             throw std::out_of_range{"time series dictionary key was not found"};
         }
@@ -130,14 +130,14 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...> {
         return id;
     }
 
-    [[nodiscard]] In<Item> item(const details::ScalarData &key) const { return make_item(require_position(key)); }
+    In<Item> item(const details::ScalarData &key) const { return make_item(require_position(key)); }
 
     [[nodiscard]] In<Item> make_item(std::uint32_t position) const {
         const auto item = data_.runtime_type().item(data_.data(), position);
         return {item.last_updated, item.value, item.runtime_type};
     }
 
-    [[nodiscard]] bool item_modified(const details::ScalarData &key) const {
+    bool item_modified(const details::ScalarData &key) const {
         if (!valid()) {
             return false;
         }

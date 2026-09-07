@@ -19,7 +19,7 @@ template <std::size_t Size>
 }
 
 template <std::size_t Size>
-[[nodiscard]] bool free_list_valid(const free_fixed_time_series_list_storage<Size> &storage) noexcept {
+bool free_list_valid(const free_fixed_time_series_list_storage<Size> &storage) noexcept {
     if (storage.node == nullptr) {
         return false;
     }
@@ -40,14 +40,14 @@ template <std::size_t Size> class FreeFixedTimeSeriesListRuntimeType final : pub
     explicit FreeFixedTimeSeriesListRuntimeType(const TimeSeriesListType &type)
         : TimeSeriesRuntimeType{type, sizeof(Storage), alignof(Storage), false, false, true} {}
 
-    [[nodiscard]] bool collection_valid(const void *value) const noexcept override {
+    bool collection_valid(const void *value) const noexcept override {
         const auto &storage = *static_cast<const Storage *>(value);
         return free_list_valid(storage);
     }
 
-    [[nodiscard]] std::size_t item_count(const void *) const override { return Size; }
+    std::size_t item_count(const void *) const override { return Size; }
 
-    [[nodiscard]] ConstItem item(const void *value, TimeSeriesItemId id) const override {
+    ConstItem item(const void *value, TimeSeriesItemId id) const override {
         if (id >= Size) {
             throw std::out_of_range{"time series list item index is out of range"};
         }
@@ -63,7 +63,7 @@ template <std::size_t Size> class FreeFixedTimeSeriesListRuntimeType final : pub
         }
     }
 
-    [[nodiscard]] bool item_updated(const EvaluationTime &last_updated, const void *value,
+    bool item_updated(const EvaluationTime &last_updated, const void *value,
                                     TimeSeriesItemId id) const noexcept override {
         return last_updated > MIN_DT && static_cast<const Storage *>(value)->changes.contains(id, last_updated);
     }
@@ -118,7 +118,7 @@ template <std::size_t Size> class FreeFixedTimeSeriesListRuntimeType final : pub
 };
 
 template <std::size_t Size>
-[[nodiscard]] const TimeSeriesRuntimeType &free_fixed_time_series_list_runtime_type(const TimeSeriesListType &type) {
+const TimeSeriesRuntimeType &free_fixed_time_series_list_runtime_type(const TimeSeriesListType &type) {
     using RuntimeType = FreeFixedTimeSeriesListRuntimeType<Size>;
     static auto mutex = std::mutex{};
     static auto runtime_types = std::vector<std::unique_ptr<RuntimeType>>{};

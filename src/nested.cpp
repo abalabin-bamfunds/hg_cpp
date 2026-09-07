@@ -76,7 +76,7 @@ class NestedNodeDefinition {
             &time_series_reference_runtime_type(*reference_output_, resolve_time_series_runtime_type(*output_type_));
     }
 
-    [[nodiscard]] const Signature &signature() const { return *signature_; }
+    const Signature &signature() const { return *signature_; }
 
     [[nodiscard]] compiled_data_type compile(const ResolvedSignature &, std::pmr::memory_resource &memory) const {
         auto graph = std::allocate_shared<CompiledGraph>(std::pmr::polymorphic_allocator<CompiledGraph>{&memory},
@@ -90,7 +90,7 @@ class NestedNodeDefinition {
         return result;
     }
 
-    [[nodiscard]] const TimeSeriesRuntimeType *
+    const TimeSeriesRuntimeType *
     output_runtime_type(const ResolvedSignature &, std::span<const ScalarRuntimeType *const>,
                         std::span<const TimeSeriesRuntimeType *const>) const noexcept {
         return output_runtime_type_;

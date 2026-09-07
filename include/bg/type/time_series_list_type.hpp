@@ -13,10 +13,10 @@ class TimeSeriesListType : public FixedItemTimeSeriesType {
   public:
     VISITOR_SUPPORT()
 
-    [[nodiscard]] const TimeSeriesType &item_type() const noexcept { return *item_type_; }
-    [[nodiscard]] const SizeParameter &size() const noexcept { return size_; }
-    [[nodiscard]] std::size_t item_count() const noexcept final { return size_.value().value_or(std::dynamic_extent); }
-    [[nodiscard]] const TimeSeriesType &item_type(std::size_t index) const final;
+    const TimeSeriesType &item_type() const noexcept { return *item_type_; }
+    const SizeParameter &size() const noexcept { return size_; }
+    std::size_t item_count() const noexcept final { return size_.value().value_or(std::dynamic_extent); }
+    const TimeSeriesType &item_type(std::size_t index) const final;
     [[nodiscard]] const TimeSeriesType &with_guarantee(TimeSeriesGuarantee guarantee) const override;
 
   protected:
@@ -35,11 +35,11 @@ class GenericTimeSeriesListType final : public TimeSeriesListType {
     GenericTimeSeriesListType(const TimeSeriesType &item_type, SizeParameter size, GuaranteeParameter guarantee)
         : TimeSeriesListType(item_type, size, guarantee) {}
 
-    [[nodiscard]] bool is_resolved() const noexcept override { return false; }
+    bool is_resolved() const noexcept override { return false; }
     [[nodiscard]] const Type &resolve(const TypeMap &bindings) const override;
 };
 
-[[nodiscard]] const TimeSeriesListType &time_series_list_type(const TimeSeriesType &item_type, std::size_t size,
+const TimeSeriesListType &time_series_list_type(const TimeSeriesType &item_type, std::size_t size,
                                                               TimeSeriesGuarantee guarantee);
 
 } // namespace bg

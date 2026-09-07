@@ -10,9 +10,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
-#include <mutex>
-#include <ranges>
-#include <vector>
+#include <stdexcept>
 
 namespace bg::details {
 
@@ -29,7 +27,7 @@ class FixedTimeSeriesListRuntimeType final : public TimeSeriesRuntimeType {
     FixedTimeSeriesListRuntimeType(const TimeSeriesListType &type, const TimeSeriesRuntimeType &item) noexcept
         : FixedTimeSeriesListRuntimeType{type, item, make_layout(type, item)} {}
 
-    [[nodiscard]] ItemLayout item_layout(TimeSeriesItemId id) const override {
+    ItemLayout item_layout(TimeSeriesItemId id) const override {
         if (id >= list_type().item_count()) {
             throw std::out_of_range{"time series list item index is out of range"};
         }
@@ -38,16 +36,16 @@ class FixedTimeSeriesListRuntimeType final : public TimeSeriesRuntimeType {
         return {*item_, item, item + value_offset_};
     }
 
-    [[nodiscard]] std::size_t item_count(const void *) const override { return list_type().item_count(); }
+    std::size_t item_count(const void *) const override { return list_type().item_count(); }
 
-    [[nodiscard]] ConstItem item(const void *value, TimeSeriesItemId id) const override {
+    ConstItem item(const void *value, TimeSeriesItemId id) const override {
         const auto field = item_layout(id);
         const auto *bytes = static_cast<const std::byte *>(value);
         return {field.runtime_type, *reinterpret_cast<const EvaluationTime *>(bytes + field.last_updated_offset),
                 bytes + field.value_offset};
     }
 
-    [[nodiscard]] MutableItem item(void *value, TimeSeriesItemId id) const override {
+    MutableItem item(void *value, TimeSeriesItemId id) const override {
         const auto field = item_layout(id);
         auto *bytes = static_cast<std::byte *>(value);
         return {field.runtime_type, *reinterpret_cast<EvaluationTime *>(bytes + field.last_updated_offset),
@@ -60,7 +58,7 @@ class FixedTimeSeriesListRuntimeType final : public TimeSeriesRuntimeType {
         }
     }
 
-    [[nodiscard]] bool item_updated(const EvaluationTime &last_updated, const void *value,
+    bool item_updated(const EvaluationTime &last_updated, const void *value,
                                     TimeSeriesItemId id) const noexcept override {
         const auto &storage = *static_cast<const time_series_list_storage *>(value);
         return last_updated > MIN_DT && storage.change_time == last_updated && storage.updated.contains(id);
@@ -84,7 +82,7 @@ class FixedTimeSeriesListRuntimeType final : public TimeSeriesRuntimeType {
         return static_cast<time_series_list_storage *>(value)->mark(id, evaluation_time, memory);
     }
 
-    [[nodiscard]] bool collection_valid(const void *value) const noexcept override {
+    bool collection_valid(const void *value) const noexcept override {
         const auto *bytes = static_cast<const std::byte *>(value);
         for (auto index = std::size_t{}; index < list_type().item_count(); ++index) {
             if (*reinterpret_cast<const EvaluationTime *>(bytes + item_layout(index).last_updated_offset) > MIN_DT) {
@@ -176,7 +174,7 @@ class FixedTimeSeriesListRuntimeType final : public TimeSeriesRuntimeType {
           value_offset_{static_cast<std::uint32_t>(layout.value_offset)},
           item_stride_{static_cast<std::uint32_t>(layout.item_stride)} {}
 
-    [[nodiscard]] const TimeSeriesListType &list_type() const noexcept {
+    const TimeSeriesListType &list_type() const noexcept {
         return static_cast<const TimeSeriesListType &>(type());
     }
 
@@ -203,33 +201,12 @@ class FixedTimeSeriesListRuntimeType final : public TimeSeriesRuntimeType {
     std::uint32_t item_stride_;
 };
 
-[[nodiscard]] inline const TimeSeriesRuntimeType &
-fixed_time_series_list_runtime_type(const TimeSeriesListType &type, const TimeSeriesRuntimeType &item) {
-    struct Entry {
-        const TimeSeriesListType *type;
-        const TimeSeriesRuntimeType *item;
-        std::unique_ptr<FixedTimeSeriesListRuntimeType> runtime_type;
-    };
-
-    static auto mutex = std::mutex{};
-    static auto entries = std::vector<Entry>{};
-
-    const auto lock = std::lock_guard{mutex};
-    const auto found =
-        std::ranges::find_if(entries, [&](const auto &entry) { return entry.type == &type && entry.item == &item; });
-    if (found != entries.end()) {
-        return *found->runtime_type;
-    }
-
-    auto runtime_type = std::make_unique<FixedTimeSeriesListRuntimeType>(type, item);
-    auto &result = *runtime_type;
-    entries.push_back({&type, &item, std::move(runtime_type)});
-    return result;
-}
+const TimeSeriesRuntimeType &
+fixed_time_series_list_runtime_type(const TimeSeriesListType &type, const TimeSeriesRuntimeType &item);
 
 template <typename Item, auto Size, auto... Properties>
 struct CppTimeSeriesRuntimeType<TSL<Item, Size, Properties...>> {
-    [[nodiscard]] static const TimeSeriesRuntimeType &get(const TimeSeriesType &type) {
+    static const TimeSeriesRuntimeType &get(const TimeSeriesType &type) {
         const auto &list = static_cast<const TimeSeriesListType &>(type);
         return fixed_time_series_list_runtime_type(list, CppTimeSeriesRuntimeType<Item>::get(list.item_type()));
     }

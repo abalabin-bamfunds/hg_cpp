@@ -36,8 +36,8 @@ struct NodeInvocationMetadata {
     std::uint32_t compiled_data_offset;
     CompiledNodeDataDestructionFunction destruction_function;
 
-    [[nodiscard]] std::span<const NodeInvocationParameterMetadata> parameters(const CompiledNode &node) const noexcept;
-    [[nodiscard]] const void *compiled_data(const CompiledNode &node) const noexcept;
+    std::span<const NodeInvocationParameterMetadata> parameters(const CompiledNode &node) const noexcept;
+    const void *compiled_data(const CompiledNode &node) const noexcept;
 };
 
 struct StateMetadataCounts {
@@ -58,24 +58,24 @@ class Subscriber {
                                 (active_optional ? active_optional_flag : 0)} {}
 
     // A dynamic entry stores a pointer-aligned runtime-storage offset instead of a node index.
-    [[nodiscard]] static Subscriber dynamic_subscribers(std::uint32_t offset) noexcept {
+    static Subscriber dynamic_subscribers(std::uint32_t offset) noexcept {
         return Subscriber{dynamic_subscribers_flag |
                           static_cast<std::uint32_t>(offset / dynamic_subscribers_alignment)};
     }
 
-    [[nodiscard]] std::size_t node_index() const noexcept { return node_index_and_flags_ & node_index_mask; }
+    std::size_t node_index() const noexcept { return node_index_and_flags_ & node_index_mask; }
 
-    [[nodiscard]] bool active() const noexcept { return (node_index_and_flags_ & active_flag) != 0; }
+    bool active() const noexcept { return (node_index_and_flags_ & active_flag) != 0; }
 
-    [[nodiscard]] bool required() const noexcept { return (node_index_and_flags_ & required_flag) != 0; }
+    bool required() const noexcept { return (node_index_and_flags_ & required_flag) != 0; }
 
-    [[nodiscard]] bool active_optional() const noexcept { return (node_index_and_flags_ & active_optional_flag) != 0; }
+    bool active_optional() const noexcept { return (node_index_and_flags_ & active_optional_flag) != 0; }
 
-    [[nodiscard]] bool has_dynamic_subscribers() const noexcept {
+    bool has_dynamic_subscribers() const noexcept {
         return (node_index_and_flags_ & dynamic_subscribers_flag) != 0;
     }
 
-    [[nodiscard]] std::size_t dynamic_subscribers_offset() const noexcept {
+    std::size_t dynamic_subscribers_offset() const noexcept {
         return (node_index_and_flags_ & dynamic_subscribers_offset_mask) * dynamic_subscribers_alignment;
     }
 
@@ -101,13 +101,13 @@ class alignas(void *) ItemSubscribers {
           subscriber_count_{subscriber_count | (has_output_notification ? output_notification_flag : std::uint32_t{})},
           subtree_size_{subtree_size}, sampled_last_updated_offset_{sampled_last_updated_offset} {}
 
-    [[nodiscard]] std::size_t item() const noexcept { return item_; }
+    std::size_t item() const noexcept { return item_; }
 
-    [[nodiscard]] std::span<const Subscriber> subscribers() const noexcept {
+    std::span<const Subscriber> subscribers() const noexcept {
         return {reinterpret_cast<const Subscriber *>(this + 1), subscriber_count()};
     }
 
-    [[nodiscard]] const OutputNotification *output_notification() const noexcept {
+    const OutputNotification *output_notification() const noexcept {
         if ((subscriber_count_ & output_notification_flag) == 0) {
             return nullptr;
         }
@@ -118,14 +118,14 @@ class alignas(void *) ItemSubscribers {
         return reinterpret_cast<const OutputNotification *>(address);
     }
 
-    [[nodiscard]] std::size_t sampled_last_updated_offset() const noexcept { return sampled_last_updated_offset_; }
+    std::size_t sampled_last_updated_offset() const noexcept { return sampled_last_updated_offset_; }
 
-    [[nodiscard]] ItemSubscriptionRange children() const noexcept;
+    ItemSubscriptionRange children() const noexcept;
 
   private:
     friend ItemSubscriptionRange;
 
-    [[nodiscard]] const ItemSubscribers *first_child() const noexcept {
+    const ItemSubscribers *first_child() const noexcept {
         auto address = output_notification() != nullptr
                            ? reinterpret_cast<std::uintptr_t>(output_notification()->end())
                            : reinterpret_cast<std::uintptr_t>(subscribers().data() + subscribers().size());
@@ -133,18 +133,18 @@ class alignas(void *) ItemSubscribers {
         return reinterpret_cast<const ItemSubscribers *>(address);
     }
 
-    [[nodiscard]] const ItemSubscribers *next() const noexcept {
+    const ItemSubscribers *next() const noexcept {
         const auto *address = reinterpret_cast<const std::byte *>(this);
         return reinterpret_cast<const ItemSubscribers *>(address + subtree_size_);
     }
-    [[nodiscard]] static std::uintptr_t align(std::uintptr_t address, std::size_t alignment) noexcept {
+    static std::uintptr_t align(std::uintptr_t address, std::size_t alignment) noexcept {
         return (address + alignment - 1) & ~(alignment - 1);
     }
 
     static constexpr std::uint32_t output_notification_flag = std::uint32_t{1} << 31;
     static constexpr std::uint32_t subscriber_count_mask = output_notification_flag - 1;
 
-    [[nodiscard]] std::size_t subscriber_count() const noexcept { return subscriber_count_ & subscriber_count_mask; }
+    std::size_t subscriber_count() const noexcept { return subscriber_count_ & subscriber_count_mask; }
 
     std::uint32_t item_;
     std::uint32_t subscriber_count_;
@@ -154,7 +154,7 @@ class alignas(void *) ItemSubscribers {
 
 class ItemSubscriptionRange {
   public:
-    [[nodiscard]] const ItemSubscribers *find(std::size_t item) const noexcept {
+    const ItemSubscribers *find(std::size_t item) const noexcept {
         auto *candidate = first_;
         while (candidate != last_) {
             if (candidate->item() == item) {
@@ -189,15 +189,15 @@ struct ItemSubscriptionRoot {
     ItemSubscriptionRoot(const TimeSeriesRuntimeType &runtime_type, std::uint32_t byte_size) noexcept
         : runtime_type{&runtime_type}, byte_size{byte_size} {}
 
-    [[nodiscard]] const ItemSubscribers *first_item() const noexcept {
+    const ItemSubscribers *first_item() const noexcept {
         return reinterpret_cast<const ItemSubscribers *>(this + 1);
     }
 
-    [[nodiscard]] const std::byte *end() const noexcept {
+    const std::byte *end() const noexcept {
         return reinterpret_cast<const std::byte *>(first_item()) + byte_size;
     }
 
-    [[nodiscard]] ItemSubscriptionRange children() const noexcept {
+    ItemSubscriptionRange children() const noexcept {
         return {first_item(), reinterpret_cast<const ItemSubscribers *>(end())};
     }
 };
@@ -205,7 +205,7 @@ struct ItemSubscriptionRoot {
 // Locates a time series in runtime storage or a scalar in the packed node record.
 class ParameterBinding {
   public:
-    [[nodiscard]] ParameterBindingMode mode() const noexcept {
+    ParameterBindingMode mode() const noexcept {
         if ((location_and_flags_ & scalar_flag) != 0) {
             return ParameterBindingMode::scalar;
         }
@@ -213,13 +213,13 @@ class ParameterBinding {
                                                      : ParameterBindingMode::reference;
     }
 
-    [[nodiscard]] std::size_t last_updated_offset() const noexcept { return location_and_flags_ & location_mask; }
+    std::size_t last_updated_offset() const noexcept { return location_and_flags_ & location_mask; }
 
-    [[nodiscard]] std::size_t value_offset() const noexcept { return value_offset_ & value_location_mask; }
+    std::size_t value_offset() const noexcept { return value_offset_ & value_location_mask; }
 
-    [[nodiscard]] bool active() const noexcept { return (value_offset_ & active_flag) != 0; }
+    bool active() const noexcept { return (value_offset_ & active_flag) != 0; }
 
-    [[nodiscard]] const void *scalar_data() const noexcept {
+    const void *scalar_data() const noexcept {
         if ((location_and_flags_ & optional_flag) != 0) {
             return nullptr;
         }
@@ -229,7 +229,7 @@ class ParameterBinding {
         return address + (location_and_flags_ & location_mask);
     }
 
-    [[nodiscard]] InputValidity validity() const noexcept {
+    InputValidity validity() const noexcept {
         return (location_and_flags_ & optional_flag) == 0 ? required : optional;
     }
 
@@ -264,36 +264,36 @@ class ParameterBinding {
 // Begins a packed node record. Parameters, subscribers, optional metadata, and scalar values follow the fixed header.
 class CompiledNode {
   public:
-    [[nodiscard]] bool has_output() const noexcept { return (output_last_updated_offset_ & no_output_flag) == 0; }
+    bool has_output() const noexcept { return (output_last_updated_offset_ & no_output_flag) == 0; }
 
-    [[nodiscard]] EvaluationFunction evaluation_function() const noexcept { return evaluation_function_; }
+    EvaluationFunction evaluation_function() const noexcept { return evaluation_function_; }
 
-    [[nodiscard]] bool has_state() const noexcept { return (output_last_updated_offset_ & state_flag) != 0; }
+    bool has_state() const noexcept { return (output_last_updated_offset_ & state_flag) != 0; }
 
-    [[nodiscard]] std::size_t output_last_updated_offset() const noexcept {
+    std::size_t output_last_updated_offset() const noexcept {
         return output_last_updated_offset_ & output_offset_mask;
     }
 
-    [[nodiscard]] std::size_t output_value_offset() const noexcept { return output_value_offset_ & output_offset_mask; }
+    std::size_t output_value_offset() const noexcept { return output_value_offset_ & output_offset_mask; }
 
-    [[nodiscard]] InvalidationMode invalidation_mode() const noexcept {
+    InvalidationMode invalidation_mode() const noexcept {
         return static_cast<InvalidationMode>(output_value_offset_ >> invalidation_mode_shift);
     }
 
-    [[nodiscard]] std::span<const ParameterBinding> parameters() const noexcept {
+    std::span<const ParameterBinding> parameters() const noexcept {
         const auto *first = std::launder(reinterpret_cast<const ParameterBinding *>(this + 1));
 
         return {first, parameter_count()};
     }
 
-    [[nodiscard]] std::span<const Subscriber> subscribers() const noexcept {
+    std::span<const Subscriber> subscribers() const noexcept {
         const auto parameter_span = parameters();
         const auto *first = reinterpret_cast<const Subscriber *>(parameter_span.data() + parameter_span.size());
 
         return {first, subscriber_count()};
     }
 
-    [[nodiscard]] const OutputNotification *output_notification() const noexcept {
+    const OutputNotification *output_notification() const noexcept {
         if ((counts_ & output_notification_flag) == 0) {
             return nullptr;
         }
@@ -304,7 +304,7 @@ class CompiledNode {
         return reinterpret_cast<const OutputNotification *>(address);
     }
 
-    [[nodiscard]] const ItemSubscriptionRoot *item_subscriptions() const noexcept {
+    const ItemSubscriptionRoot *item_subscriptions() const noexcept {
         if ((counts_ & item_subscriptions_flag) == 0) {
             return nullptr;
         }
@@ -314,13 +314,13 @@ class CompiledNode {
         return reinterpret_cast<const ItemSubscriptionRoot *>(address);
     }
 
-    [[nodiscard]] std::size_t state_offset() const noexcept {
+    std::size_t state_offset() const noexcept {
         const auto *offset = reinterpret_cast<const std::uint32_t *>(state_address());
 
         return *offset & state_offset_mask;
     }
 
-    [[nodiscard]] EvaluationFunction state_destruction_function() const noexcept {
+    EvaluationFunction state_destruction_function() const noexcept {
         if (!state_requires_destruction()) {
             return nullptr;
         }
@@ -331,47 +331,47 @@ class CompiledNode {
         return *reinterpret_cast<const EvaluationFunction *>(address);
     }
 
-    [[nodiscard]] std::size_t state_field_offset(std::size_t index) const noexcept {
+    std::size_t state_field_offset(std::size_t index) const noexcept {
         return state_field_offsets_address()[index];
     }
 
-    [[nodiscard]] const ScalarRuntimeType &generic_state_runtime_type(std::size_t index) const noexcept {
+    const ScalarRuntimeType &generic_state_runtime_type(std::size_t index) const noexcept {
         auto address = reinterpret_cast<std::uintptr_t>(state_field_offsets_address() + state_metadata_counts().fields);
         address = align(address, alignof(const ScalarRuntimeType *));
 
         return **(reinterpret_cast<const ScalarRuntimeType *const *>(address) + index);
     }
 
-    [[nodiscard]] EvaluationFunction invalidation_function() const noexcept {
+    EvaluationFunction invalidation_function() const noexcept {
         const auto address = align(optional_metadata_address(), alignof(EvaluationFunction));
 
         return *reinterpret_cast<const EvaluationFunction *>(address);
     }
 
-    [[nodiscard]] const TimeSeriesRuntimeType &time_series_input_runtime_type(std::size_t index) const noexcept {
+    const TimeSeriesRuntimeType &time_series_input_runtime_type(std::size_t index) const noexcept {
         return static_cast<const TimeSeriesRuntimeType &>(runtime_type(index));
     }
 
-    [[nodiscard]] const ScalarRuntimeType &scalar_input_runtime_type(std::size_t time_series_input_count,
+    const ScalarRuntimeType &scalar_input_runtime_type(std::size_t time_series_input_count,
                                                                      std::size_t index) const noexcept {
         return static_cast<const ScalarRuntimeType &>(runtime_type(time_series_input_count + index));
     }
 
-    [[nodiscard]] const TimeSeriesRuntimeType &output_runtime_type(std::size_t time_series_input_count,
+    const TimeSeriesRuntimeType &output_runtime_type(std::size_t time_series_input_count,
                                                                    std::size_t scalar_input_count) const noexcept {
         return static_cast<const TimeSeriesRuntimeType &>(runtime_type(time_series_input_count + scalar_input_count));
     }
 
-    [[nodiscard]] const TimeSeriesRuntimeType &node_invocation_output_runtime_type() const noexcept {
+    const TimeSeriesRuntimeType &node_invocation_output_runtime_type() const noexcept {
         const auto time_series_inputs = node_invocation_time_series_input_count();
         return output_runtime_type(time_series_inputs, parameters().size() - time_series_inputs);
     }
 
-    [[nodiscard]] std::size_t node_invocation_time_series_input_count() const noexcept {
+    std::size_t node_invocation_time_series_input_count() const noexcept {
         return (flags_ & node_invocation_time_series_input_count_mask) >> node_invocation_time_series_input_count_shift;
     }
 
-    [[nodiscard]] const NodeInvocationMetadata *node_invocation_metadata() const noexcept {
+    const NodeInvocationMetadata *node_invocation_metadata() const noexcept {
         if ((flags_ & node_invocation_flag) == 0) {
             return nullptr;
         }
@@ -418,13 +418,13 @@ class CompiledNode {
                  (uses_node_invocation ? time_series_input_count << node_invocation_time_series_input_count_shift
                                        : std::uint32_t{})) {}
 
-    [[nodiscard]] std::uint32_t parameter_count() const noexcept { return counts_ & parameter_count_mask; }
+    std::uint32_t parameter_count() const noexcept { return counts_ & parameter_count_mask; }
 
-    [[nodiscard]] std::uint32_t subscriber_count() const noexcept {
+    std::uint32_t subscriber_count() const noexcept {
         return (counts_ & subscriber_count_mask) >> parameter_count_bits;
     }
 
-    [[nodiscard]] std::uintptr_t output_notification_end() const noexcept {
+    std::uintptr_t output_notification_end() const noexcept {
         if (const auto *notification = output_notification()) {
             return reinterpret_cast<std::uintptr_t>(notification->end());
         }
@@ -433,11 +433,11 @@ class CompiledNode {
         return reinterpret_cast<std::uintptr_t>(node_subscribers.data() + node_subscribers.size());
     }
 
-    [[nodiscard]] static std::uintptr_t align(std::uintptr_t address, std::size_t alignment) noexcept {
+    static std::uintptr_t align(std::uintptr_t address, std::size_t alignment) noexcept {
         return (address + alignment - 1) & ~(alignment - 1);
     }
 
-    [[nodiscard]] std::uintptr_t optional_metadata_address() const noexcept {
+    std::uintptr_t optional_metadata_address() const noexcept {
         auto address = state_address();
 
         if (has_state()) {
@@ -457,19 +457,19 @@ class CompiledNode {
         return address;
     }
 
-    [[nodiscard]] bool state_requires_destruction() const noexcept {
+    bool state_requires_destruction() const noexcept {
         const auto *offset = reinterpret_cast<const std::uint32_t *>(state_address());
 
         return (*offset & state_destruction_flag) != 0;
     }
 
-    [[nodiscard]] bool has_state_metadata() const noexcept {
+    bool has_state_metadata() const noexcept {
         const auto *offset = reinterpret_cast<const std::uint32_t *>(state_address());
 
         return (*offset & state_metadata_flag) != 0;
     }
 
-    [[nodiscard]] const StateMetadataCounts &state_metadata_counts() const noexcept {
+    const StateMetadataCounts &state_metadata_counts() const noexcept {
         auto address = state_address();
         address += sizeof(std::uint32_t);
         if (state_requires_destruction()) {
@@ -479,14 +479,14 @@ class CompiledNode {
         return *reinterpret_cast<const StateMetadataCounts *>(address);
     }
 
-    [[nodiscard]] const std::uint32_t *state_field_offsets_address() const noexcept {
+    const std::uint32_t *state_field_offsets_address() const noexcept {
         auto address = reinterpret_cast<std::uintptr_t>(&state_metadata_counts() + 1);
         address = align(address, alignof(std::uint32_t));
 
         return reinterpret_cast<const std::uint32_t *>(address);
     }
 
-    [[nodiscard]] std::uintptr_t state_address() const noexcept {
+    std::uintptr_t state_address() const noexcept {
         auto address = output_notification_end();
         if (const auto *root = item_subscriptions()) {
             address = reinterpret_cast<std::uintptr_t>(root->end());
@@ -495,11 +495,11 @@ class CompiledNode {
         return address;
     }
 
-    [[nodiscard]] const RuntimeType &runtime_type(std::size_t index) const noexcept {
+    const RuntimeType &runtime_type(std::size_t index) const noexcept {
         return *reinterpret_cast<const RuntimeType *const *>(runtime_types_address())[index];
     }
 
-    [[nodiscard]] std::uintptr_t runtime_types_address() const noexcept {
+    std::uintptr_t runtime_types_address() const noexcept {
         auto address = after_invalidation_metadata_address();
         if ((flags_ & node_invocation_flag) != 0) {
             address = align(address, alignof(NodeInvocationMetadata)) + sizeof(NodeInvocationMetadata);
@@ -508,7 +508,7 @@ class CompiledNode {
         return align(address, alignof(const RuntimeType *));
     }
 
-    [[nodiscard]] std::uintptr_t after_invalidation_metadata_address() const noexcept {
+    std::uintptr_t after_invalidation_metadata_address() const noexcept {
         auto address = optional_metadata_address();
         if (invalidation_mode() == InvalidationMode::invoke) {
             address = align(address, alignof(EvaluationFunction)) + sizeof(EvaluationFunction);

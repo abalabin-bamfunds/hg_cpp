@@ -26,17 +26,17 @@ class WiredNode {
     WiredNode(WiredNode &&) noexcept = default;
     WiredNode &operator=(WiredNode &&) = delete;
 
-    [[nodiscard]] const NodeTemplate &node_template() const noexcept { return *node_template_; }
+    const NodeTemplate &node_template() const noexcept { return *node_template_; }
 
-    [[nodiscard]] const ResolvedSignature &signature() const noexcept { return signature_; }
+    const ResolvedSignature &signature() const noexcept { return signature_; }
 
-    [[nodiscard]] std::span<const std::size_t> input_sources() const noexcept { return input_sources_; }
+    std::span<const std::size_t> input_sources() const noexcept { return input_sources_; }
 
-    [[nodiscard]] std::span<const WiredScalar> scalar_values() const noexcept { return scalar_values_; }
+    std::span<const WiredScalar> scalar_values() const noexcept { return scalar_values_; }
 
-    [[nodiscard]] std::span<const ScalarType *const> state_types() const noexcept { return state_types_; }
+    std::span<const ScalarType *const> state_types() const noexcept { return state_types_; }
 
-    [[nodiscard]] const WiringPath &path() const noexcept { return *path_; }
+    const WiringPath &path() const noexcept { return *path_; }
 
   private:
     const NodeTemplate *node_template_;

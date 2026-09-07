@@ -62,7 +62,7 @@ struct CapturedValues {
     void reset(EvaluationTime time) { at(time).reset(); }
 
   private:
-    [[nodiscard]] std::optional<ScalarValue<>> &at(EvaluationTime time) {
+    std::optional<ScalarValue<>> &at(EvaluationTime time) {
         const auto index = static_cast<std::size_t>((time - start_time).count());
         if (index >= values.size()) {
             values.resize(index + 1);

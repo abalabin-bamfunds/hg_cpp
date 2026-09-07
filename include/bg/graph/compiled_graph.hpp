@@ -30,26 +30,26 @@ class CompiledGraph {
     CompiledGraph(CompiledGraph &&) = delete;
     CompiledGraph &operator=(CompiledGraph &&) = delete;
 
-    [[nodiscard]] std::size_t node_count() const noexcept { return node_count_and_fixed_alignment_ & count_mask; }
+    std::size_t node_count() const noexcept { return node_count_and_fixed_alignment_ & count_mask; }
 
-    [[nodiscard]] const CompiledNode &node(std::size_t index) const noexcept {
+    const CompiledNode &node(std::size_t index) const noexcept {
         return *reinterpret_cast<const CompiledNode *>(fixed_storage_ +
                                                        storage_header().node_offsets(node_count())[index]);
     }
 
-    [[nodiscard]] std::size_t fixed_storage_size() const noexcept {
+    std::size_t fixed_storage_size() const noexcept {
         return fixed_storage_size_and_flags_ & fixed_storage_size_mask;
     }
 
-    [[nodiscard]] std::size_t runtime_storage_size() const noexcept { return runtime_storage_size_; }
+    std::size_t runtime_storage_size() const noexcept { return runtime_storage_size_; }
 
-    [[nodiscard]] std::size_t runtime_storage_alignment() const noexcept {
+    std::size_t runtime_storage_alignment() const noexcept {
         return std::size_t{1} << (scalar_count_and_runtime_alignment_ >> alignment_shift);
     }
 
-    [[nodiscard]] std::size_t schedule_word_count() const noexcept { return schedule_word_count(node_count()); }
+    std::size_t schedule_word_count() const noexcept { return schedule_word_count(node_count()); }
 
-    [[nodiscard]] const WiringPath &wiring_path(std::size_t node_index) const noexcept;
+    const WiringPath &wiring_path(std::size_t node_index) const noexcept;
 
   private:
     friend class CompiledGraphBuilder;
@@ -70,7 +70,7 @@ class CompiledGraph {
 
     static constexpr std::size_t schedule_word_bits = std::numeric_limits<ScheduleWord>::digits;
 
-    [[nodiscard]] static constexpr std::size_t schedule_word_count(std::size_t node_count) noexcept {
+    static constexpr std::size_t schedule_word_count(std::size_t node_count) noexcept {
         return (node_count + schedule_word_bits - 1) / schedule_word_bits;
     }
 
@@ -81,29 +81,29 @@ class CompiledGraph {
     static constexpr std::uint32_t alignment_shift = 26;
     static constexpr std::uint32_t count_mask = (std::uint32_t{1} << alignment_shift) - 1;
 
-    [[nodiscard]] bool has_variable_memory() const noexcept {
+    bool has_variable_memory() const noexcept {
         return (fixed_storage_size_and_flags_ & variable_memory_flag) != 0;
     }
 
-    [[nodiscard]] bool has_future_scheduling() const noexcept {
+    bool has_future_scheduling() const noexcept {
         return (fixed_storage_size_and_flags_ & future_scheduling_flag) != 0;
     }
 
-    [[nodiscard]] bool has_cycle_callbacks() const noexcept {
+    bool has_cycle_callbacks() const noexcept {
         return (storage_header().variable_memory_offset & cycle_callbacks_flag) != 0;
     }
 
-    [[nodiscard]] std::size_t variable_memory_offset() const noexcept {
+    std::size_t variable_memory_offset() const noexcept {
         return storage_header().variable_memory_offset & ~cycle_callbacks_flag;
     }
 
-    [[nodiscard]] std::size_t future_schedule_offset() const noexcept {
+    std::size_t future_schedule_offset() const noexcept {
         const auto scheduling_size = schedule_word_count() * sizeof(SchedulingInfo);
 
         return (scheduling_size + alignof(void *) - 1) & ~(alignof(void *) - 1);
     }
 
-    [[nodiscard]] std::size_t cycle_callbacks_offset() const noexcept {
+    std::size_t cycle_callbacks_offset() const noexcept {
         auto offset = schedule_word_count() * sizeof(SchedulingInfo);
         if (has_future_scheduling()) {
             offset = (offset + alignof(void *) - 1) & ~(alignof(void *) - 1);
@@ -113,21 +113,21 @@ class CompiledGraph {
         return (offset + alignof(void *) - 1) & ~(alignof(void *) - 1);
     }
 
-    [[nodiscard]] std::size_t fixed_storage_alignment() const noexcept {
+    std::size_t fixed_storage_alignment() const noexcept {
         return std::size_t{1} << (node_count_and_fixed_alignment_ >> alignment_shift);
     }
 
-    [[nodiscard]] std::size_t scalar_destruction_count() const noexcept {
+    std::size_t scalar_destruction_count() const noexcept {
         return scalar_count_and_runtime_alignment_ & count_mask;
     }
 
-    [[nodiscard]] const std::byte *initial_runtime_storage() const noexcept;
-    [[nodiscard]] NodeFunctions node_functions(std::uint32_t functions_offset, std::uint32_t count) const noexcept;
-    [[nodiscard]] NodeFunctions start_functions() const noexcept;
-    [[nodiscard]] NodeFunctions stop_functions() const noexcept;
-    [[nodiscard]] OutputDestruction output_destruction() const noexcept;
+    const std::byte *initial_runtime_storage() const noexcept;
+    NodeFunctions node_functions(std::uint32_t functions_offset, std::uint32_t count) const noexcept;
+    NodeFunctions start_functions() const noexcept;
+    NodeFunctions stop_functions() const noexcept;
+    OutputDestruction output_destruction() const noexcept;
 
-    [[nodiscard]] const details::CompiledStorageHeader &storage_header() const noexcept {
+    const details::CompiledStorageHeader &storage_header() const noexcept {
         return *reinterpret_cast<const details::CompiledStorageHeader *>(fixed_storage_);
     }
 

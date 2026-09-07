@@ -53,7 +53,7 @@ void NestedGraph::bind_input(std::size_t node_index, const NestedGraphInput &inp
     const auto &node = active_->compiled_graph_->node(node_index);
     const auto runtime_node = active_->node(node_index);
     auto &last_updated = runtime_node.output_last_updated();
-    auto &target = *static_cast<details::ReferenceStorage **>(runtime_node.output_value());
+    auto &target = *static_cast<details::ReferenceAddress *>(runtime_node.output_value());
 
     if (target == input.target && last_updated == input.last_updated) {
         return;
@@ -61,7 +61,7 @@ void NestedGraph::bind_input(std::size_t node_index, const NestedGraphInput &inp
 
     const auto was_valid = last_updated > MIN_DT;
     target = input.target;
-    last_updated = input.target == nullptr ? MIN_DT : input.last_updated;
+    last_updated = input.target ? input.last_updated : MIN_DT;
     const auto now_valid = last_updated > MIN_DT;
     const auto change =
         now_valid ? (was_valid ? OutputChange::update : OutputChange::revalidation) : OutputChange::invalidation;
@@ -90,7 +90,7 @@ void NestedGraph::stop(EvaluationContext &context) {
     }
 }
 
-details::ReferenceStorage *NestedGraph::output(const CompiledNestedGraph &compiled) const noexcept {
+details::ReferenceAddress NestedGraph::output(const CompiledNestedGraph &compiled) const noexcept {
     if (active_ == nullptr) {
         return nullptr;
     }
@@ -100,7 +100,7 @@ details::ReferenceStorage *NestedGraph::output(const CompiledNestedGraph &compil
         return nullptr;
     }
 
-    return *static_cast<details::ReferenceStorage **>(node.output_value());
+    return *static_cast<details::ReferenceAddress *>(node.output_value());
 }
 
 void NestedGraph::destroy_retired_callback(void *target) noexcept {

@@ -43,8 +43,8 @@ template <typename K, auto... Properties> class Out<TSS<K, Properties...>> {
     Out(Out &&) noexcept = default;
     Out(const Out &) = delete;
 
-    [[nodiscard]] bool valid() const noexcept { return state_->valid(); }
-    [[nodiscard]] EvaluationTime last_updated() const noexcept { return state_->last_updated(); }
+    bool valid() const noexcept { return state_->valid(); }
+    EvaluationTime last_updated() const noexcept { return state_->last_updated(); }
     bool insert(const Scalar<K> &item) const { return insert(item.input_view()); }
     bool erase(const Scalar<K> &item) const { return erase(item.input_view()); }
 
@@ -75,7 +75,7 @@ template <typename K, auto... Properties> class Out<TSS<K, Properties...>> {
         }
     }
 
-    [[nodiscard]] const Out *operator->() const noexcept { return this; }
+    const Out *operator->() const noexcept { return this; }
 
     template <typename... Functions> decltype(auto) visit(Functions &&...functions) const {
         auto output = details::output_factory::make<TS_T>(state_.get());
@@ -86,15 +86,15 @@ template <typename K, auto... Properties> class Out<TSS<K, Properties...>> {
     using item_type = K;
 
   private:
-    [[nodiscard]] details::time_series_set_storage &storage() const noexcept {
+    details::time_series_set_storage &storage() const noexcept {
         return *static_cast<details::time_series_set_storage *>(state_->mutable_data());
     }
 
-    [[nodiscard]] const ScalarRuntimeType &key_runtime_type() const noexcept {
+    const ScalarRuntimeType &key_runtime_type() const noexcept {
         return static_cast<const details::TimeSeriesSetRuntimeType &>(state_->runtime_type()).key_runtime_type();
     }
 
-    [[nodiscard]] util::runtime_item_layout key_layout() const noexcept {
+    util::runtime_item_layout key_layout() const noexcept {
         return {key_runtime_type().size(), key_runtime_type().alignment()};
     }
 

@@ -23,6 +23,9 @@
 #include <vector>
 
 namespace bg {
+
+TimeSeriesRuntimeType::~TimeSeriesRuntimeType() = default;
+
 namespace {
 
 class ValueRuntimeType final : public TimeSeriesValueRuntimeType {
@@ -30,11 +33,11 @@ class ValueRuntimeType final : public TimeSeriesValueRuntimeType {
     ValueRuntimeType(const TimeSeriesType &type, const ScalarRuntimeType &scalar) noexcept
         : TimeSeriesValueRuntimeType{type,
                                      scalar,
-                                     scalar.size(),
-                                     scalar.alignment(),
-                                     scalar.uses_variable_memory(),
-                                     scalar.requires_finalization(),
-                                     scalar.supports_byte_copy_initialization()} {}
+                                    scalar.size(),
+                                    scalar.alignment(),
+                                    scalar.uses_variable_memory(),
+                                    scalar.requires_finalization(),
+                                    scalar.supports_byte_copy_initialization()} {}
 
     void construct_initial_value(void *destination) const noexcept override {
         scalar_runtime_type().construct_initial_value(destination);
@@ -57,7 +60,7 @@ struct ValueRuntimeTypeKey {
 };
 
 struct ValueRuntimeTypeKeyHash {
-    [[nodiscard]] std::size_t operator()(const ValueRuntimeTypeKey &key) const noexcept {
+    std::size_t operator()(const ValueRuntimeTypeKey &key) const noexcept {
         const auto type = std::hash<const TimeSeriesType *>{}(key.type);
         const auto scalar = std::hash<const ScalarRuntimeType *>{}(key.scalar);
 
@@ -112,12 +115,11 @@ bool TimeSeriesRuntimeType::item_updated(const EvaluationTime &, const void *, T
     return false;
 }
 
-void TimeSeriesRuntimeType::for_each_updated_item(const EvaluationTime &, const void *, void *,
-                                                  ItemIdFunction) const {}
+void TimeSeriesRuntimeType::for_each_updated_item(const EvaluationTime &, const void *, void *, ItemIdFunction) const {}
 
-details::ReferenceRepresentation *TimeSeriesRuntimeType::create_reference_representation(
-    details::ReferenceProvider &, details::ReferenceStorage &, const TimeSeriesType &,
-    std::pmr::memory_resource &) const {
+details::ReferenceRepresentation *
+TimeSeriesRuntimeType::create_reference_representation(details::ReferenceProvider &, details::ReferenceAddress,
+                                                       const TimeSeriesType &, std::pmr::memory_resource &) const {
     throw std::invalid_argument{"the requested time series representation is not implemented"};
 }
 

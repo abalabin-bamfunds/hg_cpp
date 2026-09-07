@@ -7,9 +7,9 @@ namespace bg {
 class Variable {
   public:
     explicit Variable(util::symbol name) : name_(name) {}
-    virtual ~Variable() = default;
+    virtual ~Variable();
 
-    [[nodiscard]] util::symbol name() const noexcept { return name_; }
+    util::symbol name() const noexcept { return name_; }
 
   private:
     util::symbol name_;

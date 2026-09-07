@@ -9,23 +9,28 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <cstdint>
+
 TEST_CASE("a time series reference value is one pointer",
           "[value][time-series][reference][feature:time-series-storage]") {
+    STATIC_CHECK(sizeof(bg::details::ReferenceAddress) == sizeof(void *));
+    STATIC_CHECK(sizeof(bg::details::ReferenceRoot) == 4 * sizeof(void *));
+
     const auto &target_type = bg::time_series_value_type(bg::cpp_scalar_type<int>(), bg::TimeSeriesGuarantee::ordinary);
     const auto &target_runtime_type =
         bg::time_series_value_runtime_type(target_type, bg::cpp_scalar_runtime_type<int>());
     const auto &reference_type = bg::time_series_reference_type(target_type, bg::TimeSeriesGuarantee::ordinary);
     const auto &runtime_type = bg::time_series_reference_runtime_type(reference_type, target_runtime_type);
 
-    CHECK(runtime_type.value_size() == sizeof(bg::details::ReferenceStorage *));
-    CHECK(runtime_type.value_alignment() == alignof(bg::details::ReferenceStorage *));
+    CHECK(runtime_type.value_size() == sizeof(bg::details::ReferenceAddress));
+    CHECK(runtime_type.value_alignment() == alignof(bg::details::ReferenceAddress));
 }
 
 TEST_CASE("a time series reference propagates its storage pointer",
           "[value][time-series][reference][feature:time-series-storage]") {
-    auto target = bg::details::ReferenceStorage{};
-    auto *source_value = &target;
-    auto *output_value = static_cast<bg::details::ReferenceStorage *>(nullptr);
+    auto target = bg::details::ReferenceRoute{};
+    auto source_value = bg::details::ReferenceAddress{&target};
+    auto output_value = bg::details::ReferenceAddress{};
     auto source_time = bg::EvaluationTime{bg::EvaluationTime::duration{1}};
     auto output_time = bg::MIN_DT;
     const auto evaluation_time = bg::EvaluationTime{bg::EvaluationTime::duration{2}};
@@ -37,6 +42,37 @@ TEST_CASE("a time series reference propagates its storage pointer",
     const auto output = bg::details::output_factory::make<bg::REF<bg::TS<int>>>(state);
     output.set(source);
 
-    CHECK(output_value == &target);
+    CHECK(output_value == source_value);
     CHECK(output_time == evaluation_time);
+}
+
+TEST_CASE("a reference item route retains its parent and item",
+          "[value][time-series][reference][feature:time-series-storage]") {
+    auto root = bg::details::ReferenceRoot{};
+    auto outer = bg::details::ReferenceRoute{};
+    auto inner = bg::details::ReferenceRoute{};
+
+    outer.bind_item(bg::details::ReferenceAddress{&root}, 12);
+    inner.bind_item(bg::details::ReferenceAddress{&outer}, 34);
+
+    CHECK(inner.parent.get<bg::details::ReferenceRoute>() == &outer);
+    CHECK(inner.item() == 34);
+    CHECK(outer.parent.get<bg::details::ReferenceRoot>() == &root);
+    CHECK(outer.item() == 12);
+}
+
+TEST_CASE("a reference representation route retains its source and representation index",
+          "[value][time-series][reference][feature:time-series-storage]") {
+    auto root = bg::details::ReferenceRoot{};
+    auto source = bg::details::ReferenceRoute{};
+    auto representation = bg::details::ReferenceRoute{};
+
+    source.bind_item(bg::details::ReferenceAddress{&root}, 12);
+    representation.bind_representation(bg::details::ReferenceAddress{&source}, 7);
+
+    CHECK(representation.parent.get<bg::details::ReferenceRoute>() == &source);
+    CHECK(representation.is_representation());
+    CHECK(representation.representation() == 7);
+    STATIC_CHECK(sizeof(bg::details::ReferenceRoute) ==
+                 sizeof(bg::details::ReferenceAddress) + 2 * sizeof(std::uint32_t));
 }

@@ -9,19 +9,19 @@ class ListScalarType : public ScalarType {
   public:
     VISITOR_SUPPORT()
 
-    [[nodiscard]] virtual const ScalarType &item_type() const noexcept = 0;
+    virtual const ScalarType &item_type() const noexcept = 0;
 
-    [[nodiscard]] bool supports_equality() const noexcept final { return item_type().supports_equality(); }
-    [[nodiscard]] bool supports_hash() const noexcept final { return item_type().supports_hash(); }
+    bool supports_equality() const noexcept final { return item_type().supports_equality(); }
+    bool supports_hash() const noexcept final { return item_type().supports_hash(); }
 };
 
 class GenericListScalarType final : public ListScalarType {
   public:
     explicit GenericListScalarType(const ScalarType &item_type) noexcept : item_type_(&item_type) {}
 
-    [[nodiscard]] bool is_resolved() const noexcept override { return false; }
+    bool is_resolved() const noexcept override { return false; }
     [[nodiscard]] const Type &resolve(const TypeMap &bindings) const override;
-    [[nodiscard]] const ScalarType &item_type() const noexcept override { return *item_type_; }
+    const ScalarType &item_type() const noexcept override { return *item_type_; }
 
   protected:
     [[nodiscard]] bool do_match(const Type &supplied, TypeMap &bindings) const override;
@@ -30,7 +30,7 @@ class GenericListScalarType final : public ListScalarType {
     const ScalarType *item_type_;
 };
 
-[[nodiscard]] const ListScalarType &list_scalar_type(const ScalarType &item_type);
+const ListScalarType &list_scalar_type(const ScalarType &item_type);
 
 template <typename T>
     requires is_list_v<T> && (!details::generic_scalar<T>)
@@ -45,7 +45,7 @@ namespace bg::details {
 template <typename T> struct scalar_type_traits<List<T>> : scalar_type_properties {
     static constexpr bool is_collection = true;
 
-    template <typename Scope> [[nodiscard]] static const ScalarType &get() {
+    template <typename Scope> static const ScalarType &get() {
         if constexpr (generic_scalar<T>) {
             static const auto type = GenericListScalarType{scalar_type_for<Scope, T>()};
 

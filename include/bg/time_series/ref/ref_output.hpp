@@ -14,7 +14,7 @@ namespace bg {
 
 template <typename Target, auto... Properties> class Out<REF<Target, Properties...>> {
   public:
-    using storage_type = details::ReferenceStorage *;
+    using storage_type = details::ReferenceAddress;
 
   private:
     friend details::output_factory;
@@ -48,8 +48,8 @@ template <typename Target, auto... Properties> class Out<REF<Target, Properties.
     Out(Out &&) noexcept = default;
     Out(const Out &) = delete;
 
-    [[nodiscard]] bool valid() const noexcept { return state_->valid(); }
-    [[nodiscard]] EvaluationTime last_updated() const noexcept { return state_->last_updated(); }
+    bool valid() const noexcept { return state_->valid(); }
+    EvaluationTime last_updated() const noexcept { return state_->last_updated(); }
 
     template <auto... ReferenceProperties, auto... InputProperties>
     void set(const In<REF<Target, ReferenceProperties...>, InputProperties...> &source) const {
@@ -60,8 +60,8 @@ template <typename Target, auto... Properties> class Out<REF<Target, Properties.
         set_target(source.target());
     }
 
-    void set_target(details::ReferenceStorage *target) const {
-        if (target == nullptr) {
+    void set_target(details::ReferenceAddress target) const {
+        if (!target) {
             invalidate();
             return;
         }
@@ -74,7 +74,7 @@ template <typename Target, auto... Properties> class Out<REF<Target, Properties.
         state_->invalidate_value();
     }
 
-    [[nodiscard]] const Out *operator->() const noexcept { return this; }
+    const Out *operator->() const noexcept { return this; }
 
     template <typename... Functions> decltype(auto) visit(Functions &&...functions) const {
         auto output = details::output_factory::make<TS_T>(state_.get());
@@ -85,8 +85,8 @@ template <typename Target, auto... Properties> class Out<REF<Target, Properties.
     using target_type = Target;
 
   private:
-    [[nodiscard]] details::ReferenceStorage *&reference() const noexcept {
-        return *static_cast<details::ReferenceStorage **>(state_->mutable_data());
+    details::ReferenceAddress &reference() const noexcept {
+        return *static_cast<details::ReferenceAddress *>(state_->mutable_data());
     }
 
     using Proxy = details::output_proxy<details::OutputState>;

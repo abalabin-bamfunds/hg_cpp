@@ -18,7 +18,7 @@ class ResolvedTimeSeriesSetType final : public TimeSeriesSetType {
     ResolvedTimeSeriesSetType(const ScalarType &item_type, TimeSeriesGuarantee guarantee)
         : TimeSeriesSetType(item_type, guarantee) {}
 
-    [[nodiscard]] bool is_resolved() const noexcept override { return true; }
+    bool is_resolved() const noexcept override { return true; }
     [[nodiscard]] const Type &resolve(const TypeMap &) const override { return *this; }
 };
 

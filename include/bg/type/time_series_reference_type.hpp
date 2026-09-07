@@ -9,7 +9,7 @@ class TimeSeriesReferenceType : public TimeSeriesType {
   public:
     VISITOR_SUPPORT()
 
-    [[nodiscard]] const TimeSeriesType &target_type() const noexcept { return *target_type_; }
+    const TimeSeriesType &target_type() const noexcept { return *target_type_; }
     [[nodiscard]] const TimeSeriesType &with_guarantee(TimeSeriesGuarantee guarantee) const override;
 
   protected:
@@ -20,7 +20,7 @@ class TimeSeriesReferenceType : public TimeSeriesType {
     const TimeSeriesType *target_type_;
 };
 
-[[nodiscard]] const TimeSeriesReferenceType &time_series_reference_type(const TimeSeriesType &target_type,
+const TimeSeriesReferenceType &time_series_reference_type(const TimeSeriesType &target_type,
                                                                         TimeSeriesGuarantee guarantee);
 
 class GenericTimeSeriesReferenceType final : public TimeSeriesReferenceType {
@@ -28,7 +28,7 @@ class GenericTimeSeriesReferenceType final : public TimeSeriesReferenceType {
     GenericTimeSeriesReferenceType(const TimeSeriesType &target_type, GuaranteeParameter guarantee)
         : TimeSeriesReferenceType(target_type, guarantee) {}
 
-    [[nodiscard]] bool is_resolved() const noexcept override { return false; }
+    bool is_resolved() const noexcept override { return false; }
     [[nodiscard]] const Type &resolve(const TypeMap &bindings) const override;
 };
 

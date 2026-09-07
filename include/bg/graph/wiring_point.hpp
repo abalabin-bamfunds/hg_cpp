@@ -43,19 +43,19 @@ using selected_time_series_t = referenced_wiring_time_series_t<dictionary_wiring
 } // namespace details
 
 template <typename K, typename Item, auto... Properties>
-[[nodiscard]] auto keys(wp<TSD<K, Item, Properties...>> source) -> wp<TSS<K, Properties...>>;
+auto keys(wp<TSD<K, Item, Properties...>> source) -> wp<TSS<K, Properties...>>;
 
 class WiringPoint {
   public:
-    [[nodiscard]] const GraphWiring &graph() const noexcept { return *graph_; }
-    [[nodiscard]] std::size_t node_index() const noexcept;
-    [[nodiscard]] const TimeSeriesType &type() const noexcept;
+    const GraphWiring &graph() const noexcept { return *graph_; }
+    std::size_t node_index() const noexcept;
+    const TimeSeriesType &type() const noexcept;
 
   private:
     WiringPoint(GraphWiring &graph, std::size_t record_index) noexcept : graph_(&graph), record_index_(record_index) {}
 
-    [[nodiscard]] WiringPoint item(std::size_t index) const;
-    [[nodiscard]] std::size_t record_index() const noexcept { return record_index_; }
+    WiringPoint item(std::size_t index) const;
+    std::size_t record_index() const noexcept { return record_index_; }
 
     GraphWiring *graph_;
     std::size_t record_index_;
@@ -73,17 +73,17 @@ template <typename TimeSeries> class wp {
     // Re-annotation retains the actual wiring type. Signature resolution validates it at the next wiring boundary.
     template <typename Source> explicit wp(wp<Source> source) noexcept : point_(static_cast<WiringPoint>(source)) {}
 
-    [[nodiscard]] operator WiringPoint() const noexcept { return point_; }
+    operator WiringPoint() const noexcept { return point_; }
 
     template <typename T = TimeSeries>
         requires details::is_time_series_list<T>
-    [[nodiscard]] auto operator[](std::size_t index) const -> wp<typename details::time_series_list<T>::item_type> {
+    auto operator[](std::size_t index) const -> wp<typename details::time_series_list<T>::item_type> {
         return point_.item(index);
     }
 
     template <util::compile_time_string Name, typename T = TimeSeries>
         requires details::is_time_series_bundle<T>
-    [[nodiscard]] auto operator[](details::named_argument_name<Name>) const {
+    auto operator[](details::named_argument_name<Name>) const {
         using Bundle = details::time_series_bundle<T>;
         constexpr auto Index = details::bundle_field_index<Name, Bundle::template schema_type>;
         static_assert(Index != details::missing_bundle_field, "bundle schema has no field with this name");
@@ -95,13 +95,13 @@ template <typename TimeSeries> class wp {
         requires details::dictionary_wiring_type<T> &&
                  std::same_as<canonical_scalar_t<Key>,
                               typename details::time_series_dict<details::referenced_wiring_time_series_t<T>>::key_type>
-    [[nodiscard]] auto operator[](Key &&key) const -> wp<REF<details::selected_time_series_t<T>>>;
+    auto operator[](Key &&key) const -> wp<REF<details::selected_time_series_t<T>>>;
 
     template <typename KeyTimeSeries, typename T = TimeSeries>
         requires details::dictionary_wiring_type<T> &&
                  std::same_as<details::time_series_value_t<details::referenced_wiring_time_series_t<KeyTimeSeries>>,
                               typename details::time_series_dict<details::referenced_wiring_time_series_t<T>>::key_type>
-    [[nodiscard]] auto operator[](wp<KeyTimeSeries> key) const -> wp<REF<details::selected_time_series_t<T>>>;
+    auto operator[](wp<KeyTimeSeries> key) const -> wp<REF<details::selected_time_series_t<T>>>;
 
     using time_series_type = TimeSeries;
 
@@ -113,7 +113,7 @@ template <typename TimeSeries> class wp {
 };
 
 template <typename K, typename Item, auto... Properties>
-[[nodiscard]] auto keys(wp<TSD<K, Item, Properties...>> source) -> wp<TSS<K, Properties...>> {
+auto keys(wp<TSD<K, Item, Properties...>> source) -> wp<TSS<K, Properties...>> {
     return source.point_.item(0);
 }
 

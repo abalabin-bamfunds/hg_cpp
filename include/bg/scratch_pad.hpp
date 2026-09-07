@@ -47,7 +47,7 @@ class ScratchPad {
     void release_last(void *address, std::size_t size) noexcept;
 
     // Uses caller-owned storage first and falls back to retained scratch storage when it is full.
-    [[nodiscard]] LocalStorageScope use_local_storage(std::span<std::byte> storage) noexcept;
+    LocalStorageScope use_local_storage(std::span<std::byte> storage) noexcept;
 
   private:
     friend EvaluationContext;
@@ -56,7 +56,7 @@ class ScratchPad {
         : evaluation_scratch_{evaluation_scratch} {}
 
     [[nodiscard]] void *allocate_from_local_storage(std::size_t size, std::size_t alignment) noexcept;
-    [[nodiscard]] bool release_last_from_local_storage(void *address, std::size_t size) noexcept;
+    bool release_last_from_local_storage(void *address, std::size_t size) noexcept;
 
     [[nodiscard]] void *allocate_from_storage(std::size_t size, std::size_t alignment);
     void release_last_from_storage(void *address, std::size_t size) noexcept;

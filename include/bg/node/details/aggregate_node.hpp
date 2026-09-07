@@ -2,6 +2,7 @@
 
 #include <bg/evaluation_context.hpp>
 #include <bg/graph/node.hpp>
+#include <bg/node/details/output_runtime_type.hpp>
 #include <bg/node/input.hpp>
 #include <bg/node/output.hpp>
 #include <bg/node/state.hpp>
@@ -81,7 +82,7 @@ template <> struct first_output_time_series<> {
 };
 
 template <typename Definition, std::size_t... Index>
-[[nodiscard]] auto aggregate_output_time_series_type(std::index_sequence<Index...>) ->
+auto aggregate_output_time_series_type(std::index_sequence<Index...>) ->
     typename first_output_time_series<typename output_field<
         std::remove_cv_t<util::aggregate_member_type<Index, Definition>>>::time_series_type...>::type;
 
@@ -127,7 +128,7 @@ template <typename T> struct state_field<State<T>> {
 };
 
 template <typename Definition, std::size_t... Index>
-[[nodiscard]] std::vector<const ScalarType *> aggregate_state_types(const TypeMap &bindings,
+std::vector<const ScalarType *> aggregate_state_types(const TypeMap &bindings,
                                                                     std::index_sequence<Index...>) {
     auto result = std::vector<const ScalarType *>{};
     result.reserve((std::size_t{} + ... +
@@ -307,7 +308,7 @@ template <typename Definition> struct aggregate_node_class<Definition, true> {
                                   (aggregate_node_has_evaluate<Definition> || aggregate_node_has_start<Definition>);
 };
 
-template <typename Definition, std::size_t Index> [[nodiscard]] const TimeSeriesType &input_type() {
+template <typename Definition, std::size_t Index> const TimeSeriesType &input_type() {
     using Field = std::remove_cv_t<util::aggregate_member_type<Index, Definition>>;
     using TimeSeries = typename input_field<Field>::time_series_type;
 
@@ -322,14 +323,14 @@ template <typename Definition, std::size_t Index> [[nodiscard]] const TimeSeries
     }
 }
 
-template <typename Definition, std::size_t Index> [[nodiscard]] const ScalarType &scalar_type() {
+template <typename Definition, std::size_t Index> const ScalarType &scalar_type() {
     using Field = std::remove_cv_t<util::aggregate_member_type<Index, Definition>>;
     using Value = typename scalar_field<Field>::value_type;
 
     return scalar_type_for<Definition, Value>();
 }
 
-template <typename Definition, std::size_t Index> [[nodiscard]] const TimeSeriesType &output_type() {
+template <typename Definition, std::size_t Index> const TimeSeriesType &output_type() {
     using Field = std::remove_cv_t<util::aggregate_member_type<Index, Definition>>;
     using TimeSeries = typename output_field<Field>::time_series_type;
 
@@ -340,180 +341,33 @@ template <typename Definition, std::size_t Index> [[nodiscard]] const TimeSeries
     }
 }
 
-template <typename Definition, std::size_t... Index>
-[[nodiscard]] const TimeSeriesRuntimeType *aggregate_output_runtime_type(
+template <typename Definition>
+const TimeSeriesRuntimeType *aggregate_output_runtime_type(
     const ResolvedSignature &signature,
-    [[maybe_unused]] std::span<const ScalarRuntimeType *const> parameter_runtime_types,
-    [[maybe_unused]] std::span<const TimeSeriesRuntimeType *const> time_series_input_runtime_types,
-    std::index_sequence<Index...>) {
-    const ScalarRuntimeType *value_runtime_type = nullptr;
-    const TimeSeriesRuntimeType *time_series_runtime_type = nullptr;
-
-    (
-        [&] {
-            using Field = std::remove_cv_t<util::aggregate_member_type<Index, Definition>>;
-
-            if constexpr (output_field<Field>::value && !generic_output_field<Field>::value) {
-                using TimeSeries = typename output_field<Field>::time_series_type;
-                time_series_runtime_type = &cpp_time_series_runtime_type<TimeSeries>(*signature.output);
-            }
-        }(),
-        ...);
-
-    if (signature.output == nullptr) {
+    std::span<const ScalarRuntimeType *const> parameter_runtime_types,
+    std::span<const TimeSeriesRuntimeType *const> time_series_input_runtime_types) {
+    if constexpr (!aggregate_node_has_output<Definition>()) {
         return nullptr;
-    }
-    if (time_series_runtime_type != nullptr) {
-        return time_series_runtime_type;
-    }
-    if (value_runtime_type != nullptr) {
-        return &time_series_value_runtime_type(*signature.output, *value_runtime_type);
-    }
-
-    const TimeSeriesReferenceType *reference{};
-    const TimeSeriesValueType *output_value{};
-    signature.output->visit([&](const TimeSeriesReferenceType *type) { reference = type; },
-                            [&](const TimeSeriesValueType *type) { output_value = type; }, ddv::noop);
-
-    if (reference != nullptr) {
-        auto input = std::size_t{};
-        for (const auto &parameter : signature.parameters) {
-            if (!parameter.type->is_time_series()) {
-                continue;
-            }
-
-            const auto *runtime_type = time_series_input_runtime_types[input++];
-            if (&runtime_type->type() == &reference->target_type()) {
-                return &time_series_reference_runtime_type(*reference, *runtime_type);
-            }
-
-            const TimeSeriesRuntimeType *target{};
-            runtime_type->type().visit(
-                [&](const TimeSeriesReferenceType *) {
-                    target = &static_cast<const TimeSeriesReferenceRuntimeType &>(*runtime_type).target_runtime_type();
-                },
-                ddv::noop);
-            if (target != nullptr && &target->type() == &reference->target_type()) {
-                return &time_series_reference_runtime_type(*reference, *target);
-            }
+    } else {
+        using TimeSeries = aggregate_output_time_series_t<Definition>;
+        if constexpr (!generic_time_series<TimeSeries>) {
+            return &cpp_time_series_runtime_type<TimeSeries>(*signature.output);
+        } else {
+            return &resolve_generic_output_runtime_type(signature, parameter_runtime_types,
+                                                        time_series_input_runtime_types);
         }
-
-        const TimeSeriesValueType *value{};
-        reference->target_type().visit([&](const TimeSeriesValueType *type) { value = type; }, ddv::noop);
-        if (value != nullptr) {
-            const auto &scalar = resolve_scalar_runtime_type(value->value_type(), {});
-            const auto &target = time_series_value_runtime_type(reference->target_type(), scalar);
-            return &time_series_reference_runtime_type(*reference, target);
-        }
-
-        return &resolve_time_series_runtime_type(*signature.output, time_series_input_runtime_types,
-                                                 parameter_runtime_types);
     }
-
-    if (output_value == nullptr) {
-        auto time_series_input = std::size_t{};
-        for (const auto &parameter : signature.parameters) {
-            if (!parameter.type->is_time_series()) {
-                continue;
-            }
-            if (parameter.type == signature.output) {
-                return time_series_input_runtime_types[time_series_input];
-            }
-            ++time_series_input;
-        }
-
-        return &resolve_time_series_runtime_type(*signature.output, time_series_input_runtime_types,
-                                                 parameter_runtime_types);
-    }
-
-    const auto &output_type = *output_value;
-    [[maybe_unused]] auto parameter_index = std::size_t{};
-    (
-        [&] {
-            using Field = std::remove_cv_t<util::aggregate_member_type<Index, Definition>>;
-
-            if constexpr (input_field<Field>::value) {
-                const TimeSeriesValueType *input_type{};
-                signature.parameters[parameter_index].type->visit(
-                    [&](const TimeSeriesValueType *type) { input_type = type; }, ddv::noop);
-                if (input_type != nullptr && &input_type->value_type() == &output_type.value_type()) {
-                    value_runtime_type = parameter_runtime_types[parameter_index];
-                }
-                ++parameter_index;
-            } else if constexpr (scalar_field<Field>::value) {
-                const auto *runtime_type = parameter_runtime_types[parameter_index];
-
-                if (runtime_type != nullptr) {
-                    if (const auto *candidate = runtime_type->runtime_type_for(output_type.value_type())) {
-                        value_runtime_type = candidate;
-                    }
-                }
-                ++parameter_index;
-            }
-        }(),
-        ...);
-
-    if (value_runtime_type != nullptr) {
-        return &time_series_value_runtime_type(*signature.output, *value_runtime_type);
-    }
-
-    return &resolve_time_series_runtime_type(*signature.output, time_series_input_runtime_types,
-                                             parameter_runtime_types);
 }
 
 template <typename Definition, std::size_t... Index>
-[[nodiscard]] constexpr bool aggregate_uses_time_series_input_runtime_type([[maybe_unused]] std::size_t parameter_index,
-                                                                           std::index_sequence<Index...>) noexcept {
-    [[maybe_unused]] auto current_parameter = std::size_t{};
-    auto result = false;
-
-    (
-        [&] {
-            using Field = std::remove_cv_t<util::aggregate_member_type<Index, Definition>>;
-
-            if constexpr (input_field<Field>::value || scalar_field<Field>::value) {
-                if (current_parameter == parameter_index) {
-                    result = input_view_field<Field>::value;
-                }
-                ++current_parameter;
-            }
-        }(),
-        ...);
-
-    return result;
-}
-
-template <typename Definition, std::size_t... Index>
-[[nodiscard]] constexpr bool aggregate_uses_scalar_input_runtime_type([[maybe_unused]] std::size_t parameter_index,
-                                                                      std::index_sequence<Index...>) noexcept {
-    [[maybe_unused]] auto current_parameter = std::size_t{};
-    auto result = false;
-
-    (
-        [&] {
-            using Field = std::remove_cv_t<util::aggregate_member_type<Index, Definition>>;
-
-            if constexpr (input_field<Field>::value || scalar_field<Field>::value) {
-                if (current_parameter == parameter_index) {
-                    result = generic_scalar_input_field<Field>::value;
-                }
-                ++current_parameter;
-            }
-        }(),
-        ...);
-
-    return result;
-}
-
-template <typename Definition, std::size_t... Index>
-[[nodiscard]] consteval std::size_t aggregate_time_series_runtime_type_count(std::index_sequence<Index...>) {
+consteval std::size_t aggregate_time_series_runtime_type_count(std::index_sequence<Index...>) {
     return (std::size_t{} + ... +
             static_cast<std::size_t>(
                 input_view_field<std::remove_cv_t<util::aggregate_member_type<Index, Definition>>>::value));
 }
 
 template <typename Definition, std::size_t Target, std::size_t... Index>
-[[nodiscard]] consteval std::size_t aggregate_time_series_runtime_type_index(std::index_sequence<Index...>) {
+consteval std::size_t aggregate_time_series_runtime_type_index(std::index_sequence<Index...>) {
     return (std::size_t{} + ... +
             static_cast<std::size_t>(
                 Index < Target &&
@@ -521,14 +375,14 @@ template <typename Definition, std::size_t Target, std::size_t... Index>
 }
 
 template <typename Definition, std::size_t... Index>
-[[nodiscard]] consteval std::size_t aggregate_generic_scalar_input_count(std::index_sequence<Index...>) {
+consteval std::size_t aggregate_generic_scalar_input_count(std::index_sequence<Index...>) {
     return (std::size_t{} + ... +
             static_cast<std::size_t>(
                 generic_scalar_input_field<std::remove_cv_t<util::aggregate_member_type<Index, Definition>>>::value));
 }
 
 template <typename Definition, std::size_t Target, std::size_t... Index>
-[[nodiscard]] consteval std::size_t aggregate_generic_scalar_input_index(std::index_sequence<Index...>) {
+consteval std::size_t aggregate_generic_scalar_input_index(std::index_sequence<Index...>) {
     return (std::size_t{} + ... +
             static_cast<std::size_t>(
                 Index < Target &&
@@ -536,7 +390,7 @@ template <typename Definition, std::size_t Target, std::size_t... Index>
 }
 
 template <typename Definition, std::size_t... Index>
-[[nodiscard]] consteval bool aggregate_uses_output_runtime_type(std::index_sequence<Index...>) {
+consteval bool aggregate_uses_output_runtime_type(std::index_sequence<Index...>) {
     return (false || ... || output_view_field<std::remove_cv_t<util::aggregate_member_type<Index, Definition>>>::value);
 }
 
@@ -614,7 +468,7 @@ template <typename Definition, std::size_t... Index>
 }
 
 template <typename Definition, std::size_t Target, std::size_t... Index>
-[[nodiscard]] consteval std::size_t state_index(std::index_sequence<Index...>) {
+consteval std::size_t state_index(std::index_sequence<Index...>) {
     return (
         std::size_t{} + ... +
         static_cast<std::size_t>(Index < Target &&
@@ -622,7 +476,7 @@ template <typename Definition, std::size_t Target, std::size_t... Index>
 }
 
 template <typename Definition, std::size_t Target, std::size_t... Index>
-[[nodiscard]] consteval std::size_t generic_state_index(std::index_sequence<Index...>) {
+consteval std::size_t generic_state_index(std::index_sequence<Index...>) {
     return (std::size_t{} + ... + static_cast<std::size_t>(Index < Target && [] {
                 using Field = std::remove_cv_t<util::aggregate_member_type<Index, Definition>>;
 
@@ -641,7 +495,7 @@ template <typename Definition, std::size_t Target, std::size_t... Index>
 }
 
 template <typename Definition, std::size_t Target, std::size_t... Index>
-[[nodiscard]] consteval std::size_t aggregate_state_offset(std::index_sequence<Index...>) {
+consteval std::size_t aggregate_state_offset(std::index_sequence<Index...>) {
     auto offset = std::size_t{};
     auto result = std::size_t{};
 
@@ -752,7 +606,7 @@ template <typename Definition, std::size_t Index>
 }
 
 template <typename Definition, std::size_t... Index>
-[[nodiscard]] NodeStateLayout
+NodeStateLayout
 aggregate_state_layout(const ResolvedSignature &,
                        [[maybe_unused]] std::span<const ScalarRuntimeType *const> parameter_runtime_types,
                        [[maybe_unused]] std::span<const ScalarType *const> state_types, std::index_sequence<Index...>) {

@@ -10,7 +10,7 @@
 namespace bg::details {
 namespace {
 
-[[nodiscard]] util::thread_local_pointer &current_owner() {
+util::thread_local_pointer &current_owner() {
     static auto value = util::thread_local_pointer{};
 
     return value;

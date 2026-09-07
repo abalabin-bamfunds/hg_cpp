@@ -88,41 +88,41 @@ class wiring_argument {
               &cpp_scalar_runtime_type<typename scalar_value_argument<std::remove_cvref_t<T>>::scalar_type>(), nullptr,
               &value.input_view()}) {}
 
-    [[nodiscard]] bool is_wiring_point() const noexcept { return std::holds_alternative<WiringPoint>(value_); }
+    bool is_wiring_point() const noexcept { return std::holds_alternative<WiringPoint>(value_); }
 
-    [[nodiscard]] bool is_free_time_series_list() const noexcept {
+    bool is_free_time_series_list() const noexcept {
         return std::holds_alternative<FreeTimeSeriesListArgument>(value_);
     }
 
-    [[nodiscard]] bool is_free_time_series_bundle() const noexcept {
+    bool is_free_time_series_bundle() const noexcept {
         return std::holds_alternative<FreeTimeSeriesBundleArgument>(value_);
     }
 
-    [[nodiscard]] WiringPoint wiring_point() const { return std::get<WiringPoint>(value_); }
+    WiringPoint wiring_point() const { return std::get<WiringPoint>(value_); }
 
     void wiring_point(WiringPoint point) { value_ = point; }
 
-    [[nodiscard]] const FreeTimeSeriesListArgument &free_time_series_list() const {
+    const FreeTimeSeriesListArgument &free_time_series_list() const {
         return std::get<FreeTimeSeriesListArgument>(value_);
     }
 
-    [[nodiscard]] const FreeTimeSeriesBundleArgument &free_time_series_bundle() const {
+    const FreeTimeSeriesBundleArgument &free_time_series_bundle() const {
         return std::get<FreeTimeSeriesBundleArgument>(value_);
     }
 
-    [[nodiscard]] const ScalarType &scalar_type() const noexcept { return *std::get<ScalarArgument>(value_).type; }
+    const ScalarType &scalar_type() const noexcept { return *std::get<ScalarArgument>(value_).type; }
 
-    [[nodiscard]] const ScalarRuntimeType &scalar_runtime_type() const noexcept {
+    const ScalarRuntimeType &scalar_runtime_type() const noexcept {
         return *std::get<ScalarArgument>(value_).runtime_type;
     }
 
-    [[nodiscard]] const void *scalar_data() const noexcept { return std::get<ScalarArgument>(value_).data; }
+    const void *scalar_data() const noexcept { return std::get<ScalarArgument>(value_).data; }
 
-    [[nodiscard]] const details::ScalarData *scalar_view() const noexcept {
+    const details::ScalarData *scalar_view() const noexcept {
         return std::get<ScalarArgument>(value_).view;
     }
 
-    [[nodiscard]] bool scalar_has_value() const noexcept {
+    bool scalar_has_value() const noexcept {
         return scalar_data() != nullptr || scalar_view() != nullptr;
     }
 

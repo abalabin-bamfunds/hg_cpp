@@ -57,7 +57,7 @@ class linear_hash_table {
             positions[offset] = positions[size];
         }
 
-        [[nodiscard]] size_type matching(hash_type hash) const noexcept {
+        size_type matching(hash_type hash) const noexcept {
             // The second vector includes one word after the hash array. The size mask removes that lane.
 #if defined(__SSE2__) || defined(_M_X64)
             const auto expected = _mm_set1_epi32(std::bit_cast<std::int32_t>(hash));
@@ -102,7 +102,7 @@ class linear_hash_table {
     linear_hash_table &operator=(linear_hash_table &&) = delete;
 
     template <std::predicate<position_type> Equal>
-    [[nodiscard]] std::optional<position_type> find(hash_type hash, Equal equal) const {
+    std::optional<position_type> find(hash_type hash, Equal equal) const {
         if (primary_.empty()) {
             return std::nullopt;
         }
@@ -227,10 +227,10 @@ class linear_hash_table {
         size_ = 0;
     }
 
-    [[nodiscard]] size_type size() const noexcept { return size_; }
-    [[nodiscard]] bool empty() const noexcept { return size_ == 0; }
-    [[nodiscard]] size_type bucket_count() const noexcept { return primary_.size(); }
-    [[nodiscard]] size_type overflow_bucket_count() const noexcept { return overflow_positions_.size(); }
+    size_type size() const noexcept { return size_; }
+    bool empty() const noexcept { return size_ == 0; }
+    size_type bucket_count() const noexcept { return primary_.size(); }
+    size_type overflow_bucket_count() const noexcept { return overflow_positions_.size(); }
 
     void swap(linear_hash_table &other) noexcept {
         primary_.swap(other.primary_);
@@ -241,7 +241,7 @@ class linear_hash_table {
         std::swap(size_, other.size_);
     }
 
-    [[nodiscard]] static constexpr hash_type hash_code(std::size_t hash) noexcept {
+    static constexpr hash_type hash_code(std::size_t hash) noexcept {
         if constexpr (sizeof(std::size_t) > sizeof(hash_type)) {
             hash ^= hash >> 32;
         }
@@ -253,7 +253,7 @@ class linear_hash_table {
     static constexpr auto maximum_load_numerator = std::uint64_t{3};
     static constexpr auto maximum_load_denominator = std::uint64_t{4};
 
-    [[nodiscard]] size_type bucket_for(hash_type hash) const noexcept {
+    size_type bucket_for(hash_type hash) const noexcept {
         auto result = hash & (base_ - 1);
         if (result < split_) {
             result = hash & ((base_ << 1) - 1);
@@ -294,7 +294,7 @@ class linear_hash_table {
         }
     }
 
-    [[nodiscard]] size_type count_split_entries(const bucket &head) const noexcept {
+    size_type count_split_entries(const bucket &head) const noexcept {
         auto result = size_type{};
         auto *current = &head;
 
@@ -408,7 +408,7 @@ class linear_hash_table {
         }
     }
 
-    [[nodiscard]] size_type chain_size(const bucket &head) const noexcept {
+    size_type chain_size(const bucket &head) const noexcept {
         auto result = size_type{};
         auto *current = &head;
 

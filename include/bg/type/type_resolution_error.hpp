@@ -21,9 +21,9 @@ class TypeResolutionError : public std::runtime_error {
     TypeResolutionError(TypeResolutionErrorCode code, util::symbol subject, std::string message)
         : std::runtime_error(std::move(message)), code_(code), subject_(subject) {}
 
-    [[nodiscard]] TypeResolutionErrorCode code() const noexcept { return code_; }
+    TypeResolutionErrorCode code() const noexcept { return code_; }
 
-    [[nodiscard]] util::symbol subject() const noexcept { return subject_; }
+    util::symbol subject() const noexcept { return subject_; }
 
   private:
     TypeResolutionErrorCode code_;

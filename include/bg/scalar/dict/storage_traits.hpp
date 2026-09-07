@@ -26,9 +26,9 @@ template <typename K, typename V> struct scalar_storage_traits<Dict<K, V>> {
         KeyTraits::requires_finalization || ValueTraits::requires_finalization;
     static constexpr bool assign_uses_memory_resource = true;
 
-    [[nodiscard]] static value_type read(const stored_type &value) noexcept { return value_type{value}; }
+    static value_type read(const stored_type &value) noexcept { return value_type{value}; }
 
-    [[nodiscard]] static std::size_t hash(value_type value) {
+    static std::size_t hash(value_type value) {
         auto result = std::size_t{};
         for (const auto [key, item] : value) {
             result ^= KeyTraits::hash(key) ^ (ValueTraits::hash(item) << 1);

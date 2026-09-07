@@ -25,23 +25,23 @@ template <std::size_t Size> class FreeFixedTimeSeriesListNodeTemplate final : pu
     explicit FreeFixedTimeSeriesListNodeTemplate(const TimeSeriesListType &type)
         : runtime_type_{&free_fixed_time_series_list_runtime_type<Size>(type)}, signature_{make_signature(type)} {}
 
-    [[nodiscard]] const Signature &signature() const override { return signature_; }
-    [[nodiscard]] EvaluationFunction evaluation_function(const ResolvedSignature &) const noexcept override {
+    const Signature &signature() const override { return signature_; }
+    EvaluationFunction evaluation_function(const ResolvedSignature &) const noexcept override {
         return &evaluate;
     }
-    [[nodiscard]] EvaluationFunction start_function(const ResolvedSignature &) const noexcept override {
+    EvaluationFunction start_function(const ResolvedSignature &) const noexcept override {
         return &start;
     }
-    [[nodiscard]] const TimeSeriesRuntimeType *
+    const TimeSeriesRuntimeType *
     output_runtime_type(const ResolvedSignature &, std::span<const ScalarRuntimeType *const>,
                         std::span<const TimeSeriesRuntimeType *const>) const noexcept override {
         return runtime_type_;
     }
-    [[nodiscard]] bool uses_time_series_input_runtime_type(std::size_t) const noexcept override { return true; }
-    [[nodiscard]] InputNotificationCallback input_notification(std::size_t input_index) const noexcept override {
+    bool uses_time_series_input_runtime_type(std::size_t) const noexcept override { return true; }
+    InputNotificationCallback input_notification(std::size_t input_index) const noexcept override {
         return {&input_changed, input_index};
     }
-    [[nodiscard]] std::optional<std::size_t> output_item_source(std::size_t item) const noexcept override {
+    std::optional<std::size_t> output_item_source(std::size_t item) const noexcept override {
         return item < Size ? std::optional{item} : std::nullopt;
     }
 
@@ -102,19 +102,19 @@ template <std::size_t Size> class FixedTimeSeriesListWiring {
     explicit FixedTimeSeriesListWiring(std::array<WiringPoint, Size> items)
         : items_{items}, type_{&argument_type(items)} {}
 
-    [[nodiscard]] details::FreeTimeSeriesListArgument wiring_argument() const noexcept {
+    details::FreeTimeSeriesListArgument wiring_argument() const noexcept {
         return {type_, items_, &details::materialize_fixed_time_series_list<Size>};
     }
 
   private:
-    [[nodiscard]] static const TimeSeriesType &target_type(const TimeSeriesType &type) noexcept {
+    static const TimeSeriesType &target_type(const TimeSeriesType &type) noexcept {
         if (const auto *reference = dynamic_cast<const TimeSeriesReferenceType *>(&type)) {
             return reference->target_type();
         }
         return type;
     }
 
-    [[nodiscard]] static const TimeSeriesListType &argument_type(const std::array<WiringPoint, Size> &items) {
+    static const TimeSeriesListType &argument_type(const std::array<WiringPoint, Size> &items) {
         const auto &first = target_type(items.front().type());
         auto guarantee = *first.guarantee().value();
         const auto &shape = first.with_guarantee(TimeSeriesGuarantee::ordinary);

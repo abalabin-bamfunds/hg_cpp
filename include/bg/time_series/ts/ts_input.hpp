@@ -24,15 +24,15 @@ class In<TS<Variable, TimeSeriesProperties...>, Properties...> {
     In(const EvaluationTime &last_updated, const void *value, const TimeSeriesRuntimeType &runtime_type) noexcept
         : data_{runtime_type, last_updated, value} {}
 
-    [[nodiscard]] bool valid() const noexcept { return data_.valid(); }
-    [[nodiscard]] EvaluationTime last_updated() const noexcept { return data_.last_updated(); }
-    [[nodiscard]] Scalar<Variable> value_view() const {
+    bool valid() const noexcept { return data_.valid(); }
+    EvaluationTime last_updated() const noexcept { return data_.last_updated(); }
+    Scalar<Variable> value_view() const {
         return Scalar<Variable>::from(
             static_cast<const TimeSeriesValueRuntimeType &>(data_.runtime_type()).scalar_runtime_type(), data_.data());
     }
-    [[nodiscard]] const TimeSeriesRuntimeType &runtime_type() const noexcept { return data_.runtime_type(); }
-    [[nodiscard]] const void *data() const noexcept { return data_.data(); }
-    [[nodiscard]] const In *operator->() const noexcept { return this; }
+    const TimeSeriesRuntimeType &runtime_type() const noexcept { return data_.runtime_type(); }
+    const void *data() const noexcept { return data_.data(); }
+    const In *operator->() const noexcept { return this; }
 
     template <typename... Functions> decltype(auto) visit(Functions &&...functions) const {
         return In<TS_T>{data_.last_updated_ref(), data_.data(), data_.runtime_type()}.visit(
@@ -67,34 +67,34 @@ class In<TS<T, TimeSeriesProperties...>, Properties...> {
     In(const EvaluationTime &last_updated, const void *value, const TimeSeriesRuntimeType &runtime_type) noexcept
         : data_{runtime_type, last_updated, value} {}
 
-    [[nodiscard]] bool valid() const noexcept { return data_.valid(); }
-    [[nodiscard]] EvaluationTime last_updated() const noexcept { return data_.last_updated(); }
+    bool valid() const noexcept { return data_.valid(); }
+    EvaluationTime last_updated() const noexcept { return data_.last_updated(); }
 
-    [[nodiscard]] details::scalar_value_t<T> value() const noexcept
+    details::scalar_value_t<T> value() const noexcept
         requires(!details::scalar_type_traits<T>::is_collection)
     {
         return Traits::read(*static_cast<const Stored *>(data_.data()));
     }
 
-    [[nodiscard]] details::scalar_value_t<T> operator*() const noexcept
+    details::scalar_value_t<T> operator*() const noexcept
         requires(!details::scalar_type_traits<T>::is_collection)
     {
         return value();
     }
 
-    [[nodiscard]] auto operator->() const noexcept
+    auto operator->() const noexcept
         requires(!details::scalar_type_traits<T>::is_collection && details::scalar_value_supports_arrow<T>)
     {
         return details::scalar_value_arrow<T>(value());
     }
 
-    [[nodiscard]] Scalar<T> value_view() const {
+    Scalar<T> value_view() const {
         return Scalar<T>::from(
             static_cast<const TimeSeriesValueRuntimeType &>(data_.runtime_type()).scalar_runtime_type(), data_.data());
     }
 
-    [[nodiscard]] const TimeSeriesRuntimeType &runtime_type() const noexcept { return data_.runtime_type(); }
-    [[nodiscard]] const void *data() const noexcept { return data_.data(); }
+    const TimeSeriesRuntimeType &runtime_type() const noexcept { return data_.runtime_type(); }
+    const void *data() const noexcept { return data_.data(); }
 
     template <typename... Functions> decltype(auto) visit(Functions &&...functions) const {
         return In<TS_T>{data_.last_updated_ref(), data_.data(), data_.runtime_type()}.visit(

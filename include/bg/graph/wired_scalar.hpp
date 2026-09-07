@@ -8,11 +8,11 @@ class GraphWiring;
 
 class WiredScalar {
   public:
-    [[nodiscard]] const ScalarRuntimeType &runtime_type() const noexcept { return *runtime_type_; }
+    const ScalarRuntimeType &runtime_type() const noexcept { return *runtime_type_; }
 
-    [[nodiscard]] const void *data() const noexcept { return data_; }
+    const void *data() const noexcept { return data_; }
 
-    [[nodiscard]] bool has_value() const noexcept { return data_ != nullptr; }
+    bool has_value() const noexcept { return data_ != nullptr; }
 
   private:
     friend GraphWiring;

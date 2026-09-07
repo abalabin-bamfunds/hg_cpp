@@ -75,10 +75,10 @@ class occupancy_index {
         positions_.release(memory);
     }
 
-    [[nodiscard]] bool contains(size_type position) const noexcept { return positions_.contains(position); }
-    [[nodiscard]] size_type size() const noexcept { return count_; }
-    [[nodiscard]] bool empty() const noexcept { return count_ == 0; }
-    [[nodiscard]] size_type capacity() const noexcept { return positions_.capacity(); }
+    bool contains(size_type position) const noexcept { return positions_.contains(position); }
+    size_type size() const noexcept { return count_; }
+    bool empty() const noexcept { return count_ == 0; }
+    size_type capacity() const noexcept { return positions_.capacity(); }
 
     void swap(occupancy_index &other) noexcept {
         positions_.swap(other.positions_);
@@ -86,8 +86,8 @@ class occupancy_index {
         std::swap(next_free_, other.next_free_);
     }
 
-    [[nodiscard]] iterator begin() const noexcept { return positions_.begin(); }
-    [[nodiscard]] iterator end() const noexcept { return positions_.end(); }
+    iterator begin() const noexcept { return positions_.begin(); }
+    iterator end() const noexcept { return positions_.end(); }
 
   private:
     index<> positions_;

@@ -43,7 +43,7 @@ class CppScalarRuntimeType<Dict<K, V>> final : public CppScalarRuntimeTypeBase<D
         static_cast<details::scalar_dict_storage<K, V> *>(destination)->items.swap(replacement.items);
     }
 
-    [[nodiscard]] bool equals_same_type(const void *storage, const details::ScalarData &other) const noexcept override {
+    bool equals_same_type(const void *storage, const details::ScalarData &other) const noexcept override {
         const auto &source_type = static_cast<const ScalarDictRuntimeType &>(other.runtime_type());
         if (item_count(storage) != source_type.item_count(other.data())) {
             return false;
@@ -54,18 +54,18 @@ class CppScalarRuntimeType<Dict<K, V>> final : public CppScalarRuntimeTypeBase<D
         return comparison.equal;
     }
 
-    [[nodiscard]] std::size_t item_count(const void *storage) const noexcept override {
+    std::size_t item_count(const void *storage) const noexcept override {
         return static_cast<const details::scalar_dict_storage<K, V> *>(storage)->items.size();
     }
 
-    [[nodiscard]] bool contains(const void *storage, const details::ScalarData &key) const override {
+    bool contains(const void *storage, const details::ScalarData &key) const override {
         const auto &items = static_cast<const details::scalar_dict_storage<K, V> *>(storage)->items;
         return items.find_with(key.hash(), [&](const auto &stored) {
             return this->key_runtime_type().equals(std::addressof(stored), key);
         }) != nullptr;
     }
 
-    [[nodiscard]] ScalarDictRuntimeType::ConstItem at(const void *storage,
+    ScalarDictRuntimeType::ConstItem at(const void *storage,
                                                       const details::ScalarData &key) const override {
         const auto &items = static_cast<const details::scalar_dict_storage<K, V> *>(storage)->items;
         const auto *value = items.find_with(key.hash(), [&](const auto &stored) {
@@ -77,7 +77,7 @@ class CppScalarRuntimeType<Dict<K, V>> final : public CppScalarRuntimeTypeBase<D
         return {this->mapped_runtime_type(), value};
     }
 
-    [[nodiscard]] ScalarDictRuntimeType::Item at(void *storage, const details::ScalarData &key) const override {
+    ScalarDictRuntimeType::Item at(void *storage, const details::ScalarData &key) const override {
         auto &items = static_cast<details::scalar_dict_storage<K, V> *>(storage)->items;
         auto *value = items.find_with(key.hash(), [&](const auto &stored) {
             return this->key_runtime_type().equals(std::addressof(stored), key);

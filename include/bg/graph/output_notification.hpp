@@ -23,11 +23,11 @@ enum class OutputChange : std::uint8_t {
 
 class OutputNotificationContext {
   public:
-    [[nodiscard]] RuntimeGraph &runtime_graph() const noexcept { return *runtime_graph_; }
-    [[nodiscard]] EvaluationTime evaluation_time() const noexcept;
-    [[nodiscard]] Node node(std::size_t node_index) const noexcept;
-    [[nodiscard]] void *runtime_storage_at(std::size_t offset) const noexcept;
-    [[nodiscard]] std::pmr::memory_resource &memory_resource(RuntimeGraph &graph) const noexcept;
+    RuntimeGraph &runtime_graph() const noexcept { return *runtime_graph_; }
+    EvaluationTime evaluation_time() const noexcept;
+    Node node(std::size_t node_index) const noexcept;
+    void *runtime_storage_at(std::size_t offset) const noexcept;
+    std::pmr::memory_resource &memory_resource(RuntimeGraph &graph) const noexcept;
 
     void schedule_validity_check(RuntimeGraph &graph, std::size_t node_index) const noexcept;
     void notify(details::DynamicSubscribers *subscribers, OutputChange change) const;
@@ -83,16 +83,16 @@ class OutputNotification {
         }
     }
 
-    [[nodiscard]] std::span<const std::byte> records() const noexcept {
+    std::span<const std::byte> records() const noexcept {
         return {reinterpret_cast<const std::byte *>(this + 1), record_bytes_};
     }
 
-    [[nodiscard]] const std::byte *end() const noexcept {
+    const std::byte *end() const noexcept {
         return records().data() + records().size() + following_bytes_;
     }
 
   private:
-    [[nodiscard]] const OutputNotification *next() const noexcept {
+    const OutputNotification *next() const noexcept {
         if (following_bytes_ == 0) {
             return nullptr;
         }

@@ -4,10 +4,8 @@
 #include <bg/time_series/time_series_runtime_type.hpp>
 #include <bg/time_series/tss/tss_storage.hpp>
 #include <bg/type/time_series_set_type.hpp>
+
 #include <memory>
-#include <mutex>
-#include <ranges>
-#include <vector>
 
 namespace bg::details {
 
@@ -17,7 +15,7 @@ class TimeSeriesSetRuntimeType final : public TimeSeriesRuntimeType {
         : TimeSeriesRuntimeType{type, sizeof(time_series_set_storage), alignof(time_series_set_storage),
                                 true, key.requires_finalization(),     true},
           key_{&key} {}
-    [[nodiscard]] const ScalarRuntimeType &key_runtime_type() const noexcept { return *key_; }
+    const ScalarRuntimeType &key_runtime_type() const noexcept { return *key_; }
 
     void construct_initial_value(void *destination) const noexcept override {
         std::construct_at(static_cast<time_series_set_storage *>(destination));
@@ -36,32 +34,11 @@ class TimeSeriesSetRuntimeType final : public TimeSeriesRuntimeType {
     const ScalarRuntimeType *key_;
 };
 
-[[nodiscard]] inline const TimeSeriesRuntimeType &time_series_set_runtime_type(const TimeSeriesSetType &type,
-                                                                               const ScalarRuntimeType &key) {
-    struct Entry {
-        const TimeSeriesSetType *type;
-        const ScalarRuntimeType *key;
-        std::unique_ptr<TimeSeriesSetRuntimeType> runtime_type;
-    };
-
-    static auto mutex = std::mutex{};
-    static auto entries = std::vector<Entry>{};
-
-    const auto lock = std::lock_guard{mutex};
-    const auto found =
-        std::ranges::find_if(entries, [&](const auto &entry) { return entry.type == &type && entry.key == &key; });
-    if (found != entries.end()) {
-        return *found->runtime_type;
-    }
-
-    auto runtime_type = std::make_unique<TimeSeriesSetRuntimeType>(type, key);
-    auto &result = *runtime_type;
-    entries.push_back({&type, &key, std::move(runtime_type)});
-    return result;
-}
+const TimeSeriesRuntimeType &time_series_set_runtime_type(const TimeSeriesSetType &type,
+                                                          const ScalarRuntimeType &key);
 
 template <typename K, auto... Properties> struct CppTimeSeriesRuntimeType<TSS<K, Properties...>> {
-    [[nodiscard]] static const TimeSeriesRuntimeType &get(const TimeSeriesType &type) {
+    static const TimeSeriesRuntimeType &get(const TimeSeriesType &type) {
         return time_series_set_runtime_type(static_cast<const TimeSeriesSetType &>(type), cpp_scalar_runtime_type<K>());
     }
 };

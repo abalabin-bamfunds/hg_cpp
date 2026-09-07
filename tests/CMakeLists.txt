@@ -48,6 +48,7 @@ add_executable(
     utils/scope_exit_test.cpp
     utils/sparse_bunch_test.cpp
     utils/symbol_test.cpp
+    utils/tagged_ptr_test.cpp
     utils/version_test.cpp
     value/global_state_test.cpp
     value/scalar/capability_test.cpp

@@ -84,7 +84,7 @@ decltype(auto) invoke_graph_function(const Function &function, std::span<wiring_
 }
 
 template <typename Function, std::size_t Index>
-[[nodiscard]] bool wiring_parameter_matches(const ResolvedParameter &parameter) {
+bool wiring_parameter_matches(const ResolvedParameter &parameter) {
     using Parameter = typename callable<Function>::template argument_type<Index>;
     using Value = std::remove_cvref_t<Parameter>;
 
@@ -127,7 +127,7 @@ template <typename Function> [[nodiscard]] bool wiring_parameters_match(const Re
     return wiring_parameters_match<Function>(signature, std::make_index_sequence<callable<Function>::argument_count>{});
 }
 
-template <typename Value> [[nodiscard]] util::symbol wiring_label(Value &&value) {
+template <typename Value> util::symbol wiring_label(Value &&value) {
     if constexpr (std::same_as<std::remove_cvref_t<Value>, util::symbol>) {
         return std::forward<Value>(value);
     } else {

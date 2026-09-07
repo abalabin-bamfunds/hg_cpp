@@ -19,15 +19,15 @@ template <typename T> class Scalar<Set<T>> {
     Scalar(Scalar &&) noexcept = default;
     Scalar &operator=(Scalar &&) noexcept = default;
 
-    [[nodiscard]] std::size_t size() const noexcept { return runtime_type().item_count(value_.data()); }
-    [[nodiscard]] bool empty() const noexcept { return size() == 0; }
-    [[nodiscard]] bool contains(const Scalar<T> &item) const {
+    std::size_t size() const noexcept { return runtime_type().item_count(value_.data()); }
+    bool empty() const noexcept { return size() == 0; }
+    bool contains(const Scalar<T> &item) const {
         return runtime_type().contains(value_.data(), item.input_view());
     }
 
     template <scalar_source Source>
         requires(!details::scalar_variable<T> && std::same_as<canonical_scalar_t<Source>, T>)
-    [[nodiscard]] bool contains(Source &&item) const {
+    bool contains(Source &&item) const {
         const auto value = canonical_scalar(std::forward<Source>(item));
         return runtime_type().contains(value_.data(), details::make_scalar_source<T>(value));
     }
@@ -40,27 +40,27 @@ template <typename T> class Scalar<Set<T>> {
                                 });
     }
 
-    [[nodiscard]] const Scalar *operator->() const noexcept { return this; }
-    [[nodiscard]] const ScalarType &type() const noexcept { return value_.runtime_type().type(); }
+    const Scalar *operator->() const noexcept { return this; }
+    const ScalarType &type() const noexcept { return value_.runtime_type().type(); }
 
     template <typename... Functions> decltype(auto) visit(Functions &&...functions) const {
         return Scalar<>::from(value_).visit(std::forward<Functions>(functions)...);
     }
 
-    [[nodiscard]] std::size_t hash() const noexcept
+    std::size_t hash() const noexcept
         requires details::scalar_capability_traits<Set<T>>::supports_hash
     {
         return value_.hash();
     }
 
-    [[nodiscard]] bool equals(const details::ScalarData &other) const noexcept
+    bool equals(const details::ScalarData &other) const noexcept
         requires details::scalar_capability_traits<Set<T>>::supports_equality
     {
         return value_.equals(other);
     }
 
-    [[nodiscard]] const details::ScalarData &input_view() const & noexcept { return value_; }
-    [[nodiscard]] const details::ScalarData &input_view() const && = delete;
+    const details::ScalarData &input_view() const & noexcept { return value_; }
+    const details::ScalarData &input_view() const && = delete;
 
     [[nodiscard]] static Scalar from(const details::ScalarData &value) noexcept { return Scalar{value}; }
     [[nodiscard]] static Scalar from(const ScalarRuntimeType &runtime_type, const void *data) noexcept {
@@ -74,7 +74,7 @@ template <typename T> class Scalar<Set<T>> {
     using scalar_type = Set<T>;
 
   private:
-    [[nodiscard]] const ScalarSetRuntimeType &runtime_type() const noexcept {
+    const ScalarSetRuntimeType &runtime_type() const noexcept {
         return static_cast<const ScalarSetRuntimeType &>(value_.runtime_type());
     }
 

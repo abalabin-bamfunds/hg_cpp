@@ -28,25 +28,25 @@ template <typename T> class Scalar {
     Scalar(Scalar &&) noexcept = default;
     Scalar &operator=(Scalar &&) noexcept = default;
 
-    [[nodiscard]] const Scalar *operator->() const noexcept { return this; }
+    const Scalar *operator->() const noexcept { return this; }
 
-    [[nodiscard]] details::scalar_value_t<T> value() const
+    details::scalar_value_t<T> value() const
         requires(!erased)
     {
         return details::scalar_data_value<T>(value_);
     }
 
-    [[nodiscard]] const ScalarType &type() const noexcept { return value_.runtime_type().type(); }
-    [[nodiscard]] const ScalarRuntimeType &runtime_type() const noexcept { return value_.runtime_type(); }
-    [[nodiscard]] const void *data() const noexcept { return value_.data(); }
+    const ScalarType &type() const noexcept { return value_.runtime_type().type(); }
+    const ScalarRuntimeType &runtime_type() const noexcept { return value_.runtime_type(); }
+    const void *data() const noexcept { return value_.data(); }
 
-    [[nodiscard]] std::size_t hash() const noexcept
+    std::size_t hash() const noexcept
         requires std::same_as<T, void> || details::scalar_capability_traits<T>::supports_hash
     {
         return value_.hash();
     }
 
-    [[nodiscard]] bool equals(const details::ScalarData &other) const noexcept
+    bool equals(const details::ScalarData &other) const noexcept
         requires std::same_as<T, void> || details::scalar_capability_traits<T>::supports_equality
     {
         return value_.equals(other);
@@ -61,8 +61,8 @@ template <typename T> class Scalar {
         return visit(ddv::serial{std::forward<Function>(function), std::forward<Functions>(functions)...});
     }
 
-    [[nodiscard]] const details::ScalarData &input_view() const & noexcept { return value_; }
-    [[nodiscard]] const details::ScalarData &input_view() const && = delete;
+    const details::ScalarData &input_view() const & noexcept { return value_; }
+    const details::ScalarData &input_view() const && = delete;
 
     using scalar_type = T;
 

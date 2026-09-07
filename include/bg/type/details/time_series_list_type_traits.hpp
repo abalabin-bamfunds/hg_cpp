@@ -12,7 +12,7 @@ template <typename Item, auto Size, auto... Properties> struct time_series_type_
     static constexpr bool supported = supported_time_series<Item>;
 
     template <typename Scope, std::size_t Index, bool Input>
-    [[nodiscard]] static const TimeSeriesType &get(GuaranteeParameter guarantee) {
+    static const TimeSeriesType &get(GuaranteeParameter guarantee) {
         if constexpr (!size_variable_declaration<decltype(Size)>) {
             static_assert(Size != std::dynamic_extent, "variable-size time series lists are not implemented");
         }

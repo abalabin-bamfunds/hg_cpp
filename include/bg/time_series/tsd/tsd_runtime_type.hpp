@@ -6,10 +6,9 @@
 #include <bg/time_series/tss/tss_runtime_type.hpp>
 #include <bg/type/time_series_dict_type.hpp>
 #include <bg/util/occupancy_index.hpp>
+
 #include <memory>
-#include <mutex>
-#include <ranges>
-#include <vector>
+#include <stdexcept>
 
 namespace bg::details {
 
@@ -28,16 +27,16 @@ class TimeSeriesDictionaryRuntimeType : public TimeSeriesRuntimeType {
           item_{&item}, key_layout_{key.size(), key.alignment()}, item_layout_{contained_time_series_layout(item)},
           item_value_offset_{contained_time_series_value_offset(item)} {}
 
-    [[nodiscard]] const ScalarRuntimeType &key_runtime_type() const noexcept { return *key_; }
-    [[nodiscard]] const TimeSeriesRuntimeType &item_runtime_type() const noexcept { return *item_; }
+    const ScalarRuntimeType &key_runtime_type() const noexcept { return *key_; }
+    const TimeSeriesRuntimeType &item_runtime_type() const noexcept { return *item_; }
 
-    [[nodiscard]] virtual TimeSeriesItemId find_item(const void *value, const ScalarData &key) const {
+    virtual TimeSeriesItemId find_item(const void *value, const ScalarData &key) const {
         const auto &keys = static_cast<const time_series_dict_storage *>(value)->key_storage().value;
         const auto id = keys.find_position(key, *key_, key_layout_);
         return id != util::occupancy_index::npos && keys.live().contains(id) ? id : util::occupancy_index::npos;
     }
 
-    [[nodiscard]] virtual const void *key(const void *value, TimeSeriesItemId id) const noexcept {
+    virtual const void *key(const void *value, TimeSeriesItemId id) const noexcept {
         return static_cast<const time_series_dict_storage *>(value)->key_storage().value.key(id, key_layout_);
     }
 
@@ -77,14 +76,14 @@ class TimeSeriesDictionaryRuntimeType : public TimeSeriesRuntimeType {
         }
     }
 
-    [[nodiscard]] virtual bool item_modified(const EvaluationTime &last_updated, const void *value,
+    virtual bool item_modified(const EvaluationTime &last_updated, const void *value,
                                              TimeSeriesItemId id) const noexcept {
         const auto &storage = *static_cast<const time_series_dict_storage *>(value);
-        return last_updated > MIN_DT && storage.change_time() == last_updated &&
-               storage.modified().contains(id) && !storage.key_storage().value.added().contains(id);
+        return last_updated > MIN_DT && storage.change_time() == last_updated && storage.modified().contains(id) &&
+               !storage.key_storage().value.added().contains(id);
     }
 
-    [[nodiscard]] ItemLayout item_layout(TimeSeriesItemId id) const override {
+    ItemLayout item_layout(TimeSeriesItemId id) const override {
         if (id != key_set_item_id) {
             throw std::out_of_range{"time series dictionary item is not in packed output storage"};
         }
@@ -92,11 +91,11 @@ class TimeSeriesDictionaryRuntimeType : public TimeSeriesRuntimeType {
                 time_series_dict_storage::key_value_offset()};
     }
 
-    [[nodiscard]] std::size_t item_count(const void *value) const override {
+    std::size_t item_count(const void *value) const override {
         return static_cast<const time_series_dict_storage *>(value)->key_storage().value.size();
     }
 
-    [[nodiscard]] ConstItem item(const void *value, TimeSeriesItemId id) const override {
+    ConstItem item(const void *value, TimeSeriesItemId id) const override {
         const auto &storage = *static_cast<const time_series_dict_storage *>(value);
         if (id == key_set_item_id) {
             return {*keys_, storage.key_storage().last_updated, &storage.key_storage().value};
@@ -105,7 +104,7 @@ class TimeSeriesDictionaryRuntimeType : public TimeSeriesRuntimeType {
                 storage.item_value(id, item_layout_, item_value_offset_)};
     }
 
-    [[nodiscard]] MutableItem item(void *value, TimeSeriesItemId id) const override {
+    MutableItem item(void *value, TimeSeriesItemId id) const override {
         auto &storage = *static_cast<time_series_dict_storage *>(value);
         if (id == key_set_item_id) {
             return {*keys_, storage.key_storage().last_updated, &storage.key_storage().value};
@@ -121,7 +120,7 @@ class TimeSeriesDictionaryRuntimeType : public TimeSeriesRuntimeType {
         }
     }
 
-    [[nodiscard]] bool item_updated(const EvaluationTime &last_updated, const void *value,
+    bool item_updated(const EvaluationTime &last_updated, const void *value,
                                     TimeSeriesItemId id) const noexcept override {
         const auto &storage = *static_cast<const time_series_dict_storage *>(value);
         if (last_updated <= MIN_DT || storage.change_time() != last_updated) {
@@ -166,7 +165,7 @@ class TimeSeriesDictionaryRuntimeType : public TimeSeriesRuntimeType {
         return static_cast<time_series_dict_storage *>(value)->mark_item_modified(id, evaluation_time, memory);
     }
 
-    [[nodiscard]] bool collection_valid(const void *value) const noexcept override {
+    bool collection_valid(const void *value) const noexcept override {
         return static_cast<const time_series_dict_storage *>(value)->key_storage().last_updated > MIN_DT;
     }
 
@@ -219,9 +218,10 @@ class TimeSeriesDictionaryRuntimeType : public TimeSeriesRuntimeType {
         std::destroy_at(storage);
     }
 
-    [[nodiscard]] ReferenceRepresentation *create_reference_representation(
-        ReferenceProvider &provider, ReferenceStorage &source, const TimeSeriesType &requested_type,
-        std::pmr::memory_resource &memory) const override;
+    [[nodiscard]] ReferenceRepresentation *
+    create_reference_representation(ReferenceProvider &provider, ReferenceAddress source,
+                                    const TimeSeriesType &requested_type,
+                                    std::pmr::memory_resource &memory) const override;
 
   private:
     const ScalarRuntimeType *key_;
@@ -232,34 +232,12 @@ class TimeSeriesDictionaryRuntimeType : public TimeSeriesRuntimeType {
     std::size_t item_value_offset_;
 };
 
-[[nodiscard]] inline const TimeSeriesRuntimeType &
+const TimeSeriesRuntimeType &
 time_series_dictionary_runtime_type(const TimeSeriesDictionaryType &type, const ScalarRuntimeType &key,
-                                    const TimeSeriesRuntimeType &item) {
-    struct Entry {
-        const TimeSeriesDictionaryType *type;
-        const ScalarRuntimeType *key;
-        const TimeSeriesRuntimeType *item;
-        std::unique_ptr<TimeSeriesDictionaryRuntimeType> runtime_type;
-    };
-
-    static auto mutex = std::mutex{};
-    static auto entries = std::vector<Entry>{};
-
-    const auto lock = std::lock_guard{mutex};
-    const auto found = std::ranges::find_if(
-        entries, [&](const auto &entry) { return entry.type == &type && entry.key == &key && entry.item == &item; });
-    if (found != entries.end()) {
-        return *found->runtime_type;
-    }
-
-    auto runtime_type = std::make_unique<TimeSeriesDictionaryRuntimeType>(type, key, item);
-    auto &result = *runtime_type;
-    entries.push_back({&type, &key, &item, std::move(runtime_type)});
-    return result;
-}
+                                    const TimeSeriesRuntimeType &item);
 
 template <typename K, typename Item, auto... Properties> struct CppTimeSeriesRuntimeType<TSD<K, Item, Properties...>> {
-    [[nodiscard]] static const TimeSeriesRuntimeType &get(const TimeSeriesType &type) {
+    static const TimeSeriesRuntimeType &get(const TimeSeriesType &type) {
         const auto &dictionary = static_cast<const TimeSeriesDictionaryType &>(type);
         return time_series_dictionary_runtime_type(dictionary, cpp_scalar_runtime_type<K>(),
                                                    CppTimeSeriesRuntimeType<Item>::get(dictionary.value_type()));

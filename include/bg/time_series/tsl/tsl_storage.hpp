@@ -20,18 +20,18 @@ template <std::size_t Size> class fixed_time_series_list_changes {
         return updated_.set(static_cast<std::uint32_t>(index));
     }
 
-    [[nodiscard]] bool contains(std::size_t index) const noexcept {
+    bool contains(std::size_t index) const noexcept {
         return updated_.contains(static_cast<std::uint32_t>(index));
     }
 
-    [[nodiscard]] bool contains(std::size_t index, EvaluationTime evaluation_time) const noexcept {
+    bool contains(std::size_t index, EvaluationTime evaluation_time) const noexcept {
         return time_ == evaluation_time && contains(index);
     }
 
-    [[nodiscard]] auto begin() const noexcept { return updated_.begin(); }
-    [[nodiscard]] auto end() const noexcept { return updated_.end(); }
+    auto begin() const noexcept { return updated_.begin(); }
+    auto end() const noexcept { return updated_.end(); }
 
-    [[nodiscard]] EvaluationTime time() const noexcept { return time_; }
+    EvaluationTime time() const noexcept { return time_; }
 
   private:
     static_assert(Size < util::dynamic_index_extent);

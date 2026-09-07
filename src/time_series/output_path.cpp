@@ -3,6 +3,7 @@
 #include <bg/evaluation_context.hpp>
 #include <bg/scalar/details/allocation_context.hpp>
 #include <bg/time_series/time_series_runtime_type.hpp>
+#include <bg/util/tagged_ptr.hpp>
 
 #include <cstdint>
 #include <memory>
@@ -12,26 +13,33 @@ namespace bg::details {
 namespace {
 
 struct OutputPath {
+    enum class OwnerKind : std::uintptr_t {
+        parent,
+        context,
+    };
+
     OutputPath(EvaluationContext &context, const TimeSeriesRuntimeType &runtime_type, EvaluationTime &last_updated,
                void *value, TimeSeriesItemId id, OutputPath *parent) noexcept
-        : owner{parent == nullptr ? reinterpret_cast<std::uintptr_t>(&context) | context_tag
-                                  : reinterpret_cast<std::uintptr_t>(parent)},
-          runtime_type{&runtime_type}, last_updated{&last_updated}, value{value}, id{id} {}
-
-    [[nodiscard]] EvaluationContext &context() const noexcept {
-        if ((owner & context_tag) != 0) {
-            return *reinterpret_cast<EvaluationContext *>(owner & ~context_tag);
+        : runtime_type{&runtime_type}, last_updated{&last_updated}, value{value}, id{id} {
+        if (parent == nullptr) {
+            owner.reset(&context, OwnerKind::context);
+        } else {
+            owner.reset(parent, OwnerKind::parent);
         }
-        return reinterpret_cast<OutputPath *>(owner)->context();
     }
 
-    [[nodiscard]] OutputPath *parent() const noexcept {
-        return (owner & context_tag) == 0 ? reinterpret_cast<OutputPath *>(owner) : nullptr;
+    EvaluationContext &context() const noexcept {
+        if (owner.tag() == OwnerKind::context) {
+            return *owner.get<EvaluationContext>();
+        }
+        return owner.get<OutputPath>()->context();
     }
 
-    static constexpr auto context_tag = std::uintptr_t{1};
+    OutputPath *parent() const noexcept {
+        return owner.tag() == OwnerKind::parent ? owner.get<OutputPath>() : nullptr;
+    }
 
-    std::uintptr_t owner;
+    util::erased_tagged_ptr<alignof(void *), 1, OwnerKind> owner;
     const TimeSeriesRuntimeType *runtime_type;
     EvaluationTime *last_updated;
     void *value;

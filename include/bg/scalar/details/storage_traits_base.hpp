@@ -29,9 +29,9 @@ template <typename T> struct scalar_storage_traits {
     static constexpr bool requires_finalization = !std::is_trivially_destructible_v<stored_type>;
     static constexpr bool assign_uses_memory_resource = false;
 
-    [[nodiscard]] static value_type read(const stored_type &value) noexcept { return value; }
+    static value_type read(const stored_type &value) noexcept { return value; }
 
-    [[nodiscard]] static std::size_t hash(value_type value) noexcept {
+    static std::size_t hash(value_type value) noexcept {
         if constexpr (std::same_as<T, EvaluationTime>) {
             return std::hash<EvaluationTime::rep>{}(value.time_since_epoch().count());
         } else {
@@ -62,9 +62,9 @@ template <> struct scalar_storage_traits<string> {
     static constexpr bool requires_finalization = false;
     static constexpr bool assign_uses_memory_resource = false;
 
-    [[nodiscard]] static value_type read(const stored_type &value) noexcept { return value; }
+    static value_type read(const stored_type &value) noexcept { return value; }
 
-    [[nodiscard]] static std::size_t hash(value_type value) noexcept { return std::hash<value_type>{}(value); }
+    static std::size_t hash(value_type value) noexcept { return std::hash<value_type>{}(value); }
 
     static void construct(stored_type *destination, value_type value, std::pmr::memory_resource &memory) {
         std::construct_at(destination, value, &memory);
@@ -87,7 +87,7 @@ template <typename T> struct scalar_storage_traits<Opaque<T>> {
     static constexpr bool requires_finalization = !std::is_trivially_destructible_v<stored_type>;
     static constexpr bool assign_uses_memory_resource = false;
 
-    [[nodiscard]] static scalar_value_t<Opaque<T>> read(const stored_type &value) noexcept { return value; }
+    static scalar_value_t<Opaque<T>> read(const stored_type &value) noexcept { return value; }
 
     template <typename Source>
     static void construct(stored_type *destination, Source &&value, std::pmr::memory_resource &) {

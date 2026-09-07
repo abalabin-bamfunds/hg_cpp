@@ -23,10 +23,10 @@ struct DynamicSubscriber {
           node_and_flags{node_index | (active ? active_flag : 0) | (required ? required_flag : 0) |
                          (active && !required ? active_optional_flag : 0)} {}
 
-    [[nodiscard]] std::size_t node_index() const noexcept { return node_and_flags & node_index_mask; }
-    [[nodiscard]] bool active() const noexcept { return (node_and_flags & active_flag) != 0; }
-    [[nodiscard]] bool required() const noexcept { return (node_and_flags & required_flag) != 0; }
-    [[nodiscard]] bool active_optional() const noexcept { return (node_and_flags & active_optional_flag) != 0; }
+    std::size_t node_index() const noexcept { return node_and_flags & node_index_mask; }
+    bool active() const noexcept { return (node_and_flags & active_flag) != 0; }
+    bool required() const noexcept { return (node_and_flags & required_flag) != 0; }
+    bool active_optional() const noexcept { return (node_and_flags & active_optional_flag) != 0; }
 
     RuntimeGraph *graph;
     std::uint32_t input_offset;
@@ -168,7 +168,7 @@ struct DynamicSubscribers {
         }
     }
 
-    [[nodiscard]] bool empty() const noexcept {
+    bool empty() const noexcept {
         return records_.empty() && (callback_records_ == nullptr || callback_records_->records.empty()) &&
                (observer_records_ == nullptr || observer_records_->records.empty());
     }
@@ -184,7 +184,7 @@ struct DynamicSubscribers {
         std::pmr::vector<DynamicObserver> records;
     };
 
-    [[nodiscard]] CallbackRecords &callback_records() {
+    CallbackRecords &callback_records() {
         if (callback_records_ == nullptr) {
             auto *memory = records_.get_allocator().resource();
             auto *storage = memory->allocate(sizeof(CallbackRecords), alignof(CallbackRecords));
@@ -196,7 +196,7 @@ struct DynamicSubscribers {
         return *callback_records_;
     }
 
-    [[nodiscard]] ObserverRecords &observer_records() {
+    ObserverRecords &observer_records() {
         if (observer_records_ == nullptr) {
             auto *memory = records_.get_allocator().resource();
             auto *storage = memory->allocate(sizeof(ObserverRecords), alignof(ObserverRecords));

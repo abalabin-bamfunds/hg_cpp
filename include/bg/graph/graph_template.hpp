@@ -53,10 +53,10 @@ class GraphTemplate final : public WiringTemplate {
         }
     }
 
-    [[nodiscard]] const Signature &signature() const override { return signature_; }
+    const Signature &signature() const override { return signature_; }
 
   private:
-    [[nodiscard]] util::symbol label(const ResolvedSignature &signature, std::span<details::wiring_argument> arguments,
+    util::symbol label(const ResolvedSignature &signature, std::span<details::wiring_argument> arguments,
                                      util::symbol default_label) const override {
         if constexpr (std::same_as<Label, details::default_wiring_label>) {
             return default_label;

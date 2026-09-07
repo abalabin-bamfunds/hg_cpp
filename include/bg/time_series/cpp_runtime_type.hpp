@@ -9,20 +9,20 @@
 namespace bg::details {
 
 template <typename TimeSeries>
-[[nodiscard]] const TimeSeriesType &concrete_time_series_type(TimeSeriesGuarantee inherited) {
+const TimeSeriesType &concrete_time_series_type(TimeSeriesGuarantee inherited) {
     return time_series_type_for<TimeSeries, 0, false, TimeSeries>(inherited);
 }
 
 template <typename TimeSeries> struct CppTimeSeriesRuntimeType;
 
 template <typename T, auto... Properties> struct CppTimeSeriesRuntimeType<TS<T, Properties...>> {
-    [[nodiscard]] static const TimeSeriesRuntimeType &get(const TimeSeriesType &type) {
+    static const TimeSeriesRuntimeType &get(const TimeSeriesType &type) {
         return time_series_value_runtime_type(type, cpp_scalar_runtime_type<T>());
     }
 };
 
 template <typename Target, auto... Properties> struct CppTimeSeriesRuntimeType<REF<Target, Properties...>> {
-    [[nodiscard]] static const TimeSeriesRuntimeType &get(const TimeSeriesType &type) {
+    static const TimeSeriesRuntimeType &get(const TimeSeriesType &type) {
         const auto &reference = static_cast<const TimeSeriesReferenceType &>(type);
         return time_series_reference_runtime_type(reference,
                                                   CppTimeSeriesRuntimeType<Target>::get(reference.target_type()));

@@ -14,11 +14,11 @@ template <std::size_t Size> struct compile_time_string {
         }
     }
 
-    [[nodiscard]] constexpr const char *data() const noexcept { return value; }
+    constexpr const char *data() const noexcept { return value; }
 
-    [[nodiscard]] constexpr std::size_t size() const noexcept { return Size - 1; }
+    constexpr std::size_t size() const noexcept { return Size - 1; }
 
-    [[nodiscard]] constexpr std::string_view view() const noexcept { return {value, size()}; }
+    constexpr std::string_view view() const noexcept { return {value, size()}; }
 
     template <std::size_t OtherSize>
     constexpr bool operator==(const compile_time_string<OtherSize> &other) const noexcept {

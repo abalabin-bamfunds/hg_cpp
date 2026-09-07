@@ -28,7 +28,7 @@ struct runtime_item_layout {
           alignment_log2{static_cast<std::uint8_t>(std::countr_zero(item_alignment))},
           growth_levels{growth_level_count(maximum_elements)} {}
 
-    [[nodiscard]] constexpr std::size_t alignment() const noexcept { return std::size_t{1} << alignment_log2; }
+    constexpr std::size_t alignment() const noexcept { return std::size_t{1} << alignment_log2; }
 
     const std::uint32_t size;
     const std::uint32_t maximum_elements;
@@ -37,7 +37,7 @@ struct runtime_item_layout {
     const std::uint8_t growth_levels;
 
   private:
-    [[nodiscard]] static constexpr std::uint8_t growth_level_count(std::uint32_t maximum_elements) noexcept {
+    static constexpr std::uint8_t growth_level_count(std::uint32_t maximum_elements) noexcept {
         return static_cast<std::uint8_t>(
             std::countr_zero(maximum_elements / std::min(initial_element_count, maximum_elements)));
     }
@@ -69,14 +69,14 @@ class runtime_bunch_blocks {
     runtime_bunch_blocks(runtime_bunch_blocks &&) = delete;
     runtime_bunch_blocks &operator=(runtime_bunch_blocks &&) = delete;
 
-    [[nodiscard]] void *get(size_type position, const runtime_item_layout &layout) noexcept {
+    void *get(size_type position, const runtime_item_layout &layout) noexcept {
         const auto [block_index, offset] = locate(position, layout);
         auto &current = block_at(block_index);
 
         return current.data == nullptr ? nullptr : current.data + offset * layout.size;
     }
 
-    [[nodiscard]] const void *get(size_type position, const runtime_item_layout &layout) const noexcept {
+    const void *get(size_type position, const runtime_item_layout &layout) const noexcept {
         const auto [block_index, offset] = locate(position, layout);
         const auto &current = block_at(block_index);
 
@@ -136,7 +136,7 @@ class runtime_bunch_blocks {
         additional_capacity_ = 0;
     }
 
-    [[nodiscard]] size_type allocated_block_count() const noexcept { return allocated_blocks_; }
+    size_type allocated_block_count() const noexcept { return allocated_blocks_; }
 
     void swap(runtime_bunch_blocks &other) noexcept {
         using std::swap;
@@ -148,7 +148,7 @@ class runtime_bunch_blocks {
     }
 
   private:
-    [[nodiscard]] static location locate(size_type position, const runtime_item_layout &layout) noexcept {
+    static location locate(size_type position, const runtime_item_layout &layout) noexcept {
         const auto initial = std::min(runtime_item_layout::initial_element_count, layout.maximum_elements);
         if (position < layout.first_capped_position) {
             const auto scaled = position / initial + 1;
@@ -164,7 +164,7 @@ class runtime_bunch_blocks {
         return {static_cast<size_type>(block_index), static_cast<size_type>(after_growth % layout.maximum_elements)};
     }
 
-    [[nodiscard]] static size_type block_capacity(size_type block_index, const runtime_item_layout &layout) noexcept {
+    static size_type block_capacity(size_type block_index, const runtime_item_layout &layout) noexcept {
         if (block_index < layout.growth_levels) {
             return std::min(runtime_item_layout::initial_element_count, layout.maximum_elements) << block_index;
         }
@@ -172,11 +172,11 @@ class runtime_bunch_blocks {
         return layout.maximum_elements;
     }
 
-    [[nodiscard]] block &block_at(size_type block_index) noexcept {
+    block &block_at(size_type block_index) noexcept {
         return block_index == 0 ? first_ : additional_[block_index - 1];
     }
 
-    [[nodiscard]] const block &block_at(size_type block_index) const noexcept {
+    const block &block_at(size_type block_index) const noexcept {
         return block_index == 0 ? first_ : additional_[block_index - 1];
     }
 
@@ -279,19 +279,19 @@ class runtime_contiguous_bunch {
         blocks_.release(layout, memory);
     }
 
-    [[nodiscard]] void *get(size_type position, const runtime_item_layout &layout) noexcept {
+    void *get(size_type position, const runtime_item_layout &layout) noexcept {
         assert(position < size_);
         return blocks_.get(position, layout);
     }
 
-    [[nodiscard]] const void *get(size_type position, const runtime_item_layout &layout) const noexcept {
+    const void *get(size_type position, const runtime_item_layout &layout) const noexcept {
         assert(position < size_);
         return blocks_.get(position, layout);
     }
 
-    [[nodiscard]] size_type size() const noexcept { return size_; }
-    [[nodiscard]] bool empty() const noexcept { return size_ == 0; }
-    [[nodiscard]] size_type allocated_block_count() const noexcept { return blocks_.allocated_block_count(); }
+    size_type size() const noexcept { return size_; }
+    bool empty() const noexcept { return size_ == 0; }
+    size_type allocated_block_count() const noexcept { return blocks_.allocated_block_count(); }
 
     void swap(runtime_contiguous_bunch &other) noexcept {
         blocks_.swap(other.blocks_);
@@ -343,15 +343,15 @@ class runtime_sparse_bunch {
         blocks_.release(layout, memory);
     }
 
-    [[nodiscard]] void *get(size_type position, const runtime_item_layout &layout) noexcept {
+    void *get(size_type position, const runtime_item_layout &layout) noexcept {
         return blocks_.get(position, layout);
     }
 
-    [[nodiscard]] const void *get(size_type position, const runtime_item_layout &layout) const noexcept {
+    const void *get(size_type position, const runtime_item_layout &layout) const noexcept {
         return blocks_.get(position, layout);
     }
 
-    [[nodiscard]] size_type allocated_block_count() const noexcept { return blocks_.allocated_block_count(); }
+    size_type allocated_block_count() const noexcept { return blocks_.allocated_block_count(); }
 
     void swap(runtime_sparse_bunch &other) noexcept { blocks_.swap(other.blocks_); }
 

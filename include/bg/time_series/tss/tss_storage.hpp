@@ -157,7 +157,7 @@ class time_series_set_storage {
         removed_.release(memory);
     }
 
-    [[nodiscard]] Position find_position(const details::ScalarData &key, const ScalarRuntimeType &key_runtime_type,
+    Position find_position(const details::ScalarData &key, const ScalarRuntimeType &key_runtime_type,
                                          const util::runtime_item_layout &key_layout) const {
         const auto hash = util::linear_hash_table::hash_code(key.hash());
         const auto position = lookup_.find(
@@ -165,21 +165,21 @@ class time_series_set_storage {
         return position.value_or(util::occupancy_index::npos);
     }
 
-    [[nodiscard]] bool contains(const details::ScalarData &key, const ScalarRuntimeType &key_runtime_type,
+    bool contains(const details::ScalarData &key, const ScalarRuntimeType &key_runtime_type,
                                 const util::runtime_item_layout &key_layout) const {
         const auto position = find_position(key, key_runtime_type, key_layout);
         return position != util::occupancy_index::npos && live_.contains(position);
     }
 
-    [[nodiscard]] const void *key(Position position, const util::runtime_item_layout &key_layout) const noexcept {
+    const void *key(Position position, const util::runtime_item_layout &key_layout) const noexcept {
         return keys_.get(position, key_layout);
     }
-    [[nodiscard]] std::size_t size() const noexcept { return live_.count(); }
-    [[nodiscard]] bool changed() const noexcept { return added_.any() || removed_.any(); }
-    [[nodiscard]] EvaluationTime change_time() const noexcept { return change_time_; }
-    [[nodiscard]] const util::index<> &live() const noexcept { return live_; }
-    [[nodiscard]] const util::index<> &added() const noexcept { return added_; }
-    [[nodiscard]] const util::index<> &removed() const noexcept { return removed_; }
+    std::size_t size() const noexcept { return live_.count(); }
+    bool changed() const noexcept { return added_.any() || removed_.any(); }
+    EvaluationTime change_time() const noexcept { return change_time_; }
+    const util::index<> &live() const noexcept { return live_; }
+    const util::index<> &added() const noexcept { return added_; }
+    const util::index<> &removed() const noexcept { return removed_; }
 
   private:
     void grow_indices(Position size, std::pmr::memory_resource &memory) {

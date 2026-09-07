@@ -9,7 +9,7 @@ namespace bg::details {
 
 template <typename Scope, template <template <typename> typename> typename Declaration>
     requires bundle_schema_variable_declaration<Declaration<bundle_schema_field>>
-[[nodiscard]] const TypeVariable<BundleSchemaType> &schema_variable_instance() {
+const TypeVariable<BundleSchemaType> &schema_variable_instance() {
     using Variable = Declaration<bundle_schema_field>;
     static const auto variable = TypeVariable<BundleSchemaType>{util::symbol{Variable::name.view()}};
     return variable;

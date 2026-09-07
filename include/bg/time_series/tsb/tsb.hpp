@@ -25,23 +25,23 @@ class FreeTimeSeriesBundleNodeTemplate final : public NodeTemplate {
     explicit FreeTimeSeriesBundleNodeTemplate(const TimeSeriesBundleType &type)
         : runtime_type_{&free_time_series_bundle_runtime_type(type)}, signature_{make_signature(type)} {}
 
-    [[nodiscard]] const Signature &signature() const override { return signature_; }
-    [[nodiscard]] EvaluationFunction evaluation_function(const ResolvedSignature &) const noexcept override {
+    const Signature &signature() const override { return signature_; }
+    EvaluationFunction evaluation_function(const ResolvedSignature &) const noexcept override {
         return &evaluate;
     }
-    [[nodiscard]] EvaluationFunction start_function(const ResolvedSignature &) const noexcept override {
+    EvaluationFunction start_function(const ResolvedSignature &) const noexcept override {
         return &start;
     }
-    [[nodiscard]] const TimeSeriesRuntimeType *
+    const TimeSeriesRuntimeType *
     output_runtime_type(const ResolvedSignature &, std::span<const ScalarRuntimeType *const>,
                         std::span<const TimeSeriesRuntimeType *const>) const noexcept override {
         return runtime_type_;
     }
-    [[nodiscard]] bool uses_time_series_input_runtime_type(std::size_t) const noexcept override { return true; }
-    [[nodiscard]] InputNotificationCallback input_notification(std::size_t input_index) const noexcept override {
+    bool uses_time_series_input_runtime_type(std::size_t) const noexcept override { return true; }
+    InputNotificationCallback input_notification(std::size_t input_index) const noexcept override {
         return {&input_changed, input_index};
     }
-    [[nodiscard]] std::optional<std::size_t> output_item_source(std::size_t item) const noexcept override {
+    std::optional<std::size_t> output_item_source(std::size_t item) const noexcept override {
         return item < signature_.parameter_count() ? std::optional{item} : std::nullopt;
     }
 
@@ -128,11 +128,11 @@ template <typename... Fields> class TimeSeriesBundleWiring {
     explicit TimeSeriesBundleWiring(std::array<details::NamedBundleWiringPoint, sizeof...(Fields)> fields)
         : fields_{fields}, type_{&argument_type(fields)} {}
 
-    [[nodiscard]] details::FreeTimeSeriesBundleArgument wiring_argument() const noexcept {
+    details::FreeTimeSeriesBundleArgument wiring_argument() const noexcept {
         return {type_, fields_, &details::materialize_time_series_bundle};
     }
 
-    template <util::compile_time_string Name> [[nodiscard]] auto operator[](details::named_argument_name<Name>) const {
+    template <util::compile_time_string Name> auto operator[](details::named_argument_name<Name>) const {
         constexpr auto Index = details::named_bundle_wiring_field_index<Name, Fields...>;
         static_assert(Index != sizeof...(Fields), "free time series bundle has no field with this name");
         using Field = std::tuple_element_t<Index, std::tuple<Fields...>>;
@@ -146,7 +146,7 @@ template <typename... Fields> class TimeSeriesBundleWiring {
     }
 
   private:
-    [[nodiscard]] static const TimeSeriesBundleType &
+    static const TimeSeriesBundleType &
     argument_type(const std::array<details::NamedBundleWiringPoint, sizeof...(Fields)> &fields) {
         for (auto left = std::size_t{}; left < fields.size(); ++left) {
             for (auto right = left + 1; right < fields.size(); ++right) {

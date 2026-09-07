@@ -9,11 +9,11 @@ namespace bg::details {
 
 // Describes the variable sections of compiled graph storage. Node offsets and wiring-path indices follow this header.
 struct CompiledStorageHeader {
-    [[nodiscard]] std::span<const std::uint32_t> node_offsets(std::size_t node_count) const noexcept {
+    std::span<const std::uint32_t> node_offsets(std::size_t node_count) const noexcept {
         return {reinterpret_cast<const std::uint32_t *>(this + 1), node_count};
     }
 
-    [[nodiscard]] std::span<const std::uint32_t> node_paths(std::size_t node_count) const noexcept {
+    std::span<const std::uint32_t> node_paths(std::size_t node_count) const noexcept {
         return {node_offsets(node_count).data() + node_count, node_count};
     }
 

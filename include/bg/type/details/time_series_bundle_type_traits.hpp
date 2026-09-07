@@ -12,8 +12,8 @@ namespace bg::details {
 template <template <template <typename> typename> typename Schema> inline constexpr int bundle_schema_identity = 0;
 
 template <typename Scope, bool Input, template <template <typename> typename> typename Schema, std::size_t... Index>
-[[nodiscard]] std::vector<BundleField> direct_bundle_fields(GuaranteeParameter guarantee,
-                                                            std::index_sequence<Index...>) {
+std::vector<BundleField> direct_bundle_fields(GuaranteeParameter guarantee,
+                                              std::index_sequence<Index...>) {
     auto fields = std::vector<BundleField>{};
     fields.reserve(sizeof...(Index));
     (fields.push_back({util::symbol{direct_bundle_field_name<Index, Schema>()},
@@ -24,7 +24,7 @@ template <typename Scope, bool Input, template <template <typename> typename> ty
 }
 
 template <typename Scope, bool Input, template <template <typename> typename> typename Schema>
-[[nodiscard]] const BundleSchema &cpp_bundle_schema(GuaranteeParameter guarantee) {
+const BundleSchema &cpp_bundle_schema(GuaranteeParameter guarantee) {
     const BundleSchema *base = nullptr;
     if constexpr (bundle_has_base<Schema>) {
         using Base = bundle_base_t<Schema>;
@@ -41,12 +41,12 @@ template <template <template <typename> typename> typename Schema, auto... Prope
 struct time_series_type_traits<TSB<Schema, Properties...>> {
     static constexpr bool schema_variable = bundle_schema_variable_declaration<Schema<bundle_schema_field>>;
 
-    template <std::size_t... Index> [[nodiscard]] static consteval bool fields_generic(std::index_sequence<Index...>) {
+    template <std::size_t... Index> static consteval bool fields_generic(std::index_sequence<Index...>) {
         return (false || ... || generic_time_series<direct_bundle_field_time_series<Index, Schema>>);
     }
 
     template <std::size_t... Index>
-    [[nodiscard]] static consteval bool fields_supported(std::index_sequence<Index...>) {
+    static consteval bool fields_supported(std::index_sequence<Index...>) {
         return (true && ... && supported_time_series<direct_bundle_field_time_series<Index, Schema>>);
     }
 
@@ -88,7 +88,7 @@ struct time_series_type_traits<TSB<Schema, Properties...>> {
     }();
 
     template <typename Scope, std::size_t, bool Input>
-    [[nodiscard]] static const TimeSeriesType &get(GuaranteeParameter guarantee) {
+    static const TimeSeriesType &get(GuaranteeParameter guarantee) {
         if constexpr (schema_variable) {
             static const auto type = GenericTimeSeriesBundleType{schema_variable_instance<Scope, Schema>(), guarantee};
             return type;

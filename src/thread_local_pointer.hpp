@@ -12,7 +12,7 @@ class thread_local_pointer {
     thread_local_pointer(const thread_local_pointer &) = delete;
     thread_local_pointer &operator=(const thread_local_pointer &) = delete;
 
-    [[nodiscard]] void *get() const noexcept;
+    void *get() const noexcept;
     void set(void *value) noexcept;
 
   private:

@@ -5,28 +5,12 @@
 #include <bg/type/time_series_bundle_type.hpp>
 
 #include <memory>
-#include <mutex>
-#include <ranges>
-#include <vector>
+#include <stdexcept>
 
 namespace bg::details {
 
-[[nodiscard]] inline Node free_bundle_node(const free_time_series_bundle_storage &storage) noexcept {
-    return Node::from_output(*storage.node, const_cast<free_time_series_bundle_storage *>(&storage));
-}
-
-[[nodiscard]] inline bool free_bundle_valid(const free_time_series_bundle_storage &storage) noexcept {
-    if (storage.node == nullptr) {
-        return false;
-    }
-    const auto node = free_bundle_node(storage);
-    for (auto index = std::size_t{}; index < node.input_count(); ++index) {
-        if (node.input_last_updated(index) > MIN_DT) {
-            return true;
-        }
-    }
-    return false;
-}
+Node free_bundle_node(const free_time_series_bundle_storage &storage) noexcept;
+bool free_bundle_valid(const free_time_series_bundle_storage &storage) noexcept;
 
 class FreeTimeSeriesBundleRuntimeType final : public TimeSeriesRuntimeType {
   public:
@@ -38,16 +22,16 @@ class FreeTimeSeriesBundleRuntimeType final : public TimeSeriesRuntimeType {
                                 false,
                                 true} {}
 
-    [[nodiscard]] bool collection_valid(const void *value) const noexcept override {
+    bool collection_valid(const void *value) const noexcept override {
         return free_bundle_valid(*static_cast<const free_time_series_bundle_storage *>(value));
     }
 
-    [[nodiscard]] std::size_t item_count(const void *value) const override {
+    std::size_t item_count(const void *value) const override {
         const auto &storage = *static_cast<const free_time_series_bundle_storage *>(value);
         return storage.node == nullptr ? 0 : free_bundle_node(storage).input_count();
     }
 
-    [[nodiscard]] ConstItem item(const void *value, TimeSeriesItemId id) const override {
+    ConstItem item(const void *value, TimeSeriesItemId id) const override {
         const auto &storage = *static_cast<const free_time_series_bundle_storage *>(value);
         if (storage.node == nullptr || id >= free_bundle_node(storage).input_count()) {
             throw std::out_of_range{"time series bundle item index is out of range"};
@@ -63,7 +47,7 @@ class FreeTimeSeriesBundleRuntimeType final : public TimeSeriesRuntimeType {
         }
     }
 
-    [[nodiscard]] bool item_updated(const EvaluationTime &last_updated, const void *value,
+    bool item_updated(const EvaluationTime &last_updated, const void *value,
                                     TimeSeriesItemId id) const noexcept override {
         const auto &storage = *static_cast<const free_time_series_bundle_storage *>(value);
         return last_updated > MIN_DT && storage.change_time == last_updated && storage.modified.contains(id);
@@ -118,19 +102,6 @@ class FreeTimeSeriesBundleRuntimeType final : public TimeSeriesRuntimeType {
     }
 };
 
-[[nodiscard]] inline const TimeSeriesRuntimeType &
-free_time_series_bundle_runtime_type(const TimeSeriesBundleType &type) {
-    static auto mutex = std::mutex{};
-    static auto runtime_types = std::vector<std::unique_ptr<FreeTimeSeriesBundleRuntimeType>>{};
-
-    const auto lock = std::lock_guard{mutex};
-    const auto existing =
-        std::ranges::find_if(runtime_types, [&](const auto &candidate) { return &candidate->type() == &type; });
-    if (existing != runtime_types.end()) {
-        return **existing;
-    }
-    runtime_types.push_back(std::make_unique<FreeTimeSeriesBundleRuntimeType>(type));
-    return *runtime_types.back();
-}
+const TimeSeriesRuntimeType &free_time_series_bundle_runtime_type(const TimeSeriesBundleType &type);
 
 } // namespace bg::details

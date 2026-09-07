@@ -44,12 +44,11 @@ struct bundle_sink_definition {
     inline static std::array<bool, 2> updated{};
 };
 
-struct base_bundle_sink_definition {
+struct base_bundle_value_definition {
     bg::In<bg::TSB<BaseBundle>> input;
+    bg::Out<bg::TS<int>> output;
 
-    void evaluate() const { value = *input->count; }
-
-    inline static int value{};
+    void evaluate() const { output.set(*input->count); }
 };
 
 struct bundle_sum_definition {
@@ -57,14 +56,6 @@ struct bundle_sum_definition {
     bg::Out<bg::TS<float>> output;
 
     void evaluate() const { output.set(static_cast<float>(*input->count) + *input->value); }
-};
-
-struct bundle_item_sink_definition {
-    bg::In<bg::TS<int>> input;
-
-    void evaluate() const { value = *input; }
-
-    inline static int value{};
 };
 
 struct changing_bundle_source_definition {
@@ -105,14 +96,6 @@ struct bundle_list_source_definition {
     void start() const { output[1]->value.set(4.5F); }
 };
 
-struct bundle_list_sink_definition {
-    bg::In<BundleList> input;
-
-    void evaluate() const { value = *input[1]->value; }
-
-    inline static float value{};
-};
-
 } // namespace
 
 TEST_CASE("a typed bundle publishes inherited and direct fields",
@@ -133,12 +116,12 @@ TEST_CASE("fixed time series lists can contain runtime-sized time series",
           "[scalar:integer][scalar:floating-point][representation:native][declaration:concrete]"
           "[binding:direct][schema:named]") {
     const auto source = bg::node<bundle_list_source_definition>();
-    const auto sink = bg::node<bundle_list_sink_definition>();
-    bundle_list_sink_definition::value = 0.0F;
+    using namespace bg::literals;
+    const auto graph = [&] { return source()[1]["value"_m]; };
 
-    bg::run_graph([&] { sink(source()); });
+    const auto actual = bg::testing::test_graph(graph);
 
-    CHECK(bundle_list_sink_definition::value == 4.5F);
+    CHECK(actual.equals({4.5F}));
 }
 
 TEST_CASE("graph code selects a named bundle field",
@@ -146,11 +129,11 @@ TEST_CASE("graph code selects a named bundle field",
           "[representation:native][declaration:concrete][binding:direct][feature:wiring]") {
     using namespace bg::literals;
     const auto source = bg::node<bundle_source_definition>();
-    const auto sink = bg::node<bundle_item_sink_definition>();
+    const auto graph = [&] { return source()["count"_m]; };
 
-    bg::run_graph([&] { sink(source()["count"_m]); });
+    const auto actual = bg::testing::test_graph(graph);
 
-    CHECK(bundle_item_sink_definition::value == 2);
+    CHECK(actual.equals({2}));
 }
 
 TEST_CASE("a base bundle input accepts a derived bundle",
@@ -158,11 +141,12 @@ TEST_CASE("a base bundle input accepts a derived bundle",
           "[scalar:floating-point][representation:native][declaration:concrete][binding:covariant]"
           "[schema:named]") {
     const auto source = bg::node<bundle_source_definition>();
-    const auto sink = bg::node<base_bundle_sink_definition>();
+    const auto value = bg::node<base_bundle_value_definition>();
+    const auto graph = [&] { return value(source()); };
 
-    bg::run_graph([&] { sink(source()); });
+    const auto actual = bg::testing::test_graph(graph);
 
-    CHECK(base_bundle_sink_definition::value == 2);
+    CHECK(actual.equals({2}));
 }
 
 TEST_CASE("a bundle schedules only subscribers of changed fields",
@@ -287,11 +271,12 @@ TEST_CASE("a redefined bundle field shares its inherited storage",
           "[scalar:integer][scalar:floating-point][representation:native][declaration:concrete]"
           "[binding:direct]") {
     const auto source = bg::node<redefined_bundle_source_definition>();
-    const auto sink = bg::node<base_bundle_sink_definition>();
+    const auto value = bg::node<base_bundle_value_definition>();
+    const auto graph = [&] { return value(source()); };
 
-    bg::run_graph([&] { sink(source()); });
+    const auto actual = bg::testing::test_graph(graph);
 
-    CHECK(base_bundle_sink_definition::value == 4);
+    CHECK(actual.equals({4}));
 }
 
 namespace {
@@ -310,12 +295,11 @@ struct nested_bundle_source_definition {
     }
 };
 
-struct nested_bundle_sink_definition {
+struct nested_bundle_sum_definition {
     bg::In<bg::TSB<NestedBundle>> input;
+    bg::Out<bg::TS<float>> output;
 
-    void evaluate() const { value = static_cast<float>(*input->nested->count) + *input->value; }
-
-    inline static float value{};
+    void evaluate() const { output.set(static_cast<float>(*input->nested->count) + *input->value); }
 };
 
 } // namespace
@@ -325,11 +309,12 @@ TEST_CASE("a bundle field can contain another bundle",
           "[scalar:integer][scalar:floating-point][representation:native][declaration:concrete]"
           "[binding:direct]") {
     const auto source = bg::node<nested_bundle_source_definition>();
-    const auto sink = bg::node<nested_bundle_sink_definition>();
+    const auto sum = bg::node<nested_bundle_sum_definition>();
+    const auto graph = [&] { return sum(source()); };
 
-    bg::run_graph([&] { sink(source()); });
+    const auto actual = bg::testing::test_graph(graph);
 
-    CHECK(nested_bundle_sink_definition::value == 4.5F);
+    CHECK(actual.equals({4.5F}));
 }
 
 namespace {

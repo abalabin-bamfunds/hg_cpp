@@ -14,18 +14,18 @@ namespace bg {
 
 class NodeInvocationParameter {
   public:
-    [[nodiscard]] std::size_t parameter_index() const noexcept { return parameter_index_; }
-    [[nodiscard]] util::symbol parameter_name() const noexcept { return metadata().name; }
-    [[nodiscard]] const Type &parameter_type() const noexcept { return *metadata().type; }
+    std::size_t parameter_index() const noexcept { return parameter_index_; }
+    util::symbol parameter_name() const noexcept { return metadata().name; }
+    const Type &parameter_type() const noexcept { return *metadata().type; }
 
   protected:
     NodeInvocationParameter(const CompiledNode &node, std::byte *runtime_storage, std::size_t parameter_index,
                             std::size_t view_index) noexcept
         : node_{&node}, runtime_storage_{runtime_storage}, parameter_index_{parameter_index}, view_index_{view_index} {}
 
-    [[nodiscard]] const ParameterBinding &binding() const noexcept { return node_->parameters()[parameter_index_]; }
+    const ParameterBinding &binding() const noexcept { return node_->parameters()[parameter_index_]; }
 
-    [[nodiscard]] const NodeInvocationParameterMetadata &metadata() const noexcept {
+    const NodeInvocationParameterMetadata &metadata() const noexcept {
         return node_->node_invocation_metadata()->parameters(*node_)[parameter_index_];
     }
 
@@ -41,7 +41,7 @@ class NodeInvocationInput final : public NodeInvocationParameter {
                         std::size_t view_index) noexcept
         : NodeInvocationParameter{node, runtime_storage, parameter_index, view_index} {}
 
-    [[nodiscard]] In<TS_T> value() const {
+    In<TS_T> value() const {
         return Node{*node_, runtime_storage_}.time_series_input(parameter_index_, view_index_);
     }
 };
@@ -53,9 +53,9 @@ class NodeInvocationScalar final : public NodeInvocationParameter {
         : NodeInvocationParameter{node, runtime_storage, parameter_index, view_index},
           time_series_input_count_{time_series_input_count} {}
 
-    [[nodiscard]] bool has_value() const noexcept { return binding().scalar_data() != nullptr; }
+    bool has_value() const noexcept { return binding().scalar_data() != nullptr; }
 
-    [[nodiscard]] Scalar<> value() const {
+    Scalar<> value() const {
         return Scalar<>::from(node_->scalar_input_runtime_type(time_series_input_count_, view_index_),
                               binding().scalar_data());
     }
@@ -80,7 +80,7 @@ template <bool TimeSeries> class NodeInvocationParameterRange {
             advance_to_category();
         }
 
-        [[nodiscard]] value_type operator*() const noexcept {
+        value_type operator*() const noexcept {
             if constexpr (TimeSeries) {
                 return {*node_, runtime_storage_, parameter_index_, view_index_};
             } else {
@@ -95,7 +95,7 @@ template <bool TimeSeries> class NodeInvocationParameterRange {
             return *this;
         }
 
-        [[nodiscard]] bool operator==(std::default_sentinel_t) const noexcept {
+        bool operator==(std::default_sentinel_t) const noexcept {
             return parameter_index_ == node_->parameters().size();
         }
 
@@ -115,10 +115,10 @@ template <bool TimeSeries> class NodeInvocationParameterRange {
         std::size_t view_index_;
     };
 
-    [[nodiscard]] Iterator begin() const noexcept {
+    Iterator begin() const noexcept {
         return Iterator{*node_, runtime_storage_, time_series_input_count_, 0, 0};
     }
-    [[nodiscard]] std::default_sentinel_t end() const noexcept { return {}; }
+    std::default_sentinel_t end() const noexcept { return {}; }
 
   private:
     template <typename, typename> friend class NodeInvocation;
@@ -137,17 +137,17 @@ template <typename CompiledData = void, typename State = void> class NodeInvocat
     NodeInvocation(const CompiledNode &node, void *runtime_storage, EvaluationContext &context) noexcept
         : node_{&node}, runtime_storage_{static_cast<std::byte *>(runtime_storage)}, context_{&context} {}
 
-    [[nodiscard]] EvaluationContext &context() const noexcept { return *context_; }
+    EvaluationContext &context() const noexcept { return *context_; }
 
-    [[nodiscard]] auto inputs() const noexcept -> NodeInvocationParameterRange<true> {
+    auto inputs() const noexcept -> NodeInvocationParameterRange<true> {
         return {*node_, runtime_storage_, 0};
     }
 
-    [[nodiscard]] auto scalars() const noexcept -> NodeInvocationParameterRange<false> {
+    auto scalars() const noexcept -> NodeInvocationParameterRange<false> {
         return {*node_, runtime_storage_, node_->node_invocation_time_series_input_count()};
     }
 
-    [[nodiscard]] Out<TS_T> output() const {
+    Out<TS_T> output() const {
         const auto runtime_node = Node{*node_, runtime_storage_};
         return details::output_factory::make<TS_T>(runtime_node.output_last_updated(), runtime_node.output_value(),
                                                    node_->node_invocation_output_runtime_type(), *context_);
@@ -155,13 +155,13 @@ template <typename CompiledData = void, typename State = void> class NodeInvocat
 
     template <typename Value = CompiledData>
         requires(!std::is_void_v<Value>)
-    [[nodiscard]] const Value &compiled_data() const noexcept {
+    const Value &compiled_data() const noexcept {
         return *static_cast<const Value *>(node_->node_invocation_metadata()->compiled_data(*node_));
     }
 
     template <typename Value = State>
         requires(!std::is_void_v<Value>)
-    [[nodiscard]] Value &state() const noexcept {
+    Value &state() const noexcept {
         return *static_cast<Value *>(Node{*node_, runtime_storage_}.state());
     }
 

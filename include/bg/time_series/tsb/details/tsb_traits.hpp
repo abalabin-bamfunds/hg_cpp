@@ -21,9 +21,9 @@ template <template <template <typename> typename> typename Schema> struct bundle
 struct no_bundle_base {};
 
 template <template <template <typename> typename> typename Base>
-[[nodiscard]] bundle_template<Base> bundle_base(const bundle_base_marker<Base> *);
+bundle_template<Base> bundle_base(const bundle_base_marker<Base> *);
 
-[[nodiscard]] no_bundle_base bundle_base(...);
+no_bundle_base bundle_base(...);
 
 template <template <template <typename> typename> typename Schema>
 using bundle_base_t = decltype(bundle_base(static_cast<const Schema<bundle_schema_field> *>(nullptr)));

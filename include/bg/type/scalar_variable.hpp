@@ -11,7 +11,7 @@ template <typename Scope, typename Declaration> struct ScalarVariableInstance;
 
 template <typename Scope, util::compile_time_string Name, typename... Constraints>
 struct ScalarVariableInstance<Scope, ScalarVariable<Name, Constraints...>> {
-    [[nodiscard]] static const TypeVariable<ScalarType> &get() {
+    static const TypeVariable<ScalarType> &get() {
         static const auto variable = [] {
             auto alternatives = std::vector<const ScalarType *>{};
             auto property_constraints = std::vector<TypeVariable<ScalarType>::Constraint>{};
@@ -37,14 +37,14 @@ struct ScalarVariableInstance<Scope, ScalarVariable<Name, Constraints...>> {
 };
 
 template <typename Scope, scalar_variable Declaration>
-[[nodiscard]] const TypeVariable<ScalarType> &scalar_variable_instance() {
+const TypeVariable<ScalarType> &scalar_variable_instance() {
     return ScalarVariableInstance<Scope, Declaration>::get();
 }
 
 template <scalar_variable Declaration> struct scalar_type_traits<Declaration> : scalar_type_properties {
     static constexpr bool supports_implicit_argument = false;
 
-    template <typename Scope> [[nodiscard]] static const ScalarType &get() {
+    template <typename Scope> static const ScalarType &get() {
         return scalar_variable_instance<Scope, Declaration>();
     }
 };

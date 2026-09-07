@@ -1,5 +1,6 @@
 #include <bg/node.hpp>
 #include <bg/run_graph.hpp>
+#include <bg/testing/test_graph.hpp>
 #include <bg/time_series/tss/tss_type.hpp>
 
 #include <catch2/catch_test_macros.hpp>
@@ -142,6 +143,13 @@ struct set_from_value_definition {
     void evaluate() const { output.insert(*input); }
 };
 
+struct set_size_definition {
+    bg::In<IntSet> input;
+    bg::Out<bg::TS<int>> output;
+
+    void evaluate() const { output.set(static_cast<int>(input.size())); }
+};
+
 } // namespace
 
 TEST_CASE("a time series set preserves its value when a required input becomes invalid",
@@ -149,14 +157,10 @@ TEST_CASE("a time series set preserves its value when a required input becomes i
           "[scalar:integer][representation:native][declaration:concrete][binding:direct]") {
     const auto source = bg::node<invalidating_value_source_definition>();
     const auto set_from_value = bg::node<set_from_value_definition>();
-    const auto sink = bg::node<set_sink_definition>();
-    set_sink_definition::validity.clear();
-    set_sink_definition::sizes.clear();
-    set_sink_definition::added.clear();
-    set_sink_definition::removed.clear();
+    const auto size = bg::node<set_size_definition>();
+    const auto graph = [&] { return size(set_from_value(source())); };
 
-    bg::run_graph([&] { sink(set_from_value(source())); });
+    const auto actual = bg::testing::test_graph(graph);
 
-    CHECK(set_sink_definition::validity == std::vector{true});
-    CHECK(set_sink_definition::sizes == std::vector<std::size_t>{1});
+    CHECK(actual.equals({1}));
 }

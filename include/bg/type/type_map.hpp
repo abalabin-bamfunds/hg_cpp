@@ -21,7 +21,7 @@ class TypeMap {
     TypeMap(TypeMap &&) = default;
     TypeMap &operator=(TypeMap &&) = default;
 
-    [[nodiscard]] const TypeBinding *find(const Variable &variable) const noexcept {
+    const TypeBinding *find(const Variable &variable) const noexcept {
         const auto found = values_.find(&variable);
 
         if (found != values_.end()) {

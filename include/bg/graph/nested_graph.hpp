@@ -1,6 +1,7 @@
 #pragma once
 
 #include <bg/evaluation_time.hpp>
+#include <bg/time_series/ref/ref_storage.hpp>
 
 #include <cstddef>
 #include <memory>
@@ -9,10 +10,6 @@
 #include <type_traits>
 
 namespace bg {
-
-namespace details {
-struct ReferenceStorage;
-}
 
 class CompiledGraph;
 class EvaluationContext;
@@ -25,7 +22,7 @@ struct CompiledNestedGraph {
 };
 
 struct NestedGraphInput {
-    details::ReferenceStorage *target;
+    details::ReferenceAddress target;
     EvaluationTime last_updated;
 };
 
@@ -39,8 +36,8 @@ class NestedGraph {
     void stop(EvaluationContext &context);
     void stop_and_destroy(EvaluationContext &context) noexcept;
 
-    [[nodiscard]] bool running() const noexcept { return active_ != nullptr; }
-    [[nodiscard]] details::ReferenceStorage *output(const CompiledNestedGraph &compiled) const noexcept;
+    bool running() const noexcept { return active_ != nullptr; }
+    details::ReferenceAddress output(const CompiledNestedGraph &compiled) const noexcept;
 
   private:
     static void destroy_retired_callback(void *target) noexcept;

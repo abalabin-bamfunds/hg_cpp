@@ -41,20 +41,20 @@ template <typename Key, typename Hash, typename Equal> class hash_key_table {
     template <typename Lookup>
         requires std::invocable<const Hash &, const Lookup &> &&
                  std::predicate<const Equal &, const Key &, const Lookup &>
-    [[nodiscard]] std::optional<match> find(const Lookup &key) const {
+    std::optional<match> find(const Lookup &key) const {
         const auto hash = make_hash(key);
         return find_with_hash(hash, [&](const auto &stored) { return std::invoke(equal_, stored, key); });
     }
 
     template <typename Predicate>
         requires std::predicate<Predicate &, const Key &>
-    [[nodiscard]] std::optional<match> find_with(std::size_t hash, Predicate &&matches) const {
+    std::optional<match> find_with(std::size_t hash, Predicate &&matches) const {
         return find_with_hash(linear_hash_table::hash_code(hash), std::forward<Predicate>(matches));
     }
 
     template <typename Predicate>
         requires std::predicate<Predicate &, const Key &>
-    [[nodiscard]] position_type find_position_with(std::size_t hash, Predicate &&matches) const {
+    position_type find_position_with(std::size_t hash, Predicate &&matches) const {
         const auto found = find_with(hash, std::forward<Predicate>(matches));
 
         return found ? found->position : occupancy_index::npos;
@@ -91,7 +91,7 @@ template <typename Key, typename Hash, typename Equal> class hash_key_table {
     template <typename Lookup>
         requires std::invocable<const Hash &, const Lookup &> &&
                  std::predicate<const Equal &, const Key &, const Lookup &>
-    [[nodiscard]] position_type find_position(const Lookup &key) const {
+    position_type find_position(const Lookup &key) const {
         const auto found = find(key);
 
         return found ? found->position : occupancy_index::npos;
@@ -199,12 +199,12 @@ template <typename Key, typename Hash, typename Equal> class hash_key_table {
         positions_.release(memory);
     }
 
-    [[nodiscard]] Key &key_at(position_type position) noexcept { return keys_[position]; }
-    [[nodiscard]] const Key &key_at(position_type position) const noexcept { return keys_[position]; }
+    Key &key_at(position_type position) noexcept { return keys_[position]; }
+    const Key &key_at(position_type position) const noexcept { return keys_[position]; }
 
-    [[nodiscard]] const occupancy_index &positions() const noexcept { return positions_; }
-    [[nodiscard]] std::uint32_t size() const noexcept { return positions_.size(); }
-    [[nodiscard]] bool empty() const noexcept { return positions_.empty(); }
+    const occupancy_index &positions() const noexcept { return positions_; }
+    std::uint32_t size() const noexcept { return positions_.size(); }
+    bool empty() const noexcept { return positions_.empty(); }
 
     void swap(hash_key_table &other) noexcept(std::is_nothrow_swappable_v<Hash> && std::is_nothrow_swappable_v<Equal>) {
         positions_.swap(other.positions_);
@@ -216,7 +216,7 @@ template <typename Key, typename Hash, typename Equal> class hash_key_table {
 
   private:
     template <typename Predicate>
-    [[nodiscard]] std::optional<match> find_with_hash(linear_hash_table::hash_type hash, Predicate &&matches) const {
+    std::optional<match> find_with_hash(linear_hash_table::hash_type hash, Predicate &&matches) const {
         const auto found = lookup_.find(hash, [&](auto position) { return std::invoke(matches, keys_[position]); });
 
         if (!found) {

@@ -24,11 +24,11 @@ template <details::time_series_variable Variable, auto... Properties> class In<V
     In(const EvaluationTime &last_updated, const void *value, const TimeSeriesRuntimeType &runtime_type) noexcept
         : data_{runtime_type, last_updated, value} {}
 
-    [[nodiscard]] bool valid() const noexcept { return data_.valid(); }
-    [[nodiscard]] EvaluationTime last_updated() const noexcept { return data_.last_updated(); }
-    [[nodiscard]] const TimeSeriesRuntimeType &runtime_type() const noexcept { return data_.runtime_type(); }
-    [[nodiscard]] const void *data() const noexcept { return data_.data(); }
-    [[nodiscard]] const In *operator->() const noexcept { return this; }
+    bool valid() const noexcept { return data_.valid(); }
+    EvaluationTime last_updated() const noexcept { return data_.last_updated(); }
+    const TimeSeriesRuntimeType &runtime_type() const noexcept { return data_.runtime_type(); }
+    const void *data() const noexcept { return data_.data(); }
+    const In *operator->() const noexcept { return this; }
 
     template <typename Visitor, typename... Arguments>
         requires ddv::SerialVisitorType<std::remove_cvref_t<Visitor>>

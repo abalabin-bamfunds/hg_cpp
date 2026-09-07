@@ -3,6 +3,7 @@
 #include <bg/evaluation_time.hpp>
 #include <bg/runtime_type.hpp>
 #include <bg/time_series/item_id.hpp>
+#include <bg/time_series/ref/ref_storage.hpp>
 #include <bg/type/time_series_type.hpp>
 
 #include <cstddef>
@@ -16,8 +17,8 @@ namespace details {
 class OutputState;
 class ReferenceProvider;
 class ReferenceRepresentation;
-struct ReferenceStorage;
-}
+struct ReferenceRoute;
+} // namespace details
 
 class TimeSeriesRuntimeType : public RuntimeType {
   public:
@@ -56,38 +57,38 @@ class TimeSeriesRuntimeType : public RuntimeType {
     using ItemIdFunction = void (*)(void *, TimeSeriesItemId);
     using ModifiedItemFunction = void (*)(void *, ModifiedItem);
 
-    virtual ~TimeSeriesRuntimeType() = default;
+    ~TimeSeriesRuntimeType() override;
 
-    [[nodiscard]] const TimeSeriesType &type() const noexcept {
+    const TimeSeriesType &type() const noexcept {
         return static_cast<const TimeSeriesType &>(RuntimeType::type());
     }
-    [[nodiscard]] std::size_t value_size() const noexcept { return storage_size(); }
-    [[nodiscard]] std::size_t value_alignment() const noexcept { return storage_alignment(); }
-    [[nodiscard]] bool uses_variable_memory() const noexcept { return storage_uses_variable_memory(); }
-    [[nodiscard]] bool requires_finalization() const noexcept { return storage_requires_finalization(); }
-    [[nodiscard]] bool requires_destruction() const noexcept {
+    std::size_t value_size() const noexcept { return storage_size(); }
+    std::size_t value_alignment() const noexcept { return storage_alignment(); }
+    bool uses_variable_memory() const noexcept { return storage_uses_variable_memory(); }
+    bool requires_finalization() const noexcept { return storage_requires_finalization(); }
+    bool requires_destruction() const noexcept {
         return uses_variable_memory() || requires_finalization();
     }
-    [[nodiscard]] bool supports_byte_copy_initialization() const noexcept {
+    bool supports_byte_copy_initialization() const noexcept {
         return storage_supports_byte_copy_initialization();
     }
-    [[nodiscard]] virtual ItemLayout item_layout(TimeSeriesItemId) const;
-    [[nodiscard]] virtual std::size_t item_count(const void *) const;
-    [[nodiscard]] virtual ConstItem item(const void *, TimeSeriesItemId) const;
-    [[nodiscard]] virtual MutableItem item(void *, TimeSeriesItemId) const;
+    virtual ItemLayout item_layout(TimeSeriesItemId) const;
+    virtual std::size_t item_count(const void *) const;
+    virtual ConstItem item(const void *, TimeSeriesItemId) const;
+    virtual MutableItem item(void *, TimeSeriesItemId) const;
     virtual void for_each_item_id(const void *, void *, ItemIdFunction) const;
-    [[nodiscard]] virtual bool item_updated(const EvaluationTime &, const void *, TimeSeriesItemId) const noexcept;
+    virtual bool item_updated(const EvaluationTime &, const void *, TimeSeriesItemId) const noexcept;
     virtual void for_each_updated_item(const EvaluationTime &, const void *, void *, ItemIdFunction) const;
     [[nodiscard]] virtual bool mark_item_modified(void *, TimeSeriesItemId, EvaluationTime, EvaluationTime,
                                                   std::pmr::memory_resource &) const noexcept {
         return false;
     }
-    [[nodiscard]] virtual bool collection_valid(const void *) const noexcept { return false; }
+    virtual bool collection_valid(const void *) const noexcept { return false; }
     virtual void for_each_modified_item(const EvaluationTime &, const void *, EvaluationTime, void *,
                                         ModifiedItemFunction) const {}
-    [[nodiscard]] virtual details::ReferenceRepresentation *create_reference_representation(
-        details::ReferenceProvider &, details::ReferenceStorage &, const TimeSeriesType &,
-        std::pmr::memory_resource &) const;
+    [[nodiscard]] virtual details::ReferenceRepresentation *
+    create_reference_representation(details::ReferenceProvider &, details::ReferenceAddress, const TimeSeriesType &,
+                                    std::pmr::memory_resource &) const;
     virtual void construct_initial_value(void *destination) const noexcept = 0;
     virtual void construct_runtime_value(void *destination, std::pmr::memory_resource &) const {
         construct_initial_value(destination);
@@ -115,7 +116,7 @@ class TimeSeriesRuntimeType : public RuntimeType {
 
 class TimeSeriesValueRuntimeType : public TimeSeriesRuntimeType {
   public:
-    [[nodiscard]] const ScalarRuntimeType &scalar_runtime_type() const noexcept { return *scalar_; }
+    const ScalarRuntimeType &scalar_runtime_type() const noexcept { return *scalar_; }
 
   protected:
     TimeSeriesValueRuntimeType(const TimeSeriesType &type, const ScalarRuntimeType &scalar, std::size_t value_size,
@@ -133,7 +134,7 @@ class TimeSeriesValueRuntimeType : public TimeSeriesRuntimeType {
     const ScalarRuntimeType *scalar_;
 };
 
-[[nodiscard]] const TimeSeriesRuntimeType &time_series_value_runtime_type(const TimeSeriesType &type,
+const TimeSeriesRuntimeType &time_series_value_runtime_type(const TimeSeriesType &type,
                                                                           const ScalarRuntimeType &scalar_runtime_type);
 
 [[nodiscard]] const TimeSeriesRuntimeType &
@@ -141,6 +142,6 @@ resolve_time_series_runtime_type(const TimeSeriesType &type,
                                  std::span<const TimeSeriesRuntimeType *const> available_time_series = {},
                                  std::span<const ScalarRuntimeType *const> available_scalars = {});
 
-template <typename TimeSeries> [[nodiscard]] const TimeSeriesRuntimeType &cpp_time_series_runtime_type();
+template <typename TimeSeries> const TimeSeriesRuntimeType &cpp_time_series_runtime_type();
 
 } // namespace bg

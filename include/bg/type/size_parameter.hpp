@@ -14,9 +14,9 @@ class SizeParameter {
     SizeParameter(std::size_t value) : value_{value} {}
     SizeParameter(const SizeVariable &variable) : value_{&variable} {}
 
-    [[nodiscard]] bool is_resolved() const noexcept { return std::holds_alternative<std::size_t>(value_); }
+    bool is_resolved() const noexcept { return std::holds_alternative<std::size_t>(value_); }
 
-    [[nodiscard]] std::optional<std::size_t> value() const noexcept {
+    std::optional<std::size_t> value() const noexcept {
         if (const auto *value = std::get_if<std::size_t>(&value_)) {
             return *value;
         }

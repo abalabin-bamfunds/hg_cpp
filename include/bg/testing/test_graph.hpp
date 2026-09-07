@@ -18,9 +18,9 @@ template <typename T = void> class TestGraphResult {
   public:
     explicit TestGraphResult(std::vector<std::optional<ScalarValue<>>> values) : values_{std::move(values)} {}
 
-    [[nodiscard]] std::size_t size() const noexcept { return values_.size(); }
+    std::size_t size() const noexcept { return values_.size(); }
 
-    [[nodiscard]] auto operator[](std::size_t index) const {
+    auto operator[](std::size_t index) const {
         if (!values_[index]) {
             if constexpr (std::same_as<T, void>) {
                 return std::optional<Scalar<>>{};
@@ -38,7 +38,7 @@ template <typename T = void> class TestGraphResult {
 
     template <typename Value = T>
         requires(!std::same_as<Value, void>)
-    [[nodiscard]] bool equals(
+    bool equals(
         std::initializer_list<std::optional<bg::details::scalar_value_t<Value>>> expected) const {
         if (values_.size() != expected.size()) {
             return false;
@@ -61,7 +61,7 @@ template <typename T = void> class TestGraphResult {
 
     template <typename Value = T>
         requires(!std::same_as<Value, void>)
-    [[nodiscard]] bool operator==(
+    bool operator==(
         std::initializer_list<std::optional<bg::details::scalar_value_t<Value>>> expected) const {
         return equals(expected);
     }

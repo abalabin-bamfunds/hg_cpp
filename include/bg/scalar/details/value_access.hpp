@@ -19,7 +19,7 @@ inline constexpr bool inline_scalar_value =
     std::same_as<scalar_stored_t<T>, scalar_value_t<T>> && std::is_trivially_copyable_v<scalar_stored_t<T>> &&
     sizeof(scalar_stored_t<T>) <= sizeof(std::uintptr_t);
 
-template <typename T> [[nodiscard]] scalar_value_t<T> inline_value(std::uintptr_t data) noexcept {
+template <typename T> scalar_value_t<T> inline_value(std::uintptr_t data) noexcept {
     using Traits = scalar_storage_traits<T>;
     using Stored = typename Traits::stored_type;
 

@@ -63,10 +63,10 @@ class Out<TSB<Schema, Properties...>> {
     Out(Out &&) noexcept = default;
     Out(const Out &) = delete;
 
-    [[nodiscard]] bool valid() const noexcept { return state_->valid(); }
-    [[nodiscard]] EvaluationTime last_updated() const noexcept { return state_->last_updated(); }
-    [[nodiscard]] const fields_type *operator->() const noexcept { return &fields_; }
-    [[nodiscard]] const fields_type &fields() const noexcept { return fields_; }
+    bool valid() const noexcept { return state_->valid(); }
+    EvaluationTime last_updated() const noexcept { return state_->last_updated(); }
+    const fields_type *operator->() const noexcept { return &fields_; }
+    const fields_type &fields() const noexcept { return fields_; }
     void invalidate() const { state_->invalidate(); }
 
     template <typename... Functions> decltype(auto) visit(Functions &&...functions) const {
@@ -109,13 +109,13 @@ class Out<TSB<Schema, Properties...>> {
     Out(Out &&) noexcept = default;
     Out(const Out &) = delete;
 
-    [[nodiscard]] bool valid() const noexcept { return state_->valid(); }
-    [[nodiscard]] EvaluationTime last_updated() const noexcept { return state_->last_updated(); }
-    [[nodiscard]] std::size_t size() const noexcept { return state_->runtime_type().item_count(state_->data()); }
-    [[nodiscard]] util::symbol item_name(std::size_t index) const {
+    bool valid() const noexcept { return state_->valid(); }
+    EvaluationTime last_updated() const noexcept { return state_->last_updated(); }
+    std::size_t size() const noexcept { return state_->runtime_type().item_count(state_->data()); }
+    util::symbol item_name(std::size_t index) const {
         return static_cast<const TimeSeriesBundleType &>(state_->runtime_type().type()).item_name(index);
     }
-    [[nodiscard]] Out<TS_T> operator[](std::size_t index) const {
+    Out<TS_T> operator[](std::size_t index) const {
         const auto id = static_cast<TimeSeriesItemId>(index);
         const auto item = state_->runtime_type().item(state_->mutable_data(), id);
         auto *path = state_->add_path(state_->runtime_type(), id);
@@ -123,7 +123,7 @@ class Out<TSB<Schema, Properties...>> {
     }
 
     void invalidate() const { state_->invalidate(); }
-    [[nodiscard]] const Out *operator->() const noexcept { return this; }
+    const Out *operator->() const noexcept { return this; }
 
     template <typename... Functions> decltype(auto) visit(Functions &&...functions) const {
         auto output = details::output_factory::make<TS_T>(state_.get());

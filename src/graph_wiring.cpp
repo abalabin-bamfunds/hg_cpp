@@ -22,7 +22,7 @@ namespace bg {
 
 namespace {
 
-[[nodiscard]] bool requires_reference_representation(const TimeSeriesType &parameter,
+bool requires_reference_representation(const TimeSeriesType &parameter,
                                                      const TimeSeriesType &argument) noexcept {
     const auto *parameter_dictionary = dynamic_cast<const TimeSeriesDictionaryType *>(&parameter);
     const auto *argument_dictionary = dynamic_cast<const TimeSeriesDictionaryType *>(&argument);

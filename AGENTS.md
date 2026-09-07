@@ -82,6 +82,15 @@ Keep documentation brief and complete.
   in positive language and link to its authoritative documentation. Use: “This
   is required to …”
 
+## Decision records
+
+  - Documentation describes current behavior; `docs/decisions/` records why significant choices were made.
+  - Record only durable, non-obvious decisions implemented in committed code. Include the record in the same authorized commit.
+  - Skip routine details, plans, experiments, and uncommitted work.
+  - Link relevant documentation instead of duplicating it.
+  - Preserve replaced decisions and mark them `superseded`.
+  - Never store secrets, transcripts, chain-of-thought, or speculation.
+
 ## Code
 
 Prefer the smallest clear implementation, the code should be elegant.
@@ -125,6 +134,8 @@ Visual C++ (MSVC) compilers.
 
 - Use `auto` by default. Spell out a type when it adds information that the
   initializer does not show or selects a required representation.
+- Use `[[nodiscard]]` only when ignoring a result loses an operation outcome,
+  ownership, a handle, or error information. Do not apply it to observation APIs.
 - Prefer C++23 language and library features when all supported compilers
   implement them.
 - Prefer ranges, views, spans, structured bindings, and designated initializers

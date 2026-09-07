@@ -19,11 +19,11 @@ class ReferenceInputSubscriber {
         : requested_type_{&requested_type}, input_offset_{input_offset},
           node_index_and_flags_{node_index | (active ? active_flag : 0) | (required ? required_flag : 0)} {}
 
-    [[nodiscard]] const TimeSeriesType &requested_type() const noexcept { return *requested_type_; }
-    [[nodiscard]] std::size_t input_offset() const noexcept { return input_offset_; }
-    [[nodiscard]] std::size_t node_index() const noexcept { return node_index_and_flags_ & node_index_mask; }
-    [[nodiscard]] bool active() const noexcept { return (node_index_and_flags_ & active_flag) != 0; }
-    [[nodiscard]] bool required() const noexcept { return (node_index_and_flags_ & required_flag) != 0; }
+    const TimeSeriesType &requested_type() const noexcept { return *requested_type_; }
+    std::size_t input_offset() const noexcept { return input_offset_; }
+    std::size_t node_index() const noexcept { return node_index_and_flags_ & node_index_mask; }
+    bool active() const noexcept { return (node_index_and_flags_ & active_flag) != 0; }
+    bool required() const noexcept { return (node_index_and_flags_ & required_flag) != 0; }
 
   private:
     static constexpr std::uint32_t active_flag = std::uint32_t{1} << 31;
@@ -42,9 +42,9 @@ class CallbackReferenceInputSubscriber {
                                      InputNotificationFunction callback) noexcept
         : subscription_{input_offset, node_index, active, required, requested_type}, data_{data}, callback_{callback} {}
 
-    [[nodiscard]] const ReferenceInputSubscriber &subscription() const noexcept { return subscription_; }
-    [[nodiscard]] std::size_t data() const noexcept { return data_; }
-    [[nodiscard]] InputNotificationFunction callback() const noexcept { return callback_; }
+    const ReferenceInputSubscriber &subscription() const noexcept { return subscription_; }
+    std::size_t data() const noexcept { return data_; }
+    InputNotificationFunction callback() const noexcept { return callback_; }
 
   private:
     ReferenceInputSubscriber subscription_;

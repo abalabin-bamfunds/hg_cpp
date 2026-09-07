@@ -19,11 +19,11 @@ class ResolvedTimeSeriesBundleType final : public TimeSeriesBundleType {
     ResolvedTimeSeriesBundleType(const BundleSchema &schema, TimeSeriesGuarantee guarantee)
         : TimeSeriesBundleType(schema, guarantee) {}
 
-    [[nodiscard]] bool is_resolved() const noexcept override { return true; }
+    bool is_resolved() const noexcept override { return true; }
     [[nodiscard]] const Type &resolve(const TypeMap &) const override { return *this; }
 };
 
-[[nodiscard]] bool same_fields(const BundleSchema &schema, const BundleSchema *base,
+bool same_fields(const BundleSchema &schema, const BundleSchema *base,
                                std::span<const BundleField> fields) {
     return schema.base() == base &&
            std::ranges::equal(schema.direct_fields(), fields, {}, &BundleField::name, &BundleField::name) &&

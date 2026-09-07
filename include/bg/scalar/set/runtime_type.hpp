@@ -24,9 +24,9 @@ class ScalarSetRuntimeType : public ScalarRuntimeType {
 
     using ItemFunction = void (*)(void *, Item);
 
-    [[nodiscard]] const ScalarRuntimeType &item_runtime_type() const noexcept { return *item_; }
-    [[nodiscard]] virtual std::size_t item_count(const void *storage) const noexcept = 0;
-    [[nodiscard]] virtual bool contains(const void *storage, const details::ScalarData &value) const = 0;
+    const ScalarRuntimeType &item_runtime_type() const noexcept { return *item_; }
+    virtual std::size_t item_count(const void *storage) const noexcept = 0;
+    virtual bool contains(const void *storage, const details::ScalarData &value) const = 0;
     virtual void for_each(const void *storage, void *context, ItemFunction function) const = 0;
 
     [[nodiscard]] virtual bool insert(void *storage, const details::ScalarData &value,
@@ -36,7 +36,7 @@ class ScalarSetRuntimeType : public ScalarRuntimeType {
     virtual void clear(void *storage, std::pmr::memory_resource &memory) const noexcept = 0;
 
   private:
-    [[nodiscard]] const ScalarRuntimeType *contained_runtime_type_for(const ScalarType &type) const noexcept override {
+    const ScalarRuntimeType *contained_runtime_type_for(const ScalarType &type) const noexcept override {
         return item_->runtime_type_for(type);
     }
 

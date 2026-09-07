@@ -17,9 +17,9 @@ class ResolvedSetScalarType final : public SetScalarType {
   public:
     explicit ResolvedSetScalarType(const ScalarType &item_type) noexcept : item_type_(&item_type) {}
 
-    [[nodiscard]] bool is_resolved() const noexcept override { return true; }
+    bool is_resolved() const noexcept override { return true; }
     [[nodiscard]] const Type &resolve(const TypeMap &) const override { return *this; }
-    [[nodiscard]] const ScalarType &item_type() const noexcept override { return *item_type_; }
+    const ScalarType &item_type() const noexcept override { return *item_type_; }
 
   private:
     const ScalarType *item_type_;

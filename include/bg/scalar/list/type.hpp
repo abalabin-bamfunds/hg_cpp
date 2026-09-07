@@ -38,10 +38,10 @@ template <typename T> class List {
     template <typename> friend class Scalar;
     friend class MutableList<T>;
 
-    [[nodiscard]] std::size_t size() const noexcept { return storage_->items.size(); }
-    [[nodiscard]] bool empty() const noexcept { return storage_->items.empty(); }
+    std::size_t size() const noexcept { return storage_->items.size(); }
+    bool empty() const noexcept { return storage_->items.empty(); }
 
-    [[nodiscard]] value_type operator[](std::size_t index) const noexcept {
+    value_type operator[](std::size_t index) const noexcept {
         return ItemTraits::read(storage_->items[static_cast<std::uint32_t>(index)]);
     }
 
@@ -61,9 +61,9 @@ template <typename T> class List {
 
     explicit List(const Storage &storage) noexcept : storage_(&storage) {}
 
-    [[nodiscard]] const Storage &storage() const noexcept { return *storage_; }
+    const Storage &storage() const noexcept { return *storage_; }
 
-    [[nodiscard]] const void *item_data(std::size_t index) const noexcept { return &storage_->items[index]; }
+    const void *item_data(std::size_t index) const noexcept { return &storage_->items[index]; }
 
     const Storage *storage_{};
 };
@@ -89,7 +89,7 @@ template <typename T> inline constexpr bool generic_scalar<List<T>> = generic_sc
 } // namespace bg::details
 
 template <typename T> struct std::hash<bg::List<T>> {
-    [[nodiscard]] std::size_t operator()(const bg::List<T> &value) const noexcept {
+    std::size_t operator()(const bg::List<T> &value) const noexcept {
         return bg::details::scalar_storage_traits<bg::List<T>>::hash(value);
     }
 };

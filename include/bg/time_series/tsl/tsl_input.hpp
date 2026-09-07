@@ -34,16 +34,16 @@ class In<TSL<Item, Size, TimeSeriesProperties...>, Properties...> {
     In(const EvaluationTime &last_updated, const void *value, const TimeSeriesRuntimeType &runtime_type) noexcept
         : data_{runtime_type, last_updated, value} {}
 
-    [[nodiscard]] bool valid() const noexcept { return data_.valid(); }
-    [[nodiscard]] EvaluationTime last_updated() const noexcept { return data_.last_updated(); }
-    [[nodiscard]] std::size_t size() const noexcept { return data_.runtime_type().item_count(data_.data()); }
+    bool valid() const noexcept { return data_.valid(); }
+    EvaluationTime last_updated() const noexcept { return data_.last_updated(); }
+    std::size_t size() const noexcept { return data_.runtime_type().item_count(data_.data()); }
 
-    [[nodiscard]] In<Item> operator[](std::size_t index) const {
+    In<Item> operator[](std::size_t index) const {
         const auto item = data_.runtime_type().item(data_.data(), static_cast<TimeSeriesItemId>(index));
         return {item.last_updated, item.value, item.runtime_type};
     }
 
-    [[nodiscard]] bool item_updated(std::size_t index) const noexcept {
+    bool item_updated(std::size_t index) const noexcept {
         return data_.runtime_type().item_updated(data_.last_updated_ref(), data_.data(),
                                                  static_cast<TimeSeriesItemId>(index));
     }
@@ -55,9 +55,9 @@ class In<TSL<Item, Size, TimeSeriesProperties...>, Properties...> {
             });
     }
 
-    [[nodiscard]] const TimeSeriesRuntimeType &runtime_type() const noexcept { return data_.runtime_type(); }
-    [[nodiscard]] const void *data() const noexcept { return data_.data(); }
-    [[nodiscard]] const In *operator->() const noexcept { return this; }
+    const TimeSeriesRuntimeType &runtime_type() const noexcept { return data_.runtime_type(); }
+    const void *data() const noexcept { return data_.data(); }
+    const In *operator->() const noexcept { return this; }
 
     template <typename... Functions> decltype(auto) visit(Functions &&...functions) const {
         return In<TS_T>{data_.last_updated_ref(), data_.data(), data_.runtime_type()}.visit(

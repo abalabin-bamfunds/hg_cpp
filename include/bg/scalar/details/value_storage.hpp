@@ -34,17 +34,17 @@ concept scalar_storage_constructible_from =
         scalar_storage_traits<T>::construct(destination, std::forward<Source>(source), memory);
     };
 
-[[nodiscard]] inline std::size_t allocation_header_size(ScalarDataMode mode) noexcept {
+inline std::size_t allocation_header_size(ScalarDataMode mode) noexcept {
     return mode == ScalarDataMode::owned_explicit_resource ? sizeof(ScalarValueAllocation) : 0;
 }
 
-[[nodiscard]] inline std::size_t allocation_value_offset(const ScalarRuntimeType &runtime_type,
+inline std::size_t allocation_value_offset(const ScalarRuntimeType &runtime_type,
                                                          ScalarDataMode mode) noexcept {
     const auto header = allocation_header_size(mode);
     return (header + runtime_type.alignment() - 1) / runtime_type.alignment() * runtime_type.alignment();
 }
 
-[[nodiscard]] inline std::size_t allocation_alignment(const ScalarRuntimeType &runtime_type,
+inline std::size_t allocation_alignment(const ScalarRuntimeType &runtime_type,
                                                       ScalarDataMode mode) noexcept {
     const auto header_alignment =
         mode == ScalarDataMode::owned_explicit_resource ? alignof(ScalarValueAllocation) : std::size_t{1};
