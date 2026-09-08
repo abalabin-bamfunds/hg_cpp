@@ -68,9 +68,9 @@ class State<List<T>> {
     }
 
     void append(const Scalar<T> &value) const {
-        runtime_type_->append(value_, value.input_view(), details::current_scalar_memory_resource());
+        runtime_type_->append(value_, value, details::current_scalar_memory_resource());
     }
-    void set(std::size_t index, const Scalar<T> &value) const { runtime_type_->set(value_, index, value.input_view()); }
+    void set(std::size_t index, const Scalar<T> &value) const { runtime_type_->set(value_, index, value); }
     void erase(std::size_t index) const {
         runtime_type_->erase(value_, index, details::current_scalar_memory_resource());
     }
@@ -94,14 +94,12 @@ class State<Set<T>> {
     const State *operator->() const noexcept { return this; }
     std::size_t size() const noexcept { return runtime_type_->item_count(value_); }
     bool empty() const noexcept { return size() == 0; }
-    bool contains(const Scalar<T> &value) const {
-        return runtime_type_->contains(value_, value.input_view());
-    }
+    bool contains(const Scalar<T> &value) const { return runtime_type_->contains(value_, value); }
     [[nodiscard]] bool insert(const Scalar<T> &value) const {
-        return runtime_type_->insert(value_, value.input_view(), details::current_scalar_memory_resource());
+        return runtime_type_->insert(value_, value, details::current_scalar_memory_resource());
     }
     [[nodiscard]] bool erase(const Scalar<T> &value) const {
-        return runtime_type_->erase(value_, value.input_view(), details::current_scalar_memory_resource());
+        return runtime_type_->erase(value_, value, details::current_scalar_memory_resource());
     }
     void clear() const { runtime_type_->clear(value_, details::current_scalar_memory_resource()); }
 
@@ -123,12 +121,10 @@ class State<Dict<K, V>> {
     const State *operator->() const noexcept { return this; }
     std::size_t size() const noexcept { return runtime_type_->item_count(value_); }
     bool empty() const noexcept { return size() == 0; }
-    bool contains(const Scalar<K> &key) const {
-        return runtime_type_->contains(value_, key.input_view());
-    }
+    bool contains(const Scalar<K> &key) const { return runtime_type_->contains(value_, key); }
 
     auto at(const Scalar<K> &key) const {
-        const auto item = runtime_type_->at(value_, key.input_view());
+        const auto item = runtime_type_->at(value_, key);
         if constexpr (details::scalar_type_traits<V>::is_collection) {
             if constexpr (details::generic_scalar<V>) {
                 return State<V>{item.runtime_type, item.data};
@@ -142,11 +138,10 @@ class State<Dict<K, V>> {
     }
 
     void insert_or_assign(const Scalar<K> &key, const Scalar<V> &value) const {
-        runtime_type_->insert_or_assign(value_, key.input_view(), value.input_view(),
-                                        details::current_scalar_memory_resource());
+        runtime_type_->insert_or_assign(value_, key, value, details::current_scalar_memory_resource());
     }
     [[nodiscard]] bool erase(const Scalar<K> &key) const {
-        return runtime_type_->erase(value_, key.input_view(), details::current_scalar_memory_resource());
+        return runtime_type_->erase(value_, key, details::current_scalar_memory_resource());
     }
     void clear() const { runtime_type_->clear(value_, details::current_scalar_memory_resource()); }
 

@@ -1,3 +1,5 @@
+#include <bg/graph/graph_wiring.hpp>
+#include <bg/graph/wiring_context.hpp>
 #include <bg/node.hpp>
 #include <bg/run_graph.hpp>
 #include <bg/testing/test_graph.hpp>
@@ -182,6 +184,43 @@ TEST_CASE("a free bundle follows the receiving named schema",
     const auto result = bg::testing::test_graph(graph, std::vector{1, 2}, std::vector{0.5F, 1.5F});
 
     CHECK(result.equals({1.5F, 3.5F}));
+}
+
+TEST_CASE("a free bundle reuses materialization for the same input type",
+          "[wiring][tsb][series:tsb][representation:free][feature:wiring][shape:fan-out]"
+          "[schema:named][binding:representation]") {
+    using namespace bg::literals;
+    const auto source = bg::node<bundle_source_definition>();
+    const auto sum = bg::node<bundle_sum_definition>();
+    auto wiring = bg::GraphWiring{};
+
+    const auto context = bg::WiringContext{wiring};
+    const auto value = source();
+    const auto bundle = bg::bundle("value"_m = value["value"_m], "count"_m = value["count"_m]);
+    (void)sum(bundle);
+    (void)sum(bundle);
+
+    REQUIRE(wiring.nodes().size() == 4);
+    CHECK(wiring.nodes()[2].input_sources()[0] == wiring.nodes()[3].input_sources()[0]);
+}
+
+TEST_CASE("a free bundle materializes independently for different input schemas",
+          "[wiring][tsb][series:tsb][representation:free][feature:wiring][schema:named]"
+          "[binding:representation]") {
+    using namespace bg::literals;
+    const auto source = bg::node<bundle_source_definition>();
+    const auto sum = bg::node<bundle_sum_definition>();
+    const auto count = bg::node<base_bundle_value_definition>();
+    auto wiring = bg::GraphWiring{};
+
+    const auto context = bg::WiringContext{wiring};
+    const auto value = source();
+    const auto bundle = bg::bundle("value"_m = value["value"_m], "count"_m = value["count"_m]);
+    (void)sum(bundle);
+    (void)count(bundle);
+
+    REQUIRE(wiring.nodes().size() == 5);
+    CHECK(wiring.nodes()[2].input_sources()[0] != wiring.nodes()[4].input_sources()[0]);
 }
 
 TEST_CASE("graph code selects a field directly from a free bundle",

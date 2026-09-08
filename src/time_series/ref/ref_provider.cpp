@@ -20,19 +20,15 @@ ReferenceRepresentation::~ReferenceRepresentation() = default;
 namespace {
 
 struct ScalarValueHash {
-    std::size_t operator()(const ScalarValue<> &value) const noexcept {
-        return value.input_view().hash();
-    }
+    std::size_t operator()(const ScalarValue<> &value) const noexcept { return value.hash(); }
     std::size_t operator()(const ScalarData &value) const noexcept { return value.hash(); }
 };
 
 struct ScalarValueEqual {
     bool operator()(const ScalarValue<> &stored, const ScalarData &value) const noexcept {
-        return stored.input_view().equals(value);
+        return stored.equals(value);
     }
-    bool operator()(const ScalarValue<> &left, const ScalarValue<> &right) const noexcept {
-        return left.input_view().equals(right.input_view());
-    }
+    bool operator()(const ScalarValue<> &left, const ScalarValue<> &right) const noexcept { return left.equals(right); }
 };
 
 struct DictionaryKeySubscribers {
@@ -106,7 +102,7 @@ class DictionaryObservers {
         }
     }
 
-    void source_changed(OutputNotificationContext &context) {
+    void source_changed(OutputChangeContext &context) {
         for (auto *source : sources_) {
             const auto target = reference_target(source->source);
             const auto *runtime_type = dynamic_cast<const TimeSeriesDictionaryRuntimeType *>(target.runtime_type);
@@ -157,14 +153,14 @@ class DictionaryObservers {
         memory_->deallocate(&source, sizeof(DictionarySourceObservers), alignof(DictionarySourceObservers));
     }
 
-    void notify_changes(OutputNotificationContext &context, DictionarySourceObservers &source, ReferenceTarget target,
+    void notify_changes(OutputChangeContext &context, DictionarySourceObservers &source, ReferenceTarget target,
                         const TimeSeriesDictionaryRuntimeType &runtime_type, ChangeFunction changes,
                         OutputChange change) {
         struct Callback {
             DictionarySourceObservers *source;
             const TimeSeriesDictionaryRuntimeType *runtime_type;
             ReferenceTarget target;
-            OutputNotificationContext *context;
+            OutputChangeContext *context;
             OutputChange change;
         } callback{&source, &runtime_type, target, &context, change};
 
@@ -207,7 +203,7 @@ ReferenceTarget ReferenceProvider::representation_target(std::uint32_t index) co
 
 void ReferenceProvider::add_root_subscriber(RuntimeGraph &graph, std::uint32_t input_offset, std::size_t data,
                                             std::uint32_t node_index, bool active, bool required,
-                                            InputNotificationFunction callback) {
+                                            InputChangeFunction callback) {
     auto &subscribers = DynamicSubscribers::ensure(subscriber_groups_.front(), *memory_);
     subscribers.add(graph, input_offset, data, node_index, active, required, callback);
 }
@@ -229,13 +225,13 @@ void ReferenceProvider::remove_root_observer(RuntimeGraph &graph, const void *ta
     }
 }
 
-void ReferenceProvider::notify_root(OutputNotificationContext &context, OutputChange change) {
+void ReferenceProvider::notify_root(OutputChangeContext &context, OutputChange change) {
     context.notify(subscriber_groups_.front(), change);
 }
 
 void ReferenceProvider::add_subscriber(ReferenceRoute &route, RuntimeGraph &graph, std::uint32_t input_offset,
                                        std::size_t data, std::uint32_t node_index, bool active, bool required,
-                                       InputNotificationFunction callback) {
+                                       InputChangeFunction callback) {
     if (route.subscriber_group == 0) {
         subscriber_groups_.push_back(nullptr);
         route.subscriber_group = static_cast<std::uint32_t>(subscriber_groups_.size());
@@ -269,7 +265,7 @@ void ReferenceProvider::remove_observer(ReferenceRoute &route, RuntimeGraph &gra
     }
 }
 
-void ReferenceProvider::notify(ReferenceRoute &route, OutputNotificationContext &context, OutputChange change) {
+void ReferenceProvider::notify(ReferenceRoute &route, OutputChangeContext &context, OutputChange change) {
     if (route.subscriber_group != 0) {
         context.notify(subscriber_groups_[route.subscriber_group - 1], change);
     }
@@ -320,7 +316,7 @@ ReferenceAddress ReferenceProvider::representation(ReferenceAddress source, cons
     return result->reference();
 }
 
-void ReferenceProvider::source_changed(OutputNotificationContext &context, OutputChange change) {
+void ReferenceProvider::source_changed(OutputChangeContext &context, OutputChange change) {
     const auto count = representations_.size();
     for (auto index = std::size_t{}; index < count; ++index) {
         auto *representation = representations_[index];
@@ -392,7 +388,7 @@ ReferenceAddress reference_representation(ReferenceAddress source, const TimeSer
 
 void add_reference_subscriber(ReferenceAddress address, RuntimeGraph &graph, std::uint32_t input_offset,
                               std::size_t data, std::uint32_t node_index, bool active, bool required,
-                              InputNotificationFunction callback) {
+                              InputChangeFunction callback) {
     if (auto *root = address.get<ReferenceRoot>()) {
         if (auto *provider = root->data.get<ReferenceProvider>()) {
             provider->add_root_subscriber(graph, input_offset, data, node_index, active, required, callback);
@@ -451,7 +447,7 @@ void remove_reference_observer(ReferenceAddress address, RuntimeGraph &graph, co
     route_provider(address).remove_observer(route, graph, target);
 }
 
-void notify_reference(ReferenceAddress address, OutputNotificationContext &context, OutputChange change) {
+void notify_reference(ReferenceAddress address, OutputChangeContext &context, OutputChange change) {
     if (auto *root = address.get<ReferenceRoot>()) {
         if (auto *provider = root->data.get<ReferenceProvider>()) {
             provider->notify_root(context, change);
@@ -476,7 +472,7 @@ void remove_reference_dictionary_key_subscriber(ReferenceAddress address, const 
     }
 }
 
-void notify_reference_source(ReferenceRoot &root, OutputNotificationContext &context, OutputChange change) {
+void notify_reference_source(ReferenceRoot &root, OutputChangeContext &context, OutputChange change) {
     if (auto *provider = root.data.get<ReferenceProvider>()) {
         provider->source_changed(context, change);
     } else {

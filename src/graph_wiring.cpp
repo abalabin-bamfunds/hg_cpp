@@ -1,11 +1,10 @@
 #include <bg/graph/graph_wiring.hpp>
 
+#include <bg/graph/details/deferred_wiring_point.hpp>
 #include <bg/graph/wiring_error.hpp>
 #include <bg/graph/wiring_template.hpp>
 #include <bg/node/node_template.hpp>
-#include <bg/type/time_series_bundle_type.hpp>
 #include <bg/type/time_series_dict_type.hpp>
-#include <bg/type/time_series_list_type.hpp>
 #include <bg/type/time_series_reference_type.hpp>
 #include <bg/type/type_map.hpp>
 #include <bg/util/scope_exit.hpp>
@@ -42,8 +41,13 @@ bool requires_reference_representation(const TimeSeriesType &parameter, const Ti
 
 } // namespace
 
-std::size_t WiringPoint::node_index() const noexcept {
-    return graph_->wiring_points()[record_index_].node_index;
+std::size_t WiringPoint::node_index() const {
+    const auto &record = graph_->wiring_points()[record_index_];
+    if (record.deferred) {
+        throw WiringError{"a deferred WiringPoint has no node until it is consumed"};
+    }
+
+    return record.node_index;
 }
 
 const TimeSeriesType &WiringPoint::type() const noexcept {
@@ -140,39 +144,15 @@ std::optional<WiringPoint> GraphWiring::invoke_resolved(const WiringTemplate &wi
     auto signature = std::move(resolution.signature);
 
     for (auto i = std::size_t{}; i < arguments.size(); ++i) {
-        if (!arguments[i].is_free_time_series_list()) {
+        if (!arguments[i].is_wiring_point()) {
             continue;
         }
 
-        const auto &argument = arguments[i].free_time_series_list();
         const auto *parameter = static_cast<const TimeSeriesType *>(signature.parameters[i].type);
         if (const auto *reference = dynamic_cast<const TimeSeriesReferenceType *>(parameter)) {
             parameter = &reference->target_type();
         }
-        const auto *list = dynamic_cast<const TimeSeriesListType *>(parameter);
-        if (list == nullptr || list->item_count() != argument.items.size()) {
-            throw WiringError{"a free time series list requires a matching fixed TSL parameter"};
-        }
-
-        arguments[i].wiring_point(argument.materialize(argument.items, *list));
-    }
-
-    for (auto i = std::size_t{}; i < arguments.size(); ++i) {
-        if (!arguments[i].is_free_time_series_bundle()) {
-            continue;
-        }
-
-        const auto &argument = arguments[i].free_time_series_bundle();
-        const auto *parameter = static_cast<const TimeSeriesType *>(signature.parameters[i].type);
-        if (const auto *reference = dynamic_cast<const TimeSeriesReferenceType *>(parameter)) {
-            parameter = &reference->target_type();
-        }
-        const auto *bundle = dynamic_cast<const TimeSeriesBundleType *>(parameter);
-        if (bundle == nullptr) {
-            throw WiringError{"a free time series bundle requires a TSB parameter"};
-        }
-
-        arguments[i].wiring_point(argument.materialize(argument.fields, *bundle));
+        arguments[i].wiring_point(materialize(arguments[i].wiring_point(), *parameter));
     }
 
     for (auto i = std::size_t{}; i < arguments.size(); ++i) {
@@ -292,7 +272,7 @@ std::optional<WiringPoint> GraphWiring::add_node(const NodeTemplate &node_templa
 
     if (has_output) {
         const auto record = wiring_points_.size();
-        wiring_points_.push_back({index, WiringPointRecord::npos, 0, nodes_.back().signature().output});
+        wiring_points_.push_back({index, WiringPointRecord::npos, 0, false, nodes_.back().signature().output});
         return WiringPoint{*this, record};
     }
 
@@ -312,6 +292,9 @@ WiringPoint GraphWiring::select_item(WiringPoint source, std::size_t index) {
     const auto &item_type = collection->item_type(index);
     const auto item = collection->item_id(index);
     const auto &source_record = wiring_points_[source.record_index()];
+    if (source_record.deferred) {
+        return deferred_wiring_points_[source_record.node_index]->item(index);
+    }
     if (source_record.parent == WiringPointRecord::npos) {
         const auto &node = nodes_[source_record.node_index];
         if (const auto input = node.node_template().output_item_source(index)) {
@@ -327,8 +310,35 @@ WiringPoint GraphWiring::select_item(WiringPoint source, std::size_t index) {
     }
 
     const auto record = wiring_points_.size();
-    wiring_points_.push_back({source.node_index(), source.record_index(), item, &item_type});
+    wiring_points_.push_back({source.node_index(), source.record_index(), item, false, &item_type});
     return WiringPoint{*this, record};
+}
+
+WiringPoint GraphWiring::add_deferred(std::unique_ptr<details::DeferredWiringPoint> point) {
+    const auto deferred_index = deferred_wiring_points_.size();
+    const auto record = wiring_points_.size();
+    const auto *type = &point->type();
+    deferred_wiring_points_.push_back(std::move(point));
+    wiring_points_.push_back({deferred_index, WiringPointRecord::npos, 0, true, type});
+    return WiringPoint{*this, record};
+}
+
+WiringPoint GraphWiring::materialize(WiringPoint source, const TimeSeriesType &target_type) {
+    const auto &record = wiring_points_[source.record_index()];
+    if (!record.deferred) {
+        return source;
+    }
+
+    const auto existing = std::ranges::find_if(materialized_wiring_points_, [&](const auto &entry) {
+        return entry.source == source.record_index() && entry.type == &target_type;
+    });
+    if (existing != materialized_wiring_points_.end()) {
+        return WiringPoint{*this, existing->result};
+    }
+
+    const auto result = deferred_wiring_points_[record.node_index]->materialize(target_type);
+    materialized_wiring_points_.push_back({source.record_index(), &target_type, result.record_index()});
+    return result;
 }
 
 WiringPoint GraphWiring::make_reference(WiringPoint source, const TimeSeriesType &reference_type) {
@@ -355,3 +365,11 @@ std::optional<WiringPoint> NodeTemplate::wire(GraphWiring &wiring, ResolvedSigna
 }
 
 } // namespace bg
+
+namespace bg::details {
+
+WiringPoint defer_wiring_point(std::unique_ptr<DeferredWiringPoint> point) {
+    return WiringContext::current().wiring().add_deferred(std::move(point));
+}
+
+} // namespace bg::details

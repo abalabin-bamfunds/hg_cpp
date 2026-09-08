@@ -12,19 +12,20 @@
 
 namespace bg {
 
-template <typename TimeSeries, scalar_source Key>
+template <typename TimeSeries, typename Key>
     requires details::dictionary_wiring_type<TimeSeries> &&
-             std::same_as<
-                 canonical_scalar_t<Key>,
-                 typename details::time_series_dict<details::referenced_wiring_time_series_t<TimeSeries>>::key_type>
+             scalar_source_for<
+                 typename details::time_series_dict<details::referenced_wiring_time_series_t<TimeSeries>>::key_type,
+                 Key>
 [[nodiscard]] auto getitem(wp<TimeSeries> source, Key &&key) -> wp<REF<details::selected_time_series_t<TimeSeries>>> {
     const auto *source_type = &static_cast<WiringPoint>(source).type();
     if (const auto *reference = dynamic_cast<const TimeSeriesReferenceType *>(source_type)) {
         source_type = &reference->target_type();
     }
-    const auto &node = details::dictionary_item_node_template(
-        static_cast<const TimeSeriesDictionaryType &>(*source_type), false);
-    const auto value = canonical_scalar(std::forward<Key>(key));
+    const auto &node =
+        details::dictionary_item_node_template(static_cast<const TimeSeriesDictionaryType &>(*source_type), false);
+    using KeyType = typename details::time_series_dict<details::referenced_wiring_time_series_t<TimeSeries>>::key_type;
+    const auto value = scalar_source_value<KeyType>(std::forward<Key>(key));
     return wp<REF<details::selected_time_series_t<TimeSeries>>>{*node(source, value)};
 }
 
@@ -39,16 +40,16 @@ template <typename TimeSeries, typename KeyTimeSeries>
     if (const auto *reference = dynamic_cast<const TimeSeriesReferenceType *>(source_type)) {
         source_type = &reference->target_type();
     }
-    const auto &node = details::dictionary_item_node_template(
-        static_cast<const TimeSeriesDictionaryType &>(*source_type), true);
+    const auto &node =
+        details::dictionary_item_node_template(static_cast<const TimeSeriesDictionaryType &>(*source_type), true);
     return wp<REF<details::selected_time_series_t<TimeSeries>>>{*node(source, key)};
 }
 
 template <typename TimeSeries>
-template <scalar_source Key, typename T>
+template <typename Key, typename T>
     requires details::dictionary_wiring_type<T> &&
-             std::same_as<canonical_scalar_t<Key>,
-                          typename details::time_series_dict<details::referenced_wiring_time_series_t<T>>::key_type>
+             scalar_source_for<
+                 typename details::time_series_dict<details::referenced_wiring_time_series_t<T>>::key_type, Key>
 auto wp<TimeSeries>::operator[](Key &&key) const -> wp<REF<details::selected_time_series_t<T>>> {
     return getitem(*this, std::forward<Key>(key));
 }

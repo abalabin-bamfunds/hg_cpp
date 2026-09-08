@@ -32,8 +32,8 @@ TEST_CASE("dictionary runtime items use stable sparse IDs",
     storage.reset_change_tracking(update_time, key_runtime_type, key_layout, item_runtime_type, item_layout,
                                   item_value_offset, memory);
     const auto key = bg::ScalarValue<std::int64_t>{7};
-    const auto inserted = storage.item(key.input_view(), key_runtime_type, key_layout, item_runtime_type, item_layout,
-                                       item_value_offset, memory);
+    const auto inserted =
+        storage.item(key, key_runtime_type, key_layout, item_runtime_type, item_layout, item_value_offset, memory);
     storage.key_storage().last_updated = update_time;
 
     auto item = runtime_type.item(value, inserted.position);

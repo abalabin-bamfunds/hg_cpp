@@ -8,6 +8,8 @@ namespace bg {
 
 class SetScalarType : public ScalarType {
   public:
+    using generic_scalar_view = Scalar<Set<SCALAR>>;
+
     VISITOR_SUPPORT()
 
     virtual const ScalarType &item_type() const noexcept = 0;

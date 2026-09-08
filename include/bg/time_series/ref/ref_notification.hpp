@@ -39,22 +39,22 @@ class CallbackReferenceInputSubscriber {
   public:
     CallbackReferenceInputSubscriber(std::uint32_t input_offset, std::size_t data, std::uint32_t node_index,
                                      bool active, bool required, const TimeSeriesType &requested_type,
-                                     InputNotificationFunction callback) noexcept
+                                     InputChangeFunction callback) noexcept
         : subscription_{input_offset, node_index, active, required, requested_type}, data_{data}, callback_{callback} {}
 
     const ReferenceInputSubscriber &subscription() const noexcept { return subscription_; }
     std::size_t data() const noexcept { return data_; }
-    InputNotificationFunction callback() const noexcept { return callback_; }
+    InputChangeFunction callback() const noexcept { return callback_; }
 
   private:
     ReferenceInputSubscriber subscription_;
     std::size_t data_;
-    InputNotificationFunction callback_;
+    InputChangeFunction callback_;
 };
 
-void notify_reference_inputs(OutputNotificationContext &context, const void *value, OutputChange change,
+void notify_reference_inputs(OutputChangeContext &context, const void *value, OutputChange change,
                              std::span<const std::byte> records);
-void notify_callback_reference_inputs(OutputNotificationContext &context, const void *value, OutputChange change,
+void notify_callback_reference_inputs(OutputChangeContext &context, const void *value, OutputChange change,
                                       std::span<const std::byte> records);
 
 static_assert(sizeof(ReferenceInputSubscriber) == 2 * sizeof(void *));

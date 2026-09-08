@@ -2,8 +2,10 @@
 
 #include <bg/evaluation_context.hpp>
 #include <bg/graph/compiled_node.hpp>
-#include <bg/graph/details/free_time_series_list.hpp>
+#include <bg/graph/details/deferred_wiring_point.hpp>
+#include <bg/graph/runtime_graph.hpp>
 #include <bg/graph/wiring_context.hpp>
+#include <bg/graph/wiring_error.hpp>
 #include <bg/node/node_template.hpp>
 #include <bg/time_series/tsl/tsl_free_runtime_type.hpp>
 #include <bg/time_series/tsl/tsl_type.hpp>
@@ -26,19 +28,15 @@ template <std::size_t Size> class FreeFixedTimeSeriesListNodeTemplate final : pu
         : runtime_type_{&free_fixed_time_series_list_runtime_type<Size>(type)}, signature_{make_signature(type)} {}
 
     const Signature &signature() const override { return signature_; }
-    EvaluationFunction evaluation_function(const ResolvedSignature &) const noexcept override {
-        return &evaluate;
-    }
-    EvaluationFunction start_function(const ResolvedSignature &) const noexcept override {
-        return &start;
-    }
+    EvaluationFunction evaluation_function(const ResolvedSignature &) const noexcept override { return &evaluate; }
+    EvaluationFunction start_function(const ResolvedSignature &) const noexcept override { return &start; }
     const TimeSeriesRuntimeType *
     output_runtime_type(const ResolvedSignature &, std::span<const ScalarRuntimeType *const>,
                         std::span<const TimeSeriesRuntimeType *const>) const noexcept override {
         return runtime_type_;
     }
     bool uses_time_series_input_runtime_type(std::size_t) const noexcept override { return true; }
-    InputNotificationCallback input_notification(std::size_t input_index) const noexcept override {
+    InputChangeCallback input_change_callback(std::size_t input_index) const noexcept override {
         return {&input_changed, input_index};
     }
     std::optional<std::size_t> output_item_source(std::size_t item) const noexcept override {
@@ -61,11 +59,11 @@ template <std::size_t Size> class FreeFixedTimeSeriesListNodeTemplate final : pu
         return {util::symbol{"tsl"}, std::move(parameters), type};
     }
 
-    static Storage &storage(OutputNotificationContext &context, std::size_t node_index) noexcept {
-        return *static_cast<Storage *>(context.node(node_index).output_value());
+    static Storage &storage(OutputChangeContext &context, std::size_t node_index) noexcept {
+        return *static_cast<Storage *>(context.runtime_graph().node(node_index).output_value());
     }
 
-    static void input_changed(OutputNotificationContext &context, std::size_t node_index, std::size_t input_index,
+    static void input_changed(OutputChangeContext &context, std::size_t node_index, std::size_t input_index,
                               OutputChange) {
         auto &value = storage(context, node_index);
         value.changes.mark(input_index, context.evaluation_time());
@@ -93,18 +91,23 @@ template <std::size_t Size>
     return *owned(items);
 }
 
-} // namespace bg::details
-
-namespace bg {
-
-template <std::size_t Size> class FixedTimeSeriesListWiring {
+template <std::size_t Size> class FreeFixedTimeSeriesListWiringPoint final : public DeferredWiringPoint {
   public:
-    explicit FixedTimeSeriesListWiring(std::array<WiringPoint, Size> items)
+    explicit FreeFixedTimeSeriesListWiringPoint(std::array<WiringPoint, Size> items)
         : items_{items}, type_{&argument_type(items)} {}
 
-    details::FreeTimeSeriesListArgument wiring_argument() const noexcept {
-        return {type_, items_, &details::materialize_fixed_time_series_list<Size>};
+    const TimeSeriesType &type() const noexcept override { return *type_; }
+
+    WiringPoint materialize(const TimeSeriesType &target_type) const override {
+        const auto *list = dynamic_cast<const TimeSeriesListType *>(&target_type);
+        if (list == nullptr || list->item_count() != Size) {
+            throw WiringError{"a free time series list requires a matching fixed TSL parameter"};
+        }
+
+        return materialize_fixed_time_series_list<Size>(items_, *list);
     }
+
+    WiringPoint item(std::size_t index) const override { return items_.at(index); }
 
   private:
     static const TimeSeriesType &target_type(const TimeSeriesType &type) noexcept {
@@ -134,11 +137,28 @@ template <std::size_t Size> class FixedTimeSeriesListWiring {
     const TimeSeriesListType *type_;
 };
 
+} // namespace bg::details
+
+namespace bg {
+
+template <std::size_t Size> class FixedTimeSeriesListWiring {
+  public:
+    explicit FixedTimeSeriesListWiring(WiringPoint point) : point_{point} {}
+
+    operator WiringPoint() const noexcept { return point_; }
+
+    WiringPoint operator[](std::size_t index) const { return point_[index]; }
+
+  private:
+    WiringPoint point_;
+};
+
 template <typename... TimeSeries>
 [[nodiscard]] auto tsl(wp<TimeSeries>... items) -> FixedTimeSeriesListWiring<sizeof...(TimeSeries)> {
     static_assert(sizeof...(TimeSeries) != 0);
-    return FixedTimeSeriesListWiring<sizeof...(TimeSeries)>{
-        std::array<WiringPoint, sizeof...(TimeSeries)>{static_cast<WiringPoint>(items)...}};
+    auto points = std::array<WiringPoint, sizeof...(TimeSeries)>{static_cast<WiringPoint>(items)...};
+    auto deferred = std::make_unique<details::FreeFixedTimeSeriesListWiringPoint<sizeof...(TimeSeries)>>(points);
+    return FixedTimeSeriesListWiring<sizeof...(TimeSeries)>{details::defer_wiring_point(std::move(deferred))};
 }
 
 } // namespace bg

@@ -26,11 +26,9 @@ struct RuntimeNodeDefinition {
     using state_type = RuntimeNodeState;
 
     RuntimeNodeDefinition()
-        : signature_{
-              bg::util::symbol{"runtime_node"},
-              {{bg::util::symbol{"input"},
-                &bg::TS<std::int64_t>::type()}},
-              bg::TS<std::int64_t>::type()} {}
+        : signature_{bg::util::symbol{"runtime_node"},
+                     {{bg::util::symbol{"input"}, &bg::TS<std::int64_t>::type()}},
+                     bg::TS<std::int64_t>::type()} {}
 
     [[nodiscard]] const bg::Signature &signature() const { return signature_; }
 
@@ -87,8 +85,7 @@ TEST_CASE("graph wiring owns a temporary runtime-signature node template",
 
 struct RuntimeSinkDefinition {
     RuntimeSinkDefinition()
-        : signature_{bg::util::symbol{"runtime_sink"},
-                     {{bg::util::symbol{"input"}, &bg::TS<std::int64_t>::type()}}} {}
+        : signature_{bg::util::symbol{"runtime_sink"}, {{bg::util::symbol{"input"}, &bg::TS<std::int64_t>::type()}}} {}
 
     [[nodiscard]] const bg::Signature &signature() const { return signature_; }
 
@@ -120,8 +117,7 @@ struct OptionalScalarDefinition {
     OptionalScalarDefinition()
         : signature_{
               bg::util::symbol{"optional_scalar"},
-              {{bg::util::symbol{"input"},
-                &bg::TS<std::int64_t>::type()},
+              {{bg::util::symbol{"input"}, &bg::TS<std::int64_t>::type()},
                {bg::util::symbol{"fallback"}, &bg::cpp_scalar_type<std::int64_t>(), bg::active, bg::required, true}},
               bg::TS<std::int64_t>::type()} {}
 
@@ -184,7 +180,7 @@ struct RuntimeDictionarySourceDefinition {
         const auto value = bg::ScalarValue<std::int64_t>{42};
         output.visit(
             [&](bg::Out<bg::TSD<bg::SCALAR, bg::TS_T>> *dictionary) {
-                auto item = (*dictionary)[bg::Scalar<bg::SCALAR>::from(key.input_view())];
+                auto item = (*dictionary)[bg::Scalar<bg::SCALAR>::from(key)];
                 item.visit([&](bg::Out<bg::TS<bg::SCALAR>> *item_output) { item_output->set_value(value.view()); },
                            ddv::noop);
             },

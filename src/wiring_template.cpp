@@ -2,9 +2,6 @@
 
 #include <bg/graph/wiring_arguments.hpp>
 #include <bg/graph/wiring_error.hpp>
-#include <bg/type/time_series_bundle_type.hpp>
-#include <bg/type/time_series_list_type.hpp>
-
 #include <string>
 #include <vector>
 
@@ -13,12 +10,6 @@ namespace bg {
 const Type &details::wiring_argument::type() const noexcept {
     if (is_wiring_point()) {
         return wiring_point().type();
-    }
-    if (is_free_time_series_list()) {
-        return *free_time_series_list().type;
-    }
-    if (is_free_time_series_bundle()) {
-        return *free_time_series_bundle().type;
     }
     return scalar_type();
 }

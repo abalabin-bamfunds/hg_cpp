@@ -64,5 +64,9 @@ the item position. TSD uses its stable sparse-storage position and reserves
 `key_set_item_id` for its key set. Item enumeration returns current collection
 items. Packed output storage also provides each item's storage layout.
 
+TSD input can enumerate keys, item IDs, values, key-value pairs, or ID-value
+pairs. Added, removed, and modified queries enumerate keys for the current
+change.
+
 The [TSD layout](tsd-layout.md) defines dictionary storage, shared
 representations, and tabular buffers.

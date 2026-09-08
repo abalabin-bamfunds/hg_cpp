@@ -2,8 +2,10 @@
 
 #include <bg/evaluation_context.hpp>
 #include <bg/graph/compiled_node.hpp>
-#include <bg/graph/details/free_time_series_bundle.hpp>
+#include <bg/graph/details/deferred_wiring_point.hpp>
+#include <bg/graph/runtime_graph.hpp>
 #include <bg/graph/wiring_context.hpp>
+#include <bg/graph/wiring_error.hpp>
 #include <bg/node/node_template.hpp>
 #include <bg/time_series/tsb/tsb_free_runtime_type.hpp>
 #include <bg/type/time_series_bundle_type.hpp>
@@ -20,25 +22,26 @@
 
 namespace bg::details {
 
+struct NamedBundleWiringPoint {
+    util::symbol name;
+    WiringPoint point;
+};
+
 class FreeTimeSeriesBundleNodeTemplate final : public NodeTemplate {
   public:
     explicit FreeTimeSeriesBundleNodeTemplate(const TimeSeriesBundleType &type)
         : runtime_type_{&free_time_series_bundle_runtime_type(type)}, signature_{make_signature(type)} {}
 
     const Signature &signature() const override { return signature_; }
-    EvaluationFunction evaluation_function(const ResolvedSignature &) const noexcept override {
-        return &evaluate;
-    }
-    EvaluationFunction start_function(const ResolvedSignature &) const noexcept override {
-        return &start;
-    }
+    EvaluationFunction evaluation_function(const ResolvedSignature &) const noexcept override { return &evaluate; }
+    EvaluationFunction start_function(const ResolvedSignature &) const noexcept override { return &start; }
     const TimeSeriesRuntimeType *
     output_runtime_type(const ResolvedSignature &, std::span<const ScalarRuntimeType *const>,
                         std::span<const TimeSeriesRuntimeType *const>) const noexcept override {
         return runtime_type_;
     }
     bool uses_time_series_input_runtime_type(std::size_t) const noexcept override { return true; }
-    InputNotificationCallback input_notification(std::size_t input_index) const noexcept override {
+    InputChangeCallback input_change_callback(std::size_t input_index) const noexcept override {
         return {&input_changed, input_index};
     }
     std::optional<std::size_t> output_item_source(std::size_t item) const noexcept override {
@@ -55,19 +58,18 @@ class FreeTimeSeriesBundleNodeTemplate final : public NodeTemplate {
         return {util::symbol{"bundle"}, std::move(parameters), type};
     }
 
-    static free_time_series_bundle_storage &storage(OutputNotificationContext &context,
-                                                    std::size_t node_index) noexcept {
-        return *static_cast<free_time_series_bundle_storage *>(context.node(node_index).output_value());
+    static free_time_series_bundle_storage &storage(OutputChangeContext &context, std::size_t node_index) noexcept {
+        return *static_cast<free_time_series_bundle_storage *>(context.runtime_graph().node(node_index).output_value());
     }
 
-    static void input_changed(OutputNotificationContext &context, std::size_t node_index, std::size_t input_index,
+    static void input_changed(OutputChangeContext &context, std::size_t node_index, std::size_t input_index,
                               OutputChange) {
         auto &value = storage(context, node_index);
         if (value.change_time != context.evaluation_time()) {
             value.modified.clear();
             value.change_time = context.evaluation_time();
         }
-        value.modified.set(static_cast<std::uint32_t>(input_index), context.memory_resource(context.runtime_graph()));
+        value.modified.set(static_cast<std::uint32_t>(input_index), context.runtime_graph().memory_resource());
     }
 
     static void start(const CompiledNode &node, void *runtime_storage, EvaluationContext *) noexcept {
@@ -102,6 +104,46 @@ class FreeTimeSeriesBundleNodeTemplate final : public NodeTemplate {
     return *owned(ordered);
 }
 
+template <std::size_t Size> class FreeTimeSeriesBundleWiringPoint final : public DeferredWiringPoint {
+  public:
+    explicit FreeTimeSeriesBundleWiringPoint(std::array<NamedBundleWiringPoint, Size> fields)
+        : fields_{fields}, type_{&argument_type(fields)} {}
+
+    const TimeSeriesType &type() const noexcept override { return *type_; }
+
+    WiringPoint materialize(const TimeSeriesType &target_type) const override {
+        const auto *bundle = dynamic_cast<const TimeSeriesBundleType *>(&target_type);
+        if (bundle == nullptr) {
+            throw WiringError{"a free time series bundle requires a TSB parameter"};
+        }
+
+        return materialize_time_series_bundle(fields_, *bundle);
+    }
+
+    WiringPoint item(std::size_t index) const override { return fields_.at(index).point; }
+
+  private:
+    static const TimeSeriesBundleType &argument_type(const std::array<NamedBundleWiringPoint, Size> &fields) {
+        for (auto left = std::size_t{}; left < fields.size(); ++left) {
+            for (auto right = left + 1; right < fields.size(); ++right) {
+                if (fields[left].name == fields[right].name) {
+                    throw std::invalid_argument{"a free time series bundle has duplicate field names"};
+                }
+            }
+        }
+
+        auto schema_fields = std::vector<BundleField>{};
+        schema_fields.reserve(fields.size());
+        for (const auto &[name, point] : fields) {
+            schema_fields.push_back({name, &point.type()});
+        }
+        return time_series_bundle_type(unnamed_bundle_schema(schema_fields), TimeSeriesGuarantee::ordinary);
+    }
+
+    std::array<NamedBundleWiringPoint, Size> fields_;
+    const TimeSeriesBundleType *type_;
+};
+
 template <typename T> struct named_bundle_wiring_field : std::false_type {};
 
 template <util::compile_time_string Name, typename Value>
@@ -125,12 +167,9 @@ namespace bg {
 
 template <typename... Fields> class TimeSeriesBundleWiring {
   public:
-    explicit TimeSeriesBundleWiring(std::array<details::NamedBundleWiringPoint, sizeof...(Fields)> fields)
-        : fields_{fields}, type_{&argument_type(fields)} {}
+    explicit TimeSeriesBundleWiring(WiringPoint point) : point_{point} {}
 
-    details::FreeTimeSeriesBundleArgument wiring_argument() const noexcept {
-        return {type_, fields_, &details::materialize_time_series_bundle};
-    }
+    operator WiringPoint() const noexcept { return point_; }
 
     template <util::compile_time_string Name> auto operator[](details::named_argument_name<Name>) const {
         constexpr auto Index = details::named_bundle_wiring_field_index<Name, Fields...>;
@@ -139,41 +178,23 @@ template <typename... Fields> class TimeSeriesBundleWiring {
         using Value = decltype(Field::value);
 
         if constexpr (details::is_typed_wiring_point<Value>) {
-            return Value{fields_[Index].point};
+            return Value{point_[Index]};
         } else {
-            return fields_[Index].point;
+            return point_[Index];
         }
     }
 
   private:
-    static const TimeSeriesBundleType &
-    argument_type(const std::array<details::NamedBundleWiringPoint, sizeof...(Fields)> &fields) {
-        for (auto left = std::size_t{}; left < fields.size(); ++left) {
-            for (auto right = left + 1; right < fields.size(); ++right) {
-                if (fields[left].name == fields[right].name) {
-                    throw std::invalid_argument{"a free time series bundle has duplicate field names"};
-                }
-            }
-        }
-
-        auto schema_fields = std::vector<BundleField>{};
-        schema_fields.reserve(fields.size());
-        for (const auto &[name, point] : fields) {
-            schema_fields.push_back({name, &point.type()});
-        }
-        return time_series_bundle_type(unnamed_bundle_schema(schema_fields), TimeSeriesGuarantee::ordinary);
-    }
-
-    std::array<details::NamedBundleWiringPoint, sizeof...(Fields)> fields_;
-    const TimeSeriesBundleType *type_;
+    WiringPoint point_;
 };
 
 template <typename... Fields>
     requires(sizeof...(Fields) != 0 && (details::is_named_bundle_wiring_field<Fields> && ...))
 [[nodiscard]] auto bundle(Fields &&...fields) {
-    return TimeSeriesBundleWiring<std::remove_cvref_t<Fields>...>{
-        std::array<details::NamedBundleWiringPoint, sizeof...(Fields)>{details::NamedBundleWiringPoint{
-            util::symbol{std::remove_cvref_t<Fields>::name.view()}, static_cast<WiringPoint>(fields.value)}...}};
+    auto points = std::array<details::NamedBundleWiringPoint, sizeof...(Fields)>{details::NamedBundleWiringPoint{
+        util::symbol{std::remove_cvref_t<Fields>::name.view()}, static_cast<WiringPoint>(fields.value)}...};
+    auto deferred = std::make_unique<details::FreeTimeSeriesBundleWiringPoint<sizeof...(Fields)>>(points);
+    return TimeSeriesBundleWiring<std::remove_cvref_t<Fields>...>{details::defer_wiring_point(std::move(deferred))};
 }
 
 } // namespace bg

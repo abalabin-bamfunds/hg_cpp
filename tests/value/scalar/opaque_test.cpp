@@ -26,8 +26,9 @@ TEST_CASE("an opaque scalar value owns a copy", "[value][scalar][opaque][scalar:
 
     source.values[0] = 5;
 
-    CHECK(value.view().value().values == std::array{1, 2, 3, 4});
-    CHECK(&value.view().type() == &bg::cpp_scalar_type<bg::Opaque<private_data>>());
+    const auto view = value.view();
+    CHECK(view->values == std::array{1, 2, 3, 4});
+    CHECK(&view.type() == &bg::cpp_scalar_type<bg::Opaque<private_data>>());
 }
 
 TEST_CASE("a pointer-sized opaque scalar value uses inline storage",
@@ -37,5 +38,7 @@ TEST_CASE("a pointer-sized opaque scalar value uses inline storage",
     auto source = private_data{{1, 2, 3, 4}};
     const auto value = PrivatePointerValue{&source, *std::pmr::null_memory_resource()};
 
-    CHECK(value.view().value() == &source);
+    const auto view = value.view();
+    CHECK(*view == &source);
+    CHECK(view->values == std::array{1, 2, 3, 4});
 }

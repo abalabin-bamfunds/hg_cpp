@@ -23,12 +23,12 @@ TEST_CASE("resolved scalar set storage supports mutation",
 
     const auto one = bg::ScalarValue{1};
     const auto two = bg::ScalarValue{2};
-    CHECK(set.insert(storage, one.input_view(), memory));
-    CHECK_FALSE(set.insert(storage, one.input_view(), memory));
-    CHECK(set.insert(storage, two.input_view(), memory));
-    CHECK(set.contains(storage, one.input_view()));
-    CHECK(set.erase(storage, one.input_view(), memory));
-    CHECK_FALSE(set.erase(storage, one.input_view(), memory));
+    CHECK(set.insert(storage, one, memory));
+    CHECK_FALSE(set.insert(storage, one, memory));
+    CHECK(set.insert(storage, two, memory));
+    CHECK(set.contains(storage, one));
+    CHECK(set.erase(storage, one, memory));
+    CHECK_FALSE(set.erase(storage, one, memory));
 
     set.clear(storage, memory);
     CHECK(set.item_count(storage) == 0);
@@ -54,19 +54,19 @@ TEST_CASE("a scalar set copies nested items between composed and C++ storage",
     auto *item_storage = memory.allocate(composed_item.size(), composed_item.alignment());
     composed_item.construct_initial_value(item_storage);
     const auto time_value = bg::ScalarValue{bg::EvaluationTime{bg::EvaluationTime::duration{1}}};
-    composed_item.append(item_storage, time_value.input_view(), memory);
+    composed_item.append(item_storage, time_value, memory);
 
     auto *set_storage = memory.allocate(composed_set.size(), composed_set.alignment());
     composed_set.construct_initial_value(set_storage);
     const auto item = bg::Scalar<Item>::from(composed_item, item_storage);
-    REQUIRE(composed_set.insert(set_storage, item.input_view(), memory));
+    REQUIRE(composed_set.insert(set_storage, item, memory));
 
     const auto &native_set = bg::cpp_scalar_runtime_type<Set>();
     auto *native_storage = memory.allocate(native_set.size(), native_set.alignment());
     const auto set_view = bg::Scalar<Set>::from(composed_set, set_storage);
-    native_set.construct_from_input(native_storage, set_view.input_view(), memory);
+    native_set.construct_from_input(native_storage, set_view, memory);
 
-    CHECK(static_cast<const bg::ScalarSetRuntimeType &>(native_set).contains(native_storage, item.input_view()));
+    CHECK(static_cast<const bg::ScalarSetRuntimeType &>(native_set).contains(native_storage, item));
 
     native_set.destroy(native_storage, memory);
     memory.deallocate(native_storage, native_set.size(), native_set.alignment());

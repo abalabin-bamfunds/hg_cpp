@@ -215,7 +215,7 @@ std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<detai
 
             const auto scalar_values_match = std::ranges::all_of(entry.scalar_reads, [&](const auto &read) {
                 const auto current = scalar(arguments, read.index);
-                return current && read.value.view().equals(current->input_view());
+                return current && read.value.view().equals(*current);
             });
             if (!scalar_values_match) {
                 continue;

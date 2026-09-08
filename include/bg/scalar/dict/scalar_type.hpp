@@ -8,6 +8,8 @@ namespace bg {
 
 class DictScalarType : public ScalarType {
   public:
+    using generic_scalar_view = Scalar<Dict<SCALAR, SCALAR>>;
+
     VISITOR_SUPPORT()
 
     virtual const ScalarType &key_type() const noexcept = 0;

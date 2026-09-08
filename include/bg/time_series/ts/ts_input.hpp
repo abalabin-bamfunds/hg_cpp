@@ -3,12 +3,12 @@
 #include <bg/node/details/input_properties.hpp>
 #include <bg/node/input_fwd.hpp>
 #include <bg/node/input_properties.hpp>
+#include <bg/scalar/details/value_access.hpp>
 #include <bg/scalar/scalar.hpp>
 #include <bg/time_series/details/input_data.hpp>
 #include <bg/time_series/time_series_input.hpp>
 #include <bg/time_series/time_series_runtime_type.hpp>
 #include <bg/time_series/time_series_type.hpp>
-#include <bg/time_series/ts/details/value_access.hpp>
 
 #include <string_view>
 #include <utility>

@@ -8,12 +8,16 @@
 
 namespace bg {
 
+template <typename T = void> class Scalar;
+
 namespace util {
 class symbol;
 }
 
 class ScalarType : public Type {
   public:
+    using generic_scalar_view = Scalar<>;
+
     VISITOR_SUPPORT()
 
     bool is_scalar() const noexcept final { return true; }

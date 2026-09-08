@@ -1,6 +1,7 @@
 #include <bg/time_series/ref/ref_notification.hpp>
 
 #include <bg/graph/dynamic_subscribers.hpp>
+#include <bg/graph/runtime_graph.hpp>
 #include <bg/time_series/ref/ref_provider.hpp>
 #include <bg/time_series/ref/ref_storage.hpp>
 
@@ -8,14 +9,14 @@ namespace bg::details {
 
 namespace {
 
-void update_reference_input(OutputNotificationContext &context, ReferenceAddress reference,
-                            const ReferenceInputSubscriber &subscriber, std::size_t data,
-                            InputNotificationFunction callback, OutputChange change) {
+void update_reference_input(OutputChangeContext &context, ReferenceAddress reference,
+                            const ReferenceInputSubscriber &subscriber, std::size_t data, InputChangeFunction callback,
+                            OutputChange change) {
     if (reference) {
         reference = reference_representation(reference, subscriber.requested_type());
     }
 
-    auto &input = *static_cast<ReferenceInputStorage *>(context.runtime_storage_at(subscriber.input_offset()));
+    auto &input = *static_cast<ReferenceInputStorage *>(context.runtime_graph().storage_at(subscriber.input_offset()));
     if (input.target != reference) {
         const auto subscribes_to_target = subscriber.active() || subscriber.required() || callback != nullptr;
         if (input.target && subscribes_to_target) {
@@ -24,8 +25,8 @@ void update_reference_input(OutputNotificationContext &context, ReferenceAddress
         if (reference && subscribes_to_target) {
             add_reference_subscriber(reference, context.runtime_graph(),
                                      static_cast<std::uint32_t>(subscriber.input_offset()), data,
-                                    static_cast<std::uint32_t>(subscriber.node_index()), subscriber.active(),
-                                    subscriber.required(), callback);
+                                     static_cast<std::uint32_t>(subscriber.node_index()), subscriber.active(),
+                                     subscriber.required(), callback);
         }
         input.target = reference;
     }
@@ -40,7 +41,7 @@ void update_reference_input(OutputNotificationContext &context, ReferenceAddress
 
 } // namespace
 
-void notify_reference_inputs(OutputNotificationContext &context, const void *value, OutputChange change,
+void notify_reference_inputs(OutputChangeContext &context, const void *value, OutputChange change,
                              std::span<const std::byte> record_bytes) {
     const auto records = std::span{
         reinterpret_cast<const ReferenceInputSubscriber *>(record_bytes.data()),
@@ -54,7 +55,7 @@ void notify_reference_inputs(OutputNotificationContext &context, const void *val
     }
 }
 
-void notify_callback_reference_inputs(OutputNotificationContext &context, const void *value, OutputChange change,
+void notify_callback_reference_inputs(OutputChangeContext &context, const void *value, OutputChange change,
                                       std::span<const std::byte> record_bytes) {
     const auto records = std::span{
         reinterpret_cast<const CallbackReferenceInputSubscriber *>(record_bytes.data()),

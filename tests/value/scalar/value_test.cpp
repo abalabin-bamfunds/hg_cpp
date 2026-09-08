@@ -50,7 +50,8 @@ TEST_CASE("pointer-sized scalar values compare and hash from inline storage",
 
     CHECK(left == equal);
     CHECK_FALSE(left == different);
-    CHECK(left.view().hash() == equal.view().hash());
+    CHECK(left.equals(equal));
+    CHECK(left.hash() == equal.hash());
 }
 
 TEST_CASE("an evaluation time scalar value retains its graph type",

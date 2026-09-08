@@ -21,7 +21,6 @@ template <typename T> class Scalar<List<T>> {
         return Scalar<T>::from(item_type, runtime_type().item(value_.data(), index));
     }
 
-    const Scalar *operator->() const noexcept { return this; }
     const ScalarType &type() const noexcept { return value_.runtime_type().type(); }
 
     template <typename... Functions> decltype(auto) visit(Functions &&...functions) const {
@@ -40,8 +39,8 @@ template <typename T> class Scalar<List<T>> {
         return value_.equals(other);
     }
 
-    const details::ScalarData &input_view() const & noexcept { return value_; }
-    const details::ScalarData &input_view() const && = delete;
+    operator const details::ScalarData &() const & noexcept { return value_; }
+    operator const details::ScalarData &() const && = delete;
 
     [[nodiscard]] static Scalar from(const details::ScalarData &value) noexcept { return Scalar{value}; }
     [[nodiscard]] static Scalar from(const ScalarRuntimeType &runtime_type, const void *data) noexcept {

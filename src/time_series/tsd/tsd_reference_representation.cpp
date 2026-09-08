@@ -77,14 +77,14 @@ class TimeSeriesDictionaryReferenceRepresentation final : public ReferenceRepres
         return {&last_updated_, reference_target(source()).value, &runtime_type_};
     }
 
-    void source_changed(OutputNotificationContext &context, OutputChange) override {
+    void source_changed(OutputChangeContext &context, OutputChange) override {
         release_retired();
 
         const auto source_target = reference_target(source());
         const auto source_time = *source_target.last_updated;
         struct Callback {
             TimeSeriesDictionaryReferenceRepresentation *representation;
-            OutputNotificationContext *context;
+            OutputChangeContext *context;
             EvaluationTime source_time;
         } callback{this, &context, source_time};
 
@@ -140,7 +140,7 @@ class TimeSeriesDictionaryReferenceRepresentation final : public ReferenceRepres
         }
     }
 
-    void update_item(OutputNotificationContext &context, TimeSeriesItemId id) {
+    void update_item(OutputChangeContext &context, TimeSeriesItemId id) {
         if (!positions_.contains(id)) {
             return;
         }
@@ -160,7 +160,7 @@ class TimeSeriesDictionaryReferenceRepresentation final : public ReferenceRepres
         provider_->notify(item.reference, context, change);
     }
 
-    void remove_item(OutputNotificationContext &context, TimeSeriesItemId id) {
+    void remove_item(OutputChangeContext &context, TimeSeriesItemId id) {
         if (!positions_.contains(id)) {
             return;
         }
@@ -249,7 +249,7 @@ class DereferencedTimeSeriesDictionaryRepresentation final : public ReferenceRep
         return {&last_updated_, reference_target(source()).value, &runtime_type_};
     }
 
-    void source_changed(OutputNotificationContext &context, OutputChange) override {
+    void source_changed(OutputChangeContext &context, OutputChange) override {
         release_retired();
         reset_changes(context.evaluation_time());
 
@@ -356,12 +356,12 @@ class DereferencedTimeSeriesDictionaryRepresentation final : public ReferenceRep
         item.target = nullptr;
     }
 
-    static void target_changed_callback(OutputNotificationContext &context, void *target, OutputChange) {
+    static void target_changed_callback(OutputChangeContext &context, void *target, OutputChange) {
         auto &item = *static_cast<DereferencedItem *>(target);
         item.owner->target_changed(context, item);
     }
 
-    void target_changed(OutputNotificationContext &context, DereferencedItem &item) {
+    void target_changed(OutputChangeContext &context, DereferencedItem &item) {
         reset_changes(context.evaluation_time());
         const auto target = item.target ? reference_target(item.target) : ReferenceTarget{};
         const auto now_valid = item.target && *target.last_updated > MIN_DT;

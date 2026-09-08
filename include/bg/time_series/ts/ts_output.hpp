@@ -39,7 +39,7 @@ template <details::scalar_variable Variable, auto... Properties> class Out<TS<Va
     EvaluationTime last_updated() const noexcept { return state_->last_updated(); }
 
     template <typename Value> void set_value(const Scalar<Value> &value) const {
-        value.input_view().assign(
+        static_cast<const details::ScalarData &>(value).assign(
             state_->mutable_data(),
             static_cast<const TimeSeriesValueRuntimeType &>(state_->runtime_type()).scalar_runtime_type());
         state_->publish();
@@ -111,7 +111,7 @@ template <typename T, auto... Properties> class Out<TS<T, Properties...>> {
     }
 
     template <typename Value> void set_value(const Scalar<Value> &value) const {
-        value.input_view().assign(
+        static_cast<const details::ScalarData &>(value).assign(
             state_->mutable_data(),
             static_cast<const TimeSeriesValueRuntimeType &>(state_->runtime_type()).scalar_runtime_type());
         state_->publish();

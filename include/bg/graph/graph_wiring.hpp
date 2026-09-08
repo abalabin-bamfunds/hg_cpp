@@ -17,6 +17,11 @@
 
 namespace bg {
 
+namespace details {
+class DeferredWiringPoint;
+WiringPoint defer_wiring_point(std::unique_ptr<DeferredWiringPoint> point);
+} // namespace details
+
 class NodeTemplate;
 class TimeSeriesType;
 class WiringTemplate;
@@ -27,6 +32,7 @@ struct WiringPointRecord {
     std::size_t node_index;
     std::size_t parent;
     TimeSeriesItemId item;
+    bool deferred;
     const TimeSeriesType *type;
 };
 
@@ -51,6 +57,7 @@ class GraphWiring {
     friend class NodeTemplate;
     friend class WiringPoint;
     friend class WiringTemplate;
+    friend WiringPoint details::defer_wiring_point(std::unique_ptr<details::DeferredWiringPoint> point);
 
     [[nodiscard]] std::optional<WiringPoint> invoke(const WiringTemplate &wiring_template,
                                                     std::span<details::wiring_argument> arguments,
@@ -64,6 +71,8 @@ class GraphWiring {
                                                       std::span<details::wiring_argument> arguments);
     [[nodiscard]] WiringPoint select_item(WiringPoint source, std::size_t index);
     [[nodiscard]] WiringPoint make_reference(WiringPoint source, const TimeSeriesType &reference_type);
+    [[nodiscard]] WiringPoint add_deferred(std::unique_ptr<details::DeferredWiringPoint> point);
+    [[nodiscard]] WiringPoint materialize(WiringPoint source, const TimeSeriesType &target_type);
 
     [[nodiscard]] const WiringPath &make_path(util::symbol name, util::symbol label);
     util::symbol default_label() const;
@@ -76,6 +85,7 @@ class GraphWiring {
     std::pmr::unsynchronized_pool_resource fixed_memory_;
     std::optional<std::pmr::unsynchronized_pool_resource> variable_memory_;
     std::vector<std::unique_ptr<NodeTemplate>> node_templates_;
+    std::vector<std::unique_ptr<details::DeferredWiringPoint>> deferred_wiring_points_;
     std::vector<WiredNode> nodes_;
     std::vector<WiringPointRecord> wiring_points_;
     struct ReferenceWiring {
@@ -84,6 +94,12 @@ class GraphWiring {
         std::size_t reference;
     };
     std::vector<ReferenceWiring> references_;
+    struct MaterializedWiring {
+        std::size_t source;
+        const TimeSeriesType *type;
+        std::size_t result;
+    };
+    std::vector<MaterializedWiring> materialized_wiring_points_;
     std::pmr::deque<WiringPath> paths_;
 };
 

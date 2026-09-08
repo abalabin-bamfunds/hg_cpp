@@ -81,8 +81,7 @@ const TimeSeriesType &reference_input_target_type(const Type &parameter_type) no
 }
 
 template <typename T>
-std::span<const T> stored_objects(const std::byte *storage, std::uint32_t offset,
-                                                std::size_t count) noexcept {
+std::span<const T> stored_objects(const std::byte *storage, std::uint32_t offset, std::size_t count) noexcept {
     if (count == 0) {
         return {};
     }
@@ -153,19 +152,19 @@ struct ReferenceInputSubscriberPlan {
     std::uint32_t input_index;
     bool active;
     bool required;
-    InputNotificationCallback notification;
+    InputChangeCallback notification;
 };
 
-struct CallbackInputSubscriberPlan {
+struct InputCallbackSubscriberPlan {
     std::uint32_t node_index;
     std::size_t data;
-    InputNotificationFunction function;
+    InputChangeFunction function;
 };
 
 struct SubscriptionPlan {
     std::vector<Subscriber> nodes;
     std::vector<ReferenceInputSubscriberPlan> reference_inputs;
-    std::vector<CallbackInputSubscriberPlan> callback_inputs;
+    std::vector<InputCallbackSubscriberPlan> callback_inputs;
 };
 
 struct ItemSubscriptionPlan {
@@ -325,7 +324,7 @@ std::size_t root_source_node(std::size_t source, std::span<const WiringPointReco
 }
 
 OutputLayout physical_source_output(std::size_t source, std::span<const WiringPointRecord> wiring_points,
-                                                  std::span<const NodePlan> node_plans) {
+                                    std::span<const NodePlan> node_plans) {
     const auto &record = wiring_points[source];
     if (record.parent == WiringPointRecord::npos) {
         return node_plans[record.node_index].output;
@@ -356,7 +355,7 @@ OutputLayout physical_source_output(std::size_t source, std::span<const WiringPo
 }
 
 OutputLayout source_output(std::size_t source, std::span<const WiringPointRecord> wiring_points,
-                                         std::span<const NodePlan> node_plans) {
+                           std::span<const NodePlan> node_plans) {
     auto result = physical_source_output(source, wiring_points, node_plans);
     if (wiring_points[source].parent == WiringPointRecord::npos) {
         return result;
@@ -369,7 +368,7 @@ OutputLayout source_output(std::size_t source, std::span<const WiringPointRecord
 }
 
 SubscriptionPlan &subscriber_list(std::size_t source, std::span<const WiringPointRecord> wiring_points,
-                                                std::span<NodePlan> node_plans) {
+                                  std::span<NodePlan> node_plans) {
     const auto source_index = root_source_node(source, wiring_points);
     if (wiring_points[source].parent == WiringPointRecord::npos) {
         return node_plans[source_index].subscriptions;
@@ -454,7 +453,7 @@ void plan_subscribers(std::span<const WiredNode> nodes, std::span<const WiringPo
             const auto is_active = parameter.activity == active;
             const auto is_required = parameter.validity == required;
             const auto subscriber_index = static_cast<std::uint32_t>(target_index);
-            const auto notification = target.node_template().input_notification(input_index);
+            const auto notification = target.node_template().input_change_callback(input_index);
             auto &subscriptions = subscriber_list(input.source, wiring_points, node_plans);
             if (input.dereferences_reference) {
                 subscriptions.reference_inputs.push_back({
@@ -518,8 +517,7 @@ void resolve_dynamic_subscribers(CompilationPlan &plan) {
     }
 }
 
-const TimeSeriesRuntimeType *input_runtime_type(const TimeSeriesInputPlan &input,
-                                                              const TimeSeriesRuntimeType *source) {
+const TimeSeriesRuntimeType *input_runtime_type(const TimeSeriesInputPlan &input, const TimeSeriesRuntimeType *source) {
     if (input.dereferences_reference) {
         return &static_cast<const TimeSeriesReferenceRuntimeType &>(*source).target_runtime_type();
     }
@@ -527,9 +525,9 @@ const TimeSeriesRuntimeType *input_runtime_type(const TimeSeriesInputPlan &input
     return source;
 }
 
-std::vector<const ScalarRuntimeType *>
-parameter_runtime_types(const WiredNode &node, const NodePlan &node_plan,
-                        std::span<const WiringPointRecord> wiring_points, std::span<const NodePlan> node_plans) {
+std::vector<const ScalarRuntimeType *> parameter_runtime_types(const WiredNode &node, const NodePlan &node_plan,
+                                                               std::span<const WiringPointRecord> wiring_points,
+                                                               std::span<const NodePlan> node_plans) {
     auto result = std::vector<const ScalarRuntimeType *>{};
     result.reserve(node.signature().parameters.size());
     auto input_index = std::size_t{};
@@ -557,8 +555,8 @@ parameter_runtime_types(const WiredNode &node, const NodePlan &node_plan,
 }
 
 const TimeSeriesRuntimeType *find_output_runtime_type(const WiredNode &node, const NodePlan &node_plan,
-                                                                    std::span<const WiringPointRecord> wiring_points,
-                                                                    std::span<const NodePlan> node_plans) {
+                                                      std::span<const WiringPointRecord> wiring_points,
+                                                      std::span<const NodePlan> node_plans) {
     const auto parameter_types = parameter_runtime_types(node, node_plan, wiring_points, node_plans);
     auto input_runtime_types = std::vector<const TimeSeriesRuntimeType *>{};
     input_runtime_types.reserve(node.input_sources().size());
@@ -668,7 +666,7 @@ std::size_t output_notification_size(const SubscriptionPlan &subscriptions) noex
     }
     if (!subscriptions.callback_inputs.empty()) {
         result += align_up(sizeof(OutputNotification) +
-                               subscriptions.callback_inputs.size() * sizeof(CallbackInputSubscriber),
+                               subscriptions.callback_inputs.size() * sizeof(InputCallbackSubscriber),
                            alignof(OutputNotification));
     }
 
@@ -715,9 +713,7 @@ struct RuntimeTypeCounts {
     std::size_t scalar_inputs{};
     bool output{};
 
-    std::size_t total() const noexcept {
-        return time_series_inputs + scalar_inputs + static_cast<std::size_t>(output);
-    }
+    std::size_t total() const noexcept { return time_series_inputs + scalar_inputs + static_cast<std::size_t>(output); }
 };
 
 RuntimeTypeCounts runtime_type_counts(const WiredNode &node) {
@@ -1013,7 +1009,7 @@ class CompiledGraphBuilder {
             const auto &source = *plan.wiring_paths.paths[i];
             const auto *parent = plan.wiring_paths.parents[i] == no_wiring_path
                                      ? nullptr
-                                    : compiled_paths.data() + plan.wiring_paths.parents[i];
+                                     : compiled_paths.data() + plan.wiring_paths.parents[i];
             std::construct_at(compiled_paths.data() + i, WiringPath{parent, source.name, source.label});
         }
     }
@@ -1230,7 +1226,7 @@ class CompiledGraphBuilder {
         const auto reference_bytes = reference_count * sizeof(details::ReferenceInputSubscriber);
         const auto callback_reference_bytes =
             callback_reference_count * sizeof(details::CallbackReferenceInputSubscriber);
-        const auto input_bytes = subscribers.callback_inputs.size() * sizeof(CallbackInputSubscriber);
+        const auto input_bytes = subscribers.callback_inputs.size() * sizeof(InputCallbackSubscriber);
         const auto reference_block =
             reference_count == 0 ? std::size_t{}
                                  : align_up(sizeof(OutputNotification) + reference_bytes, alignof(OutputNotification));
@@ -1288,8 +1284,8 @@ class CompiledGraphBuilder {
 
         if (!subscribers.callback_inputs.empty()) {
             auto *notification = std::construct_at(reinterpret_cast<OutputNotification *>(block),
-                                                   notify_callback_inputs, static_cast<std::uint32_t>(input_bytes));
-            auto *records = reinterpret_cast<CallbackInputSubscriber *>(notification + 1);
+                                                   notify_input_callbacks, static_cast<std::uint32_t>(input_bytes));
+            auto *records = reinterpret_cast<InputCallbackSubscriber *>(notification + 1);
             for (const auto &subscriber : subscribers.callback_inputs) {
                 std::construct_at(records++, subscriber.function, subscriber.data, subscriber.node_index);
             }

@@ -164,3 +164,41 @@ TEST_CASE("a time series set preserves its value when a required input becomes i
 
     CHECK(actual.equals({1}));
 }
+
+namespace {
+
+using ExactIntSet = bg::TSS<int>;
+
+struct exact_int_set_source_definition {
+    static constexpr bool uses_future_scheduling = true;
+
+    bg::Out<ExactIntSet> output;
+
+    void start(bg::EvaluationContext *context) const {
+        output.insert(7);
+        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
+    }
+
+    void evaluate() const { output.erase(7); }
+};
+
+struct exact_int_set_contains_definition {
+    bg::In<ExactIntSet> input;
+    bg::Out<bg::TS<bool>> output;
+
+    void evaluate() const { output.set(input.contains(7)); }
+};
+
+} // namespace
+
+TEST_CASE("a time series set accepts its exact non-canonical item type",
+          "[evaluation][series:tss][feature:time-series-view][feature:collection-change]"
+          "[scalar:integer][transition:addition][transition:removal][binding:direct]") {
+    const auto source = bg::node<exact_int_set_source_definition>();
+    const auto contains = bg::node<exact_int_set_contains_definition>();
+    const auto graph = [&] { return contains(source()); };
+
+    const auto actual = bg::testing::test_graph(graph);
+
+    CHECK(actual.equals({true, false}));
+}

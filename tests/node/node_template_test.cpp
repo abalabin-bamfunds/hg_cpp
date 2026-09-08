@@ -59,10 +59,9 @@ TEST_CASE("an aggregate node class generates a signature", "[node_template][feat
 TEST_CASE("a callable node receives typed inputs, scalars, and output",
           "[node_template][feature:node-api][definition:function]") {
     const auto factor = 2;
-    const auto add = bg::node(
-        [factor](bg::In<bg::TS<int>, "input"_n> input, int offset, bg::Out<bg::TS<int>> output) {
-            output.set(*input * factor + offset);
-        });
+    const auto add = bg::node([factor](bg::In<bg::TS<int>, "input"_n> input, int offset, bg::Out<bg::TS<int>> output) {
+        output.set(*input * factor + offset);
+    });
     const auto graph = [&](bg::wp<bg::TS<int>> input) { return add(input, 1); };
 
     CHECK(bg::testing::test_graph(graph, {1, 2, 3}).equals({3, 5, 7}));
@@ -90,7 +89,7 @@ struct key_sink {
 
     void evaluate() const {
         static_cast<void>(key == key);
-        static_cast<void>(key->hash());
+        static_cast<void>(key.hash());
     }
 };
 
@@ -134,8 +133,7 @@ TEST_CASE("an aggregate node can omit its output", "[node_template][feature:node
     const auto sink_node = bg::node<sink>();
     static_assert(std::same_as<decltype(sink_node(std::declval<bg::WiringPoint>())), void>);
 
-    const std::array<const bg::Type *, 1> arguments{
-        &bg::TS<float>::type()};
+    const std::array<const bg::Type *, 1> arguments{&bg::TS<float>::type()};
     const bg::ResolvedSignature signature = sink_node.signature().resolve(arguments);
 
     CHECK(signature.output == nullptr);

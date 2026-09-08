@@ -16,11 +16,13 @@ TEST_CASE("an erased scalar value copies a borrowed value",
 
     source.assign("changed");
 
-    CHECK(&value.input_view().type() == &bg::string_type());
+    CHECK(&value.type() == &bg::string_type());
+    CHECK(*bg::scalar_cast<bg::string>(value) == "value");
 
-    auto copy = std::pmr::string{};
-    value.input_view().assign(&copy, bg::cpp_scalar_runtime_type<bg::string>());
-    CHECK(copy == "value");
+    const auto same_source = bg::ScalarValue{std::string_view{"value"}};
+    const auto same = bg::ScalarValue<>{same_source};
+    CHECK(value.equals(same));
+    CHECK(value.hash() == same.hash());
 }
 
 TEST_CASE("an erased scalar value stores a pointer-sized borrowed value inline",
@@ -29,7 +31,7 @@ TEST_CASE("an erased scalar value stores a pointer-sized borrowed value inline",
     const auto source = bg::Scalar<std::int64_t>::from(source_value);
     const auto value = bg::ScalarValue<>{source, *std::pmr::null_memory_resource()};
 
-    CHECK(bg::scalar_cast<std::int64_t>(value)->value() == source_value);
+    CHECK(*bg::scalar_cast<std::int64_t>(value) == source_value);
 }
 
 TEST_CASE("an erased scalar value can replace its value",
@@ -41,7 +43,7 @@ TEST_CASE("an erased scalar value can replace its value",
     value = second;
 
     const auto view = value.view();
-    CHECK(bg::scalar_cast<std::int64_t>(view)->value() == 42);
+    CHECK(*bg::scalar_cast<std::int64_t>(view) == 42);
 }
 
 TEST_CASE("an erased scalar value can replace its value from a borrowed view",
@@ -54,7 +56,7 @@ TEST_CASE("an erased scalar value can replace its value from a borrowed view",
     value = source;
 
     const auto view = value.view();
-    CHECK(bg::scalar_cast<std::int64_t>(view)->value() == source_value);
+    CHECK(*bg::scalar_cast<std::int64_t>(view) == source_value);
 }
 
 TEST_CASE("scalar handles compare by type and value", "[value][scalar][erased][feature:scalar-api]") {
@@ -70,7 +72,7 @@ TEST_CASE("scalar handles compare by type and value", "[value][scalar][erased][f
     CHECK(left == equal);
     CHECK_FALSE(left == different_value);
     CHECK_FALSE(left == different_type);
-    CHECK(left->hash() == equal->hash());
+    CHECK(left.hash() == equal.hash());
 }
 
 TEST_CASE("a constrained scalar variable exposes its required operations",
@@ -86,8 +88,8 @@ TEST_CASE("a constrained scalar variable exposes its required operations",
 
     CHECK(left == equal);
     CHECK_FALSE(left == different);
-    CHECK(left->hash() == equal->hash());
-    CHECK(&left->type() == &bg::int64_type());
+    CHECK(left.hash() == equal.hash());
+    CHECK(&left.type() == &bg::int64_type());
 }
 
 TEST_CASE("scalar variable equality rejects a different semantic type",
@@ -107,7 +109,7 @@ TEST_CASE("checked scalar casts reject an incompatible value", "[value][scalar][
     const auto value = std::int64_t{42};
     const auto erased = bg::Scalar<>::from<std::int64_t>(value);
 
-    CHECK(bg::scalar_cast<std::int64_t>(erased)->value() == value);
-    CHECK(bg::unchecked_scalar_cast<std::int64_t>(erased)->value() == value);
+    CHECK(*bg::scalar_cast<std::int64_t>(erased) == value);
+    CHECK(*bg::unchecked_scalar_cast<std::int64_t>(erased) == value);
     CHECK_THROWS_AS(bg::scalar_cast<double>(erased), std::bad_cast);
 }

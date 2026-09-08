@@ -47,12 +47,12 @@ TEST_CASE("a typed input reads its time-series value", "[node_api][feature:node-
     CHECK(read_generic(input));
 
     const auto value_view = input.value_view();
-    CHECK(&value_view->type() == &bg::float_type());
-    CHECK(value_view->value() == 1.25F);
+    CHECK(&value_view.type() == &bg::float_type());
+    CHECK(*value_view == 1.25F);
 
     const auto generic_input = bg::In<bg::TS<bg::SCALAR>>{updated, &value, input.runtime_type()};
     const auto generic_value = generic_input.value_view();
-    CHECK(&generic_value->type() == &bg::float_type());
+    CHECK(&generic_value.type() == &bg::float_type());
 
     const auto visited_valid = input.visit([](const bg::In<bg::TS<bg::SCALAR>> *view) { return view->valid(); },
                                            [](const auto *) { return false; });
@@ -89,7 +89,7 @@ TEST_CASE("a generic value input returns an erased scalar value view",
     const auto value_view = input.value_view();
 
     STATIC_CHECK(std::same_as<std::remove_cv_t<decltype(value_view)>, bg::Scalar<bg::SCALAR>>);
-    CHECK(&value_view->type() == &bg::float_type());
+    CHECK(&value_view.type() == &bg::float_type());
 }
 
 TEST_CASE("an arbitrary time-series input provides its category view", "[node_api][feature:node-api]") {
@@ -102,5 +102,5 @@ TEST_CASE("an arbitrary time-series input provides its category view", "[node_ap
         input.visit([](const bg::In<bg::TS<bg::SCALAR>> *value_input) { return value_input->value_view(); }, ddv::noop);
 
     REQUIRE(value_view);
-    CHECK(&(*value_view)->type() == &bg::float_type());
+    CHECK(&value_view->type() == &bg::float_type());
 }

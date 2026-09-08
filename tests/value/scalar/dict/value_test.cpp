@@ -26,6 +26,15 @@ TEST_CASE("a scalar dictionary owns and exposes its entries",
     CHECK(sum == 3);
 }
 
+TEST_CASE("a scalar dictionary accepts its exact non-canonical key type",
+          "[value][scalar][dict][scalar:dict][feature:scalar-collection]") {
+    const auto value = bg::ScalarValue<bg::Dict<int, int>>{std::vector<std::pair<int, int>>{{1, 2}}};
+    const auto dict = value.view();
+
+    CHECK(dict.contains(1));
+    CHECK(*dict.at(1) == 2);
+}
+
 TEST_CASE("scalar dictionary equality is independent of insertion order",
           "[value][scalar][dict][scalar:dict][feature:scalar-collection]") {
     using Entry = std::pair<std::int64_t, std::string_view>;
@@ -78,8 +87,8 @@ TEST_CASE("a generic scalar dictionary exposes its declared comparison operation
 
     const auto first = bg::ScalarValue<bg::Dict<std::int64_t, std::int64_t>>{std::vector<Entry>{{1, 2}, {3, 4}}};
     const auto second = bg::ScalarValue<bg::Dict<std::int64_t, std::int64_t>>{std::vector<Entry>{{3, 4}, {1, 2}}};
-    const auto left = bg::Scalar<bg::Dict<Item, Item>>::from(first.input_view());
-    const auto right = bg::Scalar<bg::Dict<Item, Item>>::from(second.input_view());
+    const auto left = bg::Scalar<bg::Dict<Item, Item>>::from(first);
+    const auto right = bg::Scalar<bg::Dict<Item, Item>>::from(second);
 
     CHECK(left == right);
     CHECK(left == second);

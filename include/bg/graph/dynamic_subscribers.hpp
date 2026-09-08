@@ -41,11 +41,11 @@ struct DynamicSubscriber {
 
 struct DynamicCallbackSubscriber {
     DynamicCallbackSubscriber(RuntimeGraph &target_graph, std::uint32_t input_offset, std::size_t data,
-                              std::uint32_t node_index, InputNotificationFunction callback) noexcept
+                              std::uint32_t node_index, InputChangeFunction callback) noexcept
         : graph{&target_graph}, callback{callback}, data{data}, input_offset{input_offset}, node_index{node_index} {}
 
     RuntimeGraph *graph;
-    InputNotificationFunction callback;
+    InputChangeFunction callback;
     std::size_t data;
     std::uint32_t input_offset;
     std::uint32_t node_index;
@@ -96,7 +96,7 @@ struct DynamicSubscribers {
     }
 
     void add(RuntimeGraph &graph, std::uint32_t input_offset, std::size_t data, std::uint32_t node_index, bool active,
-             bool required, InputNotificationFunction callback = nullptr) {
+             bool required, InputChangeFunction callback = nullptr) {
         if (active || required) {
             records_.emplace_back(graph, input_offset, node_index, active, required);
         }

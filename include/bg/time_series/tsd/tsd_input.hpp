@@ -10,7 +10,9 @@
 #include <bg/time_series/tsd/tsd_type.hpp>
 
 #include <functional>
+#include <memory>
 #include <string_view>
+#include <type_traits>
 #include <utility>
 
 namespace bg {
@@ -33,46 +35,58 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...> {
 
     bool valid() const noexcept { return data_.valid(); }
     EvaluationTime last_updated() const noexcept { return data_.last_updated(); }
-    std::size_t size() const noexcept {
-        return valid() ? data_.runtime_type().item_count(data_.data()) : 0;
-    }
-    bool contains(const Scalar<K> &key) const { return contains(key.input_view()); }
+    std::size_t size() const noexcept { return valid() ? data_.runtime_type().item_count(data_.data()) : 0; }
+    bool contains(const Scalar<K> &key) const { return contains(static_cast<const details::ScalarData &>(key)); }
 
-    template <scalar_source Source>
-        requires(!details::scalar_variable<K> && std::same_as<canonical_scalar_t<Source>, K>)
+    template <typename Source>
+        requires(!details::scalar_variable<K> && scalar_source_for<K, Source>)
     bool contains(Source &&key) const {
-        const auto value = canonical_scalar(std::forward<Source>(key));
+        const auto value = scalar_source_value<K>(std::forward<Source>(key));
         return contains(details::make_scalar_source<K>(value));
     }
 
-    In<Item> operator[](const Scalar<K> &key) const { return item(key.input_view()); }
+    In<Item> operator[](const Scalar<K> &key) const { return item(static_cast<const details::ScalarData &>(key)); }
 
-    template <scalar_source Source>
-        requires(!details::scalar_variable<K> && std::same_as<canonical_scalar_t<Source>, K>)
+    template <typename Source>
+        requires(!details::scalar_variable<K> && scalar_source_for<K, Source>)
     In<Item> operator[](Source &&key) const {
-        const auto value = canonical_scalar(std::forward<Source>(key));
+        const auto value = scalar_source_value<K>(std::forward<Source>(key));
         return item(details::make_scalar_source<K>(value));
     }
 
-    bool item_modified(const Scalar<K> &key) const { return item_modified(key.input_view()); }
+    bool item_modified(const Scalar<K> &key) const {
+        return item_modified(static_cast<const details::ScalarData &>(key));
+    }
 
-    template <scalar_source Source>
-        requires(!details::scalar_variable<K> && std::same_as<canonical_scalar_t<Source>, K>)
+    template <typename Source>
+        requires(!details::scalar_variable<K> && scalar_source_for<K, Source>)
     bool item_modified(Source &&key) const {
-        const auto value = canonical_scalar(std::forward<Source>(key));
+        const auto value = scalar_source_value<K>(std::forward<Source>(key));
         return item_modified(details::make_scalar_source<K>(value));
     }
 
-    template <typename Function> void for_each(Function &&function) const {
-        if (!valid()) {
-            return;
-        }
+    template <typename Function> void for_each_key(Function &&function) const {
+        for_each_live_id([&](TimeSeriesItemId id) { std::invoke(function, make_key(id)); });
+    }
 
-        auto callback = [&](TimeSeriesItemId id) {
-            std::invoke(function, Scalar<K>::from(key_runtime_type(), dictionary_runtime_type().key(data_.data(), id)),
-                        make_item(id));
-        };
-        data_.runtime_type().for_each_item_id(data_.data(), &callback, invoke_with_id<decltype(callback)>);
+    template <typename Function> void for_each_id(Function &&function) const {
+        for_each_live_id(std::forward<Function>(function));
+    }
+
+    template <typename Function> void for_each_value(Function &&function) const {
+        for_each_live_id([&](TimeSeriesItemId id) { std::invoke(function, make_item(id)); });
+    }
+
+    template <typename Function> void for_each_key_value(Function &&function) const {
+        for_each_live_id([&](TimeSeriesItemId id) { std::invoke(function, make_key(id), make_item(id)); });
+    }
+
+    template <typename Function> void for_each_id_value(Function &&function) const {
+        for_each_live_id([&](TimeSeriesItemId id) { std::invoke(function, id, make_item(id)); });
+    }
+
+    template <typename Function> void for_each(Function &&function) const {
+        for_each_key_value(std::forward<Function>(function));
     }
 
     template <typename Function> void for_each_added(Function &&function) const {
@@ -137,6 +151,10 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...> {
         return {item.last_updated, item.value, item.runtime_type};
     }
 
+    Scalar<K> make_key(TimeSeriesItemId id) const {
+        return Scalar<K>::from(key_runtime_type(), dictionary_runtime_type().key(data_.data(), id));
+    }
+
     bool item_modified(const details::ScalarData &key) const {
         if (!valid()) {
             return false;
@@ -150,14 +168,20 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...> {
         std::invoke(*static_cast<Function *>(context), id);
     }
 
+    template <typename Function> void for_each_live_id(Function &&function) const {
+        if (!valid()) {
+            return;
+        }
+
+        data_.runtime_type().for_each_item_id(data_.data(), std::addressof(function),
+                                              invoke_with_id<std::remove_reference_t<Function>>);
+    }
+
     using ChangeFunction = void (details::TimeSeriesDictionaryRuntimeType::*)(
         const EvaluationTime &, const void *, void *, TimeSeriesRuntimeType::ItemIdFunction) const;
 
     template <typename Function> void apply_changes(ChangeFunction changes, Function &function) const {
-        auto callback = [&](TimeSeriesItemId id) {
-            std::invoke(function,
-                        Scalar<K>::from(key_runtime_type(), dictionary_runtime_type().key(data_.data(), id)));
-        };
+        auto callback = [&](TimeSeriesItemId id) { std::invoke(function, make_key(id)); };
         (dictionary_runtime_type().*changes)(last_updated(), data_.data(), &callback,
                                              invoke_with_id<decltype(callback)>);
     }

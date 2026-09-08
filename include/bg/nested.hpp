@@ -20,11 +20,7 @@ namespace bg::details {
 
 template <std::size_t Index, typename Argument>
 decltype(auto) nested_graph_argument(Argument &argument, const std::vector<std::optional<WiringPoint>> &inputs) {
-    if constexpr (std::same_as<std::remove_cvref_t<Argument>, WiringPoint> || is_typed_wiring_point<Argument>) {
-        return *inputs[Index];
-    } else if constexpr (free_time_series_list<Argument>) {
-        return *inputs[Index];
-    } else if constexpr (free_time_series_bundle<Argument>) {
+    if constexpr (wiring_point_argument<Argument>) {
         return *inputs[Index];
     } else {
         return (argument);
@@ -53,15 +49,7 @@ template <typename Graph, details::graph_code_argument Run, details::graph_code_
     auto argument_types = std::vector<const Type *>{};
     argument_types.reserve(supplied.size());
     for (const auto &argument : supplied) {
-        if (argument.is_wiring_point()) {
-            argument_types.push_back(&argument.wiring_point().type());
-        } else if (argument.is_free_time_series_list()) {
-            argument_types.push_back(argument.free_time_series_list().type);
-        } else if (argument.is_free_time_series_bundle()) {
-            argument_types.push_back(argument.free_time_series_bundle().type);
-        } else {
-            argument_types.push_back(&argument.scalar_type());
-        }
+        argument_types.push_back(&argument.type());
     }
     const auto resolved = graph.signature().resolve(argument_types);
 

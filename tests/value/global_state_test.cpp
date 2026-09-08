@@ -11,14 +11,12 @@ TEST_CASE("global state owns inserted scalar values",
     auto state = bg::GlobalState{};
     auto source = bg::ScalarValue{std::string_view{"value"}};
 
-    state.write([&](auto &values) {
-        values.set(bg::util::symbol{"result"}, source);
-    });
+    state.write([&](auto &values) { values.set(bg::util::symbol{"result"}, source); });
     source = bg::ScalarValue{std::string_view{"changed"}};
 
     state.read([](const auto &values) {
         const auto stored = bg::scalar_cast<bg::string>(values.at("result"));
-        CHECK(stored->value() == "value");
+        CHECK(*stored == "value");
     });
 }
 
@@ -34,7 +32,7 @@ TEST_CASE("global state replaces values and supports heterogeneous lookup",
         values.set(key, second);
 
         CHECK(values.contains("result"));
-        CHECK(bg::scalar_cast<std::int64_t>(values.at(key))->value() == 2);
+        CHECK(*bg::scalar_cast<std::int64_t>(values.at(key)) == 2);
         CHECK(values.erase("result"));
         CHECK_FALSE(values.contains(key));
     });

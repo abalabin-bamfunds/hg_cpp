@@ -84,7 +84,7 @@ decltype(auto) make_callable_node_argument(Invocation invocation) {
             return scalar.has_value() ? Field{scalar_cast<Value>(scalar.value()).value()} : Field{};
         } else if constexpr (scalar_view<Field>::value) {
             if constexpr (generic_scalar<Value>) {
-                return Field::from(scalar.value().input_view());
+                return Field::from(static_cast<const ScalarData &>(scalar.value()));
             } else {
                 return scalar_cast<Value>(scalar.value());
             }

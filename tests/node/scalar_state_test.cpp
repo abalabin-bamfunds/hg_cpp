@@ -43,9 +43,7 @@ TEST_CASE("collection state is mutable during a node invocation", "[node][state]
 
     bg::run_graph([&] { collection_state(); }, state);
 
-    state.read([](const auto &values) {
-        CHECK(bg::scalar_cast<std::int64_t>(values.at("result"))->value() == 12);
-    });
+    state.read([](const auto &values) { CHECK(*bg::scalar_cast<std::int64_t>(values.at("result")) == 12); });
 }
 
 TEST_CASE("a runtime graph releases collection state storage", "[node][state][scalar][allocation][feature:state]") {
@@ -99,9 +97,7 @@ TEST_CASE("generic collection state uses its resolved storage",
 
     bg::run_graph([&] { generic_list_state(input); }, state);
 
-    state.read([](const auto &values) {
-        CHECK(bg::scalar_cast<std::int64_t>(values.at("generic_result"))->value() == 4);
-    });
+    state.read([](const auto &values) { CHECK(*bg::scalar_cast<std::int64_t>(values.at("generic_result")) == 4); });
 }
 
 namespace {
@@ -153,9 +149,9 @@ TEST_CASE("generic set and dictionary state use resolved storage",
     bg::run_graph([&] { generic_set_dict_state(set_type, dict_type, key, value); }, state);
 
     state.read([](const auto &values) {
-        CHECK(bg::scalar_cast<bg::string>(values.at("dict_input"))->value() == "one");
-        CHECK(bg::scalar_cast<bg::string>(values.at("dict_result"))->value() == "two");
-        CHECK(bg::scalar_cast<std::int64_t>(values.at("set_result"))->value() == 1);
+        CHECK(*bg::scalar_cast<bg::string>(values.at("dict_input")) == "one");
+        CHECK(*bg::scalar_cast<bg::string>(values.at("dict_result")) == "two");
+        CHECK(*bg::scalar_cast<std::int64_t>(values.at("set_result")) == 1);
     });
 }
 
@@ -169,9 +165,8 @@ struct composed_dict_state_node {
     void start(bg::EvaluationContext *context) const {
         state->insert_or_assign(key, value);
 
-        context->global_state().write([&](auto &global_state) {
-            global_state.set(bg::util::symbol{"composed_dict_result"}, state->at(key));
-        });
+        context->global_state().write(
+            [&](auto &global_state) { global_state.set(bg::util::symbol{"composed_dict_result"}, state->at(key)); });
     }
 
     void evaluate() const {}
@@ -189,9 +184,8 @@ TEST_CASE("generic dictionary state composes storage from separate resolved type
 
     bg::run_graph([&] { composed_dict_state(key, value); }, state);
 
-    state.read([](const auto &values) {
-        CHECK(bg::scalar_cast<bg::string>(values.at("composed_dict_result"))->value() == "two");
-    });
+    state.read(
+        [](const auto &values) { CHECK(*bg::scalar_cast<bg::string>(values.at("composed_dict_result")) == "two"); });
 }
 
 namespace {
@@ -209,9 +203,8 @@ struct composed_list_set_state_node {
             throw std::logic_error{"composed set does not contain its inserted value"};
         }
 
-        context->global_state().write([&](auto &global_state) {
-            global_state.set(bg::util::symbol{"composed_list_result"}, list[0]);
-        });
+        context->global_state().write(
+            [&](auto &global_state) { global_state.set(bg::util::symbol{"composed_list_result"}, list[0]); });
     }
 
     void evaluate() const {}
@@ -228,9 +221,8 @@ TEST_CASE("generic list and set state compose storage from their resolved item t
 
     bg::run_graph([&] { composed_list_set_state(value); }, state);
 
-    state.read([](const auto &values) {
-        CHECK(bg::scalar_cast<std::int64_t>(values.at("composed_list_result"))->value() == 3);
-    });
+    state.read(
+        [](const auto &values) { CHECK(*bg::scalar_cast<std::int64_t>(values.at("composed_list_result")) == 3); });
 }
 
 TEST_CASE("a runtime graph releases composed collection state storage",
@@ -268,9 +260,8 @@ struct generic_nested_state_node {
         auto stored = state->at(key);
         stored->append(values[0]);
 
-        context->global_state().write([&](auto &global_state) {
-            global_state.set(bg::util::symbol{"generic_nested_result"}, stored[2]);
-        });
+        context->global_state().write(
+            [&](auto &global_state) { global_state.set(bg::util::symbol{"generic_nested_result"}, stored[2]); });
     }
 
     void evaluate() const {}
@@ -288,9 +279,8 @@ TEST_CASE("generic nested collection state returns mutable resolved items",
 
     bg::run_graph([&] { generic_nested_state(key, items); }, state);
 
-    state.read([](const auto &values) {
-        CHECK(bg::scalar_cast<bg::string>(values.at("generic_nested_result"))->value() == "one");
-    });
+    state.read(
+        [](const auto &values) { CHECK(*bg::scalar_cast<bg::string>(values.at("generic_nested_result")) == "one"); });
 }
 
 namespace {
@@ -322,9 +312,7 @@ TEST_CASE("nested collection state returns mutable child views", "[node][state][
 
     bg::run_graph([&] { nested_collection_state(initial); }, state);
 
-    state.read([](const auto &values) {
-        CHECK(bg::scalar_cast<std::int64_t>(values.at("nested_result"))->value() == 1);
-    });
+    state.read([](const auto &values) { CHECK(*bg::scalar_cast<std::int64_t>(values.at("nested_result")) == 1); });
 }
 
 TEST_CASE("runtime graphs have independent generic collection state",
@@ -343,9 +331,7 @@ TEST_CASE("runtime graphs have independent generic collection state",
         auto runtime = bg::RuntimeGraph{graph, state};
         bg::SimulationEvaluationEngine{}.run(runtime, bg::MIN_DT + std::chrono::microseconds{1});
 
-        state.read([](const auto &values) {
-            CHECK(bg::scalar_cast<std::int64_t>(values.at("generic_result"))->value() == 4);
-        });
+        state.read([](const auto &values) { CHECK(*bg::scalar_cast<std::int64_t>(values.at("generic_result")) == 4); });
     }
 }
 

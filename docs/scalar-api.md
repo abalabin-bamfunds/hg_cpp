@@ -11,8 +11,9 @@ node code access to a value without fixing its resolved scalar type.
 defines its lifetime. A view supplied to a node is valid for that node
 invocation and must not be retained.
 
-A concrete leaf scalar exposes `value()`. A collection scalar exposes its
-collection operations directly and has no `value()` operation. `Scalar<SCALAR>`
+A concrete leaf scalar exposes `value()` and `operator*`. When its value is a
+class, union, or pointer, `operator->` accesses that value. A collection scalar
+exposes its collection operations directly and has no `value()` operation. `Scalar<SCALAR>`
 exposes any resolved scalar type accepted by that variable without assuming
 equality or hashing. `Scalar<Variable>` exposes either operation only when the
 variable requires it. `Scalar<>` is a view erased independently of a type
@@ -41,7 +42,8 @@ view is valid for the visitor callback.
 `ScalarValue<T>` owns its value and is not copy constructible. Moving it
 transfers ownership. Construction from `Scalar<T>` copies the current value.
 `ScalarValue<>` owns a value of any resolved scalar type. It can copy or replace
-its value from any `Scalar` or `ScalarValue`.
+its value from any `Scalar` or `ScalarValue`. An owning value directly exposes
+its type, equality, and hashing operations when its scalar type supports them.
 
 `ScalarValue<T>::view()` returns a `Scalar<T>`. The returned view remains valid
 while the owner retains that value.

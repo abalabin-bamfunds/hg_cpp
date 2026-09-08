@@ -53,10 +53,9 @@ template <typename T> class ScalarValue {
     ScalarValue(Source &&source, std::pmr::memory_resource &memory)
         : value_{make(details::make_scalar_value<T>(std::forward<Source>(source), &memory))} {}
 
-    explicit ScalarValue(const Scalar<T> &source)
-        : value_{make(details::copy_scalar_value<T>(source.input_view(), nullptr))} {}
+    explicit ScalarValue(const Scalar<T> &source) : value_{make(details::copy_scalar_value<T>(source, nullptr))} {}
     ScalarValue(const Scalar<T> &source, std::pmr::memory_resource &memory)
-        : value_{make(details::copy_scalar_value<T>(source.input_view(), &memory))} {}
+        : value_{make(details::copy_scalar_value<T>(source, &memory))} {}
 
     ~ScalarValue() { release(); }
 
@@ -72,10 +71,26 @@ template <typename T> class ScalarValue {
         return *this;
     }
 
+    const ScalarType &type() const noexcept { return value_.type(); }
+    const ScalarRuntimeType &runtime_type() const noexcept { return value_.runtime_type(); }
+
+    std::size_t hash() const noexcept
+        requires requires(const Scalar<T> &value) { value.hash(); }
+    {
+        return value_.hash();
+    }
+
+    template <typename Other>
+        requires requires(const View &value, const Other &other) { value.equals(other); } &&
+                 details::scalar_capability_traits<T>::supports_equality
+    bool equals(const Other &other) const noexcept {
+        return value_.equals(other);
+    }
+
     Scalar<T> view() const & noexcept { return Scalar<T>::from(value_); }
     Scalar<T> view() const && = delete;
-    const View &input_view() const & noexcept { return value_; }
-    const View &input_view() const && = delete;
+    operator const View &() const & noexcept { return value_; }
+    operator const View &() const && = delete;
 
     using scalar_type = T;
 
@@ -95,20 +110,18 @@ template <typename T> class ScalarValue {
 template <> class ScalarValue<> {
   public:
     template <typename T>
-    explicit ScalarValue(const Scalar<T> &source)
-        : value_{make(details::copy_scalar_value(source.input_view(), nullptr))} {}
+    explicit ScalarValue(const Scalar<T> &source) : value_{make(details::copy_scalar_value(source, nullptr))} {}
 
     template <typename T>
     ScalarValue(const Scalar<T> &source, std::pmr::memory_resource &memory)
-        : value_{make(details::copy_scalar_value(source.input_view(), &memory))} {}
+        : value_{make(details::copy_scalar_value(source, &memory))} {}
 
     template <typename T>
-    explicit ScalarValue(const ScalarValue<T> &source)
-        : value_{make(details::copy_scalar_value<T>(source.input_view(), nullptr))} {}
+    explicit ScalarValue(const ScalarValue<T> &source) : value_{make(details::copy_scalar_value<T>(source, nullptr))} {}
 
     template <typename T>
     ScalarValue(const ScalarValue<T> &source, std::pmr::memory_resource &memory)
-        : value_{make(details::copy_scalar_value<T>(source.input_view(), &memory))} {}
+        : value_{make(details::copy_scalar_value<T>(source, &memory))} {}
 
     ~ScalarValue() { release(); }
 
@@ -116,7 +129,7 @@ template <> class ScalarValue<> {
 
     ScalarValue &operator=(const ScalarValue &source) {
         if (this != &source) {
-            auto replacement = ScalarValue{source.input_view()};
+            auto replacement = ScalarValue{static_cast<const details::ScalarData &>(source)};
             *this = std::move(replacement);
         }
         return *this;
@@ -143,10 +156,20 @@ template <> class ScalarValue<> {
         return *this;
     }
 
+    const ScalarType &type() const noexcept { return value_.type(); }
+    const ScalarRuntimeType &runtime_type() const noexcept { return value_.runtime_type(); }
+    std::size_t hash() const noexcept { return value_.hash(); }
+
+    template <typename Other>
+        requires requires(const details::ScalarData &value, const Other &other) { value.equals(other); }
+    bool equals(const Other &other) const noexcept {
+        return value_.equals(other);
+    }
+
     Scalar<> view() const & noexcept { return Scalar<>::from(value_); }
     Scalar<> view() const && = delete;
-    const details::ScalarData &input_view() const & noexcept { return value_; }
-    const details::ScalarData &input_view() const && = delete;
+    operator const details::ScalarData &() const & noexcept { return value_; }
+    operator const details::ScalarData &() const && = delete;
 
     using scalar_type = void;
 
@@ -200,12 +223,11 @@ bool operator==(const Left &left, const Right &right) noexcept {
     using RightScalar = typename std::remove_cvref_t<Right>::scalar_type;
 
     if constexpr (details::generic_scalar<LeftScalar>) {
-        return left.equals(right.input_view());
+        return left.equals(right);
     } else if constexpr (details::generic_scalar<RightScalar>) {
-        return right.equals(left.input_view());
+        return right.equals(left);
     } else if constexpr (std::same_as<LeftScalar, RightScalar>) {
-        return static_cast<const details::ScalarData &>(left.input_view())
-            .equals(details::ScalarData{right.input_view()});
+        return left.equals(right);
     } else {
         return false;
     }
@@ -214,14 +236,14 @@ bool operator==(const Left &left, const Right &right) noexcept {
 template <typename Target, typename Source>
     requires(!details::scalar_variable<Target>)
 [[nodiscard]] Scalar<Target> unchecked_scalar_cast(const Scalar<Source> &source) noexcept {
-    return Scalar<Target>::from(source.input_view());
+    return Scalar<Target>::from(source);
 }
 
 template <typename Target, typename Source>
     requires(!details::scalar_variable<Target>)
 [[nodiscard]] Scalar<Target> scalar_cast(const Scalar<Source> &source) {
     auto type_map = TypeMap{};
-    if (!cpp_scalar_type<Target>().match(source.input_view().type(), type_map)) {
+    if (!cpp_scalar_type<Target>().match(source.type(), type_map)) {
         throw std::bad_cast{};
     }
     return unchecked_scalar_cast<Target>(source);

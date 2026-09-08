@@ -28,14 +28,14 @@ TEST_CASE("resolved scalar dictionary storage supports mutation",
     const auto key = bg::ScalarValue{1};
     const auto first = bg::ScalarValue{"first"};
     const auto second = bg::ScalarValue{"second"};
-    dict.insert_or_assign(storage, key.input_view(), first.input_view(), memory);
-    dict.insert_or_assign(storage, key.input_view(), second.input_view(), memory);
+    dict.insert_or_assign(storage, key, first, memory);
+    dict.insert_or_assign(storage, key, second, memory);
 
     REQUIRE(dict.item_count(storage) == 1);
-    CHECK(dict.contains(storage, key.input_view()));
-    CHECK(*static_cast<const std::pmr::string *>(dict.at(storage, key.input_view()).data) == "second");
-    CHECK(dict.erase(storage, key.input_view(), memory));
-    CHECK_FALSE(dict.erase(storage, key.input_view(), memory));
+    CHECK(dict.contains(storage, key));
+    CHECK(*static_cast<const std::pmr::string *>(dict.at(storage, key).data) == "second");
+    CHECK(dict.erase(storage, key, memory));
+    CHECK_FALSE(dict.erase(storage, key, memory));
 
     dict.clear(storage, memory);
     CHECK(dict.item_count(storage) == 0);
@@ -59,9 +59,9 @@ TEST_CASE("resolved dictionary storage owns nested collection values",
 
     const auto key = bg::ScalarValue{1};
     const auto values = bg::ScalarValue<bg::List<bg::string>>{std::array<std::string_view, 2>{"one", "two"}};
-    dict.insert_or_assign(storage, key.input_view(), values.input_view(), memory);
+    dict.insert_or_assign(storage, key, values, memory);
 
-    const auto stored = dict.at(storage, key.input_view());
+    const auto stored = dict.at(storage, key);
     const auto &list = static_cast<const bg::ScalarListRuntimeType &>(stored.runtime_type);
     REQUIRE(list.item_count(stored.data) == 2);
     CHECK(*static_cast<const std::pmr::string *>(list.item(stored.data, 1)) == "two");
@@ -94,7 +94,7 @@ TEST_CASE("a scalar dictionary copies between composed and C++ storage",
         bg::ScalarValue<Dict>{std::vector<std::pair<std::int64_t, RuntimeDictValue>>{{1, {.first = 2, .second = 3}}}};
     auto memory = std::pmr::unsynchronized_pool_resource{};
     auto *storage = memory.allocate(composed.size(), composed.alignment());
-    composed.construct_from_input(storage, source.input_view(), memory);
+    composed.construct_from_input(storage, source, memory);
 
     const auto composed_view = bg::Scalar<Dict>::from(composed, storage);
     const auto copy = bg::ScalarValue<Dict>{composed_view, memory};
@@ -130,27 +130,27 @@ TEST_CASE("a scalar dictionary copies nested keys between composed and C++ stora
     auto *inner_storage = memory.allocate(inner.size(), inner.alignment());
     inner.construct_initial_value(inner_storage);
     const auto time_value = bg::ScalarValue{bg::EvaluationTime{bg::EvaluationTime::duration{1}}};
-    inner.append(inner_storage, time_value.input_view(), memory);
+    inner.append(inner_storage, time_value, memory);
     const auto inner_view = bg::Scalar<InnerKey>::from(inner, inner_storage);
 
     auto *key_storage = memory.allocate(key.size(), key.alignment());
     key.construct_initial_value(key_storage);
-    key.append(key_storage, inner_view.input_view(), memory);
+    key.append(key_storage, inner_view, memory);
     const auto key_view = bg::Scalar<Key>::from(key, key_storage);
 
     auto *dict_storage = memory.allocate(composed.size(), composed.alignment());
     composed.construct_initial_value(dict_storage);
     const auto mapped = bg::ScalarValue{42};
-    composed.insert_or_assign(dict_storage, key_view.input_view(), mapped.input_view(), memory);
+    composed.insert_or_assign(dict_storage, key_view, mapped, memory);
 
     const auto &native = bg::cpp_scalar_runtime_type<Dict>();
     auto *native_storage = memory.allocate(native.size(), native.alignment());
     const auto dict_view = bg::Scalar<Dict>::from(composed, dict_storage);
-    native.construct_from_input(native_storage, dict_view.input_view(), memory);
+    native.construct_from_input(native_storage, dict_view, memory);
     const auto &native_dict = static_cast<const bg::ScalarDictRuntimeType &>(native);
 
-    REQUIRE(native_dict.contains(native_storage, key_view.input_view()));
-    CHECK(*static_cast<const std::int64_t *>(native_dict.at(native_storage, key_view.input_view()).data) == 42);
+    REQUIRE(native_dict.contains(native_storage, key_view));
+    CHECK(*static_cast<const std::int64_t *>(native_dict.at(native_storage, key_view).data) == 42);
 
     native.destroy(native_storage, memory);
     memory.deallocate(native_storage, native.size(), native.alignment());

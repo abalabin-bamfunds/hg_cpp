@@ -27,9 +27,7 @@ class GlobalState {
             return std::hash<std::string_view>{}(value.text());
         }
 
-        std::size_t operator()(std::string_view value) const noexcept {
-            return std::hash<std::string_view>{}(value);
-        }
+        std::size_t operator()(std::string_view value) const noexcept { return std::hash<std::string_view>{}(value); }
     };
 
     struct SymbolEqual {
@@ -37,13 +35,9 @@ class GlobalState {
 
         bool operator()(util::symbol left, util::symbol right) const noexcept { return left == right; }
 
-        bool operator()(util::symbol left, std::string_view right) const noexcept {
-            return left.text() == right;
-        }
+        bool operator()(util::symbol left, std::string_view right) const noexcept { return left.text() == right; }
 
-        bool operator()(std::string_view left, util::symbol right) const noexcept {
-            return left == right.text();
-        }
+        bool operator()(std::string_view left, util::symbol right) const noexcept { return left == right.text(); }
     };
 
     using Values = util::hash_dictionary<util::symbol, ScalarValue<>, SymbolHash, SymbolEqual>;
@@ -189,12 +183,12 @@ class GlobalState {
         if (value == nullptr) {
             throw std::out_of_range{"global state key was not found"};
         }
-        if (&value->input_view().type() != &cpp_scalar_type<T>()) {
+        if (&value->type() != &cpp_scalar_type<T>()) {
             throw std::bad_cast{};
         }
 
         using Stored = typename details::scalar_mutable_traits<T>::storage_type;
-        auto &storage = *static_cast<Stored *>(const_cast<void *>(value->input_view().data()));
+        auto &storage = *static_cast<Stored *>(const_cast<void *>(value->view().data()));
         return details::mutable_scalar_view<T>(storage);
     }
 

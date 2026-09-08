@@ -26,7 +26,7 @@ class ReferenceRepresentation {
     ReferenceAddress source() const noexcept { return source_; }
     ReferenceAddress reference() noexcept { return &reference_; }
     virtual ReferenceTarget target() const = 0;
-    virtual void source_changed(OutputNotificationContext &context, OutputChange change) = 0;
+    virtual void source_changed(OutputChangeContext &context, OutputChange change) = 0;
     virtual void destroy(std::pmr::memory_resource &memory) noexcept = 0;
 
   private:
@@ -51,24 +51,23 @@ class ReferenceProvider {
     ReferenceTarget representation_target(std::uint32_t index) const;
     void add_root_subscriber(RuntimeGraph &graph, std::uint32_t input_offset, std::size_t data,
                              std::uint32_t node_index, bool active, bool required,
-                             InputNotificationFunction callback = nullptr);
+                             InputChangeFunction callback = nullptr);
     void add_root_observer(RuntimeGraph &graph, void *target, DynamicObserverFunction function);
     void remove_root_subscriber(RuntimeGraph &graph, std::size_t input_offset) noexcept;
     void remove_root_observer(RuntimeGraph &graph, const void *target) noexcept;
-    void notify_root(OutputNotificationContext &context, OutputChange change);
+    void notify_root(OutputChangeContext &context, OutputChange change);
     void add_subscriber(ReferenceRoute &route, RuntimeGraph &graph, std::uint32_t input_offset, std::size_t data,
-                        std::uint32_t node_index, bool active, bool required,
-                        InputNotificationFunction callback = nullptr);
+                        std::uint32_t node_index, bool active, bool required, InputChangeFunction callback = nullptr);
     void add_observer(ReferenceRoute &route, RuntimeGraph &graph, void *target, DynamicObserverFunction function);
     void remove_subscriber(ReferenceRoute &route, RuntimeGraph &graph, std::size_t input_offset) noexcept;
     void remove_observer(ReferenceRoute &route, RuntimeGraph &graph, const void *target) noexcept;
-    void notify(ReferenceRoute &route, OutputNotificationContext &context, OutputChange change);
+    void notify(ReferenceRoute &route, OutputChangeContext &context, OutputChange change);
     [[nodiscard]] ReferenceAddress representation(ReferenceAddress source, const TimeSeriesType &requested_type);
     void add_dictionary_key_subscriber(ReferenceAddress source, const ScalarData &key, RuntimeGraph &graph,
                                        std::uint32_t input_offset, std::uint32_t node_index);
     void remove_dictionary_key_subscriber(ReferenceAddress source, const ScalarData &key, RuntimeGraph &graph,
                                           std::uint32_t input_offset) noexcept;
-    void source_changed(OutputNotificationContext &context, OutputChange change);
+    void source_changed(OutputChangeContext &context, OutputChange change);
 
   private:
     std::pmr::memory_resource *memory_;
@@ -81,17 +80,17 @@ class ReferenceProvider {
 [[nodiscard]] ReferenceAddress reference_representation(ReferenceAddress source, const TimeSeriesType &requested_type);
 void add_reference_subscriber(ReferenceAddress address, RuntimeGraph &graph, std::uint32_t input_offset,
                               std::size_t data, std::uint32_t node_index, bool active, bool required,
-                              InputNotificationFunction callback = nullptr);
+                              InputChangeFunction callback = nullptr);
 void add_reference_observer(ReferenceAddress address, RuntimeGraph &graph, void *target,
                             DynamicObserverFunction function);
 void remove_reference_subscriber(ReferenceAddress address, RuntimeGraph &graph, std::size_t input_offset) noexcept;
 void remove_reference_observer(ReferenceAddress address, RuntimeGraph &graph, const void *target) noexcept;
-void notify_reference(ReferenceAddress address, OutputNotificationContext &context, OutputChange change);
+void notify_reference(ReferenceAddress address, OutputChangeContext &context, OutputChange change);
 void add_reference_dictionary_key_subscriber(ReferenceAddress address, const ScalarData &key, RuntimeGraph &graph,
                                              std::uint32_t input_offset, std::uint32_t node_index);
 void remove_reference_dictionary_key_subscriber(ReferenceAddress address, const ScalarData &key, RuntimeGraph &graph,
                                                 std::uint32_t input_offset) noexcept;
-void notify_reference_source(ReferenceRoot &root, OutputNotificationContext &context, OutputChange change);
+void notify_reference_source(ReferenceRoot &root, OutputChangeContext &context, OutputChange change);
 void destroy_reference_root(ReferenceRoot &root, std::pmr::memory_resource &memory) noexcept;
 
 } // namespace details

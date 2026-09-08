@@ -68,6 +68,10 @@ template <typename T> using canonical_scalar_t = typename details::canonical_sca
 template <typename T>
 concept scalar_source = requires { typename canonical_scalar_t<T>; };
 
+template <typename Target, typename Source>
+concept scalar_source_for = std::same_as<std::remove_cvref_t<Source>, Target> ||
+                            (scalar_source<Source> && std::same_as<canonical_scalar_t<Source>, Target>);
+
 template <details::canonical_integer_source T> [[nodiscard]] constexpr std::int64_t canonical_scalar(T value) noexcept {
     return static_cast<std::int64_t>(value);
 }
@@ -91,6 +95,16 @@ template <std::same_as<float> T> [[nodiscard]] constexpr float canonical_scalar(
 
 template <std::same_as<double> T> [[nodiscard]] constexpr double canonical_scalar(T value) noexcept {
     return value;
+}
+
+template <typename Target, typename Source>
+    requires scalar_source_for<Target, Source>
+[[nodiscard]] constexpr decltype(auto) scalar_source_value(Source &&source) noexcept {
+    if constexpr (std::same_as<std::remove_cvref_t<Source>, Target>) {
+        return std::forward<Source>(source);
+    } else {
+        return canonical_scalar(std::forward<Source>(source));
+    }
 }
 
 } // namespace bg

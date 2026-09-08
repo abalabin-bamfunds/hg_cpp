@@ -21,26 +21,24 @@ template <typename K, typename V> class Scalar<Dict<K, V>> {
 
     std::size_t size() const noexcept { return runtime_type().item_count(value_.data()); }
     bool empty() const noexcept { return size() == 0; }
-    bool contains(const Scalar<K> &key) const {
-        return runtime_type().contains(value_.data(), key.input_view());
-    }
+    bool contains(const Scalar<K> &key) const { return runtime_type().contains(value_.data(), key); }
 
-    template <scalar_source Source>
-        requires(!details::scalar_variable<K> && std::same_as<canonical_scalar_t<Source>, K>)
+    template <typename Source>
+        requires(!details::scalar_variable<K> && scalar_source_for<K, Source>)
     bool contains(Source &&key) const {
-        const auto value = canonical_scalar(std::forward<Source>(key));
+        const auto value = scalar_source_value<K>(std::forward<Source>(key));
         return runtime_type().contains(value_.data(), details::make_scalar_source<K>(value));
     }
 
     Scalar<V> at(const Scalar<K> &key) const {
-        const auto item = runtime_type().at(value_.data(), key.input_view());
+        const auto item = runtime_type().at(value_.data(), key);
         return Scalar<V>::from(item.runtime_type, item.data);
     }
 
-    template <scalar_source Source>
-        requires(!details::scalar_variable<K> && std::same_as<canonical_scalar_t<Source>, K>)
+    template <typename Source>
+        requires(!details::scalar_variable<K> && scalar_source_for<K, Source>)
     Scalar<V> at(Source &&key) const {
-        const auto value = canonical_scalar(std::forward<Source>(key));
+        const auto value = scalar_source_value<K>(std::forward<Source>(key));
         const auto item = runtime_type().at(value_.data(), details::make_scalar_source<K>(value));
         return Scalar<V>::from(item.runtime_type, item.data);
     }
@@ -54,7 +52,6 @@ template <typename K, typename V> class Scalar<Dict<K, V>> {
                                 });
     }
 
-    const Scalar *operator->() const noexcept { return this; }
     const ScalarType &type() const noexcept { return value_.runtime_type().type(); }
 
     template <typename... Functions> decltype(auto) visit(Functions &&...functions) const {
@@ -73,8 +70,8 @@ template <typename K, typename V> class Scalar<Dict<K, V>> {
         return value_.equals(other);
     }
 
-    const details::ScalarData &input_view() const & noexcept { return value_; }
-    const details::ScalarData &input_view() const && = delete;
+    operator const details::ScalarData &() const & noexcept { return value_; }
+    operator const details::ScalarData &() const && = delete;
 
     [[nodiscard]] static Scalar from(const details::ScalarData &value) noexcept { return Scalar{value}; }
     [[nodiscard]] static Scalar from(const ScalarRuntimeType &runtime_type, const void *data) noexcept {

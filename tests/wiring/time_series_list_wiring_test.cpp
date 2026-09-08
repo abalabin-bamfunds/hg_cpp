@@ -140,3 +140,39 @@ TEST_CASE("a free fixed time series list is materialized when consumed",
     REQUIRE(wiring.nodes().size() == 4);
     CHECK(wiring.nodes()[2].input_sources().size() == 2);
 }
+
+TEST_CASE("a free fixed time series list reuses materialization for the same input type",
+          "[wiring][tsl][series:fixed-tsl][representation:free][feature:wiring]"
+          "[binding:representation][shape:fan-out]") {
+    const auto first_source = list_source_template{};
+    const auto second_source = list_source_template{};
+    const auto sink = list_sink_template{};
+    auto wiring = bg::GraphWiring{};
+
+    const auto context = bg::WiringContext{wiring};
+    const auto first = bg::wp<bg::TSL<bg::TS<float>, 3>>{*first_source()}[0];
+    const auto second = bg::wp<bg::TSL<bg::TS<float>, 3>>{*second_source()}[1];
+    const auto list = bg::tsl(first, second);
+    (void)sink(list);
+    (void)sink(list);
+
+    REQUIRE(wiring.nodes().size() == 5);
+    CHECK(wiring.nodes()[3].input_sources()[0] == wiring.nodes()[4].input_sources()[0]);
+}
+
+TEST_CASE("selecting a free fixed time series list item returns its source without materialization",
+          "[wiring][tsl][series:fixed-tsl][representation:free][feature:wiring]") {
+    const auto source = list_source_template{};
+    const auto sink = float_sink_template{};
+    auto wiring = bg::GraphWiring{};
+
+    const auto context = bg::WiringContext{wiring};
+    const auto source_list = bg::wp<bg::TSL<bg::TS<float>, 3>>{*source()};
+    const auto first = source_list[0];
+    const auto list = bg::tsl(first, source_list[1]);
+    (void)sink(first);
+    (void)sink(list[0]);
+
+    REQUIRE(wiring.nodes().size() == 3);
+    CHECK(wiring.nodes()[1].input_sources()[0] == wiring.nodes()[2].input_sources()[0]);
+}

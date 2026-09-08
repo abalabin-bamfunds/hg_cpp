@@ -19,37 +19,25 @@
 
 namespace bg {
 
-void *OutputNotificationContext::runtime_storage_at(std::size_t offset) const noexcept {
-    return runtime_graph_->storage_ + offset;
+EvaluationTime OutputChangeContext::evaluation_time() const noexcept {
+    return runtime_graph_->evaluation_time();
 }
 
-EvaluationTime OutputNotificationContext::evaluation_time() const noexcept {
-    return runtime_graph_->evaluation_time_;
-}
-
-Node OutputNotificationContext::node(std::size_t node_index) const noexcept {
-    return runtime_graph_->node(node_index);
-}
-
-std::pmr::memory_resource &OutputNotificationContext::memory_resource(RuntimeGraph &graph) const noexcept {
-    return *graph.memory_;
-}
-
-void OutputNotificationContext::schedule_validity_check(RuntimeGraph &graph, std::size_t node_index) const noexcept {
+void OutputChangeContext::schedule_validity_check(RuntimeGraph &graph, std::size_t node_index) const noexcept {
     graph.schedule_validity_check(node_index);
 }
 
-void OutputNotificationContext::notify(details::DynamicSubscribers *subscribers, OutputChange change) const {
+void OutputChangeContext::notify(details::DynamicSubscribers *subscribers, OutputChange change) const {
     if (subscribers != nullptr) {
         runtime_graph_->schedule_dynamic_subscribers(*subscribers, change);
     }
 }
 
-void notify_callback_inputs(OutputNotificationContext &context, const void *, OutputChange change,
+void notify_input_callbacks(OutputChangeContext &context, const void *, OutputChange change,
                             std::span<const std::byte> record_bytes) {
     const auto records = std::span{
-        reinterpret_cast<const CallbackInputSubscriber *>(record_bytes.data()),
-        record_bytes.size() / sizeof(CallbackInputSubscriber),
+        reinterpret_cast<const InputCallbackSubscriber *>(record_bytes.data()),
+        record_bytes.size() / sizeof(InputCallbackSubscriber),
     };
     for (const auto &record : records) {
         record.notify(context, change);
@@ -64,9 +52,7 @@ class RuntimeGraph::FutureSchedule {
     };
 
     struct Later {
-        bool operator()(const Record &left, const Record &right) const noexcept {
-            return left.time > right.time;
-        }
+        bool operator()(const Record &left, const Record &right) const noexcept { return left.time > right.time; }
     };
 
   public:
@@ -154,7 +140,7 @@ class RuntimeGraph::ScratchUse {
 struct RuntimeGraph::PendingInputNotifications {
     // A target graph applies cross-graph input reactions after entering the source's outer cycle.
     struct Record {
-        InputNotificationFunction input_function;
+        InputChangeFunction input_function;
         std::size_t node_index;
         std::size_t data;
         OutputChange change;
@@ -187,9 +173,7 @@ class RuntimeGraph::ScheduledNodes {
             return *this;
         }
 
-        auto operator==(std::default_sentinel_t) const noexcept -> bool {
-            return word_index_ == nodes_->word_count();
-        }
+        auto operator==(std::default_sentinel_t) const noexcept -> bool { return word_index_ == nodes_->word_count(); }
 
       private:
         void advance() noexcept {
@@ -234,9 +218,7 @@ class RuntimeGraph::ScheduledNodes {
 
     ScheduleWord evaluation(std::size_t index) const noexcept { return scheduling_[index].evaluation; }
 
-    ScheduleWord validity_check(std::size_t index) const noexcept {
-        return scheduling_[index].validity_check;
-    }
+    ScheduleWord validity_check(std::size_t index) const noexcept { return scheduling_[index].validity_check; }
 
     void clear(std::size_t index) noexcept {
         scheduling_[index].evaluation = ScheduleWord{};
@@ -564,7 +546,7 @@ void RuntimeGraph::notify_output(const OutputNotification *notification, const v
         return;
     }
 
-    auto context = OutputNotificationContext{*this};
+    auto context = OutputChangeContext{*this};
     notification->notify(context, value, change);
 }
 
@@ -607,7 +589,7 @@ void RuntimeGraph::schedule_dynamic_subscribers(details::DynamicSubscribers &sub
 
     subscribers.for_each_callback([&](const auto &subscriber) {
         if (subscriber.graph == this) {
-            auto context = OutputNotificationContext{*this};
+            auto context = OutputChangeContext{*this};
             subscriber.callback(context, subscriber.node_index, subscriber.data, change);
             return;
         }
@@ -616,13 +598,13 @@ void RuntimeGraph::schedule_dynamic_subscribers(details::DynamicSubscribers &sub
     });
 
     subscribers.for_each_observer([&](const auto &observer) {
-        auto context = OutputNotificationContext{*this};
+        auto context = OutputChangeContext{*this};
         observer.function(context, observer.target, change);
     });
 }
 
-void RuntimeGraph::queue_input_notification(InputNotificationFunction function, std::size_t node_index,
-                                            std::size_t data, OutputChange change) {
+void RuntimeGraph::queue_input_notification(InputChangeFunction function, std::size_t node_index, std::size_t data,
+                                            OutputChange change) {
     if (pending_input_notifications_ == nullptr) {
         auto *storage = memory_->allocate(sizeof(PendingInputNotifications), alignof(PendingInputNotifications));
         auto release = util::scope_exit{[&]() noexcept {
@@ -645,7 +627,7 @@ void RuntimeGraph::run_input_notifications() {
 
     auto records = std::move(pending_input_notifications_->records);
     pending_input_notifications_->records.clear();
-    auto context = OutputNotificationContext{*this};
+    auto context = OutputChangeContext{*this};
     for (const auto &record : records) {
         record.input_function(context, record.node_index, record.data, record.change);
     }

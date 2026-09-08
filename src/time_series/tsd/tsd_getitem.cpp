@@ -34,14 +34,12 @@ class DictionaryItemNodeTemplate final : public NodeTemplate {
           requested_source_{&requested_source_type(source, *output_)}, signature_{make_signature()} {}
 
     const Signature &signature() const override { return signature_; }
-    EvaluationFunction evaluation_function(const ResolvedSignature &) const noexcept override {
-        return &evaluate;
-    }
+    EvaluationFunction evaluation_function(const ResolvedSignature &) const noexcept override { return &evaluate; }
     EvaluationFunction state_destruction_function(const ResolvedSignature &) const noexcept override {
         return &destroy_state;
     }
     NodeStateLayout state_layout(const ResolvedSignature &, std::span<const ScalarRuntimeType *const>,
-                                               std::span<const ScalarType *const>) const override {
+                                 std::span<const ScalarType *const>) const override {
         return {
             .size = sizeof(DictionaryItemState),
             .alignment = alignof(DictionaryItemState),
@@ -84,7 +82,7 @@ class DictionaryItemNodeTemplate final : public NodeTemplate {
     }
 
     static const TimeSeriesDictionaryType &requested_source_type(const TimeSeriesDictionaryType &source,
-                                                                               const TimeSeriesReferenceType &output) {
+                                                                 const TimeSeriesReferenceType &output) {
         if (dynamic_cast<const TimeSeriesReferenceType *>(&source.value_type()) != nullptr) {
             return source;
         }
@@ -103,8 +101,7 @@ class DictionaryItemNodeTemplate final : public NodeTemplate {
         return {util::symbol{"getitem"}, std::move(parameters), *output_};
     }
 
-    static ScalarData key(const DictionaryItemState &state, const CompiledNode &node,
-                                        const Node &runtime_node) {
+    static ScalarData key(const DictionaryItemState &state, const CompiledNode &node, const Node &runtime_node) {
         if (!state.time_series_key) {
             return {node.scalar_input_runtime_type(1, 0), node.parameters()[1].scalar_data()};
         }
@@ -123,7 +120,7 @@ class DictionaryItemNodeTemplate final : public NodeTemplate {
         if (!state.source || state.key == nullptr) {
             return;
         }
-        remove_reference_dictionary_key_subscriber(state.source, state.key->input_view(), context.runtime_graph(),
+        remove_reference_dictionary_key_subscriber(state.source, *state.key, context.runtime_graph(),
                                                    static_cast<std::uint32_t>(node.parameters()[0].value_offset()));
         state.source = nullptr;
     }
@@ -174,12 +171,12 @@ class DictionaryItemNodeTemplate final : public NodeTemplate {
 
         const auto dictionary = reference_representation(source, *state.requested_source);
         const auto subscription_unchanged =
-            state.source == dictionary && state.key != nullptr && state.key->input_view().equals(selected_key);
+            state.source == dictionary && state.key != nullptr && state.key->equals(selected_key);
         if (!subscription_unchanged) {
             remove_subscription(state, compiled_node, *context);
             replace_key(state, selected_key);
             add_reference_dictionary_key_subscriber(
-                dictionary, state.key->input_view(), context->runtime_graph(),
+                dictionary, *state.key, context->runtime_graph(),
                 static_cast<std::uint32_t>(compiled_node.parameters()[0].value_offset()),
                 static_cast<std::uint32_t>(context->node_index()));
             state.source = dictionary;

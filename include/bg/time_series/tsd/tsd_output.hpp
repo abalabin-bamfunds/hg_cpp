@@ -47,21 +47,21 @@ template <typename K, typename Item, auto... Properties> class Out<TSD<K, Item, 
     bool valid() const noexcept { return state_->valid(); }
     EvaluationTime last_updated() const noexcept { return state_->last_updated(); }
 
-    Out<Item> operator[](const Scalar<K> &key) const { return item(key.input_view()); }
+    Out<Item> operator[](const Scalar<K> &key) const { return item(static_cast<const details::ScalarData &>(key)); }
 
-    template <scalar_source Source>
-        requires(!details::scalar_variable<K> && std::same_as<canonical_scalar_t<Source>, K>)
+    template <typename Source>
+        requires(!details::scalar_variable<K> && scalar_source_for<K, Source>)
     Out<Item> operator[](Source &&key) const {
-        const auto value = canonical_scalar(std::forward<Source>(key));
+        const auto value = scalar_source_value<K>(std::forward<Source>(key));
         return item(details::make_scalar_source<K>(value));
     }
 
-    bool erase(const Scalar<K> &key) const { return erase(key.input_view()); }
+    bool erase(const Scalar<K> &key) const { return erase(static_cast<const details::ScalarData &>(key)); }
 
-    template <scalar_source Source>
-        requires(!details::scalar_variable<K> && std::same_as<canonical_scalar_t<Source>, K>)
+    template <typename Source>
+        requires(!details::scalar_variable<K> && scalar_source_for<K, Source>)
     bool erase(Source &&key) const {
-        const auto value = canonical_scalar(std::forward<Source>(key));
+        const auto value = scalar_source_value<K>(std::forward<Source>(key));
         return erase(details::make_scalar_source<K>(value));
     }
 

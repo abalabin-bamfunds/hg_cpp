@@ -48,9 +48,11 @@ template <typename K, typename V> class MutableDict : public Dict<K, V> {
         auto [stored, inserted] = mutable_storage().items.try_emplace_with(
             key, memory, [&](auto *destination) { KeyTraits::construct(destination, key, memory); },
             [&](auto *destination) noexcept { KeyTraits::destroy(destination, memory); },
-            [&](auto *destination) { value.input_view().copy_construct(destination, runtime_type, memory); });
+            [&](auto *destination) {
+                static_cast<const details::ScalarData &>(value).copy_construct(destination, runtime_type, memory);
+            });
         if (!inserted) {
-            value.input_view().assign(stored, runtime_type);
+            static_cast<const details::ScalarData &>(value).assign(stored, runtime_type);
         }
     }
 

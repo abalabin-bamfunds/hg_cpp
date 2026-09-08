@@ -60,7 +60,7 @@ class ComposedListRuntimeType final : public ScalarListRuntimeType {
         auto rollback = util::scope_exit{[&]() noexcept { destroy(destination, memory); }};
         for (auto index = std::size_t{}; index < source.size(); ++index) {
             const auto item = source[index];
-            append(destination, item.input_view(), memory);
+            append(destination, item, memory);
         }
         rollback.release();
     }
@@ -86,7 +86,7 @@ class ComposedListRuntimeType final : public ScalarListRuntimeType {
         const auto source = Scalar<List<SCALAR>>::from(value);
         for (auto index = std::size_t{}; index < source.size(); ++index) {
             const auto item = source[index];
-            append(&replacement, item.input_view(), memory);
+            append(&replacement, item, memory);
         }
 
         storage(destination).swap(replacement);
@@ -112,7 +112,7 @@ class ComposedListRuntimeType final : public ScalarListRuntimeType {
 
         for (auto index = std::uint32_t{}; index < items.size(); ++index) {
             const auto source_item = source[index];
-            if (!item_runtime_type().equals(items.get(index, item_layout_), source_item.input_view())) {
+            if (!item_runtime_type().equals(items.get(index, item_layout_), source_item)) {
                 return false;
             }
         }
@@ -124,9 +124,7 @@ class ComposedListRuntimeType final : public ScalarListRuntimeType {
         std::destroy_at(static_cast<RuntimeListStorage *>(value));
     }
 
-    std::size_t item_count(const void *value) const noexcept override {
-        return storage(value).items.size();
-    }
+    std::size_t item_count(const void *value) const noexcept override { return storage(value).items.size(); }
 
     const void *item(const void *value, std::size_t index) const noexcept override {
         return storage(value).items.get(static_cast<std::uint32_t>(index), item_layout_);
@@ -168,9 +166,7 @@ class ComposedListRuntimeType final : public ScalarListRuntimeType {
     }
 
   private:
-    static RuntimeListStorage &storage(void *value) noexcept {
-        return *static_cast<RuntimeListStorage *>(value);
-    }
+    static RuntimeListStorage &storage(void *value) noexcept { return *static_cast<RuntimeListStorage *>(value); }
     static const RuntimeListStorage &storage(const void *value) noexcept {
         return *static_cast<const RuntimeListStorage *>(value);
     }
@@ -221,9 +217,8 @@ class ComposedSetRuntimeType final : public ScalarSetRuntimeType {
         const auto source = Scalar<Set<SCALAR>>::from(value);
         auto copy = RuntimeSetCopy{this, destination, &memory};
         auto rollback = util::scope_exit{[&]() noexcept { destroy(destination, memory); }};
-        source.for_each([&](const Scalar<SCALAR> &item) {
-            (void)copy.runtime_type->insert(copy.storage, item.input_view(), *copy.memory);
-        });
+        source.for_each(
+            [&](const Scalar<SCALAR> &item) { (void)copy.runtime_type->insert(copy.storage, item, *copy.memory); });
         rollback.release();
     }
 
@@ -243,9 +238,8 @@ class ComposedSetRuntimeType final : public ScalarSetRuntimeType {
         auto replacement = RuntimeSetStorage{};
         const auto release_replacement = util::scope_exit{[&]() noexcept { clear(&replacement, memory); }};
         auto copy = RuntimeSetCopy{this, &replacement, &memory};
-        Scalar<Set<SCALAR>>::from(value).for_each([&](const Scalar<SCALAR> &item) {
-            (void)copy.runtime_type->insert(copy.storage, item.input_view(), *copy.memory);
-        });
+        Scalar<Set<SCALAR>>::from(value).for_each(
+            [&](const Scalar<SCALAR> &item) { (void)copy.runtime_type->insert(copy.storage, item, *copy.memory); });
 
         storage(destination).swap(replacement);
     }
@@ -266,7 +260,7 @@ class ComposedSetRuntimeType final : public ScalarSetRuntimeType {
 
         auto comparison = RuntimeSetComparison{this, value, true};
         source.for_each([&](const Scalar<SCALAR> &item) {
-            comparison.equal &= comparison.runtime_type->contains(comparison.storage, item.input_view());
+            comparison.equal &= comparison.runtime_type->contains(comparison.storage, item);
         });
         return comparison.equal;
     }
@@ -276,9 +270,7 @@ class ComposedSetRuntimeType final : public ScalarSetRuntimeType {
         std::destroy_at(static_cast<RuntimeSetStorage *>(value));
     }
 
-    std::size_t item_count(const void *value) const noexcept override {
-        return storage(value).positions.size();
-    }
+    std::size_t item_count(const void *value) const noexcept override { return storage(value).positions.size(); }
 
     bool contains(const void *value, const details::ScalarData &item) const override {
         return find(storage(value), item) != util::occupancy_index::npos;
@@ -357,9 +349,7 @@ class ComposedSetRuntimeType final : public ScalarSetRuntimeType {
         bool equal;
     };
 
-    static RuntimeSetStorage &storage(void *value) noexcept {
-        return *static_cast<RuntimeSetStorage *>(value);
-    }
+    static RuntimeSetStorage &storage(void *value) noexcept { return *static_cast<RuntimeSetStorage *>(value); }
     static const RuntimeSetStorage &storage(const void *value) noexcept {
         return *static_cast<const RuntimeSetStorage *>(value);
     }
@@ -439,7 +429,7 @@ class ComposedDictRuntimeType final : public ScalarDictRuntimeType {
         auto rollback = util::scope_exit{[&]() noexcept { destroy(destination, memory); }};
         Scalar<Dict<SCALAR, SCALAR>>::from(value).for_each(
             [&](const Scalar<SCALAR> &key, const Scalar<SCALAR> &mapped) {
-                copy.runtime_type->insert_or_assign(copy.storage, key.input_view(), mapped.input_view(), *copy.memory);
+                copy.runtime_type->insert_or_assign(copy.storage, key, mapped, *copy.memory);
             });
         rollback.release();
     }
@@ -463,7 +453,7 @@ class ComposedDictRuntimeType final : public ScalarDictRuntimeType {
         auto copy = RuntimeDictCopy{this, &replacement, &memory};
         Scalar<Dict<SCALAR, SCALAR>>::from(value).for_each(
             [&](const Scalar<SCALAR> &key, const Scalar<SCALAR> &mapped) {
-                copy.runtime_type->insert_or_assign(copy.storage, key.input_view(), mapped.input_view(), *copy.memory);
+                copy.runtime_type->insert_or_assign(copy.storage, key, mapped, *copy.memory);
             });
 
         storage(destination).swap(replacement);
@@ -486,12 +476,11 @@ class ComposedDictRuntimeType final : public ScalarDictRuntimeType {
 
         auto comparison = RuntimeDictComparison{this, value, true};
         source.for_each([&](const Scalar<SCALAR> &key, const Scalar<SCALAR> &mapped) {
-            const auto position = comparison.runtime_type->find(storage(comparison.storage), key.input_view());
+            const auto position = comparison.runtime_type->find(storage(comparison.storage), key);
             comparison.equal &=
                 position != util::occupancy_index::npos &&
                 comparison.runtime_type->mapped_runtime_type().equals(
-                    storage(comparison.storage).values.get(position, comparison.runtime_type->mapped_layout_),
-                    mapped.input_view());
+                    storage(comparison.storage).values.get(position, comparison.runtime_type->mapped_layout_), mapped);
         });
         return comparison.equal;
     }
@@ -501,16 +490,13 @@ class ComposedDictRuntimeType final : public ScalarDictRuntimeType {
         std::destroy_at(static_cast<RuntimeDictStorage *>(value));
     }
 
-    std::size_t item_count(const void *value) const noexcept override {
-        return storage(value).positions.size();
-    }
+    std::size_t item_count(const void *value) const noexcept override { return storage(value).positions.size(); }
 
     bool contains(const void *value, const details::ScalarData &key) const override {
         return find(storage(value), key) != util::occupancy_index::npos;
     }
 
-    ScalarDictRuntimeType::ConstItem at(const void *value,
-                                                      const details::ScalarData &key) const override {
+    ScalarDictRuntimeType::ConstItem at(const void *value, const details::ScalarData &key) const override {
         const auto position = find(storage(value), key);
         if (position == util::occupancy_index::npos) {
             throw std::out_of_range{"dictionary key was not found"};
@@ -612,9 +598,7 @@ class ComposedDictRuntimeType final : public ScalarDictRuntimeType {
         bool equal;
     };
 
-    static RuntimeDictStorage &storage(void *value) noexcept {
-        return *static_cast<RuntimeDictStorage *>(value);
-    }
+    static RuntimeDictStorage &storage(void *value) noexcept { return *static_cast<RuntimeDictStorage *>(value); }
     static const RuntimeDictStorage &storage(const void *value) noexcept {
         return *static_cast<const RuntimeDictStorage *>(value);
     }

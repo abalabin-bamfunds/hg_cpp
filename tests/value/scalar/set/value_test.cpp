@@ -24,6 +24,15 @@ TEST_CASE("a scalar set owns its unique items", "[value][scalar][set][scalar:set
     CHECK(sum == 6);
 }
 
+TEST_CASE("a scalar set accepts its exact non-canonical item type",
+          "[value][scalar][set][scalar:set][feature:scalar-collection]") {
+    const auto value = bg::ScalarValue<bg::Set<int>>{std::vector{1, 2}};
+    const auto set = value.view();
+
+    CHECK(set.contains(1));
+    CHECK_FALSE(set.contains(3));
+}
+
 TEST_CASE("scalar set equality is independent of insertion order",
           "[value][scalar][set][scalar:set][feature:scalar-collection]") {
     const auto first = bg::ScalarValue<bg::Set<std::int64_t>>{std::vector<std::int64_t>{1, 2, 3}};
@@ -55,8 +64,8 @@ TEST_CASE("a generic scalar set exposes its declared comparison operations",
 
     const auto first = bg::ScalarValue<bg::Set<std::int64_t>>{std::vector<std::int64_t>{1, 2}};
     const auto second = bg::ScalarValue<bg::Set<std::int64_t>>{std::vector<std::int64_t>{2, 1}};
-    const auto left = bg::Scalar<bg::Set<Item>>::from(first.input_view());
-    const auto right = bg::Scalar<bg::Set<Item>>::from(second.input_view());
+    const auto left = bg::Scalar<bg::Set<Item>>::from(first);
+    const auto right = bg::Scalar<bg::Set<Item>>::from(second);
 
     CHECK(left == right);
     CHECK(left == second);

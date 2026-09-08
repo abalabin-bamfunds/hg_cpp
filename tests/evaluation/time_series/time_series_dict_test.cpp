@@ -6,6 +6,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cstdint>
@@ -785,4 +786,137 @@ TEST_CASE("a dictionary preserves its value when a required input becomes invali
     const auto actual = bg::testing::test_graph(graph);
 
     CHECK(actual.equals({1}));
+}
+
+namespace {
+
+struct dictionary_enumeration_snapshot {
+    std::vector<std::int64_t> keys;
+    std::vector<bg::TimeSeriesItemId> ids;
+    std::vector<int> values;
+    std::vector<std::pair<std::int64_t, int>> key_values;
+    std::vector<std::pair<bg::TimeSeriesItemId, int>> id_values;
+};
+
+struct dictionary_enumeration_sink_definition {
+    bg::In<IntDictionary> input;
+
+    void evaluate() const {
+        auto snapshot = dictionary_enumeration_snapshot{};
+        input.for_each_key([&](const auto &key) { snapshot.keys.push_back(*key); });
+        input.for_each_id([&](bg::TimeSeriesItemId id) { snapshot.ids.push_back(id); });
+        input.for_each_value([&](const auto &value) { snapshot.values.push_back(*value); });
+        input.for_each_key_value(
+            [&](const auto &key, const auto &value) { snapshot.key_values.emplace_back(*key, *value); });
+        input.for_each_id_value(
+            [&](bg::TimeSeriesItemId id, const auto &value) { snapshot.id_values.emplace_back(id, *value); });
+        snapshots.push_back(std::move(snapshot));
+    }
+
+    inline static std::vector<dictionary_enumeration_snapshot> snapshots;
+};
+
+} // namespace
+
+TEST_CASE("dictionary enumeration exposes keys, ids, values, and their associations",
+          "[evaluation][series:tsd][feature:time-series-view][feature:collection-change]"
+          "[scalar:integer][binding:direct]") {
+    const auto source = bg::node<dict_source_definition>();
+    const auto sink = bg::node<dictionary_enumeration_sink_definition>();
+    dictionary_enumeration_sink_definition::snapshots.clear();
+
+    bg::run_graph([&] { sink(source()); });
+
+    REQUIRE(dictionary_enumeration_sink_definition::snapshots.size() == 3);
+    auto first = dictionary_enumeration_sink_definition::snapshots.front();
+    std::ranges::sort(first.keys);
+    std::ranges::sort(first.values);
+    std::ranges::sort(first.key_values);
+    std::ranges::sort(first.ids);
+
+    auto id_value_ids = std::vector<bg::TimeSeriesItemId>{};
+    auto id_values = std::vector<int>{};
+    for (const auto &[id, value] : first.id_values) {
+        id_value_ids.push_back(id);
+        id_values.push_back(value);
+    }
+    std::ranges::sort(id_value_ids);
+    std::ranges::sort(id_values);
+
+    CHECK(first.keys == std::vector<std::int64_t>{1, 2});
+    CHECK(first.values == std::vector{10, 20});
+    CHECK(first.key_values == std::vector<std::pair<std::int64_t, int>>{{1, 10}, {2, 20}});
+    REQUIRE(first.ids.size() == 2);
+    CHECK(first.ids[0] != first.ids[1]);
+    CHECK(id_value_ids == first.ids);
+    CHECK(id_values == first.values);
+
+    auto last = dictionary_enumeration_sink_definition::snapshots.back();
+    std::ranges::sort(last.keys);
+    std::ranges::sort(last.values);
+    CHECK(last.keys == std::vector<std::int64_t>{1});
+    CHECK(last.values == std::vector{11});
+}
+
+TEST_CASE("an invalid dictionary input has no entries to enumerate",
+          "[value][series:tsd][feature:time-series-view][validity:optional]") {
+    const auto input = bg::In<IntDictionary>{};
+    auto calls = std::array<std::size_t, 5>{};
+
+    input.for_each_key([&](const auto &) { ++calls[0]; });
+    input.for_each_id([&](bg::TimeSeriesItemId) { ++calls[1]; });
+    input.for_each_value([&](const auto &) { ++calls[2]; });
+    input.for_each_key_value([&](const auto &, const auto &) { ++calls[3]; });
+    input.for_each_id_value([&](bg::TimeSeriesItemId, const auto &) { ++calls[4]; });
+
+    CHECK(calls == std::array<std::size_t, 5>{});
+}
+
+namespace {
+
+using ExactIntDictionary = bg::TSD<int, bg::TS<int>>;
+
+struct exact_int_dictionary_source_definition {
+    static constexpr bool uses_future_scheduling = true;
+
+    bg::Out<ExactIntDictionary> output;
+
+    void start(bg::EvaluationContext *context) const {
+        output[7].set(70);
+        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
+    }
+
+    void evaluate() const { output.erase(7); }
+};
+
+struct exact_int_dictionary_read_definition {
+    bg::In<ExactIntDictionary> input;
+    bg::Out<bg::TS<int>> output;
+
+    void evaluate() const { output.set(input.contains(7) && !input.item_modified(7) ? *input[7] : -1); }
+};
+
+} // namespace
+
+TEST_CASE("a dictionary view accepts its exact non-canonical key type",
+          "[evaluation][series:tsd][feature:time-series-view][feature:collection-change]"
+          "[scalar:integer][transition:addition][transition:removal][binding:direct]") {
+    const auto source = bg::node<exact_int_dictionary_source_definition>();
+    const auto read = bg::node<exact_int_dictionary_read_definition>();
+    const auto graph = [&] { return read(source()); };
+
+    const auto actual = bg::testing::test_graph(graph);
+
+    CHECK(actual.equals({70, -1}));
+}
+
+TEST_CASE("dictionary item wiring accepts its exact non-canonical key type",
+          "[wiring][series:tsd][feature:getitem][scalar:integer][binding:value-to-reference]"
+          "[binding:reference-to-value]") {
+    const auto source = bg::node<exact_int_dictionary_source_definition>();
+    const auto graph = [&] { return source()[7]; };
+
+    const auto actual = bg::testing::test_graph(graph);
+
+    CHECK(actual.equals({70, std::nullopt}));
 }

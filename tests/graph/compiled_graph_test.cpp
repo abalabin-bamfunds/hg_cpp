@@ -317,8 +317,8 @@ struct opaque_sink_definition {
     bg::Scalar<bg::Opaque<private_data>> object;
 
     void evaluate() const {
-        observed = pointer->value();
-        observed_value = object->value().value;
+        observed = *pointer;
+        observed_value = object->value;
     }
 };
 

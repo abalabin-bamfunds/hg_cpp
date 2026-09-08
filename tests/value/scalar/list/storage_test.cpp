@@ -22,9 +22,9 @@ TEST_CASE("resolved scalar list storage supports mutation",
 
     const auto first = bg::ScalarValue{"first"};
     const auto second = bg::ScalarValue{"second"};
-    list.append(storage, first.input_view(), memory);
-    list.append(storage, second.input_view(), memory);
-    list.set(storage, 0, second.input_view());
+    list.append(storage, first, memory);
+    list.append(storage, second, memory);
+    list.set(storage, 0, second);
     list.erase(storage, 1, memory);
 
     REQUIRE(list.item_count(storage) == 1);
@@ -60,7 +60,7 @@ TEST_CASE("a scalar list copies between composed and C++ storage",
         bg::ScalarValue<List>{std::vector<RuntimeListItem>{{.first = 1, .second = 2}, {.first = 3, .second = 4}}};
     auto memory = std::pmr::unsynchronized_pool_resource{};
     auto *storage = memory.allocate(composed.size(), composed.alignment());
-    composed.construct_from_input(storage, source.input_view(), memory);
+    composed.construct_from_input(storage, source, memory);
 
     const auto composed_view = bg::Scalar<List>::from(composed, storage);
     const auto copy = bg::ScalarValue<List>{composed_view, memory};

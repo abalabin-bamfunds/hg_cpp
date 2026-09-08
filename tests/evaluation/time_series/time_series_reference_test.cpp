@@ -266,7 +266,7 @@ struct generic_referenced_list_value {
     bg::In<bg::TSL<bg::TS<bg::SCALAR>, 2>> input;
     bg::Out<bg::TS<int>> output;
 
-    void evaluate() const { output.set(bg::scalar_cast<int>(input[0].value_view())->value()); }
+    void evaluate() const { output.set(*bg::scalar_cast<int>(input[0].value_view())); }
 };
 
 struct reference_list {

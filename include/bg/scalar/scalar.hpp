@@ -4,6 +4,7 @@
 #include <bg/scalar/details/capability_traits.hpp>
 #include <bg/scalar/details/data.hpp>
 #include <bg/scalar/details/storage_traits.hpp>
+#include <bg/scalar/details/value_access.hpp>
 #include <bg/scalar/type.hpp>
 
 #include <ddv/serial_visitor.h>
@@ -15,7 +16,7 @@
 
 namespace bg {
 
-template <typename T = void> class Scalar;
+template <typename T> class Scalar;
 template <typename T = void> class ScalarValue;
 
 namespace details {
@@ -58,12 +59,22 @@ template <typename T> class Scalar {
     Scalar(Scalar &&) noexcept = default;
     Scalar &operator=(Scalar &&) noexcept = default;
 
-    const Scalar *operator->() const noexcept { return this; }
-
     details::scalar_value_t<T> value() const
         requires(!erased)
     {
         return details::scalar_data_value<T>(value_);
+    }
+
+    details::scalar_value_t<T> operator*() const
+        requires(!erased)
+    {
+        return value();
+    }
+
+    auto operator->() const
+        requires(!erased && details::scalar_value_supports_arrow<T>)
+    {
+        return details::scalar_value_arrow<T>(value());
     }
 
     const ScalarType &type() const noexcept { return value_.runtime_type().type(); }
@@ -91,8 +102,8 @@ template <typename T> class Scalar {
         return visit(ddv::serial{std::forward<Function>(function), std::forward<Functions>(functions)...});
     }
 
-    const details::ScalarData &input_view() const & noexcept { return value_; }
-    const details::ScalarData &input_view() const && = delete;
+    operator const details::ScalarData &() const & noexcept { return value_; }
+    operator const details::ScalarData &() const && = delete;
 
     using scalar_type = T;
 
@@ -148,21 +159,12 @@ auto Scalar<T>::visit(Visitor &&visitor, Arguments &&...arguments) const {
         std::forward_as_tuple(std::forward<Arguments>(arguments)...), std::forward<Visitor>(visitor));
     auto &types = static_cast<ScalarVisitTypes &>(dispatch);
     type().visit(
-        [&](const ListScalarType *) {
-            auto typed = Scalar<List<SCALAR>>::from(value_);
-            types.visit(&typed);
-        },
-        [&](const SetScalarType *) {
-            auto typed = Scalar<Set<SCALAR>>::from(value_);
-            types.visit(&typed);
-        },
-        [&](const DictScalarType *) {
-            auto typed = Scalar<Dict<SCALAR, SCALAR>>::from(value_);
-            types.visit(&typed);
-        },
-        [&](const ScalarType *) {
-            auto typed = Scalar<>::from(value_);
-            types.visit(&typed);
+        [&]<typename RuntimeType>(const RuntimeType *) {
+            if constexpr (requires { typename RuntimeType::generic_scalar_view; }) {
+                using View = typename RuntimeType::generic_scalar_view;
+                auto typed = View::from(value_);
+                types.visit(&typed);
+            }
         },
         ddv::noop);
     if constexpr (!decltype(dispatch)::is_result_void) {

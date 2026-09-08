@@ -4,13 +4,11 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <memory_resource>
 #include <span>
 
 namespace bg {
 
 class RuntimeGraph;
-class Node;
 namespace details {
 struct DynamicSubscribers;
 }
@@ -21,13 +19,10 @@ enum class OutputChange : std::uint8_t {
     revalidation,
 };
 
-class OutputNotificationContext {
+class OutputChangeContext {
   public:
     RuntimeGraph &runtime_graph() const noexcept { return *runtime_graph_; }
     EvaluationTime evaluation_time() const noexcept;
-    Node node(std::size_t node_index) const noexcept;
-    void *runtime_storage_at(std::size_t offset) const noexcept;
-    std::pmr::memory_resource &memory_resource(RuntimeGraph &graph) const noexcept;
 
     void schedule_validity_check(RuntimeGraph &graph, std::size_t node_index) const noexcept;
     void notify(details::DynamicSubscribers *subscribers, OutputChange change) const;
@@ -35,37 +30,37 @@ class OutputNotificationContext {
   private:
     friend class RuntimeGraph;
 
-    explicit OutputNotificationContext(RuntimeGraph &runtime_graph) noexcept : runtime_graph_{&runtime_graph} {}
+    explicit OutputChangeContext(RuntimeGraph &runtime_graph) noexcept : runtime_graph_{&runtime_graph} {}
 
     RuntimeGraph *runtime_graph_;
 };
 
-using OutputNotificationFunction = void (*)(OutputNotificationContext &, const void *, OutputChange,
+using OutputNotificationFunction = void (*)(OutputChangeContext &, const void *, OutputChange,
                                             std::span<const std::byte>);
-using InputNotificationFunction = void (*)(OutputNotificationContext &, std::size_t, std::size_t, OutputChange);
-using DynamicObserverFunction = void (*)(OutputNotificationContext &, void *, OutputChange);
+using InputChangeFunction = void (*)(OutputChangeContext &, std::size_t, std::size_t, OutputChange);
+using DynamicObserverFunction = void (*)(OutputChangeContext &, void *, OutputChange);
 
-struct InputNotificationCallback {
-    InputNotificationFunction function{};
+struct InputChangeCallback {
+    InputChangeFunction function{};
     std::size_t data{};
 };
 
-class CallbackInputSubscriber {
+class InputCallbackSubscriber {
   public:
-    CallbackInputSubscriber(InputNotificationFunction function, std::size_t data, std::uint32_t node_index) noexcept
+    InputCallbackSubscriber(InputChangeFunction function, std::size_t data, std::uint32_t node_index) noexcept
         : function_{function}, data_{data}, node_index_{node_index} {}
 
-    void notify(OutputNotificationContext &context, OutputChange change) const {
+    void notify(OutputChangeContext &context, OutputChange change) const {
         function_(context, node_index_, data_, change);
     }
 
   private:
-    InputNotificationFunction function_;
+    InputChangeFunction function_;
     std::size_t data_;
     std::uint32_t node_index_;
 };
 
-void notify_callback_inputs(OutputNotificationContext &context, const void *, OutputChange change,
+void notify_input_callbacks(OutputChangeContext &context, const void *, OutputChange change,
                             std::span<const std::byte> records);
 
 class OutputNotification {
@@ -74,7 +69,7 @@ class OutputNotification {
                        std::uint32_t following_bytes = 0) noexcept
         : function_{function}, record_bytes_{record_bytes}, following_bytes_{following_bytes} {}
 
-    void notify(OutputNotificationContext &context, const void *value, OutputChange change) const {
+    void notify(OutputChangeContext &context, const void *value, OutputChange change) const {
         // Adjacent blocks keep handler-specific records compact while allowing one output to serve several handlers.
         auto *notification = this;
         while (notification != nullptr) {
@@ -87,9 +82,7 @@ class OutputNotification {
         return {reinterpret_cast<const std::byte *>(this + 1), record_bytes_};
     }
 
-    const std::byte *end() const noexcept {
-        return records().data() + records().size() + following_bytes_;
-    }
+    const std::byte *end() const noexcept { return records().data() + records().size() + following_bytes_; }
 
   private:
     const OutputNotification *next() const noexcept {
@@ -108,6 +101,6 @@ class OutputNotification {
 };
 
 static_assert(sizeof(OutputNotification) == 2 * sizeof(void *));
-static_assert(sizeof(CallbackInputSubscriber) == 3 * sizeof(void *));
+static_assert(sizeof(InputCallbackSubscriber) == 3 * sizeof(void *));
 
 } // namespace bg

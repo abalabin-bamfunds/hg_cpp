@@ -1,5 +1,6 @@
 #pragma once
 
+#include <bg/scalar/details/data.hpp>
 #include <bg/scalar/details/storage_traits_base.hpp>
 
 #include <concepts>
@@ -13,7 +14,7 @@ template <typename Source, typename T>
 concept scalar_view_source_for = requires(const Source &source) {
     typename std::remove_cvref_t<Source>::scalar_type;
     requires std::same_as<typename std::remove_cvref_t<Source>::scalar_type, T>;
-    source.input_view();
+    static_cast<const ScalarData &>(source);
 };
 
 template <typename Collection>

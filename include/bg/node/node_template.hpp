@@ -47,7 +47,7 @@ class NodeTemplate : public WiringTemplate {
     virtual bool uses_node_invocation() const noexcept { return false; }
     virtual bool uses_future_scheduling() const noexcept { return false; }
     virtual bool uses_cycle_callbacks() const noexcept { return false; }
-    virtual InputNotificationCallback input_notification(std::size_t) const noexcept { return {}; }
+    virtual InputChangeCallback input_change_callback(std::size_t) const noexcept { return {}; }
     virtual std::optional<std::size_t> output_item_source(std::size_t) const noexcept { return std::nullopt; }
     virtual std::optional<DynamicSubscribersLayout>
     dynamic_subscribers_layout(const ResolvedSignature &) const noexcept {

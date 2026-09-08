@@ -53,7 +53,7 @@ template <typename T> struct scalar_storage_traits<List<T>> {
         for (const auto &item : value) {
             destination->items.emplace_back_with(memory, [&](auto *stored) {
                 if constexpr (scalar_view_source_for<decltype(item), T>) {
-                    item.input_view().copy_construct(stored, cpp_scalar_runtime_type<T>(), memory);
+                    static_cast<const ScalarData &>(item).copy_construct(stored, cpp_scalar_runtime_type<T>(), memory);
                 } else {
                     ItemTraits::construct(stored, item, memory);
                 }

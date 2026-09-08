@@ -44,14 +44,16 @@ class RuntimeGraph {
     void stop() noexcept;
     void evaluate(EvaluationTime evaluation_time);
     std::optional<EvaluationTime> next_scheduled_time() const noexcept;
+    EvaluationTime evaluation_time() const noexcept { return evaluation_time_; }
     GlobalState &global_state() const noexcept { return *global_state_; }
     std::pmr::memory_resource &memory_resource() const noexcept { return *memory_; }
+    void *storage_at(std::size_t offset) noexcept { return storage_ + offset; }
     Node node(std::size_t index) noexcept { return {compiled_graph_->node(index), storage_}; }
     Node node(const CompiledNode &compiled_node) noexcept { return {compiled_node, storage_}; }
 
   private:
     friend EvaluationContext;
-    friend OutputNotificationContext;
+    friend OutputChangeContext;
     friend SimulationEvaluationEngine;
     friend NestedGraph;
     friend testing::RuntimeGraphAccess;
@@ -92,7 +94,7 @@ class RuntimeGraph {
     void publish_output_changes(const CompiledNode &node, bool output_was_valid);
     void schedule_dynamic_subscribers(std::size_t offset, OutputChange change);
     void schedule_dynamic_subscribers(details::DynamicSubscribers &subscribers, OutputChange change);
-    void queue_input_notification(InputNotificationFunction function, std::size_t node_index, std::size_t data,
+    void queue_input_notification(InputChangeFunction function, std::size_t node_index, std::size_t data,
                                   OutputChange change);
     void run_input_notifications();
     void apply_invalidation(const CompiledNode &node, std::size_t node_index);

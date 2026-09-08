@@ -6,8 +6,7 @@
 #include <utility>
 #include <vector>
 
-TEST_CASE("a scalar visitor identifies a scalar value",
-          "[value][scalar][visitor][feature:visitor][scalar:integer]") {
+TEST_CASE("a scalar visitor identifies a scalar value", "[value][scalar][visitor][feature:visitor][scalar:integer]") {
     const auto value = bg::ScalarValue{42};
     auto called = false;
 
@@ -64,6 +63,21 @@ TEST_CASE("a scalar visitor supports a base-view fallback",
         [&](const bg::Scalar<> *view) {
             called = true;
             CHECK(&view->type() == &bg::int64_type());
+        },
+        ddv::noop);
+
+    CHECK(called);
+}
+
+TEST_CASE("an opaque scalar visitor uses the base-view interface",
+          "[value][scalar][visitor][feature:visitor][scalar:opaque]") {
+    const auto value = bg::ScalarValue<bg::Opaque<int>>{42};
+    auto called = false;
+
+    value.view().visit(
+        [&](const bg::Scalar<> *view) {
+            called = true;
+            CHECK(&view->type() == &bg::cpp_scalar_type<bg::Opaque<int>>());
         },
         ddv::noop);
 

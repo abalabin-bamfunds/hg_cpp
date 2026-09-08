@@ -1,11 +1,11 @@
 #pragma once
 
+#include <bg/scalar/canonical.hpp>
+#include <bg/time_series/time_series_type.hpp>
 #include <bg/time_series/tsb/tsb_type.hpp>
 #include <bg/time_series/tsd/tsd_type.hpp>
 #include <bg/time_series/tsl/tsl_type.hpp>
 #include <bg/time_series/tss/tss_type.hpp>
-#include <bg/time_series/time_series_type.hpp>
-#include <bg/scalar/canonical.hpp>
 #include <bg/util/named_argument.hpp>
 
 #include <cstddef>
@@ -37,8 +37,7 @@ concept dictionary_wiring_type = is_time_series_dict<referenced_wiring_time_seri
 template <typename T>
 using dictionary_wiring_item_t = typename time_series_dict<referenced_wiring_time_series_t<T>>::item_type;
 
-template <typename T>
-using selected_time_series_t = referenced_wiring_time_series_t<dictionary_wiring_item_t<T>>;
+template <typename T> using selected_time_series_t = referenced_wiring_time_series_t<dictionary_wiring_item_t<T>>;
 
 } // namespace details
 
@@ -48,8 +47,9 @@ auto keys(wp<TSD<K, Item, Properties...>> source) -> wp<TSS<K, Properties...>>;
 class WiringPoint {
   public:
     const GraphWiring &graph() const noexcept { return *graph_; }
-    std::size_t node_index() const noexcept;
+    std::size_t node_index() const;
     const TimeSeriesType &type() const noexcept;
+    WiringPoint operator[](std::size_t index) const { return item(index); }
 
   private:
     WiringPoint(GraphWiring &graph, std::size_t record_index) noexcept : graph_(&graph), record_index_(record_index) {}
@@ -91,10 +91,10 @@ template <typename TimeSeries> class wp {
         return wp<Item>{point_.item(Index)};
     }
 
-    template <scalar_source Key, typename T = TimeSeries>
+    template <typename Key, typename T = TimeSeries>
         requires details::dictionary_wiring_type<T> &&
-                 std::same_as<canonical_scalar_t<Key>,
-                              typename details::time_series_dict<details::referenced_wiring_time_series_t<T>>::key_type>
+                 scalar_source_for<
+                     typename details::time_series_dict<details::referenced_wiring_time_series_t<T>>::key_type, Key>
     auto operator[](Key &&key) const -> wp<REF<details::selected_time_series_t<T>>>;
 
     template <typename KeyTimeSeries, typename T = TimeSeries>

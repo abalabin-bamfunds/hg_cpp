@@ -22,16 +22,12 @@ class ReferenceNodeTemplate final : public NodeTemplate {
 
     const Signature &signature() const override { return signature_; }
 
-    EvaluationFunction evaluation_function(const ResolvedSignature &) const noexcept override {
-        return nullptr;
-    }
+    EvaluationFunction evaluation_function(const ResolvedSignature &) const noexcept override { return nullptr; }
 
-    EvaluationFunction start_function(const ResolvedSignature &) const noexcept override {
-        return &start;
-    }
+    EvaluationFunction start_function(const ResolvedSignature &) const noexcept override { return &start; }
 
     NodeStateLayout state_layout(const ResolvedSignature &, std::span<const ScalarRuntimeType *const>,
-                                               std::span<const ScalarType *const>) const override {
+                                 std::span<const ScalarType *const>) const override {
         return {
             .size = sizeof(ReferenceRoot),
             .alignment = alignof(ReferenceRoot),
@@ -50,9 +46,7 @@ class ReferenceNodeTemplate final : public NodeTemplate {
 
     bool uses_time_series_input_runtime_type(std::size_t) const noexcept override { return true; }
 
-    InputNotificationCallback input_notification(std::size_t) const noexcept override {
-        return {&source_changed, 0};
-    }
+    InputChangeCallback input_change_callback(std::size_t) const noexcept override { return {&source_changed, 0}; }
 
     const TimeSeriesRuntimeType *
     output_runtime_type(const ResolvedSignature &signature, std::span<const ScalarRuntimeType *const>,
@@ -79,9 +73,8 @@ class ReferenceNodeTemplate final : public NodeTemplate {
         destroy_reference_root(reference, context->runtime_graph().memory_resource());
     }
 
-    static void source_changed(OutputNotificationContext &context, std::size_t node_index, std::size_t,
-                               OutputChange change) {
-        auto &reference = *static_cast<ReferenceRoot *>(context.node(node_index).state());
+    static void source_changed(OutputChangeContext &context, std::size_t node_index, std::size_t, OutputChange change) {
+        auto &reference = *static_cast<ReferenceRoot *>(context.runtime_graph().node(node_index).state());
         notify_reference_source(reference, context, change);
     }
 

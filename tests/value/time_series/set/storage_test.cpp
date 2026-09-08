@@ -20,21 +20,21 @@ TEST_CASE("canceling a time series set addition reclaims its position immediatel
     storage.reset_change_tracking(bg::MIN_DT + bg::EvaluationTime::duration{1}, key_runtime_type, key_layout, memory,
                                   [&](std::uint32_t) noexcept { --constructed_items; });
     const auto inserted = storage.insert(
-        key.input_view(), key_runtime_type, key_layout, memory, [&](std::uint32_t) { ++constructed_items; },
+        key, key_runtime_type, key_layout, memory, [&](std::uint32_t) { ++constructed_items; },
         [&](std::uint32_t) noexcept { --constructed_items; });
     REQUIRE(inserted.change == bg::details::time_series_set_change::added);
 
-    const auto erased = storage.erase(key.input_view(), key_runtime_type, key_layout, memory,
-                                      [&](std::uint32_t) noexcept { --constructed_items; });
+    const auto erased =
+        storage.erase(key, key_runtime_type, key_layout, memory, [&](std::uint32_t) noexcept { --constructed_items; });
 
     CHECK(erased.change == bg::details::time_series_set_change::canceled);
     CHECK(constructed_items == 0);
     CHECK(storage.size() == 0);
-    CHECK(storage.find_position(key.input_view(), key_runtime_type, key_layout) == bg::util::occupancy_index::npos);
+    CHECK(storage.find_position(key, key_runtime_type, key_layout) == bg::util::occupancy_index::npos);
     CHECK_FALSE(storage.changed());
 
     const auto inserted_again = storage.insert(
-        key.input_view(), key_runtime_type, key_layout, memory, [&](std::uint32_t) { ++constructed_items; },
+        key, key_runtime_type, key_layout, memory, [&](std::uint32_t) { ++constructed_items; },
         [&](std::uint32_t) noexcept { --constructed_items; });
     CHECK(inserted_again.position == inserted.position);
 
@@ -56,31 +56,31 @@ TEST_CASE("removing an existing time series set item retains it until reclamatio
     storage.reset_change_tracking(first_time, key_runtime_type, key_layout, memory,
                                   [&](std::uint32_t) noexcept { --constructed_items; });
     const auto inserted = storage.insert(
-        key.input_view(), key_runtime_type, key_layout, memory, [&](std::uint32_t) { ++constructed_items; },
+        key, key_runtime_type, key_layout, memory, [&](std::uint32_t) { ++constructed_items; },
         [&](std::uint32_t) noexcept { --constructed_items; });
     storage.reset_change_tracking(first_time + bg::EvaluationTime::duration{1}, key_runtime_type, key_layout, memory,
                                   [&](std::uint32_t) noexcept { --constructed_items; });
 
-    const auto removed = storage.erase(key.input_view(), key_runtime_type, key_layout, memory,
-                                       [&](std::uint32_t) noexcept { --constructed_items; });
+    const auto removed =
+        storage.erase(key, key_runtime_type, key_layout, memory, [&](std::uint32_t) noexcept { --constructed_items; });
     REQUIRE(removed.change == bg::details::time_series_set_change::removed);
     CHECK(constructed_items == 1);
-    CHECK(storage.find_position(key.input_view(), key_runtime_type, key_layout) == inserted.position);
+    CHECK(storage.find_position(key, key_runtime_type, key_layout) == inserted.position);
 
     const auto restored = storage.insert(
-        key.input_view(), key_runtime_type, key_layout, memory, [&](std::uint32_t) { ++constructed_items; },
+        key, key_runtime_type, key_layout, memory, [&](std::uint32_t) { ++constructed_items; },
         [&](std::uint32_t) noexcept { --constructed_items; });
     CHECK(restored.change == bg::details::time_series_set_change::restored);
     CHECK(restored.position == inserted.position);
     CHECK_FALSE(storage.changed());
 
-    const auto removed_again = storage.erase(key.input_view(), key_runtime_type, key_layout, memory,
-                                             [&](std::uint32_t) noexcept { --constructed_items; });
+    const auto removed_again =
+        storage.erase(key, key_runtime_type, key_layout, memory, [&](std::uint32_t) noexcept { --constructed_items; });
     REQUIRE(removed_again.change == bg::details::time_series_set_change::removed);
     storage.reset_change_tracking(first_time + bg::EvaluationTime::duration{2}, key_runtime_type, key_layout, memory,
                                   [&](std::uint32_t) noexcept { --constructed_items; });
     CHECK(constructed_items == 0);
-    CHECK(storage.find_position(key.input_view(), key_runtime_type, key_layout) == bg::util::occupancy_index::npos);
+    CHECK(storage.find_position(key, key_runtime_type, key_layout) == bg::util::occupancy_index::npos);
 
     storage.release(key_runtime_type, key_layout, memory, [&](std::uint32_t) noexcept { --constructed_items; });
     CHECK(memory.allocations() == 0);
@@ -100,20 +100,20 @@ TEST_CASE("clearing time series set storage retains only previously visible item
     storage.reset_change_tracking(first_time, key_runtime_type, key_layout, memory,
                                   [&](std::uint32_t) noexcept { --constructed_items; });
     const auto existing = storage.insert(
-        existing_key.input_view(), key_runtime_type, key_layout, memory, [&](std::uint32_t) { ++constructed_items; },
+        existing_key, key_runtime_type, key_layout, memory, [&](std::uint32_t) { ++constructed_items; },
         [&](std::uint32_t) noexcept { --constructed_items; });
     storage.reset_change_tracking(first_time + bg::EvaluationTime::duration{1}, key_runtime_type, key_layout, memory,
                                   [&](std::uint32_t) noexcept { --constructed_items; });
     const auto added = storage.insert(
-        new_key.input_view(), key_runtime_type, key_layout, memory, [&](std::uint32_t) { ++constructed_items; },
+        new_key, key_runtime_type, key_layout, memory, [&](std::uint32_t) { ++constructed_items; },
         [&](std::uint32_t) noexcept { --constructed_items; });
 
     storage.clear(key_runtime_type, key_layout, memory, [&](std::uint32_t) noexcept { --constructed_items; });
 
     CHECK(storage.size() == 0);
     CHECK(storage.removed().contains(existing.position));
-    CHECK(storage.find_position(existing_key.input_view(), key_runtime_type, key_layout) == existing.position);
-    CHECK(storage.find_position(new_key.input_view(), key_runtime_type, key_layout) == bg::util::occupancy_index::npos);
+    CHECK(storage.find_position(existing_key, key_runtime_type, key_layout) == existing.position);
+    CHECK(storage.find_position(new_key, key_runtime_type, key_layout) == bg::util::occupancy_index::npos);
     CHECK_FALSE(storage.removed().contains(added.position));
     CHECK(constructed_items == 1);
 
