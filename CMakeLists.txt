@@ -11,6 +11,8 @@ include(CTest)
 include(FetchContent)
 include(GNUInstallDirs)
 
+set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
+
 find_package(Threads REQUIRED)
 
 option(BG_BUILD_PYTHON "Build the Python extension module" OFF)

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <bg/util/byte_copy.hpp>
 #include <bg/util/index.hpp>
 
 #include <algorithm>
@@ -19,6 +20,7 @@ class occupancy_index {
     using iterator = index<>::iterator;
 
     static constexpr auto npos = std::numeric_limits<size_type>::max();
+    static constexpr bool supports_byte_copy_initialization = true;
 
     occupancy_index() = default;
 
@@ -95,6 +97,6 @@ class occupancy_index {
     size_type next_free_{};
 };
 
-static_assert(std::is_trivially_copyable_v<occupancy_index>);
+static_assert(byte_copy_initializable<occupancy_index>);
 
 } // namespace bg::util

@@ -5,14 +5,14 @@
 #include <bg/scalar/mutable_collection.hpp>
 #include <bg/scalar/set/runtime_type.hpp>
 #include <bg/scalar/value.hpp>
+#include <bg/util/byte_copy.hpp>
 
 #include <type_traits>
 
 namespace bg {
 
 template <typename T> class State {
-    static_assert(std::is_nothrow_default_constructible_v<T>);
-    static_assert(std::is_trivially_copyable_v<T>);
+    static_assert(util::byte_copy_initializable<T>);
 
   public:
     explicit State(T &value) noexcept : value_(&value) {}

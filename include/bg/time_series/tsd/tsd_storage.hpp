@@ -2,6 +2,7 @@
 
 #include <bg/time_series/time_series_runtime_type.hpp>
 #include <bg/time_series/tss/tss_storage.hpp>
+#include <bg/util/byte_copy.hpp>
 #include <bg/util/index.hpp>
 #include <bg/util/runtime_bunch.hpp>
 #include <bg/util/scope_exit.hpp>
@@ -39,6 +40,8 @@ class time_series_dict_storage {
     using Position = std::uint32_t;
 
   public:
+    static constexpr bool supports_byte_copy_initialization = true;
+
     static consteval std::size_t key_last_updated_offset() noexcept {
         return offsetof(time_series_dict_storage, keys) + offsetof(time_series_set_slot, last_updated);
     }
@@ -180,6 +183,6 @@ class time_series_dict_storage {
     EvaluationTime change_time_{MIN_DT};
 };
 
-static_assert(std::is_trivially_copyable_v<time_series_dict_storage>);
+static_assert(util::byte_copy_initializable<time_series_dict_storage>);
 
 } // namespace bg::details

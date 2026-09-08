@@ -2,6 +2,7 @@
 
 #include <bg/node/node_invocation.hpp>
 #include <bg/node/node_template.hpp>
+#include <bg/util/byte_copy.hpp>
 
 #include <concepts>
 #include <memory>
@@ -55,9 +56,7 @@ template <details::runtime_signature_node Definition> class RuntimeSignatureNode
             static_assert(std::is_nothrow_destructible_v<CompiledData>);
         }
         if constexpr (!std::is_void_v<State>) {
-            static_assert(std::is_trivially_copyable_v<State>);
-            static_assert(std::is_trivially_destructible_v<State>);
-            static_assert(std::is_nothrow_default_constructible_v<State>);
+            static_assert(util::byte_copy_initializable<State>);
         }
     }
 

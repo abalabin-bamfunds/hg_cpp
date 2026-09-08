@@ -325,6 +325,7 @@ void RuntimeGraph::initialize_storage() {
 
     storage_ = static_cast<std::byte *>(
         memory_->allocate(compiled_graph_->runtime_storage_size(), compiled_graph_->runtime_storage_alignment()));
+    // The image contains only default states whose runtime types support byte-copy initialization.
     std::memcpy(storage_, compiled_graph_->initial_runtime_storage(), compiled_graph_->runtime_storage_size());
 }
 

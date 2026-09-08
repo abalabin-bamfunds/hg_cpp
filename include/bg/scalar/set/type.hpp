@@ -20,6 +20,8 @@ template <typename T> struct scalar_set_storage {
     using Stored = typename Traits::stored_type;
     using Items = util::hash_set<Stored, scalar_hash<T>, scalar_equal<T>>;
 
+    static constexpr bool supports_byte_copy_initialization = true;
+
     Items items;
 };
 

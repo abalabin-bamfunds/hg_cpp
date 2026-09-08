@@ -9,7 +9,7 @@
 
 namespace bg::details {
 
-template <template <template <typename> typename> typename Schema> inline constexpr int bundle_schema_identity = 0;
+template <typename Schema> inline constexpr int bundle_schema_identity = 0;
 
 template <typename Scope, bool Input, template <template <typename> typename> typename Schema, std::size_t... Index>
 std::vector<BundleField> direct_bundle_fields(GuaranteeParameter guarantee,
@@ -34,12 +34,26 @@ const BundleSchema &cpp_bundle_schema(GuaranteeParameter guarantee) {
     const auto fields = direct_bundle_fields<Scope, Input, Schema>(
         guarantee, std::make_index_sequence<direct_bundle_field_count<Schema>>{});
     return bundle_schema(util::symbol{util::unqualified_type_name<Schema<bundle_schema_field>>()},
-                         &bundle_schema_identity<Schema>, base, fields);
+                         &bundle_schema_identity<Schema<bundle_schema_field>>, base, fields);
 }
+
+template <template <template <typename> typename> typename Schema, bool HasBase> struct bundle_base_type_traits {
+    static constexpr bool generic = false;
+    static constexpr bool supported = true;
+};
+
+template <template <template <typename> typename> typename Schema> struct bundle_base_type_traits<Schema, true> {
+    using Base = bundle_base_t<Schema>;
+    using Traits = time_series_type_traits<TSB<Base::template apply>>;
+
+    static constexpr bool generic = Traits::generic;
+    static constexpr bool supported = Traits::supported;
+};
 
 template <template <template <typename> typename> typename Schema, auto... Properties>
 struct time_series_type_traits<TSB<Schema, Properties...>> {
     static constexpr bool schema_variable = bundle_schema_variable_declaration<Schema<bundle_schema_field>>;
+    using BaseTraits = bundle_base_type_traits<Schema, !schema_variable && bundle_has_base<Schema>>;
 
     template <std::size_t... Index> static consteval bool fields_generic(std::index_sequence<Index...>) {
         return (false || ... || generic_time_series<direct_bundle_field_time_series<Index, Schema>>);
@@ -50,40 +64,19 @@ struct time_series_type_traits<TSB<Schema, Properties...>> {
         return (true && ... && supported_time_series<direct_bundle_field_time_series<Index, Schema>>);
     }
 
-    static constexpr bool base_generic = [] {
-        if constexpr (schema_variable) {
-            return false;
-        } else if constexpr (bundle_has_base<Schema>) {
-            using Base = bundle_base_t<Schema>;
-            return time_series_type_traits<TSB<Base::template apply>>::generic;
-        } else {
-            return false;
-        }
-    }();
-
-    static constexpr bool base_supported = [] {
-        if constexpr (schema_variable) {
-            return true;
-        } else if constexpr (bundle_has_base<Schema>) {
-            using Base = bundle_base_t<Schema>;
-            return time_series_type_traits<TSB<Base::template apply>>::supported;
-        } else {
-            return true;
-        }
-    }();
-
     static constexpr bool generic = [] {
         if constexpr (schema_variable) {
             return true;
         } else {
-            return base_generic || fields_generic(std::make_index_sequence<direct_bundle_field_count<Schema>>{});
+            return BaseTraits::generic || fields_generic(std::make_index_sequence<direct_bundle_field_count<Schema>>{});
         }
     }();
     static constexpr bool supported = [] {
         if constexpr (schema_variable) {
             return true;
         } else {
-            return base_supported && fields_supported(std::make_index_sequence<direct_bundle_field_count<Schema>>{});
+            return BaseTraits::supported &&
+                   fields_supported(std::make_index_sequence<direct_bundle_field_count<Schema>>{});
         }
     }();
 

@@ -23,6 +23,8 @@ template <typename K, typename V> struct scalar_dict_storage {
     using StoredValue = typename ValueTraits::stored_type;
     using Items = util::hash_dictionary<StoredKey, StoredValue, scalar_hash<K>, scalar_equal<K>>;
 
+    static constexpr bool supports_byte_copy_initialization = true;
+
     Items items;
 };
 

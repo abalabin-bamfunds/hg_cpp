@@ -3,6 +3,7 @@
 #include <bg/scalar/details/cpp_runtime_type.hpp>
 #include <bg/scalar/dict/runtime_type.hpp>
 #include <bg/scalar/dict/storage_traits.hpp>
+#include <bg/util/byte_copy.hpp>
 #include <bg/util/scope_exit.hpp>
 
 #include <stdexcept>
@@ -13,7 +14,7 @@ template <typename K, typename V>
 class CppScalarRuntimeType<Dict<K, V>> final : public CppScalarRuntimeTypeBase<Dict<K, V>, ScalarDictRuntimeType> {
     using Base = CppScalarRuntimeTypeBase<Dict<K, V>, ScalarDictRuntimeType>;
 
-    static_assert(std::is_trivially_copyable_v<details::scalar_dict_storage<K, V>>);
+    static_assert(util::byte_copy_initializable<details::scalar_dict_storage<K, V>>);
 
   public:
     CppScalarRuntimeType() : Base{cpp_scalar_runtime_type<K>(), cpp_scalar_runtime_type<V>()} {}

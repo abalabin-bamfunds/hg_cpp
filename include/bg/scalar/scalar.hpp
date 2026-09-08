@@ -18,9 +18,39 @@ namespace bg {
 template <typename T = void> class Scalar;
 template <typename T = void> class ScalarValue;
 
+namespace details {
+
+template <typename T, typename Stored> [[nodiscard]] consteval bool concrete_scalar_storage_matches() {
+    if constexpr (std::same_as<T, void> || scalar_variable<T>) {
+        return false;
+    } else {
+        return std::same_as<std::remove_cvref_t<Stored>, scalar_stored_t<T>>;
+    }
+}
+
+} // namespace details
+
 template <typename T> class Scalar {
+    template <typename U> [[nodiscard]] static consteval bool supports_hash_for() {
+        if constexpr (std::same_as<U, void>) {
+            return true;
+        } else {
+            return details::scalar_capability_traits<U>::supports_hash;
+        }
+    }
+
+    template <typename U> [[nodiscard]] static consteval bool supports_equality_for() {
+        if constexpr (std::same_as<U, void>) {
+            return true;
+        } else {
+            return details::scalar_capability_traits<U>::supports_equality;
+        }
+    }
+
     static constexpr auto variable = details::scalar_variable<T>;
     static constexpr auto erased = std::same_as<T, void> || variable;
+    static constexpr auto supports_hash = supports_hash_for<T>();
+    static constexpr auto supports_equality = supports_equality_for<T>();
 
   public:
     Scalar(const Scalar &) noexcept = default;
@@ -41,13 +71,13 @@ template <typename T> class Scalar {
     const void *data() const noexcept { return value_.data(); }
 
     std::size_t hash() const noexcept
-        requires std::same_as<T, void> || details::scalar_capability_traits<T>::supports_hash
+        requires supports_hash
     {
         return value_.hash();
     }
 
     bool equals(const details::ScalarData &other) const noexcept
-        requires std::same_as<T, void> || details::scalar_capability_traits<T>::supports_equality
+        requires supports_equality
     {
         return value_.equals(other);
     }
@@ -66,15 +96,15 @@ template <typename T> class Scalar {
 
     using scalar_type = T;
 
-    template <typename Value = T>
-        requires(!erased && std::same_as<Value, T>)
-    [[nodiscard]] static Scalar from(const details::scalar_stored_t<Value> &value) noexcept {
-        return Scalar{details::ScalarData{cpp_scalar_runtime_type<Value>(), std::addressof(value)}};
+    template <typename Stored>
+        requires(details::concrete_scalar_storage_matches<T, Stored>())
+    [[nodiscard]] static Scalar from(const Stored &value) noexcept {
+        return Scalar{details::ScalarData{cpp_scalar_runtime_type<T>(), std::addressof(value)}};
     }
 
-    template <typename Value = T>
-        requires(!erased && std::same_as<Value, T>)
-    static Scalar from(details::scalar_stored_t<Value> &&) = delete;
+    template <typename Stored>
+        requires(details::concrete_scalar_storage_matches<T, Stored>())
+    static Scalar from(const Stored &&) = delete;
 
     template <typename Value>
         requires erased

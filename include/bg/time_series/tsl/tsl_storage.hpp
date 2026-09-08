@@ -1,6 +1,7 @@
 #pragma once
 
 #include <bg/evaluation_time.hpp>
+#include <bg/util/byte_copy.hpp>
 #include <bg/util/index.hpp>
 
 #include <cstddef>
@@ -41,6 +42,8 @@ template <std::size_t Size> class fixed_time_series_list_changes {
 };
 
 struct time_series_list_storage {
+    static constexpr bool supports_byte_copy_initialization = true;
+
     EvaluationTime change_time{MIN_DT};
     util::index<> updated;
 
@@ -55,6 +58,6 @@ struct time_series_list_storage {
     }
 };
 
-static_assert(std::is_trivially_copyable_v<time_series_list_storage>);
+static_assert(util::byte_copy_initializable<time_series_list_storage>);
 
 } // namespace bg::details

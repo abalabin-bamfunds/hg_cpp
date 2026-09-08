@@ -3,6 +3,7 @@
 #include <bg/scalar/details/cpp_runtime_type.hpp>
 #include <bg/scalar/set/runtime_type.hpp>
 #include <bg/scalar/set/storage_traits.hpp>
+#include <bg/util/byte_copy.hpp>
 #include <bg/util/scope_exit.hpp>
 
 #include <cassert>
@@ -13,7 +14,7 @@ template <typename T>
 class CppScalarRuntimeType<Set<T>> final : public CppScalarRuntimeTypeBase<Set<T>, ScalarSetRuntimeType> {
     using Base = CppScalarRuntimeTypeBase<Set<T>, ScalarSetRuntimeType>;
 
-    static_assert(std::is_trivially_copyable_v<details::scalar_set_storage<T>>);
+    static_assert(util::byte_copy_initializable<details::scalar_set_storage<T>>);
 
   public:
     CppScalarRuntimeType() : Base{cpp_scalar_runtime_type<T>()} {}

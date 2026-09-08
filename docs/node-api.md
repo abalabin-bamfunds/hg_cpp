@@ -155,8 +155,11 @@ A plain function can request `State<T>` as a parameter. The engine supplies it
 independently of graph code.
 
 An ordinary C++ state type must be nothrow default constructible and trivially
-copyable. Scalar collection state does not retain a memory resource. It uses the
-node allocation context and exposes a mutable scalar view.
+destructible. A trivially copyable type supports byte-copy initialization. Any
+other type declares `static constexpr bool supports_byte_copy_initialization =
+true` to assert that its default state supports it. Scalar collection state does
+not retain a memory resource. It uses the node allocation context and exposes a
+mutable scalar view.
 
 A collection state declaration can contain scalar type variables. Wiring
 resolves these variables with the node signature. Graph compilation selects a

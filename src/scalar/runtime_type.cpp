@@ -6,6 +6,7 @@
 #include <bg/scalar/set/runtime_type.hpp>
 #include <bg/scalar/set/scalar_type.hpp>
 #include <bg/scalar/value.hpp>
+#include <bg/util/byte_copy.hpp>
 #include <bg/util/linear_hash_table.hpp>
 #include <bg/util/occupancy_index.hpp>
 #include <bg/util/runtime_bunch.hpp>
@@ -29,12 +30,14 @@ ScalarRuntimeType::~ScalarRuntimeType() = default;
 namespace {
 
 struct RuntimeListStorage {
+    static constexpr bool supports_byte_copy_initialization = true;
+
     util::runtime_contiguous_bunch items;
 
     void swap(RuntimeListStorage &other) noexcept { items.swap(other.items); }
 };
 
-static_assert(std::is_trivially_copyable_v<RuntimeListStorage>);
+static_assert(util::byte_copy_initializable<RuntimeListStorage>);
 
 class ComposedListRuntimeType final : public ScalarListRuntimeType {
   public:
@@ -183,6 +186,8 @@ class ComposedListRuntimeType final : public ScalarListRuntimeType {
 };
 
 struct RuntimeSetStorage {
+    static constexpr bool supports_byte_copy_initialization = true;
+
     util::occupancy_index positions;
     util::runtime_sparse_bunch items;
     util::linear_hash_table lookup;
@@ -194,7 +199,7 @@ struct RuntimeSetStorage {
     }
 };
 
-static_assert(std::is_trivially_copyable_v<RuntimeSetStorage>);
+static_assert(util::byte_copy_initializable<RuntimeSetStorage>);
 
 class ComposedSetRuntimeType final : public ScalarSetRuntimeType {
   public:
@@ -390,6 +395,8 @@ class ComposedSetRuntimeType final : public ScalarSetRuntimeType {
 };
 
 struct RuntimeDictStorage {
+    static constexpr bool supports_byte_copy_initialization = true;
+
     util::occupancy_index positions;
     util::runtime_sparse_bunch keys;
     util::runtime_sparse_bunch values;
@@ -403,7 +410,7 @@ struct RuntimeDictStorage {
     }
 };
 
-static_assert(std::is_trivially_copyable_v<RuntimeDictStorage>);
+static_assert(util::byte_copy_initializable<RuntimeDictStorage>);
 
 class ComposedDictRuntimeType final : public ScalarDictRuntimeType {
   public:

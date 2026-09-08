@@ -3,6 +3,7 @@
 #include <bg/evaluation_time.hpp>
 #include <bg/scalar/details/data.hpp>
 #include <bg/scalar/runtime_type.hpp>
+#include <bg/util/byte_copy.hpp>
 #include <bg/util/index.hpp>
 #include <bg/util/linear_hash_table.hpp>
 #include <bg/util/occupancy_index.hpp>
@@ -30,6 +31,8 @@ class time_series_set_storage {
     using Position = std::uint32_t;
 
   public:
+    static constexpr bool supports_byte_copy_initialization = true;
+
     struct InsertResult {
         Position position;
         time_series_set_change change;
@@ -211,6 +214,6 @@ class time_series_set_storage {
     EvaluationTime change_time_{MIN_DT};
 };
 
-static_assert(std::is_trivially_copyable_v<time_series_set_storage>);
+static_assert(util::byte_copy_initializable<time_series_set_storage>);
 
 } // namespace bg::details

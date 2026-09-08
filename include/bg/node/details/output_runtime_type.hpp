@@ -4,7 +4,7 @@
 
 namespace bg {
 
-class ResolvedSignature;
+struct ResolvedSignature;
 class ScalarRuntimeType;
 class TimeSeriesRuntimeType;
 

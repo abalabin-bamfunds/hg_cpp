@@ -79,6 +79,18 @@ add_executable(
     wiring/time_series_reference_wiring_test.cpp
 )
 target_link_libraries(bg_tests PRIVATE bg::bg Catch2::Catch2WithMain)
+target_compile_options(bg_tests PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/bigobj>)
+target_compile_definitions(bg_tests PRIVATE $<$<CXX_COMPILER_ID:MSVC>:CATCH_CONFIG_NO_CPP17_STRING_VIEW>)
+
+if(WIN32)
+    add_custom_command(
+        TARGET bg_tests POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                $<TARGET_RUNTIME_DLLS:bg_tests>
+                $<TARGET_FILE_DIR:bg_tests>
+        COMMAND_EXPAND_LISTS
+    )
+endif()
 
 include(Catch)
 

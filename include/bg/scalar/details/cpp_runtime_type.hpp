@@ -6,6 +6,7 @@
 #include <bg/scalar/details/value_access.hpp>
 #include <bg/scalar/runtime_type.hpp>
 #include <bg/type/scalar_type.hpp>
+#include <bg/util/byte_copy.hpp>
 
 #include <exception>
 #include <memory>
@@ -28,7 +29,7 @@ template <typename T, typename Base> class CppScalarRuntimeTypeBase : public Bas
                alignof(Stored),
                Traits::uses_variable_memory,
                Traits::requires_finalization,
-               !is_opaque_v<T> && std::is_trivially_copyable_v<Stored> && std::is_default_constructible_v<Stored>,
+               !is_opaque_v<T> && util::byte_copy_initializable<Stored>,
                std::forward<Components>(components)...} {}
 
     [[nodiscard]] bool copy_inline(ScalarDataMode mode, std::uintptr_t source,
@@ -70,7 +71,7 @@ template <typename T, typename Base> class CppScalarRuntimeTypeBase : public Bas
     }
 
     void construct_initial_value(void *destination) const noexcept override {
-        if constexpr (std::is_trivially_copyable_v<Stored> && std::is_default_constructible_v<Stored>) {
+        if constexpr (util::byte_copy_initializable<Stored>) {
             std::construct_at(static_cast<Stored *>(destination));
         } else {
             std::terminate();

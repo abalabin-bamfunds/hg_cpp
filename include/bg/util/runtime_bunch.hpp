@@ -1,5 +1,6 @@
 #pragma once
 
+#include <bg/util/byte_copy.hpp>
 #include <bg/util/scope_exit.hpp>
 
 #include <algorithm>
@@ -62,6 +63,8 @@ class runtime_bunch_blocks {
     };
 
   public:
+    static constexpr bool supports_byte_copy_initialization = true;
+
     runtime_bunch_blocks() = default;
 
     runtime_bunch_blocks(const runtime_bunch_blocks &) = delete;
@@ -240,13 +243,14 @@ class runtime_bunch_blocks {
     size_type allocated_blocks_{};
 };
 
-static_assert(std::is_trivially_copyable_v<runtime_bunch_blocks>);
+static_assert(byte_copy_initializable<runtime_bunch_blocks>);
 
 } // namespace details
 
 class runtime_contiguous_bunch {
   public:
     using size_type = std::uint32_t;
+    static constexpr bool supports_byte_copy_initialization = true;
 
     template <typename Constructor>
     void *emplace_back_with(const runtime_item_layout &layout, std::pmr::memory_resource &memory,
@@ -306,6 +310,7 @@ class runtime_contiguous_bunch {
 class runtime_sparse_bunch {
   public:
     using size_type = std::uint32_t;
+    static constexpr bool supports_byte_copy_initialization = true;
 
     template <typename Constructor>
     void *emplace_at_with(size_type position, const runtime_item_layout &layout, std::pmr::memory_resource &memory,
@@ -359,7 +364,7 @@ class runtime_sparse_bunch {
     details::runtime_bunch_blocks blocks_;
 };
 
-static_assert(std::is_trivially_copyable_v<runtime_contiguous_bunch>);
-static_assert(std::is_trivially_copyable_v<runtime_sparse_bunch>);
+static_assert(byte_copy_initializable<runtime_contiguous_bunch>);
+static_assert(byte_copy_initializable<runtime_sparse_bunch>);
 
 } // namespace bg::util

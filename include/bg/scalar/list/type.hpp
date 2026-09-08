@@ -18,6 +18,8 @@ namespace details {
 template <typename T> struct scalar_list_storage {
     using Stored = scalar_stored_t<T>;
 
+    static constexpr bool supports_byte_copy_initialization = true;
+
     util::contiguous_bunch<Stored> items;
 };
 

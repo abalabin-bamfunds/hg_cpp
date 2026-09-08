@@ -349,7 +349,7 @@ class DereferencedTimeSeriesDictionaryRepresentation final : public ReferenceRep
         }
 
         item.last_updated = sample_time;
-        add_reference_observer(target, provider_->owner(), &item, &target_changed);
+        add_reference_observer(target, provider_->owner(), &item, &target_changed_callback);
     }
 
     void unsubscribe(DereferencedItem &item) noexcept {
@@ -359,7 +359,7 @@ class DereferencedTimeSeriesDictionaryRepresentation final : public ReferenceRep
         item.target = nullptr;
     }
 
-    static void target_changed(OutputNotificationContext &context, void *target, OutputChange) {
+    static void target_changed_callback(OutputNotificationContext &context, void *target, OutputChange) {
         auto &item = *static_cast<DereferencedItem *>(target);
         item.owner->target_changed(context, item);
     }

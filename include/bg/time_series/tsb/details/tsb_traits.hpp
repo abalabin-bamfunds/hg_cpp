@@ -52,7 +52,7 @@ template <std::size_t Index, template <template <typename> typename> typename Sc
 consteval auto direct_bundle_field_pointer() {
     using Reflected = Schema<bundle_schema_field>;
     auto fields = util::detail::aggregate_tie<direct_bundle_field_count<Schema>>::apply(
-        util::detail::reflected_aggregate<Reflected>);
+        util::detail::reflected_aggregate<Reflected>.value);
     using Field = std::remove_reference_t<decltype(std::get<Index>(fields))>;
     return util::detail::pointer_value<Field>{std::addressof(std::get<Index>(fields))};
 }
@@ -62,11 +62,14 @@ consteval std::string_view direct_bundle_field_name() {
     constexpr auto signature = util::detail::value_signature<direct_bundle_field_pointer<Index, Schema>()>();
     constexpr auto marker = std::string_view{"reflected_aggregate"};
     constexpr auto marker_position = signature.find(marker);
-    constexpr auto member_access = signature.find('.', marker_position);
 
 #if defined(_MSC_VER)
+    constexpr auto pointer_access = signature.find("->", marker_position);
+    constexpr auto member_access =
+        pointer_access == std::string_view::npos ? signature.find('.', marker_position) : pointer_access + 1;
     auto end = signature.rfind(">(void)");
 #else
+    constexpr auto member_access = signature.find('.', marker_position);
     auto end = signature.find(';', member_access);
     if (end == std::string_view::npos) {
         end = signature.rfind(']');

@@ -13,6 +13,7 @@
 
 #include <chrono>
 #include <optional>
+#include <type_traits>
 
 namespace {
 
@@ -193,8 +194,17 @@ TEST_CASE("a runtime graph releases dictionary time-series storage",
 namespace {
 
 struct counter_state {
+    static constexpr bool supports_byte_copy_initialization = true;
+
+    counter_state() = default;
+    counter_state(const counter_state &) = delete;
+    counter_state &operator=(const counter_state &) = delete;
+
     int value{};
 };
+
+static_assert(!std::is_trivially_copyable_v<counter_state>);
+static_assert(bg::util::byte_copy_initializable<counter_state>);
 
 struct alignas(16) accumulated_state {
     int value{};

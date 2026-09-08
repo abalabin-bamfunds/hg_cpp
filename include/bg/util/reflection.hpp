@@ -148,7 +148,15 @@ BG_DETAIL_AGGREGATE_TIE(32, BG_DETAIL_MEMBERS_32)
 #undef BG_DETAIL_MEMBERS_2
 #undef BG_DETAIL_MEMBERS_1
 
-template <typename T> extern const T reflected_aggregate;
+template <typename T> union reflected_aggregate_storage {
+    constexpr reflected_aggregate_storage() noexcept : empty{} {}
+    constexpr ~reflected_aggregate_storage() noexcept {}
+
+    std::byte empty;
+    T value;
+};
+
+template <typename T> inline constexpr reflected_aggregate_storage<T> reflected_aggregate;
 
 // A compiler signature retains the member name when the member pointer is a
 // non-type template argument.
@@ -157,7 +165,7 @@ template <typename T> struct pointer_value {
 };
 
 template <std::size_t Index, typename T> consteval auto aggregate_member_pointer() {
-    auto members = aggregate_tie<count_aggregate_members<T>()>::apply(reflected_aggregate<T>);
+    auto members = aggregate_tie<count_aggregate_members<T>()>::apply(reflected_aggregate<T>.value);
     using Member = std::remove_reference_t<decltype(std::get<Index>(members))>;
 
     return pointer_value<Member>{std::addressof(std::get<Index>(members))};
@@ -189,11 +197,14 @@ template <std::size_t Index, typename T> consteval std::string_view aggregate_me
     constexpr auto marker = std::string_view{"reflected_aggregate"};
 
     constexpr auto marker_position = signature.find(marker);
-    constexpr auto member_access = signature.find('.', marker_position);
 
 #if defined(_MSC_VER)
+    constexpr auto pointer_access = signature.find("->", marker_position);
+    constexpr auto member_access =
+        pointer_access == std::string_view::npos ? signature.find('.', marker_position) : pointer_access + 1;
     auto end = signature.rfind(">(void)");
 #else
+    constexpr auto member_access = signature.find('.', marker_position);
     auto end = signature.find(';', member_access);
     if (end == std::string_view::npos) {
         end = signature.rfind(']');

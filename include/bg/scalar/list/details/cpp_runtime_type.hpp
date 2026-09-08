@@ -3,6 +3,7 @@
 #include <bg/scalar/details/cpp_runtime_type.hpp>
 #include <bg/scalar/list/runtime_type.hpp>
 #include <bg/scalar/list/storage_traits.hpp>
+#include <bg/util/byte_copy.hpp>
 #include <bg/util/scope_exit.hpp>
 
 namespace bg::details {
@@ -11,7 +12,7 @@ template <typename T>
 class CppScalarRuntimeType<List<T>> final : public CppScalarRuntimeTypeBase<List<T>, ScalarListRuntimeType> {
     using Base = CppScalarRuntimeTypeBase<List<T>, ScalarListRuntimeType>;
 
-    static_assert(std::is_trivially_copyable_v<details::scalar_list_storage<T>>);
+    static_assert(util::byte_copy_initializable<details::scalar_list_storage<T>>);
 
   public:
     CppScalarRuntimeType() : Base{cpp_scalar_runtime_type<T>()} {}

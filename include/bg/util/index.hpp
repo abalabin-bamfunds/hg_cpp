@@ -1,5 +1,7 @@
 #pragma once
 
+#include <bg/util/byte_copy.hpp>
+
 #include <algorithm>
 #include <array>
 #include <bit>
@@ -103,6 +105,7 @@ template <> class index<dynamic_index_extent> {
     using iterator = details::index_iterator<index>;
 
     static constexpr auto inline_capacity = size_type{56};
+    static constexpr bool supports_byte_copy_initialization = true;
 
     index() = default;
 
@@ -464,6 +467,6 @@ template <std::uint32_t Extent> class index {
 };
 
 static_assert(sizeof(index<>) == sizeof(void *));
-static_assert(std::is_trivially_copyable_v<index<>>);
+static_assert(byte_copy_initializable<index<>>);
 
 } // namespace bg::util
