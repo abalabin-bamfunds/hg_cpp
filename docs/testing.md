@@ -17,6 +17,7 @@ Use `[dimension:value]` for each applicable dimension:
 - `feature`: `scalar-api`, `scalar-storage`, `scalar-collection`, `global-state`, `visitor`, `type-system`,
   `node-api`, `state`, `wiring`, `graph-compilation`, `test-graph`, `evaluation-context`, `evaluation-scratch`,
   `lifecycle`, `scheduling`, `future-scheduling`, `simulation`, `input-activity`, `validity`, `invalidation`,
+  `operator`,
   `time-series-storage`, `time-series-view`, `collection-change`, `reference`, `getitem`, or `nested-graph`
 - `series`: `value`, `fixed-tsl`, `sparse-tsl`, `tss`, `tsd`, `tsb`, `reference`, or `generic`
 - `schema`: `named`, `unnamed`, or `generic`
@@ -81,6 +82,10 @@ defines updates by outer cycle. An empty `std::optional` skips its cycle. The
 result has one position per cycle and uses an empty position when the output did
 not update.
 
+`test_wiring` creates a `GraphWiring` and `WiringContext` for a `void` callable.
+Use it when the behavior under test ends during wiring and does not require
+graph compilation or evaluation.
+
 ## Test areas
 
 ### Utilities
@@ -111,6 +116,7 @@ not update.
 - type variables, constraints, repeated variables, and lower bounds
 - type-map overlays and functional variable resolution
 - signature matching, resolution, and parameter category inference
+- operator signature specificity and ambiguity
 - types passed as scalars
 - guarantee compatibility, propagation, and enforcement
 - compound and hierarchical scalar schemas, inheritance, and covariance
@@ -125,6 +131,7 @@ not update.
 - node-template and graph-template interchangeability
 - graph-template boundaries and inner graph isolation
 - wiring paths, labels, and diagnostics
+- operator overload applicability, selection, requirements, resolvers, and caching
 - incompatible types, graph ownership errors, and invalid results
 
 ### Graph compilation

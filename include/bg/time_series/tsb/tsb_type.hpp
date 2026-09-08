@@ -1,6 +1,7 @@
 #pragma once
 
 #include <bg/time_series/details/time_series_properties.hpp>
+#include <bg/time_series/details/type_access.hpp>
 #include <bg/time_series/schema_variable.hpp>
 
 namespace bg {
@@ -29,7 +30,8 @@ struct bundle_extends<Base, Field, false> : Base<Field> {};
 template <template <template <typename> typename> typename Base, template <typename> typename Field>
 struct bundle_extends<Base, Field, true> : details::bundle_base_marker<Base> {};
 
-template <template <template <typename> typename> typename Schema, auto... Properties> struct TSB {
+template <template <template <typename> typename> typename Schema, auto... Properties>
+struct TSB : details::time_series_type_access<TSB<Schema, Properties...>> {
   private:
     using ParsedProperties = details::time_series_properties<Properties...>;
     static_assert(ParsedProperties::valid);
@@ -44,3 +46,4 @@ template <template <template <typename> typename> typename Schema, auto... Prope
 } // namespace bg
 
 #include <bg/time_series/tsb/details/tsb_traits.hpp>
+#include <bg/type/details/time_series_bundle_type_traits.hpp>

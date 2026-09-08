@@ -241,6 +241,18 @@ In this project, `node template` does not mean a C++ language template.
 A signature paired with a graph function. Calling it checks its boundary and
 then invokes the graph function in a named wiring context.
 
+### operator
+
+A named graph-code callable that selects one registered node template or graph
+template from the supplied arguments. Its prototype describes its intended use
+and whether it produces an output.
+
+### operator overload
+
+A node template or graph template registered as one implementation of an
+operator. Its signature can differ from the operator prototype and from other
+overloads.
+
 ### wired node
 
 A node template whose signature is resolved, together with scalar values

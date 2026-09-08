@@ -32,7 +32,7 @@ class scale_template final : public bg::NodeTemplate {
         static const bg::Signature value{
             bg::util::symbol{"scale"},
             {{bg::util::symbol{"input"}, &input_type}, {bg::util::symbol{"factor"}, &bg::float_type()}},
-            bg::time_series_value_type(bg::float_type(), bg::TimeSeriesGuarantee::ordinary)};
+            bg::TS<float>::type()};
 
         return value;
     }

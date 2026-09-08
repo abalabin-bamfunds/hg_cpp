@@ -9,7 +9,7 @@ const TimeSeriesType &TimeSeriesType::with_guarantee(TimeSeriesGuarantee guarant
         return *this;
     }
 
-    throw TypeResolutionError{TypeResolutionErrorCode::invalid_binding, util::symbol{"guarantee"},
+    throw TypeResolutionError{TypeResolutionErrorCode::invalid_type_map, util::symbol{"guarantee"},
                               "an unresolved time series type cannot change guarantee"};
 }
 

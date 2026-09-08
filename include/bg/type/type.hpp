@@ -31,8 +31,8 @@ class Type : public ddv::visitable<Type, TypeVisitor> {
     virtual bool is_resolved() const noexcept = 0;
     virtual bool is_scalar() const noexcept { return false; }
     virtual bool is_time_series() const noexcept { return false; }
-    [[nodiscard]] bool match(const Type &supplied, TypeMap &bindings) const;
-    [[nodiscard]] virtual const Type &resolve(const TypeMap &bindings) const = 0;
+    [[nodiscard]] bool match(const Type &supplied, TypeMap &type_map) const;
+    [[nodiscard]] virtual const Type &resolve(const TypeMap &type_map) const = 0;
 
   protected:
     [[nodiscard]] virtual bool do_match(const Type &supplied, TypeMap &) const { return this == &supplied; }

@@ -44,12 +44,12 @@ class GraphTemplate final : public WiringTemplate {
 
     template <typename... Arguments>
         requires(details::graph_code_argument<Arguments> && ...)
-    [[nodiscard]] auto operator()(const TypeMap &bindings, Arguments &&...arguments) const {
+    [[nodiscard]] auto operator()(const TypeMap &type_map, Arguments &&...arguments) const {
         if constexpr (std::same_as<Result, void>) {
-            (void)WiringTemplate::operator()(bindings, std::forward<Arguments>(arguments)...);
+            (void)WiringTemplate::operator()(type_map, std::forward<Arguments>(arguments)...);
         } else {
             return std::remove_cvref_t<Result>{
-                *WiringTemplate::operator()(bindings, std::forward<Arguments>(arguments)...)};
+                *WiringTemplate::operator()(type_map, std::forward<Arguments>(arguments)...)};
         }
     }
 
@@ -57,7 +57,7 @@ class GraphTemplate final : public WiringTemplate {
 
   private:
     util::symbol label(const ResolvedSignature &signature, std::span<details::wiring_argument> arguments,
-                                     util::symbol default_label) const override {
+                       util::symbol default_label) const override {
         if constexpr (std::same_as<Label, details::default_wiring_label>) {
             return default_label;
         } else {

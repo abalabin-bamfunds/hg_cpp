@@ -8,6 +8,8 @@
 namespace bg::details {
 
 template <typename Item, auto Size, auto... Properties> struct time_series_type_traits<TSL<Item, Size, Properties...>> {
+    using semantic_type = TimeSeriesListType;
+
     static constexpr bool generic = generic_time_series<Item> || size_variable_declaration<decltype(Size)>;
     static constexpr bool supported = supported_time_series<Item>;
 
@@ -17,7 +19,7 @@ template <typename Item, auto Size, auto... Properties> struct time_series_type_
             static_assert(Size != std::dynamic_extent, "variable-size time series lists are not implemented");
         }
         const auto &item = time_series_type_for<Scope, Index, Input, Item>(guarantee);
-        const auto size = size_parameter<Scope, Size>();
+        const auto size = size_parameter<Size>();
 
         if constexpr (Input) {
             static const auto type = GenericTimeSeriesListType{item, size, guarantee};
@@ -29,6 +31,18 @@ template <typename Item, auto Size, auto... Properties> struct time_series_type_
         }
 
         return time_series_list_type(item, *size.value(), *guarantee.value());
+    }
+};
+
+template <typename Item, auto Size, auto... Properties>
+struct declaration_variable_traits<TSL<Item, Size, Properties...>> {
+    template <typename Visitor> static void for_each(Visitor &&visitor) {
+        for_each_declaration_variable<Item>(visitor);
+        if constexpr (size_variable_declaration<decltype(Size)>) {
+            using Declaration = std::remove_cv_t<decltype(Size)>;
+            visitor.template operator()<Declaration>(size_variable_instance<Size>());
+        }
+        (for_each_property_variable<Properties>(visitor), ...);
     }
 };
 

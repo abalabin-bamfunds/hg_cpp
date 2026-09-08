@@ -23,7 +23,7 @@ class TimeSeriesListType : public FixedItemTimeSeriesType {
     TimeSeriesListType(const TimeSeriesType &item_type, SizeParameter size, GuaranteeParameter guarantee)
         : FixedItemTimeSeriesType(guarantee), item_type_(&item_type), size_(size) {}
 
-    [[nodiscard]] bool do_match(const Type &supplied, TypeMap &bindings) const override;
+    [[nodiscard]] bool do_match(const Type &supplied, TypeMap &type_map) const override;
 
   private:
     const TimeSeriesType *item_type_;
@@ -36,10 +36,10 @@ class GenericTimeSeriesListType final : public TimeSeriesListType {
         : TimeSeriesListType(item_type, size, guarantee) {}
 
     bool is_resolved() const noexcept override { return false; }
-    [[nodiscard]] const Type &resolve(const TypeMap &bindings) const override;
+    [[nodiscard]] const Type &resolve(const TypeMap &type_map) const override;
 };
 
 const TimeSeriesListType &time_series_list_type(const TimeSeriesType &item_type, std::size_t size,
-                                                              TimeSeriesGuarantee guarantee);
+                                                TimeSeriesGuarantee guarantee);
 
 } // namespace bg

@@ -12,6 +12,10 @@
 
 namespace bg {
 
+namespace details {
+struct node_invocation_access;
+}
+
 class NodeInvocationParameter {
   public:
     std::size_t parameter_index() const noexcept { return parameter_index_; }
@@ -166,9 +170,55 @@ template <typename CompiledData = void, typename State = void> class NodeInvocat
     }
 
   private:
+    friend details::node_invocation_access;
+
+    NodeInvocationInput input_at(std::size_t parameter_index, std::size_t view_index) const noexcept {
+        return {*node_, runtime_storage_, parameter_index, view_index};
+    }
+
+    NodeInvocationScalar scalar_at(std::size_t parameter_index, std::size_t view_index) const noexcept {
+        return {*node_, runtime_storage_, parameter_index, view_index,
+                node_->node_invocation_time_series_input_count()};
+    }
+
+    template <typename TimeSeries> Out<TimeSeries> output_as() const {
+        const auto runtime_node = Node{*node_, runtime_storage_};
+        if constexpr (!details::generic_time_series<TimeSeries> && !details::is_time_series_bundle<TimeSeries>) {
+            auto &value = *static_cast<typename Out<TimeSeries>::storage_type *>(runtime_node.output_value());
+            return details::output_factory::make<TimeSeries>(runtime_node.output_last_updated(), value, *context_);
+        } else {
+            return details::output_factory::make<TimeSeries>(
+                runtime_node.output_last_updated(), runtime_node.output_value(),
+                node_->node_invocation_output_runtime_type(), *context_);
+        }
+    }
+
     const CompiledNode *node_;
     std::byte *runtime_storage_;
     EvaluationContext *context_;
 };
+
+namespace details {
+
+struct node_invocation_access {
+    template <typename Invocation>
+    static NodeInvocationInput input(Invocation invocation, std::size_t parameter_index,
+                                     std::size_t view_index) noexcept {
+        return invocation.input_at(parameter_index, view_index);
+    }
+
+    template <typename Invocation>
+    static NodeInvocationScalar scalar(Invocation invocation, std::size_t parameter_index,
+                                       std::size_t view_index) noexcept {
+        return invocation.scalar_at(parameter_index, view_index);
+    }
+
+    template <typename TimeSeries, typename Invocation>
+    static Out<TimeSeries> output(Invocation invocation) {
+        return invocation.template output_as<TimeSeries>();
+    }
+};
+
+} // namespace details
 
 } // namespace bg

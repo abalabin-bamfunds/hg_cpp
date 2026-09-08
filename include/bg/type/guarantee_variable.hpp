@@ -12,41 +12,43 @@ class GuaranteeVariable final : public Variable {
     explicit GuaranteeVariable(util::symbol name, std::optional<TimeSeriesGuarantee> minimum = std::nullopt)
         : Variable(name), minimum_(minimum) {}
 
-    [[nodiscard]] bool match(TimeSeriesGuarantee supplied, TypeMap &bindings) const {
+    [[nodiscard]] bool match(TimeSeriesGuarantee supplied, TypeMap &type_map) const {
         if (minimum_ && !satisfies(supplied, *minimum_)) {
             return false;
         }
 
-        if (const auto *binding = bindings.find(*this)) {
-            const auto *guarantee = std::get_if<TimeSeriesGuarantee>(binding);
+        if (const auto *mapping = type_map.find(*this)) {
+            const auto *guarantee = std::get_if<TimeSeriesGuarantee>(mapping);
             if (guarantee == nullptr) {
-                throw TypeResolutionError{TypeResolutionErrorCode::invalid_binding, name(),
-                                          "guarantee variable has a non-guarantee binding"};
+                throw TypeResolutionError{TypeResolutionErrorCode::invalid_type_map, name(),
+                                          "guarantee variable has a non-guarantee mapping"};
             }
 
-            bindings.set(*this, weakest(*guarantee, supplied));
+            type_map.set(*this, weakest(*guarantee, supplied));
         } else {
-            bindings.set(*this, supplied);
+            type_map.set(*this, supplied);
         }
 
         return true;
     }
 
-    [[nodiscard]] TimeSeriesGuarantee resolve(const TypeMap &bindings) const {
-        const auto *binding = bindings.find(*this);
-        if (binding == nullptr) {
-            throw TypeResolutionError{TypeResolutionErrorCode::unbound_variable, name(),
-                                      "guarantee variable is unbound"};
+    [[nodiscard]] TimeSeriesGuarantee resolve(const TypeMap &type_map) const {
+        const auto *mapping = type_map.find(*this);
+        if (mapping == nullptr) {
+            throw TypeResolutionError{TypeResolutionErrorCode::unmapped_variable, name(),
+                                      "guarantee variable has no type map entry"};
         }
 
-        const auto *guarantee = std::get_if<TimeSeriesGuarantee>(binding);
+        const auto *guarantee = std::get_if<TimeSeriesGuarantee>(mapping);
         if (guarantee == nullptr) {
-            throw TypeResolutionError{TypeResolutionErrorCode::invalid_binding, name(),
-                                      "guarantee variable has a non-guarantee binding"};
+            throw TypeResolutionError{TypeResolutionErrorCode::invalid_type_map, name(),
+                                      "guarantee variable has a non-guarantee mapping"};
         }
 
         return *guarantee;
     }
+
+    std::optional<TimeSeriesGuarantee> minimum() const noexcept { return minimum_; }
 
   private:
     std::optional<TimeSeriesGuarantee> minimum_;

@@ -21,7 +21,7 @@ class TimeSeriesReferenceType : public TimeSeriesType {
 };
 
 const TimeSeriesReferenceType &time_series_reference_type(const TimeSeriesType &target_type,
-                                                                        TimeSeriesGuarantee guarantee);
+                                                          TimeSeriesGuarantee guarantee);
 
 class GenericTimeSeriesReferenceType final : public TimeSeriesReferenceType {
   public:
@@ -29,7 +29,7 @@ class GenericTimeSeriesReferenceType final : public TimeSeriesReferenceType {
         : TimeSeriesReferenceType(target_type, guarantee) {}
 
     bool is_resolved() const noexcept override { return false; }
-    [[nodiscard]] const Type &resolve(const TypeMap &bindings) const override;
+    [[nodiscard]] const Type &resolve(const TypeMap &type_map) const override;
 };
 
 } // namespace bg

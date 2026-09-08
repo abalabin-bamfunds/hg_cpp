@@ -78,14 +78,14 @@ struct bound_reference_source {
 
 TEST_CASE("a node call can seed type resolution", "[graph_wiring][type_system][feature:wiring]") {
     const auto source = bg::node<bound_reference_source>();
-    const auto &target = bg::time_series_value_type(bg::int64_type(), bg::TimeSeriesGuarantee::ordinary);
-    const auto &expected = bg::time_series_reference_type(target, bg::TimeSeriesGuarantee::ordinary);
-    auto bindings = bg::TypeMap{};
-    bindings.set(bg::details::TimeSeriesVariableInstance<bound_reference_source, BoundTimeSeries>::get(), &target);
+    const auto &target = bg::TS<std::int64_t>::type();
+    const auto &expected = bg::REF<bg::TS<std::int64_t>>::type();
+    auto type_map = bg::TypeMap{};
+    type_map.set(bg::details::TimeSeriesVariableInstance<BoundTimeSeries>::get(), &target);
     auto wiring = bg::GraphWiring{};
 
     auto context = bg::WiringContext{wiring};
-    const auto output = static_cast<bg::WiringPoint>(source(bindings));
+    const auto output = static_cast<bg::WiringPoint>(source(type_map));
 
     CHECK(&output.type() == &expected);
 }
@@ -99,7 +99,7 @@ class scale_template final : public bg::NodeTemplate {
         static const bg::Signature value{
             bg::util::symbol{"scale"},
             {{bg::util::symbol{"input"}, &input_type}, {bg::util::symbol{"factor"}, &bg::float_type()}},
-            bg::time_series_value_type(bg::float_type(), bg::TimeSeriesGuarantee::ordinary)};
+            bg::TS<float>::type()};
 
         return value;
     }

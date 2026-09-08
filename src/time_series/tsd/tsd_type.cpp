@@ -38,37 +38,37 @@ const TimeSeriesType &TimeSeriesDictionaryType::with_guarantee(TimeSeriesGuarant
     return time_series_dictionary_type(key_type(), value_type(), guarantee);
 }
 
-bool TimeSeriesDictionaryType::do_match(const Type &supplied, TypeMap &bindings) const {
+bool TimeSeriesDictionaryType::do_match(const Type &supplied, TypeMap &type_map) const {
     const auto *dictionary = dynamic_cast<const TimeSeriesDictionaryType *>(&supplied);
     if (dictionary == nullptr || !dictionary->is_resolved()) {
         return false;
     }
 
-    auto trial = bindings.overlay();
+    auto trial = type_map.overlay();
     if (!key_type().match(dictionary->key_type(), trial) || !value_type().match(dictionary->value_type(), trial) ||
         !guarantee().match(*dictionary->guarantee().value(), trial)) {
         return false;
     }
 
-    bindings.apply(std::move(trial));
+    type_map.apply(std::move(trial));
     return true;
 }
 
-const Type &GenericTimeSeriesDictionaryType::resolve(const TypeMap &bindings) const {
-    const auto &resolved_key = key_type().resolve(bindings);
-    const auto &resolved_value = value_type().resolve(bindings);
+const Type &GenericTimeSeriesDictionaryType::resolve(const TypeMap &type_map) const {
+    const auto &resolved_key = key_type().resolve(type_map);
+    const auto &resolved_value = value_type().resolve(type_map);
     const auto *key = dynamic_cast<const ScalarType *>(&resolved_key);
     const auto *value = dynamic_cast<const TimeSeriesType *>(&resolved_value);
     if (key == nullptr || value == nullptr) {
-        throw TypeResolutionError{TypeResolutionErrorCode::invalid_binding, util::symbol{"TSD"},
+        throw TypeResolutionError{TypeResolutionErrorCode::invalid_type_map, util::symbol{"TSD"},
                                   "time series dictionary components did not resolve to the required types"};
     }
     if (!key->supports_hash()) {
-        throw TypeResolutionError{TypeResolutionErrorCode::invalid_binding, util::symbol{"TSD"},
+        throw TypeResolutionError{TypeResolutionErrorCode::invalid_type_map, util::symbol{"TSD"},
                                   "time series dictionary key type does not support hashing"};
     }
 
-    return time_series_dictionary_type(*key, *value, guarantee().resolve(bindings));
+    return time_series_dictionary_type(*key, *value, guarantee().resolve(type_map));
 }
 
 const TimeSeriesDictionaryType &time_series_dictionary_type(const ScalarType &key_type,

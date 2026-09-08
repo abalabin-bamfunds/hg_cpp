@@ -29,8 +29,8 @@ struct RuntimeNodeDefinition {
         : signature_{
               bg::util::symbol{"runtime_node"},
               {{bg::util::symbol{"input"},
-                &bg::time_series_value_type(bg::cpp_scalar_type<std::int64_t>(), bg::TimeSeriesGuarantee::ordinary)}},
-              bg::time_series_value_type(bg::cpp_scalar_type<std::int64_t>(), bg::TimeSeriesGuarantee::ordinary)} {}
+                &bg::TS<std::int64_t>::type()}},
+              bg::TS<std::int64_t>::type()} {}
 
     [[nodiscard]] const bg::Signature &signature() const { return signature_; }
 
@@ -88,8 +88,7 @@ TEST_CASE("graph wiring owns a temporary runtime-signature node template",
 struct RuntimeSinkDefinition {
     RuntimeSinkDefinition()
         : signature_{bg::util::symbol{"runtime_sink"},
-                     {{bg::util::symbol{"input"}, &bg::time_series_value_type(bg::cpp_scalar_type<std::int64_t>(),
-                                                                              bg::TimeSeriesGuarantee::ordinary)}}} {}
+                     {{bg::util::symbol{"input"}, &bg::TS<std::int64_t>::type()}}} {}
 
     [[nodiscard]] const bg::Signature &signature() const { return signature_; }
 
@@ -122,9 +121,9 @@ struct OptionalScalarDefinition {
         : signature_{
               bg::util::symbol{"optional_scalar"},
               {{bg::util::symbol{"input"},
-                &bg::time_series_value_type(bg::cpp_scalar_type<std::int64_t>(), bg::TimeSeriesGuarantee::ordinary)},
+                &bg::TS<std::int64_t>::type()},
                {bg::util::symbol{"fallback"}, &bg::cpp_scalar_type<std::int64_t>(), bg::active, bg::required, true}},
-              bg::time_series_value_type(bg::cpp_scalar_type<std::int64_t>(), bg::TimeSeriesGuarantee::ordinary)} {}
+              bg::TS<std::int64_t>::type()} {}
 
     [[nodiscard]] const bg::Signature &signature() const { return signature_; }
 
@@ -166,10 +165,7 @@ TEST_CASE("an absent optional scalar remains enumerable",
 
 struct RuntimeDictionarySourceDefinition {
     RuntimeDictionarySourceDefinition()
-        : output_type_{&bg::time_series_dictionary_type(
-              bg::cpp_scalar_type<std::int64_t>(),
-              bg::time_series_value_type(bg::cpp_scalar_type<std::int64_t>(), bg::TimeSeriesGuarantee::ordinary),
-              bg::TimeSeriesGuarantee::ordinary)},
+        : output_type_{&bg::TSD<std::int64_t, bg::TS<std::int64_t>>::type()},
           signature_{bg::util::symbol{"runtime_dictionary_source"}, {}, *output_type_} {}
 
     [[nodiscard]] const bg::Signature &signature() const { return signature_; }

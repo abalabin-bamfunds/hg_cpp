@@ -67,12 +67,11 @@ struct scalar_type_properties {
 };
 
 template <typename T> struct scalar_type_traits : scalar_type_properties {
-
-    template <typename Scope> static const ScalarType &get() noexcept { return cpp_scalar_type<T>(); }
+    static const ScalarType &get() noexcept { return cpp_scalar_type<T>(); }
 };
 
-template <typename Scope, typename T> const ScalarType &scalar_type_for() {
-    return scalar_type_traits<T>::template get<Scope>();
+template <typename T> const ScalarType &scalar_type_for() {
+    return scalar_type_traits<T>::get();
 }
 
 } // namespace details

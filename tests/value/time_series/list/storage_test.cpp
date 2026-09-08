@@ -86,7 +86,7 @@ TEST_CASE("fixed list storage reports item cleanup requirements",
 TEST_CASE("variable-size list storage is not implemented",
           "[value][time_series][tsl][series:fixed-tsl][storage][feature:time-series-storage]"
           "[storage:variable]") {
-    const auto &item = bg::time_series_value_type(bg::cpp_scalar_type<int>(), bg::TimeSeriesGuarantee::ordinary);
+    const auto &item = bg::TS<int>::type();
     const auto &list = bg::time_series_list_type(item, std::dynamic_extent, bg::TimeSeriesGuarantee::ordinary);
 
     CHECK_THROWS_AS(bg::resolve_time_series_runtime_type(list), std::invalid_argument);

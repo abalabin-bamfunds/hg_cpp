@@ -36,7 +36,7 @@ struct RecursiveSecond {
 
 } // namespace
 
-TEST_CASE("a tagged pointer stores a pointer and tag in one word", "[utils]") {
+TEST_CASE("a tagged pointer stores a pointer and tag in one word", "[utils][coverage-exempt]") {
     auto first = First{12};
     auto pointer = bg::util::tagged_ptr<First, 2, PointerState>{&first, PointerState::second};
 
@@ -50,7 +50,7 @@ TEST_CASE("a tagged pointer stores a pointer and tag in one word", "[utils]") {
     CHECK(pointer.tag() == PointerState::third);
 }
 
-TEST_CASE("a null tagged pointer has no tag", "[utils]") {
+TEST_CASE("a null tagged pointer has no tag", "[utils][coverage-exempt]") {
     auto pointer = bg::util::tagged_ptr<First, 2, PointerState>{nullptr};
 
     pointer.reset(nullptr, PointerState::third);
@@ -60,7 +60,7 @@ TEST_CASE("a null tagged pointer has no tag", "[utils]") {
     CHECK(pointer == decltype(pointer){nullptr});
 }
 
-TEST_CASE("a tagged variant pointer identifies and visits its active type", "[utils]") {
+TEST_CASE("a tagged variant pointer identifies and visits its active type", "[utils][coverage-exempt]") {
     auto first = First{12};
     auto second = Second{34};
     auto pointer = bg::util::tagged_variant_ptr<First, Second>{&first};
@@ -80,7 +80,7 @@ TEST_CASE("a tagged variant pointer identifies and visits its active type", "[ut
     CHECK(pointer.index() == decltype(pointer)::npos);
 }
 
-TEST_CASE("a tagged pointer preserves the pointed-to const type", "[utils]") {
+TEST_CASE("a tagged pointer preserves the pointed-to const type", "[utils][coverage-exempt]") {
     const auto value = First{12};
     const auto pointer = bg::util::tagged_ptr<const First>{&value};
 
@@ -88,7 +88,7 @@ TEST_CASE("a tagged pointer preserves the pointed-to const type", "[utils]") {
     CHECK(pointer.get() == &value);
 }
 
-TEST_CASE("an erased tagged variant supports recursive alternatives", "[utils]") {
+TEST_CASE("an erased tagged variant supports recursive alternatives", "[utils][coverage-exempt]") {
     auto first = RecursiveFirst{};
     auto second = RecursiveSecond{};
 

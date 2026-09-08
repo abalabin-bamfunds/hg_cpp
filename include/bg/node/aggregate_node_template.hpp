@@ -33,9 +33,9 @@ class AggregateNodeTemplate final : public details::AggregateNodeTemplateBase {
 
     template <typename... Arguments>
         requires((details::graph_code_argument<Arguments> && ...) && details::aggregate_node_has_output<Definition>())
-    [[nodiscard]] auto operator()(const TypeMap &bindings, Arguments &&...arguments) const & {
+    [[nodiscard]] auto operator()(const TypeMap &type_map, Arguments &&...arguments) const & {
         using Output = details::aggregate_output_time_series_t<Definition>;
-        return wp<Output>{*NodeTemplate::operator()(bindings, std::forward<Arguments>(arguments)...)};
+        return wp<Output>{*NodeTemplate::operator()(type_map, std::forward<Arguments>(arguments)...)};
     }
 
     template <typename... Arguments>
@@ -46,8 +46,8 @@ class AggregateNodeTemplate final : public details::AggregateNodeTemplateBase {
 
     template <typename... Arguments>
         requires((details::graph_code_argument<Arguments> && ...) && !details::aggregate_node_has_output<Definition>())
-    void operator()(const TypeMap &bindings, Arguments &&...arguments) const & {
-        (void)NodeTemplate::operator()(bindings, std::forward<Arguments>(arguments)...);
+    void operator()(const TypeMap &type_map, Arguments &&...arguments) const & {
+        (void)NodeTemplate::operator()(type_map, std::forward<Arguments>(arguments)...);
     }
 
     template <typename... Arguments> void operator()(Arguments &&...) const && = delete;

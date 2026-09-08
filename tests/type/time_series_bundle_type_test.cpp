@@ -31,16 +31,13 @@ template <typename> struct TestField {
 
 TEST_CASE("bundle schemas include inherited fields",
           "[type_system][tsb][series:tsb][feature:type-system][schema:named]") {
-    const auto &type = static_cast<const bg::TimeSeriesBundleType &>(
-        bg::details::time_series_type_for<BundleTypeScope, 0, false, bg::TSB<DerivedBundle>>(
-            bg::TimeSeriesGuarantee::ordinary));
+    const auto &type = bg::TSB<DerivedBundle>::type();
 
     REQUIRE(type.item_count() == 2);
     CHECK(type.item_name(0).text() == "count");
     CHECK(type.item_name(1).text() == "value");
-    CHECK(&type.item_type(0) ==
-          &bg::time_series_value_type(bg::cpp_scalar_type<int>(), bg::TimeSeriesGuarantee::ordinary));
-    CHECK(&type.item_type(1) == &bg::time_series_value_type(bg::float_type(), bg::TimeSeriesGuarantee::ordinary));
+    CHECK(&type.item_type(0) == &bg::TS<int>::type());
+    CHECK(&type.item_type(1) == &bg::TS<float>::type());
     CHECK(type.schema().base() != nullptr);
 }
 
@@ -49,13 +46,13 @@ TEST_CASE("an unnamed bundle matches a compatible named schema",
     const auto &parameter = static_cast<const bg::TimeSeriesBundleType &>(
         bg::details::time_series_type_for<BundleTypeScope, 0, true, bg::TSB<BaseBundle>>(
             bg::TimeSeriesGuarantee::ordinary));
-    const auto &count = bg::time_series_value_type(bg::cpp_scalar_type<int>(), bg::TimeSeriesGuarantee::ordinary);
+    const auto &count = bg::TS<int>::type();
     const auto fields = std::array{bg::BundleField{bg::util::symbol{"count"}, &count}};
     const auto &argument =
         bg::time_series_bundle_type(bg::unnamed_bundle_schema(fields), bg::TimeSeriesGuarantee::ordinary);
-    auto bindings = bg::TypeMap{};
+    auto type_map = bg::TypeMap{};
 
-    CHECK(parameter.match(argument, bindings));
+    CHECK(parameter.match(argument, type_map));
 }
 
 TEST_CASE("bundle field policies preserve inherited member access",
@@ -79,9 +76,7 @@ template <template <typename> typename Field> struct RedefinedBundle : bg::bundl
 
 TEST_CASE("a redefined bundle field keeps its inherited position",
           "[type_system][tsb][series:tsb][inheritance][feature:type-system][schema:named]") {
-    const auto &type = static_cast<const bg::TimeSeriesBundleType &>(
-        bg::details::time_series_type_for<BundleTypeScope, 0, false, bg::TSB<RedefinedBundle>>(
-            bg::TimeSeriesGuarantee::ordinary));
+    const auto &type = bg::TSB<RedefinedBundle>::type();
 
     REQUIRE(type.item_count() == 2);
     CHECK(type.item_name(0).text() == "count");
@@ -103,14 +98,14 @@ TEST_CASE("bundle matching resolves generic field types",
     const auto &parameter = static_cast<const bg::TimeSeriesBundleType &>(
         bg::details::time_series_type_for<BundleTypeScope, 0, true, bg::TSB<GenericBundle>>(
             bg::TimeSeriesGuarantee::ordinary));
-    const auto &value = bg::time_series_value_type(bg::cpp_scalar_type<int>(), bg::TimeSeriesGuarantee::ordinary);
+    const auto &value = bg::TS<int>::type();
     const auto fields = std::array{bg::BundleField{bg::util::symbol{"value"}, &value}};
     const auto &argument =
         bg::time_series_bundle_type(bg::unnamed_bundle_schema(fields), bg::TimeSeriesGuarantee::ordinary);
-    auto bindings = bg::TypeMap{};
+    auto type_map = bg::TypeMap{};
 
-    REQUIRE(parameter.match(argument, bindings));
-    const auto &resolved = static_cast<const bg::TimeSeriesBundleType &>(parameter.resolve(bindings));
+    REQUIRE(parameter.match(argument, type_map));
+    const auto &resolved = static_cast<const bg::TimeSeriesBundleType &>(parameter.resolve(type_map));
     CHECK(&resolved.item_type(0) == &value);
 }
 
@@ -120,17 +115,15 @@ TEST_CASE("a bundle schema variable participates in type resolution",
     const auto &parameter = static_cast<const bg::TimeSeriesBundleType &>(
         bg::details::time_series_type_for<BundleTypeScope, 0, true, bg::TSB<bg::SCHEMA>>(
             bg::TimeSeriesGuarantee::ordinary));
-    const auto &argument = static_cast<const bg::TimeSeriesBundleType &>(
-        bg::details::time_series_type_for<BundleTypeScope, 1, false, bg::TSB<DerivedBundle>>(
-            bg::TimeSeriesGuarantee::ordinary));
-    auto bindings = bg::TypeMap{};
+    const auto &argument = bg::TSB<DerivedBundle>::type();
+    auto type_map = bg::TypeMap{};
 
-    REQUIRE(parameter.match(argument, bindings));
+    REQUIRE(parameter.match(argument, type_map));
     const auto &variable = dynamic_cast<const bg::Variable &>(parameter.schema_type());
-    const auto *binding = bindings.find(variable);
-    REQUIRE(binding != nullptr);
-    CHECK(std::get<const bg::Type *>(*binding) == &argument.schema());
-    CHECK(&parameter.resolve(bindings) == &argument);
+    const auto *mapping = type_map.find(variable);
+    REQUIRE(mapping != nullptr);
+    CHECK(std::get<const bg::Type *>(*mapping) == &argument.schema());
+    CHECK(&parameter.resolve(type_map) == &argument);
 }
 
 TEST_CASE("repeated bundle schema variables require the same schema",
@@ -140,15 +133,13 @@ TEST_CASE("repeated bundle schema variables require the same schema",
         bg::TimeSeriesGuarantee::ordinary);
     const auto &second = bg::details::time_series_type_for<BundleTypeScope, 1, true, bg::TSB<bg::SCHEMA>>(
         bg::TimeSeriesGuarantee::ordinary);
-    const auto &derived = bg::details::time_series_type_for<BundleTypeScope, 2, false, bg::TSB<DerivedBundle>>(
-        bg::TimeSeriesGuarantee::ordinary);
-    const auto &base = bg::details::time_series_type_for<BundleTypeScope, 3, false, bg::TSB<BaseBundle>>(
-        bg::TimeSeriesGuarantee::ordinary);
-    auto bindings = bg::TypeMap{};
+    const auto &derived = bg::TSB<DerivedBundle>::type();
+    const auto &base = bg::TSB<BaseBundle>::type();
+    auto type_map = bg::TypeMap{};
 
-    REQUIRE(first.match(derived, bindings));
-    CHECK(second.match(derived, bindings));
-    CHECK_FALSE(second.match(base, bindings));
+    REQUIRE(first.match(derived, type_map));
+    CHECK(second.match(derived, type_map));
+    CHECK_FALSE(second.match(base, type_map));
 }
 
 namespace {
@@ -164,12 +155,10 @@ TEST_CASE("named bundles with the same fields remain nominally distinct",
     const auto &parameter = static_cast<const bg::TimeSeriesBundleType &>(
         bg::details::time_series_type_for<BundleTypeScope, 0, true, bg::TSB<BaseBundle>>(
             bg::TimeSeriesGuarantee::ordinary));
-    const auto &argument = static_cast<const bg::TimeSeriesBundleType &>(
-        bg::details::time_series_type_for<BundleTypeScope, 1, false, bg::TSB<UnrelatedBundle>>(
-            bg::TimeSeriesGuarantee::ordinary));
-    auto bindings = bg::TypeMap{};
+    const auto &argument = bg::TSB<UnrelatedBundle>::type();
+    auto type_map = bg::TypeMap{};
 
-    CHECK_FALSE(parameter.match(argument, bindings));
+    CHECK_FALSE(parameter.match(argument, type_map));
 }
 
 namespace {
@@ -183,7 +172,5 @@ struct IncompatibleRedefinedBundle : bg::bundle_extends<BaseBundle, Field> {
 
 TEST_CASE("a redefined bundle field must be narrower",
           "[type_system][tsb][series:tsb][inheritance][feature:type-system][schema:named]") {
-    CHECK_THROWS_AS((bg::details::time_series_type_for<BundleTypeScope, 0, false, bg::TSB<IncompatibleRedefinedBundle>>(
-                        bg::TimeSeriesGuarantee::ordinary)),
-                    std::invalid_argument);
+    CHECK_THROWS_AS(bg::TSB<IncompatibleRedefinedBundle>::type(), std::invalid_argument);
 }

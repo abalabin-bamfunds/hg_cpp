@@ -12,10 +12,11 @@ struct reflected_values {
     float second;
 };
 
+[[maybe_unused]] void reflected_function(int) {}
+
 } // namespace
 
-TEST_CASE("aggregate reflection exposes names and member types",
-          "[reflection][coverage-exempt]") {
+TEST_CASE("aggregate reflection exposes names and member types", "[reflection][coverage-exempt]") {
     STATIC_CHECK(bg::util::aggregate_member_count<reflected_values> == 2);
     STATIC_CHECK(bg::util::aggregate_member_names<reflected_values>[0] == "first");
     STATIC_CHECK(bg::util::aggregate_member_names<reflected_values>[1] == "second");
@@ -23,6 +24,7 @@ TEST_CASE("aggregate reflection exposes names and member types",
     STATIC_CHECK(std::same_as<bg::util::aggregate_member_type<1, reflected_values>, float>);
     STATIC_CHECK(bg::util::type_name<float>() == "float");
     STATIC_CHECK(bg::util::unqualified_type_name<reflected_values>() == "reflected_values");
+    STATIC_CHECK(bg::util::function_name<reflected_function>() == "reflected_function");
 }
 
 namespace {

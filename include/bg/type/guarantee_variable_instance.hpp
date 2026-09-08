@@ -8,20 +8,26 @@
 
 namespace bg::details {
 
-template <typename Scope, auto Declaration>
-    requires guarantee_variable_declaration<decltype(Declaration)>
+template <typename Declaration>
+    requires guarantee_variable_declaration<Declaration>
 const GuaranteeVariable &guarantee_variable_instance() {
-    using Variable = std::remove_cv_t<decltype(Declaration)>;
+    using Variable = std::remove_cv_t<Declaration>;
     static const auto variable = GuaranteeVariable{util::symbol{Variable::name.view()}};
 
     return variable;
 }
 
-template <typename Scope, auto Guarantee> [[nodiscard]] GuaranteeParameter guarantee_parameter() {
+template <auto Declaration>
+    requires guarantee_variable_declaration<decltype(Declaration)>
+const GuaranteeVariable &guarantee_variable_instance() {
+    return guarantee_variable_instance<std::remove_cv_t<decltype(Declaration)>>();
+}
+
+template <auto Guarantee> [[nodiscard]] GuaranteeParameter guarantee_parameter() {
     if constexpr (std::same_as<std::remove_cv_t<decltype(Guarantee)>, TimeSeriesGuarantee>) {
         return GuaranteeParameter{Guarantee};
     } else {
-        return GuaranteeParameter{guarantee_variable_instance<Scope, Guarantee>()};
+        return GuaranteeParameter{guarantee_variable_instance<Guarantee>()};
     }
 }
 

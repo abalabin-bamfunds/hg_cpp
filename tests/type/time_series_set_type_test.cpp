@@ -16,19 +16,19 @@ TEST_CASE("time series set annotations expose their item type", "[type_system][t
 }
 
 TEST_CASE("resolved time series set types are canonical", "[type_system][tss][series:tss][feature:type-system]") {
-    const auto &set = bg::time_series_set_type(bg::int_type(), bg::TimeSeriesGuarantee::ordinary);
+    const auto &set = bg::TSS<int>::type();
 
-    CHECK(&set == &bg::time_series_set_type(bg::int_type(), bg::TimeSeriesGuarantee::ordinary));
+    CHECK(&set == &bg::TSS<int>::type());
     CHECK(&set.item_type() == &bg::int_type());
 }
 
 TEST_CASE("generic time series set types resolve their item and guarantee",
           "[type_system][tss][series:tss][feature:type-system][declaration:generic][guarantee:final]") {
-    const auto &resolved = bg::time_series_set_type(bg::int_type(), bg::TimeSeriesGuarantee::final);
+    const auto &resolved = bg::TSS<int, bg::TimeSeriesGuarantee::final>::type();
     bg::TypeVariable<bg::ScalarType> item{bg::util::symbol{"K"}, {}, {&bg::supports_scalar_hash}};
     const bg::GenericTimeSeriesSetType generic{item, bg::TimeSeriesGuarantee::final};
-    auto bindings = bg::TypeMap{};
+    auto type_map = bg::TypeMap{};
 
-    REQUIRE(generic.match(resolved, bindings));
-    CHECK(&generic.resolve(bindings) == &resolved);
+    REQUIRE(generic.match(resolved, type_map));
+    CHECK(&generic.resolve(type_map) == &resolved);
 }

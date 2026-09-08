@@ -7,6 +7,8 @@
 namespace bg::details {
 
 template <typename Target, auto... Properties> struct time_series_type_traits<REF<Target, Properties...>> {
+    using semantic_type = TimeSeriesReferenceType;
+
     static constexpr bool generic = generic_time_series<Target>;
     static constexpr bool supported = supported_time_series<Target>;
 
@@ -24,6 +26,13 @@ template <typename Target, auto... Properties> struct time_series_type_traits<RE
         }
 
         return time_series_reference_type(target, *guarantee.value());
+    }
+};
+
+template <typename Target, auto... Properties> struct declaration_variable_traits<REF<Target, Properties...>> {
+    template <typename Visitor> static void for_each(Visitor &&visitor) {
+        for_each_declaration_variable<Target>(visitor);
+        (for_each_property_variable<Properties>(visitor), ...);
     }
 };
 

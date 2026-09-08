@@ -2,6 +2,7 @@
 
 #include <bg/evaluation_context.hpp>
 #include <bg/graph/node.hpp>
+#include <bg/node/details/aggregate_resolver.hpp>
 #include <bg/node/details/output_runtime_type.hpp>
 #include <bg/node/input.hpp>
 #include <bg/node/output.hpp>
@@ -82,9 +83,8 @@ template <> struct first_output_time_series<> {
 };
 
 template <typename Definition, std::size_t... Index>
-auto aggregate_output_time_series_type(std::index_sequence<Index...>) ->
-    typename first_output_time_series<typename output_field<
-        std::remove_cv_t<util::aggregate_member_type<Index, Definition>>>::time_series_type...>::type;
+auto aggregate_output_time_series_type(std::index_sequence<Index...>) -> typename first_output_time_series<
+    typename output_field<std::remove_cv_t<util::aggregate_member_type<Index, Definition>>>::time_series_type...>::type;
 
 template <typename Definition>
 using aggregate_output_time_series_t = decltype(aggregate_output_time_series_type<Definition>(
@@ -128,8 +128,7 @@ template <typename T> struct state_field<State<T>> {
 };
 
 template <typename Definition, std::size_t... Index>
-std::vector<const ScalarType *> aggregate_state_types(const TypeMap &bindings,
-                                                                    std::index_sequence<Index...>) {
+std::vector<const ScalarType *> aggregate_state_types(const TypeMap &type_map, std::index_sequence<Index...>) {
     auto result = std::vector<const ScalarType *>{};
     result.reserve((std::size_t{} + ... +
                     static_cast<std::size_t>(
@@ -142,8 +141,7 @@ std::vector<const ScalarType *> aggregate_state_types(const TypeMap &bindings,
             if constexpr (state_field<Field>::value) {
                 using Value = typename state_field<Field>::value_type;
                 if constexpr (state_field<Field>::scalar_collection && generic_scalar_state<Value>) {
-                    result.push_back(
-                        &static_cast<const ScalarType &>(scalar_type_for<Definition, Value>().resolve(bindings)));
+                    result.push_back(&static_cast<const ScalarType &>(scalar_type_for<Value>().resolve(type_map)));
                 } else {
                     result.push_back(nullptr);
                 }
@@ -313,10 +311,9 @@ template <typename Definition, std::size_t Index> const TimeSeriesType &input_ty
     using TimeSeries = typename input_field<Field>::time_series_type;
 
     if constexpr (time_series_variable<TimeSeries>) {
-        return time_series_variable_instance<Definition, TimeSeries>();
+        return time_series_variable_instance<TimeSeries>();
     } else if constexpr (TimeSeries::has_explicit_guarantee) {
-        return time_series_type_for<Definition, Index, true, TimeSeries>(
-            guarantee_parameter<Definition, TimeSeries::guarantee>());
+        return time_series_type_for<Definition, Index, true, TimeSeries>(guarantee_parameter<TimeSeries::guarantee>());
     } else {
         static const auto guarantee = GuaranteeVariable{util::symbol{util::aggregate_member_names<Definition>[Index]}};
         return time_series_type_for<Definition, Index, true, TimeSeries>(guarantee);
@@ -327,7 +324,7 @@ template <typename Definition, std::size_t Index> const ScalarType &scalar_type(
     using Field = std::remove_cv_t<util::aggregate_member_type<Index, Definition>>;
     using Value = typename scalar_field<Field>::value_type;
 
-    return scalar_type_for<Definition, Value>();
+    return scalar_type_for<Value>();
 }
 
 template <typename Definition, std::size_t Index> const TimeSeriesType &output_type() {
@@ -335,17 +332,17 @@ template <typename Definition, std::size_t Index> const TimeSeriesType &output_t
     using TimeSeries = typename output_field<Field>::time_series_type;
 
     if constexpr (time_series_variable<TimeSeries>) {
-        return time_series_variable_instance<Definition, TimeSeries>();
+        return time_series_variable_instance<TimeSeries>();
     } else {
         return time_series_type_for<Definition, Index, false, TimeSeries>(TimeSeriesGuarantee::ordinary);
     }
 }
 
 template <typename Definition>
-const TimeSeriesRuntimeType *aggregate_output_runtime_type(
-    const ResolvedSignature &signature,
-    std::span<const ScalarRuntimeType *const> parameter_runtime_types,
-    std::span<const TimeSeriesRuntimeType *const> time_series_input_runtime_types) {
+const TimeSeriesRuntimeType *
+aggregate_output_runtime_type(const ResolvedSignature &signature,
+                              std::span<const ScalarRuntimeType *const> parameter_runtime_types,
+                              std::span<const TimeSeriesRuntimeType *const> time_series_input_runtime_types) {
     if constexpr (!aggregate_node_has_output<Definition>()) {
         return nullptr;
     } else {
@@ -424,24 +421,42 @@ void add_signature_field(std::vector<Parameter> &parameters, const TimeSeriesTyp
     }
 }
 
+template <typename Definition, std::size_t Index>
+void add_signature_field_resolvers(std::vector<VariableResolver> &resolvers) {
+    using Field = std::remove_cv_t<util::aggregate_member_type<Index, Definition>>;
+
+    if constexpr (input_field<Field>::value) {
+        append_aggregate_resolvers<Definition, typename input_field<Field>::time_series_type>(resolvers);
+    } else if constexpr (scalar_field<Field>::value) {
+        append_aggregate_resolvers<Definition, typename scalar_field<Field>::value_type>(resolvers);
+    } else if constexpr (state_field<Field>::value) {
+        append_aggregate_resolvers<Definition, typename state_field<Field>::value_type>(resolvers);
+    } else if constexpr (output_field<Field>::value) {
+        append_aggregate_resolvers<Definition, typename output_field<Field>::time_series_type>(resolvers);
+    }
+}
+
 template <typename Definition, std::size_t... Index>
-[[nodiscard]] Signature make_signature(std::index_sequence<Index...>) {
+[[nodiscard]] Signature make_signature(util::symbol name, std::index_sequence<Index...>) {
     std::vector<Parameter> parameters;
     parameters.reserve(sizeof...(Index));
     const TimeSeriesType *output = nullptr;
+    auto resolvers = std::vector<VariableResolver>{};
 
     (add_signature_field<Definition, Index>(parameters, output), ...);
+    (add_signature_field_resolvers<Definition, Index>(resolvers), ...);
 
     if (output == nullptr) {
-        return {util::symbol{util::unqualified_type_name<Definition>()}, std::move(parameters)};
+        return {name, std::move(parameters), std::move(resolvers)};
     }
 
-    return {util::symbol{util::unqualified_type_name<Definition>()}, std::move(parameters), *output};
+    return {name, std::move(parameters), *output, std::move(resolvers)};
 }
 
 template <typename Definition> [[nodiscard]] const Signature &aggregate_node_signature() {
     static const Signature signature =
-        make_signature<Definition>(std::make_index_sequence<util::aggregate_member_count<Definition>>{});
+        make_signature<Definition>(util::symbol{util::unqualified_type_name<Definition>()},
+                                   std::make_index_sequence<util::aggregate_member_count<Definition>>{});
 
     return signature;
 }

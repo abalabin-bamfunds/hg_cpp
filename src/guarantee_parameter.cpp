@@ -2,28 +2,28 @@
 
 namespace bg {
 
-bool GuaranteeParameter::match(TimeSeriesGuarantee supplied, TypeMap &bindings) const {
+bool GuaranteeParameter::match(TimeSeriesGuarantee supplied, TypeMap &type_map) const {
     if (const auto resolved = value()) {
         return satisfies(supplied, *resolved);
     }
 
     const auto *guarantee_variable = variable();
 
-    return guarantee_variable == nullptr || guarantee_variable->match(supplied, bindings);
+    return guarantee_variable == nullptr || guarantee_variable->match(supplied, type_map);
 }
 
-TimeSeriesGuarantee GuaranteeParameter::resolve(const TypeMap &bindings) const {
+TimeSeriesGuarantee GuaranteeParameter::resolve(const TypeMap &type_map) const {
     if (const auto resolved = value()) {
         return *resolved;
     }
 
     const auto *guarantee_variable = variable();
     if (guarantee_variable == nullptr) {
-        throw TypeResolutionError{TypeResolutionErrorCode::unbound_variable, util::symbol{"guarantee"},
+        throw TypeResolutionError{TypeResolutionErrorCode::unmapped_variable, util::symbol{"guarantee"},
                                   "unspecified guarantee cannot be resolved"};
     }
 
-    return guarantee_variable->resolve(bindings);
+    return guarantee_variable->resolve(type_map);
 }
 
 } // namespace bg

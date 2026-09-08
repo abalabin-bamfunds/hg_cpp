@@ -11,30 +11,31 @@ class SizeVariable final : public Variable {
   public:
     using Variable::Variable;
 
-    [[nodiscard]] bool match(std::size_t supplied, TypeMap &bindings) const {
-        if (const auto *binding = bindings.find(*this)) {
-            const auto *size = std::get_if<Size>(binding);
+    [[nodiscard]] bool match(std::size_t supplied, TypeMap &type_map) const {
+        if (const auto *mapping = type_map.find(*this)) {
+            const auto *size = std::get_if<Size>(mapping);
             if (size == nullptr) {
-                throw TypeResolutionError{TypeResolutionErrorCode::invalid_binding, name(),
-                                          "size variable has a non-size binding"};
+                throw TypeResolutionError{TypeResolutionErrorCode::invalid_type_map, name(),
+                                          "size variable has a non-size mapping"};
             }
             return size->value == supplied;
         }
 
-        bindings.set(*this, Size{supplied});
+        type_map.set(*this, Size{supplied});
         return true;
     }
 
-    [[nodiscard]] std::size_t resolve(const TypeMap &bindings) const {
-        const auto *binding = bindings.find(*this);
-        if (binding == nullptr) {
-            throw TypeResolutionError{TypeResolutionErrorCode::unbound_variable, name(), "size variable is unbound"};
+    [[nodiscard]] std::size_t resolve(const TypeMap &type_map) const {
+        const auto *mapping = type_map.find(*this);
+        if (mapping == nullptr) {
+            throw TypeResolutionError{TypeResolutionErrorCode::unmapped_variable, name(),
+                                      "size variable has no type map entry"};
         }
 
-        const auto *size = std::get_if<Size>(binding);
+        const auto *size = std::get_if<Size>(mapping);
         if (size == nullptr) {
-            throw TypeResolutionError{TypeResolutionErrorCode::invalid_binding, name(),
-                                      "size variable has a non-size binding"};
+            throw TypeResolutionError{TypeResolutionErrorCode::invalid_type_map, name(),
+                                      "size variable has a non-size mapping"};
         }
         return size->value;
     }

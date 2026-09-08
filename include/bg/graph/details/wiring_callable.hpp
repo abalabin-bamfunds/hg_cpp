@@ -96,14 +96,14 @@ bool wiring_parameter_matches(const ResolvedParameter &parameter) {
             const auto &declared = [&]() -> const TimeSeriesType & {
                 if constexpr (TimeSeries::has_explicit_guarantee) {
                     return time_series_type_for<Function, Index, true, TimeSeries>(
-                        guarantee_parameter<Function, TimeSeries::guarantee>());
+                        guarantee_parameter<TimeSeries::guarantee>());
                 } else {
                     static const auto guarantee = GuaranteeVariable{parameter.name};
                     return time_series_type_for<Function, Index, true, TimeSeries>(guarantee);
                 }
             }();
-            auto bindings = TypeMap{};
-            return declared.match(*parameter.type, bindings);
+            auto type_map = TypeMap{};
+            return declared.match(*parameter.type, type_map);
         }
     } else if constexpr (std::same_as<Value, WiringPoint>) {
         return parameter.type->is_time_series();

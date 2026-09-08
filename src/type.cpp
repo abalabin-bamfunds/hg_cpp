@@ -10,12 +10,12 @@ namespace bg {
 
 Type::~Type() = default;
 
-bool Type::match(const Type &supplied, TypeMap &bindings) const {
+bool Type::match(const Type &supplied, TypeMap &type_map) const {
     const auto *parameter_reference = dynamic_cast<const TimeSeriesReferenceType *>(this);
     const auto *argument_reference = dynamic_cast<const TimeSeriesReferenceType *>(&supplied);
 
     if (parameter_reference == nullptr) {
-        return do_match(argument_reference == nullptr ? supplied : argument_reference->target_type(), bindings);
+        return do_match(argument_reference == nullptr ? supplied : argument_reference->target_type(), type_map);
     }
 
     const auto &argument_target = argument_reference == nullptr ? supplied : argument_reference->target_type();
@@ -25,13 +25,13 @@ bool Type::match(const Type &supplied, TypeMap &bindings) const {
         return false;
     }
 
-    auto trial = bindings.overlay();
+    auto trial = type_map.overlay();
     if (!parameter_reference->target_type().match(argument_target, trial) ||
         !parameter_reference->guarantee().match(*argument_guarantee, trial)) {
         return false;
     }
 
-    bindings.apply(std::move(trial));
+    type_map.apply(std::move(trial));
     return true;
 }
 

@@ -34,13 +34,9 @@ struct DynamicSubscribersLayout {
 class NodeTemplate : public WiringTemplate {
   public:
     virtual EvaluationFunction evaluation_function(const ResolvedSignature &signature) const noexcept = 0;
-    virtual EvaluationFunction start_function(const ResolvedSignature &) const noexcept {
-        return nullptr;
-    }
+    virtual EvaluationFunction start_function(const ResolvedSignature &) const noexcept { return nullptr; }
     virtual EvaluationFunction stop_function(const ResolvedSignature &) const noexcept { return nullptr; }
-    virtual InvalidationBehavior invalidation_behavior(const ResolvedSignature &) const noexcept {
-        return {};
-    }
+    virtual InvalidationBehavior invalidation_behavior(const ResolvedSignature &) const noexcept { return {}; }
     virtual const TimeSeriesRuntimeType *
     output_runtime_type(const ResolvedSignature &signature,
                         std::span<const ScalarRuntimeType *const> parameter_runtime_types,
@@ -52,33 +48,26 @@ class NodeTemplate : public WiringTemplate {
     virtual bool uses_future_scheduling() const noexcept { return false; }
     virtual bool uses_cycle_callbacks() const noexcept { return false; }
     virtual InputNotificationCallback input_notification(std::size_t) const noexcept { return {}; }
-    virtual std::optional<std::size_t> output_item_source(std::size_t) const noexcept {
-        return std::nullopt;
-    }
+    virtual std::optional<std::size_t> output_item_source(std::size_t) const noexcept { return std::nullopt; }
     virtual std::optional<DynamicSubscribersLayout>
     dynamic_subscribers_layout(const ResolvedSignature &) const noexcept {
         return std::nullopt;
     }
-    virtual NodeStateLayout state_layout(const ResolvedSignature &,
-                                                       std::span<const ScalarRuntimeType *const>,
-                                                       std::span<const ScalarType *const>) const {
+    virtual NodeStateLayout state_layout(const ResolvedSignature &, std::span<const ScalarRuntimeType *const>,
+                                         std::span<const ScalarType *const>) const {
         return {};
     }
     virtual void construct_initial_state(const NodeStateLayout &, void *) const noexcept {}
-    virtual EvaluationFunction state_destruction_function(const ResolvedSignature &) const noexcept {
-        return nullptr;
-    }
+    virtual EvaluationFunction state_destruction_function(const ResolvedSignature &) const noexcept { return nullptr; }
 
     [[nodiscard]] virtual std::vector<const ScalarType *> resolve_state_types(const TypeMap &) const { return {}; }
 
-    virtual CompiledNodeDataLayout compiled_data_layout(const ResolvedSignature &) const noexcept {
-        return {};
-    }
+    virtual CompiledNodeDataLayout compiled_data_layout(const ResolvedSignature &) const noexcept { return {}; }
     virtual void construct_compiled_data(const ResolvedSignature &, void *, std::pmr::memory_resource &) const {}
 
   private:
     [[nodiscard]] std::optional<WiringPoint> wire(GraphWiring &wiring, ResolvedSignature signature,
-                                                  const TypeMap &bindings,
+                                                  const TypeMap &type_map,
                                                   std::span<details::wiring_argument> arguments) const final;
 };
 

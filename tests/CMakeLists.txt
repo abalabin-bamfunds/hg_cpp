@@ -37,6 +37,7 @@ add_executable(
     type/time_series_list_type_test.cpp
     type/time_series_set_type_test.cpp
     type/time_series_reference_type_test.cpp
+    type/operator_specificity_test.cpp
     utils/contiguous_bunch_test.cpp
     utils/hash_dictionary_test.cpp
     utils/hash_set_test.cpp
@@ -74,6 +75,9 @@ add_executable(
     value/time_series/set/storage_test.cpp
     wiring/graph_template_test.cpp
     wiring/graph_wiring_test.cpp
+    wiring/operator_test.cpp
+    wiring/requirement_test.cpp
+    wiring/resolver_test.cpp
     wiring/time_series_list_wiring_test.cpp
     wiring/time_series_dict_wiring_test.cpp
     wiring/time_series_reference_wiring_test.cpp

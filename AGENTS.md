@@ -16,6 +16,9 @@ and output modification.
 [docs/graph-wiring.md](docs/graph-wiring.md) defines graph functions, wiring
 templates, graph templates, wiring contexts, and wiring paths.
 
+[docs/operators.md](docs/operators.md) defines operators, overload resolution,
+requirements, resolution caching, and overload diagnostics.
+
 [docs/evaluation.md](docs/evaluation.md) defines evaluation order, context
 services, lifecycle, scheduling, cycle callbacks, and failure behavior.
 

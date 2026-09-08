@@ -85,6 +85,10 @@ call:
 A node template adds one wired node. A graph template invokes its graph function
 and can add any number of wired nodes.
 
+An [operator](operators.md) selects a node template or graph template before
+invoking its ordinary wiring behavior. Overload resolution remains internal to
+the operator.
+
 `GraphWiring` retains a reference to each supplied node template. A
 node-template call therefore requires an lvalue whose lifetime includes graph
 compilation. A runtime-signature node template can be called as a temporary;

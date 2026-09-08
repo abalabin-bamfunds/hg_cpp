@@ -23,18 +23,25 @@ class SizeParameter {
         return std::nullopt;
     }
 
-    [[nodiscard]] bool match(std::size_t supplied, TypeMap &bindings) const {
+    const SizeVariable *variable() const noexcept {
+        if (const auto *variable = std::get_if<const SizeVariable *>(&value_)) {
+            return *variable;
+        }
+        return nullptr;
+    }
+
+    [[nodiscard]] bool match(std::size_t supplied, TypeMap &type_map) const {
         if (const auto size = value()) {
             return *size == supplied;
         }
-        return std::get<const SizeVariable *>(value_)->match(supplied, bindings);
+        return std::get<const SizeVariable *>(value_)->match(supplied, type_map);
     }
 
-    [[nodiscard]] std::size_t resolve(const TypeMap &bindings) const {
+    [[nodiscard]] std::size_t resolve(const TypeMap &type_map) const {
         if (const auto size = value()) {
             return *size;
         }
-        return std::get<const SizeVariable *>(value_)->resolve(bindings);
+        return std::get<const SizeVariable *>(value_)->resolve(type_map);
     }
 
   private:

@@ -220,8 +220,8 @@ template <typename Target, typename Source>
 template <typename Target, typename Source>
     requires(!details::scalar_variable<Target>)
 [[nodiscard]] Scalar<Target> scalar_cast(const Scalar<Source> &source) {
-    auto bindings = TypeMap{};
-    if (!cpp_scalar_type<Target>().match(source.input_view().type(), bindings)) {
+    auto type_map = TypeMap{};
+    if (!cpp_scalar_type<Target>().match(source.input_view().type(), type_map)) {
         throw std::bad_cast{};
     }
     return unchecked_scalar_cast<Target>(source);

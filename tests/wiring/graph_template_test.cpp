@@ -47,7 +47,7 @@ static_assert(std::same_as<decltype(scale_graph(std::declval<bg::WiringPoint>(),
 } // namespace
 
 TEST_CASE("a lambda graph function supplies its signature", "[graph_template][feature:wiring][definition:function]") {
-    const auto &time_series = bg::time_series_value_type(bg::float_type(), bg::TimeSeriesGuarantee::ordinary);
+    const auto &time_series = bg::TS<float>::type();
     const bg::ResolvedSignature resolved =
         scale_graph.signature().resolve(std::array<const bg::Type *, 2>{&time_series, &bg::float_type()});
 
@@ -112,7 +112,7 @@ TEST_CASE("a graph signature resolves a scalar variable declaration", "[graph_te
     const auto generic_identity_graph =
         bg::graph("name"_m = "generic_identity_graph",
                   [](bg::wp<bg::TS<GraphScalar>> input) -> bg::wp<bg::TS<GraphScalar>> { return input; });
-    const auto &time_series = bg::time_series_value_type(bg::double_type(), bg::TimeSeriesGuarantee::ordinary);
+    const auto &time_series = bg::TS<double>::type();
     const std::array<const bg::Type *, 1> arguments{&time_series};
 
     const auto signature = generic_identity_graph.signature().resolve(arguments);
@@ -127,8 +127,8 @@ TEST_CASE("a graph signature resolves a time series variable declaration",
     constexpr auto G = bg::guarantee_variable<"G">;
     const auto identity = bg::graph("name"_m = "generic_time_series_identity",
                                     [](bg::wp<T::with<G>> input) -> bg::wp<T::with<G>> { return input; });
-    const auto &item = bg::time_series_value_type(bg::double_type(), bg::TimeSeriesGuarantee::ordinary);
-    const auto &list = bg::time_series_list_type(item, 2, bg::TimeSeriesGuarantee::final);
+    const auto &list =
+        bg::TSL<bg::TS<double, bg::TimeSeriesGuarantee::ordinary>, 2, bg::TimeSeriesGuarantee::final>::type();
     const auto arguments = std::array<const bg::Type *, 1>{&list};
 
     const auto signature = identity.signature().resolve(arguments);
@@ -151,7 +151,7 @@ struct struct_scale_graph {
 TEST_CASE("a struct graph definition supplies its signature", "[graph_template][feature:wiring]") {
     const auto reflected_scale_graph = bg::graph<struct_scale_graph>();
     const auto &signature = reflected_scale_graph.signature();
-    const auto &time_series = bg::time_series_value_type(bg::float_type(), bg::TimeSeriesGuarantee::ordinary);
+    const auto &time_series = bg::TS<float>::type();
     const bg::ResolvedSignature resolved =
         signature.resolve(std::array<const bg::Type *, 2>{&time_series, &bg::float_type()});
 

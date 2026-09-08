@@ -32,10 +32,10 @@ template <typename Function, std::size_t Index> const Type &graph_parameter_type
         static_assert(time_series_declaration<TimeSeries>, "wp requires a supported time series type");
 
         if constexpr (time_series_variable<TimeSeries>) {
-            return time_series_variable_instance<Function, TimeSeries>();
+            return time_series_variable_instance<TimeSeries>();
         } else if constexpr (TimeSeries::has_explicit_guarantee) {
             return time_series_type_for<Function, Index, true, TimeSeries>(
-                guarantee_parameter<Function, TimeSeries::guarantee>());
+                guarantee_parameter<TimeSeries::guarantee>());
         } else {
             static const GuaranteeVariable guarantee{name};
             return time_series_type_for<Function, Index, true, TimeSeries>(guarantee);
@@ -68,7 +68,7 @@ template <typename Function> const TimeSeriesType &graph_output_type() {
     static_assert(time_series_declaration<TimeSeries>, "wp requires a supported time series type");
 
     if constexpr (time_series_variable<TimeSeries>) {
-        return time_series_variable_instance<Function, TimeSeries>();
+        return time_series_variable_instance<TimeSeries>();
     } else {
         return time_series_type_for<Function, callable<Function>::argument_count, false, TimeSeries>(
             TimeSeriesGuarantee::ordinary);

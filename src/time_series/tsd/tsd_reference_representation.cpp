@@ -31,13 +31,11 @@ class TimeSeriesDictionaryReferenceRuntimeType final : public TimeSeriesDictiona
     ConstItem item(const void *value, TimeSeriesItemId id) const override;
     MutableItem item(void *, TimeSeriesItemId) const override;
     bool item_updated(const EvaluationTime &last_updated, const void *value,
-                                    TimeSeriesItemId id) const noexcept override;
+                      TimeSeriesItemId id) const noexcept override;
     void for_each_updated_item(const EvaluationTime &last_updated, const void *value, void *context,
                                ItemIdFunction function) const override;
     void for_each_modified(const EvaluationTime &, const void *, void *, ItemIdFunction) const override {}
-    bool item_modified(const EvaluationTime &, const void *, TimeSeriesItemId) const noexcept override {
-        return false;
-    }
+    bool item_modified(const EvaluationTime &, const void *, TimeSeriesItemId) const noexcept override { return false; }
     void for_each_modified_item(const EvaluationTime &last_updated, const void *value, EvaluationTime evaluation_time,
                                 void *context, ModifiedItemFunction function) const override;
 
@@ -176,7 +174,6 @@ class TimeSeriesDictionaryReferenceRepresentation final : public ReferenceRepres
     void release_retired() noexcept {
         auto &memory = provider_->memory();
         for (const auto id : retired_) {
-            auto &item = items_[id];
             items_.erase_at(id, memory);
             positions_.reset(id);
         }
@@ -218,13 +215,13 @@ class DereferencedTimeSeriesDictionaryRuntimeType final : public TimeSeriesDicti
     ConstItem item(const void *value, TimeSeriesItemId id) const override;
     MutableItem item(void *, TimeSeriesItemId) const override;
     bool item_updated(const EvaluationTime &last_updated, const void *value,
-                                    TimeSeriesItemId id) const noexcept override;
+                      TimeSeriesItemId id) const noexcept override;
     void for_each_updated_item(const EvaluationTime &last_updated, const void *value, void *context,
                                ItemIdFunction function) const override;
     void for_each_modified(const EvaluationTime &last_updated, const void *value, void *context,
                            ItemIdFunction function) const override;
     bool item_modified(const EvaluationTime &last_updated, const void *value,
-                                     TimeSeriesItemId id) const noexcept override;
+                       TimeSeriesItemId id) const noexcept override;
     void for_each_modified_item(const EvaluationTime &last_updated, const void *value, EvaluationTime evaluation_time,
                                 void *context, ModifiedItemFunction function) const override;
 

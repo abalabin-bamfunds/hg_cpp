@@ -26,10 +26,10 @@ TEST_CASE("fixed time series list annotations expose their item type and size",
 
 TEST_CASE("resolved time series list types are canonical",
           "[type_system][tsl][series:fixed-tsl][feature:type-system]") {
-    const auto &item = bg::time_series_value_type(bg::float_type(), bg::TimeSeriesGuarantee::ordinary);
-    const auto &list = bg::time_series_list_type(item, 3, bg::TimeSeriesGuarantee::ordinary);
+    const auto &item = bg::TS<float>::type();
+    const auto &list = bg::TSL<bg::TS<float>, 3>::type();
 
-    CHECK(&list == &bg::time_series_list_type(item, 3, bg::TimeSeriesGuarantee::ordinary));
+    CHECK(&list == &bg::TSL<bg::TS<float>, 3>::type());
     CHECK(&list.item_type() == &item);
     CHECK(list.item_count() == 3);
     CHECK(&list.item_type(2) == &item);
@@ -39,14 +39,14 @@ TEST_CASE("resolved time series list types are canonical",
 TEST_CASE("generic time series list types resolve their item and guarantee",
           "[type_system][tsl][series:fixed-tsl][feature:type-system][declaration:generic]"
           "[guarantee:final]") {
-    const auto &resolved_item = bg::time_series_value_type(bg::float_type(), bg::TimeSeriesGuarantee::final);
-    const auto &resolved_list = bg::time_series_list_type(resolved_item, 2, bg::TimeSeriesGuarantee::final);
+    const auto &resolved_list =
+        bg::TSL<bg::TS<float, bg::TimeSeriesGuarantee::final>, 2, bg::TimeSeriesGuarantee::final>::type();
     const bg::GenericTimeSeriesValueType generic_item{bg::float_type(), bg::TimeSeriesGuarantee::final};
     const bg::GenericTimeSeriesListType generic_list{generic_item, 2, bg::TimeSeriesGuarantee::final};
-    auto bindings = bg::TypeMap{};
+    auto type_map = bg::TypeMap{};
 
-    REQUIRE(generic_list.match(resolved_list, bindings));
-    CHECK(&generic_list.resolve(bindings) == &resolved_list);
+    REQUIRE(generic_list.match(resolved_list, type_map));
+    CHECK(&generic_list.resolve(type_map) == &resolved_list);
 }
 
 TEST_CASE("a time series list size variable participates in type resolution",
@@ -54,13 +54,11 @@ TEST_CASE("a time series list size variable participates in type resolution",
     const auto &parameter =
         bg::details::time_series_type_for<ListVariableScope, 0, true, bg::TSL<bg::TS<std::int64_t>, bg::SIZE>>(
             bg::TimeSeriesGuarantee::ordinary);
-    const auto &item =
-        bg::time_series_value_type(bg::cpp_scalar_type<std::int64_t>(), bg::TimeSeriesGuarantee::ordinary);
-    const auto &argument = bg::time_series_list_type(item, 3, bg::TimeSeriesGuarantee::ordinary);
-    auto bindings = bg::TypeMap{};
+    const auto &argument = bg::TSL<bg::TS<std::int64_t>, 3>::type();
+    auto type_map = bg::TypeMap{};
 
-    REQUIRE(parameter.match(argument, bindings));
-    CHECK(&parameter.resolve(bindings) == &argument);
+    REQUIRE(parameter.match(argument, type_map));
+    CHECK(&parameter.resolve(type_map) == &argument);
 }
 
 TEST_CASE("an output time series list can capture its size",
@@ -68,13 +66,11 @@ TEST_CASE("an output time series list can capture its size",
     const auto &parameter =
         bg::details::time_series_type_for<ListVariableScope, 0, false, bg::TSL<bg::TS<std::int64_t>, bg::SIZE>>(
             bg::TimeSeriesGuarantee::ordinary);
-    const auto &item =
-        bg::time_series_value_type(bg::cpp_scalar_type<std::int64_t>(), bg::TimeSeriesGuarantee::ordinary);
-    const auto &argument = bg::time_series_list_type(item, 3, bg::TimeSeriesGuarantee::ordinary);
-    auto bindings = bg::TypeMap{};
+    const auto &argument = bg::TSL<bg::TS<std::int64_t>, 3>::type();
+    auto type_map = bg::TypeMap{};
 
-    REQUIRE(parameter.match(argument, bindings));
-    CHECK(&parameter.resolve(bindings) == &argument);
+    REQUIRE(parameter.match(argument, type_map));
+    CHECK(&parameter.resolve(type_map) == &argument);
 }
 
 TEST_CASE("repeated time series list size variables require equal sizes",
@@ -85,25 +81,21 @@ TEST_CASE("repeated time series list size variables require equal sizes",
     const auto &second =
         bg::details::time_series_type_for<ListVariableScope, 1, true, bg::TSL<bg::TS<std::int64_t>, bg::SIZE>>(
             bg::TimeSeriesGuarantee::ordinary);
-    const auto &item =
-        bg::time_series_value_type(bg::cpp_scalar_type<std::int64_t>(), bg::TimeSeriesGuarantee::ordinary);
-    const auto &size_three = bg::time_series_list_type(item, 3, bg::TimeSeriesGuarantee::ordinary);
-    const auto &size_four = bg::time_series_list_type(item, 4, bg::TimeSeriesGuarantee::ordinary);
-    auto bindings = bg::TypeMap{};
+    const auto &size_three = bg::TSL<bg::TS<std::int64_t>, 3>::type();
+    const auto &size_four = bg::TSL<bg::TS<std::int64_t>, 4>::type();
+    auto type_map = bg::TypeMap{};
 
-    REQUIRE(first.match(size_three, bindings));
-    CHECK(second.match(size_three, bindings));
-    CHECK_FALSE(second.match(size_four, bindings));
+    REQUIRE(first.match(size_three, type_map));
+    CHECK(second.match(size_three, type_map));
+    CHECK_FALSE(second.match(size_four, type_map));
 }
 
 TEST_CASE("fixed time series list matching applies reference transparency to its items",
           "[type_system][tsl][series:fixed-tsl][feature:type-system][binding:reference-to-value]") {
-    const auto &item = bg::time_series_value_type(bg::float_type(), bg::TimeSeriesGuarantee::ordinary);
-    const auto &reference = bg::time_series_reference_type(item, bg::TimeSeriesGuarantee::const_);
-    const auto &values = bg::time_series_list_type(item, 2, bg::TimeSeriesGuarantee::ordinary);
-    const auto &references = bg::time_series_list_type(reference, 2, bg::TimeSeriesGuarantee::ordinary);
-    auto bindings = bg::TypeMap{};
+    const auto &values = bg::TSL<bg::TS<float>, 2>::type();
+    const auto &references = bg::TSL<bg::REF<bg::TS<float>, bg::TimeSeriesGuarantee::const_>, 2>::type();
+    auto type_map = bg::TypeMap{};
 
-    CHECK(references.match(values, bindings));
-    CHECK(values.match(references, bindings));
+    CHECK(references.match(values, type_map));
+    CHECK(values.match(references, type_map));
 }

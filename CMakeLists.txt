@@ -40,6 +40,7 @@ add_library(
     src/graph_wiring.cpp
     src/nested_graph.cpp
     src/nested.cpp
+    src/operator.cpp
     src/node/aggregate_node_template_base.cpp
     src/node/output_runtime_type.cpp
     src/guarantee_parameter.cpp
@@ -54,6 +55,7 @@ add_library(
     src/scalar/runtime_type.cpp
     src/scalar/type.cpp
     src/signature.cpp
+    src/signature_specificity.cpp
     src/simulation_evaluation_engine.cpp
     src/symbol.cpp
     src/time_series/tsl/tsl_type.cpp
@@ -79,9 +81,11 @@ add_library(
     src/thread_local_pointer.cpp
     src/type.cpp
     src/type_of.cpp
+    src/type_text.cpp
     src/variable.cpp
     src/version.cpp
     src/wiring_context.cpp
+    src/wiring_error.cpp
     src/wiring_template.cpp
 )
 add_library(bg::bg ALIAS bg)

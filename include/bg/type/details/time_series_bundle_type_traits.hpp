@@ -12,8 +12,7 @@ namespace bg::details {
 template <typename Schema> inline constexpr int bundle_schema_identity = 0;
 
 template <typename Scope, bool Input, template <template <typename> typename> typename Schema, std::size_t... Index>
-std::vector<BundleField> direct_bundle_fields(GuaranteeParameter guarantee,
-                                              std::index_sequence<Index...>) {
+std::vector<BundleField> direct_bundle_fields(GuaranteeParameter guarantee, std::index_sequence<Index...>) {
     auto fields = std::vector<BundleField>{};
     fields.reserve(sizeof...(Index));
     (fields.push_back({util::symbol{direct_bundle_field_name<Index, Schema>()},
@@ -52,6 +51,8 @@ template <template <template <typename> typename> typename Schema> struct bundle
 
 template <template <template <typename> typename> typename Schema, auto... Properties>
 struct time_series_type_traits<TSB<Schema, Properties...>> {
+    using semantic_type = TimeSeriesBundleType;
+
     static constexpr bool schema_variable = bundle_schema_variable_declaration<Schema<bundle_schema_field>>;
     using BaseTraits = bundle_base_type_traits<Schema, !schema_variable && bundle_has_base<Schema>>;
 
@@ -59,8 +60,7 @@ struct time_series_type_traits<TSB<Schema, Properties...>> {
         return (false || ... || generic_time_series<direct_bundle_field_time_series<Index, Schema>>);
     }
 
-    template <std::size_t... Index>
-    static consteval bool fields_supported(std::index_sequence<Index...>) {
+    template <std::size_t... Index> static consteval bool fields_supported(std::index_sequence<Index...>) {
         return (true && ... && supported_time_series<direct_bundle_field_time_series<Index, Schema>>);
     }
 
@@ -80,10 +80,9 @@ struct time_series_type_traits<TSB<Schema, Properties...>> {
         }
     }();
 
-    template <typename Scope, std::size_t, bool Input>
-    static const TimeSeriesType &get(GuaranteeParameter guarantee) {
+    template <typename Scope, std::size_t, bool Input> static const TimeSeriesType &get(GuaranteeParameter guarantee) {
         if constexpr (schema_variable) {
-            static const auto type = GenericTimeSeriesBundleType{schema_variable_instance<Scope, Schema>(), guarantee};
+            static const auto type = GenericTimeSeriesBundleType{schema_variable_instance<Schema>(), guarantee};
             return type;
         } else {
             const auto &schema = cpp_bundle_schema<Scope, Input, Schema>(guarantee);
@@ -97,6 +96,29 @@ struct time_series_type_traits<TSB<Schema, Properties...>> {
             }
             return time_series_bundle_type(schema, *guarantee.value());
         }
+    }
+};
+
+template <template <template <typename> typename> typename Schema, std::size_t... Index, typename Visitor>
+void for_each_bundle_field_variable(std::index_sequence<Index...>, Visitor &&visitor) {
+    (for_each_declaration_variable<direct_bundle_field_time_series<Index, Schema>>(visitor), ...);
+}
+
+template <template <template <typename> typename> typename Schema, auto... Properties>
+struct declaration_variable_traits<TSB<Schema, Properties...>> {
+    template <typename Visitor> static void for_each(Visitor &&visitor) {
+        if constexpr (bundle_schema_variable_declaration<Schema<bundle_schema_field>>) {
+            using Declaration = schema_type<Schema>;
+            visitor.template operator()<Declaration>(schema_variable_instance<Schema>());
+        } else {
+            if constexpr (bundle_has_base<Schema>) {
+                using Base = bundle_base_t<Schema>;
+                for_each_declaration_variable<TSB<Base::template apply>>(visitor);
+            }
+            for_each_bundle_field_variable<Schema>(std::make_index_sequence<direct_bundle_field_count<Schema>>{},
+                                                   visitor);
+        }
+        (for_each_property_variable<Properties>(visitor), ...);
     }
 };
 

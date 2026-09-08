@@ -31,8 +31,8 @@ class GuaranteeParameter {
         return nullptr;
     }
 
-    [[nodiscard]] bool match(TimeSeriesGuarantee supplied, TypeMap &bindings) const;
-    [[nodiscard]] TimeSeriesGuarantee resolve(const TypeMap &bindings) const;
+    [[nodiscard]] bool match(TimeSeriesGuarantee supplied, TypeMap &type_map) const;
+    [[nodiscard]] TimeSeriesGuarantee resolve(const TypeMap &type_map) const;
 
   private:
     std::variant<std::monostate, TimeSeriesGuarantee, const GuaranteeVariable *> value_;

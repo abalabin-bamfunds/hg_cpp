@@ -1,6 +1,7 @@
 #pragma once
 
 #include <bg/time_series/time_series_variable.hpp>
+#include <bg/type/details/declaration_variables.hpp>
 #include <bg/type/guarantee_variable_instance.hpp>
 #include <bg/type/time_series_type.hpp>
 #include <bg/type/type_variable.hpp>
@@ -13,10 +14,11 @@ class GenericTimeSeriesVariableType final : public TimeSeriesType {
         : TimeSeriesType(guarantee), variable_(&variable) {}
 
     bool is_resolved() const noexcept override { return false; }
-    [[nodiscard]] const Type &resolve(const TypeMap &bindings) const override;
+    [[nodiscard]] const Type &resolve(const TypeMap &type_map) const override;
+    const TypeVariable<TimeSeriesType> &variable() const noexcept { return *variable_; }
 
   protected:
-    [[nodiscard]] bool do_match(const Type &supplied, TypeMap &bindings) const override;
+    [[nodiscard]] bool do_match(const Type &supplied, TypeMap &type_map) const override;
 
   private:
     const TypeVariable<TimeSeriesType> *variable_;
@@ -24,10 +26,9 @@ class GenericTimeSeriesVariableType final : public TimeSeriesType {
 
 namespace details {
 
-template <typename Scope, typename Declaration> struct TimeSeriesVariableInstance;
+template <typename Declaration> struct TimeSeriesVariableInstance;
 
-template <typename Scope, util::compile_time_string Name>
-struct TimeSeriesVariableInstance<Scope, TimeSeriesVariable<Name>> {
+template <util::compile_time_string Name> struct TimeSeriesVariableInstance<TimeSeriesVariable<Name>> {
     static const TypeVariable<TimeSeriesType> &get() {
         static const auto variable = TypeVariable<TimeSeriesType>{util::symbol{Name.view()}};
 
@@ -35,20 +36,38 @@ struct TimeSeriesVariableInstance<Scope, TimeSeriesVariable<Name>> {
     }
 };
 
-template <typename Scope, typename Variable, auto Guarantee>
-struct TimeSeriesVariableInstance<Scope, TimeSeriesVariableWithGuarantee<Variable, Guarantee>> {
+template <typename Variable, auto Guarantee>
+struct TimeSeriesVariableInstance<TimeSeriesVariableWithGuarantee<Variable, Guarantee>> {
     static const GenericTimeSeriesVariableType &get() {
-        static const auto type = GenericTimeSeriesVariableType{TimeSeriesVariableInstance<Scope, Variable>::get(),
-                                                               guarantee_parameter<Scope, Guarantee>()};
+        static const auto type = GenericTimeSeriesVariableType{TimeSeriesVariableInstance<Variable>::get(),
+                                                               guarantee_parameter<Guarantee>()};
 
         return type;
     }
 };
 
-template <typename Scope, time_series_variable Declaration>
-const TimeSeriesType &time_series_variable_instance() {
-    return TimeSeriesVariableInstance<Scope, Declaration>::get();
+template <time_series_variable Declaration> const TimeSeriesType &time_series_variable_instance() {
+    return TimeSeriesVariableInstance<Declaration>::get();
 }
+
+template <util::compile_time_string Name> struct declaration_variable_traits<TimeSeriesVariable<Name>> {
+    using Declaration = TimeSeriesVariable<Name>;
+
+    template <typename Visitor> static void for_each(Visitor &&visitor) {
+        std::forward<Visitor>(visitor).template operator()<Declaration>(TimeSeriesVariableInstance<Declaration>::get());
+    }
+};
+
+template <typename Variable, auto Guarantee>
+struct declaration_variable_traits<TimeSeriesVariableWithGuarantee<Variable, Guarantee>> {
+    template <typename Visitor> static void for_each(Visitor &&visitor) {
+        for_each_declaration_variable<Variable>(visitor);
+        if constexpr (guarantee_variable_declaration<decltype(Guarantee)>) {
+            using Declaration = std::remove_cv_t<decltype(Guarantee)>;
+            visitor.template operator()<Declaration>(guarantee_variable_instance<Guarantee>());
+        }
+    }
+};
 
 } // namespace details
 

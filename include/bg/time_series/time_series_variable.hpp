@@ -1,5 +1,6 @@
 #pragma once
 
+#include <bg/time_series/details/type_access.hpp>
 #include <bg/time_series/guarantee_variable.hpp>
 #include <bg/type/time_series_guarantee.hpp>
 #include <bg/util/compile_time_string.hpp>
@@ -9,9 +10,12 @@
 
 namespace bg {
 
-template <typename Variable, auto Guarantee> struct TimeSeriesVariableWithGuarantee;
+template <typename Variable, auto Guarantee>
+struct TimeSeriesVariableWithGuarantee
+    : details::time_series_type_access<TimeSeriesVariableWithGuarantee<Variable, Guarantee>> {};
 
-template <util::compile_time_string Name> struct TimeSeriesVariable {
+template <util::compile_time_string Name>
+struct TimeSeriesVariable : details::time_series_type_access<TimeSeriesVariable<Name>> {
     static constexpr auto name = Name;
 
     template <auto Guarantee>
@@ -19,8 +23,6 @@ template <util::compile_time_string Name> struct TimeSeriesVariable {
                      details::guarantee_variable_declaration<decltype(Guarantee)>
     using with = TimeSeriesVariableWithGuarantee<TimeSeriesVariable, Guarantee>;
 };
-
-template <typename Variable, auto Guarantee> struct TimeSeriesVariableWithGuarantee {};
 
 using TS_T = TimeSeriesVariable<"TS_T">;
 

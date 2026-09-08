@@ -1,13 +1,15 @@
 #pragma once
 
 #include <bg/time_series/details/time_series_properties.hpp>
+#include <bg/time_series/details/type_access.hpp>
 #include <bg/time_series/time_series_variable.hpp>
 
 #include <type_traits>
 
 namespace bg {
 
-template <typename Target, auto... Properties> struct REF {
+template <typename Target, auto... Properties>
+struct REF : details::time_series_type_access<REF<Target, Properties...>> {
   private:
     using ParsedProperties = details::time_series_properties<Properties...>;
     static_assert(ParsedProperties::valid);
@@ -19,7 +21,7 @@ template <typename Target, auto... Properties> struct REF {
     static constexpr auto guarantee = ParsedProperties::guarantee;
 };
 
-template <typename T, auto... Properties> struct TS {
+template <typename T, auto... Properties> struct TS : details::time_series_type_access<TS<T, Properties...>> {
   private:
     using ParsedProperties = details::time_series_properties<Properties...>;
     static_assert(ParsedProperties::valid);
@@ -56,3 +58,6 @@ inline constexpr bool is_time_series_reference = time_series_reference<std::remo
 } // namespace details
 
 } // namespace bg
+
+#include <bg/type/details/time_series_reference_type_traits.hpp>
+#include <bg/type/details/time_series_value_type_traits.hpp>

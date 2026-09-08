@@ -55,7 +55,7 @@ class NestedNodeDefinition {
         auto parameters = std::vector<Parameter>{};
         parameters.reserve(graph_signature.parameters.size() + 1);
         parameters.push_back({util::symbol{"run"},
-                              &time_series_value_type(cpp_scalar_type<bool>(), TimeSeriesGuarantee::ordinary), active,
+                              &TS<bool>::type(), active,
                               required});
 
         for (const auto &parameter : graph_signature.parameters) {
@@ -158,9 +158,9 @@ class NestedNodeDefinition {
 } // namespace
 
 WiringPoint wire_nested_input(const TimeSeriesType &type) {
-    auto bindings = TypeMap{};
-    bindings.set(TimeSeriesVariableInstance<NestedInput, TS_T>::get(), &type);
-    return static_cast<WiringPoint>(nested_input_node(bindings));
+    auto type_map = TypeMap{};
+    type_map.set(TimeSeriesVariableInstance<TS_T>::get(), &type);
+    return static_cast<WiringPoint>(nested_input_node(type_map));
 }
 
 WiringPoint wire_nested_output(WiringPoint output) {

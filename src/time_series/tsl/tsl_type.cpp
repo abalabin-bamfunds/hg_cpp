@@ -56,31 +56,31 @@ const TimeSeriesType &TimeSeriesListType::with_guarantee(TimeSeriesGuarantee gua
     return TimeSeriesType::with_guarantee(guarantee);
 }
 
-bool TimeSeriesListType::do_match(const Type &supplied, TypeMap &bindings) const {
+bool TimeSeriesListType::do_match(const Type &supplied, TypeMap &type_map) const {
     const auto *list = dynamic_cast<const TimeSeriesListType *>(&supplied);
     if (list == nullptr || !list->is_resolved()) {
         return false;
     }
 
-    auto trial = bindings.overlay();
+    auto trial = type_map.overlay();
     if (!size().match(list->item_count(), trial) || !item_type().match(list->item_type(), trial) ||
         !guarantee().match(*list->guarantee().value(), trial)) {
         return false;
     }
 
-    bindings.apply(std::move(trial));
+    type_map.apply(std::move(trial));
     return true;
 }
 
-const Type &GenericTimeSeriesListType::resolve(const TypeMap &bindings) const {
-    const auto &resolved_item = item_type().resolve(bindings);
+const Type &GenericTimeSeriesListType::resolve(const TypeMap &type_map) const {
+    const auto &resolved_item = item_type().resolve(type_map);
     const auto *time_series = dynamic_cast<const TimeSeriesType *>(&resolved_item);
     if (time_series == nullptr) {
-        throw TypeResolutionError{TypeResolutionErrorCode::invalid_binding, util::symbol{"TSL"},
+        throw TypeResolutionError{TypeResolutionErrorCode::invalid_type_map, util::symbol{"TSL"},
                                   "time series list item did not resolve to a time series type"};
     }
 
-    return time_series_list_type(*time_series, size().resolve(bindings), guarantee().resolve(bindings));
+    return time_series_list_type(*time_series, size().resolve(type_map), guarantee().resolve(type_map));
 }
 
 const TimeSeriesListType &time_series_list_type(const TimeSeriesType &item_type, std::size_t size,

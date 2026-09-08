@@ -1,6 +1,7 @@
 #pragma once
 
 #include <bg/time_series/details/time_series_properties.hpp>
+#include <bg/time_series/details/type_access.hpp>
 #include <bg/time_series/size_variable.hpp>
 
 #include <cstddef>
@@ -9,7 +10,8 @@
 
 namespace bg {
 
-template <typename Item, auto Size = std::dynamic_extent, auto... Properties> struct TSL {
+template <typename Item, auto Size = std::dynamic_extent, auto... Properties>
+struct TSL : details::time_series_type_access<TSL<Item, Size, Properties...>> {
   private:
     using ParsedProperties = details::time_series_properties<Properties...>;
     static_assert(ParsedProperties::valid);
@@ -40,3 +42,5 @@ template <typename T> inline constexpr bool is_time_series_list = time_series_li
 } // namespace details
 
 } // namespace bg
+
+#include <bg/type/details/time_series_list_type_traits.hpp>

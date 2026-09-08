@@ -6,12 +6,15 @@
 #include <bg/type/type_resolution_error.hpp>
 #include <bg/util/symbol.hpp>
 
+#include <compare>
 #include <functional>
 #include <span>
 #include <utility>
 #include <vector>
 
 namespace bg {
+
+class WiringArguments;
 
 struct Parameter {
     util::symbol name;
@@ -22,8 +25,23 @@ struct Parameter {
 };
 
 struct VariableResolver {
+    template <typename Function> VariableResolver(const Variable *variable, Function function) : variable{variable} {
+        if constexpr (std::invocable<Function, const TypeMap &, const WiringArguments &>) {
+            requires_arguments = true;
+            resolve = [function = std::move(function)](const TypeMap &type_map, const WiringArguments *arguments) {
+                return std::invoke(function, type_map, *arguments);
+            };
+        } else {
+            static_assert(std::invocable<Function, const TypeMap &>);
+            resolve = [function = std::move(function)](const TypeMap &type_map, const WiringArguments *) {
+                return std::invoke(function, type_map);
+            };
+        }
+    }
+
     const Variable *variable;
-    std::function<TypeBinding(const TypeMap &)> resolve;
+    std::function<TypeMapValue(const TypeMap &, const WiringArguments *)> resolve;
+    bool requires_arguments{};
 };
 
 struct ResolvedParameter {
@@ -42,7 +60,7 @@ struct ResolvedSignature {
 
 struct SignatureResolution {
     ResolvedSignature signature;
-    TypeMap bindings;
+    TypeMap type_map;
 };
 
 class Signature {
@@ -55,9 +73,13 @@ class Signature {
         : name_(name), parameters_(std::move(parameters)), output_(&output), resolvers_(std::move(resolvers)) {}
 
     [[nodiscard]] ResolvedSignature resolve(std::span<const Type *const> arguments) const;
-    [[nodiscard]] SignatureResolution resolve_with_bindings(std::span<const Type *const> arguments) const;
-    [[nodiscard]] SignatureResolution resolve_with_bindings(std::span<const Type *const> arguments,
-                                                            const TypeMap &bindings) const;
+    [[nodiscard]] SignatureResolution resolve_with_type_map(std::span<const Type *const> arguments) const;
+    [[nodiscard]] SignatureResolution resolve_with_type_map(std::span<const Type *const> arguments,
+                                                            const TypeMap &type_map) const;
+    [[nodiscard]] TypeMap match_arguments(std::span<const Type *const> arguments,
+                                          const TypeMap *type_map = nullptr) const;
+    [[nodiscard]] ResolvedSignature complete_resolution(TypeMap &type_map,
+                                                        const WiringArguments *arguments = nullptr) const;
 
     util::symbol name() const noexcept { return name_; }
 
@@ -68,13 +90,14 @@ class Signature {
     bool has_output() const noexcept { return output_ != nullptr; }
 
   private:
-    [[nodiscard]] SignatureResolution resolve_seeded(std::span<const Type *const> arguments, TypeMap bindings) const;
-    [[nodiscard]] SignatureResolution resolve(TypeMap bindings) const;
+    [[nodiscard]] SignatureResolution resolve_seeded(std::span<const Type *const> arguments, TypeMap type_map) const;
 
     util::symbol name_;
     std::vector<Parameter> parameters_;
     const TimeSeriesType *output_;
     std::vector<VariableResolver> resolvers_;
 };
+
+[[nodiscard]] std::partial_ordering compare_specificity(const Signature &left, const Signature &right);
 
 } // namespace bg

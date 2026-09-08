@@ -16,10 +16,10 @@ TEST_CASE("a time series reference value is one pointer",
     STATIC_CHECK(sizeof(bg::details::ReferenceAddress) == sizeof(void *));
     STATIC_CHECK(sizeof(bg::details::ReferenceRoot) == 4 * sizeof(void *));
 
-    const auto &target_type = bg::time_series_value_type(bg::cpp_scalar_type<int>(), bg::TimeSeriesGuarantee::ordinary);
+    const auto &target_type = bg::TS<int>::type();
     const auto &target_runtime_type =
         bg::time_series_value_runtime_type(target_type, bg::cpp_scalar_runtime_type<int>());
-    const auto &reference_type = bg::time_series_reference_type(target_type, bg::TimeSeriesGuarantee::ordinary);
+    const auto &reference_type = bg::REF<bg::TS<int>>::type();
     const auto &runtime_type = bg::time_series_reference_runtime_type(reference_type, target_runtime_type);
 
     CHECK(runtime_type.value_size() == sizeof(bg::details::ReferenceAddress));

@@ -7,12 +7,14 @@
 namespace bg::details {
 
 template <typename Item, auto... Properties> struct time_series_type_traits<TSS<Item, Properties...>> {
+    using semantic_type = TimeSeriesSetType;
+
     static constexpr bool generic = generic_scalar<Item>;
     static constexpr bool supported = generic_scalar<Item> || has_cpp_scalar_type<Item>;
 
     template <typename Scope, std::size_t Index, bool Input>
     static const TimeSeriesType &get(GuaranteeParameter guarantee) {
-        const auto &item = scalar_type_for<Scope, Item>();
+        const auto &item = scalar_type_for<Item>();
 
         if constexpr (Input || generic_scalar<Item>) {
             static const auto type = GenericTimeSeriesSetType{item, guarantee};
@@ -24,6 +26,13 @@ template <typename Item, auto... Properties> struct time_series_type_traits<TSS<
         }
 
         return time_series_set_type(item, *guarantee.value());
+    }
+};
+
+template <typename Item, auto... Properties> struct declaration_variable_traits<TSS<Item, Properties...>> {
+    template <typename Visitor> static void for_each(Visitor &&visitor) {
+        for_each_declaration_variable<Item>(visitor);
+        (for_each_property_variable<Properties>(visitor), ...);
     }
 };
 

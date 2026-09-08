@@ -61,6 +61,40 @@ template <details::runtime_signature_node Definition> class RuntimeSignatureNode
     }
 
     template <typename... Arguments>
+        requires(requires { typename Definition::output_time_series_type; } &&
+                 !std::same_as<typename Definition::output_time_series_type, void> &&
+                 (details::graph_code_argument<Arguments> && ...))
+    [[nodiscard]] auto operator()(Arguments &&...arguments) const & {
+        using Output = typename Definition::output_time_series_type;
+        return wp<Output>{*NodeTemplate::operator()(std::forward<Arguments>(arguments)...)};
+    }
+
+    template <typename... Arguments>
+        requires(requires { typename Definition::output_time_series_type; } &&
+                 !std::same_as<typename Definition::output_time_series_type, void> &&
+                 (details::graph_code_argument<Arguments> && ...))
+    [[nodiscard]] auto operator()(const TypeMap &type_map, Arguments &&...arguments) const & {
+        using Output = typename Definition::output_time_series_type;
+        return wp<Output>{*NodeTemplate::operator()(type_map, std::forward<Arguments>(arguments)...)};
+    }
+
+    template <typename... Arguments>
+        requires(requires { typename Definition::output_time_series_type; } &&
+                 std::same_as<typename Definition::output_time_series_type, void> &&
+                 (details::graph_code_argument<Arguments> && ...))
+    void operator()(Arguments &&...arguments) const & {
+        (void)NodeTemplate::operator()(std::forward<Arguments>(arguments)...);
+    }
+
+    template <typename... Arguments>
+        requires(requires { typename Definition::output_time_series_type; } &&
+                 std::same_as<typename Definition::output_time_series_type, void> &&
+                 (details::graph_code_argument<Arguments> && ...))
+    void operator()(const TypeMap &type_map, Arguments &&...arguments) const & {
+        (void)NodeTemplate::operator()(type_map, std::forward<Arguments>(arguments)...);
+    }
+
+    template <typename... Arguments>
         requires(details::graph_code_argument<Arguments> && ...)
     [[nodiscard]] std::optional<WiringPoint> operator()(Arguments &&...arguments) && {
         auto node_template = std::make_unique<RuntimeSignatureNodeTemplate>(std::move(*this));
@@ -69,6 +103,14 @@ template <details::runtime_signature_node Definition> class RuntimeSignatureNode
     }
 
     const Signature &signature() const override { return definition_.signature(); }
+
+    RequirementResult requirement(const WiringArguments &arguments) const override {
+        if constexpr (requires { requirement_result(definition_.requirement(arguments)); }) {
+            return requirement_result(definition_.requirement(arguments));
+        }
+
+        return accept;
+    }
 
     EvaluationFunction evaluation_function(const ResolvedSignature &) const noexcept override {
         if constexpr (requires(Invocation invocation) { Definition::evaluate(invocation); }) {
@@ -107,9 +149,7 @@ template <details::runtime_signature_node Definition> class RuntimeSignatureNode
         return signature_parameter(parameter_index).type->is_scalar();
     }
 
-    bool uses_output_runtime_type() const noexcept override {
-        return definition_.signature().has_output();
-    }
+    bool uses_output_runtime_type() const noexcept override { return definition_.signature().has_output(); }
     bool uses_node_invocation() const noexcept override { return true; }
 
     bool uses_future_scheduling() const noexcept override {
@@ -134,7 +174,7 @@ template <details::runtime_signature_node Definition> class RuntimeSignatureNode
     }
 
     NodeStateLayout state_layout(const ResolvedSignature &, std::span<const ScalarRuntimeType *const>,
-                                               std::span<const ScalarType *const>) const override {
+                                 std::span<const ScalarType *const>) const override {
         if constexpr (std::is_void_v<State>) {
             return {};
         } else {

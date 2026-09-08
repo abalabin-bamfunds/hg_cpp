@@ -21,8 +21,7 @@ class TimeSeriesValueType : public TimeSeriesType {
     const ScalarType *value_type_;
 };
 
-const TimeSeriesValueType &time_series_value_type(const ScalarType &value_type,
-                                                                TimeSeriesGuarantee guarantee);
+const TimeSeriesValueType &time_series_value_type(const ScalarType &value_type, TimeSeriesGuarantee guarantee);
 
 class GenericTimeSeriesValueType final : public TimeSeriesValueType {
   public:
@@ -30,10 +29,10 @@ class GenericTimeSeriesValueType final : public TimeSeriesValueType {
         : TimeSeriesValueType(value_type, guarantee) {}
 
     bool is_resolved() const noexcept override { return false; }
-    [[nodiscard]] const Type &resolve(const TypeMap &bindings) const override;
+    [[nodiscard]] const Type &resolve(const TypeMap &type_map) const override;
 
   protected:
-    [[nodiscard]] bool do_match(const Type &supplied, TypeMap &bindings) const override;
+    [[nodiscard]] bool do_match(const Type &supplied, TypeMap &type_map) const override;
 };
 
 } // namespace bg

@@ -1,9 +1,15 @@
 #include <bg/node/details/aggregate_node_template_base.hpp>
 
+#include <bg/graph/wiring_arguments.hpp>
+
 namespace bg::details {
 
 const Signature &AggregateNodeTemplateBase::signature() const {
     return *descriptor_->signature;
+}
+
+RequirementResult AggregateNodeTemplateBase::requirement(const WiringArguments &arguments) const {
+    return descriptor_->requirement == nullptr ? accept : descriptor_->requirement(arguments);
 }
 
 EvaluationFunction AggregateNodeTemplateBase::evaluation_function(const ResolvedSignature &) const noexcept {
@@ -66,11 +72,11 @@ EvaluationFunction AggregateNodeTemplateBase::state_destruction_function(const R
     return descriptor_->state_destruction_function;
 }
 
-std::vector<const ScalarType *> AggregateNodeTemplateBase::resolve_state_types(const TypeMap &bindings) const {
+std::vector<const ScalarType *> AggregateNodeTemplateBase::resolve_state_types(const TypeMap &type_map) const {
     if (descriptor_->resolve_state_types == nullptr) {
         return {};
     }
-    return descriptor_->resolve_state_types(bindings);
+    return descriptor_->resolve_state_types(type_map);
 }
 
 } // namespace bg::details

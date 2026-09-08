@@ -7,12 +7,19 @@
 
 namespace bg::details {
 
-template <typename Scope, template <template <typename> typename> typename Declaration>
+template <typename Declaration>
+    requires bundle_schema_variable_declaration<Declaration>
+const TypeVariable<BundleSchemaType> &schema_variable_instance() {
+    using Variable = std::remove_cv_t<Declaration>;
+    static const auto variable = TypeVariable<BundleSchemaType>{util::symbol{Variable::name.view()}};
+
+    return variable;
+}
+
+template <template <template <typename> typename> typename Declaration>
     requires bundle_schema_variable_declaration<Declaration<bundle_schema_field>>
 const TypeVariable<BundleSchemaType> &schema_variable_instance() {
-    using Variable = Declaration<bundle_schema_field>;
-    static const auto variable = TypeVariable<BundleSchemaType>{util::symbol{Variable::name.view()}};
-    return variable;
+    return schema_variable_instance<Declaration<bundle_schema_field>>();
 }
 
 } // namespace bg::details

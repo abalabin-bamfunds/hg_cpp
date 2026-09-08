@@ -14,8 +14,7 @@ namespace {
 class list_source_template final : public bg::NodeTemplate {
   public:
     [[nodiscard]] const bg::Signature &signature() const override {
-        static const auto &item = bg::time_series_value_type(bg::float_type(), bg::TimeSeriesGuarantee::ordinary);
-        static const auto &list = bg::time_series_list_type(item, 3, bg::TimeSeriesGuarantee::ordinary);
+        static const auto &list = bg::TSL<bg::TS<float>, 3>::type();
         static const auto value = bg::Signature{bg::util::symbol{"list_source"}, {}, list};
 
         return value;
@@ -38,7 +37,7 @@ class list_source_template final : public bg::NodeTemplate {
 class float_sink_template final : public bg::NodeTemplate {
   public:
     [[nodiscard]] const bg::Signature &signature() const override {
-        static const auto &input = bg::time_series_value_type(bg::float_type(), bg::TimeSeriesGuarantee::ordinary);
+        static const auto &input = bg::TS<float>::type();
         static const auto value = bg::Signature{bg::util::symbol{"float_sink"}, {{bg::util::symbol{"input"}, &input}}};
 
         return value;
@@ -61,8 +60,7 @@ class float_sink_template final : public bg::NodeTemplate {
 class list_sink_template final : public bg::NodeTemplate {
   public:
     [[nodiscard]] const bg::Signature &signature() const override {
-        static const auto &item = bg::time_series_value_type(bg::float_type(), bg::TimeSeriesGuarantee::ordinary);
-        static const auto &list = bg::time_series_list_type(item, 2, bg::TimeSeriesGuarantee::ordinary);
+        static const auto &list = bg::TSL<bg::TS<float>, 2>::type();
         static const auto value = bg::Signature{bg::util::symbol{"list_sink"}, {{bg::util::symbol{"input"}, &list}}};
         return value;
     }

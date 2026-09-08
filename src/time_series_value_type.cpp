@@ -74,32 +74,32 @@ const TimeSeriesType &TimeSeriesValueType::with_guarantee(TimeSeriesGuarantee gu
     return time_series_value_type(value_type(), guarantee);
 }
 
-bool GenericTimeSeriesValueType::do_match(const Type &supplied, TypeMap &bindings) const {
+bool GenericTimeSeriesValueType::do_match(const Type &supplied, TypeMap &type_map) const {
     const auto *time_series = dynamic_cast<const TimeSeriesValueType *>(&supplied);
     if (time_series == nullptr || !time_series->is_resolved()) {
         return false;
     }
 
-    auto trial_bindings = bindings.overlay();
-    if (!value_type().match(time_series->value_type(), trial_bindings) ||
-        !guarantee().match(*time_series->guarantee().value(), trial_bindings)) {
+    auto trial_type_map = type_map.overlay();
+    if (!value_type().match(time_series->value_type(), trial_type_map) ||
+        !guarantee().match(*time_series->guarantee().value(), trial_type_map)) {
         return false;
     }
 
-    bindings.apply(std::move(trial_bindings));
+    type_map.apply(std::move(trial_type_map));
 
     return true;
 }
 
-const Type &GenericTimeSeriesValueType::resolve(const TypeMap &bindings) const {
-    const auto &resolved_value_type = value_type().resolve(bindings);
+const Type &GenericTimeSeriesValueType::resolve(const TypeMap &type_map) const {
+    const auto &resolved_value_type = value_type().resolve(type_map);
     const auto *scalar_type = dynamic_cast<const ScalarType *>(&resolved_value_type);
     if (scalar_type == nullptr) {
-        throw TypeResolutionError{TypeResolutionErrorCode::invalid_binding, util::symbol{"TS"},
+        throw TypeResolutionError{TypeResolutionErrorCode::invalid_type_map, util::symbol{"TS"},
                                   "time series value type did not resolve to a scalar type"};
     }
 
-    return time_series_value_type(*scalar_type, guarantee().resolve(bindings));
+    return time_series_value_type(*scalar_type, guarantee().resolve(type_map));
 }
 
 } // namespace bg

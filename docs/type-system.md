@@ -30,6 +30,20 @@ same address, so exact equality is a pointer comparison. C++ and Python
 declarations use the same objects. A module that implements a registered type
 must remain loaded while the type can be used.
 
+A C++ time series declaration exposes its semantic type through `type()`.
+Generic declarations return an unresolved semantic type containing their
+declared variables:
+
+```cpp
+TS<float>::type()
+REF<TS<float>>::type()
+TSD<int, TS<float>>::type()
+TS<SCALAR>::type()
+```
+
+Scalar variable declarations expose the same access, for example
+`SCALAR::type()`. Resolved scalar types come from their type registry.
+
 Runtime types define physical storage separately from this hierarchy.
 
 ## Runtime types
@@ -154,7 +168,7 @@ Variables express relationships between types in one signature. Reusing a
 variable requires each occurrence to resolve to the same value.
 
 `ScalarVariable<Name>` declares a scalar type variable in C++ code. `SCALAR`
-is the default declaration. Declarations with different names bind
+is the default declaration. Declarations with different names map
 independently. Additional template arguments constrain the accepted scalar
 types, as in `ScalarVariable<"Number", float, double>`.
 
@@ -169,7 +183,7 @@ using T = TimeSeriesVariable<"T">;
 In<T::with<G>> input;
 ```
 
-`T` and `G` retain separate bindings. A literal guarantee in `T::with<G>`
+`T` and `G` retain separate mappings. A literal guarantee in `T::with<G>`
 requires that guarantee or a stronger one.
 
 `SizeVariableDeclaration<Name>` declares a fixed time series list size
@@ -207,15 +221,16 @@ Value   = TypeVar<Type, float, TS<float, G>>
 Exactly one alternative must accept the supplied type. Matching uses normal
 compatibility. An unconstrained variable accepts any type in its category.
 
-`TypeMap` holds the bindings produced for one signature resolution. It is keyed
+`TypeMap` holds the mappings produced for one signature resolution. It is keyed
 by `const Variable*` and stores:
 
 ```cpp
 std::variant<const Type*, TimeSeriesGuarantee, Size>
 ```
 
-The variable object provides identity within a signature. A separate `TypeMap`
-lets another signature reuse the same variable independently.
+The variable declaration provides its identity. Each resolution operation uses
+a separate `TypeMap`, so the same declaration can resolve independently in
+different signatures.
 
 ## Signature resolution
 
@@ -227,7 +242,7 @@ before graph compilation:
 2. Resolve every parameter and output type from that map.
 
 A wiring template call can seed the `TypeMap`. Argument matching must agree
-with each seeded binding. This resolves variables that appear only in outputs.
+with each seeded map entry. This resolves variables that appear only in outputs.
 
 Reference matching is transparent at every level of a type. A non-reference
 parameter matches a reference target. A reference parameter matches the same
@@ -244,10 +259,13 @@ series input. A plain `float` parameter can accept `float` or `TS<float, G>`;
 the graph-code argument selects the category.
 
 A node template can provide a function to resolve a variable that matching did
-not bind. The function returns a resolved value and can use the `TypeMap` and
+not map. The function returns a resolved value and can use the `TypeMap` and
 declared wiring-time scalars. A scalar requested by the function resolves its
 parameter as a scalar. Functions are evaluated on demand, with dependency
 cycle detection.
+
+[Operator overload resolution](operators.md) applies these rules independently
+to each candidate before comparing applicable signatures.
 
 Graph compilation uses the resolved signature to select direct, reference,
 covariant, or representation bindings.
@@ -260,8 +278,8 @@ covariant, or representation bindings.
 Wiring represents a supplied type `X` as the canonical scalar type `TypeOf<X>`.
 Matching then applies the normal type rules to `T` and `X`:
 
-- `TypeOf<V>` binds type variable `V` to `X`.
-- `TypeOf<TSD<K, V>>` checks that `X` is a compatible TSD and binds `K` and `V`.
+- `TypeOf<V>` maps type variable `V` to `X`.
+- `TypeOf<TSD<K, V>>` checks that `X` is a compatible TSD and maps `K` and `V`.
 
 The resolved parameter type retains `X`. Parameter packing can therefore pass
 its type pointer without storing another scalar value in the wired node.
@@ -289,7 +307,7 @@ const -> final -> deduplicated -> ordinary
 The C++ enumerator for `const` is `const_`.
 
 An input accepts a source with the same or a stronger guarantee. A guarantee
-variable can declare a literal minimum. When several inputs bind the same
+variable can declare a literal minimum. When several inputs map the same
 variable, it resolves to their weakest guarantee. A scalar contributes `const`.
 
 An omitted input guarantee accepts and preserves the source guarantee. An
@@ -381,9 +399,11 @@ representation can have a different visible key set from the source.
 
 ## Errors
 
-A matching, variable resolution, or constraint failure throws a structured
-type-resolution exception. It identifies the affected parameter or output
-and the incompatible types.
+A direct signature call reports a matching, variable resolution, or constraint
+failure through a structured type-resolution exception. It identifies the
+affected parameter or output and the incompatible types. Operator resolution
+records the same information as an expected candidate rejection, as defined in
+[operator diagnostics](operators.md#diagnostics).
 
 ## Open choices
 

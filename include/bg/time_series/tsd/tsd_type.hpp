@@ -1,12 +1,14 @@
 #pragma once
 
 #include <bg/time_series/details/time_series_properties.hpp>
+#include <bg/time_series/details/type_access.hpp>
 
 #include <type_traits>
 
 namespace bg {
 
-template <typename K, typename Item, auto... Properties> struct TSD {
+template <typename K, typename Item, auto... Properties>
+struct TSD : details::time_series_type_access<TSD<K, Item, Properties...>> {
   private:
     using ParsedProperties = details::time_series_properties<Properties...>;
     static_assert(ParsedProperties::valid);
@@ -34,3 +36,5 @@ template <typename T> inline constexpr bool is_time_series_dict = time_series_di
 } // namespace details
 
 } // namespace bg
+
+#include <bg/type/details/time_series_dict_type_traits.hpp>

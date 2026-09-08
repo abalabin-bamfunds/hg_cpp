@@ -98,6 +98,13 @@ class wiring_argument {
         return std::holds_alternative<FreeTimeSeriesBundleArgument>(value_);
     }
 
+    bool present() const noexcept {
+        const auto *scalar = std::get_if<ScalarArgument>(&value_);
+        return scalar == nullptr || scalar->data != nullptr || scalar->view != nullptr;
+    }
+
+    bool is_scalar() const noexcept { return std::holds_alternative<ScalarArgument>(value_); }
+
     WiringPoint wiring_point() const { return std::get<WiringPoint>(value_); }
 
     void wiring_point(WiringPoint point) { value_ = point; }
@@ -118,13 +125,11 @@ class wiring_argument {
 
     const void *scalar_data() const noexcept { return std::get<ScalarArgument>(value_).data; }
 
-    const details::ScalarData *scalar_view() const noexcept {
-        return std::get<ScalarArgument>(value_).view;
-    }
+    const details::ScalarData *scalar_view() const noexcept { return std::get<ScalarArgument>(value_).view; }
 
-    bool scalar_has_value() const noexcept {
-        return scalar_data() != nullptr || scalar_view() != nullptr;
-    }
+    bool scalar_has_value() const noexcept { return scalar_data() != nullptr || scalar_view() != nullptr; }
+
+    const Type &type() const noexcept;
 
   private:
     std::variant<WiringPoint, ScalarArgument, FreeTimeSeriesListArgument, FreeTimeSeriesBundleArgument> value_;

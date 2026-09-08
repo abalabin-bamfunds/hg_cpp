@@ -52,6 +52,23 @@ returns its output as a `WiringPoint`. A call returns `void` when the node has
 no output. The [graph wiring design](graph-wiring.md) defines ownership and
 nested contexts.
 
+## Callable view declaration
+
+A callable can declare the invocation views directly. This form keeps a small
+node definition local to its use:
+
+```cpp
+const auto add = bg::node(
+    [](bg::In<bg::TS<int>, "value"_n> value, int amount,
+       bg::Out<bg::TS<int>> output) {
+        output.set(*value + amount);
+    });
+```
+
+Parameters can be `In<>`, scalar values, or one `Out<>`. An `In<>` name
+supplies its signature name. Captures are immutable compiled node data. Use an
+aggregate declaration when the node needs state or lifecycle functions.
+
 ## Runtime-signature declaration
 
 A definition object can provide its signature as runtime data. Use this form

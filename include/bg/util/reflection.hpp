@@ -290,4 +290,47 @@ template <typename T> consteval std::string_view unqualified_type_name() {
     return name;
 }
 
+template <auto Function> consteval std::string_view function_name() {
+    static_assert(std::is_pointer_v<decltype(Function)> &&
+                  std::is_function_v<std::remove_pointer_t<decltype(Function)>>);
+
+    constexpr auto signature = detail::value_signature<Function>();
+
+#if defined(_MSC_VER)
+    constexpr auto prefix = std::string_view{"value_signature<"};
+    const auto begin = signature.find(prefix) + prefix.size();
+    const auto end = signature.rfind(">(void)");
+#else
+    constexpr auto prefix = std::string_view{"Value = "};
+    const auto begin = signature.find(prefix) + prefix.size();
+    const auto semicolon = signature.find(';', begin);
+    const auto bracket = signature.find(']', begin);
+    const auto end = semicolon == std::string_view::npos ? bracket : semicolon;
+#endif
+
+    auto name = signature.substr(begin, end - begin);
+    if (name.starts_with('&')) {
+        name.remove_prefix(1);
+    }
+
+#if defined(_MSC_VER)
+    const auto parameter_list = name.find('(');
+    if (parameter_list != std::string_view::npos) {
+        name = name.substr(0, parameter_list);
+    }
+#endif
+
+    const auto namespace_separator = name.rfind("::");
+    if (namespace_separator != std::string_view::npos) {
+        name.remove_prefix(namespace_separator + 2);
+    }
+
+    const auto declaration_prefix = name.rfind(' ');
+    if (declaration_prefix != std::string_view::npos) {
+        name.remove_prefix(declaration_prefix + 1);
+    }
+
+    return name;
+}
+
 } // namespace bg::util

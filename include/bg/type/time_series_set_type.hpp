@@ -28,10 +28,10 @@ class GenericTimeSeriesSetType final : public TimeSeriesSetType {
         : TimeSeriesSetType(item_type, guarantee) {}
 
     bool is_resolved() const noexcept override { return false; }
-    [[nodiscard]] const Type &resolve(const TypeMap &bindings) const override;
+    [[nodiscard]] const Type &resolve(const TypeMap &type_map) const override;
 
   protected:
-    [[nodiscard]] bool do_match(const Type &supplied, TypeMap &bindings) const override;
+    [[nodiscard]] bool do_match(const Type &supplied, TypeMap &type_map) const override;
 };
 
 const TimeSeriesSetType &time_series_set_type(const ScalarType &item_type, TimeSeriesGuarantee guarantee);

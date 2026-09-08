@@ -10,14 +10,17 @@
 #include <bg/graph/nested_graph.hpp>
 #include <bg/graph/node.hpp>
 #include <bg/graph/runtime_graph.hpp>
+#include <bg/graph/requirement.hpp>
 #include <bg/graph/wired_node.hpp>
 #include <bg/graph/wired_scalar.hpp>
 #include <bg/graph/wiring_context.hpp>
+#include <bg/graph/wiring_arguments.hpp>
 #include <bg/graph/wiring_error.hpp>
 #include <bg/graph/wiring_point.hpp>
 #include <bg/graph/wiring_template.hpp>
 #include <bg/nested.hpp>
 #include <bg/node.hpp>
+#include <bg/operator.hpp>
 #include <bg/node/input.hpp>
 #include <bg/node/input_properties.hpp>
 #include <bg/node/node_invocation.hpp>

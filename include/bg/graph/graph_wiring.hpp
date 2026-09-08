@@ -54,7 +54,11 @@ class GraphWiring {
 
     [[nodiscard]] std::optional<WiringPoint> invoke(const WiringTemplate &wiring_template,
                                                     std::span<details::wiring_argument> arguments,
-                                                    const TypeMap *seed_bindings = nullptr);
+                                                    const TypeMap *seed_type_map = nullptr);
+    [[nodiscard]] std::optional<WiringPoint> invoke_resolved(const WiringTemplate &wiring_template,
+                                                             SignatureResolution resolution,
+                                                             std::span<details::wiring_argument> arguments,
+                                                             util::symbol path_name);
     [[nodiscard]] std::optional<WiringPoint> add_node(const NodeTemplate &node_template, ResolvedSignature signature,
                                                       std::vector<const ScalarType *> state_types,
                                                       std::span<details::wiring_argument> arguments);

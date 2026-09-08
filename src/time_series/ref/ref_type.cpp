@@ -60,15 +60,15 @@ const TimeSeriesType &TimeSeriesReferenceType::with_guarantee(TimeSeriesGuarante
     return time_series_reference_type(target_type(), guarantee);
 }
 
-const Type &GenericTimeSeriesReferenceType::resolve(const TypeMap &bindings) const {
-    const auto &resolved_target = target_type().resolve(bindings);
+const Type &GenericTimeSeriesReferenceType::resolve(const TypeMap &type_map) const {
+    const auto &resolved_target = target_type().resolve(type_map);
     const auto *target = dynamic_cast<const TimeSeriesType *>(&resolved_target);
     if (target == nullptr || dynamic_cast<const TimeSeriesReferenceType *>(target) != nullptr) {
-        throw TypeResolutionError{TypeResolutionErrorCode::invalid_binding, util::symbol{"REF"},
+        throw TypeResolutionError{TypeResolutionErrorCode::invalid_type_map, util::symbol{"REF"},
                                   "reference target did not resolve to a non-reference time series type"};
     }
 
-    return time_series_reference_type(*target, guarantee().resolve(bindings));
+    return time_series_reference_type(*target, guarantee().resolve(type_map));
 }
 
 } // namespace bg

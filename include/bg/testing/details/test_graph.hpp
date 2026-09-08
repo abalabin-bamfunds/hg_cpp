@@ -161,7 +161,7 @@ template <typename Function, typename Inputs, std::size_t... Index>
 
     {
         auto context = WiringContext{wiring};
-        const auto sources = std::tuple{
+        [[maybe_unused]] const auto sources = std::tuple{
             wire_source<typename FunctionInfo::template input_scalar<Index>>(std::get<Index>(inputs), start_time)...};
         const auto output =
             std::invoke(function, typename FunctionInfo::template argument<Index>{std::get<Index>(sources)}...);

@@ -11,7 +11,7 @@
 
 namespace bg {
 
-using TypeBinding = std::variant<const Type *, TimeSeriesGuarantee, Size>;
+using TypeMapValue = std::variant<const Type *, TimeSeriesGuarantee, Size>;
 
 class TypeMap {
   public:
@@ -21,17 +21,23 @@ class TypeMap {
     TypeMap(TypeMap &&) = default;
     TypeMap &operator=(TypeMap &&) = default;
 
-    const TypeBinding *find(const Variable &variable) const noexcept {
+    const TypeMapValue *find(const Variable &variable) const {
         const auto found = values_.find(&variable);
 
         if (found != values_.end()) {
             return &found->second;
         }
 
-        return parent_ == nullptr ? nullptr : parent_->find(variable);
+        if (parent_ != nullptr) {
+            return parent_->find(variable);
+        }
+
+        return missing_mapping_ == nullptr
+                   ? nullptr
+                   : missing_mapping_(missing_mapping_context_, const_cast<TypeMap &>(*this), variable);
     }
 
-    void set(const Variable &variable, TypeBinding value) { values_.insert_or_assign(&variable, std::move(value)); }
+    void set(const Variable &variable, TypeMapValue value) { values_.insert_or_assign(&variable, std::move(value)); }
 
     [[nodiscard]] TypeMap overlay() const { return TypeMap{this}; }
 
@@ -48,7 +54,16 @@ class TypeMap {
     }
 
   private:
+    friend class Signature;
+
+    using MissingMappingFunction = const TypeMapValue *(*)(void *, TypeMap &, const Variable &);
+
     explicit TypeMap(const TypeMap *parent) : parent_(parent) {}
+
+    void missing_mapping_handler(void *context, MissingMappingFunction function) noexcept {
+        missing_mapping_context_ = context;
+        missing_mapping_ = function;
+    }
 
     void copy_into(TypeMap &destination) const {
         if (parent_ != nullptr) {
@@ -60,7 +75,9 @@ class TypeMap {
     }
 
     const TypeMap *parent_{};
-    std::unordered_map<const Variable *, TypeBinding> values_;
+    std::unordered_map<const Variable *, TypeMapValue> values_;
+    void *missing_mapping_context_{};
+    MissingMappingFunction missing_mapping_{};
 };
 
 } // namespace bg

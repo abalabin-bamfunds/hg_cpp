@@ -7,14 +7,15 @@
 
 namespace bg::details {
 
-using AggregateOutputRuntimeTypeFunction = const TimeSeriesRuntimeType *(*)(
-    const ResolvedSignature &, std::span<const ScalarRuntimeType *const>,
-    std::span<const TimeSeriesRuntimeType *const>);
+using AggregateOutputRuntimeTypeFunction =
+    const TimeSeriesRuntimeType *(*)(const ResolvedSignature &, std::span<const ScalarRuntimeType *const>,
+                                     std::span<const TimeSeriesRuntimeType *const>);
 using AggregateStateLayoutFunction = NodeStateLayout (*)(const ResolvedSignature &,
                                                          std::span<const ScalarRuntimeType *const>,
                                                          std::span<const ScalarType *const>);
 using AggregateStateConstructionFunction = void (*)(const NodeStateLayout &, void *) noexcept;
 using AggregateStateTypesFunction = std::vector<const ScalarType *> (*)(const TypeMap &);
+using AggregateRequirementFunction = RequirementResult (*)(const WiringArguments &);
 
 enum class AggregateRuntimeTypeUse : unsigned char {
     none = 0,
@@ -34,6 +35,7 @@ struct AggregateNodeDescriptor {
     AggregateStateConstructionFunction construct_initial_state;
     EvaluationFunction state_destruction_function;
     AggregateStateTypesFunction resolve_state_types;
+    AggregateRequirementFunction requirement;
     bool uses_output_runtime_type;
     bool uses_future_scheduling;
 };
@@ -43,6 +45,7 @@ class AggregateNodeTemplateBase : public NodeTemplate {
     explicit AggregateNodeTemplateBase(const AggregateNodeDescriptor &descriptor) noexcept : descriptor_{&descriptor} {}
 
     const Signature &signature() const final;
+    RequirementResult requirement(const WiringArguments &arguments) const final;
     EvaluationFunction evaluation_function(const ResolvedSignature &) const noexcept final;
     EvaluationFunction start_function(const ResolvedSignature &) const noexcept final;
     EvaluationFunction stop_function(const ResolvedSignature &) const noexcept final;
@@ -60,7 +63,7 @@ class AggregateNodeTemplateBase : public NodeTemplate {
                                  std::span<const ScalarType *const> state_types) const final;
     void construct_initial_state(const NodeStateLayout &layout, void *storage) const noexcept final;
     EvaluationFunction state_destruction_function(const ResolvedSignature &) const noexcept final;
-    std::vector<const ScalarType *> resolve_state_types(const TypeMap &bindings) const final;
+    std::vector<const ScalarType *> resolve_state_types(const TypeMap &type_map) const final;
 
   private:
     const AggregateNodeDescriptor *descriptor_;

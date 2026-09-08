@@ -28,34 +28,34 @@ const TimeSeriesType &TimeSeriesSetType::with_guarantee(TimeSeriesGuarantee guar
     return time_series_set_type(item_type(), guarantee);
 }
 
-bool GenericTimeSeriesSetType::do_match(const Type &supplied, TypeMap &bindings) const {
+bool GenericTimeSeriesSetType::do_match(const Type &supplied, TypeMap &type_map) const {
     const auto *set = dynamic_cast<const TimeSeriesSetType *>(&supplied);
     if (set == nullptr || !set->is_resolved()) {
         return false;
     }
 
-    auto trial = bindings.overlay();
+    auto trial = type_map.overlay();
     if (!item_type().match(set->item_type(), trial) || !guarantee().match(*set->guarantee().value(), trial)) {
         return false;
     }
 
-    bindings.apply(std::move(trial));
+    type_map.apply(std::move(trial));
     return true;
 }
 
-const Type &GenericTimeSeriesSetType::resolve(const TypeMap &bindings) const {
-    const auto &resolved_item = item_type().resolve(bindings);
+const Type &GenericTimeSeriesSetType::resolve(const TypeMap &type_map) const {
+    const auto &resolved_item = item_type().resolve(type_map);
     const auto *scalar = dynamic_cast<const ScalarType *>(&resolved_item);
     if (scalar == nullptr) {
-        throw TypeResolutionError{TypeResolutionErrorCode::invalid_binding, util::symbol{"TSS"},
+        throw TypeResolutionError{TypeResolutionErrorCode::invalid_type_map, util::symbol{"TSS"},
                                   "time series set item did not resolve to a scalar type"};
     }
     if (!scalar->supports_hash()) {
-        throw TypeResolutionError{TypeResolutionErrorCode::invalid_binding, util::symbol{"TSS"},
+        throw TypeResolutionError{TypeResolutionErrorCode::invalid_type_map, util::symbol{"TSS"},
                                   "time series set item type does not support hashing"};
     }
 
-    return time_series_set_type(*scalar, guarantee().resolve(bindings));
+    return time_series_set_type(*scalar, guarantee().resolve(type_map));
 }
 
 const TimeSeriesSetType &time_series_set_type(const ScalarType &item_type, TimeSeriesGuarantee guarantee) {

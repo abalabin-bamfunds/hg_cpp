@@ -1,5 +1,6 @@
 #pragma once
 
+#include <bg/scalar/details/type_access.hpp>
 #include <bg/util/compile_time_string.hpp>
 
 #include <type_traits>
@@ -9,7 +10,8 @@ namespace bg {
 struct EqualityComparable {};
 struct Hashable {};
 
-template <util::compile_time_string Name, typename... Constraints> struct ScalarVariable {
+template <util::compile_time_string Name, typename... Constraints>
+struct ScalarVariable : details::scalar_type_access<ScalarVariable<Name, Constraints...>> {
     static constexpr auto name = Name;
 };
 
@@ -47,3 +49,5 @@ inline constexpr bool scalar_variable_supports_hash =
 } // namespace details
 
 } // namespace bg
+
+#include <bg/type/scalar_variable.hpp>

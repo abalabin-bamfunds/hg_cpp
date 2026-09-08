@@ -32,7 +32,7 @@ class BundleSchema : public BundleSchemaType {
     const BundleField *find(util::symbol name) const noexcept;
     bool derives_from(const BundleSchema &schema) const noexcept;
     bool is_resolved() const noexcept override;
-    [[nodiscard]] const Type &resolve(const TypeMap &bindings) const override;
+    [[nodiscard]] const Type &resolve(const TypeMap &type_map) const override;
 
   private:
     util::symbol name_;
@@ -57,7 +57,7 @@ class TimeSeriesBundleType : public FixedItemTimeSeriesType {
     TimeSeriesBundleType(const BundleSchemaType &schema, GuaranteeParameter guarantee)
         : FixedItemTimeSeriesType(guarantee), schema_{&schema} {}
 
-    [[nodiscard]] bool do_match(const Type &supplied, TypeMap &bindings) const override;
+    [[nodiscard]] bool do_match(const Type &supplied, TypeMap &type_map) const override;
 
   private:
     const BundleSchemaType *schema_;
@@ -69,13 +69,12 @@ class GenericTimeSeriesBundleType final : public TimeSeriesBundleType {
         : TimeSeriesBundleType(schema, guarantee) {}
 
     bool is_resolved() const noexcept override { return false; }
-    [[nodiscard]] const Type &resolve(const TypeMap &bindings) const override;
+    [[nodiscard]] const Type &resolve(const TypeMap &type_map) const override;
 };
 
 [[nodiscard]] const BundleSchema &bundle_schema(util::symbol name, const void *identity, const BundleSchema *base,
                                                 std::span<const BundleField> fields);
 [[nodiscard]] const BundleSchema &unnamed_bundle_schema(std::span<const BundleField> fields);
-const TimeSeriesBundleType &time_series_bundle_type(const BundleSchema &schema,
-                                                                  TimeSeriesGuarantee guarantee);
+const TimeSeriesBundleType &time_series_bundle_type(const BundleSchema &schema, TimeSeriesGuarantee guarantee);
 
 } // namespace bg

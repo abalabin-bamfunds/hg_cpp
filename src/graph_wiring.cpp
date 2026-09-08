@@ -22,8 +22,7 @@ namespace bg {
 
 namespace {
 
-bool requires_reference_representation(const TimeSeriesType &parameter,
-                                                     const TimeSeriesType &argument) noexcept {
+bool requires_reference_representation(const TimeSeriesType &parameter, const TimeSeriesType &argument) noexcept {
     const auto *parameter_dictionary = dynamic_cast<const TimeSeriesDictionaryType *>(&parameter);
     const auto *argument_dictionary = dynamic_cast<const TimeSeriesDictionaryType *>(&argument);
     if (parameter_dictionary == nullptr || argument_dictionary == nullptr) {
@@ -121,29 +120,23 @@ const WiringPath &GraphWiring::make_path(util::symbol name, util::symbol label) 
 
 std::optional<WiringPoint> GraphWiring::invoke(const WiringTemplate &wiring_template,
                                                std::span<details::wiring_argument> arguments,
-                                               const TypeMap *seed_bindings) {
-    std::vector<const Type *> argument_types;
-    argument_types.reserve(arguments.size());
-
+                                               const TypeMap *seed_type_map) {
     for (const auto &argument : arguments) {
         if (argument.is_wiring_point()) {
             const auto source = argument.wiring_point();
             if (&source.graph() != this) {
                 throw WiringError{"a WiringPoint belongs to another GraphWiring"};
             }
-            argument_types.push_back(&source.type());
-        } else if (argument.is_free_time_series_list()) {
-            argument_types.push_back(argument.free_time_series_list().type);
-        } else if (argument.is_free_time_series_bundle()) {
-            argument_types.push_back(argument.free_time_series_bundle().type);
-        } else {
-            argument_types.push_back(&argument.scalar_type());
         }
     }
 
-    auto resolution = seed_bindings == nullptr
-                          ? wiring_template.signature().resolve_with_bindings(argument_types)
-                          : wiring_template.signature().resolve_with_bindings(argument_types, *seed_bindings);
+    return wiring_template.invoke(*this, arguments, seed_type_map);
+}
+
+std::optional<WiringPoint> GraphWiring::invoke_resolved(const WiringTemplate &wiring_template,
+                                                        SignatureResolution resolution,
+                                                        std::span<details::wiring_argument> arguments,
+                                                        util::symbol path_name) {
     auto signature = std::move(resolution.signature);
 
     for (auto i = std::size_t{}; i < arguments.size(); ++i) {
@@ -207,10 +200,10 @@ std::optional<WiringPoint> GraphWiring::invoke(const WiringTemplate &wiring_temp
 
     const auto *expected_output = signature.output;
     const auto label = wiring_template.label(signature, arguments, default_label());
-    const auto &path = make_path(signature.name, label);
+    const auto &path = make_path(path_name, label);
     auto context = WiringContext{*this, path};
 
-    auto output = wiring_template.wire(*this, std::move(signature), resolution.bindings, arguments);
+    auto output = wiring_template.wire(*this, std::move(signature), resolution.type_map, arguments);
 
     if ((expected_output == nullptr) != !output.has_value()) {
         throw WiringError{"a wiring-template result does not match its output declaration"};
@@ -356,9 +349,9 @@ WiringPoint GraphWiring::make_reference(WiringPoint source, const TimeSeriesType
     return *result;
 }
 
-std::optional<WiringPoint> NodeTemplate::wire(GraphWiring &wiring, ResolvedSignature signature, const TypeMap &bindings,
+std::optional<WiringPoint> NodeTemplate::wire(GraphWiring &wiring, ResolvedSignature signature, const TypeMap &type_map,
                                               std::span<details::wiring_argument> arguments) const {
-    return wiring.add_node(*this, std::move(signature), resolve_state_types(bindings), arguments);
+    return wiring.add_node(*this, std::move(signature), resolve_state_types(type_map), arguments);
 }
 
 } // namespace bg

@@ -5,17 +5,24 @@
 
 namespace bg::details {
 
-template <typename Scope, auto Declaration>
-    requires size_variable_declaration<decltype(Declaration)>
+template <typename Declaration>
+    requires size_variable_declaration<Declaration>
 const SizeVariable &size_variable_instance() {
-    using Variable = std::remove_cv_t<decltype(Declaration)>;
+    using Variable = std::remove_cv_t<Declaration>;
     static const auto variable = SizeVariable{util::symbol{Variable::name.view()}};
+
     return variable;
 }
 
-template <typename Scope, auto Size> [[nodiscard]] SizeParameter size_parameter() {
+template <auto Declaration>
+    requires size_variable_declaration<decltype(Declaration)>
+const SizeVariable &size_variable_instance() {
+    return size_variable_instance<std::remove_cv_t<decltype(Declaration)>>();
+}
+
+template <auto Size> [[nodiscard]] SizeParameter size_parameter() {
     if constexpr (size_variable_declaration<decltype(Size)>) {
-        return SizeParameter{size_variable_instance<Scope, Size>()};
+        return SizeParameter{size_variable_instance<Size>()};
     } else {
         return SizeParameter{Size};
     }

@@ -11,7 +11,7 @@ template <typename Definition, std::size_t... Index>
 consteval auto aggregate_parameter_runtime_type_uses(std::index_sequence<Index...>) {
     constexpr auto ParameterCount = parameter_index<Definition>(std::index_sequence<Index...>{});
     auto result = std::array<AggregateRuntimeTypeUse, ParameterCount>{};
-    auto parameter = std::size_t{};
+    [[maybe_unused]] auto parameter = std::size_t{};
 
     (
         [&] {
@@ -36,8 +36,7 @@ consteval auto aggregate_parameter_runtime_type_uses(std::index_sequence<Index..
 
 template <typename Definition, std::size_t... Index>
 consteval bool aggregate_node_has_state(std::index_sequence<Index...>) {
-    return (false || ... || state_field<
-                                std::remove_cv_t<util::aggregate_member_type<Index, Definition>>>::value);
+    return (false || ... || state_field<std::remove_cv_t<util::aggregate_member_type<Index, Definition>>>::value);
 }
 
 template <typename Definition> const AggregateNodeDescriptor &aggregate_node_descriptor() {
@@ -47,82 +46,103 @@ template <typename Definition> const AggregateNodeDescriptor &aggregate_node_des
 
     static const auto descriptor = AggregateNodeDescriptor{
         .signature = &aggregate_node_signature<Definition>(),
-        .evaluation_function = [] {
-            if constexpr (aggregate_node_has_evaluate<Definition>) {
-                return &evaluate_aggregate_node<Definition>;
-            } else {
-                return EvaluationFunction{};
-            }
-        }(),
-        .start_function = [] {
-            if constexpr (aggregate_node_has_start<Definition>) {
-                return &start_aggregate_node<Definition>;
-            } else {
-                return EvaluationFunction{};
-            }
-        }(),
-        .stop_function = [] {
-            if constexpr (aggregate_node_has_stop<Definition>) {
-                return &stop_aggregate_node<Definition>;
-            } else {
-                return EvaluationFunction{};
-            }
-        }(),
-        .invalidation_behavior = [] {
-            if constexpr (aggregate_node_has_invalidation_function<Definition>) {
-                return InvalidationBehavior{InvalidationMode::invoke, &invalidate_aggregate_node<Definition>};
-            } else if constexpr (aggregate_node_preserves_output<Definition>) {
-                return InvalidationBehavior{InvalidationMode::preserve_output};
-            } else if constexpr (aggregate_output_requires_view_invalidation<Definition>(Index{})) {
-                return InvalidationBehavior{InvalidationMode::invoke, &invalidate_aggregate_output<Definition>};
-            } else {
-                return InvalidationBehavior{};
-            }
-        }(),
-        .output_runtime_type = [] {
-            if constexpr (aggregate_node_has_output<Definition>()) {
-                return &aggregate_output_runtime_type<Definition>;
-            } else {
-                return AggregateOutputRuntimeTypeFunction{};
-            }
-        }(),
+        .evaluation_function =
+            [] {
+                if constexpr (aggregate_node_has_evaluate<Definition>) {
+                    return &evaluate_aggregate_node<Definition>;
+                } else {
+                    return EvaluationFunction{};
+                }
+            }(),
+        .start_function =
+            [] {
+                if constexpr (aggregate_node_has_start<Definition>) {
+                    return &start_aggregate_node<Definition>;
+                } else {
+                    return EvaluationFunction{};
+                }
+            }(),
+        .stop_function =
+            [] {
+                if constexpr (aggregate_node_has_stop<Definition>) {
+                    return &stop_aggregate_node<Definition>;
+                } else {
+                    return EvaluationFunction{};
+                }
+            }(),
+        .invalidation_behavior =
+            [] {
+                if constexpr (aggregate_node_has_invalidation_function<Definition>) {
+                    return InvalidationBehavior{InvalidationMode::invoke, &invalidate_aggregate_node<Definition>};
+                } else if constexpr (aggregate_node_preserves_output<Definition>) {
+                    return InvalidationBehavior{InvalidationMode::preserve_output};
+                } else if constexpr (aggregate_output_requires_view_invalidation<Definition>(Index{})) {
+                    return InvalidationBehavior{InvalidationMode::invoke, &invalidate_aggregate_output<Definition>};
+                } else {
+                    return InvalidationBehavior{};
+                }
+            }(),
+        .output_runtime_type =
+            [] {
+                if constexpr (aggregate_node_has_output<Definition>()) {
+                    return &aggregate_output_runtime_type<Definition>;
+                } else {
+                    return AggregateOutputRuntimeTypeFunction{};
+                }
+            }(),
         .parameter_runtime_type_uses = parameter_runtime_type_uses,
-        .state_layout = [] {
-            if constexpr (aggregate_node_has_state<Definition>(Index{})) {
-                return AggregateStateLayoutFunction{[](const ResolvedSignature &signature,
-                                                       std::span<const ScalarRuntimeType *const> parameter_types,
-                                                       std::span<const ScalarType *const> state_types) {
-                    return aggregate_state_layout<Definition>(signature, parameter_types, state_types, Index{});
-                }};
-            } else {
-                return AggregateStateLayoutFunction{};
-            }
-        }(),
-        .construct_initial_state = [] {
-            if constexpr (aggregate_node_has_state<Definition>(Index{})) {
-                return AggregateStateConstructionFunction{[](const NodeStateLayout &layout, void *storage) noexcept {
-                    construct_aggregate_state<Definition>(layout, storage, Index{});
-                }};
-            } else {
-                return AggregateStateConstructionFunction{};
-            }
-        }(),
-        .state_destruction_function = [] {
-            if constexpr (aggregate_state_requires_destruction<Definition>(Index{})) {
-                return static_cast<EvaluationFunction>(&destroy_aggregate_state<Definition>);
-            } else {
-                return EvaluationFunction{};
-            }
-        }(),
-        .resolve_state_types = [] {
-            if constexpr (aggregate_node_has_state<Definition>(Index{})) {
-                return AggregateStateTypesFunction{[](const TypeMap &bindings) {
-                    return aggregate_state_types<Definition>(bindings, Index{});
-                }};
-            } else {
-                return AggregateStateTypesFunction{};
-            }
-        }(),
+        .state_layout =
+            [] {
+                if constexpr (aggregate_node_has_state<Definition>(Index{})) {
+                    return AggregateStateLayoutFunction{[](const ResolvedSignature &signature,
+                                                           std::span<const ScalarRuntimeType *const> parameter_types,
+                                                           std::span<const ScalarType *const> state_types) {
+                        return aggregate_state_layout<Definition>(signature, parameter_types, state_types, Index{});
+                    }};
+                } else {
+                    return AggregateStateLayoutFunction{};
+                }
+            }(),
+        .construct_initial_state =
+            [] {
+                if constexpr (aggregate_node_has_state<Definition>(Index{})) {
+                    return AggregateStateConstructionFunction{
+                        [](const NodeStateLayout &layout, void *storage) noexcept {
+                            construct_aggregate_state<Definition>(layout, storage, Index{});
+                        }};
+                } else {
+                    return AggregateStateConstructionFunction{};
+                }
+            }(),
+        .state_destruction_function =
+            [] {
+                if constexpr (aggregate_state_requires_destruction<Definition>(Index{})) {
+                    return static_cast<EvaluationFunction>(&destroy_aggregate_state<Definition>);
+                } else {
+                    return EvaluationFunction{};
+                }
+            }(),
+        .resolve_state_types =
+            [] {
+                if constexpr (aggregate_node_has_state<Definition>(Index{})) {
+                    return AggregateStateTypesFunction{
+                        [](const TypeMap &type_map) { return aggregate_state_types<Definition>(type_map, Index{}); }};
+                } else {
+                    return AggregateStateTypesFunction{};
+                }
+            }(),
+        .requirement =
+            [] {
+                if constexpr (requires(const WiringArguments &arguments) {
+                                  requirement_result(Definition::require(arguments));
+                              }) {
+                    return AggregateRequirementFunction{[](const WiringArguments &arguments) {
+                        return requirement_result(Definition::require(arguments));
+                    }};
+                } else {
+                    return AggregateRequirementFunction{};
+                }
+            }(),
         .uses_output_runtime_type = aggregate_uses_output_runtime_type<Definition>(Index{}),
         .uses_future_scheduling = aggregate_uses_future_scheduling<Definition>(),
     };

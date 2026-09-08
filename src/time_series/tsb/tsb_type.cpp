@@ -23,8 +23,7 @@ class ResolvedTimeSeriesBundleType final : public TimeSeriesBundleType {
     [[nodiscard]] const Type &resolve(const TypeMap &) const override { return *this; }
 };
 
-bool same_fields(const BundleSchema &schema, const BundleSchema *base,
-                               std::span<const BundleField> fields) {
+bool same_fields(const BundleSchema &schema, const BundleSchema *base, std::span<const BundleField> fields) {
     return schema.base() == base &&
            std::ranges::equal(schema.direct_fields(), fields, {}, &BundleField::name, &BundleField::name) &&
            std::ranges::equal(schema.direct_fields(), fields, {}, &BundleField::type, &BundleField::type);
@@ -43,27 +42,27 @@ void validate_fields(const BundleSchema *base, std::span<const BundleField> fiel
             continue;
         }
 
-        auto bindings = TypeMap{};
-        if (!inherited->type->match(*fields[index].type, bindings)) {
+        auto type_map = TypeMap{};
+        if (!inherited->type->match(*fields[index].type, type_map)) {
             throw std::invalid_argument{"a redefined time series bundle field must have a compatible narrower type"};
         }
     }
 }
 
-[[nodiscard]] const BundleSchema &resolved_schema(const BundleSchema &schema, const TypeMap &bindings) {
+[[nodiscard]] const BundleSchema &resolved_schema(const BundleSchema &schema, const TypeMap &type_map) {
     auto fields = std::vector<BundleField>{};
     fields.reserve(schema.direct_fields().size());
     for (const auto &[name, type] : schema.direct_fields()) {
-        const auto &resolved = type->resolve(bindings);
+        const auto &resolved = type->resolve(type_map);
         const auto *time_series = dynamic_cast<const TimeSeriesType *>(&resolved);
         if (time_series == nullptr) {
-            throw TypeResolutionError{TypeResolutionErrorCode::invalid_binding, name,
+            throw TypeResolutionError{TypeResolutionErrorCode::invalid_type_map, name,
                                       "bundle field did not resolve to a time series type"};
         }
         fields.push_back({name, time_series});
     }
 
-    const auto *base = schema.base() == nullptr ? nullptr : &resolved_schema(*schema.base(), bindings);
+    const auto *base = schema.base() == nullptr ? nullptr : &resolved_schema(*schema.base(), type_map);
     return bundle_schema(schema.name(), schema.identity(), base, fields);
 }
 
@@ -116,16 +115,16 @@ bool BundleSchema::is_resolved() const noexcept {
            std::ranges::all_of(fields_, [](const auto &field) { return field.type->is_resolved(); });
 }
 
-const Type &BundleSchema::resolve(const TypeMap &bindings) const {
-    return is_resolved() ? *this : resolved_schema(*this, bindings);
+const Type &BundleSchema::resolve(const TypeMap &type_map) const {
+    return is_resolved() ? *this : resolved_schema(*this, type_map);
 }
 
 const BundleSchema &TimeSeriesBundleType::schema() const {
     const auto *schema = dynamic_cast<const BundleSchema *>(schema_);
     if (schema == nullptr) {
         const auto &variable = dynamic_cast<const Variable &>(*schema_);
-        throw TypeResolutionError{TypeResolutionErrorCode::unbound_variable, variable.name(),
-                                  "bundle schema variable is unbound"};
+        throw TypeResolutionError{TypeResolutionErrorCode::unmapped_variable, variable.name(),
+                                  "bundle schema variable has no type map entry"};
     }
     return *schema;
 }
@@ -147,12 +146,12 @@ const TimeSeriesType &TimeSeriesBundleType::with_guarantee(TimeSeriesGuarantee g
     return time_series_bundle_type(schema(), guarantee);
 }
 
-bool TimeSeriesBundleType::do_match(const Type &supplied, TypeMap &bindings) const {
+bool TimeSeriesBundleType::do_match(const Type &supplied, TypeMap &type_map) const {
     const auto *bundle = dynamic_cast<const TimeSeriesBundleType *>(&supplied);
     if (bundle == nullptr || !bundle->is_resolved()) {
         return false;
     }
-    auto trial = bindings.overlay();
+    auto trial = type_map.overlay();
     if (const auto *parameter_schema = dynamic_cast<const BundleSchema *>(schema_)) {
         if (parameter_schema->named() && bundle->schema().named() &&
             !bundle->schema().derives_from(*parameter_schema)) {
@@ -173,19 +172,19 @@ bool TimeSeriesBundleType::do_match(const Type &supplied, TypeMap &bindings) con
         return false;
     }
 
-    bindings.apply(std::move(trial));
+    type_map.apply(std::move(trial));
     return true;
 }
 
-const Type &GenericTimeSeriesBundleType::resolve(const TypeMap &bindings) const {
-    const auto &resolved = schema_type().resolve(bindings);
+const Type &GenericTimeSeriesBundleType::resolve(const TypeMap &type_map) const {
+    const auto &resolved = schema_type().resolve(type_map);
     const auto *schema = dynamic_cast<const BundleSchema *>(&resolved);
     if (schema == nullptr || !schema->is_resolved()) {
         const auto &variable = dynamic_cast<const Variable &>(schema_type());
-        throw TypeResolutionError{TypeResolutionErrorCode::invalid_binding, variable.name(),
+        throw TypeResolutionError{TypeResolutionErrorCode::invalid_type_map, variable.name(),
                                   "bundle schema did not resolve to a concrete schema"};
     }
-    return time_series_bundle_type(*schema, guarantee().resolve(bindings));
+    return time_series_bundle_type(*schema, guarantee().resolve(type_map));
 }
 
 const BundleSchema &bundle_schema(util::symbol name, const void *identity, const BundleSchema *base,

@@ -26,7 +26,7 @@ class TimeSeriesDictionaryType : public FixedItemTimeSeriesType {
         : FixedItemTimeSeriesType(guarantee), key_type_(&key_type), value_type_(&value_type),
           key_set_type_(&key_set_type) {}
 
-    [[nodiscard]] bool do_match(const Type &supplied, TypeMap &bindings) const override;
+    [[nodiscard]] bool do_match(const Type &supplied, TypeMap &type_map) const override;
 
   private:
     const ScalarType *key_type_;
@@ -41,12 +41,11 @@ class GenericTimeSeriesDictionaryType final : public TimeSeriesDictionaryType {
         : TimeSeriesDictionaryType(key_type, value_type, key_set_type, guarantee) {}
 
     bool is_resolved() const noexcept override { return false; }
-    [[nodiscard]] const Type &resolve(const TypeMap &bindings) const override;
-
+    [[nodiscard]] const Type &resolve(const TypeMap &type_map) const override;
 };
 
 const TimeSeriesDictionaryType &time_series_dictionary_type(const ScalarType &key_type,
-                                                                          const TimeSeriesType &value_type,
-                                                                          TimeSeriesGuarantee guarantee);
+                                                            const TimeSeriesType &value_type,
+                                                            TimeSeriesGuarantee guarantee);
 
 } // namespace bg
