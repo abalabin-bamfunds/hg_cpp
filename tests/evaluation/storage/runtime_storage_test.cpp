@@ -197,7 +197,7 @@ struct counter_state {
     static constexpr bool supports_byte_copy_initialization = true;
 
     counter_state() = default;
-    counter_state(const counter_state &) = delete;
+    counter_state(const counter_state &other) noexcept : value{other.value} {}
     counter_state &operator=(const counter_state &) = delete;
 
     int value{};
