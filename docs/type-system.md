@@ -297,8 +297,7 @@ from the closed `TimeSeriesGuarantee` set:
 | `final` | Publish at most one update |
 | `const` | Publish one update at the time series start time |
 
-The default is `ordinary`. The guarantees are ordered from strongest to
-weakest:
+The guarantees are ordered from strongest to weakest:
 
 ```text
 const -> final -> deduplicated -> ordinary
@@ -311,7 +310,9 @@ variable can declare a literal minimum. When several inputs map the same
 variable, it resolves to their weakest guarantee. A scalar contributes `const`.
 
 An omitted input guarantee accepts and preserves the source guarantee. An
-omitted output guarantee resolves to `ordinary`.
+omitted output guarantee resolves to `ordinary`, except that a `REF` output
+resolves to `deduplicated`. An explicit `ordinary` guarantee disables this
+default.
 
 For example, a generic `add(float, float)` signature is:
 

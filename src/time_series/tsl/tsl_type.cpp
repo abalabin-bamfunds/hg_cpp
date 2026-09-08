@@ -88,11 +88,12 @@ const TimeSeriesListType &time_series_list_type(const TimeSeriesType &item_type,
     static auto mutex = std::mutex{};
     static auto types = std::unordered_map<ListTypeKey, std::unique_ptr<ResolvedTimeSeriesListType>, ListTypeKeyHash>{};
 
+    const auto &effective_item = item_type.with_guarantee(strongest(*item_type.guarantee().value(), guarantee));
     const auto lock = std::lock_guard{mutex};
-    const auto key = ListTypeKey{&item_type, size, guarantee};
+    const auto key = ListTypeKey{&effective_item, size, guarantee};
     auto [entry, inserted] = types.try_emplace(key);
     if (inserted) {
-        entry->second = std::make_unique<ResolvedTimeSeriesListType>(item_type, size, guarantee);
+        entry->second = std::make_unique<ResolvedTimeSeriesListType>(effective_item, size, guarantee);
     }
 
     return *entry->second;

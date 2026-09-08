@@ -1,4 +1,5 @@
 #include <bg/node/output.hpp>
+#include <bg/time_series/ref/ref_storage.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -118,4 +119,89 @@ TEST_CASE("a generic value output rejects an incompatible scalar view",
 
     CHECK_THROWS_AS(output.set_value(source), std::invalid_argument);
     CHECK_FALSE(output.valid());
+}
+
+TEST_CASE("a deduplicated value output suppresses an equal update",
+          "[node_api][feature:node-api][transition:update][series:value][scalar:floating-point]"
+          "[guarantee:deduplicated]") {
+    const auto previous_update = bg::MIN_DT + std::chrono::microseconds{1};
+    auto last_updated = previous_update;
+    const auto evaluation_time = previous_update + std::chrono::microseconds{1};
+    auto value = 1.25F;
+    auto state = bg::details::OutputState{
+        bg::cpp_time_series_runtime_type<bg::TS<float, bg::TimeSeriesGuarantee::deduplicated>>()};
+    state.bind(last_updated, &value, evaluation_time);
+    const auto output = bg::details::output_factory::make<bg::TS<float>>(state);
+
+    output.set(1.25F);
+
+    CHECK(last_updated == previous_update);
+}
+
+TEST_CASE("a deduplicated value output publishes revalidation",
+          "[node_api][feature:node-api][transition:revalidation][series:value]"
+          "[scalar:floating-point][guarantee:deduplicated]") {
+    auto last_updated = bg::MIN_DT;
+    const auto evaluation_time = bg::MIN_DT + std::chrono::microseconds{2};
+    auto value = 1.25F;
+    auto state = bg::details::OutputState{
+        bg::cpp_time_series_runtime_type<bg::TS<float, bg::TimeSeriesGuarantee::deduplicated>>()};
+    state.bind(last_updated, &value, evaluation_time);
+    const auto output = bg::details::output_factory::make<bg::TS<float>>(state);
+
+    output.set(1.25F);
+
+    CHECK(last_updated == evaluation_time);
+}
+
+TEST_CASE("a generic deduplicated value output compares through its scalar runtime type",
+          "[node_api][feature:node-api][declaration:generic][transition:update][series:value]"
+          "[scalar:floating-point][guarantee:deduplicated]") {
+    const auto previous_update = bg::MIN_DT + std::chrono::microseconds{1};
+    auto last_updated = previous_update;
+    const auto evaluation_time = previous_update + std::chrono::microseconds{1};
+    auto value = 1.25F;
+    const auto source = bg::Scalar<bg::SCALAR>::from<float>(value);
+    auto state = bg::details::OutputState{
+        bg::cpp_time_series_runtime_type<bg::TS<float, bg::TimeSeriesGuarantee::deduplicated>>()};
+    state.bind(last_updated, &value, evaluation_time);
+    const auto output = bg::details::output_factory::make<bg::TS<bg::SCALAR>>(state);
+
+    output.set_value(source);
+
+    CHECK(last_updated == previous_update);
+}
+
+TEST_CASE("a default reference output suppresses an equal address",
+          "[node_api][reference][feature:node-api][transition:update][series:value]"
+          "[guarantee:deduplicated]") {
+    auto root = bg::details::ReferenceRoot{};
+    auto address = bg::details::ReferenceAddress{&root};
+    const auto previous_update = bg::MIN_DT + std::chrono::microseconds{1};
+    auto last_updated = previous_update;
+    const auto evaluation_time = previous_update + std::chrono::microseconds{1};
+    auto state = bg::details::OutputState{bg::cpp_time_series_runtime_type<bg::REF<bg::TS<int>>>()};
+    state.bind(last_updated, &address, evaluation_time);
+    const auto output = bg::details::output_factory::make<bg::REF<bg::TS<int>>>(state);
+
+    output.set_target(address);
+
+    CHECK(last_updated == previous_update);
+}
+
+TEST_CASE("an ordinary reference output publishes an equal address",
+          "[node_api][reference][feature:node-api][transition:update][series:value][guarantee:ordinary]") {
+    using OrdinaryReference = bg::REF<bg::TS<int>, bg::TimeSeriesGuarantee::ordinary>;
+
+    auto root = bg::details::ReferenceRoot{};
+    auto address = bg::details::ReferenceAddress{&root};
+    auto last_updated = bg::MIN_DT + std::chrono::microseconds{1};
+    const auto evaluation_time = last_updated + std::chrono::microseconds{1};
+    auto state = bg::details::OutputState{bg::cpp_time_series_runtime_type<OrdinaryReference>()};
+    state.bind(last_updated, &address, evaluation_time);
+    const auto output = bg::details::output_factory::make<OrdinaryReference>(state);
+
+    output.set_target(address);
+
+    CHECK(last_updated == evaluation_time);
 }

@@ -73,6 +73,24 @@ TEST_CASE("a dereferenced input subscribes directly to a fixed target",
     CHECK(actual.equals({10, 20, std::nullopt, 30}));
 }
 
+TEST_CASE("a default reference output does not schedule subscribers for the same address",
+          "[evaluation][reference][feature:reference][transition:update][series:value][scalar:integer]"
+          "[guarantee:deduplicated][binding:value-to-reference][binding:reference-to-reference]") {
+    const auto forward = bg::node([](bg::In<bg::TS<int>>, bg::In<bg::REF<bg::TS<int>>, bg::passive> input,
+                                     bg::Out<bg::REF<bg::TS<int>>> output) { output.set(input); });
+    auto evaluations = 0;
+    const auto sink = bg::node([&](bg::In<bg::REF<bg::TS<int>>>) { ++evaluations; });
+    const auto graph = [&](bg::wp<bg::TS<int>> input) {
+        sink(forward(input, input));
+        return input;
+    };
+
+    const auto actual = bg::testing::test_graph(graph, std::array{1, 2, 3});
+
+    CHECK(actual.equals({1, 2, 3}));
+    CHECK(evaluations == 1);
+}
+
 TEST_CASE("an ordinary reference does not create a reference provider",
           "[evaluation][reference][feature:reference][series:value][scalar:integer]"
           "[binding:value-to-reference][binding:reference-to-value]") {

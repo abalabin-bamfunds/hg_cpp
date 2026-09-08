@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <memory>
 #include <mutex>
+#include <stdexcept>
 #include <unordered_map>
 #include <utility>
 
@@ -67,6 +68,10 @@ TimeSeriesValueTypes &time_series_value_types() {
 } // namespace
 
 const TimeSeriesValueType &time_series_value_type(const ScalarType &value_type, TimeSeriesGuarantee guarantee) {
+    if (guarantee == TimeSeriesGuarantee::deduplicated && !value_type.supports_equality()) {
+        throw std::invalid_argument{"a deduplicated time series requires a scalar type that supports equality"};
+    }
+
     return time_series_value_types().get(value_type, guarantee);
 }
 

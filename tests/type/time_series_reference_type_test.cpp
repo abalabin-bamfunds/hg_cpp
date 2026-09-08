@@ -1,3 +1,4 @@
+#include <bg/node.hpp>
 #include <bg/time_series/time_series_type.hpp>
 #include <bg/type/scalar_type.hpp>
 #include <bg/type/time_series_reference_type.hpp>
@@ -7,6 +8,24 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <stdexcept>
+
+TEST_CASE("an omitted reference output guarantee is deduplicated",
+          "[type][reference][feature:type-system][guarantee:deduplicated]") {
+    CHECK(bg::REF<bg::TS<std::int64_t>>::type().guarantee().value() == bg::TimeSeriesGuarantee::deduplicated);
+
+    const auto explicit_ordinary =
+        bg::REF<bg::TS<std::int64_t>, bg::TimeSeriesGuarantee::ordinary>::type().guarantee().value();
+    CHECK(explicit_ordinary == bg::TimeSeriesGuarantee::ordinary);
+}
+
+TEST_CASE("an omitted reference input guarantee remains unconstrained",
+          "[type][reference][feature:type-system][declaration:generic][guarantee:ordinary]"
+          "[guarantee:deduplicated]") {
+    const auto sink = bg::node([](bg::In<bg::REF<bg::TS<std::int64_t>>>) {});
+    const auto &input = static_cast<const bg::TimeSeriesType &>(*sink.signature().parameter(0).type);
+
+    CHECK_FALSE(input.guarantee().is_resolved());
+}
 
 TEST_CASE("time series reference types retain their target and guarantee",
           "[type][reference][feature:type-system][guarantee:ordinary][guarantee:const]") {
@@ -58,10 +77,10 @@ TEST_CASE("reference matching enforces the reference guarantee",
           "[binding:value-to-reference][binding:reference-to-reference]") {
     const auto &target = bg::TS<std::int64_t>::type();
     const auto &required = bg::REF<bg::TS<std::int64_t>, bg::TimeSeriesGuarantee::final>::type();
-    const auto &ordinary = bg::REF<bg::TS<std::int64_t>>::type();
+    const auto &deduplicated = bg::REF<bg::TS<std::int64_t>>::type();
     auto type_map = bg::TypeMap{};
 
-    CHECK_FALSE(required.match(ordinary, type_map));
+    CHECK_FALSE(required.match(deduplicated, type_map));
 
     type_map = bg::TypeMap{};
     CHECK(required.match(target, type_map));

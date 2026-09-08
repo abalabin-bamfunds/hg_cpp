@@ -65,6 +65,10 @@ template <typename Target, auto... Properties> class Out<REF<Target, Properties.
             invalidate();
             return;
         }
+        if (state_->suppresses_equal_updates() && valid() && reference() == target) {
+            return;
+        }
+
         reference() = target;
         state_->publish();
     }

@@ -88,6 +88,7 @@ class Signature {
     const Parameter &parameter(std::size_t index) const noexcept { return parameters_[index]; }
 
     bool has_output() const noexcept { return output_ != nullptr; }
+    const TimeSeriesType *output() const noexcept { return output_; }
 
   private:
     [[nodiscard]] SignatureResolution resolve_seeded(std::span<const Type *const> arguments, TypeMap type_map) const;

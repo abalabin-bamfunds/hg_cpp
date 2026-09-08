@@ -78,7 +78,7 @@ class DictionaryItemNodeTemplate final : public NodeTemplate {
         if (const auto *reference = dynamic_cast<const TimeSeriesReferenceType *>(target)) {
             target = &reference->target_type();
         }
-        return time_series_reference_type(*target, TimeSeriesGuarantee::ordinary);
+        return time_series_reference_type(*target, TimeSeriesGuarantee::deduplicated);
     }
 
     static const TimeSeriesDictionaryType &requested_source_type(const TimeSeriesDictionaryType &source,

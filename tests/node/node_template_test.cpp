@@ -82,6 +82,26 @@ TEST_CASE("a callable node can omit its output", "[node_template][feature:node-a
 
 namespace {
 
+struct reference_source {
+    bg::Out<bg::REF<bg::TS<int>>> output;
+
+    void evaluate() const {}
+};
+
+} // namespace
+
+TEST_CASE("aggregate and callable reference outputs default to deduplicated",
+          "[node_template][reference][feature:node-api][definition:aggregate][definition:function]"
+          "[guarantee:deduplicated]") {
+    const auto aggregate = bg::node<reference_source>();
+    const auto callable = bg::node([](bg::Out<bg::REF<bg::TS<int>>>) {});
+
+    CHECK(aggregate.signature().output()->guarantee().value() == bg::TimeSeriesGuarantee::deduplicated);
+    CHECK(callable.signature().output()->guarantee().value() == bg::TimeSeriesGuarantee::deduplicated);
+}
+
+namespace {
+
 using KeyScalar = bg::ScalarVariable<"Key", bg::EqualityComparable, bg::Hashable>;
 
 struct key_sink {

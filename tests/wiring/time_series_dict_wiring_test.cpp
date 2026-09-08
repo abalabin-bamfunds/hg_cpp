@@ -41,3 +41,15 @@ TEST_CASE("dictionary key selection records its shared key set", "[wiring][tsd][
     CHECK(wiring.wiring_points()[1].parent == 0);
     CHECK(wiring.wiring_points()[1].item == bg::key_set_item_id);
 }
+
+TEST_CASE("dictionary item selection produces a deduplicated reference",
+          "[wiring][tsd][reference][series:tsd][feature:getitem][guarantee:deduplicated]"
+          "[binding:value-to-reference]") {
+    const auto source = bg::node<dict_source_definition>();
+    auto wiring = bg::GraphWiring{};
+
+    const auto context = bg::WiringContext{wiring};
+    const bg::WiringPoint selected = source()[std::int64_t{1}];
+
+    CHECK(selected.type().guarantee().value() == bg::TimeSeriesGuarantee::deduplicated);
+}

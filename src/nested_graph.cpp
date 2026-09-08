@@ -55,7 +55,7 @@ void NestedGraph::bind_input(std::size_t node_index, const NestedGraphInput &inp
     auto &last_updated = runtime_node.output_last_updated();
     auto &target = *static_cast<details::ReferenceAddress *>(runtime_node.output_value());
 
-    if (target == input.target && last_updated == input.last_updated) {
+    if (target == input.target) {
         return;
     }
 

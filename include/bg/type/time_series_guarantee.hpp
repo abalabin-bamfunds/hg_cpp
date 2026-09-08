@@ -17,4 +17,8 @@ constexpr TimeSeriesGuarantee weakest(TimeSeriesGuarantee lhs, TimeSeriesGuarant
     return lhs < rhs ? lhs : rhs;
 }
 
+constexpr TimeSeriesGuarantee strongest(TimeSeriesGuarantee lhs, TimeSeriesGuarantee rhs) noexcept {
+    return lhs > rhs ? lhs : rhs;
+}
+
 } // namespace bg

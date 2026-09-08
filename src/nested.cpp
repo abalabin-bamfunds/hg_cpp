@@ -54,9 +54,7 @@ class NestedNodeDefinition {
         : wiring_{std::move(wiring)}, output_type_{&static_cast<const TimeSeriesType &>(*graph_signature.output)} {
         auto parameters = std::vector<Parameter>{};
         parameters.reserve(graph_signature.parameters.size() + 1);
-        parameters.push_back({util::symbol{"run"},
-                              &TS<bool>::type(), active,
-                              required});
+        parameters.push_back({util::symbol{"run"}, &TS<bool>::type(), active, required});
 
         for (const auto &parameter : graph_signature.parameters) {
             if (parameter.type->is_time_series()) {
@@ -70,7 +68,7 @@ class NestedNodeDefinition {
             }
         }
 
-        reference_output_ = &time_series_reference_type(*output_type_, TimeSeriesGuarantee::ordinary);
+        reference_output_ = &time_series_reference_type(*output_type_, TimeSeriesGuarantee::deduplicated);
         signature_ = std::make_unique<Signature>(util::symbol{"nested"}, std::move(parameters), *reference_output_);
         output_runtime_type_ =
             &time_series_reference_runtime_type(*reference_output_, resolve_time_series_runtime_type(*output_type_));
@@ -90,9 +88,9 @@ class NestedNodeDefinition {
         return result;
     }
 
-    const TimeSeriesRuntimeType *
-    output_runtime_type(const ResolvedSignature &, std::span<const ScalarRuntimeType *const>,
-                        std::span<const TimeSeriesRuntimeType *const>) const noexcept {
+    const TimeSeriesRuntimeType *output_runtime_type(const ResolvedSignature &,
+                                                     std::span<const ScalarRuntimeType *const>,
+                                                     std::span<const TimeSeriesRuntimeType *const>) const noexcept {
         return output_runtime_type_;
     }
 

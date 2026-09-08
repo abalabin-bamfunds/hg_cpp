@@ -85,8 +85,9 @@ const TimeSeriesDictionaryType &time_series_dictionary_type(const ScalarType &ke
     static auto mutex = std::mutex{};
     static auto types = std::vector<std::pair<Key, std::unique_ptr<ResolvedTimeSeriesDictionaryType>>>{};
 
+    const auto &effective_value = value_type.with_guarantee(strongest(*value_type.guarantee().value(), guarantee));
     const auto lock = std::lock_guard{mutex};
-    const auto key = Key{&key_type, &value_type, guarantee};
+    const auto key = Key{&key_type, &effective_value, guarantee};
     const auto found = std::ranges::find(types, key, &decltype(types)::value_type::first);
     if (found != types.end()) {
         return *found->second;
@@ -96,8 +97,8 @@ const TimeSeriesDictionaryType &time_series_dictionary_type(const ScalarType &ke
     }
 
     const auto &key_set = time_series_set_type(key_type, guarantee);
-    types.emplace_back(key,
-                       std::make_unique<ResolvedTimeSeriesDictionaryType>(key_type, value_type, key_set, guarantee));
+    types.emplace_back(
+        key, std::make_unique<ResolvedTimeSeriesDictionaryType>(key_type, effective_value, key_set, guarantee));
     return *types.back().second;
 }
 

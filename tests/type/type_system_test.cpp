@@ -1,5 +1,6 @@
 #include <bg/scalar/dict/scalar_type.hpp>
 #include <bg/scalar/list/scalar_type.hpp>
+#include <bg/scalar/opaque.hpp>
 #include <bg/scalar/set/scalar_type.hpp>
 #include <bg/time_series/time_series_type.hpp>
 #include <bg/time_series/tsl/tsl_type.hpp>
@@ -17,6 +18,7 @@
 #include <array>
 #include <chrono>
 #include <concepts>
+#include <stdexcept>
 #include <vector>
 
 namespace {
@@ -100,8 +102,15 @@ TEST_CASE("a time series variable and its guarantee resolve independently",
     REQUIRE(generic_left.match(list, type_map));
     REQUIRE(generic_right.match(value, type_map));
 
-    CHECK(&generic_left.resolve(type_map) == &bg::TSL<bg::TS<float>, 2>::type());
+    CHECK(&generic_left.resolve(type_map) == &bg::TSL<bg::TS<float, bg::TimeSeriesGuarantee::final>, 2>::type());
     CHECK(&generic_right.resolve(type_map) == &value);
+}
+
+TEST_CASE("a deduplicated value time series requires equality",
+          "[type_system][feature:type-system][series:value][scalar:opaque][guarantee:deduplicated]") {
+    CHECK_THROWS_AS(
+        bg::time_series_value_type(bg::cpp_scalar_type<bg::Opaque<int>>(), bg::TimeSeriesGuarantee::deduplicated),
+        std::invalid_argument);
 }
 
 TEST_CASE("a time series variable ignores the guarantees captured separately",

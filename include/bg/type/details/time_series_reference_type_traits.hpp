@@ -16,6 +16,12 @@ template <typename Target, auto... Properties> struct time_series_type_traits<RE
     static const TimeSeriesType &get(GuaranteeParameter guarantee) {
         const auto &target = time_series_type_for<Scope, Index, Input, Target>(TimeSeriesGuarantee::ordinary);
 
+        if constexpr (!Input && sizeof...(Properties) == 0) {
+            const auto inherited = guarantee.value();
+            guarantee = inherited ? strongest(*inherited, TimeSeriesGuarantee::deduplicated)
+                                  : TimeSeriesGuarantee::deduplicated;
+        }
+
         if constexpr (Input || generic_time_series<Target>) {
             static const auto type = GenericTimeSeriesReferenceType{target, guarantee};
             return type;

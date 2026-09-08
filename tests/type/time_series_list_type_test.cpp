@@ -36,6 +36,14 @@ TEST_CASE("resolved time series list types are canonical",
     CHECK_THROWS_AS(list.item_type(3), std::out_of_range);
 }
 
+TEST_CASE("a list guarantee strengthens its item guarantee",
+          "[type_system][tsl][series:fixed-tsl][feature:type-system][guarantee:ordinary][guarantee:final]") {
+    const auto &list =
+        bg::TSL<bg::TS<float, bg::TimeSeriesGuarantee::ordinary>, 3, bg::TimeSeriesGuarantee::final>::type();
+
+    CHECK(list.item_type().guarantee().value() == bg::TimeSeriesGuarantee::final);
+}
+
 TEST_CASE("generic time series list types resolve their item and guarantee",
           "[type_system][tsl][series:fixed-tsl][feature:type-system][declaration:generic]"
           "[guarantee:final]") {

@@ -66,6 +66,17 @@ void validate_fields(const BundleSchema *base, std::span<const BundleField> fiel
     return bundle_schema(schema.name(), schema.identity(), base, fields);
 }
 
+const BundleSchema &schema_with_minimum_guarantee(const BundleSchema &schema, TimeSeriesGuarantee guarantee) {
+    auto fields = std::vector<BundleField>{};
+    fields.reserve(schema.direct_fields().size());
+    for (const auto &[name, type] : schema.direct_fields()) {
+        fields.push_back({name, &type->with_guarantee(strongest(*type->guarantee().value(), guarantee))});
+    }
+
+    const auto *base = schema.base() == nullptr ? nullptr : &schema_with_minimum_guarantee(*schema.base(), guarantee);
+    return bundle_schema(schema.name(), schema.identity(), base, fields);
+}
+
 } // namespace
 
 BundleSchema::BundleSchema(util::symbol name, const void *identity, const BundleSchema *base,
@@ -221,14 +232,15 @@ const TimeSeriesBundleType &time_series_bundle_type(const BundleSchema &schema, 
     static auto mutex = std::mutex{};
     static auto types = std::vector<std::pair<Key, std::unique_ptr<ResolvedTimeSeriesBundleType>>>{};
 
+    const auto &effective_schema = schema_with_minimum_guarantee(schema, guarantee);
     const auto lock = std::lock_guard{mutex};
-    const auto key = Key{&schema, guarantee};
+    const auto key = Key{&effective_schema, guarantee};
     const auto existing = std::ranges::find(types, key, &decltype(types)::value_type::first);
     if (existing != types.end()) {
         return *existing->second;
     }
 
-    types.emplace_back(key, std::make_unique<ResolvedTimeSeriesBundleType>(schema, guarantee));
+    types.emplace_back(key, std::make_unique<ResolvedTimeSeriesBundleType>(effective_schema, guarantee));
     return *types.back().second;
 }
 

@@ -96,6 +96,16 @@ TEST_CASE("a graph template can omit its output", "[graph_template][feature:wiri
     CHECK(nodes[1].path().parent->name.text() == "scale_sink_graph");
 }
 
+TEST_CASE("a graph reference output defaults to deduplicated",
+          "[graph_template][reference][feature:wiring][definition:function][guarantee:deduplicated]") {
+    const auto pass =
+        bg::graph("name"_m = "reference_pass",
+                  [](bg::wp<bg::REF<bg::TS<int>>> input) -> bg::wp<bg::REF<bg::TS<int>>> { return input; });
+
+    CHECK(pass.signature().output()->guarantee().value() == bg::TimeSeriesGuarantee::deduplicated);
+    CHECK_FALSE(static_cast<const bg::TimeSeriesType &>(*pass.signature().parameter(0).type).guarantee().is_resolved());
+}
+
 TEST_CASE("graph output re-annotation is checked by wiring", "[graph_template][feature:wiring]") {
     const auto invalid =
         bg::graph("name"_m = "invalid_output",

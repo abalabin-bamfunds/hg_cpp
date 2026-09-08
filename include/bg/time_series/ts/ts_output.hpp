@@ -10,6 +10,8 @@
 #include <bg/time_series/time_series_output.hpp>
 #include <bg/time_series/time_series_type.hpp>
 
+#include <concepts>
+#include <type_traits>
 #include <utility>
 
 namespace bg {
@@ -39,9 +41,14 @@ template <details::scalar_variable Variable, auto... Properties> class Out<TS<Va
     EvaluationTime last_updated() const noexcept { return state_->last_updated(); }
 
     template <typename Value> void set_value(const Scalar<Value> &value) const {
-        static_cast<const details::ScalarData &>(value).assign(
-            state_->mutable_data(),
-            static_cast<const TimeSeriesValueRuntimeType &>(state_->runtime_type()).scalar_runtime_type());
+        const auto &source = static_cast<const details::ScalarData &>(value);
+        const auto &runtime_type =
+            static_cast<const TimeSeriesValueRuntimeType &>(state_->runtime_type()).scalar_runtime_type();
+        if (state_->suppresses_equal_updates() && valid() && runtime_type.equals(state_->data(), source)) {
+            return;
+        }
+
+        source.assign(state_->mutable_data(), runtime_type);
         state_->publish();
     }
 
@@ -103,17 +110,30 @@ template <typename T, auto... Properties> class Out<TS<T, Properties...>> {
 
     template <typename Value>
         requires(!details::scalar_type_traits<T>::is_collection) &&
-                requires(storage_type &target, Value &&source) { target = std::forward<Value>(source); }
-    void set(Value &&value) const
-        noexcept(noexcept(*static_cast<storage_type *>(state_->mutable_data()) = std::forward<Value>(value))) {
-        *static_cast<storage_type *>(state_->mutable_data()) = std::forward<Value>(value);
+                std::constructible_from<std::remove_cvref_t<value_type>, Value &&> &&
+                requires(storage_type &target, std::remove_cvref_t<value_type> source) { target = std::move(source); }
+    void set(Value &&value) const {
+        auto requested = std::remove_cvref_t<value_type>{std::forward<Value>(value)};
+        if constexpr (Traits::supports_equality) {
+            if (state_->suppresses_equal_updates() && valid() &&
+                Traits::read(*static_cast<const storage_type *>(state_->data())) == requested) {
+                return;
+            }
+        }
+
+        *static_cast<storage_type *>(state_->mutable_data()) = std::move(requested);
         state_->publish();
     }
 
     template <typename Value> void set_value(const Scalar<Value> &value) const {
-        static_cast<const details::ScalarData &>(value).assign(
-            state_->mutable_data(),
-            static_cast<const TimeSeriesValueRuntimeType &>(state_->runtime_type()).scalar_runtime_type());
+        const auto &source = static_cast<const details::ScalarData &>(value);
+        const auto &runtime_type =
+            static_cast<const TimeSeriesValueRuntimeType &>(state_->runtime_type()).scalar_runtime_type();
+        if (state_->suppresses_equal_updates() && valid() && runtime_type.equals(state_->data(), source)) {
+            return;
+        }
+
+        source.assign(state_->mutable_data(), runtime_type);
         state_->publish();
     }
 

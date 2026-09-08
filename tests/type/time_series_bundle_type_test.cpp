@@ -41,6 +41,22 @@ TEST_CASE("bundle schemas include inherited fields",
     CHECK(type.schema().base() != nullptr);
 }
 
+namespace {
+
+template <template <typename> typename Field> struct OrdinaryBundle {
+    Field<bg::TS<int, bg::TimeSeriesGuarantee::ordinary>> value;
+};
+
+} // namespace
+
+TEST_CASE("a bundle guarantee strengthens its field guarantees",
+          "[type_system][tsb][series:tsb][feature:type-system][schema:named]"
+          "[guarantee:ordinary][guarantee:final]") {
+    const auto &type = bg::TSB<OrdinaryBundle, bg::TimeSeriesGuarantee::final>::type();
+
+    CHECK(type.item_type(0).guarantee().value() == bg::TimeSeriesGuarantee::final);
+}
+
 TEST_CASE("an unnamed bundle matches a compatible named schema",
           "[type_system][tsb][series:tsb][feature:type-system][schema:unnamed]") {
     const auto &parameter = static_cast<const bg::TimeSeriesBundleType &>(
