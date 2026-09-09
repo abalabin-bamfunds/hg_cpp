@@ -72,8 +72,6 @@ class NestedNodeDefinition {
 
         reference_output_ = &time_series_reference_type(*output_type_, TimeSeriesGuarantee::deduplicated);
         signature_ = std::make_unique<Signature>(util::symbol{"nested"}, std::move(parameters), *reference_output_);
-        output_runtime_type_ =
-            &time_series_reference_runtime_type(*reference_output_, resolve_time_series_runtime_type(*output_type_));
     }
 
     const Signature &signature() const { return *signature_; }
@@ -88,12 +86,6 @@ class NestedNodeDefinition {
         };
         result.input_nodes.assign(wiring_.input_nodes.begin(), wiring_.input_nodes.end());
         return result;
-    }
-
-    const TimeSeriesRuntimeType *output_runtime_type(const ResolvedSignature &,
-                                                     std::span<const ScalarRuntimeType *const>,
-                                                     std::span<const TimeSeriesRuntimeType *const>) const noexcept {
-        return output_runtime_type_;
     }
 
     static void evaluate(NodeInvocation<compiled_data_type, state_type> invocation) {
@@ -151,7 +143,6 @@ class NestedNodeDefinition {
     const TimeSeriesType *output_type_;
     std::vector<std::unique_ptr<GenericTimeSeriesReferenceType>> parameter_types_;
     const TimeSeriesReferenceType *reference_output_{};
-    const TimeSeriesRuntimeType *output_runtime_type_{};
     std::unique_ptr<Signature> signature_;
 };
 

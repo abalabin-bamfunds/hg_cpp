@@ -52,13 +52,6 @@ class ReferenceNodeTemplate final : public NodeTemplate {
 
     InputChangeCallback input_change_callback(std::size_t) const noexcept override { return {&source_changed, 0}; }
 
-    const TimeSeriesRuntimeType *
-    output_runtime_type(const ResolvedSignature &signature, std::span<const ScalarRuntimeType *const>,
-                        std::span<const TimeSeriesRuntimeType *const> inputs) const noexcept override {
-        return &time_series_reference_runtime_type(static_cast<const TimeSeriesReferenceType &>(*signature.output),
-                                                   *inputs.front());
-    }
-
   private:
     static void start(const CompiledNode &node, void *runtime_storage, EvaluationContext *context) {
         const auto runtime_node = Node{node, runtime_storage};

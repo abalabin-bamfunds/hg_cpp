@@ -6,12 +6,14 @@ namespace bg {
 
 class GraphWiring;
 class TimeSeriesType;
+class TimeSeriesRuntimeType;
 class WiringPoint;
 struct WiredOutput;
 
 namespace details {
 
 WiringPoint add_wired_output(GraphWiring &wiring, WiredOutput output);
+void set_wired_output_runtime_type(WiringPoint output, const TimeSeriesRuntimeType &runtime_type);
 WiringPoint wiring_point_for_item(WiringPoint parent, TimeSeriesItemId item, const TimeSeriesType &type);
 
 } // namespace details

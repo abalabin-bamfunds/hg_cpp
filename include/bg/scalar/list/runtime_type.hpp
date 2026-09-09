@@ -28,10 +28,6 @@ class ScalarListRuntimeType : public ScalarRuntimeType {
     virtual void clear(void *storage, std::pmr::memory_resource &memory) const noexcept = 0;
 
   private:
-    const ScalarRuntimeType *contained_runtime_type_for(const ScalarType &type) const noexcept override {
-        return item_->runtime_type_for(type);
-    }
-
     const ScalarRuntimeType *item_;
 };
 

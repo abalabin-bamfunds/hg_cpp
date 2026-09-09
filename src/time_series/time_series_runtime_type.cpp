@@ -177,9 +177,7 @@ resolve_time_series_runtime_type(const TimeSeriesType &type,
             result = &time_series_value_runtime_type(type, scalar);
         },
         [&](const TimeSeriesReferenceType *reference) {
-            const auto &target =
-                resolve_time_series_runtime_type(reference->target_type(), available_time_series, scalar_runtime_types);
-            result = &time_series_reference_runtime_type(*reference, target);
+            result = &time_series_reference_runtime_type(*reference);
         },
         [&](const TimeSeriesListType *list) {
             if (list->item_count() == std::dynamic_extent) {

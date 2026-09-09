@@ -243,12 +243,6 @@ class scale_template final : public bg::NodeTemplate {
         return &evaluate;
     }
 
-    [[nodiscard]] const bg::TimeSeriesRuntimeType *
-    output_runtime_type(const bg::ResolvedSignature &signature, std::span<const bg::ScalarRuntimeType *const>,
-                        std::span<const bg::TimeSeriesRuntimeType *const>) const noexcept override {
-        return &bg::time_series_value_runtime_type(*signature.output, bg::cpp_scalar_runtime_type<float>());
-    }
-
   private:
     static void evaluate(const bg::CompiledNode &, void *, bg::EvaluationContext *) {}
 };
@@ -317,6 +311,19 @@ TEST_CASE("required scalar parameters reject absence", "[graph_wiring][feature:w
     bg::WiringContext context{wiring};
 
     CHECK_THROWS_AS(required_scalar(std::optional<int>{}), bg::WiringError);
+}
+
+TEST_CASE("explicit scalar values preserve their declared graph type",
+          "[graph_wiring][feature:wiring][scalar:integer]") {
+    const auto consume = bg::node([](bg::Scalar<int>) {});
+    const auto value = bg::ScalarValue<int>{1};
+    auto wiring = bg::GraphWiring{};
+
+    const auto context = bg::WiringContext{wiring};
+    consume(value);
+
+    REQUIRE(wiring.nodes().size() == 1);
+    CHECK(wiring.nodes()[0].signature().parameters[0].type == &bg::int_type());
 }
 
 namespace {

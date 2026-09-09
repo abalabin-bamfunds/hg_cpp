@@ -7,9 +7,6 @@
 
 namespace bg::details {
 
-using AggregateOutputRuntimeTypeFunction =
-    const TimeSeriesRuntimeType *(*)(const ResolvedSignature &, std::span<const ScalarRuntimeType *const>,
-                                     std::span<const TimeSeriesRuntimeType *const>);
 using AggregateStateLayoutFunction = NodeStateLayout (*)(const ResolvedSignature &,
                                                          std::span<const ScalarRuntimeType *const>,
                                                          std::span<const ScalarType *const>);
@@ -29,7 +26,6 @@ struct AggregateNodeDescriptor {
     EvaluationFunction start_function;
     EvaluationFunction stop_function;
     InvalidationBehavior invalidation_behavior;
-    AggregateOutputRuntimeTypeFunction output_runtime_type;
     std::span<const AggregateRuntimeTypeUse> parameter_runtime_type_uses;
     AggregateStateLayoutFunction state_layout;
     AggregateStateConstructionFunction construct_initial_state;
@@ -52,10 +48,6 @@ class AggregateNodeTemplateBase : public NodeTemplate {
     EvaluationFunction start_function(const ResolvedSignature &) const noexcept final;
     EvaluationFunction stop_function(const ResolvedSignature &) const noexcept final;
     InvalidationBehavior invalidation_behavior(const ResolvedSignature &) const noexcept final;
-    const TimeSeriesRuntimeType *
-    output_runtime_type(const ResolvedSignature &signature,
-                        std::span<const ScalarRuntimeType *const> parameter_runtime_types,
-                        std::span<const TimeSeriesRuntimeType *const> time_series_input_runtime_types) const final;
     bool uses_time_series_input_runtime_type(std::size_t parameter_index) const noexcept final;
     bool uses_scalar_input_runtime_type(std::size_t parameter_index) const noexcept final;
     bool uses_output_runtime_type() const noexcept final;

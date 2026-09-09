@@ -157,7 +157,6 @@ TEST_CASE("an aggregate node can omit its output", "[node_template][feature:node
     const bg::ResolvedSignature signature = sink_node.signature().resolve(arguments);
 
     CHECK(signature.output == nullptr);
-    CHECK(sink_node.output_runtime_type(signature, {}, {}) == nullptr);
 }
 
 namespace {
@@ -217,7 +216,7 @@ static_assert(bg::AggregateNodeClass<scalar_state_node>);
 TEST_CASE("aggregate scalar and state fields have distinct roles",
           "[node_template][feature:node-api][definition:aggregate][scalar:symbol]") {
     const auto scalar_state = bg::node<scalar_state_node>();
-    const std::array<const bg::Type *, 3> arguments{&bg::float_type(), &bg::symbol_type(), &bg::int_type()};
+    const std::array<const bg::Type *, 3> arguments{&bg::float_type(), &bg::symbol_type(), &bg::int64_type()};
     const bg::ResolvedSignature signature = scalar_state.signature().resolve(arguments);
 
     REQUIRE(signature.parameters.size() == 3);
@@ -227,7 +226,7 @@ TEST_CASE("aggregate scalar and state fields have distinct roles",
     CHECK(signature.parameters[1].name.text() == "name");
     CHECK(signature.parameters[1].type == &bg::symbol_type());
     CHECK(signature.parameters[2].name.text() == "retries");
-    CHECK(signature.parameters[2].type == &bg::int_type());
+    CHECK(signature.parameters[2].type == &bg::int64_type());
     CHECK(signature.parameters[2].accepts_absent_scalar);
     const auto layout = scalar_state.state_layout(signature, {}, {});
     CHECK(layout.size == alignof(aligned_state) + sizeof(aligned_state));
@@ -280,15 +279,6 @@ struct time_series_variable_guarantee {
 
 static_assert(bg::AggregateNodeClass<time_series_variable_guarantee>);
 
-struct generic_guarantee_collection {
-    bg::In<bg::TS<int, captured_guarantee>> input;
-    bg::Out<bg::TSL<bg::TS<int>, 2, captured_guarantee>> output;
-
-    void evaluate() const {}
-};
-
-static_assert(bg::AggregateNodeClass<generic_guarantee_collection>);
-
 } // namespace
 
 TEST_CASE("a time series variable can expose its guarantee as another variable",
@@ -302,18 +292,6 @@ TEST_CASE("a time series variable can expose its guarantee as another variable",
 
     CHECK(signature.parameters[0].type == &list);
     CHECK(signature.output == &bg::TS<int, bg::TimeSeriesGuarantee::final>::type());
-}
-
-TEST_CASE("a collection output uses its resolved guarantee", "[node_template][type_system][feature:node-api]") {
-    const auto node = bg::node<generic_guarantee_collection>();
-    const auto &input = bg::TS<int, bg::TimeSeriesGuarantee::final>::type();
-    const auto arguments = std::array<const bg::Type *, 1>{&input};
-    const auto signature = node.signature().resolve(arguments);
-
-    const auto *runtime_type = node.output_runtime_type(signature, {}, {});
-
-    REQUIRE(runtime_type != nullptr);
-    CHECK(&runtime_type->type() == signature.output);
 }
 
 namespace {

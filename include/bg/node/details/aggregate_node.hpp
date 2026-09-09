@@ -3,7 +3,6 @@
 #include <bg/evaluation_context.hpp>
 #include <bg/graph/node.hpp>
 #include <bg/node/details/aggregate_resolver.hpp>
-#include <bg/node/details/output_runtime_type.hpp>
 #include <bg/node/input.hpp>
 #include <bg/node/output.hpp>
 #include <bg/node/state.hpp>
@@ -94,17 +93,19 @@ template <typename T> inline constexpr bool generic_scalar_state = generic_scala
 
 template <typename T> struct scalar_field {
     static constexpr bool value =
-        scalar_type_traits<T>::supports_implicit_argument && requires { cpp_scalar_type<T>(); };
+        scalar_type_traits<T>::supports_implicit_argument && requires { cpp_scalar_type<canonical_scalar_type_t<T>>(); };
     static constexpr bool optional = false;
 
     using value_type = T;
+    using parameter_type = canonical_scalar_type_t<T>;
 };
 
 template <typename T> struct scalar_field<std::optional<T>> {
-    static constexpr bool value = requires { cpp_scalar_type<T>(); };
+    static constexpr bool value = requires { cpp_scalar_type<canonical_scalar_type_t<T>>(); };
     static constexpr bool optional = true;
 
     using value_type = T;
+    using parameter_type = canonical_scalar_type_t<T>;
 };
 
 template <typename T> struct scalar_field<Scalar<T>> {
@@ -112,6 +113,7 @@ template <typename T> struct scalar_field<Scalar<T>> {
     static constexpr bool optional = false;
 
     using value_type = T;
+    using parameter_type = T;
 };
 
 template <typename T> struct state_field {
@@ -273,6 +275,13 @@ inline constexpr bool aggregate_node_has_invalidation_function = requires(const 
 };
 
 template <typename Definition>
+inline constexpr bool aggregate_node_has_finalize = requires(const Definition &definition) {
+    { definition.finalize() } noexcept -> std::same_as<void>;
+} || requires(const Definition &definition, EvaluationContext *context) {
+    { definition.finalize(context) } noexcept -> std::same_as<void>;
+};
+
+template <typename Definition>
 inline constexpr bool aggregate_node_preserves_output =
     requires { requires std::same_as<std::remove_cv_t<decltype(Definition::on_invalidation)>, PreserveOutput>; };
 
@@ -322,7 +331,7 @@ template <typename Definition, std::size_t Index> const TimeSeriesType &input_ty
 
 template <typename Definition, std::size_t Index> const ScalarType &scalar_type() {
     using Field = std::remove_cv_t<util::aggregate_member_type<Index, Definition>>;
-    using Value = typename scalar_field<Field>::value_type;
+    using Value = typename scalar_field<Field>::parameter_type;
 
     return scalar_type_for<Value>();
 }
@@ -335,24 +344,6 @@ template <typename Definition, std::size_t Index> const TimeSeriesType &output_t
         return time_series_variable_instance<TimeSeries>();
     } else {
         return time_series_type_for<Definition, Index, false, TimeSeries>(TimeSeriesGuarantee::ordinary);
-    }
-}
-
-template <typename Definition>
-const TimeSeriesRuntimeType *
-aggregate_output_runtime_type(const ResolvedSignature &signature,
-                              std::span<const ScalarRuntimeType *const> parameter_runtime_types,
-                              std::span<const TimeSeriesRuntimeType *const> time_series_input_runtime_types) {
-    if constexpr (!aggregate_node_has_output<Definition>()) {
-        return nullptr;
-    } else {
-        using TimeSeries = aggregate_output_time_series_t<Definition>;
-        if constexpr (!generic_time_series<TimeSeries>) {
-            return &cpp_time_series_runtime_type<TimeSeries>(*signature.output);
-        } else {
-            return &resolve_generic_output_runtime_type(signature, parameter_runtime_types,
-                                                        time_series_input_runtime_types);
-        }
     }
 }
 
@@ -557,6 +548,7 @@ template <typename Definition, std::size_t Index>
         constexpr auto ParameterIndex = parameter_index<Definition>(std::make_index_sequence<Index>{});
         const auto *data = node.parameters()[ParameterIndex].scalar_data();
         using Value = typename scalar_field<Field>::value_type;
+        using Parameter = typename scalar_field<Field>::parameter_type;
 
         if constexpr (generic_scalar_input_field<Field>::value) {
             constexpr auto TimeSeriesRuntimeTypeCount = aggregate_time_series_runtime_type_count<Definition>(
@@ -568,15 +560,17 @@ template <typename Definition, std::size_t Index>
                 node.scalar_input_runtime_type(TimeSeriesRuntimeTypeCount, GenericScalarInputIndex);
             return Field::from(runtime_type, data);
         } else {
-            using Traits = scalar_storage_traits<Value>;
+            using Traits = scalar_storage_traits<Parameter>;
 
             if constexpr (scalar_view<Field>::value) {
                 return Field::from(*static_cast<const typename Traits::stored_type *>(data));
             } else if constexpr (scalar_field<Field>::optional) {
                 return data == nullptr ? Field{}
-                                       : Field{Traits::read(*static_cast<const typename Traits::stored_type *>(data))};
+                                       : Field{scalar_api_value<Value>(
+                                             Traits::read(*static_cast<const typename Traits::stored_type *>(data)))};
             } else {
-                return Traits::read(*static_cast<const typename Traits::stored_type *>(data));
+                return scalar_api_value<Value>(
+                    Traits::read(*static_cast<const typename Traits::stored_type *>(data)));
             }
         }
     } else if constexpr (state_field<Field>::value) {
@@ -758,6 +752,16 @@ void invoke_aggregate_node(const CompiledNode &node, void *runtime_storage, Eval
 template <typename Definition>
 void evaluate_aggregate_node(const CompiledNode &node, void *runtime_storage, EvaluationContext *context) {
     invoke_aggregate_node<Definition, &Definition::evaluate>(node, runtime_storage, context);
+}
+
+template <typename Definition>
+void finalize_aggregate_node_state(const CompiledNode &node, void *runtime_storage,
+                                   EvaluationContext *context) noexcept {
+    if constexpr (aggregate_node_has_finalize<Definition>) {
+        invoke_aggregate_node<Definition, &Definition::finalize>(node, runtime_storage, context);
+    }
+
+    destroy_aggregate_state<Definition>(node, runtime_storage, context);
 }
 
 template <typename Definition>

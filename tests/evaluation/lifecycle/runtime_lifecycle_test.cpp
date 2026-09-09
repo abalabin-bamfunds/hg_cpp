@@ -4,6 +4,7 @@
 #include <bg/graph/wiring_context.hpp>
 #include <bg/node.hpp>
 #include <bg/run_graph.hpp>
+#include <bg/scalar/opaque.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -198,6 +199,33 @@ TEST_CASE("a runtime graph has one lifecycle",
     runtime.stop();
     runtime.stop();
     CHECK_THROWS_AS(runtime.evaluate(time(2)), std::logic_error);
+}
+
+TEST_CASE("an aggregate node finalizes retained state when its runtime graph is destroyed",
+          "[evaluation][lifecycle][feature:lifecycle][feature:finalization][definition:aggregate]") {
+    struct Finalizable {
+        bg::Scalar<bg::Opaque<int *>> count;
+        bg::State<int> retained_state;
+
+        void start() const { ++*retained_state; }
+        void finalize() const noexcept { ++*count.value(); }
+    };
+
+    auto finalization_count = 0;
+    const auto finalizable = bg::node<Finalizable>();
+    auto wiring = bg::GraphWiring{};
+    {
+        const auto context = bg::WiringContext{wiring};
+        finalizable(bg::ScalarValue<bg::Opaque<int *>>{&finalization_count});
+    }
+
+    const auto compiled = bg::CompiledGraph{wiring};
+    {
+        auto runtime = bg::RuntimeGraph{compiled};
+        runtime.start(time(1));
+    }
+
+    CHECK(finalization_count == 1);
 }
 
 struct immediate_definition {

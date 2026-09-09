@@ -41,12 +41,6 @@ class scale_template final : public bg::NodeTemplate {
         return &evaluate;
     }
 
-    [[nodiscard]] const bg::TimeSeriesRuntimeType *
-    output_runtime_type(const bg::ResolvedSignature &signature, std::span<const bg::ScalarRuntimeType *const>,
-                        std::span<const bg::TimeSeriesRuntimeType *const>) const noexcept override {
-        return &bg::time_series_value_runtime_type(*signature.output, bg::cpp_scalar_runtime_type<float>());
-    }
-
   private:
     static void evaluate(const bg::CompiledNode &, void *, bg::EvaluationContext *) {}
 };

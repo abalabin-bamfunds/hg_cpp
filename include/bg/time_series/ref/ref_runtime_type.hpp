@@ -10,11 +10,9 @@ namespace bg {
 
 class TimeSeriesReferenceRuntimeType final : public TimeSeriesRuntimeType {
   public:
-    TimeSeriesReferenceRuntimeType(const TimeSeriesReferenceType &type, const TimeSeriesRuntimeType &target) noexcept
+    explicit TimeSeriesReferenceRuntimeType(const TimeSeriesReferenceType &type) noexcept
         : TimeSeriesRuntimeType{
-              type, sizeof(details::ReferenceAddress), alignof(details::ReferenceAddress), false, false, true},
-          target_{&target} {}
-    const TimeSeriesRuntimeType &target_runtime_type() const noexcept { return *target_; }
+              type, sizeof(details::ReferenceAddress), alignof(details::ReferenceAddress), false, false, true} {}
 
     void construct_initial_value(void *destination) const noexcept override {
         std::construct_at(static_cast<details::ReferenceAddress *>(destination));
@@ -23,12 +21,8 @@ class TimeSeriesReferenceRuntimeType final : public TimeSeriesRuntimeType {
     void invalidate_output(const details::OutputState &output) const override;
 
     void destroy_value(void *, std::pmr::memory_resource &) const noexcept override {}
-
-  private:
-    const TimeSeriesRuntimeType *target_;
 };
 
-const TimeSeriesRuntimeType &
-time_series_reference_runtime_type(const TimeSeriesReferenceType &type, const TimeSeriesRuntimeType &target);
+const TimeSeriesRuntimeType &time_series_reference_runtime_type(const TimeSeriesReferenceType &type);
 
 } // namespace bg

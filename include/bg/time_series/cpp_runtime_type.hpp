@@ -24,8 +24,7 @@ template <typename T, auto... Properties> struct CppTimeSeriesRuntimeType<TS<T, 
 template <typename Target, auto... Properties> struct CppTimeSeriesRuntimeType<REF<Target, Properties...>> {
     static const TimeSeriesRuntimeType &get(const TimeSeriesType &type) {
         const auto &reference = static_cast<const TimeSeriesReferenceType &>(type);
-        return time_series_reference_runtime_type(reference,
-                                                  CppTimeSeriesRuntimeType<Target>::get(reference.target_type()));
+        return time_series_reference_runtime_type(reference);
     }
 };
 

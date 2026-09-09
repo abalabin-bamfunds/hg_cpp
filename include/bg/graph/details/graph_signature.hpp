@@ -43,12 +43,12 @@ template <typename Function, std::size_t Index> const Type &graph_parameter_type
     } else if constexpr (supported_optional_scalar_argument<Parameter>) {
         using Scalar = typename optional_scalar_argument<Parameter>::value_type;
 
-        return cpp_scalar_type<Scalar>();
+        return cpp_scalar_type<canonical_scalar_type_t<Scalar>>();
     } else {
         static_assert(supported_scalar_argument<Parameter>,
                       "a graph function parameter must be wp, a scalar, or an optional scalar");
 
-        return cpp_scalar_type<Parameter>();
+        return cpp_scalar_type<canonical_scalar_type_t<Parameter>>();
     }
 }
 

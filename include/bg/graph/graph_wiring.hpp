@@ -18,6 +18,7 @@
 namespace bg {
 
 class NodeTemplate;
+class TimeSeriesRuntimeType;
 class TimeSeriesType;
 class WiringTemplate;
 
@@ -28,6 +29,7 @@ WiringPoint add_item_wiring_record(WiringPoint parent, TimeSeriesItemId item,
                                    std::unique_ptr<WiringRecord> record);
 WiringPoint materialize_wiring_point(WiringPoint point, const TimeSeriesType &type);
 WiringPoint add_wired_output(GraphWiring &wiring, WiredOutput output);
+void set_wired_output_runtime_type(WiringPoint output, const TimeSeriesRuntimeType &runtime_type);
 WiringPoint wiring_point_for_item(WiringPoint parent, TimeSeriesItemId item, const TimeSeriesType &type);
 std::size_t wired_output_node_index(const GraphWiring &wiring, WiringPoint point);
 } // namespace details
@@ -58,6 +60,8 @@ class GraphWiring {
                                                        std::unique_ptr<details::WiringRecord> record);
     friend WiringPoint details::materialize_wiring_point(WiringPoint point, const TimeSeriesType &type);
     friend WiringPoint details::add_wired_output(GraphWiring &wiring, WiredOutput output);
+    friend void details::set_wired_output_runtime_type(WiringPoint output,
+                                                       const TimeSeriesRuntimeType &runtime_type);
     friend WiringPoint details::wiring_point_for_item(WiringPoint parent, TimeSeriesItemId item,
                                                       const TimeSeriesType &type);
     friend std::size_t details::wired_output_node_index(const GraphWiring &wiring, WiringPoint point);

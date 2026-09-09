@@ -175,13 +175,6 @@ template <details::runtime_signature_node Definition> class RuntimeSignatureNode
         return false;
     }
 
-    const TimeSeriesRuntimeType *
-    output_runtime_type(const ResolvedSignature &signature,
-                        std::span<const ScalarRuntimeType *const> parameter_runtime_types,
-                        std::span<const TimeSeriesRuntimeType *const> input_runtime_types) const noexcept override {
-        return definition_.output_runtime_type(signature, parameter_runtime_types, input_runtime_types);
-    }
-
     NodeStateLayout state_layout(const ResolvedSignature &, std::span<const ScalarRuntimeType *const>,
                                  std::span<const ScalarType *const>) const override {
         if constexpr (std::is_void_v<State>) {

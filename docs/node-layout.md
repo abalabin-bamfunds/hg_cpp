@@ -45,7 +45,7 @@ A node template contains:
 
 - a reference to its signature
 - the evaluation implementation
-- output runtime type selection when the node has an output
+- whether its invocation requires the output runtime type
 - private-state size, alignment, and initial-value construction when required
 - the required-input invalidation behavior
 - the start implementation

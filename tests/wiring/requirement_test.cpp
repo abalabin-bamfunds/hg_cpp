@@ -10,6 +10,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <cstdint>
 #include <stdexcept>
 #include <string>
 
@@ -68,7 +69,7 @@ struct zero_mode_copy_definition {
 
     static bg::RequirementResult require(const bg::WiringArguments &arguments) {
         ++requirement_calls;
-        return bg::scalar_cast<int>(*arguments.scalar("mode")).value() == 0 ? bg::accept : bg::reject();
+        return bg::scalar_cast<std::int64_t>(*arguments.scalar("mode")).value() == 0 ? bg::accept : bg::reject();
     }
 
     void evaluate() const { output.set(*input); }
@@ -83,7 +84,7 @@ struct nonzero_mode_copy_definition {
 
     static bg::RequirementResult require(const bg::WiringArguments &arguments) {
         ++requirement_calls;
-        return bg::scalar_cast<int>(*arguments.scalar("mode")).value() != 0 ? bg::accept : bg::reject();
+        return bg::scalar_cast<std::int64_t>(*arguments.scalar("mode")).value() != 0 ? bg::accept : bg::reject();
     }
 
     void evaluate() const { output.set(-*input); }
@@ -127,15 +128,16 @@ TEST_CASE("callable requirements control overload applicability",
         bg::require =
             [&](const bg::WiringArguments &arguments) {
                 ++zero_requirement_calls;
-                return bg::scalar_cast<int>(*arguments.scalar(1)).value() == 0;
+                return bg::scalar_cast<std::int64_t>(*arguments.scalar(1)).value() == 0;
             }));
     operation.overload(bg::node(
         bg::eval = [](bg::In<bg::TS<float>> input, int, bg::Out<bg::TS<float>> output) { output.set(-*input); },
         bg::require =
             [&](const bg::WiringArguments &arguments) {
                 ++nonzero_requirement_calls;
-                return bg::scalar_cast<int>(*arguments.scalar(1)).value() != 0 ? bg::accept
-                                                                               : bg::reject("mode must be nonzero");
+                return bg::scalar_cast<std::int64_t>(*arguments.scalar(1)).value() != 0
+                           ? bg::accept
+                           : bg::reject("mode must be nonzero");
             }));
 
     const auto run = [&](int mode) {
@@ -188,7 +190,7 @@ TEST_CASE("an unread scalar does not participate in the operator cache key",
         bg::require =
             [&](const bg::WiringArguments &arguments) {
                 ++requirement_calls;
-                return bg::scalar_cast<int>(*arguments.scalar(2)).value() == 0;
+                return bg::scalar_cast<std::int64_t>(*arguments.scalar(2)).value() == 0;
             }));
     const auto source = bg::node([](bg::Out<bg::TS<float>>) {});
 

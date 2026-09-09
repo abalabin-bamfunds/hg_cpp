@@ -8,6 +8,7 @@
 namespace bg {
 
 class GraphWiring;
+class TimeSeriesRuntimeType;
 class TimeSeriesType;
 class WiringPoint;
 
@@ -32,6 +33,7 @@ class WiringRecord {
   private:
     friend class ::bg::GraphWiring;
     friend WiringPoint materialize_wiring_point(WiringPoint point, const TimeSeriesType &type);
+    friend void set_wired_output_runtime_type(WiringPoint output, const TimeSeriesRuntimeType &runtime_type);
     friend WiringPoint wiring_point_for_item(WiringPoint parent, TimeSeriesItemId item,
                                              const TimeSeriesType &type);
 

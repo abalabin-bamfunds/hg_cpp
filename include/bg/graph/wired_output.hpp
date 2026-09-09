@@ -7,6 +7,7 @@
 namespace bg {
 
 class TimeSeriesType;
+class TimeSeriesRuntimeType;
 
 // Describes one node output or contained output for graph compilation.
 struct WiredOutput {
@@ -16,6 +17,7 @@ struct WiredOutput {
     std::size_t parent;
     TimeSeriesItemId item;
     const TimeSeriesType *type;
+    const TimeSeriesRuntimeType *runtime_type{};
 };
 
 } // namespace bg

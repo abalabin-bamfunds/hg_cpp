@@ -157,8 +157,9 @@ A node resolved with only scalars evaluates once when its runtime graph starts.
 
 ## Scalar parameters
 
-An aggregate plain C++ field is an immutable scalar parameter. Wiring requires
-a scalar of the field's registered graph type.
+An aggregate plain C++ field is an immutable scalar parameter. Its signature
+uses the canonical graph type for that C++ type. The invocation field retains
+the declared C++ type.
 
 `Scalar<V>` requests a read-only view when `V` is a scalar type variable.
 `Scalar<List<V>>` provides the corresponding view of a scalar list. The
@@ -191,6 +192,10 @@ composes a runtime type from the resolved component runtime types.
 Each initial state must remain valid after byte copying to a different address.
 This is required for the runtime graph construction defined by the
 [node layout](node-layout.md#packed-runtime-storage).
+
+An aggregate node can define `finalize()` or `finalize(EvaluationContext*)` to
+release resources retained by its state. Finalization runs when the runtime
+graph destroys the state and must be `noexcept`.
 
 ## Complete time series access
 

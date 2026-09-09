@@ -18,6 +18,27 @@ namespace details {
 class ScalarData;
 class DictionaryObservers;
 
+class DictionaryKeySubscription {
+  public:
+    DictionaryKeySubscription() = default;
+
+    explicit operator bool() const noexcept { return source_ != nullptr; }
+
+  private:
+    friend class DictionaryObservers;
+    friend bool reference_dictionary_key_subscription_matches(DictionaryKeySubscription, ReferenceAddress,
+                                                              const ScalarData &) noexcept;
+    friend void remove_reference_dictionary_key_subscriber(DictionaryKeySubscription, RuntimeGraph &,
+                                                           std::uint32_t) noexcept;
+
+    DictionaryKeySubscription(void *source, const void *key) noexcept : source_{source}, key_{key} {}
+
+    void *source_{};
+    const void *key_{};
+};
+
+static_assert(sizeof(DictionaryKeySubscription) == 2 * sizeof(void *));
+
 class ReferenceRepresentation {
   public:
     explicit ReferenceRepresentation(ReferenceAddress source) noexcept : source_{source} {}
@@ -63,10 +84,8 @@ class ReferenceProvider {
     void remove_observer(ReferenceRoute &route, RuntimeGraph &graph, const void *target) noexcept;
     void notify(ReferenceRoute &route, OutputChangeContext &context, OutputChange change);
     [[nodiscard]] ReferenceAddress representation(ReferenceAddress source, const TimeSeriesType &requested_type);
-    void add_dictionary_key_subscriber(ReferenceAddress source, const ScalarData &key, RuntimeGraph &graph,
-                                       std::uint32_t input_offset, std::uint32_t node_index);
-    void remove_dictionary_key_subscriber(ReferenceAddress source, const ScalarData &key, RuntimeGraph &graph,
-                                          std::uint32_t input_offset) noexcept;
+    [[nodiscard]] DictionaryKeySubscription add_dictionary_key_subscriber(
+        ReferenceAddress source, const ScalarData &key, RuntimeGraph &graph, std::uint32_t node_index);
     void source_changed(OutputChangeContext &context, OutputChange change);
 
   private:
@@ -86,10 +105,12 @@ void add_reference_observer(ReferenceAddress address, RuntimeGraph &graph, void 
 void remove_reference_subscriber(ReferenceAddress address, RuntimeGraph &graph, std::size_t input_offset) noexcept;
 void remove_reference_observer(ReferenceAddress address, RuntimeGraph &graph, const void *target) noexcept;
 void notify_reference(ReferenceAddress address, OutputChangeContext &context, OutputChange change);
-void add_reference_dictionary_key_subscriber(ReferenceAddress address, const ScalarData &key, RuntimeGraph &graph,
-                                             std::uint32_t input_offset, std::uint32_t node_index);
-void remove_reference_dictionary_key_subscriber(ReferenceAddress address, const ScalarData &key, RuntimeGraph &graph,
-                                                std::uint32_t input_offset) noexcept;
+[[nodiscard]] DictionaryKeySubscription add_reference_dictionary_key_subscriber(
+    ReferenceAddress address, const ScalarData &key, RuntimeGraph &graph, std::uint32_t node_index);
+bool reference_dictionary_key_subscription_matches(DictionaryKeySubscription subscription, ReferenceAddress source,
+                                                   const ScalarData &key) noexcept;
+void remove_reference_dictionary_key_subscriber(DictionaryKeySubscription subscription, RuntimeGraph &graph,
+                                                std::uint32_t node_index) noexcept;
 void notify_reference_source(ReferenceRoot &root, OutputChangeContext &context, OutputChange change);
 void destroy_reference_root(ReferenceRoot &root, std::pmr::memory_resource &memory) noexcept;
 

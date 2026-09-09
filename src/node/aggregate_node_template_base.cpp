@@ -32,15 +32,6 @@ InvalidationBehavior AggregateNodeTemplateBase::invalidation_behavior(const Reso
     return descriptor_->invalidation_behavior;
 }
 
-const TimeSeriesRuntimeType *AggregateNodeTemplateBase::output_runtime_type(
-    const ResolvedSignature &signature, std::span<const ScalarRuntimeType *const> parameter_runtime_types,
-    std::span<const TimeSeriesRuntimeType *const> time_series_input_runtime_types) const {
-    if (descriptor_->output_runtime_type == nullptr) {
-        return nullptr;
-    }
-    return descriptor_->output_runtime_type(signature, parameter_runtime_types, time_series_input_runtime_types);
-}
-
 bool AggregateNodeTemplateBase::uses_time_series_input_runtime_type(std::size_t parameter_index) const noexcept {
     return descriptor_->parameter_runtime_type_uses[parameter_index] == AggregateRuntimeTypeUse::time_series;
 }

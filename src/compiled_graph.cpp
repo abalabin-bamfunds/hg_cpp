@@ -517,9 +517,10 @@ void resolve_dynamic_subscribers(CompilationPlan &plan) {
     }
 }
 
-const TimeSeriesRuntimeType *input_runtime_type(const TimeSeriesInputPlan &input, const TimeSeriesRuntimeType *output) {
+const TimeSeriesRuntimeType *input_runtime_type(const TimeSeriesInputPlan &input, const TimeSeriesRuntimeType *output,
+                                                const TimeSeriesType &requested_type) {
     if (input.dereferences_reference) {
-        return &static_cast<const TimeSeriesReferenceRuntimeType &>(*output).target_runtime_type();
+        return &resolve_time_series_runtime_type(requested_type);
     }
 
     return output;
@@ -536,7 +537,8 @@ std::vector<const ScalarRuntimeType *> parameter_runtime_types(const WiredNode &
         if (parameter.type->is_time_series()) {
             const auto &input = node_plan.time_series_inputs[input_index++];
             const auto layout = wired_output_layout(input.output, outputs, node_plans);
-            const auto *runtime_type = input_runtime_type(input, layout.runtime_type);
+            const auto &requested_type = static_cast<const TimeSeriesType &>(*parameter.type);
+            const auto *runtime_type = input_runtime_type(input, layout.runtime_type, requested_type);
             const ScalarRuntimeType *scalar_runtime_type{};
             runtime_type->type().visit(
                 [&](const TimeSeriesValueType *) {
@@ -557,16 +559,22 @@ std::vector<const ScalarRuntimeType *> parameter_runtime_types(const WiredNode &
 const TimeSeriesRuntimeType *find_output_runtime_type(const WiredNode &node, const NodePlan &node_plan,
                                                       std::span<const WiredOutput> outputs,
                                                       std::span<const NodePlan> node_plans) {
+    if (node_plan.output.runtime_type != nullptr) {
+        return node_plan.output.runtime_type;
+    }
+
     const auto parameter_types = parameter_runtime_types(node, node_plan, outputs, node_plans);
     auto input_runtime_types = std::vector<const TimeSeriesRuntimeType *>{};
     input_runtime_types.reserve(node.input_output_indices().size());
     for (const auto &input : node_plan.time_series_inputs) {
         const auto output = wired_output_layout(input.output, outputs, node_plans);
-        const auto *runtime_type = input_runtime_type(input, output.runtime_type);
+        const auto &parameter =
+            static_cast<const TimeSeriesType &>(*node.signature().parameters[input.parameter].type);
+        const auto *runtime_type = input_runtime_type(input, output.runtime_type, parameter);
         input_runtime_types.push_back(runtime_type);
     }
 
-    return node.node_template().output_runtime_type(node.signature(), parameter_types, input_runtime_types);
+    return &resolve_time_series_runtime_type(*node.signature().output, input_runtime_types, parameter_types);
 }
 
 [[nodiscard]] OutputLayout add_output_layout(StorageLayout &storage, const WiredNode &node, const NodePlan &node_plan,
@@ -840,6 +848,12 @@ void plan_fixed_storage(CompilationPlan &plan) {
     result.nodes = wiring.nodes();
     result.outputs = wiring.outputs();
     result.node_plans.resize(result.nodes.size());
+    for (const auto &output : result.outputs) {
+        if (output.parent == WiredOutput::npos && output.runtime_type != nullptr) {
+            result.node_plans[output.node_index].output.runtime_type = output.runtime_type;
+        }
+    }
+
     plan_time_series_inputs(result);
     plan_subscribers(result.nodes, result.outputs, result.node_plans);
     plan_dynamic_subscribers(result);
@@ -1204,7 +1218,9 @@ class CompiledGraphBuilder {
             }
 
             const auto output = wired_output_layout(input.output, plan.outputs, plan.node_plans);
-            const auto *runtime_type = input_runtime_type(input, output.runtime_type);
+            const auto &parameter =
+                static_cast<const TimeSeriesType &>(*node.signature().parameters[parameter_index].type);
+            const auto *runtime_type = input_runtime_type(input, output.runtime_type, parameter);
             runtime_types[time_series_runtime_type_index] = runtime_type;
             ++time_series_runtime_type_index;
         }

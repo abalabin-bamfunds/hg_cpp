@@ -1,6 +1,7 @@
 #include <bg/operators.hpp>
 
 #include <bg/time_series/tsb/operators.hpp>
+#include <bg/time_series/tsd/operators.hpp>
 #include <bg/time_series/tsl/operators.hpp>
 
 namespace bg::operators {
@@ -12,6 +13,7 @@ namespace {
 
 const auto registered = [] {
     details::register_time_series_list_operators(getitem);
+    details::register_time_series_dict_operators(getitem);
     details::register_time_series_bundle_operators(getattr);
     return true;
 }();

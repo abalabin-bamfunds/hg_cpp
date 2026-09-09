@@ -42,6 +42,8 @@ consteval bool aggregate_node_has_state(std::index_sequence<Index...>) {
 template <typename Definition> const AggregateNodeDescriptor &aggregate_node_descriptor() {
     constexpr auto MemberCount = util::aggregate_member_count<Definition>;
     using Index = std::make_index_sequence<MemberCount>;
+    static_assert(!aggregate_node_has_finalize<Definition> || aggregate_node_has_state<Definition>(Index{}),
+                  "an aggregate node with finalize() must contain state");
     static constexpr auto parameter_runtime_type_uses = aggregate_parameter_runtime_type_uses<Definition>(Index{});
 
     static const auto descriptor = AggregateNodeDescriptor{
@@ -82,14 +84,6 @@ template <typename Definition> const AggregateNodeDescriptor &aggregate_node_des
                     return InvalidationBehavior{};
                 }
             }(),
-        .output_runtime_type =
-            [] {
-                if constexpr (aggregate_node_has_output<Definition>()) {
-                    return &aggregate_output_runtime_type<Definition>;
-                } else {
-                    return AggregateOutputRuntimeTypeFunction{};
-                }
-            }(),
         .parameter_runtime_type_uses = parameter_runtime_type_uses,
         .state_layout =
             [] {
@@ -116,8 +110,9 @@ template <typename Definition> const AggregateNodeDescriptor &aggregate_node_des
             }(),
         .state_destruction_function =
             [] {
-                if constexpr (aggregate_state_requires_destruction<Definition>(Index{})) {
-                    return static_cast<EvaluationFunction>(&destroy_aggregate_state<Definition>);
+                if constexpr (aggregate_node_has_finalize<Definition> ||
+                              aggregate_state_requires_destruction<Definition>(Index{})) {
+                    return static_cast<EvaluationFunction>(&finalize_aggregate_node_state<Definition>);
                 } else {
                     return EvaluationFunction{};
                 }

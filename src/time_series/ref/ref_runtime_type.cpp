@@ -13,28 +13,15 @@ void TimeSeriesReferenceRuntimeType::invalidate_output(const details::OutputStat
     output.invalidate_value();
 }
 
-const TimeSeriesRuntimeType &
-time_series_reference_runtime_type(const TimeSeriesReferenceType &type, const TimeSeriesRuntimeType &target) {
-    struct Key {
-        const TimeSeriesReferenceType *type;
-        const TimeSeriesRuntimeType *target;
-
-        bool operator==(const Key &) const = default;
-    };
-    struct Hash {
-        std::size_t operator()(const Key &key) const noexcept {
-            const auto type_hash = std::hash<const TimeSeriesReferenceType *>{}(key.type);
-            return type_hash ^ (std::hash<const TimeSeriesRuntimeType *>{}(key.target) << 1U);
-        }
-    };
-
+const TimeSeriesRuntimeType &time_series_reference_runtime_type(const TimeSeriesReferenceType &type) {
     static auto mutex = std::mutex{};
-    static auto runtime_types = std::unordered_map<Key, std::unique_ptr<TimeSeriesReferenceRuntimeType>, Hash>{};
+    static auto runtime_types =
+        std::unordered_map<const TimeSeriesReferenceType *, std::unique_ptr<TimeSeriesReferenceRuntimeType>>{};
 
     const auto lock = std::lock_guard{mutex};
-    auto [entry, inserted] = runtime_types.try_emplace(Key{&type, &target});
+    auto [entry, inserted] = runtime_types.try_emplace(&type);
     if (inserted) {
-        entry->second = std::make_unique<TimeSeriesReferenceRuntimeType>(type, target);
+        entry->second = std::make_unique<TimeSeriesReferenceRuntimeType>(type);
     }
     return *entry->second;
 }

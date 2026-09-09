@@ -221,7 +221,7 @@ TEST_CASE("a function type declares a public outputless operator",
     CHECK(operation.signature().name().text() == "consume");
     REQUIRE(operation.signature().parameter_count() == 1);
     CHECK(operation.signature().parameter(0).name.text() == "value");
-    CHECK(operation.signature().parameter(0).type == &bg::int_type());
+    CHECK(operation.signature().parameter(0).type == &bg::int64_type());
     CHECK_FALSE(operation.signature().has_output());
 }
 

@@ -24,17 +24,11 @@ template <std::size_t Size> class FreeFixedTimeSeriesListNodeTemplate final : pu
     using Storage = free_fixed_time_series_list_storage<Size>;
 
   public:
-    explicit FreeFixedTimeSeriesListNodeTemplate(const TimeSeriesListType &type)
-        : runtime_type_{&free_fixed_time_series_list_runtime_type<Size>(type)}, signature_{make_signature(type)} {}
+    explicit FreeFixedTimeSeriesListNodeTemplate(const TimeSeriesListType &type) : signature_{make_signature(type)} {}
 
     const Signature &signature() const override { return signature_; }
     EvaluationFunction evaluation_function(const ResolvedSignature &) const noexcept override { return &evaluate; }
     EvaluationFunction start_function(const ResolvedSignature &) const noexcept override { return &start; }
-    const TimeSeriesRuntimeType *
-    output_runtime_type(const ResolvedSignature &, std::span<const ScalarRuntimeType *const>,
-                        std::span<const TimeSeriesRuntimeType *const>) const noexcept override {
-        return runtime_type_;
-    }
     bool uses_time_series_input_runtime_type(std::size_t) const noexcept override { return true; }
     InputChangeCallback input_change_callback(std::size_t input_index) const noexcept override {
         return {&input_changed, input_index};
@@ -75,7 +69,6 @@ template <std::size_t Size> class FreeFixedTimeSeriesListNodeTemplate final : pu
         runtime_node.output_last_updated() = free_list_valid(value) ? context->evaluation_time() : MIN_DT;
     }
 
-    const TimeSeriesRuntimeType *runtime_type_;
     Signature signature_;
 };
 
@@ -83,8 +76,11 @@ template <std::size_t Size>
 [[nodiscard]] WiringPoint materialize_fixed_time_series_list(std::span<const WiringPoint> items,
                                                              const TimeSeriesListType &type) {
     auto node = std::make_unique<FreeFixedTimeSeriesListNodeTemplate<Size>>(type);
+    const auto &runtime_type = free_fixed_time_series_list_runtime_type<Size>(type);
     const auto &owned = WiringContext::current().wiring().own_node_template(std::move(node));
-    return *owned(items);
+    const auto result = *owned(items);
+    set_wired_output_runtime_type(result, runtime_type);
+    return result;
 }
 
 class FreeFixedTimeSeriesListWiringRecord final : public WiringRecord {

@@ -46,10 +46,6 @@ class ScalarRuntimeType : public RuntimeType {
     bool supports_byte_copy_initialization() const noexcept {
         return storage_supports_byte_copy_initialization();
     }
-    const ScalarRuntimeType *runtime_type_for(const ScalarType &type) const noexcept {
-        return &this->type() == &type ? this : contained_runtime_type_for(type);
-    }
-
     virtual void construct_initial_value(void *destination) const noexcept = 0;
     virtual void construct_runtime_value(void *destination, std::pmr::memory_resource &) const {
         construct_initial_value(destination);
@@ -71,9 +67,6 @@ class ScalarRuntimeType : public RuntimeType {
               type, size, alignment, uses_variable_memory, requires_finalization, supports_byte_copy_initialization} {}
 
   private:
-    virtual const ScalarRuntimeType *contained_runtime_type_for(const ScalarType &) const noexcept {
-        return nullptr;
-    }
     virtual bool equals_same_type(const void *value, const details::ScalarData &other) const noexcept = 0;
 };
 

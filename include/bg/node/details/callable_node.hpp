@@ -82,12 +82,15 @@ decltype(auto) make_callable_node_argument(Invocation invocation) {
         return node_invocation_access::output<TimeSeries>(invocation);
     } else {
         using Value = typename scalar_field<Field>::value_type;
-        constexpr auto Parameter = callable_parameter_index<Function, Index>(Indices);
+        using ParameterScalar = typename scalar_field<Field>::parameter_type;
+        constexpr auto ParameterIndex = callable_parameter_index<Function, Index>(Indices);
         constexpr auto ScalarIndex = callable_scalar_index<Function, Index>(Indices);
-        const auto scalar = node_invocation_access::scalar(invocation, Parameter, ScalarIndex);
+        const auto scalar = node_invocation_access::scalar(invocation, ParameterIndex, ScalarIndex);
 
         if constexpr (scalar_field<Field>::optional) {
-            return scalar.has_value() ? Field{scalar_cast<Value>(scalar.value()).value()} : Field{};
+            return scalar.has_value()
+                       ? Field{scalar_api_value<Value>(scalar_cast<ParameterScalar>(scalar.value()).value())}
+                       : Field{};
         } else if constexpr (scalar_view<Field>::value) {
             if constexpr (generic_scalar<Value>) {
                 return Field::from(static_cast<const ScalarData &>(scalar.value()));
@@ -95,7 +98,7 @@ decltype(auto) make_callable_node_argument(Invocation invocation) {
                 return scalar_cast<Value>(scalar.value());
             }
         } else {
-            return scalar_cast<Value>(scalar.value()).value();
+            return scalar_api_value<Value>(scalar_cast<ParameterScalar>(scalar.value()).value());
         }
     }
 }
@@ -142,19 +145,6 @@ template <typename Function, typename... Options> class CallableNodeDefinition {
         requires stores_function
     {
         return function_;
-    }
-
-    const TimeSeriesRuntimeType *
-    output_runtime_type(const ResolvedSignature &signature,
-                        std::span<const ScalarRuntimeType *const> parameter_runtime_types,
-                        std::span<const TimeSeriesRuntimeType *const> input_runtime_types) const {
-        if constexpr (std::same_as<output_time_series_type, void>) {
-            return nullptr;
-        } else if constexpr (generic_time_series<output_time_series_type>) {
-            return &resolve_generic_output_runtime_type(signature, parameter_runtime_types, input_runtime_types);
-        } else {
-            return &cpp_time_series_runtime_type<output_time_series_type>(*signature.output);
-        }
     }
 
     static void evaluate(Invocation invocation) {

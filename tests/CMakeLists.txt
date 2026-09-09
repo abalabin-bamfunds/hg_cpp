@@ -15,6 +15,7 @@ add_executable(
     evaluation/time_series/time_series_list_test.cpp
     evaluation/time_series/time_series_bundle_test.cpp
     evaluation/time_series/time_series_dict_test.cpp
+    evaluation/time_series/time_series_dict_getitem_test.cpp
     evaluation/time_series/time_series_reference_test.cpp
     evaluation/time_series/time_series_set_test.cpp
     evaluation/time_series/time_series_value_test.cpp
@@ -81,6 +82,7 @@ add_executable(
     wiring/requirement_test.cpp
     wiring/resolver_test.cpp
     wiring/time_series_bundle_wiring_test.cpp
+    wiring/time_series_dict_wiring_test.cpp
     wiring/time_series_list_wiring_test.cpp
     wiring/time_series_reference_wiring_test.cpp
 )

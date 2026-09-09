@@ -15,6 +15,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <cstddef>
+#include <cstdint>
 #include <type_traits>
 #include <variant>
 
@@ -44,7 +45,7 @@ struct resolved_source_definition {
 
     static const bg::ScalarType *resolve(ResolvedScalar, const bg::WiringArguments &arguments) {
         ++resolver_calls;
-        const auto kind = bg::scalar_cast<int>(*arguments.scalar("kind")).value();
+        const auto kind = bg::scalar_cast<std::int64_t>(*arguments.scalar("kind")).value();
 
         if (kind == 0) {
             return &bg::int_type();
@@ -142,7 +143,8 @@ TEST_CASE("a callable resolver completes an output type", "[feature:operator][fe
         bg::eval = [](int, bg::Out<bg::TS<ResolvedScalar>>) {},
         bg::resolve<ResolvedScalar> = [&](const bg::WiringArguments &arguments) -> const bg::ScalarType * {
             ++resolver_calls;
-            return bg::scalar_cast<int>(*arguments.scalar(0)).value() == 0 ? &bg::int_type() : &bg::float_type();
+            return bg::scalar_cast<std::int64_t>(*arguments.scalar(0)).value() == 0 ? &bg::int_type()
+                                                                                    : &bg::float_type();
         }));
 
     bg::testing::test_wiring([&] {

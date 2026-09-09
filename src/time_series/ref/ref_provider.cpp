@@ -39,8 +39,10 @@ using KeySubscriberMap =
     util::hash_dictionary<ScalarValue<>, DictionaryKeySubscribers, ScalarValueHash, ScalarValueEqual>;
 
 struct DictionarySourceObservers {
-    explicit DictionarySourceObservers(ReferenceAddress source) noexcept : source{source} {}
+    DictionarySourceObservers(DictionaryObservers &owner, ReferenceAddress source) noexcept
+        : owner{&owner}, source{source} {}
 
+    DictionaryObservers *owner;
     ReferenceAddress source;
     KeySubscriberMap keys;
 };
@@ -57,48 +59,49 @@ class DictionaryObservers {
         }
     }
 
-    void add(ReferenceAddress source, const ScalarData &key, RuntimeGraph &graph, std::uint32_t input_offset,
-             std::uint32_t node_index) {
+    [[nodiscard]] DictionaryKeySubscription add(ReferenceAddress source, const ScalarData &key, RuntimeGraph &graph,
+                                                std::uint32_t node_index) {
         auto &source_observers = require_source(source);
+        auto remove_empty_source = util::scope_exit{[&]() noexcept {
+            if (source_observers.keys.empty()) {
+                erase_source(source_observers);
+            }
+        }};
         auto [entry, inserted] = source_observers.keys.try_emplace_with(
             key, *memory_,
             [&](ScalarValue<> *destination) { std::construct_at(destination, Scalar<>::from(key), *memory_); },
             [](ScalarValue<> *value) noexcept { std::destroy_at(value); },
             [](DictionaryKeySubscribers *destination) { std::construct_at(destination); });
-        (void)inserted;
+        auto remove_new_key = util::scope_exit{[&]() noexcept {
+            if (inserted) {
+                erase_key(source_observers, key);
+            }
+        }};
 
         auto &subscribers = DynamicSubscribers::ensure(entry->subscribers, *memory_);
-        subscribers.add(graph, input_offset, 0, node_index, true, false);
+        subscribers.add(graph, node_index, 0, node_index, true, false);
+
+        remove_new_key.release();
+        remove_empty_source.release();
+        return DictionaryKeySubscription{&source_observers, source_observers.keys.find_key(key)};
     }
 
-    void remove(ReferenceAddress source, const ScalarData &key, RuntimeGraph &graph,
-                std::uint32_t input_offset) noexcept {
-        auto *source_observers = find_source(source);
-        if (source_observers == nullptr) {
-            return;
-        }
-
-        auto *entry = source_observers->keys.find(key);
+    void remove(DictionaryKeySubscription subscription, RuntimeGraph &graph, std::uint32_t node_index) noexcept {
+        auto &source_observers = *static_cast<DictionarySourceObservers *>(subscription.source_);
+        const auto &key = *static_cast<const ScalarValue<> *>(subscription.key_);
+        auto *entry = source_observers.keys.find(key);
         if (entry == nullptr || entry->subscribers == nullptr) {
             return;
         }
-        entry->subscribers->remove(graph, input_offset);
+        entry->subscribers->remove(graph, node_index);
         if (!entry->subscribers->empty()) {
             return;
         }
 
-        source_observers->keys.erase_with(
-            key, *memory_, [](ScalarValue<> *value) noexcept { std::destroy_at(value); },
-            [](DictionaryKeySubscribers *value) noexcept {
-                DynamicSubscribers::release(value->subscribers);
-                std::destroy_at(value);
-            });
+        erase_key(source_observers, key);
 
-        if (source_observers->keys.empty()) {
-            const auto position = std::ranges::find(sources_, source_observers);
-            *position = sources_.back();
-            sources_.pop_back();
-            release_source(*source_observers);
+        if (source_observers.keys.empty()) {
+            erase_source(source_observers);
         }
     }
 
@@ -135,11 +138,27 @@ class DictionaryObservers {
         }
 
         auto *storage = memory_->allocate(sizeof(DictionarySourceObservers), alignof(DictionarySourceObservers));
-        auto *result = std::construct_at(static_cast<DictionarySourceObservers *>(storage), source);
+        auto *result = std::construct_at(static_cast<DictionarySourceObservers *>(storage), *this, source);
         auto release = util::scope_exit{[&]() noexcept { release_source(*result); }};
         sources_.push_back(result);
         release.release();
         return *result;
+    }
+
+    void erase_key(DictionarySourceObservers &source, const ScalarData &key) noexcept {
+        source.keys.erase_with(
+            key, *memory_, [](ScalarValue<> *value) noexcept { std::destroy_at(value); },
+            [](DictionaryKeySubscribers *value) noexcept {
+                DynamicSubscribers::release(value->subscribers);
+                std::destroy_at(value);
+            });
+    }
+
+    void erase_source(DictionarySourceObservers &source) noexcept {
+        const auto position = std::ranges::find(sources_, &source);
+        *position = sources_.back();
+        sources_.pop_back();
+        release_source(source);
     }
 
     void release_source(DictionarySourceObservers &source) noexcept {
@@ -271,9 +290,8 @@ void ReferenceProvider::notify(ReferenceRoute &route, OutputChangeContext &conte
     }
 }
 
-void ReferenceProvider::add_dictionary_key_subscriber(ReferenceAddress source, const ScalarData &key,
-                                                      RuntimeGraph &graph, std::uint32_t input_offset,
-                                                      std::uint32_t node_index) {
+DictionaryKeySubscription ReferenceProvider::add_dictionary_key_subscriber(
+    ReferenceAddress source, const ScalarData &key, RuntimeGraph &graph, std::uint32_t node_index) {
     if (dictionary_observers_ == nullptr) {
         auto *storage = memory_->allocate(sizeof(DictionaryObservers), alignof(DictionaryObservers));
         auto release = util::scope_exit{[&]() noexcept {
@@ -282,14 +300,7 @@ void ReferenceProvider::add_dictionary_key_subscriber(ReferenceAddress source, c
         dictionary_observers_ = std::construct_at(static_cast<DictionaryObservers *>(storage), *memory_);
         release.release();
     }
-    dictionary_observers_->add(source, key, graph, input_offset, node_index);
-}
-
-void ReferenceProvider::remove_dictionary_key_subscriber(ReferenceAddress source, const ScalarData &key,
-                                                         RuntimeGraph &graph, std::uint32_t input_offset) noexcept {
-    if (dictionary_observers_ != nullptr) {
-        dictionary_observers_->remove(source, key, graph, input_offset);
-    }
+    return dictionary_observers_->add(source, key, graph, node_index);
 }
 
 ReferenceAddress ReferenceProvider::representation(ReferenceAddress source, const TimeSeriesType &requested_type) {
@@ -460,15 +471,27 @@ void notify_reference(ReferenceAddress address, OutputChangeContext &context, Ou
     route_provider(address).notify(route, context, change);
 }
 
-void add_reference_dictionary_key_subscriber(ReferenceAddress address, const ScalarData &key, RuntimeGraph &graph,
-                                             std::uint32_t input_offset, std::uint32_t node_index) {
-    require_provider(address).add_dictionary_key_subscriber(address, key, graph, input_offset, node_index);
+DictionaryKeySubscription add_reference_dictionary_key_subscriber(
+    ReferenceAddress address, const ScalarData &key, RuntimeGraph &graph, std::uint32_t node_index) {
+    return require_provider(address).add_dictionary_key_subscriber(address, key, graph, node_index);
 }
 
-void remove_reference_dictionary_key_subscriber(ReferenceAddress address, const ScalarData &key, RuntimeGraph &graph,
-                                                std::uint32_t input_offset) noexcept {
-    if (auto *provider = reference_root(address).data.get<ReferenceProvider>()) {
-        provider->remove_dictionary_key_subscriber(address, key, graph, input_offset);
+bool reference_dictionary_key_subscription_matches(DictionaryKeySubscription subscription, ReferenceAddress source,
+                                                   const ScalarData &key) noexcept {
+    if (!subscription) {
+        return false;
+    }
+
+    const auto &observed_source = *static_cast<const DictionarySourceObservers *>(subscription.source_);
+    const auto &observed_key = *static_cast<const ScalarValue<> *>(subscription.key_);
+    return observed_source.source == source && observed_key.equals(key);
+}
+
+void remove_reference_dictionary_key_subscriber(DictionaryKeySubscription subscription, RuntimeGraph &graph,
+                                                std::uint32_t node_index) noexcept {
+    if (subscription) {
+        static_cast<const DictionarySourceObservers *>(subscription.source_)->owner->remove(subscription, graph,
+                                                                                           node_index);
     }
 }
 

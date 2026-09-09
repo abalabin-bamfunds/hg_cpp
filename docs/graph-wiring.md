@@ -16,7 +16,10 @@ Python.
 
 A wiring record owns behavior required to materialize its value. Materialized
 records identify wired outputs. Graph compilation consumes only wired outputs
-and does not depend on wiring-record behavior.
+and does not depend on wiring-record behavior. A materialized record whose
+layout differs from the normal layout for its semantic type stores its runtime
+type on the wired output. Graph compilation resolves the runtime type of other
+outputs from their resolved semantic types and input runtime types.
 
 Each `WiringPoint` argument to a node call must belong to the active
 `GraphWiring`. Inner graph boundaries provide local wiring points for their

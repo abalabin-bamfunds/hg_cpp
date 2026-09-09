@@ -38,10 +38,6 @@ class NodeTemplate : public WiringTemplate {
     virtual EvaluationFunction start_function(const ResolvedSignature &) const noexcept { return nullptr; }
     virtual EvaluationFunction stop_function(const ResolvedSignature &) const noexcept { return nullptr; }
     virtual InvalidationBehavior invalidation_behavior(const ResolvedSignature &) const noexcept { return {}; }
-    virtual const TimeSeriesRuntimeType *
-    output_runtime_type(const ResolvedSignature &signature,
-                        std::span<const ScalarRuntimeType *const> parameter_runtime_types,
-                        std::span<const TimeSeriesRuntimeType *const> time_series_input_runtime_types) const = 0;
     virtual bool uses_time_series_input_runtime_type(std::size_t) const noexcept { return false; }
     virtual bool uses_scalar_input_runtime_type(std::size_t) const noexcept { return false; }
     virtual bool uses_output_runtime_type() const noexcept { return false; }

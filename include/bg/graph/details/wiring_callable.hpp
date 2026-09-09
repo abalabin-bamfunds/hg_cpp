@@ -54,19 +54,25 @@ template <typename Parameter> [[nodiscard]] decltype(auto) graph_argument(wiring
 
         return argument.wiring_point();
     } else if constexpr (supported_optional_scalar_argument<Value>) {
-        using Scalar = typename optional_scalar_argument<Value>::value_type;
+        using ApiScalar = typename optional_scalar_argument<Value>::value_type;
+        using Canonical = canonical_scalar_type_t<ApiScalar>;
 
-        return argument.scalar_has_value() ? Value{*static_cast<const Scalar *>(argument.scalar_data())} : Value{};
+        if (!argument.scalar_has_value()) {
+            return Value{};
+        }
+        const auto value = argument.scalar_view() == nullptr
+                               ? Scalar<>::from(argument.scalar_runtime_type(), argument.scalar_data())
+                               : Scalar<>::from(*argument.scalar_view());
+        return Value{scalar_api_value<ApiScalar>(scalar_cast<Canonical>(value).value())};
     } else {
         static_assert(supported_scalar_argument<Value>);
         static_assert(!std::is_lvalue_reference_v<Parameter> || std::is_const_v<std::remove_reference_t<Parameter>>);
 
-        const auto &value = *static_cast<const Value *>(argument.scalar_data());
-        if constexpr (std::is_lvalue_reference_v<Parameter>) {
-            return value;
-        } else {
-            return Value{value};
-        }
+        using Canonical = canonical_scalar_type_t<Value>;
+        const auto scalar = argument.scalar_view() == nullptr
+                                ? Scalar<>::from(argument.scalar_runtime_type(), argument.scalar_data())
+                                : Scalar<>::from(*argument.scalar_view());
+        return scalar_api_value<Value>(scalar_cast<Canonical>(scalar).value());
     }
 }
 
@@ -109,11 +115,13 @@ bool wiring_parameter_matches(const ResolvedParameter &parameter) {
     } else if constexpr (supported_optional_scalar_argument<Value>) {
         using Scalar = typename optional_scalar_argument<Value>::value_type;
 
-        return parameter.accepts_absent_scalar && parameter.type == &cpp_scalar_type<Scalar>();
+        return parameter.accepts_absent_scalar &&
+               parameter.type == &cpp_scalar_type<canonical_scalar_type_t<Scalar>>();
     } else {
         static_assert(supported_scalar_argument<Value>);
 
-        return !parameter.accepts_absent_scalar && parameter.type == &cpp_scalar_type<Value>();
+        return !parameter.accepts_absent_scalar &&
+               parameter.type == &cpp_scalar_type<canonical_scalar_type_t<Value>>();
     }
 }
 

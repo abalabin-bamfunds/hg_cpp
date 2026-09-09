@@ -108,6 +108,11 @@ template <typename T> class ScalarValue {
 
 template <> class ScalarValue<> {
   public:
+    template <scalar_source Source>
+    explicit ScalarValue(Source &&source)
+        : value_{make(details::make_scalar_value<canonical_scalar_t<Source>>(
+              canonical_scalar(std::forward<Source>(source)), nullptr))} {}
+
     template <typename T>
     explicit ScalarValue(const Scalar<T> &source) : value_{make(details::copy_scalar_value(source, nullptr))} {}
 

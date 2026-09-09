@@ -44,7 +44,6 @@ add_library(
     src/operators.cpp
     src/node/aggregate_node_template_base.cpp
     src/node/node_template.cpp
-    src/node/output_runtime_type.cpp
     src/guarantee_parameter.cpp
     src/runtime_type.cpp
     src/runtime_graph.cpp
@@ -74,6 +73,7 @@ add_library(
     src/time_series/tsd/tsd_type.cpp
     src/time_series/tsd/tsd_runtime_type.cpp
     src/time_series/tsd/tsd_reference_representation.cpp
+    src/time_series/tsd/operators.cpp
     src/time_series/tss/tss_type.cpp
     src/time_series/tss/tss_runtime_type.cpp
     src/time_series/output_path.cpp

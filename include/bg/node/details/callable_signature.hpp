@@ -71,7 +71,7 @@ void add_callable_parameter(std::vector<Parameter> &parameters) {
     } else {
         static_assert(scalar_field<Field>::value,
                       "a callable parameter must be In, a scalar, an optional scalar, or Out");
-        using Value = typename scalar_field<Field>::value_type;
+        using Value = typename scalar_field<Field>::parameter_type;
         parameters.push_back({util::symbol{std::to_string(parameters.size())}, &scalar_type_for<Value>(), active,
                               required, scalar_field<Field>::optional});
     }

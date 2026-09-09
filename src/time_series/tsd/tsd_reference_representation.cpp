@@ -597,8 +597,7 @@ TimeSeriesDictionaryRuntimeType::create_reference_representation(ReferenceProvid
 
     const auto *requested_reference = dynamic_cast<const TimeSeriesReferenceType *>(&dictionary->value_type());
     if (requested_reference != nullptr && &requested_reference->target_type() == &item_runtime_type().type()) {
-        const auto available = std::array{&item_runtime_type()};
-        const auto &item = resolve_time_series_runtime_type(dictionary->value_type(), available);
+        const auto &item = resolve_time_series_runtime_type(dictionary->value_type());
         auto *storage = memory.allocate(sizeof(TimeSeriesDictionaryReferenceRepresentation),
                                         alignof(TimeSeriesDictionaryReferenceRepresentation));
         auto release = util::scope_exit{[&]() noexcept {
@@ -613,9 +612,7 @@ TimeSeriesDictionaryRuntimeType::create_reference_representation(ReferenceProvid
 
     const auto *source_reference = dynamic_cast<const TimeSeriesReferenceType *>(&item_runtime_type().type());
     if (source_reference != nullptr && &source_reference->target_type() == &dictionary->value_type()) {
-        const auto &reference_runtime_type = static_cast<const TimeSeriesReferenceRuntimeType &>(item_runtime_type());
-        const auto available = std::array{&reference_runtime_type.target_runtime_type()};
-        const auto &item = resolve_time_series_runtime_type(dictionary->value_type(), available);
+        const auto &item = resolve_time_series_runtime_type(dictionary->value_type());
         auto *storage = memory.allocate(sizeof(DereferencedTimeSeriesDictionaryRepresentation),
                                         alignof(DereferencedTimeSeriesDictionaryRepresentation));
         auto release = util::scope_exit{[&]() noexcept {

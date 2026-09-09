@@ -36,12 +36,6 @@ struct RuntimeNodeDefinition {
         return {.factor = 2};
     }
 
-    [[nodiscard]] const bg::TimeSeriesRuntimeType *
-    output_runtime_type(const bg::ResolvedSignature &, std::span<const bg::ScalarRuntimeType *const>,
-                        std::span<const bg::TimeSeriesRuntimeType *const> inputs) const noexcept {
-        return inputs.front();
-    }
-
     static void evaluate(bg::NodeInvocation<compiled_data_type, state_type> invocation) {
         const auto input = *invocation.inputs().begin();
         CHECK(input.parameter_index() == 0);
@@ -89,12 +83,6 @@ struct RuntimeSinkDefinition {
 
     [[nodiscard]] const bg::Signature &signature() const { return signature_; }
 
-    [[nodiscard]] const bg::TimeSeriesRuntimeType *
-    output_runtime_type(const bg::ResolvedSignature &, std::span<const bg::ScalarRuntimeType *const>,
-                        std::span<const bg::TimeSeriesRuntimeType *const>) const noexcept {
-        return nullptr;
-    }
-
     static void evaluate(bg::NodeInvocation<> invocation) {
         CHECK(invocation.inputs().begin() != invocation.inputs().end());
     }
@@ -122,12 +110,6 @@ struct OptionalScalarDefinition {
               bg::TS<std::int64_t>::type()} {}
 
     [[nodiscard]] const bg::Signature &signature() const { return signature_; }
-
-    [[nodiscard]] const bg::TimeSeriesRuntimeType *
-    output_runtime_type(const bg::ResolvedSignature &, std::span<const bg::ScalarRuntimeType *const>,
-                        std::span<const bg::TimeSeriesRuntimeType *const> inputs) const noexcept {
-        return inputs.front();
-    }
 
     static void evaluate(bg::NodeInvocation<> invocation) {
         const auto scalar = *invocation.scalars().begin();
@@ -165,14 +147,6 @@ struct RuntimeDictionarySourceDefinition {
           signature_{bg::util::symbol{"runtime_dictionary_source"}, {}, *output_type_} {}
 
     [[nodiscard]] const bg::Signature &signature() const { return signature_; }
-
-    [[nodiscard]] const bg::TimeSeriesRuntimeType *
-    output_runtime_type(const bg::ResolvedSignature &signature, std::span<const bg::ScalarRuntimeType *const> scalars,
-                        std::span<const bg::TimeSeriesRuntimeType *const> inputs) const noexcept {
-        const auto integer = &bg::cpp_scalar_runtime_type<std::int64_t>();
-        const auto available = std::array<const bg::ScalarRuntimeType *, 1>{integer};
-        return &bg::resolve_time_series_runtime_type(*signature.output, inputs, scalars.empty() ? available : scalars);
-    }
 
     static void start(bg::NodeInvocation<> invocation) {
         auto output = invocation.output();

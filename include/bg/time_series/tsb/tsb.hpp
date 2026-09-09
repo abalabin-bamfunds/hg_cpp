@@ -29,17 +29,11 @@ struct NamedBundleWiringPoint {
 
 class FreeTimeSeriesBundleNodeTemplate final : public NodeTemplate {
   public:
-    explicit FreeTimeSeriesBundleNodeTemplate(const TimeSeriesBundleType &type)
-        : runtime_type_{&free_time_series_bundle_runtime_type(type)}, signature_{make_signature(type)} {}
+    explicit FreeTimeSeriesBundleNodeTemplate(const TimeSeriesBundleType &type) : signature_{make_signature(type)} {}
 
     const Signature &signature() const override { return signature_; }
     EvaluationFunction evaluation_function(const ResolvedSignature &) const noexcept override { return &evaluate; }
     EvaluationFunction start_function(const ResolvedSignature &) const noexcept override { return &start; }
-    const TimeSeriesRuntimeType *
-    output_runtime_type(const ResolvedSignature &, std::span<const ScalarRuntimeType *const>,
-                        std::span<const TimeSeriesRuntimeType *const>) const noexcept override {
-        return runtime_type_;
-    }
     bool uses_time_series_input_runtime_type(std::size_t) const noexcept override { return true; }
     InputChangeCallback input_change_callback(std::size_t input_index) const noexcept override {
         return {&input_changed, input_index};
@@ -78,7 +72,6 @@ class FreeTimeSeriesBundleNodeTemplate final : public NodeTemplate {
         runtime_node.output_last_updated() = free_bundle_valid(value) ? context->evaluation_time() : MIN_DT;
     }
 
-    const TimeSeriesRuntimeType *runtime_type_;
     Signature signature_;
 };
 
@@ -96,8 +89,11 @@ class FreeTimeSeriesBundleNodeTemplate final : public NodeTemplate {
     }
 
     auto node = std::make_unique<FreeTimeSeriesBundleNodeTemplate>(type);
+    const auto &runtime_type = free_time_series_bundle_runtime_type(type);
     const auto &owned = WiringContext::current().wiring().own_node_template(std::move(node));
-    return *owned(ordered);
+    const auto result = *owned(ordered);
+    set_wired_output_runtime_type(result, runtime_type);
+    return result;
 }
 
 class FreeTimeSeriesBundleWiringRecord final : public WiringRecord {

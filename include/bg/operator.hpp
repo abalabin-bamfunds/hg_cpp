@@ -23,7 +23,7 @@ template <typename Declaration> const Type &operator_declaration_type() {
     if constexpr (requires { Value::type(); }) {
         return Value::type();
     } else {
-        return cpp_scalar_type<Value>();
+        return cpp_scalar_type<canonical_scalar_type_t<Value>>();
     }
 }
 

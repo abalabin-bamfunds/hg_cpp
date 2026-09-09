@@ -68,6 +68,27 @@ template <typename T> using canonical_scalar_t = typename details::canonical_sca
 template <typename T>
 concept scalar_source = requires { typename canonical_scalar_t<T>; };
 
+namespace details {
+
+template <typename T, bool = scalar_source<T>> struct canonical_scalar_type {
+    using type = std::remove_cvref_t<T>;
+};
+
+template <typename T> struct canonical_scalar_type<T, true> {
+    using type = canonical_scalar_t<T>;
+};
+
+template <typename T> using canonical_scalar_type_t = typename canonical_scalar_type<T>::type;
+
+template <typename Target, typename Source>
+    requires std::constructible_from<std::remove_cvref_t<Target>, Source>
+[[nodiscard]] constexpr auto scalar_api_value(Source &&source)
+    noexcept(std::is_nothrow_constructible_v<std::remove_cvref_t<Target>, Source>) {
+    return std::remove_cvref_t<Target>(std::forward<Source>(source));
+}
+
+} // namespace details
+
 template <typename Target, typename Source>
 concept scalar_source_for = std::same_as<std::remove_cvref_t<Source>, Target> ||
                             (scalar_source<Source> && std::same_as<canonical_scalar_t<Source>, Target>);

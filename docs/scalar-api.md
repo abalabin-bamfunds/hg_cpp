@@ -63,6 +63,9 @@ Signed and unsigned integers that fit convert to `std::int64_t`. Character
 strings convert to `bg::string`, whose read API returns `std::string_view`.
 `EvaluationTime` retains its type.
 
+Wiring applies the same conversion to raw C++ scalar arguments before type
+resolution. An explicit `ScalarValue<T>` retains `T`.
+
 `ScalarValue<Opaque<T>>` owns a copy of private C++ data without adding graph
 operations. `T` must be copy constructible and destructible. For `Opaque<T*>`,
 ownership of the pointed-to object remains with the caller.
