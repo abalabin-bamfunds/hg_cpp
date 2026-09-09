@@ -5,6 +5,7 @@
 namespace bg {
 
 class GraphWiring;
+class NodeTemplate;
 
 class WiredScalar {
   public:
@@ -16,6 +17,7 @@ class WiredScalar {
 
   private:
     friend GraphWiring;
+    friend NodeTemplate;
 
     WiredScalar(const ScalarRuntimeType &runtime_type, void *data) noexcept
         : runtime_type_(&runtime_type), data_(data) {}

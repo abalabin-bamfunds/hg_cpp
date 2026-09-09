@@ -2,7 +2,7 @@
 
 #include <bg/evaluation_context.hpp>
 #include <bg/graph/compiled_node.hpp>
-#include <bg/graph/details/deferred_wiring_point.hpp>
+#include <bg/graph/details/wiring_record.hpp>
 #include <bg/graph/runtime_graph.hpp>
 #include <bg/graph/wiring_context.hpp>
 #include <bg/graph/wiring_error.hpp>
@@ -39,10 +39,6 @@ template <std::size_t Size> class FreeFixedTimeSeriesListNodeTemplate final : pu
     InputChangeCallback input_change_callback(std::size_t input_index) const noexcept override {
         return {&input_changed, input_index};
     }
-    std::optional<std::size_t> output_item_source(std::size_t item) const noexcept override {
-        return item < Size ? std::optional{item} : std::nullopt;
-    }
-
   private:
     [[nodiscard]] static Signature make_signature(const TimeSeriesListType &type) {
         auto parameters = std::vector<Parameter>{};
@@ -91,41 +87,47 @@ template <std::size_t Size>
     return *owned(items);
 }
 
-template <std::size_t Size> class FreeFixedTimeSeriesListWiringPoint final : public DeferredWiringPoint {
+class FreeFixedTimeSeriesListWiringRecord final : public WiringRecord {
+    using MaterializeFunction = WiringPoint (*)(std::span<const WiringPoint>, const TimeSeriesListType &);
+
   public:
-    explicit FreeFixedTimeSeriesListWiringPoint(std::array<WiringPoint, Size> items)
-        : items_{items}, type_{&argument_type(items)} {}
+    template <std::size_t Size>
+    explicit FreeFixedTimeSeriesListWiringRecord(std::array<WiringPoint, Size> items)
+        : WiringRecord{argument_type(items)}, items_{items.begin(), items.end()},
+          materialize_{
+              [](auto values, const auto &type) { return materialize_fixed_time_series_list<Size>(values, type); }} {}
 
-    const TimeSeriesType &type() const noexcept override { return *type_; }
-
-    WiringPoint materialize(const TimeSeriesType &target_type) const override {
-        const auto *list = dynamic_cast<const TimeSeriesListType *>(&target_type);
-        if (list == nullptr || list->item_count() != Size) {
-            throw WiringError{"a free time series list requires a matching fixed TSL parameter"};
-        }
-
-        return materialize_fixed_time_series_list<Size>(items_, *list);
-    }
-
-    WiringPoint item(std::size_t index) const override { return items_.at(index); }
+    WiringPoint item(std::size_t index) const { return items_.at(index); }
 
   private:
-    static const TimeSeriesType &target_type(const TimeSeriesType &type) noexcept {
+    WiringPoint materialize(const TimeSeriesType &target_type) const override {
+        const auto &value_type = target_type_of(target_type);
+        const auto *list = dynamic_cast<const TimeSeriesListType *>(&value_type);
+        if (list == nullptr || list->item_count() != items_.size()) {
+            throw WiringError{"a free fixed TSL requires a matching fixed TSL parameter"};
+        }
+
+        const auto result = materialize_(items_, *list);
+        return materialize_wiring_point(result, target_type);
+    }
+
+    static const TimeSeriesType &target_type_of(const TimeSeriesType &type) noexcept {
         if (const auto *reference = dynamic_cast<const TimeSeriesReferenceType *>(&type)) {
             return reference->target_type();
         }
         return type;
     }
 
+    template <std::size_t Size>
     static const TimeSeriesListType &argument_type(const std::array<WiringPoint, Size> &items) {
-        const auto &first = target_type(items.front().type());
+        const auto &first = target_type_of(items.front().type());
         auto guarantee = *first.guarantee().value();
         const auto &shape = first.with_guarantee(TimeSeriesGuarantee::ordinary);
 
         for (const auto item : items | std::views::drop(1)) {
-            const auto &candidate = target_type(item.type());
+            const auto &candidate = target_type_of(item.type());
             if (&candidate.with_guarantee(TimeSeriesGuarantee::ordinary) != &shape) {
-                throw std::invalid_argument{"a free time series list requires compatible item types"};
+                throw std::invalid_argument{"a free fixed TSL requires compatible item types"};
             }
             guarantee = weakest(guarantee, *candidate.guarantee().value());
         }
@@ -133,32 +135,19 @@ template <std::size_t Size> class FreeFixedTimeSeriesListWiringPoint final : pub
         return time_series_list_type(first.with_guarantee(guarantee), Size, TimeSeriesGuarantee::ordinary);
     }
 
-    std::array<WiringPoint, Size> items_;
-    const TimeSeriesListType *type_;
+    std::vector<WiringPoint> items_;
+    MaterializeFunction materialize_;
 };
 
 } // namespace bg::details
 
 namespace bg {
 
-template <std::size_t Size> class FixedTimeSeriesListWiring {
-  public:
-    explicit FixedTimeSeriesListWiring(WiringPoint point) : point_{point} {}
-
-    operator WiringPoint() const noexcept { return point_; }
-
-    WiringPoint operator[](std::size_t index) const { return point_[index]; }
-
-  private:
-    WiringPoint point_;
-};
-
-template <typename... TimeSeries>
-[[nodiscard]] auto tsl(wp<TimeSeries>... items) -> FixedTimeSeriesListWiring<sizeof...(TimeSeries)> {
+template <typename... TimeSeries> [[nodiscard]] wp<> tsl(wp<TimeSeries>... items) {
     static_assert(sizeof...(TimeSeries) != 0);
     auto points = std::array<WiringPoint, sizeof...(TimeSeries)>{static_cast<WiringPoint>(items)...};
-    auto deferred = std::make_unique<details::FreeFixedTimeSeriesListWiringPoint<sizeof...(TimeSeries)>>(points);
-    return FixedTimeSeriesListWiring<sizeof...(TimeSeries)>{details::defer_wiring_point(std::move(deferred))};
+    auto record = std::make_unique<details::FreeFixedTimeSeriesListWiringRecord>(points);
+    return wp<>{details::add_wiring_record(std::move(record))};
 }
 
 } // namespace bg

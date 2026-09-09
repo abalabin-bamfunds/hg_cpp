@@ -14,53 +14,38 @@ names, parameter count, parameter types, or output type.
 
 C++ uses the operator object as its identity.
 
-`operator_` builds the prototype from the same fields as an aggregate node. A
-lambda form declares the fields as parameters. An aggregate form uses member
-names as parameter names. Neither form defines evaluation behavior:
+Public headers declare an operator from a function type. The definition supplies
+its name and parameter names:
 
 ```cpp
-using namespace bg::literals;
+namespace bg::operators {
 
-auto add = bg::operator_(
-    "add",
-    [](bg::In<bg::TS_T, "lhs"_n>,
-       bg::In<bg::TS_T, "rhs"_n>,
-       bg::Out<bg::TS_T>) {});
+extern operator_<auto(TS_T, TS_T) -> TS_T> add;
 
-struct add_definition {
-    bg::In<bg::TS_T> lhs;
-    bg::In<bg::TS_T> rhs;
-    bg::Out<bg::TS_T> output;
-};
+} // namespace bg::operators
 
-auto aggregate_add = bg::operator_<add_definition>();
+decltype(bg::operators::add) bg::operators::add{"add", {"lhs", "rhs"}};
+```
+
+Local code uses the same declaration form:
+
+```cpp
+auto add = bg::operator_<auto(bg::TS_T, bg::TS_T) -> bg::TS_T>{"add", {"lhs", "rhs"}};
 add.overload(bg::node<add_integers>());
 add.overload(add_numbers_graph);
 ```
 
-A declaration-only function provides a compact prototype when parameter names
-are encoded by `In` and no resolvers or requirements are needed:
-
-```cpp
-auto add(bg::In<bg::TS_T, "lhs"_n>,
-         bg::In<bg::TS_T, "rhs"_n>) -> bg::TS_T;
-
-auto add_operator = bg::operator_<add>();
-```
-
-The function is inspected but never called and does not require a definition.
-Ordinary C++ parameter names are not part of a function type, so this form
-cannot use them as operator parameter names.
-
 The prototype determines whether the operator produces an output. Every
-overload must have the same output presence as the prototype. An operator call
-returns `std::optional<WiringPoint>` because overloads can produce different
-output types and outputless operators have no wiring point. Graph code unwraps
-the result when it uses an output:
+overload must have the same output presence as the prototype. An output operator
+returns `wp<>` because overloads can produce different output types. An
+outputless operator returns `void`.
 
 ```cpp
-auto result = *add(lhs, rhs);
+auto result = add(lhs, rhs);
 ```
+
+Engine operators are declared in `bg::operators`. Each time series or scalar
+module registers the overloads it implements.
 
 An operator owns its registered overloads. Registration is permanent and is
 not concurrent with graph wiring. Adding an overload clears that operator's
@@ -98,7 +83,7 @@ reference parameter for a reference argument and a direct parameter for a
 direct argument. It then compares the remaining type specificity. Conflicting
 reference preferences across parameters remain ambiguous.
 
-Free collection materialization and other wiring adaptations also happen
+Free collection materialization and other wiring adaptations happen
 after selection. This ensures that ranking describes the graph-code arguments,
 not infrastructure introduced by wiring.
 

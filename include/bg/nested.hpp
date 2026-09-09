@@ -65,14 +65,15 @@ template <typename Graph, details::graph_code_argument Run, details::graph_code_
             }
 
             inputs[i] = details::wire_nested_input(static_cast<const TimeSeriesType &>(*resolved.parameters[i].type));
-            input_nodes.push_back(inputs[i]->node_index());
+            input_nodes.push_back(details::wired_output_node_index(*inner_wiring, *inputs[i]));
         }
 
         auto originals = std::forward_as_tuple(arguments...);
         const auto output =
             details::invoke_nested_graph(graph, originals, inputs, std::index_sequence_for<Arguments...>{});
-        const auto boundary_output = details::wire_nested_output(output);
-        output_node = boundary_output.node_index();
+        const auto boundary_output =
+            details::wire_nested_output(output, static_cast<const TimeSeriesType &>(*resolved.output));
+        output_node = details::wired_output_node_index(*inner_wiring, boundary_output);
     }
 
     auto nested_wiring = details::NestedGraphWiring{

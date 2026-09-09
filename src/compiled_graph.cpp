@@ -169,7 +169,7 @@ struct SubscriptionPlan {
 
 struct ItemSubscriptionPlan {
     std::uint32_t item;
-    std::size_t wiring_point;
+    std::size_t output;
     std::uint32_t sampled_last_updated_offset{};
     SubscriptionPlan subscriptions;
     std::vector<ItemSubscriptionPlan> items;
@@ -189,10 +189,10 @@ struct StateLayout {
 
 struct TimeSeriesInputPlan {
     std::uint32_t parameter;
-    std::size_t source;
+    std::size_t output;
     bool dereferences_reference;
     std::uint32_t offset;
-    std::uint32_t source_last_updated_offset;
+    std::uint32_t output_last_updated_offset;
 };
 
 struct RuntimeStorageLayout {
@@ -252,14 +252,14 @@ struct FixedStorageLayout {
 };
 
 struct DynamicSubscribersPlan {
-    std::size_t source;
+    std::size_t output;
     std::size_t node;
     std::size_t state_offset;
 };
 
 struct CompilationPlan {
     std::span<const WiredNode> nodes;
-    std::span<const WiringPointRecord> wiring_points;
+    std::span<const WiredOutput> outputs;
     std::vector<NodePlan> node_plans;
     WiringPathLayout wiring_paths;
     NodeFunctionLayout starts;
@@ -315,23 +315,23 @@ struct ConstructedNodeData {
     return result;
 }
 
-std::size_t root_source_node(std::size_t source, std::span<const WiringPointRecord> wiring_points) {
-    while (wiring_points[source].parent != WiringPointRecord::npos) {
-        source = wiring_points[source].parent;
+std::size_t root_output_node_index(std::size_t output, std::span<const WiredOutput> outputs) {
+    while (outputs[output].parent != WiredOutput::npos) {
+        output = outputs[output].parent;
     }
 
-    return wiring_points[source].node_index;
+    return outputs[output].node_index;
 }
 
-OutputLayout physical_source_output(std::size_t source, std::span<const WiringPointRecord> wiring_points,
+OutputLayout physical_output_layout(std::size_t output, std::span<const WiredOutput> outputs,
                                     std::span<const NodePlan> node_plans) {
-    const auto &record = wiring_points[source];
-    if (record.parent == WiringPointRecord::npos) {
-        return node_plans[record.node_index].output;
+    const auto &wired_output = outputs[output];
+    if (wired_output.parent == WiredOutput::npos) {
+        return node_plans[wired_output.node_index].output;
     }
 
-    const auto parent = physical_source_output(record.parent, wiring_points, node_plans);
-    const auto item = parent.runtime_type->item_layout(static_cast<TimeSeriesItemId>(record.item));
+    const auto parent = physical_output_layout(wired_output.parent, outputs, node_plans);
+    const auto item = parent.runtime_type->item_layout(wired_output.item);
 
     return {
         packed_offset(parent.value_offset + item.last_updated_offset, "runtime storage reaches 1 GiB"),
@@ -341,12 +341,12 @@ OutputLayout physical_source_output(std::size_t source, std::span<const WiringPo
 }
 
 [[nodiscard]] const ItemSubscriptionPlan *find_item_subscription(std::span<const ItemSubscriptionPlan> items,
-                                                                 std::size_t wiring_point) noexcept {
+                                                                 std::size_t output) noexcept {
     for (const auto &item : items) {
-        if (item.wiring_point == wiring_point) {
+        if (item.output == output) {
             return &item;
         }
-        if (const auto *result = find_item_subscription(item.items, wiring_point)) {
+        if (const auto *result = find_item_subscription(item.items, output)) {
             return result;
         }
     }
@@ -354,41 +354,41 @@ OutputLayout physical_source_output(std::size_t source, std::span<const WiringPo
     return nullptr;
 }
 
-OutputLayout source_output(std::size_t source, std::span<const WiringPointRecord> wiring_points,
-                           std::span<const NodePlan> node_plans) {
-    auto result = physical_source_output(source, wiring_points, node_plans);
-    if (wiring_points[source].parent == WiringPointRecord::npos) {
+OutputLayout wired_output_layout(std::size_t output, std::span<const WiredOutput> outputs,
+                                 std::span<const NodePlan> node_plans) {
+    auto result = physical_output_layout(output, outputs, node_plans);
+    if (outputs[output].parent == WiredOutput::npos) {
         return result;
     }
 
-    const auto source_node = root_source_node(source, wiring_points);
+    const auto node_index = root_output_node_index(output, outputs);
     result.last_updated_offset =
-        find_item_subscription(node_plans[source_node].item_subscriptions, source)->sampled_last_updated_offset;
+        find_item_subscription(node_plans[node_index].item_subscriptions, output)->sampled_last_updated_offset;
     return result;
 }
 
-SubscriptionPlan &subscriber_list(std::size_t source, std::span<const WiringPointRecord> wiring_points,
+SubscriptionPlan &subscriber_list(std::size_t output, std::span<const WiredOutput> outputs,
                                   std::span<NodePlan> node_plans) {
-    const auto source_index = root_source_node(source, wiring_points);
-    if (wiring_points[source].parent == WiringPointRecord::npos) {
-        return node_plans[source_index].subscriptions;
+    const auto node_index = root_output_node_index(output, outputs);
+    if (outputs[output].parent == WiredOutput::npos) {
+        return node_plans[node_index].subscriptions;
     }
 
     auto path = std::vector<std::size_t>{};
-    while (wiring_points[source].parent != WiringPointRecord::npos) {
-        path.push_back(source);
-        source = wiring_points[source].parent;
+    while (outputs[output].parent != WiredOutput::npos) {
+        path.push_back(output);
+        output = outputs[output].parent;
     }
 
-    auto *items = &node_plans[source_index].item_subscriptions;
+    auto *items = &node_plans[node_index].item_subscriptions;
     ItemSubscriptionPlan *leaf = nullptr;
-    for (const auto wiring_point : path | std::views::reverse) {
-        const auto item = wiring_points[wiring_point].item;
+    for (const auto output_index : path | std::views::reverse) {
+        const auto item = outputs[output_index].item;
         auto entry = std::ranges::find(*items, item, &ItemSubscriptionPlan::item);
         if (entry == items->end()) {
             entry = items->insert(entry, ItemSubscriptionPlan{
                                              .item = static_cast<std::uint32_t>(item),
-                                             .wiring_point = wiring_point,
+                                             .output = output_index,
                                              .sampled_last_updated_offset = 0,
                                              .subscriptions = {},
                                              .items = {},
@@ -404,7 +404,7 @@ SubscriptionPlan &subscriber_list(std::size_t source, std::span<const WiringPoin
 void plan_time_series_inputs(CompilationPlan &plan) {
     for (auto node_index = std::size_t{}; node_index < plan.nodes.size(); ++node_index) {
         const auto &node = plan.nodes[node_index];
-        auto source_index = std::size_t{};
+        auto input_index = std::size_t{};
 
         for (auto parameter_index = std::size_t{}; parameter_index < node.signature().parameters.size();
              ++parameter_index) {
@@ -413,22 +413,22 @@ void plan_time_series_inputs(CompilationPlan &plan) {
                 continue;
             }
 
-            const auto source = node.input_sources()[source_index++];
-            const auto source_is_reference =
-                dynamic_cast<const TimeSeriesReferenceType *>(plan.wiring_points[source].type) != nullptr;
+            const auto output = node.input_output_indices()[input_index++];
+            const auto output_is_reference =
+                dynamic_cast<const TimeSeriesReferenceType *>(plan.outputs[output].type) != nullptr;
             const auto input_is_reference = dynamic_cast<const TimeSeriesReferenceType *>(parameter.type) != nullptr;
             plan.node_plans[node_index].time_series_inputs.push_back({
                 .parameter = static_cast<std::uint32_t>(parameter_index),
-                .source = source,
-                .dereferences_reference = source_is_reference && !input_is_reference,
+                .output = output,
+                .dereferences_reference = output_is_reference && !input_is_reference,
                 .offset = 0,
-                .source_last_updated_offset = 0,
+                .output_last_updated_offset = 0,
             });
         }
     }
 }
 
-void plan_subscribers(std::span<const WiredNode> nodes, std::span<const WiringPointRecord> wiring_points,
+void plan_subscribers(std::span<const WiredNode> nodes, std::span<const WiredOutput> outputs,
                       std::span<NodePlan> node_plans) {
     const auto add_subscriber = [](std::vector<Subscriber> &subscribers, std::uint32_t node_index, bool is_active,
                                    bool is_required, bool is_active_optional) {
@@ -454,7 +454,7 @@ void plan_subscribers(std::span<const WiredNode> nodes, std::span<const WiringPo
             const auto is_required = parameter.validity == required;
             const auto subscriber_index = static_cast<std::uint32_t>(target_index);
             const auto notification = target.node_template().input_change_callback(input_index);
-            auto &subscriptions = subscriber_list(input.source, wiring_points, node_plans);
+            auto &subscriptions = subscriber_list(input.output, outputs, node_plans);
             if (input.dereferences_reference) {
                 subscriptions.reference_inputs.push_back({
                     .node_index = subscriber_index,
@@ -490,13 +490,13 @@ void plan_dynamic_subscribers(CompilationPlan &plan) {
         if (!layout) {
             continue;
         }
-        if (layout->source_input >= node.input_sources().size()) {
+        if (layout->source_input >= node.input_output_indices().size()) {
             throw std::logic_error{"dynamic subscriber source input is out of range"};
         }
 
-        const auto source = plan.node_plans[node_index].time_series_inputs[layout->source_input].source;
-        (void)subscriber_list(source, plan.wiring_points, plan.node_plans);
-        plan.dynamic_subscribers.push_back({source, node_index, layout->state_offset});
+        const auto output = plan.node_plans[node_index].time_series_inputs[layout->source_input].output;
+        (void)subscriber_list(output, plan.outputs, plan.node_plans);
+        plan.dynamic_subscribers.push_back({output, node_index, layout->state_offset});
     }
 }
 
@@ -512,21 +512,21 @@ void resolve_dynamic_subscribers(CompilationPlan &plan) {
             throw std::logic_error{"dynamic subscribers are not pointer-aligned"};
         }
 
-        subscriber_list(dynamic.source, plan.wiring_points, plan.node_plans)
+        subscriber_list(dynamic.output, plan.outputs, plan.node_plans)
             .nodes.push_back(Subscriber::dynamic_subscribers(packed_offset(offset, "runtime storage reaches 1 GiB")));
     }
 }
 
-const TimeSeriesRuntimeType *input_runtime_type(const TimeSeriesInputPlan &input, const TimeSeriesRuntimeType *source) {
+const TimeSeriesRuntimeType *input_runtime_type(const TimeSeriesInputPlan &input, const TimeSeriesRuntimeType *output) {
     if (input.dereferences_reference) {
-        return &static_cast<const TimeSeriesReferenceRuntimeType &>(*source).target_runtime_type();
+        return &static_cast<const TimeSeriesReferenceRuntimeType &>(*output).target_runtime_type();
     }
 
-    return source;
+    return output;
 }
 
 std::vector<const ScalarRuntimeType *> parameter_runtime_types(const WiredNode &node, const NodePlan &node_plan,
-                                                               std::span<const WiringPointRecord> wiring_points,
+                                                               std::span<const WiredOutput> outputs,
                                                                std::span<const NodePlan> node_plans) {
     auto result = std::vector<const ScalarRuntimeType *>{};
     result.reserve(node.signature().parameters.size());
@@ -535,8 +535,8 @@ std::vector<const ScalarRuntimeType *> parameter_runtime_types(const WiredNode &
     for (const auto &parameter : node.signature().parameters) {
         if (parameter.type->is_time_series()) {
             const auto &input = node_plan.time_series_inputs[input_index++];
-            const auto output = source_output(input.source, wiring_points, node_plans);
-            const auto *runtime_type = input_runtime_type(input, output.runtime_type);
+            const auto layout = wired_output_layout(input.output, outputs, node_plans);
+            const auto *runtime_type = input_runtime_type(input, layout.runtime_type);
             const ScalarRuntimeType *scalar_runtime_type{};
             runtime_type->type().visit(
                 [&](const TimeSeriesValueType *) {
@@ -555,14 +555,14 @@ std::vector<const ScalarRuntimeType *> parameter_runtime_types(const WiredNode &
 }
 
 const TimeSeriesRuntimeType *find_output_runtime_type(const WiredNode &node, const NodePlan &node_plan,
-                                                      std::span<const WiringPointRecord> wiring_points,
+                                                      std::span<const WiredOutput> outputs,
                                                       std::span<const NodePlan> node_plans) {
-    const auto parameter_types = parameter_runtime_types(node, node_plan, wiring_points, node_plans);
+    const auto parameter_types = parameter_runtime_types(node, node_plan, outputs, node_plans);
     auto input_runtime_types = std::vector<const TimeSeriesRuntimeType *>{};
-    input_runtime_types.reserve(node.input_sources().size());
+    input_runtime_types.reserve(node.input_output_indices().size());
     for (const auto &input : node_plan.time_series_inputs) {
-        const auto source = source_output(input.source, wiring_points, node_plans);
-        const auto *runtime_type = input_runtime_type(input, source.runtime_type);
+        const auto output = wired_output_layout(input.output, outputs, node_plans);
+        const auto *runtime_type = input_runtime_type(input, output.runtime_type);
         input_runtime_types.push_back(runtime_type);
     }
 
@@ -570,13 +570,13 @@ const TimeSeriesRuntimeType *find_output_runtime_type(const WiredNode &node, con
 }
 
 [[nodiscard]] OutputLayout add_output_layout(StorageLayout &storage, const WiredNode &node, const NodePlan &node_plan,
-                                             std::span<const WiringPointRecord> wiring_points,
+                                             std::span<const WiredOutput> outputs,
                                              std::span<const NodePlan> node_plans) {
     if (node.signature().output == nullptr) {
         return {};
     }
 
-    const auto *runtime_type = find_output_runtime_type(node, node_plan, wiring_points, node_plans);
+    const auto *runtime_type = find_output_runtime_type(node, node_plan, outputs, node_plans);
     if (runtime_type == nullptr) {
         throw std::logic_error{"node output has no runtime type"};
     }
@@ -592,10 +592,10 @@ const TimeSeriesRuntimeType *find_output_runtime_type(const WiredNode &node, con
 }
 
 [[nodiscard]] StateLayout add_state_layout(StorageLayout &storage, const WiredNode &node, const NodePlan &node_plan,
-                                           std::span<const WiringPointRecord> wiring_points,
+                                           std::span<const WiredOutput> outputs,
                                            std::span<const NodePlan> node_plans) {
     auto layout = node.node_template().state_layout(
-        node.signature(), parameter_runtime_types(node, node_plan, wiring_points, node_plans), node.state_types());
+        node.signature(), parameter_runtime_types(node, node_plan, outputs, node_plans), node.state_types());
     if (layout.size == 0) {
         return {};
     }
@@ -626,7 +626,7 @@ void plan_runtime_storage(CompilationPlan &plan, std::size_t schedule_word_count
 
     for (auto i = std::size_t{}; i < plan.nodes.size(); ++i) {
         auto &node_plan = plan.node_plans[i];
-        node_plan.output = add_output_layout(storage, plan.nodes[i], node_plan, plan.wiring_points, plan.node_plans);
+        node_plan.output = add_output_layout(storage, plan.nodes[i], node_plan, plan.outputs, plan.node_plans);
         add_item_samples(node_plan.item_subscriptions);
 
         for (auto &input : node_plan.time_series_inputs) {
@@ -634,13 +634,13 @@ void plan_runtime_storage(CompilationPlan &plan, std::size_t schedule_word_count
                 continue;
             }
 
-            const auto source_layout = source_output(input.source, plan.wiring_points, plan.node_plans);
+            const auto output_layout = wired_output_layout(input.output, plan.outputs, plan.node_plans);
             const auto slot = storage.add<details::ReferenceInputStorage>();
             input.offset = packed_offset(slot.offset, "runtime storage reaches 1 GiB");
-            input.source_last_updated_offset = source_layout.last_updated_offset;
+            input.output_last_updated_offset = output_layout.last_updated_offset;
         }
 
-        node_plan.state = add_state_layout(storage, plan.nodes[i], node_plan, plan.wiring_points, plan.node_plans);
+        node_plan.state = add_state_layout(storage, plan.nodes[i], node_plan, plan.outputs, plan.node_plans);
     }
 
     (void)packed_offset(storage.size(), "runtime storage reaches 1 GiB");
@@ -838,10 +838,10 @@ void plan_fixed_storage(CompilationPlan &plan) {
 [[nodiscard]] CompilationPlan make_compilation_plan(const GraphWiring &wiring, std::size_t schedule_word_count) {
     auto result = CompilationPlan{};
     result.nodes = wiring.nodes();
-    result.wiring_points = wiring.wiring_points();
+    result.outputs = wiring.outputs();
     result.node_plans.resize(result.nodes.size());
     plan_time_series_inputs(result);
-    plan_subscribers(result.nodes, result.wiring_points, result.node_plans);
+    plan_subscribers(result.nodes, result.outputs, result.node_plans);
     plan_dynamic_subscribers(result);
     result.wiring_paths = make_wiring_path_layout(result.nodes);
 
@@ -1124,10 +1124,10 @@ class CompiledGraphBuilder {
 
             if (parameter.type->is_time_series()) {
                 const auto &input = plan.node_plans[node_index].time_series_inputs[input_index++];
-                const auto resolved_output = source_output(input.source, plan.wiring_points, plan.node_plans);
+                const auto resolved_output = wired_output_layout(input.output, plan.outputs, plan.node_plans);
                 if (input.dereferences_reference) {
                     std::construct_at(parameters.data() + parameter_index,
-                                      ParameterBinding{input.source_last_updated_offset, input.offset,
+                                      ParameterBinding{input.output_last_updated_offset, input.offset,
                                                        parameter.activity, parameter.validity});
                 } else {
                     std::construct_at(parameters.data() + parameter_index,
@@ -1203,8 +1203,8 @@ class CompiledGraphBuilder {
                 continue;
             }
 
-            const auto source = source_output(input.source, plan.wiring_points, plan.node_plans);
-            const auto *runtime_type = input_runtime_type(input, source.runtime_type);
+            const auto output = wired_output_layout(input.output, plan.outputs, plan.node_plans);
+            const auto *runtime_type = input_runtime_type(input, output.runtime_type);
             runtime_types[time_series_runtime_type_index] = runtime_type;
             ++time_series_runtime_type_index;
         }

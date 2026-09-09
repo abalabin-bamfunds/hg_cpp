@@ -188,18 +188,6 @@ only keys added or removed in the current cycle. A subscription to a missing
 key owns a copy of the key and remains until the key is added or the subscriber
 leaves.
 
-Graph code can select an item with a wiring-time scalar key or a time series
-key. Selection returns `REF<TS_T>`. Selecting from
-`TSD<K, REF<TS_T>>` returns the contained reference rather than creating a
-nested reference. A missing key, invalid key input, or invalid dictionary input
-makes the result invalid.
-
-A selected source item update schedules consumers of the returned reference
-directly. It does not evaluate the selection node. A key input change, source
-retarget, selected reference change, or selected key addition or removal
-updates the selected reference. Other key-set changes do not evaluate the
-selection node.
-
 The shared set and its representations handle key removal:
 
 1. The set marks the key and sparse index as removed.

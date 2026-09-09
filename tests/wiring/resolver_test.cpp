@@ -109,14 +109,14 @@ TEST_CASE("an aggregate resolver completes an output type",
           "[feature:operator][feature:wiring][definition:aggregate]") {
     resolved_source_definition::resolver_calls = 0;
 
-    auto operation = bg::operator_("resolved_source", [](int, bg::Out<bg::TS<float>>) {});
+    auto operation = bg::operator_<auto(int) -> bg::TS<float>>{"resolved_source", {"kind"}};
     operation.overload(bg::node<resolved_source_definition>());
 
     const auto resolve = [&](int kind) -> const bg::TimeSeriesType & {
         auto wiring = bg::GraphWiring{};
         auto context = bg::WiringContext{wiring};
 
-        return operation(kind)->type();
+        return operation(kind).type();
     };
 
     CHECK(&resolve(0) == &bg::TS<int>::type());
@@ -137,7 +137,7 @@ TEST_CASE("an aggregate resolver completes an output type",
 
 TEST_CASE("a callable resolver completes an output type", "[feature:operator][feature:wiring][definition:function]") {
     auto resolver_calls = 0;
-    auto operation = bg::operator_("resolved_source", [](int, bg::Out<bg::TS<float>>) {});
+    auto operation = bg::operator_<auto(int) -> bg::TS<float>>{"resolved_source", {"kind"}};
     operation.overload(bg::node(
         bg::eval = [](int, bg::Out<bg::TS<ResolvedScalar>>) {},
         bg::resolve<ResolvedScalar> = [&](const bg::WiringArguments &arguments) -> const bg::ScalarType * {
@@ -146,9 +146,9 @@ TEST_CASE("a callable resolver completes an output type", "[feature:operator][fe
         }));
 
     bg::testing::test_wiring([&] {
-        CHECK(&operation(0)->type() == &bg::TS<int>::type());
-        CHECK(&operation(0)->type() == &bg::TS<int>::type());
-        CHECK(&operation(1)->type() == &bg::TS<float>::type());
+        CHECK(&operation(0).type() == &bg::TS<int>::type());
+        CHECK(&operation(0).type() == &bg::TS<int>::type());
+        CHECK(&operation(1).type() == &bg::TS<float>::type());
     });
 
     CHECK(resolver_calls == 2);
@@ -156,7 +156,7 @@ TEST_CASE("a callable resolver completes an output type", "[feature:operator][fe
 
 TEST_CASE("an aggregate resolver cannot bypass a variable constraint",
           "[feature:operator][feature:wiring][definition:aggregate]") {
-    auto operation = bg::operator_("number_source", [](bg::Out<bg::TS<float>>) {});
+    auto operation = bg::operator_<auto() -> bg::TS<float>>{"number_source"};
     operation.overload(bg::node<invalid_number_source_definition>());
 
     bg::testing::test_wiring([&] {
@@ -173,7 +173,7 @@ TEST_CASE("an aggregate resolver cannot bypass a variable constraint",
 
 TEST_CASE("a callable resolver cannot bypass a variable constraint",
           "[feature:operator][feature:wiring][definition:function]") {
-    auto operation = bg::operator_("number_source", [](bg::Out<bg::TS<float>>) {});
+    auto operation = bg::operator_<auto() -> bg::TS<float>>{"number_source"};
     operation.overload(bg::node(
         bg::eval = [](bg::Out<bg::TS<ResolvedNumber>>) {},
         bg::resolve<ResolvedNumber> = [](const bg::WiringArguments &) -> const bg::ScalarType & {
@@ -185,15 +185,15 @@ TEST_CASE("a callable resolver cannot bypass a variable constraint",
 
 TEST_CASE("aggregate resolvers resolve dependencies on demand",
           "[feature:operator][feature:wiring][definition:aggregate]") {
-    auto operation = bg::operator_("dictionary_source", [](bg::Out<bg::TSD<int, bg::TS<float>>>) {});
+    auto operation = bg::operator_<auto() -> bg::TSD<int, bg::TS<float>>>{"dictionary_source"};
     operation.overload(bg::node<dependent_dictionary_source_definition>());
 
-    bg::testing::test_wiring([&] { CHECK(&operation()->type() == &bg::TSD<float, bg::TS<float>>::type()); });
+    bg::testing::test_wiring([&] { CHECK(&operation().type() == &bg::TSD<float, bg::TS<float>>::type()); });
 }
 
 TEST_CASE("callable resolvers resolve dependencies on demand",
           "[feature:operator][feature:wiring][definition:function]") {
-    auto operation = bg::operator_("dictionary_source", [](bg::Out<bg::TSD<int, bg::TS<float>>>) {});
+    auto operation = bg::operator_<auto() -> bg::TSD<int, bg::TS<float>>>{"dictionary_source"};
     operation.overload(bg::node(
         bg::eval = [](bg::Out<bg::TSD<DependentKey, bg::TS<DependentValue>>>) {},
         bg::resolve<DependentKey> = [](const bg::TypeMap &type_map) -> const bg::ScalarType & {
@@ -202,11 +202,11 @@ TEST_CASE("callable resolvers resolve dependencies on demand",
         },
         bg::resolve<DependentValue> = []() -> const bg::ScalarType & { return bg::int_type(); }));
 
-    bg::testing::test_wiring([&] { CHECK(&operation()->type() == &bg::TSD<int, bg::TS<int>>::type()); });
+    bg::testing::test_wiring([&] { CHECK(&operation().type() == &bg::TSD<int, bg::TS<int>>::type()); });
 }
 
 TEST_CASE("resolver dependency cycles reject an overload", "[feature:operator][feature:wiring][definition:function]") {
-    auto operation = bg::operator_("cyclic_source", [](bg::Out<bg::TSD<int, bg::TS<int>>>) {});
+    auto operation = bg::operator_<auto() -> bg::TSD<int, bg::TS<int>>>{"cyclic_source"};
     operation.overload(bg::node(
         bg::eval = [](bg::Out<bg::TSD<CyclicLeft, bg::TS<CyclicRight>>>) {},
         bg::resolve<CyclicLeft> = [](const bg::TypeMap &type_map) -> const bg::ScalarType & {
@@ -223,16 +223,16 @@ TEST_CASE("resolver dependency cycles reject an overload", "[feature:operator][f
 
 TEST_CASE("aggregate resolver discovery follows nested type traits",
           "[feature:operator][feature:wiring][definition:aggregate]") {
-    auto operation = bg::operator_("collection_source", [](bg::Out<bg::TSL<bg::TS<int>, 3>>) {});
+    auto operation = bg::operator_<auto() -> bg::TSL<bg::TS<int>, 3>>{"collection_source"};
     operation.overload(bg::node<collection_source_definition>());
 
     bg::testing::test_wiring(
-        [&] { CHECK(&operation()->type() == &bg::TSL<bg::TS<int, bg::TimeSeriesGuarantee::final>, 3>::type()); });
+        [&] { CHECK(&operation().type() == &bg::TSL<bg::TS<int, bg::TimeSeriesGuarantee::final>, 3>::type()); });
 }
 
 TEST_CASE("callable resolver discovery follows nested type traits",
           "[feature:operator][feature:wiring][definition:function]") {
-    auto operation = bg::operator_("collection_source", [](bg::Out<bg::TSL<bg::TS<int>, 2>>) {});
+    auto operation = bg::operator_<auto() -> bg::TSL<bg::TS<int>, 2>>{"collection_source"};
     operation.overload(bg::node(
         bg::eval = [](bg::Out<bg::TSL<bg::TS<ResolvedScalar, ResolvedGuarantee>, bg::SIZE>>) {},
         bg::resolve<ResolvedScalar> = []() -> const bg::ScalarType & { return bg::float_type(); },
@@ -240,37 +240,37 @@ TEST_CASE("callable resolver discovery follows nested type traits",
         bg::resolve<ResolvedSizeDeclaration> = [] { return std::size_t{2}; }));
 
     bg::testing::test_wiring(
-        [&] { CHECK(&operation()->type() == &bg::TSL<bg::TS<float, bg::TimeSeriesGuarantee::const_>, 2>::type()); });
+        [&] { CHECK(&operation().type() == &bg::TSL<bg::TS<float, bg::TimeSeriesGuarantee::const_>, 2>::type()); });
 }
 
 TEST_CASE("a callable resolver can resolve a time-series variable",
           "[feature:operator][feature:wiring][definition:function][declaration:generic]") {
-    auto operation = bg::operator_("resolved_source", [](bg::Out<bg::TS<float>>) {});
+    auto operation = bg::operator_<auto() -> bg::TS<float>>{"resolved_source"};
     operation.overload(bg::node(
         bg::eval = [](bg::Out<ResolvedTimeSeries>) {},
         bg::resolve<ResolvedTimeSeries> = []() -> const bg::TimeSeriesType & { return bg::TS<float>::type(); }));
 
-    bg::testing::test_wiring([&] { CHECK(&operation()->type() == &bg::TS<float>::type()); });
+    bg::testing::test_wiring([&] { CHECK(&operation().type() == &bg::TS<float>::type()); });
 }
 
 TEST_CASE("an aggregate resolver can resolve a bundle schema variable",
           "[feature:operator][feature:wiring][definition:aggregate][declaration:generic][series:tsb]") {
-    auto operation = bg::operator_("resolved_bundle", [](bg::Out<bg::TSB<ResolvedBundle>>) {});
+    auto operation = bg::operator_<auto() -> bg::TSB<ResolvedBundle>>{"resolved_bundle"};
     operation.overload(bg::node<resolved_bundle_source_definition>());
 
-    bg::testing::test_wiring([&] { CHECK(&operation()->type() == &bg::TSB<ResolvedBundle>::type()); });
+    bg::testing::test_wiring([&] { CHECK(&operation().type() == &bg::TSB<ResolvedBundle>::type()); });
 }
 
 TEST_CASE("a callable resolver can resolve a bundle schema variable",
           "[feature:operator][feature:wiring][definition:function][declaration:generic][series:tsb]") {
-    auto operation = bg::operator_("resolved_bundle", [](bg::Out<bg::TSB<ResolvedBundle>>) {});
+    auto operation = bg::operator_<auto() -> bg::TSB<ResolvedBundle>>{"resolved_bundle"};
     operation.overload(bg::node(
         bg::eval = [](bg::Out<bg::TSB<bg::SCHEMA>>) {},
         bg::resolve<bg::schema_type<bg::SCHEMA>> = []() -> const bg::BundleSchemaType & {
             return bg::TSB<ResolvedBundle>::type().schema_type();
         }));
 
-    bg::testing::test_wiring([&] { CHECK(&operation()->type() == &bg::TSB<ResolvedBundle>::type()); });
+    bg::testing::test_wiring([&] { CHECK(&operation().type() == &bg::TSB<ResolvedBundle>::type()); });
 }
 
 } // namespace

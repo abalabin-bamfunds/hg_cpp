@@ -45,7 +45,7 @@ TEST_CASE("a runtime node locates output and input data", "[evaluation][storage]
 
     auto direct_sink_index = std::size_t{};
     auto reference_sink_index = std::size_t{};
-    const auto source_point = [&] {
+    [&] {
         const auto context = bg::WiringContext{wiring};
         const auto result = source();
 
@@ -55,7 +55,6 @@ TEST_CASE("a runtime node locates output and input data", "[evaluation][storage]
         const auto referenced = reference(result);
         reference_sink_index = wiring.nodes().size();
         sink(referenced);
-        return static_cast<bg::WiringPoint>(result);
     }();
 
     const auto compiled = bg::CompiledGraph{wiring};
@@ -63,11 +62,11 @@ TEST_CASE("a runtime node locates output and input data", "[evaluation][storage]
     runtime.start(time(1));
     runtime.evaluate(time(1));
 
-    const auto source_node = runtime.node(source_point.node_index());
+    const auto source_node = runtime.node(0);
     CHECK(source_node.output_last_updated() == time(1));
     CHECK(*static_cast<const double *>(source_node.output_value()) == 1.5);
 
-    const auto recovered = bg::Node::from_output(compiled.node(source_point.node_index()), source_node.output_value());
+    const auto recovered = bg::Node::from_output(compiled.node(0), source_node.output_value());
     CHECK(recovered.output_value() == source_node.output_value());
     CHECK(&recovered.output_last_updated() == &source_node.output_last_updated());
 

@@ -7,8 +7,6 @@
 #include <bg/node/invalidation.hpp>
 #include <bg/node/runtime_signature_node_template.hpp>
 #include <bg/node/state.hpp>
-#include <bg/time_series/tsd/tsd_wiring.hpp>
-
 #include <utility>
 
 namespace bg {

@@ -2,11 +2,11 @@
 
 #include <bg/graph/details/wiring_argument.hpp>
 #include <bg/graph/wired_node.hpp>
+#include <bg/graph/wired_output.hpp>
 #include <bg/graph/wiring_path.hpp>
 #include <bg/graph/wiring_point.hpp>
-#include <bg/time_series/item_id.hpp>
+#include <bg/util/linear_hash_table.hpp>
 
-#include <array>
 #include <deque>
 #include <memory>
 #include <memory_resource>
@@ -17,24 +17,20 @@
 
 namespace bg {
 
-namespace details {
-class DeferredWiringPoint;
-WiringPoint defer_wiring_point(std::unique_ptr<DeferredWiringPoint> point);
-} // namespace details
-
 class NodeTemplate;
 class TimeSeriesType;
 class WiringTemplate;
 
-struct WiringPointRecord {
-    static constexpr auto npos = static_cast<std::size_t>(-1);
-
-    std::size_t node_index;
-    std::size_t parent;
-    TimeSeriesItemId item;
-    bool deferred;
-    const TimeSeriesType *type;
-};
+namespace details {
+class WiringRecord;
+WiringPoint add_wiring_record(std::unique_ptr<WiringRecord> record);
+WiringPoint add_item_wiring_record(WiringPoint parent, TimeSeriesItemId item,
+                                   std::unique_ptr<WiringRecord> record);
+WiringPoint materialize_wiring_point(WiringPoint point, const TimeSeriesType &type);
+WiringPoint add_wired_output(GraphWiring &wiring, WiredOutput output);
+WiringPoint wiring_point_for_item(WiringPoint parent, TimeSeriesItemId item, const TimeSeriesType &type);
+std::size_t wired_output_node_index(const GraphWiring &wiring, WiringPoint point);
+} // namespace details
 
 class GraphWiring {
   public:
@@ -49,7 +45,7 @@ class GraphWiring {
 
     std::span<const WiredNode> nodes() const noexcept { return nodes_; }
 
-    std::span<const WiringPointRecord> wiring_points() const noexcept { return wiring_points_; }
+    std::span<const WiredOutput> outputs() const noexcept { return outputs_; }
 
     [[nodiscard]] const NodeTemplate &own_node_template(std::unique_ptr<NodeTemplate> node_template);
 
@@ -57,7 +53,14 @@ class GraphWiring {
     friend class NodeTemplate;
     friend class WiringPoint;
     friend class WiringTemplate;
-    friend WiringPoint details::defer_wiring_point(std::unique_ptr<details::DeferredWiringPoint> point);
+    friend WiringPoint details::add_wiring_record(std::unique_ptr<details::WiringRecord> record);
+    friend WiringPoint details::add_item_wiring_record(WiringPoint parent, TimeSeriesItemId item,
+                                                       std::unique_ptr<details::WiringRecord> record);
+    friend WiringPoint details::materialize_wiring_point(WiringPoint point, const TimeSeriesType &type);
+    friend WiringPoint details::add_wired_output(GraphWiring &wiring, WiredOutput output);
+    friend WiringPoint details::wiring_point_for_item(WiringPoint parent, TimeSeriesItemId item,
+                                                      const TimeSeriesType &type);
+    friend std::size_t details::wired_output_node_index(const GraphWiring &wiring, WiringPoint point);
 
     [[nodiscard]] std::optional<WiringPoint> invoke(const WiringTemplate &wiring_template,
                                                     std::span<details::wiring_argument> arguments,
@@ -66,13 +69,21 @@ class GraphWiring {
                                                              SignatureResolution resolution,
                                                              std::span<details::wiring_argument> arguments,
                                                              util::symbol path_name);
-    [[nodiscard]] std::optional<WiringPoint> add_node(const NodeTemplate &node_template, ResolvedSignature signature,
-                                                      std::vector<const ScalarType *> state_types,
-                                                      std::span<details::wiring_argument> arguments);
-    [[nodiscard]] WiringPoint select_item(WiringPoint source, std::size_t index);
-    [[nodiscard]] WiringPoint make_reference(WiringPoint source, const TimeSeriesType &reference_type);
-    [[nodiscard]] WiringPoint add_deferred(std::unique_ptr<details::DeferredWiringPoint> point);
-    [[nodiscard]] WiringPoint materialize(WiringPoint source, const TimeSeriesType &target_type);
+    [[nodiscard]] std::size_t register_node(WiredNode node);
+    void register_node_output(std::size_t node_index, WiringPoint output, std::optional<std::size_t> hash);
+    [[nodiscard]] WiringPoint register_record(std::unique_ptr<details::WiringRecord> record);
+    [[nodiscard]] WiringPoint register_item_record(WiringPoint parent, TimeSeriesItemId item,
+                                                   std::unique_ptr<details::WiringRecord> record);
+    [[nodiscard]] WiringPoint register_output(WiredOutput output,
+                                              std::unique_ptr<details::WiringRecord> record);
+    [[nodiscard]] std::size_t output_index(WiringPoint point) const;
+    [[nodiscard]] std::optional<WiringPoint> find_output_item(std::size_t parent, TimeSeriesItemId item) const;
+    [[nodiscard]] std::optional<WiringPoint> find_wired_node(std::size_t hash, const NodeTemplate &node_template,
+                                                             const ResolvedSignature &signature,
+                                                             std::span<const std::size_t> input_output_indices,
+                                                             std::span<const ScalarType *const> state_types,
+                                                             std::span<const details::wiring_argument> arguments);
+    void cache_wired_node(std::size_t hash, std::size_t node_index);
 
     [[nodiscard]] const WiringPath &make_path(util::symbol name, util::symbol label);
     util::symbol default_label() const;
@@ -85,19 +96,23 @@ class GraphWiring {
     std::pmr::unsynchronized_pool_resource fixed_memory_;
     std::optional<std::pmr::unsynchronized_pool_resource> variable_memory_;
     std::vector<std::unique_ptr<NodeTemplate>> node_templates_;
-    std::vector<std::unique_ptr<details::DeferredWiringPoint>> deferred_wiring_points_;
-    std::vector<WiredNode> nodes_;
-    std::vector<WiringPointRecord> wiring_points_;
-    struct ReferenceWiring {
-        std::size_t source;
-        const TimeSeriesType *type;
-        std::size_t reference;
+    std::vector<std::unique_ptr<details::WiringRecord>> wiring_records_;
+    struct ItemRecord {
+        const details::WiringRecord *parent;
+        TimeSeriesItemId item;
+        const details::WiringRecord *result;
     };
-    std::vector<ReferenceWiring> references_;
+    std::vector<ItemRecord> item_records_;
+    std::vector<WiredNode> nodes_;
+    std::vector<WiredOutput> outputs_;
+    std::vector<const details::WiringRecord *> output_records_;
+    std::vector<const details::WiringRecord *> node_output_records_;
+    util::linear_hash_table wired_nodes_;
+    util::linear_hash_table output_items_;
     struct MaterializedWiring {
-        std::size_t source;
+        const details::WiringRecord *record;
         const TimeSeriesType *type;
-        std::size_t result;
+        const details::WiringRecord *result;
     };
     std::vector<MaterializedWiring> materialized_wiring_points_;
     std::pmr::deque<WiringPath> paths_;

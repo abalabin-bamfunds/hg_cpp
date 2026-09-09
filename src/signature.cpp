@@ -14,7 +14,7 @@ namespace {
 
 template <typename Category>
 std::optional<bool> variable_accepts(const Variable &variable, const TypeMapValue &mapping) {
-    const auto *typed_variable = dynamic_cast<const TypeVariable<Category> *>(&variable);
+    const auto *typed_variable = dynamic_cast<const TypeVariableType<Category> *>(&variable);
     if (typed_variable == nullptr) {
         return std::nullopt;
     }
@@ -24,8 +24,7 @@ std::optional<bool> variable_accepts(const Variable &variable, const TypeMapValu
         return false;
     }
 
-    auto trial = TypeMap{};
-    return typed_variable->match(**type, trial);
+    return typed_variable->accepts(**type);
 }
 
 bool valid_resolver_mapping(const Variable &variable, const TypeMapValue &mapping) {

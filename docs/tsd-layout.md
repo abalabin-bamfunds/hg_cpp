@@ -17,9 +17,6 @@ A `TSD<K, TS_T>` consists of:
 The set provides added and removed keys. The sparse list provides updated items.
 Together they provide the change information of the dictionary.
 
-Graph code uses `bg::keys(tsd)` to select the embedded `TSS<K>`. Its subscribers
-are scheduled only when the key set changes.
-
 The set exposes its keys as a list of buffers. Each key buffer has a matching
 validity bitset. The sparse list exposes item buffers for the same index ranges
 and uses the set's validity bitsets.

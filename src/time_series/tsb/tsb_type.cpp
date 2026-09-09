@@ -42,8 +42,7 @@ void validate_fields(const BundleSchema *base, std::span<const BundleField> fiel
             continue;
         }
 
-        auto type_map = TypeMap{};
-        if (!inherited->type->match(*fields[index].type, type_map)) {
+        if (!inherited->type->accepts(*fields[index].type)) {
             throw std::invalid_argument{"a redefined time series bundle field must have a compatible narrower type"};
         }
     }

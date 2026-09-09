@@ -32,8 +32,8 @@ TEST_CASE("wiring inserts and reuses a reference-making node",
         (void)pass(value);
     }
 
-    REQUIRE(wiring.nodes().size() == 4);
-    CHECK(wiring.nodes()[2].input_sources().front() == wiring.nodes()[3].input_sources().front());
+    REQUIRE(wiring.nodes().size() == 3);
+    CHECK(wiring.nodes()[2].input_output_indices().front() == 1);
     CHECK(wiring.nodes()[1].signature().name == bg::util::symbol{"reference"});
 }
 
@@ -49,8 +49,7 @@ TEST_CASE("wiring preserves an existing reference",
         (void)pass(reference);
 
         REQUIRE(wiring.nodes().size() == 4);
-        const auto input = wiring.nodes().back().input_sources().front();
-        const bg::WiringPoint reference_point = reference;
-        CHECK(wiring.wiring_points()[input].node_index == reference_point.node_index());
+        const auto input = wiring.nodes().back().input_output_indices().front();
+        CHECK(wiring.outputs()[input].node_index == 2);
     }
 }

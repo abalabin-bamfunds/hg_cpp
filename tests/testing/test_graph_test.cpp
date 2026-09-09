@@ -34,7 +34,7 @@ TEST_CASE("test_graph evaluates a node over input ticks",
 TEST_CASE("test_graph supports skipped input ticks",
           "[testing][evaluation][feature:test-graph][transition:update][series:value][scalar:integer]") {
     const auto add_graph = bg::graph(
-        "name"_m = "add_graph",
+        "name"_n = "add_graph",
         [](bg::wp<bg::TS<float>> lhs, bg::wp<bg::TS<float>> rhs) -> bg::wp<bg::TS<float>> { return add(lhs, rhs); });
     const auto lhs = std::vector<std::optional<float>>{1.0F, std::nullopt, 3.0F};
     const auto rhs = std::vector{10.0F, 20.0F, 30.0F};

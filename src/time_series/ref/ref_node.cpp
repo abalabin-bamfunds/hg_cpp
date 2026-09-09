@@ -3,14 +3,18 @@
 #include <bg/evaluation_context.hpp>
 #include <bg/graph/node.hpp>
 #include <bg/graph/runtime_graph.hpp>
+#include <bg/graph/wiring_error.hpp>
+#include <bg/graph/wiring_point.hpp>
 #include <bg/node/node_template.hpp>
 #include <bg/time_series/ref/ref_provider.hpp>
 #include <bg/time_series/ref/ref_runtime_type.hpp>
+#include <bg/type/time_series_dict_type.hpp>
 #include <bg/type/time_series_reference_type.hpp>
 
+#include <algorithm>
 #include <memory>
 #include <mutex>
-#include <unordered_map>
+#include <vector>
 
 namespace bg::details {
 namespace {
@@ -83,29 +87,68 @@ class ReferenceNodeTemplate final : public NodeTemplate {
 
 } // namespace
 
+bool requires_reference_representation(const TimeSeriesType &parameter, const TimeSeriesType &argument) noexcept {
+    const auto *parameter_dictionary = dynamic_cast<const TimeSeriesDictionaryType *>(&parameter);
+    const auto *argument_dictionary = dynamic_cast<const TimeSeriesDictionaryType *>(&argument);
+    if (parameter_dictionary == nullptr || argument_dictionary == nullptr) {
+        return false;
+    }
+
+    const auto &parameter_item = parameter_dictionary->value_type();
+    const auto &argument_item = argument_dictionary->value_type();
+    const auto parameter_is_reference = dynamic_cast<const TimeSeriesReferenceType *>(&parameter_item) != nullptr;
+    const auto argument_is_reference = dynamic_cast<const TimeSeriesReferenceType *>(&argument_item) != nullptr;
+    if (parameter_is_reference != argument_is_reference) {
+        return true;
+    }
+
+    return requires_reference_representation(parameter_item, argument_item);
+}
+
 const NodeTemplate &reference_node_template(const TimeSeriesType &source, const TimeSeriesReferenceType &type) {
-    struct Key {
+    struct Entry {
         const TimeSeriesType *source;
         const TimeSeriesReferenceType *type;
-
-        bool operator==(const Key &) const = default;
-    };
-    struct Hash {
-        std::size_t operator()(const Key &key) const noexcept {
-            return std::hash<const TimeSeriesType *>{}(key.source) ^
-                   (std::hash<const TimeSeriesReferenceType *>{}(key.type) << 1U);
-        }
+        std::unique_ptr<ReferenceNodeTemplate> node_template;
     };
 
     static auto mutex = std::mutex{};
-    static auto templates = std::unordered_map<Key, std::unique_ptr<ReferenceNodeTemplate>, Hash>{};
+    static auto templates = std::vector<Entry>{};
 
     const auto lock = std::lock_guard{mutex};
-    auto [entry, inserted] = templates.try_emplace(Key{&source, &type});
-    if (inserted) {
-        entry->second = std::make_unique<ReferenceNodeTemplate>(source, type);
+    const auto existing = std::ranges::find_if(templates, [&](const auto &entry) {
+        return entry.source == &source && entry.type == &type;
+    });
+    if (existing != templates.end()) {
+        return *existing->node_template;
     }
-    return *entry->second;
+
+    auto &entry = templates.emplace_back(&source, &type, std::make_unique<ReferenceNodeTemplate>(source, type));
+    return *entry.node_template;
+}
+
+WiringPoint materialize_reference(WiringPoint source, const TimeSeriesType &requested_type) {
+    const auto *requested_reference = dynamic_cast<const TimeSeriesReferenceType *>(&requested_type);
+    const auto *source_reference = dynamic_cast<const TimeSeriesReferenceType *>(&source.type());
+
+    if (requested_reference != nullptr && source_reference == nullptr) {
+        const auto result = reference_node_template(source.type(), *requested_reference)(source);
+        if (!result) {
+            throw WiringError{"a reference node produced no output"};
+        }
+        return *result;
+    }
+
+    if (source_reference == nullptr && requires_reference_representation(requested_type, source.type())) {
+        const auto &reference_type = time_series_reference_type(requested_type, TimeSeriesGuarantee::const_);
+        const auto result = reference_node_template(source.type(), reference_type)(source);
+        if (!result) {
+            throw WiringError{"a reference node produced no output"};
+        }
+        return *result;
+    }
+
+    return source;
 }
 
 } // namespace bg::details

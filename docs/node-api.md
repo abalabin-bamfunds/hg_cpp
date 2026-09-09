@@ -52,6 +52,11 @@ returns its output as a `WiringPoint`. A call returns `void` when the node has
 no output. The [graph wiring design](graph-wiring.md) defines ownership and
 nested contexts.
 
+Equal calls to an output-producing node reuse one wired node by default. An
+aggregate or runtime-signature definition can disable this with
+`static constexpr bool deduplicate_wiring = false`. A callable definition uses
+`bg::deduplicate_wiring = false` as a `node()` option.
+
 ## Callable view declaration
 
 A callable can declare the invocation views directly. This form keeps a small

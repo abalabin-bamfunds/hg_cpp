@@ -10,6 +10,11 @@ namespace bg {
 
 Type::~Type() = default;
 
+bool Type::accepts(const Type &supplied) const {
+    auto type_map = TypeMap{};
+    return match(supplied, type_map);
+}
+
 bool Type::match(const Type &supplied, TypeMap &type_map) const {
     const auto *parameter_reference = dynamic_cast<const TimeSeriesReferenceType *>(this);
     const auto *argument_reference = dynamic_cast<const TimeSeriesReferenceType *>(&supplied);

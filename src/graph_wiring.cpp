@@ -1,15 +1,10 @@
 #include <bg/graph/graph_wiring.hpp>
 
-#include <bg/graph/details/deferred_wiring_point.hpp>
+#include <bg/graph/details/wiring_record.hpp>
 #include <bg/graph/wiring_error.hpp>
 #include <bg/graph/wiring_template.hpp>
 #include <bg/node/node_template.hpp>
-#include <bg/type/time_series_dict_type.hpp>
-#include <bg/type/time_series_reference_type.hpp>
-#include <bg/type/type_map.hpp>
-#include <bg/util/scope_exit.hpp>
-
-#include "time_series/ref/ref_node.hpp"
+#include <bg/scalar/scalar.hpp>
 
 #include <algorithm>
 #include <array>
@@ -21,41 +16,67 @@ namespace bg {
 
 namespace {
 
-bool requires_reference_representation(const TimeSeriesType &parameter, const TimeSeriesType &argument) noexcept {
-    const auto *parameter_dictionary = dynamic_cast<const TimeSeriesDictionaryType *>(&parameter);
-    const auto *argument_dictionary = dynamic_cast<const TimeSeriesDictionaryType *>(&argument);
-    if (parameter_dictionary == nullptr || argument_dictionary == nullptr) {
+util::linear_hash_table::hash_type output_item_hash(std::size_t parent, TimeSeriesItemId item) noexcept {
+    constexpr auto constant = std::size_t{0x9e3779b9};
+    auto result = parent;
+    result ^= static_cast<std::size_t>(item) + constant + (result << 6) + (result >> 2);
+    return util::linear_hash_table::hash_code(result);
+}
+
+std::optional<Scalar<>> scalar_value(const details::wiring_argument &argument) {
+    if (!argument.scalar_has_value()) {
+        return std::nullopt;
+    }
+    if (const auto *view = argument.scalar_view()) {
+        return Scalar<>::from(*view);
+    }
+    return Scalar<>::from(argument.scalar_runtime_type(), argument.scalar_data());
+}
+
+bool same_signature(const ResolvedSignature &left, const ResolvedSignature &right) noexcept {
+    if (left.output != right.output || left.parameters.size() != right.parameters.size()) {
         return false;
     }
 
-    const auto &parameter_item = parameter_dictionary->value_type();
-    const auto &argument_item = argument_dictionary->value_type();
-    const auto parameter_is_reference = dynamic_cast<const TimeSeriesReferenceType *>(&parameter_item) != nullptr;
-    const auto argument_is_reference = dynamic_cast<const TimeSeriesReferenceType *>(&argument_item) != nullptr;
-    if (parameter_is_reference != argument_is_reference) {
-        return true;
+    return std::ranges::equal(left.parameters, right.parameters,
+                              [](const auto &left_parameter, const auto &right_parameter) {
+                                  return left_parameter.type == right_parameter.type;
+                              });
+}
+
+bool same_scalar_arguments(std::span<const WiredScalar> stored, std::span<const details::wiring_argument> arguments) {
+    auto scalar_index = std::size_t{};
+    for (const auto &argument : arguments) {
+        if (!argument.is_scalar()) {
+            continue;
+        }
+
+        const auto &candidate = stored[scalar_index++];
+        if (candidate.has_value() != argument.scalar_has_value()) {
+            return false;
+        }
+        if (!candidate.has_value()) {
+            continue;
+        }
+
+        const auto current = scalar_value(argument);
+        const auto stored_value = Scalar<>::from(candidate.runtime_type(), candidate.data());
+        if (!stored_value.equals(*current)) {
+            return false;
+        }
     }
 
-    return requires_reference_representation(parameter_item, argument_item);
+    return scalar_index == stored.size();
 }
 
 } // namespace
 
-std::size_t WiringPoint::node_index() const {
-    const auto &record = graph_->wiring_points()[record_index_];
-    if (record.deferred) {
-        throw WiringError{"a deferred WiringPoint has no node until it is consumed"};
-    }
-
-    return record.node_index;
+const GraphWiring &WiringPoint::graph() const noexcept {
+    return record_->graph();
 }
 
 const TimeSeriesType &WiringPoint::type() const noexcept {
-    return *graph_->wiring_points()[record_index_].type;
-}
-
-WiringPoint WiringPoint::item(std::size_t index) const {
-    return graph_->select_item(*this, index);
+    return record_->type();
 }
 
 GraphWiring::GraphWiring() : GraphWiring(*std::pmr::get_default_resource()) {}
@@ -87,6 +108,9 @@ GraphWiring::~GraphWiring() {
             }
         }
     }
+
+    wired_nodes_.release(fixed_memory_);
+    output_items_.release(fixed_memory_);
 }
 
 const NodeTemplate &GraphWiring::own_node_template(std::unique_ptr<NodeTemplate> node_template) {
@@ -143,41 +167,6 @@ std::optional<WiringPoint> GraphWiring::invoke_resolved(const WiringTemplate &wi
                                                         util::symbol path_name) {
     auto signature = std::move(resolution.signature);
 
-    for (auto i = std::size_t{}; i < arguments.size(); ++i) {
-        if (!arguments[i].is_wiring_point()) {
-            continue;
-        }
-
-        const auto *parameter = static_cast<const TimeSeriesType *>(signature.parameters[i].type);
-        if (const auto *reference = dynamic_cast<const TimeSeriesReferenceType *>(parameter)) {
-            parameter = &reference->target_type();
-        }
-        arguments[i].wiring_point(materialize(arguments[i].wiring_point(), *parameter));
-    }
-
-    for (auto i = std::size_t{}; i < arguments.size(); ++i) {
-        if (!arguments[i].is_wiring_point()) {
-            continue;
-        }
-
-        const auto &parameter = static_cast<const TimeSeriesType &>(*signature.parameters[i].type);
-        const auto &argument = arguments[i].wiring_point().type();
-        const auto *parameter_reference = dynamic_cast<const TimeSeriesReferenceType *>(&parameter);
-        const auto *argument_reference = dynamic_cast<const TimeSeriesReferenceType *>(&argument);
-
-        if (parameter_reference != nullptr) {
-            if (argument_reference == nullptr) {
-                arguments[i].wiring_point(make_reference(arguments[i].wiring_point(), *parameter_reference));
-            }
-            continue;
-        }
-
-        if (argument_reference == nullptr && requires_reference_representation(parameter, argument)) {
-            const auto &reference = time_series_reference_type(parameter, TimeSeriesGuarantee::const_);
-            arguments[i].wiring_point(make_reference(arguments[i].wiring_point(), reference));
-        }
-    }
-
     const auto *expected_output = signature.output;
     const auto label = wiring_template.label(signature, arguments, default_label());
     const auto &path = make_path(path_name, label);
@@ -195,181 +184,134 @@ std::optional<WiringPoint> GraphWiring::invoke_resolved(const WiringTemplate &wi
         throw WiringError{"a wiring-template returned a WiringPoint from another GraphWiring"};
     }
 
-    auto output_bindings = TypeMap{};
-    if (!expected_output->match(output->type(), output_bindings)) {
+    if (!expected_output->accepts(output->type())) {
         throw WiringError{"a wiring-template result does not satisfy its resolved output type"};
     }
 
     return output;
 }
 
-std::optional<WiringPoint> GraphWiring::add_node(const NodeTemplate &node_template, ResolvedSignature signature,
-                                                 std::vector<const ScalarType *> state_types,
-                                                 std::span<details::wiring_argument> arguments) {
-    std::vector<std::size_t> source_indices;
-    std::size_t source_count = 0;
-    for (const auto &argument : arguments) {
-        source_count += static_cast<std::size_t>(argument.is_wiring_point());
-    }
-    source_indices.reserve(source_count);
-
-    for (const details::wiring_argument &argument : arguments) {
-        if (argument.is_wiring_point()) {
-            source_indices.push_back(argument.wiring_point().record_index());
-        }
-    }
-
-    std::vector<WiredScalar> scalar_values;
-    scalar_values.reserve(arguments.size() - source_count);
-    auto release_scalars = util::scope_exit{[&]() noexcept { destroy_scalars(scalar_values); }};
-
-    for (auto i = std::size_t{}; i < arguments.size(); ++i) {
-        const auto &argument = arguments[i];
-        if (argument.is_wiring_point()) {
-            continue;
-        }
-
-        const auto &runtime_type = argument.scalar_runtime_type();
-        if (!argument.scalar_has_value()) {
-            if (!signature.parameters[i].accepts_absent_scalar) {
-                throw WiringError{"a required scalar parameter has no value"};
-            }
-
-            scalar_values.push_back(WiredScalar{runtime_type, nullptr});
-            continue;
-        }
-
-        auto &scalar_memory = variable_memory(runtime_type);
-        auto *data = fixed_memory_.allocate(runtime_type.size(), runtime_type.alignment());
-        auto release_data = util::scope_exit{
-            [&]() noexcept { fixed_memory_.deallocate(data, runtime_type.size(), runtime_type.alignment()); }};
-
-        if (const auto *view = argument.scalar_view()) {
-            view->copy_construct(data, runtime_type, scalar_memory);
-        } else {
-            runtime_type.construct_from_value(data, argument.scalar_data(), scalar_memory);
-        }
-
-        auto destroy_data = util::scope_exit{[&]() noexcept { runtime_type.destroy(data, scalar_memory); }};
-        scalar_values.push_back(WiredScalar{runtime_type, data});
-        destroy_data.release();
-        release_data.release();
+std::optional<WiringPoint> GraphWiring::find_wired_node(std::size_t hash, const NodeTemplate &node_template,
+                                                        const ResolvedSignature &signature,
+                                                        std::span<const std::size_t> input_output_indices,
+                                                        std::span<const ScalarType *const> state_types,
+                                                        std::span<const details::wiring_argument> arguments) {
+    const auto found = wired_nodes_.find(util::linear_hash_table::hash_code(hash), [&](auto position) {
+        const auto &node = nodes_[position];
+        return &node.node_template() == &node_template && same_signature(node.signature(), signature) &&
+               std::ranges::equal(node.input_output_indices(), input_output_indices) &&
+               std::ranges::equal(node.state_types(), state_types) &&
+               same_scalar_arguments(node.scalar_values(), arguments);
+    });
+    if (!found) {
+        return std::nullopt;
     }
 
-    const auto has_output = signature.output != nullptr;
-    const auto index = nodes_.size();
-    auto node = WiredNode{node_template,
-                          std::move(signature),
-                          std::move(source_indices),
-                          std::move(scalar_values),
-                          std::move(state_types),
-                          *WiringContext::current().path()};
-    release_scalars.release();
-
-    auto release_node_scalars = util::scope_exit{[&]() noexcept { destroy_scalars(node.scalar_values()); }};
-    nodes_.push_back(std::move(node));
-    release_node_scalars.release();
-
-    if (has_output) {
-        const auto record = wiring_points_.size();
-        wiring_points_.push_back({index, WiringPointRecord::npos, 0, false, nodes_.back().signature().output});
-        return WiringPoint{*this, record};
-    }
-
-    return std::nullopt;
+    return WiringPoint{*node_output_records_[*found]};
 }
 
-WiringPoint GraphWiring::select_item(WiringPoint source, std::size_t index) {
-    if (&source.graph() != this) {
+void GraphWiring::cache_wired_node(std::size_t hash, std::size_t node_index) {
+    wired_nodes_.insert(util::linear_hash_table::hash_code(hash), static_cast<std::uint32_t>(node_index),
+                        fixed_memory_);
+}
+
+std::size_t GraphWiring::register_node(WiredNode node) {
+    const auto index = nodes_.size();
+    nodes_.reserve(index + 1);
+    node_output_records_.reserve(index + 1);
+
+    nodes_.push_back(std::move(node));
+    node_output_records_.push_back(nullptr);
+    return index;
+}
+
+void GraphWiring::register_node_output(std::size_t node_index, WiringPoint output,
+                                       std::optional<std::size_t> hash) {
+    node_output_records_[node_index] = output.record_;
+    if (hash) {
+        cache_wired_node(*hash, node_index);
+    }
+}
+
+WiringPoint GraphWiring::register_record(std::unique_ptr<details::WiringRecord> record) {
+    auto &result = *record;
+    result.graph_ = this;
+    wiring_records_.push_back(std::move(record));
+    return WiringPoint{result};
+}
+
+WiringPoint GraphWiring::register_item_record(WiringPoint parent, TimeSeriesItemId item,
+                                              std::unique_ptr<details::WiringRecord> record) {
+    if (&parent.graph() != this) {
         throw WiringError{"a WiringPoint belongs to another GraphWiring"};
     }
 
-    const auto *collection = dynamic_cast<const FixedItemTimeSeriesType *>(&source.type());
-    if (collection == nullptr) {
-        throw WiringError{"a WiringPoint does not identify a time series with fixed items"};
-    }
-
-    const auto &item_type = collection->item_type(index);
-    const auto item = collection->item_id(index);
-    const auto &source_record = wiring_points_[source.record_index()];
-    if (source_record.deferred) {
-        return deferred_wiring_points_[source_record.node_index]->item(index);
-    }
-    if (source_record.parent == WiringPointRecord::npos) {
-        const auto &node = nodes_[source_record.node_index];
-        if (const auto input = node.node_template().output_item_source(index)) {
-            return WiringPoint{*this, node.input_sources()[*input]};
-        }
-    }
-
-    for (auto record = std::size_t{}; record < wiring_points_.size(); ++record) {
-        const auto &candidate = wiring_points_[record];
-        if (candidate.parent == source.record_index() && candidate.item == item) {
-            return WiringPoint{*this, record};
-        }
-    }
-
-    const auto record = wiring_points_.size();
-    wiring_points_.push_back({source.node_index(), source.record_index(), item, false, &item_type});
-    return WiringPoint{*this, record};
-}
-
-WiringPoint GraphWiring::add_deferred(std::unique_ptr<details::DeferredWiringPoint> point) {
-    const auto deferred_index = deferred_wiring_points_.size();
-    const auto record = wiring_points_.size();
-    const auto *type = &point->type();
-    deferred_wiring_points_.push_back(std::move(point));
-    wiring_points_.push_back({deferred_index, WiringPointRecord::npos, 0, true, type});
-    return WiringPoint{*this, record};
-}
-
-WiringPoint GraphWiring::materialize(WiringPoint source, const TimeSeriesType &target_type) {
-    const auto &record = wiring_points_[source.record_index()];
-    if (!record.deferred) {
-        return source;
-    }
-
-    const auto existing = std::ranges::find_if(materialized_wiring_points_, [&](const auto &entry) {
-        return entry.source == source.record_index() && entry.type == &target_type;
+    const auto existing = std::ranges::find_if(item_records_, [&](const auto &entry) {
+        return entry.parent == parent.record_ && entry.item == item;
     });
-    if (existing != materialized_wiring_points_.end()) {
-        return WiringPoint{*this, existing->result};
+    if (existing != item_records_.end()) {
+        return WiringPoint{*existing->result};
     }
 
-    const auto result = deferred_wiring_points_[record.node_index]->materialize(target_type);
-    materialized_wiring_points_.push_back({source.record_index(), &target_type, result.record_index()});
+    item_records_.reserve(item_records_.size() + 1);
+    auto result = register_record(std::move(record));
+    item_records_.push_back({parent.record_, item, result.record_});
     return result;
 }
 
-WiringPoint GraphWiring::make_reference(WiringPoint source, const TimeSeriesType &reference_type) {
-    const auto existing = std::ranges::find_if(references_, [&](const auto &entry) {
-        return entry.source == source.record_index() && entry.type == &reference_type;
-    });
-    if (existing != references_.end()) {
-        return WiringPoint{*this, existing->reference};
+WiringPoint GraphWiring::register_output(WiredOutput output,
+                                         std::unique_ptr<details::WiringRecord> record) {
+    wiring_records_.reserve(wiring_records_.size() + 1);
+    outputs_.reserve(outputs_.size() + 1);
+    output_records_.reserve(output_records_.size() + 1);
+
+    auto &result = *record;
+    const auto output_index = outputs_.size();
+    if (output.parent != WiredOutput::npos) {
+        output_items_.insert(output_item_hash(output.parent, output.item), static_cast<std::uint32_t>(output_index),
+                             fixed_memory_);
     }
 
-    const auto &type = static_cast<const TimeSeriesReferenceType &>(reference_type);
-    const auto result = details::reference_node_template(source.type(), type)(source);
-    if (!result) {
-        throw WiringError{"a reference-making node produced no output"};
-    }
+    result.graph_ = this;
+    result.output_ = output_index;
 
-    references_.push_back({source.record_index(), &reference_type, result->record_index()});
-    return *result;
+    outputs_.push_back(output);
+    output_records_.push_back(&result);
+    wiring_records_.push_back(std::move(record));
+    return WiringPoint{result};
 }
 
-std::optional<WiringPoint> NodeTemplate::wire(GraphWiring &wiring, ResolvedSignature signature, const TypeMap &type_map,
-                                              std::span<details::wiring_argument> arguments) const {
-    return wiring.add_node(*this, std::move(signature), resolve_state_types(type_map), arguments);
+std::optional<WiringPoint> GraphWiring::find_output_item(std::size_t parent, TimeSeriesItemId item) const {
+    const auto found = output_items_.find(output_item_hash(parent, item), [&](auto position) {
+        const auto &output = outputs_[position];
+        return output.parent == parent && output.item == item;
+    });
+    if (!found) {
+        return std::nullopt;
+    }
+
+    return WiringPoint{*output_records_[*found]};
+}
+
+std::size_t GraphWiring::output_index(WiringPoint point) const {
+    if (&point.graph() != this) {
+        throw WiringError{"a WiringPoint belongs to another GraphWiring"};
+    }
+
+    const auto output = point.record_->output_;
+    if (output == details::WiringRecord::no_output) {
+        throw WiringError{"a WiringPoint has no wired output until it is consumed"};
+    }
+
+    return output;
 }
 
 } // namespace bg
 
 namespace bg::details {
 
-WiringPoint defer_wiring_point(std::unique_ptr<DeferredWiringPoint> point) {
-    return WiringContext::current().wiring().add_deferred(std::move(point));
+std::size_t wired_output_node_index(const GraphWiring &wiring, WiringPoint point) {
+    return wiring.outputs_[wiring.output_index(point)].node_index;
 }
 
 } // namespace bg::details

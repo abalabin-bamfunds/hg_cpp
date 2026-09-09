@@ -22,7 +22,7 @@ struct NestedGraphWiring {
 };
 
 [[nodiscard]] WiringPoint wire_nested_input(const TimeSeriesType &type);
-[[nodiscard]] WiringPoint wire_nested_output(WiringPoint output);
+[[nodiscard]] WiringPoint wire_nested_output(WiringPoint output, const TimeSeriesType &type);
 [[nodiscard]] std::unique_ptr<NodeTemplate> make_nested_node(NestedGraphWiring wiring,
                                                              const ResolvedSignature &graph_signature);
 

@@ -24,7 +24,7 @@
 namespace {
 
 static_assert(std::derived_from<bg::GenericTimeSeriesValueType, bg::TimeSeriesValueType>);
-static_assert(!std::constructible_from<bg::TypeVariable<bg::ScalarType>, bg::util::symbol,
+static_assert(!std::constructible_from<bg::TypeVariableType<bg::ScalarType>, bg::util::symbol,
                                        std::vector<const bg::TimeSeriesType *>>);
 
 [[nodiscard]] bool is_value_type(const bg::Type *type, const bg::ScalarType &value_type,
@@ -87,10 +87,16 @@ TEST_CASE("generic C++ declarations expose their semantic types",
     CHECK(&value.resolve(float_bindings) == &bg::TS<float>::type());
 }
 
+TEST_CASE("type compatibility can be checked without retaining a type map",
+          "[type_system][feature:type-system][declaration:generic]") {
+    CHECK(bg::TS<bg::SCALAR>::type().accepts(bg::TS<int>::type()));
+    CHECK_FALSE(bg::TS<int>::type().accepts(bg::TS<float>::type()));
+}
+
 TEST_CASE("a time series variable and its guarantee resolve independently",
           "[type_system][feature:type-system][declaration:generic][guarantee:ordinary][guarantee:final]") {
-    auto left = bg::TypeVariable<bg::TimeSeriesType>{bg::util::symbol{"Left"}};
-    auto right = bg::TypeVariable<bg::TimeSeriesType>{bg::util::symbol{"Right"}};
+    auto left = bg::TypeVariableType<bg::TimeSeriesType>{bg::util::symbol{"Left"}};
+    auto right = bg::TypeVariableType<bg::TimeSeriesType>{bg::util::symbol{"Right"}};
     auto guarantee = bg::GuaranteeVariable{bg::util::symbol{"G"}};
     const auto generic_left = bg::GenericTimeSeriesVariableType{left, guarantee};
     const auto generic_right = bg::GenericTimeSeriesVariableType{right, guarantee};
@@ -116,7 +122,7 @@ TEST_CASE("a deduplicated value time series requires equality",
 TEST_CASE("a time series variable ignores the guarantees captured separately",
           "[type_system][feature:type-system][declaration:generic][guarantee:deduplicated]"
           "[guarantee:final]") {
-    auto variable = bg::TypeVariable<bg::TimeSeriesType>{bg::util::symbol{"T"}};
+    auto variable = bg::TypeVariableType<bg::TimeSeriesType>{bg::util::symbol{"T"}};
     auto guarantee = bg::GuaranteeVariable{bg::util::symbol{"G"}};
     const auto generic = bg::GenericTimeSeriesVariableType{variable, guarantee};
     const auto &final = bg::TS<float, bg::TimeSeriesGuarantee::final>::type();
@@ -154,8 +160,8 @@ TEST_CASE("a signature resolves scalar parameters", "[type_system][feature:type-
     bg::GuaranteeVariable guarantee{bg::util::symbol{"G"}};
     bg::GenericTimeSeriesValueType ts_float{float_type, guarantee};
 
-    bg::TypeVariable<bg::Type> lhs_type{bg::util::symbol{"Lhs"}, {&float_type, &ts_float}};
-    bg::TypeVariable<bg::Type> rhs_type{bg::util::symbol{"Rhs"}, {&float_type, &ts_float}};
+    bg::TypeVariableType<bg::Type> lhs_type{bg::util::symbol{"Lhs"}, {&float_type, &ts_float}};
+    bg::TypeVariableType<bg::Type> rhs_type{bg::util::symbol{"Rhs"}, {&float_type, &ts_float}};
 
     const bg::Signature add{
         bg::util::symbol{"add"},
@@ -176,8 +182,8 @@ TEST_CASE("a signature resolves scalar and time-series parameters", "[type_syste
 
     bg::GuaranteeVariable guarantee{bg::util::symbol{"G"}};
     bg::GenericTimeSeriesValueType ts_float{float_type, guarantee};
-    bg::TypeVariable<bg::Type> lhs_type{bg::util::symbol{"Lhs"}, {&float_type, &ts_float}};
-    bg::TypeVariable<bg::Type> rhs_type{bg::util::symbol{"Rhs"}, {&float_type, &ts_float}};
+    bg::TypeVariableType<bg::Type> lhs_type{bg::util::symbol{"Lhs"}, {&float_type, &ts_float}};
+    bg::TypeVariableType<bg::Type> rhs_type{bg::util::symbol{"Rhs"}, {&float_type, &ts_float}};
     const bg::Signature add{bg::util::symbol{"add"},
                             {{bg::util::symbol{"lhs"}, &lhs_type}, {bg::util::symbol{"rhs"}, &rhs_type}},
                             ts_float};
@@ -199,8 +205,8 @@ TEST_CASE("a shared guarantee variable resolves to the weakest input guarantee",
 
     bg::GuaranteeVariable guarantee{bg::util::symbol{"G"}};
     bg::GenericTimeSeriesValueType ts_float{float_type, guarantee};
-    bg::TypeVariable<bg::Type> lhs_type{bg::util::symbol{"Lhs"}, {&ts_float}};
-    bg::TypeVariable<bg::Type> rhs_type{bg::util::symbol{"Rhs"}, {&ts_float}};
+    bg::TypeVariableType<bg::Type> lhs_type{bg::util::symbol{"Lhs"}, {&ts_float}};
+    bg::TypeVariableType<bg::Type> rhs_type{bg::util::symbol{"Rhs"}, {&ts_float}};
     const bg::Signature add{bg::util::symbol{"add"},
                             {{bg::util::symbol{"lhs"}, &lhs_type}, {bg::util::symbol{"rhs"}, &rhs_type}},
                             ts_float};
@@ -222,7 +228,7 @@ TEST_CASE("a guarantee variable enforces its lower bound",
 
     bg::GuaranteeVariable stable_guarantee{bg::util::symbol{"Stable"}, bg::TimeSeriesGuarantee::deduplicated};
     bg::GenericTimeSeriesValueType stable_ts_float{float_type, stable_guarantee};
-    bg::TypeVariable<bg::Type> stable_type{bg::util::symbol{"StableType"}, {&stable_ts_float}};
+    bg::TypeVariableType<bg::Type> stable_type{bg::util::symbol{"StableType"}, {&stable_ts_float}};
     const bg::Signature stable_input{
         bg::util::symbol{"stable_input"}, {{bg::util::symbol{"value"}, &stable_type}}, stable_ts_float};
 
@@ -249,7 +255,7 @@ TEST_CASE("repeated use of a type variable requires one resolved type",
     const auto &ts_final = bg::TS<float, bg::TimeSeriesGuarantee::final>::type();
     const auto &ts_ordinary = bg::TS<float>::type();
 
-    bg::TypeVariable<bg::Type> same_type{bg::util::symbol{"Same"}};
+    bg::TypeVariableType<bg::Type> same_type{bg::util::symbol{"Same"}};
     const bg::Signature same_inputs{bg::util::symbol{"same_inputs"},
                                     {{bg::util::symbol{"first"}, &same_type}, {bg::util::symbol{"second"}, &same_type}},
                                     ts_ordinary};
@@ -268,7 +274,7 @@ TEST_CASE("a type parameter maps a time-series type variable",
           "[type_system][feature:type-system][declaration:generic]") {
     const auto &ts_final = bg::TS<float, bg::TimeSeriesGuarantee::final>::type();
 
-    bg::TypeVariable<bg::TimeSeriesType> selected_type{bg::util::symbol{"Selected"}};
+    bg::TypeVariableType<bg::TimeSeriesType> selected_type{bg::util::symbol{"Selected"}};
     bg::GenericTypeScalarType type_parameter{selected_type};
     const bg::Signature select_type{
         bg::util::symbol{"select_type"}, {{bg::util::symbol{"type"}, &type_parameter}}, selected_type};
@@ -322,7 +328,7 @@ TEST_CASE("a time-series type parameter rejects a scalar type", "[type_system][f
 }
 
 TEST_CASE("a generic scalar list resolves its item type", "[type_system][feature:type-system][declaration:generic]") {
-    bg::TypeVariable<bg::ScalarType> item{bg::util::symbol{"Item"}};
+    bg::TypeVariableType<bg::ScalarType> item{bg::util::symbol{"Item"}};
     const auto generic_list = bg::GenericListScalarType{item};
     const auto &float_list = bg::list_scalar_type(bg::float_type());
     auto type_map = bg::TypeMap{};
@@ -333,8 +339,8 @@ TEST_CASE("a generic scalar list resolves its item type", "[type_system][feature
 
 TEST_CASE("generic set and dictionary types resolve their components",
           "[type_system][feature:type-system][declaration:generic]") {
-    bg::TypeVariable<bg::ScalarType> key{bg::util::symbol{"Key"}};
-    bg::TypeVariable<bg::ScalarType> value{bg::util::symbol{"Value"}};
+    bg::TypeVariableType<bg::ScalarType> key{bg::util::symbol{"Key"}};
+    bg::TypeVariableType<bg::ScalarType> value{bg::util::symbol{"Value"}};
     const auto generic_set = bg::GenericSetScalarType{key};
     const auto generic_dict = bg::GenericDictScalarType{key, value};
     const auto &resolved_set = bg::set_scalar_type(bg::string_type());

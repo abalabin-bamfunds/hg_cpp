@@ -145,6 +145,13 @@ template <typename Definition> const AggregateNodeDescriptor &aggregate_node_des
             }(),
         .uses_output_runtime_type = aggregate_uses_output_runtime_type<Definition>(Index{}),
         .uses_future_scheduling = aggregate_uses_future_scheduling<Definition>(),
+        .deduplicate_wiring =
+            [] {
+                if constexpr (requires { Definition::deduplicate_wiring; }) {
+                    return static_cast<bool>(Definition::deduplicate_wiring);
+                }
+                return true;
+            }(),
     };
 
     return descriptor;

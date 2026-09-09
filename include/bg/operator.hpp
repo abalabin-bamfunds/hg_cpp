@@ -1,17 +1,15 @@
 #pragma once
 
-#include <bg/graph/details/wiring_callable.hpp>
 #include <bg/graph/operator.hpp>
-#include <bg/node/details/callable_signature.hpp>
-#include <bg/node/input.hpp>
-#include <bg/node/output.hpp>
+#include <bg/type/details/scalar_type.hpp>
 #include <bg/type/details/time_series_type.hpp>
-#include <bg/type/details/time_series_type_traits.hpp>
-#include <bg/util/reflection.hpp>
 
 #include <concepts>
 #include <cstddef>
-#include <string>
+#include <initializer_list>
+#include <optional>
+#include <span>
+#include <stdexcept>
 #include <string_view>
 #include <type_traits>
 #include <utility>
@@ -19,83 +17,99 @@
 
 namespace bg::details {
 
-template <typename Function, std::size_t... Index>
-Signature make_operator_signature(util::symbol name, std::index_sequence<Index...>) {
-    static_assert(std::same_as<typename callable<Function>::result_type, void>,
-                  "an operator prototype lambda must return void and declare its output with Out");
-    static_assert(callable_output_count<Function>(std::index_sequence<Index...>{}) <= 1,
-                  "an operator prototype can have at most one output");
-    return make_callable_signature<Function, Function>(name);
-}
+template <typename Declaration> const Type &operator_declaration_type() {
+    using Value = std::remove_cv_t<Declaration>;
 
-template <typename Function> Signature make_operator_signature(util::symbol name) {
-    return make_operator_signature<Function>(name, std::make_index_sequence<callable<Function>::argument_count>{});
-}
-
-template <auto Function> struct declared_operator_scope {};
-
-template <auto Function, std::size_t... Index>
-Signature make_declared_operator_signature(std::index_sequence<Index...>) {
-    using FunctionType = decltype(Function);
-    using Result = std::remove_cvref_t<typename callable<FunctionType>::result_type>;
-    static_assert(std::same_as<Result, void> || supported_time_series<Result>,
-                  "an operator prototype function must return void or a time series type");
-
-    auto parameters = std::vector<Parameter>{};
-    parameters.reserve(sizeof...(Index));
-    (add_callable_parameter<declared_operator_scope<Function>, FunctionType, Index>(parameters), ...);
-
-    const auto name = util::symbol{util::function_name<Function>()};
-    if constexpr (std::same_as<Result, void>) {
-        return Signature{name, std::move(parameters)};
+    if constexpr (requires { Value::type(); }) {
+        return Value::type();
     } else {
-        return Signature{name, std::move(parameters),
-                         callable_output_type<declared_operator_scope<Function>, Result, sizeof...(Index)>()};
+        return cpp_scalar_type<Value>();
     }
 }
 
-template <auto Function> Signature make_declared_operator_signature() {
-    using FunctionType = decltype(Function);
-    return make_declared_operator_signature<Function>(
-        std::make_index_sequence<callable<FunctionType>::argument_count>{});
-}
+template <typename Result, typename... Arguments>
+Signature make_typed_operator_signature(util::symbol name, std::span<const std::string_view> parameter_names,
+                                        Result (*)(Arguments...)) {
+    if (parameter_names.size() != sizeof...(Arguments)) {
+        throw std::invalid_argument{"an operator prototype requires one name for every parameter"};
+    }
 
-template <typename Definition, std::size_t... Index>
-consteval bool aggregate_operator_fields(std::index_sequence<Index...>) {
-    return ((input_field<std::remove_cv_t<util::aggregate_member_type<Index, Definition>>>::value ||
-             output_field<std::remove_cv_t<util::aggregate_member_type<Index, Definition>>>::value ||
-             scalar_field<std::remove_cv_t<util::aggregate_member_type<Index, Definition>>>::value) &&
+    auto parameters = std::vector<Parameter>{};
+    parameters.reserve(sizeof...(Arguments));
+    if constexpr (sizeof...(Arguments) != 0) {
+        auto index = std::size_t{};
+        (
+            [&] {
+                parameters.push_back({util::symbol{parameter_names[index]}, &operator_declaration_type<Arguments>()});
+                ++index;
+            }(),
             ...);
+    }
+
+    if constexpr (std::same_as<Result, void>) {
+        return {name, std::move(parameters)};
+    } else {
+        const auto &output = operator_declaration_type<Result>();
+        const auto *time_series = dynamic_cast<const TimeSeriesType *>(&output);
+        if (time_series == nullptr) {
+            throw std::invalid_argument{"an operator prototype output must be a time series type"};
+        }
+        return {name, std::move(parameters), *time_series};
+    }
 }
 
-template <typename Definition>
-concept aggregate_operator_definition =
-    std::is_aggregate_v<Definition> &&
-    aggregate_operator_fields<Definition>(std::make_index_sequence<util::aggregate_member_count<Definition>>{}) &&
-    output_field_count<Definition>(std::make_index_sequence<util::aggregate_member_count<Definition>>{}) <= 1;
+template <typename Prototype> struct operator_prototype;
+
+template <typename Result, typename... Arguments> struct operator_prototype<Result(Arguments...)> {
+    static constexpr bool has_output = !std::same_as<Result, void>;
+
+    static Signature signature(util::symbol name, std::span<const std::string_view> parameter_names) {
+        return make_typed_operator_signature(name, parameter_names, static_cast<Result (*)(Arguments...)>(nullptr));
+    }
+};
 
 } // namespace bg::details
 
 namespace bg {
 
-template <typename Prototype> [[nodiscard]] auto operator_(std::string_view name, Prototype) {
-    using Function = std::remove_cvref_t<Prototype>;
-    return Operator{details::make_operator_signature<Function>(util::symbol{name})};
-}
+template <typename Prototype> class operator_ : public Operator {
+  public:
+    explicit operator_(std::string_view name, std::span<const std::string_view> parameter_names = {})
+        : Operator(details::operator_prototype<Prototype>::signature(util::symbol{name}, parameter_names)) {}
 
-template <details::aggregate_operator_definition Definition> [[nodiscard]] auto operator_(std::string_view name) {
-    auto signature = details::make_signature<Definition>(
-        util::symbol{name}, std::make_index_sequence<util::aggregate_member_count<Definition>>{});
+    operator_(std::string_view name, std::initializer_list<std::string_view> parameter_names)
+        : operator_(name, std::span<const std::string_view>{parameter_names}) {}
 
-    return Operator{std::move(signature)};
-}
+    template <typename... Arguments>
+        requires(details::graph_code_argument<Arguments> && ...)
+    auto operator()(Arguments &&...arguments) const & {
+        return public_result(WiringTemplate::operator()(std::forward<Arguments>(arguments)...));
+    }
 
-template <details::aggregate_operator_definition Definition> [[nodiscard]] auto operator_() {
-    return operator_<Definition>(util::unqualified_type_name<Definition>());
-}
+    auto operator()(std::span<const WiringPoint> arguments) const & {
+        return public_result(WiringTemplate::operator()(arguments));
+    }
 
-template <auto Prototype> [[nodiscard]] auto operator_() {
-    return Operator{details::make_declared_operator_signature<Prototype>()};
-}
+    template <typename... Arguments>
+        requires(details::graph_code_argument<Arguments> && ...)
+    auto operator()(const TypeMap &type_map, Arguments &&...arguments) const & {
+        return public_result(WiringTemplate::operator()(type_map, std::forward<Arguments>(arguments)...));
+    }
+
+    auto operator()(const TypeMap &type_map, std::span<const WiringPoint> arguments) const & {
+        return public_result(WiringTemplate::operator()(type_map, arguments));
+    }
+
+    template <typename... Arguments> auto operator()(Arguments &&...) const && = delete;
+
+  private:
+    static auto public_result(std::optional<WiringPoint> result) {
+        if constexpr (details::operator_prototype<Prototype>::has_output) {
+            return wp<>{*result};
+        } else if (result) {
+            throw std::logic_error{"an outputless operator overload produced an output"};
+        }
+    }
+};
 
 } // namespace bg

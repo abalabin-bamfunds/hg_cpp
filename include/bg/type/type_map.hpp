@@ -5,6 +5,7 @@
 #include <bg/type/type.hpp>
 #include <bg/type/variable.hpp>
 
+#include <algorithm>
 #include <unordered_map>
 #include <utility>
 #include <variant>
@@ -12,6 +13,8 @@
 namespace bg {
 
 using TypeMapValue = std::variant<const Type *, TimeSeriesGuarantee, Size>;
+
+template <typename Category> class TypeVariableType;
 
 class TypeMap {
   public:
@@ -55,10 +58,24 @@ class TypeMap {
 
   private:
     friend class Signature;
+    template <typename Category> friend class TypeVariableType;
 
     using MissingMappingFunction = const TypeMapValue *(*)(void *, TypeMap &, const Variable &);
 
     explicit TypeMap(const TypeMap *parent) : parent_(parent) {}
+
+    [[nodiscard]] bool apply_compatible(TypeMap &&overlay) {
+        const auto compatible = std::ranges::all_of(overlay.values_, [&](const auto &entry) {
+            const auto *current = find(*entry.first);
+            return current == nullptr || *current == entry.second;
+        });
+        if (!compatible) {
+            return false;
+        }
+
+        apply(std::move(overlay));
+        return true;
+    }
 
     void missing_mapping_handler(void *context, MissingMappingFunction function) noexcept {
         missing_mapping_context_ = context;

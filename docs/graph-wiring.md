@@ -3,14 +3,20 @@
 ## Purpose
 
 Graph wiring records node calls and their connections before graph compilation.
-`GraphWiring` owns the resulting wired nodes.
+`GraphWiring` owns and indexes wiring records, wired outputs, and wired nodes.
+Wiring records materialize values. Node templates construct wired nodes.
 
 ## Wiring points
 
-A node call appends one wired node to the active `GraphWiring`. A call with an
-output returns a `WiringPoint` that identifies the output in its owning
-`GraphWiring`. A call without an output returns `void` in the typed C++ API and
-`None` in Python.
+A `WiringPoint` identifies a wiring record in its owning `GraphWiring`. A node
+call with an output returns a record for that output. Free collections
+use records that retain their sources until a node consumes the collection.
+A call without an output returns `void` in the typed C++ API and `None` in
+Python.
+
+A wiring record owns behavior required to materialize its value. Materialized
+records identify wired outputs. Graph compilation consumes only wired outputs
+and does not depend on wiring-record behavior.
 
 Each `WiringPoint` argument to a node call must belong to the active
 `GraphWiring`. Inner graph boundaries provide local wiring points for their
@@ -20,22 +26,28 @@ declared inputs.
 size as `WiringPoint` and converts to `WiringPoint`. Graph definitions use it to
 declare time series parameter and output types.
 
+`point.as<TS_T>()` returns a typed wiring point when the requested type accepts
+the point's runtime type. Constructing `wp<TS_T>` from another wiring point
+performs the same check.
+
 `bg::tsl(a, b, ...)` creates a wiring point that groups its sources without
 creating item storage. The receiving parameter determines whether each item is
-a value or a reference. Wiring then creates one free TSL output over the
-selected sources. Selecting an item from that wiring point returns the original
-source wiring point.
+a value or a reference. Wiring then creates one TSL output over the selected
+sources.
 
 The logical output preserves dependency ordering. Source changes schedule it as
 a normal node. It combines changes from the same cycle and copies no item value.
 
-`bg::bundle("name"_m = a, "value"_m = b)` creates a wiring point for an
+`bg::bundle("name"_n = a, "value"_n = b)` creates a wiring point for an
 unnamed TSB. A named TSB parameter accepts a compatible field set. Wiring
-creates one free TSB output over the selected sources and reports their field
+creates one TSB output over the selected sources and reports their field
 changes.
 
-Graph code selects a named field with `bundle["name"_m]`. Selection returns the
-field's original wiring point when the TSB was created by `bg::bundle`.
+`wp<TSB<Schema>>` exposes the schema fields through `operator->`. Each field is
+a typed wiring point. A field becomes a wired output only when a node consumes
+it. `operators::getattr` selects a field by name from named and unnamed TSBs and
+returns `wp<>`. Re-annotate an unnamed TSB with `as<TSB<Schema>>()` to use the
+schema's C++ field members.
 
 ## Wiring context
 
@@ -64,13 +76,20 @@ A node call:
 
 1. checks that each wiring point belongs to the active `GraphWiring`
 2. resolves the signature from the argument types
-3. stores the node template, resolved signature, and input source indices in a
-   wired node
-4. returns a `WiringPoint` when the wired node has an output
+3. materializes wiring-point arguments for the resolved parameter types
+4. reuses an existing wired node with the same node template, resolved types,
+   physical inputs, state types, and scalar arguments when permitted
+5. otherwise stores those values in a new wired node
+6. returns a `WiringPoint` when the wired node has an output
 
-Scalar arguments are immutable wired-node data and do not create input source
-indices. `GraphWiring` owns a copy of each supplied scalar. An optional scalar
-parameter can record absence.
+Scalar arguments are immutable wired-node data and do not create input wired
+output indices. `GraphWiring` owns a copy of each supplied scalar. An optional
+scalar parameter can record absence.
+
+Node calls with no output are never reused. A scalar without equality and
+hashing also prevents reuse. The first call supplies the retained wiring path.
+Set `deduplicate_wiring` to `false` on a node definition when equal calls must
+create distinct wired nodes.
 
 ## Wiring template call
 
@@ -105,15 +124,15 @@ Its call expands into the active `GraphWiring`.
 parameter uses `wp<TS_T>`. Scalar parameters use their scalar types. The return
 type is `wp<TS_T>` or `void`.
 
-A lambda graph requires a `"name"_m` argument. Its optional label uses
-`"label"_m`. The graph function is the only positional argument:
+A lambda graph requires a `"name"_n` argument. Its optional label uses
+`"label"_n`. The graph function is the only positional argument:
 
 ```cpp
 using namespace bg::literals;
 
 inline const auto scaled = bg::graph(
-    "name"_m = "scaled",
-    "label"_m = [](bg::wp<bg::TS<float>>, float factor) {
+    "name"_n = "scaled",
+    "label"_n = [](bg::wp<bg::TS<float>>, float factor) {
         return std::to_string(factor);
     },
     [](bg::wp<bg::TS<float>> input,

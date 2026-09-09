@@ -301,7 +301,9 @@ TEST_CASE("a dereferenced input subscribes directly to a fixed collection item",
           "[binding:value-to-reference][binding:reference-to-value]") {
     const auto source = bg::node<referenced_list_source>();
     const auto pass = bg::node<reference_pass>();
-    const auto graph = [&] { return pass(source()[0]); };
+    const auto first =
+        bg::node([](bg::In<bg::TSL<bg::TS<int>, 2>> input, bg::Out<bg::TS<int>> output) { output.set(*input[0]); });
+    const auto graph = [&] { return pass(first(source())); };
     reference_pass::evaluation_count = 0;
 
     const auto actual = bg::testing::test_graph(graph);
@@ -399,7 +401,9 @@ TEST_CASE("a reference stored in a fixed collection item updates its consumer",
           "[scalar:integer][binding:value-to-reference][binding:reference-to-value]") {
     const auto source = bg::node<changing_reference_target>();
     const auto list = bg::node<reference_list>();
-    const auto graph = [&] { return list(source())[0]; };
+    const auto first = bg::node([](bg::In<bg::TSL<bg::REF<bg::TS<int>>, 1>> input,
+                                   bg::Out<bg::REF<bg::TS<int>>> output) { output.set(input[0]); });
+    const auto graph = [&] { return first(list(source())); };
 
     const auto actual = bg::testing::test_graph(graph);
 

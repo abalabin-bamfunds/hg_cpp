@@ -23,6 +23,8 @@ namespace bg::details {
 namespace {
 
 struct NestedInput {
+    static constexpr bool deduplicate_wiring = false;
+
     Out<REF<TS_T>> output;
 
     void evaluate() const noexcept {}
@@ -161,8 +163,8 @@ WiringPoint wire_nested_input(const TimeSeriesType &type) {
     return static_cast<WiringPoint>(nested_input_node(type_map));
 }
 
-WiringPoint wire_nested_output(WiringPoint output) {
-    return static_cast<WiringPoint>(nested_output_node(output));
+WiringPoint wire_nested_output(WiringPoint output, const TimeSeriesType &type) {
+    return static_cast<WiringPoint>(nested_output_node(materialize_wiring_point(output, type)));
 }
 
 std::unique_ptr<NodeTemplate> make_nested_node(NestedGraphWiring wiring, const ResolvedSignature &graph_signature) {

@@ -260,16 +260,21 @@ supplied while the graph is constructed and a record of the wired node that
 provides each input. The scalar values are immutable after graph construction. A
 wired node does not know how its output is used.
 
+### wired output
+
+The compiler-facing identity of a wired node's root output or one of its
+contained outputs. The C++ type is `WiredOutput`.
+
 ### graph wiring
 
-The mutable graph-construction state that owns wired nodes and records their
-connections before graph compilation. The C++ type is `GraphWiring`.
+The mutable graph-construction state that owns wired nodes, wired outputs, and
+their connections before graph compilation. The C++ type is `GraphWiring`.
 
 ### wiring point
 
-A two-word value that identifies a wired node output by its owning `GraphWiring`
-and wired-node index. The C++ type is `WiringPoint`. `wp<TS_T>` adds a time
-series type for graph-signature inference without adding runtime storage.
+A pointer-sized value that identifies a wiring record owned by a `GraphWiring`.
+The C++ type is `WiringPoint`. `wp<TS_T>` adds a time series type for
+graph-signature inference without adding runtime storage.
 
 ### wiring context
 

@@ -41,7 +41,9 @@ add_library(
     src/nested_graph.cpp
     src/nested.cpp
     src/operator.cpp
+    src/operators.cpp
     src/node/aggregate_node_template_base.cpp
+    src/node/node_template.cpp
     src/node/output_runtime_type.cpp
     src/guarantee_parameter.cpp
     src/runtime_type.cpp
@@ -60,8 +62,10 @@ add_library(
     src/symbol.cpp
     src/time_series/tsl/tsl_type.cpp
     src/time_series/tsl/tsl_runtime_type.cpp
+    src/time_series/tsl/operators.cpp
     src/time_series/tsb/tsb_type.cpp
     src/time_series/tsb/tsb_runtime_type.cpp
+    src/time_series/tsb/operators.cpp
     src/time_series/ref/ref_notification.cpp
     src/time_series/ref/ref_provider.cpp
     src/time_series/ref/ref_runtime_type.cpp
@@ -70,7 +74,6 @@ add_library(
     src/time_series/tsd/tsd_type.cpp
     src/time_series/tsd/tsd_runtime_type.cpp
     src/time_series/tsd/tsd_reference_representation.cpp
-    src/time_series/tsd/tsd_getitem.cpp
     src/time_series/tss/tss_type.cpp
     src/time_series/tss/tss_runtime_type.cpp
     src/time_series/output_path.cpp
@@ -86,6 +89,8 @@ add_library(
     src/version.cpp
     src/wiring_context.cpp
     src/wiring_error.cpp
+    src/wiring_record.cpp
+    src/wired_output.cpp
     src/wiring_template.cpp
 )
 add_library(bg::bg ALIAS bg)

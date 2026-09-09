@@ -8,6 +8,10 @@ const Signature &AggregateNodeTemplateBase::signature() const {
     return *descriptor_->signature;
 }
 
+bool AggregateNodeTemplateBase::deduplicate_wiring() const noexcept {
+    return descriptor_->deduplicate_wiring;
+}
+
 RequirementResult AggregateNodeTemplateBase::requirement(const WiringArguments &arguments) const {
     return descriptor_->requirement == nullptr ? accept : descriptor_->requirement(arguments);
 }
@@ -53,9 +57,10 @@ bool AggregateNodeTemplateBase::uses_future_scheduling() const noexcept {
     return descriptor_->uses_future_scheduling;
 }
 
-NodeStateLayout AggregateNodeTemplateBase::state_layout(
-    const ResolvedSignature &signature, std::span<const ScalarRuntimeType *const> parameter_runtime_types,
-    std::span<const ScalarType *const> state_types) const {
+NodeStateLayout
+AggregateNodeTemplateBase::state_layout(const ResolvedSignature &signature,
+                                        std::span<const ScalarRuntimeType *const> parameter_runtime_types,
+                                        std::span<const ScalarType *const> state_types) const {
     if (descriptor_->state_layout == nullptr) {
         return {};
     }

@@ -41,11 +41,11 @@ struct rejecting_copy_definition {
 
 TEST_CASE("an aggregate requirement can explain why it rejected an overload",
           "[feature:operator][feature:wiring][definition:aggregate]") {
-    auto operation = bg::operator_("identity", [](bg::In<bg::TS<float>, "value"_n>, bg::Out<bg::TS<float>>) {});
+    auto operation = bg::operator_<auto(bg::TS<float>) -> bg::TS<float>>{"identity", {"value"}};
     operation.overload(bg::node<rejecting_copy_definition>());
 
     const auto graph = [&](bg::wp<bg::TS<float>> value) -> bg::wp<bg::TS<float>> {
-        return bg::wp<bg::TS<float>>{*operation(value)};
+        return operation(value).as<bg::TS<float>>();
     };
 
     try {
@@ -94,13 +94,13 @@ TEST_CASE("an operator cache keys scalar values read by aggregate requirements",
     zero_mode_copy_definition::requirement_calls = 0;
     nonzero_mode_copy_definition::requirement_calls = 0;
 
-    auto operation = bg::operator_("mode", [](bg::In<bg::TS<float>, "value"_n>, int, bg::Out<bg::TS<float>>) {});
+    auto operation = bg::operator_<auto(bg::TS<float>, int) -> bg::TS<float>>{"mode", {"value", "mode"}};
     operation.overload(bg::node<zero_mode_copy_definition>());
     operation.overload(bg::node<nonzero_mode_copy_definition>());
 
     const auto run = [&](int mode) {
         const auto graph = [&](bg::wp<bg::TS<float>> input) -> bg::wp<bg::TS<float>> {
-            return bg::wp<bg::TS<float>>{*operation(input, mode)};
+            return operation(input, mode).as<bg::TS<float>>();
         };
 
         return bg::testing::test_graph(graph, {1.0F});
@@ -120,7 +120,7 @@ TEST_CASE("callable requirements control overload applicability",
           "[feature:operator][feature:wiring][definition:function]") {
     auto zero_requirement_calls = 0;
     auto nonzero_requirement_calls = 0;
-    auto operation = bg::operator_("mode", [](bg::In<bg::TS<float>, "value"_n>, int, bg::Out<bg::TS<float>>) {});
+    auto operation = bg::operator_<auto(bg::TS<float>, int) -> bg::TS<float>>{"mode", {"value", "mode"}};
 
     operation.overload(bg::node(
         bg::eval = [](bg::In<bg::TS<float>> input, int, bg::Out<bg::TS<float>> output) { output.set(*input); },
@@ -140,7 +140,7 @@ TEST_CASE("callable requirements control overload applicability",
 
     const auto run = [&](int mode) {
         const auto graph = [&](bg::wp<bg::TS<float>> input) -> bg::wp<bg::TS<float>> {
-            return bg::wp<bg::TS<float>>{*operation(input, mode)};
+            return operation(input, mode).as<bg::TS<float>>();
         };
 
         return bg::testing::test_graph(graph, {2.0F});
@@ -161,7 +161,7 @@ TEST_CASE("an unhashable scalar read disables operator caching",
     using Argument = bg::Opaque<unhashable_wiring_value>;
 
     auto requirement_calls = 0;
-    auto operation = bg::operator_("consume", [](bg::Scalar<Argument>) {});
+    auto operation = bg::operator_<void(Argument)>{"consume", {"value"}};
     operation.overload(bg::node(
         bg::eval = [](bg::Scalar<Argument>) {}, bg::require =
                                                     [&](const bg::WiringArguments &arguments) {
@@ -181,7 +181,8 @@ TEST_CASE("an unhashable scalar read disables operator caching",
 TEST_CASE("an unread scalar does not participate in the operator cache key",
           "[feature:operator][feature:wiring][definition:function]") {
     auto requirement_calls = 0;
-    auto operation = bg::operator_("mode", [](bg::In<bg::TS<float>, "value"_n>, int, int, bg::Out<bg::TS<float>>) {});
+    auto operation = bg::operator_<auto(bg::TS<float>, int, int) -> bg::TS<float>>{
+        "mode", {"value", "ignored", "mode"}};
     operation.overload(bg::node(
         bg::eval = [](bg::In<bg::TS<float>>, int, int, bg::Out<bg::TS<float>>) {},
         bg::require =
@@ -201,7 +202,7 @@ TEST_CASE("an unread scalar does not participate in the operator cache key",
 
 TEST_CASE("a requirement exception reports its callback failure",
           "[feature:operator][feature:wiring][definition:function]") {
-    auto operation = bg::operator_("identity", [](bg::In<bg::TS<float>>, bg::Out<bg::TS<float>>) {});
+    auto operation = bg::operator_<auto(bg::TS<float>) -> bg::TS<float>>{"identity", {"value"}};
     operation.overload(bg::node(
         bg::eval = [](bg::In<bg::TS<float>>, bg::Out<bg::TS<float>>) {},
         bg::require = [](const bg::WiringArguments &) -> bool { throw std::runtime_error{"requirement failed"}; }));

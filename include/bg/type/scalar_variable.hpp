@@ -12,10 +12,10 @@ template <typename Declaration> struct ScalarVariableInstance;
 
 template <util::compile_time_string Name, typename... Constraints>
 struct ScalarVariableInstance<ScalarVariable<Name, Constraints...>> {
-    static const TypeVariable<ScalarType> &get() {
+    static const TypeVariableType<ScalarType> &get() {
         static const auto variable = [] {
             auto alternatives = std::vector<const ScalarType *>{};
-            auto property_constraints = std::vector<TypeVariable<ScalarType>::Constraint>{};
+            auto property_constraints = std::vector<TypeVariableType<ScalarType>::Constraint>{};
 
             (
                 [&] {
@@ -29,15 +29,15 @@ struct ScalarVariableInstance<ScalarVariable<Name, Constraints...>> {
                 }(),
                 ...);
 
-            return TypeVariable<ScalarType>{util::symbol{Name.view()}, std::move(alternatives),
-                                            std::move(property_constraints)};
+            return TypeVariableType<ScalarType>{util::symbol{Name.view()}, std::move(alternatives),
+                                                std::move(property_constraints)};
         }();
 
         return variable;
     }
 };
 
-template <scalar_variable Declaration> const TypeVariable<ScalarType> &scalar_variable_instance() {
+template <scalar_variable Declaration> const TypeVariableType<ScalarType> &scalar_variable_instance() {
     return ScalarVariableInstance<Declaration>::get();
 }
 

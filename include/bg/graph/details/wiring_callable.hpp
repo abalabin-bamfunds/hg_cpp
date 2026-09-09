@@ -102,8 +102,7 @@ bool wiring_parameter_matches(const ResolvedParameter &parameter) {
                     return time_series_type_for<Function, Index, true, TimeSeries>(guarantee);
                 }
             }();
-            auto type_map = TypeMap{};
-            return declared.match(*parameter.type, type_map);
+            return declared.accepts(*parameter.type);
         }
     } else if constexpr (std::same_as<Value, WiringPoint>) {
         return parameter.type->is_time_series();

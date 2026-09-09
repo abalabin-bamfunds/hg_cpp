@@ -10,18 +10,18 @@ namespace bg {
 
 class GenericTimeSeriesVariableType final : public TimeSeriesType {
   public:
-    GenericTimeSeriesVariableType(const TypeVariable<TimeSeriesType> &variable, GuaranteeParameter guarantee)
+    GenericTimeSeriesVariableType(const TypeVariableType<TimeSeriesType> &variable, GuaranteeParameter guarantee)
         : TimeSeriesType(guarantee), variable_(&variable) {}
 
     bool is_resolved() const noexcept override { return false; }
     [[nodiscard]] const Type &resolve(const TypeMap &type_map) const override;
-    const TypeVariable<TimeSeriesType> &variable() const noexcept { return *variable_; }
+    const TypeVariableType<TimeSeriesType> &variable() const noexcept { return *variable_; }
 
   protected:
     [[nodiscard]] bool do_match(const Type &supplied, TypeMap &type_map) const override;
 
   private:
-    const TypeVariable<TimeSeriesType> *variable_;
+    const TypeVariableType<TimeSeriesType> *variable_;
 };
 
 namespace details {
@@ -29,8 +29,8 @@ namespace details {
 template <typename Declaration> struct TimeSeriesVariableInstance;
 
 template <util::compile_time_string Name> struct TimeSeriesVariableInstance<TimeSeriesVariable<Name>> {
-    static const TypeVariable<TimeSeriesType> &get() {
-        static const auto variable = TypeVariable<TimeSeriesType>{util::symbol{Name.view()}};
+    static const TypeVariableType<TimeSeriesType> &get() {
+        static const auto variable = TypeVariableType<TimeSeriesType>{util::symbol{Name.view()}};
 
         return variable;
     }

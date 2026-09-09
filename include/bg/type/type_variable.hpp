@@ -1,8 +1,10 @@
 #pragma once
 
+#include <bg/type/details/declaration_variables.hpp>
 #include <bg/type/scalar_type.hpp>
 #include <bg/type/type_map.hpp>
 #include <bg/type/type_resolution_error.hpp>
+#include <bg/util/compile_time_string.hpp>
 
 #include <algorithm>
 #include <concepts>
@@ -13,14 +15,14 @@
 
 namespace bg {
 
-template <typename Category>
-    requires std::derived_from<Category, Type>
-class TypeVariable final : public Category, public Variable {
+template <typename Category> class TypeVariableType final : public Category, public Variable {
+    static_assert(std::derived_from<Category, Type>);
+
   public:
     using Constraint = bool (*)(const Category &) noexcept;
 
-    explicit TypeVariable(util::symbol name, std::vector<const Category *> alternatives = {},
-                          std::vector<Constraint> constraints = {})
+    explicit TypeVariableType(util::symbol name, std::vector<const Category *> alternatives = {},
+                              std::vector<Constraint> constraints = {})
         : Variable(name), alternatives_(std::move(alternatives)), constraints_(std::move(constraints)) {}
 
     bool is_resolved() const noexcept override { return false; }
@@ -41,22 +43,27 @@ class TypeVariable final : public Category, public Variable {
             return false;
         }
 
-        if (const auto *mapping = type_map.find(*this)) {
+        const auto *mapping = type_map.find(*this);
+        if (mapping != nullptr) {
             const auto *type = std::get_if<const Type *>(mapping);
             if (type == nullptr) {
                 throw TypeResolutionError{TypeResolutionErrorCode::invalid_type_map, name(),
                                           "type variable has a non-type mapping"};
             }
 
-            return *type == &supplied;
+            if (*type != &supplied) {
+                return false;
+            }
         }
 
         if (alternatives_.empty()) {
-            type_map.set(*this, &supplied);
+            if (mapping == nullptr) {
+                type_map.set(*this, &supplied);
+            }
             return true;
         }
 
-        auto constraint_selected = false;
+        auto alternative_matched = false;
         auto selected_type_map = TypeMap{};
 
         for (const auto *alternative : alternatives_) {
@@ -66,22 +73,21 @@ class TypeVariable final : public Category, public Variable {
                 continue;
             }
 
-            if (constraint_selected) {
+            alternative_matched = true;
+            if (!selected_type_map.apply_compatible(std::move(trial_type_map))) {
                 throw TypeResolutionError{TypeResolutionErrorCode::ambiguous_constraint, name(),
-                                          "more than one type constraint accepts the supplied "
-                                          "type"};
+                                          "matching alternatives produce conflicting type mappings"};
             }
-
-            constraint_selected = true;
-            selected_type_map = std::move(trial_type_map);
         }
 
-        if (!constraint_selected) {
+        if (!alternative_matched) {
             return false;
         }
 
         type_map.apply(std::move(selected_type_map));
-        type_map.set(*this, &supplied);
+        if (mapping == nullptr) {
+            type_map.set(*this, &supplied);
+        }
 
         return true;
     }
@@ -130,5 +136,51 @@ class TypeVariable final : public Category, public Variable {
     std::vector<const Category *> alternatives_;
     std::vector<Constraint> constraints_;
 };
+
+template <util::compile_time_string Name, typename... Alternatives> struct TypeVariable {
+    static_assert(sizeof...(Alternatives) > 0, "a type variable requires at least one alternative");
+
+    static const TypeVariableType<Type> &type() {
+        static const auto variable = TypeVariableType<Type>{
+            util::symbol{Name.view()}, std::vector<const Type *>{&alternative_type<Alternatives>()...}};
+
+        return variable;
+    }
+
+    static constexpr auto name = Name;
+
+  private:
+    template <typename Alternative> static const Type &alternative_type() {
+        if constexpr (requires { Alternative::type(); }) {
+            return Alternative::type();
+        } else {
+            return cpp_scalar_type<Alternative>();
+        }
+    }
+};
+
+template <typename... Alternatives> using Union = TypeVariable<"Union", Alternatives...>;
+
+namespace details {
+
+template <typename T> struct is_type_variable_declaration : std::false_type {};
+
+template <util::compile_time_string Name, typename... Alternatives>
+struct is_type_variable_declaration<TypeVariable<Name, Alternatives...>> : std::true_type {};
+
+template <typename T>
+concept type_variable_declaration = is_type_variable_declaration<std::remove_cv_t<T>>::value;
+
+template <util::compile_time_string Name, typename... Alternatives>
+struct declaration_variable_traits<TypeVariable<Name, Alternatives...>> {
+    using Declaration = TypeVariable<Name, Alternatives...>;
+
+    template <typename Visitor> static void for_each(Visitor &&visitor) {
+        visitor.template operator()<Declaration>(static_cast<const Variable &>(Declaration::type()));
+        (for_each_declaration_variable<Alternatives>(visitor), ...);
+    }
+};
+
+} // namespace details
 
 } // namespace bg

@@ -54,8 +54,8 @@ TEST_CASE("generic time series dictionary types resolve their components",
           "[type_system][tsd][series:tsd][feature:type-system][declaration:generic][guarantee:final]") {
     const auto &resolved =
         bg::TSD<int, bg::TS<float, bg::TimeSeriesGuarantee::final>, bg::TimeSeriesGuarantee::final>::type();
-    bg::TypeVariable<bg::ScalarType> key{bg::util::symbol{"K"}, {}, {&bg::supports_scalar_hash}};
-    bg::TypeVariable<bg::TimeSeriesType> value{bg::util::symbol{"V"}};
+    bg::TypeVariableType<bg::ScalarType> key{bg::util::symbol{"K"}, {}, {&bg::supports_scalar_hash}};
+    bg::TypeVariableType<bg::TimeSeriesType> value{bg::util::symbol{"V"}};
     const bg::GenericTimeSeriesSetType key_set{key, bg::TimeSeriesGuarantee::final};
     const bg::GenericTimeSeriesDictionaryType generic{key, value, key_set, bg::TimeSeriesGuarantee::final};
     auto type_map = bg::TypeMap{};

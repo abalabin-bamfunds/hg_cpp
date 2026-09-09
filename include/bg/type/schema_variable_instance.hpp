@@ -9,16 +9,16 @@ namespace bg::details {
 
 template <typename Declaration>
     requires bundle_schema_variable_declaration<Declaration>
-const TypeVariable<BundleSchemaType> &schema_variable_instance() {
+const TypeVariableType<BundleSchemaType> &schema_variable_instance() {
     using Variable = std::remove_cv_t<Declaration>;
-    static const auto variable = TypeVariable<BundleSchemaType>{util::symbol{Variable::name.view()}};
+    static const auto variable = TypeVariableType<BundleSchemaType>{util::symbol{Variable::name.view()}};
 
     return variable;
 }
 
 template <template <template <typename> typename> typename Declaration>
     requires bundle_schema_variable_declaration<Declaration<bundle_schema_field>>
-const TypeVariable<BundleSchemaType> &schema_variable_instance() {
+const TypeVariableType<BundleSchemaType> &schema_variable_instance() {
     return schema_variable_instance<Declaration<bundle_schema_field>>();
 }
 

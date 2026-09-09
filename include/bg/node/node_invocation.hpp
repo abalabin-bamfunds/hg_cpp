@@ -45,9 +45,7 @@ class NodeInvocationInput final : public NodeInvocationParameter {
                         std::size_t view_index) noexcept
         : NodeInvocationParameter{node, runtime_storage, parameter_index, view_index} {}
 
-    In<TS_T> value() const {
-        return Node{*node_, runtime_storage_}.time_series_input(parameter_index_, view_index_);
-    }
+    In<TS_T> value() const { return Node{*node_, runtime_storage_}.time_series_input(parameter_index_, view_index_); }
 };
 
 class NodeInvocationScalar final : public NodeInvocationParameter {
@@ -119,9 +117,7 @@ template <bool TimeSeries> class NodeInvocationParameterRange {
         std::size_t view_index_;
     };
 
-    Iterator begin() const noexcept {
-        return Iterator{*node_, runtime_storage_, time_series_input_count_, 0, 0};
-    }
+    Iterator begin() const noexcept { return Iterator{*node_, runtime_storage_, time_series_input_count_, 0, 0}; }
     std::default_sentinel_t end() const noexcept { return {}; }
 
   private:
@@ -143,9 +139,7 @@ template <typename CompiledData = void, typename State = void> class NodeInvocat
 
     EvaluationContext &context() const noexcept { return *context_; }
 
-    auto inputs() const noexcept -> NodeInvocationParameterRange<true> {
-        return {*node_, runtime_storage_, 0};
-    }
+    auto inputs() const noexcept -> NodeInvocationParameterRange<true> { return {*node_, runtime_storage_, 0}; }
 
     auto scalars() const noexcept -> NodeInvocationParameterRange<false> {
         return {*node_, runtime_storage_, node_->node_invocation_time_series_input_count()};
@@ -172,8 +166,10 @@ template <typename CompiledData = void, typename State = void> class NodeInvocat
   private:
     friend details::node_invocation_access;
 
-    NodeInvocationInput input_at(std::size_t parameter_index, std::size_t view_index) const noexcept {
-        return {*node_, runtime_storage_, parameter_index, view_index};
+    template <typename Input> Input input_as(std::size_t parameter_index, std::size_t view_index) const {
+        const auto runtime_node = Node{*node_, runtime_storage_};
+        return Input{runtime_node.input_last_updated(parameter_index), runtime_node.input_value(parameter_index),
+                     runtime_node.time_series_input_runtime_type(parameter_index, view_index)};
     }
 
     NodeInvocationScalar scalar_at(std::size_t parameter_index, std::size_t view_index) const noexcept {
@@ -187,9 +183,9 @@ template <typename CompiledData = void, typename State = void> class NodeInvocat
             auto &value = *static_cast<typename Out<TimeSeries>::storage_type *>(runtime_node.output_value());
             return details::output_factory::make<TimeSeries>(runtime_node.output_last_updated(), value, *context_);
         } else {
-            return details::output_factory::make<TimeSeries>(
-                runtime_node.output_last_updated(), runtime_node.output_value(),
-                node_->node_invocation_output_runtime_type(), *context_);
+            return details::output_factory::make<TimeSeries>(runtime_node.output_last_updated(),
+                                                             runtime_node.output_value(),
+                                                             node_->node_invocation_output_runtime_type(), *context_);
         }
     }
 
@@ -201,10 +197,9 @@ template <typename CompiledData = void, typename State = void> class NodeInvocat
 namespace details {
 
 struct node_invocation_access {
-    template <typename Invocation>
-    static NodeInvocationInput input(Invocation invocation, std::size_t parameter_index,
-                                     std::size_t view_index) noexcept {
-        return invocation.input_at(parameter_index, view_index);
+    template <typename Input, typename Invocation>
+    static Input input(Invocation invocation, std::size_t parameter_index, std::size_t view_index) {
+        return invocation.template input_as<Input>(parameter_index, view_index);
     }
 
     template <typename Invocation>
@@ -213,8 +208,7 @@ struct node_invocation_access {
         return invocation.scalar_at(parameter_index, view_index);
     }
 
-    template <typename TimeSeries, typename Invocation>
-    static Out<TimeSeries> output(Invocation invocation) {
+    template <typename TimeSeries, typename Invocation> static Out<TimeSeries> output(Invocation invocation) {
         return invocation.template output_as<TimeSeries>();
     }
 };

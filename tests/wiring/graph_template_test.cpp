@@ -38,8 +38,8 @@ const auto scale = bg::node<scale_definition>(
     [](bg::WiringPoint, float factor) { return std::string{"node-factor="} + std::to_string(factor); });
 
 const auto scale_graph = bg::graph(
-    "name"_m = "scale_graph",
-    "label"_m = [](bg::wp<bg::TS<float>>, float factor) { return std::string{"factor="} + std::to_string(factor); },
+    "name"_n = "scale_graph",
+    "label"_n = [](bg::wp<bg::TS<float>>, float factor) { return std::string{"factor="} + std::to_string(factor); },
     [](bg::wp<bg::TS<float>> input, float factor) -> bg::wp<bg::TS<float>> { return scale(input, factor); });
 
 static_assert(std::same_as<decltype(scale_graph(std::declval<bg::WiringPoint>(), 2.0F)), bg::wp<bg::TS<float>>>);
@@ -82,7 +82,7 @@ TEST_CASE("a graph template expands into the active graph", "[graph_template][fe
 
 TEST_CASE("a graph template can omit its output", "[graph_template][feature:wiring]") {
     const auto scale_sink_graph = bg::graph(
-        "name"_m = "scale_sink_graph", [](bg::wp<bg::TS<float>> input, float factor) { (void)scale(input, factor); });
+        "name"_n = "scale_sink_graph", [](bg::wp<bg::TS<float>> input, float factor) { (void)scale(input, factor); });
     bg::GraphWiring wiring;
 
     {
@@ -99,16 +99,16 @@ TEST_CASE("a graph template can omit its output", "[graph_template][feature:wiri
 TEST_CASE("a graph reference output defaults to deduplicated",
           "[graph_template][reference][feature:wiring][definition:function][guarantee:deduplicated]") {
     const auto pass =
-        bg::graph("name"_m = "reference_pass",
+        bg::graph("name"_n = "reference_pass",
                   [](bg::wp<bg::REF<bg::TS<int>>> input) -> bg::wp<bg::REF<bg::TS<int>>> { return input; });
 
     CHECK(pass.signature().output()->guarantee().value() == bg::TimeSeriesGuarantee::deduplicated);
     CHECK_FALSE(static_cast<const bg::TimeSeriesType &>(*pass.signature().parameter(0).type).guarantee().is_resolved());
 }
 
-TEST_CASE("graph output re-annotation is checked by wiring", "[graph_template][feature:wiring]") {
+TEST_CASE("graph output re-annotation is checked at the cast", "[graph_template][feature:wiring]") {
     const auto invalid =
-        bg::graph("name"_m = "invalid_output",
+        bg::graph("name"_n = "invalid_output",
                   [](bg::wp<bg::TS<float>> input) -> bg::wp<bg::TS<double>> { return bg::wp<bg::TS<double>>{input}; });
     auto wiring = bg::GraphWiring{};
     const auto context = bg::WiringContext{wiring};
@@ -120,7 +120,7 @@ TEST_CASE("a graph signature resolves a scalar variable declaration", "[graph_te
     using GraphScalar = bg::ScalarVariable<"GraphScalar">;
 
     const auto generic_identity_graph =
-        bg::graph("name"_m = "generic_identity_graph",
+        bg::graph("name"_n = "generic_identity_graph",
                   [](bg::wp<bg::TS<GraphScalar>> input) -> bg::wp<bg::TS<GraphScalar>> { return input; });
     const auto &time_series = bg::TS<double>::type();
     const std::array<const bg::Type *, 1> arguments{&time_series};
@@ -135,7 +135,7 @@ TEST_CASE("a graph signature resolves a time series variable declaration",
           "[graph_template][type_system][feature:wiring]") {
     using T = bg::TimeSeriesVariable<"T">;
     constexpr auto G = bg::guarantee_variable<"G">;
-    const auto identity = bg::graph("name"_m = "generic_time_series_identity",
+    const auto identity = bg::graph("name"_n = "generic_time_series_identity",
                                     [](bg::wp<T::with<G>> input) -> bg::wp<T::with<G>> { return input; });
     const auto &list =
         bg::TSL<bg::TS<double, bg::TimeSeriesGuarantee::ordinary>, 2, bg::TimeSeriesGuarantee::final>::type();
@@ -197,7 +197,7 @@ TEST_CASE("node and graph templates share the wiring interface", "[graph_templat
     CHECK(wiring.nodes().size() == 3);
 }
 
-TEST_CASE("custom wiring labels can repeat", "[graph_template][feature:wiring]") {
+TEST_CASE("deduplicated graph calls retain their first wiring path", "[graph_template][feature:wiring]") {
     bg::GraphWiring wiring;
 
     {
@@ -208,10 +208,9 @@ TEST_CASE("custom wiring labels can repeat", "[graph_template][feature:wiring]")
     }
 
     const auto nodes = wiring.nodes();
-    REQUIRE(nodes.size() == 3);
+    REQUIRE(nodes.size() == 2);
     REQUIRE(nodes[1].path().parent != nullptr);
-    REQUIRE(nodes[2].path().parent != nullptr);
-    CHECK(nodes[1].path().parent->label == nodes[2].path().parent->label);
+    CHECK(nodes[1].path().parent->label.text() == "factor=2.000000");
 }
 
 TEST_CASE("a compiled graph owns its wiring paths", "[graph_template][feature:wiring]") {

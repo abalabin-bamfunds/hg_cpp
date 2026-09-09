@@ -15,11 +15,12 @@ struct WiringPath;
 
 class WiredNode {
   public:
-    WiredNode(const NodeTemplate &node_template, ResolvedSignature signature, std::vector<std::size_t> input_sources,
-              std::vector<WiredScalar> scalar_values, std::vector<const ScalarType *> state_types,
-              const WiringPath &path)
-        : node_template_(&node_template), signature_(std::move(signature)), input_sources_(std::move(input_sources)),
-          scalar_values_(std::move(scalar_values)), state_types_(std::move(state_types)), path_(&path) {}
+    WiredNode(const NodeTemplate &node_template, ResolvedSignature signature,
+              std::vector<std::size_t> input_output_indices, std::vector<WiredScalar> scalar_values,
+              std::vector<const ScalarType *> state_types, const WiringPath &path)
+        : node_template_(&node_template), signature_(std::move(signature)),
+          input_output_indices_(std::move(input_output_indices)), scalar_values_(std::move(scalar_values)),
+          state_types_(std::move(state_types)), path_(&path) {}
 
     WiredNode(const WiredNode &) = delete;
     WiredNode &operator=(const WiredNode &) = delete;
@@ -30,7 +31,7 @@ class WiredNode {
 
     const ResolvedSignature &signature() const noexcept { return signature_; }
 
-    std::span<const std::size_t> input_sources() const noexcept { return input_sources_; }
+    std::span<const std::size_t> input_output_indices() const noexcept { return input_output_indices_; }
 
     std::span<const WiredScalar> scalar_values() const noexcept { return scalar_values_; }
 
@@ -41,7 +42,7 @@ class WiredNode {
   private:
     const NodeTemplate *node_template_;
     ResolvedSignature signature_;
-    std::vector<std::size_t> input_sources_;
+    std::vector<std::size_t> input_output_indices_;
     std::vector<WiredScalar> scalar_values_;
     std::vector<const ScalarType *> state_types_;
     const WiringPath *path_;

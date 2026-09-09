@@ -1,178 +1,124 @@
 #include <bg/graph/graph_wiring.hpp>
 #include <bg/graph/wiring_context.hpp>
-#include <bg/node/node_template.hpp>
-#include <bg/time_series/time_series_type.hpp>
+#include <bg/node.hpp>
+#include <bg/operators.hpp>
 #include <bg/time_series/tsl/tsl.hpp>
-#include <bg/time_series/tsl/tsl_type.hpp>
-#include <bg/type/time_series_list_type.hpp>
-#include <bg/type/time_series_value_type.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
-namespace {
-
-class list_source_template final : public bg::NodeTemplate {
-  public:
-    [[nodiscard]] const bg::Signature &signature() const override {
-        static const auto &list = bg::TSL<bg::TS<float>, 3>::type();
-        static const auto value = bg::Signature{bg::util::symbol{"list_source"}, {}, list};
-
-        return value;
-    }
-
-    [[nodiscard]] bg::EvaluationFunction evaluation_function(const bg::ResolvedSignature &) const noexcept override {
-        return &evaluate;
-    }
-
-    [[nodiscard]] const bg::TimeSeriesRuntimeType *
-    output_runtime_type(const bg::ResolvedSignature &, std::span<const bg::ScalarRuntimeType *const>,
-                        std::span<const bg::TimeSeriesRuntimeType *const>) const noexcept override {
-        return nullptr;
-    }
-
-  private:
-    static void evaluate(const bg::CompiledNode &, void *, bg::EvaluationContext *) {}
-};
-
-class float_sink_template final : public bg::NodeTemplate {
-  public:
-    [[nodiscard]] const bg::Signature &signature() const override {
-        static const auto &input = bg::TS<float>::type();
-        static const auto value = bg::Signature{bg::util::symbol{"float_sink"}, {{bg::util::symbol{"input"}, &input}}};
-
-        return value;
-    }
-
-    [[nodiscard]] bg::EvaluationFunction evaluation_function(const bg::ResolvedSignature &) const noexcept override {
-        return &evaluate;
-    }
-
-    [[nodiscard]] const bg::TimeSeriesRuntimeType *
-    output_runtime_type(const bg::ResolvedSignature &, std::span<const bg::ScalarRuntimeType *const>,
-                        std::span<const bg::TimeSeriesRuntimeType *const>) const noexcept override {
-        return nullptr;
-    }
-
-  private:
-    static void evaluate(const bg::CompiledNode &, void *, bg::EvaluationContext *) {}
-};
-
-class list_sink_template final : public bg::NodeTemplate {
-  public:
-    [[nodiscard]] const bg::Signature &signature() const override {
-        static const auto &list = bg::TSL<bg::TS<float>, 2>::type();
-        static const auto value = bg::Signature{bg::util::symbol{"list_sink"}, {{bg::util::symbol{"input"}, &list}}};
-        return value;
-    }
-
-    [[nodiscard]] bg::EvaluationFunction evaluation_function(const bg::ResolvedSignature &) const noexcept override {
-        return &evaluate;
-    }
-
-    [[nodiscard]] const bg::TimeSeriesRuntimeType *
-    output_runtime_type(const bg::ResolvedSignature &, std::span<const bg::ScalarRuntimeType *const>,
-                        std::span<const bg::TimeSeriesRuntimeType *const>) const noexcept override {
-        return nullptr;
-    }
-
-  private:
-    static void evaluate(const bg::CompiledNode &, void *, bg::EvaluationContext *) {}
-};
-
-} // namespace
-
-TEST_CASE("graph wiring records fixed time series list item selection",
-          "[wiring][tsl][series:fixed-tsl][feature:wiring]") {
-    const auto source = list_source_template{};
-    const auto consume = float_sink_template{};
-    auto wiring = bg::GraphWiring{};
-
-    {
-        const auto context = bg::WiringContext{wiring};
-        const auto list = bg::wp<bg::TSL<bg::TS<float>, 3>>{*source()};
-        (void)consume(list[1]);
-        (void)consume(list[1]);
-    }
-
-    const auto points = wiring.wiring_points();
-    REQUIRE(points.size() == 2);
-
-    const auto &list = points[0];
-    const auto &item = points[1];
-    CHECK(list.parent == bg::WiringPointRecord::npos);
-    CHECK(item.parent == 0);
-    CHECK(item.item == 1);
-    CHECK(item.node_index == list.node_index);
-
-    const auto *list_type = dynamic_cast<const bg::TimeSeriesListType *>(list.type);
-    REQUIRE(list_type != nullptr);
-    CHECK(item.type == &list_type->item_type());
-
-    REQUIRE(wiring.nodes().size() == 3);
-    CHECK(wiring.nodes()[1].input_sources()[0] == 1);
-    CHECK(wiring.nodes()[2].input_sources()[0] == 1);
-}
-
-TEST_CASE("fixed time series list selection checks its index", "[wiring][tsl][series:fixed-tsl][feature:wiring]") {
-    const auto source = list_source_template{};
-    auto wiring = bg::GraphWiring{};
-    const auto context = bg::WiringContext{wiring};
-    const auto list = bg::wp<bg::TSL<bg::TS<float>, 3>>{*source()};
-
-    CHECK_THROWS_AS(list[3], std::out_of_range);
-}
+#include <cstdint>
 
 TEST_CASE("a free fixed time series list is materialized when consumed",
           "[wiring][tsl][series:fixed-tsl][free][representation:free][feature:wiring]"
           "[binding:representation]") {
-    const auto first_source = list_source_template{};
-    const auto second_source = list_source_template{};
-    const auto sink = list_sink_template{};
+    const auto first_source = bg::node([](bg::Out<bg::TS<float>>) {});
+    const auto second_source = bg::node([](bg::Out<bg::TS<float>>) {});
+    const auto sink = bg::node([](bg::In<bg::TSL<bg::TS<float>, 2>>) {});
     auto wiring = bg::GraphWiring{};
 
     const auto context = bg::WiringContext{wiring};
-    const auto first = bg::wp<bg::TSL<bg::TS<float>, 3>>{*first_source()}[0];
-    const auto second = bg::wp<bg::TSL<bg::TS<float>, 3>>{*second_source()}[1];
+    const auto first = first_source();
+    const auto second = second_source();
     const auto list = bg::tsl(first, second);
     REQUIRE(wiring.nodes().size() == 2);
     (void)sink(list);
 
     REQUIRE(wiring.nodes().size() == 4);
-    CHECK(wiring.nodes()[2].input_sources().size() == 2);
+    CHECK(wiring.nodes()[2].input_output_indices().size() == 2);
 }
 
 TEST_CASE("a free fixed time series list reuses materialization for the same input type",
           "[wiring][tsl][series:fixed-tsl][representation:free][feature:wiring]"
           "[binding:representation][shape:fan-out]") {
-    const auto first_source = list_source_template{};
-    const auto second_source = list_source_template{};
-    const auto sink = list_sink_template{};
+    const auto first_source = bg::node([](bg::Out<bg::TS<float>>) {});
+    const auto second_source = bg::node([](bg::Out<bg::TS<float>>) {});
+    const auto sink = bg::node([](bg::In<bg::TSL<bg::TS<float>, 2>>) {});
     auto wiring = bg::GraphWiring{};
 
     const auto context = bg::WiringContext{wiring};
-    const auto first = bg::wp<bg::TSL<bg::TS<float>, 3>>{*first_source()}[0];
-    const auto second = bg::wp<bg::TSL<bg::TS<float>, 3>>{*second_source()}[1];
+    const auto first = first_source();
+    const auto second = second_source();
     const auto list = bg::tsl(first, second);
     (void)sink(list);
     (void)sink(list);
 
     REQUIRE(wiring.nodes().size() == 5);
-    CHECK(wiring.nodes()[3].input_sources()[0] == wiring.nodes()[4].input_sources()[0]);
+    CHECK(wiring.nodes()[3].input_output_indices()[0] == wiring.nodes()[4].input_output_indices()[0]);
 }
 
-TEST_CASE("selecting a free fixed time series list item returns its source without materialization",
-          "[wiring][tsl][series:fixed-tsl][representation:free][feature:wiring]") {
-    const auto source = list_source_template{};
-    const auto sink = float_sink_template{};
+TEST_CASE("a free fixed time series list can satisfy a reference input",
+          "[wiring][tsl][reference][series:fixed-tsl][representation:free][feature:wiring]"
+          "[binding:value-to-reference]") {
+    const auto first_source = bg::node([](bg::Out<bg::TS<float>>) {});
+    const auto second_source = bg::node([](bg::Out<bg::TS<float>>) {});
+    const auto sink = bg::node([](bg::In<bg::REF<bg::TSL<bg::TS<float>, 2>>>) {});
     auto wiring = bg::GraphWiring{};
 
     const auto context = bg::WiringContext{wiring};
-    const auto source_list = bg::wp<bg::TSL<bg::TS<float>, 3>>{*source()};
-    const auto first = source_list[0];
-    const auto list = bg::tsl(first, source_list[1]);
-    (void)sink(first);
-    (void)sink(list[0]);
+    const auto list = bg::tsl(first_source(), second_source());
+    sink(list);
 
-    REQUIRE(wiring.nodes().size() == 3);
-    CHECK(wiring.nodes()[1].input_sources()[0] == wiring.nodes()[2].input_sources()[0]);
+    REQUIRE(wiring.nodes().size() == 5);
+    CHECK(wiring.nodes()[2].signature().name == bg::util::symbol{"tsl"});
+    CHECK(wiring.nodes()[3].signature().name == bg::util::symbol{"reference"});
+}
+
+TEST_CASE("getitem selects an item from a free fixed time series list without materializing it",
+          "[wiring][series:fixed-tsl][representation:free][feature:getitem][feature:operator]") {
+    const auto source = bg::node([](bg::Out<bg::TS<float>>) {});
+    auto wiring = bg::GraphWiring{};
+
+    const auto context = bg::WiringContext{wiring};
+    const auto first = source();
+    const auto second = source();
+    const auto list = bg::tsl(first, second);
+    const auto selected = list[std::int64_t{1}];
+
+    STATIC_CHECK(std::same_as<decltype(selected), const bg::wp<>>);
+    CHECK(&selected.type() == &bg::TS<float>::type());
+    CHECK(wiring.nodes().size() == 1);
+    CHECK(wiring.outputs().size() == 1);
+}
+
+TEST_CASE("getitem creates a contained wired output for a stored time series list",
+          "[wiring][series:fixed-tsl][representation:native][feature:getitem][feature:operator]") {
+    const auto source = bg::node([](bg::Out<bg::TSL<bg::TS<float>, 3>>) {});
+    auto wiring = bg::GraphWiring{};
+
+    const auto context = bg::WiringContext{wiring};
+    const auto selected = source()[std::int64_t{1}];
+
+    CHECK(&selected.type() == &bg::TS<float>::type());
+    REQUIRE(wiring.outputs().size() == 2);
+    CHECK(wiring.outputs()[1].parent == 0);
+    CHECK(wiring.outputs()[1].item == 1);
+}
+
+TEST_CASE("getitem reuses a contained wired output",
+          "[wiring][series:fixed-tsl][representation:native][feature:getitem][feature:operator]"
+          "[shape:fan-out]") {
+    const auto source = bg::node([](bg::Out<bg::TSL<bg::TS<float>, 3>>) {});
+    auto wiring = bg::GraphWiring{};
+
+    const auto context = bg::WiringContext{wiring};
+    const auto list = source();
+    (void)list[std::int64_t{1}];
+    (void)list[std::int64_t{1}];
+
+    CHECK(wiring.outputs().size() == 2);
+}
+
+TEST_CASE("getitem distinguishes items belonging to different wired outputs",
+          "[wiring][series:fixed-tsl][representation:native][feature:getitem][feature:operator]") {
+    const auto first_source = bg::node([](bg::Out<bg::TSL<bg::TS<float>, 3>>) {});
+    const auto second_source = bg::node([](bg::Out<bg::TSL<bg::TS<float>, 3>>) {});
+    auto wiring = bg::GraphWiring{};
+
+    const auto context = bg::WiringContext{wiring};
+    (void)first_source()[std::int64_t{1}];
+    (void)second_source()[std::int64_t{1}];
+
+    REQUIRE(wiring.outputs().size() == 4);
+    CHECK(wiring.outputs()[1].parent == 0);
+    CHECK(wiring.outputs()[3].parent == 2);
 }

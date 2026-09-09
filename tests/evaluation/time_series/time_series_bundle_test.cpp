@@ -60,36 +60,6 @@ struct bundle_sum_definition {
     void evaluate() const { output.set(static_cast<float>(*input->count) + *input->value); }
 };
 
-struct changing_bundle_source_definition {
-    static constexpr bool uses_future_scheduling = true;
-
-    bg::Out<bg::TSB<DerivedBundle>> output;
-
-    void start(bg::EvaluationContext *context) const {
-        output->count.set(2);
-        output->value.set(3.5F);
-        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
-    }
-
-    void evaluate() const { output->value.set(4.5F); }
-};
-
-struct changing_bundle_sink_definition {
-    bg::In<bg::TSB<DerivedBundle>> input;
-
-    void evaluate() const { updates.push_back({input.item_updated(0), input.item_updated(1)}); }
-
-    inline static std::vector<std::array<bool, 2>> updates;
-};
-
-struct count_updates_definition {
-    bg::In<bg::TS<int>> input;
-
-    void evaluate() const { ++count; }
-
-    inline static int count{};
-};
-
 using BundleList = bg::TSL<bg::TSB<DerivedBundle>, 2>;
 
 struct bundle_list_source_definition {
@@ -118,20 +88,22 @@ TEST_CASE("fixed time series lists can contain runtime-sized time series",
           "[scalar:integer][scalar:floating-point][representation:native][declaration:concrete]"
           "[binding:direct][schema:named]") {
     const auto source = bg::node<bundle_list_source_definition>();
-    using namespace bg::literals;
-    const auto graph = [&] { return source()[1]["value"_m]; };
+    const auto value =
+        bg::node([](bg::In<BundleList> input, bg::Out<bg::TS<float>> output) { output.set(*input[1]->value); });
+    const auto graph = [&] { return value(source()); };
 
     const auto actual = bg::testing::test_graph(graph);
 
     CHECK(actual.equals({4.5F}));
 }
 
-TEST_CASE("graph code selects a named bundle field",
-          "[evaluation][tsb][series:tsb][wiring][schema:named][scalar:integer][scalar:floating-point]"
-          "[representation:native][declaration:concrete][binding:direct][feature:wiring]") {
-    using namespace bg::literals;
+TEST_CASE("node code selects a named bundle field",
+          "[evaluation][tsb][feature:getitem][series:tsb][schema:named][scalar:integer][scalar:floating-point]"
+          "[representation:native][declaration:concrete][binding:direct]") {
     const auto source = bg::node<bundle_source_definition>();
-    const auto graph = [&] { return source()["count"_m]; };
+    const auto count =
+        bg::node([](bg::In<bg::TSB<DerivedBundle>> input, bg::Out<bg::TS<int>> output) { output.set(*input->count); });
+    const auto graph = [&] { return count(source()); };
 
     const auto actual = bg::testing::test_graph(graph);
 
@@ -151,25 +123,30 @@ TEST_CASE("a base bundle input accepts a derived bundle",
     CHECK(actual.equals({2}));
 }
 
-TEST_CASE("a bundle schedules only subscribers of changed fields",
-          "[evaluation][tsb][series:tsb][scheduling][feature:collection-change][transition:update]"
-          "[scalar:integer][scalar:floating-point][representation:native][declaration:concrete]"
-          "[binding:direct][schema:named]") {
+TEST_CASE("a typed TSB wiring point selects an inherited field",
+          "[evaluation][series:tsb][feature:getattr][schema:named][representation:native]"
+          "[transition:update]") {
+    const auto source = bg::node<bundle_source_definition>();
+    const auto graph = [&] { return source()->count; };
+
+    const auto actual = bg::testing::test_graph(graph);
+
+    CHECK(actual.equals({2}));
+}
+
+TEST_CASE("a typed free TSB wiring point selects its original source",
+          "[evaluation][series:tsb][feature:getattr][schema:named][representation:free]"
+          "[transition:update]") {
     using namespace bg::literals;
-    const auto source = bg::node<changing_bundle_source_definition>();
-    const auto bundle_sink = bg::node<changing_bundle_sink_definition>();
-    const auto count_sink = bg::node<count_updates_definition>();
-    changing_bundle_sink_definition::updates.clear();
-    count_updates_definition::count = 0;
 
-    bg::run_graph([&] {
-        const auto value = source();
-        bundle_sink(value);
-        count_sink(value["count"_m]);
-    });
+    const auto graph = [](bg::wp<bg::TS<int>> count, bg::wp<bg::TS<float>> value) {
+        return bg::bundle("value"_n = value, "count"_n = count).as<bg::TSB<DerivedBundle>>()->count;
+    };
 
-    CHECK(changing_bundle_sink_definition::updates == std::vector<std::array<bool, 2>>{{true, true}, {false, true}});
-    CHECK(count_updates_definition::count == 1);
+    const auto actual =
+        bg::testing::test_graph(graph, std::vector{1, 2, 3}, std::vector{0.5F, 1.5F, 2.5F});
+
+    CHECK(actual.equals({1, 2, 3}));
 }
 
 TEST_CASE("a free bundle follows the receiving named schema",
@@ -178,7 +155,7 @@ TEST_CASE("a free bundle follows the receiving named schema",
     using namespace bg::literals;
     const auto sum = bg::node<bundle_sum_definition>();
     const auto graph = [&](bg::wp<bg::TS<int>> count, bg::wp<bg::TS<float>> value) {
-        return sum(bg::bundle("value"_m = value, "count"_m = count));
+        return sum(bg::bundle("value"_n = value, "count"_n = count));
     };
 
     const auto result = bg::testing::test_graph(graph, std::vector{1, 2}, std::vector{0.5F, 1.5F});
@@ -190,87 +167,71 @@ TEST_CASE("a free bundle reuses materialization for the same input type",
           "[wiring][tsb][series:tsb][representation:free][feature:wiring][shape:fan-out]"
           "[schema:named][binding:representation]") {
     using namespace bg::literals;
-    const auto source = bg::node<bundle_source_definition>();
-    const auto sum = bg::node<bundle_sum_definition>();
+    const auto count = bg::node([](bg::Out<bg::TS<int>>) {});
+    const auto value = bg::node([](bg::Out<bg::TS<float>>) {});
+    const auto first_sum = bg::node<bundle_sum_definition>();
+    const auto second_sum = bg::node<bundle_sum_definition>();
     auto wiring = bg::GraphWiring{};
 
     const auto context = bg::WiringContext{wiring};
-    const auto value = source();
-    const auto bundle = bg::bundle("value"_m = value["value"_m], "count"_m = value["count"_m]);
-    (void)sum(bundle);
-    (void)sum(bundle);
+    const auto bundle = bg::bundle("value"_n = value(), "count"_n = count());
+    (void)first_sum(bundle);
+    (void)second_sum(bundle);
 
-    REQUIRE(wiring.nodes().size() == 4);
-    CHECK(wiring.nodes()[2].input_sources()[0] == wiring.nodes()[3].input_sources()[0]);
+    REQUIRE(wiring.nodes().size() == 5);
+    CHECK(wiring.nodes()[3].input_output_indices()[0] == wiring.nodes()[4].input_output_indices()[0]);
 }
 
 TEST_CASE("a free bundle materializes independently for different input schemas",
           "[wiring][tsb][series:tsb][representation:free][feature:wiring][schema:named]"
           "[binding:representation]") {
     using namespace bg::literals;
-    const auto source = bg::node<bundle_source_definition>();
+    const auto count_source = bg::node([](bg::Out<bg::TS<int>>) {});
+    const auto value_source = bg::node([](bg::Out<bg::TS<float>>) {});
     const auto sum = bg::node<bundle_sum_definition>();
     const auto count = bg::node<base_bundle_value_definition>();
     auto wiring = bg::GraphWiring{};
 
     const auto context = bg::WiringContext{wiring};
-    const auto value = source();
-    const auto bundle = bg::bundle("value"_m = value["value"_m], "count"_m = value["count"_m]);
+    const auto bundle = bg::bundle("value"_n = value_source(), "count"_n = count_source());
     (void)sum(bundle);
     (void)count(bundle);
 
-    REQUIRE(wiring.nodes().size() == 5);
-    CHECK(wiring.nodes()[2].input_sources()[0] != wiring.nodes()[4].input_sources()[0]);
-}
-
-TEST_CASE("graph code selects a field directly from a free bundle",
-          "[evaluation][tsb][series:tsb][wiring][scalar:integer][scalar:floating-point]"
-          "[representation:native][declaration:concrete][binding:direct][schema:named][feature:wiring]") {
-    using namespace bg::literals;
-    const auto graph = [](bg::wp<bg::TS<int>> count, bg::wp<bg::TS<float>> value) {
-        return bg::bundle("value"_m = value, "count"_m = count)["count"_m];
-    };
-
-    const auto result = bg::testing::test_graph(graph, std::vector{1, 2}, std::vector{0.5F, 1.5F});
-
-    CHECK(result.equals({1, 2}));
+    REQUIRE(wiring.nodes().size() == 6);
+    CHECK(wiring.nodes()[3].input_output_indices()[0] != wiring.nodes()[5].input_output_indices()[0]);
 }
 
 TEST_CASE("a free bundle requires every field of the receiving schema",
           "[evaluation][tsb][series:tsb][wiring][scalar:integer][scalar:floating-point]"
           "[representation:native][declaration:concrete][binding:direct][schema:named][feature:wiring]") {
     using namespace bg::literals;
-    const auto source = bg::node<bundle_source_definition>();
+    const auto count = bg::node([](bg::Out<bg::TS<int>>) {});
     const auto sum = bg::node<bundle_sum_definition>();
 
-    CHECK_THROWS(bg::run_graph([&] { return sum(bg::bundle("count"_m = source()["count"_m])); }));
+    CHECK_THROWS(bg::run_graph([&] { return sum(bg::bundle("count"_n = count())); }));
 }
 
 TEST_CASE("a free bundle requires compatible field types",
           "[evaluation][tsb][series:tsb][wiring][scalar:integer][scalar:floating-point]"
           "[representation:native][declaration:concrete][binding:direct][schema:named][feature:wiring]") {
     using namespace bg::literals;
-    const auto source = bg::node<bundle_source_definition>();
+    const auto count = bg::node([](bg::Out<bg::TS<int>>) {});
+    const auto value = bg::node([](bg::Out<bg::TS<float>>) {});
     const auto sum = bg::node<bundle_sum_definition>();
 
-    CHECK_THROWS(bg::run_graph([&] {
-        const auto value = source();
-        return sum(bg::bundle("count"_m = value["value"_m], "value"_m = value["count"_m]));
-    }));
+    CHECK_THROWS(bg::run_graph([&] { return sum(bg::bundle("count"_n = value(), "value"_n = count())); }));
 }
 
 TEST_CASE("a free bundle rejects duplicate field names",
           "[evaluation][tsb][series:tsb][wiring][scalar:integer][scalar:floating-point]"
           "[representation:native][declaration:concrete][binding:direct][schema:named][feature:wiring]") {
     using namespace bg::literals;
-    const auto source = bg::node<bundle_source_definition>();
+    const auto count = bg::node([](bg::Out<bg::TS<int>>) {});
+    const auto value = bg::node([](bg::Out<bg::TS<float>>) {});
     const auto sum = bg::node<bundle_sum_definition>();
 
-    CHECK_THROWS(bg::run_graph([&] {
-        const auto value = source();
-        return sum(
-            bg::bundle("count"_m = value["count"_m], "count"_m = value["count"_m], "value"_m = value["value"_m]));
-    }));
+    CHECK_THROWS(
+        bg::run_graph([&] { return sum(bg::bundle("count"_n = count(), "count"_n = count(), "value"_n = value())); }));
 }
 
 TEST_CASE("a named bundle input accepts extra free bundle fields",
@@ -279,7 +240,7 @@ TEST_CASE("a named bundle input accepts extra free bundle fields",
     using namespace bg::literals;
     const auto sum = bg::node<bundle_sum_definition>();
     const auto graph = [&](bg::wp<bg::TS<int>> count, bg::wp<bg::TS<float>> value) {
-        return sum(bg::bundle("extra"_m = count, "value"_m = value, "count"_m = count));
+        return sum(bg::bundle("extra"_n = count, "value"_n = value, "count"_n = count));
     };
 
     const auto result = bg::testing::test_graph(graph, std::vector{1, 2}, std::vector{0.5F, 1.5F});

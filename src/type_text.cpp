@@ -79,7 +79,7 @@ void append_type_text(std::string &result, const Type &type) {
         append_scalar(result, *scalar);
         return;
     }
-    if (const auto *variable = dynamic_cast<const TypeVariable<Type> *>(&type)) {
+    if (const auto *variable = dynamic_cast<const TypeVariableType<Type> *>(&type)) {
         result += variable->name().text();
         return;
     }

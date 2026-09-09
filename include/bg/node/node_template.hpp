@@ -33,6 +33,7 @@ struct DynamicSubscribersLayout {
 
 class NodeTemplate : public WiringTemplate {
   public:
+    virtual bool deduplicate_wiring() const noexcept { return true; }
     virtual EvaluationFunction evaluation_function(const ResolvedSignature &signature) const noexcept = 0;
     virtual EvaluationFunction start_function(const ResolvedSignature &) const noexcept { return nullptr; }
     virtual EvaluationFunction stop_function(const ResolvedSignature &) const noexcept { return nullptr; }
@@ -48,7 +49,6 @@ class NodeTemplate : public WiringTemplate {
     virtual bool uses_future_scheduling() const noexcept { return false; }
     virtual bool uses_cycle_callbacks() const noexcept { return false; }
     virtual InputChangeCallback input_change_callback(std::size_t) const noexcept { return {}; }
-    virtual std::optional<std::size_t> output_item_source(std::size_t) const noexcept { return std::nullopt; }
     virtual std::optional<DynamicSubscribersLayout>
     dynamic_subscribers_layout(const ResolvedSignature &) const noexcept {
         return std::nullopt;

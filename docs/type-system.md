@@ -206,20 +206,32 @@ using Key = ScalarVariable<"Key", EqualityComparable, Hashable>;
 C++ scalar types derive these properties from their value operations. A
 collection scalar has a property when its item type has that property.
 
-Each variable derives from `Variable`. `TypeVariable<Category>` also implements
-its type category, so `TypeVariable<ScalarType>` can be used wherever a scalar
-type is required. A schema variable is a `TypeVariable<BundleSchemaType>`.
+Each runtime variable derives from `Variable`. `TypeVariableType<Category>` also
+implements its type category, so `TypeVariableType<ScalarType>` can be used
+wherever a scalar type is required. A schema variable is a
+`TypeVariableType<BundleSchemaType>`.
 Size and guarantee variables derive only from `Variable`.
 
-A type variable can restrict its value to alternative generic types:
+A root-category variable can restrict its value to alternative declarations:
 
-```text
-Numbers = TypeVar<ScalarType, int, float>
-Value   = TypeVar<Type, float, TS<float, G>>
+```cpp
+using K = ScalarVariable<"K", Hashable>;
+using Key = TypeVariable<"Key", K, TS<K>>;
 ```
 
-Exactly one alternative must accept the supplied type. Matching uses normal
-compatibility. An unconstrained variable accepts any type in its category.
+`Union<K, TS<K>>` is the anonymous inline form. Repeated use of the same union
+declaration in one signature selects the same concrete type. Use named variables
+when equal alternatives must map independently or a resolver needs the outer
+mapping.
+
+Matching uses normal compatibility after reference transparency. The outer
+variable maps to the supplied concrete type. Variables in every matching
+alternative also map. Compatible overlapping alternatives combine their
+mappings; conflicting mappings reject the match as ambiguous.
+
+`Type::accepts()` checks directional compatibility without retaining variable
+mappings. `Type::match()` checks the same compatibility and extends a supplied
+`TypeMap` for resolution.
 
 `TypeMap` holds the mappings produced for one signature resolution. It is keyed
 by `const Variable*` and stores:

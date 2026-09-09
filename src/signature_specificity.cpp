@@ -11,7 +11,6 @@
 #include <bg/type/time_series_set_type.hpp>
 #include <bg/type/time_series_value_type.hpp>
 #include <bg/type/time_series_variable.hpp>
-#include <bg/type/type_map.hpp>
 #include <bg/type/type_of.hpp>
 #include <bg/type/type_variable.hpp>
 
@@ -77,19 +76,49 @@ template <typename T> Order compare_sets(std::span<const T> left, std::span<cons
 }
 
 template <typename Category>
-Order compare_variables(const TypeVariable<Category> &left, const TypeVariable<Category> &right,
+bool alternatives_subset(const TypeVariableType<Category> &left, const TypeVariableType<Category> &right,
+                         Comparison &comparison) {
+    if (right.alternatives().empty()) {
+        return true;
+    }
+    if (left.alternatives().empty()) {
+        return false;
+    }
+
+    auto complete = comparison;
+    const auto subset = std::ranges::all_of(left.alternatives(), [&](const auto *left_alternative) {
+        for (const auto *right_alternative : right.alternatives()) {
+            auto trial = complete;
+            const auto order = compare_types(*left_alternative, *right_alternative, trial);
+            if (order == Order::less || order == Order::equivalent) {
+                complete = std::move(trial);
+                return true;
+            }
+        }
+        return false;
+    });
+    if (subset) {
+        comparison = std::move(complete);
+    }
+    return subset;
+}
+
+template <typename Category>
+Order compare_variables(const TypeVariableType<Category> &left, const TypeVariableType<Category> &right,
                         Comparison &comparison) {
     comparison.variables.emplace_back(&left, &right);
 
-    const auto alternatives = compare_sets(left.alternatives(), right.alternatives());
+    const auto left_subset = alternatives_subset(left, right, comparison);
+    const auto right_subset = alternatives_subset(right, left, comparison);
+    const auto alternatives = left_subset == right_subset ? (left_subset ? Order::equivalent : Order::unordered)
+                                                          : (left_subset ? Order::less : Order::greater);
     const auto constraints = compare_sets(right.constraints(), left.constraints());
     return combine(alternatives, constraints);
 }
 
-template <typename Category> bool variable_accepts(const TypeVariable<Category> &variable, const Type &type) {
+template <typename Category> bool variable_accepts(const TypeVariableType<Category> &variable, const Type &type) {
     if (type.is_resolved()) {
-        auto type_map = TypeMap{};
-        return variable.match(type, type_map);
+        return variable.accepts(type);
     }
 
     if constexpr (std::same_as<Category, Type>) {
@@ -110,39 +139,39 @@ struct DirectVariable {
 };
 
 std::optional<DirectVariable> direct_variable(const Type &type) noexcept {
-    if (const auto *variable = dynamic_cast<const TypeVariable<Type> *>(&type)) {
+    if (const auto *variable = dynamic_cast<const TypeVariableType<Type> *>(&type)) {
         return DirectVariable{variable, DirectVariable::Category::any};
     }
-    if (const auto *variable = dynamic_cast<const TypeVariable<ScalarType> *>(&type)) {
+    if (const auto *variable = dynamic_cast<const TypeVariableType<ScalarType> *>(&type)) {
         return DirectVariable{variable, DirectVariable::Category::scalar};
     }
-    if (const auto *variable = dynamic_cast<const TypeVariable<TimeSeriesType> *>(&type)) {
+    if (const auto *variable = dynamic_cast<const TypeVariableType<TimeSeriesType> *>(&type)) {
         return DirectVariable{variable, DirectVariable::Category::time_series};
     }
-    if (const auto *variable = dynamic_cast<const TypeVariable<BundleSchemaType> *>(&type)) {
+    if (const auto *variable = dynamic_cast<const TypeVariableType<BundleSchemaType> *>(&type)) {
         return DirectVariable{variable, DirectVariable::Category::schema};
     }
     return std::nullopt;
 }
 
 Order compare_direct_variables(const Type &left, const Type &right, Comparison &comparison) {
-    if (const auto *left_variable = dynamic_cast<const TypeVariable<Type> *>(&left)) {
-        if (const auto *right_variable = dynamic_cast<const TypeVariable<Type> *>(&right)) {
+    if (const auto *left_variable = dynamic_cast<const TypeVariableType<Type> *>(&left)) {
+        if (const auto *right_variable = dynamic_cast<const TypeVariableType<Type> *>(&right)) {
             return compare_variables(*left_variable, *right_variable, comparison);
         }
     }
-    if (const auto *left_variable = dynamic_cast<const TypeVariable<ScalarType> *>(&left)) {
-        if (const auto *right_variable = dynamic_cast<const TypeVariable<ScalarType> *>(&right)) {
+    if (const auto *left_variable = dynamic_cast<const TypeVariableType<ScalarType> *>(&left)) {
+        if (const auto *right_variable = dynamic_cast<const TypeVariableType<ScalarType> *>(&right)) {
             return compare_variables(*left_variable, *right_variable, comparison);
         }
     }
-    if (const auto *left_variable = dynamic_cast<const TypeVariable<TimeSeriesType> *>(&left)) {
-        if (const auto *right_variable = dynamic_cast<const TypeVariable<TimeSeriesType> *>(&right)) {
+    if (const auto *left_variable = dynamic_cast<const TypeVariableType<TimeSeriesType> *>(&left)) {
+        if (const auto *right_variable = dynamic_cast<const TypeVariableType<TimeSeriesType> *>(&right)) {
             return compare_variables(*left_variable, *right_variable, comparison);
         }
     }
-    if (const auto *left_variable = dynamic_cast<const TypeVariable<BundleSchemaType> *>(&left)) {
-        if (const auto *right_variable = dynamic_cast<const TypeVariable<BundleSchemaType> *>(&right)) {
+    if (const auto *left_variable = dynamic_cast<const TypeVariableType<BundleSchemaType> *>(&left)) {
+        if (const auto *right_variable = dynamic_cast<const TypeVariableType<BundleSchemaType> *>(&right)) {
             return compare_variables(*left_variable, *right_variable, comparison);
         }
     }
@@ -164,8 +193,8 @@ Order compare_direct_variables(const Type &left, const Type &right, Comparison &
 
 template <typename Category>
 std::optional<Order> compare_one_variable(const Type &left, const Type &right,
-                                          const TypeVariable<Category> *left_variable,
-                                          const TypeVariable<Category> *right_variable) {
+                                          const TypeVariableType<Category> *left_variable,
+                                          const TypeVariableType<Category> *right_variable) {
     if (left_variable != nullptr && right_variable == nullptr) {
         return variable_accepts(*left_variable, right) ? Order::greater : Order::unordered;
     }
@@ -235,10 +264,8 @@ Order compare_resolved(const Type &left, const Type &right) {
         return Order::unordered;
     }
 
-    auto left_type_map = TypeMap{};
-    auto right_type_map = TypeMap{};
-    const auto right_accepts_left = right.match(left, left_type_map);
-    const auto left_accepts_right = left.match(right, right_type_map);
+    const auto right_accepts_left = right.accepts(left);
+    const auto left_accepts_right = left.accepts(right);
     if (right_accepts_left && left_accepts_right) {
         return Order::equivalent;
     }
@@ -266,21 +293,22 @@ Order compare_types(const Type &left, const Type &right, Comparison &comparison)
         return compare_direct_variables(left, right, comparison);
     }
 
-    if (const auto result = compare_one_variable(left, right, dynamic_cast<const TypeVariable<Type> *>(&left),
-                                                 dynamic_cast<const TypeVariable<Type> *>(&right))) {
+    if (const auto result = compare_one_variable(left, right, dynamic_cast<const TypeVariableType<Type> *>(&left),
+                                                 dynamic_cast<const TypeVariableType<Type> *>(&right))) {
         return *result;
     }
-    if (const auto result = compare_one_variable(left, right, dynamic_cast<const TypeVariable<ScalarType> *>(&left),
-                                                 dynamic_cast<const TypeVariable<ScalarType> *>(&right))) {
-        return *result;
-    }
-    if (const auto result = compare_one_variable(left, right, dynamic_cast<const TypeVariable<TimeSeriesType> *>(&left),
-                                                 dynamic_cast<const TypeVariable<TimeSeriesType> *>(&right))) {
+    if (const auto result = compare_one_variable(left, right, dynamic_cast<const TypeVariableType<ScalarType> *>(&left),
+                                                 dynamic_cast<const TypeVariableType<ScalarType> *>(&right))) {
         return *result;
     }
     if (const auto result =
-            compare_one_variable(left, right, dynamic_cast<const TypeVariable<BundleSchemaType> *>(&left),
-                                 dynamic_cast<const TypeVariable<BundleSchemaType> *>(&right))) {
+            compare_one_variable(left, right, dynamic_cast<const TypeVariableType<TimeSeriesType> *>(&left),
+                                 dynamic_cast<const TypeVariableType<TimeSeriesType> *>(&right))) {
+        return *result;
+    }
+    if (const auto result =
+            compare_one_variable(left, right, dynamic_cast<const TypeVariableType<BundleSchemaType> *>(&left),
+                                 dynamic_cast<const TypeVariableType<BundleSchemaType> *>(&right))) {
         return *result;
     }
 

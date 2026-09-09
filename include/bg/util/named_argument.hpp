@@ -14,7 +14,9 @@ template <util::compile_time_string Name, typename Value> struct named_argument 
     Value value;
 };
 
-template <util::compile_time_string Name> struct named_argument_name {
+template <util::compile_time_string Name> struct compile_time_name {
+    static constexpr auto text = Name;
+
     template <typename Value> [[nodiscard]] constexpr auto operator=(Value &&value) const {
         return named_argument<Name, std::decay_t<Value>>{std::forward<Value>(value)};
     }
@@ -55,8 +57,8 @@ decltype(auto) named_argument_value(First &&first, Rest &&...rest) {
 
 namespace bg::literals {
 
-template <util::compile_time_string Name> [[nodiscard]] consteval auto operator""_m() {
-    return details::named_argument_name<Name>{};
+template <util::compile_time_string Name> [[nodiscard]] consteval auto operator""_n() {
+    return details::compile_time_name<Name>{};
 }
 
 } // namespace bg::literals

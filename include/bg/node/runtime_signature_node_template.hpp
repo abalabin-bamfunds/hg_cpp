@@ -104,6 +104,15 @@ template <details::runtime_signature_node Definition> class RuntimeSignatureNode
 
     const Signature &signature() const override { return definition_.signature(); }
 
+    bool deduplicate_wiring() const noexcept override {
+        if constexpr (requires { definition_.deduplicate_wiring(); }) {
+            return definition_.deduplicate_wiring();
+        } else if constexpr (requires { Definition::deduplicate_wiring; }) {
+            return static_cast<bool>(Definition::deduplicate_wiring);
+        }
+        return true;
+    }
+
     RequirementResult requirement(const WiringArguments &arguments) const override {
         if constexpr (requires { requirement_result(definition_.requirement(arguments)); }) {
             return requirement_result(definition_.requirement(arguments));

@@ -43,6 +43,13 @@ template <typename... Options> std::vector<VariableResolver> callable_resolvers(
     return result;
 }
 
+template <typename Option> bool callable_wiring_deduplication(const Option &option) noexcept {
+    if constexpr (is_callable_wiring_deduplication_v<Option>) {
+        return option.enabled;
+    }
+    return true;
+}
+
 template <typename Function, std::size_t Target, std::size_t... Index>
 consteval std::size_t callable_parameter_index(std::index_sequence<Index...>) {
     return (std::size_t{} + ... +
@@ -69,8 +76,7 @@ decltype(auto) make_callable_node_argument(Invocation invocation) {
     if constexpr (input_field<Field>::value) {
         constexpr auto Parameter = callable_parameter_index<Function, Index>(Indices);
         constexpr auto Input = callable_input_index<Function, Index>(Indices);
-        const auto value = node_invocation_access::input(invocation, Parameter, Input).value();
-        return Field{value.last_updated(), value.data(), value.runtime_type()};
+        return node_invocation_access::input<Field>(invocation, Parameter, Input);
     } else if constexpr (output_field<Field>::value) {
         using TimeSeries = typename output_field<Field>::time_series_type;
         return node_invocation_access::output<TimeSeries>(invocation);
@@ -108,6 +114,11 @@ template <typename Function, typename... Options> class CallableNodeDefinition {
                                                                  callable_resolvers(options_))} {}
 
     const Signature &signature() const { return signature_; }
+
+    bool deduplicate_wiring() const noexcept {
+        return std::apply([](const auto &...option) { return (callable_wiring_deduplication(option) && ...); },
+                          options_);
+    }
 
     RequirementResult requirement(const WiringArguments &arguments) const {
         auto result = accept;

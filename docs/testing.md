@@ -18,7 +18,8 @@ Use `[dimension:value]` for each applicable dimension:
   `node-api`, `state`, `wiring`, `graph-compilation`, `test-graph`, `evaluation-context`, `evaluation-scratch`,
   `lifecycle`, `scheduling`, `future-scheduling`, `simulation`, `input-activity`, `validity`, `invalidation`,
   `operator`,
-  `time-series-storage`, `time-series-view`, `collection-change`, `reference`, `getitem`, or `nested-graph`
+  `time-series-storage`, `time-series-view`, `collection-change`, `reference`, `getitem`, `getattr`, or
+  `nested-graph`
 - `series`: `value`, `fixed-tsl`, `sparse-tsl`, `tss`, `tsd`, `tsb`, `reference`, or `generic`
 - `schema`: `named`, `unnamed`, or `generic`
 - `representation`: `native`, `free`, `filtered`, or `covariant`
@@ -131,6 +132,7 @@ graph compilation or evaluation.
 - node-template and graph-template interchangeability
 - graph-template boundaries and inner graph isolation
 - wiring paths, labels, and diagnostics
+- node-call deduplication, opt-out, and identity inputs
 - operator overload applicability, selection, requirements, resolvers, and caching
 - incompatible types, graph ownership errors, and invalid results
 

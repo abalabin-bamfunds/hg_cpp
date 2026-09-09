@@ -5,7 +5,6 @@
 #include <bg/scalar/details/value_storage.hpp>
 #include <bg/scalar/scalar.hpp>
 #include <bg/scalar/type.hpp>
-#include <bg/type/type_map.hpp>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
@@ -242,8 +241,7 @@ template <typename Target, typename Source>
 template <typename Target, typename Source>
     requires(!details::scalar_variable<Target>)
 [[nodiscard]] Scalar<Target> scalar_cast(const Scalar<Source> &source) {
-    auto type_map = TypeMap{};
-    if (!cpp_scalar_type<Target>().match(source.type(), type_map)) {
+    if (!cpp_scalar_type<Target>().accepts(source.type())) {
         throw std::bad_cast{};
     }
     return unchecked_scalar_cast<Target>(source);

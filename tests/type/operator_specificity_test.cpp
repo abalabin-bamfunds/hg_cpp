@@ -15,7 +15,7 @@
 TEST_CASE("an exact parameter is less generic than a type variable",
           "[feature:operator][feature:type-system][declaration:generic]") {
     const auto exact = bg::Signature{bg::util::symbol{"exact"}, {{bg::util::symbol{"value"}, &bg::int_type()}}};
-    const auto variable = bg::TypeVariable<bg::ScalarType>{bg::util::symbol{"T"}};
+    const auto variable = bg::TypeVariableType<bg::ScalarType>{bg::util::symbol{"T"}};
     const auto generic = bg::Signature{bg::util::symbol{"generic"}, {{bg::util::symbol{"value"}, &variable}}};
 
     CHECK(bg::compare_specificity(exact, generic) == std::partial_ordering::less);
@@ -25,8 +25,8 @@ TEST_CASE("an exact parameter is less generic than a type variable",
 TEST_CASE("a constrained variable is less generic than an unconstrained variable",
           "[feature:operator][feature:type-system][declaration:generic]") {
     const auto number =
-        bg::TypeVariable<bg::ScalarType>{bg::util::symbol{"Number"}, {&bg::int_type(), &bg::float_type()}};
-    const auto scalar = bg::TypeVariable<bg::ScalarType>{bg::util::symbol{"Scalar"}};
+        bg::TypeVariableType<bg::ScalarType>{bg::util::symbol{"Number"}, {&bg::int_type(), &bg::float_type()}};
+    const auto scalar = bg::TypeVariableType<bg::ScalarType>{bg::util::symbol{"Scalar"}};
     const auto constrained = bg::Signature{bg::util::symbol{"number"}, {{bg::util::symbol{"value"}, &number}}};
     const auto unconstrained = bg::Signature{bg::util::symbol{"scalar"}, {{bg::util::symbol{"value"}, &scalar}}};
 
@@ -35,9 +35,9 @@ TEST_CASE("a constrained variable is less generic than an unconstrained variable
 
 TEST_CASE("a repeated variable is less generic than independent variables",
           "[feature:operator][feature:type-system][declaration:generic]") {
-    const auto repeated = bg::TypeVariable<bg::ScalarType>{bg::util::symbol{"T"}};
-    const auto left = bg::TypeVariable<bg::ScalarType>{bg::util::symbol{"L"}};
-    const auto right = bg::TypeVariable<bg::ScalarType>{bg::util::symbol{"R"}};
+    const auto repeated = bg::TypeVariableType<bg::ScalarType>{bg::util::symbol{"T"}};
+    const auto left = bg::TypeVariableType<bg::ScalarType>{bg::util::symbol{"L"}};
+    const auto right = bg::TypeVariableType<bg::ScalarType>{bg::util::symbol{"R"}};
     const auto same = bg::Signature{bg::util::symbol{"same"},
                                     {{bg::util::symbol{"left"}, &repeated}, {bg::util::symbol{"right"}, &repeated}}};
     const auto independent = bg::Signature{bg::util::symbol{"independent"},
@@ -49,8 +49,8 @@ TEST_CASE("a repeated variable is less generic than independent variables",
 
 TEST_CASE("constraints on different parameters are unordered",
           "[feature:operator][feature:type-system][declaration:generic]") {
-    const auto any_left = bg::TypeVariable<bg::ScalarType>{bg::util::symbol{"L"}};
-    const auto any_right = bg::TypeVariable<bg::ScalarType>{bg::util::symbol{"R"}};
+    const auto any_left = bg::TypeVariableType<bg::ScalarType>{bg::util::symbol{"L"}};
+    const auto any_right = bg::TypeVariableType<bg::ScalarType>{bg::util::symbol{"R"}};
     const auto left_exact =
         bg::Signature{bg::util::symbol{"left_exact"},
                       {{bg::util::symbol{"left"}, &bg::int_type()}, {bg::util::symbol{"right"}, &any_right}}};
@@ -122,4 +122,30 @@ TEST_CASE("identical signatures have equivalent specificity", "[feature:operator
     const auto right = bg::Signature{bg::util::symbol{"right"}, {{bg::util::symbol{"other"}, &bg::TS<int>::type()}}};
 
     CHECK(bg::compare_specificity(left, right) == std::partial_ordering::equivalent);
+}
+
+TEST_CASE("a union accepting a subset of types is less generic",
+          "[feature:operator][feature:type-system][declaration:generic]") {
+    using Number = bg::ScalarVariable<"Number">;
+
+    const auto numeric =
+        bg::TypeVariableType<bg::Type>{bg::util::symbol{"Numeric"}, {&bg::int64_type(), &bg::float_type()}};
+    const auto scalar = bg::TypeVariableType<bg::Type>{bg::util::symbol{"Scalar"}, {&Number::type()}};
+    const auto numeric_signature = bg::Signature{bg::util::symbol{"numeric"}, {{bg::util::symbol{"value"}, &numeric}}};
+    const auto scalar_signature = bg::Signature{bg::util::symbol{"scalar"}, {{bg::util::symbol{"value"}, &scalar}}};
+
+    CHECK(bg::compare_specificity(numeric_signature, scalar_signature) == std::partial_ordering::less);
+    CHECK(bg::compare_specificity(scalar_signature, numeric_signature) == std::partial_ordering::greater);
+}
+
+TEST_CASE("partially overlapping unions are unordered",
+          "[feature:operator][feature:type-system][declaration:generic]") {
+    const auto left = bg::TypeVariableType<bg::Type>{bg::util::symbol{"Left"}, {&bg::int64_type(), &bg::float_type()}};
+    const auto right =
+        bg::TypeVariableType<bg::Type>{bg::util::symbol{"Right"}, {&bg::float_type(), &bg::double_type()}};
+    const auto left_signature = bg::Signature{bg::util::symbol{"left"}, {{bg::util::symbol{"value"}, &left}}};
+    const auto right_signature = bg::Signature{bg::util::symbol{"right"}, {{bg::util::symbol{"value"}, &right}}};
+
+    CHECK(bg::compare_specificity(left_signature, right_signature) == std::partial_ordering::unordered);
+    CHECK(bg::compare_specificity(right_signature, left_signature) == std::partial_ordering::unordered);
 }

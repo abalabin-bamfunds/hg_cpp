@@ -47,6 +47,8 @@ template <typename Declaration> const Variable &resolver_variable() {
 
     if constexpr (scalar_variable<Value>) {
         return scalar_variable_instance<Value>();
+    } else if constexpr (type_variable_declaration<Value>) {
+        return Value::type();
     } else if constexpr (time_series_variable<Value> && requires { Value::name; }) {
         return TimeSeriesVariableInstance<Value>::get();
     } else if constexpr (guarantee_variable_declaration<Value>) {

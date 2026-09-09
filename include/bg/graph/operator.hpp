@@ -10,7 +10,7 @@
 
 namespace bg {
 
-class Operator final : public WiringTemplate {
+class Operator : public WiringTemplate {
   public:
     explicit Operator(Signature prototype);
     ~Operator() override;

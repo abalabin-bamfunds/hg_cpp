@@ -38,6 +38,7 @@ struct AggregateNodeDescriptor {
     AggregateRequirementFunction requirement;
     bool uses_output_runtime_type;
     bool uses_future_scheduling;
+    bool deduplicate_wiring;
 };
 
 class AggregateNodeTemplateBase : public NodeTemplate {
@@ -45,6 +46,7 @@ class AggregateNodeTemplateBase : public NodeTemplate {
     explicit AggregateNodeTemplateBase(const AggregateNodeDescriptor &descriptor) noexcept : descriptor_{&descriptor} {}
 
     const Signature &signature() const final;
+    bool deduplicate_wiring() const noexcept final;
     RequirementResult requirement(const WiringArguments &arguments) const final;
     EvaluationFunction evaluation_function(const ResolvedSignature &) const noexcept final;
     EvaluationFunction start_function(const ResolvedSignature &) const noexcept final;

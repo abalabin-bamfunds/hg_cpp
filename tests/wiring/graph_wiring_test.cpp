@@ -31,7 +31,7 @@ struct copy_definition {
     void evaluate() const { output.set(*input); }
 };
 
-static_assert(sizeof(bg::WiringPoint) == 2 * sizeof(void *));
+static_assert(sizeof(bg::WiringPoint) == sizeof(void *));
 static_assert(std::is_trivially_copyable_v<bg::WiringPoint>);
 
 } // namespace
@@ -47,16 +47,151 @@ TEST_CASE("node calls add wired nodes to the active graph", "[graph_wiring][feat
         const bg::WiringPoint output = copy(input);
 
         CHECK(&input.graph() == &wiring);
-        CHECK(input.node_index() == 0);
-        CHECK(output.node_index() == 1);
+        CHECK(&output.graph() == &wiring);
     }
 
     const auto nodes = wiring.nodes();
     REQUIRE(nodes.size() == 2);
     CHECK(&nodes[0].node_template() == &source);
     CHECK(&nodes[1].node_template() == &copy);
-    REQUIRE(nodes[1].input_sources().size() == 1);
-    CHECK(nodes[1].input_sources()[0] == 0);
+    REQUIRE(nodes[1].input_output_indices().size() == 1);
+    CHECK(nodes[1].input_output_indices()[0] == 0);
+}
+
+TEST_CASE("wiring point re-annotation checks type compatibility", "[graph_wiring][feature:wiring]") {
+    const auto source = bg::node([](bg::Out<bg::TS<float>>) {});
+    auto wiring = bg::GraphWiring{};
+
+    const auto context = bg::WiringContext{wiring};
+    const auto typed = source();
+    const auto point = static_cast<bg::WiringPoint>(typed);
+
+    STATIC_CHECK(std::same_as<decltype(point.as<bg::TS<float>>()), bg::wp<bg::TS<float>>>);
+    STATIC_CHECK(std::same_as<decltype(typed.as<bg::TS<float>>()), bg::wp<bg::TS<float>>>);
+    CHECK_NOTHROW(point.as<bg::TS<float>>());
+    CHECK_NOTHROW(typed.as<bg::TS<float>>());
+    CHECK_NOTHROW(point.as<bg::REF<bg::TS<float>>>());
+    CHECK_THROWS_AS(point.as<bg::TS<double>>(), bg::WiringError);
+    CHECK_THROWS_AS(bg::wp<bg::TS<double>>{typed}, bg::WiringError);
+}
+
+TEST_CASE("wiring reuses a node called with the same arguments", "[graph_wiring][feature:wiring]") {
+    const auto source = bg::node([](bg::Out<bg::TS<float>>) {});
+    const auto scale = bg::node([](bg::In<bg::TS<float>>, float, bg::Out<bg::TS<float>>) {});
+    auto wiring = bg::GraphWiring{};
+
+    const auto context = bg::WiringContext{wiring};
+    const auto input = source();
+    (void)scale(input, 2.0F);
+    (void)scale(input, 2.0F);
+
+    CHECK(wiring.nodes().size() == 2);
+}
+
+TEST_CASE("wiring keeps calls with different scalar arguments separate", "[graph_wiring][feature:wiring]") {
+    const auto source = bg::node([](bg::Out<bg::TS<float>>) {});
+    const auto scale = bg::node([](bg::In<bg::TS<float>>, float, bg::Out<bg::TS<float>>) {});
+    auto wiring = bg::GraphWiring{};
+
+    const auto context = bg::WiringContext{wiring};
+    const auto input = source();
+    (void)scale(input, 2.0F);
+    (void)scale(input, 3.0F);
+
+    CHECK(wiring.nodes().size() == 3);
+}
+
+TEST_CASE("wiring keeps calls with different input sources separate", "[graph_wiring][feature:wiring]") {
+    const auto first_source = bg::node([](bg::Out<bg::TS<float>>) {});
+    const auto second_source = bg::node([](bg::Out<bg::TS<float>>) {});
+    const auto copy = bg::node([](bg::In<bg::TS<float>>, bg::Out<bg::TS<float>>) {});
+    auto wiring = bg::GraphWiring{};
+
+    const auto context = bg::WiringContext{wiring};
+    (void)copy(first_source());
+    (void)copy(second_source());
+
+    CHECK(wiring.nodes().size() == 4);
+}
+
+TEST_CASE("wiring reuses a node called with the same absent scalar", "[graph_wiring][feature:wiring]") {
+    const auto source = bg::node([](std::optional<int>, bg::Out<bg::TS<float>>) {});
+    auto wiring = bg::GraphWiring{};
+
+    const auto context = bg::WiringContext{wiring};
+    (void)source(std::optional<int>{});
+    (void)source(std::optional<int>{});
+
+    CHECK(wiring.nodes().size() == 1);
+}
+
+namespace {
+
+struct unhashable_wiring_value {
+    int value;
+};
+
+} // namespace
+
+TEST_CASE("wiring does not reuse calls with an unhashable scalar", "[graph_wiring][feature:wiring][scalar:opaque]") {
+    using Argument = bg::Opaque<unhashable_wiring_value>;
+
+    const auto source = bg::node([](bg::Scalar<Argument>, bg::Out<bg::TS<float>>) {});
+    const auto value = bg::ScalarValue<Argument>{unhashable_wiring_value{1}};
+    auto wiring = bg::GraphWiring{};
+
+    const auto context = bg::WiringContext{wiring};
+    (void)source(value);
+    (void)source(value);
+
+    CHECK(wiring.nodes().size() == 2);
+}
+
+TEST_CASE("wiring does not reuse outputless node calls", "[graph_wiring][feature:wiring]") {
+    const auto source = bg::node([](bg::Out<bg::TS<float>>) {});
+    const auto sink = bg::node([](bg::In<bg::TS<float>>) {});
+    auto wiring = bg::GraphWiring{};
+
+    const auto context = bg::WiringContext{wiring};
+    const auto input = source();
+    sink(input);
+    sink(input);
+
+    CHECK(wiring.nodes().size() == 3);
+}
+
+TEST_CASE("a node can disable wiring deduplication", "[graph_wiring][feature:wiring]") {
+    const auto source = bg::node(bg::eval = [](bg::Out<bg::TS<float>>) {}, bg::deduplicate_wiring = false);
+    auto wiring = bg::GraphWiring{};
+
+    const auto context = bg::WiringContext{wiring};
+    (void)source();
+    (void)source();
+
+    CHECK(wiring.nodes().size() == 2);
+}
+
+namespace {
+
+struct non_deduplicated_source {
+    static constexpr bool deduplicate_wiring = false;
+
+    bg::Out<bg::TS<float>> output;
+
+    void evaluate() const {}
+};
+
+} // namespace
+
+TEST_CASE("an aggregate node can disable wiring deduplication", "[graph_wiring][feature:wiring]") {
+    const auto source = bg::node<non_deduplicated_source>();
+    auto wiring = bg::GraphWiring{};
+
+    const auto context = bg::WiringContext{wiring};
+    (void)source();
+    (void)source();
+
+    CHECK(wiring.nodes().size() == 2);
 }
 
 TEST_CASE("a node call requires a wiring context", "[graph_wiring][feature:wiring]") {
@@ -133,8 +268,8 @@ TEST_CASE("wired nodes retain scalar arguments", "[graph_wiring][feature:wiring]
 
     const auto nodes = wiring.nodes();
     REQUIRE(nodes.size() == 2);
-    REQUIRE(nodes[1].input_sources().size() == 1);
-    CHECK(nodes[1].input_sources()[0] == 0);
+    REQUIRE(nodes[1].input_output_indices().size() == 1);
+    CHECK(nodes[1].input_output_indices()[0] == 0);
     REQUIRE(nodes[1].scalar_values().size() == 1);
     const bg::WiredScalar &factor = nodes[1].scalar_values()[0];
     CHECK(*static_cast<const float *>(factor.data()) == 2.0F);

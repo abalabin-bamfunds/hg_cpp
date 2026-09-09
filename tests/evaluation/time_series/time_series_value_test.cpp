@@ -26,7 +26,8 @@ TEST_CASE("a collection guarantee deduplicates contained value outputs",
     using Values = bg::TSL<bg::TS<int, bg::TimeSeriesGuarantee::ordinary>, 1, bg::TimeSeriesGuarantee::deduplicated>;
 
     const auto collect = bg::node([](bg::In<bg::TS<int>> input, bg::Out<Values> output) { output[0].set(*input); });
-    const auto graph = [&](bg::wp<bg::TS<int>> input) { return collect(input)[0]; };
+    const auto first = bg::node([](bg::In<Values> input, bg::Out<bg::TS<int>> output) { output.set(*input[0]); });
+    const auto graph = [&](bg::wp<bg::TS<int>> input) { return first(collect(input)); };
 
     const auto actual = bg::testing::test_graph(graph, std::array{1, 1, 2});
 

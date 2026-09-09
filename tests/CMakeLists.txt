@@ -33,6 +33,7 @@ add_executable(
     node/scalar_state_test.cpp
     testing/test_graph_test.cpp
     type/type_system_test.cpp
+    type/type_variable_test.cpp
     type/time_series_dict_type_test.cpp
     type/time_series_bundle_type_test.cpp
     type/time_series_list_type_test.cpp
@@ -79,8 +80,8 @@ add_executable(
     wiring/operator_test.cpp
     wiring/requirement_test.cpp
     wiring/resolver_test.cpp
+    wiring/time_series_bundle_wiring_test.cpp
     wiring/time_series_list_wiring_test.cpp
-    wiring/time_series_dict_wiring_test.cpp
     wiring/time_series_reference_wiring_test.cpp
 )
 target_link_libraries(bg_tests PRIVATE bg::bg Catch2::Catch2WithMain)

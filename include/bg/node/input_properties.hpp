@@ -1,6 +1,6 @@
 #pragma once
 
-#include <bg/util/compile_time_string.hpp>
+#include <bg/util/named_argument.hpp>
 
 #include <cstdint>
 
@@ -21,21 +21,5 @@ enum class InputValidity : std::uint8_t {
 
 inline constexpr InputValidity required = InputValidity::required;
 inline constexpr InputValidity optional = InputValidity::optional;
-
-namespace details {
-
-template <util::compile_time_string Text> struct compile_time_name {
-    static constexpr auto text = Text;
-};
-
-} // namespace details
-
-namespace literals {
-
-template <util::compile_time_string Text> [[nodiscard]] consteval auto operator""_n() {
-    return details::compile_time_name<Text>{};
-}
-
-} // namespace literals
 
 } // namespace bg
