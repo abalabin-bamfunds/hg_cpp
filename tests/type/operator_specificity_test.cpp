@@ -25,7 +25,7 @@ TEST_CASE("an exact parameter is less generic than a type variable",
 TEST_CASE("a constrained variable is less generic than an unconstrained variable",
           "[feature:operator][feature:type-system][declaration:generic]") {
     const auto number =
-        bg::TypeVariableType<bg::ScalarType>{bg::util::symbol{"Number"}, {&bg::int_type(), &bg::float_type()}};
+        bg::TypeVariableType<bg::ScalarType>{bg::util::symbol{"NUMBER"}, {&bg::int_type(), &bg::float_type()}};
     const auto scalar = bg::TypeVariableType<bg::ScalarType>{bg::util::symbol{"Scalar"}};
     const auto constrained = bg::Signature{bg::util::symbol{"number"}, {{bg::util::symbol{"value"}, &number}}};
     const auto unconstrained = bg::Signature{bg::util::symbol{"scalar"}, {{bg::util::symbol{"value"}, &scalar}}};
@@ -106,12 +106,12 @@ TEST_CASE("a literal list size is less generic than a size variable",
 
 TEST_CASE("unrelated scalar capability constraints are unordered",
           "[feature:operator][feature:type-system][declaration:generic]") {
-    using EqualityScalar = bg::ScalarVariable<"EqualityScalar", bg::EqualityComparable>;
-    using HashScalar = bg::ScalarVariable<"HashScalar", bg::Hashable>;
+    using EQUALITY_SCALAR = bg::ScalarVariable<"EQUALITY_SCALAR", bg::EqualityComparable>;
+    using HASH_SCALAR = bg::ScalarVariable<"HASH_SCALAR", bg::Hashable>;
 
     const auto equality =
-        bg::Signature{bg::util::symbol{"equality"}, {{bg::util::symbol{"value"}, &EqualityScalar::type()}}};
-    const auto hash = bg::Signature{bg::util::symbol{"hash"}, {{bg::util::symbol{"value"}, &HashScalar::type()}}};
+        bg::Signature{bg::util::symbol{"equality"}, {{bg::util::symbol{"value"}, &EQUALITY_SCALAR::type()}}};
+    const auto hash = bg::Signature{bg::util::symbol{"hash"}, {{bg::util::symbol{"value"}, &HASH_SCALAR::type()}}};
 
     CHECK(bg::compare_specificity(equality, hash) == std::partial_ordering::unordered);
     CHECK(bg::compare_specificity(hash, equality) == std::partial_ordering::unordered);
@@ -126,11 +126,11 @@ TEST_CASE("identical signatures have equivalent specificity", "[feature:operator
 
 TEST_CASE("a union accepting a subset of types is less generic",
           "[feature:operator][feature:type-system][declaration:generic]") {
-    using Number = bg::ScalarVariable<"Number">;
+    using NUMBER = bg::ScalarVariable<"NUMBER">;
 
     const auto numeric =
         bg::TypeVariableType<bg::Type>{bg::util::symbol{"Numeric"}, {&bg::int64_type(), &bg::float_type()}};
-    const auto scalar = bg::TypeVariableType<bg::Type>{bg::util::symbol{"Scalar"}, {&Number::type()}};
+    const auto scalar = bg::TypeVariableType<bg::Type>{bg::util::symbol{"Scalar"}, {&NUMBER::type()}};
     const auto numeric_signature = bg::Signature{bg::util::symbol{"numeric"}, {{bg::util::symbol{"value"}, &numeric}}};
     const auto scalar_signature = bg::Signature{bg::util::symbol{"scalar"}, {{bg::util::symbol{"value"}, &scalar}}};
 

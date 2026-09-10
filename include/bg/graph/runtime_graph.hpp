@@ -16,6 +16,7 @@ namespace bg {
 
 namespace details {
 class EvaluationScratch;
+class ReferenceProvider;
 }
 
 namespace testing {
@@ -56,6 +57,7 @@ class RuntimeGraph {
     friend OutputChangeContext;
     friend SimulationEvaluationEngine;
     friend NestedGraph;
+    friend details::ReferenceProvider;
     friend testing::RuntimeGraphAccess;
 
     using ScheduleWord = CompiledGraph::ScheduleWord;
@@ -82,14 +84,18 @@ class RuntimeGraph {
     void mirror_future_schedule();
     CycleCallbacks *&cycle_callbacks() noexcept;
     CycleCallbacks *cycle_callbacks() const noexcept;
+    RuntimeGraph &outer_graph() noexcept;
+    CycleCallbacks &require_cycle_callbacks();
     void add_cycle_callback(void *target, void (*function)(void *) noexcept);
+    void remove_cycle_callback(const void *target) noexcept;
     void run_cycle_callbacks() noexcept;
     void clear_cycle_callbacks() noexcept;
     void propagate_modified_items(const CompiledNode &node);
     void schedule_subscribers(std::span<const Subscriber> subscribers, OutputChange change);
     void schedule_node_subscriber(std::size_t node_index, bool active, bool required, bool active_optional,
                                   OutputChange change) noexcept;
-    void notify_output(const OutputNotification *notification, const void *value, OutputChange change);
+    void notify_output(const OutputNotification *notification, const TimeSeriesRuntimeType *runtime_type,
+                       const void *value, OutputChange change);
     void propagate_output_change(const CompiledNode &node, OutputChange change);
     void publish_output_changes(const CompiledNode &node, bool output_was_valid);
     void schedule_dynamic_subscribers(std::size_t offset, OutputChange change);

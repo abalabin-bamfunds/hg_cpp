@@ -12,9 +12,7 @@
 
 TEST_CASE("getitem selects a dictionary item through a deduplicated reference",
           "[wiring][series:tsd][feature:getitem][feature:operator][binding:value-to-reference]") {
-    using Dictionary = bg::TSD<std::int64_t, bg::TS<float>>;
-
-    const auto source = bg::node([](bg::Out<Dictionary>) {});
+    const auto source = bg::node([](bg::Out<bg::TSD<std::int64_t, bg::TS<float>>>) {});
     const auto sink = bg::node([](bg::In<bg::TS<float>>) {});
     auto wiring = bg::GraphWiring{};
 
@@ -31,9 +29,7 @@ TEST_CASE("getitem selects a dictionary item through a deduplicated reference",
 
 TEST_CASE("repeated dictionary item selection reuses its node",
           "[wiring][series:tsd][feature:getitem][feature:operator][shape:fan-out]") {
-    using Dictionary = bg::TSD<std::int64_t, bg::TS<float>>;
-
-    const auto source = bg::node([](bg::Out<Dictionary>) {});
+    const auto source = bg::node([](bg::Out<bg::TSD<std::int64_t, bg::TS<float>>>) {});
     auto wiring = bg::GraphWiring{};
 
     const auto context = bg::WiringContext{wiring};
@@ -47,9 +43,7 @@ TEST_CASE("repeated dictionary item selection reuses its node",
 
 TEST_CASE("getitem accepts a time series dictionary key",
           "[wiring][series:tsd][series:value][feature:getitem][feature:operator]") {
-    using Dictionary = bg::TSD<std::int64_t, bg::TS<float>>;
-
-    const auto dictionary_source = bg::node([](bg::Out<Dictionary>) {});
+    const auto dictionary_source = bg::node([](bg::Out<bg::TSD<std::int64_t, bg::TS<float>>>) {});
     const auto key_source = bg::node([](bg::Out<bg::TS<std::int64_t>>) {});
     auto wiring = bg::GraphWiring{};
 

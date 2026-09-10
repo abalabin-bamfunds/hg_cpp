@@ -229,10 +229,8 @@ TEST_CASE("a free list processes reference changes in a nested graph",
     CHECK(actual.equals({11, 22, 33}));
 }
 
-using NestedIntList = bg::TSL<bg::TS<std::int64_t>, 2>;
-
 struct NestedListSum {
-    bg::In<NestedIntList> input;
+    bg::In<bg::TSL<bg::TS<std::int64_t>, 2>> input;
     bg::Out<bg::TS<std::int64_t>> output;
 
     void evaluate() const { output.set(*input[0] + *input[1]); }
@@ -243,9 +241,9 @@ TEST_CASE("a reference to an outer free list works in a nested graph",
           "[feature:nested-graph][shape:nested][scalar:integer][binding:value-to-reference]"
           "[binding:reference-to-value]") {
     const auto sum = bg::node<NestedListSum>();
-    const auto inner =
-        bg::graph("name"_n = "consume_outer_free_list",
-                  [&](bg::wp<NestedIntList> input) -> bg::wp<bg::TS<std::int64_t>> { return sum(input); });
+    const auto inner = bg::graph(
+        "name"_n = "consume_outer_free_list",
+        [&](bg::wp<bg::TSL<bg::TS<std::int64_t>, 2>> input) -> bg::wp<bg::TS<std::int64_t>> { return sum(input); });
     const auto outer = [&](bg::wp<bg::TS<std::int64_t>> first, bg::wp<bg::TS<std::int64_t>> second,
                            bg::wp<bg::TS<bool>> run) { return bg::nested(inner, run, bg::tsl(first, second)); };
 
@@ -261,13 +259,16 @@ TEST_CASE("a reference to an inner free list works in the outer graph",
           "[feature:nested-graph][shape:nested][scalar:integer][binding:value-to-reference]"
           "[binding:reference-to-value]") {
     const auto sum = bg::node<NestedListSum>();
-    const auto materialize = bg::graph("name"_n = "materialize_free_list",
-                                       [](bg::wp<NestedIntList> input) -> bg::wp<NestedIntList> { return input; });
-    const auto inner = bg::graph(
-        "name"_n = "produce_inner_free_list",
-        [&](bg::wp<bg::TS<std::int64_t>> first, bg::wp<bg::TS<std::int64_t>> second) -> bg::wp<NestedIntList> {
-            return materialize(bg::tsl(first, second));
-        });
+    const auto materialize =
+        bg::graph("name"_n = "materialize_free_list",
+                  [](bg::wp<bg::TSL<bg::TS<std::int64_t>, 2>> input) -> bg::wp<bg::TSL<bg::TS<std::int64_t>, 2>> {
+                      return input;
+                  });
+    const auto inner = bg::graph("name"_n = "produce_inner_free_list",
+                                 [&](bg::wp<bg::TS<std::int64_t>> first,
+                                     bg::wp<bg::TS<std::int64_t>> second) -> bg::wp<bg::TSL<bg::TS<std::int64_t>, 2>> {
+                                     return materialize(bg::tsl(first, second));
+                                 });
     const auto outer = [&](bg::wp<bg::TS<std::int64_t>> first, bg::wp<bg::TS<std::int64_t>> second,
                            bg::wp<bg::TS<bool>> run) { return sum(bg::nested(inner, run, first, second)); };
 
@@ -283,8 +284,11 @@ TEST_CASE("a free list reference passes through a nested graph",
           "[feature:nested-graph][shape:nested][scalar:integer][binding:value-to-reference]"
           "[binding:reference-to-value][binding:reference-to-reference]") {
     const auto sum = bg::node<NestedListSum>();
-    const auto inner = bg::graph("name"_n = "pass_free_list",
-                                 [](bg::wp<NestedIntList> input) -> bg::wp<NestedIntList> { return input; });
+    const auto inner =
+        bg::graph("name"_n = "pass_free_list",
+                  [](bg::wp<bg::TSL<bg::TS<std::int64_t>, 2>> input) -> bg::wp<bg::TSL<bg::TS<std::int64_t>, 2>> {
+                      return input;
+                  });
     const auto outer = [&](bg::wp<bg::TS<std::int64_t>> first, bg::wp<bg::TS<std::int64_t>> second,
                            bg::wp<bg::TS<bool>> run) { return sum(bg::nested(inner, run, bg::tsl(first, second))); };
 
@@ -300,10 +304,8 @@ template <template <typename> typename Field> struct NestedIntBundle {
     Field<bg::TS<std::int64_t>> second;
 };
 
-using NestedIntBundleTimeSeries = bg::TSB<NestedIntBundle>;
-
 struct NestedBundleSum {
-    bg::In<NestedIntBundleTimeSeries> input;
+    bg::In<bg::TSB<NestedIntBundle>> input;
     bg::Out<bg::TS<std::int64_t>> output;
 
     void evaluate() const { output.set(*input->first + *input->second); }
@@ -316,7 +318,7 @@ TEST_CASE("a reference to an outer free bundle works in a nested graph",
     const auto sum = bg::node<NestedBundleSum>();
     const auto inner =
         bg::graph("name"_n = "consume_outer_free_bundle",
-                  [&](bg::wp<NestedIntBundleTimeSeries> input) -> bg::wp<bg::TS<std::int64_t>> { return sum(input); });
+                  [&](bg::wp<bg::TSB<NestedIntBundle>> input) -> bg::wp<bg::TS<std::int64_t>> { return sum(input); });
     const auto outer = [&](bg::wp<bg::TS<std::int64_t>> first, bg::wp<bg::TS<std::int64_t>> second,
                            bg::wp<bg::TS<bool>> run) {
         return bg::nested(inner, run, bg::bundle("first"_n = first, "second"_n = second));
@@ -336,10 +338,10 @@ TEST_CASE("a reference to an inner free bundle works in the outer graph",
     const auto sum = bg::node<NestedBundleSum>();
     const auto materialize =
         bg::graph("name"_n = "materialize_free_bundle",
-                  [](bg::wp<NestedIntBundleTimeSeries> input) -> bg::wp<NestedIntBundleTimeSeries> { return input; });
+                  [](bg::wp<bg::TSB<NestedIntBundle>> input) -> bg::wp<bg::TSB<NestedIntBundle>> { return input; });
     const auto inner = bg::graph("name"_n = "produce_inner_free_bundle",
                                  [&](bg::wp<bg::TS<std::int64_t>> first,
-                                     bg::wp<bg::TS<std::int64_t>> second) -> bg::wp<NestedIntBundleTimeSeries> {
+                                     bg::wp<bg::TS<std::int64_t>> second) -> bg::wp<bg::TSB<NestedIntBundle>> {
                                      return materialize(bg::bundle("first"_n = first, "second"_n = second));
                                  });
     const auto outer = [&](bg::wp<bg::TS<std::int64_t>> first, bg::wp<bg::TS<std::int64_t>> second,
@@ -359,7 +361,7 @@ TEST_CASE("a free bundle reference passes through a nested graph",
     const auto sum = bg::node<NestedBundleSum>();
     const auto inner =
         bg::graph("name"_n = "pass_free_bundle",
-                  [](bg::wp<NestedIntBundleTimeSeries> input) -> bg::wp<NestedIntBundleTimeSeries> { return input; });
+                  [](bg::wp<bg::TSB<NestedIntBundle>> input) -> bg::wp<bg::TSB<NestedIntBundle>> { return input; });
     const auto outer = [&](bg::wp<bg::TS<std::int64_t>> first, bg::wp<bg::TS<std::int64_t>> second,
                            bg::wp<bg::TS<bool>> run) {
         return sum(bg::nested(inner, run, bg::bundle("first"_n = first, "second"_n = second)));

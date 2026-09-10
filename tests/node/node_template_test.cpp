@@ -102,10 +102,10 @@ TEST_CASE("aggregate and callable reference outputs default to deduplicated",
 
 namespace {
 
-using KeyScalar = bg::ScalarVariable<"Key", bg::EqualityComparable, bg::Hashable>;
+using KEY_SCALAR = bg::ScalarVariable<"KEY", bg::EqualityComparable, bg::Hashable>;
 
 struct key_sink {
-    bg::Scalar<KeyScalar> key;
+    bg::Scalar<KEY_SCALAR> key;
 
     void evaluate() const {
         static_cast<void>(key == key);
@@ -235,14 +235,14 @@ TEST_CASE("aggregate scalar and state fields have distinct roles",
 
 namespace {
 
-using LeftScalar = bg::ScalarVariable<"Left">;
-using RightScalar = bg::ScalarVariable<"Right">;
+using LEFT_SCALAR = bg::ScalarVariable<"LEFT">;
+using RIGHT_SCALAR = bg::ScalarVariable<"RIGHT">;
 
 struct generic_pair {
-    bg::In<bg::TS<LeftScalar>> first;
-    bg::In<bg::TS<LeftScalar>> second;
-    bg::In<bg::TS<RightScalar>> other;
-    bg::Out<bg::TS<LeftScalar>> output;
+    bg::In<bg::TS<LEFT_SCALAR>> first;
+    bg::In<bg::TS<LEFT_SCALAR>> second;
+    bg::In<bg::TS<RIGHT_SCALAR>> other;
+    bg::Out<bg::TS<LEFT_SCALAR>> output;
 
     void evaluate() const { output.set_value(first.value_view()); }
 };
@@ -267,12 +267,12 @@ TEST_CASE("scalar variable declarations retain their identity", "[node_template]
 
 namespace {
 
-inline constexpr auto captured_guarantee = bg::guarantee_variable<"G">;
-using CapturedTimeSeries = bg::TimeSeriesVariable<"T">;
+inline constexpr auto G = bg::guarantee_variable<"G">;
+using CAPTURED_TIME_SERIES = bg::TimeSeriesVariable<"T">;
 
 struct time_series_variable_guarantee {
-    bg::In<CapturedTimeSeries::with<captured_guarantee>> input;
-    bg::Out<bg::TS<int, captured_guarantee>> output;
+    bg::In<CAPTURED_TIME_SERIES::with<G>> input;
+    bg::Out<bg::TS<int, G>> output;
 
     void evaluate() const {}
 };
@@ -337,10 +337,10 @@ TEST_CASE("collection inputs retain their resolved runtime layout", "[node_templ
 
 namespace {
 
-using NumericScalar = bg::ScalarVariable<"Numeric", float, double>;
+using NUMERIC_SCALAR = bg::ScalarVariable<"NUMERIC", float, double>;
 
 struct numeric_sink {
-    bg::In<bg::TS<NumericScalar>> input;
+    bg::In<bg::TS<NUMERIC_SCALAR>> input;
 
     void evaluate() const {}
 };

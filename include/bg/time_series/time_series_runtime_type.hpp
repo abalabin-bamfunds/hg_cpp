@@ -86,6 +86,10 @@ class TimeSeriesRuntimeType : public RuntimeType {
     virtual bool collection_valid(const void *) const noexcept { return false; }
     virtual void for_each_modified_item(const EvaluationTime &, const void *, EvaluationTime, void *,
                                         ModifiedItemFunction) const {}
+    virtual bool satisfies_reference_request(const TimeSeriesType &requested_type) const noexcept {
+        return &type() == &requested_type;
+    }
+    virtual details::ReferenceAddress reference_address(const void *) const;
     [[nodiscard]] virtual details::ReferenceRepresentation *
     create_reference_representation(details::ReferenceProvider &, details::ReferenceAddress, const TimeSeriesType &,
                                     std::pmr::memory_resource &) const;

@@ -9,6 +9,7 @@
 namespace bg {
 
 class RuntimeGraph;
+class TimeSeriesRuntimeType;
 namespace details {
 struct DynamicSubscribers;
 }
@@ -23,6 +24,9 @@ class OutputChangeContext {
   public:
     RuntimeGraph &runtime_graph() const noexcept { return *runtime_graph_; }
     EvaluationTime evaluation_time() const noexcept;
+    OutputChangeContext for_graph(RuntimeGraph &graph) const noexcept {
+        return OutputChangeContext{graph, evaluation_time_};
+    }
 
     void schedule_validity_check(RuntimeGraph &graph, std::size_t node_index) const noexcept;
     void notify(details::DynamicSubscribers *subscribers, OutputChange change) const;
@@ -30,13 +34,16 @@ class OutputChangeContext {
   private:
     friend class RuntimeGraph;
 
-    explicit OutputChangeContext(RuntimeGraph &runtime_graph) noexcept : runtime_graph_{&runtime_graph} {}
+    explicit OutputChangeContext(RuntimeGraph &runtime_graph) noexcept;
+    OutputChangeContext(RuntimeGraph &runtime_graph, EvaluationTime evaluation_time) noexcept
+        : runtime_graph_{&runtime_graph}, evaluation_time_{evaluation_time} {}
 
     RuntimeGraph *runtime_graph_;
+    EvaluationTime evaluation_time_;
 };
 
-using OutputNotificationFunction = void (*)(OutputChangeContext &, const void *, OutputChange,
-                                            std::span<const std::byte>);
+using OutputNotificationFunction = void (*)(OutputChangeContext &, const TimeSeriesRuntimeType *, const void *,
+                                            OutputChange, std::span<const std::byte>);
 using InputChangeFunction = void (*)(OutputChangeContext &, std::size_t, std::size_t, OutputChange);
 using DynamicObserverFunction = void (*)(OutputChangeContext &, void *, OutputChange);
 
@@ -60,8 +67,8 @@ class InputCallbackSubscriber {
     std::uint32_t node_index_;
 };
 
-void notify_input_callbacks(OutputChangeContext &context, const void *, OutputChange change,
-                            std::span<const std::byte> records);
+void notify_input_callbacks(OutputChangeContext &context, const TimeSeriesRuntimeType *, const void *,
+                            OutputChange change, std::span<const std::byte> records);
 
 class OutputNotification {
   public:
@@ -69,11 +76,12 @@ class OutputNotification {
                        std::uint32_t following_bytes = 0) noexcept
         : function_{function}, record_bytes_{record_bytes}, following_bytes_{following_bytes} {}
 
-    void notify(OutputChangeContext &context, const void *value, OutputChange change) const {
+    void notify(OutputChangeContext &context, const TimeSeriesRuntimeType *runtime_type, const void *value,
+                OutputChange change) const {
         // Adjacent blocks keep handler-specific records compact while allowing one output to serve several handlers.
         auto *notification = this;
         while (notification != nullptr) {
-            notification->function_(context, value, change, notification->records());
+            notification->function_(context, runtime_type, value, change, notification->records());
             notification = notification->next();
         }
     }

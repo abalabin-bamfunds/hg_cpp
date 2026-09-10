@@ -117,6 +117,10 @@ bool TimeSeriesRuntimeType::item_updated(const EvaluationTime &, const void *, T
 
 void TimeSeriesRuntimeType::for_each_updated_item(const EvaluationTime &, const void *, void *, ItemIdFunction) const {}
 
+details::ReferenceAddress TimeSeriesRuntimeType::reference_address(const void *) const {
+    throw std::logic_error{"time series does not contain a reference address"};
+}
+
 details::ReferenceRepresentation *
 TimeSeriesRuntimeType::create_reference_representation(details::ReferenceProvider &, details::ReferenceAddress,
                                                        const TimeSeriesType &, std::pmr::memory_resource &) const {

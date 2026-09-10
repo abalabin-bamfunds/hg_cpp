@@ -70,12 +70,12 @@ TEST_CASE("a scalar list can contain evaluation times",
 TEST_CASE("a generic scalar list exposes its declared comparison operations",
           "[value][scalar][list][scalar:list][generic][declaration:generic][feature:scalar-collection]"
           "[scalar:generic]") {
-    using Item = bg::ScalarVariable<"Item", bg::EqualityComparable, bg::Hashable>;
+    using ITEM = bg::ScalarVariable<"ITEM", bg::EqualityComparable, bg::Hashable>;
 
     const auto first = bg::ScalarValue<bg::List<std::int64_t>>{std::vector<std::int64_t>{1, 2}};
     const auto second = bg::ScalarValue<bg::List<std::int64_t>>{std::vector<std::int64_t>{1, 2}};
-    const auto left = bg::Scalar<bg::List<Item>>::from(first);
-    const auto right = bg::Scalar<bg::List<Item>>::from(second);
+    const auto left = bg::Scalar<bg::List<ITEM>>::from(first);
+    const auto right = bg::Scalar<bg::List<ITEM>>::from(second);
 
     CHECK(left == right);
     CHECK(left == second);

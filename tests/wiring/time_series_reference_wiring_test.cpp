@@ -1,6 +1,7 @@
 #include <bg/graph/graph_wiring.hpp>
 #include <bg/graph/wiring_context.hpp>
 #include <bg/node.hpp>
+#include <bg/type/time_series_reference_type.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -35,6 +36,8 @@ TEST_CASE("wiring inserts and reuses a reference-making node",
     REQUIRE(wiring.nodes().size() == 3);
     CHECK(wiring.nodes()[2].input_output_indices().front() == 1);
     CHECK(wiring.nodes()[1].signature().name == bg::util::symbol{"reference"});
+    const auto &reference = dynamic_cast<const bg::TimeSeriesReferenceType &>(*wiring.nodes()[1].signature().output);
+    CHECK(reference.guarantee().value() == bg::TimeSeriesGuarantee::const_);
 }
 
 TEST_CASE("wiring preserves an existing reference",

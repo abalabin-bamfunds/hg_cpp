@@ -53,12 +53,12 @@ template <typename Target, auto... Properties> class Out<REF<Target, Properties.
     const TimeSeriesRuntimeType &runtime_type() const noexcept { return state_->runtime_type(); }
 
     template <auto... ReferenceProperties, auto... InputProperties>
-    void set(const In<REF<Target, ReferenceProperties...>, InputProperties...> &source) const {
-        if (!source.valid()) {
+    void set(const In<REF<Target, ReferenceProperties...>, InputProperties...> &input) const {
+        if (!input.valid()) {
             invalidate();
             return;
         }
-        set_target(source.target());
+        set_target(input.target());
     }
 
     void set_target(details::ReferenceAddress target) const {

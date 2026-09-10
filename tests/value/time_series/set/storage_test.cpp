@@ -86,6 +86,57 @@ TEST_CASE("removing an existing time series set item retains it until reclamatio
     CHECK(memory.allocations() == 0);
 }
 
+TEST_CASE("retaining a time series set key preserves its non-live position",
+          "[value][tss][series:tss][storage][feature:time-series-storage][feature:getitem]"
+          "[transition:addition][transition:removal]") {
+    auto memory = counting_memory_resource{};
+    auto storage = bg::details::time_series_set_storage{};
+    const auto &key_runtime_type = bg::cpp_scalar_runtime_type<std::int64_t>();
+    const auto key_layout = bg::util::runtime_item_layout{key_runtime_type.size(), key_runtime_type.alignment()};
+    const auto key = bg::ScalarValue<std::int64_t>{1};
+    const auto first_time = bg::MIN_DT + bg::EvaluationTime::duration{1};
+    auto constructed_items = 0;
+
+    storage.reset_change_tracking(first_time, key_runtime_type, key_layout, memory,
+                                  [&](std::uint32_t) noexcept { --constructed_items; });
+    const auto retained = storage.retain(key, key_runtime_type, key_layout, memory);
+    const auto retained_again = storage.retain(key, key_runtime_type, key_layout, memory);
+
+    CHECK(retained_again == retained);
+    CHECK(storage.size() == 0);
+    CHECK_FALSE(storage.changed());
+
+    storage.release_retention(retained, memory);
+    storage.reset_change_tracking(first_time + bg::EvaluationTime::duration{1}, key_runtime_type, key_layout, memory,
+                                  [&](std::uint32_t) noexcept { --constructed_items; });
+    CHECK(storage.find_position(key, key_runtime_type, key_layout) == retained);
+
+    const auto inserted = storage.insert(
+        key, key_runtime_type, key_layout, memory, [&](std::uint32_t) { ++constructed_items; },
+        [&](std::uint32_t) noexcept { --constructed_items; });
+    REQUIRE(inserted.change == bg::details::time_series_set_change::added);
+    CHECK(inserted.position == retained);
+
+    storage.reset_change_tracking(first_time + bg::EvaluationTime::duration{2}, key_runtime_type, key_layout, memory,
+                                  [&](std::uint32_t) noexcept { --constructed_items; });
+    const auto removed =
+        storage.erase(key, key_runtime_type, key_layout, memory, [&](std::uint32_t) noexcept { --constructed_items; });
+    REQUIRE(removed.change == bg::details::time_series_set_change::removed);
+    storage.reset_change_tracking(first_time + bg::EvaluationTime::duration{3}, key_runtime_type, key_layout, memory,
+                                  [&](std::uint32_t) noexcept { --constructed_items; });
+
+    CHECK(constructed_items == 0);
+    CHECK(storage.find_position(key, key_runtime_type, key_layout) == retained);
+
+    storage.release_retention(retained, memory);
+    storage.reset_change_tracking(first_time + bg::EvaluationTime::duration{4}, key_runtime_type, key_layout, memory,
+                                  [&](std::uint32_t) noexcept { --constructed_items; });
+    CHECK(storage.find_position(key, key_runtime_type, key_layout) == bg::util::occupancy_index::npos);
+
+    storage.release(key_runtime_type, key_layout, memory, [&](std::uint32_t) noexcept { --constructed_items; });
+    CHECK(memory.allocations() == 0);
+}
+
 TEST_CASE("clearing time series set storage retains only previously visible items",
           "[value][tss][series:tss][storage][feature:time-series-storage][transition:removal]") {
     auto memory = counting_memory_resource{};

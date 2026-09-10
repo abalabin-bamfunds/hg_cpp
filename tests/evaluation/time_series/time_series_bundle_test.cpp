@@ -60,10 +60,8 @@ struct bundle_sum_definition {
     void evaluate() const { output.set(static_cast<float>(*input->count) + *input->value); }
 };
 
-using BundleList = bg::TSL<bg::TSB<DerivedBundle>, 2>;
-
 struct bundle_list_source_definition {
-    bg::Out<BundleList> output;
+    bg::Out<bg::TSL<bg::TSB<DerivedBundle>, 2>> output;
 
     void start() const { output[1]->value.set(4.5F); }
 };
@@ -88,8 +86,9 @@ TEST_CASE("fixed time series lists can contain runtime-sized time series",
           "[scalar:integer][scalar:floating-point][representation:native][declaration:concrete]"
           "[binding:direct][schema:named]") {
     const auto source = bg::node<bundle_list_source_definition>();
-    const auto value =
-        bg::node([](bg::In<BundleList> input, bg::Out<bg::TS<float>> output) { output.set(*input[1]->value); });
+    const auto value = bg::node([](bg::In<bg::TSL<bg::TSB<DerivedBundle>, 2>> input, bg::Out<bg::TS<float>> output) {
+        output.set(*input[1]->value);
+    });
     const auto graph = [&] { return value(source()); };
 
     const auto actual = bg::testing::test_graph(graph);
@@ -143,8 +142,7 @@ TEST_CASE("a typed free TSB wiring point selects its original source",
         return bg::bundle("value"_n = value, "count"_n = count).as<bg::TSB<DerivedBundle>>()->count;
     };
 
-    const auto actual =
-        bg::testing::test_graph(graph, std::vector{1, 2, 3}, std::vector{0.5F, 1.5F, 2.5F});
+    const auto actual = bg::testing::test_graph(graph, std::vector{1, 2, 3}, std::vector{0.5F, 1.5F, 2.5F});
 
     CHECK(actual.equals({1, 2, 3}));
 }

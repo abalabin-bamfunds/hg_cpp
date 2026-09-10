@@ -82,13 +82,13 @@ TEST_CASE("a scalar dictionary owns nested collection values",
 TEST_CASE("a generic scalar dictionary exposes its declared comparison operations",
           "[value][scalar][dict][scalar:dict][generic][declaration:generic][feature:scalar-collection]"
           "[scalar:generic]") {
-    using Item = bg::ScalarVariable<"Item", bg::EqualityComparable, bg::Hashable>;
+    using ITEM = bg::ScalarVariable<"ITEM", bg::EqualityComparable, bg::Hashable>;
     using Entry = std::pair<std::int64_t, std::int64_t>;
 
     const auto first = bg::ScalarValue<bg::Dict<std::int64_t, std::int64_t>>{std::vector<Entry>{{1, 2}, {3, 4}}};
     const auto second = bg::ScalarValue<bg::Dict<std::int64_t, std::int64_t>>{std::vector<Entry>{{3, 4}, {1, 2}}};
-    const auto left = bg::Scalar<bg::Dict<Item, Item>>::from(first);
-    const auto right = bg::Scalar<bg::Dict<Item, Item>>::from(second);
+    const auto left = bg::Scalar<bg::Dict<ITEM, ITEM>>::from(first);
+    const auto right = bg::Scalar<bg::Dict<ITEM, ITEM>>::from(second);
 
     CHECK(left == right);
     CHECK(left == second);

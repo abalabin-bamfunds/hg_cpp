@@ -201,10 +201,10 @@ TEST_CASE("a node call requires a wiring context", "[graph_wiring][feature:wirin
 
 namespace {
 
-using BoundTimeSeries = bg::TimeSeriesVariable<"BoundTimeSeries">;
+using BOUND_TIME_SERIES = bg::TimeSeriesVariable<"BOUND_TIME_SERIES">;
 
 struct bound_reference_source {
-    bg::Out<bg::REF<BoundTimeSeries>> output;
+    bg::Out<bg::REF<BOUND_TIME_SERIES>> output;
 
     void evaluate() const noexcept {}
 };
@@ -216,7 +216,7 @@ TEST_CASE("a node call can seed type resolution", "[graph_wiring][type_system][f
     const auto &target = bg::TS<std::int64_t>::type();
     const auto &expected = bg::REF<bg::TS<std::int64_t>>::type();
     auto type_map = bg::TypeMap{};
-    type_map.set(bg::details::TimeSeriesVariableInstance<BoundTimeSeries>::get(), &target);
+    type_map.set(bg::details::TimeSeriesVariableInstance<BOUND_TIME_SERIES>::get(), &target);
     auto wiring = bg::GraphWiring{};
 
     auto context = bg::WiringContext{wiring};

@@ -214,6 +214,12 @@ class wp<TSB<Schema, Properties...>> {
     using time_series_type = TimeSeries;
 
   private:
+    struct unchecked_t {};
+
+    wp(WiringPoint point, unchecked_t) noexcept : point_(point) {}
+
+    friend struct details::wiring_point_annotation;
+
     WiringPoint point_;
 };
 

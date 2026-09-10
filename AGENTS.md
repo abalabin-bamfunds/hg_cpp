@@ -137,6 +137,10 @@ Visual C++ (MSVC) compilers.
 
 - Use `auto` by default. Spell out a type when it adds information that the
   initializer does not show or selects a required representation.
+- Spell composite time series types directly in node and graph declarations.
+  Do not hide types such as `TSD<K, TS<V>>` behind a C++ type alias there.
+- Name graph type variables in uppercase, for example `KEY`, `VALUE`, and
+  `ITEM`.
 - Use `[[nodiscard]]` only when ignoring a result loses an operation outcome,
   ownership, a handle, or error information. Do not apply it to observation APIs.
 - Prefer C++23 language and library features when all supported compilers

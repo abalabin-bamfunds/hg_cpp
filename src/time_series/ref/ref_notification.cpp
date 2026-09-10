@@ -41,28 +41,34 @@ void update_reference_input(OutputChangeContext &context, ReferenceAddress refer
 
 } // namespace
 
-void notify_reference_inputs(OutputChangeContext &context, const void *value, OutputChange change,
+void notify_reference_inputs(OutputChangeContext &context, const TimeSeriesRuntimeType *runtime_type,
+                             const void *value, OutputChange change,
                              std::span<const std::byte> record_bytes) {
     const auto records = std::span{
         reinterpret_cast<const ReferenceInputSubscriber *>(record_bytes.data()),
         record_bytes.size() / sizeof(ReferenceInputSubscriber),
     };
-    const auto reference =
-        change == OutputChange::invalidation ? ReferenceAddress{} : *static_cast<const ReferenceAddress *>(value);
+    const auto reference = change == OutputChange::invalidation
+                               ? ReferenceAddress{}
+                               : runtime_type == nullptr ? *static_cast<const ReferenceAddress *>(value)
+                                                         : runtime_type->reference_address(value);
 
     for (const auto &subscriber : records) {
         update_reference_input(context, reference, subscriber, 0, nullptr, change);
     }
 }
 
-void notify_callback_reference_inputs(OutputChangeContext &context, const void *value, OutputChange change,
+void notify_callback_reference_inputs(OutputChangeContext &context, const TimeSeriesRuntimeType *runtime_type,
+                                      const void *value, OutputChange change,
                                       std::span<const std::byte> record_bytes) {
     const auto records = std::span{
         reinterpret_cast<const CallbackReferenceInputSubscriber *>(record_bytes.data()),
         record_bytes.size() / sizeof(CallbackReferenceInputSubscriber),
     };
-    const auto reference =
-        change == OutputChange::invalidation ? ReferenceAddress{} : *static_cast<const ReferenceAddress *>(value);
+    const auto reference = change == OutputChange::invalidation
+                               ? ReferenceAddress{}
+                               : runtime_type == nullptr ? *static_cast<const ReferenceAddress *>(value)
+                                                         : runtime_type->reference_address(value);
 
     for (const auto &subscriber : records) {
         update_reference_input(context, reference, subscriber.subscription(), subscriber.data(), subscriber.callback(),

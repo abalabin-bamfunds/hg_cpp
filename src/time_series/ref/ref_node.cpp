@@ -21,8 +21,8 @@ namespace {
 
 class ReferenceNodeTemplate final : public NodeTemplate {
   public:
-    ReferenceNodeTemplate(const TimeSeriesType &source, const TimeSeriesReferenceType &type)
-        : signature_{util::symbol{"reference"}, {{util::symbol{"target"}, &source, passive, optional}}, type} {}
+    ReferenceNodeTemplate(const TimeSeriesType &input_type, const TimeSeriesReferenceType &type)
+        : signature_{util::symbol{"reference"}, {{util::symbol{"target"}, &input_type, passive, optional}}, type} {}
 
     const Signature &signature() const override { return signature_; }
 
@@ -50,7 +50,11 @@ class ReferenceNodeTemplate final : public NodeTemplate {
 
     bool uses_time_series_input_runtime_type(std::size_t) const noexcept override { return true; }
 
-    InputChangeCallback input_change_callback(std::size_t) const noexcept override { return {&source_changed, 0}; }
+    bool uses_cycle_callbacks() const noexcept override {
+        return dynamic_cast<const TimeSeriesDictionaryType *>(signature_.parameter(0).type) != nullptr;
+    }
+
+    InputChangeCallback input_change_callback(std::size_t) const noexcept override { return {&notify_input, 0}; }
 
   private:
     static void start(const CompiledNode &node, void *runtime_storage, EvaluationContext *context) {
@@ -59,7 +63,7 @@ class ReferenceNodeTemplate final : public NodeTemplate {
         auto &output = *static_cast<ReferenceAddress *>(runtime_node.output_value());
 
         reference.graph = &context->runtime_graph();
-        reference.source = &node;
+        reference.node = &node;
         reference.runtime_type = &runtime_node.time_series_input_runtime_type(0, 0);
         output = &reference;
         runtime_node.output_last_updated() = context->evaluation_time();
@@ -70,9 +74,9 @@ class ReferenceNodeTemplate final : public NodeTemplate {
         destroy_reference_root(reference, context->runtime_graph().memory_resource());
     }
 
-    static void source_changed(OutputChangeContext &context, std::size_t node_index, std::size_t, OutputChange change) {
+    static void notify_input(OutputChangeContext &context, std::size_t node_index, std::size_t, OutputChange change) {
         auto &reference = *static_cast<ReferenceRoot *>(context.runtime_graph().node(node_index).state());
-        notify_reference_source(reference, context, change);
+        notify_reference(ReferenceAddress{&reference}, context, change);
     }
 
     Signature signature_;
@@ -98,9 +102,9 @@ bool requires_reference_representation(const TimeSeriesType &parameter, const Ti
     return requires_reference_representation(parameter_item, argument_item);
 }
 
-const NodeTemplate &reference_node_template(const TimeSeriesType &source, const TimeSeriesReferenceType &type) {
+const NodeTemplate &reference_node_template(const TimeSeriesType &argument, const TimeSeriesReferenceType &type) {
     struct Entry {
-        const TimeSeriesType *source;
+        const TimeSeriesType *argument;
         const TimeSeriesReferenceType *type;
         std::unique_ptr<ReferenceNodeTemplate> node_template;
     };
@@ -110,38 +114,40 @@ const NodeTemplate &reference_node_template(const TimeSeriesType &source, const 
 
     const auto lock = std::lock_guard{mutex};
     const auto existing = std::ranges::find_if(templates, [&](const auto &entry) {
-        return entry.source == &source && entry.type == &type;
+        return entry.argument == &argument && entry.type == &type;
     });
     if (existing != templates.end()) {
         return *existing->node_template;
     }
 
-    auto &entry = templates.emplace_back(&source, &type, std::make_unique<ReferenceNodeTemplate>(source, type));
+    auto &entry = templates.emplace_back(&argument, &type, std::make_unique<ReferenceNodeTemplate>(argument, type));
     return *entry.node_template;
 }
 
-WiringPoint materialize_reference(WiringPoint source, const TimeSeriesType &requested_type) {
+WiringPoint materialize_reference(WiringPoint argument, const TimeSeriesType &requested_type) {
     const auto *requested_reference = dynamic_cast<const TimeSeriesReferenceType *>(&requested_type);
-    const auto *source_reference = dynamic_cast<const TimeSeriesReferenceType *>(&source.type());
+    const auto *argument_reference = dynamic_cast<const TimeSeriesReferenceType *>(&argument.type());
 
-    if (requested_reference != nullptr && source_reference == nullptr) {
-        const auto result = reference_node_template(source.type(), *requested_reference)(source);
+    if (requested_reference != nullptr && argument_reference == nullptr) {
+        const auto &reference_type =
+            time_series_reference_type(requested_reference->target_type(), TimeSeriesGuarantee::const_);
+        const auto result = reference_node_template(argument.type(), reference_type)(argument);
         if (!result) {
             throw WiringError{"a reference node produced no output"};
         }
         return *result;
     }
 
-    if (source_reference == nullptr && requires_reference_representation(requested_type, source.type())) {
+    if (argument_reference == nullptr && requires_reference_representation(requested_type, argument.type())) {
         const auto &reference_type = time_series_reference_type(requested_type, TimeSeriesGuarantee::const_);
-        const auto result = reference_node_template(source.type(), reference_type)(source);
+        const auto result = reference_node_template(argument.type(), reference_type)(argument);
         if (!result) {
             throw WiringError{"a reference node produced no output"};
         }
         return *result;
     }
 
-    return source;
+    return argument;
 }
 
 } // namespace bg::details

@@ -60,12 +60,12 @@ TEST_CASE("a scalar set owns variable-size items",
 TEST_CASE("a generic scalar set exposes its declared comparison operations",
           "[value][scalar][set][scalar:set][generic][declaration:generic][feature:scalar-collection]"
           "[scalar:generic]") {
-    using Item = bg::ScalarVariable<"Item", bg::EqualityComparable, bg::Hashable>;
+    using ITEM = bg::ScalarVariable<"ITEM", bg::EqualityComparable, bg::Hashable>;
 
     const auto first = bg::ScalarValue<bg::Set<std::int64_t>>{std::vector<std::int64_t>{1, 2}};
     const auto second = bg::ScalarValue<bg::Set<std::int64_t>>{std::vector<std::int64_t>{2, 1}};
-    const auto left = bg::Scalar<bg::Set<Item>>::from(first);
-    const auto right = bg::Scalar<bg::Set<Item>>::from(second);
+    const auto left = bg::Scalar<bg::Set<ITEM>>::from(first);
+    const auto right = bg::Scalar<bg::Set<ITEM>>::from(second);
 
     CHECK(left == right);
     CHECK(left == second);

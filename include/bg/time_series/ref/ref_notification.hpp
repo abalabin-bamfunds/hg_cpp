@@ -52,9 +52,11 @@ class CallbackReferenceInputSubscriber {
     InputChangeFunction callback_;
 };
 
-void notify_reference_inputs(OutputChangeContext &context, const void *value, OutputChange change,
+void notify_reference_inputs(OutputChangeContext &context, const TimeSeriesRuntimeType *runtime_type,
+                             const void *value, OutputChange change,
                              std::span<const std::byte> records);
-void notify_callback_reference_inputs(OutputChangeContext &context, const void *value, OutputChange change,
+void notify_callback_reference_inputs(OutputChangeContext &context, const TimeSeriesRuntimeType *runtime_type,
+                                      const void *value, OutputChange change,
                                       std::span<const std::byte> records);
 
 static_assert(sizeof(ReferenceInputSubscriber) == 2 * sizeof(void *));

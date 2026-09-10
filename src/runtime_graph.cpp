@@ -19,9 +19,10 @@
 
 namespace bg {
 
-EvaluationTime OutputChangeContext::evaluation_time() const noexcept {
-    return runtime_graph_->evaluation_time();
-}
+OutputChangeContext::OutputChangeContext(RuntimeGraph &runtime_graph) noexcept
+    : runtime_graph_{&runtime_graph}, evaluation_time_{runtime_graph.evaluation_time()} {}
+
+EvaluationTime OutputChangeContext::evaluation_time() const noexcept { return evaluation_time_; }
 
 void OutputChangeContext::schedule_validity_check(RuntimeGraph &graph, std::size_t node_index) const noexcept {
     graph.schedule_validity_check(node_index);
@@ -33,7 +34,8 @@ void OutputChangeContext::notify(details::DynamicSubscribers *subscribers, Outpu
     }
 }
 
-void notify_input_callbacks(OutputChangeContext &context, const void *, OutputChange change,
+void notify_input_callbacks(OutputChangeContext &context, const TimeSeriesRuntimeType *, const void *,
+                            OutputChange change,
                             std::span<const std::byte> record_bytes) {
     const auto records = std::span{
         reinterpret_cast<const InputCallbackSubscriber *>(record_bytes.data()),
@@ -100,6 +102,7 @@ class RuntimeGraph::FutureSchedule {
 
 class RuntimeGraph::CycleCallbacks {
     struct Record {
+        RuntimeGraph *owner;
         void *target;
         void (*function)(void *) noexcept;
     };
@@ -107,7 +110,17 @@ class RuntimeGraph::CycleCallbacks {
   public:
     explicit CycleCallbacks(std::pmr::memory_resource &memory) : records_{&memory} {}
 
-    void add(void *target, void (*function)(void *) noexcept) { records_.push_back({target, function}); }
+    void add(RuntimeGraph &owner, void *target, void (*function)(void *) noexcept) {
+        records_.push_back({&owner, target, function});
+    }
+
+    void remove(const void *target) noexcept {
+        std::erase_if(records_, [=](const auto &record) { return record.target == target; });
+    }
+
+    void remove(RuntimeGraph &owner) noexcept {
+        std::erase_if(records_, [&](const auto &record) { return record.owner == &owner; });
+    }
 
     void run() noexcept {
         const auto count = records_.size();
@@ -270,7 +283,7 @@ class RuntimeGraph::ModifiedItemPropagator {
             sampled_last_updated = now_valid ? graph_->evaluation_time_ : MIN_DT;
             const auto change = now_valid ? (was_valid ? OutputChange::update : OutputChange::revalidation)
                                           : OutputChange::invalidation;
-            graph_->notify_output(subscribers.output_notification(), item.value, change);
+            graph_->notify_output(subscribers.output_notification(), item.runtime_type, item.value, change);
             graph_->schedule_subscribers(subscribers.subscribers(), change);
         }
 
@@ -481,7 +494,15 @@ RuntimeGraph::CycleCallbacks *RuntimeGraph::cycle_callbacks() const noexcept {
     return *reinterpret_cast<CycleCallbacks *const *>(storage_ + compiled_graph_->cycle_callbacks_offset());
 }
 
-void RuntimeGraph::add_cycle_callback(void *target, void (*function)(void *) noexcept) {
+RuntimeGraph &RuntimeGraph::outer_graph() noexcept {
+    auto *result = this;
+    while (result->parent_ != nullptr) {
+        result = result->parent_;
+    }
+    return *result;
+}
+
+RuntimeGraph::CycleCallbacks &RuntimeGraph::require_cycle_callbacks() {
     if (!compiled_graph_->has_cycle_callbacks()) {
         throw std::logic_error{"the graph does not declare cycle callbacks"};
     }
@@ -494,7 +515,18 @@ void RuntimeGraph::add_cycle_callback(void *target, void (*function)(void *) noe
         release.release();
     }
 
-    cycle_callbacks()->add(target, function);
+    return *cycle_callbacks();
+}
+
+void RuntimeGraph::add_cycle_callback(void *target, void (*function)(void *) noexcept) {
+    outer_graph().require_cycle_callbacks().add(*this, target, function);
+}
+
+void RuntimeGraph::remove_cycle_callback(const void *target) noexcept {
+    auto &outer = outer_graph();
+    if (outer.compiled_graph_->has_cycle_callbacks() && outer.cycle_callbacks() != nullptr) {
+        outer.cycle_callbacks()->remove(target);
+    }
 }
 
 void RuntimeGraph::run_cycle_callbacks() noexcept {
@@ -504,6 +536,13 @@ void RuntimeGraph::run_cycle_callbacks() noexcept {
 }
 
 void RuntimeGraph::clear_cycle_callbacks() noexcept {
+    auto &outer = outer_graph();
+    if (&outer != this) {
+        if (outer.compiled_graph_->has_cycle_callbacks() && outer.cycle_callbacks() != nullptr) {
+            outer.cycle_callbacks()->remove(*this);
+        }
+        return;
+    }
     if (compiled_graph_->has_cycle_callbacks() && cycle_callbacks() != nullptr) {
         cycle_callbacks()->clear();
     }
@@ -541,19 +580,20 @@ void RuntimeGraph::schedule_node_subscriber(std::size_t node_index, bool is_acti
     }
 }
 
-void RuntimeGraph::notify_output(const OutputNotification *notification, const void *value, OutputChange change) {
+void RuntimeGraph::notify_output(const OutputNotification *notification, const TimeSeriesRuntimeType *runtime_type,
+                                 const void *value, OutputChange change) {
     if (notification == nullptr) {
         return;
     }
 
     auto context = OutputChangeContext{*this};
-    notification->notify(context, value, change);
+    notification->notify(context, runtime_type, value, change);
 }
 
 void RuntimeGraph::propagate_output_change(const CompiledNode &node, OutputChange change) {
     const auto runtime_node = Node{node, storage_};
     propagate_modified_items(node);
-    notify_output(node.output_notification(), runtime_node.output_value(), change);
+    notify_output(node.output_notification(), nullptr, runtime_node.output_value(), change);
     schedule_subscribers(node.subscribers(), change);
 }
 
@@ -598,7 +638,7 @@ void RuntimeGraph::schedule_dynamic_subscribers(details::DynamicSubscribers &sub
     });
 
     subscribers.for_each_observer([&](const auto &observer) {
-        auto context = OutputChangeContext{*this};
+        auto context = OutputChangeContext{*observer.graph, evaluation_time_};
         observer.function(context, observer.target, change);
     });
 }

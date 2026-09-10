@@ -14,6 +14,7 @@ class WiringPoint;
 
 namespace details {
 class WiringRecord;
+struct wiring_point_annotation;
 const WiringRecord &wiring_record(WiringPoint point) noexcept;
 } // namespace details
 
@@ -59,6 +60,12 @@ template <typename TimeSeries> class wp {
     using time_series_type = TimeSeries;
 
   private:
+    struct unchecked_t {};
+
+    wp(WiringPoint point, unchecked_t) noexcept : point_(point) {}
+
+    friend struct details::wiring_point_annotation;
+
     WiringPoint point_;
 };
 
@@ -67,6 +74,12 @@ template <typename TimeSeries> wp<TimeSeries> WiringPoint::as() const {
 }
 
 namespace details {
+
+struct wiring_point_annotation {
+    template <typename TimeSeries> static wp<TimeSeries> make(WiringPoint point) noexcept {
+        return wp<TimeSeries>{point, typename wp<TimeSeries>::unchecked_t{}};
+    }
+};
 
 template <typename T> struct typed_wiring_point : std::false_type {};
 

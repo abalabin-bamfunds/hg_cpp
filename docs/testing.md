@@ -18,7 +18,7 @@ Use `[dimension:value]` for each applicable dimension:
   `node-api`, `state`, `wiring`, `graph-compilation`, `test-graph`, `evaluation-context`, `evaluation-scratch`,
   `lifecycle`, `finalization`, `scheduling`, `future-scheduling`, `simulation`, `input-activity`, `validity`,
   `invalidation`, `operator`,
-  `time-series-storage`, `time-series-view`, `collection-change`, `reference`, `getitem`, `getattr`, or
+  `time-series-storage`, `time-series-view`, `collection-change`, `reference`, `sampling`, `getitem`, `getattr`, or
   `nested-graph`
 - `series`: `value`, `fixed-tsl`, `sparse-tsl`, `tss`, `tsd`, `tsb`, `reference`, or `generic`
 - `schema`: `named`, `unnamed`, or `generic`

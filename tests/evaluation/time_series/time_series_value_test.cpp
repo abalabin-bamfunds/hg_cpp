@@ -23,10 +23,15 @@ TEST_CASE("a deduplicated value output schedules subscribers only for changed va
 TEST_CASE("a collection guarantee deduplicates contained value outputs",
           "[evaluation][feature:collection-change][transition:update][series:fixed-tsl]"
           "[scalar:integer][guarantee:ordinary][guarantee:deduplicated]") {
-    using Values = bg::TSL<bg::TS<int, bg::TimeSeriesGuarantee::ordinary>, 1, bg::TimeSeriesGuarantee::deduplicated>;
 
-    const auto collect = bg::node([](bg::In<bg::TS<int>> input, bg::Out<Values> output) { output[0].set(*input); });
-    const auto first = bg::node([](bg::In<Values> input, bg::Out<bg::TS<int>> output) { output.set(*input[0]); });
+    const auto collect = bg::node(
+        [](bg::In<bg::TS<int>> input,
+           bg::Out<bg::TSL<bg::TS<int, bg::TimeSeriesGuarantee::ordinary>, 1, bg::TimeSeriesGuarantee::deduplicated>>
+               output) { output[0].set(*input); });
+    const auto first = bg::node(
+        [](bg::In<bg::TSL<bg::TS<int, bg::TimeSeriesGuarantee::ordinary>, 1, bg::TimeSeriesGuarantee::deduplicated>>
+               input,
+           bg::Out<bg::TS<int>> output) { output.set(*input[0]); });
     const auto graph = [&](bg::wp<bg::TS<int>> input) { return first(collect(input)); };
 
     const auto actual = bg::testing::test_graph(graph, std::array{1, 1, 2});

@@ -12,6 +12,19 @@
 
 namespace bg::details {
 
+class TimeSeriesDictionaryRuntimeType;
+
+struct DictionaryKeyStorage {
+    const TimeSeriesDictionaryRuntimeType *runtime_type{};
+    void *value{};
+};
+
+struct RetainedDictionaryKey {
+    const TimeSeriesDictionaryRuntimeType *runtime_type{};
+    void *value{};
+    TimeSeriesItemId id{util::occupancy_index::npos};
+};
+
 class TimeSeriesDictionaryRuntimeType : public TimeSeriesRuntimeType {
   public:
     TimeSeriesDictionaryRuntimeType(const TimeSeriesDictionaryType &type, const ScalarRuntimeType &key,
@@ -30,10 +43,34 @@ class TimeSeriesDictionaryRuntimeType : public TimeSeriesRuntimeType {
     const ScalarRuntimeType &key_runtime_type() const noexcept { return *key_; }
     const TimeSeriesRuntimeType &item_runtime_type() const noexcept { return *item_; }
 
-    virtual TimeSeriesItemId find_item(const void *value, const ScalarData &key) const {
+    virtual DictionaryKeyStorage retention_storage(void *value) const noexcept {
+        return {this, value};
+    }
+
+    virtual RetainedDictionaryKey retain_key(void *value, const ScalarData &key,
+                                             std::pmr::memory_resource &memory) const {
+        auto &keys = static_cast<time_series_dict_storage *>(value)->key_storage().value;
+        return {this, value, keys.retain(key, *key_, key_layout_, memory)};
+    }
+
+    virtual void release_key(void *value, TimeSeriesItemId id, std::pmr::memory_resource &memory) const noexcept {
+        auto &keys = static_cast<time_series_dict_storage *>(value)->key_storage().value;
+        keys.release_retention(id, memory);
+    }
+
+    virtual TimeSeriesItemId find_key(const void *value, const ScalarData &key) const {
         const auto &keys = static_cast<const time_series_dict_storage *>(value)->key_storage().value;
-        const auto id = keys.find_position(key, *key_, key_layout_);
-        return id != util::occupancy_index::npos && keys.live().contains(id) ? id : util::occupancy_index::npos;
+        return keys.find_position(key, *key_, key_layout_);
+    }
+
+    virtual bool key_live(const void *value, TimeSeriesItemId id) const noexcept {
+        const auto &keys = static_cast<const time_series_dict_storage *>(value)->key_storage().value;
+        return keys.live().contains(id);
+    }
+
+    virtual TimeSeriesItemId find_item(const void *value, const ScalarData &key) const {
+        const auto id = find_key(value, key);
+        return id != util::occupancy_index::npos && key_live(value, id) ? id : util::occupancy_index::npos;
     }
 
     virtual const void *key(const void *value, TimeSeriesItemId id) const noexcept {
@@ -208,6 +245,14 @@ class TimeSeriesDictionaryRuntimeType : public TimeSeriesRuntimeType {
         }
     }
 
+    bool satisfies_reference_request(const TimeSeriesType &requested_type) const noexcept override {
+        const auto *requested = dynamic_cast<const TimeSeriesDictionaryType *>(&requested_type);
+        const auto &provided = static_cast<const TimeSeriesDictionaryType &>(type());
+        return requested != nullptr && &requested->key_type() == &provided.key_type() &&
+               satisfies(*provided.guarantee().value(), *requested->guarantee().value()) &&
+               item_runtime_type().satisfies_reference_request(requested->value_type());
+    }
+
     void construct_initial_value(void *destination) const noexcept override {
         std::construct_at(static_cast<time_series_dict_storage *>(destination));
     }
@@ -219,7 +264,7 @@ class TimeSeriesDictionaryRuntimeType : public TimeSeriesRuntimeType {
     }
 
     [[nodiscard]] ReferenceRepresentation *
-    create_reference_representation(ReferenceProvider &provider, ReferenceAddress source,
+    create_reference_representation(ReferenceProvider &provider, ReferenceAddress input,
                                     const TimeSeriesType &requested_type,
                                     std::pmr::memory_resource &memory) const override;
 

@@ -340,12 +340,10 @@ TEST_CASE("a generic fixed collection input uses the referenced target runtime_t
 
 namespace {
 
-using IntPairTimeSeriesList = bg::TSL<bg::TS<int>, 2>;
-
 struct owned_pair_definition {
     bg::In<bg::TS<int>> first;
     bg::In<bg::TS<int>> second;
-    bg::Out<IntPairTimeSeriesList> output;
+    bg::Out<bg::TSL<bg::TS<int>, 2>> output;
 
     void evaluate() const {
         output[0].set(*first);
@@ -355,15 +353,15 @@ struct owned_pair_definition {
 
 struct pair_reference_selector_definition {
     bg::In<bg::TS<int>> condition;
-    bg::In<bg::REF<IntPairTimeSeriesList>, bg::passive, bg::optional> owned;
-    bg::In<bg::REF<IntPairTimeSeriesList>, bg::passive, bg::optional> free;
-    bg::Out<bg::REF<IntPairTimeSeriesList>> output;
+    bg::In<bg::REF<bg::TSL<bg::TS<int>, 2>>, bg::passive, bg::optional> owned;
+    bg::In<bg::REF<bg::TSL<bg::TS<int>, 2>>, bg::passive, bg::optional> free;
+    bg::Out<bg::REF<bg::TSL<bg::TS<int>, 2>>> output;
 
     void evaluate() const { *condition == 0 ? output.set(owned) : output.set(free); }
 };
 
 struct pair_sum_definition {
-    bg::In<IntPairTimeSeriesList> input;
+    bg::In<bg::TSL<bg::TS<int>, 2>> input;
     bg::Out<bg::TS<int>> output;
 
     void evaluate() const { output.set(*input[0] + *input[1]); }

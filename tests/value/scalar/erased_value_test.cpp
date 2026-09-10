@@ -77,14 +77,14 @@ TEST_CASE("scalar handles compare by type and value", "[value][scalar][erased][f
 
 TEST_CASE("a constrained scalar variable exposes its required operations",
           "[value][scalar][erased][feature:scalar-api][scalar:generic]") {
-    using Key = bg::ScalarVariable<"Key", bg::EqualityComparable, bg::Hashable>;
+    using KEY = bg::ScalarVariable<"KEY", bg::EqualityComparable, bg::Hashable>;
 
     const auto left_value = std::int64_t{42};
     const auto equal_value = std::int64_t{42};
     const auto different_value = std::int64_t{43};
-    const auto left = bg::Scalar<Key>::from<std::int64_t>(left_value);
-    const auto equal = bg::Scalar<Key>::from<std::int64_t>(equal_value);
-    const auto different = bg::Scalar<Key>::from<std::int64_t>(different_value);
+    const auto left = bg::Scalar<KEY>::from<std::int64_t>(left_value);
+    const auto equal = bg::Scalar<KEY>::from<std::int64_t>(equal_value);
+    const auto different = bg::Scalar<KEY>::from<std::int64_t>(different_value);
 
     CHECK(left == equal);
     CHECK_FALSE(left == different);
@@ -94,12 +94,12 @@ TEST_CASE("a constrained scalar variable exposes its required operations",
 
 TEST_CASE("scalar variable equality rejects a different semantic type",
           "[value][scalar][erased][feature:scalar-api][scalar:generic]") {
-    using Value = bg::ScalarVariable<"Value", bg::EqualityComparable>;
+    using VALUE = bg::ScalarVariable<"VALUE", bg::EqualityComparable>;
 
     const auto integer_value = std::int64_t{42};
     const auto string_value = std::pmr::string{"42"};
-    const auto integer = bg::Scalar<Value>::from<std::int64_t>(integer_value);
-    const auto string = bg::Scalar<Value>::from<bg::string>(string_value);
+    const auto integer = bg::Scalar<VALUE>::from<std::int64_t>(integer_value);
+    const auto string = bg::Scalar<VALUE>::from<bg::string>(string_value);
 
     CHECK_FALSE(integer == string);
     CHECK_FALSE(string == integer);

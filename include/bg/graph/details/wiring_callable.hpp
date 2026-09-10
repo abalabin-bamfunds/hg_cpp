@@ -48,7 +48,9 @@ template <typename Parameter> [[nodiscard]] decltype(auto) graph_argument(wiring
     if constexpr (is_typed_wiring_point<Value>) {
         static_assert(!std::is_reference_v<Parameter>);
 
-        return Value{argument.wiring_point()};
+        using TimeSeries = typename typed_wiring_point<Value>::time_series_type;
+        // Signature resolution already validated the annotation. The wiring point retains its actual representation.
+        return wiring_point_annotation::make<TimeSeries>(argument.wiring_point());
     } else if constexpr (std::same_as<Value, WiringPoint>) {
         static_assert(!std::is_reference_v<Parameter>);
 

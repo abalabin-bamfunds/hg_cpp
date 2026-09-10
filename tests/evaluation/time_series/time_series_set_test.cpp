@@ -12,13 +12,11 @@
 
 namespace {
 
-using IntSet = bg::TSS<std::int64_t>;
-
 struct set_source_definition {
     static constexpr bool uses_future_scheduling = true;
 
     bg::State<int> step;
-    bg::Out<IntSet> output;
+    bg::Out<bg::TSS<std::int64_t>> output;
 
     void start(bg::EvaluationContext *context) const {
         output.clear();
@@ -46,7 +44,7 @@ struct set_source_definition {
 };
 
 struct set_sink_definition {
-    bg::In<IntSet, bg::optional> input;
+    bg::In<bg::TSS<std::int64_t>, bg::optional> input;
 
     void evaluate() const {
         validity.push_back(input.valid());
@@ -90,7 +88,7 @@ TEST_CASE("a time series set becomes valid on its first empty tick and remains v
 namespace {
 
 struct inverse_set_mutation_source_definition {
-    bg::Out<IntSet> output;
+    bg::Out<bg::TSS<std::int64_t>> output;
 
     void start() const {
         output.insert(1);
@@ -138,13 +136,13 @@ struct invalidating_value_source_definition {
 
 struct set_from_value_definition {
     bg::In<bg::TS<int>> input;
-    bg::Out<IntSet> output;
+    bg::Out<bg::TSS<std::int64_t>> output;
 
     void evaluate() const { output.insert(*input); }
 };
 
 struct set_size_definition {
-    bg::In<IntSet> input;
+    bg::In<bg::TSS<std::int64_t>> input;
     bg::Out<bg::TS<int>> output;
 
     void evaluate() const { output.set(static_cast<int>(input.size())); }
@@ -167,12 +165,10 @@ TEST_CASE("a time series set preserves its value when a required input becomes i
 
 namespace {
 
-using ExactIntSet = bg::TSS<int>;
-
 struct exact_int_set_source_definition {
     static constexpr bool uses_future_scheduling = true;
 
-    bg::Out<ExactIntSet> output;
+    bg::Out<bg::TSS<int>> output;
 
     void start(bg::EvaluationContext *context) const {
         output.insert(7);
@@ -183,7 +179,7 @@ struct exact_int_set_source_definition {
 };
 
 struct exact_int_set_contains_definition {
-    bg::In<ExactIntSet> input;
+    bg::In<bg::TSS<int>> input;
     bg::Out<bg::TS<bool>> output;
 
     void evaluate() const { output.set(input.contains(7)); }

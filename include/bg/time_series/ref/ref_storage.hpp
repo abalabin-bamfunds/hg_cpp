@@ -18,6 +18,7 @@ namespace details {
 
 struct DynamicSubscribers;
 class ReferenceProvider;
+class ReferenceItemSubscribers;
 struct ReferenceInputStorage;
 struct ReferenceRoot;
 struct ReferenceRoute;
@@ -38,9 +39,9 @@ struct ReferenceRoute {
         target = item;
     }
 
-    void bind_representation(ReferenceAddress source, std::uint32_t index) noexcept {
+    void bind_representation(ReferenceAddress parent_address, std::uint32_t index) noexcept {
         assert(index < representation_flag);
-        parent = source;
+        parent = parent_address;
         target = representation_flag | index;
     }
 
@@ -57,6 +58,8 @@ struct ReferenceRoute {
     ReferenceAddress parent;
     std::uint32_t target{};
     std::uint32_t subscriber_group{};
+    std::uint32_t item_subscriber{};
+    TimeSeriesItemId subscriber_item{};
 
   private:
     static constexpr auto representation_flag = std::uint32_t{1} << 31;
@@ -64,7 +67,7 @@ struct ReferenceRoute {
 
 struct ReferenceRoot {
     RuntimeGraph *graph{};
-    const CompiledNode *source{};
+    const CompiledNode *node{};
     const TimeSeriesRuntimeType *runtime_type{};
     ReferenceRootData data;
 };
@@ -76,7 +79,7 @@ struct ReferenceInputStorage {
 ReferenceTarget reference_target(ReferenceAddress address);
 
 static_assert(sizeof(ReferenceTarget) == 3 * sizeof(void *));
-static_assert(sizeof(ReferenceRoute) == 2 * sizeof(void *));
+static_assert(sizeof(ReferenceRoute) == 3 * sizeof(void *));
 static_assert(sizeof(ReferenceRoot) == 4 * sizeof(void *));
 static_assert(sizeof(ReferenceAddress) == sizeof(void *));
 static_assert(sizeof(ReferenceInputStorage) == sizeof(void *));

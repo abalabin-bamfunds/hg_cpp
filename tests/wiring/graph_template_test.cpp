@@ -117,11 +117,11 @@ TEST_CASE("graph output re-annotation is checked at the cast", "[graph_template]
 }
 
 TEST_CASE("a graph signature resolves a scalar variable declaration", "[graph_template][feature:wiring]") {
-    using GraphScalar = bg::ScalarVariable<"GraphScalar">;
+    using GRAPH_SCALAR = bg::ScalarVariable<"GRAPH_SCALAR">;
 
     const auto generic_identity_graph =
         bg::graph("name"_n = "generic_identity_graph",
-                  [](bg::wp<bg::TS<GraphScalar>> input) -> bg::wp<bg::TS<GraphScalar>> { return input; });
+                  [](bg::wp<bg::TS<GRAPH_SCALAR>> input) -> bg::wp<bg::TS<GRAPH_SCALAR>> { return input; });
     const auto &time_series = bg::TS<double>::type();
     const std::array<const bg::Type *, 1> arguments{&time_series};
 

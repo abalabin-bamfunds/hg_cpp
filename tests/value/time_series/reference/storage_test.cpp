@@ -70,6 +70,5 @@ TEST_CASE("a reference representation route retains its source and representatio
     CHECK(representation.parent.get<bg::details::ReferenceRoute>() == &source);
     CHECK(representation.is_representation());
     CHECK(representation.representation() == 7);
-    STATIC_CHECK(sizeof(bg::details::ReferenceRoute) ==
-                 sizeof(bg::details::ReferenceAddress) + 2 * sizeof(std::uint32_t));
+    STATIC_CHECK(sizeof(bg::details::ReferenceRoute) == 3 * sizeof(void *));
 }

@@ -95,19 +95,24 @@ complete record span. The handler updates target pointers and dynamic
 subscriptions, then requests required-input validity checks. The runtime does
 not interpret REF storage.
 
-The reference-making node receives source changes through a compiled callback
-subscription. Its root notifies ordinary subscribers directly. If the root has
-provider data, the provider first updates the affected representations and
-then notifies their subscriber groups.
+The reference-making node receives input changes through a compiled callback
+subscription and notifies its root address. Each representation observes its
+exact input address. It consumes that notification, updates its state, and
+notifies only the affected representation or item addresses.
 
 The source runtime graph owns the created representations and subscriber
-groups. A group is allocated when its route receives its first subscriber.
-Subscriber records identify the destination runtime graph, node, and input
-slot.
+groups. Ordinary subscriber records identify the destination runtime graph,
+node, and input slot.
 
-When an exact reference target changes, the root schedules its dynamic
-subscribers directly. Other representations update the affected representation
-before scheduling its subscribers.
+A source dictionary item route records the destination representation and item
+ID that use it. The first relationship is stored with the route. Fan-out uses
+root-owned overflow storage. A source dictionary batches changed routes, and
+each destination representation publishes once with its changed item IDs.
+Notification work is proportional to changed routes and their destinations.
+
+An address notification schedules its dynamic subscribers directly. Subscriber
+records retain the destination graph. An observer callback uses that graph's
+context and the notification's outer-cycle time.
 
 When a reference changes target:
 
@@ -145,9 +150,13 @@ node observes:
 - A contained collection applies the same rules recursively.
 
 An initial sample reports every current key or item as added. A removed sample
-reports every previous key or item as removed. The previous target remains
-accessible for the sampled invocation. Multiple target changes before that
-invocation compare the target last observed by the node with the final target.
+reports every previous key or item as removed. Sampling is change information
+for the current evaluation cycle. Every input sees the same sample. A passive
+input does not replay the sample in a later cycle.
+
+The representation retains the previous target until old change information is
+cleared. A reference output publishes after its node finishes evaluating, so it
+publishes at most one target change per cycle.
 
 An input view reports whether its visible last-updated time is the current
 evaluation time without requiring evaluation-context access. Sampling reports
@@ -182,11 +191,11 @@ Dictionary representations use the shared-key structure defined by the
 When an item is first used through a reference, its route receives a subscriber
 group from the source provider. Item updates notify that route directly.
 
-A dictionary creates keyed subscription storage only when it is used. The
-storage maps each watched key to its subscribers. Key-set processing looks up
-only keys added or removed in the current cycle. A subscription to a missing
-key owns a copy of the key and remains until the key is added or the subscriber
-leaves.
+A dictionary creates keyed subscription storage only when it is used. A
+subscription retains the key's sparse item ID, creating a non-live key when the
+key is absent. Notification processing uses changed item IDs directly. The key
+set reclaims an unretained non-live ID after the outer cycle in which it was
+released.
 
 The shared set and its representations handle key removal:
 
@@ -195,8 +204,8 @@ The shared set and its representations handle key removal:
    received its reference.
 3. The set and representations keep the key and item storage valid until the
    outer cycle ends.
-4. They reclaim the storage on the next collection mutation or graph
-   destruction.
+4. A later collection mutation removes dependent representations and reclaims
+   the route after its subscriber group is empty.
 
 Removal notification applies to dynamic time series and the outputs of removable
 inner runtime graphs.

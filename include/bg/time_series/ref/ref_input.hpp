@@ -32,7 +32,7 @@ class In<REF<Target, TimeSeriesProperties...>, Properties...> {
     bool valid() const noexcept { return data_.valid(); }
     EvaluationTime last_updated() const noexcept { return data_.last_updated(); }
     details::ReferenceAddress target() const noexcept {
-        return *static_cast<const details::ReferenceAddress *>(data_.data());
+        return data_.runtime_type().reference_address(data_.data());
     }
     const TimeSeriesRuntimeType &runtime_type() const noexcept { return data_.runtime_type(); }
     const void *data() const noexcept { return data_.data(); }

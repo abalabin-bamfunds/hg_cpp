@@ -24,7 +24,7 @@ concept HasValueMember = requires(const T &value) { value.value(); };
 template <typename T>
 concept HasArrowOperator = requires(const T &value) { value.operator->(); };
 
-using Key = bg::ScalarVariable<"Key", bg::EqualityComparable, bg::Hashable>;
+using KEY = bg::ScalarVariable<"KEY", bg::EqualityComparable, bg::Hashable>;
 
 } // namespace
 
@@ -32,18 +32,18 @@ TEST_CASE("scalar variable constraints select handle operations",
           "[value][scalar][capability][feature:scalar-api][scalar:generic]") {
     STATIC_CHECK_FALSE(HashableScalarHandle<bg::Scalar<bg::SCALAR>>);
     STATIC_CHECK_FALSE(EqualityComparableScalarHandle<bg::Scalar<bg::SCALAR>>);
-    STATIC_CHECK(HashableScalarHandle<bg::Scalar<Key>>);
-    STATIC_CHECK(EqualityComparableScalarHandle<bg::Scalar<Key>>);
+    STATIC_CHECK(HashableScalarHandle<bg::Scalar<KEY>>);
+    STATIC_CHECK(EqualityComparableScalarHandle<bg::Scalar<KEY>>);
 }
 
 TEST_CASE("scalar collection handles propagate item capabilities",
           "[value][scalar][capability][collection][feature:scalar-api]") {
-    STATIC_CHECK(HashableScalarHandle<bg::Scalar<bg::List<Key>>>);
-    STATIC_CHECK(EqualityComparableScalarHandle<bg::Scalar<bg::List<Key>>>);
-    STATIC_CHECK(HashableScalarHandle<bg::Scalar<bg::Set<Key>>>);
-    STATIC_CHECK(EqualityComparableScalarHandle<bg::Scalar<bg::Set<Key>>>);
-    STATIC_CHECK((HashableScalarHandle<bg::Scalar<bg::Dict<Key, Key>>>));
-    STATIC_CHECK((EqualityComparableScalarHandle<bg::Scalar<bg::Dict<Key, Key>>>));
+    STATIC_CHECK(HashableScalarHandle<bg::Scalar<bg::List<KEY>>>);
+    STATIC_CHECK(EqualityComparableScalarHandle<bg::Scalar<bg::List<KEY>>>);
+    STATIC_CHECK(HashableScalarHandle<bg::Scalar<bg::Set<KEY>>>);
+    STATIC_CHECK(EqualityComparableScalarHandle<bg::Scalar<bg::Set<KEY>>>);
+    STATIC_CHECK((HashableScalarHandle<bg::Scalar<bg::Dict<KEY, KEY>>>));
+    STATIC_CHECK((EqualityComparableScalarHandle<bg::Scalar<bg::Dict<KEY, KEY>>>));
 }
 
 TEST_CASE("mutable collection views require a resolved scalar type",
