@@ -1,7 +1,7 @@
 #pragma once
 
+#include <bg/allocator.hpp>
 #include <bg/graph/output_notification.hpp>
-#include <bg/util/scope_exit.hpp>
 
 #include <algorithm>
 #include <cstddef>
@@ -69,11 +69,7 @@ struct DynamicSubscribers {
             return *subscribers;
         }
 
-        auto *storage = memory.allocate(sizeof(DynamicSubscribers), alignof(DynamicSubscribers));
-        auto release = util::scope_exit{
-            [&]() noexcept { memory.deallocate(storage, sizeof(DynamicSubscribers), alignof(DynamicSubscribers)); }};
-        subscribers = std::construct_at(static_cast<DynamicSubscribers *>(storage), memory);
-        release.release();
+        subscribers = allocator{memory}.new_object<DynamicSubscribers>(memory);
         return *subscribers;
     }
 
@@ -83,16 +79,14 @@ struct DynamicSubscribers {
         }
 
         auto *memory = subscribers->records_.get_allocator().resource();
+        auto allocation = allocator{*memory};
         if (subscribers->callback_records_ != nullptr) {
-            std::destroy_at(subscribers->callback_records_);
-            memory->deallocate(subscribers->callback_records_, sizeof(CallbackRecords), alignof(CallbackRecords));
+            allocation.delete_object(subscribers->callback_records_);
         }
         if (subscribers->observer_records_ != nullptr) {
-            std::destroy_at(subscribers->observer_records_);
-            memory->deallocate(subscribers->observer_records_, sizeof(ObserverRecords), alignof(ObserverRecords));
+            allocation.delete_object(subscribers->observer_records_);
         }
-        std::destroy_at(subscribers);
-        memory->deallocate(subscribers, sizeof(DynamicSubscribers), alignof(DynamicSubscribers));
+        allocation.delete_object(subscribers);
     }
 
     void add(RuntimeGraph &graph, std::uint32_t input_offset, std::size_t data, std::uint32_t node_index, bool active,
@@ -187,11 +181,7 @@ struct DynamicSubscribers {
     CallbackRecords &callback_records() {
         if (callback_records_ == nullptr) {
             auto *memory = records_.get_allocator().resource();
-            auto *storage = memory->allocate(sizeof(CallbackRecords), alignof(CallbackRecords));
-            auto release = util::scope_exit{
-                [&]() noexcept { memory->deallocate(storage, sizeof(CallbackRecords), alignof(CallbackRecords)); }};
-            callback_records_ = std::construct_at(static_cast<CallbackRecords *>(storage), *memory);
-            release.release();
+            callback_records_ = allocator{*memory}.new_object<CallbackRecords>(*memory);
         }
         return *callback_records_;
     }
@@ -199,11 +189,7 @@ struct DynamicSubscribers {
     ObserverRecords &observer_records() {
         if (observer_records_ == nullptr) {
             auto *memory = records_.get_allocator().resource();
-            auto *storage = memory->allocate(sizeof(ObserverRecords), alignof(ObserverRecords));
-            auto release = util::scope_exit{
-                [&]() noexcept { memory->deallocate(storage, sizeof(ObserverRecords), alignof(ObserverRecords)); }};
-            observer_records_ = std::construct_at(static_cast<ObserverRecords *>(storage), *memory);
-            release.release();
+            observer_records_ = allocator{*memory}.new_object<ObserverRecords>(*memory);
         }
         return *observer_records_;
     }

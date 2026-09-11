@@ -1,5 +1,6 @@
 #include <bg/time_series/tsd/tsd_key_subscription.hpp>
 
+#include <bg/allocator.hpp>
 #include <bg/graph/dynamic_subscribers.hpp>
 #include <bg/graph/runtime_graph.hpp>
 #include <bg/time_series/ref/ref_runtime_type.hpp>
@@ -78,8 +79,7 @@ class TsdKeySubscriptions final : public ReferenceProviderComponent {
     }
 
     void destroy(std::pmr::memory_resource &memory) noexcept override {
-        std::destroy_at(this);
-        memory.deallocate(this, sizeof(TsdKeySubscriptions), alignof(TsdKeySubscriptions));
+        allocator{memory}.delete_object(this);
     }
 
     [[nodiscard]] TsdKeySubscription add(Reference reference, const ScalarData &key, RuntimeGraph &graph,
@@ -177,8 +177,7 @@ class TsdKeySubscriptions final : public ReferenceProviderComponent {
             return *existing;
         }
 
-        auto *storage = memory_->allocate(sizeof(SubscribedTsd), alignof(SubscribedTsd));
-        auto *result = std::construct_at(static_cast<SubscribedTsd *>(storage), *this, reference, retained);
+        auto *result = allocator{*memory_}.new_object<SubscribedTsd>(*this, reference, retained);
         auto release = util::scope_exit{[&]() noexcept { release_tsd(*result); }};
         subscribed_tsds_.push_back(result);
         auto remove_entry = util::scope_exit{[&]() noexcept { subscribed_tsds_.pop_back(); }};
@@ -225,8 +224,7 @@ class TsdKeySubscriptions final : public ReferenceProviderComponent {
                 DynamicSubscribers::release(entry->subscribers);
                 std::destroy_at(entry);
             });
-        std::destroy_at(&tsd);
-        memory_->deallocate(&tsd, sizeof(SubscribedTsd), alignof(SubscribedTsd));
+        allocator{*memory_}.delete_object(&tsd);
     }
 
     static void notify_tsd(OutputChangeContext &context, void *value, OutputChange change) {
@@ -370,12 +368,8 @@ TsdKeySubscriptions &require_tsd_key_subscriptions(Reference reference) {
     }
 
     auto &memory = provider.memory();
-    auto *storage = memory.allocate(sizeof(TsdKeySubscriptions), alignof(TsdKeySubscriptions));
-    auto release = util::scope_exit{
-        [&]() noexcept { memory.deallocate(storage, sizeof(TsdKeySubscriptions), alignof(TsdKeySubscriptions)); }};
-    auto *subscriptions = std::construct_at(static_cast<TsdKeySubscriptions *>(storage), provider, memory);
+    auto *subscriptions = allocator{memory}.new_object<TsdKeySubscriptions>(provider, memory);
     provider.add_component(*subscriptions);
-    release.release();
     return *subscriptions;
 }
 

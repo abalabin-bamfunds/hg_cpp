@@ -1,5 +1,6 @@
 #include "ref_item_notification_links.hpp"
 
+#include <bg/allocator.hpp>
 #include <bg/graph/dynamic_subscribers.hpp>
 #include <bg/graph/runtime_graph.hpp>
 #include <bg/util/scope_exit.hpp>
@@ -44,8 +45,7 @@ class ReferenceItemNotificationLinks {
             if (group == nullptr) {
                 continue;
             }
-            std::destroy_at(group);
-            memory_->deallocate(group, sizeof(Group), alignof(Group));
+            allocator{*memory_}.delete_object(group);
         }
     }
 
@@ -83,10 +83,7 @@ class ReferenceItemNotificationLinks {
             }
 
             auto *group = allocate_group();
-            auto release_group = util::scope_exit{[&]() noexcept {
-                std::destroy_at(group);
-                memory_->deallocate(group, sizeof(Group), alignof(Group));
-            }};
+            auto release_group = util::scope_exit{[&]() noexcept { allocator{*memory_}.delete_object(group); }};
             group->links.push_back(inline_link(notifications));
             group->links.push_back(link);
 
@@ -238,8 +235,7 @@ class ReferenceItemNotificationLinks {
     }
 
     Group *allocate_group() {
-        auto *storage = memory_->allocate(sizeof(Group), alignof(Group));
-        return std::construct_at(static_cast<Group *>(storage), *memory_);
+        return allocator{*memory_}.new_object<Group>(*memory_);
     }
 
     std::uint32_t store_group(Group *group) {
@@ -267,8 +263,7 @@ class ReferenceItemNotificationLinks {
     void release_group(ItemNotificationDetail &notifications) noexcept {
         const auto index = notifications.overflow_group_index();
         auto *group = groups_[index];
-        std::destroy_at(group);
-        memory_->deallocate(group, sizeof(Group), alignof(Group));
+        allocator{*memory_}.delete_object(group);
         groups_[index] = nullptr;
     }
 
@@ -295,13 +290,7 @@ class ReferenceItemNotificationLinks {
 };
 
 ReferenceItemNotificationLinks *create_reference_item_notification_links(std::pmr::memory_resource &memory) {
-    auto *storage = memory.allocate(sizeof(ReferenceItemNotificationLinks), alignof(ReferenceItemNotificationLinks));
-    auto release = util::scope_exit{[&]() noexcept {
-        memory.deallocate(storage, sizeof(ReferenceItemNotificationLinks), alignof(ReferenceItemNotificationLinks));
-    }};
-    auto *result = std::construct_at(static_cast<ReferenceItemNotificationLinks *>(storage), memory);
-    release.release();
-    return result;
+    return allocator{memory}.new_object<ReferenceItemNotificationLinks>(memory);
 }
 
 void destroy_reference_item_notification_links(ReferenceItemNotificationLinks *links,
@@ -310,8 +299,7 @@ void destroy_reference_item_notification_links(ReferenceItemNotificationLinks *l
         return;
     }
 
-    std::destroy_at(links);
-    memory.deallocate(links, sizeof(ReferenceItemNotificationLinks), alignof(ReferenceItemNotificationLinks));
+    allocator{memory}.delete_object(links);
 }
 
 void add_reference_root_item_link(ReferenceItemNotificationLinks &links, RuntimeGraph &graph, void *receiver,

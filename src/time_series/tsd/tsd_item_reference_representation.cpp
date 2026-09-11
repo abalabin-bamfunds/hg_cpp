@@ -1,5 +1,6 @@
 #include "tsd_reference_representation.hpp"
 
+#include <bg/allocator.hpp>
 #include <bg/time_series/ref/ref_runtime_type.hpp>
 #include <bg/type/time_series_reference_type.hpp>
 #include <bg/util/occupancy_index.hpp>
@@ -144,9 +145,7 @@ class TimeSeriesDictionaryReferenceRepresentation final : public ReferenceRepres
         items_.release(positions_, memory);
         positions_.release(memory);
         item_valid_.release(memory);
-        std::destroy_at(this);
-        memory.deallocate(this, sizeof(TimeSeriesDictionaryReferenceRepresentation),
-                          alignof(TimeSeriesDictionaryReferenceRepresentation));
+        allocator{memory}.delete_object(this);
     }
 
     const ReferenceItemStorage &item(item_id_t id) const noexcept { return items_[id]; }
@@ -377,16 +376,8 @@ ReferenceRepresentation *make_tsd_item_reference_representation(
     ReferenceProvider &provider, Reference base_reference, const TimeSeriesDictionaryType &type,
     const TimeSeriesDictionaryRuntimeType &base_runtime_type, const TimeSeriesRuntimeType &item_runtime_type,
     std::pmr::memory_resource &memory) {
-    auto *storage = memory.allocate(sizeof(TimeSeriesDictionaryReferenceRepresentation),
-                                    alignof(TimeSeriesDictionaryReferenceRepresentation));
-    auto release = util::scope_exit{[&]() noexcept {
-        memory.deallocate(storage, sizeof(TimeSeriesDictionaryReferenceRepresentation),
-                          alignof(TimeSeriesDictionaryReferenceRepresentation));
-    }};
-    auto *result = std::construct_at(static_cast<TimeSeriesDictionaryReferenceRepresentation *>(storage), provider,
-                                     base_reference, type, base_runtime_type, item_runtime_type);
-    release.release();
-    return result;
+    return allocator{memory}.new_object<TimeSeriesDictionaryReferenceRepresentation>(
+        provider, base_reference, type, base_runtime_type, item_runtime_type);
 }
 
 } // namespace bg::details

@@ -2,6 +2,7 @@
 
 #include "ref_item_notification_links.hpp"
 
+#include <bg/allocator.hpp>
 #include <bg/graph/dynamic_subscribers.hpp>
 #include <bg/graph/node.hpp>
 #include <bg/graph/runtime_graph.hpp>
@@ -330,12 +331,8 @@ ReferenceProvider &require_provider(RootReference &root) {
 
     auto *subscribers = root.subscribers_or_provider.get<DynamicSubscribers>();
     auto &memory = root.owner_graph->memory_resource();
-    auto *storage = memory.allocate(sizeof(ReferenceProvider), alignof(ReferenceProvider));
-    auto release = util::scope_exit{
-        [&]() noexcept { memory.deallocate(storage, sizeof(ReferenceProvider), alignof(ReferenceProvider)); }};
-    auto *provider = std::construct_at(static_cast<ReferenceProvider *>(storage), memory, root, subscribers);
+    auto *provider = allocator{memory}.new_object<ReferenceProvider>(memory, root, subscribers);
     root.subscribers_or_provider = provider;
-    release.release();
     return *provider;
 }
 
@@ -465,8 +462,7 @@ void remove_reference_item_notification_link(Reference reference, RuntimeGraph &
 
 void destroy_root_reference(RootReference &root, std::pmr::memory_resource &memory) noexcept {
     if (auto *provider = root.subscribers_or_provider.get<ReferenceProvider>()) {
-        std::destroy_at(provider);
-        memory.deallocate(provider, sizeof(ReferenceProvider), alignof(ReferenceProvider));
+        allocator{memory}.delete_object(provider);
     } else {
         DynamicSubscribers::release(root.subscribers_or_provider.get<DynamicSubscribers>());
     }

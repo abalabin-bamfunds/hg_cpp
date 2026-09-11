@@ -1,5 +1,6 @@
 #include "tsd_reference_sample.hpp"
 
+#include <bg/allocator.hpp>
 #include <bg/time_series/ref/ref_runtime_type.hpp>
 #include <bg/type/time_series_reference_type.hpp>
 #include <bg/util/scope_exit.hpp>
@@ -124,11 +125,7 @@ SampledDictionary *make_dictionary_sample(ResolvedTimeSeries previous, ResolvedT
     }
 
     const auto &shape = current_type != nullptr ? *current_type : *previous_type;
-    auto *storage = memory.allocate(sizeof(SampledDictionary), alignof(SampledDictionary));
-    auto release = util::scope_exit{
-        [&]() noexcept { memory.deallocate(storage, sizeof(SampledDictionary), alignof(SampledDictionary)); }};
-    auto *sample =
-        std::construct_at(static_cast<SampledDictionary *>(storage), shape, previous, current, evaluation_time, memory);
+    auto *sample = allocator{memory}.new_object<SampledDictionary>(shape, previous, current, evaluation_time, memory);
     auto destroy = util::scope_exit{[&]() noexcept { destroy_dictionary_sample(sample); }};
 
     if (current.valid()) {
@@ -191,7 +188,6 @@ SampledDictionary *make_dictionary_sample(ResolvedTimeSeries previous, ResolvedT
     }
 
     destroy.release();
-    release.release();
     return sample;
 }
 
@@ -207,8 +203,7 @@ void destroy_dictionary_sample(SampledDictionary *sample) noexcept {
     sample->added.release(memory);
     sample->removed.release(memory);
     sample->modified.release(memory);
-    std::destroy_at(sample);
-    memory.deallocate(sample, sizeof(SampledDictionary), alignof(SampledDictionary));
+    allocator{memory}.delete_object(sample);
 }
 
 item_id_t SampledDictionaryRuntimeType::find_item(const void *value, const ScalarData &key) const {

@@ -41,6 +41,7 @@ add_executable(
     type/time_series_set_type_test.cpp
     type/time_series_reference_type_test.cpp
     type/operator_specificity_test.cpp
+    utils/allocator_test.cpp
     utils/contiguous_bunch_test.cpp
     utils/hash_dictionary_test.cpp
     utils/hash_set_test.cpp

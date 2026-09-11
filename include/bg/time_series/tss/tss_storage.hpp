@@ -1,5 +1,6 @@
 #pragma once
 
+#include <bg/allocator.hpp>
 #include <bg/evaluation_time.hpp>
 #include <bg/scalar/details/data.hpp>
 #include <bg/scalar/runtime_type.hpp>
@@ -325,11 +326,7 @@ class time_series_set_storage {
             return *retention_counts_;
         }
 
-        auto *storage = memory.allocate(sizeof(RetentionCounts), alignof(RetentionCounts));
-        auto release = util::scope_exit{
-            [&]() noexcept { memory.deallocate(storage, sizeof(RetentionCounts), alignof(RetentionCounts)); }};
-        retention_counts_ = std::construct_at(static_cast<RetentionCounts *>(storage));
-        release.release();
+        retention_counts_ = allocator{memory}.new_object<RetentionCounts>();
         return *retention_counts_;
     }
 
@@ -339,8 +336,7 @@ class time_series_set_storage {
 
     void release_retention_counts(std::pmr::memory_resource &memory) noexcept {
         retention_counts_->release(memory);
-        std::destroy_at(retention_counts_);
-        memory.deallocate(retention_counts_, sizeof(RetentionCounts), alignof(RetentionCounts));
+        allocator{memory}.delete_object(retention_counts_);
         retention_counts_ = nullptr;
     }
 

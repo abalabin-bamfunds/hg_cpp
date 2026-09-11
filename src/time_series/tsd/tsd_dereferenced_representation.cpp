@@ -1,4 +1,6 @@
 #include "tsd_reference_representation.hpp"
+
+#include <bg/allocator.hpp>
 #include "tsd_reference_sample.hpp"
 
 #include <bg/util/occupancy_index.hpp>
@@ -116,9 +118,7 @@ class DereferencedTimeSeriesDictionaryRepresentation final : public ReferenceRep
         }
         clear_samples();
         modified_.release(memory);
-        std::destroy_at(this);
-        memory.deallocate(this, sizeof(DereferencedTimeSeriesDictionaryRepresentation),
-                          alignof(DereferencedTimeSeriesDictionaryRepresentation));
+        allocator{memory}.delete_object(this);
     }
 
     TimeSeriesRuntimeType::ConstItem item(item_id_t id) const {
@@ -456,16 +456,8 @@ ReferenceRepresentation *make_dereferenced_tsd_representation(ReferenceProvider 
                                                               const TimeSeriesDictionaryRuntimeType &base_runtime_type,
                                                               const TimeSeriesRuntimeType &item_runtime_type,
                                                               std::pmr::memory_resource &memory) {
-    auto *storage = memory.allocate(sizeof(DereferencedTimeSeriesDictionaryRepresentation),
-                                    alignof(DereferencedTimeSeriesDictionaryRepresentation));
-    auto release = util::scope_exit{[&]() noexcept {
-        memory.deallocate(storage, sizeof(DereferencedTimeSeriesDictionaryRepresentation),
-                          alignof(DereferencedTimeSeriesDictionaryRepresentation));
-    }};
-    auto *result = std::construct_at(static_cast<DereferencedTimeSeriesDictionaryRepresentation *>(storage), provider,
-                                     base_reference, type, base_runtime_type, item_runtime_type);
-    release.release();
-    return result;
+    return allocator{memory}.new_object<DereferencedTimeSeriesDictionaryRepresentation>(
+        provider, base_reference, type, base_runtime_type, item_runtime_type);
 }
 
 } // namespace bg::details

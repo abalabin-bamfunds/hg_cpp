@@ -1,5 +1,6 @@
 #include <bg/graph/runtime_graph.hpp>
 
+#include <bg/allocator.hpp>
 #include <bg/details/evaluation_scratch.hpp>
 #include <bg/graph/compiled_node.hpp>
 #include <bg/graph/dynamic_subscribers.hpp>
@@ -367,19 +368,15 @@ RuntimeGraph::~RuntimeGraph() {
     }
 
     if (compiled_graph_->has_future_scheduling() && future_schedule() != nullptr) {
-        std::destroy_at(future_schedule());
-        memory_->deallocate(future_schedule(), sizeof(FutureSchedule), alignof(FutureSchedule));
+        allocator{*memory_}.delete_object(future_schedule());
     }
 
     if (compiled_graph_->has_cycle_callbacks() && cycle_callbacks() != nullptr) {
-        std::destroy_at(cycle_callbacks());
-        memory_->deallocate(cycle_callbacks(), sizeof(CycleCallbacks), alignof(CycleCallbacks));
+        allocator{*memory_}.delete_object(cycle_callbacks());
     }
 
     if (pending_input_notifications_ != nullptr) {
-        std::destroy_at(pending_input_notifications_);
-        memory_->deallocate(pending_input_notifications_, sizeof(PendingInputNotifications),
-                            alignof(PendingInputNotifications));
+        allocator{*memory_}.delete_object(pending_input_notifications_);
     }
 
     if (storage_ != nullptr) {
@@ -423,11 +420,7 @@ ScheduleHandle RuntimeGraph::schedule_at(std::size_t node_index, EvaluationTime 
     }
 
     if (future_schedule() == nullptr) {
-        auto *storage = memory_->allocate(sizeof(FutureSchedule), alignof(FutureSchedule));
-        auto release = util::scope_exit{
-            [&]() noexcept { memory_->deallocate(storage, sizeof(FutureSchedule), alignof(FutureSchedule)); }};
-        future_schedule() = std::construct_at(static_cast<FutureSchedule *>(storage), *memory_);
-        release.release();
+        future_schedule() = allocator{*memory_}.new_object<FutureSchedule>(*memory_);
     }
 
     auto result = ScheduleHandle{future_schedule()->add(time, node_index)};
@@ -508,11 +501,7 @@ RuntimeGraph::CycleCallbacks &RuntimeGraph::require_cycle_callbacks() {
     }
 
     if (cycle_callbacks() == nullptr) {
-        auto *storage = memory_->allocate(sizeof(CycleCallbacks), alignof(CycleCallbacks));
-        auto release = util::scope_exit{
-            [&]() noexcept { memory_->deallocate(storage, sizeof(CycleCallbacks), alignof(CycleCallbacks)); }};
-        cycle_callbacks() = std::construct_at(static_cast<CycleCallbacks *>(storage), *memory_);
-        release.release();
+        cycle_callbacks() = allocator{*memory_}.new_object<CycleCallbacks>(*memory_);
     }
 
     return *cycle_callbacks();
@@ -646,12 +635,7 @@ void RuntimeGraph::schedule_dynamic_subscribers(details::DynamicSubscribers &sub
 void RuntimeGraph::queue_input_notification(InputChangeFunction function, std::size_t node_index, std::size_t data,
                                             OutputChange change) {
     if (pending_input_notifications_ == nullptr) {
-        auto *storage = memory_->allocate(sizeof(PendingInputNotifications), alignof(PendingInputNotifications));
-        auto release = util::scope_exit{[&]() noexcept {
-            memory_->deallocate(storage, sizeof(PendingInputNotifications), alignof(PendingInputNotifications));
-        }};
-        pending_input_notifications_ = std::construct_at(static_cast<PendingInputNotifications *>(storage), *memory_);
-        release.release();
+        pending_input_notifications_ = allocator{*memory_}.new_object<PendingInputNotifications>(*memory_);
     }
 
     pending_input_notifications_->records.push_back({function, node_index, data, change});

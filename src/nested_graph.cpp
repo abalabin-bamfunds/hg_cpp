@@ -1,5 +1,6 @@
 #include <bg/graph/nested_graph.hpp>
 
+#include <bg/allocator.hpp>
 #include <bg/evaluation_context.hpp>
 #include <bg/graph/compiled_graph.hpp>
 #include <bg/graph/node.hpp>
@@ -19,12 +20,8 @@ void NestedGraph::start(const CompiledNestedGraph &compiled, EvaluationContext &
     }
 
     auto &parent = context.runtime_graph();
-    auto *storage = parent.memory_->allocate(sizeof(RuntimeGraph), alignof(RuntimeGraph));
-    auto release = util::scope_exit{
-        [&]() noexcept { parent.memory_->deallocate(storage, sizeof(RuntimeGraph), alignof(RuntimeGraph)); }};
-    active_ = std::construct_at(static_cast<RuntimeGraph *>(storage), *compiled.graph, *parent.memory_,
-                                parent.global_state());
-    release.release();
+    active_ = allocator{*parent.memory_}.new_object<RuntimeGraph>(*compiled.graph, *parent.memory_,
+                                                                   parent.global_state());
     active_->parent_ = &parent;
     active_->owner_node_index_ = context.node_index();
     active_->suppress_parent_scheduling_ = true;
@@ -112,9 +109,7 @@ void NestedGraph::destroy(RuntimeGraph *graph) noexcept {
         return;
     }
 
-    auto *memory = graph->memory_;
-    std::destroy_at(graph);
-    memory->deallocate(graph, sizeof(RuntimeGraph), alignof(RuntimeGraph));
+    allocator{*graph->memory_}.delete_object(graph);
 }
 
 void NestedGraph::destroy_retired() noexcept {
