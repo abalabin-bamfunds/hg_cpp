@@ -51,6 +51,7 @@ template <typename Target, auto... Properties> class Out<REF<Target, Properties.
     bool valid() const noexcept { return state_->valid(); }
     EvaluationTime last_updated() const noexcept { return state_->last_updated(); }
     const TimeSeriesRuntimeType &runtime_type() const noexcept { return state_->runtime_type(); }
+    Reference value() const noexcept { return stored_reference(); }
 
     template <auto... ReferenceProperties, auto... InputProperties>
     void set(const In<REF<Target, ReferenceProperties...>, InputProperties...> &input) const {

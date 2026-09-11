@@ -66,6 +66,13 @@ TEST_CASE("test_graph accepts a graph function and reports skipped cycles",
     CHECK(bg::testing::test_graph(graph, {1, 2, std::nullopt, 4}).equals({2, 3, std::nullopt, 5}));
 }
 
+TEST_CASE("test_graph captures a runtime-typed output",
+          "[testing][evaluation][feature:test-graph][declaration:generic][series:value]") {
+    const auto graph = [](bg::wp<bg::TS<int>> input) { return bg::wp<>{input}; };
+
+    CHECK(bg::testing::test_graph(graph, {1, 2, std::nullopt, 4}).equals<int>({1, 2, std::nullopt, 4}));
+}
+
 TEST_CASE("wiring converts C++ string arguments to the canonical graph type",
           "[testing][evaluation][feature:test-graph][definition:function][series:value][scalar:string]") {
     const auto publish = bg::node(

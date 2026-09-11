@@ -535,14 +535,15 @@ template <typename Definition, std::size_t Index>
         constexpr auto ParameterIndex = parameter_index<Definition>(std::make_index_sequence<Index>{});
         const auto &last_updated = runtime_node.input_last_updated(ParameterIndex);
         const auto *value = runtime_node.input_value(ParameterIndex);
+        const auto modified = runtime_node.input_modified(ParameterIndex, context->evaluation_time());
 
         if constexpr (input_view_field<Field>::value) {
             constexpr auto RuntimeTypeIndex = aggregate_time_series_runtime_type_index<Definition, Index>(
                 std::make_index_sequence<util::aggregate_member_count<Definition>>{});
             const auto &runtime_type = runtime_node.time_series_input_runtime_type(ParameterIndex, RuntimeTypeIndex);
-            return Field{last_updated, value, runtime_type};
+            return Field{last_updated, value, runtime_type, modified};
         } else {
-            return Field{last_updated, static_cast<const typename Field::storage_type *>(value)};
+            return Field{last_updated, static_cast<const typename Field::storage_type *>(value), modified};
         }
     } else if constexpr (scalar_field<Field>::value) {
         constexpr auto ParameterIndex = parameter_index<Definition>(std::make_index_sequence<Index>{});

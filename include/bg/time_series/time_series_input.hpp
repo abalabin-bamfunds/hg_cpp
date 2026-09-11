@@ -21,10 +21,12 @@ template <details::time_series_variable Variable, auto... Properties> class In<V
     static_assert(ParsedProperties::valid);
 
   public:
-    In(const EvaluationTime &last_updated, const void *value, const TimeSeriesRuntimeType &runtime_type) noexcept
-        : data_{runtime_type, last_updated, value} {}
+    In(const EvaluationTime &last_updated, const void *value, const TimeSeriesRuntimeType &runtime_type,
+       bool modified = false) noexcept
+        : data_{runtime_type, last_updated, value, modified} {}
 
     bool valid() const noexcept { return data_.valid(); }
+    bool modified() const noexcept { return data_.modified(); }
     EvaluationTime last_updated() const noexcept { return data_.last_updated(); }
     const TimeSeriesRuntimeType &runtime_type() const noexcept { return data_.runtime_type(); }
     const void *data() const noexcept { return data_.data(); }
@@ -74,27 +76,27 @@ auto In<Variable, Properties...>::visit(Visitor &&visitor, Arguments &&...argume
     auto &types = static_cast<TimeSeriesInputTypes &>(dispatch);
     runtime_type().type().visit(
         [&](const TimeSeriesValueType *) {
-            auto input = In<TS<SCALAR>>{data_.last_updated_ref(), data(), runtime_type()};
+            auto input = In<TS<SCALAR>>{data_.last_updated_ref(), data(), runtime_type(), data_.modified()};
             types.visit(&input);
         },
         [&](const TimeSeriesListType *) {
-            auto input = In<TSL<TS_T, SIZE>>{data_.last_updated_ref(), data(), runtime_type()};
+            auto input = In<TSL<TS_T, SIZE>>{data_.last_updated_ref(), data(), runtime_type(), data_.modified()};
             types.visit(&input);
         },
         [&](const TimeSeriesBundleType *) {
-            auto input = In<TSB<SCHEMA>>{data_.last_updated_ref(), data(), runtime_type()};
+            auto input = In<TSB<SCHEMA>>{data_.last_updated_ref(), data(), runtime_type(), data_.modified()};
             types.visit(&input);
         },
         [&](const TimeSeriesSetType *) {
-            auto input = In<TSS<SCALAR>>{data_.last_updated_ref(), data(), runtime_type()};
+            auto input = In<TSS<SCALAR>>{data_.last_updated_ref(), data(), runtime_type(), data_.modified()};
             types.visit(&input);
         },
         [&](const TimeSeriesDictionaryType *) {
-            auto input = In<TSD<SCALAR, TS_T>>{data_.last_updated_ref(), data(), runtime_type()};
+            auto input = In<TSD<SCALAR, TS_T>>{data_.last_updated_ref(), data(), runtime_type(), data_.modified()};
             types.visit(&input);
         },
         [&](const TimeSeriesReferenceType *) {
-            auto input = In<REF<TS_T>>{data_.last_updated_ref(), data(), runtime_type()};
+            auto input = In<REF<TS_T>>{data_.last_updated_ref(), data(), runtime_type(), data_.modified()};
             types.visit(&input);
         },
         ddv::noop);

@@ -27,7 +27,7 @@ struct TsdKeyEntry {
     void clear_retired_entry() noexcept { retired_entry_ = 0; }
 
     DynamicSubscribers *subscribers{};
-    ItemReference reference;
+    ItemReference *item_reference{};
     bool item_valid{};
     bool retained{};
 
@@ -83,7 +83,7 @@ class TsdKeySubscriptions final : public ReferenceProviderComponent {
         memory.delete_object(this);
     }
 
-    [[nodiscard]] TsdKeySubscription add(Reference reference, const ScalarData &key, RuntimeGraph &graph,
+    [[nodiscard]] TsdKeySubscription add(Reference reference, Scalar<> key, RuntimeGraph &graph,
                                          std::uint32_t node_index) {
         release_retired(graph.evaluation_time());
 
@@ -93,7 +93,7 @@ class TsdKeySubscriptions final : public ReferenceProviderComponent {
             return {};
         }
 
-        auto retained = runtime_type->retain_key(const_cast<void *>(resolved.storage), key, memory_);
+        auto retained = runtime_type->retain_key(const_cast<void *>(resolved.storage), scalar_data(key), memory_);
         if (retained.runtime_type == nullptr) {
             return {};
         }
@@ -117,7 +117,11 @@ class TsdKeySubscriptions final : public ReferenceProviderComponent {
         }};
 
         if (inserted) {
-            entry->reference = ItemReference{reference, retained.id};
+            const auto item_is_reference =
+                dynamic_cast<const TimeSeriesReferenceRuntimeType *>(&runtime_type->item_runtime_type()) != nullptr;
+            if (!item_is_reference) {
+                entry->item_reference = memory_.new_object<ItemReference>(reference, retained.id);
+            }
             if (tsd.runtime_type->key_live(tsd.storage, retained.id)) {
                 entry->item_valid = tsd.runtime_type->item(tsd.storage, retained.id).last_updated > MIN_DT;
             }
@@ -194,6 +198,9 @@ class TsdKeySubscriptions final : public ReferenceProviderComponent {
         if (entry->retained) {
             tsd.runtime_type->release_key(tsd.storage, id, memory_);
         }
+        if (entry->item_reference != nullptr) {
+            memory_.delete_object(entry->item_reference);
+        }
         tsd.keys.erase_with(
             id, memory_, [](item_id_t *) noexcept {},
             [](TsdKeyEntry *value) noexcept {
@@ -217,6 +224,9 @@ class TsdKeySubscriptions final : public ReferenceProviderComponent {
         for (const auto entry : tsd.keys) {
             if (entry.value.retained) {
                 tsd.runtime_type->release_key(tsd.storage, entry.key, memory_);
+            }
+            if (entry.value.item_reference != nullptr) {
+                memory_.delete_object(entry.value.item_reference);
             }
         }
         tsd.keys.release_with(
@@ -319,7 +329,8 @@ class TsdKeySubscriptions final : public ReferenceProviderComponent {
             return;
         }
         if (item_valid) {
-            notify_reference(Reference{&entry->reference}, context, OutputChange::update);
+            assert(entry->item_reference != nullptr);
+            notify_reference(Reference{entry->item_reference}, context, OutputChange::update);
         }
     }
 
@@ -334,7 +345,8 @@ class TsdKeySubscriptions final : public ReferenceProviderComponent {
                 entry->clear_retired_entry();
                 continue;
             }
-            if (retired.time >= evaluation_time || !provider_->release_item_reference(entry->reference)) {
+            if (retired.time >= evaluation_time ||
+                (entry->item_reference != nullptr && !provider_->release_item_reference(*entry->item_reference))) {
                 *retained++ = retired;
                 entry->set_retired_entry_index(static_cast<std::uint32_t>(retained - retired_keys_.begin() - 1));
                 continue;
@@ -376,32 +388,12 @@ TsdKeySubscriptions &require_tsd_key_subscriptions(Reference reference) {
 
 } // namespace
 
-TsdKeySubscription add_tsd_key_subscriber(Reference reference, const ScalarData &key, RuntimeGraph &graph,
+TsdKeySubscription add_tsd_key_subscriber(Reference reference, Scalar<> key, RuntimeGraph &graph,
                                           std::uint32_t node_index) {
     return require_tsd_key_subscriptions(reference).add(reference, key, graph, node_index);
 }
 
-bool tsd_key_subscription_matches(TsdKeySubscription subscription, Reference reference, const ScalarData &key) {
-    if (!subscription) {
-        return false;
-    }
-
-    const auto &tsd = *static_cast<const SubscribedTsd *>(subscription.subscribed_tsd_);
-    if (tsd.reference != reference) {
-        return false;
-    }
-
-    const auto resolved = resolve_reference(reference);
-    const auto *runtime_type = dynamic_cast<const TimeSeriesDictionaryRuntimeType *>(resolved.runtime_type);
-    if (runtime_type == nullptr || resolved.storage == nullptr) {
-        return false;
-    }
-    const auto storage = runtime_type->retention_storage(const_cast<void *>(resolved.storage));
-    return storage.runtime_type == tsd.runtime_type && storage.value == tsd.storage &&
-           tsd.runtime_type->key_runtime_type().equals(tsd.runtime_type->key(tsd.storage, subscription.item_id_), key);
-}
-
-Reference tsd_key_subscription_reference(TsdKeySubscription subscription) {
+Reference tsd_key_subscription_value(TsdKeySubscription subscription) {
     if (!subscription) {
         return {};
     }
@@ -421,7 +413,19 @@ Reference tsd_key_subscription_reference(TsdKeySubscription subscription) {
         return item.runtime_type.reference(item.value);
     }
 
-    return Reference{&entry->reference};
+    assert(entry->item_reference != nullptr);
+    return Reference{entry->item_reference};
+}
+
+bool tsd_key_subscription_is_final_and_valid(TsdKeySubscription subscription) {
+    if (!tsd_key_subscription_value(subscription)) {
+        return false;
+    }
+
+    const auto &tsd = *static_cast<const SubscribedTsd *>(subscription.subscribed_tsd_);
+    const auto item = tsd.runtime_type->item(tsd.storage, subscription.item_id_);
+    const auto guarantee = item.runtime_type.type().guarantee().value();
+    return guarantee && satisfies(*guarantee, TimeSeriesGuarantee::final);
 }
 
 void remove_tsd_key_subscriber(TsdKeySubscription subscription, RuntimeGraph &graph,

@@ -6,6 +6,7 @@
 #include <bg/testing/test_graph.hpp>
 #include <bg/testing/test_wiring.hpp>
 #include <bg/time_series/time_series_type.hpp>
+#include <bg/time_series/tsd/tsd_type.hpp>
 #include <bg/type/time_series_reference_type.hpp>
 #include <bg/type/time_series_value_type.hpp>
 
@@ -175,6 +176,37 @@ TEST_CASE("an operator prefers the overload with the argument's reference shape"
     bg::testing::test_wiring([&] {
         operation(direct_source());
         CHECK(selected == "direct");
+    });
+
+    bg::testing::test_wiring([&] {
+        operation(reference_source());
+        CHECK(selected == "reference");
+    });
+}
+
+TEST_CASE("an operator prefers the overload with a contained reference shape",
+          "[feature:operator][feature:wiring][feature:reference][series:tsd]") {
+    auto selected = std::string{};
+    auto operation = bg::operator_<auto(bg::TS_T) -> bg::TS_T>{"identity", {"value"}};
+    operation.overload(bg::graph(
+        "name"_n = "value",
+        [&](bg::wp<bg::TSD<std::int64_t, bg::TS<float>>> value) {
+            selected = "value";
+            return value;
+        }));
+    operation.overload(bg::graph(
+        "name"_n = "reference",
+        [&](bg::wp<bg::TSD<std::int64_t, bg::REF<bg::TS<float>>>> value) {
+            selected = "reference";
+            return value;
+        }));
+    const auto value_source = bg::node([](bg::Out<bg::TSD<std::int64_t, bg::TS<float>>>) {});
+    const auto reference_source =
+        bg::node([](bg::Out<bg::TSD<std::int64_t, bg::REF<bg::TS<float>>>>) {});
+
+    bg::testing::test_wiring([&] {
+        operation(value_source());
+        CHECK(selected == "value");
     });
 
     bg::testing::test_wiring([&] {

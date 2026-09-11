@@ -21,10 +21,12 @@ class In<TS<Variable, TimeSeriesProperties...>, Properties...> {
     static_assert(ParsedProperties::valid);
 
   public:
-    In(const EvaluationTime &last_updated, const void *value, const TimeSeriesRuntimeType &runtime_type) noexcept
-        : data_{runtime_type, last_updated, value} {}
+    In(const EvaluationTime &last_updated, const void *value, const TimeSeriesRuntimeType &runtime_type,
+       bool modified = false) noexcept
+        : data_{runtime_type, last_updated, value, modified} {}
 
     bool valid() const noexcept { return data_.valid(); }
+    bool modified() const noexcept { return data_.modified(); }
     EvaluationTime last_updated() const noexcept { return data_.last_updated(); }
     Scalar<Variable> value_view() const {
         return Scalar<Variable>::from(
@@ -35,7 +37,7 @@ class In<TS<Variable, TimeSeriesProperties...>, Properties...> {
     const In *operator->() const noexcept { return this; }
 
     template <typename... Functions> decltype(auto) visit(Functions &&...functions) const {
-        return In<TS_T>{data_.last_updated_ref(), data_.data(), data_.runtime_type()}.visit(
+        return In<TS_T>{data_.last_updated_ref(), data_.data(), data_.runtime_type(), data_.modified()}.visit(
             std::forward<Functions>(functions)...);
     }
 
@@ -61,13 +63,15 @@ class In<TS<T, TimeSeriesProperties...>, Properties...> {
 
     In() noexcept : data_{cpp_time_series_runtime_type<TS<T, TimeSeriesProperties...>>(), MIN_DT, nullptr} {}
 
-    In(const EvaluationTime &last_updated, const Stored *value) noexcept
-        : data_{cpp_time_series_runtime_type<TS<T, TimeSeriesProperties...>>(), last_updated, value} {}
+    In(const EvaluationTime &last_updated, const Stored *value, bool modified = false) noexcept
+        : data_{cpp_time_series_runtime_type<TS<T, TimeSeriesProperties...>>(), last_updated, value, modified} {}
 
-    In(const EvaluationTime &last_updated, const void *value, const TimeSeriesRuntimeType &runtime_type) noexcept
-        : data_{runtime_type, last_updated, value} {}
+    In(const EvaluationTime &last_updated, const void *value, const TimeSeriesRuntimeType &runtime_type,
+       bool modified = false) noexcept
+        : data_{runtime_type, last_updated, value, modified} {}
 
     bool valid() const noexcept { return data_.valid(); }
+    bool modified() const noexcept { return data_.modified(); }
     EvaluationTime last_updated() const noexcept { return data_.last_updated(); }
 
     details::scalar_value_t<T> value() const noexcept
@@ -97,7 +101,7 @@ class In<TS<T, TimeSeriesProperties...>, Properties...> {
     const void *data() const noexcept { return data_.data(); }
 
     template <typename... Functions> decltype(auto) visit(Functions &&...functions) const {
-        return In<TS_T>{data_.last_updated_ref(), data_.data(), data_.runtime_type()}.visit(
+        return In<TS_T>{data_.last_updated_ref(), data_.data(), data_.runtime_type(), data_.modified()}.visit(
             std::forward<Functions>(functions)...);
     }
 

@@ -33,18 +33,33 @@ WiringFailureStage failure_stage(TypeResolutionErrorCode code) noexcept {
     return WiringFailureStage::resolver;
 }
 
-std::partial_ordering compare_reference_affinity(const Signature &left, const Signature &right,
+std::partial_ordering compare_reference_affinity(const ResolvedSignature &left, const ResolvedSignature &right,
                                                  std::span<const Type *const> arguments) noexcept {
     auto left_better = false;
     auto right_better = false;
     for (auto index = std::size_t{}; index < arguments.size(); ++index) {
-        const auto argument_is_reference = dynamic_cast<const TimeSeriesReferenceType *>(arguments[index]) != nullptr;
-        const auto left_matches = (dynamic_cast<const TimeSeriesReferenceType *>(left.parameter(index).type) !=
-                                   nullptr) == argument_is_reference;
-        const auto right_matches = (dynamic_cast<const TimeSeriesReferenceType *>(right.parameter(index).type) !=
-                                    nullptr) == argument_is_reference;
+        const auto *argument = dynamic_cast<const TimeSeriesType *>(arguments[index]);
+        const auto *left_parameter = dynamic_cast<const TimeSeriesType *>(left.parameters[index].type);
+        const auto *right_parameter = dynamic_cast<const TimeSeriesType *>(right.parameters[index].type);
+        if (argument == nullptr || left_parameter == nullptr || right_parameter == nullptr) {
+            continue;
+        }
+
+        const auto *argument_reference = dynamic_cast<const TimeSeriesReferenceType *>(argument);
+        const auto *left_reference = dynamic_cast<const TimeSeriesReferenceType *>(left_parameter);
+        const auto *right_reference = dynamic_cast<const TimeSeriesReferenceType *>(right_parameter);
+        const auto left_matches = (left_reference != nullptr) == (argument_reference != nullptr);
+        const auto right_matches = (right_reference != nullptr) == (argument_reference != nullptr);
         left_better |= left_matches && !right_matches;
         right_better |= right_matches && !left_matches;
+
+        const auto &supplied = argument_reference == nullptr ? *argument : argument_reference->target_type();
+        const auto &left_target = left_reference == nullptr ? *left_parameter : left_reference->target_type();
+        const auto &right_target = right_reference == nullptr ? *right_parameter : right_reference->target_type();
+        const auto left_requires_representation = left_target.requires_reference_representation_for(supplied);
+        const auto right_requires_representation = right_target.requires_reference_representation_for(supplied);
+        left_better |= !left_requires_representation && right_requires_representation;
+        right_better |= !right_requires_representation && left_requires_representation;
     }
     if (left_better == right_better) {
         return left_better ? std::partial_ordering::unordered : std::partial_ordering::equivalent;
@@ -52,8 +67,10 @@ std::partial_ordering compare_reference_affinity(const Signature &left, const Si
     return left_better ? std::partial_ordering::less : std::partial_ordering::greater;
 }
 
-bool preferred(const WiringTemplate &candidate, const WiringTemplate &other, std::span<const Type *const> arguments) {
-    const auto reference_affinity = compare_reference_affinity(candidate.signature(), other.signature(), arguments);
+bool preferred(const WiringTemplate &candidate, const ResolvedSignature &candidate_signature,
+               const WiringTemplate &other, const ResolvedSignature &other_signature,
+               std::span<const Type *const> arguments) {
+    const auto reference_affinity = compare_reference_affinity(candidate_signature, other_signature, arguments);
     if (reference_affinity != std::partial_ordering::equivalent) {
         return reference_affinity == std::partial_ordering::less;
     }
@@ -280,7 +297,9 @@ std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<detai
     Candidate *selected = nullptr;
     for (auto &candidate : applicable) {
         const auto least_generic = std::ranges::all_of(applicable, [&](const auto &other) {
-            return &candidate == &other || preferred(*candidate.implementation, *other.implementation, argument_types);
+            return &candidate == &other ||
+                   preferred(*candidate.implementation, candidate.resolution.signature, *other.implementation,
+                             other.resolution.signature, argument_types);
         });
         if (least_generic) {
             selected = &candidate;

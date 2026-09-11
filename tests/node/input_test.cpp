@@ -61,6 +61,21 @@ TEST_CASE("a typed input reads its time-series value", "[node_api][feature:node-
     CHECK(*visited_valid);
 }
 
+TEST_CASE("an input reports whether its visible value was modified",
+          "[node_api][feature:node-api][feature:time-series-view]") {
+    const auto updated = bg::MIN_DT + std::chrono::microseconds{1};
+    const auto value = 1.25F;
+    const auto modified = FloatInput{updated, &value, true};
+    const auto unchanged = FloatInput{updated, &value};
+
+    CHECK(modified.modified());
+    CHECK_FALSE(unchanged.modified());
+
+    const auto visited = modified.visit([](const auto *input) { return input->modified(); });
+    REQUIRE(visited);
+    CHECK(*visited);
+}
+
 TEST_CASE("a typed value input provides member access to its value", "[node_api][feature:node-api]") {
     const auto updated = bg::MIN_DT + std::chrono::microseconds{1};
     const auto value = std::pmr::string{"value"};

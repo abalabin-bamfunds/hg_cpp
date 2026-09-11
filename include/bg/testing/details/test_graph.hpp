@@ -99,7 +99,9 @@ template <typename T> struct canonical_tick<std::optional<T>> {
 
 template <typename T> using canonical_tick_t = typename canonical_tick<T>::type;
 
-template <typename TimeSeries> struct test_output_scalar;
+template <typename TimeSeries> struct test_output_scalar {
+    using type = void;
+};
 
 template <typename T, auto... Properties> struct test_output_scalar<TS<T, Properties...>> {
     using type = T;

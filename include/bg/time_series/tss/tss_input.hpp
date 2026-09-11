@@ -24,13 +24,15 @@ class In<TSS<K, TimeSeriesProperties...>, Properties...> {
 
     In() noexcept : data_{cpp_time_series_runtime_type<TSS<K, TimeSeriesProperties...>>(), MIN_DT, nullptr} {}
 
-    In(const EvaluationTime &last_updated, const storage_type *value) noexcept
-        : data_{cpp_time_series_runtime_type<TSS<K, TimeSeriesProperties...>>(), last_updated, value} {}
+    In(const EvaluationTime &last_updated, const storage_type *value, bool modified = false) noexcept
+        : data_{cpp_time_series_runtime_type<TSS<K, TimeSeriesProperties...>>(), last_updated, value, modified} {}
 
-    In(const EvaluationTime &last_updated, const void *value, const TimeSeriesRuntimeType &runtime_type) noexcept
-        : data_{runtime_type, last_updated, value} {}
+    In(const EvaluationTime &last_updated, const void *value, const TimeSeriesRuntimeType &runtime_type,
+       bool modified = false) noexcept
+        : data_{runtime_type, last_updated, value, modified} {}
 
     bool valid() const noexcept { return data_.valid(); }
+    bool modified() const noexcept { return data_.modified(); }
     EvaluationTime last_updated() const noexcept { return data_.last_updated(); }
     std::size_t size() const noexcept { return valid() ? storage().size() : 0; }
     bool contains(const Scalar<K> &item) const { return contains(details::scalar_data(item)); }
@@ -65,7 +67,7 @@ class In<TSS<K, TimeSeriesProperties...>, Properties...> {
     const In *operator->() const noexcept { return this; }
 
     template <typename... Functions> decltype(auto) visit(Functions &&...functions) const {
-        return In<TS_T>{data_.last_updated_ref(), data_.data(), data_.runtime_type()}.visit(
+        return In<TS_T>{data_.last_updated_ref(), data_.data(), data_.runtime_type(), data_.modified()}.visit(
             std::forward<Functions>(functions)...);
     }
 

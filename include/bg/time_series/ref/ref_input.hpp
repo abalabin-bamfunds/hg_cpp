@@ -23,13 +23,15 @@ class In<REF<Target, TimeSeriesProperties...>, Properties...> {
 
     In() noexcept : data_{cpp_time_series_runtime_type<REF<Target, TimeSeriesProperties...>>(), MIN_DT, nullptr} {}
 
-    In(const EvaluationTime &last_updated, const storage_type *value) noexcept
-        : data_{cpp_time_series_runtime_type<REF<Target, TimeSeriesProperties...>>(), last_updated, value} {}
+    In(const EvaluationTime &last_updated, const storage_type *value, bool modified = false) noexcept
+        : data_{cpp_time_series_runtime_type<REF<Target, TimeSeriesProperties...>>(), last_updated, value, modified} {}
 
-    In(const EvaluationTime &last_updated, const void *value, const TimeSeriesRuntimeType &runtime_type) noexcept
-        : data_{runtime_type, last_updated, value} {}
+    In(const EvaluationTime &last_updated, const void *value, const TimeSeriesRuntimeType &runtime_type,
+       bool modified = false) noexcept
+        : data_{runtime_type, last_updated, value, modified} {}
 
     bool valid() const noexcept { return data_.valid(); }
+    bool modified() const noexcept { return data_.modified(); }
     EvaluationTime last_updated() const noexcept { return data_.last_updated(); }
     Reference value() const noexcept { return data_.runtime_type().reference(data_.data()); }
     const TimeSeriesRuntimeType &runtime_type() const noexcept { return data_.runtime_type(); }
@@ -37,7 +39,7 @@ class In<REF<Target, TimeSeriesProperties...>, Properties...> {
     const In *operator->() const noexcept { return this; }
 
     template <typename... Functions> decltype(auto) visit(Functions &&...functions) const {
-        return In<TS_T>{data_.last_updated_ref(), data_.data(), data_.runtime_type()}.visit(
+        return In<TS_T>{data_.last_updated_ref(), data_.data(), data_.runtime_type(), data_.modified()}.visit(
             std::forward<Functions>(functions)...);
     }
 

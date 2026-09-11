@@ -36,7 +36,8 @@ TEST_CASE("a pointer-sized opaque scalar value uses inline storage",
     using PrivatePointerValue = bg::ScalarValue<bg::Opaque<private_data *>>;
 
     auto source = private_data{{1, 2, 3, 4}};
-    const auto value = PrivatePointerValue{&source, *std::pmr::null_memory_resource()};
+    auto allocator = bg::allocator{*std::pmr::null_memory_resource()};
+    const auto value = PrivatePointerValue{&source, allocator};
 
     const auto view = value.view();
     CHECK(*view == &source);

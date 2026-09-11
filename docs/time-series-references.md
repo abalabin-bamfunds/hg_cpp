@@ -205,6 +205,11 @@ key is absent. Notification processing uses changed item IDs directly. The key
 set reclaims an unretained non-live ID after the outer cycle in which it was
 released.
 
+Selecting a value item returns its item reference. Selecting a reference item
+forwards the stored reference and subscribes the selecting node to replacement
+or removal of that item. Updates from the forwarded target bypass the selecting
+node.
+
 The shared set and its representations handle key removal:
 
 1. The set marks the key and sparse index as removed.

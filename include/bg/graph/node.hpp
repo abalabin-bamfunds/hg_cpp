@@ -45,6 +45,10 @@ class Node {
         return wired_last_updated > referenced_last_updated ? wired_last_updated : referenced_last_updated;
     }
 
+    bool input_modified(std::size_t parameter_index, EvaluationTime evaluation_time) const noexcept {
+        return evaluation_time > MIN_DT && input_last_updated(parameter_index) == evaluation_time;
+    }
+
     const void *input_value(std::size_t parameter_index) const noexcept {
         const auto &binding = compiled_node_->parameters()[parameter_index];
         if (binding.mode() != ParameterBindingMode::reference) {
@@ -61,16 +65,20 @@ class Node {
         if (binding.mode() == ParameterBindingMode::reference) {
             const auto reference = reference_input(parameter_index).value;
             if (reference) {
-                return *details::resolve_reference(reference).runtime_type;
+                if (const auto *runtime_type = details::resolve_reference(reference).runtime_type) {
+                    return *runtime_type;
+                }
             }
         }
 
         return compiled_node_->time_series_input_runtime_type(runtime_type_index);
     }
 
-    In<TS_T> time_series_input(std::size_t parameter_index, std::size_t runtime_type_index) const noexcept {
+    In<TS_T> time_series_input(std::size_t parameter_index, std::size_t runtime_type_index,
+                               EvaluationTime evaluation_time = MIN_DT) const noexcept {
         return {input_last_updated(parameter_index), input_value(parameter_index),
-                time_series_input_runtime_type(parameter_index, runtime_type_index)};
+                time_series_input_runtime_type(parameter_index, runtime_type_index),
+                input_modified(parameter_index, evaluation_time)};
     }
 
     ReferenceInputStorage &reference_input(std::size_t parameter_index) const noexcept {

@@ -10,7 +10,8 @@ namespace bg::details {
 namespace {
 
 using K = ScalarVariable<"K", Hashable>;
-using ITEM = TimeSeriesVariable<"ITEM">;
+using V = TimeSeriesVariable<"V">;
+inline constexpr auto G = guarantee_variable<"G">;
 
 struct TsdItemState {
     TsdKeySubscription subscription;
@@ -22,47 +23,47 @@ void remove_subscription(State<TsdItemState> state, EvaluationContext &context) 
     state->subscription = {};
 }
 
-void evaluate_getitem(const In<REF<TSD<K, ITEM>>, optional> &tsd, const ScalarData &key, State<TsdItemState> state,
-                      const Out<REF<ITEM>> &output, EvaluationContext &context) {
+void update_value_item(
+    const In<REF<TSD<K, V, G>, G>, optional> &tsd, Scalar<> key, bool key_modified, State<TsdItemState> state,
+    const Out<REF<V, G>> &output, EvaluationContext &context) {
     if (!tsd.valid()) {
         remove_subscription(state, context);
         output.invalidate();
         return;
     }
 
-    const auto reference = tsd.value();
-    if (!tsd_key_subscription_matches(state->subscription, reference, key)) {
+    if (!state->subscription || tsd.modified() || key_modified) {
         remove_subscription(state, context);
-        state->subscription = add_tsd_key_subscriber(reference, key, context.runtime_graph(),
+        state->subscription = add_tsd_key_subscriber(tsd.value(), key, context.runtime_graph(),
                                                      static_cast<std::uint32_t>(context.node_index()));
     }
 
-    const auto selected = tsd_key_subscription_reference(state->subscription);
-    if (selected) {
-        output.set_value(selected);
+    const auto value = tsd_key_subscription_value(state->subscription);
+    if (value) {
+        output.set_value(value);
     } else {
         output.invalidate();
     }
 }
 
-struct tsd_getitem_scalar {
-    In<REF<TSD<K, ITEM>>, optional> tsd;
+struct tsd_value_getitem_scalar {
+    In<REF<TSD<K, V, G>, G>, optional> tsd;
     Scalar<K> key;
     State<TsdItemState> state;
-    Out<REF<ITEM>> output;
+    Out<REF<V, G>> output;
 
     void evaluate(EvaluationContext *context) const {
-        evaluate_getitem(tsd, scalar_data(key), state, output, *context);
+        update_value_item(tsd, Scalar<>::from(key), false, state, output, *context);
     }
 
     void finalize(EvaluationContext *context) const noexcept { remove_subscription(state, *context); }
 };
 
-struct tsd_getitem_time_series {
-    In<REF<TSD<K, ITEM>>, optional> tsd;
-    In<TS<K>, optional> key;
+struct tsd_value_getitem_time_series {
+    In<REF<TSD<K, V, G>, G>, optional> tsd;
+    In<TS<K, G>, optional> key;
     State<TsdItemState> state;
-    Out<REF<ITEM>> output;
+    Out<REF<V, G>> output;
 
     void evaluate(EvaluationContext *context) const {
         if (!key.valid()) {
@@ -72,7 +73,67 @@ struct tsd_getitem_time_series {
         }
 
         const auto selected_key = key.value_view();
-        evaluate_getitem(tsd, scalar_data(selected_key), state, output, *context);
+        update_value_item(tsd, Scalar<>::from(selected_key), key.modified(), state, output, *context);
+    }
+
+    void finalize(EvaluationContext *context) const noexcept { remove_subscription(state, *context); }
+};
+
+void update_reference_item(
+    const In<REF<TSD<K, REF<V, G>, G>, G>, optional> &tsd, Scalar<> key, bool key_modified,
+    State<TsdItemState> state, const Out<REF<V, G>> &output, EvaluationContext &context) {
+    if (!tsd.valid()) {
+        remove_subscription(state, context);
+        output.invalidate();
+        return;
+    }
+
+    if (!state->subscription || tsd.modified() || key_modified) {
+        remove_subscription(state, context);
+        state->subscription = add_tsd_key_subscriber(tsd.value(), key, context.runtime_graph(),
+                                                     static_cast<std::uint32_t>(context.node_index()));
+    }
+
+    const auto value = tsd_key_subscription_value(state->subscription);
+    if (!value) {
+        output.invalidate();
+        return;
+    }
+
+    output.set_value(value);
+    if (tsd_key_subscription_is_final_and_valid(state->subscription)) {
+        remove_subscription(state, context);
+    }
+}
+
+struct tsd_reference_getitem_scalar {
+    In<REF<TSD<K, REF<V, G>, G>, G>, optional> tsd;
+    Scalar<K> key;
+    State<TsdItemState> state;
+    Out<REF<V, G>> output;
+
+    void evaluate(EvaluationContext *context) const {
+        update_reference_item(tsd, Scalar<>::from(key), false, state, output, *context);
+    }
+
+    void finalize(EvaluationContext *context) const noexcept { remove_subscription(state, *context); }
+};
+
+struct tsd_reference_getitem_time_series {
+    In<REF<TSD<K, REF<V, G>, G>, G>, optional> tsd;
+    In<TS<K, G>, optional> key;
+    State<TsdItemState> state;
+    Out<REF<V, G>> output;
+
+    void evaluate(EvaluationContext *context) const {
+        if (!key.valid()) {
+            remove_subscription(state, *context);
+            output.invalidate();
+            return;
+        }
+
+        const auto selected_key = key.value_view();
+        update_reference_item(tsd, Scalar<>::from(selected_key), key.modified(), state, output, *context);
     }
 
     void finalize(EvaluationContext *context) const noexcept { remove_subscription(state, *context); }
@@ -81,8 +142,10 @@ struct tsd_getitem_time_series {
 } // namespace
 
 void register_time_series_dict_operators(Operator &getitem) {
-    getitem.overload(bg::node<tsd_getitem_scalar>());
-    getitem.overload(bg::node<tsd_getitem_time_series>());
+    getitem.overload(bg::node<tsd_value_getitem_scalar>());
+    getitem.overload(bg::node<tsd_value_getitem_time_series>());
+    getitem.overload(bg::node<tsd_reference_getitem_scalar>());
+    getitem.overload(bg::node<tsd_reference_getitem_time_series>());
 }
 
 } // namespace bg::details

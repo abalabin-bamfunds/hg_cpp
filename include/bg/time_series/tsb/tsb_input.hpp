@@ -21,7 +21,8 @@ class bundle_input_factory {
 
     template <typename Item> [[nodiscard]] In<Item> make(std::size_t index) const {
         const auto item = data_->runtime_type().item(data_->data(), static_cast<item_id_t>(index));
-        return {item.last_updated, item.value, item.runtime_type};
+        return {item.last_updated, item.value, item.runtime_type,
+                data_->modified() && item.last_updated == data_->last_updated()};
     }
 
   private:
@@ -46,10 +47,12 @@ class In<TSB<Schema, TimeSeriesProperties...>, Properties...> {
     using time_series_type = TSB<Schema, TimeSeriesProperties...>;
     using fields_type = Schema<details::bundle_input_field>;
 
-    In(const EvaluationTime &last_updated, const void *value, const TimeSeriesRuntimeType &runtime_type) noexcept
-        : data_{runtime_type, last_updated, value}, fields_{details::make_bundle_inputs<Schema>(data_)} {}
+    In(const EvaluationTime &last_updated, const void *value, const TimeSeriesRuntimeType &runtime_type,
+       bool modified = false) noexcept
+        : data_{runtime_type, last_updated, value, modified}, fields_{details::make_bundle_inputs<Schema>(data_)} {}
 
     bool valid() const noexcept { return data_.valid(); }
+    bool modified() const noexcept { return data_.modified(); }
     EvaluationTime last_updated() const noexcept { return data_.last_updated(); }
     const fields_type *operator->() const noexcept { return &fields_; }
     const fields_type &fields() const noexcept { return fields_; }
@@ -66,7 +69,7 @@ class In<TSB<Schema, TimeSeriesProperties...>, Properties...> {
     }
 
     template <typename... Functions> decltype(auto) visit(Functions &&...functions) const {
-        return In<TS_T>{data_.last_updated_ref(), data_.data(), data_.runtime_type()}.visit(
+        return In<TS_T>{data_.last_updated_ref(), data_.data(), data_.runtime_type(), data_.modified()}.visit(
             std::forward<Functions>(functions)...);
     }
 
@@ -86,10 +89,12 @@ class In<TSB<Schema, TimeSeriesProperties...>, Properties...> {
     static_assert(ParsedProperties::valid);
 
   public:
-    In(const EvaluationTime &last_updated, const void *value, const TimeSeriesRuntimeType &runtime_type) noexcept
-        : data_{runtime_type, last_updated, value} {}
+    In(const EvaluationTime &last_updated, const void *value, const TimeSeriesRuntimeType &runtime_type,
+       bool modified = false) noexcept
+        : data_{runtime_type, last_updated, value, modified} {}
 
     bool valid() const noexcept { return data_.valid(); }
+    bool modified() const noexcept { return data_.modified(); }
     EvaluationTime last_updated() const noexcept { return data_.last_updated(); }
     std::size_t size() const noexcept { return data_.runtime_type().item_count(data_.data()); }
     util::symbol item_name(std::size_t index) const {
@@ -97,7 +102,8 @@ class In<TSB<Schema, TimeSeriesProperties...>, Properties...> {
     }
     In<TS_T> operator[](std::size_t index) const {
         const auto item = data_.runtime_type().item(data_.data(), static_cast<item_id_t>(index));
-        return {item.last_updated, item.value, item.runtime_type};
+        return {item.last_updated, item.value, item.runtime_type,
+                data_.modified() && item.last_updated == data_.last_updated()};
     }
     bool item_updated(std::size_t index) const noexcept {
         return data_.runtime_type().item_updated(data_.last_updated_ref(), data_.data(),
@@ -116,7 +122,7 @@ class In<TSB<Schema, TimeSeriesProperties...>, Properties...> {
     const In *operator->() const noexcept { return this; }
 
     template <typename... Functions> decltype(auto) visit(Functions &&...functions) const {
-        return In<TS_T>{data_.last_updated_ref(), data_.data(), data_.runtime_type()}.visit(
+        return In<TS_T>{data_.last_updated_ref(), data_.data(), data_.runtime_type(), data_.modified()}.visit(
             std::forward<Functions>(functions)...);
     }
 

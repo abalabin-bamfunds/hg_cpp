@@ -169,7 +169,8 @@ template <typename CompiledData = void, typename State = void> class NodeInvocat
     template <typename Input> Input input_as(std::size_t parameter_index, std::size_t view_index) const {
         const auto runtime_node = Node{*node_, runtime_storage_};
         return Input{runtime_node.input_last_updated(parameter_index), runtime_node.input_value(parameter_index),
-                     runtime_node.time_series_input_runtime_type(parameter_index, view_index)};
+                     runtime_node.time_series_input_runtime_type(parameter_index, view_index),
+                     runtime_node.input_modified(parameter_index, context_->evaluation_time())};
     }
 
     NodeInvocationScalar scalar_at(std::size_t parameter_index, std::size_t view_index) const noexcept {
