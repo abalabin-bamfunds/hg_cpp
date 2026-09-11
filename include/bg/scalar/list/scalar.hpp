@@ -24,7 +24,7 @@ template <typename T> class Scalar<List<T>> {
     const ScalarType &type() const noexcept { return value_.runtime_type().type(); }
 
     template <typename... Functions> decltype(auto) visit(Functions &&...functions) const {
-        return Scalar<>::from(value_).visit(std::forward<Functions>(functions)...);
+        return Scalar<>::from(value_.runtime_type(), value_.data()).visit(std::forward<Functions>(functions)...);
     }
 
     std::size_t hash() const noexcept
@@ -33,19 +33,24 @@ template <typename T> class Scalar<List<T>> {
         return value_.hash();
     }
 
-    bool equals(const details::ScalarData &other) const noexcept
-        requires details::scalar_capability_traits<List<T>>::supports_equality
-    {
-        return value_.equals(other);
+    template <typename Other>
+        requires requires(const Other &other) { details::scalar_data(other); } &&
+                 details::scalar_capability_traits<List<T>>::supports_equality
+    bool equals(const Other &other) const noexcept {
+        return value_.equals(details::scalar_data(other));
     }
-
-    operator const details::ScalarData &() const & noexcept { return value_; }
-    operator const details::ScalarData &() const && = delete;
-
-    [[nodiscard]] static Scalar from(const details::ScalarData &value) noexcept { return Scalar{value}; }
     [[nodiscard]] static Scalar from(const ScalarRuntimeType &runtime_type, const void *data) noexcept {
         return Scalar{details::ScalarData{runtime_type, data}};
     }
+    template <typename Source> [[nodiscard]] static Scalar from(const Scalar<Source> &value) noexcept {
+        return from(value.runtime_type(), value.data());
+    }
+    template <typename Source> static Scalar from(const Scalar<Source> &&) = delete;
+    template <typename Source> [[nodiscard]] static Scalar from(const ScalarValue<Source> &value) noexcept {
+        const auto view = value.view();
+        return from(view.runtime_type(), view.data());
+    }
+    template <typename Source> static Scalar from(const ScalarValue<Source> &&) = delete;
     [[nodiscard]] static Scalar from(const details::scalar_stored_t<List<T>> &value) noexcept {
         return from(cpp_scalar_runtime_type<List<T>>(), std::addressof(value));
     }
@@ -53,10 +58,14 @@ template <typename T> class Scalar<List<T>> {
 
     using scalar_type = List<T>;
 
-  private:
+  public:
     const ScalarListRuntimeType &runtime_type() const noexcept {
         return static_cast<const ScalarListRuntimeType &>(value_.runtime_type());
     }
+    const void *data() const noexcept { return value_.data(); }
+
+  private:
+    template <typename U> friend const details::ScalarData &details::scalar_data(const Scalar<U> &) noexcept;
 
     explicit Scalar(details::ScalarData value) noexcept : value_{value} {}
     details::ScalarData value_;

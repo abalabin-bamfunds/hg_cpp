@@ -29,8 +29,6 @@ concept direct_scalar_source = scalar_storage_constructible_from<T, Source> && [
 } // namespace details
 
 template <typename T> class ScalarValue {
-    using View = details::ScalarData;
-
   public:
     template <scalar_source Source>
         requires std::same_as<canonical_scalar_t<Source>, T>
@@ -52,21 +50,22 @@ template <typename T> class ScalarValue {
     ScalarValue(Source &&source, std::pmr::memory_resource &memory)
         : value_{make(details::make_scalar_value<T>(std::forward<Source>(source), &memory))} {}
 
-    explicit ScalarValue(const Scalar<T> &source) : value_{make(details::copy_scalar_value<T>(source, nullptr))} {}
+    explicit ScalarValue(const Scalar<T> &source)
+        : value_{make(details::copy_scalar_value<T>(details::scalar_data(source), nullptr))} {}
     ScalarValue(const Scalar<T> &source, std::pmr::memory_resource &memory)
-        : value_{make(details::copy_scalar_value<T>(source, &memory))} {}
+        : value_{make(details::copy_scalar_value<T>(details::scalar_data(source), &memory))} {}
 
     ~ScalarValue() { release(); }
 
     ScalarValue(const ScalarValue &) = delete;
     ScalarValue &operator=(const ScalarValue &) = delete;
 
-    ScalarValue(ScalarValue &&other) noexcept : value_{other.value_} { other.value_ = View{}; }
+    ScalarValue(ScalarValue &&other) noexcept : value_{other.value_} { other.value_ = details::ScalarData{}; }
 
     ScalarValue &operator=(ScalarValue &&other) noexcept {
         release();
         value_ = other.value_;
-        other.value_ = View{};
+        other.value_ = details::ScalarData{};
         return *this;
     }
 
@@ -80,30 +79,30 @@ template <typename T> class ScalarValue {
     }
 
     template <typename Other>
-        requires requires(const View &value, const Other &other) { value.equals(other); } &&
+        requires requires(const Other &other) { details::scalar_data(other); } &&
                  details::scalar_capability_traits<T>::supports_equality
     bool equals(const Other &other) const noexcept {
-        return value_.equals(other);
+        return value_.equals(details::scalar_data(other));
     }
 
-    Scalar<T> view() const & noexcept { return Scalar<T>::from(value_); }
+    Scalar<T> view() const & noexcept { return Scalar<T>::from(value_.runtime_type(), value_.data()); }
     Scalar<T> view() const && = delete;
-    operator const View &() const & noexcept { return value_; }
-    operator const View &() const && = delete;
 
     using scalar_type = T;
 
   private:
-    [[nodiscard]] static View make(details::OwnedScalarData value) noexcept {
+    [[nodiscard]] static details::ScalarData make(details::OwnedScalarData value) noexcept {
         return {*value.runtime_type, value.data, value.mode};
     }
 
     void release() noexcept {
         details::release_scalar_value(value_);
-        value_ = View{};
+        value_ = details::ScalarData{};
     }
 
-    View value_;
+    template <typename U> friend const details::ScalarData &details::scalar_data(const ScalarValue<U> &) noexcept;
+
+    details::ScalarData value_;
 };
 
 template <> class ScalarValue<> {
@@ -114,18 +113,20 @@ template <> class ScalarValue<> {
               canonical_scalar(std::forward<Source>(source)), nullptr))} {}
 
     template <typename T>
-    explicit ScalarValue(const Scalar<T> &source) : value_{make(details::copy_scalar_value(source, nullptr))} {}
+    explicit ScalarValue(const Scalar<T> &source)
+        : value_{make(details::copy_scalar_value(details::scalar_data(source), nullptr))} {}
 
     template <typename T>
     ScalarValue(const Scalar<T> &source, std::pmr::memory_resource &memory)
-        : value_{make(details::copy_scalar_value(source, &memory))} {}
+        : value_{make(details::copy_scalar_value(details::scalar_data(source), &memory))} {}
 
     template <typename T>
-    explicit ScalarValue(const ScalarValue<T> &source) : value_{make(details::copy_scalar_value<T>(source, nullptr))} {}
+    explicit ScalarValue(const ScalarValue<T> &source)
+        : value_{make(details::copy_scalar_value<T>(details::scalar_data(source), nullptr))} {}
 
     template <typename T>
     ScalarValue(const ScalarValue<T> &source, std::pmr::memory_resource &memory)
-        : value_{make(details::copy_scalar_value<T>(source, &memory))} {}
+        : value_{make(details::copy_scalar_value<T>(details::scalar_data(source), &memory))} {}
 
     ~ScalarValue() { release(); }
 
@@ -133,7 +134,7 @@ template <> class ScalarValue<> {
 
     ScalarValue &operator=(const ScalarValue &source) {
         if (this != &source) {
-            auto replacement = ScalarValue{static_cast<const details::ScalarData &>(source)};
+            auto replacement = ScalarValue{details::scalar_data(source)};
             *this = std::move(replacement);
         }
         return *this;
@@ -165,19 +166,19 @@ template <> class ScalarValue<> {
     std::size_t hash() const noexcept { return value_.hash(); }
 
     template <typename Other>
-        requires requires(const details::ScalarData &value, const Other &other) { value.equals(other); }
+        requires requires(const Other &other) { details::scalar_data(other); }
     bool equals(const Other &other) const noexcept {
-        return value_.equals(other);
+        return value_.equals(details::scalar_data(other));
     }
 
-    Scalar<> view() const & noexcept { return Scalar<>::from(value_); }
+    Scalar<> view() const & noexcept { return Scalar<>::from(value_.runtime_type(), value_.data()); }
     Scalar<> view() const && = delete;
-    operator const details::ScalarData &() const & noexcept { return value_; }
-    operator const details::ScalarData &() const && = delete;
 
     using scalar_type = void;
 
   private:
+    template <typename U> friend const details::ScalarData &details::scalar_data(const ScalarValue<U> &) noexcept;
+
     explicit ScalarValue(const details::ScalarData &source)
         : value_{make(details::copy_scalar_value(source, nullptr))} {}
 
@@ -192,6 +193,14 @@ template <> class ScalarValue<> {
 
     details::ScalarData value_;
 };
+
+namespace details {
+
+template <typename T> const ScalarData &scalar_data(const ScalarValue<T> &value) noexcept {
+    return value.value_;
+}
+
+} // namespace details
 
 template <scalar_source Source> ScalarValue(Source &&) -> ScalarValue<canonical_scalar_t<Source>>;
 template <scalar_source Source>
@@ -240,7 +249,7 @@ bool operator==(const Left &left, const Right &right) noexcept {
 template <typename Target, typename Source>
     requires(!details::scalar_variable<Target>)
 [[nodiscard]] Scalar<Target> unchecked_scalar_cast(const Scalar<Source> &source) noexcept {
-    return Scalar<Target>::from(source);
+    return Scalar<Target>::from(source.runtime_type(), source.data());
 }
 
 template <typename Target, typename Source>

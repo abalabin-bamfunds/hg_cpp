@@ -106,9 +106,9 @@ class NestedNodeDefinition {
         values.reserve(invocation.compiled_data().input_nodes.size());
         for (; input != inputs.end(); ++input) {
             const auto value = (*input).value();
-            const auto target =
-                *value.visit([](const In<REF<TS_T>> *reference) { return reference->target(); }, ddv::noop);
-            values.push_back({value.valid() ? target : nullptr, value.valid() ? value.last_updated() : MIN_DT});
+            const auto reference =
+                *value.visit([](const In<REF<TS_T>> *input) { return input->value(); }, ddv::noop);
+            values.push_back({value.valid() ? reference : nullptr, value.valid() ? value.last_updated() : MIN_DT});
         }
 
         auto &graph = invocation.state().graph;
@@ -121,7 +121,7 @@ class NestedNodeDefinition {
 
         auto output = invocation.output();
         output.visit(
-            [&](Out<REF<TS_T>> *reference) { reference->set_target(graph.output(invocation.compiled_data())); },
+            [&](Out<REF<TS_T>> *reference) { reference->set_value(graph.output(invocation.compiled_data())); },
             ddv::noop);
     }
 

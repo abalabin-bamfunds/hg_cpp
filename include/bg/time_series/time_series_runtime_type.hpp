@@ -17,7 +17,7 @@ namespace details {
 class OutputState;
 class ReferenceProvider;
 class ReferenceRepresentation;
-struct ReferenceRoute;
+struct ItemReference;
 } // namespace details
 
 class TimeSeriesRuntimeType : public RuntimeType {
@@ -36,7 +36,7 @@ class TimeSeriesRuntimeType : public RuntimeType {
     static_assert(sizeof(ItemLayout) == 16);
 
     struct ModifiedItem {
-        TimeSeriesItemId id;
+        item_id_t id;
         const TimeSeriesRuntimeType *runtime_type;
         const EvaluationTime *last_updated;
         const void *value;
@@ -54,7 +54,7 @@ class TimeSeriesRuntimeType : public RuntimeType {
         void *value;
     };
 
-    using ItemIdFunction = void (*)(void *, TimeSeriesItemId);
+    using ItemIdFunction = void (*)(void *, item_id_t);
     using ModifiedItemFunction = void (*)(void *, ModifiedItem);
 
     ~TimeSeriesRuntimeType() override;
@@ -72,14 +72,14 @@ class TimeSeriesRuntimeType : public RuntimeType {
     bool supports_byte_copy_initialization() const noexcept {
         return storage_supports_byte_copy_initialization();
     }
-    virtual ItemLayout item_layout(TimeSeriesItemId) const;
+    virtual ItemLayout item_layout(item_id_t) const;
     virtual std::size_t item_count(const void *) const;
-    virtual ConstItem item(const void *, TimeSeriesItemId) const;
-    virtual MutableItem item(void *, TimeSeriesItemId) const;
+    virtual ConstItem item(const void *, item_id_t) const;
+    virtual MutableItem item(void *, item_id_t) const;
     virtual void for_each_item_id(const void *, void *, ItemIdFunction) const;
-    virtual bool item_updated(const EvaluationTime &, const void *, TimeSeriesItemId) const noexcept;
+    virtual bool item_updated(const EvaluationTime &, const void *, item_id_t) const noexcept;
     virtual void for_each_updated_item(const EvaluationTime &, const void *, void *, ItemIdFunction) const;
-    [[nodiscard]] virtual bool mark_item_modified(void *, TimeSeriesItemId, EvaluationTime, EvaluationTime,
+    [[nodiscard]] virtual bool mark_item_modified(void *, item_id_t, EvaluationTime, EvaluationTime,
                                                   std::pmr::memory_resource &) const noexcept {
         return false;
     }
@@ -89,9 +89,9 @@ class TimeSeriesRuntimeType : public RuntimeType {
     virtual bool satisfies_reference_request(const TimeSeriesType &requested_type) const noexcept {
         return &type() == &requested_type;
     }
-    virtual details::ReferenceAddress reference_address(const void *) const;
+    virtual Reference reference(const void *) const;
     [[nodiscard]] virtual details::ReferenceRepresentation *
-    create_reference_representation(details::ReferenceProvider &, details::ReferenceAddress, const TimeSeriesType &,
+    create_reference_representation(details::ReferenceProvider &, Reference, const TimeSeriesType &,
                                     std::pmr::memory_resource &) const;
     virtual void construct_initial_value(void *destination) const noexcept = 0;
     virtual void construct_runtime_value(void *destination, std::pmr::memory_resource &) const {

@@ -1,5 +1,7 @@
 #include <bg/time_series/ref/ref_provider.hpp>
 
+#include "ref_item_notification_links.hpp"
+
 #include <bg/graph/dynamic_subscribers.hpp>
 #include <bg/graph/node.hpp>
 #include <bg/graph/runtime_graph.hpp>
@@ -17,278 +19,28 @@ namespace bg::details {
 ReferenceRepresentation::~ReferenceRepresentation() = default;
 ReferenceProviderComponent::~ReferenceProviderComponent() = default;
 
-class ReferenceItemNotificationLinks {
-    struct Link {
-        std::uint32_t target;
-        TimeSeriesItemId item;
+namespace {
 
-        bool operator==(const Link &) const = default;
-    };
-
-    struct NotificationTarget {
-        RuntimeGraph *graph;
-        void *value;
-        ReferenceItemNotifyFunction notify_function;
-        ReferenceItemPublishFunction publish_function;
-        std::uint32_t links{};
-        bool touched{};
-    };
-
-    struct Group {
-        explicit Group(std::pmr::memory_resource &memory) : links{&memory} {}
-
-        std::pmr::vector<Link> links;
-    };
-
-  public:
-    explicit ReferenceItemNotificationLinks(std::pmr::memory_resource &memory)
-        : targets_{&memory}, groups_{&memory}, touched_{&memory}, memory_{&memory} {}
-
-    ~ReferenceItemNotificationLinks() {
-        for (auto *group : groups_) {
-            if (group == nullptr) {
-                continue;
-            }
-            std::destroy_at(group);
-            memory_->deallocate(group, sizeof(Group), alignof(Group));
-        }
+ReferenceSubscriptionDetail &reference_subscriptions(Reference reference) noexcept {
+    if (auto *item = reference.get<ItemReference>()) {
+        return item->subscriptions();
     }
+    return reference.get<RepresentationReference>()->subscriptions();
+}
 
-    void add(ReferenceRoute *route, RuntimeGraph &graph, void *target, TimeSeriesItemId item,
-             ReferenceItemNotifyFunction notify_function, ReferenceItemPublishFunction publish_function) {
-        auto &subscriptions = route == nullptr ? root_ : *route;
-        const auto target_count = targets_.size();
-        const auto target_index = require_target(graph, target, notify_function, publish_function);
-        auto remove_unused_target = util::scope_exit{[&]() noexcept {
-            if (targets_.size() != target_count && targets_.back().links == 0) {
-                targets_.pop_back();
-            }
-        }};
-        const auto value = Link{target_index, item};
-
-        if (subscriptions.item_notification_link == 0) {
-            set_inline(subscriptions, value);
-            ++targets_[target_index].links;
-            remove_unused_target.release();
-            return;
-        }
-        if (!is_group(subscriptions)) {
-            if (inline_link(subscriptions) == value) {
-                return;
-            }
-
-            auto *group = allocate_group();
-            auto release_group = util::scope_exit{[&]() noexcept {
-                std::destroy_at(group);
-                memory_->deallocate(group, sizeof(Group), alignof(Group));
-            }};
-            group->links.push_back(inline_link(subscriptions));
-            group->links.push_back(value);
-
-            const auto group_index = store_group(group);
-            release_group.release();
-            subscriptions.item_notification_link = group_flag | (group_index + 1);
-            subscriptions.notification_item = 0;
-            ++targets_[target_index].links;
-            remove_unused_target.release();
-            return;
-        }
-
-        auto &group = group_for(subscriptions);
-        if (std::ranges::find(group.links, value) != group.links.end()) {
-            return;
-        }
-        group.links.push_back(value);
-        ++targets_[target_index].links;
-        remove_unused_target.release();
+Reference parent_reference(Reference reference) noexcept {
+    if (const auto *item = reference.get<ItemReference>()) {
+        return item->parent();
     }
-
-    void remove(ReferenceRoute *route, RuntimeGraph &graph, const void *target, TimeSeriesItemId item,
-                ReferenceItemNotifyFunction notify_function) noexcept {
-        auto &subscriptions = route == nullptr ? root_ : *route;
-        if (subscriptions.item_notification_link == 0) {
-            return;
-        }
-
-        const auto matches = [&](Link value) {
-            const auto &notification_target = targets_[value.target];
-            return value.item == item && notification_target.graph == &graph &&
-                   notification_target.value == target && notification_target.notify_function == notify_function;
-        };
-        if (!is_group(subscriptions)) {
-            const auto value = inline_link(subscriptions);
-            if (!matches(value)) {
-                return;
-            }
-            --targets_[value.target].links;
-            subscriptions.item_notification_link = 0;
-            subscriptions.notification_item = 0;
-            return;
-        }
-
-        auto &group = group_for(subscriptions);
-        const auto found = std::ranges::find_if(group.links, matches);
-        if (found == group.links.end()) {
-            return;
-        }
-        --targets_[found->target].links;
-        *found = group.links.back();
-        group.links.pop_back();
-        if (group.links.size() == 1) {
-            const auto remaining = group.links.front();
-            release_group(subscriptions);
-            set_inline(subscriptions, remaining);
-        }
+    if (const auto *representation = reference.get<RepresentationReference>()) {
+        return representation->base();
     }
+    return {};
+}
 
-    void notify(ReferenceRoute *route, OutputChangeContext &context, OutputChange change) {
-        const auto &subscriptions = route == nullptr ? root_ : *route;
-        if (subscriptions.item_notification_link == 0) {
-            return;
-        }
-        if (!is_group(subscriptions)) {
-            notify(inline_link(subscriptions), context, change);
-            return;
-        }
+} // namespace
 
-        for (const auto link : group_for(subscriptions).links) {
-            notify(link, context, change);
-        }
-    }
-
-    bool empty(const ReferenceRoute &route) const noexcept { return route.item_notification_link == 0; }
-
-    void begin() noexcept { ++batch_depth_; }
-
-    void cancel() noexcept {
-        assert(batch_depth_ != 0);
-        if (--batch_depth_ != 0) {
-            return;
-        }
-
-        for (auto position = std::size_t{}; position < touched_.size(); ++position) {
-            const auto index = touched_[position];
-            targets_[index].touched = false;
-        }
-        touched_.clear();
-    }
-
-    void publish(OutputChangeContext &context) {
-        assert(batch_depth_ != 0);
-        if (batch_depth_ != 1) {
-            --batch_depth_;
-            return;
-        }
-
-        for (const auto index : touched_) {
-            targets_[index].touched = false;
-            const auto graph = targets_[index].graph;
-            const auto value = targets_[index].value;
-            const auto function = targets_[index].publish_function;
-            auto target_context = context.for_graph(*graph);
-            function(target_context, value);
-        }
-        touched_.clear();
-        batch_depth_ = 0;
-    }
-
-  private:
-    static constexpr auto group_flag = std::uint32_t{1} << 31;
-    static constexpr auto index_mask = group_flag - 1;
-
-    std::uint32_t require_target(RuntimeGraph &graph, void *value, ReferenceItemNotifyFunction notify_function,
-                                 ReferenceItemPublishFunction publish_function) {
-        const auto existing = std::ranges::find_if(targets_, [&](const auto &target) {
-            return target.graph == &graph && target.value == value && target.notify_function == notify_function &&
-                   target.publish_function == publish_function;
-        });
-        if (existing != targets_.end()) {
-            return static_cast<std::uint32_t>(existing - targets_.begin());
-        }
-
-        const auto available = std::ranges::find_if(targets_, [](const auto &target) {
-            return target.links == 0 && !target.touched;
-        });
-        if (available != targets_.end()) {
-            *available = {&graph, value, notify_function, publish_function};
-            return static_cast<std::uint32_t>(available - targets_.begin());
-        }
-        if (targets_.size() == index_mask) {
-            throw std::length_error{"reference item notification target table is full"};
-        }
-
-        targets_.push_back({&graph, value, notify_function, publish_function});
-        return static_cast<std::uint32_t>(targets_.size() - 1);
-    }
-
-    Group *allocate_group() {
-        auto *storage = memory_->allocate(sizeof(Group), alignof(Group));
-        return std::construct_at(static_cast<Group *>(storage), *memory_);
-    }
-
-    std::uint32_t store_group(Group *group) {
-        const auto available = std::ranges::find(groups_, nullptr);
-        if (available != groups_.end()) {
-            *available = group;
-            return static_cast<std::uint32_t>(available - groups_.begin());
-        }
-        if (groups_.size() == index_mask) {
-            throw std::length_error{"reference item notification link group table is full"};
-        }
-
-        groups_.push_back(group);
-        return static_cast<std::uint32_t>(groups_.size() - 1);
-    }
-
-    static bool is_group(const ReferenceRoute &route) noexcept {
-        return (route.item_notification_link & group_flag) != 0;
-    }
-
-    static Link inline_link(const ReferenceRoute &route) noexcept {
-        return {route.item_notification_link - 1, route.notification_item};
-    }
-
-    static void set_inline(ReferenceRoute &route, Link link) noexcept {
-        route.item_notification_link = link.target + 1;
-        route.notification_item = link.item;
-    }
-
-    Group &group_for(const ReferenceRoute &route) const noexcept {
-        const auto index = (route.item_notification_link & index_mask) - 1;
-        return *groups_[index];
-    }
-
-    void release_group(ReferenceRoute &route) noexcept {
-        const auto index = (route.item_notification_link & index_mask) - 1;
-        auto *group = groups_[index];
-        std::destroy_at(group);
-        memory_->deallocate(group, sizeof(Group), alignof(Group));
-        groups_[index] = nullptr;
-    }
-
-    void notify(Link link, OutputChangeContext &context, OutputChange change) {
-        auto &target = targets_[link.target];
-        auto target_context = context.for_graph(*target.graph);
-        target.notify_function(target_context, target.value, link.item, change);
-        if (batch_depth_ == 0) {
-            target.publish_function(target_context, target.value);
-            return;
-        }
-        if (!target.touched) {
-            touched_.push_back(link.target);
-            target.touched = true;
-        }
-    }
-
-    ReferenceRoute root_;
-    std::pmr::vector<NotificationTarget> targets_;
-    std::pmr::vector<Group *> groups_;
-    std::pmr::vector<std::uint32_t> touched_;
-    std::pmr::memory_resource *memory_;
-    std::size_t batch_depth_{};
-};
-
-ReferenceProvider::ReferenceProvider(std::pmr::memory_resource &memory, ReferenceRoot &root,
+ReferenceProvider::ReferenceProvider(std::pmr::memory_resource &memory, RootReference &root,
                                      DynamicSubscribers *root_subscribers)
     : memory_{&memory}, root_{&root}, representations_{&memory}, subscriber_groups_{&memory} {
     subscriber_groups_.push_back(root_subscribers);
@@ -302,7 +54,7 @@ ReferenceProvider::~ReferenceProvider() {
         if (representation == nullptr) {
             continue;
         }
-        remove_reference_observer(representation->input(), owner(), representation);
+        remove_reference_observer(representation->base_reference(), owner(), representation);
     }
     for (auto *representation : representations_ | std::views::reverse) {
         if (representation == nullptr) {
@@ -318,28 +70,24 @@ ReferenceProvider::~ReferenceProvider() {
     for (auto *subscribers : subscriber_groups_) {
         DynamicSubscribers::release(subscribers);
     }
-    if (item_notification_links_ != nullptr) {
-        std::destroy_at(item_notification_links_);
-        memory_->deallocate(item_notification_links_, sizeof(ReferenceItemNotificationLinks),
-                            alignof(ReferenceItemNotificationLinks));
-    }
+    destroy_reference_item_notification_links(item_notification_links_, *memory_);
 }
 
-ReferenceTarget ReferenceProvider::representation_target(std::uint32_t index) const {
+ResolvedTimeSeries ReferenceProvider::resolve_representation(std::uint32_t index) const {
     assert(representations_[index] != nullptr);
-    return representations_[index]->target();
+    return representations_[index]->resolve();
 }
 
-void ReferenceProvider::add_root_subscriber(RuntimeGraph &graph, std::uint32_t input_offset, std::size_t data,
+void ReferenceProvider::add_root_subscriber(RuntimeGraph &graph, std::uint32_t input_offset, std::size_t callback_data,
                                             std::uint32_t node_index, bool active, bool required,
                                             InputChangeFunction callback) {
     auto &subscribers = DynamicSubscribers::ensure(subscriber_groups_.front(), *memory_);
-    subscribers.add(graph, input_offset, data, node_index, active, required, callback);
+    subscribers.add(graph, input_offset, callback_data, node_index, active, required, callback);
 }
 
-void ReferenceProvider::add_root_observer(RuntimeGraph &graph, void *target, DynamicObserverFunction function) {
+void ReferenceProvider::add_root_observer(RuntimeGraph &graph, void *receiver, DynamicObserverFunction function) {
     auto &subscribers = DynamicSubscribers::ensure(subscriber_groups_.front(), *memory_);
-    subscribers.add_observer(graph, target, function);
+    subscribers.add_observer(graph, receiver, function);
 }
 
 void ReferenceProvider::remove_root_subscriber(RuntimeGraph &graph, std::size_t input_offset) noexcept {
@@ -348,164 +96,182 @@ void ReferenceProvider::remove_root_subscriber(RuntimeGraph &graph, std::size_t 
     }
 }
 
-void ReferenceProvider::remove_root_observer(RuntimeGraph &graph, const void *target) noexcept {
+void ReferenceProvider::remove_root_observer(RuntimeGraph &graph, const void *receiver) noexcept {
     if (subscriber_groups_.front() != nullptr) {
-        subscriber_groups_.front()->remove_observer(graph, target);
+        subscriber_groups_.front()->remove_observer(graph, receiver);
     }
 }
 
 void ReferenceProvider::notify_root(OutputChangeContext &context, OutputChange change) {
     context.notify(subscriber_groups_.front(), change);
     if (item_notification_links_ != nullptr) {
-        item_notification_links_->notify(nullptr, context, change);
+        notify_reference_root_item_links(*item_notification_links_, context, change);
     }
 }
 
-void ReferenceProvider::add_subscriber(ReferenceRoute &route, RuntimeGraph &graph, std::uint32_t input_offset,
-                                       std::size_t data, std::uint32_t node_index, bool active, bool required,
-                                       InputChangeFunction callback) {
-    if (route.subscriber_group == 0) {
+void ReferenceProvider::add_subscriber(ReferenceSubscriptionDetail &subscriptions, RuntimeGraph &graph,
+                                       std::uint32_t input_offset, std::size_t callback_data, std::uint32_t node_index,
+                                       bool active, bool required, InputChangeFunction callback) {
+    if (!subscriptions.has_subscriber_group()) {
         subscriber_groups_.push_back(nullptr);
-        route.subscriber_group = static_cast<std::uint32_t>(subscriber_groups_.size());
+        subscriptions.set_subscriber_group(static_cast<std::uint32_t>(subscriber_groups_.size() - 1));
     }
 
-    auto &subscribers = DynamicSubscribers::ensure(subscriber_groups_[route.subscriber_group - 1], *memory_);
-    subscribers.add(graph, input_offset, data, node_index, active, required, callback);
+    auto &subscribers =
+        DynamicSubscribers::ensure(subscriber_groups_[subscriptions.subscriber_group_index()], *memory_);
+    subscribers.add(graph, input_offset, callback_data, node_index, active, required, callback);
 }
 
-void ReferenceProvider::add_observer(ReferenceRoute &route, RuntimeGraph &graph, void *target,
+void ReferenceProvider::add_observer(ReferenceSubscriptionDetail &subscriptions, RuntimeGraph &graph, void *receiver,
                                      DynamicObserverFunction function) {
-    if (route.subscriber_group == 0) {
+    if (!subscriptions.has_subscriber_group()) {
         subscriber_groups_.push_back(nullptr);
-        route.subscriber_group = static_cast<std::uint32_t>(subscriber_groups_.size());
+        subscriptions.set_subscriber_group(static_cast<std::uint32_t>(subscriber_groups_.size() - 1));
     }
 
-    auto &subscribers = DynamicSubscribers::ensure(subscriber_groups_[route.subscriber_group - 1], *memory_);
-    subscribers.add_observer(graph, target, function);
+    auto &subscribers =
+        DynamicSubscribers::ensure(subscriber_groups_[subscriptions.subscriber_group_index()], *memory_);
+    subscribers.add_observer(graph, receiver, function);
 }
 
-void ReferenceProvider::remove_subscriber(ReferenceRoute &route, RuntimeGraph &graph,
+void ReferenceProvider::remove_subscriber(ReferenceSubscriptionDetail &subscriptions, RuntimeGraph &graph,
                                           std::size_t input_offset) noexcept {
-    if (route.subscriber_group != 0) {
-        subscriber_groups_[route.subscriber_group - 1]->remove(graph, input_offset);
+    if (subscriptions.has_subscriber_group()) {
+        subscriber_groups_[subscriptions.subscriber_group_index()]->remove(graph, input_offset);
     }
 }
 
-void ReferenceProvider::remove_observer(ReferenceRoute &route, RuntimeGraph &graph, const void *target) noexcept {
-    if (route.subscriber_group != 0) {
-        subscriber_groups_[route.subscriber_group - 1]->remove_observer(graph, target);
+void ReferenceProvider::remove_observer(ReferenceSubscriptionDetail &subscriptions, RuntimeGraph &graph,
+                                        const void *receiver) noexcept {
+    if (subscriptions.has_subscriber_group()) {
+        subscriber_groups_[subscriptions.subscriber_group_index()]->remove_observer(graph, receiver);
     }
 }
 
-void ReferenceProvider::notify(ReferenceRoute &route, OutputChangeContext &context, OutputChange change) {
-    if (route.subscriber_group != 0) {
-        context.notify(subscriber_groups_[route.subscriber_group - 1], change);
+void ReferenceProvider::notify(ReferenceSubscriptionDetail &subscriptions, OutputChangeContext &context,
+                               OutputChange change) {
+    if (subscriptions.has_subscriber_group()) {
+        context.notify(subscriber_groups_[subscriptions.subscriber_group_index()], change);
     }
     if (item_notification_links_ != nullptr) {
-        item_notification_links_->notify(&route, context, change);
+        notify_reference_item_links(*item_notification_links_, subscriptions, context, change);
     }
 }
 
 void ReferenceProvider::begin_item_notification_batch() noexcept {
     if (item_notification_links_ != nullptr) {
-        item_notification_links_->begin();
+        begin_reference_item_notification_batch(*item_notification_links_);
     }
 }
 
 void ReferenceProvider::cancel_item_notification_batch() noexcept {
     if (item_notification_links_ != nullptr) {
-        item_notification_links_->cancel();
+        cancel_reference_item_notification_batch(*item_notification_links_);
     }
 }
 
 void ReferenceProvider::publish_item_notification_batch(OutputChangeContext &context) {
     if (item_notification_links_ != nullptr) {
-        item_notification_links_->publish(context);
+        publish_reference_item_notification_batch(*item_notification_links_, context);
     }
 }
 
-void ReferenceProvider::add_item_notification_link(ReferenceRoute *route, RuntimeGraph &graph, void *target,
-                                                   TimeSeriesItemId item,
+void ReferenceProvider::add_item_notification_link(Reference reference, RuntimeGraph &graph, void *receiver,
+                                                   item_id_t receiver_item_id,
                                                    ReferenceItemNotifyFunction notify_function,
                                                    ReferenceItemPublishFunction publish_function) {
     if (item_notification_links_ == nullptr) {
-        auto *storage =
-            memory_->allocate(sizeof(ReferenceItemNotificationLinks), alignof(ReferenceItemNotificationLinks));
-        auto release = util::scope_exit{[&]() noexcept {
-            memory_->deallocate(storage, sizeof(ReferenceItemNotificationLinks),
-                                alignof(ReferenceItemNotificationLinks));
-        }};
-        item_notification_links_ =
-            std::construct_at(static_cast<ReferenceItemNotificationLinks *>(storage), *memory_);
-        release.release();
+        item_notification_links_ = create_reference_item_notification_links(*memory_);
     }
-    item_notification_links_->add(route, graph, target, item, notify_function, publish_function);
+    if (reference.holds<RootReference>()) {
+        add_reference_root_item_link(*item_notification_links_, graph, receiver, receiver_item_id, notify_function,
+                                     publish_function);
+        return;
+    }
+
+    add_reference_item_link(*item_notification_links_, reference_subscriptions(reference), graph, receiver,
+                            receiver_item_id, notify_function, publish_function);
 }
 
-void ReferenceProvider::remove_item_notification_link(ReferenceRoute *route, RuntimeGraph &graph,
-                                                      const void *target, TimeSeriesItemId item,
+void ReferenceProvider::remove_item_notification_link(Reference reference, RuntimeGraph &graph, const void *receiver,
+                                                      item_id_t receiver_item_id,
                                                       ReferenceItemNotifyFunction notify_function) noexcept {
-    if (item_notification_links_ != nullptr) {
-        item_notification_links_->remove(route, graph, target, item, notify_function);
+    if (item_notification_links_ == nullptr) {
+        return;
     }
+
+    if (reference.holds<RootReference>()) {
+        remove_reference_root_item_link(*item_notification_links_, graph, receiver, receiver_item_id, notify_function);
+        return;
+    }
+
+    remove_reference_item_link(*item_notification_links_, reference_subscriptions(reference), graph, receiver,
+                               receiver_item_id, notify_function);
 }
 
-void ReferenceProvider::add_cycle_callback(void *target, void (*function)(void *) noexcept) {
-    owner().add_cycle_callback(target, function);
+void ReferenceProvider::add_cycle_callback(void *receiver, void (*function)(void *) noexcept) {
+    owner().add_cycle_callback(receiver, function);
 }
 
-void ReferenceProvider::remove_cycle_callback(const void *target) noexcept {
-    owner().remove_cycle_callback(target);
+void ReferenceProvider::remove_cycle_callback(const void *receiver) noexcept {
+    owner().remove_cycle_callback(receiver);
 }
 
-bool ReferenceProvider::release_route(ReferenceRoute &route) noexcept {
-    const auto release_subscribers = [&](ReferenceRoute &released) {
-        if (released.subscriber_group == 0) {
+bool ReferenceProvider::release_item_reference(ItemReference &reference) noexcept {
+    const auto release_subscribers = [&](ReferenceSubscriptionDetail &subscriptions) {
+        if (!subscriptions.has_subscriber_group()) {
             return true;
         }
 
-        auto &subscribers = subscriber_groups_[released.subscriber_group - 1];
+        auto &subscribers = subscriber_groups_[subscriptions.subscriber_group_index()];
         if (subscribers != nullptr && !subscribers->empty()) {
             return false;
         }
 
         DynamicSubscribers::release(subscribers);
         subscribers = nullptr;
-        released.subscriber_group = 0;
+        subscriptions.clear_subscriber_group();
         return true;
     };
-    const auto retired = ReferenceAddress{&route};
-    const auto depends_on_retired_route = [&](ReferenceAddress address) {
-        while (address) {
-            if (address == retired) {
+    const auto retired = Reference{&reference};
+    const auto depends_on_retired_reference = [&](Reference candidate) {
+        while (candidate) {
+            if (candidate == retired) {
                 return true;
             }
-            const auto *parent = address.get<ReferenceRoute>();
-            if (parent == nullptr) {
+            if (const auto *item = candidate.get<ItemReference>()) {
+                candidate = item->parent();
+                continue;
+            }
+            if (const auto *representation = candidate.get<RepresentationReference>()) {
+                candidate = representation->base();
+                continue;
+            }
+            if (candidate.holds<RootReference>()) {
                 return false;
             }
-            address = parent->parent;
         }
         return false;
     };
 
     for (auto index = representations_.size(); index != 0; --index) {
         auto *&representation = representations_[index - 1];
-        if (representation == nullptr || !depends_on_retired_route(representation->input())) {
+        if (representation == nullptr || !depends_on_retired_reference(representation->base_reference())) {
             continue;
         }
 
-        auto &representation_route = *representation->address().get<ReferenceRoute>();
-        if (!release_subscribers(representation_route)) {
+        auto &representation_reference = *representation->reference().get<RepresentationReference>();
+        if (!release_subscribers(representation_reference.subscriptions())) {
             return false;
         }
-        remove_reference_observer(representation->input(), owner(), representation);
+        remove_reference_observer(representation->base_reference(), owner(), representation);
         representation->destroy(*memory_);
         representation = nullptr;
     }
 
-    return (item_notification_links_ == nullptr || item_notification_links_->empty(route)) &&
-           release_subscribers(route);
+    return (item_notification_links_ == nullptr ||
+            reference_item_links_empty(*item_notification_links_, reference.subscriptions())) &&
+           release_subscribers(reference.subscriptions());
 }
 
 void ReferenceProvider::add_component(ReferenceProviderComponent &component) noexcept {
@@ -513,199 +279,196 @@ void ReferenceProvider::add_component(ReferenceProviderComponent &component) noe
     components_ = &component;
 }
 
-ReferenceAddress ReferenceProvider::representation(ReferenceAddress input, const TimeSeriesType &requested_type) {
-    const auto input_target = reference_target(input);
-    if (input_target.runtime_type->satisfies_reference_request(requested_type)) {
-        return input;
+Reference ReferenceProvider::representation(Reference base_reference, const TimeSeriesType &requested_type) {
+    const auto base_time_series = resolve_reference(base_reference);
+    if (base_time_series.runtime_type->satisfies_reference_request(requested_type)) {
+        return base_reference;
     }
-    const auto root_target = reference_target(ReferenceAddress{root_});
-    if (root_target.runtime_type->satisfies_reference_request(requested_type)) {
-        return ReferenceAddress{root_};
+    const auto root_time_series = resolve_reference(Reference{root_});
+    if (root_time_series.runtime_type->satisfies_reference_request(requested_type)) {
+        return Reference{root_};
     }
 
     for (auto *representation : representations_) {
         if (representation == nullptr) {
             continue;
         }
-        if (representation->input() == input &&
-            representation->target().runtime_type->satisfies_reference_request(requested_type)) {
-            return representation->address();
+        if (representation->base_reference() == base_reference &&
+            representation->resolve().runtime_type->satisfies_reference_request(requested_type)) {
+            return representation->reference();
         }
     }
 
     auto *result =
-        input_target.runtime_type->create_reference_representation(*this, input, requested_type, *memory_);
+        base_time_series.runtime_type->create_reference_representation(*this, base_reference, requested_type, *memory_);
     auto release = util::scope_exit{[&]() noexcept { result->destroy(*memory_); }};
     result->bind(static_cast<std::uint32_t>(representations_.size()));
     representations_.push_back(result);
     auto remove_entry = util::scope_exit{[&]() noexcept { representations_.pop_back(); }};
-    add_reference_observer(input, owner(), result, [](OutputChangeContext &context, void *value, OutputChange change) {
-        static_cast<ReferenceRepresentation *>(value)->notify(context, change);
-    });
+    add_reference_observer(base_reference, owner(), result,
+                           [](OutputChangeContext &context, void *receiver, OutputChange change) {
+                               static_cast<ReferenceRepresentation *>(receiver)->notify(context, change);
+                           });
     remove_entry.release();
     release.release();
-    return result->address();
+    return result->reference();
 }
 
 namespace {
 
-ReferenceRoot &reference_root(ReferenceAddress address) noexcept {
-    while (auto *route = address.get<ReferenceRoute>()) {
-        address = route->parent;
+RootReference &reference_root(Reference reference) noexcept {
+    while (!reference.holds<RootReference>()) {
+        reference = parent_reference(reference);
     }
-    return *address.get<ReferenceRoot>();
+    return *reference.get<RootReference>();
 }
 
-ReferenceProvider &require_provider(ReferenceRoot &root) {
-    if (auto *provider = root.data.get<ReferenceProvider>()) {
+ReferenceProvider &require_provider(RootReference &root) {
+    if (auto *provider = root.subscribers_or_provider.get<ReferenceProvider>()) {
         return *provider;
     }
 
-    auto *subscribers = root.data.get<DynamicSubscribers>();
-    auto &memory = root.graph->memory_resource();
+    auto *subscribers = root.subscribers_or_provider.get<DynamicSubscribers>();
+    auto &memory = root.owner_graph->memory_resource();
     auto *storage = memory.allocate(sizeof(ReferenceProvider), alignof(ReferenceProvider));
     auto release = util::scope_exit{
         [&]() noexcept { memory.deallocate(storage, sizeof(ReferenceProvider), alignof(ReferenceProvider)); }};
     auto *provider = std::construct_at(static_cast<ReferenceProvider *>(storage), memory, root, subscribers);
-    root.data = provider;
+    root.subscribers_or_provider = provider;
     release.release();
     return *provider;
 }
 
-ReferenceProvider &route_provider(ReferenceAddress address) noexcept {
-    return *reference_root(address).data.get<ReferenceProvider>();
+ReferenceProvider &provider_for(Reference reference) noexcept {
+    return *reference_root(reference).subscribers_or_provider.get<ReferenceProvider>();
 }
 
 } // namespace
 
-ReferenceTarget reference_target(ReferenceAddress address) {
-    if (auto *root = address.get<ReferenceRoot>()) {
-        const auto node = root->graph->node(*root->node);
-        return {&node.input_last_updated(0), node.input_value(0), root->runtime_type};
+ResolvedTimeSeries resolve_reference(Reference reference) {
+    if (auto *root = reference.get<RootReference>()) {
+        const auto node = root->owner_graph->node(*root->reference_node);
+        return {&node.input_last_updated(0), node.input_value(0), root->referenced_runtime_type};
     }
-    const auto &route = *address.get<ReferenceRoute>();
-    if (route.is_representation()) {
-        return route_provider(address).representation_target(route.representation());
+    if (const auto *representation = reference.get<RepresentationReference>()) {
+        return provider_for(reference).resolve_representation(representation->representation_index());
     }
 
-    const auto parent = reference_target(route.parent);
-    const auto item = parent.runtime_type->item(parent.value, route.item());
+    const auto &item_reference = *reference.get<ItemReference>();
+    const auto parent = resolve_reference(item_reference.parent());
+    const auto item = parent.runtime_type->item(parent.storage, item_reference.item_id());
     return {&item.last_updated, item.value, &item.runtime_type};
 }
 
-ReferenceAddress reference_representation(ReferenceAddress input, const TimeSeriesType &requested_type) {
-    const auto target = reference_target(input);
-    if (&target.runtime_type->type() == &requested_type) {
-        return input;
+Reference reference_representation(Reference reference, const TimeSeriesType &requested_type) {
+    const auto resolved = resolve_reference(reference);
+    if (&resolved.runtime_type->type() == &requested_type) {
+        return reference;
     }
-    return require_reference_provider(input).representation(input, requested_type);
+    return require_reference_provider(reference).representation(reference, requested_type);
 }
 
-ReferenceProvider &require_reference_provider(ReferenceAddress address) {
-    return require_provider(reference_root(address));
+ReferenceProvider &require_reference_provider(Reference reference) {
+    return require_provider(reference_root(reference));
 }
 
-void add_reference_subscriber(ReferenceAddress address, RuntimeGraph &graph, std::uint32_t input_offset,
-                              std::size_t data, std::uint32_t node_index, bool active, bool required,
+void add_reference_subscriber(Reference reference, RuntimeGraph &graph, std::uint32_t input_offset,
+                              std::size_t callback_data, std::uint32_t node_index, bool active, bool required,
                               InputChangeFunction callback) {
-    if (auto *root = address.get<ReferenceRoot>()) {
-        if (auto *provider = root->data.get<ReferenceProvider>()) {
-            provider->add_root_subscriber(graph, input_offset, data, node_index, active, required, callback);
+    if (auto *root = reference.get<RootReference>()) {
+        if (auto *provider = root->subscribers_or_provider.get<ReferenceProvider>()) {
+            provider->add_root_subscriber(graph, input_offset, callback_data, node_index, active, required, callback);
             return;
         }
-        auto *subscribers = root->data.get<DynamicSubscribers>();
-        auto &result = DynamicSubscribers::ensure(subscribers, root->graph->memory_resource());
-        root->data = subscribers;
-        result.add(graph, input_offset, data, node_index, active, required, callback);
+        auto *subscribers = root->subscribers_or_provider.get<DynamicSubscribers>();
+        auto &result = DynamicSubscribers::ensure(subscribers, root->owner_graph->memory_resource());
+        root->subscribers_or_provider = subscribers;
+        result.add(graph, input_offset, callback_data, node_index, active, required, callback);
         return;
     }
-    auto &route = *address.get<ReferenceRoute>();
-    route_provider(address).add_subscriber(route, graph, input_offset, data, node_index, active, required, callback);
+    provider_for(reference).add_subscriber(reference_subscriptions(reference), graph, input_offset, callback_data,
+                                           node_index, active, required, callback);
 }
 
-void add_reference_observer(ReferenceAddress address, RuntimeGraph &graph, void *target,
+void add_reference_observer(Reference reference, RuntimeGraph &graph, void *receiver,
                             DynamicObserverFunction function) {
-    if (auto *root = address.get<ReferenceRoot>()) {
-        if (auto *provider = root->data.get<ReferenceProvider>()) {
-            provider->add_root_observer(graph, target, function);
+    if (auto *root = reference.get<RootReference>()) {
+        if (auto *provider = root->subscribers_or_provider.get<ReferenceProvider>()) {
+            provider->add_root_observer(graph, receiver, function);
             return;
         }
-        auto *subscribers = root->data.get<DynamicSubscribers>();
-        auto &result = DynamicSubscribers::ensure(subscribers, root->graph->memory_resource());
-        root->data = subscribers;
-        result.add_observer(graph, target, function);
+        auto *subscribers = root->subscribers_or_provider.get<DynamicSubscribers>();
+        auto &result = DynamicSubscribers::ensure(subscribers, root->owner_graph->memory_resource());
+        root->subscribers_or_provider = subscribers;
+        result.add_observer(graph, receiver, function);
         return;
     }
-    auto &route = *address.get<ReferenceRoute>();
-    route_provider(address).add_observer(route, graph, target, function);
+    provider_for(reference).add_observer(reference_subscriptions(reference), graph, receiver, function);
 }
 
-void remove_reference_subscriber(ReferenceAddress address, RuntimeGraph &graph, std::size_t input_offset) noexcept {
-    if (auto *root = address.get<ReferenceRoot>()) {
-        if (auto *provider = root->data.get<ReferenceProvider>()) {
+void remove_reference_subscriber(Reference reference, RuntimeGraph &graph, std::size_t input_offset) noexcept {
+    if (auto *root = reference.get<RootReference>()) {
+        if (auto *provider = root->subscribers_or_provider.get<ReferenceProvider>()) {
             provider->remove_root_subscriber(graph, input_offset);
-        } else if (auto *subscribers = root->data.get<DynamicSubscribers>()) {
+        } else if (auto *subscribers = root->subscribers_or_provider.get<DynamicSubscribers>()) {
             subscribers->remove(graph, input_offset);
         }
         return;
     }
-    auto &route = *address.get<ReferenceRoute>();
-    route_provider(address).remove_subscriber(route, graph, input_offset);
+    provider_for(reference).remove_subscriber(reference_subscriptions(reference), graph, input_offset);
 }
 
-void remove_reference_observer(ReferenceAddress address, RuntimeGraph &graph, const void *target) noexcept {
-    if (auto *root = address.get<ReferenceRoot>()) {
-        if (auto *provider = root->data.get<ReferenceProvider>()) {
-            provider->remove_root_observer(graph, target);
-        } else if (auto *subscribers = root->data.get<DynamicSubscribers>()) {
-            subscribers->remove_observer(graph, target);
+void remove_reference_observer(Reference reference, RuntimeGraph &graph, const void *receiver) noexcept {
+    if (auto *root = reference.get<RootReference>()) {
+        if (auto *provider = root->subscribers_or_provider.get<ReferenceProvider>()) {
+            provider->remove_root_observer(graph, receiver);
+        } else if (auto *subscribers = root->subscribers_or_provider.get<DynamicSubscribers>()) {
+            subscribers->remove_observer(graph, receiver);
         }
         return;
     }
-    auto &route = *address.get<ReferenceRoute>();
-    route_provider(address).remove_observer(route, graph, target);
+    provider_for(reference).remove_observer(reference_subscriptions(reference), graph, receiver);
 }
 
-void notify_reference(ReferenceAddress address, OutputChangeContext &context, OutputChange change) {
-    if (auto *root = address.get<ReferenceRoot>()) {
-        if (auto *provider = root->data.get<ReferenceProvider>()) {
+void notify_reference(Reference reference, OutputChangeContext &context, OutputChange change) {
+    if (auto *root = reference.get<RootReference>()) {
+        if (auto *provider = root->subscribers_or_provider.get<ReferenceProvider>()) {
             provider->notify_root(context, change);
         } else {
-            context.notify(root->data.get<DynamicSubscribers>(), change);
+            context.notify(root->subscribers_or_provider.get<DynamicSubscribers>(), change);
         }
         return;
     }
-    auto &route = *address.get<ReferenceRoute>();
-    route_provider(address).notify(route, context, change);
+    provider_for(reference).notify(reference_subscriptions(reference), context, change);
 }
 
-void add_reference_item_notification_link(ReferenceAddress address, RuntimeGraph &graph, void *target,
-                                          TimeSeriesItemId item, ReferenceItemNotifyFunction notify_function,
+void add_reference_item_notification_link(Reference reference, RuntimeGraph &graph, void *receiver,
+                                          item_id_t receiver_item_id, ReferenceItemNotifyFunction notify_function,
                                           ReferenceItemPublishFunction publish_function) {
-    auto &provider = require_reference_provider(address);
-    provider.add_item_notification_link(address.get<ReferenceRoute>(), graph, target, item, notify_function,
+    auto &provider = require_reference_provider(reference);
+    provider.add_item_notification_link(reference, graph, receiver, receiver_item_id, notify_function,
                                         publish_function);
 }
 
-void remove_reference_item_notification_link(ReferenceAddress address, RuntimeGraph &graph, const void *target,
-                                             TimeSeriesItemId item,
+void remove_reference_item_notification_link(Reference reference, RuntimeGraph &graph, const void *receiver,
+                                             item_id_t receiver_item_id,
                                              ReferenceItemNotifyFunction notify_function) noexcept {
-    if (!address) {
+    if (!reference) {
         return;
     }
-    auto *root = reference_root(address).data.get<ReferenceProvider>();
+    auto *root = reference_root(reference).subscribers_or_provider.get<ReferenceProvider>();
     if (root == nullptr) {
         return;
     }
-    root->remove_item_notification_link(address.get<ReferenceRoute>(), graph, target, item, notify_function);
+    root->remove_item_notification_link(reference, graph, receiver, receiver_item_id, notify_function);
 }
 
-void destroy_reference_root(ReferenceRoot &root, std::pmr::memory_resource &memory) noexcept {
-    if (auto *provider = root.data.get<ReferenceProvider>()) {
+void destroy_root_reference(RootReference &root, std::pmr::memory_resource &memory) noexcept {
+    if (auto *provider = root.subscribers_or_provider.get<ReferenceProvider>()) {
         std::destroy_at(provider);
         memory.deallocate(provider, sizeof(ReferenceProvider), alignof(ReferenceProvider));
     } else {
-        DynamicSubscribers::release(root.data.get<DynamicSubscribers>());
+        DynamicSubscribers::release(root.subscribers_or_provider.get<DynamicSubscribers>());
     }
     std::destroy_at(&root);
 }

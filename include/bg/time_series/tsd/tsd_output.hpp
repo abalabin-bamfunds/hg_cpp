@@ -47,7 +47,7 @@ template <typename K, typename Item, auto... Properties> class Out<TSD<K, Item, 
     bool valid() const noexcept { return state_->valid(); }
     EvaluationTime last_updated() const noexcept { return state_->last_updated(); }
 
-    Out<Item> operator[](const Scalar<K> &key) const { return item(static_cast<const details::ScalarData &>(key)); }
+    Out<Item> operator[](const Scalar<K> &key) const { return item(details::scalar_data(key)); }
 
     template <typename Source>
         requires(!details::scalar_variable<K> && scalar_source_for<K, Source>)
@@ -56,7 +56,7 @@ template <typename K, typename Item, auto... Properties> class Out<TSD<K, Item, 
         return item(details::make_scalar_source<K>(value));
     }
 
-    bool erase(const Scalar<K> &key) const { return erase(static_cast<const details::ScalarData &>(key)); }
+    bool erase(const Scalar<K> &key) const { return erase(details::scalar_data(key)); }
 
     template <typename Source>
         requires(!details::scalar_variable<K> && scalar_source_for<K, Source>)

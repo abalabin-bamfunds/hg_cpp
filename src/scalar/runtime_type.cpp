@@ -56,11 +56,11 @@ class ComposedListRuntimeType final : public ScalarListRuntimeType {
     void construct_from_input(void *destination, const details::ScalarData &value,
                               std::pmr::memory_resource &memory) const override {
         construct_initial_value(destination);
-        const auto source = Scalar<List<SCALAR>>::from(value);
+        const auto source = Scalar<List<SCALAR>>::from(value.runtime_type(), value.data());
         auto rollback = util::scope_exit{[&]() noexcept { destroy(destination, memory); }};
         for (auto index = std::size_t{}; index < source.size(); ++index) {
             const auto item = source[index];
-            append(destination, item, memory);
+            append(destination, details::scalar_data(item), memory);
         }
         rollback.release();
     }
@@ -83,10 +83,10 @@ class ComposedListRuntimeType final : public ScalarListRuntimeType {
         auto &memory = details::current_scalar_memory_resource();
         auto replacement = RuntimeListStorage{};
         const auto release_replacement = util::scope_exit{[&]() noexcept { clear(&replacement, memory); }};
-        const auto source = Scalar<List<SCALAR>>::from(value);
+        const auto source = Scalar<List<SCALAR>>::from(value.runtime_type(), value.data());
         for (auto index = std::size_t{}; index < source.size(); ++index) {
             const auto item = source[index];
-            append(&replacement, item, memory);
+            append(&replacement, details::scalar_data(item), memory);
         }
 
         storage(destination).swap(replacement);
@@ -104,7 +104,7 @@ class ComposedListRuntimeType final : public ScalarListRuntimeType {
     }
 
     bool equals_same_type(const void *value, const details::ScalarData &other) const noexcept override {
-        const auto source = Scalar<List<SCALAR>>::from(other);
+        const auto source = Scalar<List<SCALAR>>::from(other.runtime_type(), other.data());
         const auto &items = storage(value).items;
         if (items.size() != source.size()) {
             return false;
@@ -112,7 +112,7 @@ class ComposedListRuntimeType final : public ScalarListRuntimeType {
 
         for (auto index = std::uint32_t{}; index < items.size(); ++index) {
             const auto source_item = source[index];
-            if (!item_runtime_type().equals(items.get(index, item_layout_), source_item)) {
+            if (!item_runtime_type().equals(items.get(index, item_layout_), details::scalar_data(source_item))) {
                 return false;
             }
         }
@@ -214,11 +214,12 @@ class ComposedSetRuntimeType final : public ScalarSetRuntimeType {
     void construct_from_input(void *destination, const details::ScalarData &value,
                               std::pmr::memory_resource &memory) const override {
         construct_initial_value(destination);
-        const auto source = Scalar<Set<SCALAR>>::from(value);
+        const auto source = Scalar<Set<SCALAR>>::from(value.runtime_type(), value.data());
         auto copy = RuntimeSetCopy{this, destination, &memory};
         auto rollback = util::scope_exit{[&]() noexcept { destroy(destination, memory); }};
-        source.for_each(
-            [&](const Scalar<SCALAR> &item) { (void)copy.runtime_type->insert(copy.storage, item, *copy.memory); });
+        source.for_each([&](const Scalar<SCALAR> &item) {
+            (void)copy.runtime_type->insert(copy.storage, details::scalar_data(item), *copy.memory);
+        });
         rollback.release();
     }
 
@@ -238,8 +239,9 @@ class ComposedSetRuntimeType final : public ScalarSetRuntimeType {
         auto replacement = RuntimeSetStorage{};
         const auto release_replacement = util::scope_exit{[&]() noexcept { clear(&replacement, memory); }};
         auto copy = RuntimeSetCopy{this, &replacement, &memory};
-        Scalar<Set<SCALAR>>::from(value).for_each(
-            [&](const Scalar<SCALAR> &item) { (void)copy.runtime_type->insert(copy.storage, item, *copy.memory); });
+        Scalar<Set<SCALAR>>::from(value.runtime_type(), value.data()).for_each([&](const Scalar<SCALAR> &item) {
+            (void)copy.runtime_type->insert(copy.storage, details::scalar_data(item), *copy.memory);
+        });
 
         storage(destination).swap(replacement);
     }
@@ -253,14 +255,14 @@ class ComposedSetRuntimeType final : public ScalarSetRuntimeType {
     }
 
     bool equals_same_type(const void *value, const details::ScalarData &other) const noexcept override {
-        const auto source = Scalar<Set<SCALAR>>::from(other);
+        const auto source = Scalar<Set<SCALAR>>::from(other.runtime_type(), other.data());
         if (item_count(value) != source.size()) {
             return false;
         }
 
         auto comparison = RuntimeSetComparison{this, value, true};
         source.for_each([&](const Scalar<SCALAR> &item) {
-            comparison.equal &= comparison.runtime_type->contains(comparison.storage, item);
+            comparison.equal &= comparison.runtime_type->contains(comparison.storage, details::scalar_data(item));
         });
         return comparison.equal;
     }
@@ -427,9 +429,10 @@ class ComposedDictRuntimeType final : public ScalarDictRuntimeType {
         construct_initial_value(destination);
         auto copy = RuntimeDictCopy{this, destination, &memory};
         auto rollback = util::scope_exit{[&]() noexcept { destroy(destination, memory); }};
-        Scalar<Dict<SCALAR, SCALAR>>::from(value).for_each(
-            [&](const Scalar<SCALAR> &key, const Scalar<SCALAR> &mapped) {
-                copy.runtime_type->insert_or_assign(copy.storage, key, mapped, *copy.memory);
+        Scalar<Dict<SCALAR, SCALAR>>::from(value.runtime_type(), value.data())
+            .for_each([&](const Scalar<SCALAR> &key, const Scalar<SCALAR> &mapped) {
+                copy.runtime_type->insert_or_assign(copy.storage, details::scalar_data(key),
+                                                    details::scalar_data(mapped), *copy.memory);
             });
         rollback.release();
     }
@@ -451,9 +454,10 @@ class ComposedDictRuntimeType final : public ScalarDictRuntimeType {
         auto replacement = RuntimeDictStorage{};
         const auto release_replacement = util::scope_exit{[&]() noexcept { clear(&replacement, memory); }};
         auto copy = RuntimeDictCopy{this, &replacement, &memory};
-        Scalar<Dict<SCALAR, SCALAR>>::from(value).for_each(
-            [&](const Scalar<SCALAR> &key, const Scalar<SCALAR> &mapped) {
-                copy.runtime_type->insert_or_assign(copy.storage, key, mapped, *copy.memory);
+        Scalar<Dict<SCALAR, SCALAR>>::from(value.runtime_type(), value.data())
+            .for_each([&](const Scalar<SCALAR> &key, const Scalar<SCALAR> &mapped) {
+                copy.runtime_type->insert_or_assign(copy.storage, details::scalar_data(key),
+                                                    details::scalar_data(mapped), *copy.memory);
             });
 
         storage(destination).swap(replacement);
@@ -469,18 +473,19 @@ class ComposedDictRuntimeType final : public ScalarDictRuntimeType {
     }
 
     bool equals_same_type(const void *value, const details::ScalarData &other) const noexcept override {
-        const auto source = Scalar<Dict<SCALAR, SCALAR>>::from(other);
+        const auto source = Scalar<Dict<SCALAR, SCALAR>>::from(other.runtime_type(), other.data());
         if (item_count(value) != source.size()) {
             return false;
         }
 
         auto comparison = RuntimeDictComparison{this, value, true};
         source.for_each([&](const Scalar<SCALAR> &key, const Scalar<SCALAR> &mapped) {
-            const auto position = comparison.runtime_type->find(storage(comparison.storage), key);
+            const auto position = comparison.runtime_type->find(storage(comparison.storage), details::scalar_data(key));
             comparison.equal &=
                 position != util::occupancy_index::npos &&
                 comparison.runtime_type->mapped_runtime_type().equals(
-                    storage(comparison.storage).values.get(position, comparison.runtime_type->mapped_layout_), mapped);
+                    storage(comparison.storage).values.get(position, comparison.runtime_type->mapped_layout_),
+                    details::scalar_data(mapped));
         });
         return comparison.equal;
     }

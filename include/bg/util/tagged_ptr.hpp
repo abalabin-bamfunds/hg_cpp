@@ -43,7 +43,7 @@ inline constexpr auto minimum_alignment = [] {
     return result;
 }();
 
-template <std::size_t Alignment, std::size_t TagBits, typename Tag> class erased_tagged_ptr {
+template <std::size_t Alignment, std::size_t TagBits, typename Tag> class tagged_pointer_bits {
   public:
     static_assert(Alignment != 0 && std::has_single_bit(Alignment));
     static_assert(TagBits <= std::countr_zero(Alignment));
@@ -52,10 +52,10 @@ template <std::size_t Alignment, std::size_t TagBits, typename Tag> class erased
     static constexpr auto tag_mask = TagBits == 0 ? std::uintptr_t{} : (std::uintptr_t{1} << TagBits) - 1;
     static constexpr auto pointer_mask = ~tag_mask;
 
-    constexpr erased_tagged_ptr() noexcept = default;
-    constexpr erased_tagged_ptr(std::nullptr_t) noexcept {}
+    constexpr tagged_pointer_bits() noexcept = default;
+    constexpr tagged_pointer_bits(std::nullptr_t) noexcept {}
 
-    template <typename T> constexpr erased_tagged_ptr(T *pointer, Tag tag = {}) noexcept { reset(pointer, tag); }
+    template <typename T> constexpr tagged_pointer_bits(T *pointer, Tag tag = {}) noexcept { reset(pointer, tag); }
 
     template <typename T> constexpr T *get() const noexcept {
         return reinterpret_cast<T *>(bits_ & pointer_mask);
@@ -82,16 +82,13 @@ template <std::size_t Alignment, std::size_t TagBits, typename Tag> class erased
     constexpr void reset_tag(Tag tag) noexcept { reset(get<void>(), tag); }
     constexpr void clear() noexcept { bits_ = 0; }
 
-    bool operator==(const erased_tagged_ptr &) const = default;
+    bool operator==(const tagged_pointer_bits &) const = default;
 
   private:
     std::uintptr_t bits_{};
 };
 
 } // namespace details
-
-template <std::size_t Alignment, std::size_t TagBits = 1, typename Tag = std::uintptr_t>
-using erased_tagged_ptr = details::erased_tagged_ptr<Alignment, TagBits, Tag>;
 
 template <typename T, std::size_t TagBits = 1, typename Tag = std::uintptr_t> class tagged_ptr {
   public:
@@ -115,38 +112,38 @@ template <typename T, std::size_t TagBits = 1, typename Tag = std::uintptr_t> cl
     bool operator==(const tagged_ptr &) const = default;
 
   private:
-    erased_tagged_ptr<alignof(T), TagBits, Tag> value_;
+    details::tagged_pointer_bits<alignof(T), TagBits, Tag> value_;
 };
 
-template <std::size_t Alignment, typename... Types> class erased_tagged_variant_ptr {
+template <std::size_t Alignment, typename... Types> class variant_ptr_with_alignment {
     static_assert(sizeof...(Types) != 0);
     static_assert((std::is_object_v<Types> && ...));
     static_assert(details::all_distinct<Types...>);
 
     static constexpr auto alternative_count = sizeof...(Types);
     static constexpr auto tag_bits = alternative_count == 1 ? std::size_t{} : std::bit_width(alternative_count - 1);
-    using Storage = erased_tagged_ptr<Alignment, tag_bits>;
+    using Storage = details::tagged_pointer_bits<Alignment, tag_bits, std::uintptr_t>;
 
   public:
     static constexpr auto npos = static_cast<std::size_t>(-1);
 
-    constexpr erased_tagged_variant_ptr() noexcept = default;
-    constexpr erased_tagged_variant_ptr(std::nullptr_t) noexcept {}
+    constexpr variant_ptr_with_alignment() noexcept = default;
+    constexpr variant_ptr_with_alignment(std::nullptr_t) noexcept {}
 
     template <typename T>
         requires details::one_of<T, Types...>
-    constexpr erased_tagged_variant_ptr(T *pointer) noexcept {
+    constexpr variant_ptr_with_alignment(T *pointer) noexcept {
         reset(pointer);
     }
 
     template <typename T>
         requires details::one_of<T, Types...>
-    constexpr erased_tagged_variant_ptr &operator=(T *pointer) noexcept {
+    constexpr variant_ptr_with_alignment &operator=(T *pointer) noexcept {
         reset(pointer);
         return *this;
     }
 
-    constexpr erased_tagged_variant_ptr &operator=(std::nullptr_t) noexcept {
+    constexpr variant_ptr_with_alignment &operator=(std::nullptr_t) noexcept {
         clear();
         return *this;
     }
@@ -186,7 +183,7 @@ template <std::size_t Alignment, typename... Types> class erased_tagged_variant_
         return visit<0>(index(), std::forward<Visitor>(visitor));
     }
 
-    bool operator==(const erased_tagged_variant_ptr &) const = default;
+    bool operator==(const variant_ptr_with_alignment &) const = default;
 
   private:
     template <std::size_t Index, typename Visitor>
@@ -207,8 +204,8 @@ template <std::size_t Alignment, typename... Types> class erased_tagged_variant_
 };
 
 template <typename... Types>
-using tagged_variant_ptr = erased_tagged_variant_ptr<details::minimum_alignment<Types...>, Types...>;
+using variant_ptr = variant_ptr_with_alignment<details::minimum_alignment<Types...>, Types...>;
 
-static_assert(sizeof(erased_tagged_ptr<alignof(void *)>) == sizeof(void *));
+static_assert(sizeof(details::tagged_pointer_bits<alignof(void *), 1, std::uintptr_t>) == sizeof(void *));
 
 } // namespace bg::util

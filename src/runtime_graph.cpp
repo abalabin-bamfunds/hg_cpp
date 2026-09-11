@@ -103,19 +103,19 @@ class RuntimeGraph::FutureSchedule {
 class RuntimeGraph::CycleCallbacks {
     struct Record {
         RuntimeGraph *owner;
-        void *target;
+        void *receiver;
         void (*function)(void *) noexcept;
     };
 
   public:
     explicit CycleCallbacks(std::pmr::memory_resource &memory) : records_{&memory} {}
 
-    void add(RuntimeGraph &owner, void *target, void (*function)(void *) noexcept) {
-        records_.push_back({&owner, target, function});
+    void add(RuntimeGraph &owner, void *receiver, void (*function)(void *) noexcept) {
+        records_.push_back({&owner, receiver, function});
     }
 
-    void remove(const void *target) noexcept {
-        std::erase_if(records_, [=](const auto &record) { return record.target == target; });
+    void remove(const void *receiver) noexcept {
+        std::erase_if(records_, [=](const auto &record) { return record.receiver == receiver; });
     }
 
     void remove(RuntimeGraph &owner) noexcept {
@@ -125,7 +125,7 @@ class RuntimeGraph::CycleCallbacks {
     void run() noexcept {
         const auto count = records_.size();
         for (auto i = count; i != 0; --i) {
-            records_[i - 1].function(records_[i - 1].target);
+            records_[i - 1].function(records_[i - 1].receiver);
         }
         records_.erase(records_.begin(), records_.begin() + static_cast<std::ptrdiff_t>(count));
     }
@@ -341,8 +341,8 @@ RuntimeGraph::~RuntimeGraph() {
                 }
 
                 auto &input = runtime_node.reference_input(parameter_index);
-                if (input.target) {
-                    details::remove_reference_subscriber(input.target, *this, parameter.value_offset());
+                if (input.value) {
+                    details::remove_reference_subscriber(input.value, *this, parameter.value_offset());
                 }
             }
         }
@@ -518,14 +518,14 @@ RuntimeGraph::CycleCallbacks &RuntimeGraph::require_cycle_callbacks() {
     return *cycle_callbacks();
 }
 
-void RuntimeGraph::add_cycle_callback(void *target, void (*function)(void *) noexcept) {
-    outer_graph().require_cycle_callbacks().add(*this, target, function);
+void RuntimeGraph::add_cycle_callback(void *receiver, void (*function)(void *) noexcept) {
+    outer_graph().require_cycle_callbacks().add(*this, receiver, function);
 }
 
-void RuntimeGraph::remove_cycle_callback(const void *target) noexcept {
+void RuntimeGraph::remove_cycle_callback(const void *receiver) noexcept {
     auto &outer = outer_graph();
     if (outer.compiled_graph_->has_cycle_callbacks() && outer.cycle_callbacks() != nullptr) {
-        outer.cycle_callbacks()->remove(target);
+        outer.cycle_callbacks()->remove(receiver);
     }
 }
 
@@ -639,7 +639,7 @@ void RuntimeGraph::schedule_dynamic_subscribers(details::DynamicSubscribers &sub
 
     subscribers.for_each_observer([&](const auto &observer) {
         auto context = OutputChangeContext{*observer.graph, evaluation_time_};
-        observer.function(context, observer.target, change);
+        observer.function(context, observer.receiver, change);
     });
 }
 

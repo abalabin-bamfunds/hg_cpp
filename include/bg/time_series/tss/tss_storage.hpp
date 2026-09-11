@@ -87,6 +87,13 @@ class time_series_set_storage {
         return position;
     }
 
+    template <typename Key>
+        requires requires(const Key &key) { details::scalar_data(key); }
+    Position retain(const Key &key, const ScalarRuntimeType &key_runtime_type,
+                    const util::runtime_item_layout &key_layout, std::pmr::memory_resource &memory) {
+        return retain(details::scalar_data(key), key_runtime_type, key_layout, memory);
+    }
+
     void release_retention(Position position, std::pmr::memory_resource &memory) noexcept {
         assert(retention_counts_ != nullptr);
         auto *count = retention_counts_->find(position);
@@ -189,6 +196,15 @@ class time_series_set_storage {
         return {position, time_series_set_change::added};
     }
 
+    template <typename Key, typename ConstructItem, typename DestroyItem>
+        requires requires(const Key &key) { details::scalar_data(key); }
+    [[nodiscard]] InsertResult insert(const Key &key, const ScalarRuntimeType &key_runtime_type,
+                                      const util::runtime_item_layout &key_layout, std::pmr::memory_resource &memory,
+                                      ConstructItem &&construct_item, DestroyItem &&destroy_item) {
+        return insert(details::scalar_data(key), key_runtime_type, key_layout, memory,
+                      std::forward<ConstructItem>(construct_item), std::forward<DestroyItem>(destroy_item));
+    }
+
     template <typename Reclaim>
         requires std::is_nothrow_invocable_v<Reclaim &, Position>
     [[nodiscard]] EraseResult erase(const details::ScalarData &key, const ScalarRuntimeType &key_runtime_type,
@@ -212,6 +228,14 @@ class time_series_set_storage {
 
         removed_.set(position, memory);
         return {position, time_series_set_change::removed};
+    }
+
+    template <typename Key, typename Reclaim>
+        requires requires(const Key &key) { details::scalar_data(key); }
+    [[nodiscard]] EraseResult erase(const Key &key, const ScalarRuntimeType &key_runtime_type,
+                                    const util::runtime_item_layout &key_layout, std::pmr::memory_resource &memory,
+                                    Reclaim &&reclaim) {
+        return erase(details::scalar_data(key), key_runtime_type, key_layout, memory, std::forward<Reclaim>(reclaim));
     }
 
     template <typename Reclaim>
@@ -263,10 +287,24 @@ class time_series_set_storage {
         return position.value_or(util::occupancy_index::npos);
     }
 
+    template <typename Key>
+        requires requires(const Key &key) { details::scalar_data(key); }
+    Position find_position(const Key &key, const ScalarRuntimeType &key_runtime_type,
+                           const util::runtime_item_layout &key_layout) const {
+        return find_position(details::scalar_data(key), key_runtime_type, key_layout);
+    }
+
     bool contains(const details::ScalarData &key, const ScalarRuntimeType &key_runtime_type,
                   const util::runtime_item_layout &key_layout) const {
         const auto position = find_position(key, key_runtime_type, key_layout);
         return position != util::occupancy_index::npos && live_.contains(position);
+    }
+
+    template <typename Key>
+        requires requires(const Key &key) { details::scalar_data(key); }
+    bool contains(const Key &key, const ScalarRuntimeType &key_runtime_type,
+                  const util::runtime_item_layout &key_layout) const {
+        return contains(details::scalar_data(key), key_runtime_type, key_layout);
     }
 
     const void *key(Position position, const util::runtime_item_layout &key_layout) const noexcept {

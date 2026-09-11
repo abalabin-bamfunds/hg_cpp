@@ -65,6 +65,7 @@ add_library(
     src/time_series/tsb/tsb_type.cpp
     src/time_series/tsb/tsb_runtime_type.cpp
     src/time_series/tsb/operators.cpp
+    src/time_series/ref/ref_item_notification_links.cpp
     src/time_series/ref/ref_notification.cpp
     src/time_series/ref/ref_provider.cpp
     src/time_series/ref/ref_runtime_type.cpp
@@ -73,7 +74,10 @@ add_library(
     src/time_series/tsd/tsd_type.cpp
     src/time_series/tsd/tsd_key_subscription.cpp
     src/time_series/tsd/tsd_runtime_type.cpp
+    src/time_series/tsd/tsd_dereferenced_representation.cpp
+    src/time_series/tsd/tsd_item_reference_representation.cpp
     src/time_series/tsd/tsd_reference_representation.cpp
+    src/time_series/tsd/tsd_reference_sample.cpp
     src/time_series/tsd/operators.cpp
     src/time_series/tss/tss_type.cpp
     src/time_series/tss/tss_runtime_type.cpp

@@ -17,7 +17,7 @@ namespace bg {
 namespace details {
 class EvaluationScratch;
 class ReferenceProvider;
-}
+} // namespace details
 
 namespace testing {
 class RuntimeGraphAccess;
@@ -86,8 +86,8 @@ class RuntimeGraph {
     CycleCallbacks *cycle_callbacks() const noexcept;
     RuntimeGraph &outer_graph() noexcept;
     CycleCallbacks &require_cycle_callbacks();
-    void add_cycle_callback(void *target, void (*function)(void *) noexcept);
-    void remove_cycle_callback(const void *target) noexcept;
+    void add_cycle_callback(void *receiver, void (*function)(void *) noexcept);
+    void remove_cycle_callback(const void *receiver) noexcept;
     void run_cycle_callbacks() noexcept;
     void clear_cycle_callbacks() noexcept;
     void propagate_modified_items(const CompiledNode &node);

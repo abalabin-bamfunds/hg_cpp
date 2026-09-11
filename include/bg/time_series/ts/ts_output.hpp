@@ -41,7 +41,7 @@ template <details::scalar_variable Variable, auto... Properties> class Out<TS<Va
     EvaluationTime last_updated() const noexcept { return state_->last_updated(); }
 
     template <typename Value> void set_value(const Scalar<Value> &value) const {
-        const auto &source = static_cast<const details::ScalarData &>(value);
+        const auto &source = details::scalar_data(value);
         const auto &runtime_type =
             static_cast<const TimeSeriesValueRuntimeType &>(state_->runtime_type()).scalar_runtime_type();
         if (state_->suppresses_equal_updates() && valid() && runtime_type.equals(state_->data(), source)) {
@@ -126,7 +126,7 @@ template <typename T, auto... Properties> class Out<TS<T, Properties...>> {
     }
 
     template <typename Value> void set_value(const Scalar<Value> &value) const {
-        const auto &source = static_cast<const details::ScalarData &>(value);
+        const auto &source = details::scalar_data(value);
         const auto &runtime_type =
             static_cast<const TimeSeriesValueRuntimeType &>(state_->runtime_type()).scalar_runtime_type();
         if (state_->suppresses_equal_updates() && valid() && runtime_type.equals(state_->data(), source)) {

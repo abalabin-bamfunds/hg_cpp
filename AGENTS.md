@@ -2,6 +2,8 @@
 
 These instructions apply to the complete repository.
 
+If there is a LOCAL_AGENTS.md in the directory, read and apply it too.
+
 ## Project direction
 
 [docs/project.md](docs/project.md) defines the project purpose and priorities.

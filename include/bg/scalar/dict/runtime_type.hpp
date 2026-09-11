@@ -38,14 +38,42 @@ class ScalarDictRuntimeType : public ScalarRuntimeType {
     const ScalarRuntimeType &mapped_runtime_type() const noexcept { return *mapped_; }
     virtual std::size_t item_count(const void *storage) const noexcept = 0;
     virtual bool contains(const void *storage, const details::ScalarData &key) const = 0;
+    template <typename Key>
+        requires requires(const Key &key) { details::scalar_data(key); }
+    bool contains(const void *storage, const Key &key) const {
+        return contains(storage, details::scalar_data(key));
+    }
     virtual ConstItem at(const void *storage, const details::ScalarData &key) const = 0;
+    template <typename Key>
+        requires requires(const Key &key) { details::scalar_data(key); }
+    ConstItem at(const void *storage, const Key &key) const {
+        return at(storage, details::scalar_data(key));
+    }
     virtual Item at(void *storage, const details::ScalarData &key) const = 0;
+    template <typename Key>
+        requires requires(const Key &key) { details::scalar_data(key); }
+    Item at(void *storage, const Key &key) const {
+        return at(storage, details::scalar_data(key));
+    }
     virtual void for_each(const void *storage, void *context, EntryFunction function) const = 0;
 
     virtual void insert_or_assign(void *storage, const details::ScalarData &key, const details::ScalarData &value,
                                   std::pmr::memory_resource &memory) const = 0;
+    template <typename Key, typename Value>
+        requires requires(const Key &key, const Value &value) {
+            details::scalar_data(key);
+            details::scalar_data(value);
+        }
+    void insert_or_assign(void *storage, const Key &key, const Value &value, std::pmr::memory_resource &memory) const {
+        insert_or_assign(storage, details::scalar_data(key), details::scalar_data(value), memory);
+    }
     [[nodiscard]] virtual bool erase(void *storage, const details::ScalarData &key,
                                      std::pmr::memory_resource &memory) const = 0;
+    template <typename Key>
+        requires requires(const Key &key) { details::scalar_data(key); }
+    [[nodiscard]] bool erase(void *storage, const Key &key, std::pmr::memory_resource &memory) const {
+        return erase(storage, details::scalar_data(key), memory);
+    }
     virtual void clear(void *storage, std::pmr::memory_resource &memory) const noexcept = 0;
 
   private:

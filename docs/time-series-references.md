@@ -32,15 +32,17 @@ The inserted node belongs to the graph that owns the source. Wiring reuses one
 such node for each source output and records each representation requested by
 the complete wired graph.
 
-A reference value is one word that identifies either a root time series or a
-contained route. Passing a reference copies this word. An ordinary reference
-uses its root directly. Collection representations and item routes create
-provider data only when they are requested.
+`Reference` is one word that identifies a root time series, a contained item,
+or a representation. Passing a reference copies that word. Resolving a
+reference provides the selected time series storage, runtime type, and
+last-updated time. A root reference uses its root directly. Collection
+representations and item references create provider data only when requested.
 
-A contained route retains its parent reference and an item or representation
-identifier. Operations follow parent references to the root and obtain provider
-data there. This preserves provenance through nested collection routes without
-storing a provider pointer in each route.
+An item reference retains its parent reference and item ID. A representation
+reference retains its base reference and representation index. Operations follow
+these references to the root and obtain provider data there. This preserves
+provenance through nested collections without a provider pointer in each
+reference.
 
 For a source reached through a reference, the receiving binding sends its type
 request to the node associated with the target. The graph that owns the target
@@ -78,7 +80,7 @@ corresponding item without evaluating an intermediate node.
 
 When `REF<TS_T>` is bound to its exact target type, compiled-node data records
 the reference output's last updated location. Each runtime graph stores the
-current target identity used by the receiving input.
+current reference used by the receiving input.
 
 ## Subscriptions
 
@@ -96,32 +98,33 @@ subscriptions, then requests required-input validity checks. The runtime does
 not interpret REF storage.
 
 The reference-making node receives input changes through a compiled callback
-subscription and notifies its root address. Each representation observes its
-exact input address. It consumes that notification, updates its state, and
-notifies only the affected representation or item addresses.
+subscription and notifies its root reference. Each representation observes its
+base reference. It consumes that notification, updates its state, and
+notifies only the affected representation or item references.
 
 The source runtime graph owns the created representations and subscriber
 groups. Ordinary subscriber records identify the destination runtime graph,
 node, and input slot.
 
-A TSD item route records notification links to destination representations.
+A TSD item reference records notification links to destination representations.
 Each link identifies the destination item ID. The first link is stored with the
-route. Fan-out uses root-owned overflow storage. A TSD batches changed routes,
+item reference. Fan-out uses root-owned overflow storage. A TSD batches changed
+item references,
 and each destination representation publishes once with its changed item IDs.
-Notification work is proportional to changed routes and their destinations.
+Notification work is proportional to changed item references and their destinations.
 
-The reference provider owns generic addresses, subscriber groups, notification
+The reference provider owns references, subscriber groups, notification
 links, and type-specific components. TSD key subscriptions are implemented by
 a lazily created TSD component.
 
-An address notification schedules its dynamic subscribers directly. Subscriber
+A reference notification schedules its dynamic subscribers directly. Subscriber
 records retain the destination graph. An observer callback uses that graph's
 context and the notification's outer-cycle time.
 
 When a reference changes target:
 
 1. Remove any receiving input subscription from the old target.
-2. Update its runtime target pointer.
+2. Store the new reference.
 3. Add a subscription to the new target when the input is active, required, or
    updates another logical output.
 4. Sample the new target.
@@ -177,7 +180,7 @@ the affected inner nodes through their dynamic subscriptions.
 
 An inner graph can return a reference to an inner or outer time series. Outer
 consumers subscribe directly to the target. Passing an input reference through
-an inner graph copies the target pointer and removes the inner graph from the
+an inner graph copies the reference and removes the inner graph from the
 value-update path.
 
 When an outer consumer requests a compatible type that the inner graph did not
@@ -192,8 +195,9 @@ scheduling, and lifecycle.
 TSD representations use the shared-key structure defined by the
 [TSD layout](tsd-layout.md#shared-representations).
 
-When an item is first used through a reference, its route receives a subscriber
-group from the source provider. Item updates notify that route directly.
+When an item is first used through a reference, its item reference receives a
+subscriber group from the provider that owns its root. Item updates notify that
+item reference directly.
 
 A TSD creates keyed subscription storage only when it is used. A
 subscription retains the key's sparse item ID, creating a non-live key when the
@@ -209,7 +213,7 @@ The shared set and its representations handle key removal:
 3. The set and representations keep the key and item storage valid until the
    outer cycle ends.
 4. A later collection mutation removes dependent representations and reclaims
-   the route after its subscriber group is empty.
+   the item reference after its subscriber group is empty.
 
 Removal notification applies to dynamic time series and the outputs of removable
 inner runtime graphs.

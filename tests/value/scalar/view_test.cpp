@@ -13,10 +13,8 @@ concept HasArrowOperator = requires(const T &value) { value.operator->(); };
 
 static_assert(sizeof(bg::Scalar<float>) == sizeof(bg::details::ScalarData));
 static_assert(std::is_trivially_copyable_v<bg::details::ScalarData>);
-static_assert(std::convertible_to<const bg::Scalar<float> &, const bg::details::ScalarData &>);
-static_assert(std::convertible_to<const bg::ScalarValue<float> &, const bg::details::ScalarData &>);
-static_assert(!std::convertible_to<bg::Scalar<float> &&, const bg::details::ScalarData &>);
-static_assert(!std::convertible_to<bg::ScalarValue<float> &&, const bg::details::ScalarData &>);
+static_assert(!std::convertible_to<const bg::Scalar<float> &, const bg::details::ScalarData &>);
+static_assert(!std::convertible_to<const bg::ScalarValue<float> &, const bg::details::ScalarData &>);
 static_assert(!HasArrowOperator<bg::Scalar<float>>);
 static_assert(HasArrowOperator<bg::Scalar<bg::string>>);
 

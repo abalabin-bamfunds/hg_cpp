@@ -27,7 +27,7 @@ std::optional<Scalar<>> scalar_value(const details::wiring_argument &argument) {
         return std::nullopt;
     }
     if (const auto *view = argument.scalar_view()) {
-        return Scalar<>::from(*view);
+        return Scalar<>::from(view->runtime_type(), view->data());
     }
     return Scalar<>::from(argument.scalar_runtime_type(), argument.scalar_data());
 }
@@ -124,9 +124,8 @@ std::optional<WiringPoint> NodeTemplate::wire(GraphWiring &wiring, ResolvedSigna
 
         auto &scalar_memory = wiring.variable_memory(runtime_type);
         auto *data = wiring.fixed_memory_.allocate(runtime_type.size(), runtime_type.alignment());
-        auto release_data = util::scope_exit{[&]() noexcept {
-            wiring.fixed_memory_.deallocate(data, runtime_type.size(), runtime_type.alignment());
-        }};
+        auto release_data = util::scope_exit{
+            [&]() noexcept { wiring.fixed_memory_.deallocate(data, runtime_type.size(), runtime_type.alignment()); }};
 
         if (const auto *view = argument.scalar_view()) {
             view->copy_construct(data, runtime_type, scalar_memory);
@@ -156,8 +155,8 @@ std::optional<WiringPoint> NodeTemplate::wire(GraphWiring &wiring, ResolvedSigna
         return std::nullopt;
     }
 
-    const auto output = details::add_wired_output(
-        wiring, {node_index, WiredOutput::npos, 0, wiring.nodes_.back().signature().output});
+    const auto output =
+        details::add_wired_output(wiring, {node_index, WiredOutput::npos, 0, wiring.nodes_.back().signature().output});
     wiring.register_node_output(node_index, output, hash);
     return output;
 }

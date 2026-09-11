@@ -19,28 +19,28 @@ class OutputState {
     void bind(EvaluationTime &last_updated, void *data, const EvaluationTime &evaluation_time) noexcept {
         last_updated_ = &last_updated;
         data_ = data;
-        owner_.reset(&evaluation_time, Owner::evaluation_time);
+        owner_.reset(&evaluation_time);
     }
 
     void bind(EvaluationTime &last_updated, void *data, EvaluationContext &context) noexcept {
         last_updated_ = &last_updated;
         data_ = data;
-        owner_.reset(&context, Owner::context);
+        owner_.reset(&context);
     }
 
     void bind(EvaluationTime &last_updated, void *data, void *output_path) noexcept {
         last_updated_ = &last_updated;
         data_ = data;
-        owner_.reset(output_path, Owner::path);
+        owner_.reset(static_cast<OutputPath *>(output_path));
     }
 
     void release() noexcept {
-        if (owner_.tag() == Owner::evaluation_time) {
+        if (owner_.holds<const EvaluationTime>()) {
             return;
         }
 
         auto &evaluation_context = context();
-        auto *path = owner_.tag() == Owner::path ? owner_.get<void>() : nullptr;
+        auto *path = owner_.get<OutputPath>();
         evaluation_context.scratch().release_last(this, sizeof(OutputState));
         if (path != nullptr) {
             release_output_path(path);
@@ -48,8 +48,8 @@ class OutputState {
     }
 
     void release_path() noexcept {
-        if (owner_.tag() == Owner::path && owner_) {
-            release_output_path(owner_.get<void>());
+        if (auto *path = owner_.get<OutputPath>()) {
+            release_output_path(path);
         }
     }
 
@@ -76,48 +76,42 @@ class OutputState {
         publish_containing_collections();
     }
 
-    [[nodiscard]] void *add_path(const TimeSeriesRuntimeType &runtime_type, TimeSeriesItemId id) const {
-        auto *parent = owner_.tag() == Owner::path ? owner_.get<void>() : nullptr;
+    [[nodiscard]] void *add_path(const TimeSeriesRuntimeType &runtime_type, item_id_t id) const {
+        auto *parent = owner_.get<OutputPath>();
         return add_output_path(context(), runtime_type, mutable_last_updated(), mutable_data(), id, parent);
     }
 
-    void publish_item(const TimeSeriesRuntimeType &runtime_type, TimeSeriesItemId id) const {
+    void publish_item(const TimeSeriesRuntimeType &runtime_type, item_id_t id) const {
         auto *path = add_path(runtime_type, id);
         publish_output_path(path);
         release_output_path(path);
     }
 
     EvaluationContext &context() const noexcept {
-        if (owner_.tag() == Owner::context) {
-            return *owner_.get<EvaluationContext>();
+        if (auto *evaluation_context = owner_.get<EvaluationContext>()) {
+            return *evaluation_context;
         }
-        return output_path_context(owner_.get<void>());
+        return output_path_context(owner_.get<OutputPath>());
     }
 
   private:
     void publish_containing_collections() const noexcept {
-        if (owner_.tag() == Owner::path && owner_) {
-            publish_output_path(owner_.get<void>());
+        if (auto *path = owner_.get<OutputPath>()) {
+            publish_output_path(path);
         }
     }
 
     const EvaluationTime &evaluation_time() const noexcept {
-        if (owner_.tag() == Owner::evaluation_time) {
-            return *owner_.get<const EvaluationTime>();
+        if (auto *time = owner_.get<const EvaluationTime>()) {
+            return *time;
         }
         return context().evaluation_time();
     }
 
-    enum class Owner : std::uintptr_t {
-        path,
-        context,
-        evaluation_time,
-    };
-
     util::tagged_ptr<const TimeSeriesRuntimeType, 2, TimeSeriesGuarantee> runtime_type_{};
     const EvaluationTime *last_updated_{&MIN_DT};
     const void *data_{};
-    util::erased_tagged_ptr<4, 2, Owner> owner_{&MIN_DT, Owner::evaluation_time};
+    util::variant_ptr_with_alignment<4, OutputPath, EvaluationContext, const EvaluationTime> owner_{&MIN_DT};
 };
 
 static_assert(sizeof(OutputState) == 4 * sizeof(void *));

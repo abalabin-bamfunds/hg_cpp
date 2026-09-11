@@ -21,6 +21,9 @@ template <typename T = void> class ScalarValue;
 
 namespace details {
 
+template <typename T> const ScalarData &scalar_data(const Scalar<T> &value) noexcept;
+template <typename T> const ScalarData &scalar_data(const ScalarValue<T> &value) noexcept;
+
 template <typename T, typename Stored> [[nodiscard]] consteval bool concrete_scalar_storage_matches() {
     if constexpr (std::same_as<T, void> || scalar_variable<T>) {
         return false;
@@ -87,10 +90,10 @@ template <typename T> class Scalar {
         return value_.hash();
     }
 
-    bool equals(const details::ScalarData &other) const noexcept
-        requires supports_equality
-    {
-        return value_.equals(other);
+    template <typename Other>
+        requires requires(const Other &other) { details::scalar_data(other); } && supports_equality
+    bool equals(const Other &other) const noexcept {
+        return value_.equals(details::scalar_data(other));
     }
 
     template <typename Visitor, typename... Arguments>
@@ -101,9 +104,6 @@ template <typename T> class Scalar {
     decltype(auto) visit(Function &&function, Functions &&...functions) const {
         return visit(ddv::serial{std::forward<Function>(function), std::forward<Functions>(functions)...});
     }
-
-    operator const details::ScalarData &() const & noexcept { return value_; }
-    operator const details::ScalarData &() const && = delete;
 
     using scalar_type = T;
 
@@ -127,7 +127,18 @@ template <typename T> class Scalar {
         requires erased
     static Scalar from(details::scalar_stored_t<Value> &&) = delete;
 
-    [[nodiscard]] static Scalar from(const details::ScalarData &value) noexcept { return Scalar{value}; }
+    template <typename Source> [[nodiscard]] static Scalar from(const Scalar<Source> &value) noexcept {
+        return from(value.runtime_type(), value.data());
+    }
+
+    template <typename Source> static Scalar from(const Scalar<Source> &&) = delete;
+
+    template <typename Source> [[nodiscard]] static Scalar from(const ScalarValue<Source> &value) noexcept {
+        const auto view = value.view();
+        return from(view.runtime_type(), view.data());
+    }
+
+    template <typename Source> static Scalar from(const ScalarValue<Source> &&) = delete;
 
     [[nodiscard]] static Scalar from(const ScalarRuntimeType &runtime_type, const void *data) noexcept {
         return Scalar{details::ScalarData{runtime_type, data}};
@@ -135,6 +146,7 @@ template <typename T> class Scalar {
 
   private:
     template <typename> friend class ScalarValue;
+    template <typename U> friend const details::ScalarData &details::scalar_data(const Scalar<U> &) noexcept;
 
     explicit Scalar(details::ScalarData value) noexcept : value_{value} {}
 
@@ -162,7 +174,7 @@ auto Scalar<T>::visit(Visitor &&visitor, Arguments &&...arguments) const {
         [&]<typename RuntimeType>(const RuntimeType *) {
             if constexpr (requires { typename RuntimeType::generic_scalar_view; }) {
                 using View = typename RuntimeType::generic_scalar_view;
-                auto typed = View::from(value_);
+                auto typed = View::from(value_.runtime_type(), value_.data());
                 types.visit(&typed);
             }
         },
@@ -171,6 +183,14 @@ auto Scalar<T>::visit(Visitor &&visitor, Arguments &&...arguments) const {
         return *dispatch;
     }
 }
+
+namespace details {
+
+template <typename T> const ScalarData &scalar_data(const Scalar<T> &value) noexcept {
+    return value.value_;
+}
+
+} // namespace details
 
 static_assert(sizeof(Scalar<int>) == 2 * sizeof(void *));
 

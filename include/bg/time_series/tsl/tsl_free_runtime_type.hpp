@@ -47,7 +47,7 @@ template <std::size_t Size> class FreeFixedTimeSeriesListRuntimeType final : pub
 
     std::size_t item_count(const void *) const override { return Size; }
 
-    ConstItem item(const void *value, TimeSeriesItemId id) const override {
+    ConstItem item(const void *value, item_id_t id) const override {
         if (id >= Size) {
             throw std::out_of_range{"time series list item index is out of range"};
         }
@@ -58,13 +58,13 @@ template <std::size_t Size> class FreeFixedTimeSeriesListRuntimeType final : pub
     }
 
     void for_each_item_id(const void *, void *context, ItemIdFunction function) const override {
-        for (auto id = TimeSeriesItemId{}; id < Size; ++id) {
+        for (auto id = item_id_t{}; id < Size; ++id) {
             function(context, id);
         }
     }
 
     bool item_updated(const EvaluationTime &last_updated, const void *value,
-                                    TimeSeriesItemId id) const noexcept override {
+                                    item_id_t id) const noexcept override {
         return last_updated > MIN_DT && static_cast<const Storage *>(value)->changes.contains(id, last_updated);
     }
 
@@ -89,7 +89,7 @@ template <std::size_t Size> class FreeFixedTimeSeriesListRuntimeType final : pub
         const auto node = free_list_node(storage);
         const auto publish = [&](std::size_t index, const EvaluationTime &item_last_updated) {
             const auto input = node.time_series_input(index, index);
-            function(context, {static_cast<TimeSeriesItemId>(index), &input.runtime_type(), &item_last_updated,
+            function(context, {static_cast<item_id_t>(index), &input.runtime_type(), &item_last_updated,
                                input.data()});
         };
 

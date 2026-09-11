@@ -34,7 +34,7 @@ class WiringRecord {
     friend class ::bg::GraphWiring;
     friend WiringPoint materialize_wiring_point(WiringPoint point, const TimeSeriesType &type);
     friend void set_wired_output_runtime_type(WiringPoint output, const TimeSeriesRuntimeType &runtime_type);
-    friend WiringPoint wiring_point_for_item(WiringPoint parent, TimeSeriesItemId item,
+    friend WiringPoint wiring_point_for_item(WiringPoint parent, item_id_t item,
                                              const TimeSeriesType &type);
 
     virtual WiringPoint materialize(const TimeSeriesType &requested_type) const = 0;
@@ -45,7 +45,7 @@ class WiringRecord {
 };
 
 WiringPoint add_wiring_record(std::unique_ptr<WiringRecord> record);
-WiringPoint add_item_wiring_record(WiringPoint parent, TimeSeriesItemId item,
+WiringPoint add_item_wiring_record(WiringPoint parent, item_id_t item,
                                    std::unique_ptr<WiringRecord> record);
 WiringPoint materialize_wiring_point(WiringPoint point, const TimeSeriesType &type);
 const WiringRecord &wiring_record(WiringPoint point) noexcept;

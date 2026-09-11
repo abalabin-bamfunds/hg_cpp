@@ -50,8 +50,7 @@ concept graph_code_argument = wiring_point_argument<T> || supported_scalar_argum
 class wiring_argument {
     struct ScalarArgument {
         template <scalar_source Source>
-        explicit ScalarArgument(Source &&source)
-            : owned{std::in_place, std::forward<Source>(source)} {}
+        explicit ScalarArgument(Source &&source) : owned{std::in_place, std::forward<Source>(source)} {}
 
         ScalarArgument(const ScalarType &scalar_type, const ScalarRuntimeType &scalar_runtime_type,
                        const void *scalar_data = nullptr, const details::ScalarData *scalar_view = nullptr)
@@ -78,13 +77,11 @@ class wiring_argument {
 
     template <typename T>
         requires supported_scalar_argument<T>
-    wiring_argument(T &&value)
-        : value_(make_scalar_argument(std::forward<T>(value))) {}
+    wiring_argument(T &&value) : value_(make_scalar_argument(std::forward<T>(value))) {}
 
     template <typename T>
         requires supported_optional_scalar_argument<T>
-    wiring_argument(T &&value)
-        : value_(make_optional_scalar_argument(std::forward<T>(value))) {}
+    wiring_argument(T &&value) : value_(make_optional_scalar_argument(std::forward<T>(value))) {}
 
     template <typename T>
         requires supported_scalar_value_argument<T>
@@ -92,7 +89,7 @@ class wiring_argument {
         : value_(ScalarArgument{
               cpp_scalar_type<typename scalar_value_argument<std::remove_cvref_t<T>>::scalar_type>(),
               cpp_scalar_runtime_type<typename scalar_value_argument<std::remove_cvref_t<T>>::scalar_type>(), nullptr,
-              &static_cast<const details::ScalarData &>(value)}) {}
+              &details::scalar_data(value)}) {}
 
     bool is_wiring_point() const noexcept { return std::holds_alternative<WiringPoint>(value_); }
 
@@ -121,7 +118,7 @@ class wiring_argument {
 
     const details::ScalarData *scalar_view() const noexcept {
         const auto &scalar = std::get<ScalarArgument>(value_);
-        return scalar.owned ? &static_cast<const details::ScalarData &>(*scalar.owned) : scalar.view;
+        return scalar.owned ? &details::scalar_data(*scalar.owned) : scalar.view;
     }
 
     bool scalar_has_value() const noexcept { return scalar_data() != nullptr || scalar_view() != nullptr; }
@@ -136,8 +133,7 @@ class wiring_argument {
         if constexpr (scalar_source<Source>) {
             return ScalarArgument{std::forward<T>(value)};
         } else {
-            return ScalarArgument{cpp_scalar_type<Scalar>(), cpp_scalar_runtime_type<Scalar>(),
-                                  std::addressof(value)};
+            return ScalarArgument{cpp_scalar_type<Scalar>(), cpp_scalar_runtime_type<Scalar>(), std::addressof(value)};
         }
     }
 

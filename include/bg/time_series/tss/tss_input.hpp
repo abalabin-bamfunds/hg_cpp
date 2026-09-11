@@ -33,7 +33,7 @@ class In<TSS<K, TimeSeriesProperties...>, Properties...> {
     bool valid() const noexcept { return data_.valid(); }
     EvaluationTime last_updated() const noexcept { return data_.last_updated(); }
     std::size_t size() const noexcept { return valid() ? storage().size() : 0; }
-    bool contains(const Scalar<K> &item) const { return contains(static_cast<const details::ScalarData &>(item)); }
+    bool contains(const Scalar<K> &item) const { return contains(details::scalar_data(item)); }
 
     template <typename Source>
         requires(!details::scalar_variable<K> && scalar_source_for<K, Source>)

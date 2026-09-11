@@ -37,27 +37,26 @@ class ReferenceInputSubscriber {
 
 class CallbackReferenceInputSubscriber {
   public:
-    CallbackReferenceInputSubscriber(std::uint32_t input_offset, std::size_t data, std::uint32_t node_index,
+    CallbackReferenceInputSubscriber(std::uint32_t input_offset, std::size_t callback_data, std::uint32_t node_index,
                                      bool active, bool required, const TimeSeriesType &requested_type,
                                      InputChangeFunction callback) noexcept
-        : subscription_{input_offset, node_index, active, required, requested_type}, data_{data}, callback_{callback} {}
+        : subscription_{input_offset, node_index, active, required, requested_type}, callback_data_{callback_data},
+          callback_{callback} {}
 
     const ReferenceInputSubscriber &subscription() const noexcept { return subscription_; }
-    std::size_t data() const noexcept { return data_; }
+    std::size_t callback_data() const noexcept { return callback_data_; }
     InputChangeFunction callback() const noexcept { return callback_; }
 
   private:
     ReferenceInputSubscriber subscription_;
-    std::size_t data_;
+    std::size_t callback_data_;
     InputChangeFunction callback_;
 };
 
-void notify_reference_inputs(OutputChangeContext &context, const TimeSeriesRuntimeType *runtime_type,
-                             const void *value, OutputChange change,
-                             std::span<const std::byte> records);
+void notify_reference_inputs(OutputChangeContext &context, const TimeSeriesRuntimeType *runtime_type, const void *value,
+                             OutputChange change, std::span<const std::byte> records);
 void notify_callback_reference_inputs(OutputChangeContext &context, const TimeSeriesRuntimeType *runtime_type,
-                                      const void *value, OutputChange change,
-                                      std::span<const std::byte> records);
+                                      const void *value, OutputChange change, std::span<const std::byte> records);
 
 static_assert(sizeof(ReferenceInputSubscriber) == 2 * sizeof(void *));
 static_assert(sizeof(CallbackReferenceInputSubscriber) == 4 * sizeof(void *));

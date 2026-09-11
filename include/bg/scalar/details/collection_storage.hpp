@@ -14,7 +14,7 @@ template <typename Source, typename T>
 concept scalar_view_source_for = requires(const Source &source) {
     typename std::remove_cvref_t<Source>::scalar_type;
     requires std::same_as<typename std::remove_cvref_t<Source>::scalar_type, T>;
-    static_cast<const ScalarData &>(source);
+    scalar_data(source);
 };
 
 template <typename Collection>

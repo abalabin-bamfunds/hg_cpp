@@ -10,49 +10,41 @@
 
 namespace bg::details {
 
-namespace {
-
-struct OutputPath {
-    enum class OwnerKind : std::uintptr_t {
-        parent,
-        context,
-    };
-
+class OutputPath {
+  public:
     OutputPath(EvaluationContext &context, const TimeSeriesRuntimeType &runtime_type, EvaluationTime &last_updated,
-               void *value, TimeSeriesItemId id, OutputPath *parent) noexcept
+               void *value, item_id_t id, OutputPath *parent) noexcept
         : runtime_type{&runtime_type}, last_updated{&last_updated}, value{value}, id{id} {
         if (parent == nullptr) {
-            owner.reset(&context, OwnerKind::context);
+            owner.reset(&context);
         } else {
-            owner.reset(parent, OwnerKind::parent);
+            owner.reset(parent);
         }
     }
 
     EvaluationContext &context() const noexcept {
-        if (owner.tag() == OwnerKind::context) {
-            return *owner.get<EvaluationContext>();
+        if (auto *evaluation_context = owner.get<EvaluationContext>()) {
+            return *evaluation_context;
         }
         return owner.get<OutputPath>()->context();
     }
 
     OutputPath *parent() const noexcept {
-        return owner.tag() == OwnerKind::parent ? owner.get<OutputPath>() : nullptr;
+        return owner.get<OutputPath>();
     }
 
-    util::erased_tagged_ptr<alignof(void *), 1, OwnerKind> owner;
+    util::variant_ptr_with_alignment<alignof(void *), OutputPath, EvaluationContext> owner;
     const TimeSeriesRuntimeType *runtime_type;
     EvaluationTime *last_updated;
     void *value;
-    TimeSeriesItemId id;
+    item_id_t id;
 };
 
 static_assert(sizeof(OutputPath) == 40);
 static_assert(alignof(EvaluationContext) >= 2);
 
-} // namespace
-
 void *add_output_path(EvaluationContext &context, const TimeSeriesRuntimeType &runtime_type,
-                      EvaluationTime &last_updated, void *value, TimeSeriesItemId id, void *parent) {
+                      EvaluationTime &last_updated, void *value, item_id_t id, void *parent) {
     auto *storage = context.scratch().allocate(sizeof(OutputPath), alignof(OutputPath));
     return std::construct_at(static_cast<OutputPath *>(storage), context, runtime_type, last_updated, value, id,
                              static_cast<OutputPath *>(parent));

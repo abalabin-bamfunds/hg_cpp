@@ -27,12 +27,27 @@ class ScalarSetRuntimeType : public ScalarRuntimeType {
     const ScalarRuntimeType &item_runtime_type() const noexcept { return *item_; }
     virtual std::size_t item_count(const void *storage) const noexcept = 0;
     virtual bool contains(const void *storage, const details::ScalarData &value) const = 0;
+    template <typename Value>
+        requires requires(const Value &value) { details::scalar_data(value); }
+    bool contains(const void *storage, const Value &value) const {
+        return contains(storage, details::scalar_data(value));
+    }
     virtual void for_each(const void *storage, void *context, ItemFunction function) const = 0;
 
     [[nodiscard]] virtual bool insert(void *storage, const details::ScalarData &value,
                                       std::pmr::memory_resource &memory) const = 0;
+    template <typename Value>
+        requires requires(const Value &value) { details::scalar_data(value); }
+    [[nodiscard]] bool insert(void *storage, const Value &value, std::pmr::memory_resource &memory) const {
+        return insert(storage, details::scalar_data(value), memory);
+    }
     [[nodiscard]] virtual bool erase(void *storage, const details::ScalarData &value,
                                      std::pmr::memory_resource &memory) const = 0;
+    template <typename Value>
+        requires requires(const Value &value) { details::scalar_data(value); }
+    [[nodiscard]] bool erase(void *storage, const Value &value, std::pmr::memory_resource &memory) const {
+        return erase(storage, details::scalar_data(value), memory);
+    }
     virtual void clear(void *storage, std::pmr::memory_resource &memory) const noexcept = 0;
 
   private:

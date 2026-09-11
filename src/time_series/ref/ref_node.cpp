@@ -33,15 +33,15 @@ class ReferenceNodeTemplate final : public NodeTemplate {
     NodeStateLayout state_layout(const ResolvedSignature &, std::span<const ScalarRuntimeType *const>,
                                  std::span<const ScalarType *const>) const override {
         return {
-            .size = sizeof(ReferenceRoot),
-            .alignment = alignof(ReferenceRoot),
+            .size = sizeof(RootReference),
+            .alignment = alignof(RootReference),
             .field_offsets = {},
             .generic_runtime_types = {},
         };
     }
 
     void construct_initial_state(const NodeStateLayout &, void *storage) const noexcept override {
-        std::construct_at(static_cast<ReferenceRoot *>(storage));
+        std::construct_at(static_cast<RootReference *>(storage));
     }
 
     EvaluationFunction state_destruction_function(const ResolvedSignature &) const noexcept override {
@@ -57,24 +57,24 @@ class ReferenceNodeTemplate final : public NodeTemplate {
   private:
     static void start(const CompiledNode &node, void *runtime_storage, EvaluationContext *context) {
         const auto runtime_node = Node{node, runtime_storage};
-        auto &reference = *static_cast<ReferenceRoot *>(runtime_node.state());
-        auto &output = *static_cast<ReferenceAddress *>(runtime_node.output_value());
+        auto &root = *static_cast<RootReference *>(runtime_node.state());
+        auto &output = *static_cast<Reference *>(runtime_node.output_value());
 
-        reference.graph = &context->runtime_graph();
-        reference.node = &node;
-        reference.runtime_type = &runtime_node.time_series_input_runtime_type(0, 0);
-        output = &reference;
+        root.owner_graph = &context->runtime_graph();
+        root.reference_node = &node;
+        root.referenced_runtime_type = &runtime_node.time_series_input_runtime_type(0, 0);
+        output = &root;
         runtime_node.output_last_updated() = context->evaluation_time();
     }
 
     static void destroy_state(const CompiledNode &node, void *runtime_storage, EvaluationContext *context) noexcept {
-        auto &reference = *static_cast<ReferenceRoot *>(Node{node, runtime_storage}.state());
-        destroy_reference_root(reference, context->runtime_graph().memory_resource());
+        auto &root = *static_cast<RootReference *>(Node{node, runtime_storage}.state());
+        destroy_root_reference(root, context->runtime_graph().memory_resource());
     }
 
     static void notify_input(OutputChangeContext &context, std::size_t node_index, std::size_t, OutputChange change) {
-        auto &reference = *static_cast<ReferenceRoot *>(context.runtime_graph().node(node_index).state());
-        notify_reference(ReferenceAddress{&reference}, context, change);
+        auto &root = *static_cast<RootReference *>(context.runtime_graph().node(node_index).state());
+        notify_reference(Reference{&root}, context, change);
     }
 
     Signature signature_;
@@ -94,9 +94,8 @@ const NodeTemplate &reference_node_template(const TimeSeriesType &argument, cons
     static auto templates = std::vector<Entry>{};
 
     const auto lock = std::lock_guard{mutex};
-    const auto existing = std::ranges::find_if(templates, [&](const auto &entry) {
-        return entry.argument == &argument && entry.type == &type;
-    });
+    const auto existing = std::ranges::find_if(
+        templates, [&](const auto &entry) { return entry.argument == &argument && entry.type == &type; });
     if (existing != templates.end()) {
         return *existing->node_template;
     }

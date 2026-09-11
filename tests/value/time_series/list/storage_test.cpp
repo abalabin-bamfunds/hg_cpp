@@ -55,12 +55,12 @@ TEST_CASE("fixed list runtime items use positional IDs",
     auto *storage = memory.allocate(runtime_type.value_size(), runtime_type.value_alignment());
     runtime_type.construct_runtime_value(storage, memory);
 
-    auto ids = std::vector<bg::TimeSeriesItemId>{};
-    runtime_type.for_each_item_id(storage, &ids, [](void *context, bg::TimeSeriesItemId id) {
-        static_cast<std::vector<bg::TimeSeriesItemId> *>(context)->push_back(id);
+    auto ids = std::vector<bg::item_id_t>{};
+    runtime_type.for_each_item_id(storage, &ids, [](void *context, bg::item_id_t id) {
+        static_cast<std::vector<bg::item_id_t> *>(context)->push_back(id);
     });
     CHECK(runtime_type.item_count(storage) == 3);
-    CHECK(ids == std::vector<bg::TimeSeriesItemId>{0, 1, 2});
+    CHECK(ids == std::vector<bg::item_id_t>{0, 1, 2});
 
     const auto update_time = bg::MIN_DT + std::chrono::microseconds{1};
     auto item = runtime_type.item(storage, 1);

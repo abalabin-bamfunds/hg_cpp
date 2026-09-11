@@ -16,7 +16,7 @@ namespace bg {
 
 namespace {
 
-util::linear_hash_table::hash_type output_item_hash(std::size_t parent, TimeSeriesItemId item) noexcept {
+util::linear_hash_table::hash_type output_item_hash(std::size_t parent, item_id_t item) noexcept {
     constexpr auto constant = std::size_t{0x9e3779b9};
     auto result = parent;
     result ^= static_cast<std::size_t>(item) + constant + (result << 6) + (result >> 2);
@@ -28,7 +28,7 @@ std::optional<Scalar<>> scalar_value(const details::wiring_argument &argument) {
         return std::nullopt;
     }
     if (const auto *view = argument.scalar_view()) {
-        return Scalar<>::from(*view);
+        return Scalar<>::from(view->runtime_type(), view->data());
     }
     return Scalar<>::from(argument.scalar_runtime_type(), argument.scalar_data());
 }
@@ -225,8 +225,7 @@ std::size_t GraphWiring::register_node(WiredNode node) {
     return index;
 }
 
-void GraphWiring::register_node_output(std::size_t node_index, WiringPoint output,
-                                       std::optional<std::size_t> hash) {
+void GraphWiring::register_node_output(std::size_t node_index, WiringPoint output, std::optional<std::size_t> hash) {
     node_output_records_[node_index] = output.record_;
     if (hash) {
         cache_wired_node(*hash, node_index);
@@ -240,15 +239,14 @@ WiringPoint GraphWiring::register_record(std::unique_ptr<details::WiringRecord> 
     return WiringPoint{result};
 }
 
-WiringPoint GraphWiring::register_item_record(WiringPoint parent, TimeSeriesItemId item,
+WiringPoint GraphWiring::register_item_record(WiringPoint parent, item_id_t item,
                                               std::unique_ptr<details::WiringRecord> record) {
     if (&parent.graph() != this) {
         throw WiringError{"a WiringPoint belongs to another GraphWiring"};
     }
 
-    const auto existing = std::ranges::find_if(item_records_, [&](const auto &entry) {
-        return entry.parent == parent.record_ && entry.item == item;
-    });
+    const auto existing = std::ranges::find_if(
+        item_records_, [&](const auto &entry) { return entry.parent == parent.record_ && entry.item == item; });
     if (existing != item_records_.end()) {
         return WiringPoint{*existing->result};
     }
@@ -259,8 +257,7 @@ WiringPoint GraphWiring::register_item_record(WiringPoint parent, TimeSeriesItem
     return result;
 }
 
-WiringPoint GraphWiring::register_output(WiredOutput output,
-                                         std::unique_ptr<details::WiringRecord> record) {
+WiringPoint GraphWiring::register_output(WiredOutput output, std::unique_ptr<details::WiringRecord> record) {
     wiring_records_.reserve(wiring_records_.size() + 1);
     outputs_.reserve(outputs_.size() + 1);
     output_records_.reserve(output_records_.size() + 1);
@@ -281,7 +278,7 @@ WiringPoint GraphWiring::register_output(WiredOutput output,
     return WiringPoint{result};
 }
 
-std::optional<WiringPoint> GraphWiring::find_output_item(std::size_t parent, TimeSeriesItemId item) const {
+std::optional<WiringPoint> GraphWiring::find_output_item(std::size_t parent, item_id_t item) const {
     const auto found = output_items_.find(output_item_hash(parent, item), [&](auto position) {
         const auto &output = outputs_[position];
         return output.parent == parent && output.item == item;

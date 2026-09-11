@@ -19,7 +19,7 @@ class In<REF<Target, TimeSeriesProperties...>, Properties...> {
     static_assert(ParsedProperties::valid);
 
   public:
-    using storage_type = details::ReferenceAddress;
+    using storage_type = Reference;
 
     In() noexcept : data_{cpp_time_series_runtime_type<REF<Target, TimeSeriesProperties...>>(), MIN_DT, nullptr} {}
 
@@ -31,9 +31,7 @@ class In<REF<Target, TimeSeriesProperties...>, Properties...> {
 
     bool valid() const noexcept { return data_.valid(); }
     EvaluationTime last_updated() const noexcept { return data_.last_updated(); }
-    details::ReferenceAddress target() const noexcept {
-        return data_.runtime_type().reference_address(data_.data());
-    }
+    Reference value() const noexcept { return data_.runtime_type().reference(data_.data()); }
     const TimeSeriesRuntimeType &runtime_type() const noexcept { return data_.runtime_type(); }
     const void *data() const noexcept { return data_.data(); }
     const In *operator->() const noexcept { return this; }

@@ -22,7 +22,7 @@ struct CompiledNestedGraph {
 };
 
 struct NestedGraphInput {
-    details::ReferenceAddress target;
+    Reference reference;
     EvaluationTime last_updated;
 };
 
@@ -37,10 +37,10 @@ class NestedGraph {
     void stop_and_destroy(EvaluationContext &context) noexcept;
 
     bool running() const noexcept { return active_ != nullptr; }
-    details::ReferenceAddress output(const CompiledNestedGraph &compiled) const noexcept;
+    Reference output(const CompiledNestedGraph &compiled) const noexcept;
 
   private:
-    static void destroy_retired_callback(void *target) noexcept;
+    static void destroy_retired_callback(void *receiver) noexcept;
     static void destroy(RuntimeGraph *graph) noexcept;
     void destroy_retired() noexcept;
     void bind_input(std::size_t node_index, const NestedGraphInput &input);

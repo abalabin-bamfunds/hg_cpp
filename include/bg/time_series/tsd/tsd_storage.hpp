@@ -15,15 +15,13 @@
 
 namespace bg::details {
 
-inline std::size_t
-contained_time_series_value_offset(const TimeSeriesRuntimeType &runtime_type) noexcept {
+inline std::size_t contained_time_series_value_offset(const TimeSeriesRuntimeType &runtime_type) noexcept {
     const auto alignment = runtime_type.value_alignment();
     const auto remainder = sizeof(EvaluationTime) % alignment;
     return remainder == 0 ? sizeof(EvaluationTime) : sizeof(EvaluationTime) + alignment - remainder;
 }
 
-inline util::runtime_item_layout
-contained_time_series_layout(const TimeSeriesRuntimeType &runtime_type) noexcept {
+inline util::runtime_item_layout contained_time_series_layout(const TimeSeriesRuntimeType &runtime_type) noexcept {
     const auto alignment = std::max(alignof(EvaluationTime), runtime_type.value_alignment());
     const auto value_offset = contained_time_series_value_offset(runtime_type);
     const auto size = value_offset + runtime_type.value_size();
@@ -67,11 +65,12 @@ class time_series_dict_storage {
         change_time_ = evaluation_time;
     }
 
-    time_series_set_storage::InsertResult
-    item(const details::ScalarData &key, const ScalarRuntimeType &key_runtime_type,
-         const util::runtime_item_layout &key_layout, const TimeSeriesRuntimeType &item_runtime_type,
-         const util::runtime_item_layout &item_layout, std::size_t item_value_offset,
-         std::pmr::memory_resource &memory) {
+    time_series_set_storage::InsertResult item(const details::ScalarData &key,
+                                               const ScalarRuntimeType &key_runtime_type,
+                                               const util::runtime_item_layout &key_layout,
+                                               const TimeSeriesRuntimeType &item_runtime_type,
+                                               const util::runtime_item_layout &item_layout,
+                                               std::size_t item_value_offset, std::pmr::memory_resource &memory) {
         return keys.value.insert(
             key, key_runtime_type, key_layout, memory,
             [&](Position position) {
@@ -90,6 +89,16 @@ class time_series_dict_storage {
             });
     }
 
+    template <typename Key>
+        requires requires(const Key &key) { details::scalar_data(key); }
+    time_series_set_storage::InsertResult
+    item(const Key &key, const ScalarRuntimeType &key_runtime_type, const util::runtime_item_layout &key_layout,
+         const TimeSeriesRuntimeType &item_runtime_type, const util::runtime_item_layout &item_layout,
+         std::size_t item_value_offset, std::pmr::memory_resource &memory) {
+        return item(details::scalar_data(key), key_runtime_type, key_layout, item_runtime_type, item_layout,
+                    item_value_offset, memory);
+    }
+
     [[nodiscard]] time_series_set_storage::EraseResult
     erase(const details::ScalarData &key, const ScalarRuntimeType &key_runtime_type,
           const util::runtime_item_layout &key_layout, const TimeSeriesRuntimeType &item_runtime_type,
@@ -103,6 +112,16 @@ class time_series_dict_storage {
             modified_.reset(result.position);
         }
         return result;
+    }
+
+    template <typename Key>
+        requires requires(const Key &key) { details::scalar_data(key); }
+    [[nodiscard]] time_series_set_storage::EraseResult
+    erase(const Key &key, const ScalarRuntimeType &key_runtime_type, const util::runtime_item_layout &key_layout,
+          const TimeSeriesRuntimeType &item_runtime_type, const util::runtime_item_layout &item_layout,
+          std::size_t item_value_offset, std::pmr::memory_resource &memory) {
+        return erase(details::scalar_data(key), key_runtime_type, key_layout, item_runtime_type, item_layout,
+                     item_value_offset, memory);
     }
 
     void clear(const ScalarRuntimeType &key_runtime_type, const util::runtime_item_layout &key_layout,
@@ -136,23 +155,20 @@ class time_series_dict_storage {
     const time_series_set_slot &key_storage() const noexcept { return keys; }
     const util::index<> &modified() const noexcept { return modified_; }
 
-    EvaluationTime &item_last_updated(Position position,
-                                                    const util::runtime_item_layout &layout) noexcept {
+    EvaluationTime &item_last_updated(Position position, const util::runtime_item_layout &layout) noexcept {
         return *static_cast<EvaluationTime *>(items_.get(position, layout));
     }
 
-    const EvaluationTime &item_last_updated(Position position,
-                                                          const util::runtime_item_layout &layout) const noexcept {
+    const EvaluationTime &item_last_updated(Position position, const util::runtime_item_layout &layout) const noexcept {
         return *static_cast<const EvaluationTime *>(items_.get(position, layout));
     }
 
-    void *item_value(Position position, const util::runtime_item_layout &layout,
-                                   std::size_t value_offset) noexcept {
+    void *item_value(Position position, const util::runtime_item_layout &layout, std::size_t value_offset) noexcept {
         return static_cast<std::byte *>(items_.get(position, layout)) + value_offset;
     }
 
     const void *item_value(Position position, const util::runtime_item_layout &layout,
-                                         std::size_t value_offset) const noexcept {
+                           std::size_t value_offset) const noexcept {
         return static_cast<const std::byte *>(items_.get(position, layout)) + value_offset;
     }
 

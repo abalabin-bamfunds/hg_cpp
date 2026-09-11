@@ -11,17 +11,17 @@ namespace bg {
 class TimeSeriesReferenceRuntimeType : public TimeSeriesRuntimeType {
   public:
     explicit TimeSeriesReferenceRuntimeType(const TimeSeriesReferenceType &type) noexcept
-        : TimeSeriesReferenceRuntimeType{type, sizeof(details::ReferenceAddress), alignof(details::ReferenceAddress)} {}
+        : TimeSeriesReferenceRuntimeType{type, sizeof(Reference), alignof(Reference)} {}
 
     void construct_initial_value(void *destination) const noexcept override {
-        std::construct_at(static_cast<details::ReferenceAddress *>(destination));
+        std::construct_at(static_cast<Reference *>(destination));
     }
 
     void invalidate_output(const details::OutputState &output) const override;
 
     bool satisfies_reference_request(const TimeSeriesType &requested_type) const noexcept override;
-    details::ReferenceAddress reference_address(const void *value) const override {
-        return *static_cast<const details::ReferenceAddress *>(value);
+    Reference reference(const void *value) const override {
+        return *static_cast<const Reference *>(value);
     }
 
     void destroy_value(void *, std::pmr::memory_resource &) const noexcept override {}

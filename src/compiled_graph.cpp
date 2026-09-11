@@ -5,6 +5,7 @@
 #include <bg/node/node_template.hpp>
 #include <bg/scalar/runtime_type.hpp>
 #include <bg/scalar/scalar.hpp>
+#include <bg/time_series/ref/ref_input_storage.hpp>
 #include <bg/time_series/ref/ref_notification.hpp>
 #include <bg/time_series/ref/ref_runtime_type.hpp>
 #include <bg/time_series/ref/ref_storage.hpp>
@@ -643,7 +644,7 @@ void plan_runtime_storage(CompilationPlan &plan, std::size_t schedule_word_count
             }
 
             const auto output_layout = wired_output_layout(input.output, plan.outputs, plan.node_plans);
-            const auto slot = storage.add<details::ReferenceInputStorage>();
+            const auto slot = storage.add<ReferenceInputStorage>();
             input.offset = packed_offset(slot.offset, "runtime storage reaches 1 GiB");
             input.output_last_updated_offset = output_layout.last_updated_offset;
         }
@@ -1087,7 +1088,7 @@ class CompiledGraphBuilder {
                     continue;
                 }
                 std::construct_at(
-                    reinterpret_cast<details::ReferenceInputStorage *>(runtime_storage.data() + reference.offset));
+                    reinterpret_cast<ReferenceInputStorage *>(runtime_storage.data() + reference.offset));
             }
         }
 

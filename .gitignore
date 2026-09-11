@@ -1,3 +1,6 @@
+# local/private agentic setup
+/LOCAL_AGENTS.md
+
 # CMake build trees
 /build/
 /cmake-build-*/

@@ -20,7 +20,7 @@ class bundle_input_factory {
     explicit bundle_input_factory(const TimeSeriesInputData &data) noexcept : data_{&data} {}
 
     template <typename Item> [[nodiscard]] In<Item> make(std::size_t index) const {
-        const auto item = data_->runtime_type().item(data_->data(), static_cast<TimeSeriesItemId>(index));
+        const auto item = data_->runtime_type().item(data_->data(), static_cast<item_id_t>(index));
         return {item.last_updated, item.value, item.runtime_type};
     }
 
@@ -55,12 +55,12 @@ class In<TSB<Schema, TimeSeriesProperties...>, Properties...> {
     const fields_type &fields() const noexcept { return fields_; }
     bool item_updated(std::size_t index) const noexcept {
         return data_.runtime_type().item_updated(data_.last_updated_ref(), data_.data(),
-                                                 static_cast<TimeSeriesItemId>(index));
+                                                 static_cast<item_id_t>(index));
     }
 
     template <typename Function> void for_each_updated(Function &&function) const {
         data_.runtime_type().for_each_updated_item(
-            data_.last_updated_ref(), data_.data(), std::addressof(function), [](void *context, TimeSeriesItemId id) {
+            data_.last_updated_ref(), data_.data(), std::addressof(function), [](void *context, item_id_t id) {
                 (*static_cast<std::remove_reference_t<Function> *>(context))(id);
             });
     }
@@ -96,17 +96,17 @@ class In<TSB<Schema, TimeSeriesProperties...>, Properties...> {
         return static_cast<const TimeSeriesBundleType &>(data_.runtime_type().type()).item_name(index);
     }
     In<TS_T> operator[](std::size_t index) const {
-        const auto item = data_.runtime_type().item(data_.data(), static_cast<TimeSeriesItemId>(index));
+        const auto item = data_.runtime_type().item(data_.data(), static_cast<item_id_t>(index));
         return {item.last_updated, item.value, item.runtime_type};
     }
     bool item_updated(std::size_t index) const noexcept {
         return data_.runtime_type().item_updated(data_.last_updated_ref(), data_.data(),
-                                                 static_cast<TimeSeriesItemId>(index));
+                                                 static_cast<item_id_t>(index));
     }
 
     template <typename Function> void for_each_updated(Function &&function) const {
         data_.runtime_type().for_each_updated_item(
-            data_.last_updated_ref(), data_.data(), std::addressof(function), [](void *context, TimeSeriesItemId id) {
+            data_.last_updated_ref(), data_.data(), std::addressof(function), [](void *context, item_id_t id) {
                 (*static_cast<std::remove_reference_t<Function> *>(context))(id);
             });
     }

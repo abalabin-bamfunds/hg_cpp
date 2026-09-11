@@ -14,7 +14,7 @@ namespace bg {
 
 template <typename Target, auto... Properties> class Out<REF<Target, Properties...>> {
   public:
-    using storage_type = details::ReferenceAddress;
+    using storage_type = Reference;
 
   private:
     friend details::output_factory;
@@ -58,24 +58,24 @@ template <typename Target, auto... Properties> class Out<REF<Target, Properties.
             invalidate();
             return;
         }
-        set_target(input.target());
+        set_value(input.value());
     }
 
-    void set_target(details::ReferenceAddress target) const {
-        if (!target) {
+    void set_value(Reference value) const {
+        if (!value) {
             invalidate();
             return;
         }
-        if (state_->suppresses_equal_updates() && valid() && reference() == target) {
+        if (state_->suppresses_equal_updates() && valid() && stored_reference() == value) {
             return;
         }
 
-        reference() = target;
+        stored_reference() = value;
         state_->publish();
     }
 
     void invalidate() const {
-        reference() = nullptr;
+        stored_reference() = nullptr;
         state_->invalidate_value();
     }
 
@@ -90,9 +90,7 @@ template <typename Target, auto... Properties> class Out<REF<Target, Properties.
     using target_type = Target;
 
   private:
-    details::ReferenceAddress &reference() const noexcept {
-        return *static_cast<details::ReferenceAddress *>(state_->mutable_data());
-    }
+    Reference &stored_reference() const noexcept { return *static_cast<Reference *>(state_->mutable_data()); }
 
     using Proxy = details::output_proxy<details::OutputState>;
 

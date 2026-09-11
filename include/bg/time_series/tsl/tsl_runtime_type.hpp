@@ -27,7 +27,7 @@ class FixedTimeSeriesListRuntimeType final : public TimeSeriesRuntimeType {
     FixedTimeSeriesListRuntimeType(const TimeSeriesListType &type, const TimeSeriesRuntimeType &item) noexcept
         : FixedTimeSeriesListRuntimeType{type, item, make_layout(type, item)} {}
 
-    ItemLayout item_layout(TimeSeriesItemId id) const override {
+    ItemLayout item_layout(item_id_t id) const override {
         if (id >= list_type().item_count()) {
             throw std::out_of_range{"time series list item index is out of range"};
         }
@@ -38,14 +38,14 @@ class FixedTimeSeriesListRuntimeType final : public TimeSeriesRuntimeType {
 
     std::size_t item_count(const void *) const override { return list_type().item_count(); }
 
-    ConstItem item(const void *value, TimeSeriesItemId id) const override {
+    ConstItem item(const void *value, item_id_t id) const override {
         const auto field = item_layout(id);
         const auto *bytes = static_cast<const std::byte *>(value);
         return {field.runtime_type, *reinterpret_cast<const EvaluationTime *>(bytes + field.last_updated_offset),
                 bytes + field.value_offset};
     }
 
-    MutableItem item(void *value, TimeSeriesItemId id) const override {
+    MutableItem item(void *value, item_id_t id) const override {
         const auto field = item_layout(id);
         auto *bytes = static_cast<std::byte *>(value);
         return {field.runtime_type, *reinterpret_cast<EvaluationTime *>(bytes + field.last_updated_offset),
@@ -53,13 +53,13 @@ class FixedTimeSeriesListRuntimeType final : public TimeSeriesRuntimeType {
     }
 
     void for_each_item_id(const void *, void *context, ItemIdFunction function) const override {
-        for (auto id = TimeSeriesItemId{}; id < list_type().item_count(); ++id) {
+        for (auto id = item_id_t{}; id < list_type().item_count(); ++id) {
             function(context, id);
         }
     }
 
     bool item_updated(const EvaluationTime &last_updated, const void *value,
-                                    TimeSeriesItemId id) const noexcept override {
+                                    item_id_t id) const noexcept override {
         const auto &storage = *static_cast<const time_series_list_storage *>(value);
         return last_updated > MIN_DT && storage.change_time == last_updated && storage.updated.contains(id);
     }
@@ -77,7 +77,7 @@ class FixedTimeSeriesListRuntimeType final : public TimeSeriesRuntimeType {
 
     void invalidate_output(const details::OutputState &output) const override { invalidate_output_items(output); }
 
-    [[nodiscard]] bool mark_item_modified(void *value, TimeSeriesItemId id, EvaluationTime evaluation_time,
+    [[nodiscard]] bool mark_item_modified(void *value, item_id_t id, EvaluationTime evaluation_time,
                                           EvaluationTime, std::pmr::memory_resource &memory) const noexcept override {
         return static_cast<time_series_list_storage *>(value)->mark(id, evaluation_time, memory);
     }
@@ -97,7 +97,7 @@ class FixedTimeSeriesListRuntimeType final : public TimeSeriesRuntimeType {
         const auto *bytes = static_cast<const std::byte *>(value);
         const auto publish = [&](std::size_t index, const EvaluationTime &item_last_updated) {
             const auto field = item_layout(index);
-            function(context, {static_cast<TimeSeriesItemId>(index), item_, &item_last_updated,
+            function(context, {static_cast<item_id_t>(index), item_, &item_last_updated,
                                bytes + field.value_offset});
         };
 

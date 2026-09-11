@@ -24,7 +24,8 @@ struct Second {
 struct RecursiveFirst;
 struct RecursiveSecond;
 
-using RecursivePointer = bg::util::erased_tagged_variant_ptr<alignof(void *), RecursiveFirst, RecursiveSecond>;
+using RecursivePointer =
+    bg::util::variant_ptr_with_alignment<alignof(void *), RecursiveFirst, RecursiveSecond>;
 
 struct RecursiveFirst {
     RecursivePointer next;
@@ -60,10 +61,10 @@ TEST_CASE("a null tagged pointer has no tag", "[utils][coverage-exempt]") {
     CHECK(pointer == decltype(pointer){nullptr});
 }
 
-TEST_CASE("a tagged variant pointer identifies and visits its active type", "[utils][coverage-exempt]") {
+TEST_CASE("a variant pointer identifies and visits its active type", "[utils][coverage-exempt]") {
     auto first = First{12};
     auto second = Second{34};
-    auto pointer = bg::util::tagged_variant_ptr<First, Second>{&first};
+    auto pointer = bg::util::variant_ptr<First, Second>{&first};
 
     STATIC_CHECK(sizeof(pointer) == sizeof(void *));
     CHECK(pointer.holds<First>());
@@ -88,7 +89,7 @@ TEST_CASE("a tagged pointer preserves the pointed-to const type", "[utils][cover
     CHECK(pointer.get() == &value);
 }
 
-TEST_CASE("an erased tagged variant supports recursive alternatives", "[utils][coverage-exempt]") {
+TEST_CASE("a variant pointer supports recursive alternatives", "[utils][coverage-exempt]") {
     auto first = RecursiveFirst{};
     auto second = RecursiveSecond{};
 

@@ -54,7 +54,7 @@ template <typename Item, auto Size, auto... Properties> class Out<TSL<Item, Size
     std::size_t size() const noexcept { return state_->runtime_type().item_count(state_->data()); }
 
     Out<Item> operator[](std::size_t index) const {
-        const auto id = static_cast<TimeSeriesItemId>(index);
+        const auto id = static_cast<item_id_t>(index);
         const auto item = state_->runtime_type().item(state_->mutable_data(), id);
         auto *path = state_->add_path(state_->runtime_type(), id);
         return details::output_factory::make<Item>(item.last_updated, item.value, item.runtime_type, path);

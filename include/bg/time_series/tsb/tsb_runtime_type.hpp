@@ -43,18 +43,18 @@ class TimeSeriesBundleRuntimeTypeBase : public TimeSeriesRuntimeType {
                            std::ranges::all_of(items, &TimeSeriesRuntimeType::supports_byte_copy_initialization));
     }
 
-    ItemLayout item_layout(TimeSeriesItemId id) const final { return fields_.at(id); }
+    ItemLayout item_layout(item_id_t id) const final { return fields_.at(id); }
 
     std::size_t item_count(const void *) const final { return fields_.size(); }
 
-    ConstItem item(const void *value, TimeSeriesItemId id) const final {
+    ConstItem item(const void *value, item_id_t id) const final {
         const auto &field = fields_.at(id);
         const auto *bytes = static_cast<const std::byte *>(value);
         return {field.runtime_type, *reinterpret_cast<const EvaluationTime *>(bytes + field.last_updated_offset),
                 bytes + field.value_offset};
     }
 
-    MutableItem item(void *value, TimeSeriesItemId id) const final {
+    MutableItem item(void *value, item_id_t id) const final {
         const auto &field = fields_.at(id);
         auto *bytes = static_cast<std::byte *>(value);
         return {field.runtime_type, *reinterpret_cast<EvaluationTime *>(bytes + field.last_updated_offset),
@@ -62,13 +62,13 @@ class TimeSeriesBundleRuntimeTypeBase : public TimeSeriesRuntimeType {
     }
 
     void for_each_item_id(const void *, void *context, ItemIdFunction function) const final {
-        for (auto id = TimeSeriesItemId{}; id < fields_.size(); ++id) {
+        for (auto id = item_id_t{}; id < fields_.size(); ++id) {
             function(context, id);
         }
     }
 
     bool item_updated(const EvaluationTime &last_updated, const void *value,
-                                    TimeSeriesItemId id) const noexcept final {
+                                    item_id_t id) const noexcept final {
         const auto &storage = *static_cast<const time_series_bundle_storage *>(value);
         return last_updated > MIN_DT && storage.change_time == last_updated && storage.modified.contains(id);
     }
@@ -86,7 +86,7 @@ class TimeSeriesBundleRuntimeTypeBase : public TimeSeriesRuntimeType {
 
     void invalidate_output(const details::OutputState &output) const final { invalidate_output_items(output); }
 
-    [[nodiscard]] bool mark_item_modified(void *value, TimeSeriesItemId id, EvaluationTime evaluation_time,
+    [[nodiscard]] bool mark_item_modified(void *value, item_id_t id, EvaluationTime evaluation_time,
                                           EvaluationTime, std::pmr::memory_resource &memory) const noexcept final {
         auto &storage = *static_cast<time_series_bundle_storage *>(value);
         if (storage.change_time != evaluation_time) {
@@ -109,7 +109,7 @@ class TimeSeriesBundleRuntimeTypeBase : public TimeSeriesRuntimeType {
         const auto &storage = *static_cast<const time_series_bundle_storage *>(value);
         const auto publish = [&](std::size_t index, const EvaluationTime &item_last_updated) {
             const auto &field = fields_[index];
-            function(context, {static_cast<TimeSeriesItemId>(index), &field.runtime_type, &item_last_updated,
+            function(context, {static_cast<item_id_t>(index), &field.runtime_type, &item_last_updated,
                                bytes + field.value_offset});
         };
 

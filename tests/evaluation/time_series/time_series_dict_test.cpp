@@ -117,8 +117,8 @@ struct reference_dictionary_summary_definition {
     bg::Out<bg::TS<int>> output;
 
     void evaluate() const {
-        const auto target = bg::details::reference_target(input[1].target());
-        output.set(static_cast<int>(input.size() * 100) + *static_cast<const int *>(target.value));
+        const auto resolved = bg::details::resolve_reference(input[1].value());
+        output.set(static_cast<int>(input.size() * 100) + *static_cast<const int *>(resolved.storage));
     }
 };
 
@@ -792,10 +792,10 @@ namespace {
 
 struct dictionary_enumeration_snapshot {
     std::vector<std::int64_t> keys;
-    std::vector<bg::TimeSeriesItemId> ids;
+    std::vector<bg::item_id_t> ids;
     std::vector<int> values;
     std::vector<std::pair<std::int64_t, int>> key_values;
-    std::vector<std::pair<bg::TimeSeriesItemId, int>> id_values;
+    std::vector<std::pair<bg::item_id_t, int>> id_values;
 };
 
 struct dictionary_enumeration_sink_definition {
@@ -804,12 +804,12 @@ struct dictionary_enumeration_sink_definition {
     void evaluate() const {
         auto snapshot = dictionary_enumeration_snapshot{};
         input.for_each_key([&](const auto &key) { snapshot.keys.push_back(*key); });
-        input.for_each_id([&](bg::TimeSeriesItemId id) { snapshot.ids.push_back(id); });
+        input.for_each_id([&](bg::item_id_t id) { snapshot.ids.push_back(id); });
         input.for_each_value([&](const auto &value) { snapshot.values.push_back(*value); });
         input.for_each_key_value(
             [&](const auto &key, const auto &value) { snapshot.key_values.emplace_back(*key, *value); });
         input.for_each_id_value(
-            [&](bg::TimeSeriesItemId id, const auto &value) { snapshot.id_values.emplace_back(id, *value); });
+            [&](bg::item_id_t id, const auto &value) { snapshot.id_values.emplace_back(id, *value); });
         snapshots.push_back(std::move(snapshot));
     }
 
@@ -834,7 +834,7 @@ TEST_CASE("dictionary enumeration exposes keys, ids, values, and their associati
     std::ranges::sort(first.key_values);
     std::ranges::sort(first.ids);
 
-    auto id_value_ids = std::vector<bg::TimeSeriesItemId>{};
+    auto id_value_ids = std::vector<bg::item_id_t>{};
     auto id_values = std::vector<int>{};
     for (const auto &[id, value] : first.id_values) {
         id_value_ids.push_back(id);
@@ -864,10 +864,10 @@ TEST_CASE("an invalid dictionary input has no entries to enumerate",
     auto calls = std::array<std::size_t, 5>{};
 
     input.for_each_key([&](const auto &) { ++calls[0]; });
-    input.for_each_id([&](bg::TimeSeriesItemId) { ++calls[1]; });
+    input.for_each_id([&](bg::item_id_t) { ++calls[1]; });
     input.for_each_value([&](const auto &) { ++calls[2]; });
     input.for_each_key_value([&](const auto &, const auto &) { ++calls[3]; });
-    input.for_each_id_value([&](bg::TimeSeriesItemId, const auto &) { ++calls[4]; });
+    input.for_each_id_value([&](bg::item_id_t, const auto &) { ++calls[4]; });
 
     CHECK(calls == std::array<std::size_t, 5>{});
 }

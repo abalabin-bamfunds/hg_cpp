@@ -31,7 +31,7 @@ class FreeTimeSeriesBundleRuntimeType final : public TimeSeriesRuntimeType {
         return storage.node == nullptr ? 0 : free_bundle_node(storage).input_count();
     }
 
-    ConstItem item(const void *value, TimeSeriesItemId id) const override {
+    ConstItem item(const void *value, item_id_t id) const override {
         const auto &storage = *static_cast<const free_time_series_bundle_storage *>(value);
         if (storage.node == nullptr || id >= free_bundle_node(storage).input_count()) {
             throw std::out_of_range{"time series bundle item index is out of range"};
@@ -42,13 +42,13 @@ class FreeTimeSeriesBundleRuntimeType final : public TimeSeriesRuntimeType {
 
     void for_each_item_id(const void *value, void *context, ItemIdFunction function) const override {
         const auto count = item_count(value);
-        for (auto id = TimeSeriesItemId{}; id < count; ++id) {
+        for (auto id = item_id_t{}; id < count; ++id) {
             function(context, id);
         }
     }
 
     bool item_updated(const EvaluationTime &last_updated, const void *value,
-                                    TimeSeriesItemId id) const noexcept override {
+                                    item_id_t id) const noexcept override {
         const auto &storage = *static_cast<const free_time_series_bundle_storage *>(value);
         return last_updated > MIN_DT && storage.change_time == last_updated && storage.modified.contains(id);
     }
@@ -73,7 +73,7 @@ class FreeTimeSeriesBundleRuntimeType final : public TimeSeriesRuntimeType {
         const auto node = free_bundle_node(storage);
         const auto publish = [&](std::size_t index, const EvaluationTime &item_last_updated) {
             const auto input = node.time_series_input(index, index);
-            function(context, {static_cast<TimeSeriesItemId>(index), &input.runtime_type(), &item_last_updated,
+            function(context, {static_cast<item_id_t>(index), &input.runtime_type(), &item_last_updated,
                                input.data()});
         };
 

@@ -18,7 +18,7 @@ WiringPoint add_wiring_record(std::unique_ptr<WiringRecord> record) {
     return WiringContext::current().wiring().register_record(std::move(record));
 }
 
-WiringPoint add_item_wiring_record(WiringPoint parent, TimeSeriesItemId item,
+WiringPoint add_item_wiring_record(WiringPoint parent, item_id_t item,
                                    std::unique_ptr<WiringRecord> record) {
     return WiringContext::current().wiring().register_item_record(parent, item, std::move(record));
 }

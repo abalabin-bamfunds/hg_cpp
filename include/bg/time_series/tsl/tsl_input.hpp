@@ -39,18 +39,18 @@ class In<TSL<Item, Size, TimeSeriesProperties...>, Properties...> {
     std::size_t size() const noexcept { return data_.runtime_type().item_count(data_.data()); }
 
     In<Item> operator[](std::size_t index) const {
-        const auto item = data_.runtime_type().item(data_.data(), static_cast<TimeSeriesItemId>(index));
+        const auto item = data_.runtime_type().item(data_.data(), static_cast<item_id_t>(index));
         return {item.last_updated, item.value, item.runtime_type};
     }
 
     bool item_updated(std::size_t index) const noexcept {
         return data_.runtime_type().item_updated(data_.last_updated_ref(), data_.data(),
-                                                 static_cast<TimeSeriesItemId>(index));
+                                                 static_cast<item_id_t>(index));
     }
 
     template <typename Function> void for_each_updated(Function &&function) const {
         data_.runtime_type().for_each_updated_item(
-            data_.last_updated_ref(), data_.data(), std::addressof(function), [](void *context, TimeSeriesItemId id) {
+            data_.last_updated_ref(), data_.data(), std::addressof(function), [](void *context, item_id_t id) {
                 (*static_cast<std::remove_reference_t<Function> *>(context))(id);
             });
     }

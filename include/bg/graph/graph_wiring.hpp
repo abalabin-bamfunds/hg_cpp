@@ -25,12 +25,12 @@ class WiringTemplate;
 namespace details {
 class WiringRecord;
 WiringPoint add_wiring_record(std::unique_ptr<WiringRecord> record);
-WiringPoint add_item_wiring_record(WiringPoint parent, TimeSeriesItemId item,
+WiringPoint add_item_wiring_record(WiringPoint parent, item_id_t item,
                                    std::unique_ptr<WiringRecord> record);
 WiringPoint materialize_wiring_point(WiringPoint point, const TimeSeriesType &type);
 WiringPoint add_wired_output(GraphWiring &wiring, WiredOutput output);
 void set_wired_output_runtime_type(WiringPoint output, const TimeSeriesRuntimeType &runtime_type);
-WiringPoint wiring_point_for_item(WiringPoint parent, TimeSeriesItemId item, const TimeSeriesType &type);
+WiringPoint wiring_point_for_item(WiringPoint parent, item_id_t item, const TimeSeriesType &type);
 std::size_t wired_output_node_index(const GraphWiring &wiring, WiringPoint point);
 } // namespace details
 
@@ -56,13 +56,13 @@ class GraphWiring {
     friend class WiringPoint;
     friend class WiringTemplate;
     friend WiringPoint details::add_wiring_record(std::unique_ptr<details::WiringRecord> record);
-    friend WiringPoint details::add_item_wiring_record(WiringPoint parent, TimeSeriesItemId item,
+    friend WiringPoint details::add_item_wiring_record(WiringPoint parent, item_id_t item,
                                                        std::unique_ptr<details::WiringRecord> record);
     friend WiringPoint details::materialize_wiring_point(WiringPoint point, const TimeSeriesType &type);
     friend WiringPoint details::add_wired_output(GraphWiring &wiring, WiredOutput output);
     friend void details::set_wired_output_runtime_type(WiringPoint output,
                                                        const TimeSeriesRuntimeType &runtime_type);
-    friend WiringPoint details::wiring_point_for_item(WiringPoint parent, TimeSeriesItemId item,
+    friend WiringPoint details::wiring_point_for_item(WiringPoint parent, item_id_t item,
                                                       const TimeSeriesType &type);
     friend std::size_t details::wired_output_node_index(const GraphWiring &wiring, WiringPoint point);
 
@@ -76,12 +76,12 @@ class GraphWiring {
     [[nodiscard]] std::size_t register_node(WiredNode node);
     void register_node_output(std::size_t node_index, WiringPoint output, std::optional<std::size_t> hash);
     [[nodiscard]] WiringPoint register_record(std::unique_ptr<details::WiringRecord> record);
-    [[nodiscard]] WiringPoint register_item_record(WiringPoint parent, TimeSeriesItemId item,
+    [[nodiscard]] WiringPoint register_item_record(WiringPoint parent, item_id_t item,
                                                    std::unique_ptr<details::WiringRecord> record);
     [[nodiscard]] WiringPoint register_output(WiredOutput output,
                                               std::unique_ptr<details::WiringRecord> record);
     [[nodiscard]] std::size_t output_index(WiringPoint point) const;
-    [[nodiscard]] std::optional<WiringPoint> find_output_item(std::size_t parent, TimeSeriesItemId item) const;
+    [[nodiscard]] std::optional<WiringPoint> find_output_item(std::size_t parent, item_id_t item) const;
     [[nodiscard]] std::optional<WiringPoint> find_wired_node(std::size_t hash, const NodeTemplate &node_template,
                                                              const ResolvedSignature &signature,
                                                              std::span<const std::size_t> input_output_indices,
@@ -103,7 +103,7 @@ class GraphWiring {
     std::vector<std::unique_ptr<details::WiringRecord>> wiring_records_;
     struct ItemRecord {
         const details::WiringRecord *parent;
-        TimeSeriesItemId item;
+        item_id_t item;
         const details::WiringRecord *result;
     };
     std::vector<ItemRecord> item_records_;

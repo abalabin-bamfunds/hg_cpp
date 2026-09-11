@@ -22,24 +22,24 @@ void remove_subscription(State<TsdItemState> state, EvaluationContext &context) 
     state->subscription = {};
 }
 
-void evaluate_getitem(const In<REF<TSD<K, ITEM>>, optional> &tsd, const ScalarData &key,
-                      State<TsdItemState> state, const Out<REF<ITEM>> &output, EvaluationContext &context) {
+void evaluate_getitem(const In<REF<TSD<K, ITEM>>, optional> &tsd, const ScalarData &key, State<TsdItemState> state,
+                      const Out<REF<ITEM>> &output, EvaluationContext &context) {
     if (!tsd.valid()) {
         remove_subscription(state, context);
         output.invalidate();
         return;
     }
 
-    const auto address = tsd.target();
-    if (!tsd_key_subscription_matches(state->subscription, address, key)) {
+    const auto reference = tsd.value();
+    if (!tsd_key_subscription_matches(state->subscription, reference, key)) {
         remove_subscription(state, context);
-        state->subscription = add_tsd_key_subscriber(address, key, context.runtime_graph(),
+        state->subscription = add_tsd_key_subscriber(reference, key, context.runtime_graph(),
                                                      static_cast<std::uint32_t>(context.node_index()));
     }
 
-    const auto selected = tsd_key_subscription_target(state->subscription);
+    const auto selected = tsd_key_subscription_reference(state->subscription);
     if (selected) {
-        output.set_target(selected);
+        output.set_value(selected);
     } else {
         output.invalidate();
     }
@@ -51,7 +51,9 @@ struct tsd_getitem_scalar {
     State<TsdItemState> state;
     Out<REF<ITEM>> output;
 
-    void evaluate(EvaluationContext *context) const { evaluate_getitem(tsd, key, state, output, *context); }
+    void evaluate(EvaluationContext *context) const {
+        evaluate_getitem(tsd, scalar_data(key), state, output, *context);
+    }
 
     void finalize(EvaluationContext *context) const noexcept { remove_subscription(state, *context); }
 };
@@ -70,7 +72,7 @@ struct tsd_getitem_time_series {
         }
 
         const auto selected_key = key.value_view();
-        evaluate_getitem(tsd, selected_key, state, output, *context);
+        evaluate_getitem(tsd, scalar_data(selected_key), state, output, *context);
     }
 
     void finalize(EvaluationContext *context) const noexcept { remove_subscription(state, *context); }

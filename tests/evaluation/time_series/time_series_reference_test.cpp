@@ -73,7 +73,7 @@ TEST_CASE("a dereferenced input subscribes directly to a fixed target",
     CHECK(actual.equals({10, 20, std::nullopt, 30}));
 }
 
-TEST_CASE("a default reference output does not schedule subscribers for the same address",
+TEST_CASE("a default reference output does not schedule subscribers for the same reference",
           "[evaluation][reference][feature:reference][transition:update][series:value][scalar:integer]"
           "[guarantee:deduplicated][binding:value-to-reference][binding:reference-to-reference]") {
     const auto forward = bg::node([](bg::In<bg::TS<int>>, bg::In<bg::REF<bg::TS<int>>, bg::passive> input,
@@ -109,9 +109,9 @@ TEST_CASE("an ordinary reference does not create a reference provider",
     runtime.start(bg::MIN_DT + std::chrono::microseconds{1});
     runtime.evaluate(bg::MIN_DT + std::chrono::microseconds{2});
 
-    auto &root = *static_cast<bg::details::ReferenceRoot *>(runtime.node(1).state());
-    CHECK(root.data.holds<bg::details::DynamicSubscribers>());
-    CHECK_FALSE(root.data.holds<bg::details::ReferenceProvider>());
+    auto &root = *static_cast<bg::details::RootReference *>(runtime.node(1).state());
+    CHECK(root.subscribers_or_provider.holds<bg::details::DynamicSubscribers>());
+    CHECK_FALSE(root.subscribers_or_provider.holds<bg::details::ReferenceProvider>());
 
     runtime.stop();
 }

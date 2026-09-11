@@ -64,16 +64,17 @@ template <typename Parameter> [[nodiscard]] decltype(auto) graph_argument(wiring
         }
         const auto value = argument.scalar_view() == nullptr
                                ? Scalar<>::from(argument.scalar_runtime_type(), argument.scalar_data())
-                               : Scalar<>::from(*argument.scalar_view());
+                               : Scalar<>::from(argument.scalar_view()->runtime_type(), argument.scalar_view()->data());
         return Value{scalar_api_value<ApiScalar>(scalar_cast<Canonical>(value).value())};
     } else {
         static_assert(supported_scalar_argument<Value>);
         static_assert(!std::is_lvalue_reference_v<Parameter> || std::is_const_v<std::remove_reference_t<Parameter>>);
 
         using Canonical = canonical_scalar_type_t<Value>;
-        const auto scalar = argument.scalar_view() == nullptr
-                                ? Scalar<>::from(argument.scalar_runtime_type(), argument.scalar_data())
-                                : Scalar<>::from(*argument.scalar_view());
+        const auto scalar =
+            argument.scalar_view() == nullptr
+                ? Scalar<>::from(argument.scalar_runtime_type(), argument.scalar_data())
+                : Scalar<>::from(argument.scalar_view()->runtime_type(), argument.scalar_view()->data());
         return scalar_api_value<Value>(scalar_cast<Canonical>(scalar).value());
     }
 }
@@ -91,8 +92,7 @@ decltype(auto) invoke_graph_function(const Function &function, std::span<wiring_
     return invoke_graph_function(function, arguments, std::make_index_sequence<callable<Function>::argument_count>{});
 }
 
-template <typename Function, std::size_t Index>
-bool wiring_parameter_matches(const ResolvedParameter &parameter) {
+template <typename Function, std::size_t Index> bool wiring_parameter_matches(const ResolvedParameter &parameter) {
     using Parameter = typename callable<Function>::template argument_type<Index>;
     using Value = std::remove_cvref_t<Parameter>;
 
@@ -117,13 +117,11 @@ bool wiring_parameter_matches(const ResolvedParameter &parameter) {
     } else if constexpr (supported_optional_scalar_argument<Value>) {
         using Scalar = typename optional_scalar_argument<Value>::value_type;
 
-        return parameter.accepts_absent_scalar &&
-               parameter.type == &cpp_scalar_type<canonical_scalar_type_t<Scalar>>();
+        return parameter.accepts_absent_scalar && parameter.type == &cpp_scalar_type<canonical_scalar_type_t<Scalar>>();
     } else {
         static_assert(supported_scalar_argument<Value>);
 
-        return !parameter.accepts_absent_scalar &&
-               parameter.type == &cpp_scalar_type<canonical_scalar_type_t<Value>>();
+        return !parameter.accepts_absent_scalar && parameter.type == &cpp_scalar_type<canonical_scalar_type_t<Value>>();
     }
 }
 

@@ -52,7 +52,7 @@ class WiringArguments {
 
         auto value = argument.scalar_view() == nullptr
                          ? Scalar<>::from(argument.scalar_runtime_type(), argument.scalar_data())
-                         : Scalar<>::from(*argument.scalar_view());
+                         : Scalar<>::from(argument.scalar_view()->runtime_type(), argument.scalar_view()->data());
         if (scalar_read_ != nullptr) {
             scalar_read_(scalar_read_context_, index, value);
         }

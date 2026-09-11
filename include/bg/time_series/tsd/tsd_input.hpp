@@ -36,7 +36,7 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...> {
     bool valid() const noexcept { return data_.valid(); }
     EvaluationTime last_updated() const noexcept { return data_.last_updated(); }
     std::size_t size() const noexcept { return valid() ? data_.runtime_type().item_count(data_.data()) : 0; }
-    bool contains(const Scalar<K> &key) const { return contains(static_cast<const details::ScalarData &>(key)); }
+    bool contains(const Scalar<K> &key) const { return contains(details::scalar_data(key)); }
 
     template <typename Source>
         requires(!details::scalar_variable<K> && scalar_source_for<K, Source>)
@@ -45,7 +45,7 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...> {
         return contains(details::make_scalar_source<K>(value));
     }
 
-    In<Item> operator[](const Scalar<K> &key) const { return item(static_cast<const details::ScalarData &>(key)); }
+    In<Item> operator[](const Scalar<K> &key) const { return item(details::scalar_data(key)); }
 
     template <typename Source>
         requires(!details::scalar_variable<K> && scalar_source_for<K, Source>)
@@ -54,9 +54,7 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...> {
         return item(details::make_scalar_source<K>(value));
     }
 
-    bool item_modified(const Scalar<K> &key) const {
-        return item_modified(static_cast<const details::ScalarData &>(key));
-    }
+    bool item_modified(const Scalar<K> &key) const { return item_modified(details::scalar_data(key)); }
 
     template <typename Source>
         requires(!details::scalar_variable<K> && scalar_source_for<K, Source>)
@@ -66,7 +64,7 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...> {
     }
 
     template <typename Function> void for_each_key(Function &&function) const {
-        for_each_live_id([&](TimeSeriesItemId id) { std::invoke(function, make_key(id)); });
+        for_each_live_id([&](item_id_t id) { std::invoke(function, make_key(id)); });
     }
 
     template <typename Function> void for_each_id(Function &&function) const {
@@ -74,15 +72,15 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...> {
     }
 
     template <typename Function> void for_each_value(Function &&function) const {
-        for_each_live_id([&](TimeSeriesItemId id) { std::invoke(function, make_item(id)); });
+        for_each_live_id([&](item_id_t id) { std::invoke(function, make_item(id)); });
     }
 
     template <typename Function> void for_each_key_value(Function &&function) const {
-        for_each_live_id([&](TimeSeriesItemId id) { std::invoke(function, make_key(id), make_item(id)); });
+        for_each_live_id([&](item_id_t id) { std::invoke(function, make_key(id), make_item(id)); });
     }
 
     template <typename Function> void for_each_id_value(Function &&function) const {
-        for_each_live_id([&](TimeSeriesItemId id) { std::invoke(function, id, make_item(id)); });
+        for_each_live_id([&](item_id_t id) { std::invoke(function, id, make_item(id)); });
     }
 
     template <typename Function> void for_each(Function &&function) const {
@@ -151,7 +149,7 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...> {
         return {item.last_updated, item.value, item.runtime_type};
     }
 
-    Scalar<K> make_key(TimeSeriesItemId id) const {
+    Scalar<K> make_key(item_id_t id) const {
         return Scalar<K>::from(key_runtime_type(), dictionary_runtime_type().key(data_.data(), id));
     }
 
@@ -164,7 +162,7 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...> {
                dictionary_runtime_type().item_modified(last_updated(), data_.data(), id);
     }
 
-    template <typename Function> static void invoke_with_id(void *context, TimeSeriesItemId id) {
+    template <typename Function> static void invoke_with_id(void *context, item_id_t id) {
         std::invoke(*static_cast<Function *>(context), id);
     }
 
@@ -181,7 +179,7 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...> {
         const EvaluationTime &, const void *, void *, TimeSeriesRuntimeType::ItemIdFunction) const;
 
     template <typename Function> void apply_changes(ChangeFunction changes, Function &function) const {
-        auto callback = [&](TimeSeriesItemId id) { std::invoke(function, make_key(id)); };
+        auto callback = [&](item_id_t id) { std::invoke(function, make_key(id)); };
         (dictionary_runtime_type().*changes)(last_updated(), data_.data(), &callback,
                                              invoke_with_id<decltype(callback)>);
     }

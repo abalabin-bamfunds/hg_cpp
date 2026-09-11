@@ -52,11 +52,11 @@ struct DynamicCallbackSubscriber {
 };
 
 struct DynamicObserver {
-    DynamicObserver(RuntimeGraph &target_graph, void *target, DynamicObserverFunction function) noexcept
-        : graph{&target_graph}, target{target}, function{function} {}
+    DynamicObserver(RuntimeGraph &receiving_graph, void *receiver, DynamicObserverFunction function) noexcept
+        : graph{&receiving_graph}, receiver{receiver}, function{function} {}
 
     RuntimeGraph *graph;
-    void *target;
+    void *receiver;
     DynamicObserverFunction function;
 };
 
@@ -126,17 +126,17 @@ struct DynamicSubscribers {
         }
     }
 
-    void add_observer(RuntimeGraph &graph, void *target, DynamicObserverFunction function) {
-        observer_records().records.emplace_back(graph, target, function);
+    void add_observer(RuntimeGraph &graph, void *receiver, DynamicObserverFunction function) {
+        observer_records().records.emplace_back(graph, receiver, function);
     }
 
-    void remove_observer(RuntimeGraph &graph, const void *target) noexcept {
+    void remove_observer(RuntimeGraph &graph, const void *receiver) noexcept {
         if (observer_records_ == nullptr) {
             return;
         }
 
         const auto record = std::ranges::find_if(observer_records_->records, [&](const auto &candidate) {
-            return candidate.graph == &graph && candidate.target == target;
+            return candidate.graph == &graph && candidate.receiver == receiver;
         });
         if (record != observer_records_->records.end()) {
             *record = observer_records_->records.back();

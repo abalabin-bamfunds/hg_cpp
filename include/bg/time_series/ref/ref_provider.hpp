@@ -18,7 +18,7 @@ namespace details {
 
 class ReferenceItemNotificationLinks;
 
-using ReferenceItemNotifyFunction = void (*)(OutputChangeContext &, void *, TimeSeriesItemId, OutputChange);
+using ReferenceItemNotifyFunction = void (*)(OutputChangeContext &, void *, item_id_t, OutputChange);
 using ReferenceItemPublishFunction = void (*)(OutputChangeContext &, void *);
 
 class ReferenceProviderComponent {
@@ -44,60 +44,65 @@ static_assert(sizeof(ReferenceProviderComponent) == 2 * sizeof(void *));
 
 class ReferenceRepresentation {
   public:
-    explicit ReferenceRepresentation(ReferenceAddress input) noexcept : input_{input} {}
+    explicit ReferenceRepresentation(Reference base_reference) noexcept : base_reference_{base_reference} {}
     virtual ~ReferenceRepresentation();
 
-    ReferenceAddress input() const noexcept { return input_; }
-    ReferenceAddress address() noexcept { return &address_; }
-    virtual ReferenceTarget target() const = 0;
+    Reference base_reference() const noexcept { return base_reference_; }
+    Reference reference() noexcept { return &reference_; }
+    virtual ResolvedTimeSeries resolve() const = 0;
     virtual void notify(OutputChangeContext &context, OutputChange change) = 0;
     virtual void destroy(std::pmr::memory_resource &memory) noexcept = 0;
 
   private:
     friend class ReferenceProvider;
 
-    void bind(std::uint32_t index) noexcept { address_.bind_representation(input_, index); }
+    void bind(std::uint32_t index) noexcept { reference_ = RepresentationReference{base_reference_, index}; }
 
-    ReferenceAddress input_;
-    ReferenceRoute address_;
+    Reference base_reference_;
+    RepresentationReference reference_;
 };
 
 class ReferenceProvider {
   public:
-    ReferenceProvider(std::pmr::memory_resource &memory, ReferenceRoot &root, DynamicSubscribers *root_subscribers);
+    ReferenceProvider(std::pmr::memory_resource &memory, RootReference &root, DynamicSubscribers *root_subscribers);
     ~ReferenceProvider();
 
     ReferenceProvider(const ReferenceProvider &) = delete;
     ReferenceProvider &operator=(const ReferenceProvider &) = delete;
 
-    RuntimeGraph &owner() const noexcept { return *root_->graph; }
+    RuntimeGraph &owner() const noexcept { return *root_->owner_graph; }
     std::pmr::memory_resource &memory() const noexcept { return *memory_; }
-    ReferenceTarget representation_target(std::uint32_t index) const;
-    void add_root_subscriber(RuntimeGraph &graph, std::uint32_t input_offset, std::size_t data,
+    ResolvedTimeSeries resolve_representation(std::uint32_t index) const;
+    void add_root_subscriber(RuntimeGraph &graph, std::uint32_t input_offset, std::size_t callback_data,
                              std::uint32_t node_index, bool active, bool required,
                              InputChangeFunction callback = nullptr);
-    void add_root_observer(RuntimeGraph &graph, void *target, DynamicObserverFunction function);
+    void add_root_observer(RuntimeGraph &graph, void *receiver, DynamicObserverFunction function);
     void remove_root_subscriber(RuntimeGraph &graph, std::size_t input_offset) noexcept;
-    void remove_root_observer(RuntimeGraph &graph, const void *target) noexcept;
+    void remove_root_observer(RuntimeGraph &graph, const void *receiver) noexcept;
     void notify_root(OutputChangeContext &context, OutputChange change);
-    void add_subscriber(ReferenceRoute &route, RuntimeGraph &graph, std::uint32_t input_offset, std::size_t data,
-                        std::uint32_t node_index, bool active, bool required, InputChangeFunction callback = nullptr);
-    void add_observer(ReferenceRoute &route, RuntimeGraph &graph, void *target, DynamicObserverFunction function);
-    void remove_subscriber(ReferenceRoute &route, RuntimeGraph &graph, std::size_t input_offset) noexcept;
-    void remove_observer(ReferenceRoute &route, RuntimeGraph &graph, const void *target) noexcept;
-    void notify(ReferenceRoute &route, OutputChangeContext &context, OutputChange change);
+    void add_subscriber(ReferenceSubscriptionDetail &subscriptions, RuntimeGraph &graph, std::uint32_t input_offset,
+                        std::size_t callback_data, std::uint32_t node_index, bool active, bool required,
+                        InputChangeFunction callback = nullptr);
+    void add_observer(ReferenceSubscriptionDetail &subscriptions, RuntimeGraph &graph, void *receiver,
+                      DynamicObserverFunction function);
+    void remove_subscriber(ReferenceSubscriptionDetail &subscriptions, RuntimeGraph &graph,
+                           std::size_t input_offset) noexcept;
+    void remove_observer(ReferenceSubscriptionDetail &subscriptions, RuntimeGraph &graph,
+                         const void *receiver) noexcept;
+    void notify(ReferenceSubscriptionDetail &subscriptions, OutputChangeContext &context, OutputChange change);
     void begin_item_notification_batch() noexcept;
     void cancel_item_notification_batch() noexcept;
     void publish_item_notification_batch(OutputChangeContext &context);
-    void add_item_notification_link(ReferenceRoute *route, RuntimeGraph &graph, void *target, TimeSeriesItemId item,
-                                    ReferenceItemNotifyFunction notify_function,
+    void add_item_notification_link(Reference reference, RuntimeGraph &graph, void *receiver,
+                                    item_id_t receiver_item_id, ReferenceItemNotifyFunction notify_function,
                                     ReferenceItemPublishFunction publish_function);
-    void remove_item_notification_link(ReferenceRoute *route, RuntimeGraph &graph, const void *target,
-                                       TimeSeriesItemId item, ReferenceItemNotifyFunction notify_function) noexcept;
-    void add_cycle_callback(void *target, void (*function)(void *) noexcept);
-    void remove_cycle_callback(const void *target) noexcept;
-    bool release_route(ReferenceRoute &route) noexcept;
-    [[nodiscard]] ReferenceAddress representation(ReferenceAddress input, const TimeSeriesType &requested_type);
+    void remove_item_notification_link(Reference reference, RuntimeGraph &graph, const void *receiver,
+                                       item_id_t receiver_item_id,
+                                       ReferenceItemNotifyFunction notify_function) noexcept;
+    void add_cycle_callback(void *receiver, void (*function)(void *) noexcept);
+    void remove_cycle_callback(const void *receiver) noexcept;
+    bool release_item_reference(ItemReference &reference) noexcept;
+    [[nodiscard]] Reference representation(Reference base_reference, const TimeSeriesType &requested_type);
     void add_component(ReferenceProviderComponent &component) noexcept;
 
     template <typename Component> Component *component() noexcept {
@@ -112,30 +117,29 @@ class ReferenceProvider {
 
   private:
     std::pmr::memory_resource *memory_;
-    ReferenceRoot *root_;
+    RootReference *root_;
     std::pmr::vector<ReferenceRepresentation *> representations_;
     std::pmr::vector<DynamicSubscribers *> subscriber_groups_;
     ReferenceProviderComponent *components_{};
     ReferenceItemNotificationLinks *item_notification_links_{};
 };
 
-[[nodiscard]] ReferenceAddress reference_representation(ReferenceAddress input, const TimeSeriesType &requested_type);
-ReferenceProvider &require_reference_provider(ReferenceAddress address);
-void add_reference_subscriber(ReferenceAddress address, RuntimeGraph &graph, std::uint32_t input_offset,
-                              std::size_t data, std::uint32_t node_index, bool active, bool required,
+[[nodiscard]] Reference reference_representation(Reference reference, const TimeSeriesType &requested_type);
+ReferenceProvider &require_reference_provider(Reference reference);
+void add_reference_subscriber(Reference reference, RuntimeGraph &graph, std::uint32_t input_offset,
+                              std::size_t callback_data, std::uint32_t node_index, bool active, bool required,
                               InputChangeFunction callback = nullptr);
-void add_reference_observer(ReferenceAddress address, RuntimeGraph &graph, void *target,
-                            DynamicObserverFunction function);
-void remove_reference_subscriber(ReferenceAddress address, RuntimeGraph &graph, std::size_t input_offset) noexcept;
-void remove_reference_observer(ReferenceAddress address, RuntimeGraph &graph, const void *target) noexcept;
-void notify_reference(ReferenceAddress address, OutputChangeContext &context, OutputChange change);
-void add_reference_item_notification_link(ReferenceAddress address, RuntimeGraph &graph, void *target,
-                                          TimeSeriesItemId item, ReferenceItemNotifyFunction notify_function,
+void add_reference_observer(Reference reference, RuntimeGraph &graph, void *receiver, DynamicObserverFunction function);
+void remove_reference_subscriber(Reference reference, RuntimeGraph &graph, std::size_t input_offset) noexcept;
+void remove_reference_observer(Reference reference, RuntimeGraph &graph, const void *receiver) noexcept;
+void notify_reference(Reference reference, OutputChangeContext &context, OutputChange change);
+void add_reference_item_notification_link(Reference reference, RuntimeGraph &graph, void *receiver,
+                                          item_id_t receiver_item_id, ReferenceItemNotifyFunction notify_function,
                                           ReferenceItemPublishFunction publish_function);
-void remove_reference_item_notification_link(ReferenceAddress address, RuntimeGraph &graph, const void *target,
-                                             TimeSeriesItemId item,
+void remove_reference_item_notification_link(Reference reference, RuntimeGraph &graph, const void *receiver,
+                                             item_id_t receiver_item_id,
                                              ReferenceItemNotifyFunction notify_function) noexcept;
-void destroy_reference_root(ReferenceRoot &root, std::pmr::memory_resource &memory) noexcept;
+void destroy_root_reference(RootReference &root, std::pmr::memory_resource &memory) noexcept;
 
 } // namespace details
 } // namespace bg

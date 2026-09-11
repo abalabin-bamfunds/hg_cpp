@@ -23,7 +23,17 @@ class ScalarListRuntimeType : public ScalarRuntimeType {
     virtual void *item(void *storage, std::size_t index) const noexcept = 0;
 
     virtual void append(void *storage, const details::ScalarData &value, std::pmr::memory_resource &memory) const = 0;
+    template <typename Value>
+        requires requires(const Value &value) { details::scalar_data(value); }
+    void append(void *storage, const Value &value, std::pmr::memory_resource &memory) const {
+        append(storage, details::scalar_data(value), memory);
+    }
     virtual void set(void *storage, std::size_t index, const details::ScalarData &value) const = 0;
+    template <typename Value>
+        requires requires(const Value &value) { details::scalar_data(value); }
+    void set(void *storage, std::size_t index, const Value &value) const {
+        set(storage, index, details::scalar_data(value));
+    }
     virtual void erase(void *storage, std::size_t index, std::pmr::memory_resource &memory) const = 0;
     virtual void clear(void *storage, std::pmr::memory_resource &memory) const noexcept = 0;
 

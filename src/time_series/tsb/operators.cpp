@@ -19,7 +19,7 @@ namespace {
 
 class TimeSeriesBundleFieldWiringRecord final : public WiringRecord {
   public:
-    TimeSeriesBundleFieldWiringRecord(WiringPoint bundle, TimeSeriesItemId field, const TimeSeriesType &type)
+    TimeSeriesBundleFieldWiringRecord(WiringPoint bundle, item_id_t field, const TimeSeriesType &type)
         : WiringRecord{type}, bundle_{bundle}, field_{field} {}
 
   private:
@@ -30,7 +30,7 @@ class TimeSeriesBundleFieldWiringRecord final : public WiringRecord {
     }
 
     WiringPoint bundle_;
-    TimeSeriesItemId field_;
+    item_id_t field_;
 };
 
 const TimeSeriesBundleType &bundle_type(const Type &type) {

@@ -45,8 +45,8 @@ template <typename K, auto... Properties> class Out<TSS<K, Properties...>> {
 
     bool valid() const noexcept { return state_->valid(); }
     EvaluationTime last_updated() const noexcept { return state_->last_updated(); }
-    bool insert(const Scalar<K> &item) const { return insert(static_cast<const details::ScalarData &>(item)); }
-    bool erase(const Scalar<K> &item) const { return erase(static_cast<const details::ScalarData &>(item)); }
+    bool insert(const Scalar<K> &item) const { return insert(details::scalar_data(item)); }
+    bool erase(const Scalar<K> &item) const { return erase(details::scalar_data(item)); }
 
     template <typename Source>
         requires(!details::scalar_variable<K> && scalar_source_for<K, Source>)

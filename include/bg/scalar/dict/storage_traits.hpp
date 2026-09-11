@@ -64,8 +64,7 @@ template <typename K, typename V> struct scalar_storage_traits<Dict<K, V>> {
                 [&](auto *stored) noexcept { KeyTraits::destroy(stored, memory); },
                 [&](auto *stored) {
                     if constexpr (scalar_view_source_for<decltype(item), V>) {
-                        static_cast<const ScalarData &>(item).copy_construct(stored, cpp_scalar_runtime_type<V>(),
-                                                                             memory);
+                        scalar_data(item).copy_construct(stored, cpp_scalar_runtime_type<V>(), memory);
                     } else {
                         ValueTraits::construct(stored, item, memory);
                     }

@@ -11,18 +11,21 @@
 
 namespace bg {
 
+template <typename T> class Scalar;
+template <typename T> class ScalarValue;
+
 namespace details {
 class ScalarData;
 enum class ScalarDataMode : std::uintptr_t;
+template <typename T> const ScalarData &scalar_data(const Scalar<T> &value) noexcept;
+template <typename T> const ScalarData &scalar_data(const ScalarValue<T> &value) noexcept;
 } // namespace details
 
 class ScalarRuntimeType : public RuntimeType {
   public:
     ~ScalarRuntimeType() override;
 
-    const ScalarType &type() const noexcept {
-        return static_cast<const ScalarType &>(RuntimeType::type());
-    }
+    const ScalarType &type() const noexcept { return static_cast<const ScalarType &>(RuntimeType::type()); }
     [[nodiscard]] virtual bool copy_inline(details::ScalarDataMode, std::uintptr_t, std::uintptr_t &) const noexcept {
         return false;
     }
@@ -31,8 +34,7 @@ class ScalarRuntimeType : public RuntimeType {
     virtual std::size_t hash(details::ScalarDataMode, std::uintptr_t data) const noexcept {
         return hash(reinterpret_cast<const void *>(data));
     }
-    virtual bool equals(details::ScalarDataMode, std::uintptr_t data,
-                                      const details::ScalarData &other) const noexcept {
+    virtual bool equals(details::ScalarDataMode, std::uintptr_t data, const details::ScalarData &other) const noexcept {
         return equals(reinterpret_cast<const void *>(data), other);
     }
 
@@ -40,12 +42,8 @@ class ScalarRuntimeType : public RuntimeType {
     std::size_t alignment() const noexcept { return storage_alignment(); }
     bool uses_variable_memory() const noexcept { return storage_uses_variable_memory(); }
     bool requires_finalization() const noexcept { return storage_requires_finalization(); }
-    bool requires_destruction() const noexcept {
-        return uses_variable_memory() || requires_finalization();
-    }
-    bool supports_byte_copy_initialization() const noexcept {
-        return storage_supports_byte_copy_initialization();
-    }
+    bool requires_destruction() const noexcept { return uses_variable_memory() || requires_finalization(); }
+    bool supports_byte_copy_initialization() const noexcept { return storage_supports_byte_copy_initialization(); }
     virtual void construct_initial_value(void *destination) const noexcept = 0;
     virtual void construct_runtime_value(void *destination, std::pmr::memory_resource &) const {
         construct_initial_value(destination);
@@ -53,11 +51,26 @@ class ScalarRuntimeType : public RuntimeType {
     virtual void construct_from_value(void *, const void *, std::pmr::memory_resource &) const { std::terminate(); }
     virtual void construct_from_input(void *destination, const details::ScalarData &value,
                                       std::pmr::memory_resource &memory) const = 0;
+    template <typename Value>
+        requires requires(const Value &value) { details::scalar_data(value); }
+    void construct_from_input(void *destination, const Value &value, std::pmr::memory_resource &memory) const {
+        construct_from_input(destination, details::scalar_data(value), memory);
+    }
     virtual void copy_construct(void *destination, const void *source, std::pmr::memory_resource &memory) const = 0;
     virtual void assign_from_value(void *, const void *) const { std::terminate(); }
     virtual void assign_from_input(void *destination, const details::ScalarData &value) const = 0;
+    template <typename Value>
+        requires requires(const Value &value) { details::scalar_data(value); }
+    void assign_from_input(void *destination, const Value &value) const {
+        assign_from_input(destination, details::scalar_data(value));
+    }
     virtual std::size_t hash(const void *value) const noexcept = 0;
     bool equals(const void *value, const details::ScalarData &other) const noexcept;
+    template <typename Value>
+        requires requires(const Value &value) { details::scalar_data(value); }
+    bool equals(const void *value, const Value &other) const noexcept {
+        return equals(value, details::scalar_data(other));
+    }
     virtual void destroy(void *value, std::pmr::memory_resource &memory) const noexcept = 0;
 
   protected:

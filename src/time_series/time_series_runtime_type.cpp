@@ -70,7 +70,7 @@ struct ValueRuntimeTypeKeyHash {
 
 } // namespace
 
-TimeSeriesRuntimeType::ItemLayout TimeSeriesRuntimeType::item_layout(TimeSeriesItemId) const {
+TimeSeriesRuntimeType::ItemLayout TimeSeriesRuntimeType::item_layout(item_id_t) const {
     throw std::out_of_range{"time series has no packed item layout"};
 }
 
@@ -84,7 +84,7 @@ void TimeSeriesRuntimeType::invalidate_output_value(const details::OutputState &
 
 void TimeSeriesRuntimeType::invalidate_output_items(const details::OutputState &output) {
     auto *context = const_cast<details::OutputState *>(&output);
-    output.runtime_type().for_each_item_id(output.data(), context, [](void *context, TimeSeriesItemId id) {
+    output.runtime_type().for_each_item_id(output.data(), context, [](void *context, item_id_t id) {
         const auto &output = *static_cast<const details::OutputState *>(context);
         auto *bytes = static_cast<std::byte *>(output.mutable_data());
         const auto field = output.runtime_type().item_layout(id);
@@ -101,28 +101,28 @@ std::size_t TimeSeriesRuntimeType::item_count(const void *) const {
     return 0;
 }
 
-TimeSeriesRuntimeType::ConstItem TimeSeriesRuntimeType::item(const void *, TimeSeriesItemId) const {
+TimeSeriesRuntimeType::ConstItem TimeSeriesRuntimeType::item(const void *, item_id_t) const {
     throw std::out_of_range{"time series has no items"};
 }
 
-TimeSeriesRuntimeType::MutableItem TimeSeriesRuntimeType::item(void *, TimeSeriesItemId) const {
+TimeSeriesRuntimeType::MutableItem TimeSeriesRuntimeType::item(void *, item_id_t) const {
     throw std::out_of_range{"time series has no mutable items"};
 }
 
 void TimeSeriesRuntimeType::for_each_item_id(const void *, void *, ItemIdFunction) const {}
 
-bool TimeSeriesRuntimeType::item_updated(const EvaluationTime &, const void *, TimeSeriesItemId) const noexcept {
+bool TimeSeriesRuntimeType::item_updated(const EvaluationTime &, const void *, item_id_t) const noexcept {
     return false;
 }
 
 void TimeSeriesRuntimeType::for_each_updated_item(const EvaluationTime &, const void *, void *, ItemIdFunction) const {}
 
-details::ReferenceAddress TimeSeriesRuntimeType::reference_address(const void *) const {
+Reference TimeSeriesRuntimeType::reference(const void *) const {
     throw std::logic_error{"time series does not contain a reference address"};
 }
 
 details::ReferenceRepresentation *
-TimeSeriesRuntimeType::create_reference_representation(details::ReferenceProvider &, details::ReferenceAddress,
+TimeSeriesRuntimeType::create_reference_representation(details::ReferenceProvider &, Reference,
                                                        const TimeSeriesType &, std::pmr::memory_resource &) const {
     throw std::invalid_argument{"the requested time series representation is not implemented"};
 }

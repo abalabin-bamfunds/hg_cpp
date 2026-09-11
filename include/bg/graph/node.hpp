@@ -1,6 +1,7 @@
 #pragma once
 
 #include <bg/graph/compiled_node.hpp>
+#include <bg/time_series/ref/ref_input_storage.hpp>
 #include <bg/time_series/ref/ref_storage.hpp>
 #include <bg/time_series/time_series_input.hpp>
 
@@ -24,24 +25,24 @@ class Node {
 
     const EvaluationTime &input_last_updated(std::size_t parameter_index) const noexcept {
         const auto &binding = compiled_node_->parameters()[parameter_index];
-        const auto &source_last_updated =
+        const auto &wired_last_updated =
             *reinterpret_cast<const EvaluationTime *>(runtime_storage_ + binding.last_updated_offset());
         if (binding.mode() != ParameterBindingMode::reference) {
-            return source_last_updated;
+            return wired_last_updated;
         }
 
-        const auto target = reference_input(parameter_index).target;
-        if (!target) {
+        const auto reference = reference_input(parameter_index).value;
+        if (!reference) {
             return MIN_DT;
         }
 
-        const auto resolved = details::reference_target(target);
-        const auto &target_last_updated = *resolved.last_updated;
-        if (target_last_updated <= MIN_DT) {
-            return target_last_updated;
+        const auto resolved = details::resolve_reference(reference);
+        const auto &referenced_last_updated = *resolved.last_updated;
+        if (referenced_last_updated <= MIN_DT) {
+            return referenced_last_updated;
         }
 
-        return source_last_updated > target_last_updated ? source_last_updated : target_last_updated;
+        return wired_last_updated > referenced_last_updated ? wired_last_updated : referenced_last_updated;
     }
 
     const void *input_value(std::size_t parameter_index) const noexcept {
@@ -50,17 +51,17 @@ class Node {
             return runtime_storage_ + binding.value_offset();
         }
 
-        const auto target = reference_input(parameter_index).target;
-        return target ? details::reference_target(target).value : nullptr;
+        const auto reference = reference_input(parameter_index).value;
+        return reference ? details::resolve_reference(reference).storage : nullptr;
     }
 
-    const TimeSeriesRuntimeType &
-    time_series_input_runtime_type(std::size_t parameter_index, std::size_t runtime_type_index) const noexcept {
+    const TimeSeriesRuntimeType &time_series_input_runtime_type(std::size_t parameter_index,
+                                                                std::size_t runtime_type_index) const noexcept {
         const auto &binding = compiled_node_->parameters()[parameter_index];
         if (binding.mode() == ParameterBindingMode::reference) {
-            const auto target = reference_input(parameter_index).target;
-            if (target) {
-                return *details::reference_target(target).runtime_type;
+            const auto reference = reference_input(parameter_index).value;
+            if (reference) {
+                return *details::resolve_reference(reference).runtime_type;
             }
         }
 
@@ -72,9 +73,9 @@ class Node {
                 time_series_input_runtime_type(parameter_index, runtime_type_index)};
     }
 
-    details::ReferenceInputStorage &reference_input(std::size_t parameter_index) const noexcept {
+    ReferenceInputStorage &reference_input(std::size_t parameter_index) const noexcept {
         const auto offset = compiled_node_->parameters()[parameter_index].value_offset();
-        return *reinterpret_cast<details::ReferenceInputStorage *>(runtime_storage_ + offset);
+        return *reinterpret_cast<ReferenceInputStorage *>(runtime_storage_ + offset);
     }
 
     EvaluationTime &output_last_updated() const noexcept {

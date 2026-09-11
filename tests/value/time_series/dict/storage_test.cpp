@@ -41,12 +41,12 @@ TEST_CASE("dictionary runtime items use stable sparse IDs",
     *static_cast<int *>(item.value) = 42;
     REQUIRE(storage.mark_item_modified(inserted.position, update_time, memory));
 
-    auto ids = std::vector<bg::TimeSeriesItemId>{};
-    runtime_type.for_each_item_id(value, &ids, [](void *context, bg::TimeSeriesItemId id) {
-        static_cast<std::vector<bg::TimeSeriesItemId> *>(context)->push_back(id);
+    auto ids = std::vector<bg::item_id_t>{};
+    runtime_type.for_each_item_id(value, &ids, [](void *context, bg::item_id_t id) {
+        static_cast<std::vector<bg::item_id_t> *>(context)->push_back(id);
     });
     CHECK(runtime_type.item_count(value) == 1);
-    CHECK(ids == std::vector<bg::TimeSeriesItemId>{inserted.position});
+    CHECK(ids == std::vector<bg::item_id_t>{inserted.position});
 
     const auto const_item = runtime_type.item(static_cast<const void *>(value), inserted.position);
     CHECK(&const_item.runtime_type == &item_runtime_type);
@@ -57,11 +57,11 @@ TEST_CASE("dictionary runtime items use stable sparse IDs",
     CHECK(key_set.last_updated == update_time);
     CHECK(key_set.value == &storage.key_storage().value);
 
-    auto updated = std::vector<bg::TimeSeriesItemId>{};
-    runtime_type.for_each_updated_item(update_time, value, &updated, [](void *context, bg::TimeSeriesItemId id) {
-        static_cast<std::vector<bg::TimeSeriesItemId> *>(context)->push_back(id);
+    auto updated = std::vector<bg::item_id_t>{};
+    runtime_type.for_each_updated_item(update_time, value, &updated, [](void *context, bg::item_id_t id) {
+        static_cast<std::vector<bg::item_id_t> *>(context)->push_back(id);
     });
-    CHECK(updated == std::vector<bg::TimeSeriesItemId>{bg::key_set_item_id, inserted.position});
+    CHECK(updated == std::vector<bg::item_id_t>{bg::key_set_item_id, inserted.position});
 
     runtime_type.destroy_value(value, memory);
 }

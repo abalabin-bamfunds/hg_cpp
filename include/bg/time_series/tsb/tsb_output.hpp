@@ -19,7 +19,7 @@ class bundle_output_factory {
     explicit bundle_output_factory(const OutputState &state) noexcept : state_{&state} {}
 
     template <typename Item> [[nodiscard]] Out<Item> make(std::size_t index) const {
-        const auto id = static_cast<TimeSeriesItemId>(index);
+        const auto id = static_cast<item_id_t>(index);
         const auto item = state_->runtime_type().item(state_->mutable_data(), id);
         auto *path = state_->add_path(state_->runtime_type(), id);
         return output_factory::make<Item>(item.last_updated, item.value, item.runtime_type, path);
@@ -116,7 +116,7 @@ class Out<TSB<Schema, Properties...>> {
         return static_cast<const TimeSeriesBundleType &>(state_->runtime_type().type()).item_name(index);
     }
     Out<TS_T> operator[](std::size_t index) const {
-        const auto id = static_cast<TimeSeriesItemId>(index);
+        const auto id = static_cast<item_id_t>(index);
         const auto item = state_->runtime_type().item(state_->mutable_data(), id);
         auto *path = state_->add_path(state_->runtime_type(), id);
         return details::output_factory::make<TS_T>(item.last_updated, item.value, item.runtime_type, path);

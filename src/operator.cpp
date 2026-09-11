@@ -148,7 +148,7 @@ std::optional<Scalar<>> scalar(std::span<const details::wiring_argument> argumen
     }
 
     if (const auto *view = argument.scalar_view()) {
-        return Scalar<>::from(*view);
+        return Scalar<>::from(view->runtime_type(), view->data());
     }
 
     return Scalar<>::from(argument.scalar_runtime_type(), argument.scalar_data());

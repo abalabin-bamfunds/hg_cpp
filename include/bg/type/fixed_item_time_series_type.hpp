@@ -11,8 +11,8 @@ class FixedItemTimeSeriesType : public TimeSeriesType {
   public:
     virtual std::size_t item_count() const noexcept = 0;
     virtual const TimeSeriesType &item_type(std::size_t index) const = 0;
-    virtual TimeSeriesItemId item_id(std::size_t index) const noexcept {
-        return static_cast<TimeSeriesItemId>(index);
+    virtual item_id_t item_id(std::size_t index) const noexcept {
+        return static_cast<item_id_t>(index);
     }
 
   protected:

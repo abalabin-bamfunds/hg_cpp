@@ -12,8 +12,10 @@ class TimeSeriesRuntimeType;
 
 namespace details {
 
+class OutputPath;
+
 [[nodiscard]] void *add_output_path(EvaluationContext &context, const TimeSeriesRuntimeType &runtime_type,
-                                    EvaluationTime &last_updated, void *value, TimeSeriesItemId id, void *parent);
+                                    EvaluationTime &last_updated, void *value, item_id_t id, void *parent);
 EvaluationContext &output_path_context(void *path) noexcept;
 void publish_output_path(void *path) noexcept;
 void release_output_path(void *path) noexcept;
