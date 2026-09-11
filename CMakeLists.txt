@@ -97,7 +97,7 @@ add_library(
 add_library(bg::bg ALIAS bg)
 
 target_compile_features(bg PUBLIC cxx_std_23)
-target_compile_definitions(bg PRIVATE BG_VERSION="${PROJECT_VERSION}")
+target_compile_definitions(bg PRIVATE BG_BUILDING_ENGINE BG_VERSION="${PROJECT_VERSION}")
 target_link_libraries(bg PUBLIC ddv::ddvisitor PRIVATE Threads::Threads)
 target_include_directories(
     bg

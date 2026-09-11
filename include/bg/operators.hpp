@@ -1,5 +1,6 @@
 #pragma once
 
+#include <bg/export.hpp>
 #include <bg/operator.hpp>
 #include <bg/time_series/time_series_type.hpp>
 #include <bg/time_series/time_series_variable.hpp>
@@ -14,8 +15,8 @@ using COLLECTION = TimeSeriesVariable<"COLLECTION">;
 using ITEM = TimeSeriesVariable<"ITEM">;
 using K = ScalarVariable<"K", Hashable>;
 
-extern operator_<auto(COLLECTION, Union<K, TS<K>>) -> ITEM> getitem;
-extern operator_<auto(TSB<SCHEMA>, util::symbol) -> ITEM> getattr;
+extern BG_EXPORT operator_<auto(COLLECTION, Union<K, TS<K>>) -> ITEM> getitem;
+extern BG_EXPORT operator_<auto(TSB<SCHEMA>, util::symbol) -> ITEM> getattr;
 
 } // namespace bg::operators
 

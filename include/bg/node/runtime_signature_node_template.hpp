@@ -49,8 +49,6 @@ template <details::runtime_signature_node Definition> class RuntimeSignatureNode
     using Invocation = NodeInvocation<CompiledData, State>;
 
   public:
-    using NodeTemplate::operator();
-
     explicit RuntimeSignatureNodeTemplate(Definition definition) : definition_{std::move(definition)} {
         if constexpr (!std::is_void_v<CompiledData>) {
             static_assert(std::is_nothrow_destructible_v<CompiledData>);
@@ -92,6 +90,29 @@ template <details::runtime_signature_node Definition> class RuntimeSignatureNode
                  (details::graph_code_argument<Arguments> && ...))
     void operator()(const TypeMap &type_map, Arguments &&...arguments) const & {
         (void)NodeTemplate::operator()(type_map, std::forward<Arguments>(arguments)...);
+    }
+
+    template <typename... Arguments>
+        requires(!requires { typename Definition::output_time_series_type; } &&
+                 (details::graph_code_argument<Arguments> && ...))
+    [[nodiscard]] std::optional<WiringPoint> operator()(Arguments &&...arguments) const & {
+        return NodeTemplate::operator()(std::forward<Arguments>(arguments)...);
+    }
+
+    template <typename... Arguments>
+        requires(!requires { typename Definition::output_time_series_type; } &&
+                 (details::graph_code_argument<Arguments> && ...))
+    [[nodiscard]] std::optional<WiringPoint> operator()(const TypeMap &type_map, Arguments &&...arguments) const & {
+        return NodeTemplate::operator()(type_map, std::forward<Arguments>(arguments)...);
+    }
+
+    [[nodiscard]] std::optional<WiringPoint> operator()(std::span<const WiringPoint> arguments) const & {
+        return NodeTemplate::operator()(arguments);
+    }
+
+    [[nodiscard]] std::optional<WiringPoint> operator()(const TypeMap &type_map,
+                                                         std::span<const WiringPoint> arguments) const & {
+        return NodeTemplate::operator()(type_map, arguments);
     }
 
     template <typename... Arguments>
