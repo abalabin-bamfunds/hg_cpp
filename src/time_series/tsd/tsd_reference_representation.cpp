@@ -96,18 +96,18 @@ class TimeSeriesDictionaryReferenceRepresentation final : public ReferenceRepres
 
     void notify(OutputChangeContext &context, OutputChange change) override {
         release_retired(context.evaluation_time());
-        provider_->begin_item_notifications();
-        auto cancel_items = util::scope_exit{[&]() noexcept { provider_->cancel_item_notifications(); }};
+        provider_->begin_item_notification_batch();
+        auto cancel_items = util::scope_exit{[&]() noexcept { provider_->cancel_item_notification_batch(); }};
 
         if (change == OutputChange::invalidation) {
             invalidate(context);
-            provider_->publish_item_notifications(context);
+            provider_->publish_item_notification_batch(context);
             cancel_items.release();
             return;
         }
         if (last_updated_ <= MIN_DT) {
             revalidate(context);
-            provider_->publish_item_notifications(context);
+            provider_->publish_item_notification_batch(context);
             cancel_items.release();
             return;
         }
@@ -137,7 +137,7 @@ class TimeSeriesDictionaryReferenceRepresentation final : public ReferenceRepres
                                               });
 
         if (!input_runtime_type_->item_updated(input_time, input_target.value, key_set_item_id)) {
-            provider_->publish_item_notifications(context);
+            provider_->publish_item_notification_batch(context);
             cancel_items.release();
             return;
         }
@@ -145,7 +145,7 @@ class TimeSeriesDictionaryReferenceRepresentation final : public ReferenceRepres
         const auto was_valid = last_updated_ > MIN_DT;
         last_updated_ = context.evaluation_time();
         notify_reference(address(), context, was_valid ? OutputChange::update : OutputChange::revalidation);
-        provider_->publish_item_notifications(context);
+        provider_->publish_item_notification_batch(context);
         cancel_items.release();
     }
 
@@ -589,8 +589,8 @@ class DereferencedTimeSeriesDictionaryRepresentation final : public ReferenceRep
         sample_switch(id, target_value, sample_time, previous);
         targets_[id] = target;
         if (target) {
-            add_reference_item_subscriber(target, provider_->owner(), this, id, &target_changed_callback,
-                                          &publish_target_changes_callback);
+            add_reference_item_notification_link(target, provider_->owner(), this, id, &target_changed_callback,
+                                                 &publish_target_changes_callback);
         }
     }
 
@@ -642,7 +642,8 @@ class DereferencedTimeSeriesDictionaryRepresentation final : public ReferenceRep
 
     void unsubscribe(TimeSeriesItemId id) noexcept {
         if (id < targets_.size() && targets_[id]) {
-            remove_reference_item_subscriber(targets_[id], provider_->owner(), this, id, &target_changed_callback);
+            remove_reference_item_notification_link(targets_[id], provider_->owner(), this, id,
+                                                    &target_changed_callback);
         }
         if (id < targets_.size()) {
             targets_[id] = nullptr;

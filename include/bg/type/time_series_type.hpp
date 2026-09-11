@@ -15,6 +15,8 @@ class TimeSeriesType : public Type {
     const GuaranteeParameter &guarantee() const noexcept { return guarantee_; }
     [[nodiscard]] virtual const TimeSeriesType &with_guarantee(TimeSeriesGuarantee guarantee) const;
     virtual bool supports_invalidation() const noexcept { return true; }
+    virtual bool reference_changes_require_cycle_cleanup() const noexcept { return false; }
+    virtual bool requires_reference_representation_for(const TimeSeriesType &) const noexcept { return false; }
 
   protected:
     TimeSeriesType() = default;

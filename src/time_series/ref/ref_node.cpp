@@ -8,7 +8,6 @@
 #include <bg/node/node_template.hpp>
 #include <bg/time_series/ref/ref_provider.hpp>
 #include <bg/time_series/ref/ref_runtime_type.hpp>
-#include <bg/type/time_series_dict_type.hpp>
 #include <bg/type/time_series_reference_type.hpp>
 
 #include <algorithm>
@@ -22,7 +21,8 @@ namespace {
 class ReferenceNodeTemplate final : public NodeTemplate {
   public:
     ReferenceNodeTemplate(const TimeSeriesType &input_type, const TimeSeriesReferenceType &type)
-        : signature_{util::symbol{"reference"}, {{util::symbol{"target"}, &input_type, passive, optional}}, type} {}
+        : signature_{util::symbol{"reference"}, {{util::symbol{"target"}, &input_type, passive, optional}}, type},
+          uses_cycle_callbacks_{input_type.reference_changes_require_cycle_cleanup()} {}
 
     const Signature &signature() const override { return signature_; }
 
@@ -50,9 +50,7 @@ class ReferenceNodeTemplate final : public NodeTemplate {
 
     bool uses_time_series_input_runtime_type(std::size_t) const noexcept override { return true; }
 
-    bool uses_cycle_callbacks() const noexcept override {
-        return dynamic_cast<const TimeSeriesDictionaryType *>(signature_.parameter(0).type) != nullptr;
-    }
+    bool uses_cycle_callbacks() const noexcept override { return uses_cycle_callbacks_; }
 
     InputChangeCallback input_change_callback(std::size_t) const noexcept override { return {&notify_input, 0}; }
 
@@ -80,27 +78,10 @@ class ReferenceNodeTemplate final : public NodeTemplate {
     }
 
     Signature signature_;
+    bool uses_cycle_callbacks_;
 };
 
 } // namespace
-
-bool requires_reference_representation(const TimeSeriesType &parameter, const TimeSeriesType &argument) noexcept {
-    const auto *parameter_dictionary = dynamic_cast<const TimeSeriesDictionaryType *>(&parameter);
-    const auto *argument_dictionary = dynamic_cast<const TimeSeriesDictionaryType *>(&argument);
-    if (parameter_dictionary == nullptr || argument_dictionary == nullptr) {
-        return false;
-    }
-
-    const auto &parameter_item = parameter_dictionary->value_type();
-    const auto &argument_item = argument_dictionary->value_type();
-    const auto parameter_is_reference = dynamic_cast<const TimeSeriesReferenceType *>(&parameter_item) != nullptr;
-    const auto argument_is_reference = dynamic_cast<const TimeSeriesReferenceType *>(&argument_item) != nullptr;
-    if (parameter_is_reference != argument_is_reference) {
-        return true;
-    }
-
-    return requires_reference_representation(parameter_item, argument_item);
-}
 
 const NodeTemplate &reference_node_template(const TimeSeriesType &argument, const TimeSeriesReferenceType &type) {
     struct Entry {
@@ -138,7 +119,7 @@ WiringPoint materialize_reference(WiringPoint argument, const TimeSeriesType &re
         return *result;
     }
 
-    if (argument_reference == nullptr && requires_reference_representation(requested_type, argument.type())) {
+    if (argument_reference == nullptr && requested_type.requires_reference_representation_for(argument.type())) {
         const auto &reference_type = time_series_reference_type(requested_type, TimeSeriesGuarantee::const_);
         const auto result = reference_node_template(argument.type(), reference_type)(argument);
         if (!result) {

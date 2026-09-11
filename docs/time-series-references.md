@@ -104,11 +104,15 @@ The source runtime graph owns the created representations and subscriber
 groups. Ordinary subscriber records identify the destination runtime graph,
 node, and input slot.
 
-A source dictionary item route records the destination representation and item
-ID that use it. The first relationship is stored with the route. Fan-out uses
-root-owned overflow storage. A source dictionary batches changed routes, and
-each destination representation publishes once with its changed item IDs.
+A TSD item route records notification links to destination representations.
+Each link identifies the destination item ID. The first link is stored with the
+route. Fan-out uses root-owned overflow storage. A TSD batches changed routes,
+and each destination representation publishes once with its changed item IDs.
 Notification work is proportional to changed routes and their destinations.
+
+The reference provider owns generic addresses, subscriber groups, notification
+links, and type-specific components. TSD key subscriptions are implemented by
+a lazily created TSD component.
 
 An address notification schedules its dynamic subscribers directly. Subscriber
 records retain the destination graph. An observer callback uses that graph's
@@ -185,13 +189,13 @@ scheduling, and lifecycle.
 
 ## Dynamic collections
 
-Dictionary representations use the shared-key structure defined by the
+TSD representations use the shared-key structure defined by the
 [TSD layout](tsd-layout.md#shared-representations).
 
 When an item is first used through a reference, its route receives a subscriber
 group from the source provider. Item updates notify that route directly.
 
-A dictionary creates keyed subscription storage only when it is used. A
+A TSD creates keyed subscription storage only when it is used. A
 subscription retains the key's sparse item ID, creating a non-live key when the
 key is absent. Notification processing uses changed item IDs directly. The key
 set reclaims an unretained non-live ID after the outer cycle in which it was

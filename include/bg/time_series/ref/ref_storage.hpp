@@ -18,7 +18,7 @@ namespace details {
 
 struct DynamicSubscribers;
 class ReferenceProvider;
-class ReferenceItemSubscribers;
+class ReferenceItemNotificationLinks;
 struct ReferenceInputStorage;
 struct ReferenceRoot;
 struct ReferenceRoute;
@@ -58,8 +58,8 @@ struct ReferenceRoute {
     ReferenceAddress parent;
     std::uint32_t target{};
     std::uint32_t subscriber_group{};
-    std::uint32_t item_subscriber{};
-    TimeSeriesItemId subscriber_item{};
+    std::uint32_t item_notification_link{};
+    TimeSeriesItemId notification_item{};
 
   private:
     static constexpr auto representation_flag = std::uint32_t{1} << 31;

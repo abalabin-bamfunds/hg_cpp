@@ -6,6 +6,7 @@
 
 #include <cstdint>
 #include <memory_resource>
+#include <type_traits>
 #include <vector>
 
 namespace bg {
@@ -15,35 +16,31 @@ class TimeSeriesType;
 
 namespace details {
 
-class ScalarData;
-class DictionaryObservers;
-class ReferenceItemSubscribers;
+class ReferenceItemNotificationLinks;
 
-using ReferenceItemChangeFunction = void (*)(OutputChangeContext &, void *, TimeSeriesItemId, OutputChange);
+using ReferenceItemNotifyFunction = void (*)(OutputChangeContext &, void *, TimeSeriesItemId, OutputChange);
 using ReferenceItemPublishFunction = void (*)(OutputChangeContext &, void *);
 
-class DictionaryKeySubscription {
+class ReferenceProviderComponent {
   public:
-    DictionaryKeySubscription() = default;
+    virtual ~ReferenceProviderComponent();
 
-    explicit operator bool() const noexcept { return dictionary_ != nullptr; }
+    ReferenceProviderComponent(const ReferenceProviderComponent &) = delete;
+    ReferenceProviderComponent &operator=(const ReferenceProviderComponent &) = delete;
+
+    virtual void detach() noexcept = 0;
+    virtual void destroy(std::pmr::memory_resource &memory) noexcept = 0;
+
+  protected:
+    ReferenceProviderComponent() = default;
 
   private:
-    friend class DictionaryObservers;
-    friend bool reference_dictionary_key_subscription_matches(DictionaryKeySubscription, ReferenceAddress,
-                                                               const ScalarData &);
-    friend ReferenceAddress reference_dictionary_key_subscription_target(DictionaryKeySubscription);
-    friend void remove_reference_dictionary_key_subscriber(DictionaryKeySubscription, RuntimeGraph &,
-                                                           std::uint32_t) noexcept;
+    friend class ReferenceProvider;
 
-    DictionaryKeySubscription(void *dictionary, TimeSeriesItemId item) noexcept
-        : dictionary_{dictionary}, item_{item} {}
-
-    void *dictionary_{};
-    TimeSeriesItemId item_{TimeSeriesItemId(-1)};
+    ReferenceProviderComponent *next_{};
 };
 
-static_assert(sizeof(DictionaryKeySubscription) == 2 * sizeof(void *));
+static_assert(sizeof(ReferenceProviderComponent) == 2 * sizeof(void *));
 
 class ReferenceRepresentation {
   public:
@@ -89,32 +86,41 @@ class ReferenceProvider {
     void remove_subscriber(ReferenceRoute &route, RuntimeGraph &graph, std::size_t input_offset) noexcept;
     void remove_observer(ReferenceRoute &route, RuntimeGraph &graph, const void *target) noexcept;
     void notify(ReferenceRoute &route, OutputChangeContext &context, OutputChange change);
-    void begin_item_notifications() noexcept;
-    void cancel_item_notifications() noexcept;
-    void publish_item_notifications(OutputChangeContext &context);
-    void add_item_subscriber(ReferenceRoute *route, RuntimeGraph &graph, void *target, TimeSeriesItemId item,
-                             ReferenceItemChangeFunction change_function,
-                             ReferenceItemPublishFunction publish_function);
-    void remove_item_subscriber(ReferenceRoute *route, RuntimeGraph &graph, const void *target,
-                                TimeSeriesItemId item, ReferenceItemChangeFunction change_function) noexcept;
+    void begin_item_notification_batch() noexcept;
+    void cancel_item_notification_batch() noexcept;
+    void publish_item_notification_batch(OutputChangeContext &context);
+    void add_item_notification_link(ReferenceRoute *route, RuntimeGraph &graph, void *target, TimeSeriesItemId item,
+                                    ReferenceItemNotifyFunction notify_function,
+                                    ReferenceItemPublishFunction publish_function);
+    void remove_item_notification_link(ReferenceRoute *route, RuntimeGraph &graph, const void *target,
+                                       TimeSeriesItemId item, ReferenceItemNotifyFunction notify_function) noexcept;
     void add_cycle_callback(void *target, void (*function)(void *) noexcept);
     void remove_cycle_callback(const void *target) noexcept;
     bool release_route(ReferenceRoute &route) noexcept;
     [[nodiscard]] ReferenceAddress representation(ReferenceAddress input, const TimeSeriesType &requested_type);
-    [[nodiscard]] DictionaryKeySubscription add_dictionary_key_subscriber(ReferenceAddress dictionary,
-                                                                          const ScalarData &key, RuntimeGraph &graph,
-                                                                          std::uint32_t node_index);
+    void add_component(ReferenceProviderComponent &component) noexcept;
+
+    template <typename Component> Component *component() noexcept {
+        static_assert(std::is_base_of_v<ReferenceProviderComponent, Component>);
+        for (auto *candidate = components_; candidate != nullptr; candidate = candidate->next_) {
+            if (auto *result = dynamic_cast<Component *>(candidate)) {
+                return result;
+            }
+        }
+        return nullptr;
+    }
 
   private:
     std::pmr::memory_resource *memory_;
     ReferenceRoot *root_;
     std::pmr::vector<ReferenceRepresentation *> representations_;
     std::pmr::vector<DynamicSubscribers *> subscriber_groups_;
-    DictionaryObservers *dictionary_observers_{};
-    ReferenceItemSubscribers *item_subscribers_{};
+    ReferenceProviderComponent *components_{};
+    ReferenceItemNotificationLinks *item_notification_links_{};
 };
 
 [[nodiscard]] ReferenceAddress reference_representation(ReferenceAddress input, const TimeSeriesType &requested_type);
+ReferenceProvider &require_reference_provider(ReferenceAddress address);
 void add_reference_subscriber(ReferenceAddress address, RuntimeGraph &graph, std::uint32_t input_offset,
                               std::size_t data, std::uint32_t node_index, bool active, bool required,
                               InputChangeFunction callback = nullptr);
@@ -123,21 +129,12 @@ void add_reference_observer(ReferenceAddress address, RuntimeGraph &graph, void 
 void remove_reference_subscriber(ReferenceAddress address, RuntimeGraph &graph, std::size_t input_offset) noexcept;
 void remove_reference_observer(ReferenceAddress address, RuntimeGraph &graph, const void *target) noexcept;
 void notify_reference(ReferenceAddress address, OutputChangeContext &context, OutputChange change);
-void add_reference_item_subscriber(ReferenceAddress address, RuntimeGraph &graph, void *target,
-                                   TimeSeriesItemId item, ReferenceItemChangeFunction change_function,
-                                   ReferenceItemPublishFunction publish_function);
-void remove_reference_item_subscriber(ReferenceAddress address, RuntimeGraph &graph, const void *target,
-                                      TimeSeriesItemId item,
-                                      ReferenceItemChangeFunction change_function) noexcept;
-[[nodiscard]] DictionaryKeySubscription add_reference_dictionary_key_subscriber(ReferenceAddress address,
-                                                                                const ScalarData &key,
-                                                                                RuntimeGraph &graph,
-                                                                                std::uint32_t node_index);
-bool reference_dictionary_key_subscription_matches(DictionaryKeySubscription subscription, ReferenceAddress dictionary,
-                                                   const ScalarData &key);
-ReferenceAddress reference_dictionary_key_subscription_target(DictionaryKeySubscription subscription);
-void remove_reference_dictionary_key_subscriber(DictionaryKeySubscription subscription, RuntimeGraph &graph,
-                                                std::uint32_t node_index) noexcept;
+void add_reference_item_notification_link(ReferenceAddress address, RuntimeGraph &graph, void *target,
+                                          TimeSeriesItemId item, ReferenceItemNotifyFunction notify_function,
+                                          ReferenceItemPublishFunction publish_function);
+void remove_reference_item_notification_link(ReferenceAddress address, RuntimeGraph &graph, const void *target,
+                                             TimeSeriesItemId item,
+                                             ReferenceItemNotifyFunction notify_function) noexcept;
 void destroy_reference_root(ReferenceRoot &root, std::pmr::memory_resource &memory) noexcept;
 
 } // namespace details

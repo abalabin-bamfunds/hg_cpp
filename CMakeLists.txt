@@ -71,6 +71,7 @@ add_library(
     src/time_series/ref/ref_type.cpp
     src/time_series/ref/ref_node.cpp
     src/time_series/tsd/tsd_type.cpp
+    src/time_series/tsd/tsd_key_subscription.cpp
     src/time_series/tsd/tsd_runtime_type.cpp
     src/time_series/tsd/tsd_reference_representation.cpp
     src/time_series/tsd/operators.cpp

@@ -1,6 +1,7 @@
 #include <bg/type/time_series_dict_type.hpp>
 
 #include <bg/type/time_series_set_type.hpp>
+#include <bg/type/time_series_reference_type.hpp>
 #include <bg/type/type_map.hpp>
 #include <bg/type/type_resolution_error.hpp>
 #include <bg/util/symbol.hpp>
@@ -36,6 +37,19 @@ const TimeSeriesType &TimeSeriesDictionaryType::item_type(std::size_t index) con
 
 const TimeSeriesType &TimeSeriesDictionaryType::with_guarantee(TimeSeriesGuarantee guarantee) const {
     return time_series_dictionary_type(key_type(), value_type(), guarantee);
+}
+
+bool TimeSeriesDictionaryType::requires_reference_representation_for(const TimeSeriesType &supplied) const noexcept {
+    const auto *tsd = dynamic_cast<const TimeSeriesDictionaryType *>(&supplied);
+    if (tsd == nullptr) {
+        return false;
+    }
+
+    const auto value_is_reference = dynamic_cast<const TimeSeriesReferenceType *>(&value_type()) != nullptr;
+    const auto supplied_value_is_reference =
+        dynamic_cast<const TimeSeriesReferenceType *>(&tsd->value_type()) != nullptr;
+    return value_is_reference != supplied_value_is_reference ||
+           value_type().requires_reference_representation_for(tsd->value_type());
 }
 
 bool TimeSeriesDictionaryType::do_match(const Type &supplied, TypeMap &type_map) const {
