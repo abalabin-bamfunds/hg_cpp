@@ -87,7 +87,7 @@ class TimeSeriesBundleRuntimeTypeBase : public TimeSeriesRuntimeType {
     void invalidate_output(const details::OutputState &output) const final { invalidate_output_items(output); }
 
     [[nodiscard]] bool mark_item_modified(void *value, item_id_t id, EvaluationTime evaluation_time,
-                                          EvaluationTime, std::pmr::memory_resource &memory) const noexcept final {
+                                          EvaluationTime, allocator &memory) const noexcept final {
         auto &storage = *static_cast<time_series_bundle_storage *>(value);
         if (storage.change_time != evaluation_time) {
             storage.modified.clear();
@@ -137,7 +137,7 @@ class TimeSeriesBundleRuntimeTypeBase : public TimeSeriesRuntimeType {
         }
     }
 
-    void construct_runtime_value(void *destination, std::pmr::memory_resource &memory) const final {
+    void construct_runtime_value(void *destination, allocator &memory) const final {
         auto *storage = std::construct_at(static_cast<time_series_bundle_storage *>(destination));
         auto *bytes = static_cast<std::byte *>(destination);
         auto constructed = std::size_t{};
@@ -158,7 +158,7 @@ class TimeSeriesBundleRuntimeTypeBase : public TimeSeriesRuntimeType {
         rollback.release();
     }
 
-    void destroy_value(void *value, std::pmr::memory_resource &memory) const noexcept final {
+    void destroy_value(void *value, allocator &memory) const noexcept final {
         auto *bytes = static_cast<std::byte *>(value);
         for (auto field = fields_.rbegin(); field != fields_.rend(); ++field) {
             field->runtime_type.destroy_value(bytes + field->value_offset, memory);

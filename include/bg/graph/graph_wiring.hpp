@@ -1,5 +1,6 @@
 #pragma once
 
+#include <bg/allocator.hpp>
 #include <bg/graph/details/wiring_argument.hpp>
 #include <bg/graph/wired_node.hpp>
 #include <bg/graph/wired_output.hpp>
@@ -37,7 +38,7 @@ std::size_t wired_output_node_index(const GraphWiring &wiring, WiringPoint point
 class GraphWiring {
   public:
     GraphWiring();
-    explicit GraphWiring(std::pmr::memory_resource &memory);
+    explicit GraphWiring(allocator memory);
     ~GraphWiring();
 
     GraphWiring(const GraphWiring &) = delete;
@@ -93,12 +94,13 @@ class GraphWiring {
     util::symbol default_label() const;
 
     void destroy_scalars(std::span<const WiredScalar> scalars) noexcept;
-    std::pmr::memory_resource &variable_memory() noexcept;
-    std::pmr::memory_resource &variable_memory(const ScalarRuntimeType &runtime_type);
+    allocator &variable_allocator() noexcept;
+    allocator &variable_allocator(const ScalarRuntimeType &runtime_type);
 
-    std::pmr::memory_resource *memory_;
+    allocator allocator_;
     std::pmr::unsynchronized_pool_resource fixed_memory_;
     std::optional<std::pmr::unsynchronized_pool_resource> variable_memory_;
+    allocator variable_allocator_;
     std::vector<std::unique_ptr<NodeTemplate>> node_templates_;
     std::vector<std::unique_ptr<details::WiringRecord>> wiring_records_;
     struct ItemRecord {

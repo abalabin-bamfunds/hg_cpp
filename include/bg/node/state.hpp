@@ -68,13 +68,18 @@ class State<List<T>> {
     }
 
     void append(const Scalar<T> &value) const {
-        runtime_type_->append(value_, value, details::current_scalar_memory_resource());
+        auto memory = details::current_scalar_allocator();
+        runtime_type_->append(value_, value, memory);
     }
     void set(std::size_t index, const Scalar<T> &value) const { runtime_type_->set(value_, index, value); }
     void erase(std::size_t index) const {
-        runtime_type_->erase(value_, index, details::current_scalar_memory_resource());
+        auto memory = details::current_scalar_allocator();
+        runtime_type_->erase(value_, index, memory);
     }
-    void clear() const { runtime_type_->clear(value_, details::current_scalar_memory_resource()); }
+    void clear() const {
+        auto memory = details::current_scalar_allocator();
+        runtime_type_->clear(value_, memory);
+    }
 
     using value_type = List<T>;
 
@@ -96,12 +101,17 @@ class State<Set<T>> {
     bool empty() const noexcept { return size() == 0; }
     bool contains(const Scalar<T> &value) const { return runtime_type_->contains(value_, value); }
     [[nodiscard]] bool insert(const Scalar<T> &value) const {
-        return runtime_type_->insert(value_, value, details::current_scalar_memory_resource());
+        auto memory = details::current_scalar_allocator();
+        return runtime_type_->insert(value_, value, memory);
     }
     [[nodiscard]] bool erase(const Scalar<T> &value) const {
-        return runtime_type_->erase(value_, value, details::current_scalar_memory_resource());
+        auto memory = details::current_scalar_allocator();
+        return runtime_type_->erase(value_, value, memory);
     }
-    void clear() const { runtime_type_->clear(value_, details::current_scalar_memory_resource()); }
+    void clear() const {
+        auto memory = details::current_scalar_allocator();
+        runtime_type_->clear(value_, memory);
+    }
 
     using value_type = Set<T>;
 
@@ -138,12 +148,17 @@ class State<Dict<K, V>> {
     }
 
     void insert_or_assign(const Scalar<K> &key, const Scalar<V> &value) const {
-        runtime_type_->insert_or_assign(value_, key, value, details::current_scalar_memory_resource());
+        auto memory = details::current_scalar_allocator();
+        runtime_type_->insert_or_assign(value_, key, value, memory);
     }
     [[nodiscard]] bool erase(const Scalar<K> &key) const {
-        return runtime_type_->erase(value_, key, details::current_scalar_memory_resource());
+        auto memory = details::current_scalar_allocator();
+        return runtime_type_->erase(value_, key, memory);
     }
-    void clear() const { runtime_type_->clear(value_, details::current_scalar_memory_resource()); }
+    void clear() const {
+        auto memory = details::current_scalar_allocator();
+        runtime_type_->clear(value_, memory);
+    }
 
     using value_type = Dict<K, V>;
 

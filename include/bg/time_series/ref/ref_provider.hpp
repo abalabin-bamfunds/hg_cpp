@@ -1,11 +1,11 @@
 #pragma once
 
+#include <bg/allocator.hpp>
 #include <bg/graph/output_notification.hpp>
 #include <bg/time_series/item_id.hpp>
 #include <bg/time_series/ref/ref_storage.hpp>
 
 #include <cstdint>
-#include <memory_resource>
 #include <type_traits>
 #include <vector>
 
@@ -29,7 +29,7 @@ class ReferenceProviderComponent {
     ReferenceProviderComponent &operator=(const ReferenceProviderComponent &) = delete;
 
     virtual void detach() noexcept = 0;
-    virtual void destroy(std::pmr::memory_resource &memory) noexcept = 0;
+    virtual void destroy(allocator &memory) noexcept = 0;
 
   protected:
     ReferenceProviderComponent() = default;
@@ -51,7 +51,7 @@ class ReferenceRepresentation {
     Reference reference() noexcept { return &reference_; }
     virtual ResolvedTimeSeries resolve() const = 0;
     virtual void notify(OutputChangeContext &context, OutputChange change) = 0;
-    virtual void destroy(std::pmr::memory_resource &memory) noexcept = 0;
+    virtual void destroy(allocator &memory) noexcept = 0;
 
   private:
     friend class ReferenceProvider;
@@ -64,14 +64,15 @@ class ReferenceRepresentation {
 
 class ReferenceProvider {
   public:
-    ReferenceProvider(std::pmr::memory_resource &memory, RootReference &root, DynamicSubscribers *root_subscribers);
+    ReferenceProvider(allocator memory, RootReference &root, DynamicSubscribers *root_subscribers);
     ~ReferenceProvider();
 
     ReferenceProvider(const ReferenceProvider &) = delete;
     ReferenceProvider &operator=(const ReferenceProvider &) = delete;
 
     RuntimeGraph &owner() const noexcept { return *root_->owner_graph; }
-    std::pmr::memory_resource &memory() const noexcept { return *memory_; }
+    allocator &allocation() noexcept { return memory_; }
+    const allocator &allocation() const noexcept { return memory_; }
     ResolvedTimeSeries resolve_representation(std::uint32_t index) const;
     void add_root_subscriber(RuntimeGraph &graph, std::uint32_t input_offset, std::size_t callback_data,
                              std::uint32_t node_index, bool active, bool required,
@@ -116,7 +117,7 @@ class ReferenceProvider {
     }
 
   private:
-    std::pmr::memory_resource *memory_;
+    allocator memory_;
     RootReference *root_;
     std::pmr::vector<ReferenceRepresentation *> representations_;
     std::pmr::vector<DynamicSubscribers *> subscriber_groups_;
@@ -139,7 +140,7 @@ void add_reference_item_notification_link(Reference reference, RuntimeGraph &gra
 void remove_reference_item_notification_link(Reference reference, RuntimeGraph &graph, const void *receiver,
                                              item_id_t receiver_item_id,
                                              ReferenceItemNotifyFunction notify_function) noexcept;
-void destroy_root_reference(RootReference &root, std::pmr::memory_resource &memory) noexcept;
+void destroy_root_reference(RootReference &root, allocator &memory) noexcept;
 
 } // namespace details
 } // namespace bg

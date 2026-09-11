@@ -1,5 +1,6 @@
 #pragma once
 
+#include <bg/allocator.hpp>
 #include <bg/evaluation_context.hpp>
 #include <bg/global_state.hpp>
 #include <bg/graph/compiled_graph.hpp>
@@ -7,7 +8,6 @@
 
 #include <cstddef>
 #include <memory>
-#include <memory_resource>
 #include <optional>
 #include <span>
 #include <vector>
@@ -31,9 +31,9 @@ class NestedGraph;
 class RuntimeGraph {
   public:
     explicit RuntimeGraph(const CompiledGraph &compiled_graph);
-    RuntimeGraph(const CompiledGraph &compiled_graph, std::pmr::memory_resource &memory);
+    RuntimeGraph(const CompiledGraph &compiled_graph, allocator memory);
     RuntimeGraph(const CompiledGraph &compiled_graph, GlobalState &global_state);
-    RuntimeGraph(const CompiledGraph &compiled_graph, std::pmr::memory_resource &memory, GlobalState &global_state);
+    RuntimeGraph(const CompiledGraph &compiled_graph, allocator memory, GlobalState &global_state);
     ~RuntimeGraph();
 
     RuntimeGraph(const RuntimeGraph &) = delete;
@@ -47,7 +47,8 @@ class RuntimeGraph {
     std::optional<EvaluationTime> next_scheduled_time() const noexcept;
     EvaluationTime evaluation_time() const noexcept { return evaluation_time_; }
     GlobalState &global_state() const noexcept { return *global_state_; }
-    std::pmr::memory_resource &memory_resource() const noexcept { return *memory_; }
+    bg::allocator &allocation() noexcept { return allocator_; }
+    const bg::allocator &allocation() const noexcept { return allocator_; }
     void *storage_at(std::size_t offset) noexcept { return storage_ + offset; }
     Node node(std::size_t index) noexcept { return {compiled_graph_->node(index), storage_}; }
     Node node(const CompiledNode &compiled_node) noexcept { return {compiled_node, storage_}; }
@@ -111,7 +112,7 @@ class RuntimeGraph {
     void stop(details::EvaluationScratch &scratch) noexcept;
 
     const CompiledGraph *compiled_graph_;
-    std::pmr::memory_resource *memory_;
+    bg::allocator allocator_;
     std::unique_ptr<GlobalState> owned_global_state_;
     GlobalState *global_state_;
     std::byte *storage_{};

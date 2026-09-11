@@ -69,7 +69,8 @@ class ReferenceNodeTemplate final : public NodeTemplate {
 
     static void destroy_state(const CompiledNode &node, void *runtime_storage, EvaluationContext *context) noexcept {
         auto &root = *static_cast<RootReference *>(Node{node, runtime_storage}.state());
-        destroy_root_reference(root, context->runtime_graph().memory_resource());
+        auto memory = context->runtime_graph().allocation();
+        destroy_root_reference(root, memory);
     }
 
     static void notify_input(OutputChangeContext &context, std::size_t node_index, std::size_t, OutputChange change) {

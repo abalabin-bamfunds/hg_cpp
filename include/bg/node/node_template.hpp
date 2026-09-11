@@ -1,5 +1,6 @@
 #pragma once
 
+#include <bg/allocator.hpp>
 #include <bg/graph/evaluation_function.hpp>
 #include <bg/graph/output_notification.hpp>
 #include <bg/graph/wiring_template.hpp>
@@ -9,7 +10,6 @@
 #include <bg/type/signature.hpp>
 
 #include <cstddef>
-#include <memory_resource>
 #include <optional>
 #include <vector>
 
@@ -59,7 +59,7 @@ class NodeTemplate : public WiringTemplate {
     [[nodiscard]] virtual std::vector<const ScalarType *> resolve_state_types(const TypeMap &) const { return {}; }
 
     virtual CompiledNodeDataLayout compiled_data_layout(const ResolvedSignature &) const noexcept { return {}; }
-    virtual void construct_compiled_data(const ResolvedSignature &, void *, std::pmr::memory_resource &) const {}
+    virtual void construct_compiled_data(const ResolvedSignature &, void *, allocator &) const {}
 
   private:
     [[nodiscard]] std::optional<WiringPoint> wire(GraphWiring &wiring, ResolvedSignature signature,

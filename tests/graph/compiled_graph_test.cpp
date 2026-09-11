@@ -258,7 +258,7 @@ TEST_CASE("compiled fixed storage uses one allocation", "[compiled_graph][featur
     counting_memory_resource memory;
 
     {
-        bg::CompiledGraph graph{wiring, memory};
+        bg::CompiledGraph graph{wiring, bg::allocator{memory}};
 
         CHECK(graph.fixed_storage_size() > 0);
         CHECK(memory.allocation_count() == 1);

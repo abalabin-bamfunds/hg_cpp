@@ -33,16 +33,17 @@ TEST_CASE("C++ scalar storage copies into graph-owned memory", "[scalar][feature
     std::pmr::unsynchronized_pool_resource graph_memory;
     const std::pmr::string source{"a scalar value long enough to require allocated storage", &source_memory};
     const bg::ScalarRuntimeType &runtime_type = bg::cpp_scalar_runtime_type<bg::string>();
+    auto allocator = bg::allocator{graph_memory};
 
-    void *storage = graph_memory.allocate(runtime_type.size(), runtime_type.alignment());
-    runtime_type.copy_construct(storage, &source, graph_memory);
+    void *storage = allocator.allocate_bytes(runtime_type.size(), runtime_type.alignment());
+    runtime_type.copy_construct(storage, &source, allocator);
 
     const auto &copy = *static_cast<const std::pmr::string *>(storage);
     CHECK(copy == source);
     CHECK(copy.get_allocator().resource() == &graph_memory);
 
-    runtime_type.destroy(storage, graph_memory);
-    graph_memory.deallocate(storage, runtime_type.size(), runtime_type.alignment());
+    runtime_type.destroy(storage, allocator);
+    allocator.deallocate_bytes(storage, runtime_type.size(), runtime_type.alignment());
 }
 
 TEST_CASE("C++ scalar storage reports its destruction requirements", "[scalar][feature:scalar-storage]") {
@@ -75,9 +76,10 @@ TEST_CASE("scalar storage distinguishes variable memory from finalization",
     auto source = finalizable_value{};
     source.count = &finalization_count;
     auto memory = std::pmr::unsynchronized_pool_resource{};
+    auto allocator = bg::allocator{memory};
     alignas(finalizable_value) std::byte storage[sizeof(finalizable_value)];
-    opaque.construct_from_value(storage, &source, memory);
-    opaque.destroy(storage, memory);
+    opaque.construct_from_value(storage, &source, allocator);
+    opaque.destroy(storage, allocator);
     CHECK(finalization_count == 1);
 }
 

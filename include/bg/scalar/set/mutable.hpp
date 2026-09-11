@@ -20,7 +20,7 @@ template <typename T> class MutableSet : public Set<T> {
     bool contains(typename Traits::value_type value) const { return Base::contains(value); }
 
     [[nodiscard]] bool insert(typename Traits::value_type value) const {
-        auto &memory = details::current_scalar_memory_resource();
+        auto memory = details::current_scalar_allocator();
         return mutable_storage()
             .items
             .insert_with(
@@ -30,13 +30,13 @@ template <typename T> class MutableSet : public Set<T> {
     }
 
     [[nodiscard]] bool erase(typename Traits::value_type value) const {
-        auto &memory = details::current_scalar_memory_resource();
+        auto memory = details::current_scalar_allocator();
         return mutable_storage().items.erase_with(value, memory,
                                                   [&](auto *stored) noexcept { Traits::destroy(stored, memory); });
     }
 
     void clear() const {
-        auto &memory = details::current_scalar_memory_resource();
+        auto memory = details::current_scalar_allocator();
         mutable_storage().items.release_with(memory, [&](auto *stored) noexcept { Traits::destroy(stored, memory); });
     }
 

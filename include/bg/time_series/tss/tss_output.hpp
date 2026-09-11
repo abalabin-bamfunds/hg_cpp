@@ -63,7 +63,7 @@ template <typename K, auto... Properties> class Out<TSS<K, Properties...>> {
     }
 
     void clear() const {
-        auto &memory = details::current_scalar_memory_resource();
+        auto memory = details::current_scalar_allocator();
         auto &value = storage();
         const auto should_publish = !valid() || value.size() != 0;
         value.reset_change_tracking(state_->context().evaluation_time(), key_runtime_type(), key_layout(), memory,
@@ -99,7 +99,7 @@ template <typename K, auto... Properties> class Out<TSS<K, Properties...>> {
     }
 
     bool insert(const details::ScalarData &item) const {
-        auto &memory = details::current_scalar_memory_resource();
+        auto memory = details::current_scalar_allocator();
         auto &value = storage();
         value.reset_change_tracking(state_->context().evaluation_time(), key_runtime_type(), key_layout(), memory,
                                     [](std::uint32_t) noexcept {});
@@ -112,7 +112,7 @@ template <typename K, auto... Properties> class Out<TSS<K, Properties...>> {
     }
 
     bool erase(const details::ScalarData &item) const {
-        auto &memory = details::current_scalar_memory_resource();
+        auto memory = details::current_scalar_allocator();
         auto &value = storage();
         value.reset_change_tracking(state_->context().evaluation_time(), key_runtime_type(), key_layout(), memory,
                                     [](std::uint32_t) noexcept {});

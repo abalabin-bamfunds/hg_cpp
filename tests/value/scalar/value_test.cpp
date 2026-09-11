@@ -27,7 +27,8 @@ TEST_CASE("a scalar value accepts lossless unsigned integer conversion",
 
 TEST_CASE("a pointer-sized scalar value uses inline storage",
           "[value][scalar][feature:scalar-api][scalar:integer][storage:inline]") {
-    const auto value = bg::ScalarValue{42, *std::pmr::null_memory_resource()};
+    auto allocator = bg::allocator{*std::pmr::null_memory_resource()};
+    const auto value = bg::ScalarValue{42, allocator};
 
     CHECK(&value.view().runtime_type() == &bg::cpp_scalar_runtime_type<std::int64_t>());
     CHECK(value.view().value() == 42);
@@ -37,7 +38,8 @@ TEST_CASE("a pointer-sized scalar value copies a borrowed value inline",
           "[value][scalar][feature:scalar-api][scalar:integer][storage:inline]") {
     const auto source_value = std::int64_t{42};
     const auto source = bg::Scalar<std::int64_t>::from(source_value);
-    const auto value = bg::ScalarValue<std::int64_t>{source, *std::pmr::null_memory_resource()};
+    auto allocator = bg::allocator{*std::pmr::null_memory_resource()};
+    const auto value = bg::ScalarValue<std::int64_t>{source, allocator};
 
     CHECK(value.view().value() == source_value);
 }
@@ -111,7 +113,8 @@ TEST_CASE("a scalar value uses the supplied memory resource", "[value][scalar][f
     auto memory = counting_memory_resource{};
 
     {
-        auto value = bg::ScalarValue{std::string_view{"long enough to require separate character storage"}, memory};
+        auto allocator = bg::allocator{memory};
+        auto value = bg::ScalarValue{std::string_view{"long enough to require separate character storage"}, allocator};
         CHECK(value.view().value() == "long enough to require separate character storage");
     }
 
@@ -122,7 +125,7 @@ TEST_CASE("a scalar value uses the current node memory resource", "[value][scala
     auto memory = counting_memory_resource{};
     const auto graph = 1;
     {
-        const auto context = bg::details::ScalarAllocationContext{memory, &graph, 2};
+        const auto context = bg::details::ScalarAllocationContext{bg::allocator{memory}, &graph, 2};
         const auto value = bg::ScalarValue{"long enough to require separate character storage"};
 
         CHECK(value.view().value() == "long enough to require separate character storage");

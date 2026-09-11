@@ -60,7 +60,8 @@ void publish_output_path(void *output_path) noexcept {
         auto &entry = *path;
         auto &context = entry.context();
         const auto modified = entry.runtime_type->mark_item_modified(
-            entry.value, entry.id, context.evaluation_time(), *entry.last_updated, current_scalar_memory_resource());
+            entry.value, entry.id, context.evaluation_time(), *entry.last_updated,
+            current_scalar_allocator());
         *entry.last_updated = entry.runtime_type->collection_valid(entry.value) ? context.evaluation_time() : MIN_DT;
         if (!modified) {
             return;

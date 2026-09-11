@@ -78,7 +78,7 @@ template <typename T, typename Base> class CppScalarRuntimeTypeBase : public Bas
         }
     }
 
-    void construct_runtime_value(void *destination, std::pmr::memory_resource &memory) const override {
+    void construct_runtime_value(void *destination, allocator &memory) const override {
         if constexpr (std::default_initializable<Value>) {
             Traits::construct(static_cast<Stored *>(destination), Value{}, memory);
         } else {
@@ -86,37 +86,38 @@ template <typename T, typename Base> class CppScalarRuntimeTypeBase : public Bas
         }
     }
 
-    void construct_from_value(void *destination, const void *value, std::pmr::memory_resource &memory) const override {
+    void construct_from_value(void *destination, const void *value, allocator &memory) const override {
         Traits::construct(static_cast<Stored *>(destination), *static_cast<const Value *>(value), memory);
     }
 
     void construct_from_input(void *destination, const details::ScalarData &value,
-                              std::pmr::memory_resource &memory) const override {
+                              allocator &memory) const override {
         Traits::construct(static_cast<Stored *>(destination), scalar_data_value<T>(value), memory);
     }
 
-    void copy_construct(void *destination, const void *source, std::pmr::memory_resource &memory) const override {
+    void copy_construct(void *destination, const void *source, allocator &memory) const override {
         if constexpr (requires {
                           Traits::copy_construct(static_cast<Stored *>(destination),
                                                  *static_cast<const Stored *>(source), memory);
                       }) {
-            Traits::copy_construct(static_cast<Stored *>(destination), *static_cast<const Stored *>(source), memory);
+            Traits::copy_construct(static_cast<Stored *>(destination), *static_cast<const Stored *>(source),
+                                   memory);
         } else {
             std::uninitialized_construct_using_allocator(static_cast<Stored *>(destination),
-                                                         std::pmr::polymorphic_allocator<Stored>{&memory},
+                                                         std::pmr::polymorphic_allocator<Stored>{&memory.memory_resource()},
                                                          *static_cast<const Stored *>(source));
         }
     }
 
     void assign_from_value(void *destination, const void *value) const override {
-        if constexpr (requires(Stored &target, const Value &source, std::pmr::memory_resource &memory) {
+        if constexpr (requires(Stored &target, const Value &source, allocator &memory) {
                           Traits::assign(target, source, memory);
                       }) {
-            auto *memory = std::pmr::new_delete_resource();
+            auto memory = allocator{};
             if constexpr (Traits::assign_uses_memory_resource) {
-                memory = &current_scalar_memory_resource();
+                memory = current_scalar_allocator();
             }
-            Traits::assign(*static_cast<Stored *>(destination), *static_cast<const Value *>(value), *memory);
+            Traits::assign(*static_cast<Stored *>(destination), *static_cast<const Value *>(value), memory);
         } else {
             std::terminate();
         }
@@ -143,7 +144,7 @@ template <typename T, typename Base> class CppScalarRuntimeTypeBase : public Bas
         }
     }
 
-    void destroy(void *value, std::pmr::memory_resource &memory) const noexcept override {
+    void destroy(void *value, allocator &memory) const noexcept override {
         Traits::destroy(static_cast<Stored *>(value), memory);
     }
 };
@@ -155,7 +156,7 @@ class CppScalarRuntimeType<Opaque<T>> final : public CppScalarRuntimeTypeBase<Op
   public:
     void construct_initial_value(void *) const noexcept override { std::terminate(); }
 
-    void copy_construct(void *destination, const void *source, std::pmr::memory_resource &) const override {
+    void copy_construct(void *destination, const void *source, allocator &) const override {
         std::construct_at(static_cast<T *>(destination), *static_cast<const T *>(source));
     }
 };

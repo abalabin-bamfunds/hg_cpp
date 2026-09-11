@@ -59,7 +59,7 @@ class FreeTimeSeriesBundleNodeTemplate final : public NodeTemplate {
             value.modified.clear();
             value.change_time = context.evaluation_time();
         }
-        value.modified.set(static_cast<std::uint32_t>(input_index), context.runtime_graph().memory_resource());
+        value.modified.set(static_cast<std::uint32_t>(input_index), context.runtime_graph().allocation());
     }
 
     static void start(const CompiledNode &node, void *runtime_storage, EvaluationContext *) noexcept {

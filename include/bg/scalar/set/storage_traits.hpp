@@ -31,12 +31,12 @@ template <typename T> struct scalar_storage_traits<Set<T>> {
         return result;
     }
 
-    static void construct(stored_type *destination, value_type value, std::pmr::memory_resource &memory) {
+    static void construct(stored_type *destination, value_type value, allocator &memory) {
         std::construct_at(destination);
         auto rollback = util::scope_exit{[&]() noexcept { destroy(destination, memory); }};
         for (const auto item : value) {
             (void)destination->items.insert_with(
-                item, memory, [&](auto *stored) { ItemTraits::construct(stored, item, memory); },
+                item, memory.memory_resource(), [&](auto *stored) { ItemTraits::construct(stored, item, memory); },
                 [&](auto *stored) noexcept { ItemTraits::destroy(stored, memory); });
         }
         rollback.release();
@@ -44,27 +44,27 @@ template <typename T> struct scalar_storage_traits<Set<T>> {
 
     template <std::ranges::input_range Range>
         requires std::convertible_to<std::ranges::range_reference_t<const Range>, typename ItemTraits::value_type>
-    static void construct(stored_type *destination, const Range &value, std::pmr::memory_resource &memory) {
+    static void construct(stored_type *destination, const Range &value, allocator &memory) {
         std::construct_at(destination);
         auto rollback = util::scope_exit{[&]() noexcept { destroy(destination, memory); }};
         for (const auto &item : value) {
             (void)destination->items.insert_with(
-                item, memory, [&](auto *stored) { ItemTraits::construct(stored, item, memory); },
+                item, memory.memory_resource(), [&](auto *stored) { ItemTraits::construct(stored, item, memory); },
                 [&](auto *stored) noexcept { ItemTraits::destroy(stored, memory); });
         }
         rollback.release();
     }
 
-    static void copy_construct(stored_type *destination, const stored_type &source, std::pmr::memory_resource &memory) {
+    static void copy_construct(stored_type *destination, const stored_type &source, allocator &memory) {
         construct(destination, read(source), memory);
     }
 
-    static void assign(stored_type &destination, value_type value, std::pmr::memory_resource &memory) {
+    static void assign(stored_type &destination, value_type value, allocator &memory) {
         replace_collection_storage<Set<T>>(destination, value, memory);
     }
 
-    static void destroy(stored_type *value, std::pmr::memory_resource &memory) noexcept {
-        value->items.release_with(memory, [&](auto *item) noexcept { ItemTraits::destroy(item, memory); });
+    static void destroy(stored_type *value, allocator &memory) noexcept {
+        value->items.release_with(memory.memory_resource(), [&](auto *item) noexcept { ItemTraits::destroy(item, memory); });
         std::destroy_at(value);
     }
 };

@@ -37,12 +37,12 @@ template <typename K, typename V> struct scalar_storage_traits<Dict<K, V>> {
         return result;
     }
 
-    static void construct(stored_type *destination, value_type value, std::pmr::memory_resource &memory) {
+    static void construct(stored_type *destination, value_type value, allocator &memory) {
         std::construct_at(destination);
         auto rollback = util::scope_exit{[&]() noexcept { destroy(destination, memory); }};
         for (const auto [key, item] : value) {
             (void)destination->items.try_emplace_with(
-                key, memory, [&](auto *stored) { KeyTraits::construct(stored, key, memory); },
+                key, memory.memory_resource(), [&](auto *stored) { KeyTraits::construct(stored, key, memory); },
                 [&](auto *stored) noexcept { KeyTraits::destroy(stored, memory); },
                 [&](auto *stored) { ValueTraits::construct(stored, item, memory); });
         }
@@ -55,12 +55,12 @@ template <typename K, typename V> struct scalar_storage_traits<Dict<K, V>> {
         } && (std::convertible_to<decltype(std::declval<std::ranges::range_reference_t<const Range>>().second),
                                   typename ValueTraits::value_type> ||
               scalar_view_source_for<decltype(std::declval<std::ranges::range_reference_t<const Range>>().second), V>)
-    static void construct(stored_type *destination, const Range &value, std::pmr::memory_resource &memory) {
+    static void construct(stored_type *destination, const Range &value, allocator &memory) {
         std::construct_at(destination);
         auto rollback = util::scope_exit{[&]() noexcept { destroy(destination, memory); }};
         for (const auto &[key, item] : value) {
             (void)destination->items.try_emplace_with(
-                key, memory, [&](auto *stored) { KeyTraits::construct(stored, key, memory); },
+                key, memory.memory_resource(), [&](auto *stored) { KeyTraits::construct(stored, key, memory); },
                 [&](auto *stored) noexcept { KeyTraits::destroy(stored, memory); },
                 [&](auto *stored) {
                     if constexpr (scalar_view_source_for<decltype(item), V>) {
@@ -73,17 +73,17 @@ template <typename K, typename V> struct scalar_storage_traits<Dict<K, V>> {
         rollback.release();
     }
 
-    static void copy_construct(stored_type *destination, const stored_type &source, std::pmr::memory_resource &memory) {
+    static void copy_construct(stored_type *destination, const stored_type &source, allocator &memory) {
         construct(destination, read(source), memory);
     }
 
-    static void assign(stored_type &destination, value_type value, std::pmr::memory_resource &memory) {
+    static void assign(stored_type &destination, value_type value, allocator &memory) {
         replace_collection_storage<Dict<K, V>>(destination, value, memory);
     }
 
-    static void destroy(stored_type *value, std::pmr::memory_resource &memory) noexcept {
+    static void destroy(stored_type *value, allocator &memory) noexcept {
         value->items.release_with(
-            memory, [&](auto *key) noexcept { KeyTraits::destroy(key, memory); },
+            memory.memory_resource(), [&](auto *key) noexcept { KeyTraits::destroy(key, memory); },
             [&](auto *item) noexcept { ValueTraits::destroy(item, memory); });
         std::destroy_at(value);
     }

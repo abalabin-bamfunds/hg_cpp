@@ -31,21 +31,22 @@ class ReferenceItemNotificationLinks {
     };
 
     struct Group {
-        explicit Group(std::pmr::memory_resource &memory) : links{&memory} {}
+        explicit Group(allocator memory) : links{&memory.memory_resource()} {}
 
         std::pmr::vector<Link> links;
     };
 
   public:
-    explicit ReferenceItemNotificationLinks(std::pmr::memory_resource &memory)
-        : receivers_{&memory}, groups_{&memory}, touched_receivers_{&memory}, memory_{&memory} {}
+    explicit ReferenceItemNotificationLinks(allocator memory)
+        : receivers_{&memory.memory_resource()}, groups_{&memory.memory_resource()},
+          touched_receivers_{&memory.memory_resource()}, memory_{memory} {}
 
     ~ReferenceItemNotificationLinks() {
         for (auto *group : groups_) {
             if (group == nullptr) {
                 continue;
             }
-            allocator{*memory_}.delete_object(group);
+            memory_.delete_object(group);
         }
     }
 
@@ -83,7 +84,7 @@ class ReferenceItemNotificationLinks {
             }
 
             auto *group = allocate_group();
-            auto release_group = util::scope_exit{[&]() noexcept { allocator{*memory_}.delete_object(group); }};
+            auto release_group = util::scope_exit{[&]() noexcept { memory_.delete_object(group); }};
             group->links.push_back(inline_link(notifications));
             group->links.push_back(link);
 
@@ -235,7 +236,7 @@ class ReferenceItemNotificationLinks {
     }
 
     Group *allocate_group() {
-        return allocator{*memory_}.new_object<Group>(*memory_);
+        return memory_.new_object<Group>(memory_);
     }
 
     std::uint32_t store_group(Group *group) {
@@ -263,7 +264,7 @@ class ReferenceItemNotificationLinks {
     void release_group(ItemNotificationDetail &notifications) noexcept {
         const auto index = notifications.overflow_group_index();
         auto *group = groups_[index];
-        allocator{*memory_}.delete_object(group);
+        memory_.delete_object(group);
         groups_[index] = nullptr;
     }
 
@@ -285,21 +286,21 @@ class ReferenceItemNotificationLinks {
     std::pmr::vector<NotificationReceiver> receivers_;
     std::pmr::vector<Group *> groups_;
     std::pmr::vector<std::uint32_t> touched_receivers_;
-    std::pmr::memory_resource *memory_;
+    allocator memory_;
     std::size_t batch_depth_{};
 };
 
-ReferenceItemNotificationLinks *create_reference_item_notification_links(std::pmr::memory_resource &memory) {
-    return allocator{memory}.new_object<ReferenceItemNotificationLinks>(memory);
+ReferenceItemNotificationLinks *create_reference_item_notification_links(allocator memory) {
+    return memory.new_object<ReferenceItemNotificationLinks>(memory);
 }
 
 void destroy_reference_item_notification_links(ReferenceItemNotificationLinks *links,
-                                               std::pmr::memory_resource &memory) noexcept {
+                                               allocator &memory) noexcept {
     if (links == nullptr) {
         return;
     }
 
-    allocator{memory}.delete_object(links);
+    memory.delete_object(links);
 }
 
 void add_reference_root_item_link(ReferenceItemNotificationLinks &links, RuntimeGraph &graph, void *receiver,

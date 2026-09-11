@@ -24,7 +24,7 @@ class TimeSeriesReferenceRuntimeType : public TimeSeriesRuntimeType {
         return *static_cast<const Reference *>(value);
     }
 
-    void destroy_value(void *, std::pmr::memory_resource &) const noexcept override {}
+    void destroy_value(void *, allocator &) const noexcept override {}
 
   protected:
     TimeSeriesReferenceRuntimeType(const TimeSeriesReferenceType &type, std::size_t size,

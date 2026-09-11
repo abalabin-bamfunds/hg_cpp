@@ -61,15 +61,15 @@ struct DynamicObserver {
 };
 
 struct DynamicSubscribers {
-    explicit DynamicSubscribers(std::pmr::memory_resource &memory) : records_{&memory} {}
+    explicit DynamicSubscribers(allocator memory) : records_{&memory.memory_resource()} {}
 
     [[nodiscard]] static DynamicSubscribers &ensure(DynamicSubscribers *&subscribers,
-                                                    std::pmr::memory_resource &memory) {
+                                                    allocator memory) {
         if (subscribers != nullptr) {
             return *subscribers;
         }
 
-        subscribers = allocator{memory}.new_object<DynamicSubscribers>(memory);
+        subscribers = memory.new_object<DynamicSubscribers>(memory);
         return *subscribers;
     }
 
@@ -169,19 +169,19 @@ struct DynamicSubscribers {
 
   private:
     struct CallbackRecords {
-        explicit CallbackRecords(std::pmr::memory_resource &memory) : records{&memory} {}
+        explicit CallbackRecords(allocator memory) : records{&memory.memory_resource()} {}
         std::pmr::vector<DynamicCallbackSubscriber> records;
     };
 
     struct ObserverRecords {
-        explicit ObserverRecords(std::pmr::memory_resource &memory) : records{&memory} {}
+        explicit ObserverRecords(allocator memory) : records{&memory.memory_resource()} {}
         std::pmr::vector<DynamicObserver> records;
     };
 
     CallbackRecords &callback_records() {
         if (callback_records_ == nullptr) {
             auto *memory = records_.get_allocator().resource();
-            callback_records_ = allocator{*memory}.new_object<CallbackRecords>(*memory);
+            callback_records_ = allocator{*memory}.new_object<CallbackRecords>(allocator{*memory});
         }
         return *callback_records_;
     }
@@ -189,7 +189,7 @@ struct DynamicSubscribers {
     ObserverRecords &observer_records() {
         if (observer_records_ == nullptr) {
             auto *memory = records_.get_allocator().resource();
-            observer_records_ = allocator{*memory}.new_object<ObserverRecords>(*memory);
+            observer_records_ = allocator{*memory}.new_object<ObserverRecords>(allocator{*memory});
         }
         return *observer_records_;
     }

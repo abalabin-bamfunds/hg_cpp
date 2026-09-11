@@ -1,12 +1,12 @@
 #pragma once
 
+#include <bg/allocator.hpp>
 #include <bg/runtime_type.hpp>
 #include <bg/type/scalar_type.hpp>
 
 #include <cstddef>
 #include <cstdint>
 #include <exception>
-#include <memory_resource>
 #include <span>
 
 namespace bg {
@@ -45,18 +45,18 @@ class ScalarRuntimeType : public RuntimeType {
     bool requires_destruction() const noexcept { return uses_variable_memory() || requires_finalization(); }
     bool supports_byte_copy_initialization() const noexcept { return storage_supports_byte_copy_initialization(); }
     virtual void construct_initial_value(void *destination) const noexcept = 0;
-    virtual void construct_runtime_value(void *destination, std::pmr::memory_resource &) const {
+    virtual void construct_runtime_value(void *destination, allocator &) const {
         construct_initial_value(destination);
     }
-    virtual void construct_from_value(void *, const void *, std::pmr::memory_resource &) const { std::terminate(); }
+    virtual void construct_from_value(void *, const void *, allocator &) const { std::terminate(); }
     virtual void construct_from_input(void *destination, const details::ScalarData &value,
-                                      std::pmr::memory_resource &memory) const = 0;
+                                      allocator &memory) const = 0;
     template <typename Value>
         requires requires(const Value &value) { details::scalar_data(value); }
-    void construct_from_input(void *destination, const Value &value, std::pmr::memory_resource &memory) const {
+    void construct_from_input(void *destination, const Value &value, allocator &memory) const {
         construct_from_input(destination, details::scalar_data(value), memory);
     }
-    virtual void copy_construct(void *destination, const void *source, std::pmr::memory_resource &memory) const = 0;
+    virtual void copy_construct(void *destination, const void *source, allocator &memory) const = 0;
     virtual void assign_from_value(void *, const void *) const { std::terminate(); }
     virtual void assign_from_input(void *destination, const details::ScalarData &value) const = 0;
     template <typename Value>
@@ -71,7 +71,7 @@ class ScalarRuntimeType : public RuntimeType {
     bool equals(const void *value, const Value &other) const noexcept {
         return equals(value, details::scalar_data(other));
     }
-    virtual void destroy(void *value, std::pmr::memory_resource &memory) const noexcept = 0;
+    virtual void destroy(void *value, allocator &memory) const noexcept = 0;
 
   protected:
     ScalarRuntimeType(const ScalarType &type, std::size_t size, std::size_t alignment, bool uses_variable_memory,

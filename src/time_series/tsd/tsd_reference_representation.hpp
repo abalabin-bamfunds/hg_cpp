@@ -8,13 +8,13 @@ namespace bg::details {
 ReferenceRepresentation *make_tsd_item_reference_representation(
     ReferenceProvider &provider, Reference base_reference, const TimeSeriesDictionaryType &type,
     const TimeSeriesDictionaryRuntimeType &base_runtime_type, const TimeSeriesRuntimeType &item_runtime_type,
-    std::pmr::memory_resource &memory);
+    allocator &memory);
 
 ReferenceRepresentation *make_dereferenced_tsd_representation(ReferenceProvider &provider,
                                                               Reference base_reference,
                                                               const TimeSeriesDictionaryType &type,
                                                               const TimeSeriesDictionaryRuntimeType &base_runtime_type,
                                                               const TimeSeriesRuntimeType &item_runtime_type,
-                                                              std::pmr::memory_resource &memory);
+                                                              allocator &memory);
 
 } // namespace bg::details

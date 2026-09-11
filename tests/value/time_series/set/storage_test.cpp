@@ -10,7 +10,8 @@
 
 TEST_CASE("canceling a time series set addition reclaims its position immediately",
           "[value][tss][series:tss][storage][feature:time-series-storage][transition:addition]") {
-    auto memory = counting_memory_resource{};
+    auto resource = counting_memory_resource{};
+    auto memory = bg::allocator{resource};
     auto storage = bg::details::time_series_set_storage{};
     const auto &key_runtime_type = bg::cpp_scalar_runtime_type<std::int64_t>();
     const auto key_layout = bg::util::runtime_item_layout{key_runtime_type.size(), key_runtime_type.alignment()};
@@ -40,12 +41,13 @@ TEST_CASE("canceling a time series set addition reclaims its position immediatel
 
     storage.release(key_runtime_type, key_layout, memory, [&](std::uint32_t) noexcept { --constructed_items; });
     CHECK(constructed_items == 0);
-    CHECK(memory.allocations() == 0);
+    CHECK(resource.allocations() == 0);
 }
 
 TEST_CASE("removing an existing time series set item retains it until reclamation",
           "[value][tss][series:tss][storage][feature:time-series-storage][transition:removal]") {
-    auto memory = counting_memory_resource{};
+    auto resource = counting_memory_resource{};
+    auto memory = bg::allocator{resource};
     auto storage = bg::details::time_series_set_storage{};
     const auto &key_runtime_type = bg::cpp_scalar_runtime_type<std::int64_t>();
     const auto key_layout = bg::util::runtime_item_layout{key_runtime_type.size(), key_runtime_type.alignment()};
@@ -83,13 +85,14 @@ TEST_CASE("removing an existing time series set item retains it until reclamatio
     CHECK(storage.find_position(key, key_runtime_type, key_layout) == bg::util::occupancy_index::npos);
 
     storage.release(key_runtime_type, key_layout, memory, [&](std::uint32_t) noexcept { --constructed_items; });
-    CHECK(memory.allocations() == 0);
+    CHECK(resource.allocations() == 0);
 }
 
 TEST_CASE("retaining a time series set key preserves its non-live position",
           "[value][tss][series:tss][storage][feature:time-series-storage][feature:getitem]"
           "[transition:addition][transition:removal]") {
-    auto memory = counting_memory_resource{};
+    auto resource = counting_memory_resource{};
+    auto memory = bg::allocator{resource};
     auto storage = bg::details::time_series_set_storage{};
     const auto &key_runtime_type = bg::cpp_scalar_runtime_type<std::int64_t>();
     const auto key_layout = bg::util::runtime_item_layout{key_runtime_type.size(), key_runtime_type.alignment()};
@@ -134,12 +137,13 @@ TEST_CASE("retaining a time series set key preserves its non-live position",
     CHECK(storage.find_position(key, key_runtime_type, key_layout) == bg::util::occupancy_index::npos);
 
     storage.release(key_runtime_type, key_layout, memory, [&](std::uint32_t) noexcept { --constructed_items; });
-    CHECK(memory.allocations() == 0);
+    CHECK(resource.allocations() == 0);
 }
 
 TEST_CASE("clearing time series set storage retains only previously visible items",
           "[value][tss][series:tss][storage][feature:time-series-storage][transition:removal]") {
-    auto memory = counting_memory_resource{};
+    auto resource = counting_memory_resource{};
+    auto memory = bg::allocator{resource};
     auto storage = bg::details::time_series_set_storage{};
     const auto &key_runtime_type = bg::cpp_scalar_runtime_type<std::int64_t>();
     const auto key_layout = bg::util::runtime_item_layout{key_runtime_type.size(), key_runtime_type.alignment()};
@@ -173,5 +177,5 @@ TEST_CASE("clearing time series set storage retains only previously visible item
     CHECK(constructed_items == 0);
 
     storage.release(key_runtime_type, key_layout, memory, [&](std::uint32_t) noexcept { --constructed_items; });
-    CHECK(memory.allocations() == 0);
+    CHECK(resource.allocations() == 0);
 }

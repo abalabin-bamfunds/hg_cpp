@@ -1,11 +1,11 @@
 #pragma once
 
+#include <bg/allocator.hpp>
 #include <bg/scalar/details/data.hpp>
 #include <bg/scalar/details/storage_traits_base.hpp>
 
 #include <concepts>
 #include <cstddef>
-#include <memory_resource>
 #include <type_traits>
 
 namespace bg::details {
@@ -19,7 +19,7 @@ concept scalar_view_source_for = requires(const Source &source) {
 
 template <typename Collection>
 void replace_collection_storage(scalar_stored_t<Collection> &destination, scalar_value_t<Collection> value,
-                                std::pmr::memory_resource &memory) {
+                                allocator &memory) {
     using Storage = scalar_stored_t<Collection>;
     using Traits = scalar_storage_traits<Collection>;
 

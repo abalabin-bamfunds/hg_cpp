@@ -3,7 +3,6 @@
 #include <bg/scalar/runtime_type.hpp>
 
 #include <cstddef>
-#include <memory_resource>
 
 namespace bg {
 
@@ -34,21 +33,19 @@ class ScalarSetRuntimeType : public ScalarRuntimeType {
     }
     virtual void for_each(const void *storage, void *context, ItemFunction function) const = 0;
 
-    [[nodiscard]] virtual bool insert(void *storage, const details::ScalarData &value,
-                                      std::pmr::memory_resource &memory) const = 0;
+    [[nodiscard]] virtual bool insert(void *storage, const details::ScalarData &value, allocator &memory) const = 0;
     template <typename Value>
         requires requires(const Value &value) { details::scalar_data(value); }
-    [[nodiscard]] bool insert(void *storage, const Value &value, std::pmr::memory_resource &memory) const {
+    [[nodiscard]] bool insert(void *storage, const Value &value, allocator &memory) const {
         return insert(storage, details::scalar_data(value), memory);
     }
-    [[nodiscard]] virtual bool erase(void *storage, const details::ScalarData &value,
-                                     std::pmr::memory_resource &memory) const = 0;
+    [[nodiscard]] virtual bool erase(void *storage, const details::ScalarData &value, allocator &memory) const = 0;
     template <typename Value>
         requires requires(const Value &value) { details::scalar_data(value); }
-    [[nodiscard]] bool erase(void *storage, const Value &value, std::pmr::memory_resource &memory) const {
+    [[nodiscard]] bool erase(void *storage, const Value &value, allocator &memory) const {
         return erase(storage, details::scalar_data(value), memory);
     }
-    virtual void clear(void *storage, std::pmr::memory_resource &memory) const noexcept = 0;
+    virtual void clear(void *storage, allocator &memory) const noexcept = 0;
 
   private:
     const ScalarRuntimeType *item_;

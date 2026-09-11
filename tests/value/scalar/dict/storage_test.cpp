@@ -22,26 +22,27 @@ TEST_CASE("resolved scalar dictionary storage supports mutation",
     const auto &type = bg::dict_scalar_type(key_storage.type(), value_storage.type());
     const auto &dict = static_cast<const bg::ScalarDictRuntimeType &>(bg::resolve_scalar_runtime_type(type, available));
     auto memory = std::pmr::unsynchronized_pool_resource{};
-    auto *storage = memory.allocate(dict.size(), dict.alignment());
+    auto allocator = bg::allocator{memory};
+    auto *storage = allocator.allocate_bytes(dict.size(), dict.alignment());
     dict.construct_initial_value(storage);
 
     const auto key = bg::ScalarValue{1};
     const auto first = bg::ScalarValue{"first"};
     const auto second = bg::ScalarValue{"second"};
-    dict.insert_or_assign(storage, key, first, memory);
-    dict.insert_or_assign(storage, key, second, memory);
+    dict.insert_or_assign(storage, key, first, allocator);
+    dict.insert_or_assign(storage, key, second, allocator);
 
     REQUIRE(dict.item_count(storage) == 1);
     CHECK(dict.contains(storage, key));
     CHECK(*static_cast<const std::pmr::string *>(dict.at(storage, key).data) == "second");
-    CHECK(dict.erase(storage, key, memory));
-    CHECK_FALSE(dict.erase(storage, key, memory));
+    CHECK(dict.erase(storage, key, allocator));
+    CHECK_FALSE(dict.erase(storage, key, allocator));
 
-    dict.clear(storage, memory);
+    dict.clear(storage, allocator);
     CHECK(dict.item_count(storage) == 0);
 
-    dict.destroy(storage, memory);
-    memory.deallocate(storage, dict.size(), dict.alignment());
+    dict.destroy(storage, allocator);
+    allocator.deallocate_bytes(storage, dict.size(), dict.alignment());
 }
 
 TEST_CASE("resolved dictionary storage owns nested collection values",
@@ -54,20 +55,21 @@ TEST_CASE("resolved dictionary storage owns nested collection values",
     const auto &dict =
         static_cast<const bg::ScalarDictRuntimeType &>(bg::resolve_scalar_runtime_type(dict_type, available));
     auto memory = std::pmr::unsynchronized_pool_resource{};
-    auto *storage = memory.allocate(dict.size(), dict.alignment());
+    auto allocator = bg::allocator{memory};
+    auto *storage = allocator.allocate_bytes(dict.size(), dict.alignment());
     dict.construct_initial_value(storage);
 
     const auto key = bg::ScalarValue{1};
     const auto values = bg::ScalarValue<bg::List<bg::string>>{std::array<std::string_view, 2>{"one", "two"}};
-    dict.insert_or_assign(storage, key, values, memory);
+    dict.insert_or_assign(storage, key, values, allocator);
 
     const auto stored = dict.at(storage, key);
     const auto &list = static_cast<const bg::ScalarListRuntimeType &>(stored.runtime_type);
     REQUIRE(list.item_count(stored.data) == 2);
     CHECK(*static_cast<const std::pmr::string *>(list.item(stored.data, 1)) == "two");
 
-    dict.destroy(storage, memory);
-    memory.deallocate(storage, dict.size(), dict.alignment());
+    dict.destroy(storage, allocator);
+    allocator.deallocate_bytes(storage, dict.size(), dict.alignment());
 }
 
 namespace {
@@ -93,18 +95,19 @@ TEST_CASE("a scalar dictionary copies between composed and C++ storage",
     const auto source =
         bg::ScalarValue<Dict>{std::vector<std::pair<std::int64_t, RuntimeDictValue>>{{1, {.first = 2, .second = 3}}}};
     auto memory = std::pmr::unsynchronized_pool_resource{};
-    auto *storage = memory.allocate(composed.size(), composed.alignment());
-    composed.construct_from_input(storage, source, memory);
+    auto allocator = bg::allocator{memory};
+    auto *storage = allocator.allocate_bytes(composed.size(), composed.alignment());
+    composed.construct_from_input(storage, source, allocator);
 
     const auto composed_view = bg::Scalar<Dict>::from(composed, storage);
-    const auto copy = bg::ScalarValue<Dict>{composed_view, memory};
+    const auto copy = bg::ScalarValue<Dict>{composed_view, allocator};
 
     REQUIRE(copy.view().size() == 1);
     CHECK(copy.view().at(1).value().first == 2);
     CHECK(copy.view().at(1).value().second == 3);
 
-    composed.destroy(storage, memory);
-    memory.deallocate(storage, composed.size(), composed.alignment());
+    composed.destroy(storage, allocator);
+    allocator.deallocate_bytes(storage, composed.size(), composed.alignment());
 }
 
 TEST_CASE("a scalar dictionary copies nested keys between composed and C++ storage",
@@ -126,38 +129,39 @@ TEST_CASE("a scalar dictionary copies nested keys between composed and C++ stora
     const auto &composed =
         static_cast<const bg::ScalarDictRuntimeType &>(bg::resolve_scalar_runtime_type(dict_type, available));
     auto memory = std::pmr::unsynchronized_pool_resource{};
+    auto allocator = bg::allocator{memory};
 
-    auto *inner_storage = memory.allocate(inner.size(), inner.alignment());
+    auto *inner_storage = allocator.allocate_bytes(inner.size(), inner.alignment());
     inner.construct_initial_value(inner_storage);
     const auto time_value = bg::ScalarValue{bg::EvaluationTime{bg::EvaluationTime::duration{1}}};
-    inner.append(inner_storage, time_value, memory);
+    inner.append(inner_storage, time_value, allocator);
     const auto inner_view = bg::Scalar<InnerKey>::from(inner, inner_storage);
 
-    auto *key_storage = memory.allocate(key.size(), key.alignment());
+    auto *key_storage = allocator.allocate_bytes(key.size(), key.alignment());
     key.construct_initial_value(key_storage);
-    key.append(key_storage, inner_view, memory);
+    key.append(key_storage, inner_view, allocator);
     const auto key_view = bg::Scalar<Key>::from(key, key_storage);
 
-    auto *dict_storage = memory.allocate(composed.size(), composed.alignment());
+    auto *dict_storage = allocator.allocate_bytes(composed.size(), composed.alignment());
     composed.construct_initial_value(dict_storage);
     const auto mapped = bg::ScalarValue{42};
-    composed.insert_or_assign(dict_storage, key_view, mapped, memory);
+    composed.insert_or_assign(dict_storage, key_view, mapped, allocator);
 
     const auto &native = bg::cpp_scalar_runtime_type<Dict>();
-    auto *native_storage = memory.allocate(native.size(), native.alignment());
+    auto *native_storage = allocator.allocate_bytes(native.size(), native.alignment());
     const auto dict_view = bg::Scalar<Dict>::from(composed, dict_storage);
-    native.construct_from_input(native_storage, dict_view, memory);
+    native.construct_from_input(native_storage, dict_view, allocator);
     const auto &native_dict = static_cast<const bg::ScalarDictRuntimeType &>(native);
 
     REQUIRE(native_dict.contains(native_storage, key_view));
     CHECK(*static_cast<const std::int64_t *>(native_dict.at(native_storage, key_view).data) == 42);
 
-    native.destroy(native_storage, memory);
-    memory.deallocate(native_storage, native.size(), native.alignment());
-    composed.destroy(dict_storage, memory);
-    memory.deallocate(dict_storage, composed.size(), composed.alignment());
-    key.destroy(key_storage, memory);
-    memory.deallocate(key_storage, key.size(), key.alignment());
-    inner.destroy(inner_storage, memory);
-    memory.deallocate(inner_storage, inner.size(), inner.alignment());
+    native.destroy(native_storage, allocator);
+    allocator.deallocate_bytes(native_storage, native.size(), native.alignment());
+    composed.destroy(dict_storage, allocator);
+    allocator.deallocate_bytes(dict_storage, composed.size(), composed.alignment());
+    key.destroy(key_storage, allocator);
+    allocator.deallocate_bytes(key_storage, key.size(), key.alignment());
+    inner.destroy(inner_storage, allocator);
+    allocator.deallocate_bytes(inner_storage, inner.size(), inner.alignment());
 }

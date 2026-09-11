@@ -1,19 +1,20 @@
 #pragma once
 
+#include <bg/allocator.hpp>
+
 #include <cstddef>
-#include <memory_resource>
 
 namespace bg::details {
 
 struct ScalarAllocationOwner {
-    std::pmr::memory_resource *memory;
+    allocator memory;
     const void *graph;
     std::size_t node_index;
 };
 
 class ScalarAllocationContext {
   public:
-    ScalarAllocationContext(std::pmr::memory_resource &memory, const void *graph, std::size_t node_index) noexcept;
+    ScalarAllocationContext(allocator memory, const void *graph, std::size_t node_index) noexcept;
     ~ScalarAllocationContext();
 
     ScalarAllocationContext(const ScalarAllocationContext &) = delete;
@@ -25,7 +26,7 @@ class ScalarAllocationContext {
 };
 
 const ScalarAllocationOwner *current_scalar_allocation_owner() noexcept;
-std::pmr::memory_resource &current_scalar_memory_resource();
+allocator &current_scalar_allocator();
 
 void record_context_scalar_allocation(const void *value);
 void check_context_scalar_deallocation(const void *value);

@@ -95,7 +95,7 @@ class FreeTimeSeriesBundleRuntimeType final : public TimeSeriesRuntimeType {
         std::construct_at(static_cast<free_time_series_bundle_storage *>(destination));
     }
 
-    void destroy_value(void *value, std::pmr::memory_resource &memory) const noexcept override {
+    void destroy_value(void *value, allocator &memory) const noexcept override {
         auto *storage = static_cast<free_time_series_bundle_storage *>(value);
         storage->modified.release(memory);
         std::destroy_at(storage);

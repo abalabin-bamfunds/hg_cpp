@@ -73,7 +73,8 @@ class TimeSeriesDictionaryReferenceRepresentation final : public ReferenceRepres
         : ReferenceRepresentation{base_reference}, provider_{&provider}, base_runtime_type_{&base_runtime_type},
           item_runtime_type_{static_cast<const TimeSeriesReferenceType &>(item_runtime_type.type())},
           runtime_type_{type, base_runtime_type, item_runtime_type_, *this},
-          last_updated_{*resolve_reference(base_reference).last_updated}, retired_{&provider.memory()} {
+          last_updated_{*resolve_reference(base_reference).last_updated},
+          retired_{&provider.allocation().memory_resource()} {
         const auto base_time_series = resolve_reference(base_reference);
         const auto *storage = base_time_series.storage;
         base_runtime_type.for_each_item_id(storage, this, [](void *context, item_id_t id) {
@@ -141,11 +142,11 @@ class TimeSeriesDictionaryReferenceRepresentation final : public ReferenceRepres
         cancel_items.release();
     }
 
-    void destroy(std::pmr::memory_resource &memory) noexcept override {
+    void destroy(allocator &memory) noexcept override {
         items_.release(positions_, memory);
         positions_.release(memory);
         item_valid_.release(memory);
-        allocator{memory}.delete_object(this);
+        memory.delete_object(this);
     }
 
     const ReferenceItemStorage &item(item_id_t id) const noexcept { return items_[id]; }
@@ -166,7 +167,7 @@ class TimeSeriesDictionaryReferenceRepresentation final : public ReferenceRepres
 
     void revalidate(OutputChangeContext &context) {
         auto current = util::index<>{};
-        auto release_current = util::scope_exit{[&]() noexcept { current.release(provider_->memory()); }};
+        auto release_current = util::scope_exit{[&]() noexcept { current.release(provider_->allocation()); }};
         const auto base_time_series = resolve_reference(base_reference());
 
         struct Callback {
@@ -177,7 +178,7 @@ class TimeSeriesDictionaryReferenceRepresentation final : public ReferenceRepres
         base_runtime_type_->for_each_item_id(base_time_series.storage, &callback, [](void *value, item_id_t id) {
             auto &callback = *static_cast<Callback *>(value);
             auto &self = *callback.representation;
-            callback.current->set(id, self.provider_->memory());
+            callback.current->set(id, self.provider_->allocation());
             if (!self.positions_.contains(id)) {
                 self.add_item(id, callback.context->evaluation_time());
                 return;
@@ -190,7 +191,7 @@ class TimeSeriesDictionaryReferenceRepresentation final : public ReferenceRepres
                 return;
             }
 
-            self.item_valid_.set(id, self.provider_->memory());
+            self.item_valid_.set(id, self.provider_->allocation());
             self.provider_->notify(self.items_[id].reference.subscriptions(), *callback.context,
                                    OutputChange::revalidation);
         });
@@ -211,7 +212,7 @@ class TimeSeriesDictionaryReferenceRepresentation final : public ReferenceRepres
             return;
         }
 
-        auto &memory = provider_->memory();
+        auto &memory = provider_->allocation();
         const auto base_time_series = resolve_reference(base_reference());
         const auto item = base_runtime_type_->item(base_time_series.storage, id);
         items_.emplace_at(id, memory, base_reference(), id, reference_time);
@@ -232,7 +233,7 @@ class TimeSeriesDictionaryReferenceRepresentation final : public ReferenceRepres
         const auto now_valid = item_time_series.last_updated > MIN_DT;
         const auto was_valid = item_valid_.contains(id);
         if (now_valid) {
-            item_valid_.set(id, provider_->memory());
+            item_valid_.set(id, provider_->allocation());
             provider_->notify(item.reference.subscriptions(), context,
                               was_valid ? OutputChange::update : OutputChange::revalidation);
             return;
@@ -270,7 +271,7 @@ class TimeSeriesDictionaryReferenceRepresentation final : public ReferenceRepres
     }
 
     void release_retired(EvaluationTime evaluation_time) noexcept {
-        auto &memory = provider_->memory();
+        auto &memory = provider_->allocation();
         auto retained = retired_.begin();
         for (const auto item : retired_) {
             if (item.time >= evaluation_time) {
@@ -375,8 +376,8 @@ void TimeSeriesDictionaryReferenceRuntimeType::for_each_modified_item(const Eval
 ReferenceRepresentation *make_tsd_item_reference_representation(
     ReferenceProvider &provider, Reference base_reference, const TimeSeriesDictionaryType &type,
     const TimeSeriesDictionaryRuntimeType &base_runtime_type, const TimeSeriesRuntimeType &item_runtime_type,
-    std::pmr::memory_resource &memory) {
-    return allocator{memory}.new_object<TimeSeriesDictionaryReferenceRepresentation>(
+    allocator &memory) {
+    return memory.new_object<TimeSeriesDictionaryReferenceRepresentation>(
         provider, base_reference, type, base_runtime_type, item_runtime_type);
 }
 

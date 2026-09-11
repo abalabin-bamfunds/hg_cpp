@@ -911,7 +911,7 @@ void plan_fixed_storage(CompilationPlan &plan) {
 
 class CompiledGraphBuilder {
   public:
-    static void build(CompiledGraph &graph, const GraphWiring &wiring, std::pmr::memory_resource &memory) {
+    static void build(CompiledGraph &graph, const GraphWiring &wiring, allocator memory) {
         const auto nodes = wiring.nodes();
         if (nodes.size() > CompiledGraph::count_mask) {
             throw std::length_error{"a compiled graph has too many nodes"};
@@ -924,10 +924,10 @@ class CompiledGraphBuilder {
 
         set_graph_metadata(graph, plan);
 
-        auto *storage = static_cast<std::byte *>(memory.allocate(plan.fixed.size, plan.fixed.alignment));
+        auto *storage = static_cast<std::byte *>(memory.allocate_bytes(plan.fixed.size, plan.fixed.alignment));
         graph.fixed_storage_ = storage;
         auto release = util::scope_exit{[&]() noexcept {
-            memory.deallocate(storage, plan.fixed.size, plan.fixed.alignment);
+            memory.deallocate_bytes(storage, plan.fixed.size, plan.fixed.alignment);
             graph.fixed_storage_ = nullptr;
         }};
         construct_storage(plan, storage, memory);
@@ -951,8 +951,7 @@ class CompiledGraphBuilder {
              << CompiledGraph::alignment_shift);
     }
 
-    static void construct_storage(const CompilationPlan &plan, std::byte *storage,
-                                  std::pmr::memory_resource &upstream_memory) {
+    static void construct_storage(const CompilationPlan &plan, std::byte *storage, allocator upstream_memory) {
         construct_header(plan, storage);
         construct_wiring_paths(plan, storage);
         if (plan.has_lifecycle()) {
@@ -964,14 +963,14 @@ class CompiledGraphBuilder {
         constructed_scalars.reserve(plan.scalar_destruction_count);
         auto constructed_node_data = std::vector<ConstructedNodeData>{};
         constructed_node_data.reserve(plan.nodes.size());
-        auto *variable_memory = std::pmr::null_memory_resource();
+        auto variable_memory = allocator{*std::pmr::null_memory_resource()};
         std::pmr::unsynchronized_pool_resource *variable_pool = nullptr;
         auto rollback = util::scope_exit{[&]() noexcept {
             for (auto data = constructed_node_data.rbegin(); data != constructed_node_data.rend(); ++data) {
                 data->destruction_function(data->data);
             }
             for (auto scalar = constructed_scalars.rbegin(); scalar != constructed_scalars.rend(); ++scalar) {
-                scalar->runtime_type->destroy(scalar->data, *variable_memory);
+                scalar->runtime_type->destroy(scalar->data, variable_memory);
             }
 
             if (variable_pool != nullptr) {
@@ -981,14 +980,14 @@ class CompiledGraphBuilder {
 
         if (plan.uses_variable_memory) {
             auto *pool = plan.fixed.variable_memory.objects<std::pmr::unsynchronized_pool_resource>(storage).data();
-            std::construct_at(pool, &upstream_memory);
+            std::construct_at(pool, &upstream_memory.memory_resource());
             variable_pool = pool;
-            variable_memory = pool;
+            variable_memory = allocator{*pool};
         }
 
         construct_initial_runtime_storage(plan, storage);
         construct_output_destruction(plan, storage);
-        construct_nodes(plan, storage, upstream_memory, *variable_memory, constructed_scalars, constructed_node_data);
+        construct_nodes(plan, storage, upstream_memory, variable_memory, constructed_scalars, constructed_node_data);
         rollback.release();
     }
 
@@ -1120,7 +1119,7 @@ class CompiledGraphBuilder {
     }
 
     static void construct_parameters(const CompilationPlan &plan, std::size_t node_index, std::byte *storage,
-                                     std::pmr::memory_resource &variable_memory,
+                                     allocator variable_memory,
                                      std::vector<ConstructedScalar> &constructed_scalars,
                                      std::size_t &scalar_destruction_index) {
         const auto &node = plan.nodes[node_index];
@@ -1337,10 +1336,11 @@ class CompiledGraphBuilder {
         return destination;
     }
 
-    static void construct_nodes(const CompilationPlan &plan, std::byte *storage,
-                                std::pmr::memory_resource &compiled_memory, std::pmr::memory_resource &variable_memory,
+    static void construct_nodes(const CompilationPlan &plan, std::byte *storage, allocator compiled_memory,
+                                allocator variable_memory,
                                 std::vector<ConstructedScalar> &constructed_scalars,
                                 std::vector<ConstructedNodeData> &constructed_node_data) {
+        auto compiled_allocator = compiled_memory;
         auto node_offsets = plan.fixed.node_offsets.objects<std::uint32_t>(storage);
         auto scalar_destruction_index = std::size_t{};
 
@@ -1417,7 +1417,7 @@ class CompiledGraphBuilder {
 
                 if (node_plan.compiled_data.size != 0) {
                     auto *data = node_storage + layout.compiled_data.offset;
-                    node.node_template().construct_compiled_data(node.signature(), data, compiled_memory);
+                    node.node_template().construct_compiled_data(node.signature(), data, compiled_allocator);
                     if (node_plan.compiled_data.destruction_function != nullptr) {
                         constructed_node_data.push_back({node_plan.compiled_data.destruction_function, data});
                     }
@@ -1442,9 +1442,9 @@ class CompiledGraphBuilder {
     }
 };
 
-CompiledGraph::CompiledGraph(const GraphWiring &wiring) : CompiledGraph(wiring, *std::pmr::get_default_resource()) {}
+CompiledGraph::CompiledGraph(const GraphWiring &wiring) : CompiledGraph(wiring, allocator{}) {}
 
-CompiledGraph::CompiledGraph(const GraphWiring &wiring, std::pmr::memory_resource &memory) : fixed_memory_(&memory) {
+CompiledGraph::CompiledGraph(const GraphWiring &wiring, allocator memory) : fixed_allocator_(memory) {
     CompiledGraphBuilder::build(*this, wiring, memory);
 }
 
@@ -1502,11 +1502,11 @@ CompiledGraph::~CompiledGraph() {
     const auto &header = storage_header();
 
     std::pmr::unsynchronized_pool_resource *variable_pool = nullptr;
-    auto *variable_memory = std::pmr::null_memory_resource();
+    auto variable_memory = allocator{*std::pmr::null_memory_resource()};
     if (has_variable_memory()) {
         variable_pool =
             reinterpret_cast<std::pmr::unsynchronized_pool_resource *>(fixed_storage_ + variable_memory_offset());
-        variable_memory = variable_pool;
+        variable_memory = allocator{*variable_pool};
     }
 
     for (auto node_index = node_count(); node_index != 0;) {
@@ -1526,14 +1526,14 @@ CompiledGraph::~CompiledGraph() {
                                                            count * sizeof(const ScalarRuntimeType *));
     const auto offsets = stored_objects<std::uint32_t>(fixed_storage_, offsets_offset, count);
     for (auto i = count; i > 0; --i) {
-        runtime_types[i - 1]->destroy(fixed_storage_ + offsets[i - 1], *variable_memory);
+        runtime_types[i - 1]->destroy(fixed_storage_ + offsets[i - 1], variable_memory);
     }
 
     if (variable_pool != nullptr) {
         std::destroy_at(variable_pool);
     }
 
-    fixed_memory_->deallocate(fixed_storage_, fixed_storage_size(), fixed_storage_alignment());
+    fixed_allocator_.deallocate_bytes(fixed_storage_, fixed_storage_size(), fixed_storage_alignment());
 }
 
 } // namespace bg

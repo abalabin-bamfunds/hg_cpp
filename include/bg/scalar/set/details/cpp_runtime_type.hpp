@@ -24,7 +24,7 @@ class CppScalarRuntimeType<Set<T>> final : public CppScalarRuntimeTypeBase<Set<T
     }
 
     void construct_from_input(void *destination, const details::ScalarData &value,
-                              std::pmr::memory_resource &memory) const override {
+                              allocator &memory) const override {
         construct_initial_value(destination);
         auto rollback = util::scope_exit{[&]() noexcept { clear(destination, memory); }};
         auto copy = SetCopy{this, destination, &memory};
@@ -34,7 +34,7 @@ class CppScalarRuntimeType<Set<T>> final : public CppScalarRuntimeTypeBase<Set<T
     }
 
     void assign_from_input(void *destination, const details::ScalarData &value) const override {
-        auto &memory = current_scalar_memory_resource();
+        auto memory = current_scalar_allocator();
         auto replacement = details::scalar_set_storage<T>{};
         auto release_replacement = util::scope_exit{[&]() noexcept { clear(&replacement, memory); }};
         auto copy = SetCopy{this, &replacement, &memory};
@@ -73,36 +73,37 @@ class CppScalarRuntimeType<Set<T>> final : public CppScalarRuntimeTypeBase<Set<T
     }
 
     [[nodiscard]] bool insert(void *storage, const details::ScalarData &value,
-                              std::pmr::memory_resource &memory) const override {
+                              allocator &memory) const override {
         auto &items = static_cast<details::scalar_set_storage<T> *>(storage)->items;
         return items
             .insert_with(
                 value.hash(),
-                [&](const auto &item) { return this->item_runtime_type().equals(std::addressof(item), value); }, memory,
+                [&](const auto &item) { return this->item_runtime_type().equals(std::addressof(item), value); },
+                memory.memory_resource(),
                 [&](auto *destination) { value.copy_construct(destination, this->item_runtime_type(), memory); },
                 [&](auto *destination) noexcept { scalar_storage_traits<T>::destroy(destination, memory); })
             .second;
     }
 
     [[nodiscard]] bool erase(void *storage, const details::ScalarData &value,
-                             std::pmr::memory_resource &memory) const override {
+                             allocator &memory) const override {
         auto &items = static_cast<details::scalar_set_storage<T> *>(storage)->items;
         return items.erase_with(
             value.hash(),
-            [&](const auto &item) { return this->item_runtime_type().equals(std::addressof(item), value); }, memory,
-            [&](auto *item) noexcept { scalar_storage_traits<T>::destroy(item, memory); });
+            [&](const auto &item) { return this->item_runtime_type().equals(std::addressof(item), value); },
+            memory.memory_resource(), [&](auto *item) noexcept { scalar_storage_traits<T>::destroy(item, memory); });
     }
 
-    void clear(void *storage, std::pmr::memory_resource &memory) const noexcept override {
+    void clear(void *storage, allocator &memory) const noexcept override {
         static_cast<details::scalar_set_storage<T> *>(storage)->items.release_with(
-            memory, [&](auto *item) noexcept { scalar_storage_traits<T>::destroy(item, memory); });
+            memory.memory_resource(), [&](auto *item) noexcept { scalar_storage_traits<T>::destroy(item, memory); });
     }
 
   private:
     struct SetCopy {
         const CppScalarRuntimeType *runtime_type;
         void *storage;
-        std::pmr::memory_resource *memory;
+        allocator *memory;
     };
 
     struct SetComparison {

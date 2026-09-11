@@ -29,7 +29,8 @@ TEST_CASE("an erased scalar value stores a pointer-sized borrowed value inline",
           "[value][scalar][erased][feature:scalar-api][scalar:generic][scalar:integer][storage:inline]") {
     const auto source_value = std::int64_t{42};
     const auto source = bg::Scalar<std::int64_t>::from(source_value);
-    const auto value = bg::ScalarValue<>{source, *std::pmr::null_memory_resource()};
+    auto allocator = bg::allocator{*std::pmr::null_memory_resource()};
+    const auto value = bg::ScalarValue<>{source, allocator};
 
     CHECK(*bg::scalar_cast<std::int64_t>(value) == source_value);
 }

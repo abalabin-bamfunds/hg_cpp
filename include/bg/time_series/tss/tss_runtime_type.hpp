@@ -23,7 +23,7 @@ class TimeSeriesSetRuntimeType final : public TimeSeriesRuntimeType {
 
     void invalidate_output(const details::OutputState &) const override {}
 
-    void destroy_value(void *value, std::pmr::memory_resource &memory) const noexcept override {
+    void destroy_value(void *value, allocator &memory) const noexcept override {
         auto *storage = static_cast<time_series_set_storage *>(value);
         const auto layout = util::runtime_item_layout{key_->size(), key_->alignment()};
         storage->release(*key_, layout, memory, [](std::uint32_t) noexcept {});

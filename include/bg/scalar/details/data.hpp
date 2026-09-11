@@ -1,5 +1,6 @@
 #pragma once
 
+#include <bg/allocator.hpp>
 #include <bg/scalar/details/value_type.hpp>
 #include <bg/scalar/runtime_type.hpp>
 #include <bg/util/tagged_ptr.hpp>
@@ -7,7 +8,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
-#include <memory_resource>
 #include <stdexcept>
 #include <utility>
 
@@ -17,13 +17,13 @@ enum class ScalarDataMode : std::uintptr_t {
     stored_view,
     source_view,
     inline_value,
-    owned_explicit_resource,
-    owned_context_resource,
-    owned_standard_resource,
+    owned_explicit_allocator,
+    owned_context_allocator,
+    owned_default_allocator,
 };
 
 inline constexpr auto scalar_data_mode_mask = std::uintptr_t{7};
-static_assert(std::to_underlying(ScalarDataMode::owned_standard_resource) <= scalar_data_mode_mask);
+static_assert(std::to_underlying(ScalarDataMode::owned_default_allocator) <= scalar_data_mode_mask);
 
 class ScalarData {
   public:
@@ -53,7 +53,7 @@ class ScalarData {
     }
 
     void copy_construct(void *destination, const ScalarRuntimeType &destination_runtime_type,
-                        std::pmr::memory_resource &memory) const {
+                        allocator &memory) const {
         if (&type() != &destination_runtime_type.type()) {
             throw std::invalid_argument{"incompatible scalar types"};
         }

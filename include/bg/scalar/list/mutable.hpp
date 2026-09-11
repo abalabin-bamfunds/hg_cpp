@@ -23,18 +23,18 @@ template <typename T> class MutableList : public List<T> {
     decltype(auto) operator[](std::size_t index) const noexcept;
 
     void append(typename Traits::value_type value) const {
-        auto &memory = details::current_scalar_memory_resource();
+        auto memory = details::current_scalar_allocator();
         mutable_storage().items.emplace_back_with(memory,
                                                   [&](auto *stored) { Traits::construct(stored, value, memory); });
     }
 
     void set(std::size_t index, typename Traits::value_type value) const {
-        auto &memory = details::current_scalar_memory_resource();
+        auto memory = details::current_scalar_allocator();
         Traits::assign(mutable_storage().items[static_cast<std::uint32_t>(index)], value, memory);
     }
 
     void erase(std::size_t index) const {
-        auto &memory = details::current_scalar_memory_resource();
+        auto memory = details::current_scalar_allocator();
         auto &items = mutable_storage().items;
 
         for (auto i = static_cast<std::uint32_t>(index); i + 1 < items.size(); ++i) {
@@ -44,7 +44,7 @@ template <typename T> class MutableList : public List<T> {
     }
 
     void clear() const {
-        auto &memory = details::current_scalar_memory_resource();
+        auto memory = details::current_scalar_allocator();
         mutable_storage().items.release_with(memory, [&](auto *item) noexcept { Traits::destroy(item, memory); });
     }
 

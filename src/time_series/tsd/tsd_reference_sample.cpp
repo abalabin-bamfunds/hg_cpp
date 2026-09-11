@@ -22,8 +22,8 @@ class SampledDictionaryRuntimeType final : public TimeSeriesDictionaryRuntimeTyp
                                           shape.key_runtime_type(), shape.item_runtime_type()} {}
 
     DictionaryKeyStorage retention_storage(void *value) const noexcept override;
-    RetainedDictionaryKey retain_key(void *, const ScalarData &, std::pmr::memory_resource &) const override;
-    void release_key(void *, item_id_t, std::pmr::memory_resource &) const noexcept override;
+    RetainedDictionaryKey retain_key(void *, const ScalarData &, allocator &) const override;
+    void release_key(void *, item_id_t, allocator &) const noexcept override;
     item_id_t find_key(const void *value, const ScalarData &key) const override;
     bool key_live(const void *value, item_id_t id) const noexcept override;
     item_id_t find_item(const void *value, const ScalarData &key) const override;
@@ -54,11 +54,11 @@ struct SampledDictionary {
     };
 
     SampledDictionary(const TimeSeriesDictionaryRuntimeType &shape, ResolvedTimeSeries previous,
-                      ResolvedTimeSeries current, EvaluationTime evaluation_time, std::pmr::memory_resource &memory)
+                      ResolvedTimeSeries current, EvaluationTime evaluation_time, allocator &memory)
         : runtime_type{&sampled_runtime_type(shape)},
           previous_last_updated{previous.last_updated == nullptr ? MIN_DT : *previous.last_updated},
           current_last_updated{current.last_updated == nullptr ? MIN_DT : *current.last_updated}, previous{previous},
-          current{current}, evaluation_time{evaluation_time}, children{&memory}, memory{&memory} {
+          current{current}, evaluation_time{evaluation_time}, children{&memory.memory_resource()}, memory{&memory} {
         this->previous.last_updated = &previous_last_updated;
         this->current.last_updated = &current_last_updated;
     }
@@ -73,7 +73,7 @@ struct SampledDictionary {
     util::index<> removed;
     util::index<> modified;
     std::pmr::vector<Child> children;
-    std::pmr::memory_resource *memory;
+    allocator *memory;
 };
 
 const TimeSeriesDictionaryRuntimeType *dictionary_runtime_type(ResolvedTimeSeries time_series) noexcept {
@@ -113,7 +113,7 @@ const SampledDictionaryRuntimeType &sampled_runtime_type(const TimeSeriesDiction
 }
 
 SampledDictionary *make_dictionary_sample(ResolvedTimeSeries previous, ResolvedTimeSeries current,
-                                          EvaluationTime evaluation_time, std::pmr::memory_resource &memory) {
+                                          EvaluationTime evaluation_time, allocator &memory) {
     const auto *previous_type = dictionary_runtime_type(previous);
     const auto *current_type = dictionary_runtime_type(current);
     if (previous_type == nullptr && current_type == nullptr) {
@@ -125,7 +125,7 @@ SampledDictionary *make_dictionary_sample(ResolvedTimeSeries previous, ResolvedT
     }
 
     const auto &shape = current_type != nullptr ? *current_type : *previous_type;
-    auto *sample = allocator{memory}.new_object<SampledDictionary>(shape, previous, current, evaluation_time, memory);
+    auto *sample = memory.new_object<SampledDictionary>(shape, previous, current, evaluation_time, memory);
     auto destroy = util::scope_exit{[&]() noexcept { destroy_dictionary_sample(sample); }};
 
     if (current.valid()) {
@@ -203,7 +203,7 @@ void destroy_dictionary_sample(SampledDictionary *sample) noexcept {
     sample->added.release(memory);
     sample->removed.release(memory);
     sample->modified.release(memory);
-    allocator{memory}.delete_object(sample);
+    memory.delete_object(sample);
 }
 
 item_id_t SampledDictionaryRuntimeType::find_item(const void *value, const ScalarData &key) const {
@@ -215,7 +215,7 @@ item_id_t SampledDictionaryRuntimeType::find_item(const void *value, const Scala
 }
 
 RetainedDictionaryKey SampledDictionaryRuntimeType::retain_key(void *value, const ScalarData &key,
-                                                               std::pmr::memory_resource &memory) const {
+                                                               allocator &memory) const {
     auto &sample = *static_cast<SampledDictionary *>(value);
     auto *runtime_type = dictionary_runtime_type(sample.current);
     if (runtime_type == nullptr || sample.current.storage == nullptr) {
@@ -235,7 +235,7 @@ DictionaryKeyStorage SampledDictionaryRuntimeType::retention_storage(void *value
     return runtime_type->retention_storage(const_cast<void *>(sample.current.storage));
 }
 
-void SampledDictionaryRuntimeType::release_key(void *, item_id_t, std::pmr::memory_resource &) const noexcept {
+void SampledDictionaryRuntimeType::release_key(void *, item_id_t, allocator &) const noexcept {
     assert(false && "sampled dictionary key retention must be released through its retained runtime type");
 }
 

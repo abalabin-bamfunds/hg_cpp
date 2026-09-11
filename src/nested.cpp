@@ -76,12 +76,12 @@ class NestedNodeDefinition {
 
     const Signature &signature() const { return *signature_; }
 
-    [[nodiscard]] compiled_data_type compile(const ResolvedSignature &, std::pmr::memory_resource &memory) const {
-        auto graph = std::allocate_shared<CompiledGraph>(std::pmr::polymorphic_allocator<CompiledGraph>{&memory},
-                                                         *wiring_.wiring, memory);
+    [[nodiscard]] compiled_data_type compile(const ResolvedSignature &, allocator &memory) const {
+        auto graph = std::allocate_shared<CompiledGraph>(
+            std::pmr::polymorphic_allocator<CompiledGraph>{&memory.memory_resource()}, *wiring_.wiring, memory);
         auto result = compiled_data_type{
             .graph = std::move(graph),
-            .input_nodes = std::pmr::vector<std::size_t>{&memory},
+            .input_nodes = std::pmr::vector<std::size_t>{&memory.memory_resource()},
             .output_node = wiring_.output_node,
         };
         result.input_nodes.assign(wiring_.input_nodes.begin(), wiring_.input_nodes.end());

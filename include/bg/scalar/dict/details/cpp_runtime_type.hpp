@@ -24,7 +24,7 @@ class CppScalarRuntimeType<Dict<K, V>> final : public CppScalarRuntimeTypeBase<D
     }
 
     void construct_from_input(void *destination, const details::ScalarData &value,
-                              std::pmr::memory_resource &memory) const override {
+                              allocator &memory) const override {
         construct_initial_value(destination);
         auto rollback = util::scope_exit{[&]() noexcept { clear(destination, memory); }};
         auto copy = DictCopy{this, destination, &memory};
@@ -34,7 +34,7 @@ class CppScalarRuntimeType<Dict<K, V>> final : public CppScalarRuntimeTypeBase<D
     }
 
     void assign_from_input(void *destination, const details::ScalarData &value) const override {
-        auto &memory = current_scalar_memory_resource();
+        auto memory = current_scalar_allocator();
         auto replacement = details::scalar_dict_storage<K, V>{};
         auto release_replacement = util::scope_exit{[&]() noexcept { clear(&replacement, memory); }};
         auto copy = DictCopy{this, &replacement, &memory};
@@ -97,11 +97,12 @@ class CppScalarRuntimeType<Dict<K, V>> final : public CppScalarRuntimeTypeBase<D
     }
 
     void insert_or_assign(void *storage, const details::ScalarData &key, const details::ScalarData &value,
-                          std::pmr::memory_resource &memory) const override {
+                          allocator &memory) const override {
         auto &items = static_cast<details::scalar_dict_storage<K, V> *>(storage)->items;
         auto [stored, inserted] = items.try_emplace_with(
             key.hash(),
-            [&](const auto &stored) { return this->key_runtime_type().equals(std::addressof(stored), key); }, memory,
+            [&](const auto &stored) { return this->key_runtime_type().equals(std::addressof(stored), key); },
+            memory.memory_resource(),
             [&](auto *destination) { key.copy_construct(destination, this->key_runtime_type(), memory); },
             [&](auto *destination) noexcept { scalar_storage_traits<K>::destroy(destination, memory); },
             [&](auto *destination) { value.copy_construct(destination, this->mapped_runtime_type(), memory); });
@@ -111,18 +112,18 @@ class CppScalarRuntimeType<Dict<K, V>> final : public CppScalarRuntimeTypeBase<D
     }
 
     [[nodiscard]] bool erase(void *storage, const details::ScalarData &key,
-                             std::pmr::memory_resource &memory) const override {
+                             allocator &memory) const override {
         auto &items = static_cast<details::scalar_dict_storage<K, V> *>(storage)->items;
         return items.erase_with(
             key.hash(),
-            [&](const auto &stored) { return this->key_runtime_type().equals(std::addressof(stored), key); }, memory,
-            [&](auto *item) noexcept { scalar_storage_traits<K>::destroy(item, memory); },
+            [&](const auto &stored) { return this->key_runtime_type().equals(std::addressof(stored), key); },
+            memory.memory_resource(), [&](auto *item) noexcept { scalar_storage_traits<K>::destroy(item, memory); },
             [&](auto *item) noexcept { scalar_storage_traits<V>::destroy(item, memory); });
     }
 
-    void clear(void *storage, std::pmr::memory_resource &memory) const noexcept override {
+    void clear(void *storage, allocator &memory) const noexcept override {
         static_cast<details::scalar_dict_storage<K, V> *>(storage)->items.release_with(
-            memory, [&](auto *item) noexcept { scalar_storage_traits<K>::destroy(item, memory); },
+            memory.memory_resource(), [&](auto *item) noexcept { scalar_storage_traits<K>::destroy(item, memory); },
             [&](auto *item) noexcept { scalar_storage_traits<V>::destroy(item, memory); });
     }
 
@@ -130,7 +131,7 @@ class CppScalarRuntimeType<Dict<K, V>> final : public CppScalarRuntimeTypeBase<D
     struct DictCopy {
         const CppScalarRuntimeType *runtime_type;
         void *storage;
-        std::pmr::memory_resource *memory;
+        allocator *memory;
     };
 
     struct DictComparison {

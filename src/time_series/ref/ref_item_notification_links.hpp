@@ -4,9 +4,9 @@
 
 namespace bg::details {
 
-ReferenceItemNotificationLinks *create_reference_item_notification_links(std::pmr::memory_resource &memory);
+ReferenceItemNotificationLinks *create_reference_item_notification_links(allocator memory);
 void destroy_reference_item_notification_links(ReferenceItemNotificationLinks *links,
-                                               std::pmr::memory_resource &memory) noexcept;
+                                               allocator &memory) noexcept;
 
 void add_reference_root_item_link(ReferenceItemNotificationLinks &links, RuntimeGraph &graph, void *receiver,
                                   item_id_t receiver_item_id, ReferenceItemNotifyFunction notify_function,

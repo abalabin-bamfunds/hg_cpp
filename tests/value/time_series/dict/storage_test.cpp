@@ -24,22 +24,23 @@ TEST_CASE("dictionary runtime items use stable sparse IDs",
     const auto item_value_offset = bg::details::contained_time_series_value_offset(item_runtime_type);
 
     auto memory = std::pmr::monotonic_buffer_resource{};
-    auto *value = memory.allocate(runtime_type.value_size(), runtime_type.value_alignment());
-    runtime_type.construct_runtime_value(value, memory);
+    auto allocator = bg::allocator{memory};
+    auto *value = allocator.allocate_bytes(runtime_type.value_size(), runtime_type.value_alignment());
+    runtime_type.construct_runtime_value(value, allocator);
     auto &storage = *static_cast<bg::details::time_series_dict_storage *>(value);
 
     const auto update_time = bg::MIN_DT + std::chrono::microseconds{1};
     storage.reset_change_tracking(update_time, key_runtime_type, key_layout, item_runtime_type, item_layout,
-                                  item_value_offset, memory);
+                                  item_value_offset, allocator);
     const auto key = bg::ScalarValue<std::int64_t>{7};
     const auto inserted =
-        storage.item(key, key_runtime_type, key_layout, item_runtime_type, item_layout, item_value_offset, memory);
+        storage.item(key, key_runtime_type, key_layout, item_runtime_type, item_layout, item_value_offset, allocator);
     storage.key_storage().last_updated = update_time;
 
     auto item = runtime_type.item(value, inserted.position);
     item.last_updated = update_time;
     *static_cast<int *>(item.value) = 42;
-    REQUIRE(storage.mark_item_modified(inserted.position, update_time, memory));
+    REQUIRE(storage.mark_item_modified(inserted.position, update_time, allocator));
 
     auto ids = std::vector<bg::item_id_t>{};
     runtime_type.for_each_item_id(value, &ids, [](void *context, bg::item_id_t id) {
@@ -63,5 +64,6 @@ TEST_CASE("dictionary runtime items use stable sparse IDs",
     });
     CHECK(updated == std::vector<bg::item_id_t>{bg::key_set_item_id, inserted.position});
 
-    runtime_type.destroy_value(value, memory);
+    runtime_type.destroy_value(value, allocator);
+    allocator.deallocate_bytes(value, runtime_type.value_size(), runtime_type.value_alignment());
 }

@@ -241,8 +241,7 @@ template <details::runtime_signature_node Definition> class RuntimeSignatureNode
         }
     }
 
-    void construct_compiled_data(const ResolvedSignature &signature, void *storage,
-                                 std::pmr::memory_resource &memory) const override {
+    void construct_compiled_data(const ResolvedSignature &signature, void *storage, allocator &memory) const override {
         if constexpr (!std::is_void_v<CompiledData>) {
             std::construct_at(static_cast<CompiledData *>(storage), definition_.compile(signature, memory));
         }

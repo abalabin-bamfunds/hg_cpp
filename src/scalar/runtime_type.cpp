@@ -51,10 +51,10 @@ class ComposedListRuntimeType final : public ScalarListRuntimeType {
         std::construct_at(static_cast<RuntimeListStorage *>(destination));
     }
 
-    void construct_from_value(void *, const void *, std::pmr::memory_resource &) const override { std::terminate(); }
+    void construct_from_value(void *, const void *, allocator &) const override { std::terminate(); }
 
     void construct_from_input(void *destination, const details::ScalarData &value,
-                              std::pmr::memory_resource &memory) const override {
+                              allocator &memory) const override {
         construct_initial_value(destination);
         const auto source = Scalar<List<SCALAR>>::from(value.runtime_type(), value.data());
         auto rollback = util::scope_exit{[&]() noexcept { destroy(destination, memory); }};
@@ -65,12 +65,12 @@ class ComposedListRuntimeType final : public ScalarListRuntimeType {
         rollback.release();
     }
 
-    void copy_construct(void *destination, const void *source, std::pmr::memory_resource &memory) const override {
+    void copy_construct(void *destination, const void *source, allocator &memory) const override {
         construct_initial_value(destination);
         const auto &items = static_cast<const RuntimeListStorage *>(source)->items;
         auto rollback = util::scope_exit{[&]() noexcept { destroy(destination, memory); }};
         for (auto index = std::uint32_t{}; index < items.size(); ++index) {
-            storage(destination).items.emplace_back_with(item_layout_, memory, [&](void *item) {
+            storage(destination).items.emplace_back_with(item_layout_, memory.memory_resource(), [&](void *item) {
                 item_runtime_type().copy_construct(item, items.get(index, item_layout_), memory);
             });
         }
@@ -80,7 +80,7 @@ class ComposedListRuntimeType final : public ScalarListRuntimeType {
     void assign_from_value(void *, const void *) const override { std::terminate(); }
 
     void assign_from_input(void *destination, const details::ScalarData &value) const override {
-        auto &memory = details::current_scalar_memory_resource();
+        auto memory = details::current_scalar_allocator();
         auto replacement = RuntimeListStorage{};
         const auto release_replacement = util::scope_exit{[&]() noexcept { clear(&replacement, memory); }};
         const auto source = Scalar<List<SCALAR>>::from(value.runtime_type(), value.data());
@@ -119,7 +119,7 @@ class ComposedListRuntimeType final : public ScalarListRuntimeType {
         return true;
     }
 
-    void destroy(void *value, std::pmr::memory_resource &memory) const noexcept override {
+    void destroy(void *value, allocator &memory) const noexcept override {
         clear(value, memory);
         std::destroy_at(static_cast<RuntimeListStorage *>(value));
     }
@@ -134,7 +134,7 @@ class ComposedListRuntimeType final : public ScalarListRuntimeType {
         return storage(value).items.get(static_cast<std::uint32_t>(index), item_layout_);
     }
 
-    void append(void *value, const details::ScalarData &item, std::pmr::memory_resource &memory) const override {
+    void append(void *value, const details::ScalarData &item, allocator &memory) const override {
         append(value, item.runtime_type(), memory, item.data());
     }
 
@@ -142,7 +142,7 @@ class ComposedListRuntimeType final : public ScalarListRuntimeType {
         item.assign(storage(value).items.get(static_cast<std::uint32_t>(index), item_layout_), item_runtime_type());
     }
 
-    void erase(void *value, std::size_t index, std::pmr::memory_resource &memory) const override {
+    void erase(void *value, std::size_t index, allocator &memory) const override {
         auto &items = storage(value).items;
         const auto position = static_cast<std::uint32_t>(index);
         auto replacement = RuntimeListStorage{};
@@ -152,7 +152,7 @@ class ComposedListRuntimeType final : public ScalarListRuntimeType {
                 continue;
             }
 
-            replacement.items.emplace_back_with(item_layout_, memory, [&](void *target) {
+            replacement.items.emplace_back_with(item_layout_, memory.memory_resource(), [&](void *target) {
                 item_runtime_type().copy_construct(target, items.get(current, item_layout_), memory);
             });
         }
@@ -160,8 +160,8 @@ class ComposedListRuntimeType final : public ScalarListRuntimeType {
         storage(value).swap(replacement);
     }
 
-    void clear(void *value, std::pmr::memory_resource &memory) const noexcept override {
-        storage(value).items.release_with(item_layout_, memory,
+    void clear(void *value, allocator &memory) const noexcept override {
+        storage(value).items.release_with(item_layout_, memory.memory_resource(),
                                           [&](void *item) noexcept { item_runtime_type().destroy(item, memory); });
     }
 
@@ -171,11 +171,12 @@ class ComposedListRuntimeType final : public ScalarListRuntimeType {
         return *static_cast<const RuntimeListStorage *>(value);
     }
 
-    void append(void *value, const ScalarRuntimeType &runtime_type, std::pmr::memory_resource &memory,
+    void append(void *value, const ScalarRuntimeType &runtime_type, allocator &memory,
                 const void *data) const {
         const auto item = details::ScalarData{runtime_type, data};
         storage(value).items.emplace_back_with(
-            item_layout_, memory, [&](void *target) { item.copy_construct(target, item_runtime_type(), memory); });
+            item_layout_, memory.memory_resource(),
+            [&](void *target) { item.copy_construct(target, item_runtime_type(), memory); });
     }
 
     util::runtime_item_layout item_layout_;
@@ -209,10 +210,10 @@ class ComposedSetRuntimeType final : public ScalarSetRuntimeType {
         std::construct_at(static_cast<RuntimeSetStorage *>(destination));
     }
 
-    void construct_from_value(void *, const void *, std::pmr::memory_resource &) const override { std::terminate(); }
+    void construct_from_value(void *, const void *, allocator &) const override { std::terminate(); }
 
     void construct_from_input(void *destination, const details::ScalarData &value,
-                              std::pmr::memory_resource &memory) const override {
+                              allocator &memory) const override {
         construct_initial_value(destination);
         const auto source = Scalar<Set<SCALAR>>::from(value.runtime_type(), value.data());
         auto copy = RuntimeSetCopy{this, destination, &memory};
@@ -223,7 +224,7 @@ class ComposedSetRuntimeType final : public ScalarSetRuntimeType {
         rollback.release();
     }
 
-    void copy_construct(void *destination, const void *source, std::pmr::memory_resource &memory) const override {
+    void copy_construct(void *destination, const void *source, allocator &memory) const override {
         construct_initial_value(destination);
         auto rollback = util::scope_exit{[&]() noexcept { destroy(destination, memory); }};
         for (const auto position : storage(source).positions) {
@@ -235,7 +236,7 @@ class ComposedSetRuntimeType final : public ScalarSetRuntimeType {
     void assign_from_value(void *, const void *) const override { std::terminate(); }
 
     void assign_from_input(void *destination, const details::ScalarData &value) const override {
-        auto &memory = details::current_scalar_memory_resource();
+        auto memory = details::current_scalar_allocator();
         auto replacement = RuntimeSetStorage{};
         const auto release_replacement = util::scope_exit{[&]() noexcept { clear(&replacement, memory); }};
         auto copy = RuntimeSetCopy{this, &replacement, &memory};
@@ -267,7 +268,7 @@ class ComposedSetRuntimeType final : public ScalarSetRuntimeType {
         return comparison.equal;
     }
 
-    void destroy(void *value, std::pmr::memory_resource &memory) const noexcept override {
+    void destroy(void *value, allocator &memory) const noexcept override {
         clear(value, memory);
         std::destroy_at(static_cast<RuntimeSetStorage *>(value));
     }
@@ -285,7 +286,7 @@ class ComposedSetRuntimeType final : public ScalarSetRuntimeType {
     }
 
     [[nodiscard]] bool insert(void *value, const details::ScalarData &item,
-                              std::pmr::memory_resource &memory) const override {
+                              allocator &memory) const override {
         auto &target = storage(value);
         const auto hash = util::linear_hash_table::hash_code(item.hash());
         if (target.lookup.find(hash, [&](auto position) {
@@ -312,7 +313,7 @@ class ComposedSetRuntimeType final : public ScalarSetRuntimeType {
     }
 
     [[nodiscard]] bool erase(void *value, const details::ScalarData &item,
-                             std::pmr::memory_resource &memory) const override {
+                             allocator &memory) const override {
         auto &target = storage(value);
         const auto hash = util::linear_hash_table::hash_code(item.hash());
         const auto position = target.lookup.find(hash, [&](auto candidate) {
@@ -330,7 +331,7 @@ class ComposedSetRuntimeType final : public ScalarSetRuntimeType {
         return true;
     }
 
-    void clear(void *value, std::pmr::memory_resource &memory) const noexcept override {
+    void clear(void *value, allocator &memory) const noexcept override {
         auto &target = storage(value);
         target.lookup.release(memory);
         target.items.release_with(target.positions, item_layout_, memory,
@@ -342,7 +343,7 @@ class ComposedSetRuntimeType final : public ScalarSetRuntimeType {
     struct RuntimeSetCopy {
         const ComposedSetRuntimeType *runtime_type;
         void *storage;
-        std::pmr::memory_resource *memory;
+        allocator *memory;
     };
 
     struct RuntimeSetComparison {
@@ -364,7 +365,7 @@ class ComposedSetRuntimeType final : public ScalarSetRuntimeType {
         return result.value_or(util::occupancy_index::npos);
     }
 
-    void insert_stored(void *value, const void *item, std::pmr::memory_resource &memory) const {
+    void insert_stored(void *value, const void *item, allocator &memory) const {
         auto &target = storage(value);
         const auto hash = util::linear_hash_table::hash_code(item_runtime_type().hash(item));
         const auto position = target.positions.acquire(memory);
@@ -422,10 +423,10 @@ class ComposedDictRuntimeType final : public ScalarDictRuntimeType {
         std::construct_at(static_cast<RuntimeDictStorage *>(destination));
     }
 
-    void construct_from_value(void *, const void *, std::pmr::memory_resource &) const override { std::terminate(); }
+    void construct_from_value(void *, const void *, allocator &) const override { std::terminate(); }
 
     void construct_from_input(void *destination, const details::ScalarData &value,
-                              std::pmr::memory_resource &memory) const override {
+                              allocator &memory) const override {
         construct_initial_value(destination);
         auto copy = RuntimeDictCopy{this, destination, &memory};
         auto rollback = util::scope_exit{[&]() noexcept { destroy(destination, memory); }};
@@ -437,7 +438,7 @@ class ComposedDictRuntimeType final : public ScalarDictRuntimeType {
         rollback.release();
     }
 
-    void copy_construct(void *destination, const void *source, std::pmr::memory_resource &memory) const override {
+    void copy_construct(void *destination, const void *source, allocator &memory) const override {
         construct_initial_value(destination);
         auto rollback = util::scope_exit{[&]() noexcept { destroy(destination, memory); }};
         for (const auto position : storage(source).positions) {
@@ -450,7 +451,7 @@ class ComposedDictRuntimeType final : public ScalarDictRuntimeType {
     void assign_from_value(void *, const void *) const override { std::terminate(); }
 
     void assign_from_input(void *destination, const details::ScalarData &value) const override {
-        auto &memory = details::current_scalar_memory_resource();
+        auto memory = details::current_scalar_allocator();
         auto replacement = RuntimeDictStorage{};
         const auto release_replacement = util::scope_exit{[&]() noexcept { clear(&replacement, memory); }};
         auto copy = RuntimeDictCopy{this, &replacement, &memory};
@@ -490,7 +491,7 @@ class ComposedDictRuntimeType final : public ScalarDictRuntimeType {
         return comparison.equal;
     }
 
-    void destroy(void *value, std::pmr::memory_resource &memory) const noexcept override {
+    void destroy(void *value, allocator &memory) const noexcept override {
         clear(value, memory);
         std::destroy_at(static_cast<RuntimeDictStorage *>(value));
     }
@@ -525,7 +526,7 @@ class ComposedDictRuntimeType final : public ScalarDictRuntimeType {
     }
 
     void insert_or_assign(void *value, const details::ScalarData &key, const details::ScalarData &mapped,
-                          std::pmr::memory_resource &memory) const override {
+                          allocator &memory) const override {
         auto &target = storage(value);
         const auto hash = util::linear_hash_table::hash_code(key.hash());
         if (const auto position = target.lookup.find(hash, [&](auto candidate) {
@@ -560,7 +561,7 @@ class ComposedDictRuntimeType final : public ScalarDictRuntimeType {
     }
 
     [[nodiscard]] bool erase(void *value, const details::ScalarData &key,
-                             std::pmr::memory_resource &memory) const override {
+                             allocator &memory) const override {
         auto &target = storage(value);
         const auto hash = util::linear_hash_table::hash_code(key.hash());
         const auto position = target.lookup.find(hash, [&](auto candidate) {
@@ -580,7 +581,7 @@ class ComposedDictRuntimeType final : public ScalarDictRuntimeType {
         return true;
     }
 
-    void clear(void *value, std::pmr::memory_resource &memory) const noexcept override {
+    void clear(void *value, allocator &memory) const noexcept override {
         auto &target = storage(value);
         target.lookup.release(memory);
         target.values.release_with(target.positions, mapped_layout_, memory,
@@ -594,7 +595,7 @@ class ComposedDictRuntimeType final : public ScalarDictRuntimeType {
     struct RuntimeDictCopy {
         const ComposedDictRuntimeType *runtime_type;
         void *storage;
-        std::pmr::memory_resource *memory;
+        allocator *memory;
     };
 
     struct RuntimeDictComparison {
@@ -616,7 +617,7 @@ class ComposedDictRuntimeType final : public ScalarDictRuntimeType {
         return result.value_or(util::occupancy_index::npos);
     }
 
-    void insert_stored(void *value, const void *key, const void *mapped, std::pmr::memory_resource &memory) const {
+    void insert_stored(void *value, const void *key, const void *mapped, allocator &memory) const {
         auto &target = storage(value);
         const auto hash = util::linear_hash_table::hash_code(key_runtime_type().hash(key));
         const auto position = target.positions.acquire(memory);
@@ -694,10 +695,10 @@ void release_scalar_value(const ScalarData &value) noexcept {
     const auto &runtime_type = value.runtime_type();
     const auto value_offset = allocation_value_offset(runtime_type, mode);
     auto *allocation = reinterpret_cast<std::byte *>(value.data_word()) - value_offset;
-    auto *memory = std::pmr::new_delete_resource();
-    if (mode == ScalarDataMode::owned_explicit_resource) {
-        memory = reinterpret_cast<const ScalarValueAllocation *>(allocation)->memory;
-    } else if (mode == ScalarDataMode::owned_context_resource) {
+    auto memory = allocator{};
+    if (mode == ScalarDataMode::owned_explicit_allocator) {
+        memory = reinterpret_cast<const ScalarValueAllocator *>(allocation)->memory;
+    } else if (mode == ScalarDataMode::owned_context_allocator) {
 #ifndef NDEBUG
         check_context_scalar_deallocation(reinterpret_cast<const void *>(value.data_word()));
 #endif
@@ -706,8 +707,8 @@ void release_scalar_value(const ScalarData &value) noexcept {
         memory = owner->memory;
     }
 
-    runtime_type.destroy(reinterpret_cast<void *>(value.data_word()), *memory);
-    memory->deallocate(allocation, value_offset + runtime_type.size(), allocation_alignment(runtime_type, mode));
+    runtime_type.destroy(reinterpret_cast<void *>(value.data_word()), memory);
+    memory.deallocate_bytes(allocation, value_offset + runtime_type.size(), allocation_alignment(runtime_type, mode));
 }
 
 } // namespace details

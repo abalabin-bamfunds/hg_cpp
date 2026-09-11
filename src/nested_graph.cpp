@@ -20,8 +20,7 @@ void NestedGraph::start(const CompiledNestedGraph &compiled, EvaluationContext &
     }
 
     auto &parent = context.runtime_graph();
-    active_ = allocator{*parent.memory_}.new_object<RuntimeGraph>(*compiled.graph, *parent.memory_,
-                                                                   parent.global_state());
+    active_ = parent.allocator_.new_object<RuntimeGraph>(*compiled.graph, parent.allocator_, parent.global_state());
     active_->parent_ = &parent;
     active_->owner_node_index_ = context.node_index();
     active_->suppress_parent_scheduling_ = true;
@@ -109,7 +108,7 @@ void NestedGraph::destroy(RuntimeGraph *graph) noexcept {
         return;
     }
 
-    allocator{*graph->memory_}.delete_object(graph);
+    graph->allocator_.delete_object(graph);
 }
 
 void NestedGraph::destroy_retired() noexcept {

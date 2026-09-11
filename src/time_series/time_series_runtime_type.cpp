@@ -43,11 +43,11 @@ class ValueRuntimeType final : public TimeSeriesValueRuntimeType {
         scalar_runtime_type().construct_initial_value(destination);
     }
 
-    void construct_runtime_value(void *destination, std::pmr::memory_resource &memory) const override {
+    void construct_runtime_value(void *destination, allocator &memory) const override {
         scalar_runtime_type().construct_runtime_value(destination, memory);
     }
 
-    void destroy_value(void *value, std::pmr::memory_resource &memory) const noexcept override {
+    void destroy_value(void *value, allocator &memory) const noexcept override {
         scalar_runtime_type().destroy(value, memory);
     }
 };
@@ -123,7 +123,7 @@ Reference TimeSeriesRuntimeType::reference(const void *) const {
 
 details::ReferenceRepresentation *
 TimeSeriesRuntimeType::create_reference_representation(details::ReferenceProvider &, Reference,
-                                                       const TimeSeriesType &, std::pmr::memory_resource &) const {
+                                                       const TimeSeriesType &, allocator &) const {
     throw std::invalid_argument{"the requested time series representation is not implemented"};
 }
 

@@ -41,9 +41,10 @@ Reference parent_reference(Reference reference) noexcept {
 
 } // namespace
 
-ReferenceProvider::ReferenceProvider(std::pmr::memory_resource &memory, RootReference &root,
+ReferenceProvider::ReferenceProvider(allocator memory, RootReference &root,
                                      DynamicSubscribers *root_subscribers)
-    : memory_{&memory}, root_{&root}, representations_{&memory}, subscriber_groups_{&memory} {
+    : memory_{memory}, root_{&root}, representations_{&memory.memory_resource()},
+      subscriber_groups_{&memory.memory_resource()} {
     subscriber_groups_.push_back(root_subscribers);
 }
 
@@ -61,17 +62,17 @@ ReferenceProvider::~ReferenceProvider() {
         if (representation == nullptr) {
             continue;
         }
-        representation->destroy(*memory_);
+        representation->destroy(memory_);
     }
     while (components_ != nullptr) {
         auto *component = components_;
         components_ = component->next_;
-        component->destroy(*memory_);
+        component->destroy(memory_);
     }
     for (auto *subscribers : subscriber_groups_) {
         DynamicSubscribers::release(subscribers);
     }
-    destroy_reference_item_notification_links(item_notification_links_, *memory_);
+    destroy_reference_item_notification_links(item_notification_links_, memory_);
 }
 
 ResolvedTimeSeries ReferenceProvider::resolve_representation(std::uint32_t index) const {
@@ -82,12 +83,12 @@ ResolvedTimeSeries ReferenceProvider::resolve_representation(std::uint32_t index
 void ReferenceProvider::add_root_subscriber(RuntimeGraph &graph, std::uint32_t input_offset, std::size_t callback_data,
                                             std::uint32_t node_index, bool active, bool required,
                                             InputChangeFunction callback) {
-    auto &subscribers = DynamicSubscribers::ensure(subscriber_groups_.front(), *memory_);
+    auto &subscribers = DynamicSubscribers::ensure(subscriber_groups_.front(), memory_);
     subscribers.add(graph, input_offset, callback_data, node_index, active, required, callback);
 }
 
 void ReferenceProvider::add_root_observer(RuntimeGraph &graph, void *receiver, DynamicObserverFunction function) {
-    auto &subscribers = DynamicSubscribers::ensure(subscriber_groups_.front(), *memory_);
+    auto &subscribers = DynamicSubscribers::ensure(subscriber_groups_.front(), memory_);
     subscribers.add_observer(graph, receiver, function);
 }
 
@@ -119,7 +120,7 @@ void ReferenceProvider::add_subscriber(ReferenceSubscriptionDetail &subscription
     }
 
     auto &subscribers =
-        DynamicSubscribers::ensure(subscriber_groups_[subscriptions.subscriber_group_index()], *memory_);
+        DynamicSubscribers::ensure(subscriber_groups_[subscriptions.subscriber_group_index()], memory_);
     subscribers.add(graph, input_offset, callback_data, node_index, active, required, callback);
 }
 
@@ -131,7 +132,7 @@ void ReferenceProvider::add_observer(ReferenceSubscriptionDetail &subscriptions,
     }
 
     auto &subscribers =
-        DynamicSubscribers::ensure(subscriber_groups_[subscriptions.subscriber_group_index()], *memory_);
+        DynamicSubscribers::ensure(subscriber_groups_[subscriptions.subscriber_group_index()], memory_);
     subscribers.add_observer(graph, receiver, function);
 }
 
@@ -182,7 +183,7 @@ void ReferenceProvider::add_item_notification_link(Reference reference, RuntimeG
                                                    ReferenceItemNotifyFunction notify_function,
                                                    ReferenceItemPublishFunction publish_function) {
     if (item_notification_links_ == nullptr) {
-        item_notification_links_ = create_reference_item_notification_links(*memory_);
+        item_notification_links_ = create_reference_item_notification_links(memory_);
     }
     if (reference.holds<RootReference>()) {
         add_reference_root_item_link(*item_notification_links_, graph, receiver, receiver_item_id, notify_function,
@@ -266,7 +267,7 @@ bool ReferenceProvider::release_item_reference(ItemReference &reference) noexcep
             return false;
         }
         remove_reference_observer(representation->base_reference(), owner(), representation);
-        representation->destroy(*memory_);
+        representation->destroy(memory_);
         representation = nullptr;
     }
 
@@ -301,8 +302,8 @@ Reference ReferenceProvider::representation(Reference base_reference, const Time
     }
 
     auto *result =
-        base_time_series.runtime_type->create_reference_representation(*this, base_reference, requested_type, *memory_);
-    auto release = util::scope_exit{[&]() noexcept { result->destroy(*memory_); }};
+        base_time_series.runtime_type->create_reference_representation(*this, base_reference, requested_type, memory_);
+    auto release = util::scope_exit{[&]() noexcept { result->destroy(memory_); }};
     result->bind(static_cast<std::uint32_t>(representations_.size()));
     representations_.push_back(result);
     auto remove_entry = util::scope_exit{[&]() noexcept { representations_.pop_back(); }};
@@ -330,8 +331,8 @@ ReferenceProvider &require_provider(RootReference &root) {
     }
 
     auto *subscribers = root.subscribers_or_provider.get<DynamicSubscribers>();
-    auto &memory = root.owner_graph->memory_resource();
-    auto *provider = allocator{memory}.new_object<ReferenceProvider>(memory, root, subscribers);
+    auto &memory = root.owner_graph->allocation();
+    auto *provider = memory.new_object<ReferenceProvider>(memory, root, subscribers);
     root.subscribers_or_provider = provider;
     return *provider;
 }
@@ -378,7 +379,7 @@ void add_reference_subscriber(Reference reference, RuntimeGraph &graph, std::uin
             return;
         }
         auto *subscribers = root->subscribers_or_provider.get<DynamicSubscribers>();
-        auto &result = DynamicSubscribers::ensure(subscribers, root->owner_graph->memory_resource());
+        auto &result = DynamicSubscribers::ensure(subscribers, root->owner_graph->allocation());
         root->subscribers_or_provider = subscribers;
         result.add(graph, input_offset, callback_data, node_index, active, required, callback);
         return;
@@ -395,7 +396,7 @@ void add_reference_observer(Reference reference, RuntimeGraph &graph, void *rece
             return;
         }
         auto *subscribers = root->subscribers_or_provider.get<DynamicSubscribers>();
-        auto &result = DynamicSubscribers::ensure(subscribers, root->owner_graph->memory_resource());
+        auto &result = DynamicSubscribers::ensure(subscribers, root->owner_graph->allocation());
         root->subscribers_or_provider = subscribers;
         result.add_observer(graph, receiver, function);
         return;
@@ -460,7 +461,7 @@ void remove_reference_item_notification_link(Reference reference, RuntimeGraph &
     root->remove_item_notification_link(reference, graph, receiver, receiver_item_id, notify_function);
 }
 
-void destroy_root_reference(RootReference &root, std::pmr::memory_resource &memory) noexcept {
+void destroy_root_reference(RootReference &root, allocator &memory) noexcept {
     if (auto *provider = root.subscribers_or_provider.get<ReferenceProvider>()) {
         allocator{memory}.delete_object(provider);
     } else {

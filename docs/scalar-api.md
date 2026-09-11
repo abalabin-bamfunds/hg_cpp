@@ -49,9 +49,9 @@ its type, equality, and hashing operations when its scalar type supports them.
 while the owner retains that value.
 
 Use `ScalarValue` when a value must outlive a borrowed view. A constructor can
-accept a memory resource for owned storage.
+accept a `bg::allocator` for owned storage.
 
-An explicit memory resource defines the ownership of dynamic storage. Without
+An explicit allocator defines the ownership of dynamic storage. Without
 one, dynamic storage created during a node invocation belongs to the runtime
 graph, and its `ScalarValue` must be destroyed in that invocation. This is
 required for graph memory accounting.
@@ -82,13 +82,13 @@ Node code uses `Scalar<List<T>>` to access a resolved list. Indexing it returns
 
 `Set<T>` declares a homogeneous scalar set type. `Dict<K, V>` declares a scalar
 dictionary type. `Scalar<Set<T>>` and `Scalar<Dict<K, V>>` provide read-only
-access. Their storage receives a memory resource from its owner without
+access. Their storage receives an allocator from its owner without
 retaining its pointer. Dictionary keys and values occupy separate columns.
 
 `MutableList<T>`, `MutableSet<T>`, and `MutableDict<K, V>` provide the matching
 mutation operations. `State` exposes these views during a node invocation. An
-operation that can allocate or release memory uses the active allocation
-context. Looking up a nested collection through a mutable list or dictionary
+operation that can allocate or release memory uses the active `bg::allocator`.
+Looking up a nested collection through a mutable list or dictionary
 returns its mutable view.
 
 Generic collection views use the resolved item types. This applies to scalar

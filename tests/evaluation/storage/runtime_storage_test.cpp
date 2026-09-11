@@ -183,7 +183,7 @@ TEST_CASE("a runtime graph releases dictionary time-series storage",
     const auto compiled = bg::CompiledGraph{wiring};
     auto memory = counting_memory_resource{};
     {
-        auto runtime = bg::RuntimeGraph{compiled, memory};
+        auto runtime = bg::RuntimeGraph{compiled, bg::allocator{memory}};
         runtime.start(time(1));
         CHECK(memory.allocations() > 1);
     }

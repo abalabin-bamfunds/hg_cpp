@@ -10,7 +10,6 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
-#include <memory_resource>
 #include <type_traits>
 
 namespace bg::details {
@@ -52,7 +51,7 @@ class time_series_dict_storage {
                                const util::runtime_item_layout &key_layout,
                                const TimeSeriesRuntimeType &item_runtime_type,
                                const util::runtime_item_layout &item_layout, std::size_t item_value_offset,
-                               std::pmr::memory_resource &memory) {
+                               allocator &memory) {
         if (change_time_ == evaluation_time) {
             return;
         }
@@ -70,7 +69,7 @@ class time_series_dict_storage {
                                                const util::runtime_item_layout &key_layout,
                                                const TimeSeriesRuntimeType &item_runtime_type,
                                                const util::runtime_item_layout &item_layout,
-                                               std::size_t item_value_offset, std::pmr::memory_resource &memory) {
+                                               std::size_t item_value_offset, allocator &memory) {
         return keys.value.insert(
             key, key_runtime_type, key_layout, memory,
             [&](Position position) {
@@ -94,7 +93,7 @@ class time_series_dict_storage {
     time_series_set_storage::InsertResult
     item(const Key &key, const ScalarRuntimeType &key_runtime_type, const util::runtime_item_layout &key_layout,
          const TimeSeriesRuntimeType &item_runtime_type, const util::runtime_item_layout &item_layout,
-         std::size_t item_value_offset, std::pmr::memory_resource &memory) {
+         std::size_t item_value_offset, allocator &memory) {
         return item(details::scalar_data(key), key_runtime_type, key_layout, item_runtime_type, item_layout,
                     item_value_offset, memory);
     }
@@ -103,7 +102,7 @@ class time_series_dict_storage {
     erase(const details::ScalarData &key, const ScalarRuntimeType &key_runtime_type,
           const util::runtime_item_layout &key_layout, const TimeSeriesRuntimeType &item_runtime_type,
           const util::runtime_item_layout &item_layout, std::size_t item_value_offset,
-          std::pmr::memory_resource &memory) {
+          allocator &memory) {
         const auto result =
             keys.value.erase(key, key_runtime_type, key_layout, memory, [&](Position position) noexcept {
                 destroy_item(position, item_runtime_type, item_layout, item_value_offset, memory);
@@ -119,14 +118,14 @@ class time_series_dict_storage {
     [[nodiscard]] time_series_set_storage::EraseResult
     erase(const Key &key, const ScalarRuntimeType &key_runtime_type, const util::runtime_item_layout &key_layout,
           const TimeSeriesRuntimeType &item_runtime_type, const util::runtime_item_layout &item_layout,
-          std::size_t item_value_offset, std::pmr::memory_resource &memory) {
+          std::size_t item_value_offset, allocator &memory) {
         return erase(details::scalar_data(key), key_runtime_type, key_layout, item_runtime_type, item_layout,
                      item_value_offset, memory);
     }
 
     void clear(const ScalarRuntimeType &key_runtime_type, const util::runtime_item_layout &key_layout,
                const TimeSeriesRuntimeType &item_runtime_type, const util::runtime_item_layout &item_layout,
-               std::size_t item_value_offset, std::pmr::memory_resource &memory) {
+               std::size_t item_value_offset, allocator &memory) {
         keys.value.clear(key_runtime_type, key_layout, memory, [&](Position position) noexcept {
             modified_.reset(position);
             destroy_item(position, item_runtime_type, item_layout, item_value_offset, memory);
@@ -137,14 +136,14 @@ class time_series_dict_storage {
     }
 
     [[nodiscard]] bool mark_item_modified(Position position, EvaluationTime evaluation_time,
-                                          std::pmr::memory_resource &memory) {
+                                          allocator &memory) {
         if (change_time_ != evaluation_time || !keys.value.live().contains(position)) {
             return false;
         }
         return modified_.set(position, memory);
     }
 
-    void mark_item_resurrected(Position position, EvaluationTime evaluation_time, std::pmr::memory_resource &memory) {
+    void mark_item_resurrected(Position position, EvaluationTime evaluation_time, allocator &memory) {
         if (change_time_ == evaluation_time && keys.value.live().contains(position)) {
             modified_.set(position, memory);
         }
@@ -174,7 +173,7 @@ class time_series_dict_storage {
 
     void release(const ScalarRuntimeType &key_runtime_type, const util::runtime_item_layout &key_layout,
                  const TimeSeriesRuntimeType &item_runtime_type, const util::runtime_item_layout &item_layout,
-                 std::size_t item_value_offset, std::pmr::memory_resource &memory) noexcept {
+                 std::size_t item_value_offset, allocator &memory) noexcept {
         keys.value.release(key_runtime_type, key_layout, memory, [&](Position position) noexcept {
             destroy_item(position, item_runtime_type, item_layout, item_value_offset, memory);
         });
@@ -185,7 +184,7 @@ class time_series_dict_storage {
   private:
     void destroy_item(Position position, const TimeSeriesRuntimeType &item_runtime_type,
                       const util::runtime_item_layout &item_layout, std::size_t item_value_offset,
-                      std::pmr::memory_resource &memory) noexcept {
+                      allocator &memory) noexcept {
         items_.erase_at_with(position, item_layout, memory, [&](void *item) noexcept {
             auto *bytes = static_cast<std::byte *>(item);
             item_runtime_type.destroy_value(bytes + item_value_offset, memory);

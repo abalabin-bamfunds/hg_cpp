@@ -7,7 +7,7 @@ namespace bg::details {
 
 ReferenceRepresentation *TimeSeriesDictionaryRuntimeType::create_reference_representation(
     ReferenceProvider &provider, Reference base_reference, const TimeSeriesType &requested_type,
-    std::pmr::memory_resource &memory) const {
+    allocator &memory) const {
     const auto *dictionary = dynamic_cast<const TimeSeriesDictionaryType *>(&requested_type);
     if (dictionary == nullptr || &dictionary->key_type() != &key_runtime_type().type()) {
         return TimeSeriesRuntimeType::create_reference_representation(provider, base_reference, requested_type, memory);

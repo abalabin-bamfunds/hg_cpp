@@ -1,5 +1,6 @@
 #pragma once
 
+#include <bg/allocator.hpp>
 #include <bg/graph/compiled_node.hpp>
 #include <bg/graph/details/compiled_storage_header.hpp>
 #include <bg/graph/details/scheduling_info.hpp>
@@ -8,7 +9,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
-#include <memory_resource>
 #include <span>
 
 namespace bg {
@@ -22,7 +22,7 @@ class TimeSeriesRuntimeType;
 class CompiledGraph {
   public:
     explicit CompiledGraph(const GraphWiring &wiring);
-    CompiledGraph(const GraphWiring &wiring, std::pmr::memory_resource &memory);
+    CompiledGraph(const GraphWiring &wiring, allocator memory);
     ~CompiledGraph();
 
     CompiledGraph(const CompiledGraph &) = delete;
@@ -131,7 +131,7 @@ class CompiledGraph {
         return *reinterpret_cast<const details::CompiledStorageHeader *>(fixed_storage_);
     }
 
-    std::pmr::memory_resource *fixed_memory_;
+    allocator fixed_allocator_;
     std::byte *fixed_storage_{};
     std::uint32_t fixed_storage_size_and_flags_{};
     std::uint32_t runtime_storage_size_{};

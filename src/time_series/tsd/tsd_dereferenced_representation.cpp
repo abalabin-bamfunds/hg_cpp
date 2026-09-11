@@ -48,7 +48,8 @@ class DereferencedTimeSeriesDictionaryRepresentation final : public ReferenceRep
                                                    const TimeSeriesRuntimeType &item_runtime_type)
         : ReferenceRepresentation{base_reference}, provider_{&provider}, base_runtime_type_{&base_runtime_type},
           runtime_type_{type, base_runtime_type, item_runtime_type, *this},
-          last_updated_{*resolve_reference(base_reference).last_updated}, item_references_{&provider.memory()} {
+          last_updated_{*resolve_reference(base_reference).last_updated},
+          item_references_{&provider.allocation().memory_resource()} {
         const auto base_time_series = resolve_reference(base_reference);
         base_runtime_type.for_each_item_id(base_time_series.storage, this, [](void *context, item_id_t id) {
             auto &self = *static_cast<DereferencedTimeSeriesDictionaryRepresentation *>(context);
@@ -87,7 +88,7 @@ class DereferencedTimeSeriesDictionaryRepresentation final : public ReferenceRep
             input_time, base_time_series.storage, this, [](void *value, item_id_t id) {
                 auto &self = *static_cast<DereferencedTimeSeriesDictionaryRepresentation *>(value);
                 self.bind_item(id, self.current_base_item(id), *resolve_reference(self.base_reference()).last_updated);
-                self.modified_.set(id, self.provider_->memory());
+                self.modified_.set(id, self.provider_->allocation());
             });
         struct RemoveCallback {
             DereferencedTimeSeriesDictionaryRepresentation *representation;
@@ -109,7 +110,7 @@ class DereferencedTimeSeriesDictionaryRepresentation final : public ReferenceRep
         }
     }
 
-    void destroy(std::pmr::memory_resource &memory) noexcept override {
+    void destroy(allocator &memory) noexcept override {
         if (sample_cleanup_registered_) {
             provider_->remove_cycle_callback(this);
         }
@@ -118,7 +119,7 @@ class DereferencedTimeSeriesDictionaryRepresentation final : public ReferenceRep
         }
         clear_samples();
         modified_.release(memory);
-        allocator{memory}.delete_object(this);
+        memory.delete_object(this);
     }
 
     TimeSeriesRuntimeType::ConstItem item(item_id_t id) const {
@@ -180,7 +181,7 @@ class DereferencedTimeSeriesDictionaryRepresentation final : public ReferenceRep
             auto &callback = *static_cast<Callback *>(value);
             auto &self = *callback.representation;
             self.add_item(id, callback.evaluation_time);
-            self.modified_.set(id, self.provider_->memory());
+            self.modified_.set(id, self.provider_->allocation());
         });
 
         last_updated_ = context.evaluation_time();
@@ -239,14 +240,14 @@ class DereferencedTimeSeriesDictionaryRepresentation final : public ReferenceRep
             previous_last_updated = *previous.last_updated;
             previous.last_updated = &previous_last_updated;
             destroy_dictionary_sample(*existing);
-            samples_.erase_at(id, provider_->memory());
+            samples_.erase_at(id, provider_->allocation());
             sample_positions_.reset(id);
         }
 
         if (previous.runtime_type == nullptr && id < item_references_.size() && item_references_[id]) {
             previous = resolve_reference(item_references_[id]);
         }
-        auto *sample = make_dictionary_sample(previous, current, evaluation_time, provider_->memory());
+        auto *sample = make_dictionary_sample(previous, current, evaluation_time, provider_->allocation());
         if (sample == nullptr) {
             return;
         }
@@ -256,9 +257,9 @@ class DereferencedTimeSeriesDictionaryRepresentation final : public ReferenceRep
             sample_cleanup_registered_ = true;
         }
 
-        sample_positions_.set(id, provider_->memory());
+        sample_positions_.set(id, provider_->allocation());
         auto reset_position = util::scope_exit{[&]() noexcept { sample_positions_.reset(id); }};
-        samples_.emplace_at(id, provider_->memory(), sample);
+        samples_.emplace_at(id, provider_->allocation(), sample);
         reset_position.release();
         destroy_sample.release();
     }
@@ -268,7 +269,7 @@ class DereferencedTimeSeriesDictionaryRepresentation final : public ReferenceRep
     }
 
     void clear_samples() noexcept {
-        auto &memory = provider_->memory();
+        auto &memory = provider_->allocation();
         for (const auto id : sample_positions_) {
             destroy_dictionary_sample(samples_[id]);
         }
@@ -312,7 +313,7 @@ class DereferencedTimeSeriesDictionaryRepresentation final : public ReferenceRep
             previous.storage = nullptr;
             sample_switch(id, referenced_item, context.evaluation_time(), previous);
         }
-        modified_.set(id, provider_->memory());
+        modified_.set(id, provider_->allocation());
     }
 
     void publish_item_changes(OutputChangeContext &context) {
@@ -455,8 +456,8 @@ ReferenceRepresentation *make_dereferenced_tsd_representation(ReferenceProvider 
                                                               const TimeSeriesDictionaryType &type,
                                                               const TimeSeriesDictionaryRuntimeType &base_runtime_type,
                                                               const TimeSeriesRuntimeType &item_runtime_type,
-                                                              std::pmr::memory_resource &memory) {
-    return allocator{memory}.new_object<DereferencedTimeSeriesDictionaryRepresentation>(
+                                                              allocator &memory) {
+    return memory.new_object<DereferencedTimeSeriesDictionaryRepresentation>(
         provider, base_reference, type, base_runtime_type, item_runtime_type);
 }
 

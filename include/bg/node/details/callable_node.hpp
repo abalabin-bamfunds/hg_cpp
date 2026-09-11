@@ -142,7 +142,7 @@ template <typename Function, typename... Options> class CallableNodeDefinition {
         return result;
     }
 
-    Function compile(const ResolvedSignature &, std::pmr::memory_resource &) const
+    Function compile(const ResolvedSignature &, allocator &) const
         requires stores_function
     {
         return function_;

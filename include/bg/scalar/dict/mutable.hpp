@@ -24,7 +24,7 @@ template <typename K, typename V> class MutableDict : public Dict<K, V> {
     decltype(auto) at(typename KeyTraits::value_type key) const;
 
     void insert_or_assign(typename KeyTraits::value_type key, typename ValueTraits::value_type value) const {
-        auto &memory = details::current_scalar_memory_resource();
+        auto memory = details::current_scalar_allocator();
         auto [stored, inserted] = mutable_storage().items.try_emplace_with(
             key, memory, [&](auto *destination) { KeyTraits::construct(destination, key, memory); },
             [&](auto *destination) noexcept { KeyTraits::destroy(destination, memory); },
@@ -43,7 +43,7 @@ template <typename K, typename V> class MutableDict : public Dict<K, V> {
     }
 
     void insert_or_assign(typename KeyTraits::value_type key, const Scalar<V> &value) const {
-        auto &memory = details::current_scalar_memory_resource();
+        auto memory = details::current_scalar_allocator();
         const auto &runtime_type = cpp_scalar_runtime_type<V>();
         auto [stored, inserted] = mutable_storage().items.try_emplace_with(
             key, memory, [&](auto *destination) { KeyTraits::construct(destination, key, memory); },
@@ -55,14 +55,14 @@ template <typename K, typename V> class MutableDict : public Dict<K, V> {
     }
 
     [[nodiscard]] bool erase(typename KeyTraits::value_type key) const {
-        auto &memory = details::current_scalar_memory_resource();
+        auto memory = details::current_scalar_allocator();
         return mutable_storage().items.erase_with(
             key, memory, [&](auto *stored) noexcept { KeyTraits::destroy(stored, memory); },
             [&](auto *stored) noexcept { ValueTraits::destroy(stored, memory); });
     }
 
     void clear() const {
-        auto &memory = details::current_scalar_memory_resource();
+        auto memory = details::current_scalar_allocator();
         mutable_storage().items.release_with(
             memory, [&](auto *stored) noexcept { KeyTraits::destroy(stored, memory); },
             [&](auto *stored) noexcept { ValueTraits::destroy(stored, memory); });

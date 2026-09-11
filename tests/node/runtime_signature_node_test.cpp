@@ -32,7 +32,7 @@ struct RuntimeNodeDefinition {
 
     [[nodiscard]] const bg::Signature &signature() const { return signature_; }
 
-    [[nodiscard]] RuntimeNodeData compile(const bg::ResolvedSignature &, std::pmr::memory_resource &) const {
+    [[nodiscard]] RuntimeNodeData compile(const bg::ResolvedSignature &, bg::allocator &) const {
         return {.factor = 2};
     }
 

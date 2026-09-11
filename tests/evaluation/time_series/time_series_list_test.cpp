@@ -515,7 +515,7 @@ TEST_CASE("sequential item views reuse evaluation scratch storage",
 
     const auto compiled = bg::CompiledGraph{wiring};
     auto memory = counting_memory_resource{};
-    auto runtime = bg::RuntimeGraph{compiled, memory};
+    auto runtime = bg::RuntimeGraph{compiled, bg::allocator{memory}};
     memory.fail_after(2);
 
     CHECK_NOTHROW(runtime.start(bg::MIN_DT + bg::EvaluationTime::duration{1}));

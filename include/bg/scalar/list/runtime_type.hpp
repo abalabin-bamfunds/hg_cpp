@@ -3,7 +3,6 @@
 #include <bg/scalar/runtime_type.hpp>
 
 #include <cstddef>
-#include <memory_resource>
 
 namespace bg {
 
@@ -22,10 +21,10 @@ class ScalarListRuntimeType : public ScalarRuntimeType {
     virtual const void *item(const void *storage, std::size_t index) const noexcept = 0;
     virtual void *item(void *storage, std::size_t index) const noexcept = 0;
 
-    virtual void append(void *storage, const details::ScalarData &value, std::pmr::memory_resource &memory) const = 0;
+    virtual void append(void *storage, const details::ScalarData &value, allocator &memory) const = 0;
     template <typename Value>
         requires requires(const Value &value) { details::scalar_data(value); }
-    void append(void *storage, const Value &value, std::pmr::memory_resource &memory) const {
+    void append(void *storage, const Value &value, allocator &memory) const {
         append(storage, details::scalar_data(value), memory);
     }
     virtual void set(void *storage, std::size_t index, const details::ScalarData &value) const = 0;
@@ -34,8 +33,8 @@ class ScalarListRuntimeType : public ScalarRuntimeType {
     void set(void *storage, std::size_t index, const Value &value) const {
         set(storage, index, details::scalar_data(value));
     }
-    virtual void erase(void *storage, std::size_t index, std::pmr::memory_resource &memory) const = 0;
-    virtual void clear(void *storage, std::pmr::memory_resource &memory) const noexcept = 0;
+    virtual void erase(void *storage, std::size_t index, allocator &memory) const = 0;
+    virtual void clear(void *storage, allocator &memory) const noexcept = 0;
 
   private:
     const ScalarRuntimeType *item_;

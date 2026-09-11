@@ -13,7 +13,7 @@ an object that can outlive the run.
 ## Values
 
 Each entry maps a symbol to an owning `ScalarValue<>`. Setting an entry copies
-the value into the global state's memory resource. Replacing or removing the
+the value into the global state's allocator. Replacing or removing the
 entry ends the lifetime of views into its value.
 
 `read(callback)` invokes the callback with read access. Its `at()` function

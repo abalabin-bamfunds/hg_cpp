@@ -22,7 +22,7 @@ class CppScalarRuntimeType<List<T>> final : public CppScalarRuntimeTypeBase<List
     }
 
     void construct_from_input(void *destination, const details::ScalarData &value,
-                              std::pmr::memory_resource &memory) const override {
+                              allocator &memory) const override {
         construct_initial_value(destination);
         auto rollback = util::scope_exit{[&]() noexcept { clear(destination, memory); }};
         const auto &source_type = static_cast<const ScalarListRuntimeType &>(value.runtime_type());
@@ -33,7 +33,7 @@ class CppScalarRuntimeType<List<T>> final : public CppScalarRuntimeTypeBase<List
     }
 
     void assign_from_input(void *destination, const details::ScalarData &value) const override {
-        auto &memory = current_scalar_memory_resource();
+        auto memory = current_scalar_allocator();
         auto replacement = details::scalar_list_storage<T>{};
         auto release_replacement = util::scope_exit{[&]() noexcept { clear(&replacement, memory); }};
         const auto &source_type = static_cast<const ScalarListRuntimeType &>(value.runtime_type());
@@ -74,10 +74,11 @@ class CppScalarRuntimeType<List<T>> final : public CppScalarRuntimeTypeBase<List
         return std::addressof(items[static_cast<std::uint32_t>(index)]);
     }
 
-    void append(void *storage, const details::ScalarData &value, std::pmr::memory_resource &memory) const override {
+    void append(void *storage, const details::ScalarData &value, allocator &memory) const override {
         auto &items = static_cast<details::scalar_list_storage<T> *>(storage)->items;
         items.emplace_back_with(
-            memory, [&](auto *destination) { value.copy_construct(destination, this->item_runtime_type(), memory); });
+            memory.memory_resource(),
+            [&](auto *destination) { value.copy_construct(destination, this->item_runtime_type(), memory); });
     }
 
     void set(void *storage, std::size_t index, const details::ScalarData &value) const override {
@@ -85,27 +86,27 @@ class CppScalarRuntimeType<List<T>> final : public CppScalarRuntimeTypeBase<List
         value.assign(std::addressof(items[static_cast<std::uint32_t>(index)]), this->item_runtime_type());
     }
 
-    void erase(void *storage, std::size_t index, std::pmr::memory_resource &memory) const override {
+    void erase(void *storage, std::size_t index, allocator &memory) const override {
         auto &items = static_cast<details::scalar_list_storage<T> *>(storage)->items;
         auto replacement = details::scalar_list_storage<T>{};
         auto rollback = util::scope_exit{[&]() noexcept {
             replacement.items.release_with(
-                memory, [&](auto *item) noexcept { scalar_storage_traits<T>::destroy(item, memory); });
+                memory.memory_resource(), [&](auto *item) noexcept { scalar_storage_traits<T>::destroy(item, memory); });
         }};
         for (auto position = std::uint32_t{}; position < items.size(); ++position) {
             if (position == index) {
                 continue;
             }
-            replacement.items.emplace_back_with(memory, [&](auto *item) {
+            replacement.items.emplace_back_with(memory.memory_resource(), [&](auto *item) {
                 this->item_runtime_type().copy_construct(item, std::addressof(items[position]), memory);
             });
         }
         items.swap(replacement.items);
     }
 
-    void clear(void *storage, std::pmr::memory_resource &memory) const noexcept override {
+    void clear(void *storage, allocator &memory) const noexcept override {
         static_cast<details::scalar_list_storage<T> *>(storage)->items.release_with(
-            memory, [&](auto *item) noexcept { scalar_storage_traits<T>::destroy(item, memory); });
+            memory.memory_resource(), [&](auto *item) noexcept { scalar_storage_traits<T>::destroy(item, memory); });
     }
 };
 

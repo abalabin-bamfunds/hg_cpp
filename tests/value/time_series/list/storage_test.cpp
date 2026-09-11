@@ -31,8 +31,9 @@ TEST_CASE("fixed list validity is derived from its items",
           "[value][time_series][tsl][series:fixed-tsl][feature:time-series-storage]") {
     const auto &runtime_type = bg::cpp_time_series_runtime_type<bg::TSL<bg::TS<int>, 3>>();
     auto memory = std::pmr::monotonic_buffer_resource{};
-    auto *storage = memory.allocate(runtime_type.value_size(), runtime_type.value_alignment());
-    runtime_type.construct_runtime_value(storage, memory);
+    auto allocator = bg::allocator{memory};
+    auto *storage = allocator.allocate_bytes(runtime_type.value_size(), runtime_type.value_alignment());
+    runtime_type.construct_runtime_value(storage, allocator);
 
     CHECK_FALSE(runtime_type.collection_valid(storage));
 
@@ -45,15 +46,16 @@ TEST_CASE("fixed list validity is derived from its items",
     last_updated = bg::MIN_DT;
     CHECK_FALSE(runtime_type.collection_valid(storage));
 
-    runtime_type.destroy_value(storage, memory);
+    runtime_type.destroy_value(storage, allocator);
 }
 
 TEST_CASE("fixed list runtime items use positional IDs",
           "[value][time_series][tsl][series:fixed-tsl][runtime_type][feature:time-series-storage]") {
     const auto &runtime_type = bg::cpp_time_series_runtime_type<bg::TSL<bg::TS<int>, 3>>();
     auto memory = std::pmr::monotonic_buffer_resource{};
-    auto *storage = memory.allocate(runtime_type.value_size(), runtime_type.value_alignment());
-    runtime_type.construct_runtime_value(storage, memory);
+    auto allocator = bg::allocator{memory};
+    auto *storage = allocator.allocate_bytes(runtime_type.value_size(), runtime_type.value_alignment());
+    runtime_type.construct_runtime_value(storage, allocator);
 
     auto ids = std::vector<bg::item_id_t>{};
     runtime_type.for_each_item_id(storage, &ids, [](void *context, bg::item_id_t id) {
@@ -72,7 +74,7 @@ TEST_CASE("fixed list runtime items use positional IDs",
     CHECK(const_item.last_updated == update_time);
     CHECK(*static_cast<const int *>(const_item.value) == 42);
 
-    runtime_type.destroy_value(storage, memory);
+    runtime_type.destroy_value(storage, allocator);
 }
 
 TEST_CASE("fixed list storage reports item cleanup requirements",

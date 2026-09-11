@@ -79,32 +79,32 @@ const TimeSeriesType &WiringPoint::type() const noexcept {
     return record_->type();
 }
 
-GraphWiring::GraphWiring() : GraphWiring(*std::pmr::get_default_resource()) {}
+GraphWiring::GraphWiring() : GraphWiring(allocator{}) {}
 
-GraphWiring::GraphWiring(std::pmr::memory_resource &memory)
-    : memory_(&memory), fixed_memory_{&memory}, paths_{&fixed_memory_} {}
+GraphWiring::GraphWiring(allocator memory)
+    : allocator_{memory}, fixed_memory_{&allocator_.memory_resource()},
+      variable_allocator_{*std::pmr::null_memory_resource()},
+      paths_{&fixed_memory_} {}
 
-std::pmr::memory_resource &GraphWiring::variable_memory() noexcept {
-    if (variable_memory_) {
-        return *variable_memory_;
-    }
-
-    return *std::pmr::null_memory_resource();
+allocator &GraphWiring::variable_allocator() noexcept {
+    return variable_allocator_;
 }
 
-std::pmr::memory_resource &GraphWiring::variable_memory(const ScalarRuntimeType &runtime_type) {
+allocator &GraphWiring::variable_allocator(const ScalarRuntimeType &runtime_type) {
     if (runtime_type.uses_variable_memory() && !variable_memory_) {
-        variable_memory_.emplace(memory_);
+        variable_memory_.emplace(&allocator_.memory_resource());
+        variable_allocator_ = allocator{*variable_memory_};
     }
 
-    return variable_memory();
+    return variable_allocator();
 }
 
 GraphWiring::~GraphWiring() {
     for (const auto &node : nodes_) {
         for (const auto &scalar : node.scalar_values()) {
             if (scalar.has_value() && scalar.runtime_type_->requires_destruction()) {
-                scalar.runtime_type_->destroy(scalar.data_, variable_memory());
+                auto memory = variable_allocator();
+                scalar.runtime_type_->destroy(scalar.data_, memory);
             }
         }
     }
@@ -125,7 +125,8 @@ void GraphWiring::destroy_scalars(std::span<const WiredScalar> scalars) noexcept
             continue;
         }
 
-        scalar.runtime_type_->destroy(scalar.data_, variable_memory());
+        auto memory = variable_allocator();
+        scalar.runtime_type_->destroy(scalar.data_, memory);
         fixed_memory_.deallocate(scalar.data_, scalar.runtime_type_->size(), scalar.runtime_type_->alignment());
     }
 }

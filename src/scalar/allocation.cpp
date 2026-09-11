@@ -23,9 +23,8 @@ std::unordered_map<const void *, ScalarAllocationOwner> allocations;
 
 } // namespace
 
-ScalarAllocationContext::ScalarAllocationContext(std::pmr::memory_resource &memory, const void *graph,
-                                                 std::size_t node_index) noexcept
-    : owner_{&memory, graph, node_index}, previous_{static_cast<ScalarAllocationOwner *>(current_owner().get())} {
+ScalarAllocationContext::ScalarAllocationContext(allocator memory, const void *graph, std::size_t node_index) noexcept
+    : owner_{memory, graph, node_index}, previous_{static_cast<ScalarAllocationOwner *>(current_owner().get())} {
     current_owner().set(&owner_);
 }
 
@@ -38,13 +37,13 @@ const ScalarAllocationOwner *current_scalar_allocation_owner() noexcept {
     return static_cast<const ScalarAllocationOwner *>(current_owner().get());
 }
 
-std::pmr::memory_resource &current_scalar_memory_resource() {
+allocator &current_scalar_allocator() {
     const auto *owner = current_scalar_allocation_owner();
     if (owner == nullptr) {
         throw std::logic_error{"scalar mutation requires an allocation context"};
     }
 
-    return *owner->memory;
+    return const_cast<allocator &>(owner->memory);
 }
 
 void record_context_scalar_allocation(const void *value) {
@@ -68,7 +67,7 @@ void check_context_scalar_deallocation(const void *value) {
     const auto lock = std::scoped_lock{allocations_mutex};
     const auto allocation = allocations.find(value);
     assert(allocation != allocations.end());
-    assert(allocation->second.memory == owner->memory);
+    assert(&allocation->second.memory.memory_resource() == &owner->memory.memory_resource());
     assert(allocation->second.graph == owner->graph);
     assert(allocation->second.node_index == owner->node_index);
     allocations.erase(allocation);

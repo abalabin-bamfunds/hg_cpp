@@ -96,7 +96,7 @@ data. Evaluation does not load these arrays unless it needs the corresponding
 function.
 
 Compilation copies scalar values and leaves graph wiring reusable. Variable
-scalar data uses a separate memory resource owned by the compiled graph.
+scalar data uses a separate allocator owned by the compiled graph.
 
 ## Storage cleanup
 
@@ -105,7 +105,7 @@ A runtime type reports variable-memory use and
 type requires finalization when a contained runtime type requires it.
 
 Destroying one value performs its finalization and releases its variable
-memory. A graph can discard its complete memory resource without destroying
+memory. A graph can discard its complete allocation without destroying
 values that do not require finalization.
 
 ## Runtime node

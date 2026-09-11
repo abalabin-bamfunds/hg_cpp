@@ -1,6 +1,7 @@
 #pragma once
 
 #include <bg/evaluation_time.hpp>
+#include <bg/allocator.hpp>
 #include <bg/scalar/details/value_type.hpp>
 #include <bg/scalar/opaque.hpp>
 #include <bg/scalar/string.hpp>
@@ -39,17 +40,17 @@ template <typename T> struct scalar_storage_traits {
         }
     }
 
-    static void construct(stored_type *destination, value_type value, std::pmr::memory_resource &) {
+    static void construct(stored_type *destination, value_type value, allocator &) {
         std::construct_at(destination, std::move(value));
     }
 
-    static void assign(stored_type &destination, value_type value, std::pmr::memory_resource &)
+    static void assign(stored_type &destination, value_type value, allocator &)
         requires std::assignable_from<stored_type &, value_type>
     {
         destination = std::move(value);
     }
 
-    static void destroy(stored_type *value, std::pmr::memory_resource &) noexcept { std::destroy_at(value); }
+    static void destroy(stored_type *value, allocator &) noexcept { std::destroy_at(value); }
 };
 
 template <> struct scalar_storage_traits<string> {
@@ -66,15 +67,15 @@ template <> struct scalar_storage_traits<string> {
 
     static std::size_t hash(value_type value) noexcept { return std::hash<value_type>{}(value); }
 
-    static void construct(stored_type *destination, value_type value, std::pmr::memory_resource &memory) {
-        std::construct_at(destination, value, &memory);
+    static void construct(stored_type *destination, value_type value, allocator &memory) {
+        std::construct_at(destination, value, &memory.memory_resource());
     }
 
-    static void assign(stored_type &destination, value_type value, std::pmr::memory_resource &) {
+    static void assign(stored_type &destination, value_type value, allocator &) {
         destination.assign(value);
     }
 
-    static void destroy(stored_type *value, std::pmr::memory_resource &) noexcept { std::destroy_at(value); }
+    static void destroy(stored_type *value, allocator &) noexcept { std::destroy_at(value); }
 };
 
 template <typename T> struct scalar_storage_traits<Opaque<T>> {
@@ -90,17 +91,17 @@ template <typename T> struct scalar_storage_traits<Opaque<T>> {
     static scalar_value_t<Opaque<T>> read(const stored_type &value) noexcept { return value; }
 
     template <typename Source>
-    static void construct(stored_type *destination, Source &&value, std::pmr::memory_resource &) {
+    static void construct(stored_type *destination, Source &&value, allocator &) {
         std::construct_at(destination, std::forward<Source>(value));
     }
 
-    static void assign(stored_type &destination, const stored_type &value, std::pmr::memory_resource &)
+    static void assign(stored_type &destination, const stored_type &value, allocator &)
         requires std::is_copy_assignable_v<stored_type>
     {
         destination = value;
     }
 
-    static void destroy(stored_type *value, std::pmr::memory_resource &) noexcept { std::destroy_at(value); }
+    static void destroy(stored_type *value, allocator &) noexcept { std::destroy_at(value); }
 };
 
 template <typename T> using scalar_stored_t = typename scalar_storage_traits<T>::stored_type;

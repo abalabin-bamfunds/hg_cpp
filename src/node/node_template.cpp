@@ -122,7 +122,7 @@ std::optional<WiringPoint> NodeTemplate::wire(GraphWiring &wiring, ResolvedSigna
             continue;
         }
 
-        auto &scalar_memory = wiring.variable_memory(runtime_type);
+        auto scalar_memory = wiring.variable_allocator(runtime_type);
         auto *data = wiring.fixed_memory_.allocate(runtime_type.size(), runtime_type.alignment());
         auto release_data = util::scope_exit{
             [&]() noexcept { wiring.fixed_memory_.deallocate(data, runtime_type.size(), runtime_type.alignment()); }};

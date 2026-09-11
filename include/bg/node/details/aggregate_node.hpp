@@ -685,7 +685,7 @@ template <typename Definition, std::size_t... Index>
 void destroy_aggregate_state(const CompiledNode &node, void *runtime_storage, EvaluationContext *,
                              std::index_sequence<Index...>) noexcept {
     const auto runtime_node = Node{node, runtime_storage};
-    auto &memory = current_scalar_memory_resource();
+    auto memory = current_scalar_allocator();
     constexpr auto MemberCount = util::aggregate_member_count<Definition>;
 
     (

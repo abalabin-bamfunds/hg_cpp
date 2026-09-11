@@ -1,5 +1,6 @@
 #pragma once
 
+#include <bg/allocator.hpp>
 #include <bg/scalar/details/allocation_context.hpp>
 #include <bg/scalar/mutable_collection.hpp>
 #include <bg/scalar/value.hpp>
@@ -109,22 +110,23 @@ class GlobalState {
         friend GlobalState;
 
         explicit WriteAccess(GlobalState &state)
-            : state_{&state}, lock_{state.mutex_}, allocation_context_{state.memory_, &state, 0} {}
+            : state_{&state}, lock_{state.mutex_}, allocation_context_{state.allocator_, &state, 0} {}
 
         GlobalState *state_;
         std::unique_lock<std::shared_mutex> lock_;
         details::ScalarAllocationContext allocation_context_;
     };
 
-    explicit GlobalState(std::pmr::memory_resource &upstream = *std::pmr::get_default_resource())
-        : memory_{&upstream} {}
+    GlobalState() : GlobalState(allocator{}) {}
+
+    explicit GlobalState(allocator upstream) : memory_{&upstream.memory_resource()}, allocator_{memory_} {}
 
     GlobalState(const GlobalState &) = delete;
     GlobalState &operator=(const GlobalState &) = delete;
     GlobalState(GlobalState &&) = delete;
     GlobalState &operator=(GlobalState &&) = delete;
 
-    ~GlobalState() { values_.release(memory_); }
+    ~GlobalState() { values_.release(allocator_.memory_resource()); }
 
     template <typename Function>
         requires std::invocable<Function, const ReadAccess &> &&
@@ -173,7 +175,7 @@ class GlobalState {
     }
 
     template <details::ScalarHandle Value> void set(util::symbol key, const Value &value) {
-        values_.insert_or_assign(key, ScalarValue<>{value, memory_}, memory_);
+        values_.insert_or_assign(key, ScalarValue<>{value, allocator_}, allocator_.memory_resource());
     }
 
     template <typename T, typename Key>
@@ -192,10 +194,11 @@ class GlobalState {
         return details::mutable_scalar_view<T>(storage);
     }
 
-    bool erase(util::symbol key) { return values_.erase(key, memory_); }
-    bool erase(std::string_view key) { return values_.erase(key, memory_); }
+    bool erase(util::symbol key) { return values_.erase(key, allocator_.memory_resource()); }
+    bool erase(std::string_view key) { return values_.erase(key, allocator_.memory_resource()); }
 
     std::pmr::unsynchronized_pool_resource memory_;
+    allocator allocator_;
     Values values_;
     mutable std::shared_mutex mutex_;
 };

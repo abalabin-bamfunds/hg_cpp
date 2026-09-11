@@ -34,11 +34,11 @@ template <typename T> struct scalar_storage_traits<List<T>> {
         return result;
     }
 
-    static void construct(stored_type *destination, value_type value, std::pmr::memory_resource &memory) {
+    static void construct(stored_type *destination, value_type value, allocator &memory) {
         std::construct_at(destination);
         auto rollback = util::scope_exit{[&]() noexcept { destroy(destination, memory); }};
         for (auto i = std::size_t{}; i < value.size(); ++i) {
-            destination->items.emplace_back_with(memory,
+            destination->items.emplace_back_with(memory.memory_resource(),
                                                  [&](auto *item) { ItemTraits::construct(item, value[i], memory); });
         }
         rollback.release();
@@ -47,11 +47,11 @@ template <typename T> struct scalar_storage_traits<List<T>> {
     template <std::ranges::contiguous_range Range>
         requires(std::convertible_to<std::ranges::range_reference_t<const Range>, typename ItemTraits::value_type> ||
                  scalar_view_source_for<std::ranges::range_reference_t<const Range>, T>)
-    static void construct(stored_type *destination, const Range &value, std::pmr::memory_resource &memory) {
+    static void construct(stored_type *destination, const Range &value, allocator &memory) {
         std::construct_at(destination);
         auto rollback = util::scope_exit{[&]() noexcept { destroy(destination, memory); }};
         for (const auto &item : value) {
-            destination->items.emplace_back_with(memory, [&](auto *stored) {
+            destination->items.emplace_back_with(memory.memory_resource(), [&](auto *stored) {
                 if constexpr (scalar_view_source_for<decltype(item), T>) {
                     scalar_data(item).copy_construct(stored, cpp_scalar_runtime_type<T>(), memory);
                 } else {
@@ -62,16 +62,16 @@ template <typename T> struct scalar_storage_traits<List<T>> {
         rollback.release();
     }
 
-    static void copy_construct(stored_type *destination, const stored_type &source, std::pmr::memory_resource &memory) {
+    static void copy_construct(stored_type *destination, const stored_type &source, allocator &memory) {
         construct(destination, read(source), memory);
     }
 
-    static void assign(stored_type &destination, value_type value, std::pmr::memory_resource &memory) {
+    static void assign(stored_type &destination, value_type value, allocator &memory) {
         replace_collection_storage<List<T>>(destination, value, memory);
     }
 
-    static void destroy(stored_type *value, std::pmr::memory_resource &memory) noexcept {
-        value->items.release_with(memory, [&](auto *item) noexcept { ItemTraits::destroy(item, memory); });
+    static void destroy(stored_type *value, allocator &memory) noexcept {
+        value->items.release_with(memory.memory_resource(), [&](auto *item) noexcept { ItemTraits::destroy(item, memory); });
         std::destroy_at(value);
     }
 };

@@ -102,7 +102,7 @@ TEST_CASE("a runtime graph releases scalar list time-series storage",
     const auto graph = bg::CompiledGraph{wiring};
     auto memory = counting_memory_resource{};
     {
-        auto runtime = bg::RuntimeGraph{graph, memory};
+        auto runtime = bg::RuntimeGraph{graph, bg::allocator{memory}};
         bg::SimulationEvaluationEngine{}.run(runtime, bg::MIN_DT + std::chrono::microseconds{1});
     }
 

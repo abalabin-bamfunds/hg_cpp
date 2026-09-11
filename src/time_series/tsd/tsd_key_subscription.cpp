@@ -59,8 +59,9 @@ class TsdKeySubscriptions final : public ReferenceProviderComponent {
     };
 
   public:
-    TsdKeySubscriptions(ReferenceProvider &provider, std::pmr::memory_resource &memory)
-        : provider_{&provider}, subscribed_tsds_{&memory}, retired_keys_{&memory}, memory_{&memory} {}
+    TsdKeySubscriptions(ReferenceProvider &provider, allocator memory)
+        : provider_{&provider}, subscribed_tsds_{&memory.memory_resource()}, retired_keys_{&memory.memory_resource()},
+          memory_{memory} {}
 
     ~TsdKeySubscriptions() override {
         detach();
@@ -78,8 +79,8 @@ class TsdKeySubscriptions final : public ReferenceProviderComponent {
         }
     }
 
-    void destroy(std::pmr::memory_resource &memory) noexcept override {
-        allocator{memory}.delete_object(this);
+    void destroy(allocator &memory) noexcept override {
+        memory.delete_object(this);
     }
 
     [[nodiscard]] TsdKeySubscription add(Reference reference, const ScalarData &key, RuntimeGraph &graph,
@@ -92,12 +93,12 @@ class TsdKeySubscriptions final : public ReferenceProviderComponent {
             return {};
         }
 
-        auto retained = runtime_type->retain_key(const_cast<void *>(resolved.storage), key, *memory_);
+        auto retained = runtime_type->retain_key(const_cast<void *>(resolved.storage), key, memory_);
         if (retained.runtime_type == nullptr) {
             return {};
         }
         auto release_retention = util::scope_exit{
-            [&]() noexcept { retained.runtime_type->release_key(retained.value, retained.id, *memory_); }};
+            [&]() noexcept { retained.runtime_type->release_key(retained.value, retained.id, memory_); }};
 
         auto &tsd = require_tsd(reference, retained);
         if (retired_keys_.capacity() <= entry_count_) {
@@ -108,7 +109,7 @@ class TsdKeySubscriptions final : public ReferenceProviderComponent {
                 erase_tsd(tsd);
             }
         }};
-        auto [entry, inserted] = tsd.keys.try_emplace(retained.id, *memory_);
+        auto [entry, inserted] = tsd.keys.try_emplace(retained.id, memory_);
         auto remove_new_key = util::scope_exit{[&]() noexcept {
             if (inserted) {
                 erase_key(tsd, retained.id);
@@ -130,7 +131,7 @@ class TsdKeySubscriptions final : public ReferenceProviderComponent {
             release_retention.release();
         }
 
-        auto &subscribers = DynamicSubscribers::ensure(entry->subscribers, *memory_);
+        auto &subscribers = DynamicSubscribers::ensure(entry->subscribers, memory_);
         subscribers.add(graph, node_index, 0, node_index, true, false);
 
         remove_new_key.release();
@@ -155,7 +156,7 @@ class TsdKeySubscriptions final : public ReferenceProviderComponent {
             retired_keys_[entry->retired_entry_index()].time = graph.evaluation_time();
         }
         if (entry->retained) {
-            tsd.runtime_type->release_key(tsd.storage, subscription.item_id_, *memory_);
+            tsd.runtime_type->release_key(tsd.storage, subscription.item_id_, memory_);
             entry->retained = false;
         }
     }
@@ -177,7 +178,7 @@ class TsdKeySubscriptions final : public ReferenceProviderComponent {
             return *existing;
         }
 
-        auto *result = allocator{*memory_}.new_object<SubscribedTsd>(*this, reference, retained);
+        auto *result = memory_.new_object<SubscribedTsd>(*this, reference, retained);
         auto release = util::scope_exit{[&]() noexcept { release_tsd(*result); }};
         subscribed_tsds_.push_back(result);
         auto remove_entry = util::scope_exit{[&]() noexcept { subscribed_tsds_.pop_back(); }};
@@ -191,10 +192,10 @@ class TsdKeySubscriptions final : public ReferenceProviderComponent {
     void erase_key(SubscribedTsd &tsd, item_id_t id) noexcept {
         auto *entry = tsd.keys.find(id);
         if (entry->retained) {
-            tsd.runtime_type->release_key(tsd.storage, id, *memory_);
+            tsd.runtime_type->release_key(tsd.storage, id, memory_);
         }
         tsd.keys.erase_with(
-            id, *memory_, [](item_id_t *) noexcept {},
+            id, memory_, [](item_id_t *) noexcept {},
             [](TsdKeyEntry *value) noexcept {
                 DynamicSubscribers::release(value->subscribers);
                 std::destroy_at(value);
@@ -215,16 +216,16 @@ class TsdKeySubscriptions final : public ReferenceProviderComponent {
         }
         for (const auto entry : tsd.keys) {
             if (entry.value.retained) {
-                tsd.runtime_type->release_key(tsd.storage, entry.key, *memory_);
+                tsd.runtime_type->release_key(tsd.storage, entry.key, memory_);
             }
         }
         tsd.keys.release_with(
-            *memory_, [](item_id_t *) noexcept {},
+            memory_, [](item_id_t *) noexcept {},
             [](TsdKeyEntry *entry) noexcept {
                 DynamicSubscribers::release(entry->subscribers);
                 std::destroy_at(entry);
             });
-        allocator{*memory_}.delete_object(&tsd);
+        memory_.delete_object(&tsd);
     }
 
     static void notify_tsd(OutputChangeContext &context, void *value, OutputChange change) {
@@ -356,7 +357,7 @@ class TsdKeySubscriptions final : public ReferenceProviderComponent {
     std::pmr::vector<SubscribedTsd *> subscribed_tsds_;
     std::pmr::vector<RetiredKey> retired_keys_;
     std::size_t entry_count_{};
-    std::pmr::memory_resource *memory_;
+    allocator memory_;
 };
 
 namespace {
@@ -367,8 +368,8 @@ TsdKeySubscriptions &require_tsd_key_subscriptions(Reference reference) {
         return *subscriptions;
     }
 
-    auto &memory = provider.memory();
-    auto *subscriptions = allocator{memory}.new_object<TsdKeySubscriptions>(provider, memory);
+    auto &memory = provider.allocation();
+    auto *subscriptions = memory.new_object<TsdKeySubscriptions>(provider, memory);
     provider.add_component(*subscriptions);
     return *subscriptions;
 }

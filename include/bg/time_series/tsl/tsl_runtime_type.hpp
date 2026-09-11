@@ -78,7 +78,7 @@ class FixedTimeSeriesListRuntimeType final : public TimeSeriesRuntimeType {
     void invalidate_output(const details::OutputState &output) const override { invalidate_output_items(output); }
 
     [[nodiscard]] bool mark_item_modified(void *value, item_id_t id, EvaluationTime evaluation_time,
-                                          EvaluationTime, std::pmr::memory_resource &memory) const noexcept override {
+                                          EvaluationTime, allocator &memory) const noexcept override {
         return static_cast<time_series_list_storage *>(value)->mark(id, evaluation_time, memory);
     }
 
@@ -128,7 +128,7 @@ class FixedTimeSeriesListRuntimeType final : public TimeSeriesRuntimeType {
         }
     }
 
-    void construct_runtime_value(void *destination, std::pmr::memory_resource &memory) const override {
+    void construct_runtime_value(void *destination, allocator &memory) const override {
         auto *storage = std::construct_at(static_cast<time_series_list_storage *>(destination));
         auto *bytes = static_cast<std::byte *>(destination);
         auto constructed = std::size_t{};
@@ -149,7 +149,7 @@ class FixedTimeSeriesListRuntimeType final : public TimeSeriesRuntimeType {
         rollback.release();
     }
 
-    void destroy_value(void *value, std::pmr::memory_resource &memory) const noexcept override {
+    void destroy_value(void *value, allocator &memory) const noexcept override {
         auto *bytes = static_cast<std::byte *>(value);
         for (auto index = list_type().item_count(); index != 0; --index) {
             const auto field = item_layout(index - 1);

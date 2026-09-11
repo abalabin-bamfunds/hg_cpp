@@ -1,5 +1,6 @@
 #pragma once
 
+#include <bg/allocator.hpp>
 #include <bg/scalar/canonical.hpp>
 #include <bg/scalar/cpp_runtime_type.hpp>
 #include <bg/scalar/details/value_storage.hpp>
@@ -8,7 +9,6 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
-#include <memory_resource>
 #include <stdexcept>
 #include <type_traits>
 #include <utility>
@@ -42,17 +42,17 @@ template <typename T> class ScalarValue {
 
     template <scalar_source Source>
         requires std::same_as<canonical_scalar_t<Source>, T>
-    ScalarValue(Source &&source, std::pmr::memory_resource &memory)
+    ScalarValue(Source &&source, allocator &memory)
         : value_{make(details::make_scalar_value<T>(canonical_scalar(std::forward<Source>(source)), &memory))} {}
 
     template <typename Source>
         requires details::direct_scalar_source<T, Source>
-    ScalarValue(Source &&source, std::pmr::memory_resource &memory)
+    ScalarValue(Source &&source, allocator &memory)
         : value_{make(details::make_scalar_value<T>(std::forward<Source>(source), &memory))} {}
 
     explicit ScalarValue(const Scalar<T> &source)
         : value_{make(details::copy_scalar_value<T>(details::scalar_data(source), nullptr))} {}
-    ScalarValue(const Scalar<T> &source, std::pmr::memory_resource &memory)
+    ScalarValue(const Scalar<T> &source, allocator &memory)
         : value_{make(details::copy_scalar_value<T>(details::scalar_data(source), &memory))} {}
 
     ~ScalarValue() { release(); }
@@ -117,7 +117,7 @@ template <> class ScalarValue<> {
         : value_{make(details::copy_scalar_value(details::scalar_data(source), nullptr))} {}
 
     template <typename T>
-    ScalarValue(const Scalar<T> &source, std::pmr::memory_resource &memory)
+    ScalarValue(const Scalar<T> &source, allocator &memory)
         : value_{make(details::copy_scalar_value(details::scalar_data(source), &memory))} {}
 
     template <typename T>
@@ -125,7 +125,7 @@ template <> class ScalarValue<> {
         : value_{make(details::copy_scalar_value<T>(details::scalar_data(source), nullptr))} {}
 
     template <typename T>
-    ScalarValue(const ScalarValue<T> &source, std::pmr::memory_resource &memory)
+    ScalarValue(const ScalarValue<T> &source, allocator &memory)
         : value_{make(details::copy_scalar_value<T>(details::scalar_data(source), &memory))} {}
 
     ~ScalarValue() { release(); }
@@ -204,7 +204,7 @@ template <typename T> const ScalarData &scalar_data(const ScalarValue<T> &value)
 
 template <scalar_source Source> ScalarValue(Source &&) -> ScalarValue<canonical_scalar_t<Source>>;
 template <scalar_source Source>
-ScalarValue(Source &&, std::pmr::memory_resource &) -> ScalarValue<canonical_scalar_t<Source>>;
+ScalarValue(Source &&, allocator &) -> ScalarValue<canonical_scalar_t<Source>>;
 
 namespace details {
 

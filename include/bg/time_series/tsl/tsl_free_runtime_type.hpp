@@ -112,7 +112,7 @@ template <std::size_t Size> class FreeFixedTimeSeriesListRuntimeType final : pub
         std::construct_at(static_cast<Storage *>(destination));
     }
 
-    void destroy_value(void *value, std::pmr::memory_resource &) const noexcept override {
+    void destroy_value(void *value, allocator &) const noexcept override {
         std::destroy_at(static_cast<Storage *>(value));
     }
 };

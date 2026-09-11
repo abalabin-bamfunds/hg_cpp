@@ -66,7 +66,7 @@ template <typename K, typename Item, auto... Properties> class Out<TSD<K, Item, 
     }
 
     void clear() const {
-        auto &memory = details::current_scalar_memory_resource();
+        auto memory = details::current_scalar_allocator();
         auto &value = storage();
         const auto should_publish = !valid() || value.key_storage().value.size() != 0;
         reset_change_tracking(value, memory);
@@ -115,13 +115,13 @@ template <typename K, typename Item, auto... Properties> class Out<TSD<K, Item, 
         return details::contained_time_series_value_offset(item_runtime_type());
     }
 
-    void reset_change_tracking(details::time_series_dict_storage &value, std::pmr::memory_resource &memory) const {
+    void reset_change_tracking(details::time_series_dict_storage &value, allocator &memory) const {
         value.reset_change_tracking(state_->context().evaluation_time(), key_runtime_type(), key_layout(),
                                     item_runtime_type(), item_layout(), item_value_offset(), memory);
     }
 
     Out<Item> item(const details::ScalarData &key) const {
-        auto &memory = details::current_scalar_memory_resource();
+        auto memory = details::current_scalar_allocator();
         auto &value = storage();
         reset_change_tracking(value, memory);
         const auto result = value.item(key, key_runtime_type(), key_layout(), item_runtime_type(), item_layout(),
@@ -141,7 +141,7 @@ template <typename K, typename Item, auto... Properties> class Out<TSD<K, Item, 
     }
 
     bool erase(const details::ScalarData &key) const {
-        auto &memory = details::current_scalar_memory_resource();
+        auto memory = details::current_scalar_allocator();
         auto &value = storage();
         reset_change_tracking(value, memory);
         const auto result = value.erase(key, key_runtime_type(), key_layout(), item_runtime_type(), item_layout(),

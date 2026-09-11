@@ -1,5 +1,6 @@
 #pragma once
 
+#include <bg/allocator.hpp>
 #include <bg/evaluation_time.hpp>
 #include <bg/runtime_type.hpp>
 #include <bg/time_series/item_id.hpp>
@@ -7,7 +8,6 @@
 #include <bg/type/time_series_type.hpp>
 
 #include <cstddef>
-#include <memory_resource>
 #include <span>
 
 namespace bg {
@@ -80,7 +80,7 @@ class TimeSeriesRuntimeType : public RuntimeType {
     virtual bool item_updated(const EvaluationTime &, const void *, item_id_t) const noexcept;
     virtual void for_each_updated_item(const EvaluationTime &, const void *, void *, ItemIdFunction) const;
     [[nodiscard]] virtual bool mark_item_modified(void *, item_id_t, EvaluationTime, EvaluationTime,
-                                                  std::pmr::memory_resource &) const noexcept {
+                                                  allocator &) const noexcept {
         return false;
     }
     virtual bool collection_valid(const void *) const noexcept { return false; }
@@ -92,13 +92,13 @@ class TimeSeriesRuntimeType : public RuntimeType {
     virtual Reference reference(const void *) const;
     [[nodiscard]] virtual details::ReferenceRepresentation *
     create_reference_representation(details::ReferenceProvider &, Reference, const TimeSeriesType &,
-                                    std::pmr::memory_resource &) const;
+                                    allocator &) const;
     virtual void construct_initial_value(void *destination) const noexcept = 0;
-    virtual void construct_runtime_value(void *destination, std::pmr::memory_resource &) const {
+    virtual void construct_runtime_value(void *destination, allocator &) const {
         construct_initial_value(destination);
     }
     virtual void invalidate_output(const details::OutputState &output) const;
-    virtual void destroy_value(void *value, std::pmr::memory_resource &memory) const noexcept = 0;
+    virtual void destroy_value(void *value, allocator &memory) const noexcept = 0;
 
   protected:
     TimeSeriesRuntimeType(const TimeSeriesType &type, std::size_t value_size, std::size_t value_alignment,

@@ -58,7 +58,7 @@ struct CapturedValues {
     EvaluationTime start_time;
     std::vector<std::optional<ScalarValue<>>> values;
 
-    void set(EvaluationTime time, Scalar<SCALAR> value) { at(time).emplace(value, *std::pmr::new_delete_resource()); }
+    void set(EvaluationTime time, Scalar<SCALAR> value) { at(time).emplace(value); }
     void reset(EvaluationTime time) { at(time).reset(); }
 
   private:

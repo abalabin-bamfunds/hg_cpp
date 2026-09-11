@@ -14,6 +14,8 @@ namespace bg {
 // Allocates objects through a non-owning polymorphic memory resource.
 class allocator {
   public:
+    allocator() noexcept : allocator{*std::pmr::get_default_resource()} {}
+
     explicit allocator(std::pmr::memory_resource &memory) noexcept : memory_{&memory} {}
 
     [[nodiscard]] void *allocate_bytes(std::size_t size, std::size_t alignment) {
@@ -44,6 +46,9 @@ class allocator {
     }
 
     std::pmr::memory_resource &memory_resource() const noexcept { return *memory_; }
+
+    // Allows allocation-aware graph code to use generic PMR utilities.
+    operator std::pmr::memory_resource &() const noexcept { return *memory_; }
 
   private:
     std::pmr::memory_resource *memory_;

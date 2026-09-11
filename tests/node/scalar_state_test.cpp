@@ -58,7 +58,7 @@ TEST_CASE("a runtime graph releases collection state storage", "[node][state][sc
     auto memory = counting_memory_resource{};
     auto global_state = bg::GlobalState{};
     {
-        auto runtime = bg::RuntimeGraph{graph, memory, global_state};
+        auto runtime = bg::RuntimeGraph{graph, bg::allocator{memory}, global_state};
         bg::SimulationEvaluationEngine{}.run(runtime, bg::MIN_DT + std::chrono::microseconds{1});
     }
 
@@ -240,7 +240,7 @@ TEST_CASE("a runtime graph releases composed collection state storage",
     auto memory = counting_memory_resource{};
     auto state = bg::GlobalState{};
     {
-        auto runtime = bg::RuntimeGraph{graph, memory, state};
+        auto runtime = bg::RuntimeGraph{graph, bg::allocator{memory}, state};
         bg::SimulationEvaluationEngine{}.run(runtime, bg::MIN_DT + std::chrono::microseconds{1});
     }
 

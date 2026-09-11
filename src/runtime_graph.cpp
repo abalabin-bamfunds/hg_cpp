@@ -59,7 +59,7 @@ class RuntimeGraph::FutureSchedule {
     };
 
   public:
-    explicit FutureSchedule(std::pmr::memory_resource &memory) : records_{&memory} {}
+    explicit FutureSchedule(allocator memory) : records_{&memory.memory_resource()} {}
 
     [[nodiscard]] std::uint64_t add(EvaluationTime time, std::size_t node_index) {
         const auto id = next_id_++;
@@ -109,7 +109,7 @@ class RuntimeGraph::CycleCallbacks {
     };
 
   public:
-    explicit CycleCallbacks(std::pmr::memory_resource &memory) : records_{&memory} {}
+    explicit CycleCallbacks(allocator memory) : records_{&memory.memory_resource()} {}
 
     void add(RuntimeGraph &owner, void *receiver, void (*function)(void *) noexcept) {
         records_.push_back({&owner, receiver, function});
@@ -160,7 +160,7 @@ struct RuntimeGraph::PendingInputNotifications {
         OutputChange change;
     };
 
-    explicit PendingInputNotifications(std::pmr::memory_resource &memory) : records{&memory} {}
+    explicit PendingInputNotifications(allocator memory) : records{&memory.memory_resource()} {}
 
     std::pmr::vector<Record> records;
 };
@@ -296,21 +296,20 @@ class RuntimeGraph::ModifiedItemPropagator {
     RuntimeGraph *graph_;
 };
 
-RuntimeGraph::RuntimeGraph(const CompiledGraph &compiled_graph)
-    : RuntimeGraph(compiled_graph, *std::pmr::get_default_resource()) {}
+RuntimeGraph::RuntimeGraph(const CompiledGraph &compiled_graph) : RuntimeGraph(compiled_graph, allocator{}) {}
 
-RuntimeGraph::RuntimeGraph(const CompiledGraph &compiled_graph, std::pmr::memory_resource &memory)
-    : compiled_graph_(&compiled_graph), memory_(&memory), owned_global_state_(std::make_unique<GlobalState>()),
+RuntimeGraph::RuntimeGraph(const CompiledGraph &compiled_graph, allocator memory)
+    : compiled_graph_(&compiled_graph), allocator_(memory), owned_global_state_(std::make_unique<GlobalState>(memory)),
       global_state_(owned_global_state_.get()) {
     initialize_storage();
 }
 
 RuntimeGraph::RuntimeGraph(const CompiledGraph &compiled_graph, GlobalState &global_state)
-    : RuntimeGraph(compiled_graph, *std::pmr::get_default_resource(), global_state) {}
+    : RuntimeGraph(compiled_graph, allocator{}, global_state) {}
 
-RuntimeGraph::RuntimeGraph(const CompiledGraph &compiled_graph, std::pmr::memory_resource &memory,
+RuntimeGraph::RuntimeGraph(const CompiledGraph &compiled_graph, allocator memory,
                            GlobalState &global_state)
-    : compiled_graph_(&compiled_graph), memory_(&memory), global_state_(&global_state) {
+    : compiled_graph_(&compiled_graph), allocator_(memory), global_state_(&global_state) {
     initialize_storage();
 }
 
@@ -320,7 +319,7 @@ void RuntimeGraph::initialize_storage() {
     }
 
     storage_ = static_cast<std::byte *>(
-        memory_->allocate(compiled_graph_->runtime_storage_size(), compiled_graph_->runtime_storage_alignment()));
+        allocator_.allocate_bytes(compiled_graph_->runtime_storage_size(), compiled_graph_->runtime_storage_alignment()));
     // The image contains only default states whose runtime types support byte-copy initialization.
     std::memcpy(storage_, compiled_graph_->initial_runtime_storage(), compiled_graph_->runtime_storage_size());
 }
@@ -356,32 +355,32 @@ RuntimeGraph::~RuntimeGraph() {
             }
 
             EvaluationContext context{evaluation_time_, *this, node_index};
-            const auto allocation_context = details::ScalarAllocationContext{*memory_, this, node_index};
+            const auto allocation_context = details::ScalarAllocationContext{allocator_, this, node_index};
             node.state_destruction_function()(node, storage_, &context);
         }
 
         const auto output_destruction = compiled_graph_->output_destruction();
         for (auto i = output_destruction.offsets.size(); i != 0; --i) {
             output_destruction.runtime_types[i - 1]->destroy_value(storage_ + output_destruction.offsets[i - 1],
-                                                                   *memory_);
+                                                                   allocator_);
         }
     }
 
     if (compiled_graph_->has_future_scheduling() && future_schedule() != nullptr) {
-        allocator{*memory_}.delete_object(future_schedule());
+        allocator_.delete_object(future_schedule());
     }
 
     if (compiled_graph_->has_cycle_callbacks() && cycle_callbacks() != nullptr) {
-        allocator{*memory_}.delete_object(cycle_callbacks());
+        allocator_.delete_object(cycle_callbacks());
     }
 
     if (pending_input_notifications_ != nullptr) {
-        allocator{*memory_}.delete_object(pending_input_notifications_);
+        allocator_.delete_object(pending_input_notifications_);
     }
 
     if (storage_ != nullptr) {
-        memory_->deallocate(storage_, compiled_graph_->runtime_storage_size(),
-                            compiled_graph_->runtime_storage_alignment());
+        allocator_.deallocate_bytes(storage_, compiled_graph_->runtime_storage_size(),
+                                 compiled_graph_->runtime_storage_alignment());
     }
 }
 
@@ -420,7 +419,7 @@ ScheduleHandle RuntimeGraph::schedule_at(std::size_t node_index, EvaluationTime 
     }
 
     if (future_schedule() == nullptr) {
-        future_schedule() = allocator{*memory_}.new_object<FutureSchedule>(*memory_);
+        future_schedule() = allocator_.new_object<FutureSchedule>(allocator_);
     }
 
     auto result = ScheduleHandle{future_schedule()->add(time, node_index)};
@@ -501,7 +500,7 @@ RuntimeGraph::CycleCallbacks &RuntimeGraph::require_cycle_callbacks() {
     }
 
     if (cycle_callbacks() == nullptr) {
-        cycle_callbacks() = allocator{*memory_}.new_object<CycleCallbacks>(*memory_);
+        cycle_callbacks() = allocator_.new_object<CycleCallbacks>(allocator_);
     }
 
     return *cycle_callbacks();
@@ -635,7 +634,7 @@ void RuntimeGraph::schedule_dynamic_subscribers(details::DynamicSubscribers &sub
 void RuntimeGraph::queue_input_notification(InputChangeFunction function, std::size_t node_index, std::size_t data,
                                             OutputChange change) {
     if (pending_input_notifications_ == nullptr) {
-        pending_input_notifications_ = allocator{*memory_}.new_object<PendingInputNotifications>(*memory_);
+        pending_input_notifications_ = allocator_.new_object<PendingInputNotifications>(allocator_);
     }
 
     pending_input_notifications_->records.push_back({function, node_index, data, change});
@@ -678,7 +677,7 @@ void RuntimeGraph::apply_invalidation(const CompiledNode &node, std::size_t node
 
     const auto output_was_valid = node.has_output() && Node{node, storage_}.output_last_updated() > MIN_DT;
     EvaluationContext context{evaluation_time_, *this, node_index};
-    const auto allocation_context = details::ScalarAllocationContext{*memory_, this, node_index};
+    const auto allocation_context = details::ScalarAllocationContext{allocator_, this, node_index};
     node.invalidation_function()(node, storage_, &context);
 
     if (node.has_output()) {
@@ -687,7 +686,7 @@ void RuntimeGraph::apply_invalidation(const CompiledNode &node, std::size_t node
 }
 
 void RuntimeGraph::start(EvaluationTime evaluation_time) {
-    auto scratch = details::EvaluationScratch{*memory_};
+    auto scratch = details::EvaluationScratch{allocator_.memory_resource()};
     start(evaluation_time, scratch);
 }
 
@@ -713,7 +712,7 @@ void RuntimeGraph::start(EvaluationTime evaluation_time, details::EvaluationScra
         const auto output_was_valid = node.has_output() && Node{node, storage_}.output_last_updated() > MIN_DT;
 
         EvaluationContext context{evaluation_time, *this, node_index};
-        const auto allocation_context = details::ScalarAllocationContext{*memory_, this, node_index};
+        const auto allocation_context = details::ScalarAllocationContext{allocator_, this, node_index};
         (*function)(node, storage_, &context);
         ++function;
         started_node_count = node_index + 1;
@@ -735,7 +734,7 @@ void RuntimeGraph::stop_nodes(std::size_t node_count) noexcept {
 
         const auto &node = compiled_graph_->node(node_index);
         EvaluationContext context{evaluation_time_, *this, node_index};
-        const auto allocation_context = details::ScalarAllocationContext{*memory_, this, node_index};
+        const auto allocation_context = details::ScalarAllocationContext{allocator_, this, node_index};
         stops.functions[i](node, storage_, &context);
     }
 
@@ -744,7 +743,7 @@ void RuntimeGraph::stop_nodes(std::size_t node_count) noexcept {
 }
 
 void RuntimeGraph::stop() noexcept {
-    auto scratch = details::EvaluationScratch{*memory_};
+    auto scratch = details::EvaluationScratch{allocator_.memory_resource()};
     stop(scratch);
 }
 
@@ -775,7 +774,7 @@ bool RuntimeGraph::inputs_are_valid(const CompiledNode &node) const noexcept {
 }
 
 void RuntimeGraph::evaluate(EvaluationTime evaluation_time) {
-    auto scratch = details::EvaluationScratch{*memory_};
+    auto scratch = details::EvaluationScratch{allocator_.memory_resource()};
     evaluate(evaluation_time, scratch);
 }
 
@@ -830,7 +829,7 @@ void RuntimeGraph::evaluate(EvaluationTime evaluation_time, details::EvaluationS
         const auto output_was_valid = has_output && Node{node, storage_}.output_last_updated() > MIN_DT;
         if (const auto evaluate = node.evaluation_function(); evaluate != nullptr) {
             EvaluationContext context{evaluation_time, *this, node_index};
-            const auto allocation_context = details::ScalarAllocationContext{*memory_, this, node_index};
+            const auto allocation_context = details::ScalarAllocationContext{allocator_, this, node_index};
             evaluate(node, storage_, &context);
         }
 

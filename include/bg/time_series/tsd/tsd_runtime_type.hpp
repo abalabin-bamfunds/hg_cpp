@@ -48,12 +48,12 @@ class TimeSeriesDictionaryRuntimeType : public TimeSeriesRuntimeType {
     }
 
     virtual RetainedDictionaryKey retain_key(void *value, const ScalarData &key,
-                                             std::pmr::memory_resource &memory) const {
+                                             allocator &memory) const {
         auto &keys = static_cast<time_series_dict_storage *>(value)->key_storage().value;
         return {this, value, keys.retain(key, *key_, key_layout_, memory)};
     }
 
-    virtual void release_key(void *value, item_id_t id, std::pmr::memory_resource &memory) const noexcept {
+    virtual void release_key(void *value, item_id_t id, allocator &memory) const noexcept {
         auto &keys = static_cast<time_series_dict_storage *>(value)->key_storage().value;
         keys.release_retention(id, memory);
     }
@@ -195,7 +195,7 @@ class TimeSeriesDictionaryRuntimeType : public TimeSeriesRuntimeType {
     }
 
     [[nodiscard]] bool mark_item_modified(void *value, item_id_t id, EvaluationTime evaluation_time,
-                                          EvaluationTime, std::pmr::memory_resource &memory) const noexcept override {
+                                          EvaluationTime, allocator &memory) const noexcept override {
         if (id == key_set_item_id) {
             return true;
         }
@@ -257,7 +257,7 @@ class TimeSeriesDictionaryRuntimeType : public TimeSeriesRuntimeType {
         std::construct_at(static_cast<time_series_dict_storage *>(destination));
     }
 
-    void destroy_value(void *value, std::pmr::memory_resource &memory) const noexcept override {
+    void destroy_value(void *value, allocator &memory) const noexcept override {
         auto *storage = static_cast<time_series_dict_storage *>(value);
         storage->release(*key_, key_layout_, *item_, item_layout_, item_value_offset_, memory);
         std::destroy_at(storage);
@@ -266,7 +266,7 @@ class TimeSeriesDictionaryRuntimeType : public TimeSeriesRuntimeType {
     [[nodiscard]] ReferenceRepresentation *
     create_reference_representation(ReferenceProvider &provider, Reference input,
                                     const TimeSeriesType &requested_type,
-                                    std::pmr::memory_resource &memory) const override;
+                                    allocator &memory) const override;
 
   private:
     const ScalarRuntimeType *key_;
