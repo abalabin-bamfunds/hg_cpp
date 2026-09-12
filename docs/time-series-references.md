@@ -97,10 +97,10 @@ complete record span. The handler updates target pointers and dynamic
 subscriptions, then requests required-input validity checks. The runtime does
 not interpret REF storage.
 
-The reference-making node receives input changes through a compiled callback
-subscription and notifies its root reference. Each representation observes its
-base reference. It consumes that notification, updates its state, and
-notifies only the affected representation or item references.
+The reference-making node receives input changes through a compiled input
+notification and notifies its root reference. Each representation observes its
+base reference. It consumes that notification, updates its state, and notifies
+only the affected representation or item references.
 
 The source runtime graph owns the created representations and subscriber
 groups. Ordinary subscriber records identify the destination runtime graph,
@@ -117,8 +117,8 @@ The reference provider owns references, subscriber groups, notification
 links, and type-specific components. TSD key subscriptions are implemented by
 a lazily created TSD component.
 
-A reference notification schedules its dynamic subscribers directly. Subscriber
-records retain the destination graph. An observer callback uses that graph's
+A reference notification notifies its dynamic subscribers directly. Subscriber
+records retain the destination graph. A runtime observer uses that graph's
 context and the notification's outer-cycle time.
 
 When a reference changes target:

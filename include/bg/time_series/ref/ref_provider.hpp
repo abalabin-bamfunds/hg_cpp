@@ -74,18 +74,18 @@ class ReferenceProvider {
     allocator &allocation() noexcept { return memory_; }
     const allocator &allocation() const noexcept { return memory_; }
     ResolvedTimeSeries resolve_representation(std::uint32_t index) const;
-    void add_root_subscriber(RuntimeGraph &graph, std::uint32_t input_offset, std::size_t callback_data,
+    void add_root_subscriber(RuntimeGraph &graph, std::uint32_t input_offset, std::size_t notification_data,
                              std::uint32_t node_index, bool active, bool required,
-                             InputChangeFunction callback = nullptr);
-    void add_root_observer(RuntimeGraph &graph, void *receiver, DynamicObserverFunction function);
+                             InputNotificationFunction notification = nullptr);
+    void add_root_observer(RuntimeGraph &graph, void *receiver, RuntimeObserverFunction function);
     void remove_root_subscriber(RuntimeGraph &graph, std::size_t input_offset) noexcept;
     void remove_root_observer(RuntimeGraph &graph, const void *receiver) noexcept;
     void notify_root(OutputChangeContext &context, OutputChange change);
     void add_subscriber(ReferenceSubscriptionDetail &subscriptions, RuntimeGraph &graph, std::uint32_t input_offset,
-                        std::size_t callback_data, std::uint32_t node_index, bool active, bool required,
-                        InputChangeFunction callback = nullptr);
+                        std::size_t notification_data, std::uint32_t node_index, bool active, bool required,
+                        InputNotificationFunction notification = nullptr);
     void add_observer(ReferenceSubscriptionDetail &subscriptions, RuntimeGraph &graph, void *receiver,
-                      DynamicObserverFunction function);
+                      RuntimeObserverFunction function);
     void remove_subscriber(ReferenceSubscriptionDetail &subscriptions, RuntimeGraph &graph,
                            std::size_t input_offset) noexcept;
     void remove_observer(ReferenceSubscriptionDetail &subscriptions, RuntimeGraph &graph,
@@ -128,9 +128,9 @@ class ReferenceProvider {
 [[nodiscard]] Reference reference_representation(Reference reference, const TimeSeriesType &requested_type);
 ReferenceProvider &require_reference_provider(Reference reference);
 void add_reference_subscriber(Reference reference, RuntimeGraph &graph, std::uint32_t input_offset,
-                              std::size_t callback_data, std::uint32_t node_index, bool active, bool required,
-                              InputChangeFunction callback = nullptr);
-void add_reference_observer(Reference reference, RuntimeGraph &graph, void *receiver, DynamicObserverFunction function);
+                              std::size_t notification_data, std::uint32_t node_index, bool active, bool required,
+                              InputNotificationFunction notification = nullptr);
+void add_reference_observer(Reference reference, RuntimeGraph &graph, void *receiver, RuntimeObserverFunction function);
 void remove_reference_subscriber(Reference reference, RuntimeGraph &graph, std::size_t input_offset) noexcept;
 void remove_reference_observer(Reference reference, RuntimeGraph &graph, const void *receiver) noexcept;
 void notify_reference(Reference reference, OutputChangeContext &context, OutputChange change);

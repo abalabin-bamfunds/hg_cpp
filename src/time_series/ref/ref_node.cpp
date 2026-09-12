@@ -52,7 +52,7 @@ class ReferenceNodeTemplate final : public NodeTemplate {
 
     bool uses_cycle_callbacks() const noexcept override { return uses_cycle_callbacks_; }
 
-    InputChangeCallback input_change_callback(std::size_t) const noexcept override { return {&notify_input, 0}; }
+    InputNotification input_notification(std::size_t) const noexcept override { return {&notify_input, 0}; }
 
   private:
     static void start(const CompiledNode &node, void *runtime_storage, EvaluationContext *context) {

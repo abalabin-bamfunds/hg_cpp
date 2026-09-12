@@ -24,7 +24,7 @@ class RuntimeGraphAccess;
 }
 
 class TimeSeriesRuntimeType;
-class ItemSubscribers;
+class ItemSubscription;
 class SimulationEvaluationEngine;
 class NestedGraph;
 
@@ -68,7 +68,7 @@ class RuntimeGraph {
     class FutureSchedule;
     class CycleCallbacks;
     class ScratchUse;
-    class ModifiedItemPropagator;
+    class OutputChangePublisher;
     struct PendingInputNotifications;
 
     auto scheduling_info() noexcept -> std::span<SchedulingInfo>;
@@ -91,17 +91,13 @@ class RuntimeGraph {
     void remove_cycle_callback(const void *receiver) noexcept;
     void run_cycle_callbacks() noexcept;
     void clear_cycle_callbacks() noexcept;
-    void propagate_modified_items(const CompiledNode &node);
-    void schedule_subscribers(std::span<const Subscriber> subscribers, OutputChange change);
-    void schedule_node_subscriber(std::size_t node_index, bool active, bool required, bool active_optional,
-                                  OutputChange change) noexcept;
-    void notify_output(const OutputNotification *notification, const TimeSeriesRuntimeType *runtime_type,
-                       const void *value, OutputChange change);
-    void propagate_output_change(const CompiledNode &node, OutputChange change);
-    void publish_output_changes(const CompiledNode &node, bool output_was_valid);
-    void schedule_dynamic_subscribers(std::size_t offset, OutputChange change);
-    void schedule_dynamic_subscribers(details::DynamicSubscribers &subscribers, OutputChange change);
-    void queue_input_notification(InputChangeFunction function, std::size_t node_index, std::size_t data,
+    std::optional<OutputChange> output_change(const CompiledNode &node, bool output_was_valid) const noexcept;
+    void publish_output(const CompiledNode &node, OutputChange change);
+    void notify_subscribers(std::span<const Subscriber> subscribers, OutputChange change);
+    void notify_node_subscriber(std::size_t node_index, bool active, bool required, bool active_optional,
+                                OutputChange change) noexcept;
+    void notify_dynamic_subscribers(details::DynamicSubscribers &subscribers, OutputChange change);
+    void queue_input_notification(InputNotificationFunction function, std::size_t node_index, std::size_t data,
                                   OutputChange change);
     void run_input_notifications();
     void apply_invalidation(const CompiledNode &node, std::size_t node_index);

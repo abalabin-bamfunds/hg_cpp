@@ -79,8 +79,8 @@ class TsdKeySubscriptions final : public ReferenceProviderComponent {
 
   public:
     TsdKeySubscriptions(ReferenceProvider &provider, allocator memory)
-        : provider_{&provider}, subscribed_tsds_{&memory.memory_resource()}, key_subscribers_{&memory.memory_resource()},
-          retired_keys_{&memory.memory_resource()}, memory_{memory} {}
+        : provider_{&provider}, subscribed_tsds_{&memory.memory_resource()},
+          key_subscribers_{&memory.memory_resource()}, retired_keys_{&memory.memory_resource()}, memory_{memory} {}
 
     ~TsdKeySubscriptions() override {
         detach();
@@ -360,7 +360,7 @@ class TsdKeySubscriptions final : public ReferenceProviderComponent {
     }
 
     static void notify_entry(OutputChangeContext &context, TsdKeyEntry &entry, OutputChange change) {
-        context.notify(entry.subscribers, change);
+        context.notify_subscribers(entry.subscribers, change);
         if (entry.item_reference != nullptr) {
             notify_reference(Reference{entry.item_reference}, context, change);
         }
@@ -416,7 +416,7 @@ class TsdKeySubscriptions final : public ReferenceProviderComponent {
             dynamic_cast<const TimeSeriesReferenceRuntimeType *>(&runtime_type.item_runtime_type()) != nullptr;
         if (item_is_reference) {
             entry->item_valid = change != OutputChange::invalidation;
-            context.notify(entry->subscribers, change);
+            context.notify_subscribers(entry->subscribers, change);
             return;
         }
 

@@ -41,8 +41,7 @@ Reference parent_reference(Reference reference) noexcept {
 
 } // namespace
 
-ReferenceProvider::ReferenceProvider(allocator memory, RootReference &root,
-                                     DynamicSubscribers *root_subscribers)
+ReferenceProvider::ReferenceProvider(allocator memory, RootReference &root, DynamicSubscribers *root_subscribers)
     : memory_{memory}, root_{&root}, representations_{&memory.memory_resource()},
       subscriber_groups_{&memory.memory_resource()} {
     subscriber_groups_.push_back(root_subscribers);
@@ -80,14 +79,14 @@ ResolvedTimeSeries ReferenceProvider::resolve_representation(std::uint32_t index
     return representations_[index]->resolve();
 }
 
-void ReferenceProvider::add_root_subscriber(RuntimeGraph &graph, std::uint32_t input_offset, std::size_t callback_data,
-                                            std::uint32_t node_index, bool active, bool required,
-                                            InputChangeFunction callback) {
+void ReferenceProvider::add_root_subscriber(RuntimeGraph &graph, std::uint32_t input_offset,
+                                            std::size_t notification_data, std::uint32_t node_index, bool active,
+                                            bool required, InputNotificationFunction notification) {
     auto &subscribers = DynamicSubscribers::ensure(subscriber_groups_.front(), memory_);
-    subscribers.add(graph, input_offset, callback_data, node_index, active, required, callback);
+    subscribers.add(graph, input_offset, notification_data, node_index, active, required, notification);
 }
 
-void ReferenceProvider::add_root_observer(RuntimeGraph &graph, void *receiver, DynamicObserverFunction function) {
+void ReferenceProvider::add_root_observer(RuntimeGraph &graph, void *receiver, RuntimeObserverFunction function) {
     auto &subscribers = DynamicSubscribers::ensure(subscriber_groups_.front(), memory_);
     subscribers.add_observer(graph, receiver, function);
 }
@@ -105,34 +104,33 @@ void ReferenceProvider::remove_root_observer(RuntimeGraph &graph, const void *re
 }
 
 void ReferenceProvider::notify_root(OutputChangeContext &context, OutputChange change) {
-    context.notify(subscriber_groups_.front(), change);
+    context.notify_subscribers(subscriber_groups_.front(), change);
     if (item_notification_links_ != nullptr) {
         notify_reference_root_item_links(*item_notification_links_, context, change);
     }
 }
 
 void ReferenceProvider::add_subscriber(ReferenceSubscriptionDetail &subscriptions, RuntimeGraph &graph,
-                                       std::uint32_t input_offset, std::size_t callback_data, std::uint32_t node_index,
-                                       bool active, bool required, InputChangeFunction callback) {
+                                       std::uint32_t input_offset, std::size_t notification_data,
+                                       std::uint32_t node_index, bool active, bool required,
+                                       InputNotificationFunction notification) {
     if (!subscriptions.has_subscriber_group()) {
         subscriber_groups_.push_back(nullptr);
         subscriptions.set_subscriber_group(static_cast<std::uint32_t>(subscriber_groups_.size() - 1));
     }
 
-    auto &subscribers =
-        DynamicSubscribers::ensure(subscriber_groups_[subscriptions.subscriber_group_index()], memory_);
-    subscribers.add(graph, input_offset, callback_data, node_index, active, required, callback);
+    auto &subscribers = DynamicSubscribers::ensure(subscriber_groups_[subscriptions.subscriber_group_index()], memory_);
+    subscribers.add(graph, input_offset, notification_data, node_index, active, required, notification);
 }
 
 void ReferenceProvider::add_observer(ReferenceSubscriptionDetail &subscriptions, RuntimeGraph &graph, void *receiver,
-                                     DynamicObserverFunction function) {
+                                     RuntimeObserverFunction function) {
     if (!subscriptions.has_subscriber_group()) {
         subscriber_groups_.push_back(nullptr);
         subscriptions.set_subscriber_group(static_cast<std::uint32_t>(subscriber_groups_.size() - 1));
     }
 
-    auto &subscribers =
-        DynamicSubscribers::ensure(subscriber_groups_[subscriptions.subscriber_group_index()], memory_);
+    auto &subscribers = DynamicSubscribers::ensure(subscriber_groups_[subscriptions.subscriber_group_index()], memory_);
     subscribers.add_observer(graph, receiver, function);
 }
 
@@ -153,7 +151,7 @@ void ReferenceProvider::remove_observer(ReferenceSubscriptionDetail &subscriptio
 void ReferenceProvider::notify(ReferenceSubscriptionDetail &subscriptions, OutputChangeContext &context,
                                OutputChange change) {
     if (subscriptions.has_subscriber_group()) {
-        context.notify(subscriber_groups_[subscriptions.subscriber_group_index()], change);
+        context.notify_subscribers(subscriber_groups_[subscriptions.subscriber_group_index()], change);
     }
     if (item_notification_links_ != nullptr) {
         notify_reference_item_links(*item_notification_links_, subscriptions, context, change);
@@ -371,25 +369,26 @@ ReferenceProvider &require_reference_provider(Reference reference) {
 }
 
 void add_reference_subscriber(Reference reference, RuntimeGraph &graph, std::uint32_t input_offset,
-                              std::size_t callback_data, std::uint32_t node_index, bool active, bool required,
-                              InputChangeFunction callback) {
+                              std::size_t notification_data, std::uint32_t node_index, bool active, bool required,
+                              InputNotificationFunction notification) {
     if (auto *root = reference.get<RootReference>()) {
         if (auto *provider = root->subscribers_or_provider.get<ReferenceProvider>()) {
-            provider->add_root_subscriber(graph, input_offset, callback_data, node_index, active, required, callback);
+            provider->add_root_subscriber(graph, input_offset, notification_data, node_index, active, required,
+                                          notification);
             return;
         }
         auto *subscribers = root->subscribers_or_provider.get<DynamicSubscribers>();
         auto &result = DynamicSubscribers::ensure(subscribers, root->owner_graph->allocation());
         root->subscribers_or_provider = subscribers;
-        result.add(graph, input_offset, callback_data, node_index, active, required, callback);
+        result.add(graph, input_offset, notification_data, node_index, active, required, notification);
         return;
     }
-    provider_for(reference).add_subscriber(reference_subscriptions(reference), graph, input_offset, callback_data,
-                                           node_index, active, required, callback);
+    provider_for(reference).add_subscriber(reference_subscriptions(reference), graph, input_offset, notification_data,
+                                           node_index, active, required, notification);
 }
 
 void add_reference_observer(Reference reference, RuntimeGraph &graph, void *receiver,
-                            DynamicObserverFunction function) {
+                            RuntimeObserverFunction function) {
     if (auto *root = reference.get<RootReference>()) {
         if (auto *provider = root->subscribers_or_provider.get<ReferenceProvider>()) {
             provider->add_root_observer(graph, receiver, function);
@@ -433,7 +432,7 @@ void notify_reference(Reference reference, OutputChangeContext &context, OutputC
         if (auto *provider = root->subscribers_or_provider.get<ReferenceProvider>()) {
             provider->notify_root(context, change);
         } else {
-            context.notify(root->subscribers_or_provider.get<DynamicSubscribers>(), change);
+            context.notify_subscribers(root->subscribers_or_provider.get<DynamicSubscribers>(), change);
         }
         return;
     }

@@ -30,9 +30,10 @@ template <std::size_t Size> class FreeFixedTimeSeriesListNodeTemplate final : pu
     EvaluationFunction evaluation_function(const ResolvedSignature &) const noexcept override { return &evaluate; }
     EvaluationFunction start_function(const ResolvedSignature &) const noexcept override { return &start; }
     bool uses_time_series_input_runtime_type(std::size_t) const noexcept override { return true; }
-    InputChangeCallback input_change_callback(std::size_t input_index) const noexcept override {
+    InputNotification input_notification(std::size_t input_index) const noexcept override {
         return {&input_changed, input_index};
     }
+
   private:
     [[nodiscard]] static Signature make_signature(const TimeSeriesListType &type) {
         auto parameters = std::vector<Parameter>{};

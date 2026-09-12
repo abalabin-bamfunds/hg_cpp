@@ -29,18 +29,17 @@ void OutputChangeContext::schedule_validity_check(RuntimeGraph &graph, std::size
     graph.schedule_validity_check(node_index);
 }
 
-void OutputChangeContext::notify(details::DynamicSubscribers *subscribers, OutputChange change) const {
+void OutputChangeContext::notify_subscribers(details::DynamicSubscribers *subscribers, OutputChange change) const {
     if (subscribers != nullptr) {
-        runtime_graph_->schedule_dynamic_subscribers(*subscribers, change);
+        runtime_graph_->notify_dynamic_subscribers(*subscribers, change);
     }
 }
 
-void notify_input_callbacks(OutputChangeContext &context, const TimeSeriesRuntimeType *, const void *,
-                            OutputChange change,
-                            std::span<const std::byte> record_bytes) {
+void notify_input_subscribers(OutputChangeContext &context, const TimeSeriesRuntimeType *, const void *,
+                              OutputChange change, std::span<const std::byte> record_bytes) {
     const auto records = std::span{
-        reinterpret_cast<const InputCallbackSubscriber *>(record_bytes.data()),
-        record_bytes.size() / sizeof(InputCallbackSubscriber),
+        reinterpret_cast<const InputNotificationSubscriber *>(record_bytes.data()),
+        record_bytes.size() / sizeof(InputNotificationSubscriber),
     };
     for (const auto &record : records) {
         record.notify(context, change);
@@ -154,7 +153,7 @@ class RuntimeGraph::ScratchUse {
 struct RuntimeGraph::PendingInputNotifications {
     // A target graph applies cross-graph input reactions after entering the source's outer cycle.
     struct Record {
-        InputChangeFunction input_function;
+        InputNotificationFunction function;
         std::size_t node_index;
         std::size_t data;
         OutputChange change;
@@ -242,41 +241,47 @@ class RuntimeGraph::ScheduledNodes {
     std::span<SchedulingInfo> scheduling_;
 };
 
-class RuntimeGraph::ModifiedItemPropagator {
+class RuntimeGraph::OutputChangePublisher {
     struct Scope {
-        ModifiedItemPropagator *propagator;
+        OutputChangePublisher *publisher;
         ItemSubscriptionRange subscriptions;
     };
 
   public:
-    explicit ModifiedItemPropagator(RuntimeGraph &graph) noexcept : graph_{&graph} {}
+    explicit OutputChangePublisher(RuntimeGraph &graph) noexcept : graph_{&graph} {}
 
-    void propagate(const CompiledNode &node) {
-        const auto *root = node.item_subscriptions();
+    void publish(const CompiledNode &compiled_node, OutputChange change) {
+        const auto runtime_node = Node{compiled_node, graph_->storage_};
+        publish_modified_items(compiled_node, runtime_node);
+        publish_handlers(compiled_node.output_notification(), nullptr, runtime_node.output_value(), change);
+        graph_->notify_subscribers(compiled_node.subscribers(), change);
+    }
+
+  private:
+    void publish_modified_items(const CompiledNode &compiled_node, Node runtime_node) {
+        const auto *root = compiled_node.item_subscriptions();
         if (root == nullptr) {
             return;
         }
 
-        const auto runtime_node = Node{node, graph_->storage_};
         auto scope = Scope{this, root->children()};
         root->runtime_type->for_each_modified_item(runtime_node.output_last_updated(), runtime_node.output_value(),
-                                                   graph_->evaluation_time_, &scope, propagate_item);
+                                                   graph_->evaluation_time_, &scope, visit_modified_item);
     }
 
-  private:
-    static void propagate_item(void *context, TimeSeriesRuntimeType::ModifiedItem item) {
+    static void visit_modified_item(void *context, TimeSeriesRuntimeType::ModifiedItem item) {
         auto &scope = *static_cast<Scope *>(context);
         const auto *subscribers = scope.subscriptions.find(item.id);
         if (subscribers == nullptr) {
             return;
         }
 
-        scope.propagator->propagate(item, *subscribers);
+        scope.publisher->publish_item(item, *subscribers);
     }
 
-    void propagate(TimeSeriesRuntimeType::ModifiedItem item, const ItemSubscribers &subscribers) {
+    void publish_item(TimeSeriesRuntimeType::ModifiedItem item, const ItemSubscription &subscription) {
         auto &sampled_last_updated =
-            *reinterpret_cast<EvaluationTime *>(graph_->storage_ + subscribers.sampled_last_updated_offset());
+            *reinterpret_cast<EvaluationTime *>(graph_->storage_ + subscription.sampled_last_updated_offset());
         const auto was_valid = sampled_last_updated > MIN_DT;
         const auto now_valid = *item.last_updated > MIN_DT;
 
@@ -284,13 +289,23 @@ class RuntimeGraph::ModifiedItemPropagator {
             sampled_last_updated = now_valid ? graph_->evaluation_time_ : MIN_DT;
             const auto change = now_valid ? (was_valid ? OutputChange::update : OutputChange::revalidation)
                                           : OutputChange::invalidation;
-            graph_->notify_output(subscribers.output_notification(), item.runtime_type, item.value, change);
-            graph_->schedule_subscribers(subscribers.subscribers(), change);
+            publish_handlers(subscription.output_notification(), item.runtime_type, item.value, change);
+            graph_->notify_subscribers(subscription.subscribers(), change);
         }
 
-        auto scope = Scope{this, subscribers.children()};
+        auto scope = Scope{this, subscription.children()};
         item.runtime_type->for_each_modified_item(*item.last_updated, item.value, graph_->evaluation_time_, &scope,
-                                                  propagate_item);
+                                                  visit_modified_item);
+    }
+
+    void publish_handlers(const OutputNotification *handlers, const TimeSeriesRuntimeType *runtime_type,
+                          const void *value, OutputChange change) {
+        if (handlers == nullptr) {
+            return;
+        }
+
+        auto context = OutputChangeContext{*graph_};
+        handlers->notify(context, runtime_type, value, change);
     }
 
     RuntimeGraph *graph_;
@@ -307,8 +322,7 @@ RuntimeGraph::RuntimeGraph(const CompiledGraph &compiled_graph, allocator memory
 RuntimeGraph::RuntimeGraph(const CompiledGraph &compiled_graph, GlobalState &global_state)
     : RuntimeGraph(compiled_graph, allocator{}, global_state) {}
 
-RuntimeGraph::RuntimeGraph(const CompiledGraph &compiled_graph, allocator memory,
-                           GlobalState &global_state)
+RuntimeGraph::RuntimeGraph(const CompiledGraph &compiled_graph, allocator memory, GlobalState &global_state)
     : compiled_graph_(&compiled_graph), allocator_(memory), global_state_(&global_state) {
     initialize_storage();
 }
@@ -318,8 +332,8 @@ void RuntimeGraph::initialize_storage() {
         return;
     }
 
-    storage_ = static_cast<std::byte *>(
-        allocator_.allocate_bytes(compiled_graph_->runtime_storage_size(), compiled_graph_->runtime_storage_alignment()));
+    storage_ = static_cast<std::byte *>(allocator_.allocate_bytes(compiled_graph_->runtime_storage_size(),
+                                                                  compiled_graph_->runtime_storage_alignment()));
     // The image contains only default states whose runtime types support byte-copy initialization.
     std::memcpy(storage_, compiled_graph_->initial_runtime_storage(), compiled_graph_->runtime_storage_size());
 }
@@ -380,7 +394,7 @@ RuntimeGraph::~RuntimeGraph() {
 
     if (storage_ != nullptr) {
         allocator_.deallocate_bytes(storage_, compiled_graph_->runtime_storage_size(),
-                                 compiled_graph_->runtime_storage_alignment());
+                                    compiled_graph_->runtime_storage_alignment());
     }
 }
 
@@ -544,20 +558,24 @@ std::optional<EvaluationTime> RuntimeGraph::next_scheduled_time() const noexcept
     return future_schedule()->next_time();
 }
 
-void RuntimeGraph::schedule_subscribers(std::span<const Subscriber> subscribers, OutputChange change) {
+void RuntimeGraph::notify_subscribers(std::span<const Subscriber> subscribers, OutputChange change) {
     for (const auto &subscriber : subscribers) {
         if (subscriber.has_dynamic_subscribers()) {
-            schedule_dynamic_subscribers(subscriber.dynamic_subscribers_offset(), change);
+            auto *dynamic_subscribers =
+                *reinterpret_cast<details::DynamicSubscribers **>(storage_ + subscriber.dynamic_subscribers_offset());
+            if (dynamic_subscribers != nullptr) {
+                notify_dynamic_subscribers(*dynamic_subscribers, change);
+            }
             continue;
         }
 
-        schedule_node_subscriber(subscriber.node_index(), subscriber.active(), subscriber.required(),
-                                 subscriber.active_optional(), change);
+        notify_node_subscriber(subscriber.node_index(), subscriber.active(), subscriber.required(),
+                               subscriber.active_optional(), change);
     }
 }
 
-void RuntimeGraph::schedule_node_subscriber(std::size_t node_index, bool is_active, bool is_required,
-                                            bool is_active_optional, OutputChange change) noexcept {
+void RuntimeGraph::notify_node_subscriber(std::size_t node_index, bool is_active, bool is_required,
+                                          bool is_active_optional, OutputChange change) noexcept {
     if ((change != OutputChange::invalidation && is_active) ||
         (change == OutputChange::invalidation && is_active_optional)) {
         schedule(node_index);
@@ -568,61 +586,36 @@ void RuntimeGraph::schedule_node_subscriber(std::size_t node_index, bool is_acti
     }
 }
 
-void RuntimeGraph::notify_output(const OutputNotification *notification, const TimeSeriesRuntimeType *runtime_type,
-                                 const void *value, OutputChange change) {
-    if (notification == nullptr) {
-        return;
-    }
-
-    auto context = OutputChangeContext{*this};
-    notification->notify(context, runtime_type, value, change);
-}
-
-void RuntimeGraph::propagate_output_change(const CompiledNode &node, OutputChange change) {
-    const auto runtime_node = Node{node, storage_};
-    propagate_modified_items(node);
-    notify_output(node.output_notification(), nullptr, runtime_node.output_value(), change);
-    schedule_subscribers(node.subscribers(), change);
-}
-
-void RuntimeGraph::publish_output_changes(const CompiledNode &node, bool output_was_valid) {
+std::optional<OutputChange> RuntimeGraph::output_change(const CompiledNode &node,
+                                                        bool output_was_valid) const noexcept {
     auto &last_updated = Node{node, storage_}.output_last_updated();
     const auto now_valid = last_updated > MIN_DT;
     if (last_updated != evaluation_time_ && output_was_valid == now_valid) {
-        return;
+        return std::nullopt;
     }
 
-    propagate_output_change(node, now_valid ? (output_was_valid ? OutputChange::update : OutputChange::revalidation)
-                                            : OutputChange::invalidation);
+    return now_valid ? (output_was_valid ? OutputChange::update : OutputChange::revalidation)
+                     : OutputChange::invalidation;
 }
 
-void RuntimeGraph::propagate_modified_items(const CompiledNode &node) {
-    ModifiedItemPropagator{*this}.propagate(node);
+void RuntimeGraph::publish_output(const CompiledNode &node, OutputChange change) {
+    OutputChangePublisher{*this}.publish(node, change);
 }
 
-void RuntimeGraph::schedule_dynamic_subscribers(std::size_t offset, OutputChange change) {
-    auto *subscribers = *reinterpret_cast<details::DynamicSubscribers **>(storage_ + offset);
-    if (subscribers == nullptr) {
-        return;
-    }
-
-    schedule_dynamic_subscribers(*subscribers, change);
-}
-
-void RuntimeGraph::schedule_dynamic_subscribers(details::DynamicSubscribers &subscribers, OutputChange change) {
-    subscribers.for_each([&](const auto &subscriber) {
-        subscriber.graph->schedule_node_subscriber(subscriber.node_index(), subscriber.active(), subscriber.required(),
-                                                   subscriber.active_optional(), change);
+void RuntimeGraph::notify_dynamic_subscribers(details::DynamicSubscribers &subscribers, OutputChange change) {
+    subscribers.for_each_node_subscriber([&](const auto &subscriber) {
+        subscriber.graph->notify_node_subscriber(subscriber.node_index(), subscriber.active(), subscriber.required(),
+                                                 subscriber.active_optional(), change);
     });
 
-    subscribers.for_each_callback([&](const auto &subscriber) {
+    subscribers.for_each_input_subscriber([&](const auto &subscriber) {
         if (subscriber.graph == this) {
             auto context = OutputChangeContext{*this};
-            subscriber.callback(context, subscriber.node_index, subscriber.data, change);
+            subscriber.function(context, subscriber.node_index, subscriber.data, change);
             return;
         }
 
-        subscriber.graph->queue_input_notification(subscriber.callback, subscriber.node_index, subscriber.data, change);
+        subscriber.graph->queue_input_notification(subscriber.function, subscriber.node_index, subscriber.data, change);
     });
 
     subscribers.for_each_observer([&](const auto &observer) {
@@ -631,8 +624,8 @@ void RuntimeGraph::schedule_dynamic_subscribers(details::DynamicSubscribers &sub
     });
 }
 
-void RuntimeGraph::queue_input_notification(InputChangeFunction function, std::size_t node_index, std::size_t data,
-                                            OutputChange change) {
+void RuntimeGraph::queue_input_notification(InputNotificationFunction function, std::size_t node_index,
+                                            std::size_t data, OutputChange change) {
     if (pending_input_notifications_ == nullptr) {
         pending_input_notifications_ = allocator_.new_object<PendingInputNotifications>(allocator_);
     }
@@ -652,7 +645,7 @@ void RuntimeGraph::run_input_notifications() {
     pending_input_notifications_->records.clear();
     auto context = OutputChangeContext{*this};
     for (const auto &record : records) {
-        record.input_function(context, record.node_index, record.data, record.change);
+        record.function(context, record.node_index, record.data, record.change);
     }
 }
 
@@ -663,7 +656,7 @@ void RuntimeGraph::apply_invalidation(const CompiledNode &node, std::size_t node
             auto &last_updated = Node{node, storage_}.output_last_updated();
             if (last_updated > MIN_DT) {
                 last_updated = MIN_DT;
-                propagate_output_change(node, OutputChange::invalidation);
+                publish_output(node, OutputChange::invalidation);
             }
         }
         return;
@@ -681,7 +674,9 @@ void RuntimeGraph::apply_invalidation(const CompiledNode &node, std::size_t node
     node.invalidation_function()(node, storage_, &context);
 
     if (node.has_output()) {
-        publish_output_changes(node, output_was_valid);
+        if (const auto change = output_change(node, output_was_valid)) {
+            publish_output(node, *change);
+        }
     }
 }
 
@@ -718,7 +713,9 @@ void RuntimeGraph::start(EvaluationTime evaluation_time, details::EvaluationScra
         started_node_count = node_index + 1;
 
         if (node.has_output()) {
-            publish_output_changes(node, output_was_valid);
+            if (const auto change = output_change(node, output_was_valid)) {
+                publish_output(node, *change);
+            }
         }
     }
     stop_on_failure.release();
@@ -834,7 +831,9 @@ void RuntimeGraph::evaluate(EvaluationTime evaluation_time, details::EvaluationS
         }
 
         if (has_output) {
-            publish_output_changes(node, output_was_valid);
+            if (const auto change = output_change(node, output_was_valid)) {
+                publish_output(node, *change);
+            }
         }
     }
     stop_on_failure.release();

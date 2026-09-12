@@ -29,7 +29,7 @@ class OutputChangeContext {
     }
 
     void schedule_validity_check(RuntimeGraph &graph, std::size_t node_index) const noexcept;
-    void notify(details::DynamicSubscribers *subscribers, OutputChange change) const;
+    void notify_subscribers(details::DynamicSubscribers *subscribers, OutputChange change) const;
 
   private:
     friend class RuntimeGraph;
@@ -42,19 +42,19 @@ class OutputChangeContext {
     EvaluationTime evaluation_time_;
 };
 
-using OutputNotificationFunction = void (*)(OutputChangeContext &, const TimeSeriesRuntimeType *, const void *,
-                                            OutputChange, std::span<const std::byte>);
-using InputChangeFunction = void (*)(OutputChangeContext &, std::size_t, std::size_t, OutputChange);
-using DynamicObserverFunction = void (*)(OutputChangeContext &, void *, OutputChange);
+using OutputChangeHandler = void (*)(OutputChangeContext &, const TimeSeriesRuntimeType *, const void *, OutputChange,
+                                     std::span<const std::byte>);
+using InputNotificationFunction = void (*)(OutputChangeContext &, std::size_t, std::size_t, OutputChange);
+using RuntimeObserverFunction = void (*)(OutputChangeContext &, void *, OutputChange);
 
-struct InputChangeCallback {
-    InputChangeFunction function{};
+struct InputNotification {
+    InputNotificationFunction function{};
     std::size_t data{};
 };
 
-class InputCallbackSubscriber {
+class InputNotificationSubscriber {
   public:
-    InputCallbackSubscriber(InputChangeFunction function, std::size_t data, std::uint32_t node_index) noexcept
+    InputNotificationSubscriber(InputNotificationFunction function, std::size_t data, std::uint32_t node_index) noexcept
         : function_{function}, data_{data}, node_index_{node_index} {}
 
     void notify(OutputChangeContext &context, OutputChange change) const {
@@ -62,27 +62,27 @@ class InputCallbackSubscriber {
     }
 
   private:
-    InputChangeFunction function_;
+    InputNotificationFunction function_;
     std::size_t data_;
     std::uint32_t node_index_;
 };
 
-void notify_input_callbacks(OutputChangeContext &context, const TimeSeriesRuntimeType *, const void *,
-                            OutputChange change, std::span<const std::byte> records);
+void notify_input_subscribers(OutputChangeContext &context, const TimeSeriesRuntimeType *, const void *,
+                              OutputChange change, std::span<const std::byte> records);
 
 class OutputNotification {
   public:
-    OutputNotification(OutputNotificationFunction function, std::uint32_t record_bytes,
+    OutputNotification(OutputChangeHandler function, std::uint32_t record_bytes,
                        std::uint32_t following_bytes = 0) noexcept
         : function_{function}, record_bytes_{record_bytes}, following_bytes_{following_bytes} {}
 
     void notify(OutputChangeContext &context, const TimeSeriesRuntimeType *runtime_type, const void *value,
                 OutputChange change) const {
         // Adjacent blocks keep handler-specific records compact while allowing one output to serve several handlers.
-        auto *notification = this;
-        while (notification != nullptr) {
-            notification->function_(context, runtime_type, value, change, notification->records());
-            notification = notification->next();
+        auto *handler = this;
+        while (handler != nullptr) {
+            handler->function_(context, runtime_type, value, change, handler->records());
+            handler = handler->next();
         }
     }
 
@@ -103,12 +103,12 @@ class OutputNotification {
         return reinterpret_cast<const OutputNotification *>(address);
     }
 
-    OutputNotificationFunction function_;
+    OutputChangeHandler function_;
     std::uint32_t record_bytes_;
     std::uint32_t following_bytes_;
 };
 
 static_assert(sizeof(OutputNotification) == 2 * sizeof(void *));
-static_assert(sizeof(InputCallbackSubscriber) == 3 * sizeof(void *));
+static_assert(sizeof(InputNotificationSubscriber) == 3 * sizeof(void *));
 
 } // namespace bg

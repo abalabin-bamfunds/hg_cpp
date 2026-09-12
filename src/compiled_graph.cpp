@@ -153,19 +153,19 @@ struct ReferenceInputSubscriberPlan {
     std::uint32_t input_index;
     bool active;
     bool required;
-    InputChangeCallback notification;
+    InputNotification notification;
 };
 
-struct InputCallbackSubscriberPlan {
+struct InputNotificationSubscriberPlan {
     std::uint32_t node_index;
     std::size_t data;
-    InputChangeFunction function;
+    InputNotificationFunction function;
 };
 
 struct SubscriptionPlan {
     std::vector<Subscriber> nodes;
     std::vector<ReferenceInputSubscriberPlan> reference_inputs;
-    std::vector<InputCallbackSubscriberPlan> callback_inputs;
+    std::vector<InputNotificationSubscriberPlan> input_subscribers;
 };
 
 struct ItemSubscriptionPlan {
@@ -454,7 +454,7 @@ void plan_subscribers(std::span<const WiredNode> nodes, std::span<const WiredOut
             const auto is_active = parameter.activity == active;
             const auto is_required = parameter.validity == required;
             const auto subscriber_index = static_cast<std::uint32_t>(target_index);
-            const auto notification = target.node_template().input_change_callback(input_index);
+            const auto notification = target.node_template().input_notification(input_index);
             auto &subscriptions = subscriber_list(input.output, outputs, node_plans);
             if (input.dereferences_reference) {
                 subscriptions.reference_inputs.push_back({
@@ -469,7 +469,7 @@ void plan_subscribers(std::span<const WiredNode> nodes, std::span<const WiredOut
                 }
             } else {
                 if (notification.function != nullptr) {
-                    subscriptions.callback_inputs.push_back({
+                    subscriptions.input_subscribers.push_back({
                         .node_index = subscriber_index,
                         .data = notification.data,
                         .function = notification.function,
@@ -569,8 +569,7 @@ const TimeSeriesRuntimeType *find_output_runtime_type(const WiredNode &node, con
     input_runtime_types.reserve(node.input_output_indices().size());
     for (const auto &input : node_plan.time_series_inputs) {
         const auto output = wired_output_layout(input.output, outputs, node_plans);
-        const auto &parameter =
-            static_cast<const TimeSeriesType &>(*node.signature().parameters[input.parameter].type);
+        const auto &parameter = static_cast<const TimeSeriesType &>(*node.signature().parameters[input.parameter].type);
         const auto *runtime_type = input_runtime_type(input, output.runtime_type, parameter);
         input_runtime_types.push_back(runtime_type);
     }
@@ -601,8 +600,7 @@ const TimeSeriesRuntimeType *find_output_runtime_type(const WiredNode &node, con
 }
 
 [[nodiscard]] StateLayout add_state_layout(StorageLayout &storage, const WiredNode &node, const NodePlan &node_plan,
-                                           std::span<const WiredOutput> outputs,
-                                           std::span<const NodePlan> node_plans) {
+                                           std::span<const WiredOutput> outputs, std::span<const NodePlan> node_plans) {
     auto layout = node.node_template().state_layout(
         node.signature(), parameter_runtime_types(node, node_plan, outputs, node_plans), node.state_types());
     if (layout.size == 0) {
@@ -658,24 +656,24 @@ void plan_runtime_storage(CompilationPlan &plan, std::size_t schedule_word_count
 }
 
 std::size_t output_notification_size(const SubscriptionPlan &subscriptions) noexcept {
-    const auto callback_reference_count =
+    const auto notifying_reference_count =
         std::ranges::count_if(subscriptions.reference_inputs,
                               [](const auto &subscriber) { return subscriber.notification.function != nullptr; });
-    const auto reference_count = subscriptions.reference_inputs.size() - callback_reference_count;
+    const auto reference_count = subscriptions.reference_inputs.size() - notifying_reference_count;
 
     auto result = std::size_t{};
     if (reference_count != 0) {
         result += align_up(sizeof(OutputNotification) + reference_count * sizeof(details::ReferenceInputSubscriber),
                            alignof(OutputNotification));
     }
-    if (callback_reference_count != 0) {
+    if (notifying_reference_count != 0) {
         result += align_up(sizeof(OutputNotification) +
-                               callback_reference_count * sizeof(details::CallbackReferenceInputSubscriber),
+                               notifying_reference_count * sizeof(details::ReferenceInputNotificationSubscriber),
                            alignof(OutputNotification));
     }
-    if (!subscriptions.callback_inputs.empty()) {
+    if (!subscriptions.input_subscribers.empty()) {
         result += align_up(sizeof(OutputNotification) +
-                               subscriptions.callback_inputs.size() * sizeof(InputCallbackSubscriber),
+                               subscriptions.input_subscribers.size() * sizeof(InputNotificationSubscriber),
                            alignof(OutputNotification));
     }
 
@@ -699,7 +697,7 @@ std::size_t item_subscriber_size(std::span<const ItemSubscriptionPlan> items) {
     for (const auto &item : items) {
         if (item.subscriptions.nodes.size() > max_subscriber_count ||
             item.subscriptions.reference_inputs.size() > std::numeric_limits<std::uint32_t>::max() ||
-            item.subscriptions.callback_inputs.size() > std::numeric_limits<std::uint32_t>::max() ||
+            item.subscriptions.input_subscribers.size() > std::numeric_limits<std::uint32_t>::max() ||
             item.items.size() > std::numeric_limits<std::uint32_t>::max()) {
             throw std::length_error{"a time series item has too many subscriptions"};
         }
@@ -711,10 +709,10 @@ std::size_t item_subscriber_size(std::span<const ItemSubscriptionPlan> items) {
 }
 
 std::size_t item_subscriber_size(const ItemSubscriptionPlan &item) {
-    auto result = sizeof(ItemSubscribers) + subscription_size(item.subscriptions);
-    result = align_up(result, alignof(ItemSubscribers));
+    auto result = sizeof(ItemSubscription) + subscription_size(item.subscriptions);
+    result = align_up(result, alignof(ItemSubscription));
     result += item_subscriber_size(item.items);
-    return align_up(result, alignof(ItemSubscribers));
+    return align_up(result, alignof(ItemSubscription));
 }
 
 struct RuntimeTypeCounts {
@@ -744,7 +742,7 @@ RuntimeTypeCounts runtime_type_counts(const WiredNode &node) {
         throw std::length_error{"a node has too many subscribers"};
     }
     if (node_plan.subscriptions.reference_inputs.size() > std::numeric_limits<std::uint32_t>::max() ||
-        node_plan.subscriptions.callback_inputs.size() > std::numeric_limits<std::uint32_t>::max()) {
+        node_plan.subscriptions.input_subscribers.size() > std::numeric_limits<std::uint32_t>::max()) {
         throw std::length_error{"a node has too many output notifications"};
     }
 
@@ -754,14 +752,14 @@ RuntimeTypeCounts runtime_type_counts(const WiredNode &node) {
     auto result = FixedNodeLayout{};
     result.parameters = storage.add<ParameterBinding>(node.signature().parameters.size());
     result.subscribers = storage.add<Subscriber>(node_plan.subscriptions.nodes.size());
-    if (!node_plan.subscriptions.reference_inputs.empty() || !node_plan.subscriptions.callback_inputs.empty()) {
+    if (!node_plan.subscriptions.reference_inputs.empty() || !node_plan.subscriptions.input_subscribers.empty()) {
         result.output_notification =
             storage.add_bytes(output_notification_size(node_plan.subscriptions), alignof(OutputNotification));
     }
     if (!node_plan.item_subscriptions.empty()) {
         result.item_subscription_root = storage.add<ItemSubscriptionRoot>();
         result.item_subscribers =
-            storage.add_bytes(item_subscriber_size(node_plan.item_subscriptions), alignof(ItemSubscribers));
+            storage.add_bytes(item_subscriber_size(node_plan.item_subscriptions), alignof(ItemSubscription));
     }
     if (node_plan.state.node.size != 0) {
         result.state_offset = storage.add<std::uint32_t>();
@@ -1086,8 +1084,7 @@ class CompiledGraphBuilder {
                 if (!reference.dereferences_reference) {
                     continue;
                 }
-                std::construct_at(
-                    reinterpret_cast<ReferenceInputStorage *>(runtime_storage.data() + reference.offset));
+                std::construct_at(reinterpret_cast<ReferenceInputStorage *>(runtime_storage.data() + reference.offset));
             }
         }
 
@@ -1119,8 +1116,7 @@ class CompiledGraphBuilder {
     }
 
     static void construct_parameters(const CompilationPlan &plan, std::size_t node_index, std::byte *storage,
-                                     allocator variable_memory,
-                                     std::vector<ConstructedScalar> &constructed_scalars,
+                                     allocator variable_memory, std::vector<ConstructedScalar> &constructed_scalars,
                                      std::size_t &scalar_destruction_index) {
         const auto &node = plan.nodes[node_index];
         const auto &layout = plan.node_plans[node_index].fixed;
@@ -1235,25 +1231,25 @@ class CompiledGraphBuilder {
                                                      std::byte *destination) {
         destination = reinterpret_cast<std::byte *>(
             align_up(reinterpret_cast<std::uintptr_t>(destination), alignof(OutputNotification)));
-        const auto callback_reference_count =
+        const auto notifying_reference_count =
             std::ranges::count_if(subscribers.reference_inputs,
                                   [](const auto &subscriber) { return subscriber.notification.function != nullptr; });
-        const auto reference_count = subscribers.reference_inputs.size() - callback_reference_count;
+        const auto reference_count = subscribers.reference_inputs.size() - notifying_reference_count;
         const auto reference_bytes = reference_count * sizeof(details::ReferenceInputSubscriber);
-        const auto callback_reference_bytes =
-            callback_reference_count * sizeof(details::CallbackReferenceInputSubscriber);
-        const auto input_bytes = subscribers.callback_inputs.size() * sizeof(InputCallbackSubscriber);
+        const auto notifying_reference_bytes =
+            notifying_reference_count * sizeof(details::ReferenceInputNotificationSubscriber);
+        const auto input_bytes = subscribers.input_subscribers.size() * sizeof(InputNotificationSubscriber);
         const auto reference_block =
             reference_count == 0 ? std::size_t{}
                                  : align_up(sizeof(OutputNotification) + reference_bytes, alignof(OutputNotification));
-        const auto callback_reference_block =
-            callback_reference_count == 0
+        const auto notifying_reference_block =
+            notifying_reference_count == 0
                 ? std::size_t{}
-                : align_up(sizeof(OutputNotification) + callback_reference_bytes, alignof(OutputNotification));
-        const auto input_block = subscribers.callback_inputs.empty()
+                : align_up(sizeof(OutputNotification) + notifying_reference_bytes, alignof(OutputNotification));
+        const auto input_block = subscribers.input_subscribers.empty()
                                      ? std::size_t{}
                                      : align_up(sizeof(OutputNotification) + input_bytes, alignof(OutputNotification));
-        const auto total_bytes = reference_block + callback_reference_block + input_block;
+        const auto total_bytes = reference_block + notifying_reference_block + input_block;
         auto *block = destination;
 
         if (reference_count != 0) {
@@ -1276,13 +1272,13 @@ class CompiledGraphBuilder {
             block += reference_block;
         }
 
-        if (callback_reference_count != 0) {
+        if (notifying_reference_count != 0) {
             const auto following = total_bytes - static_cast<std::size_t>(block - destination) -
-                                   sizeof(OutputNotification) - callback_reference_bytes;
+                                   sizeof(OutputNotification) - notifying_reference_bytes;
             auto *notification = std::construct_at(
-                reinterpret_cast<OutputNotification *>(block), details::notify_callback_reference_inputs,
-                static_cast<std::uint32_t>(callback_reference_bytes), static_cast<std::uint32_t>(following));
-            auto *records = reinterpret_cast<details::CallbackReferenceInputSubscriber *>(notification + 1);
+                reinterpret_cast<OutputNotification *>(block), details::notify_reference_inputs_with_notifications,
+                static_cast<std::uint32_t>(notifying_reference_bytes), static_cast<std::uint32_t>(following));
+            auto *records = reinterpret_cast<details::ReferenceInputNotificationSubscriber *>(notification + 1);
             for (const auto &subscriber : subscribers.reference_inputs) {
                 if (subscriber.notification.function == nullptr) {
                     continue;
@@ -1295,14 +1291,14 @@ class CompiledGraphBuilder {
                                       *plan.nodes[subscriber.node_index].signature().parameters[input.parameter].type),
                                   subscriber.notification.function);
             }
-            block += callback_reference_block;
+            block += notifying_reference_block;
         }
 
-        if (!subscribers.callback_inputs.empty()) {
+        if (!subscribers.input_subscribers.empty()) {
             auto *notification = std::construct_at(reinterpret_cast<OutputNotification *>(block),
-                                                   notify_input_callbacks, static_cast<std::uint32_t>(input_bytes));
-            auto *records = reinterpret_cast<InputCallbackSubscriber *>(notification + 1);
-            for (const auto &subscriber : subscribers.callback_inputs) {
+                                                   notify_input_subscribers, static_cast<std::uint32_t>(input_bytes));
+            auto *records = reinterpret_cast<InputNotificationSubscriber *>(notification + 1);
+            for (const auto &subscriber : subscribers.input_subscribers) {
                 std::construct_at(records++, subscriber.function, subscriber.data, subscriber.node_index);
             }
         }
@@ -1314,31 +1310,30 @@ class CompiledGraphBuilder {
                                                  std::span<const ItemSubscriptionPlan> items, std::byte *destination) {
         for (const auto &item : items) {
             destination = reinterpret_cast<std::byte *>(
-                align_up(reinterpret_cast<std::uintptr_t>(destination), alignof(ItemSubscribers)));
+                align_up(reinterpret_cast<std::uintptr_t>(destination), alignof(ItemSubscription)));
             auto *compiled = std::construct_at(
-                reinterpret_cast<ItemSubscribers *>(destination), item.item,
+                reinterpret_cast<ItemSubscription *>(destination), item.item,
                 static_cast<std::uint32_t>(item.subscriptions.nodes.size()),
                 static_cast<std::uint32_t>(item_subscriber_size(item)), item.sampled_last_updated_offset,
-                !item.subscriptions.reference_inputs.empty() || !item.subscriptions.callback_inputs.empty());
+                !item.subscriptions.reference_inputs.empty() || !item.subscriptions.input_subscribers.empty());
             auto *subscribers = reinterpret_cast<Subscriber *>(compiled + 1);
             std::uninitialized_copy(item.subscriptions.nodes.begin(), item.subscriptions.nodes.end(), subscribers);
             destination = reinterpret_cast<std::byte *>(subscribers + item.subscriptions.nodes.size());
-            if (!item.subscriptions.reference_inputs.empty() || !item.subscriptions.callback_inputs.empty()) {
+            if (!item.subscriptions.reference_inputs.empty() || !item.subscriptions.input_subscribers.empty()) {
                 destination = construct_output_notifications(plan, item.subscriptions, destination);
             }
             destination = reinterpret_cast<std::byte *>(
-                align_up(reinterpret_cast<std::uintptr_t>(destination), alignof(ItemSubscribers)));
+                align_up(reinterpret_cast<std::uintptr_t>(destination), alignof(ItemSubscription)));
             destination = construct_item_subscribers(plan, item.items, destination);
             destination = reinterpret_cast<std::byte *>(
-                align_up(reinterpret_cast<std::uintptr_t>(destination), alignof(ItemSubscribers)));
+                align_up(reinterpret_cast<std::uintptr_t>(destination), alignof(ItemSubscription)));
         }
 
         return destination;
     }
 
     static void construct_nodes(const CompilationPlan &plan, std::byte *storage, allocator compiled_memory,
-                                allocator variable_memory,
-                                std::vector<ConstructedScalar> &constructed_scalars,
+                                allocator variable_memory, std::vector<ConstructedScalar> &constructed_scalars,
                                 std::vector<ConstructedNodeData> &constructed_node_data) {
         auto compiled_allocator = compiled_memory;
         auto node_offsets = plan.fixed.node_offsets.objects<std::uint32_t>(storage);
@@ -1353,7 +1348,8 @@ class CompiledGraphBuilder {
             construct_parameters(plan, i, storage, variable_memory, constructed_scalars, scalar_destruction_index);
             std::uninitialized_copy(node_plan.subscriptions.nodes.begin(), node_plan.subscriptions.nodes.end(),
                                     layout.subscribers.objects<Subscriber>(node_storage).data());
-            if (!node_plan.subscriptions.reference_inputs.empty() || !node_plan.subscriptions.callback_inputs.empty()) {
+            if (!node_plan.subscriptions.reference_inputs.empty() ||
+                !node_plan.subscriptions.input_subscribers.empty()) {
                 construct_output_notifications(plan, node_plan.subscriptions,
                                                node_storage + layout.output_notification.offset);
             }
@@ -1433,7 +1429,7 @@ class CompiledGraphBuilder {
                     static_cast<std::uint32_t>(node_plan.subscriptions.nodes.size()),
                     node.signature().output != nullptr, node_plan.state.node.size != 0,
                     !node_plan.subscriptions.reference_inputs.empty() ||
-                        !node_plan.subscriptions.callback_inputs.empty(),
+                        !node_plan.subscriptions.input_subscribers.empty(),
                     !node_plan.item_subscriptions.empty(), node.node_template().uses_node_invocation(),
                     static_cast<std::uint32_t>(node_plan.time_series_inputs.size()), node_plan.invalidation.mode});
             std::construct_at(node_offsets.data() + i,

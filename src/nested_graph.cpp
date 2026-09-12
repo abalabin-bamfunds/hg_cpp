@@ -61,7 +61,7 @@ void NestedGraph::bind_input(std::size_t node_index, const NestedGraphInput &inp
     const auto now_valid = last_updated > MIN_DT;
     const auto change =
         now_valid ? (was_valid ? OutputChange::update : OutputChange::revalidation) : OutputChange::invalidation;
-    active_->propagate_output_change(node, change);
+    active_->publish_output(node, change);
 }
 
 void NestedGraph::evaluate(EvaluationContext &context) {

@@ -71,9 +71,7 @@ class Subscriber {
 
     bool active_optional() const noexcept { return (node_index_and_flags_ & active_optional_flag) != 0; }
 
-    bool has_dynamic_subscribers() const noexcept {
-        return (node_index_and_flags_ & dynamic_subscribers_flag) != 0;
-    }
+    bool has_dynamic_subscribers() const noexcept { return (node_index_and_flags_ & dynamic_subscribers_flag) != 0; }
 
     std::size_t dynamic_subscribers_offset() const noexcept {
         return (node_index_and_flags_ & dynamic_subscribers_offset_mask) * dynamic_subscribers_alignment;
@@ -93,10 +91,10 @@ class Subscriber {
     std::uint32_t node_index_and_flags_;
 };
 
-class alignas(void *) ItemSubscribers {
+class alignas(void *) ItemSubscription {
   public:
-    ItemSubscribers(std::uint32_t item, std::uint32_t subscriber_count, std::uint32_t subtree_size,
-                    std::uint32_t sampled_last_updated_offset, bool has_output_notification) noexcept
+    ItemSubscription(std::uint32_t item, std::uint32_t subscriber_count, std::uint32_t subtree_size,
+                     std::uint32_t sampled_last_updated_offset, bool has_output_notification) noexcept
         : item_{item},
           subscriber_count_{subscriber_count | (has_output_notification ? output_notification_flag : std::uint32_t{})},
           subtree_size_{subtree_size}, sampled_last_updated_offset_{sampled_last_updated_offset} {}
@@ -125,18 +123,19 @@ class alignas(void *) ItemSubscribers {
   private:
     friend ItemSubscriptionRange;
 
-    const ItemSubscribers *first_child() const noexcept {
+    const ItemSubscription *first_child() const noexcept {
         auto address = output_notification() != nullptr
                            ? reinterpret_cast<std::uintptr_t>(output_notification()->end())
                            : reinterpret_cast<std::uintptr_t>(subscribers().data() + subscribers().size());
-        address = align(address, alignof(ItemSubscribers));
-        return reinterpret_cast<const ItemSubscribers *>(address);
+        address = align(address, alignof(ItemSubscription));
+        return reinterpret_cast<const ItemSubscription *>(address);
     }
 
-    const ItemSubscribers *next() const noexcept {
+    const ItemSubscription *next() const noexcept {
         const auto *address = reinterpret_cast<const std::byte *>(this);
-        return reinterpret_cast<const ItemSubscribers *>(address + subtree_size_);
+        return reinterpret_cast<const ItemSubscription *>(address + subtree_size_);
     }
+
     static std::uintptr_t align(std::uintptr_t address, std::size_t alignment) noexcept {
         return (address + alignment - 1) & ~(alignment - 1);
     }
@@ -154,7 +153,7 @@ class alignas(void *) ItemSubscribers {
 
 class ItemSubscriptionRange {
   public:
-    const ItemSubscribers *find(std::size_t item) const noexcept {
+    const ItemSubscription *find(std::size_t item) const noexcept {
         auto *candidate = first_;
         while (candidate != last_) {
             if (candidate->item() == item) {
@@ -168,17 +167,17 @@ class ItemSubscriptionRange {
     }
 
   private:
-    friend ItemSubscribers;
+    friend ItemSubscription;
     friend struct ItemSubscriptionRoot;
 
-    ItemSubscriptionRange(const ItemSubscribers *first, const ItemSubscribers *last) noexcept
+    ItemSubscriptionRange(const ItemSubscription *first, const ItemSubscription *last) noexcept
         : first_{first}, last_{last} {}
 
-    const ItemSubscribers *first_;
-    const ItemSubscribers *last_;
+    const ItemSubscription *first_;
+    const ItemSubscription *last_;
 };
 
-inline ItemSubscriptionRange ItemSubscribers::children() const noexcept {
+inline ItemSubscriptionRange ItemSubscription::children() const noexcept {
     return {first_child(), next()};
 }
 
@@ -189,16 +188,12 @@ struct ItemSubscriptionRoot {
     ItemSubscriptionRoot(const TimeSeriesRuntimeType &runtime_type, std::uint32_t byte_size) noexcept
         : runtime_type{&runtime_type}, byte_size{byte_size} {}
 
-    const ItemSubscribers *first_item() const noexcept {
-        return reinterpret_cast<const ItemSubscribers *>(this + 1);
-    }
+    const ItemSubscription *first_item() const noexcept { return reinterpret_cast<const ItemSubscription *>(this + 1); }
 
-    const std::byte *end() const noexcept {
-        return reinterpret_cast<const std::byte *>(first_item()) + byte_size;
-    }
+    const std::byte *end() const noexcept { return reinterpret_cast<const std::byte *>(first_item()) + byte_size; }
 
     ItemSubscriptionRange children() const noexcept {
-        return {first_item(), reinterpret_cast<const ItemSubscribers *>(end())};
+        return {first_item(), reinterpret_cast<const ItemSubscription *>(end())};
     }
 };
 
@@ -229,9 +224,7 @@ class ParameterBinding {
         return address + (location_and_flags_ & location_mask);
     }
 
-    InputValidity validity() const noexcept {
-        return (location_and_flags_ & optional_flag) == 0 ? required : optional;
-    }
+    InputValidity validity() const noexcept { return (location_and_flags_ & optional_flag) == 0 ? required : optional; }
 
   private:
     friend class CompiledGraphBuilder;
@@ -270,9 +263,7 @@ class CompiledNode {
 
     bool has_state() const noexcept { return (output_last_updated_offset_ & state_flag) != 0; }
 
-    std::size_t output_last_updated_offset() const noexcept {
-        return output_last_updated_offset_ & output_offset_mask;
-    }
+    std::size_t output_last_updated_offset() const noexcept { return output_last_updated_offset_ & output_offset_mask; }
 
     std::size_t output_value_offset() const noexcept { return output_value_offset_ & output_offset_mask; }
 
@@ -331,9 +322,7 @@ class CompiledNode {
         return *reinterpret_cast<const EvaluationFunction *>(address);
     }
 
-    std::size_t state_field_offset(std::size_t index) const noexcept {
-        return state_field_offsets_address()[index];
-    }
+    std::size_t state_field_offset(std::size_t index) const noexcept { return state_field_offsets_address()[index]; }
 
     const ScalarRuntimeType &generic_state_runtime_type(std::size_t index) const noexcept {
         auto address = reinterpret_cast<std::uintptr_t>(state_field_offsets_address() + state_metadata_counts().fields);
@@ -353,12 +342,12 @@ class CompiledNode {
     }
 
     const ScalarRuntimeType &scalar_input_runtime_type(std::size_t time_series_input_count,
-                                                                     std::size_t index) const noexcept {
+                                                       std::size_t index) const noexcept {
         return static_cast<const ScalarRuntimeType &>(runtime_type(time_series_input_count + index));
     }
 
     const TimeSeriesRuntimeType &output_runtime_type(std::size_t time_series_input_count,
-                                                                   std::size_t scalar_input_count) const noexcept {
+                                                     std::size_t scalar_input_count) const noexcept {
         return static_cast<const TimeSeriesRuntimeType &>(runtime_type(time_series_input_count + scalar_input_count));
     }
 
@@ -526,7 +515,7 @@ class CompiledNode {
 
 static_assert(sizeof(ParameterBinding) == 8);
 static_assert(sizeof(Subscriber) == 4);
-static_assert(sizeof(ItemSubscribers) == 16);
+static_assert(sizeof(ItemSubscription) == 16);
 static_assert(sizeof(ItemSubscriptionRange) == 2 * sizeof(void *));
 static_assert(sizeof(ItemSubscriptionRoot) == 2 * sizeof(void *));
 static_assert(sizeof(StateMetadataCounts) == sizeof(std::uint32_t));

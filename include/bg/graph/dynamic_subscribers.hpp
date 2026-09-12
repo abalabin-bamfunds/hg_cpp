@@ -16,9 +16,9 @@ class RuntimeGraph;
 
 namespace details {
 
-struct DynamicSubscriber {
-    DynamicSubscriber(RuntimeGraph &target_graph, std::uint32_t input_offset, std::uint32_t node_index, bool active,
-                      bool required) noexcept
+struct DynamicNodeSubscriber {
+    DynamicNodeSubscriber(RuntimeGraph &target_graph, std::uint32_t input_offset, std::uint32_t node_index,
+                          bool active, bool required) noexcept
         : graph{&target_graph}, input_offset{input_offset},
           node_and_flags{node_index | (active ? active_flag : 0) | (required ? required_flag : 0) |
                          (active && !required ? active_optional_flag : 0)} {}
@@ -39,32 +39,31 @@ struct DynamicSubscriber {
     static constexpr std::uint32_t node_index_mask = active_optional_flag - 1;
 };
 
-struct DynamicCallbackSubscriber {
-    DynamicCallbackSubscriber(RuntimeGraph &target_graph, std::uint32_t input_offset, std::size_t data,
-                              std::uint32_t node_index, InputChangeFunction callback) noexcept
-        : graph{&target_graph}, callback{callback}, data{data}, input_offset{input_offset}, node_index{node_index} {}
+struct DynamicInputSubscriber {
+    DynamicInputSubscriber(RuntimeGraph &target_graph, std::uint32_t input_offset, std::size_t data,
+                           std::uint32_t node_index, InputNotificationFunction function) noexcept
+        : graph{&target_graph}, function{function}, data{data}, input_offset{input_offset}, node_index{node_index} {}
 
     RuntimeGraph *graph;
-    InputChangeFunction callback;
+    InputNotificationFunction function;
     std::size_t data;
     std::uint32_t input_offset;
     std::uint32_t node_index;
 };
 
-struct DynamicObserver {
-    DynamicObserver(RuntimeGraph &receiving_graph, void *receiver, DynamicObserverFunction function) noexcept
+struct RuntimeObserver {
+    RuntimeObserver(RuntimeGraph &receiving_graph, void *receiver, RuntimeObserverFunction function) noexcept
         : graph{&receiving_graph}, receiver{receiver}, function{function} {}
 
     RuntimeGraph *graph;
     void *receiver;
-    DynamicObserverFunction function;
+    RuntimeObserverFunction function;
 };
 
 struct DynamicSubscribers {
-    explicit DynamicSubscribers(allocator memory) : records_{&memory.memory_resource()} {}
+    explicit DynamicSubscribers(allocator memory) : node_subscribers_{&memory.memory_resource()} {}
 
-    [[nodiscard]] static DynamicSubscribers &ensure(DynamicSubscribers *&subscribers,
-                                                    allocator memory) {
+    [[nodiscard]] static DynamicSubscribers &ensure(DynamicSubscribers *&subscribers, allocator memory) {
         if (subscribers != nullptr) {
             return *subscribers;
         }
@@ -78,130 +77,130 @@ struct DynamicSubscribers {
             return;
         }
 
-        auto *memory = subscribers->records_.get_allocator().resource();
+        auto *memory = subscribers->node_subscribers_.get_allocator().resource();
         auto allocation = allocator{*memory};
-        if (subscribers->callback_records_ != nullptr) {
-            allocation.delete_object(subscribers->callback_records_);
+        if (subscribers->input_subscribers_ != nullptr) {
+            allocation.delete_object(subscribers->input_subscribers_);
         }
-        if (subscribers->observer_records_ != nullptr) {
-            allocation.delete_object(subscribers->observer_records_);
+        if (subscribers->observers_ != nullptr) {
+            allocation.delete_object(subscribers->observers_);
         }
         allocation.delete_object(subscribers);
     }
 
     void add(RuntimeGraph &graph, std::uint32_t input_offset, std::size_t data, std::uint32_t node_index, bool active,
-             bool required, InputChangeFunction callback = nullptr) {
+             bool required, InputNotificationFunction input_function = nullptr) {
         if (active || required) {
-            records_.emplace_back(graph, input_offset, node_index, active, required);
+            node_subscribers_.emplace_back(graph, input_offset, node_index, active, required);
         }
-        if (callback != nullptr) {
-            callback_records().records.emplace_back(graph, input_offset, data, node_index, callback);
+        if (input_function != nullptr) {
+            input_subscribers().records.emplace_back(graph, input_offset, data, node_index, input_function);
         }
     }
 
     void remove(RuntimeGraph &graph, std::size_t input_offset) noexcept {
-        const auto record = std::ranges::find_if(records_, [&](const auto &candidate) {
+        const auto record = std::ranges::find_if(node_subscribers_, [&](const auto &candidate) {
             return candidate.graph == &graph && candidate.input_offset == input_offset;
         });
-        if (record != records_.end()) {
-            *record = records_.back();
-            records_.pop_back();
+        if (record != node_subscribers_.end()) {
+            *record = node_subscribers_.back();
+            node_subscribers_.pop_back();
         }
 
-        if (callback_records_ == nullptr) {
+        if (input_subscribers_ == nullptr) {
             return;
         }
-        const auto callback_record = std::ranges::find_if(callback_records_->records, [&](const auto &candidate) {
+        const auto input_subscriber = std::ranges::find_if(input_subscribers_->records, [&](const auto &candidate) {
             return candidate.graph == &graph && candidate.input_offset == input_offset;
         });
-        if (callback_record != callback_records_->records.end()) {
-            *callback_record = callback_records_->records.back();
-            callback_records_->records.pop_back();
+        if (input_subscriber != input_subscribers_->records.end()) {
+            *input_subscriber = input_subscribers_->records.back();
+            input_subscribers_->records.pop_back();
         }
     }
 
-    void add_observer(RuntimeGraph &graph, void *receiver, DynamicObserverFunction function) {
-        observer_records().records.emplace_back(graph, receiver, function);
+    void add_observer(RuntimeGraph &graph, void *receiver, RuntimeObserverFunction function) {
+        observers().records.emplace_back(graph, receiver, function);
     }
 
     void remove_observer(RuntimeGraph &graph, const void *receiver) noexcept {
-        if (observer_records_ == nullptr) {
+        if (observers_ == nullptr) {
             return;
         }
 
-        const auto record = std::ranges::find_if(observer_records_->records, [&](const auto &candidate) {
+        const auto record = std::ranges::find_if(observers_->records, [&](const auto &candidate) {
             return candidate.graph == &graph && candidate.receiver == receiver;
         });
-        if (record != observer_records_->records.end()) {
-            *record = observer_records_->records.back();
-            observer_records_->records.pop_back();
+        if (record != observers_->records.end()) {
+            *record = observers_->records.back();
+            observers_->records.pop_back();
         }
     }
 
-    template <typename Function> void for_each(Function &&function) const {
-        for (const auto &record : records_) {
+    template <typename Function> void for_each_node_subscriber(Function &&function) const {
+        for (const auto &record : node_subscribers_) {
             function(record);
         }
     }
 
-    template <typename Function> void for_each_callback(Function &&function) const {
-        if (callback_records_ == nullptr) {
+    template <typename Function> void for_each_input_subscriber(Function &&function) const {
+        if (input_subscribers_ == nullptr) {
             return;
         }
-        for (const auto &record : callback_records_->records) {
+        for (const auto &record : input_subscribers_->records) {
             function(record);
         }
     }
 
     template <typename Function> void for_each_observer(Function &&function) const {
-        if (observer_records_ == nullptr) {
+        if (observers_ == nullptr) {
             return;
         }
-        for (const auto &record : observer_records_->records) {
+        for (const auto &record : observers_->records) {
             function(record);
         }
     }
 
     bool empty() const noexcept {
-        return records_.empty() && (callback_records_ == nullptr || callback_records_->records.empty()) &&
-               (observer_records_ == nullptr || observer_records_->records.empty());
+        return node_subscribers_.empty() && (input_subscribers_ == nullptr || input_subscribers_->records.empty()) &&
+               (observers_ == nullptr || observers_->records.empty());
     }
 
   private:
-    struct CallbackRecords {
-        explicit CallbackRecords(allocator memory) : records{&memory.memory_resource()} {}
-        std::pmr::vector<DynamicCallbackSubscriber> records;
+    struct InputSubscribers {
+        explicit InputSubscribers(allocator memory) : records{&memory.memory_resource()} {}
+        std::pmr::vector<DynamicInputSubscriber> records;
     };
 
-    struct ObserverRecords {
-        explicit ObserverRecords(allocator memory) : records{&memory.memory_resource()} {}
-        std::pmr::vector<DynamicObserver> records;
+    struct Observers {
+        explicit Observers(allocator memory) : records{&memory.memory_resource()} {}
+        std::pmr::vector<RuntimeObserver> records;
     };
 
-    CallbackRecords &callback_records() {
-        if (callback_records_ == nullptr) {
-            auto *memory = records_.get_allocator().resource();
-            callback_records_ = allocator{*memory}.new_object<CallbackRecords>(allocator{*memory});
+    InputSubscribers &input_subscribers() {
+        if (input_subscribers_ == nullptr) {
+            auto *memory = node_subscribers_.get_allocator().resource();
+            input_subscribers_ = allocator{*memory}.new_object<InputSubscribers>(allocator{*memory});
         }
-        return *callback_records_;
+        return *input_subscribers_;
     }
 
-    ObserverRecords &observer_records() {
-        if (observer_records_ == nullptr) {
-            auto *memory = records_.get_allocator().resource();
-            observer_records_ = allocator{*memory}.new_object<ObserverRecords>(allocator{*memory});
+    Observers &observers() {
+        if (observers_ == nullptr) {
+            auto *memory = node_subscribers_.get_allocator().resource();
+            observers_ = allocator{*memory}.new_object<Observers>(allocator{*memory});
         }
-        return *observer_records_;
+        return *observers_;
     }
 
-    std::pmr::vector<DynamicSubscriber> records_;
-    CallbackRecords *callback_records_{};
-    ObserverRecords *observer_records_{};
+    std::pmr::vector<DynamicNodeSubscriber> node_subscribers_;
+    InputSubscribers *input_subscribers_{};
+    Observers *observers_{};
 };
 
-static_assert(sizeof(DynamicSubscriber) == 2 * sizeof(void *));
-static_assert(sizeof(DynamicCallbackSubscriber) == 4 * sizeof(void *));
-static_assert(sizeof(DynamicObserver) == 3 * sizeof(void *));
+static_assert(sizeof(DynamicNodeSubscriber) == 2 * sizeof(void *));
+static_assert(sizeof(DynamicInputSubscriber) == 4 * sizeof(void *));
+static_assert(sizeof(RuntimeObserver) == 3 * sizeof(void *));
 
 } // namespace details
 } // namespace bg
