@@ -19,7 +19,7 @@ namespace details {
 
 struct DynamicSubscribers;
 class ReferenceProvider;
-class ReferenceItemNotificationLinks;
+class ItemNotifications;
 struct RootReference;
 struct ItemReference;
 struct RepresentationReference;
@@ -48,51 +48,51 @@ struct ResolvedTimeSeries {
     const TimeSeriesRuntimeType *runtime_type{};
 };
 
-class ItemNotificationDetail {
+class ItemNotificationDescriptor {
   public:
     bool empty() const noexcept { return location_ == 0; }
-    bool uses_overflow_group() const noexcept { return (location_ & overflow_group_flag) != 0; }
+    bool has_destination_item_group() const noexcept { return (location_ & destination_item_group_flag) != 0; }
 
-    std::uint32_t receiver_index() const noexcept {
-        assert(!empty() && !uses_overflow_group());
+    std::uint32_t inline_destination_index() const noexcept {
+        assert(!empty() && !has_destination_item_group());
         return location_ - 1;
     }
 
-    item_id_t receiver_item_id() const noexcept {
-        assert(!empty() && !uses_overflow_group());
-        return receiver_item_id_;
+    item_id_t inline_destination_item_id() const noexcept {
+        assert(!empty() && !has_destination_item_group());
+        return destination_item_id_;
     }
 
-    std::uint32_t overflow_group_index() const noexcept {
-        assert(uses_overflow_group());
+    std::uint32_t destination_item_group_index() const noexcept {
+        assert(has_destination_item_group());
         return (location_ & index_mask) - 1;
     }
 
-    void set_inline(std::uint32_t receiver_index, item_id_t receiver_item_id) noexcept {
-        assert(receiver_index < index_mask);
-        location_ = receiver_index + 1;
-        receiver_item_id_ = receiver_item_id;
+    void set_inline_destination_item(std::uint32_t destination_index, item_id_t destination_item_id) noexcept {
+        assert(destination_index < index_mask);
+        location_ = destination_index + 1;
+        destination_item_id_ = destination_item_id;
     }
 
-    void set_overflow_group(std::uint32_t group_index) noexcept {
+    void set_destination_item_group(std::uint32_t group_index) noexcept {
         assert(group_index < index_mask);
-        location_ = overflow_group_flag | (group_index + 1);
-        receiver_item_id_ = 0;
+        location_ = destination_item_group_flag | (group_index + 1);
+        destination_item_id_ = 0;
     }
 
     void clear() noexcept {
         location_ = 0;
-        receiver_item_id_ = 0;
+        destination_item_id_ = 0;
     }
 
   private:
-    static constexpr auto overflow_group_flag = std::uint32_t{1} << 31;
-    static constexpr auto index_mask = overflow_group_flag - 1;
+    static constexpr auto destination_item_group_flag = std::uint32_t{1} << 31;
+    static constexpr auto index_mask = destination_item_group_flag - 1;
 
-    // Zero means no link. Otherwise the low bits are a one-based receiver index
-    // for one inline link, or a one-based overflow-group index when the high bit is set.
+    // Zero means no destination item. Otherwise this holds a one-based destination index for an inline item,
+    // or a one-based destination-item-group index when the high bit is set.
     std::uint32_t location_{};
-    item_id_t receiver_item_id_{};
+    item_id_t destination_item_id_{};
 };
 
 class ReferenceSubscriptionDetail {
@@ -111,12 +111,14 @@ class ReferenceSubscriptionDetail {
 
     void clear_subscriber_group() noexcept { subscriber_group_ = 0; }
 
-    ItemNotificationDetail &item_notifications() noexcept { return item_notifications_; }
-    const ItemNotificationDetail &item_notifications() const noexcept { return item_notifications_; }
+    ItemNotificationDescriptor &item_notification_descriptor() noexcept { return item_notification_descriptor_; }
+    const ItemNotificationDescriptor &item_notification_descriptor() const noexcept {
+        return item_notification_descriptor_;
+    }
 
   private:
     std::uint32_t subscriber_group_{};
-    ItemNotificationDetail item_notifications_;
+    ItemNotificationDescriptor item_notification_descriptor_;
 };
 
 struct ItemReference {
@@ -160,7 +162,7 @@ struct RootReference {
 ResolvedTimeSeries resolve_reference(Reference reference);
 
 static_assert(sizeof(ResolvedTimeSeries) == 3 * sizeof(void *));
-static_assert(sizeof(ItemNotificationDetail) == sizeof(void *));
+static_assert(sizeof(ItemNotificationDescriptor) == sizeof(void *));
 static_assert(sizeof(ReferenceSubscriptionDetail) == 3 * sizeof(std::uint32_t));
 static_assert(sizeof(ItemReference) == 3 * sizeof(void *));
 static_assert(sizeof(RepresentationReference) == 3 * sizeof(void *));
@@ -169,7 +171,7 @@ static_assert(sizeof(Reference) == sizeof(void *));
 static_assert(std::is_trivially_copyable_v<ReferenceSubscriptionDetail>);
 static_assert(std::is_trivially_copyable_v<ItemReference>);
 static_assert(std::is_trivially_copyable_v<RepresentationReference>);
-static_assert(std::is_trivially_copyable_v<ItemNotificationDetail>);
+static_assert(std::is_trivially_copyable_v<ItemNotificationDescriptor>);
 static_assert(std::is_trivially_copyable_v<RootReference>);
 static_assert(std::is_trivially_copyable_v<Reference>);
 

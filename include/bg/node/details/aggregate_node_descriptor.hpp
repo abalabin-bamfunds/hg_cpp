@@ -18,6 +18,9 @@ consteval auto aggregate_parameter_runtime_type_uses(std::index_sequence<Index..
             using Field = std::remove_cv_t<util::aggregate_member_type<Index, Definition>>;
 
             if constexpr (input_field<Field>::value) {
+                if constexpr (input_field<Field>::dynamic_binding) {
+                    return;
+                }
                 if constexpr (input_view_field<Field>::value) {
                     result[parameter] = AggregateRuntimeTypeUse::time_series;
                 }
@@ -42,7 +45,9 @@ consteval bool aggregate_node_has_state(std::index_sequence<Index...>) {
 template <typename Definition> const AggregateNodeDescriptor &aggregate_node_descriptor() {
     constexpr auto MemberCount = util::aggregate_member_count<Definition>;
     using Index = std::make_index_sequence<MemberCount>;
-    static_assert(!aggregate_node_has_finalize<Definition> || aggregate_node_has_state<Definition>(Index{}),
+    constexpr auto HasDynamicReferenceInputs = aggregate_has_dynamic_reference_inputs<Definition>(Index{});
+    constexpr auto HasStoredState = aggregate_node_has_state<Definition>(Index{}) || HasDynamicReferenceInputs;
+    static_assert(!aggregate_node_has_finalize<Definition> || HasStoredState,
                   "an aggregate node with finalize() must contain state");
     static constexpr auto parameter_runtime_type_uses = aggregate_parameter_runtime_type_uses<Definition>(Index{});
 
@@ -66,7 +71,7 @@ template <typename Definition> const AggregateNodeDescriptor &aggregate_node_des
             }(),
         .stop_function =
             [] {
-                if constexpr (aggregate_node_has_stop<Definition>) {
+                if constexpr (aggregate_node_has_stop<Definition> || HasDynamicReferenceInputs) {
                     return &stop_aggregate_node<Definition>;
                 } else {
                     return EvaluationFunction{};
@@ -87,7 +92,7 @@ template <typename Definition> const AggregateNodeDescriptor &aggregate_node_des
         .parameter_runtime_type_uses = parameter_runtime_type_uses,
         .state_layout =
             [] {
-                if constexpr (aggregate_node_has_state<Definition>(Index{})) {
+                if constexpr (HasStoredState) {
                     return AggregateStateLayoutFunction{[](const ResolvedSignature &signature,
                                                            std::span<const ScalarRuntimeType *const> parameter_types,
                                                            std::span<const ScalarType *const> state_types) {
@@ -99,7 +104,7 @@ template <typename Definition> const AggregateNodeDescriptor &aggregate_node_des
             }(),
         .construct_initial_state =
             [] {
-                if constexpr (aggregate_node_has_state<Definition>(Index{})) {
+                if constexpr (HasStoredState) {
                     return AggregateStateConstructionFunction{
                         [](const NodeStateLayout &layout, void *storage) noexcept {
                             construct_aggregate_state<Definition>(layout, storage, Index{});
@@ -111,7 +116,8 @@ template <typename Definition> const AggregateNodeDescriptor &aggregate_node_des
         .state_destruction_function =
             [] {
                 if constexpr (aggregate_node_has_finalize<Definition> ||
-                              aggregate_state_requires_destruction<Definition>(Index{})) {
+                              aggregate_state_requires_destruction<Definition>(Index{}) ||
+                              HasDynamicReferenceInputs) {
                     return static_cast<EvaluationFunction>(&finalize_aggregate_node_state<Definition>);
                 } else {
                     return EvaluationFunction{};
@@ -124,6 +130,16 @@ template <typename Definition> const AggregateNodeDescriptor &aggregate_node_des
                         [](const TypeMap &type_map) { return aggregate_state_types<Definition>(type_map, Index{}); }};
                 } else {
                     return AggregateStateTypesFunction{};
+                }
+            }(),
+        .dynamic_reference_input_types =
+            [] {
+                if constexpr (HasDynamicReferenceInputs) {
+                    return AggregateDynamicReferenceInputTypesFunction{[](const TypeMap &type_map) {
+                        return aggregate_dynamic_reference_input_types<Definition>(type_map, Index{});
+                    }};
+                } else {
+                    return AggregateDynamicReferenceInputTypesFunction{};
                 }
             }(),
         .requirement =

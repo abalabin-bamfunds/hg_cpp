@@ -74,6 +74,7 @@ class In<TSL<Item, Size, TimeSeriesProperties...>, Properties...> {
     static constexpr std::string_view name = ParsedProperties::name;
     static constexpr InputActivity activity = ParsedProperties::activity;
     static constexpr InputValidity validity = ParsedProperties::validity;
+    static constexpr bool dynamic_binding = ParsedProperties::dynamic_binding;
 
   private:
     details::TimeSeriesInputData data_;

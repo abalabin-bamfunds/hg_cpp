@@ -227,8 +227,8 @@ class DereferencedTimeSeriesDictionaryRepresentation final : public ReferenceRep
         sample_switch(id, current, sample_time, previous);
         item_references_[id] = new_reference;
         if (new_reference) {
-            add_reference_item_notification_link(new_reference, provider_->owner(), this, id,
-                                                 &notify_item_change_callback, &publish_item_changes_callback);
+            add_reference_item_notification(new_reference, provider_->owner(), this, id, &notify_item_change_callback,
+                                            &publish_item_changes_callback);
         }
     }
 
@@ -280,22 +280,24 @@ class DereferencedTimeSeriesDictionaryRepresentation final : public ReferenceRep
 
     void unsubscribe(item_id_t id) noexcept {
         if (id < item_references_.size() && item_references_[id]) {
-            remove_reference_item_notification_link(item_references_[id], provider_->owner(), this, id,
-                                                    &notify_item_change_callback);
+            remove_reference_item_notification(item_references_[id], provider_->owner(), this, id,
+                                               &notify_item_change_callback);
         }
         if (id < item_references_.size()) {
             item_references_[id] = nullptr;
         }
     }
 
-    static void notify_item_change_callback(OutputChangeContext &context, void *receiver, item_id_t id,
+    static void notify_item_change_callback(OutputChangeContext &context, void *destination_representation,
+                                             item_id_t id,
                                             OutputChange change) {
-        static_cast<DereferencedTimeSeriesDictionaryRepresentation *>(receiver)->notify_item_change(context, id,
-                                                                                                    change);
+        static_cast<DereferencedTimeSeriesDictionaryRepresentation *>(destination_representation)
+            ->notify_item_change(context, id, change);
     }
 
-    static void publish_item_changes_callback(OutputChangeContext &context, void *receiver) {
-        static_cast<DereferencedTimeSeriesDictionaryRepresentation *>(receiver)->publish_item_changes(context);
+    static void publish_item_changes_callback(OutputChangeContext &context, void *destination_representation) {
+        static_cast<DereferencedTimeSeriesDictionaryRepresentation *>(destination_representation)
+            ->publish_item_changes(context);
     }
 
     void notify_item_change(OutputChangeContext &context, item_id_t id, OutputChange change) {

@@ -119,6 +119,7 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...> {
     static constexpr std::string_view name = ParsedProperties::name;
     static constexpr InputActivity activity = ParsedProperties::activity;
     static constexpr InputValidity validity = ParsedProperties::validity;
+    static constexpr bool dynamic_binding = ParsedProperties::dynamic_binding;
 
   private:
     const details::TimeSeriesDictionaryRuntimeType &dictionary_runtime_type() const noexcept {

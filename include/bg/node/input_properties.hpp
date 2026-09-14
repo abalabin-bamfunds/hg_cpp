@@ -22,4 +22,8 @@ enum class InputValidity : std::uint8_t {
 inline constexpr InputValidity required = InputValidity::required;
 inline constexpr InputValidity optional = InputValidity::optional;
 
+struct DynamicBinding {};
+
+inline constexpr DynamicBinding dynamic_binding{};
+
 } // namespace bg

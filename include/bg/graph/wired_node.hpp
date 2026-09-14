@@ -17,10 +17,12 @@ class WiredNode {
   public:
     WiredNode(const NodeTemplate &node_template, ResolvedSignature signature,
               std::vector<std::size_t> input_output_indices, std::vector<WiredScalar> scalar_values,
-              std::vector<const ScalarType *> state_types, const WiringPath &path)
+              std::vector<const ScalarType *> state_types,
+              std::vector<const TimeSeriesType *> dynamic_reference_input_types, const WiringPath &path)
         : node_template_(&node_template), signature_(std::move(signature)),
           input_output_indices_(std::move(input_output_indices)), scalar_values_(std::move(scalar_values)),
-          state_types_(std::move(state_types)), path_(&path) {}
+          state_types_(std::move(state_types)), dynamic_reference_input_types_(std::move(dynamic_reference_input_types)),
+          path_(&path) {}
 
     WiredNode(const WiredNode &) = delete;
     WiredNode &operator=(const WiredNode &) = delete;
@@ -37,6 +39,10 @@ class WiredNode {
 
     std::span<const ScalarType *const> state_types() const noexcept { return state_types_; }
 
+    std::span<const TimeSeriesType *const> dynamic_reference_input_types() const noexcept {
+        return dynamic_reference_input_types_;
+    }
+
     const WiringPath &path() const noexcept { return *path_; }
 
   private:
@@ -45,6 +51,7 @@ class WiredNode {
     std::vector<std::size_t> input_output_indices_;
     std::vector<WiredScalar> scalar_values_;
     std::vector<const ScalarType *> state_types_;
+    std::vector<const TimeSeriesType *> dynamic_reference_input_types_;
     const WiringPath *path_;
 };
 

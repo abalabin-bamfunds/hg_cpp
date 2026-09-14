@@ -65,7 +65,8 @@ add_library(
     src/time_series/tsb/tsb_type.cpp
     src/time_series/tsb/tsb_runtime_type.cpp
     src/time_series/tsb/operators.cpp
-    src/time_series/ref/ref_item_notification_links.cpp
+    src/time_series/ref/dynamic_reference_input.cpp
+    src/time_series/ref/ref_item_notifications.cpp
     src/time_series/ref/ref_notification.cpp
     src/time_series/ref/ref_provider.cpp
     src/time_series/ref/ref_runtime_type.cpp

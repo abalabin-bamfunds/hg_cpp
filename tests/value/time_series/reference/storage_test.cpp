@@ -83,26 +83,26 @@ TEST_CASE("reference subscriber group encoding is hidden behind accessors",
     CHECK_FALSE(subscriptions.has_subscriber_group());
 }
 
-TEST_CASE("reference item notification encoding is hidden behind accessors",
+TEST_CASE("reference item notification descriptor encoding is hidden behind accessors",
           "[value][time-series][reference][feature:time-series-storage]") {
-    auto notifications = bg::details::ItemNotificationDetail{};
+    auto notifications = bg::details::ItemNotificationDescriptor{};
 
     CHECK(notifications.empty());
 
-    notifications.set_inline(4, 12);
+    notifications.set_inline_destination_item(4, 12);
 
     CHECK_FALSE(notifications.empty());
-    CHECK_FALSE(notifications.uses_overflow_group());
-    CHECK(notifications.receiver_index() == 4);
-    CHECK(notifications.receiver_item_id() == 12);
+    CHECK_FALSE(notifications.has_destination_item_group());
+    CHECK(notifications.inline_destination_index() == 4);
+    CHECK(notifications.inline_destination_item_id() == 12);
 
-    notifications.set_overflow_group(9);
+    notifications.set_destination_item_group(9);
 
-    CHECK(notifications.uses_overflow_group());
-    CHECK(notifications.overflow_group_index() == 9);
+    CHECK(notifications.has_destination_item_group());
+    CHECK(notifications.destination_item_group_index() == 9);
 
     notifications.clear();
 
     CHECK(notifications.empty());
-    STATIC_CHECK(sizeof(bg::details::ItemNotificationDetail) == sizeof(void *));
+    STATIC_CHECK(sizeof(bg::details::ItemNotificationDescriptor) == sizeof(void *));
 }

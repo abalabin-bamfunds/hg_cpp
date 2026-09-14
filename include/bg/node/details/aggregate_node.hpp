@@ -8,6 +8,7 @@
 #include <bg/node/state.hpp>
 #include <bg/node/state_layout.hpp>
 #include <bg/scalar/cpp_runtime_type.hpp>
+#include <bg/time_series/ref/dynamic_reference_input.hpp>
 #include <bg/time_series/ref/ref_runtime_type.hpp>
 #include <bg/time_series/time_series_runtime_type.hpp>
 #include <bg/time_series/tsb/tsb_runtime_type.hpp>
@@ -46,6 +47,7 @@ namespace bg::details {
 template <typename T> struct input_field {
     static constexpr bool value = false;
     static constexpr bool reflected_name = true;
+    static constexpr bool dynamic_binding = false;
 };
 
 template <typename TimeSeries, auto... Properties> struct input_field<In<TimeSeries, Properties...>> {
@@ -55,6 +57,10 @@ template <typename TimeSeries, auto... Properties> struct input_field<In<TimeSer
     static constexpr bool reflected_name = Input::name.empty();
     static constexpr InputActivity activity = Input::activity;
     static constexpr InputValidity validity = Input::validity;
+    static constexpr bool dynamic_binding = Input::dynamic_binding;
+
+    static_assert(!dynamic_binding || is_time_series_reference<TimeSeries>,
+                  "dynamic_binding requires a time series reference input");
 
     using time_series_type = TimeSeries;
 };
@@ -129,6 +135,8 @@ template <typename T> struct state_field<State<T>> {
     using storage_type = std::conditional_t<scalar_collection, scalar_stored_t<T>, T>;
 };
 
+template <typename Definition, std::size_t Index> const TimeSeriesType &input_type();
+
 template <typename Definition, std::size_t... Index>
 std::vector<const ScalarType *> aggregate_state_types(const TypeMap &type_map, std::index_sequence<Index...>) {
     auto result = std::vector<const ScalarType *>{};
@@ -147,6 +155,28 @@ std::vector<const ScalarType *> aggregate_state_types(const TypeMap &type_map, s
                 } else {
                     result.push_back(nullptr);
                 }
+            }
+        }(),
+        ...);
+
+    return result;
+}
+
+template <typename Definition, std::size_t... Index>
+std::vector<const TimeSeriesType *> aggregate_dynamic_reference_input_types(const TypeMap &type_map,
+                                                                            std::index_sequence<Index...>) {
+    auto result = std::vector<const TimeSeriesType *>{};
+    result.reserve((std::size_t{} + ... + static_cast<std::size_t>([] {
+                        using Field = std::remove_cv_t<util::aggregate_member_type<Index, Definition>>;
+                        return input_field<Field>::value && input_field<Field>::dynamic_binding;
+                    }())));
+
+    (
+        [&] {
+            using Field = std::remove_cv_t<util::aggregate_member_type<Index, Definition>>;
+            if constexpr (input_field<Field>::value && input_field<Field>::dynamic_binding) {
+                const auto &resolved = input_type<Definition, Index>().resolve(type_map);
+                result.push_back(&static_cast<const TimeSeriesType &>(resolved));
             }
         }(),
         ...);
@@ -296,6 +326,7 @@ template <typename Definition> [[nodiscard]] consteval bool aggregate_uses_futur
 template <typename Definition, std::size_t... Index>
 consteval bool input_fields_use_reflected_names(std::index_sequence<Index...>) {
     return ((!input_field<std::remove_cv_t<util::aggregate_member_type<Index, Definition>>>::value ||
+             input_field<std::remove_cv_t<util::aggregate_member_type<Index, Definition>>>::dynamic_binding ||
              input_field<std::remove_cv_t<util::aggregate_member_type<Index, Definition>>>::reflected_name) &&
             ...);
 }
@@ -351,7 +382,8 @@ template <typename Definition, std::size_t... Index>
 consteval std::size_t aggregate_time_series_runtime_type_count(std::index_sequence<Index...>) {
     return (std::size_t{} + ... +
             static_cast<std::size_t>(
-                input_view_field<std::remove_cv_t<util::aggregate_member_type<Index, Definition>>>::value));
+                input_view_field<std::remove_cv_t<util::aggregate_member_type<Index, Definition>>>::value &&
+                !input_field<std::remove_cv_t<util::aggregate_member_type<Index, Definition>>>::dynamic_binding));
 }
 
 template <typename Definition, std::size_t Target, std::size_t... Index>
@@ -359,7 +391,8 @@ consteval std::size_t aggregate_time_series_runtime_type_index(std::index_sequen
     return (std::size_t{} + ... +
             static_cast<std::size_t>(
                 Index < Target &&
-                input_view_field<std::remove_cv_t<util::aggregate_member_type<Index, Definition>>>::value));
+                input_view_field<std::remove_cv_t<util::aggregate_member_type<Index, Definition>>>::value &&
+                !input_field<std::remove_cv_t<util::aggregate_member_type<Index, Definition>>>::dynamic_binding));
 }
 
 template <typename Definition, std::size_t... Index>
@@ -400,7 +433,7 @@ template <typename Definition, std::size_t Index>
 void add_signature_field(std::vector<Parameter> &parameters, const TimeSeriesType *&output) {
     using Field = std::remove_cv_t<util::aggregate_member_type<Index, Definition>>;
 
-    if constexpr (input_field<Field>::value) {
+    if constexpr (input_field<Field>::value && !input_field<Field>::dynamic_binding) {
         parameters.push_back({util::symbol{util::aggregate_member_names<Definition>[Index]},
                               &input_type<Definition, Index>(), input_field<Field>::activity,
                               input_field<Field>::validity});
@@ -416,7 +449,7 @@ template <typename Definition, std::size_t Index>
 void add_signature_field_resolvers(std::vector<VariableResolver> &resolvers) {
     using Field = std::remove_cv_t<util::aggregate_member_type<Index, Definition>>;
 
-    if constexpr (input_field<Field>::value) {
+    if constexpr (input_field<Field>::value && !input_field<Field>::dynamic_binding) {
         append_aggregate_resolvers<Definition, typename input_field<Field>::time_series_type>(resolvers);
     } else if constexpr (scalar_field<Field>::value) {
         append_aggregate_resolvers<Definition, typename scalar_field<Field>::value_type>(resolvers);
@@ -454,10 +487,11 @@ template <typename Definition> [[nodiscard]] const Signature &aggregate_node_sig
 
 template <typename Definition, std::size_t... Index>
 consteval std::size_t parameter_index(std::index_sequence<Index...>) {
-    return (std::size_t{} + ... +
-            static_cast<std::size_t>(
-                input_field<std::remove_cv_t<util::aggregate_member_type<Index, Definition>>>::value ||
-                scalar_field<std::remove_cv_t<util::aggregate_member_type<Index, Definition>>>::value));
+    return (std::size_t{} + ... + static_cast<std::size_t>([] {
+                using Field = std::remove_cv_t<util::aggregate_member_type<Index, Definition>>;
+                return (input_field<Field>::value && !input_field<Field>::dynamic_binding) ||
+                       scalar_field<Field>::value;
+            }()));
 }
 
 template <typename Definition, std::size_t... Index>
@@ -479,6 +513,21 @@ consteval std::size_t state_index(std::index_sequence<Index...>) {
         std::size_t{} + ... +
         static_cast<std::size_t>(Index < Target &&
                                  state_field<std::remove_cv_t<util::aggregate_member_type<Index, Definition>>>::value));
+}
+
+template <typename Definition, std::size_t... Index>
+consteval std::size_t state_field_count(std::index_sequence<Index...>) {
+    return (std::size_t{} + ... +
+            static_cast<std::size_t>(
+                state_field<std::remove_cv_t<util::aggregate_member_type<Index, Definition>>>::value));
+}
+
+template <typename Definition, std::size_t Target, std::size_t... Index>
+consteval std::size_t dynamic_reference_input_index(std::index_sequence<Index...>) {
+    return (std::size_t{} + ... + static_cast<std::size_t>(Index < Target && [] {
+                using Field = std::remove_cv_t<util::aggregate_member_type<Index, Definition>>;
+                return input_field<Field>::value && input_field<Field>::dynamic_binding;
+            }()));
 }
 
 template <typename Definition, std::size_t Target, std::size_t... Index>
@@ -525,6 +574,46 @@ consteval std::size_t aggregate_state_offset(std::index_sequence<Index...>) {
     return result;
 }
 
+template <typename Definition, std::size_t... Index>
+consteval std::size_t aggregate_static_state_size(std::index_sequence<Index...>) {
+    auto offset = std::size_t{};
+    (
+        [&] {
+            using Field = std::remove_cv_t<util::aggregate_member_type<Index, Definition>>;
+            if constexpr (state_field<Field>::value) {
+                using Value = typename state_field<Field>::storage_type;
+                offset = align_up(offset, alignof(Value));
+                offset += sizeof(Value);
+            }
+        }(),
+        ...);
+    return offset;
+}
+
+template <typename Definition, std::size_t Index>
+consteval std::size_t aggregate_dynamic_reference_input_offset() {
+    constexpr auto MemberCount = util::aggregate_member_count<Definition>;
+    constexpr auto DynamicIndex =
+        dynamic_reference_input_index<Definition, Index>(std::make_index_sequence<MemberCount>{});
+    auto offset = aggregate_static_state_size<Definition>(std::make_index_sequence<MemberCount>{});
+    offset = align_up(offset, alignof(DynamicReferenceInputStorage));
+    return offset + DynamicIndex * sizeof(DynamicReferenceInputStorage);
+}
+
+template <typename Definition, std::size_t Index>
+std::size_t dynamic_reference_input_offset(const CompiledNode &node) noexcept {
+    constexpr auto MemberCount = util::aggregate_member_count<Definition>;
+    constexpr auto DynamicIndex =
+        dynamic_reference_input_index<Definition, Index>(std::make_index_sequence<MemberCount>{});
+
+    if constexpr (aggregate_has_generic_state<Definition>(std::make_index_sequence<MemberCount>{})) {
+        constexpr auto StateFieldCount = state_field_count<Definition>(std::make_index_sequence<MemberCount>{});
+        return node.state_field_offset(StateFieldCount + DynamicIndex);
+    } else {
+        return aggregate_dynamic_reference_input_offset<Definition, Index>();
+    }
+}
+
 template <typename Definition, std::size_t Index>
 [[nodiscard]] auto make_runtime_field(const CompiledNode &node, std::byte *runtime_storage,
                                       EvaluationContext *context) {
@@ -532,6 +621,13 @@ template <typename Definition, std::size_t Index>
     const auto runtime_node = Node{node, runtime_storage};
 
     if constexpr (input_field<Field>::value) {
+        if constexpr (input_field<Field>::dynamic_binding) {
+            const auto offset = dynamic_reference_input_offset<Definition, Index>(node);
+            auto *state = static_cast<std::byte *>(runtime_node.state());
+            auto &input = *reinterpret_cast<DynamicReferenceInputStorage *>(state + offset);
+            return Field{input, *context, node.state_offset() + offset};
+        }
+
         constexpr auto ParameterIndex = parameter_index<Definition>(std::make_index_sequence<Index>{});
         const auto &last_updated = runtime_node.input_last_updated(ParameterIndex);
         const auto *value = runtime_node.input_value(ParameterIndex);
@@ -680,6 +776,14 @@ void construct_aggregate_state(const NodeStateLayout &layout, [[maybe_unused]] v
             }
         }(),
         ...);
+
+    for (auto index = std::size_t{}; index < layout.dynamic_reference_input_types.size(); ++index) {
+        const auto &type = *layout.dynamic_reference_input_types[index];
+        const auto &runtime_type = resolve_time_series_runtime_type(type);
+        const auto offset = layout.field_offsets[layout.state_field_count + index];
+        std::construct_at(reinterpret_cast<DynamicReferenceInputStorage *>(static_cast<std::byte *>(storage) + offset),
+                          runtime_type);
+    }
 }
 
 template <typename Definition, std::size_t... Index>
@@ -729,6 +833,38 @@ template <typename Definition, std::size_t... Index>
     return (... || state_field<std::remove_cv_t<util::aggregate_member_type<Index, Definition>>>::scalar_collection);
 }
 
+template <typename Definition, std::size_t... Index>
+[[nodiscard]] consteval bool aggregate_has_dynamic_reference_inputs(std::index_sequence<Index...>) noexcept {
+    return (false || ... || [] {
+        using Field = std::remove_cv_t<util::aggregate_member_type<Index, Definition>>;
+        return input_field<Field>::value && input_field<Field>::dynamic_binding;
+    }());
+}
+
+template <typename Definition, std::size_t Index>
+void unbind_dynamic_reference_input(const CompiledNode &node, void *runtime_storage, EvaluationContext &context) {
+    using Field = std::remove_cv_t<util::aggregate_member_type<Index, Definition>>;
+    if constexpr (input_field<Field>::value && input_field<Field>::dynamic_binding) {
+        const auto offset = dynamic_reference_input_offset<Definition, Index>(node);
+        auto *state = static_cast<std::byte *>(Node{node, runtime_storage}.state());
+        auto &input = *reinterpret_cast<DynamicReferenceInputStorage *>(state + offset);
+        input.unbind(context.runtime_graph(), node.state_offset() + offset);
+    }
+}
+
+template <typename Definition, std::size_t... Index>
+void unbind_dynamic_reference_inputs(const CompiledNode &node, void *runtime_storage, EvaluationContext &context,
+                                     std::index_sequence<Index...>) noexcept {
+    (unbind_dynamic_reference_input<Definition, Index>(node, runtime_storage, context), ...);
+}
+
+template <typename Definition>
+void unbind_dynamic_reference_inputs(const CompiledNode &node, void *runtime_storage,
+                                     EvaluationContext &context) noexcept {
+    unbind_dynamic_reference_inputs<Definition>(
+        node, runtime_storage, context, std::make_index_sequence<util::aggregate_member_count<Definition>>{});
+}
+
 template <typename Definition, auto Function, std::size_t... Index>
 void invoke_aggregate_node(const CompiledNode &node, void *runtime_storage, EvaluationContext *context,
                            std::index_sequence<Index...>) {
@@ -762,6 +898,7 @@ void finalize_aggregate_node_state(const CompiledNode &node, void *runtime_stora
         invoke_aggregate_node<Definition, &Definition::finalize>(node, runtime_storage, context);
     }
 
+    unbind_dynamic_reference_inputs<Definition>(node, runtime_storage, *context);
     destroy_aggregate_state<Definition>(node, runtime_storage, context);
 }
 
@@ -772,7 +909,11 @@ void start_aggregate_node(const CompiledNode &node, void *runtime_storage, Evalu
 
 template <typename Definition>
 void stop_aggregate_node(const CompiledNode &node, void *runtime_storage, EvaluationContext *context) {
-    invoke_aggregate_node<Definition, &Definition::stop>(node, runtime_storage, context);
+    if constexpr (aggregate_node_has_stop<Definition>) {
+        invoke_aggregate_node<Definition, &Definition::stop>(node, runtime_storage, context);
+    }
+
+    unbind_dynamic_reference_inputs<Definition>(node, runtime_storage, *context);
 }
 
 template <typename Definition>

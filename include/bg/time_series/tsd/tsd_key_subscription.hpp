@@ -8,10 +8,14 @@
 
 namespace bg::details {
 
-[[nodiscard]] Reference acquire_tsd_item_reference(Reference tsd, Scalar<> key);
-void release_tsd_item_reference(Reference item) noexcept;
+struct TsdItemReferenceInput {
+    const EvaluationTime *last_updated;
+    const TimeSeriesRuntimeType *runtime_type;
+    const void *value;
+    bool modified;
+};
 
-void add_tsd_key_subscriber(Reference tsd, Scalar<> key, RuntimeGraph &graph, std::uint32_t node_index);
-void remove_tsd_key_subscriber(Reference tsd, RuntimeGraph &graph, std::uint32_t node_index) noexcept;
+[[nodiscard]] TsdItemReferenceInput tsd_item_reference_input(Reference tsd, Scalar<> key);
+const TimeSeriesRuntimeType &tsd_item_reference_runtime_type(const TimeSeriesRuntimeType &tsd);
 
 } // namespace bg::details

@@ -21,14 +21,19 @@ template <typename T> inline constexpr bool is_validity = std::same_as<std::remo
 
 template <typename T> inline constexpr bool is_name = is_compile_time_name<std::remove_cv_t<T>>::value;
 
+template <typename T> inline constexpr bool is_dynamic_binding = std::same_as<std::remove_cv_t<T>, DynamicBinding>;
+
 template <auto Property>
-consteval void apply_input_property(InputActivity &activity, InputValidity &validity, std::string_view &name) {
+consteval void apply_input_property(InputActivity &activity, InputValidity &validity, bool &dynamic_binding,
+                                    std::string_view &name) {
     using PropertyType = decltype(Property);
 
     if constexpr (is_activity<PropertyType>) {
         activity = Property;
     } else if constexpr (is_validity<PropertyType>) {
         validity = Property;
+    } else if constexpr (is_dynamic_binding<PropertyType>) {
+        dynamic_binding = true;
     } else if constexpr (is_name<PropertyType>) {
         name = is_compile_time_name<std::remove_cv_t<PropertyType>>::text;
     }
@@ -36,7 +41,7 @@ consteval void apply_input_property(InputActivity &activity, InputValidity &vali
 
 template <auto... Properties> struct input_properties {
     static_assert((... && (is_activity<decltype(Properties)> || is_validity<decltype(Properties)> ||
-                           is_name<decltype(Properties)>)),
+                           is_dynamic_binding<decltype(Properties)> || is_name<decltype(Properties)>)),
                   "unsupported input property");
     static_assert((std::size_t{} + ... + static_cast<std::size_t>(is_activity<decltype(Properties)>)) <= 1,
                   "an input can have only one activity property");
@@ -44,6 +49,8 @@ template <auto... Properties> struct input_properties {
                   "an input can have only one validity property");
     static_assert((std::size_t{} + ... + static_cast<std::size_t>(is_name<decltype(Properties)>)) <= 1,
                   "an input can have only one name property");
+    static_assert((std::size_t{} + ... + static_cast<std::size_t>(is_dynamic_binding<decltype(Properties)>)) <= 1,
+                  "an input can have only one dynamic_binding property");
 
     static constexpr bool valid = true;
 
@@ -51,12 +58,14 @@ template <auto... Properties> struct input_properties {
     struct values {
         InputActivity activity{active};
         InputValidity validity{required};
+        bool dynamic_binding{};
         std::string_view name;
     };
 
     static consteval values parse() {
         values result;
-        (apply_input_property<Properties>(result.activity, result.validity, result.name), ...);
+        (apply_input_property<Properties>(result.activity, result.validity, result.dynamic_binding, result.name),
+         ...);
 
         return result;
     }
@@ -66,6 +75,7 @@ template <auto... Properties> struct input_properties {
   public:
     static constexpr InputActivity activity = parsed.activity;
     static constexpr InputValidity validity = parsed.validity;
+    static constexpr bool dynamic_binding = parsed.dynamic_binding;
     static constexpr std::string_view name = parsed.name;
 };
 

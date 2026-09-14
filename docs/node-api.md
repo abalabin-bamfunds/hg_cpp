@@ -244,6 +244,11 @@ An `In` value is valid for one function call. Its last-updated time includes
 [sampling](time-series-references.md#input-sampling) when the input is bound
 through a reference.
 
+An aggregate can declare an internal `In<REF<TS_T>, dynamic_binding>` field.
+The field is excluded from the node signature. Its type variables must resolve
+through the public signature. `bind()` replaces its addressable input and
+`unbind()` removes the binding. The engine manages subscriptions and cleanup.
+
 Fully specified and generic inputs expose the same common interface to helper
 functions and visitors. A fully specified value input also provides `value()`
 and `operator*`. `operator->` provides member access when the C++ value type

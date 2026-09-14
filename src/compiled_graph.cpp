@@ -6,6 +6,7 @@
 #include <bg/scalar/runtime_type.hpp>
 #include <bg/scalar/scalar.hpp>
 #include <bg/time_series/ref/ref_input_storage.hpp>
+#include <bg/time_series/ref/dynamic_reference_input.hpp>
 #include <bg/time_series/ref/ref_notification.hpp>
 #include <bg/time_series/ref/ref_runtime_type.hpp>
 #include <bg/time_series/ref/ref_storage.hpp>
@@ -603,6 +604,15 @@ const TimeSeriesRuntimeType *find_output_runtime_type(const WiredNode &node, con
                                            std::span<const WiredOutput> outputs, std::span<const NodePlan> node_plans) {
     auto layout = node.node_template().state_layout(
         node.signature(), parameter_runtime_types(node, node_plan, outputs, node_plans), node.state_types());
+    layout.state_field_count = layout.field_offsets.size();
+    layout.dynamic_reference_input_types.assign(node.dynamic_reference_input_types().begin(),
+                                                node.dynamic_reference_input_types().end());
+    for ([[maybe_unused]] const auto *type : layout.dynamic_reference_input_types) {
+        layout.size = align_up(layout.size, alignof(details::DynamicReferenceInputStorage));
+        layout.field_offsets.push_back(layout.size);
+        layout.size += sizeof(details::DynamicReferenceInputStorage);
+        layout.alignment = std::max(layout.alignment, alignof(details::DynamicReferenceInputStorage));
+    }
     if (layout.size == 0) {
         return {};
     }

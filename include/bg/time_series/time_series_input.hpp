@@ -46,6 +46,7 @@ template <details::time_series_variable Variable, auto... Properties> class In<V
     static constexpr std::string_view name = ParsedProperties::name;
     static constexpr InputActivity activity = ParsedProperties::activity;
     static constexpr InputValidity validity = ParsedProperties::validity;
+    static constexpr bool dynamic_binding = ParsedProperties::dynamic_binding;
 
   private:
     details::TimeSeriesInputData data_;

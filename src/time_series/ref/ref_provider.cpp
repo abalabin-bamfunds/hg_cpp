@@ -1,6 +1,6 @@
 #include <bg/time_series/ref/ref_provider.hpp>
 
-#include "ref_item_notification_links.hpp"
+#include "ref_item_notifications.hpp"
 
 #include <bg/allocator.hpp>
 #include <bg/graph/dynamic_subscribers.hpp>
@@ -71,7 +71,7 @@ ReferenceProvider::~ReferenceProvider() {
     for (auto *subscribers : subscriber_groups_) {
         DynamicSubscribers::release(subscribers);
     }
-    destroy_reference_item_notification_links(item_notification_links_, memory_);
+    memory_.delete_object(item_notifications_);
 }
 
 ResolvedTimeSeries ReferenceProvider::resolve_representation(std::uint32_t index) const {
@@ -105,8 +105,8 @@ void ReferenceProvider::remove_root_observer(RuntimeGraph &graph, const void *re
 
 void ReferenceProvider::notify_root(OutputChangeContext &context, OutputChange change) {
     context.notify_subscribers(subscriber_groups_.front(), change);
-    if (item_notification_links_ != nullptr) {
-        notify_reference_root_item_links(*item_notification_links_, context, change);
+    if (item_notifications_ != nullptr) {
+        item_notifications_->notify_root(context, change);
     }
 }
 
@@ -148,65 +148,65 @@ void ReferenceProvider::remove_observer(ReferenceSubscriptionDetail &subscriptio
     }
 }
 
-void ReferenceProvider::notify(ReferenceSubscriptionDetail &subscriptions, OutputChangeContext &context,
-                               OutputChange change) {
+void ReferenceProvider::notify_reference_subscriptions(const ReferenceSubscriptionDetail &subscriptions,
+                                                       OutputChangeContext &context, OutputChange change) {
     if (subscriptions.has_subscriber_group()) {
         context.notify_subscribers(subscriber_groups_[subscriptions.subscriber_group_index()], change);
     }
-    if (item_notification_links_ != nullptr) {
-        notify_reference_item_links(*item_notification_links_, subscriptions, context, change);
+    if (item_notifications_ != nullptr) {
+        item_notifications_->notify(subscriptions, context, change);
     }
 }
 
 void ReferenceProvider::begin_item_notification_batch() noexcept {
-    if (item_notification_links_ != nullptr) {
-        begin_reference_item_notification_batch(*item_notification_links_);
+    if (item_notifications_ != nullptr) {
+        item_notifications_->begin_batch();
     }
 }
 
 void ReferenceProvider::cancel_item_notification_batch() noexcept {
-    if (item_notification_links_ != nullptr) {
-        cancel_reference_item_notification_batch(*item_notification_links_);
+    if (item_notifications_ != nullptr) {
+        item_notifications_->cancel_batch();
     }
 }
 
 void ReferenceProvider::publish_item_notification_batch(OutputChangeContext &context) {
-    if (item_notification_links_ != nullptr) {
-        publish_reference_item_notification_batch(*item_notification_links_, context);
+    if (item_notifications_ != nullptr) {
+        item_notifications_->publish_batch(context);
     }
 }
 
-void ReferenceProvider::add_item_notification_link(Reference reference, RuntimeGraph &graph, void *receiver,
-                                                   item_id_t receiver_item_id,
-                                                   ReferenceItemNotifyFunction notify_function,
-                                                   ReferenceItemPublishFunction publish_function) {
-    if (item_notification_links_ == nullptr) {
-        item_notification_links_ = create_reference_item_notification_links(memory_);
+void ReferenceProvider::add_item_notification(Reference reference, RuntimeGraph &graph,
+                                              void *destination_representation, item_id_t destination_item_id,
+                                              ItemChangeNotificationFunction notify_item_change,
+                                              ItemChangePublicationFunction publish_item_changes) {
+    if (item_notifications_ == nullptr) {
+        item_notifications_ = memory_.new_object<ItemNotifications>(memory_);
     }
     if (reference.holds<RootReference>()) {
-        add_reference_root_item_link(*item_notification_links_, graph, receiver, receiver_item_id, notify_function,
-                                     publish_function);
+        item_notifications_->add_root(graph, destination_representation, destination_item_id, notify_item_change,
+                                      publish_item_changes);
         return;
     }
 
-    add_reference_item_link(*item_notification_links_, reference_subscriptions(reference), graph, receiver,
-                            receiver_item_id, notify_function, publish_function);
+    item_notifications_->add(reference_subscriptions(reference), graph, destination_representation,
+                             destination_item_id, notify_item_change, publish_item_changes);
 }
 
-void ReferenceProvider::remove_item_notification_link(Reference reference, RuntimeGraph &graph, const void *receiver,
-                                                      item_id_t receiver_item_id,
-                                                      ReferenceItemNotifyFunction notify_function) noexcept {
-    if (item_notification_links_ == nullptr) {
+void ReferenceProvider::remove_item_notification(Reference reference, RuntimeGraph &graph,
+                                                 const void *destination_representation, item_id_t destination_item_id,
+                                                 ItemChangeNotificationFunction notify_item_change) noexcept {
+    if (item_notifications_ == nullptr) {
         return;
     }
 
     if (reference.holds<RootReference>()) {
-        remove_reference_root_item_link(*item_notification_links_, graph, receiver, receiver_item_id, notify_function);
+        item_notifications_->remove_root(graph, destination_representation, destination_item_id, notify_item_change);
         return;
     }
 
-    remove_reference_item_link(*item_notification_links_, reference_subscriptions(reference), graph, receiver,
-                               receiver_item_id, notify_function);
+    item_notifications_->remove(reference_subscriptions(reference), graph, destination_representation,
+                                destination_item_id, notify_item_change);
 }
 
 void ReferenceProvider::add_cycle_callback(void *receiver, void (*function)(void *) noexcept) {
@@ -269,9 +269,9 @@ bool ReferenceProvider::release_item_reference(ItemReference &reference) noexcep
         representation = nullptr;
     }
 
-    return (item_notification_links_ == nullptr ||
-            reference_item_links_empty(*item_notification_links_, reference.subscriptions())) &&
-           release_subscribers(reference.subscriptions());
+    const auto has_item_notifications =
+        item_notifications_ != nullptr && item_notifications_->has_item_notifications(reference.subscriptions());
+    return !has_item_notifications && release_subscribers(reference.subscriptions());
 }
 
 void ReferenceProvider::add_component(ReferenceProviderComponent &component) noexcept {
@@ -436,20 +436,20 @@ void notify_reference(Reference reference, OutputChangeContext &context, OutputC
         }
         return;
     }
-    provider_for(reference).notify(reference_subscriptions(reference), context, change);
+    provider_for(reference).notify_reference_subscriptions(reference_subscriptions(reference), context, change);
 }
 
-void add_reference_item_notification_link(Reference reference, RuntimeGraph &graph, void *receiver,
-                                          item_id_t receiver_item_id, ReferenceItemNotifyFunction notify_function,
-                                          ReferenceItemPublishFunction publish_function) {
+void add_reference_item_notification(Reference reference, RuntimeGraph &graph, void *destination_representation,
+                                     item_id_t destination_item_id, ItemChangeNotificationFunction notify_item_change,
+                                     ItemChangePublicationFunction publish_item_changes) {
     auto &provider = require_reference_provider(reference);
-    provider.add_item_notification_link(reference, graph, receiver, receiver_item_id, notify_function,
-                                        publish_function);
+    provider.add_item_notification(reference, graph, destination_representation, destination_item_id,
+                                   notify_item_change, publish_item_changes);
 }
 
-void remove_reference_item_notification_link(Reference reference, RuntimeGraph &graph, const void *receiver,
-                                             item_id_t receiver_item_id,
-                                             ReferenceItemNotifyFunction notify_function) noexcept {
+void remove_reference_item_notification(Reference reference, RuntimeGraph &graph,
+                                        const void *destination_representation, item_id_t destination_item_id,
+                                        ItemChangeNotificationFunction notify_item_change) noexcept {
     if (!reference) {
         return;
     }
@@ -457,7 +457,8 @@ void remove_reference_item_notification_link(Reference reference, RuntimeGraph &
     if (root == nullptr) {
         return;
     }
-    root->remove_item_notification_link(reference, graph, receiver, receiver_item_id, notify_function);
+    root->remove_item_notification(reference, graph, destination_representation, destination_item_id,
+                                   notify_item_change);
 }
 
 void destroy_root_reference(RootReference &root, allocator &memory) noexcept {

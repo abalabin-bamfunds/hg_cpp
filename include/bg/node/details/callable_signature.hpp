@@ -64,6 +64,8 @@ void add_callable_parameter(std::vector<Parameter> &parameters) {
     using Field = callable_field<Function, Index>;
 
     if constexpr (input_field<Field>::value) {
+        static_assert(!input_field<Field>::dynamic_binding,
+                      "dynamic_binding is supported only by aggregate node fields");
         const auto text = Field::name.empty() ? std::to_string(parameters.size()) : std::string{Field::name};
         const auto name = util::symbol{text};
         parameters.push_back(

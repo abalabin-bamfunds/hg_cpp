@@ -12,6 +12,7 @@ using AggregateStateLayoutFunction = NodeStateLayout (*)(const ResolvedSignature
                                                          std::span<const ScalarType *const>);
 using AggregateStateConstructionFunction = void (*)(const NodeStateLayout &, void *) noexcept;
 using AggregateStateTypesFunction = std::vector<const ScalarType *> (*)(const TypeMap &);
+using AggregateDynamicReferenceInputTypesFunction = std::vector<const TimeSeriesType *> (*)(const TypeMap &);
 using AggregateRequirementFunction = RequirementResult (*)(const WiringArguments &);
 
 enum class AggregateRuntimeTypeUse : unsigned char {
@@ -31,6 +32,7 @@ struct AggregateNodeDescriptor {
     AggregateStateConstructionFunction construct_initial_state;
     EvaluationFunction state_destruction_function;
     AggregateStateTypesFunction resolve_state_types;
+    AggregateDynamicReferenceInputTypesFunction dynamic_reference_input_types;
     AggregateRequirementFunction requirement;
     bool uses_output_runtime_type;
     bool uses_future_scheduling;
@@ -57,6 +59,7 @@ class AggregateNodeTemplateBase : public NodeTemplate {
                                  std::span<const ScalarType *const> state_types) const final;
     void construct_initial_state(const NodeStateLayout &layout, void *storage) const noexcept final;
     EvaluationFunction state_destruction_function(const ResolvedSignature &) const noexcept final;
+    std::vector<const TimeSeriesType *> dynamic_reference_input_types(const TypeMap &) const final;
     std::vector<const ScalarType *> resolve_state_types(const TypeMap &type_map) const final;
 
   private:

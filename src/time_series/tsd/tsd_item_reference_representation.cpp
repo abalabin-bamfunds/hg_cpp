@@ -158,7 +158,8 @@ class TimeSeriesDictionaryReferenceRepresentation final : public ReferenceRepres
         }
 
         for (const auto id : item_valid_) {
-            provider_->notify(items_[id].reference.subscriptions(), context, OutputChange::invalidation);
+            provider_->notify_reference_subscriptions(items_[id].reference.subscriptions(), context,
+                                                      OutputChange::invalidation);
         }
         item_valid_.clear();
         last_updated_ = MIN_DT;
@@ -192,8 +193,8 @@ class TimeSeriesDictionaryReferenceRepresentation final : public ReferenceRepres
             }
 
             self.item_valid_.set(id, self.provider_->allocation());
-            self.provider_->notify(self.items_[id].reference.subscriptions(), *callback.context,
-                                   OutputChange::revalidation);
+            self.provider_->notify_reference_subscriptions(self.items_[id].reference.subscriptions(), *callback.context,
+                                                           OutputChange::revalidation);
         });
 
         for (const auto id : positions_) {
@@ -234,13 +235,14 @@ class TimeSeriesDictionaryReferenceRepresentation final : public ReferenceRepres
         const auto was_valid = item_valid_.contains(id);
         if (now_valid) {
             item_valid_.set(id, provider_->allocation());
-            provider_->notify(item.reference.subscriptions(), context,
-                              was_valid ? OutputChange::update : OutputChange::revalidation);
+            provider_->notify_reference_subscriptions(item.reference.subscriptions(), context,
+                                                      was_valid ? OutputChange::update : OutputChange::revalidation);
             return;
         }
         if (was_valid) {
             item_valid_.reset(id);
-            provider_->notify(item.reference.subscriptions(), context, OutputChange::invalidation);
+            provider_->notify_reference_subscriptions(item.reference.subscriptions(), context,
+                                                      OutputChange::invalidation);
         }
     }
 
@@ -251,7 +253,8 @@ class TimeSeriesDictionaryReferenceRepresentation final : public ReferenceRepres
 
         auto &item = items_[id];
         if (item_valid_.reset(id)) {
-            provider_->notify(item.reference.subscriptions(), context, OutputChange::invalidation);
+            provider_->notify_reference_subscriptions(item.reference.subscriptions(), context,
+                                                      OutputChange::invalidation);
         }
         retire_item(id, context.evaluation_time());
     }

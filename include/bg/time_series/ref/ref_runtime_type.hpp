@@ -23,6 +23,8 @@ class TimeSeriesReferenceRuntimeType : public TimeSeriesRuntimeType {
     Reference reference(const void *value) const override {
         return *static_cast<const Reference *>(value);
     }
+    virtual Reference binding_reference(const void *) const noexcept { return {}; }
+    virtual Reference resolve_binding(Reference reference) const noexcept { return reference; }
 
     void destroy_value(void *, allocator &) const noexcept override {}
 

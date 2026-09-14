@@ -29,6 +29,7 @@ class OutputChangeContext {
     }
 
     void schedule_validity_check(RuntimeGraph &graph, std::size_t node_index) const noexcept;
+    void schedule(RuntimeGraph &graph, std::size_t node_index) const noexcept;
     void notify_subscribers(details::DynamicSubscribers *subscribers, OutputChange change) const;
 
   private:

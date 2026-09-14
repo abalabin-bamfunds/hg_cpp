@@ -29,6 +29,10 @@ void OutputChangeContext::schedule_validity_check(RuntimeGraph &graph, std::size
     graph.schedule_validity_check(node_index);
 }
 
+void OutputChangeContext::schedule(RuntimeGraph &graph, std::size_t node_index) const noexcept {
+    graph.schedule(node_index);
+}
+
 void OutputChangeContext::notify_subscribers(details::DynamicSubscribers *subscribers, OutputChange change) const {
     if (subscribers != nullptr) {
         runtime_graph_->notify_dynamic_subscribers(*subscribers, change);

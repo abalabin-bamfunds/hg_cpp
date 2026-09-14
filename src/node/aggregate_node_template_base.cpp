@@ -68,6 +68,14 @@ EvaluationFunction AggregateNodeTemplateBase::state_destruction_function(const R
     return descriptor_->state_destruction_function;
 }
 
+std::vector<const TimeSeriesType *>
+AggregateNodeTemplateBase::dynamic_reference_input_types(const TypeMap &type_map) const {
+    if (descriptor_->dynamic_reference_input_types == nullptr) {
+        return {};
+    }
+    return descriptor_->dynamic_reference_input_types(type_map);
+}
+
 std::vector<const ScalarType *> AggregateNodeTemplateBase::resolve_state_types(const TypeMap &type_map) const {
     if (descriptor_->resolve_state_types == nullptr) {
         return {};

@@ -1,6 +1,7 @@
 #include <bg/node.hpp>
 #include <bg/testing/test_graph.hpp>
 #include <bg/type/scalar_type.hpp>
+#include <bg/type/time_series_reference_type.hpp>
 #include <bg/type/time_series_list_type.hpp>
 #include <bg/type/time_series_value_type.hpp>
 
@@ -8,6 +9,7 @@
 
 #include <array>
 #include <concepts>
+#include <cstdint>
 #include <optional>
 #include <type_traits>
 #include <utility>
@@ -54,6 +56,39 @@ TEST_CASE("an aggregate node class generates a signature", "[node_template][feat
     CHECK(signature.parameters[1].activity == bg::passive);
     CHECK(signature.parameters[1].validity == bg::optional);
     CHECK(signature.output == &bg::TS<float>::type());
+}
+
+namespace {
+namespace dynamic_input_test {
+
+using ITEM = bg::TimeSeriesVariable<"ITEM">;
+inline constexpr auto G = bg::guarantee_variable<"G">;
+
+struct dynamic_reference_input_node {
+    bg::In<bg::REF<bg::TSD<std::int64_t, ITEM, G>, G>> dictionary;
+    bg::In<bg::REF<ITEM, G>, bg::dynamic_binding, bg::optional, "selected"_n> item;
+    bg::Out<bg::REF<ITEM, G>> output;
+
+    void evaluate() const {}
+};
+
+} // namespace dynamic_input_test
+} // namespace
+
+TEST_CASE("a dynamic reference input is internal to an aggregate node",
+          "[node_template][feature:node-api][feature:reference][definition:aggregate]") {
+    const auto node = bg::node<dynamic_input_test::dynamic_reference_input_node>();
+    const std::array<const bg::Type *, 1> arguments{&bg::TSD<std::int64_t, bg::TS<float>>::type()};
+
+    const auto resolution = node.signature().resolve_with_type_map(arguments);
+    const auto dynamic_inputs = node.dynamic_reference_input_types(resolution.type_map);
+
+    REQUIRE(resolution.signature.parameters.size() == 1);
+    CHECK(resolution.signature.parameters[0].name.text() == "dictionary");
+    REQUIRE(dynamic_inputs.size() == 1);
+    CHECK(dynamic_inputs[0] == resolution.signature.output);
+    const auto &reference = static_cast<const bg::TimeSeriesReferenceType &>(*dynamic_inputs[0]);
+    CHECK(&reference.target_type() == &bg::TS<float>::type());
 }
 
 TEST_CASE("a callable node receives typed inputs, scalars, and output",

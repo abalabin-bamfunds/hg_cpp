@@ -106,16 +106,17 @@ The source runtime graph owns the created representations and subscriber
 groups. Ordinary subscriber records identify the destination runtime graph,
 node, and input slot.
 
-A TSD item reference records notification links to destination representations.
-Each link identifies the destination item ID. The first link is stored with the
-item reference. Fan-out uses root-owned overflow storage. A TSD batches changed
-item references,
-and each destination representation publishes once with its changed item IDs.
+A TSD item reference records item notifications for destination representations.
+Each notification stores a destination-table index and destination item ID. The
+shared destination entry stores the graph, representation, and notification
+functions. The first destination item is stored with the item reference. Fan-out
+uses root-owned destination-item groups. A TSD batches changed item references.
+Each destination representation publishes once with its changed item IDs.
 Notification work is proportional to changed item references and their destinations.
 
-The reference provider owns references, subscriber groups, notification
-links, and type-specific components. TSD key subscriptions are implemented by
-a lazily created TSD component.
+The reference provider owns references, subscriber groups, item notifications,
+and type-specific components. TSD item selection uses a lazily created TSD
+component.
 
 A reference notification notifies its dynamic subscribers directly. Subscriber
 records retain the destination graph. A runtime observer uses that graph's
@@ -199,16 +200,16 @@ When an item is first used through a reference, its item reference receives a
 subscriber group from the provider that owns its root. Item updates notify that
 item reference directly.
 
-A TSD creates keyed subscription storage only when it is used. A
-subscription retains the key's sparse item ID, creating a non-live key when the
-key is absent. Notification processing uses changed item IDs directly. The key
-set reclaims an unretained non-live ID after the outer cycle in which it was
-released.
+A TSD creates item-reference storage only when an item is selected through a
+reference. Selection retains the key's sparse item ID and creates a non-live key
+when the key is absent. The key set reclaims an unretained non-live ID after the
+outer cycle in which it was released.
 
-Selecting a value item returns its item reference. Selecting a reference item
-forwards the stored reference and subscribes the selecting node to replacement
-or removal of that item. Updates from the forwarded target bypass the selecting
-node.
+Selecting an item returns an addressable reference input. Dynamic input binding
+subscribes to that address. A value item resolves to its item reference. A
+reference item resolves to its stored reference. Replacement or removal of the
+selected item schedules the selecting node. Updates from a stored reference's
+target bypass that node.
 
 The shared set and its representations handle key removal:
 

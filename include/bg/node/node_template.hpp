@@ -56,6 +56,10 @@ class NodeTemplate : public WiringTemplate {
     virtual void construct_initial_state(const NodeStateLayout &, void *) const noexcept {}
     virtual EvaluationFunction state_destruction_function(const ResolvedSignature &) const noexcept { return nullptr; }
 
+    [[nodiscard]] virtual std::vector<const TimeSeriesType *> dynamic_reference_input_types(const TypeMap &) const {
+        return {};
+    }
+
     [[nodiscard]] virtual std::vector<const ScalarType *> resolve_state_types(const TypeMap &) const { return {}; }
 
     virtual CompiledNodeDataLayout compiled_data_layout(const ResolvedSignature &) const noexcept { return {}; }
