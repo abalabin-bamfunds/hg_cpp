@@ -604,10 +604,7 @@ const TimeSeriesRuntimeType *find_output_runtime_type(const WiredNode &node, con
                                            std::span<const WiredOutput> outputs, std::span<const NodePlan> node_plans) {
     auto layout = node.node_template().state_layout(
         node.signature(), parameter_runtime_types(node, node_plan, outputs, node_plans), node.state_types());
-    layout.state_field_count = layout.field_offsets.size();
-    layout.dynamic_reference_input_types.assign(node.dynamic_reference_input_types().begin(),
-                                                node.dynamic_reference_input_types().end());
-    for ([[maybe_unused]] const auto *type : layout.dynamic_reference_input_types) {
+    for ([[maybe_unused]] const auto *type : node.dynamic_reference_input_types()) {
         layout.size = align_up(layout.size, alignof(details::DynamicReferenceInputStorage));
         layout.field_offsets.push_back(layout.size);
         layout.size += sizeof(details::DynamicReferenceInputStorage);
@@ -728,13 +725,17 @@ std::size_t item_subscriber_size(const ItemSubscriptionPlan &item) {
 struct RuntimeTypeCounts {
     std::size_t time_series_inputs{};
     std::size_t scalar_inputs{};
+    std::size_t dynamic_reference_inputs{};
     bool output{};
 
-    std::size_t total() const noexcept { return time_series_inputs + scalar_inputs + static_cast<std::size_t>(output); }
+    std::size_t total() const noexcept {
+        return time_series_inputs + scalar_inputs + dynamic_reference_inputs + static_cast<std::size_t>(output);
+    }
 };
 
 RuntimeTypeCounts runtime_type_counts(const WiredNode &node) {
-    auto result = RuntimeTypeCounts{.output = node.node_template().uses_output_runtime_type()};
+    auto result = RuntimeTypeCounts{.dynamic_reference_inputs = node.dynamic_reference_input_types().size(),
+                                    .output = node.node_template().uses_output_runtime_type()};
     for (auto parameter = std::size_t{}; parameter < node.signature().parameters.size(); ++parameter) {
         result.time_series_inputs +=
             static_cast<std::size_t>(node.node_template().uses_time_series_input_runtime_type(parameter));
@@ -1233,7 +1234,13 @@ class CompiledGraphBuilder {
 
         if (node.node_template().uses_output_runtime_type()) {
             const auto *runtime_type = plan.node_plans[node_index].output.runtime_type;
-            runtime_types.back() = runtime_type;
+            runtime_types[runtime_type_count.time_series_inputs + runtime_type_count.scalar_inputs] = runtime_type;
+        }
+
+        auto dynamic_reference_input_index = runtime_type_count.time_series_inputs + runtime_type_count.scalar_inputs +
+                                             static_cast<std::size_t>(runtime_type_count.output);
+        for (const auto *type : node.dynamic_reference_input_types()) {
+            runtime_types[dynamic_reference_input_index++] = &resolve_time_series_runtime_type(*type);
         }
     }
 

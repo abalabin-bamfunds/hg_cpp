@@ -351,6 +351,15 @@ class CompiledNode {
         return static_cast<const TimeSeriesRuntimeType &>(runtime_type(time_series_input_count + scalar_input_count));
     }
 
+    const TimeSeriesRuntimeType &dynamic_reference_input_runtime_type(std::size_t time_series_input_count,
+                                                                      std::size_t scalar_input_count,
+                                                                      bool uses_output_runtime_type,
+                                                                      std::size_t index) const noexcept {
+        const auto output_count = static_cast<std::size_t>(uses_output_runtime_type);
+        return static_cast<const TimeSeriesRuntimeType &>(
+            runtime_type(time_series_input_count + scalar_input_count + output_count + index));
+    }
+
     const TimeSeriesRuntimeType &node_invocation_output_runtime_type() const noexcept {
         const auto time_series_inputs = node_invocation_time_series_input_count();
         return output_runtime_type(time_series_inputs, parameters().size() - time_series_inputs);

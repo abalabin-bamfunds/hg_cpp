@@ -54,10 +54,10 @@ class In<REF<Target, TimeSeriesProperties...>, Properties...> {
        bool modified = false) noexcept
         : data_{runtime_type, last_updated, value, modified} {}
 
-    In(details::DynamicReferenceInputStorage &storage, EvaluationContext &context, std::size_t storage_offset) noexcept
+    In(details::DynamicReferenceInputStorage &storage, const TimeSeriesRuntimeType &runtime_type,
+       EvaluationContext &context, std::size_t storage_offset) noexcept
         requires ParsedProperties::dynamic_binding
-        : data_{storage.runtime_type(), storage.last_updated(), &storage.value(),
-                storage.modified(context.evaluation_time())},
+        : data_{runtime_type, storage.last_updated(), &storage.value(), storage.modified(context.evaluation_time())},
           dynamic_{&storage, &context, storage_offset} {}
 
     bool valid() const noexcept { return data_.valid(); }
@@ -96,13 +96,14 @@ class In<REF<Target, TimeSeriesProperties...>, Properties...> {
     void bind(const In<REF<Target, InputTimeSeriesProperties...>, InputProperties...> &input) const
         requires ParsedProperties::dynamic_binding
     {
+        const auto *declared_runtime_type = &data_.runtime_type();
         const auto &runtime_type = static_cast<const TimeSeriesReferenceRuntimeType &>(input.runtime_type());
         const auto reference = runtime_type.binding_reference(input.data());
         if (!reference) {
             if (!input.valid()) {
                 dynamic_.storage->bind({}, runtime_type, *dynamic_.context, dynamic_.storage_offset);
-                data_ = details::TimeSeriesInputData{dynamic_.storage->runtime_type(),
-                                                     dynamic_.storage->last_updated(), &dynamic_.storage->value(),
+                data_ = details::TimeSeriesInputData{*declared_runtime_type, dynamic_.storage->last_updated(),
+                                                     &dynamic_.storage->value(),
                                                      dynamic_.storage->modified(
                                                          dynamic_.context->evaluation_time())};
                 return;
@@ -111,7 +112,7 @@ class In<REF<Target, TimeSeriesProperties...>, Properties...> {
         }
 
         dynamic_.storage->bind(reference, runtime_type, *dynamic_.context, dynamic_.storage_offset);
-        data_ = details::TimeSeriesInputData{dynamic_.storage->runtime_type(), dynamic_.storage->last_updated(),
+        data_ = details::TimeSeriesInputData{*declared_runtime_type, dynamic_.storage->last_updated(),
                                              &dynamic_.storage->value(),
                                              dynamic_.storage->modified(dynamic_.context->evaluation_time())};
     }
@@ -119,8 +120,9 @@ class In<REF<Target, TimeSeriesProperties...>, Properties...> {
     void unbind() const noexcept
         requires ParsedProperties::dynamic_binding
     {
+        const auto *declared_runtime_type = &data_.runtime_type();
         dynamic_.storage->unbind(dynamic_.context->runtime_graph(), dynamic_.storage_offset);
-        data_ = details::TimeSeriesInputData{dynamic_.storage->runtime_type(), dynamic_.storage->last_updated(),
+        data_ = details::TimeSeriesInputData{*declared_runtime_type, dynamic_.storage->last_updated(),
                                              &dynamic_.storage->value(), false};
     }
 

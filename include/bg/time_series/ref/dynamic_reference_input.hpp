@@ -5,6 +5,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <type_traits>
 
 namespace bg {
 
@@ -19,11 +20,7 @@ namespace details {
 
 class DynamicReferenceInputStorage {
   public:
-    explicit DynamicReferenceInputStorage(const TimeSeriesRuntimeType &runtime_type) noexcept
-        : runtime_type_{&runtime_type} {}
-
-    const TimeSeriesRuntimeType &runtime_type() const noexcept { return *runtime_type_; }
-    const EvaluationTime &last_updated() const noexcept { return last_updated_; }
+    const EvaluationTime &last_updated() const noexcept { return value_ ? change_time_ : MIN_DT; }
     const Reference &value() const noexcept { return value_; }
     bool modified(EvaluationTime evaluation_time) const noexcept { return change_time_ == evaluation_time; }
 
@@ -37,13 +34,14 @@ class DynamicReferenceInputStorage {
 
     bool refresh(EvaluationTime evaluation_time) noexcept;
 
-    const TimeSeriesRuntimeType *runtime_type_;
     const TimeSeriesReferenceRuntimeType *binding_runtime_type_{};
     Reference selected_;
     Reference value_;
-    EvaluationTime last_updated_{MIN_DT};
     EvaluationTime change_time_{MIN_DT};
 };
+
+static_assert(sizeof(DynamicReferenceInputStorage) == 4 * sizeof(void *));
+static_assert(std::is_trivially_copyable_v<DynamicReferenceInputStorage>);
 
 } // namespace details
 } // namespace bg

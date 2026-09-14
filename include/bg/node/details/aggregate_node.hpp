@@ -622,10 +622,21 @@ template <typename Definition, std::size_t Index>
 
     if constexpr (input_field<Field>::value) {
         if constexpr (input_field<Field>::dynamic_binding) {
+            constexpr auto MemberCount = util::aggregate_member_count<Definition>;
+            constexpr auto TimeSeriesRuntimeTypeCount =
+                aggregate_time_series_runtime_type_count<Definition>(std::make_index_sequence<MemberCount>{});
+            constexpr auto GenericScalarInputCount =
+                aggregate_generic_scalar_input_count<Definition>(std::make_index_sequence<MemberCount>{});
+            constexpr auto UsesOutputRuntimeType =
+                aggregate_uses_output_runtime_type<Definition>(std::make_index_sequence<MemberCount>{});
+            constexpr auto DynamicIndex =
+                dynamic_reference_input_index<Definition, Index>(std::make_index_sequence<MemberCount>{});
             const auto offset = dynamic_reference_input_offset<Definition, Index>(node);
             auto *state = static_cast<std::byte *>(runtime_node.state());
             auto &input = *reinterpret_cast<DynamicReferenceInputStorage *>(state + offset);
-            return Field{input, *context, node.state_offset() + offset};
+            const auto &runtime_type = node.dynamic_reference_input_runtime_type(
+                TimeSeriesRuntimeTypeCount, GenericScalarInputCount, UsesOutputRuntimeType, DynamicIndex);
+            return Field{input, runtime_type, *context, node.state_offset() + offset};
         }
 
         constexpr auto ParameterIndex = parameter_index<Definition>(std::make_index_sequence<Index>{});
@@ -777,12 +788,15 @@ void construct_aggregate_state(const NodeStateLayout &layout, [[maybe_unused]] v
         }(),
         ...);
 
-    for (auto index = std::size_t{}; index < layout.dynamic_reference_input_types.size(); ++index) {
-        const auto &type = *layout.dynamic_reference_input_types[index];
-        const auto &runtime_type = resolve_time_series_runtime_type(type);
-        const auto offset = layout.field_offsets[layout.state_field_count + index];
-        std::construct_at(reinterpret_cast<DynamicReferenceInputStorage *>(static_cast<std::byte *>(storage) + offset),
-                          runtime_type);
+    constexpr auto StateFieldCount = state_field_count<Definition>(std::index_sequence<Index...>{});
+    constexpr auto DynamicReferenceInputCount =
+        (std::size_t{} + ... + static_cast<std::size_t>([] {
+             using Field = std::remove_cv_t<util::aggregate_member_type<Index, Definition>>;
+             return input_field<Field>::value && input_field<Field>::dynamic_binding;
+         }()));
+    for (auto index = std::size_t{}; index < DynamicReferenceInputCount; ++index) {
+        const auto offset = layout.field_offsets[StateFieldCount + index];
+        std::construct_at(reinterpret_cast<DynamicReferenceInputStorage *>(static_cast<std::byte *>(storage) + offset));
     }
 }
 

@@ -15,7 +15,6 @@ bool DynamicReferenceInputStorage::refresh(EvaluationTime evaluation_time) noexc
     }
 
     value_ = value;
-    last_updated_ = value ? evaluation_time : MIN_DT;
     change_time_ = evaluation_time;
     return true;
 }
@@ -46,7 +45,6 @@ void DynamicReferenceInputStorage::unbind(RuntimeGraph &graph, std::size_t stora
     selected_ = {};
     binding_runtime_type_ = nullptr;
     value_ = {};
-    last_updated_ = MIN_DT;
     change_time_ = MIN_DT;
 }
 
