@@ -22,7 +22,7 @@ struct runtime_node_reference {
     bg::In<bg::REF<bg::TS<double>>> input;
     bg::Out<bg::REF<bg::TS<double>>> output;
 
-    void evaluate() const { output.set(input); }
+    void evaluate() const { output.copy(input); }
 };
 
 struct runtime_node_sink {

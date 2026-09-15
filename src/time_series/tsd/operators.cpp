@@ -19,7 +19,7 @@ struct tsd_value_getitem_scalar {
 
     void evaluate() const {
         item.bind(tsd[key]);
-        output.set(item);
+        output.copy(item);
     }
 };
 
@@ -37,7 +37,7 @@ struct tsd_value_getitem_time_series {
         }
 
         item.bind(tsd[key.value_view()]);
-        output.set(item);
+        output.copy(item);
     }
 };
 
@@ -49,7 +49,7 @@ struct tsd_reference_getitem_scalar {
 
     void evaluate() const {
         item.bind(tsd[key]);
-        output.set(item);
+        output.copy(item);
     }
 };
 
@@ -67,7 +67,7 @@ struct tsd_reference_getitem_time_series {
         }
 
         item.bind(tsd[key.value_view()]);
-        output.set(item);
+        output.copy(item);
     }
 };
 

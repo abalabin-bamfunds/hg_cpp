@@ -367,6 +367,9 @@ produce a valid empty collection.
 `Out<TS<T>>::set_value()` accepts a compatible scalar view. It assigns the value
 before it sets the last updated time.
 
+`Out<REF<TS_T>>::copy(input)` copies a reference input and propagates invalidity.
+`set_value(reference)` assigns a `Reference` directly.
+
 A node function has either a returned output or one `Out<TS_T>` parameter.
 `std::optional` controls node API access or publication. It is not a graph
 scalar type, so `TS<std::optional<T>>` is invalid.

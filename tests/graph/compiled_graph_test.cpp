@@ -105,7 +105,7 @@ struct reference_subscription_source {
 struct reference_subscription_pass {
     bg::In<bg::REF<bg::TS<int>>> input;
     bg::Out<bg::REF<bg::TS<int>>> output;
-    void evaluate() const { output.set(input); }
+    void evaluate() const { output.copy(input); }
 };
 
 struct two_reference_input_sink {

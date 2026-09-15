@@ -24,7 +24,7 @@ class DynamicReferenceInputStorage {
     const Reference &value() const noexcept { return value_; }
     bool modified(EvaluationTime evaluation_time) const noexcept { return change_time_ == evaluation_time; }
 
-    void bind(Reference reference, const TimeSeriesReferenceRuntimeType &runtime_type, EvaluationContext &context,
+    void bind(void *address, const TimeSeriesReferenceRuntimeType &runtime_type, EvaluationContext &context,
               std::size_t storage_offset);
     void unbind(RuntimeGraph &graph, std::size_t storage_offset) noexcept;
 
@@ -35,7 +35,7 @@ class DynamicReferenceInputStorage {
     bool refresh(EvaluationTime evaluation_time) noexcept;
 
     const TimeSeriesReferenceRuntimeType *binding_runtime_type_{};
-    Reference selected_;
+    void *binding_address_{};
     Reference value_;
     EvaluationTime change_time_{MIN_DT};
 };

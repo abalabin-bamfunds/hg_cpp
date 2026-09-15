@@ -34,7 +34,7 @@ struct NestedOutput {
     In<REF<TS_T>, active, optional> value;
     Out<REF<TS_T>> output;
 
-    void evaluate() const { output.set(value); }
+    void evaluate() const { output.copy(value); }
 };
 
 const auto nested_input_node = node<NestedInput>();

@@ -95,7 +95,7 @@ struct free_list_reference_definition {
     bg::In<bg::REF<bg::TS<int>>> input;
     bg::Out<bg::REF<bg::TS<int>>> output;
 
-    void evaluate() const { output.set(input); }
+    void evaluate() const { output.copy(input); }
 };
 
 } // namespace

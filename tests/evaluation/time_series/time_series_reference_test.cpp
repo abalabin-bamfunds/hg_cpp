@@ -44,7 +44,7 @@ struct reference_pass {
     bg::Out<bg::REF<bg::TS<int>>> output;
 
     void evaluate() const {
-        output.set(input);
+        output.copy(input);
         ++evaluation_count;
     }
 
@@ -77,7 +77,7 @@ TEST_CASE("a default reference output does not schedule subscribers for the same
           "[evaluation][reference][feature:reference][transition:update][series:value][scalar:integer]"
           "[guarantee:deduplicated][binding:value-to-reference][binding:reference-to-reference]") {
     const auto forward = bg::node([](bg::In<bg::TS<int>>, bg::In<bg::REF<bg::TS<int>>, bg::passive> input,
-                                     bg::Out<bg::REF<bg::TS<int>>> output) { output.set(input); });
+                                     bg::Out<bg::REF<bg::TS<int>>> output) { output.copy(input); });
     auto evaluations = 0;
     const auto sink = bg::node([&](bg::In<bg::REF<bg::TS<int>>>) { ++evaluations; });
     const auto graph = [&](bg::wp<bg::TS<int>> input) {
@@ -149,7 +149,7 @@ struct reference_selector {
     bg::In<bg::REF<bg::TS<int>>, bg::passive, bg::optional> right;
     bg::Out<bg::REF<bg::TS<int>>> output;
 
-    void evaluate() const { *condition ? output.set(right) : output.set(left); }
+    void evaluate() const { *condition ? output.copy(right) : output.copy(left); }
 };
 
 struct sampled_reference_sink {
@@ -263,7 +263,7 @@ struct list_reference_pass {
     bg::In<bg::REF<bg::TSL<bg::TS<int>, 2>>> input;
     bg::Out<bg::REF<bg::TSL<bg::TS<int>, 2>>> output;
 
-    void evaluate() const { output.set(input); }
+    void evaluate() const { output.copy(input); }
 };
 
 struct referenced_list_value {
@@ -277,7 +277,7 @@ struct generic_list_reference_pass {
     bg::In<bg::REF<bg::TSL<bg::TS<bg::SCALAR>, 2>>> input;
     bg::Out<bg::REF<bg::TSL<bg::TS<bg::SCALAR>, 2>>> output;
 
-    void evaluate() const { output.set(input); }
+    void evaluate() const { output.copy(input); }
 };
 
 struct generic_referenced_list_value {
@@ -291,7 +291,7 @@ struct reference_list {
     bg::In<bg::REF<bg::TS<int>>> input;
     bg::Out<bg::TSL<bg::REF<bg::TS<int>>, 1>> output;
 
-    void evaluate() const { output[0].set(input); }
+    void evaluate() const { output[0].copy(input); }
 };
 
 } // namespace
@@ -357,7 +357,7 @@ struct pair_reference_selector_definition {
     bg::In<bg::REF<bg::TSL<bg::TS<int>, 2>>, bg::passive, bg::optional> free;
     bg::Out<bg::REF<bg::TSL<bg::TS<int>, 2>>> output;
 
-    void evaluate() const { *condition == 0 ? output.set(owned) : output.set(free); }
+    void evaluate() const { *condition == 0 ? output.copy(owned) : output.copy(free); }
 };
 
 struct pair_sum_definition {
@@ -400,7 +400,7 @@ TEST_CASE("a reference stored in a fixed collection item updates its consumer",
     const auto source = bg::node<changing_reference_target>();
     const auto list = bg::node<reference_list>();
     const auto first = bg::node([](bg::In<bg::TSL<bg::REF<bg::TS<int>>, 1>> input,
-                                   bg::Out<bg::REF<bg::TS<int>>> output) { output.set(input[0]); });
+                                   bg::Out<bg::REF<bg::TS<int>>> output) { output.copy(input[0]); });
     const auto graph = [&] { return first(list(source())); };
 
     const auto actual = bg::testing::test_graph(graph);
@@ -418,7 +418,7 @@ struct invalidating_reference {
     bg::Out<bg::REF<bg::TS<int>>> output;
 
     void start(bg::EvaluationContext *context) const {
-        output.set(target);
+        output.copy(target);
         context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
     }
 
@@ -427,7 +427,7 @@ struct invalidating_reference {
             output.invalidate();
             context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
         } else {
-            output.set(target);
+            output.copy(target);
         }
         ++*step;
     }

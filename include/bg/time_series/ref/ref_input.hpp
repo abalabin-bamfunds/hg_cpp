@@ -98,10 +98,10 @@ class In<REF<Target, TimeSeriesProperties...>, Properties...> {
     {
         const auto *declared_runtime_type = &data_.runtime_type();
         const auto &runtime_type = static_cast<const TimeSeriesReferenceRuntimeType &>(input.runtime_type());
-        const auto reference = runtime_type.binding_reference(input.data());
-        if (!reference) {
+        auto *address = runtime_type.binding_address(input.data());
+        if (address == nullptr) {
             if (!input.valid()) {
-                dynamic_.storage->bind({}, runtime_type, *dynamic_.context, dynamic_.storage_offset);
+                dynamic_.storage->bind(nullptr, runtime_type, *dynamic_.context, dynamic_.storage_offset);
                 data_ = details::TimeSeriesInputData{*declared_runtime_type, dynamic_.storage->last_updated(),
                                                      &dynamic_.storage->value(),
                                                      dynamic_.storage->modified(
@@ -111,7 +111,7 @@ class In<REF<Target, TimeSeriesProperties...>, Properties...> {
             throw std::invalid_argument{"a dynamic reference input requires an addressable input"};
         }
 
-        dynamic_.storage->bind(reference, runtime_type, *dynamic_.context, dynamic_.storage_offset);
+        dynamic_.storage->bind(address, runtime_type, *dynamic_.context, dynamic_.storage_offset);
         data_ = details::TimeSeriesInputData{*declared_runtime_type, dynamic_.storage->last_updated(),
                                              &dynamic_.storage->value(),
                                              dynamic_.storage->modified(dynamic_.context->evaluation_time())};

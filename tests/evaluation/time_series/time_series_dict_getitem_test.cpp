@@ -35,6 +35,19 @@ TEST_CASE("dictionary getitem follows one scalar key without reacting to unrelat
     CHECK(actual.equals<int>({std::nullopt, std::nullopt, 10, 11, std::nullopt, 12}));
 }
 
+TEST_CASE("dictionary getitem does not evaluate when its selected value item ticks",
+          "[evaluation][series:tsd][series:value][feature:getitem][feature:operator]"
+          "[binding:value-to-reference][binding:reference-to-reference][transition:update]") {
+    const auto make_dictionary =
+        node([](In<TS<int>> input, Out<TSD<std::int64_t, TS<int>>> output) { output[1].set(*input); });
+    const auto monitor = node([](In<REF<TS<int>>>, Out<TS<int>> output) { output.set(1); });
+    const auto graph = [&](wp<TS<int>> input) { return monitor(make_dictionary(input)[std::int64_t{1}]); };
+
+    const auto actual = testing::test_graph(graph, std::array{10, 20, 30});
+
+    CHECK(actual.equals({1, std::nullopt, std::nullopt}));
+}
+
 TEST_CASE("dictionary getitem changes its subscription with a time series key",
           "[evaluation][series:tsd][series:value][feature:getitem][feature:operator]"
           "[binding:value-to-reference][binding:reference-to-value][transition:update]") {
@@ -78,8 +91,8 @@ TEST_CASE("dictionary getitem selects an item from a dictionary of references",
     const auto scale = node([](In<TS<int>> input, Out<TS<int>> output) { output.set(*input * 10); });
     const auto make_dictionary =
         node([](In<REF<TS<int>>> first, In<REF<TS<int>>> second, Out<TSD<std::int64_t, REF<TS<int>>>> output) {
-            output[1].set(first);
-            output[2].set(second);
+            output[1].copy(first);
+            output[2].copy(second);
         });
     const auto graph = [&](wp<TS<int>> input) {
         return make_dictionary(increment(input), scale(input))[std::int64_t{2}];
@@ -97,7 +110,7 @@ TEST_CASE("dictionary getitem follows a replaced reference without evaluating fo
     const auto scale = node([](In<TS<int>> input, Out<TS<int>> output) { output.set(*input * 10); });
     const auto make_dictionary =
         node([](In<TS<bool>> select_second, In<REF<TS<int>>> first, In<REF<TS<int>>> second,
-                Out<TSD<std::int64_t, REF<TS<int>>>> output) { output[1].set(*select_second ? second : first); });
+                Out<TSD<std::int64_t, REF<TS<int>>>> output) { output[1].copy(*select_second ? second : first); });
     const auto monitor = node([](In<REF<TS<int>>>, Out<TS<int>> output) { output.set(1); });
     const auto graph = [&](wp<TS<int>> input, wp<TS<bool>> select_second) {
         return monitor(make_dictionary(select_second, increment(input), scale(input))[std::int64_t{1}]);
@@ -115,8 +128,8 @@ TEST_CASE("dictionary reference getitem ignores another item",
     const auto scale = node([](In<TS<int>> input, Out<TS<int>> output) { output.set(*input * 10); });
     const auto make_dictionary = node([](In<TS<bool>> select_second, In<REF<TS<int>>> first, In<REF<TS<int>>> second,
                                          Out<TSD<std::int64_t, REF<TS<int>>>> output) {
-        output[1].set(first);
-        output[2].set(*select_second ? second : first);
+        output[1].copy(first);
+        output[2].copy(*select_second ? second : first);
     });
     const auto monitor = node([](In<REF<TS<int>>>, Out<TS<int>> output) { output.set(1); });
     const auto graph = [&](wp<TS<int>> input, wp<TS<bool>> select_second) {
@@ -157,7 +170,7 @@ TEST_CASE("a dereferenced dictionary follows a target that is initially invalid"
         }
     });
     const auto make_dictionary =
-        node([](In<REF<TS<int>>> target, Out<TSD<std::int64_t, REF<TS<int>>>> output) { output[1].set(target); });
+        node([](In<REF<TS<int>>> target, Out<TSD<std::int64_t, REF<TS<int>>>> output) { output[1].copy(target); });
     const auto read = node([](In<TSD<std::int64_t, TS<int>>> input, Out<TS<int>> output) {
         if (input[1].valid()) {
             output.set(*input[1]);
@@ -184,7 +197,7 @@ TEST_CASE("a dereferenced dictionary follows target invalidation and revalidatio
         }
     });
     const auto make_dictionary =
-        node([](In<REF<TS<int>>> target, Out<TSD<std::int64_t, REF<TS<int>>>> output) { output[1].set(target); });
+        node([](In<REF<TS<int>>> target, Out<TSD<std::int64_t, REF<TS<int>>>> output) { output[1].copy(target); });
     const auto read = node([](In<TSD<std::int64_t, TS<int>>> input, Out<TS<int>> output) {
         if (input[1].valid()) {
             output.set(*input[1]);
@@ -222,7 +235,7 @@ TEST_CASE("an inner dictionary reference representation crosses into its outer g
     const auto make_dictionary =
         node([](In<TS<int>> input, Out<TSD<std::int64_t, TS<int>>> output) { output[1].set(*input); });
     const auto select =
-        node([](In<TSD<std::int64_t, REF<TS<int>>>> input, Out<REF<TS<int>>> output) { output.set(input[1]); });
+        node([](In<TSD<std::int64_t, REF<TS<int>>>> input, Out<REF<TS<int>>> output) { output.copy(input[1]); });
     const auto read = node([](In<TS<int>> input, Out<TS<int>> output) { output.set(*input); });
     const auto inner = graph("name"_n = "produce_dictionary", [&](wp<TS<int>> input) -> wp<TSD<std::int64_t, TS<int>>> {
         return make_dictionary(input);
@@ -241,7 +254,7 @@ TEST_CASE("a dictionary reference representation connects two nested graphs",
     const auto make_dictionary =
         node([](In<TS<int>> input, Out<TSD<std::int64_t, TS<int>>> output) { output[1].set(*input); });
     const auto select =
-        node([](In<TSD<std::int64_t, REF<TS<int>>>> input, Out<REF<TS<int>>> output) { output.set(input[1]); });
+        node([](In<TSD<std::int64_t, REF<TS<int>>>> input, Out<REF<TS<int>>> output) { output.copy(input[1]); });
     const auto read = node([](In<TS<int>> input, Out<TS<int>> output) { output.set(*input); });
     const auto producer =
         graph("name"_n = "produce_dictionary",
@@ -316,7 +329,7 @@ TEST_CASE("a contained dictionary reference representation follows removal and r
             }
         });
     const auto select =
-        node([](In<TSD<std::int64_t, REF<TS<int>>>> input, Out<REF<TS<int>>> output) { output.set(input[2]); });
+        node([](In<TSD<std::int64_t, REF<TS<int>>>> input, Out<REF<TS<int>>> output) { output.copy(input[2]); });
     const auto read = node([](In<TS<int>> input, Out<TS<int>> output) { output.set(*input); });
     const auto graph = [&](wp<TS<int>> command) { return read(select(make_dictionary(command)[std::int64_t{1}])); };
 
@@ -355,9 +368,9 @@ TEST_CASE("dereferencing a dictionary item samples a new dictionary target",
                                 In<REF<TSD<std::int64_t, TS<int>>>> second,
                                 Out<TSD<std::int64_t, REF<TSD<std::int64_t, TS<int>>>>> output) {
         if (*selection == 0) {
-            output[0].set(first);
+            output[0].copy(first);
         } else if (*selection == 1) {
-            output[0].set(second);
+            output[0].copy(second);
         } else {
             output[0].invalidate();
         }
@@ -392,7 +405,7 @@ TEST_CASE("dictionary getitem follows a sampled dictionary item",
     const auto select = node([](In<TS<bool>> use_second, In<REF<TSD<std::int64_t, TS<int>>>> first,
                                 In<REF<TSD<std::int64_t, TS<int>>>> second,
                                 Out<TSD<std::int64_t, REF<TSD<std::int64_t, TS<int>>>>> output) {
-        output[0].set(*use_second ? second : first);
+        output[0].copy(*use_second ? second : first);
     });
     const auto read = node([](In<TS<int>> input, Out<TS<int>> output) { output.set(*input); });
     const auto graph = [&](wp<TS<bool>> use_second) {
@@ -413,7 +426,7 @@ TEST_CASE("all consumers see the same dictionary target sample",
     const auto select = node([](In<TS<bool>> use_second, In<REF<TSD<std::int64_t, TS<int>>>> first,
                                 In<REF<TSD<std::int64_t, TS<int>>>> second,
                                 Out<TSD<std::int64_t, REF<TSD<std::int64_t, TS<int>>>>> output) {
-        output[0].set(*use_second ? second : first);
+        output[0].copy(*use_second ? second : first);
     });
     const auto inspect = node([](In<TSD<std::int64_t, TSD<std::int64_t, TS<int>>>> input, Out<TS<int>> output) {
         auto result = 0;
@@ -440,7 +453,7 @@ TEST_CASE("a passive consumer does not replay an old dictionary target sample",
     const auto select = node([](In<TS<int>> selection, In<REF<TSD<std::int64_t, TS<int>>>> first,
                                 In<REF<TSD<std::int64_t, TS<int>>>> second,
                                 Out<TSD<std::int64_t, REF<TSD<std::int64_t, TS<int>>>>> output) {
-        output[0].set(*selection == 0 ? first : second);
+        output[0].copy(*selection == 0 ? first : second);
     });
     const auto inspect = node(
         [](In<TSD<std::int64_t, TSD<std::int64_t, TS<int>>>, passive> input, In<TS<int>> trigger, Out<TS<int>> output) {
@@ -474,7 +487,7 @@ TEST_CASE("a contained dictionary target sample recurses into modified items",
     const auto select = node([](In<TS<bool>> use_second, In<REF<TSD<std::int64_t, TSD<std::int64_t, TS<int>>>>> first,
                                 In<REF<TSD<std::int64_t, TSD<std::int64_t, TS<int>>>>> second,
                                 Out<TSD<std::int64_t, REF<TSD<std::int64_t, TSD<std::int64_t, TS<int>>>>>> output) {
-        output[0].set(*use_second ? second : first);
+        output[0].copy(*use_second ? second : first);
     });
     const auto inspect =
         node([](In<TSD<std::int64_t, TSD<std::int64_t, TSD<std::int64_t, TS<int>>>>> input, Out<TS<int>> output) {
@@ -510,7 +523,7 @@ TEST_CASE("a dictionary item samples nested graph stop and restart",
     const auto wrap = node([](In<REF<TSD<std::int64_t, TS<int>>>, optional> target,
                               Out<TSD<std::int64_t, REF<TSD<std::int64_t, TS<int>>>>> output) {
         if (target.valid()) {
-            output[0].set(target);
+            output[0].copy(target);
         } else {
             output[0].invalidate();
         }

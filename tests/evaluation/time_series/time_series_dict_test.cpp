@@ -143,7 +143,7 @@ struct reference_dictionary_rekey_definition {
     bg::Out<bg::TSD<std::int64_t, bg::REF<bg::TS<int>>>> output;
 
     void evaluate() const {
-        input.for_each_added([&](const auto &key) { output[key.value() * 10].set(input[key]); });
+        input.for_each_added([&](const auto &key) { output[key.value() * 10].copy(input[key]); });
         input.for_each_removed([&](const auto &key) { output.erase(key.value() * 10); });
     }
 };
@@ -159,7 +159,7 @@ struct explicit_reference_dictionary_pass_definition {
     bg::In<bg::REF<bg::TSD<std::int64_t, bg::REF<bg::TS<int>>>>> input;
     bg::Out<bg::REF<bg::TSD<std::int64_t, bg::REF<bg::TS<int>>>>> output;
 
-    void evaluate() const { output.set(input); }
+    void evaluate() const { output.copy(input); }
 };
 
 struct dictionary_summary_definition {
@@ -201,7 +201,7 @@ TEST_CASE("source dictionary item routes batch fan-out to reference dictionaries
     const auto rekey = bg::node(
         [](bg::In<bg::TSD<std::int64_t, bg::REF<bg::TS<int>>>> input, bg::Scalar<std::int64_t> offset,
            bg::Out<bg::TSD<std::int64_t, bg::REF<bg::TS<int>>>> output) {
-            input.for_each_added([&](const auto &key) { output[key.value() + *offset].set(input[key]); });
+            input.for_each_added([&](const auto &key) { output[key.value() + *offset].copy(input[key]); });
             input.for_each_removed([&](const auto &key) { output.erase(key.value() + *offset); });
         });
     const auto sum = bg::node(
@@ -246,8 +246,8 @@ struct standalone_reference_dictionary_definition {
     bg::Out<bg::TSD<std::int64_t, bg::REF<bg::TS<int>>>> output;
 
     void evaluate() const {
-        output[1].set(first);
-        output[2].set(second);
+        output[1].copy(first);
+        output[2].copy(second);
     }
 };
 
@@ -359,7 +359,7 @@ TEST_CASE("a node can publish a contained dictionary reference",
     const auto source = bg::node<dict_source_definition>();
     const auto rekey = bg::node<reference_dictionary_rekey_definition>();
     const auto select = bg::node([](bg::In<bg::TSD<std::int64_t, bg::REF<bg::TS<int>>>> input,
-                                    bg::Out<bg::REF<bg::TS<int>>> output) { output.set(input[10]); });
+                                    bg::Out<bg::REF<bg::TS<int>>> output) { output.copy(input[10]); });
     const auto graph = [&] { return select(rekey(source())); };
 
     const auto actual = bg::testing::test_graph(graph);
