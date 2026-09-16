@@ -14,7 +14,8 @@ bool representation_required(const TimeSeriesRuntimeType &provided, const TimeSe
     if (provided_tsd.item_runtime_type().is_reference() != requested_tsd.item_runtime_type().is_reference()) {
         return true;
     }
-    return reference_representation_required(provided_tsd.item_runtime_type(), requested_tsd.item_runtime_type());
+    return ReferenceProvider::representation_required(provided_tsd.item_runtime_type(),
+                                                      requested_tsd.item_runtime_type());
 }
 
 const TimeSeriesRuntimeType &representation_runtime_type(const TimeSeriesRuntimeType &provided,

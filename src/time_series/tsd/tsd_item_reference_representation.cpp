@@ -73,9 +73,9 @@ class TimeSeriesDictionaryReferenceRepresentation final : public ReferenceRepres
         : ReferenceRepresentation{base_reference}, provider_{&provider}, base_runtime_type_{&base_runtime_type},
           item_runtime_type_{static_cast<const TimeSeriesReferenceType &>(item_runtime_type.type())},
           runtime_type_{type, base_runtime_type, item_runtime_type_, *this},
-          last_updated_{*resolve_reference(base_reference).last_updated},
+          last_updated_{*ResolvedTimeSeries::resolve(base_reference).last_updated},
           retired_{&provider.allocation().memory_resource()} {
-        const auto base_time_series = resolve_reference(base_reference);
+        const auto base_time_series = ResolvedTimeSeries::resolve(base_reference);
         const auto *storage = base_time_series.storage;
         base_runtime_type.for_each_item_id(storage, this, [](void *context, item_id_t id) {
             auto &self = *static_cast<TimeSeriesDictionaryReferenceRepresentation *>(context);
@@ -84,7 +84,7 @@ class TimeSeriesDictionaryReferenceRepresentation final : public ReferenceRepres
     }
 
     ResolvedTimeSeries resolve() const override {
-        return {&last_updated_, resolve_reference(base_reference()).storage, &runtime_type_};
+        return {&last_updated_, ResolvedTimeSeries::resolve(base_reference()).storage, &runtime_type_};
     }
 
     void notify(OutputChangeContext &context, OutputChange change) override {
@@ -105,7 +105,7 @@ class TimeSeriesDictionaryReferenceRepresentation final : public ReferenceRepres
             return;
         }
 
-        const auto base_time_series = resolve_reference(base_reference());
+        const auto base_time_series = ResolvedTimeSeries::resolve(base_reference());
         const auto input_time = *base_time_series.last_updated;
         struct Callback {
             TimeSeriesDictionaryReferenceRepresentation *representation;
@@ -137,7 +137,8 @@ class TimeSeriesDictionaryReferenceRepresentation final : public ReferenceRepres
 
         const auto was_valid = last_updated_ > MIN_DT;
         last_updated_ = context.evaluation_time();
-        notify_reference(reference(), context, was_valid ? OutputChange::update : OutputChange::revalidation);
+        ReferenceProvider::notify(reference(), context,
+                                  was_valid ? OutputChange::update : OutputChange::revalidation);
         provider_->publish_item_notification_batch(context);
         cancel_items.release();
     }
@@ -158,18 +159,17 @@ class TimeSeriesDictionaryReferenceRepresentation final : public ReferenceRepres
         }
 
         for (const auto id : item_valid_) {
-            provider_->notify_reference_subscriptions(items_[id].reference.subscriptions(), context,
-                                                      OutputChange::invalidation);
+            provider_->notify_subscriptions(items_[id].reference.subscriptions(), context, OutputChange::invalidation);
         }
         item_valid_.clear();
         last_updated_ = MIN_DT;
-        notify_reference(reference(), context, OutputChange::invalidation);
+        ReferenceProvider::notify(reference(), context, OutputChange::invalidation);
     }
 
     void revalidate(OutputChangeContext &context) {
         auto current = util::index<>{};
         auto release_current = util::scope_exit{[&]() noexcept { current.release(provider_->allocation()); }};
-        const auto base_time_series = resolve_reference(base_reference());
+        const auto base_time_series = ResolvedTimeSeries::resolve(base_reference());
 
         struct Callback {
             TimeSeriesDictionaryReferenceRepresentation *representation;
@@ -186,15 +186,16 @@ class TimeSeriesDictionaryReferenceRepresentation final : public ReferenceRepres
             }
 
             self.restore_item(id);
-            const auto item = self.base_runtime_type_->item(resolve_reference(self.base_reference()).storage, id);
+            const auto item = self.base_runtime_type_->item(ResolvedTimeSeries::resolve(self.base_reference()).storage,
+                                                            id);
             if (item.last_updated <= MIN_DT) {
                 self.item_valid_.reset(id);
                 return;
             }
 
             self.item_valid_.set(id, self.provider_->allocation());
-            self.provider_->notify_reference_subscriptions(self.items_[id].reference.subscriptions(), *callback.context,
-                                                           OutputChange::revalidation);
+            self.provider_->notify_subscriptions(self.items_[id].reference.subscriptions(), *callback.context,
+                                                 OutputChange::revalidation);
         });
 
         for (const auto id : positions_) {
@@ -204,7 +205,7 @@ class TimeSeriesDictionaryReferenceRepresentation final : public ReferenceRepres
         }
 
         last_updated_ = context.evaluation_time();
-        notify_reference(reference(), context, OutputChange::revalidation);
+        ReferenceProvider::notify(reference(), context, OutputChange::revalidation);
     }
 
     void add_item(item_id_t id, EvaluationTime reference_time) {
@@ -214,7 +215,7 @@ class TimeSeriesDictionaryReferenceRepresentation final : public ReferenceRepres
         }
 
         auto &memory = provider_->allocation();
-        const auto base_time_series = resolve_reference(base_reference());
+        const auto base_time_series = ResolvedTimeSeries::resolve(base_reference());
         const auto item = base_runtime_type_->item(base_time_series.storage, id);
         items_.emplace_at(id, memory, base_reference(), id, reference_time);
         positions_.set(id, memory);
@@ -229,20 +230,19 @@ class TimeSeriesDictionaryReferenceRepresentation final : public ReferenceRepres
         }
 
         auto &item = items_[id];
-        const auto base_time_series = resolve_reference(base_reference());
+        const auto base_time_series = ResolvedTimeSeries::resolve(base_reference());
         const auto item_time_series = base_runtime_type_->item(base_time_series.storage, id);
         const auto now_valid = item_time_series.last_updated > MIN_DT;
         const auto was_valid = item_valid_.contains(id);
         if (now_valid) {
             item_valid_.set(id, provider_->allocation());
-            provider_->notify_reference_subscriptions(item.reference.subscriptions(), context,
-                                                      was_valid ? OutputChange::update : OutputChange::revalidation);
+            provider_->notify_subscriptions(item.reference.subscriptions(), context,
+                                            was_valid ? OutputChange::update : OutputChange::revalidation);
             return;
         }
         if (was_valid) {
             item_valid_.reset(id);
-            provider_->notify_reference_subscriptions(item.reference.subscriptions(), context,
-                                                      OutputChange::invalidation);
+            provider_->notify_subscriptions(item.reference.subscriptions(), context, OutputChange::invalidation);
         }
     }
 
@@ -253,8 +253,7 @@ class TimeSeriesDictionaryReferenceRepresentation final : public ReferenceRepres
 
         auto &item = items_[id];
         if (item_valid_.reset(id)) {
-            provider_->notify_reference_subscriptions(item.reference.subscriptions(), context,
-                                                      OutputChange::invalidation);
+            provider_->notify_subscriptions(item.reference.subscriptions(), context, OutputChange::invalidation);
         }
         retire_item(id, context.evaluation_time());
     }

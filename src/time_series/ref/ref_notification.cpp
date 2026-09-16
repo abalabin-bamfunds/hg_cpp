@@ -14,20 +14,20 @@ void update_reference_input(OutputChangeContext &context, Reference new_referenc
                             const ReferenceInputSubscriber &subscriber, std::size_t notification_data,
                             InputNotificationFunction notification, OutputChange change) {
     if (new_reference) {
-        new_reference = reference_representation(new_reference, subscriber.requested_runtime_type());
+        new_reference = ReferenceProvider::representation(new_reference, subscriber.requested_runtime_type());
     }
 
     auto &input = *static_cast<ReferenceInputStorage *>(context.runtime_graph().storage_at(subscriber.input_offset()));
     if (input.value != new_reference) {
         const auto needs_subscription = subscriber.active() || subscriber.required() || notification != nullptr;
         if (input.value && needs_subscription) {
-            remove_reference_subscriber(input.value, context.runtime_graph(), subscriber.input_offset());
+            ReferenceProvider::remove_subscriber(input.value, context.runtime_graph(), subscriber.input_offset());
         }
         if (new_reference && needs_subscription) {
-            add_reference_subscriber(new_reference, context.runtime_graph(),
-                                     static_cast<std::uint32_t>(subscriber.input_offset()), notification_data,
-                                     static_cast<std::uint32_t>(subscriber.node_index()), subscriber.active(),
-                                     subscriber.required(), notification);
+            ReferenceProvider::add_subscriber(new_reference, context.runtime_graph(),
+                                              static_cast<std::uint32_t>(subscriber.input_offset()), notification_data,
+                                              static_cast<std::uint32_t>(subscriber.node_index()), subscriber.active(),
+                                              subscriber.required(), notification);
         }
         input.value = new_reference;
     }

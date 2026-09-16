@@ -360,7 +360,7 @@ RuntimeGraph::~RuntimeGraph() {
 
                 auto &input = runtime_node.reference_input(parameter_index);
                 if (input.value) {
-                    details::remove_reference_subscriber(input.value, *this, parameter.value_offset());
+                    details::ReferenceProvider::remove_subscriber(input.value, *this, parameter.value_offset());
                 }
             }
         }

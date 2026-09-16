@@ -117,7 +117,7 @@ class TsdKeySubscriptions final : public ReferenceProviderComponent {
         provider_->remove_cycle_callback(this);
         for (auto *tsd : subscribed_tsds_) {
             if (tsd->observing_reference) {
-                remove_reference_observer(tsd->reference, provider_->owner(), tsd);
+                provider_->remove_observer(tsd->reference, provider_->owner(), tsd);
                 tsd->observing_reference = false;
             }
         }
@@ -157,8 +157,8 @@ class TsdKeySubscriptions final : public ReferenceProviderComponent {
             auto &subscribers = DynamicSubscribers::ensure(entry.selection.reference_item_subscribers, memory_);
             subscribers.add(graph, input_offset, notification_data, node_index, false, false, notification);
         } else {
-            add_reference_subscriber(Reference{entry.selection.value_item_reference}, graph, input_offset,
-                                     notification_data, node_index, false, false, notification);
+            ReferenceProvider::add_subscriber(Reference{entry.selection.value_item_reference}, graph, input_offset,
+                                              notification_data, node_index, false, false, notification);
         }
     }
 
@@ -166,7 +166,8 @@ class TsdKeySubscriptions final : public ReferenceProviderComponent {
         if (entry.tsd->stores_references()) {
             entry.selection.reference_item_subscribers->remove(graph, input_offset);
         } else {
-            remove_reference_subscriber(Reference{entry.selection.value_item_reference}, graph, input_offset);
+            ReferenceProvider::remove_subscriber(Reference{entry.selection.value_item_reference}, graph,
+                                                 input_offset);
         }
         if (!has_active_subscribers(entry)) {
             queue_release(entry);
@@ -178,7 +179,7 @@ class TsdKeySubscriptions final : public ReferenceProviderComponent {
                                                                      TimeSeriesRuntimeType::ItemIdFunction) const;
 
     RetainedDictionaryKey retain_key(Reference reference, Scalar<> key) {
-        const auto resolved = resolve_reference(reference);
+        const auto resolved = ResolvedTimeSeries::resolve(reference);
         if (resolved.storage == nullptr) {
             return {};
         }
@@ -261,7 +262,7 @@ class TsdKeySubscriptions final : public ReferenceProviderComponent {
         auto release = util::scope_exit{[&]() noexcept { release_tsd(*result); }};
         subscribed_tsds_.push_back(result);
         auto remove_entry = util::scope_exit{[&]() noexcept { subscribed_tsds_.pop_back(); }};
-        add_reference_observer(reference, provider_->owner(), result, &notify_tsd);
+        provider_->add_observer(reference, provider_->owner(), result, &notify_tsd);
         result->observing_reference = true;
 
         remove_entry.release();
@@ -323,7 +324,7 @@ class TsdKeySubscriptions final : public ReferenceProviderComponent {
 
     void release_tsd(SubscribedTsd &tsd) noexcept {
         if (tsd.observing_reference) {
-            remove_reference_observer(tsd.reference, provider_->owner(), &tsd);
+            provider_->remove_observer(tsd.reference, provider_->owner(), &tsd);
         }
         for (const auto entry : tsd.keys) {
             if (entry.value.retained()) {
@@ -352,7 +353,7 @@ class TsdKeySubscriptions final : public ReferenceProviderComponent {
             return;
         }
 
-        const auto resolved = resolve_reference(tsd.reference);
+        const auto resolved = ResolvedTimeSeries::resolve(tsd.reference);
         if (resolved.storage == nullptr) {
             invalidate_all(context, tsd);
             return;
@@ -377,7 +378,7 @@ class TsdKeySubscriptions final : public ReferenceProviderComponent {
 
     static void notify_selection(OutputChangeContext &context, TsdKeySelection &entry, OutputChange change) {
         if (!entry.tsd->stores_references()) {
-            notify_reference(Reference{entry.selection.value_item_reference}, context, change);
+            ReferenceProvider::notify(Reference{entry.selection.value_item_reference}, context, change);
         } else {
             context.notify_subscribers(entry.selection.reference_item_subscribers, change);
         }
@@ -516,7 +517,7 @@ void unsubscribe_tsd_key_selection(void *value, RuntimeGraph &graph, std::size_t
 namespace {
 
 TsdKeySubscriptions &require_tsd_key_subscriptions(Reference reference) {
-    auto &provider = require_reference_provider(reference);
+    auto &provider = ReferenceProvider::require(reference);
     if (auto *subscriptions = provider.component<TsdKeySubscriptions>()) {
         return *subscriptions;
     }

@@ -117,7 +117,7 @@ struct reference_dictionary_summary_definition {
     bg::Out<bg::TS<int>> output;
 
     void evaluate() const {
-        const auto resolved = bg::details::resolve_reference(input[1].value());
+        const auto resolved = bg::details::ResolvedTimeSeries::resolve(input[1].value());
         output.set(static_cast<int>(input.size() * 100) + *static_cast<const int *>(resolved.storage));
     }
 };

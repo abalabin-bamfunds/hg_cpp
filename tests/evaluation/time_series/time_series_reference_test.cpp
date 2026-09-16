@@ -1,6 +1,7 @@
 #include <bg/node.hpp>
 #include <bg/run_graph.hpp>
 #include <bg/testing/test_graph.hpp>
+#include <bg/time_series/ref/ref_provider.hpp>
 #include <bg/time_series/ref/ref_storage.hpp>
 #include <bg/time_series/tsl/tsl.hpp>
 
@@ -91,7 +92,7 @@ TEST_CASE("a default reference output does not schedule subscribers for the same
     CHECK(evaluations == 1);
 }
 
-TEST_CASE("an ordinary reference does not create a reference provider",
+TEST_CASE("reference provider access preserves lazy allocation",
           "[evaluation][reference][feature:reference][series:value][scalar:integer]"
           "[binding:value-to-reference][binding:reference-to-value]") {
     const auto source = bg::node<changing_reference_target>();
@@ -112,6 +113,13 @@ TEST_CASE("an ordinary reference does not create a reference provider",
     auto &root = *static_cast<bg::details::RootReference *>(runtime.node(1).state());
     CHECK(root.subscribers_or_provider.holds<bg::details::DynamicSubscribers>());
     CHECK_FALSE(root.subscribers_or_provider.holds<bg::details::ReferenceProvider>());
+
+    const auto reference = bg::Reference{&root};
+    CHECK(bg::details::ReferenceProvider::get({}) == nullptr);
+    CHECK(bg::details::ReferenceProvider::get(reference) == nullptr);
+
+    auto &provider = bg::details::ReferenceProvider::require(reference);
+    CHECK(bg::details::ReferenceProvider::get(reference) == &provider);
 
     runtime.stop();
 }

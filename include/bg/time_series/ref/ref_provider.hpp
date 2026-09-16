@@ -106,43 +106,54 @@ class ReferenceProvider {
     ReferenceProvider(const ReferenceProvider &) = delete;
     ReferenceProvider &operator=(const ReferenceProvider &) = delete;
 
+    // Returns the root's existing provider without creating one.
+    static ReferenceProvider *get(Reference reference) noexcept;
+
+    // Returns the root's provider, creating it when necessary.
+    static ReferenceProvider &require(Reference reference);
+
+    [[nodiscard]] static Reference representation(Reference reference,
+                                                  const TimeSeriesRuntimeType &requested_runtime_type);
+    static bool representation_required(const TimeSeriesRuntimeType &provided,
+                                        const TimeSeriesRuntimeType &requested) noexcept;
+    static const TimeSeriesRuntimeType &representation_runtime_type(const TimeSeriesRuntimeType &provided,
+                                                                    const TimeSeriesRuntimeType &requested);
+
+    static void add_subscriber(Reference reference, RuntimeGraph &graph, std::uint32_t input_offset,
+                               std::size_t notification_data, std::uint32_t node_index, bool active, bool required,
+                               InputNotificationFunction notification = nullptr);
+    static void remove_subscriber(Reference reference, RuntimeGraph &graph, std::size_t input_offset) noexcept;
+    static void notify(Reference reference, OutputChangeContext &context, OutputChange change);
+
+    static void add_item_notification(Reference reference, RuntimeGraph &graph, void *destination_representation,
+                                      item_id_t destination_item_id, ItemChangeNotificationFunction notify_item_change,
+                                      ItemChangePublicationFunction publish_item_changes);
+    static void remove_item_notification(Reference reference, RuntimeGraph &graph,
+                                         const void *destination_representation, item_id_t destination_item_id,
+                                         ItemChangeNotificationFunction notify_item_change) noexcept;
+
+    static void destroy_root(RootReference &root, allocator &memory) noexcept;
+
     RuntimeGraph &owner() const noexcept { return *root_->owner_graph; }
     allocator &allocation() noexcept { return memory_; }
     const allocator &allocation() const noexcept { return memory_; }
+
     ResolvedTimeSeries resolve_representation(std::uint32_t index) const;
-    void add_root_subscriber(RuntimeGraph &graph, std::uint32_t input_offset, std::size_t notification_data,
-                             std::uint32_t node_index, bool active, bool required,
-                             InputNotificationFunction notification = nullptr);
-    void add_root_observer(RuntimeGraph &graph, void *receiver, RuntimeObserverFunction function);
-    void remove_root_subscriber(RuntimeGraph &graph, std::size_t input_offset) noexcept;
-    void remove_root_observer(RuntimeGraph &graph, const void *receiver) noexcept;
-    void notify_root(OutputChangeContext &context, OutputChange change);
-    void add_subscriber(ReferenceSubscriptionDetail &subscriptions, RuntimeGraph &graph, std::uint32_t input_offset,
-                        std::size_t notification_data, std::uint32_t node_index, bool active, bool required,
-                        InputNotificationFunction notification = nullptr);
-    void add_observer(ReferenceSubscriptionDetail &subscriptions, RuntimeGraph &graph, void *receiver,
-                      RuntimeObserverFunction function);
-    void remove_subscriber(ReferenceSubscriptionDetail &subscriptions, RuntimeGraph &graph,
-                           std::size_t input_offset) noexcept;
-    void remove_observer(ReferenceSubscriptionDetail &subscriptions, RuntimeGraph &graph,
-                         const void *receiver) noexcept;
-    void notify_reference_subscriptions(const ReferenceSubscriptionDetail &subscriptions,
-                                        OutputChangeContext &context, OutputChange change);
+    void add_observer(Reference reference, RuntimeGraph &graph, void *receiver, RuntimeObserverFunction function);
+    void remove_observer(Reference reference, RuntimeGraph &graph, const void *receiver) noexcept;
+    void notify_subscriptions(const ReferenceSubscriptionDetail &subscriptions, OutputChangeContext &context,
+                              OutputChange change);
+
     void begin_item_notification_batch() noexcept;
     void cancel_item_notification_batch() noexcept;
     void publish_item_notification_batch(OutputChangeContext &context);
-    void add_item_notification(Reference reference, RuntimeGraph &graph, void *destination_representation,
-                               item_id_t destination_item_id, ItemChangeNotificationFunction notify_item_change,
-                               ItemChangePublicationFunction publish_item_changes);
-    void remove_item_notification(Reference reference, RuntimeGraph &graph, const void *destination_representation,
-                                  item_id_t destination_item_id,
-                                  ItemChangeNotificationFunction notify_item_change) noexcept;
+
     void add_cycle_callback(void *receiver, void (*function)(void *) noexcept);
     void remove_cycle_callback(const void *receiver) noexcept;
+
     bool item_reference_has_subscribers(const ItemReference &reference) const noexcept;
     bool release_item_reference(ItemReference &reference) noexcept;
-    [[nodiscard]] Reference representation(Reference base_reference,
-                                           const TimeSeriesRuntimeType &requested_runtime_type);
+
     void add_component(ReferenceProviderComponent &component) noexcept;
 
     template <typename Component> Component *component() noexcept {
@@ -157,6 +168,37 @@ class ReferenceProvider {
     }
 
   private:
+    static ReferenceSubscriptionDetail &subscriptions(Reference reference) noexcept;
+    static Reference parent(Reference reference) noexcept;
+    static RootReference &root(Reference reference) noexcept;
+    static ReferenceProvider &require(RootReference &root);
+
+    void add_root_subscriber(RuntimeGraph &graph, std::uint32_t input_offset, std::size_t notification_data,
+                             std::uint32_t node_index, bool active, bool required,
+                             InputNotificationFunction notification);
+    void add_root_observer(RuntimeGraph &graph, void *receiver, RuntimeObserverFunction function);
+    void remove_root_subscriber(RuntimeGraph &graph, std::size_t input_offset) noexcept;
+    void remove_root_observer(RuntimeGraph &graph, const void *receiver) noexcept;
+    void notify_root(OutputChangeContext &context, OutputChange change);
+    void add_subscriber(ReferenceSubscriptionDetail &subscriptions, RuntimeGraph &graph, std::uint32_t input_offset,
+                        std::size_t notification_data, std::uint32_t node_index, bool active, bool required,
+                        InputNotificationFunction notification);
+    void add_observer(ReferenceSubscriptionDetail &subscriptions, RuntimeGraph &graph, void *receiver,
+                      RuntimeObserverFunction function);
+    void remove_subscriber(ReferenceSubscriptionDetail &subscriptions, RuntimeGraph &graph,
+                           std::size_t input_offset) noexcept;
+    void remove_observer(ReferenceSubscriptionDetail &subscriptions, RuntimeGraph &graph,
+                         const void *receiver) noexcept;
+    void add_item_notification_record(Reference reference, RuntimeGraph &graph, void *destination_representation,
+                                      item_id_t destination_item_id,
+                                      ItemChangeNotificationFunction notify_item_change,
+                                      ItemChangePublicationFunction publish_item_changes);
+    void remove_item_notification_record(Reference reference, RuntimeGraph &graph,
+                                         const void *destination_representation, item_id_t destination_item_id,
+                                         ItemChangeNotificationFunction notify_item_change) noexcept;
+    [[nodiscard]] Reference make_representation(Reference base_reference,
+                                                const TimeSeriesRuntimeType &requested_runtime_type);
+
     allocator memory_;
     RootReference *root_;
     std::pmr::vector<ReferenceRepresentation *> representations_;
@@ -164,28 +206,6 @@ class ReferenceProvider {
     ReferenceProviderComponent *components_{};
     ItemNotifications *item_notifications_{};
 };
-
-[[nodiscard]] Reference reference_representation(Reference reference,
-                                                 const TimeSeriesRuntimeType &requested_runtime_type);
-bool reference_representation_required(const TimeSeriesRuntimeType &provided,
-                                       const TimeSeriesRuntimeType &requested) noexcept;
-const TimeSeriesRuntimeType &reference_representation_runtime_type(const TimeSeriesRuntimeType &provided,
-                                                                   const TimeSeriesRuntimeType &requested);
-ReferenceProvider &require_reference_provider(Reference reference);
-void add_reference_subscriber(Reference reference, RuntimeGraph &graph, std::uint32_t input_offset,
-                              std::size_t notification_data, std::uint32_t node_index, bool active, bool required,
-                              InputNotificationFunction notification = nullptr);
-void add_reference_observer(Reference reference, RuntimeGraph &graph, void *receiver, RuntimeObserverFunction function);
-void remove_reference_subscriber(Reference reference, RuntimeGraph &graph, std::size_t input_offset) noexcept;
-void remove_reference_observer(Reference reference, RuntimeGraph &graph, const void *receiver) noexcept;
-void notify_reference(Reference reference, OutputChangeContext &context, OutputChange change);
-void add_reference_item_notification(Reference reference, RuntimeGraph &graph, void *destination_representation,
-                                     item_id_t destination_item_id, ItemChangeNotificationFunction notify_item_change,
-                                     ItemChangePublicationFunction publish_item_changes);
-void remove_reference_item_notification(Reference reference, RuntimeGraph &graph,
-                                        const void *destination_representation, item_id_t destination_item_id,
-                                        ItemChangeNotificationFunction notify_item_change) noexcept;
-void destroy_root_reference(RootReference &root, allocator &memory) noexcept;
 
 } // namespace details
 } // namespace bg

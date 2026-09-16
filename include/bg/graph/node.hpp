@@ -36,7 +36,7 @@ class Node {
             return MIN_DT;
         }
 
-        const auto resolved = details::resolve_reference(reference);
+        const auto resolved = details::ResolvedTimeSeries::resolve(reference);
         const auto &referenced_last_updated = *resolved.last_updated;
         if (referenced_last_updated <= MIN_DT) {
             return referenced_last_updated;
@@ -56,7 +56,7 @@ class Node {
         }
 
         const auto reference = reference_input(parameter_index).value;
-        return reference ? details::resolve_reference(reference).storage : nullptr;
+        return reference ? details::ResolvedTimeSeries::resolve(reference).storage : nullptr;
     }
 
     const TimeSeriesRuntimeType &time_series_input_runtime_type(std::size_t parameter_index,
@@ -65,7 +65,7 @@ class Node {
         if (binding.mode() == ParameterBindingMode::reference) {
             const auto reference = reference_input(parameter_index).value;
             if (reference) {
-                if (const auto *runtime_type = details::resolve_reference(reference).runtime_type) {
+                if (const auto *runtime_type = details::ResolvedTimeSeries::resolve(reference).runtime_type) {
                     return *runtime_type;
                 }
             }

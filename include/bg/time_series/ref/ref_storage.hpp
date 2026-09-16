@@ -39,6 +39,8 @@ using RootReferenceNotificationStorage =
     util::variant_ptr_with_alignment<alignof(void *), DynamicSubscribers, ReferenceProvider>;
 
 struct ResolvedTimeSeries {
+    static ResolvedTimeSeries resolve(Reference reference);
+
     bool valid() const noexcept {
         return runtime_type != nullptr && storage != nullptr && last_updated != nullptr && *last_updated > MIN_DT;
     }
@@ -158,8 +160,6 @@ struct RootReference {
     const TimeSeriesRuntimeType *referenced_runtime_type{};
     RootReferenceNotificationStorage subscribers_or_provider;
 };
-
-ResolvedTimeSeries resolve_reference(Reference reference);
 
 static_assert(sizeof(ResolvedTimeSeries) == 3 * sizeof(void *));
 static_assert(sizeof(ItemNotificationDescriptor) == sizeof(void *));

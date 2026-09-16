@@ -21,16 +21,14 @@ namespace bg::details {
 ReferenceRepresentation::~ReferenceRepresentation() = default;
 ReferenceProviderComponent::~ReferenceProviderComponent() = default;
 
-namespace {
-
-ReferenceSubscriptionDetail &reference_subscriptions(Reference reference) noexcept {
+ReferenceSubscriptionDetail &ReferenceProvider::subscriptions(Reference reference) noexcept {
     if (auto *item = reference.get<ItemReference>()) {
         return item->subscriptions();
     }
     return reference.get<RepresentationReference>()->subscriptions();
 }
 
-Reference parent_reference(Reference reference) noexcept {
+Reference ReferenceProvider::parent(Reference reference) noexcept {
     if (const auto *item = reference.get<ItemReference>()) {
         return item->parent();
     }
@@ -40,7 +38,35 @@ Reference parent_reference(Reference reference) noexcept {
     return {};
 }
 
-} // namespace
+RootReference &ReferenceProvider::root(Reference reference) noexcept {
+    while (!reference.holds<RootReference>()) {
+        reference = parent(reference);
+    }
+    return *reference.get<RootReference>();
+}
+
+ReferenceProvider *ReferenceProvider::get(Reference reference) noexcept {
+    if (!reference) {
+        return nullptr;
+    }
+    return root(reference).subscribers_or_provider.get<ReferenceProvider>();
+}
+
+ReferenceProvider &ReferenceProvider::require(RootReference &root) {
+    if (auto *provider = root.subscribers_or_provider.get<ReferenceProvider>()) {
+        return *provider;
+    }
+
+    auto *subscribers = root.subscribers_or_provider.get<DynamicSubscribers>();
+    auto &memory = root.owner_graph->allocation();
+    auto *provider = memory.new_object<ReferenceProvider>(memory, root, subscribers);
+    root.subscribers_or_provider = provider;
+    return *provider;
+}
+
+ReferenceProvider &ReferenceProvider::require(Reference reference) {
+    return require(root(reference));
+}
 
 ReferenceProvider::ReferenceProvider(allocator memory, RootReference &root, DynamicSubscribers *root_subscribers)
     : memory_{memory}, root_{&root}, representations_{&memory.memory_resource()},
@@ -56,7 +82,7 @@ ReferenceProvider::~ReferenceProvider() {
         if (representation == nullptr) {
             continue;
         }
-        remove_reference_observer(representation->base_reference(), owner(), representation);
+        remove_observer(representation->base_reference(), owner(), representation);
     }
     for (auto *representation : representations_ | std::views::reverse) {
         if (representation == nullptr) {
@@ -149,8 +175,8 @@ void ReferenceProvider::remove_observer(ReferenceSubscriptionDetail &subscriptio
     }
 }
 
-void ReferenceProvider::notify_reference_subscriptions(const ReferenceSubscriptionDetail &subscriptions,
-                                                       OutputChangeContext &context, OutputChange change) {
+void ReferenceProvider::notify_subscriptions(const ReferenceSubscriptionDetail &subscriptions,
+                                             OutputChangeContext &context, OutputChange change) {
     if (subscriptions.has_subscriber_group()) {
         context.notify_subscribers(subscriber_groups_[subscriptions.subscriber_group_index()], change);
     }
@@ -177,10 +203,10 @@ void ReferenceProvider::publish_item_notification_batch(OutputChangeContext &con
     }
 }
 
-void ReferenceProvider::add_item_notification(Reference reference, RuntimeGraph &graph,
-                                              void *destination_representation, item_id_t destination_item_id,
-                                              ItemChangeNotificationFunction notify_item_change,
-                                              ItemChangePublicationFunction publish_item_changes) {
+void ReferenceProvider::add_item_notification_record(Reference reference, RuntimeGraph &graph,
+                                                     void *destination_representation, item_id_t destination_item_id,
+                                                     ItemChangeNotificationFunction notify_item_change,
+                                                     ItemChangePublicationFunction publish_item_changes) {
     if (item_notifications_ == nullptr) {
         item_notifications_ = memory_.new_object<ItemNotifications>(memory_);
     }
@@ -190,13 +216,14 @@ void ReferenceProvider::add_item_notification(Reference reference, RuntimeGraph 
         return;
     }
 
-    item_notifications_->add(reference_subscriptions(reference), graph, destination_representation,
+    item_notifications_->add(subscriptions(reference), graph, destination_representation,
                              destination_item_id, notify_item_change, publish_item_changes);
 }
 
-void ReferenceProvider::remove_item_notification(Reference reference, RuntimeGraph &graph,
-                                                 const void *destination_representation, item_id_t destination_item_id,
-                                                 ItemChangeNotificationFunction notify_item_change) noexcept {
+void ReferenceProvider::remove_item_notification_record(Reference reference, RuntimeGraph &graph,
+                                                        const void *destination_representation,
+                                                        item_id_t destination_item_id,
+                                                        ItemChangeNotificationFunction notify_item_change) noexcept {
     if (item_notifications_ == nullptr) {
         return;
     }
@@ -206,7 +233,7 @@ void ReferenceProvider::remove_item_notification(Reference reference, RuntimeGra
         return;
     }
 
-    item_notifications_->remove(reference_subscriptions(reference), graph, destination_representation,
+    item_notifications_->remove(subscriptions(reference), graph, destination_representation,
                                 destination_item_id, notify_item_change);
 }
 
@@ -275,7 +302,7 @@ bool ReferenceProvider::release_item_reference(ItemReference &reference) noexcep
         if (!release_subscribers(representation_reference.subscriptions())) {
             return false;
         }
-        remove_reference_observer(representation->base_reference(), owner(), representation);
+        remove_observer(representation->base_reference(), owner(), representation);
         representation->destroy(memory_);
         representation = nullptr;
     }
@@ -290,13 +317,13 @@ void ReferenceProvider::add_component(ReferenceProviderComponent &component) noe
     components_ = &component;
 }
 
-Reference ReferenceProvider::representation(Reference base_reference,
-                                            const TimeSeriesRuntimeType &requested_runtime_type) {
-    const auto base_time_series = resolve_reference(base_reference);
+Reference ReferenceProvider::make_representation(Reference base_reference,
+                                                  const TimeSeriesRuntimeType &requested_runtime_type) {
+    const auto base_time_series = ResolvedTimeSeries::resolve(base_reference);
     if (&base_time_series.runtime_type->type() == &requested_runtime_type.type()) {
         return base_reference;
     }
-    const auto root_time_series = resolve_reference(Reference{root_});
+    const auto root_time_series = ResolvedTimeSeries::resolve(Reference{root_});
     if (&root_time_series.runtime_type->type() == &requested_runtime_type.type()) {
         return Reference{root_};
     }
@@ -321,69 +348,41 @@ Reference ReferenceProvider::representation(Reference base_reference,
     result->bind(static_cast<std::uint32_t>(representations_.size()));
     representations_.push_back(result);
     auto remove_entry = util::scope_exit{[&]() noexcept { representations_.pop_back(); }};
-    add_reference_observer(base_reference, owner(), result,
-                           [](OutputChangeContext &context, void *receiver, OutputChange change) {
-                               static_cast<ReferenceRepresentation *>(receiver)->notify(context, change);
-                           });
+    add_observer(base_reference, owner(), result,
+                 [](OutputChangeContext &context, void *receiver, OutputChange change) {
+                     static_cast<ReferenceRepresentation *>(receiver)->notify(context, change);
+                 });
     remove_entry.release();
     release.release();
     return result->reference();
 }
 
-namespace {
-
-RootReference &reference_root(Reference reference) noexcept {
-    while (!reference.holds<RootReference>()) {
-        reference = parent_reference(reference);
-    }
-    return *reference.get<RootReference>();
-}
-
-ReferenceProvider &require_provider(RootReference &root) {
-    if (auto *provider = root.subscribers_or_provider.get<ReferenceProvider>()) {
-        return *provider;
-    }
-
-    auto *subscribers = root.subscribers_or_provider.get<DynamicSubscribers>();
-    auto &memory = root.owner_graph->allocation();
-    auto *provider = memory.new_object<ReferenceProvider>(memory, root, subscribers);
-    root.subscribers_or_provider = provider;
-    return *provider;
-}
-
-ReferenceProvider &provider_for(Reference reference) noexcept {
-    return *reference_root(reference).subscribers_or_provider.get<ReferenceProvider>();
-}
-
-} // namespace
-
-ResolvedTimeSeries resolve_reference(Reference reference) {
+ResolvedTimeSeries ResolvedTimeSeries::resolve(Reference reference) {
     if (auto *root = reference.get<RootReference>()) {
         const auto node = root->owner_graph->node(*root->reference_node);
         return {&node.input_last_updated(0), node.input_value(0), root->referenced_runtime_type};
     }
     if (const auto *representation = reference.get<RepresentationReference>()) {
-        return provider_for(reference).resolve_representation(representation->representation_index());
+        return ReferenceProvider::get(reference)->resolve_representation(representation->representation_index());
     }
 
     const auto &item_reference = *reference.get<ItemReference>();
-    const auto parent = resolve_reference(item_reference.parent());
-    const auto item = parent.runtime_type->item(parent.storage, item_reference.item_id());
+    const auto parent_time_series = ResolvedTimeSeries::resolve(item_reference.parent());
+    const auto item = parent_time_series.runtime_type->item(parent_time_series.storage, item_reference.item_id());
     return {&item.last_updated, item.value, &item.runtime_type};
 }
 
-Reference reference_representation(Reference reference, const TimeSeriesRuntimeType &requested_runtime_type) {
-    const auto resolved = resolve_reference(reference);
-    if (!reference_representation_required(*resolved.runtime_type, requested_runtime_type)) {
+Reference ReferenceProvider::representation(Reference reference, const TimeSeriesRuntimeType &requested_runtime_type) {
+    const auto resolved = ResolvedTimeSeries::resolve(reference);
+    if (!representation_required(*resolved.runtime_type, requested_runtime_type)) {
         return reference;
     }
-    const auto &representation_runtime_type =
-        reference_representation_runtime_type(*resolved.runtime_type, requested_runtime_type);
-    return require_reference_provider(reference).representation(reference, representation_runtime_type);
+    const auto &runtime_type = representation_runtime_type(*resolved.runtime_type, requested_runtime_type);
+    return require(reference).make_representation(reference, runtime_type);
 }
 
-bool reference_representation_required(const TimeSeriesRuntimeType &provided,
-                                       const TimeSeriesRuntimeType &requested) noexcept {
+bool ReferenceProvider::representation_required(const TimeSeriesRuntimeType &provided,
+                                                const TimeSeriesRuntimeType &requested) noexcept {
     if (&provided.type() == &requested.type()) {
         return false;
     }
@@ -391,8 +390,8 @@ bool reference_representation_required(const TimeSeriesRuntimeType &provided,
     return factory != nullptr && factory->is_required(provided, requested);
 }
 
-const TimeSeriesRuntimeType &reference_representation_runtime_type(const TimeSeriesRuntimeType &provided,
-                                                                   const TimeSeriesRuntimeType &requested) {
+const TimeSeriesRuntimeType &ReferenceProvider::representation_runtime_type(const TimeSeriesRuntimeType &provided,
+                                                                             const TimeSeriesRuntimeType &requested) {
     const auto *factory = requested.reference_representation_factory();
     if (factory == nullptr) {
         throw std::invalid_argument{"the requested time series representation is not implemented"};
@@ -400,13 +399,9 @@ const TimeSeriesRuntimeType &reference_representation_runtime_type(const TimeSer
     return factory->representation_runtime_type(provided, requested);
 }
 
-ReferenceProvider &require_reference_provider(Reference reference) {
-    return require_provider(reference_root(reference));
-}
-
-void add_reference_subscriber(Reference reference, RuntimeGraph &graph, std::uint32_t input_offset,
-                              std::size_t notification_data, std::uint32_t node_index, bool active, bool required,
-                              InputNotificationFunction notification) {
+void ReferenceProvider::add_subscriber(Reference reference, RuntimeGraph &graph, std::uint32_t input_offset,
+                                       std::size_t notification_data, std::uint32_t node_index, bool active,
+                                       bool required, InputNotificationFunction notification) {
     if (auto *root = reference.get<RootReference>()) {
         if (auto *provider = root->subscribers_or_provider.get<ReferenceProvider>()) {
             provider->add_root_subscriber(graph, input_offset, notification_data, node_index, active, required,
@@ -419,27 +414,20 @@ void add_reference_subscriber(Reference reference, RuntimeGraph &graph, std::uin
         result.add(graph, input_offset, notification_data, node_index, active, required, notification);
         return;
     }
-    provider_for(reference).add_subscriber(reference_subscriptions(reference), graph, input_offset, notification_data,
-                                           node_index, active, required, notification);
+    get(reference)->add_subscriber(subscriptions(reference), graph, input_offset, notification_data, node_index,
+                                   active, required, notification);
 }
 
-void add_reference_observer(Reference reference, RuntimeGraph &graph, void *receiver,
-                            RuntimeObserverFunction function) {
+void ReferenceProvider::add_observer(Reference reference, RuntimeGraph &graph, void *receiver,
+                                     RuntimeObserverFunction function) {
     if (auto *root = reference.get<RootReference>()) {
-        if (auto *provider = root->subscribers_or_provider.get<ReferenceProvider>()) {
-            provider->add_root_observer(graph, receiver, function);
-            return;
-        }
-        auto *subscribers = root->subscribers_or_provider.get<DynamicSubscribers>();
-        auto &result = DynamicSubscribers::ensure(subscribers, root->owner_graph->allocation());
-        root->subscribers_or_provider = subscribers;
-        result.add_observer(graph, receiver, function);
+        add_root_observer(graph, receiver, function);
         return;
     }
-    provider_for(reference).add_observer(reference_subscriptions(reference), graph, receiver, function);
+    add_observer(subscriptions(reference), graph, receiver, function);
 }
 
-void remove_reference_subscriber(Reference reference, RuntimeGraph &graph, std::size_t input_offset) noexcept {
+void ReferenceProvider::remove_subscriber(Reference reference, RuntimeGraph &graph, std::size_t input_offset) noexcept {
     if (auto *root = reference.get<RootReference>()) {
         if (auto *provider = root->subscribers_or_provider.get<ReferenceProvider>()) {
             provider->remove_root_subscriber(graph, input_offset);
@@ -448,22 +436,18 @@ void remove_reference_subscriber(Reference reference, RuntimeGraph &graph, std::
         }
         return;
     }
-    provider_for(reference).remove_subscriber(reference_subscriptions(reference), graph, input_offset);
+    get(reference)->remove_subscriber(subscriptions(reference), graph, input_offset);
 }
 
-void remove_reference_observer(Reference reference, RuntimeGraph &graph, const void *receiver) noexcept {
+void ReferenceProvider::remove_observer(Reference reference, RuntimeGraph &graph, const void *receiver) noexcept {
     if (auto *root = reference.get<RootReference>()) {
-        if (auto *provider = root->subscribers_or_provider.get<ReferenceProvider>()) {
-            provider->remove_root_observer(graph, receiver);
-        } else if (auto *subscribers = root->subscribers_or_provider.get<DynamicSubscribers>()) {
-            subscribers->remove_observer(graph, receiver);
-        }
+        remove_root_observer(graph, receiver);
         return;
     }
-    provider_for(reference).remove_observer(reference_subscriptions(reference), graph, receiver);
+    remove_observer(subscriptions(reference), graph, receiver);
 }
 
-void notify_reference(Reference reference, OutputChangeContext &context, OutputChange change) {
+void ReferenceProvider::notify(Reference reference, OutputChangeContext &context, OutputChange change) {
     if (auto *root = reference.get<RootReference>()) {
         if (auto *provider = root->subscribers_or_provider.get<ReferenceProvider>()) {
             provider->notify_root(context, change);
@@ -472,32 +456,32 @@ void notify_reference(Reference reference, OutputChangeContext &context, OutputC
         }
         return;
     }
-    provider_for(reference).notify_reference_subscriptions(reference_subscriptions(reference), context, change);
+    get(reference)->notify_subscriptions(subscriptions(reference), context, change);
 }
 
-void add_reference_item_notification(Reference reference, RuntimeGraph &graph, void *destination_representation,
-                                     item_id_t destination_item_id, ItemChangeNotificationFunction notify_item_change,
-                                     ItemChangePublicationFunction publish_item_changes) {
-    auto &provider = require_reference_provider(reference);
-    provider.add_item_notification(reference, graph, destination_representation, destination_item_id,
-                                   notify_item_change, publish_item_changes);
+void ReferenceProvider::add_item_notification(Reference reference, RuntimeGraph &graph,
+                                               void *destination_representation, item_id_t destination_item_id,
+                                               ItemChangeNotificationFunction notify_item_change,
+                                               ItemChangePublicationFunction publish_item_changes) {
+    require(reference).add_item_notification_record(reference, graph, destination_representation, destination_item_id,
+                                                    notify_item_change, publish_item_changes);
 }
 
-void remove_reference_item_notification(Reference reference, RuntimeGraph &graph,
-                                        const void *destination_representation, item_id_t destination_item_id,
-                                        ItemChangeNotificationFunction notify_item_change) noexcept {
+void ReferenceProvider::remove_item_notification(Reference reference, RuntimeGraph &graph,
+                                                  const void *destination_representation, item_id_t destination_item_id,
+                                                  ItemChangeNotificationFunction notify_item_change) noexcept {
     if (!reference) {
         return;
     }
-    auto *root = reference_root(reference).subscribers_or_provider.get<ReferenceProvider>();
-    if (root == nullptr) {
+    auto *provider = get(reference);
+    if (provider == nullptr) {
         return;
     }
-    root->remove_item_notification(reference, graph, destination_representation, destination_item_id,
-                                   notify_item_change);
+    provider->remove_item_notification_record(reference, graph, destination_representation, destination_item_id,
+                                              notify_item_change);
 }
 
-void destroy_root_reference(RootReference &root, allocator &memory) noexcept {
+void ReferenceProvider::destroy_root(RootReference &root, allocator &memory) noexcept {
     if (auto *provider = root.subscribers_or_provider.get<ReferenceProvider>()) {
         allocator{memory}.delete_object(provider);
     } else {

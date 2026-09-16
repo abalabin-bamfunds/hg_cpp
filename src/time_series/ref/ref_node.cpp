@@ -70,12 +70,12 @@ class ReferenceNodeTemplate final : public NodeTemplate {
     static void destroy_state(const CompiledNode &node, void *runtime_storage, EvaluationContext *context) noexcept {
         auto &root = *static_cast<RootReference *>(Node{node, runtime_storage}.state());
         auto memory = context->runtime_graph().allocation();
-        destroy_root_reference(root, memory);
+        ReferenceProvider::destroy_root(root, memory);
     }
 
     static void notify_input(OutputChangeContext &context, std::size_t node_index, std::size_t, OutputChange change) {
         auto &root = *static_cast<RootReference *>(context.runtime_graph().node(node_index).state());
-        notify_reference(Reference{&root}, context, change);
+        ReferenceProvider::notify(Reference{&root}, context, change);
     }
 
     Signature signature_;
