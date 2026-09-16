@@ -53,8 +53,9 @@ template <std::size_t Size> class FreeFixedTimeSeriesListRuntimeType final : pub
         }
 
         const auto &storage = *static_cast<const Storage *>(value);
-        const auto input = free_list_node(storage).time_series_input(id, id);
-        return {input.runtime_type(), input.last_updated(), input.data()};
+        const auto node = free_list_node(storage);
+        const auto input = node.time_series_input(id, id);
+        return {input.runtime_type(), node.input_last_updated(id), input.data()};
     }
 
     void for_each_item_id(const void *, void *context, ItemIdFunction function) const override {

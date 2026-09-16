@@ -36,8 +36,9 @@ class FreeTimeSeriesBundleRuntimeType final : public TimeSeriesRuntimeType {
         if (storage.node == nullptr || id >= free_bundle_node(storage).input_count()) {
             throw std::out_of_range{"time series bundle item index is out of range"};
         }
-        const auto input = free_bundle_node(storage).time_series_input(id, id);
-        return {input.runtime_type(), input.last_updated(), input.data()};
+        const auto node = free_bundle_node(storage);
+        const auto input = node.time_series_input(id, id);
+        return {input.runtime_type(), node.input_last_updated(id), input.data()};
     }
 
     void for_each_item_id(const void *value, void *context, ItemIdFunction function) const override {
