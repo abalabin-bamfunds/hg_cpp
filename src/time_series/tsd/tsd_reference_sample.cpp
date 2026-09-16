@@ -2,7 +2,6 @@
 
 #include <bg/allocator.hpp>
 #include <bg/time_series/ref/ref_runtime_type.hpp>
-#include <bg/type/time_series_reference_type.hpp>
 #include <bg/util/scope_exit.hpp>
 
 #include <algorithm>
@@ -79,12 +78,17 @@ struct SampledDictionary {
 const TimeSeriesDictionaryRuntimeType *dictionary_runtime_type(ResolvedTimeSeries time_series) noexcept {
     return time_series.runtime_type == nullptr
                ? nullptr
-               : dynamic_cast<const TimeSeriesDictionaryRuntimeType *>(time_series.runtime_type);
+               : &static_cast<const TimeSeriesDictionaryRuntimeType &>(*time_series.runtime_type);
+}
+
+bool is_dictionary(const TimeSeriesRuntimeType &runtime_type) {
+    auto result = false;
+    runtime_type.type().visit([&](const TimeSeriesDictionaryType *) { result = true; }, ddv::noop);
+    return result;
 }
 
 bool same_item(const TimeSeriesRuntimeType::ConstItem &left, const TimeSeriesRuntimeType::ConstItem &right) noexcept {
-    if (dynamic_cast<const TimeSeriesReferenceType *>(&left.runtime_type.type()) != nullptr &&
-        dynamic_cast<const TimeSeriesReferenceType *>(&right.runtime_type.type()) != nullptr && left.value != nullptr &&
+    if (left.runtime_type.is_reference() && right.runtime_type.is_reference() && left.value != nullptr &&
         right.value != nullptr) {
         return left.runtime_type.reference(left.value) == right.runtime_type.reference(right.value);
     }
@@ -112,19 +116,12 @@ const SampledDictionaryRuntimeType &sampled_runtime_type(const TimeSeriesDiction
     return result;
 }
 
-SampledDictionary *make_dictionary_sample(ResolvedTimeSeries previous, ResolvedTimeSeries current,
-                                          EvaluationTime evaluation_time, allocator &memory) {
+SampledDictionary *make_dictionary_sample_impl(ResolvedTimeSeries previous, ResolvedTimeSeries current,
+                                               EvaluationTime evaluation_time, allocator &memory) {
     const auto *previous_type = dictionary_runtime_type(previous);
     const auto *current_type = dictionary_runtime_type(current);
-    if (previous_type == nullptr && current_type == nullptr) {
-        return nullptr;
-    }
-    if ((previous.runtime_type != nullptr && previous_type == nullptr) ||
-        (current.runtime_type != nullptr && current_type == nullptr)) {
-        return nullptr;
-    }
-
     const auto &shape = current_type != nullptr ? *current_type : *previous_type;
+    const auto nested_dictionaries = is_dictionary(shape.item_runtime_type());
     auto *sample = memory.new_object<SampledDictionary>(shape, previous, current, evaluation_time, memory);
     auto destroy = util::scope_exit{[&]() noexcept { destroy_dictionary_sample(sample); }};
 
@@ -133,7 +130,8 @@ SampledDictionary *make_dictionary_sample(ResolvedTimeSeries previous, ResolvedT
             SampledDictionary *sample;
             const TimeSeriesDictionaryRuntimeType *current_type;
             const TimeSeriesDictionaryRuntimeType *previous_type;
-        } callback{sample, current_type, previous_type};
+            bool nested_dictionaries;
+        } callback{sample, current_type, previous_type, nested_dictionaries};
         current_type->for_each_item_id(current.storage, &callback, [](void *value, item_id_t id) {
             auto &callback = *static_cast<CurrentCallback *>(value);
             auto &sample = *callback.sample;
@@ -161,8 +159,9 @@ SampledDictionary *make_dictionary_sample(ResolvedTimeSeries previous, ResolvedT
                 ResolvedTimeSeries{&previous_item.last_updated, previous_item.value, &previous_item.runtime_type};
             const auto current_time_series =
                 ResolvedTimeSeries{&current_item.last_updated, current_item.value, &current_item.runtime_type};
-            if (auto *child = make_dictionary_sample(previous_time_series, current_time_series, sample.evaluation_time,
-                                                     *sample.memory)) {
+            if (callback.nested_dictionaries) {
+                auto *child = make_dictionary_sample_impl(previous_time_series, current_time_series,
+                                                          sample.evaluation_time, *sample.memory);
                 sample.children.push_back({id, child});
             }
         });
@@ -189,6 +188,16 @@ SampledDictionary *make_dictionary_sample(ResolvedTimeSeries previous, ResolvedT
 
     destroy.release();
     return sample;
+}
+
+SampledDictionary *make_dictionary_sample(ResolvedTimeSeries previous, ResolvedTimeSeries current,
+                                          EvaluationTime evaluation_time, allocator &memory) {
+    const auto *runtime_type = current.runtime_type != nullptr ? current.runtime_type : previous.runtime_type;
+    if (runtime_type == nullptr || !is_dictionary(*runtime_type)) {
+        return nullptr;
+    }
+
+    return make_dictionary_sample_impl(previous, current, evaluation_time, memory);
 }
 
 void destroy_dictionary_sample(SampledDictionary *sample) noexcept {

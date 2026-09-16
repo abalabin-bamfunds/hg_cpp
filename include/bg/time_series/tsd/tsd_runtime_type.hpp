@@ -114,7 +114,7 @@ class TimeSeriesDictionaryRuntimeType : public TimeSeriesRuntimeType {
     }
 
     virtual bool item_modified(const EvaluationTime &last_updated, const void *value,
-                                             item_id_t id) const noexcept {
+                               item_id_t id) const noexcept {
         const auto &storage = *static_cast<const time_series_dict_storage *>(value);
         return last_updated > MIN_DT && storage.change_time() == last_updated && storage.modified().contains(id) &&
                !storage.key_storage().value.added().contains(id);
@@ -158,7 +158,7 @@ class TimeSeriesDictionaryRuntimeType : public TimeSeriesRuntimeType {
     }
 
     bool item_updated(const EvaluationTime &last_updated, const void *value,
-                                    item_id_t id) const noexcept override {
+                      item_id_t id) const noexcept override {
         const auto &storage = *static_cast<const time_series_dict_storage *>(value);
         if (last_updated <= MIN_DT || storage.change_time() != last_updated) {
             return false;
@@ -245,14 +245,6 @@ class TimeSeriesDictionaryRuntimeType : public TimeSeriesRuntimeType {
         }
     }
 
-    bool satisfies_reference_request(const TimeSeriesType &requested_type) const noexcept override {
-        const auto *requested = dynamic_cast<const TimeSeriesDictionaryType *>(&requested_type);
-        const auto &provided = static_cast<const TimeSeriesDictionaryType &>(type());
-        return requested != nullptr && &requested->key_type() == &provided.key_type() &&
-               satisfies(*provided.guarantee().value(), *requested->guarantee().value()) &&
-               item_runtime_type().satisfies_reference_request(requested->value_type());
-    }
-
     void construct_initial_value(void *destination) const noexcept override {
         std::construct_at(static_cast<time_series_dict_storage *>(destination));
     }
@@ -263,10 +255,7 @@ class TimeSeriesDictionaryRuntimeType : public TimeSeriesRuntimeType {
         std::destroy_at(storage);
     }
 
-    [[nodiscard]] ReferenceRepresentation *
-    create_reference_representation(ReferenceProvider &provider, Reference input,
-                                    const TimeSeriesType &requested_type,
-                                    allocator &memory) const override;
+    const ReferenceRepresentationFactory *reference_representation_factory() const noexcept override;
 
   private:
     const ScalarRuntimeType *key_;
@@ -277,9 +266,9 @@ class TimeSeriesDictionaryRuntimeType : public TimeSeriesRuntimeType {
     std::size_t item_value_offset_;
 };
 
-const TimeSeriesRuntimeType &
-time_series_dictionary_runtime_type(const TimeSeriesDictionaryType &type, const ScalarRuntimeType &key,
-                                    const TimeSeriesRuntimeType &item);
+const TimeSeriesRuntimeType &time_series_dictionary_runtime_type(const TimeSeriesDictionaryType &type,
+                                                                 const ScalarRuntimeType &key,
+                                                                 const TimeSeriesRuntimeType &item);
 
 template <typename K, typename Item, auto... Properties> struct CppTimeSeriesRuntimeType<TSD<K, Item, Properties...>> {
     static const TimeSeriesRuntimeType &get(const TimeSeriesType &type) {

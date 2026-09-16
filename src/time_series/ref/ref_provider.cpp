@@ -14,6 +14,7 @@
 #include <limits>
 #include <memory>
 #include <ranges>
+#include <stdexcept>
 
 namespace bg::details {
 
@@ -289,13 +290,14 @@ void ReferenceProvider::add_component(ReferenceProviderComponent &component) noe
     components_ = &component;
 }
 
-Reference ReferenceProvider::representation(Reference base_reference, const TimeSeriesType &requested_type) {
+Reference ReferenceProvider::representation(Reference base_reference,
+                                            const TimeSeriesRuntimeType &requested_runtime_type) {
     const auto base_time_series = resolve_reference(base_reference);
-    if (base_time_series.runtime_type->satisfies_reference_request(requested_type)) {
+    if (&base_time_series.runtime_type->type() == &requested_runtime_type.type()) {
         return base_reference;
     }
     const auto root_time_series = resolve_reference(Reference{root_});
-    if (root_time_series.runtime_type->satisfies_reference_request(requested_type)) {
+    if (&root_time_series.runtime_type->type() == &requested_runtime_type.type()) {
         return Reference{root_};
     }
 
@@ -304,13 +306,17 @@ Reference ReferenceProvider::representation(Reference base_reference, const Time
             continue;
         }
         if (representation->base_reference() == base_reference &&
-            representation->resolve().runtime_type->satisfies_reference_request(requested_type)) {
+            &representation->resolve().runtime_type->type() == &requested_runtime_type.type()) {
             return representation->reference();
         }
     }
 
+    const auto *factory = base_time_series.runtime_type->reference_representation_factory();
+    if (factory == nullptr) {
+        throw std::invalid_argument{"the requested time series representation is not implemented"};
+    }
     auto *result =
-        base_time_series.runtime_type->create_reference_representation(*this, base_reference, requested_type, memory_);
+        factory->create(*this, base_reference, *base_time_series.runtime_type, requested_runtime_type, memory_);
     auto release = util::scope_exit{[&]() noexcept { result->destroy(memory_); }};
     result->bind(static_cast<std::uint32_t>(representations_.size()));
     representations_.push_back(result);
@@ -366,12 +372,32 @@ ResolvedTimeSeries resolve_reference(Reference reference) {
     return {&item.last_updated, item.value, &item.runtime_type};
 }
 
-Reference reference_representation(Reference reference, const TimeSeriesType &requested_type) {
+Reference reference_representation(Reference reference, const TimeSeriesRuntimeType &requested_runtime_type) {
     const auto resolved = resolve_reference(reference);
-    if (&resolved.runtime_type->type() == &requested_type) {
+    if (!reference_representation_required(*resolved.runtime_type, requested_runtime_type)) {
         return reference;
     }
-    return require_reference_provider(reference).representation(reference, requested_type);
+    const auto &representation_runtime_type =
+        reference_representation_runtime_type(*resolved.runtime_type, requested_runtime_type);
+    return require_reference_provider(reference).representation(reference, representation_runtime_type);
+}
+
+bool reference_representation_required(const TimeSeriesRuntimeType &provided,
+                                       const TimeSeriesRuntimeType &requested) noexcept {
+    if (&provided.type() == &requested.type()) {
+        return false;
+    }
+    const auto *factory = requested.reference_representation_factory();
+    return factory != nullptr && factory->is_required(provided, requested);
+}
+
+const TimeSeriesRuntimeType &reference_representation_runtime_type(const TimeSeriesRuntimeType &provided,
+                                                                   const TimeSeriesRuntimeType &requested) {
+    const auto *factory = requested.reference_representation_factory();
+    if (factory == nullptr) {
+        throw std::invalid_argument{"the requested time series representation is not implemented"};
+    }
+    return factory->representation_runtime_type(provided, requested);
 }
 
 ReferenceProvider &require_reference_provider(Reference reference) {

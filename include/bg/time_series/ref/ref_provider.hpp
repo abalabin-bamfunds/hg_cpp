@@ -7,16 +7,18 @@
 
 #include <cstdint>
 #include <type_traits>
+#include <typeinfo>
 #include <vector>
 
 namespace bg {
 
 class RuntimeGraph;
-class TimeSeriesType;
+class TimeSeriesRuntimeType;
 
 namespace details {
 
 class ItemNotifications;
+class ReferenceProvider;
 
 using ItemChangeNotificationFunction = void (*)(OutputChangeContext &, void *, item_id_t, OutputChange);
 using ItemChangePublicationFunction = void (*)(OutputChangeContext &, void *);
@@ -62,6 +64,40 @@ class ReferenceRepresentation {
     RepresentationReference reference_;
 };
 
+class ReferenceRepresentationFactory {
+  public:
+    using IsRequiredFunction = bool (*)(const TimeSeriesRuntimeType &, const TimeSeriesRuntimeType &) noexcept;
+    using RepresentationRuntimeTypeFunction = const TimeSeriesRuntimeType &(*)(const TimeSeriesRuntimeType &,
+                                                                                const TimeSeriesRuntimeType &);
+    using CreateFunction = ReferenceRepresentation *(*)(ReferenceProvider &, Reference, const TimeSeriesRuntimeType &,
+                                                        const TimeSeriesRuntimeType &, allocator &);
+
+    explicit constexpr ReferenceRepresentationFactory(IsRequiredFunction is_required,
+                                                      RepresentationRuntimeTypeFunction representation_runtime_type,
+                                                      CreateFunction create) noexcept
+        : is_required_{is_required}, representation_runtime_type_{representation_runtime_type}, create_{create} {}
+
+    bool is_required(const TimeSeriesRuntimeType &provided, const TimeSeriesRuntimeType &requested) const noexcept {
+        return is_required_(provided, requested);
+    }
+
+    const TimeSeriesRuntimeType &representation_runtime_type(const TimeSeriesRuntimeType &provided,
+                                                             const TimeSeriesRuntimeType &requested) const {
+        return representation_runtime_type_(provided, requested);
+    }
+
+    [[nodiscard]] ReferenceRepresentation *create(ReferenceProvider &provider, Reference reference,
+                                                  const TimeSeriesRuntimeType &provided,
+                                                  const TimeSeriesRuntimeType &requested, allocator &memory) const {
+        return create_(provider, reference, provided, requested, memory);
+    }
+
+  private:
+    IsRequiredFunction is_required_;
+    RepresentationRuntimeTypeFunction representation_runtime_type_;
+    CreateFunction create_;
+};
+
 class ReferenceProvider {
   public:
     ReferenceProvider(allocator memory, RootReference &root, DynamicSubscribers *root_subscribers);
@@ -105,14 +141,16 @@ class ReferenceProvider {
     void remove_cycle_callback(const void *receiver) noexcept;
     bool item_reference_has_subscribers(const ItemReference &reference) const noexcept;
     bool release_item_reference(ItemReference &reference) noexcept;
-    [[nodiscard]] Reference representation(Reference base_reference, const TimeSeriesType &requested_type);
+    [[nodiscard]] Reference representation(Reference base_reference,
+                                           const TimeSeriesRuntimeType &requested_runtime_type);
     void add_component(ReferenceProviderComponent &component) noexcept;
 
     template <typename Component> Component *component() noexcept {
         static_assert(std::is_base_of_v<ReferenceProviderComponent, Component>);
+        static_assert(std::is_final_v<Component>);
         for (auto *candidate = components_; candidate != nullptr; candidate = candidate->next_) {
-            if (auto *result = dynamic_cast<Component *>(candidate)) {
-                return result;
+            if (typeid(*candidate) == typeid(Component)) {
+                return static_cast<Component *>(candidate);
             }
         }
         return nullptr;
@@ -127,7 +165,12 @@ class ReferenceProvider {
     ItemNotifications *item_notifications_{};
 };
 
-[[nodiscard]] Reference reference_representation(Reference reference, const TimeSeriesType &requested_type);
+[[nodiscard]] Reference reference_representation(Reference reference,
+                                                 const TimeSeriesRuntimeType &requested_runtime_type);
+bool reference_representation_required(const TimeSeriesRuntimeType &provided,
+                                       const TimeSeriesRuntimeType &requested) noexcept;
+const TimeSeriesRuntimeType &reference_representation_runtime_type(const TimeSeriesRuntimeType &provided,
+                                                                   const TimeSeriesRuntimeType &requested);
 ReferenceProvider &require_reference_provider(Reference reference);
 void add_reference_subscriber(Reference reference, RuntimeGraph &graph, std::uint32_t input_offset,
                               std::size_t notification_data, std::uint32_t node_index, bool active, bool required,

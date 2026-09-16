@@ -214,9 +214,9 @@ class DereferencedTimeSeriesDictionaryRepresentation final : public ReferenceRep
         const auto previous = previous_reference ? resolve_reference(previous_reference) : ResolvedTimeSeries{};
 
         auto new_reference = base_item.last_updated > MIN_DT ? base_item.runtime_type.reference(base_item.value)
-                                                           : Reference{};
+                                                             : Reference{};
         if (new_reference) {
-            new_reference = reference_representation(new_reference, runtime_type_.item_runtime_type().type());
+            new_reference = reference_representation(new_reference, runtime_type_.item_runtime_type());
         }
         if (new_reference == previous_reference) {
             return;
@@ -290,7 +290,7 @@ class DereferencedTimeSeriesDictionaryRepresentation final : public ReferenceRep
 
     static void notify_item_change_callback(OutputChangeContext &context, void *destination_representation,
                                              item_id_t id,
-                                            OutputChange change) {
+                                             OutputChange change) {
         static_cast<DereferencedTimeSeriesDictionaryRepresentation *>(destination_representation)
             ->notify_item_change(context, id, change);
     }

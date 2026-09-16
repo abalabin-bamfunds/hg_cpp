@@ -8,18 +8,18 @@
 
 namespace bg {
 
-class TimeSeriesType;
+class TimeSeriesRuntimeType;
 
 namespace details {
 
 class ReferenceInputSubscriber {
   public:
     ReferenceInputSubscriber(std::uint32_t input_offset, std::uint32_t node_index, bool active, bool required,
-                             const TimeSeriesType &requested_type) noexcept
-        : requested_type_{&requested_type}, input_offset_{input_offset},
+                             const TimeSeriesRuntimeType &requested_runtime_type) noexcept
+        : requested_runtime_type_{&requested_runtime_type}, input_offset_{input_offset},
           node_index_and_flags_{node_index | (active ? active_flag : 0) | (required ? required_flag : 0)} {}
 
-    const TimeSeriesType &requested_type() const noexcept { return *requested_type_; }
+    const TimeSeriesRuntimeType &requested_runtime_type() const noexcept { return *requested_runtime_type_; }
     std::size_t input_offset() const noexcept { return input_offset_; }
     std::size_t node_index() const noexcept { return node_index_and_flags_ & node_index_mask; }
     bool active() const noexcept { return (node_index_and_flags_ & active_flag) != 0; }
@@ -30,7 +30,7 @@ class ReferenceInputSubscriber {
     static constexpr std::uint32_t required_flag = std::uint32_t{1} << 30;
     static constexpr std::uint32_t node_index_mask = required_flag - 1;
 
-    const TimeSeriesType *requested_type_;
+    const TimeSeriesRuntimeType *requested_runtime_type_;
     std::uint32_t input_offset_;
     std::uint32_t node_index_and_flags_;
 };
@@ -39,9 +39,9 @@ class ReferenceInputNotificationSubscriber {
   public:
     ReferenceInputNotificationSubscriber(std::uint32_t input_offset, std::size_t notification_data,
                                          std::uint32_t node_index, bool active, bool required,
-                                         const TimeSeriesType &requested_type,
+                                         const TimeSeriesRuntimeType &requested_runtime_type,
                                          InputNotificationFunction notification) noexcept
-        : subscription_{input_offset, node_index, active, required, requested_type},
+        : subscription_{input_offset, node_index, active, required, requested_runtime_type},
           notification_data_{notification_data}, notification_{notification} {}
 
     const ReferenceInputSubscriber &subscription() const noexcept { return subscription_; }
@@ -57,8 +57,8 @@ class ReferenceInputNotificationSubscriber {
 void notify_reference_inputs(OutputChangeContext &context, const TimeSeriesRuntimeType *runtime_type, const void *value,
                              OutputChange change, std::span<const std::byte> records);
 void notify_reference_inputs_with_notifications(OutputChangeContext &context,
-                                                const TimeSeriesRuntimeType *runtime_type, const void *value,
-                                                OutputChange change, std::span<const std::byte> records);
+                                                 const TimeSeriesRuntimeType *runtime_type, const void *value,
+                                                 OutputChange change, std::span<const std::byte> records);
 
 static_assert(sizeof(ReferenceInputSubscriber) == 2 * sizeof(void *));
 static_assert(sizeof(ReferenceInputNotificationSubscriber) == 4 * sizeof(void *));

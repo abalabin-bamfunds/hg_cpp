@@ -69,7 +69,7 @@ struct SubscribedTsd {
     bool observing_reference{};
 
     bool stores_references() const noexcept {
-        return dynamic_cast<const TimeSeriesReferenceRuntimeType *>(&runtime_type->item_runtime_type()) != nullptr;
+        return runtime_type->item_runtime_type().is_reference();
     }
 };
 
@@ -77,8 +77,8 @@ namespace {
 
 const TimeSeriesReferenceType &resolved_tsd_item_reference_type(const TimeSeriesDictionaryRuntimeType &tsd) {
     const auto &dictionary_type = static_cast<const TimeSeriesDictionaryType &>(tsd.type());
-    if (const auto *reference = dynamic_cast<const TimeSeriesReferenceType *>(&dictionary_type.value_type())) {
-        return *reference;
+    if (tsd.item_runtime_type().is_reference()) {
+        return static_cast<const TimeSeriesReferenceType &>(dictionary_type.value_type());
     }
 
     return time_series_reference_type(dictionary_type.value_type(), *dictionary_type.guarantee().value());
@@ -179,12 +179,12 @@ class TsdKeySubscriptions final : public ReferenceProviderComponent {
 
     RetainedDictionaryKey retain_key(Reference reference, Scalar<> key) {
         const auto resolved = resolve_reference(reference);
-        const auto *runtime_type = dynamic_cast<const TimeSeriesDictionaryRuntimeType *>(resolved.runtime_type);
-        if (runtime_type == nullptr || resolved.storage == nullptr) {
+        if (resolved.storage == nullptr) {
             return {};
         }
 
-        return runtime_type->retain_key(const_cast<void *>(resolved.storage), scalar_data(key), memory_);
+        const auto &runtime_type = static_cast<const TimeSeriesDictionaryRuntimeType &>(*resolved.runtime_type);
+        return runtime_type.retain_key(const_cast<void *>(resolved.storage), scalar_data(key), memory_);
     }
 
     TsdKeySelection &require_entry(SubscribedTsd &tsd, item_id_t id) {
@@ -233,7 +233,7 @@ class TsdKeySubscriptions final : public ReferenceProviderComponent {
         auto value = Reference{};
         if (item.last_updated > MIN_DT) {
             value = tsd.stores_references() ? *static_cast<const Reference *>(item.value)
-                                             : Reference{entry.selection.value_item_reference};
+                                            : Reference{entry.selection.value_item_reference};
         }
         if (value == entry.selected_reference) {
             return false;
@@ -353,22 +353,25 @@ class TsdKeySubscriptions final : public ReferenceProviderComponent {
         }
 
         const auto resolved = resolve_reference(tsd.reference);
-        const auto *runtime_type = dynamic_cast<const TimeSeriesDictionaryRuntimeType *>(resolved.runtime_type);
-        if (runtime_type == nullptr || resolved.storage == nullptr || runtime_type != tsd.runtime_type ||
-            resolved.storage != tsd.storage) {
+        if (resolved.storage == nullptr) {
+            invalidate_all(context, tsd);
+            return;
+        }
+        const auto &runtime_type = static_cast<const TimeSeriesDictionaryRuntimeType &>(*resolved.runtime_type);
+        if (&runtime_type != tsd.runtime_type || resolved.storage != tsd.storage) {
             invalidate_all(context, tsd);
             return;
         }
         if (change != OutputChange::update) {
-            notify_present(context, tsd, resolved, *runtime_type, change);
+            notify_present(context, tsd, resolved, runtime_type, change);
             return;
         }
 
-        notify_changes(context, tsd, resolved, *runtime_type, &TimeSeriesDictionaryRuntimeType::for_each_added,
+        notify_changes(context, tsd, resolved, runtime_type, &TimeSeriesDictionaryRuntimeType::for_each_added,
                        OutputChange::revalidation);
-        notify_changes(context, tsd, resolved, *runtime_type, &TimeSeriesDictionaryRuntimeType::for_each_removed,
+        notify_changes(context, tsd, resolved, runtime_type, &TimeSeriesDictionaryRuntimeType::for_each_removed,
                        OutputChange::invalidation);
-        notify_changes(context, tsd, resolved, *runtime_type, &TimeSeriesDictionaryRuntimeType::for_each_modified,
+        notify_changes(context, tsd, resolved, runtime_type, &TimeSeriesDictionaryRuntimeType::for_each_modified,
                        OutputChange::update);
     }
 

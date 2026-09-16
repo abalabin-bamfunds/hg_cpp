@@ -121,12 +121,6 @@ Reference TimeSeriesRuntimeType::reference(const void *) const {
     throw std::logic_error{"time series does not contain a reference address"};
 }
 
-details::ReferenceRepresentation *
-TimeSeriesRuntimeType::create_reference_representation(details::ReferenceProvider &, Reference,
-                                                       const TimeSeriesType &, allocator &) const {
-    throw std::invalid_argument{"the requested time series representation is not implemented"};
-}
-
 const TimeSeriesRuntimeType &time_series_value_runtime_type(const TimeSeriesType &type,
                                                             const ScalarRuntimeType &scalar_runtime_type) {
     auto value_type = false;

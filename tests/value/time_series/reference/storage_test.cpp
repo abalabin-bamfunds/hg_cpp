@@ -23,6 +23,12 @@ TEST_CASE("a time series reference value is one pointer",
     CHECK(runtime_type.value_alignment() == alignof(bg::Reference));
 }
 
+TEST_CASE("runtime types identify reference storage without a runtime downcast",
+          "[value][time-series][reference][feature:time-series-storage]") {
+    CHECK(bg::cpp_time_series_runtime_type<bg::REF<bg::TS<int>>>().is_reference());
+    CHECK_FALSE(bg::cpp_time_series_runtime_type<bg::TS<int>>().is_reference());
+}
+
 TEST_CASE("a time series reference propagates its value",
           "[value][time-series][reference][feature:time-series-storage]") {
     auto root = bg::details::RootReference{};

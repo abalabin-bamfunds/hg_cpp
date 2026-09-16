@@ -89,13 +89,19 @@ graphs with the same wiring.
 
 A `REF<TS_T>` to `TS_T` binding creates two subscriptions. The node
 subscription applies the input's activity. An output-notification record stores
-the receiving node, resolved input-slot offset, activity, and validity policy.
+the receiving node, resolved input-slot offset, activity, validity policy, and
+requested target runtime type.
 
 The compiled output metadata associates these records with the REF notification
 handler. After the output changes, the runtime invokes the handler once for the
 complete record span. The handler updates target pointers and dynamic
 subscriptions, then requests required-input validity checks. The runtime does
 not interpret REF storage.
+
+The reference subsystem compares the resolved target runtime type with the
+requested runtime type. A type-specific representation factory checks contained
+runtime types when required. Runtime reference handling does not run semantic
+type matching or construct a type map.
 
 The reference-making node receives input changes through a compiled input
 notification and notifies its root reference. Each representation observes its

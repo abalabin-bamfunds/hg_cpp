@@ -17,6 +17,7 @@ namespace details {
 class OutputState;
 class ReferenceProvider;
 class ReferenceRepresentation;
+class ReferenceRepresentationFactory;
 struct ItemReference;
 } // namespace details
 
@@ -72,6 +73,7 @@ class TimeSeriesRuntimeType : public RuntimeType {
     bool supports_byte_copy_initialization() const noexcept {
         return storage_supports_byte_copy_initialization();
     }
+    bool is_reference() const noexcept { return has_runtime_type_flag(reference_flag); }
     virtual ItemLayout item_layout(item_id_t) const;
     virtual std::size_t item_count(const void *) const;
     virtual ConstItem item(const void *, item_id_t) const;
@@ -86,13 +88,10 @@ class TimeSeriesRuntimeType : public RuntimeType {
     virtual bool collection_valid(const void *) const noexcept { return false; }
     virtual void for_each_modified_item(const EvaluationTime &, const void *, EvaluationTime, void *,
                                         ModifiedItemFunction) const {}
-    virtual bool satisfies_reference_request(const TimeSeriesType &requested_type) const noexcept {
-        return &type() == &requested_type;
-    }
     virtual Reference reference(const void *) const;
-    [[nodiscard]] virtual details::ReferenceRepresentation *
-    create_reference_representation(details::ReferenceProvider &, Reference, const TimeSeriesType &,
-                                    allocator &) const;
+    virtual const details::ReferenceRepresentationFactory *reference_representation_factory() const noexcept {
+        return nullptr;
+    }
     virtual void construct_initial_value(void *destination) const noexcept = 0;
     virtual void construct_runtime_value(void *destination, allocator &) const {
         construct_initial_value(destination);
@@ -102,21 +101,27 @@ class TimeSeriesRuntimeType : public RuntimeType {
 
   protected:
     TimeSeriesRuntimeType(const TimeSeriesType &type, std::size_t value_size, std::size_t value_alignment,
-                          bool uses_variable_memory, bool requires_finalization,
-                          bool supports_byte_copy_initialization) noexcept
+                          bool uses_variable_memory, bool requires_finalization, bool supports_byte_copy_initialization,
+                          bool is_reference = false) noexcept
         : RuntimeType{type,
                       value_size,
                       value_alignment,
                       uses_variable_memory,
                       requires_finalization,
-                      supports_byte_copy_initialization} {}
+                      supports_byte_copy_initialization,
+                      is_reference ? reference_flag : std::uint8_t{}} {}
 
     explicit TimeSeriesRuntimeType(const TimeSeriesType &type) noexcept
         : TimeSeriesRuntimeType{type, 0, 1, false, false, false} {}
 
     static void invalidate_output_value(const details::OutputState &output) noexcept;
     static void invalidate_output_items(const details::OutputState &output);
+
+  private:
+    static constexpr auto reference_flag = first_additional_flag;
 };
+
+static_assert(sizeof(TimeSeriesRuntimeType) == sizeof(RuntimeType));
 
 class TimeSeriesValueRuntimeType : public TimeSeriesRuntimeType {
   public:
@@ -139,7 +144,7 @@ class TimeSeriesValueRuntimeType : public TimeSeriesRuntimeType {
 };
 
 const TimeSeriesRuntimeType &time_series_value_runtime_type(const TimeSeriesType &type,
-                                                                          const ScalarRuntimeType &scalar_runtime_type);
+                                                            const ScalarRuntimeType &scalar_runtime_type);
 
 [[nodiscard]] const TimeSeriesRuntimeType &
 resolve_time_series_runtime_type(const TimeSeriesType &type,

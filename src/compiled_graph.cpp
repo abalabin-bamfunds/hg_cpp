@@ -5,9 +5,10 @@
 #include <bg/node/node_template.hpp>
 #include <bg/scalar/runtime_type.hpp>
 #include <bg/scalar/scalar.hpp>
-#include <bg/time_series/ref/ref_input_storage.hpp>
 #include <bg/time_series/ref/dynamic_reference_input.hpp>
+#include <bg/time_series/ref/ref_input_storage.hpp>
 #include <bg/time_series/ref/ref_notification.hpp>
+#include <bg/time_series/ref/ref_provider.hpp>
 #include <bg/time_series/ref/ref_runtime_type.hpp>
 #include <bg/time_series/ref/ref_storage.hpp>
 #include <bg/time_series/time_series_runtime_type.hpp>
@@ -1244,6 +1245,14 @@ class CompiledGraphBuilder {
         }
     }
 
+    static const TimeSeriesRuntimeType &
+    requested_reference_runtime_type(const CompilationPlan &plan, const ReferenceInputSubscriberPlan &subscriber) {
+        const auto &input = plan.node_plans[subscriber.node_index].time_series_inputs[subscriber.input_index];
+        const auto &parameter = *plan.nodes[subscriber.node_index].signature().parameters[input.parameter].type;
+        const auto &requested_type = reference_input_target_type(parameter);
+        return resolve_time_series_runtime_type(requested_type);
+    }
+
     static std::byte *construct_output_notifications(const CompilationPlan &plan, const SubscriptionPlan &subscribers,
                                                      std::byte *destination) {
         destination = reinterpret_cast<std::byte *>(
@@ -1282,9 +1291,7 @@ class CompiledGraphBuilder {
 
                 const auto &input = plan.node_plans[subscriber.node_index].time_series_inputs[subscriber.input_index];
                 std::construct_at(records++, input.offset, subscriber.node_index, subscriber.active,
-                                  subscriber.required,
-                                  reference_input_target_type(
-                                      *plan.nodes[subscriber.node_index].signature().parameters[input.parameter].type));
+                                  subscriber.required, requested_reference_runtime_type(plan, subscriber));
             }
             block += reference_block;
         }
@@ -1304,9 +1311,7 @@ class CompiledGraphBuilder {
                 const auto &input = plan.node_plans[subscriber.node_index].time_series_inputs[subscriber.input_index];
                 std::construct_at(records++, input.offset, subscriber.notification.data, subscriber.node_index,
                                   subscriber.active, subscriber.required,
-                                  reference_input_target_type(
-                                      *plan.nodes[subscriber.node_index].signature().parameters[input.parameter].type),
-                                  subscriber.notification.function);
+                                  requested_reference_runtime_type(plan, subscriber), subscriber.notification.function);
             }
             block += notifying_reference_block;
         }

@@ -13,17 +13,6 @@ void TimeSeriesReferenceRuntimeType::invalidate_output(const details::OutputStat
     output.invalidate_value();
 }
 
-bool TimeSeriesReferenceRuntimeType::satisfies_reference_request(const TimeSeriesType &requested_type) const noexcept {
-    const auto *requested = dynamic_cast<const TimeSeriesReferenceType *>(&requested_type);
-    if (requested == nullptr) {
-        return false;
-    }
-
-    const auto &provided = static_cast<const TimeSeriesReferenceType &>(type());
-    return satisfies(*provided.guarantee().value(), *requested->guarantee().value()) &&
-           requested->target_type().accepts(provided.target_type());
-}
-
 const TimeSeriesRuntimeType &time_series_reference_runtime_type(const TimeSeriesReferenceType &type) {
     static auto mutex = std::mutex{};
     static auto runtime_types =

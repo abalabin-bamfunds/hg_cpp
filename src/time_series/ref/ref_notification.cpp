@@ -14,7 +14,7 @@ void update_reference_input(OutputChangeContext &context, Reference new_referenc
                             const ReferenceInputSubscriber &subscriber, std::size_t notification_data,
                             InputNotificationFunction notification, OutputChange change) {
     if (new_reference) {
-        new_reference = reference_representation(new_reference, subscriber.requested_type());
+        new_reference = reference_representation(new_reference, subscriber.requested_runtime_type());
     }
 
     auto &input = *static_cast<ReferenceInputStorage *>(context.runtime_graph().storage_at(subscriber.input_offset()));
@@ -58,8 +58,8 @@ void notify_reference_inputs(OutputChangeContext &context, const TimeSeriesRunti
 }
 
 void notify_reference_inputs_with_notifications(OutputChangeContext &context,
-                                                const TimeSeriesRuntimeType *runtime_type, const void *value,
-                                                OutputChange change, std::span<const std::byte> record_bytes) {
+                                                 const TimeSeriesRuntimeType *runtime_type, const void *value,
+                                                 OutputChange change, std::span<const std::byte> record_bytes) {
     const auto records = std::span{
         reinterpret_cast<const ReferenceInputNotificationSubscriber *>(record_bytes.data()),
         record_bytes.size() / sizeof(ReferenceInputNotificationSubscriber),

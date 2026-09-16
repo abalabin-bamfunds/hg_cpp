@@ -19,17 +19,14 @@ class TimeSeriesReferenceRuntimeType : public TimeSeriesRuntimeType {
 
     void invalidate_output(const details::OutputState &output) const override;
 
-    bool satisfies_reference_request(const TimeSeriesType &requested_type) const noexcept override;
-    Reference reference(const void *value) const override {
-        return *static_cast<const Reference *>(value);
-    }
+    Reference reference(const void *value) const override { return *static_cast<const Reference *>(value); }
 
     void destroy_value(void *, allocator &) const noexcept override {}
 
   protected:
     TimeSeriesReferenceRuntimeType(const TimeSeriesReferenceType &type, std::size_t size,
                                    std::size_t alignment) noexcept
-        : TimeSeriesRuntimeType{type, size, alignment, false, false, true} {}
+        : TimeSeriesRuntimeType{type, size, alignment, false, false, true, true} {}
 };
 
 const TimeSeriesRuntimeType &time_series_reference_runtime_type(const TimeSeriesReferenceType &type);
