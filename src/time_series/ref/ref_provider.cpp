@@ -217,6 +217,16 @@ void ReferenceProvider::remove_cycle_callback(const void *receiver) noexcept {
     owner().remove_cycle_callback(receiver);
 }
 
+bool ReferenceProvider::item_reference_has_subscribers(const ItemReference &reference) const noexcept {
+    const auto &subscriptions = reference.subscriptions();
+    if (!subscriptions.has_subscriber_group()) {
+        return false;
+    }
+
+    const auto *subscribers = subscriber_groups_[subscriptions.subscriber_group_index()];
+    return subscribers != nullptr && !subscribers->empty();
+}
+
 bool ReferenceProvider::release_item_reference(ItemReference &reference) noexcept {
     const auto release_subscribers = [&](ReferenceSubscriptionDetail &subscriptions) {
         if (!subscriptions.has_subscriber_group()) {

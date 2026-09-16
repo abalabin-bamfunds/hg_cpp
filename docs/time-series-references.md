@@ -205,11 +205,19 @@ reference. Selection retains the key's sparse item ID and creates a non-live key
 when the key is absent. The key set reclaims an unretained non-live ID after the
 outer cycle in which it was released.
 
-Selecting an item returns an addressable reference input. Dynamic input binding
-subscribes to that address. A value item resolves to its item reference. A
-reference item resolves to its stored reference. Replacement or removal of the
+Selecting an item returns an `In<REF<V>>` that uses the canonical `REF<V>`
+runtime type. The input carries a separate `ReferenceBinding`; runtime types do
+not own selection state or subscriptions. A dynamic input uses the binding to
+subscribe to selection changes.
+
+A value item resolves to its item reference. A reference item resolves to its
+stored reference without creating `REF<REF<V>>`. Replacement or removal of the
 selected item schedules the selecting node. Updates from a stored reference's
 target bypass that node.
+
+The selection owns the selected reference. An unused selection remains alive
+until the next outer-cycle callback. This preserves temporary selections for
+their evaluation and lets removal reclaim only entries that remain unused.
 
 The shared set and its representations handle key removal:
 
@@ -218,8 +226,8 @@ The shared set and its representations handle key removal:
    received its reference.
 3. The set and representations keep the key and item storage valid until the
    outer cycle ends.
-4. A later collection mutation removes dependent representations and reclaims
-   the item reference after its subscriber group is empty.
+4. The release callback removes dependent representations and reclaims the
+   item reference after its subscriber group is empty.
 
 Removal notification applies to dynamic time series and the outputs of removable
 inner runtime graphs.

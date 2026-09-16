@@ -103,6 +103,7 @@ class ReferenceProvider {
                                   ItemChangeNotificationFunction notify_item_change) noexcept;
     void add_cycle_callback(void *receiver, void (*function)(void *) noexcept);
     void remove_cycle_callback(const void *receiver) noexcept;
+    bool item_reference_has_subscribers(const ItemReference &reference) const noexcept;
     bool release_item_reference(ItemReference &reference) noexcept;
     [[nodiscard]] Reference representation(Reference base_reference, const TimeSeriesType &requested_type);
     void add_component(ReferenceProviderComponent &component) noexcept;

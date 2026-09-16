@@ -54,6 +54,10 @@ class In<REF<Target, TimeSeriesProperties...>, Properties...> {
        bool modified = false) noexcept
         : data_{runtime_type, last_updated, value, modified} {}
 
+    In(const EvaluationTime &last_updated, details::ReferenceBinding binding,
+       const TimeSeriesRuntimeType &runtime_type, bool modified = false) noexcept
+        : data_{runtime_type, last_updated, &binding.value(), modified}, binding_{binding} {}
+
     In(details::DynamicReferenceInputStorage &storage, const TimeSeriesRuntimeType &runtime_type,
        EvaluationContext &context, std::size_t storage_offset) noexcept
         requires ParsedProperties::dynamic_binding
@@ -79,7 +83,10 @@ class In<REF<Target, TimeSeriesProperties...>, Properties...> {
         }
 
         const auto input = details::tsd_item_reference_input(value(), Scalar<>::from(key));
-        return In<Result>{*input.last_updated, input.value, *input.runtime_type, input.modified};
+        if (!input.binding) {
+            return In<Result>{*input.last_updated, nullptr, *input.runtime_type, input.modified};
+        }
+        return In<Result>{*input.last_updated, input.binding, *input.runtime_type, input.modified};
     }
 
     template <typename Source, typename T = Target>
@@ -97,11 +104,9 @@ class In<REF<Target, TimeSeriesProperties...>, Properties...> {
         requires ParsedProperties::dynamic_binding
     {
         const auto *declared_runtime_type = &data_.runtime_type();
-        const auto &runtime_type = static_cast<const TimeSeriesReferenceRuntimeType &>(input.runtime_type());
-        auto *address = runtime_type.binding_address(input.data());
-        if (address == nullptr) {
+        if (!input.binding_) {
             if (!input.valid()) {
-                dynamic_.storage->bind(nullptr, runtime_type, *dynamic_.context, dynamic_.storage_offset);
+                dynamic_.storage->unbind(dynamic_.context->runtime_graph(), dynamic_.storage_offset);
                 data_ = details::TimeSeriesInputData{*declared_runtime_type, dynamic_.storage->last_updated(),
                                                      &dynamic_.storage->value(),
                                                      dynamic_.storage->modified(
@@ -111,7 +116,7 @@ class In<REF<Target, TimeSeriesProperties...>, Properties...> {
             throw std::invalid_argument{"a dynamic reference input requires an addressable input"};
         }
 
-        dynamic_.storage->bind(address, runtime_type, *dynamic_.context, dynamic_.storage_offset);
+        dynamic_.storage->bind(input.binding_, *dynamic_.context, dynamic_.storage_offset);
         data_ = details::TimeSeriesInputData{*declared_runtime_type, dynamic_.storage->last_updated(),
                                              &dynamic_.storage->value(),
                                              dynamic_.storage->modified(dynamic_.context->evaluation_time())};
@@ -140,6 +145,8 @@ class In<REF<Target, TimeSeriesProperties...>, Properties...> {
     static constexpr bool dynamic_binding = ParsedProperties::dynamic_binding;
 
   private:
+    template <typename, auto...> friend class In;
+
     struct EmptyDynamicBinding {};
 
     struct DynamicBindingData {
@@ -149,6 +156,7 @@ class In<REF<Target, TimeSeriesProperties...>, Properties...> {
     };
 
     mutable details::TimeSeriesInputData data_;
+    details::ReferenceBinding binding_{};
     [[no_unique_address]] std::conditional_t<ParsedProperties::dynamic_binding, DynamicBindingData,
                                              EmptyDynamicBinding>
         dynamic_;

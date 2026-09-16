@@ -4,9 +4,9 @@
 #include <bg/graph/dynamic_subscribers.hpp>
 #include <bg/graph/runtime_graph.hpp>
 #include <bg/time_series/ref/ref_runtime_type.hpp>
+#include <bg/time_series/tsd/tsd_runtime_type.hpp>
 #include <bg/type/time_series_dict_type.hpp>
 #include <bg/type/time_series_reference_type.hpp>
-#include <bg/time_series/tsd/tsd_runtime_type.hpp>
 #include <bg/util/hash_dictionary.hpp>
 #include <bg/util/scope_exit.hpp>
 
@@ -19,33 +19,43 @@
 namespace bg::details {
 
 class TsdKeySubscriptions;
+struct SubscribedTsd;
 
-namespace {
-
-struct TsdKeyEntry {
-    bool pending_release() const noexcept { return retired_entry_ != 0; }
-
-    std::uint32_t retired_entry_index() const noexcept {
-        assert(pending_release());
-        return retired_entry_ - 1;
+struct TsdKeySelection {
+  public:
+    bool queued_for_release() const noexcept { return (state_ & release_queue_index_mask) != 0; }
+    std::uint32_t release_queue_index() const noexcept {
+        assert(queued_for_release());
+        return (state_ & release_queue_index_mask) - 1;
+    }
+    void set_release_queue_index(std::uint32_t index) noexcept {
+        assert(index < release_queue_index_mask);
+        state_ = (state_ & retained_flag) | (index + 1);
+    }
+    void clear_release_queue_index() noexcept { state_ &= retained_flag; }
+    bool retained() const noexcept { return (state_ & retained_flag) != 0; }
+    void set_retained(bool value) noexcept {
+        state_ = (state_ & release_queue_index_mask) | (value ? retained_flag : 0);
     }
 
-    void set_retired_entry_index(std::uint32_t index) noexcept { retired_entry_ = index + 1; }
+    SubscribedTsd *tsd{};
+    union SelectionStorage {
+        ItemReference *value_item_reference;
+        DynamicSubscribers *reference_item_subscribers;
 
-    union {
-        ItemReference *item_reference{};
-        const Reference *stored_reference;
-    };
-    DynamicSubscribers *selection_subscribers{};
-    EvaluationTime reference_last_updated{MIN_DT};
-    bool item_valid{};
-    bool retained{};
+        SelectionStorage() : value_item_reference{} {}
+    } selection;
+    Reference selected_reference{};
+    EvaluationTime selection_time{MIN_DT};
+    item_id_t id{};
 
   private:
-    std::uint32_t retired_entry_{};
+    static constexpr auto retained_flag = std::uint32_t{1} << 31;
+    static constexpr auto release_queue_index_mask = ~retained_flag;
+    std::uint32_t state_{};
 };
 
-using TsdKeyEntryMap = util::hash_dictionary<item_id_t, TsdKeyEntry>;
+using TsdKeySelectionMap = util::hash_dictionary<item_id_t, TsdKeySelection>;
 
 struct SubscribedTsd {
     SubscribedTsd(TsdKeySubscriptions &owner, Reference reference, RetainedDictionaryKey retained) noexcept
@@ -55,7 +65,7 @@ struct SubscribedTsd {
     Reference reference;
     const TimeSeriesDictionaryRuntimeType *runtime_type;
     void *storage;
-    TsdKeyEntryMap keys;
+    TsdKeySelectionMap keys;
     bool observing_reference{};
 
     bool stores_references() const noexcept {
@@ -63,31 +73,7 @@ struct SubscribedTsd {
     }
 };
 
-} // namespace
-
 namespace {
-
-class TsdKeyReferenceRuntimeType final : public TimeSeriesReferenceRuntimeType {
-  public:
-    TsdKeyReferenceRuntimeType(const TimeSeriesReferenceType &type, TsdKeySubscriptions &owner,
-                               bool stored_reference) noexcept
-        : TimeSeriesReferenceRuntimeType{type, sizeof(TsdKeyEntry), alignof(TsdKeyEntry)}, owner_{&owner},
-          stored_reference_{stored_reference} {}
-
-    bool reads_stored_reference() const noexcept { return stored_reference_; }
-    Reference reference(const void *value) const noexcept override;
-    void *binding_address(const void *value) const noexcept override { return const_cast<void *>(value); }
-    Reference resolve_binding(const void *address) const noexcept override { return reference(address); }
-    void add_binding_subscriber(void *address, RuntimeGraph &graph, std::uint32_t input_offset,
-                                std::size_t notification_data, std::uint32_t node_index,
-                                InputNotificationFunction function) const override;
-    void remove_binding_subscriber(void *address, RuntimeGraph &graph,
-                                   std::size_t input_offset) const noexcept override;
-
-  private:
-    TsdKeySubscriptions *owner_;
-    bool stored_reference_;
-};
 
 const TimeSeriesReferenceType &resolved_tsd_item_reference_type(const TimeSeriesDictionaryRuntimeType &tsd) {
     const auto &dictionary_type = static_cast<const TimeSeriesDictionaryType &>(tsd.type());
@@ -98,19 +84,26 @@ const TimeSeriesReferenceType &resolved_tsd_item_reference_type(const TimeSeries
     return time_series_reference_type(dictionary_type.value_type(), *dictionary_type.guarantee().value());
 }
 
+const Reference &selected_tsd_key_reference(const void *value) noexcept;
+void subscribe_tsd_key_selection(void *value, RuntimeGraph &graph, std::uint32_t input_offset,
+                                 std::size_t notification_data, std::uint32_t node_index,
+                                 InputNotificationFunction notification);
+void unsubscribe_tsd_key_selection(void *value, RuntimeGraph &graph, std::size_t input_offset) noexcept;
+
+const ReferenceBindingOperations tsd_key_selection_operations{
+    &selected_tsd_key_reference,
+    &subscribe_tsd_key_selection,
+    &unsubscribe_tsd_key_selection,
+};
+
 } // namespace
 
 class TsdKeySubscriptions final : public ReferenceProviderComponent {
-    struct RetiredKey {
-        SubscribedTsd *tsd;
-        item_id_t id;
-        EvaluationTime time;
-    };
-
   public:
     TsdKeySubscriptions(ReferenceProvider &provider, allocator memory)
-        : provider_{&provider}, subscribed_tsds_{&memory.memory_resource()},
-          retired_keys_{&memory.memory_resource()}, binding_runtime_types_{&memory.memory_resource()},
+        : provider_{&provider},
+          subscribed_tsds_{&memory.memory_resource()},
+          release_queue_{&memory.memory_resource()},
           memory_{memory} {}
 
     ~TsdKeySubscriptions() override {
@@ -118,12 +111,10 @@ class TsdKeySubscriptions final : public ReferenceProviderComponent {
         for (auto *tsd : subscribed_tsds_) {
             release_tsd(*tsd);
         }
-        for (auto *runtime_type : binding_runtime_types_) {
-            memory_.delete_object(runtime_type);
-        }
     }
 
     void detach() noexcept override {
+        provider_->remove_cycle_callback(this);
         for (auto *tsd : subscribed_tsds_) {
             if (tsd->observing_reference) {
                 remove_reference_observer(tsd->reference, provider_->owner(), tsd);
@@ -135,41 +126,50 @@ class TsdKeySubscriptions final : public ReferenceProviderComponent {
     void destroy(allocator &memory) noexcept override { memory.delete_object(this); }
 
     [[nodiscard]] TsdItemReferenceInput input(Reference reference, Scalar<> key) {
-        release_retired(provider_->owner().evaluation_time());
-
         const auto retained = retain_key(reference, key);
         if (retained.runtime_type == nullptr) {
-            return {&MIN_DT, nullptr, nullptr, false};
+            return {&MIN_DT, nullptr, {}, false};
         }
         auto release_retention = util::scope_exit{
             [&]() noexcept { retained.runtime_type->release_key(retained.value, retained.id, memory_); }};
 
         auto &tsd = require_tsd(reference, retained);
         auto &entry = require_entry(tsd, retained.id);
-        if (!entry.retained) {
-            entry.retained = true;
+        if (!entry.retained()) {
+            entry.set_retained(true);
             release_retention.release();
         }
 
         refresh_reference_value(tsd, retained.id, entry, provider_->owner().evaluation_time());
-        retire_if_unused(tsd, retained.id, provider_->owner().evaluation_time());
+        queue_release(entry);
 
-        const auto &runtime_type = binding_runtime_type(tsd);
-        return {&entry.reference_last_updated, &runtime_type, &entry,
-                entry.reference_last_updated == provider_->owner().evaluation_time()};
+        const auto &runtime_type =
+            time_series_reference_runtime_type(resolved_tsd_item_reference_type(*tsd.runtime_type));
+        return {&entry.selection_time, &runtime_type, ReferenceBinding{&entry, tsd_key_selection_operations},
+                entry.selection_time == provider_->owner().evaluation_time()};
     }
 
-    void add_binding_subscriber(TsdKeyEntry &entry, RuntimeGraph &graph, std::uint32_t input_offset,
+    void add_binding_subscriber(TsdKeySelection &entry, RuntimeGraph &graph, std::uint32_t input_offset,
                                 std::size_t notification_data, std::uint32_t node_index,
-                                InputNotificationFunction function) {
-        auto &subscribers = DynamicSubscribers::ensure(entry.selection_subscribers, memory_);
-        subscribers.add(graph, input_offset, notification_data, node_index, false, false, function);
+                                InputNotificationFunction notification) {
+        remove_from_release_queue(entry);
+        if (entry.tsd->stores_references()) {
+            auto &subscribers = DynamicSubscribers::ensure(entry.selection.reference_item_subscribers, memory_);
+            subscribers.add(graph, input_offset, notification_data, node_index, false, false, notification);
+        } else {
+            add_reference_subscriber(Reference{entry.selection.value_item_reference}, graph, input_offset,
+                                     notification_data, node_index, false, false, notification);
+        }
     }
 
-    static void remove_binding_subscriber(TsdKeyEntry &entry, RuntimeGraph &graph,
-                                          std::size_t input_offset) noexcept {
-        if (entry.selection_subscribers != nullptr) {
-            entry.selection_subscribers->remove(graph, input_offset);
+    void remove_binding_subscriber(TsdKeySelection &entry, RuntimeGraph &graph, std::size_t input_offset) noexcept {
+        if (entry.tsd->stores_references()) {
+            entry.selection.reference_item_subscribers->remove(graph, input_offset);
+        } else {
+            remove_reference_subscriber(Reference{entry.selection.value_item_reference}, graph, input_offset);
+        }
+        if (!has_active_subscribers(entry)) {
+            queue_release(entry);
         }
     }
 
@@ -187,61 +187,61 @@ class TsdKeySubscriptions final : public ReferenceProviderComponent {
         return runtime_type->retain_key(const_cast<void *>(resolved.storage), scalar_data(key), memory_);
     }
 
-    TsdKeyEntry &require_entry(SubscribedTsd &tsd, item_id_t id) {
+    TsdKeySelection &require_entry(SubscribedTsd &tsd, item_id_t id) {
         if (auto *entry = tsd.keys.find(id)) {
             return *entry;
         }
-        if (retired_keys_.capacity() <= entry_count_) {
-            retired_keys_.reserve(std::max<std::size_t>(retired_keys_.capacity() * 2, 8));
+
+        if (release_queue_.capacity() <= entry_count_) {
+            release_queue_.reserve(std::max<std::size_t>(release_queue_.capacity() * 2, 8));
         }
 
-        auto *item_reference = tsd.stores_references() ? nullptr : memory_.new_object<ItemReference>(tsd.reference, id);
-        auto release_item_reference = util::scope_exit{[&]() noexcept { memory_.delete_object(item_reference); }};
+        auto *value_item_reference =
+            tsd.stores_references() ? nullptr : memory_.new_object<ItemReference>(tsd.reference, id);
+        auto release_slot_reference = util::scope_exit{[&]() noexcept {
+            if (value_item_reference != nullptr) {
+                memory_.delete_object(value_item_reference);
+            }
+        }};
         auto [entry, inserted] = tsd.keys.try_emplace(id, memory_);
         assert(inserted);
 
-        if (tsd.stores_references()) {
-            entry->stored_reference = static_cast<const Reference *>(tsd.runtime_type->item(tsd.storage, id).value);
-        } else {
-            entry->item_reference = item_reference;
-            release_item_reference.release();
+        entry->tsd = &tsd;
+        entry->selection.value_item_reference = value_item_reference;
+        entry->id = id;
+        if (value_item_reference != nullptr) {
+            release_slot_reference.release();
         }
         ++entry_count_;
         return *entry;
     }
 
-    const TsdKeyReferenceRuntimeType &binding_runtime_type(SubscribedTsd &tsd) {
-        const auto &type = resolved_tsd_item_reference_type(*tsd.runtime_type);
-        const auto stored_reference = tsd.stores_references();
-        const auto existing = std::ranges::find_if(binding_runtime_types_, [&](const auto *candidate) {
-            return &candidate->type() == &type && candidate->reads_stored_reference() == stored_reference;
-        });
-        if (existing != binding_runtime_types_.end()) {
-            return **existing;
-        }
-
-        auto *result = memory_.new_object<TsdKeyReferenceRuntimeType>(type, *this, stored_reference);
-        auto release = util::scope_exit{[&]() noexcept { memory_.delete_object(result); }};
-        binding_runtime_types_.push_back(result);
-        release.release();
-        return *result;
-    }
-
-    static void refresh_reference_value(SubscribedTsd &tsd, item_id_t id, TsdKeyEntry &entry,
+    static bool refresh_reference_value(SubscribedTsd &tsd, item_id_t id, TsdKeySelection &entry,
                                         EvaluationTime evaluation_time) {
-        const auto was_valid = entry.reference_last_updated > MIN_DT;
         const auto key_is_live = tsd.runtime_type->key_live(tsd.storage, id);
-        const auto item = tsd.runtime_type->item(tsd.storage, id);
-        const auto item_is_reference =
-            dynamic_cast<const TimeSeriesReferenceRuntimeType *>(&item.runtime_type) != nullptr;
-        const auto is_valid = key_is_live && (!item_is_reference || item.last_updated > MIN_DT);
-        entry.item_valid = key_is_live && item.last_updated > MIN_DT;
-
-        if (!is_valid) {
-            entry.reference_last_updated = MIN_DT;
-        } else if (!was_valid) {
-            entry.reference_last_updated = evaluation_time;
+        if (!key_is_live) {
+            if (!entry.selected_reference) {
+                return false;
+            }
+            entry.selected_reference = {};
+            entry.selection_time = MIN_DT;
+            return true;
         }
+
+        const auto item = tsd.runtime_type->item(tsd.storage, id);
+
+        auto value = Reference{};
+        if (item.last_updated > MIN_DT) {
+            value = tsd.stores_references() ? *static_cast<const Reference *>(item.value)
+                                             : Reference{entry.selection.value_item_reference};
+        }
+        if (value == entry.selected_reference) {
+            return false;
+        }
+
+        entry.selected_reference = value;
+        entry.selection_time = value ? evaluation_time : MIN_DT;
+        return true;
     }
 
     SubscribedTsd *find_tsd(Reference reference, RetainedDictionaryKey retained) const noexcept {
@@ -269,29 +269,48 @@ class TsdKeySubscriptions final : public ReferenceProviderComponent {
         return *result;
     }
 
-    void retire_if_unused(SubscribedTsd &tsd, item_id_t id, EvaluationTime evaluation_time) noexcept {
-        auto *entry = tsd.keys.find(id);
-        assert(entry != nullptr);
-        if (!entry->pending_release()) {
-            retired_keys_.push_back({&tsd, id, evaluation_time});
-            entry->set_retired_entry_index(static_cast<std::uint32_t>(retired_keys_.size() - 1));
-        } else {
-            retired_keys_[entry->retired_entry_index()].time = evaluation_time;
+    void queue_release(TsdKeySelection &entry) noexcept {
+        if (has_active_subscribers(entry) || entry.queued_for_release()) {
+            return;
+        }
+        release_queue_.push_back(&entry);
+        entry.set_release_queue_index(static_cast<std::uint32_t>(release_queue_.size() - 1));
+        if (!cycle_callback_registered_) {
+            provider_->add_cycle_callback(this, &release_queued_entries);
+            cycle_callback_registered_ = true;
         }
     }
 
-    void erase_key(SubscribedTsd &tsd, item_id_t id) noexcept {
-        auto *entry = tsd.keys.find(id);
-        if (entry->retained) {
+    void remove_from_release_queue(TsdKeySelection &entry) noexcept {
+        if (!entry.queued_for_release()) {
+            return;
+        }
+        const auto index = entry.release_queue_index();
+        auto replacement = release_queue_.back();
+        release_queue_[index] = replacement;
+        replacement->set_release_queue_index(index);
+        release_queue_.pop_back();
+        entry.clear_release_queue_index();
+    }
+
+    void erase_key(TsdKeySelection &entry, item_id_t id) noexcept {
+        auto &tsd = *entry.tsd;
+        assert(!has_active_subscribers(entry));
+        if (entry.retained()) {
             tsd.runtime_type->release_key(tsd.storage, id, memory_);
+            entry.set_retained(false);
         }
-        DynamicSubscribers::release(entry->selection_subscribers);
         if (!tsd.stores_references()) {
-            memory_.delete_object(entry->item_reference);
+            if (!provider_->release_item_reference(*entry.selection.value_item_reference)) {
+                queue_release(entry);
+                return;
+            }
+            memory_.delete_object(entry.selection.value_item_reference);
+        } else {
+            DynamicSubscribers::release(entry.selection.reference_item_subscribers);
         }
-        tsd.keys.erase_with(
-            id, memory_, [](item_id_t *) noexcept {},
-            [](TsdKeyEntry *value) noexcept { std::destroy_at(value); });
+        tsd.keys.erase_with(id, memory_, [](item_id_t *) noexcept {},
+                            [](TsdKeySelection *value) noexcept { std::destroy_at(value); });
         --entry_count_;
     }
 
@@ -307,17 +326,17 @@ class TsdKeySubscriptions final : public ReferenceProviderComponent {
             remove_reference_observer(tsd.reference, provider_->owner(), &tsd);
         }
         for (const auto entry : tsd.keys) {
-            if (entry.value.retained) {
+            if (entry.value.retained()) {
                 tsd.runtime_type->release_key(tsd.storage, entry.key, memory_);
             }
-            DynamicSubscribers::release(entry.value.selection_subscribers);
             if (!tsd.stores_references()) {
-                memory_.delete_object(entry.value.item_reference);
+                memory_.delete_object(entry.value.selection.value_item_reference);
+            } else {
+                DynamicSubscribers::release(entry.value.selection.reference_item_subscribers);
             }
         }
-        tsd.keys.release_with(
-            memory_, [](item_id_t *) noexcept {},
-            [](TsdKeyEntry *entry) noexcept { std::destroy_at(entry); });
+        tsd.keys.release_with(memory_, [](item_id_t *) noexcept {},
+                              [](TsdKeySelection *entry) noexcept { std::destroy_at(entry); });
         memory_.delete_object(&tsd);
     }
 
@@ -335,15 +354,11 @@ class TsdKeySubscriptions final : public ReferenceProviderComponent {
 
         const auto resolved = resolve_reference(tsd.reference);
         const auto *runtime_type = dynamic_cast<const TimeSeriesDictionaryRuntimeType *>(resolved.runtime_type);
-        if (runtime_type == nullptr || resolved.storage == nullptr) {
+        if (runtime_type == nullptr || resolved.storage == nullptr || runtime_type != tsd.runtime_type ||
+            resolved.storage != tsd.storage) {
             invalidate_all(context, tsd);
             return;
         }
-        if (runtime_type != tsd.runtime_type || resolved.storage != tsd.storage) {
-            invalidate_all(context, tsd);
-            return;
-        }
-
         if (change != OutputChange::update) {
             notify_present(context, tsd, resolved, *runtime_type, change);
             return;
@@ -357,49 +372,41 @@ class TsdKeySubscriptions final : public ReferenceProviderComponent {
                        OutputChange::update);
     }
 
-    static void notify_selection(OutputChangeContext &context, TsdKeyEntry &entry, OutputChange change) {
-        context.notify_subscribers(entry.selection_subscribers, change);
-    }
-
-    static void notify_item_reference(OutputChangeContext &context, TsdKeyEntry &entry, OutputChange change) {
-        notify_reference(Reference{entry.item_reference}, context, change);
+    static void notify_selection(OutputChangeContext &context, TsdKeySelection &entry, OutputChange change) {
+        if (!entry.tsd->stores_references()) {
+            notify_reference(Reference{entry.selection.value_item_reference}, context, change);
+        } else {
+            context.notify_subscribers(entry.selection.reference_item_subscribers, change);
+        }
     }
 
     static void invalidate_all(OutputChangeContext &context, SubscribedTsd &tsd) {
         for (const auto entry : tsd.keys) {
-            const auto reference_was_valid = entry.value.reference_last_updated > MIN_DT;
-            const auto item_was_valid = entry.value.item_valid;
-            entry.value.reference_last_updated = MIN_DT;
-            entry.value.item_valid = false;
-
-            if (reference_was_valid) {
+            const auto was_valid = static_cast<bool>(entry.value.selected_reference);
+            entry.value.selected_reference = {};
+            entry.value.selection_time = MIN_DT;
+            if (was_valid) {
                 notify_selection(context, entry.value, OutputChange::invalidation);
-            }
-            if (!tsd.stores_references() && item_was_valid) {
-                notify_item_reference(context, entry.value, OutputChange::invalidation);
             }
         }
     }
 
     void release_retained_keys(SubscribedTsd &tsd) noexcept {
         for (const auto entry : tsd.keys) {
-            if (!entry.value.retained) {
+            if (!entry.value.retained()) {
                 continue;
             }
-
             tsd.runtime_type->release_key(tsd.storage, entry.key, memory_);
-            entry.value.retained = false;
+            entry.value.set_retained(false);
         }
     }
 
     static void notify_present(OutputChangeContext &context, SubscribedTsd &tsd, ResolvedTimeSeries resolved,
                                const TimeSeriesDictionaryRuntimeType &runtime_type, OutputChange change) {
         for (const auto entry : tsd.keys) {
-            if (!runtime_type.key_live(resolved.storage, entry.key)) {
-                continue;
+            if (runtime_type.key_live(resolved.storage, entry.key)) {
+                notify_item(context, tsd, entry.key, change);
             }
-
-            notify_item(context, tsd, entry.key, change);
         }
     }
 
@@ -425,101 +432,85 @@ class TsdKeySubscriptions final : public ReferenceProviderComponent {
             return;
         }
 
-        const auto reference_was_valid = entry->reference_last_updated > MIN_DT;
-        const auto item_was_valid = entry->item_valid;
-        refresh_reference_value(tsd, id, *entry, context.evaluation_time());
-        const auto reference_is_valid = entry->reference_last_updated > MIN_DT;
-
+        const auto value_changed = refresh_reference_value(tsd, id, *entry, context.evaluation_time());
         if (tsd.stores_references()) {
-            if (reference_was_valid != reference_is_valid) {
+            if (value_changed) {
                 notify_selection(context, *entry,
-                                 reference_is_valid ? OutputChange::revalidation : OutputChange::invalidation);
-            } else if (reference_is_valid && change == OutputChange::update) {
-                entry->reference_last_updated = context.evaluation_time();
-                notify_selection(context, *entry, OutputChange::update);
+                                 entry->selected_reference ? OutputChange::update : OutputChange::invalidation);
             }
             return;
         }
 
-        if (reference_was_valid != reference_is_valid) {
-            notify_selection(context, *entry,
-                             reference_is_valid ? OutputChange::revalidation : OutputChange::invalidation);
-        }
-        if (item_was_valid != entry->item_valid) {
-            notify_item_reference(context, *entry,
-                                  entry->item_valid ? OutputChange::revalidation : OutputChange::invalidation);
-        } else if (entry->item_valid && change == OutputChange::update) {
-            notify_item_reference(context, *entry, OutputChange::update);
+        if (entry->selected_reference) {
+            notify_selection(context, *entry, change);
+        } else if (value_changed) {
+            notify_selection(context, *entry, OutputChange::invalidation);
         }
     }
 
-    void release_retired(EvaluationTime evaluation_time) noexcept {
-        auto retained = retired_keys_.begin();
-        for (const auto retired : retired_keys_) {
-            auto *entry = retired.tsd->keys.find(retired.id);
-            if (entry == nullptr) {
-                continue;
-            }
-            if (retired.time >= evaluation_time) {
-                *retained++ = retired;
-                entry->set_retired_entry_index(static_cast<std::uint32_t>(retained - retired_keys_.begin() - 1));
-                continue;
-            }
+    static void release_queued_entries(void *value) noexcept {
+        static_cast<TsdKeySubscriptions *>(value)->release_queued_entries();
+    }
 
-            const auto has_selection_subscribers =
-                entry->selection_subscribers != nullptr && !entry->selection_subscribers->empty();
-            if (has_selection_subscribers ||
-                (!retired.tsd->stores_references() && !provider_->release_item_reference(*entry->item_reference))) {
-                *retained++ = retired;
-                entry->set_retired_entry_index(static_cast<std::uint32_t>(retained - retired_keys_.begin() - 1));
-                continue;
+    void release_queued_entries() noexcept {
+        cycle_callback_registered_ = false;
+        const auto release_count = release_queue_.size();
+        for (auto index = std::size_t{}; index < release_count; ++index) {
+            auto *entry = release_queue_.back();
+            release_queue_.pop_back();
+            entry->clear_release_queue_index();
+            if (!has_active_subscribers(*entry)) {
+                erase_key(*entry, entry->id);
             }
-            erase_key(*retired.tsd, retired.id);
         }
-        retired_keys_.erase(retained, retired_keys_.end());
 
-        auto tsd = std::size_t{};
-        while (tsd < subscribed_tsds_.size()) {
-            if (subscribed_tsds_[tsd]->keys.empty()) {
-                erase_tsd(*subscribed_tsds_[tsd]);
+        auto index = std::size_t{};
+        while (index < subscribed_tsds_.size()) {
+            if (subscribed_tsds_[index]->keys.empty()) {
+                erase_tsd(*subscribed_tsds_[index]);
             } else {
-                ++tsd;
+                ++index;
             }
         }
     }
 
     ReferenceProvider *provider_;
     std::pmr::vector<SubscribedTsd *> subscribed_tsds_;
-    std::pmr::vector<RetiredKey> retired_keys_;
-    std::pmr::vector<TsdKeyReferenceRuntimeType *> binding_runtime_types_;
+    bool has_active_subscribers(const TsdKeySelection &entry) const noexcept {
+        if (entry.tsd->stores_references()) {
+            return entry.selection.reference_item_subscribers != nullptr &&
+                   !entry.selection.reference_item_subscribers->empty();
+        }
+        return provider_->item_reference_has_subscribers(*entry.selection.value_item_reference);
+    }
+
+    std::pmr::vector<TsdKeySelection *> release_queue_;
     std::size_t entry_count_{};
     allocator memory_;
+    bool cycle_callback_registered_{};
 };
 
 namespace {
 
-Reference TsdKeyReferenceRuntimeType::reference(const void *value) const noexcept {
-    const auto &entry = *static_cast<const TsdKeyEntry *>(value);
-    if (entry.reference_last_updated <= MIN_DT) {
-        return {};
-    }
-
-    return stored_reference_ ? *entry.stored_reference : Reference{entry.item_reference};
+const Reference &selected_tsd_key_reference(const void *value) noexcept {
+    return static_cast<const TsdKeySelection *>(value)->selected_reference;
 }
 
-void TsdKeyReferenceRuntimeType::add_binding_subscriber(void *address, RuntimeGraph &graph,
-                                                        std::uint32_t input_offset,
-                                                        std::size_t notification_data,
-                                                        std::uint32_t node_index,
-                                                        InputNotificationFunction function) const {
-    owner_->add_binding_subscriber(*static_cast<TsdKeyEntry *>(address), graph, input_offset, notification_data,
-                                   node_index, function);
+void subscribe_tsd_key_selection(void *value, RuntimeGraph &graph, std::uint32_t input_offset,
+                                 std::size_t notification_data, std::uint32_t node_index,
+                                 InputNotificationFunction notification) {
+    auto &entry = *static_cast<TsdKeySelection *>(value);
+    entry.tsd->owner->add_binding_subscriber(entry, graph, input_offset, notification_data, node_index, notification);
 }
 
-void TsdKeyReferenceRuntimeType::remove_binding_subscriber(void *address, RuntimeGraph &graph,
-                                                           std::size_t input_offset) const noexcept {
-    owner_->remove_binding_subscriber(*static_cast<TsdKeyEntry *>(address), graph, input_offset);
+void unsubscribe_tsd_key_selection(void *value, RuntimeGraph &graph, std::size_t input_offset) noexcept {
+    auto &entry = *static_cast<TsdKeySelection *>(value);
+    entry.tsd->owner->remove_binding_subscriber(entry, graph, input_offset);
 }
+
+} // namespace
+
+namespace {
 
 TsdKeySubscriptions &require_tsd_key_subscriptions(Reference reference) {
     auto &provider = require_reference_provider(reference);
@@ -544,6 +535,6 @@ const TimeSeriesRuntimeType &tsd_item_reference_runtime_type(const TimeSeriesRun
         resolved_tsd_item_reference_type(static_cast<const TimeSeriesDictionaryRuntimeType &>(tsd)));
 }
 
-static_assert(sizeof(TsdKeyEntry) == 4 * sizeof(void *));
+static_assert(sizeof(TsdKeySelection) == 5 * sizeof(void *));
 
 } // namespace bg::details

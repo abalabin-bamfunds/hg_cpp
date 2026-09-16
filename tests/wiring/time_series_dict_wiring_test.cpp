@@ -4,12 +4,18 @@
 #include <bg/operators.hpp>
 #include <bg/testing/test_wiring.hpp>
 #include <bg/time_series/tsd/tsd_type.hpp>
+#include <bg/time_series/tss/tss_type.hpp>
 #include <bg/type/time_series_reference_type.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <cstdint>
 #include <type_traits>
+#include <utility>
+
+TEST_CASE("getitem leaves unsupported collection results generic", "[wiring][coverage-exempt]") {
+    STATIC_CHECK(std::same_as<decltype(std::declval<bg::wp<bg::TSS<int>>>()[std::int64_t{}]), bg::wp<>>);
+}
 
 TEST_CASE("getitem selects a dictionary item through a reference",
           "[wiring][series:tsd][feature:getitem][feature:operator][binding:value-to-reference]") {
@@ -20,7 +26,7 @@ TEST_CASE("getitem selects a dictionary item through a reference",
     const auto context = bg::WiringContext{wiring};
     const auto selected = source()[1];
 
-    STATIC_CHECK(std::same_as<decltype(selected), const bg::wp<>>);
+    STATIC_CHECK(std::same_as<decltype(selected), const bg::wp<bg::TS<float>>>);
     const auto &reference = dynamic_cast<const bg::TimeSeriesReferenceType &>(selected.type());
     CHECK(&reference.target_type() == &bg::TS<float>::type());
     CHECK(reference.guarantee().value() == bg::TimeSeriesGuarantee::ordinary);
@@ -62,6 +68,7 @@ TEST_CASE("getitem preserves a dictionary reference item's target type",
     const auto context = bg::WiringContext{wiring};
     const auto selected = source()[1];
 
+    STATIC_CHECK(std::same_as<decltype(selected), const bg::wp<bg::TS<float>>>);
     CHECK(&selected.type() ==
           &bg::time_series_reference_type(bg::TS<float>::type(), bg::TimeSeriesGuarantee::ordinary));
 }

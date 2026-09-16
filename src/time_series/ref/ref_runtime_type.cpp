@@ -4,17 +4,9 @@
 
 #include <memory>
 #include <mutex>
-#include <stdexcept>
 #include <unordered_map>
 
 namespace bg {
-
-void TimeSeriesReferenceRuntimeType::add_binding_subscriber(void *, RuntimeGraph &, std::uint32_t, std::size_t,
-                                                            std::uint32_t, InputNotificationFunction) const {
-    throw std::logic_error{"reference runtime type does not provide a binding address"};
-}
-
-void TimeSeriesReferenceRuntimeType::remove_binding_subscriber(void *, RuntimeGraph &, std::size_t) const noexcept {}
 
 void TimeSeriesReferenceRuntimeType::invalidate_output(const details::OutputState &output) const {
     *static_cast<Reference *>(output.mutable_data()) = nullptr;
