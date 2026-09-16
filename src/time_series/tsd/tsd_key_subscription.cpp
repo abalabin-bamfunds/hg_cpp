@@ -84,17 +84,7 @@ const TimeSeriesReferenceType &resolved_tsd_item_reference_type(const TimeSeries
     return time_series_reference_type(dictionary_type.value_type(), *dictionary_type.guarantee().value());
 }
 
-const Reference &selected_tsd_key_reference(const void *value) noexcept;
-void subscribe_tsd_key_selection(void *value, RuntimeGraph &graph, std::uint32_t input_offset,
-                                 std::size_t notification_data, std::uint32_t node_index,
-                                 InputNotificationFunction notification);
-void unsubscribe_tsd_key_selection(void *value, RuntimeGraph &graph, std::size_t input_offset) noexcept;
-
-const ReferenceBindingOperations tsd_key_selection_operations{
-    &selected_tsd_key_reference,
-    &subscribe_tsd_key_selection,
-    &unsubscribe_tsd_key_selection,
-};
+const ReferenceBindingType &tsd_key_reference_binding_type() noexcept;
 
 } // namespace
 
@@ -145,7 +135,7 @@ class TsdKeySubscriptions final : public ReferenceProviderComponent {
 
         const auto &runtime_type =
             time_series_reference_runtime_type(resolved_tsd_item_reference_type(*tsd.runtime_type));
-        return {&entry.selection_time, &runtime_type, ReferenceBinding{&entry, tsd_key_selection_operations},
+        return {&entry.selection_time, &runtime_type, ReferenceBinding{&entry, tsd_key_reference_binding_type()},
                 entry.selection_time == provider_->owner().evaluation_time()};
     }
 
@@ -496,20 +486,28 @@ class TsdKeySubscriptions final : public ReferenceProviderComponent {
 
 namespace {
 
-const Reference &selected_tsd_key_reference(const void *value) noexcept {
-    return static_cast<const TsdKeySelection *>(value)->selected_reference;
-}
+class TsdKeyReferenceBindingType final : public ReferenceBindingType {
+  public:
+    const Reference &value(const void *data) const noexcept override {
+        return static_cast<const TsdKeySelection *>(data)->selected_reference;
+    }
 
-void subscribe_tsd_key_selection(void *value, RuntimeGraph &graph, std::uint32_t input_offset,
-                                 std::size_t notification_data, std::uint32_t node_index,
-                                 InputNotificationFunction notification) {
-    auto &entry = *static_cast<TsdKeySelection *>(value);
-    entry.tsd->owner->add_binding_subscriber(entry, graph, input_offset, notification_data, node_index, notification);
-}
+    void subscribe(void *data, RuntimeGraph &graph, std::uint32_t input_offset, std::size_t notification_data,
+                   std::uint32_t node_index, InputNotificationFunction notification) const override {
+        auto &entry = *static_cast<TsdKeySelection *>(data);
+        entry.tsd->owner->add_binding_subscriber(entry, graph, input_offset, notification_data, node_index,
+                                                 notification);
+    }
 
-void unsubscribe_tsd_key_selection(void *value, RuntimeGraph &graph, std::size_t input_offset) noexcept {
-    auto &entry = *static_cast<TsdKeySelection *>(value);
-    entry.tsd->owner->remove_binding_subscriber(entry, graph, input_offset);
+    void unsubscribe(void *data, RuntimeGraph &graph, std::size_t input_offset) const noexcept override {
+        auto &entry = *static_cast<TsdKeySelection *>(data);
+        entry.tsd->owner->remove_binding_subscriber(entry, graph, input_offset);
+    }
+};
+
+const ReferenceBindingType &tsd_key_reference_binding_type() noexcept {
+    static const auto result = TsdKeyReferenceBindingType{};
+    return result;
 }
 
 } // namespace

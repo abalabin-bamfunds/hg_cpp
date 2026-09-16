@@ -15,37 +15,40 @@ class RuntimeGraph;
 
 namespace details {
 
-// A ReferenceBinding identifies selected-reference state and the operations
-// required to subscribe to its changes. Implementations share the operations,
-// so the handle itself is two words.
-struct ReferenceBindingOperations {
-    const Reference &(*value)(const void *) noexcept;
-    void (*subscribe)(void *, RuntimeGraph &, std::uint32_t input_offset, std::size_t notification_data,
-                      std::uint32_t node_index, InputNotificationFunction notification);
-    void (*unsubscribe)(void *, RuntimeGraph &, std::size_t input_offset) noexcept;
+class ReferenceBindingType {
+  public:
+    virtual const Reference &value(const void *data) const noexcept = 0;
+    virtual void subscribe(void *data, RuntimeGraph &graph, std::uint32_t input_offset,
+                           std::size_t notification_data, std::uint32_t node_index,
+                           InputNotificationFunction notification) const = 0;
+    virtual void unsubscribe(void *data, RuntimeGraph &graph, std::size_t input_offset) const noexcept = 0;
+
+  protected:
+    ReferenceBindingType() = default;
+    ~ReferenceBindingType() = default;
 };
 
+// Identifies selected-reference state and the type that interprets it.
 class ReferenceBinding {
   public:
     ReferenceBinding() = default;
-    ReferenceBinding(void *value, const ReferenceBindingOperations &operations) noexcept
-        : value_{value}, operations_{&operations} {}
+    ReferenceBinding(void *data, const ReferenceBindingType &type) noexcept : data_{data}, type_{&type} {}
 
-    explicit operator bool() const noexcept { return value_ != nullptr; }
-    const Reference &value() const noexcept { return operations_->value(value_); }
+    explicit operator bool() const noexcept { return data_ != nullptr; }
+    const Reference &value() const noexcept { return type_->value(data_); }
     void subscribe(RuntimeGraph &graph, std::uint32_t input_offset, std::size_t notification_data,
                    std::uint32_t node_index, InputNotificationFunction notification) const {
-        operations_->subscribe(value_, graph, input_offset, notification_data, node_index, notification);
+        type_->subscribe(data_, graph, input_offset, notification_data, node_index, notification);
     }
     void unsubscribe(RuntimeGraph &graph, std::size_t input_offset) const noexcept {
-        operations_->unsubscribe(value_, graph, input_offset);
+        type_->unsubscribe(data_, graph, input_offset);
     }
 
     friend bool operator==(ReferenceBinding, ReferenceBinding) = default;
 
   private:
-    void *value_{};
-    const ReferenceBindingOperations *operations_{};
+    void *data_{};
+    const ReferenceBindingType *type_{};
 };
 
 class DynamicReferenceInputStorage {
@@ -68,6 +71,7 @@ class DynamicReferenceInputStorage {
     EvaluationTime change_time_{MIN_DT};
 };
 
+static_assert(sizeof(ReferenceBindingType) == sizeof(void *));
 static_assert(sizeof(ReferenceBinding) == 2 * sizeof(void *));
 static_assert(sizeof(DynamicReferenceInputStorage) == 4 * sizeof(void *));
 static_assert(std::is_trivially_copyable_v<DynamicReferenceInputStorage>);
