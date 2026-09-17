@@ -167,6 +167,16 @@ class ReferenceProvider {
         return nullptr;
     }
 
+    template <typename Component> Component &require_component() {
+        if (auto *existing = component<Component>()) {
+            return *existing;
+        }
+
+        auto *result = memory_.new_object<Component>(*this, memory_);
+        add_component(*result);
+        return *result;
+    }
+
   private:
     static ReferenceSubscriptionDetail &subscriptions(Reference reference) noexcept;
     static Reference parent(Reference reference) noexcept;

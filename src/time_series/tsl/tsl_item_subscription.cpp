@@ -10,15 +10,6 @@ namespace bg::details {
 
 namespace {
 
-const TimeSeriesReferenceType &resolved_tsl_item_reference_type(const TimeSeriesRuntimeType &tsl) {
-    const auto &list_type = static_cast<const TimeSeriesListType &>(tsl.type());
-    if (const auto *reference = dynamic_cast<const TimeSeriesReferenceType *>(&list_type.item_type())) {
-        return *reference;
-    }
-
-    return time_series_reference_type(list_type.item_type(), *list_type.guarantee().value());
-}
-
 const TimeSeriesRuntimeType &item_reference_runtime_type(const TimeSeriesRuntimeType &tsl,
                                                          const TimeSeriesRuntimeType &item) {
     if (item.is_reference()) {
@@ -52,18 +43,6 @@ class TslItemSubscriptions final : public ItemSelectionSubscriptions<TslItemSubs
     static void release_item_retention(Collection &, Selection &) noexcept {}
 };
 
-TslItemSubscriptions &require_tsl_item_subscriptions(Reference reference) {
-    auto &provider = ReferenceProvider::require(reference);
-    if (auto *subscriptions = provider.component<TslItemSubscriptions>()) {
-        return *subscriptions;
-    }
-
-    auto &memory = provider.allocation();
-    auto *subscriptions = memory.new_object<TslItemSubscriptions>(provider, memory);
-    provider.add_component(*subscriptions);
-    return *subscriptions;
-}
-
 } // namespace
 
 TslItemReferenceInput tsl_item_reference_input(Reference tsl, std::size_t index) {
@@ -79,11 +58,14 @@ TslItemReferenceInput tsl_item_reference_input(Reference tsl, std::size_t index)
 
     const auto &item_runtime_type =
         resolved.runtime_type->item(resolved.storage, static_cast<item_id_t>(index)).runtime_type;
-    return require_tsl_item_subscriptions(tsl).input(tsl, static_cast<item_id_t>(index), resolved, item_runtime_type);
+    auto &subscriptions = ReferenceProvider::require(tsl).require_component<TslItemSubscriptions>();
+    return subscriptions.input(tsl, static_cast<item_id_t>(index), resolved, item_runtime_type);
 }
 
 const TimeSeriesRuntimeType &tsl_item_reference_runtime_type(const TimeSeriesRuntimeType &tsl) {
-    return time_series_reference_runtime_type(resolved_tsl_item_reference_type(tsl));
+    const auto &list_type = static_cast<const TimeSeriesListType &>(tsl.type());
+    const auto &item_runtime_type = resolve_time_series_runtime_type(list_type.item_type());
+    return item_reference_runtime_type(tsl, item_runtime_type);
 }
 
 using TslObservedItems = ObservedItemCollection<TslItemSubscriptions, TimeSeriesRuntimeType>;

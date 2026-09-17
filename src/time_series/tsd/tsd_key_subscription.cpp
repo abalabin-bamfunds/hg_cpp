@@ -77,22 +77,11 @@ class TsdKeySubscriptions final
     }
 };
 
-TsdKeySubscriptions &require_tsd_key_subscriptions(Reference reference) {
-    auto &provider = ReferenceProvider::require(reference);
-    if (auto *subscriptions = provider.component<TsdKeySubscriptions>()) {
-        return *subscriptions;
-    }
-
-    auto &memory = provider.allocation();
-    auto *subscriptions = memory.new_object<TsdKeySubscriptions>(provider, memory);
-    provider.add_component(*subscriptions);
-    return *subscriptions;
-}
-
 } // namespace
 
 TsdItemReferenceInput tsd_item_reference_input(Reference tsd, Scalar<> key) {
-    return require_tsd_key_subscriptions(tsd).input(tsd, key);
+    auto &subscriptions = ReferenceProvider::require(tsd).require_component<TsdKeySubscriptions>();
+    return subscriptions.input(tsd, key);
 }
 
 const TimeSeriesRuntimeType &tsd_item_reference_runtime_type(const TimeSeriesRuntimeType &tsd) {

@@ -111,6 +111,10 @@ Prefer the smallest clear implementation, the code should be elegant.
 - Extract a function or class only when it has a coherent responsibility and
   gives its caller a smaller, clearer interface. Keep simple operations at
   their point of use.
+- Put an operation on the object that owns the state or invariant it uses. Use
+  a free function only for a symmetric algorithm, factory, public customization
+  point, or operation with no natural owner. Do not add namespace-scope helpers
+  that inspect an owner's internals or only forward to it.
 - Add defensive checks only when a value can be null or invalid by design.
 - Do not add ways to replace behavior, special object-creation code, or settings
   for an unconfirmed need.
@@ -145,6 +149,11 @@ Visual C++ (MSVC) compilers.
   `ITEM`.
 - Use `[[nodiscard]]` only when ignoring a result loses an operation outcome,
   ownership, a handle, or error information. Do not apply it to observation APIs.
+- Do not use `dynamic_cast` in evaluation, notification, subscription,
+  time-series access, or other graph runtime paths. Put runtime dispatch on the
+  runtime type, visitor, tagged representation, or object that owns the
+  behavior. `dynamic_cast` is acceptable during wiring, type resolution,
+  diagnostics, and checked boundary validation.
 - Prefer C++23 language and library features when all supported compilers
   implement them.
 - Prefer ranges, views, spans, structured bindings, and designated initializers
@@ -156,6 +165,8 @@ Before completing a change, check:
 
 - Is every new part required now?
 - Can any helper, wrapper, or layer be removed?
+- Does each new runtime downcast or namespace-scope helper indicate a missing
+  abstraction or owner?
 - Are names consistent with the terminology dictionary?
 - Does whitespace show the structure of the logic?
 - Do the supported compilers accept every selected feature?
