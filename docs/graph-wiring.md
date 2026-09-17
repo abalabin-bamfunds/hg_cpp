@@ -9,10 +9,9 @@ Wiring records materialize values. Node templates construct wired nodes.
 ## Wiring points
 
 A `WiringPoint` identifies a wiring record in its owning `GraphWiring`. A node
-call with an output returns a record for that output. Free collections
-use records that retain their sources until a node consumes the collection.
-A call without an output returns `void` in the typed C++ API and `None` in
-Python.
+call with an output returns a record for that output. Free collections use
+records that retain their item wiring points until a node consumes the
+collection. A call without an output returns `void`.
 
 A wiring record owns behavior required to materialize its value. Materialized
 records identify wired outputs. Graph compilation consumes only wired outputs
@@ -33,17 +32,22 @@ declare time series parameter and output types.
 the point's runtime type. Constructing `wp<TS_T>` from another wiring point
 performs the same check.
 
-`bg::tsl(a, b, ...)` creates a wiring point that groups its sources without
-creating item storage. The receiving parameter determines whether each item is
-a value or a reference. Wiring then creates one TSL output over the selected
-sources.
+`point[key]` forwards to `operators::getitem`. Operator overload resolution
+selects the behavior for the collection and key types. A scalar index into a
+fixed TSL selects its contained wiring point without adding a node. A time
+series index, or a TSD key supplied as either a scalar or time series, creates a
+node that tracks the selected item.
 
-The logical output preserves dependency ordering. Source changes schedule it as
-a normal node. It combines changes from the same cycle and copies no item value.
+`bg::tsl(a, b, ...)` groups item wiring points without creating item storage.
+The receiving parameter determines whether each item is a value or a reference.
+Wiring then creates one TSL output over the selected items.
+
+The logical output preserves dependency ordering. Item updates schedule it as a
+normal node. It combines updates from the same cycle and copies no item value.
 
 `bg::bundle("name"_n = a, "value"_n = b)` creates a wiring point for an
 unnamed TSB. A named TSB parameter accepts a compatible field set. Wiring
-creates one TSB output over the selected sources and reports their field
+creates one TSB output over the selected fields and reports their field
 changes.
 
 `wp<TSB<Schema>>` exposes the schema fields through `operator->`. Each field is
@@ -190,7 +194,3 @@ repeat.
 
 `GraphWiring` owns path entries in stable storage. A wired node refers to the
 entry for its node-template call.
-
-## Open implementation choices
-
-1. Recovery when a wiring-template call fails after adding wired nodes.

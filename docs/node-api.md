@@ -230,16 +230,6 @@ evaluation time. `TS<T>::value()` returns `const T&`. `value()` and
 `last_updated()` require a valid time series. Collection time series provide
 their type-specific change queries.
 
-A time series dictionary input can request the `valid_items` guarantee. Its
-view exposes only keys whose item time series are valid. It reports:
-
-- `added` when a key starts identifying a valid item
-- `modified` when a visible item updates and remains valid
-- `removed` when a visible key is removed or its item becomes invalid
-
-The view derives these changes from the source dictionary. An equal-type
-binding selects this view directly.
-
 An `In` value is valid for one function call. Its last-updated time includes
 [sampling](time-series-references.md#input-sampling) when the input is bound
 through a reference.
@@ -313,7 +303,7 @@ cycle callbacks, and failure behavior.
 ## Returned outputs
 
 A function that returns `T` requests an update of its `TS<T>` output on every
-invocation. The [type system](type-system.md#runtime-enforcement) defines how the
+invocation. The [type system](type-system.md#enforcement) defines how the
 resolved output guarantee publishes the update.
 
 A function can return `std::optional<T>` to control whether it updates its
@@ -340,17 +330,15 @@ modifications. The `Out` parameter is last, and the function returns `void`.
 ```cpp
 using namespace bg::literals;
 
-using Prices = bg::TSD<bg::string, bg::TS<float>>;
-
 inline const auto copy_prices = bg::node(
     "copy_prices",
-    [](bg::In<Prices, "source"_n> source,
-       bg::Out<Prices> output) noexcept {
-        source.for_each_added(
-            [&](const auto& key) { output[key].set(*source[key]); });
-        source.for_each_modified(
-            [&](const auto& key) { output[key].set(*source[key]); });
-        source.for_each_removed([&](const auto& key) { output.erase(key); });
+    [](bg::In<bg::TSD<bg::string, bg::TS<float>>, "values"_n> values,
+       bg::Out<bg::TSD<bg::string, bg::TS<float>>> output) noexcept {
+        values.for_each_added(
+            [&](const auto& key) { output[key].set(*values[key]); });
+        values.for_each_modified(
+            [&](const auto& key) { output[key].set(*values[key]); });
+        values.for_each_removed([&](const auto& key) { output.erase(key); });
     });
 ```
 

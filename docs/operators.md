@@ -80,7 +80,9 @@ information.
 
 Reference shape does not change type specificity. Selection first prefers a
 reference parameter for a reference argument and a direct parameter for a
-direct argument. It then compares the remaining type specificity. Conflicting
+direct argument. The preference applies recursively to collection item types.
+For example, `TSL<REF<V>, N>` is preferred over `TSL<V, N>` for a list of
+references. It then compares the remaining type specificity. Conflicting
 reference preferences across parameters remain ambiguous.
 
 Free collection materialization and other wiring adaptations happen
@@ -105,11 +107,11 @@ this view records the reads required by the resolution cache.
 Callable node declarations use a resolver named for its variable:
 
 ```cpp
-using Result = bg::ScalarVariable<"Result">;
+using RESULT = bg::ScalarVariable<"RESULT">;
 
 bg::node(
     bg::eval = evaluate,
-    bg::resolve<Result> = resolve_result);
+    bg::resolve<RESULT> = resolve_result);
 ```
 
 A schema variable uses `schema_type` because its TSB declaration is a template:
@@ -123,13 +125,13 @@ token identifies the result:
 
 ```cpp
 struct implementation {
-    using Input = bg::ScalarVariable<"Input">;
-    using Result = bg::ScalarVariable<"Result">;
+    using INPUT = bg::ScalarVariable<"INPUT">;
+    using RESULT = bg::ScalarVariable<"RESULT">;
 
-    bg::In<bg::TS<Input>> input;
-    bg::Out<bg::TS<Result>> output;
+    bg::In<bg::TS<INPUT>> input;
+    bg::Out<bg::TS<RESULT>> output;
 
-    static const bg::ScalarType *resolve(Result, auto arguments);
+    static const bg::ScalarType *resolve(RESULT, auto arguments);
 
     void evaluate() const;
 };
@@ -214,8 +216,8 @@ includes its optional message.
 
 The public wiring boundary throws `WiringError` when no unique overload exists.
 The error owns the structured diagnostic and also renders readable text. This
-lets C++ inspect the failure directly and lets Python expose fields without
-parsing `what()`.
+lets callers inspect the failure directly and lets language bindings expose
+fields without parsing `what()`.
 
 A no-match diagnostic reports the operator name, wiring path, supplied
 arguments, and each candidate's first decisive failure. An ambiguity diagnostic

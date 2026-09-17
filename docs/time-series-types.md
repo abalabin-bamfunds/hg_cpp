@@ -31,9 +31,11 @@ item validity remains independent.
 | Time series reference | `REF<TS_T>` | None |
 | Time series set | `TSS<T>` | Added and removed items |
 | Time series list (fixed size) | `TSL<TS_T, Size>` | Updated items |
-| Time series list (variable size, sparse) | `TSL<TS_T>` | Added, removed, and updated items |
 | Time series bundle | `TSB<Schema>` | Updated items |
 | Time series dictionary | `TSD<K, TS_T>` | Added and removed keys; modified items |
+
+`TSL<TS_T>` declares the semantic type for a variable-size sparse list. Its
+runtime storage and node views are not implemented.
 
 ## Layout
 
@@ -68,5 +70,5 @@ TSD input can enumerate keys, item IDs, values, key-value pairs, or ID-value
 pairs. Added, removed, and modified queries enumerate keys for the current
 change.
 
-The [TSD layout](tsd-layout.md) defines dictionary storage, shared
-representations, and tabular buffers.
+The [TSD layout](tsd-layout.md) defines dictionary storage and reference
+representations.

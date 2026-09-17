@@ -20,11 +20,11 @@ Use `[dimension:value]` for each applicable dimension:
   `invalidation`, `operator`,
   `time-series-storage`, `time-series-view`, `collection-change`, `reference`, `sampling`, `getitem`, `getattr`, or
   `nested-graph`
-- `series`: `value`, `fixed-tsl`, `sparse-tsl`, `tss`, `tsd`, `tsb`, `reference`, or `generic`
+- `series`: `value`, `fixed-tsl`, `tss`, `tsd`, `tsb`, `reference`, or `generic`
 - `schema`: `named`, `unnamed`, or `generic`
-- `representation`: `native`, `free`, `filtered`, or `covariant`
-- `scalar`: `integer`, `floating-point`, `boolean`, `string`, `symbol`, `evaluation-time`, `compound`,
-  `hierarchical`, `opaque`, `list`, `set`, `dict`, or `generic`
+- `representation`: `native`, `free`, or `covariant`
+- `scalar`: `integer`, `floating-point`, `boolean`, `string`, `symbol`, `evaluation-time`, `opaque`, `list`, `set`,
+  `dict`, or `generic`
 - `storage`: `inline`, `fixed`, or `variable`
 - `declaration`: `concrete`, `partially-generic`, `generic`, or `runtime`
 - `binding`: `direct`, `value-to-reference`, `reference-to-value`, `reference-to-reference`, `covariant`, or
@@ -36,7 +36,7 @@ Use `[dimension:value]` for each applicable dimension:
 - `input-guarantee`: `valid-items`
 - `transition`: `first-tick`, `update`, `invalidation`, `revalidation`, `addition`, `removal`, `resurrection`,
   `start`, `stop`, or `restart`
-- `definition`: `aggregate`, `function`, `runtime`, or `python`
+- `definition`: `aggregate`, `function`, or `runtime`
 
 Use lower-case kebab-case values in tags. For example:
 
@@ -68,8 +68,6 @@ the tags and write `test-coverage.md` to the build directory.
 - `tests/evaluation`: evaluation context, engines, lifecycle, scheduling, storage, time series, and validity
 - `tests/node`: node declaration and invocation interfaces
 - `tests/testing`: test utilities
-- `tests/nodes`: reusable node behavior
-- `tests/graphs`: reusable graph behavior
 
 Name a test file after the feature it covers. Split node and graph behavior by
 value type when the type changes the expected behavior. Keep each test case
@@ -120,8 +118,7 @@ graph compilation or evaluation.
 - operator signature specificity and ambiguity
 - types passed as scalars
 - guarantee compatibility, propagation, and enforcement
-- compound and hierarchical scalar schemas, inheritance, and covariance
-- collection types, nested types, and `valid_items`
+- collection types and nested types
 
 ### Wiring
 
@@ -178,12 +175,11 @@ graph compilation or evaluation.
 ### Collection time series
 
 - set additions and removals
-- fixed and sparse list updates
+- fixed-list updates
 - bundle fields and inheritance
 - dictionary key, item, and validity changes
 - nested dictionary representations and shared key sets
 - output mutation paths and parent notifications
-- tabular buffers and Arrow-compatible views
 
 ### Nodes and graphs
 
@@ -196,13 +192,6 @@ For each reusable node and graph, test:
 - supported scalar and time series types
 - supported graph shapes
 - reported errors
-
-### Python
-
-- C++ and Python type and signature parity
-- Python node and graph definitions
-- scalar and time series conversion
-- object lifetime and exception translation
 
 ### Performance and portability
 

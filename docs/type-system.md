@@ -1,7 +1,5 @@
 # Type system
 
-Status: working design. Open choices are listed at the end.
-
 ## Purpose
 
 The type system gives wiring, graph compilation, and node code one description
@@ -26,9 +24,8 @@ reports exactly one.
 
 Type objects are process-wide so modules can register types before an engine
 exists. Resolved objects are immutable and canonical. Equivalent types have the
-same address, so exact equality is a pointer comparison. C++ and Python
-declarations use the same objects. A module that implements a registered type
-must remain loaded while the type can be used.
+same address, so exact equality is a pointer comparison. A module that
+implements a registered type must remain loaded while the type can be used.
 
 A C++ time series declaration exposes its semantic type through `type()`.
 Generic declarations return an unresolved semantic type containing their
@@ -63,18 +60,15 @@ reuses them across graphs.
 
 ## Scalar types
 
-Scalar types separate graph identity and compatibility from C++ or Python
-storage. Each registered scalar type has a fully qualified `Symbol`. A C++
-type has one default graph type, while several graph types can share the
-same storage type.
+Scalar types separate graph identity and compatibility from C++ storage. Each
+registered scalar type has a fully qualified `Symbol`. A C++ type has one
+default graph type, while several graph types can share the same storage type.
 
 `EvaluationTime` is a scalar type. Graph code can use it directly and as a
 component of another scalar type, such as `List<EvaluationTime>`.
 
 `Opaque<T>` carries private C++ data as a wiring-time scalar. It has exact
 compatibility and provides no equality or hashing.
-
-A compound scalar has an ordered field schema and exact compatibility.
 
 A scalar list has one scalar item type. `List<SCALAR>` accepts any resolved
 scalar item type. Each list is homogeneous.
@@ -83,41 +77,6 @@ A scalar set has one hashable scalar item type, written `Set<T>`. A scalar
 dictionary maps hashable scalar keys to scalar values, written `Dict<K, V>`.
 
 The [scalar API](scalar-api.md) defines C++ access and ownership.
-
-A hierarchical scalar adds explicit graph inheritance. This inheritance is
-independent of C++ and Python inheritance. Direct bases are ordered and use the
-C3 method resolution order.
-
-Each hierarchical scalar records the fields it adds. A field inherited through
-more than one path appears once. A derived type must resolve conflicting
-inherited fields by declaring a compatible, narrower field type.
-
-Hierarchical scalar values are immutable and stored by handle. This keeps their
-time series value field pointer-sized while allowing different derived layouts.
-The handle identifies the actual type. A value declared as `Base` can hold
-`Base` or a derived type, and an update replaces the handle. Compound scalar
-storage can be inline.
-
-## Covariance
-
-Covariance lets an input accept hierarchical values without creating another
-time series. If `Derived` inherits from `Base`, compatibility
-applies recursively:
-
-```text
-Derived <: Base
-List<Derived> <: List<Base>
-Dict<Derived, V> <: Dict<Base, V>
-TS<Derived> <: TS<Base>
-```
-
-A covariant binding retains the source's declared component type. A container
-declared for `Base` accepts `Base` and its derived types. A container declared
-for `Derived` accepts `Derived` and its derived types. Dictionary lookup and set
-membership treat a value outside the declared constraint as absent.
-
-Graph compilation implements a covariant time series binding with a direct
-input view.
 
 ## Time series types
 
@@ -200,7 +159,7 @@ operation. A scalar variable view exposes an operation when its declaration
 requires it:
 
 ```cpp
-using Key = ScalarVariable<"Key", EqualityComparable, Hashable>;
+using KEY = ScalarVariable<"KEY", EqualityComparable, Hashable>;
 ```
 
 C++ scalar types derive these properties from their value operations. A
@@ -216,7 +175,7 @@ A root-category variable can restrict its value to alternative declarations:
 
 ```cpp
 using K = ScalarVariable<"K", Hashable>;
-using Key = TypeVariable<"Key", K, TS<K>>;
+using KEY = TypeVariable<"KEY", K, TS<K>>;
 ```
 
 `Union<K, TS<K>>` is the anonymous inline form. Repeated use of the same union
@@ -279,13 +238,13 @@ cycle detection.
 [Operator overload resolution](operators.md) applies these rules independently
 to each candidate before comparing applicable signatures.
 
-Graph compilation uses the resolved signature to select direct, reference,
-covariant, or representation bindings.
+Graph compilation uses the resolved signature to select direct, reference, or
+representation bindings.
 
 ### Types passed as scalars
 
 `TypeOf<T>` is a scalar whose value is a resolved graph type compatible with
-`T`. Python uses `Type[T]` for the same declaration.
+`T`.
 
 Wiring represents a supplied type `X` as the canonical scalar type `TypeOf<X>`.
 Matching then applies the normal type rules to `T` and `X`:
@@ -396,20 +355,6 @@ in the same invocation does not cancel publication. A collection can therefore
 tick with empty final change sets. Collection storage enforces effective child
 guarantees before it notifies subscribers.
 
-## `valid_items`
-
-`valid_items` lets a TSD input exclude invalid immediate items without changing
-the source or output dictionary. It is a field of each generic TSD input type,
-including each nested TSD.
-
-For an equal-type binding, graph compilation selects a filtered direct view.
-The view derives its visible keys and changes from the source key,
-item-validity, and item-modification records.
-
-A representation request includes `valid_items` when it changes the item type.
-The node that provides representations maintains that view. A reference
-representation can have a different visible key set from the source.
-
 ## Errors
 
 A direct signature call reports a matching, variable resolution, or constraint
@@ -417,10 +362,3 @@ failure through a structured type-resolution exception. It identifies the
 affected parameter or output and the incompatible types. Operator resolution
 records the same information as an expected candidate rejection, as defined in
 [operator diagnostics](operators.md#diagnostics).
-
-## Open choices
-
-1. C++ interfaces for variables and functional resolvers.
-2. Equality rules for values such as a floating-point not-a-number.
-3. Whether a Boolean `valid_items` field covers all nested TSD requirements.
-4. Allocation and ownership of immutable hierarchical scalar values.

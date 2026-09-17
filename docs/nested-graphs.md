@@ -67,6 +67,5 @@ references to its time series valid through the cycle in which it stops. Stoppin
 the outer graph stops its remaining inner runtime graphs. Their storage is
 destroyed with the outer runtime graph.
 
-Inner graph failure follows the sequence in
-[Exceptions](evaluation.md#exceptions). A failed runtime graph remains stopped
-and can only be replaced by a new instance.
+An exception from an inner graph propagates through its owning node and stops
+the outer graph, as defined by [Exceptions](evaluation.md#exceptions).

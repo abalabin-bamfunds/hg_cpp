@@ -1,7 +1,5 @@
 # Evaluation
 
-Status: working design. Open implementation choices are listed at the end.
-
 ## Outer cycle
 
 An outer cycle is one quantum of evaluation and time. Its evaluation time is
@@ -69,16 +67,12 @@ The engine injects the context independently of wiring.
 The context provides:
 
 - the evaluation time
-- wall-clock time from the clock supplied to the evaluation engine
-- the current runtime graph and node
-- the current runtime graph's `bg::allocator`
+- the current runtime graph and node index
+- access to the runtime graph's `bg::allocator`
 - temporary scratch storage for the current node invocation
 - the outer graph's [global state](global-state.md)
 - immediate and future scheduling
 - cancellation of future scheduling
-- on-demand cycle callback registration
-
-The supplied wall clock allows tests and replay to control wall-clock results.
 
 ## Start
 
@@ -121,22 +115,16 @@ outer cycle. It then advances to each next scheduled time and calls
 A later real-time evaluation engine can wait for each scheduled time while
 using the same runtime graph interface.
 
-## Cycle callbacks
+## Deferred cleanup
 
-Cycle callbacks are registered on demand for graph-owned objects, including
-node state, time series state, and collection storage. A callback record
-identifies the target, callback function, and owning runtime graph.
+Runtime subsystems register cleanup callbacks on demand. The outer graph runs
+them in reverse registration order at the beginning of its next cycle, before
+it applies new input updates. This keeps removed storage available for the
+complete cycle in which it was removed and releases downstream objects before
+objects that they can reference.
 
-A beginning-of-cycle callback runs before new input updates. An end-of-cycle
-callback runs after all outer and inner evaluation work and before deferred
-storage reclamation.
-
-Beginning-of-cycle callbacks run in reverse registration order. This releases
-downstream objects before objects that they can reference.
-
-A failed or stopped runtime graph discards its pending cycle callbacks. Its stop
-code performs cleanup. [Deferred reclamation](time-series-references.md#outer-cycle-boundary)
-keeps required storage valid through the outer cycle.
+A failed or stopped runtime graph discards its pending callbacks. Its stop code
+performs the required cleanup.
 
 ## Stop
 
@@ -153,43 +141,11 @@ after graph failure.
 
 ## Exceptions
 
-An uncaught exception propagates through inner graph invocations. An exception
-that reaches the outer graph is a terminal failure.
+An exception from start or evaluation stops that runtime graph. The engine
+invokes stop for every node whose start completed, discards scheduled work and
+cleanup callbacks, and propagates the exception. An exception from an inner
+graph therefore also stops the outer graph that invoked it.
 
-Wiring can select an exception-catching evaluation entry point for any node.
-This choice adds the exception-catching branch and a separate error time series
-to that wired node.
-
-The error value contains:
-
-- the error type
-- the error message
-- a snapshot that identifies the runtime graph instance, its complete nested
-  graph path, and the node that threw
-
-The snapshot stores identifiers instead of runtime graph pointers. This is
-required because an inner runtime graph can be removed while its error value
-remains observable.
-
-Output updates are not transactional. When an inner graph fails, the engine:
-
-1. sets the error output selected by wiring
-2. invalidates the inner graph's reference output and unbinds its subscribers
-3. discards scheduled work and future scheduling for that runtime graph
-4. discards its cycle callbacks
-5. invokes stop immediately for its successfully started nodes
-6. keeps storage valid through the outer cycle
-
-The failed runtime graph remains stopped. A later event can replace it with a
-new runtime graph, which starts in the replacement cycle.
-
-Failure in the outer graph is terminal. The engine runs stop before reporting
-the failure to its caller.
-
-## Open implementation choices
-
-1. C++ representation of wall-clock time.
-2. Layout of future scheduling handles and records.
-3. Storage layout for callback records.
-4. C++ types and storage for structured error values and nested graph paths.
-5. Execution ordering across runtime graph boundaries and dynamic references.
+Output updates are not transactional. Updates made before the exception remain
+visible while the stopped graph's storage exists. A stopped runtime graph
+cannot restart.

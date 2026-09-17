@@ -8,10 +8,12 @@ core entities.
 Current design documents cover the [node API](docs/node-api.md),
 [node object layout](docs/node-layout.md),
 [graph wiring](docs/graph-wiring.md),
+[operators](docs/operators.md),
 [evaluation](docs/evaluation.md),
 [type system](docs/type-system.md),
 [scalar API](docs/scalar-api.md),
 [global state](docs/global-state.md),
+[nested graphs](docs/nested-graphs.md),
 [testing](docs/testing.md),
 [time series types](docs/time-series-types.md),
 [time series references](docs/time-series-references.md),
@@ -45,6 +47,9 @@ and configure with:
 cmake --preset dev -DBG_BUILD_PYTHON=ON
 cmake --build --preset dev
 ```
+
+The extension currently exposes the project version. Node and graph bindings
+are not implemented.
 
 ## Layout
 

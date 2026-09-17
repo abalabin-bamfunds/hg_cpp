@@ -26,11 +26,11 @@ code receives the type declared by its signature.
 A node that handles a reference declares `In<REF<TS_T>>` or
 `Out<REF<TS_T>>`. A reference output selects or passes through an input
 reference. Wiring inserts the required reference-making node for a time series
-source.
+output.
 
-The inserted node belongs to the graph that owns the source. Wiring reuses one
-such node for each source output and records each representation requested by
-the complete wired graph.
+The inserted node belongs to the graph that owns the output. Wiring reuses one
+such node for each output and records each representation requested by the
+complete wired graph.
 
 `Reference` is one word that identifies a root time series, a contained item,
 or a representation. Passing a reference copies that word. Resolving a
@@ -44,9 +44,8 @@ these references to the root and obtain provider data there. This preserves
 provenance through nested collections without a provider pointer in each
 reference.
 
-For a source reached through a reference, the receiving binding sends its type
-request to the node associated with the target. The graph that owns the target
-creates the representation.
+The receiving binding sends a representation request to the node associated
+with the target. The graph that owns the target creates the representation.
 
 ## Dynamic representations
 
@@ -54,25 +53,25 @@ The inserted node owns dynamically created time series. This is required because
 a reference from a nested graph can receive a compatible type request after the
 target graph has been compiled.
 
-An exact-type request returns the source time series. A repeated request returns
-the existing representation for the source and requested type. A new compatible
+An exact-type request returns the target time series. A repeated request returns
+the existing representation for that target and requested type. A new compatible
 request allocates its representation through the runtime graph that owns the
-source. Runtime storage is proportional to the representations that are used.
+target. Runtime storage is proportional to the representations that are used.
 
-The same process applies recursively to collection time series. Examples include:
+TSD supports compatible representations recursively. Examples include:
 
-| Source | Requested representation |
+| Provided type | Requested representation |
 | --- | --- |
 | `TSD<K, TS_T>` | `TSD<K, REF<TS_T>>` |
 | `TSD<K, REF<TS_T>>` | `TSD<K, TS_T>` |
 
-A `TSD<K, REF<TS_T>>` representation of `TSD<K, TS_T>` shares the source key
-storage and item IDs. Its item references identify the source items. Converting
-that representation back to `TSD<K, TS_T>` returns the source dictionary.
-Source item updates notify consumers of the item references without updating
-the reference dictionary itself.
+A `TSD<K, REF<TS_T>>` representation of `TSD<K, TS_T>` shares the original key
+storage and item IDs. Its item references identify the original items.
+Converting that representation back to `TSD<K, TS_T>` returns the original TSD.
+Item updates notify consumers of the item references without updating the
+reference TSD itself.
 
-A `TSD<K, REF<TS_T>>` constructed by a node has no source dictionary.
+A `TSD<K, REF<TS_T>>` constructed by a node has no underlying value TSD.
 Converting it to `TSD<K, TS_T>` creates a representation that retains every
 key and exposes the current reference target as its item. An empty reference
 produces an invalid item. Target changes and target updates modify the
@@ -108,21 +107,25 @@ notification and notifies its root reference. Each representation observes its
 base reference. It consumes that notification, updates its state, and notifies
 only the affected representation or item references.
 
-The source runtime graph owns the created representations and subscriber
-groups. Ordinary subscriber records identify the destination runtime graph,
-node, and input slot.
+The runtime graph that owns the referenced output owns its created
+representations and subscriber groups. A subscriber identifies a receiving
+runtime graph, node, and input slot. It updates the input and applies the
+input's activity and validity rules.
 
-A TSD item reference records item notifications for destination representations.
-Each notification stores a destination-table index and destination item ID. The
-shared destination entry stores the graph, representation, and notification
-functions. The first destination item is stored with the item reference. Fan-out
-uses root-owned destination-item groups. A TSD batches changed item references.
-Each destination representation publishes once with its changed item IDs.
-Notification work is proportional to changed item references and their destinations.
+An observer connects one runtime reference object to another without adding a
+node evaluation. Representations and item selections use observers to maintain
+their own state before they notify their subscribers.
 
-The reference provider owns references, subscriber groups, item notifications,
-and type-specific components. TSD and fixed TSL item selection each use a
-lazily created component.
+A TSD item reference uses a compact descriptor for each destination
+representation. Shared provider data stores the destination and notification
+functions. A TSD batches changed item references, then each destination
+representation publishes once with its changed item IDs. Notification work is
+proportional to changed item references and their destinations.
+
+The reference provider is created only when a root needs dynamic behavior. It
+owns representations, subscriber groups, item-notification groups, and
+type-specific components. TSD and fixed TSL item selection each use one lazily
+created component per root.
 
 A reference notification notifies its dynamic subscribers directly. Subscriber
 records retain the destination graph. A runtime observer uses that graph's
@@ -150,23 +153,28 @@ outer cycle.
 
 ### Input sampling
 
-A dereferenced input distinguishes an ordinary target update from a change of
-target. Binding its first target samples that target as a first update. Removing
-the target reports the previous collection as removed.
+A dereferenced value input distinguishes an ordinary target update from a
+change of target. Binding a target reports the binding time as the input's
+visible last-updated time without modifying the target.
 
-Switching from collection `A` to collection `B` reports the transition that the
-node observes:
+A `TSD<K, TS_T>` representation of `TSD<K, REF<TS_T>>` also samples changes to
+each item reference. Binding its first item target samples that target as a
+first update. Removing an item target reports its previous collection value as
+removed.
 
-- TSS and TSD additions are the keys or items in `B` but not `A`.
-- TSS and TSD removals are the keys or items in `A` but not `B`.
+Switching a TSD item target from TSD `A` to TSD `B` reports the transition that
+the node observes:
+
+- TSD additions are the keys in `B` but not `A`.
+- TSD removals are the keys in `A` but not `B`.
 - A TSD item present in both is modified unless both entries identify the same
   item time series.
-- A contained collection applies the same rules recursively.
+- A contained TSD applies the same rules recursively.
 
-An initial sample reports every current key or item as added. A removed sample
-reports every previous key or item as removed. Sampling is change information
-for the current evaluation cycle. Every input sees the same sample. A passive
-input does not replay the sample in a later cycle.
+An initial TSD sample reports every current key as added. A removed sample
+reports every previous key as removed. Sampling is change information for the
+current evaluation cycle. Every input sees the same sample. A passive input does
+not replay the sample in a later cycle.
 
 The representation retains the previous target until old change information is
 cleared. A reference output publishes after its node finishes evaluating, so it
@@ -191,13 +199,13 @@ an inner graph copies the reference and removes the inner graph from the
 value-update path.
 
 When an outer consumer requests a compatible type that the inner graph did not
-request during compilation, the runtime graph that owns the source creates or
+request during compilation, the runtime graph that owns the target creates or
 returns the shared representation for that type.
 
 The [nested graph design](nested-graphs.md) defines boundary isolation,
 scheduling, and lifecycle.
 
-## Dynamic collections
+## Collection item selection
 
 TSD representations use the shared-key structure defined by the
 [TSD layout](tsd-layout.md#shared-representations).
@@ -212,10 +220,10 @@ When an item is first used through a reference, its item reference receives a
 subscriber group from the provider that owns its root. Item updates notify that
 item reference directly.
 
-A TSD creates item-reference storage only when an item is selected through a
-reference. Selection retains the key's sparse item ID and creates a non-live key
-when the key is absent. The key set reclaims an unretained non-live ID after the
-outer cycle in which it was released.
+A TSD key selection creates selection storage only for that key. It retains the
+key's sparse item ID and creates a non-live key when the key is absent. The key
+set reclaims an unretained non-live ID after the outer cycle in which it was
+released.
 
 Selecting an item returns an `In<REF<V>>` that uses the canonical `REF<V>`
 runtime type. The input carries a separate `ReferenceBinding`; runtime types do
@@ -250,6 +258,7 @@ its selected target changes.
 
 ## Outer-cycle boundary
 
-An outer cycle ends after all outer and inner work has finished, including work
-that runs concurrently. This is the earliest point at which removed storage can
-be reclaimed.
+Removed storage remains available until all outer and inner work for its outer
+cycle has finished. A cleanup callback reclaims it at the beginning of the next
+outer cycle, before new input updates. Stopping or destroying the graph performs
+the same required cleanup.

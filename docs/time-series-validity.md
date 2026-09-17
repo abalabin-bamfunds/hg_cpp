@@ -1,7 +1,5 @@
 # Time series validity
 
-Status: working design.
-
 A time series is valid when its last updated time is greater than `MIN_DT`.
 An invalidatable time series becomes invalid when its last updated time is set
 to `MIN_DT`.
@@ -50,15 +48,13 @@ remaining lifetime of the reference.
 tick that publishes an empty collection. They remain valid after that tick.
 `TSD` item validity is independent of TSD validity.
 
-A TSS or TSD input view can become invalid when reference processing removes or
-retargets its source. The input view reports this change as follows:
+A TSS or TSD input view can become invalid when its reference is removed or
+selects an invalid target. An invalid view has no current collection value. A
+dereferenced TSD representation reports changes to its item targets through the
+[sampling rules](time-series-references.md#input-sampling).
 
-- `TSS` removes every item and reports it as removed
-- `TSD` removes every key and item and reports every key as removed
-
-Storage for removed entries follows the
-[outer-cycle lifetime](time-series-references.md#outer-cycle-boundary). A
-`valid_items` TSD view reports only its visible keys.
+Removed storage follows the
+[outer-cycle lifetime](time-series-references.md#outer-cycle-boundary).
 
 `clear()` publishes a valid empty TSS or TSD. A TSS or TSD output preserves its
 value when a required input becomes invalid.
