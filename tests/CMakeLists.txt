@@ -13,6 +13,7 @@ add_executable(
     evaluation/storage/runtime_views_test.cpp
     evaluation/storage/node_test.cpp
     evaluation/time_series/time_series_list_test.cpp
+    evaluation/time_series/time_series_list_getitem_test.cpp
     evaluation/time_series/time_series_bundle_test.cpp
     evaluation/time_series/time_series_dict_test.cpp
     evaluation/time_series/time_series_dict_getitem_test.cpp

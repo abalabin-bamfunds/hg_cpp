@@ -172,6 +172,7 @@ graph compilation or evaluation.
 - dynamic collection items and outer-cycle removal lifetime
 - representation creation and reuse
 - dictionary item selection with scalar and time series keys
+- fixed-list item selection with scalar and time series indices
 - keyed subscriptions for present, missing, removed, and restored items
 
 ### Collection time series

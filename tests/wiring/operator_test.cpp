@@ -7,6 +7,7 @@
 #include <bg/testing/test_wiring.hpp>
 #include <bg/time_series/time_series_type.hpp>
 #include <bg/time_series/tsd/tsd_type.hpp>
+#include <bg/time_series/tsl/tsl_type.hpp>
 #include <bg/type/time_series_reference_type.hpp>
 #include <bg/type/time_series_value_type.hpp>
 
@@ -22,8 +23,7 @@ namespace {
 
 TEST_CASE("an operator selects the least generic applicable overload",
           "[feature:operator][feature:wiring][declaration:generic]") {
-    auto operation =
-        bg::operator_<auto(bg::TS_T, bg::TS_T) -> bg::TS_T>{"select", {"value", "fallback"}};
+    auto operation = bg::operator_<auto(bg::TS_T, bg::TS_T)->bg::TS_T>{"select", {"value", "fallback"}};
     operation.overload(bg::graph("name"_n = "generic", [](bg::wp<bg::TS<bg::SCALAR>>,
                                                           bg::wp<bg::TS<bg::SCALAR>> fallback) { return fallback; }));
     operation.overload(
@@ -44,7 +44,7 @@ TEST_CASE("an operator selects the least generic applicable overload",
 
 TEST_CASE("registering an overload clears cached selections", "[feature:operator][feature:wiring]") {
     auto selected = std::string{};
-    auto operation = bg::operator_<auto(bg::TS_T) -> bg::TS_T>{"identity", {"value"}};
+    auto operation = bg::operator_<auto(bg::TS_T)->bg::TS_T>{"identity", {"value"}};
     operation.overload(bg::graph("name"_n = "generic", [&](bg::wp<bg::TS<bg::SCALAR>> value) {
         selected = "generic";
         return value;
@@ -66,7 +66,7 @@ TEST_CASE("registering an overload clears cached selections", "[feature:operator
 TEST_CASE("an overload can have a different parameter count from its prototype",
           "[feature:operator][feature:wiring][definition:function]") {
     auto selected = false;
-    auto operation = bg::operator_<auto(bg::TS_T) -> bg::TS_T>{"choose", {"value"}};
+    auto operation = bg::operator_<auto(bg::TS_T)->bg::TS_T>{"choose", {"value"}};
     operation.overload(bg::graph("name"_n = "choose_pair", [&](bg::wp<bg::TS<float>> value, bg::wp<bg::TS<float>>) {
         selected = true;
         return value;
@@ -79,7 +79,7 @@ TEST_CASE("an overload can have a different parameter count from its prototype",
 }
 
 TEST_CASE("an operator reports equally specific overloads as ambiguous", "[feature:operator][feature:wiring]") {
-    auto operation = bg::operator_<auto(bg::TS<float>) -> bg::TS<float>>{"identity", {"value"}};
+    auto operation = bg::operator_<auto(bg::TS<float>)->bg::TS<float>>{"identity", {"value"}};
     operation.overload(bg::graph("name"_n = "first", [](bg::wp<bg::TS<float>> value) { return value; }));
     operation.overload(bg::graph("name"_n = "second", [](bg::wp<bg::TS<float>> value) { return value; }));
 
@@ -99,7 +99,7 @@ TEST_CASE("an operator reports equally specific overloads as ambiguous", "[featu
 }
 
 TEST_CASE("an operator reports expected and supplied types for a mismatch", "[feature:operator][feature:wiring]") {
-    auto operation = bg::operator_<auto(bg::TS<float>) -> bg::TS<float>>{"identity", {"value"}};
+    auto operation = bg::operator_<auto(bg::TS<float>)->bg::TS<float>>{"identity", {"value"}};
     operation.overload(bg::graph("name"_n = "float_identity", [](bg::wp<bg::TS<float>> value) { return value; }));
 
     const auto graph = [&](bg::wp<bg::TS<double>> value) -> bg::wp<bg::TS<double>> {
@@ -123,7 +123,7 @@ TEST_CASE("an operator reports expected and supplied types for a mismatch", "[fe
 TEST_CASE("operator diagnostics own signatures and retain prototype argument names",
           "[feature:operator][feature:wiring]") {
     const auto error = [] {
-        auto operation = bg::operator_<auto(bg::TS<float>) -> bg::TS<float>>{"identity", {"value"}};
+        auto operation = bg::operator_<auto(bg::TS<float>)->bg::TS<float>>{"identity", {"value"}};
         operation.overload(bg::graph("name"_n = "float_identity", [](bg::wp<bg::TS<float>> value) { return value; }));
 
         try {
@@ -149,7 +149,7 @@ TEST_CASE("operator diagnostics own signatures and retain prototype argument nam
 TEST_CASE("operator matching treats a reference argument transparently",
           "[feature:operator][feature:wiring][feature:reference][binding:reference-to-value]") {
     const auto source = bg::node([](bg::Out<bg::REF<bg::TS<float>>>) {});
-    auto operation = bg::operator_<auto(bg::TS<float>) -> bg::TS<float>>{"identity", {"value"}};
+    auto operation = bg::operator_<auto(bg::TS<float>)->bg::TS<float>>{"identity", {"value"}};
     operation.overload(bg::graph("name"_n = "direct", [](bg::wp<bg::TS<float>> value) { return value; }));
 
     bg::testing::test_wiring([&] {
@@ -161,7 +161,7 @@ TEST_CASE("operator matching treats a reference argument transparently",
 TEST_CASE("an operator prefers the overload with the argument's reference shape",
           "[feature:operator][feature:wiring][feature:reference][binding:reference-to-reference]") {
     auto selected = std::string{};
-    auto operation = bg::operator_<auto(bg::TS<float>) -> bg::TS<float>>{"identity", {"value"}};
+    auto operation = bg::operator_<auto(bg::TS<float>)->bg::TS<float>>{"identity", {"value"}};
     operation.overload(bg::graph("name"_n = "direct", [&](bg::wp<bg::TS<float>> value) {
         selected = "direct";
         return value;
@@ -187,22 +187,18 @@ TEST_CASE("an operator prefers the overload with the argument's reference shape"
 TEST_CASE("an operator prefers the overload with a contained reference shape",
           "[feature:operator][feature:wiring][feature:reference][series:tsd]") {
     auto selected = std::string{};
-    auto operation = bg::operator_<auto(bg::TS_T) -> bg::TS_T>{"identity", {"value"}};
-    operation.overload(bg::graph(
-        "name"_n = "value",
-        [&](bg::wp<bg::TSD<std::int64_t, bg::TS<float>>> value) {
-            selected = "value";
-            return value;
-        }));
-    operation.overload(bg::graph(
-        "name"_n = "reference",
-        [&](bg::wp<bg::TSD<std::int64_t, bg::REF<bg::TS<float>>>> value) {
+    auto operation = bg::operator_<auto(bg::TS_T)->bg::TS_T>{"identity", {"value"}};
+    operation.overload(bg::graph("name"_n = "value", [&](bg::wp<bg::TSD<std::int64_t, bg::TS<float>>> value) {
+        selected = "value";
+        return value;
+    }));
+    operation.overload(
+        bg::graph("name"_n = "reference", [&](bg::wp<bg::TSD<std::int64_t, bg::REF<bg::TS<float>>>> value) {
             selected = "reference";
             return value;
         }));
     const auto value_source = bg::node([](bg::Out<bg::TSD<std::int64_t, bg::TS<float>>>) {});
-    const auto reference_source =
-        bg::node([](bg::Out<bg::TSD<std::int64_t, bg::REF<bg::TS<float>>>>) {});
+    const auto reference_source = bg::node([](bg::Out<bg::TSD<std::int64_t, bg::REF<bg::TS<float>>>>) {});
 
     bg::testing::test_wiring([&] {
         operation(value_source());
@@ -215,8 +211,50 @@ TEST_CASE("an operator prefers the overload with a contained reference shape",
     });
 }
 
+TEST_CASE("an operator prefers a generic overload with the argument's contained reference shape",
+          "[feature:operator][feature:wiring][feature:reference][series:fixed-tsl]"
+          "[declaration:generic]") {
+    auto selected = std::string{};
+    auto operation = bg::operator_<auto(bg::TS_T)->bg::TS_T>{"identity", {"value"}};
+    operation.overload(bg::graph("name"_n = "value", [&](bg::wp<bg::TSL<bg::TS_T, bg::SIZE>> value) {
+        selected = "value";
+        return value;
+    }));
+    operation.overload(bg::graph("name"_n = "reference", [&](bg::wp<bg::TSL<bg::REF<bg::TS_T>, bg::SIZE>> value) {
+        selected = "reference";
+        return value;
+    }));
+    const auto value_source = bg::node([](bg::Out<bg::TSL<bg::TS<float>, 2>>) {});
+    const auto reference_source = bg::node([](bg::Out<bg::TSL<bg::REF<bg::TS<float>>, 2>>) {});
+
+    bg::testing::test_wiring([&] {
+        operation(value_source());
+        CHECK(selected == "value");
+    });
+
+    bg::testing::test_wiring([&] {
+        operation(reference_source());
+        CHECK(selected == "reference");
+    });
+}
+
+TEST_CASE("conflicting contained reference preferences are ambiguous",
+          "[feature:operator][feature:wiring][feature:reference][series:fixed-tsl]"
+          "[declaration:generic]") {
+    auto operation = bg::operator_<auto(bg::TS_T, bg::TS_T)->bg::TS_T>{"choose", {"left", "right"}};
+    operation.overload(bg::graph("name"_n = "values", [](bg::wp<bg::TSL<bg::TS_T, bg::SIZE>> left,
+                                                         bg::wp<bg::TSL<bg::TS_T, bg::SIZE>>) { return left; }));
+    operation.overload(
+        bg::graph("name"_n = "references", [](bg::wp<bg::TSL<bg::REF<bg::TS_T>, bg::SIZE>> left,
+                                              bg::wp<bg::TSL<bg::REF<bg::TS_T>, bg::SIZE>>) { return left; }));
+    const auto value_source = bg::node([](bg::Out<bg::TSL<bg::TS<float>, 2>>) {});
+    const auto reference_source = bg::node([](bg::Out<bg::TSL<bg::REF<bg::TS<float>>, 2>>) {});
+
+    CHECK_THROWS_AS(bg::testing::test_wiring([&] { operation(reference_source(), value_source()); }), bg::WiringError);
+}
+
 TEST_CASE("an operator rejects an overload with a different output shape", "[feature:operator][feature:wiring]") {
-    auto operation = bg::operator_<auto(bg::TS<float>) -> bg::TS<float>>{"identity", {"value"}};
+    auto operation = bg::operator_<auto(bg::TS<float>)->bg::TS<float>>{"identity", {"value"}};
     const auto sink = bg::graph("name"_n = "sink", [](bg::wp<bg::TS<float>>) {});
 
     CHECK_THROWS_AS(operation.overload(sink), std::invalid_argument);
@@ -237,7 +275,7 @@ TEST_CASE("an outputless operator invokes an outputless overload",
 
 TEST_CASE("a function type declares a public output operator",
           "[feature:operator][feature:type-system][definition:function]") {
-    const auto operation = bg::operator_<auto(bg::TS_T, bg::TS_T) -> bg::TS_T>{"add", {"lhs", "rhs"}};
+    const auto operation = bg::operator_<auto(bg::TS_T, bg::TS_T)->bg::TS_T>{"add", {"lhs", "rhs"}};
 
     CHECK(operation.signature().name().text() == "add");
     REQUIRE(operation.signature().parameter_count() == 2);

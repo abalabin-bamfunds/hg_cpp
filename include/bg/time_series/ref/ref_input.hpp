@@ -13,6 +13,8 @@
 #include <bg/time_series/time_series_type.hpp>
 #include <bg/time_series/tsd/tsd_key_subscription.hpp>
 #include <bg/time_series/tsd/tsd_type.hpp>
+#include <bg/time_series/tsl/tsl_item_subscription.hpp>
+#include <bg/time_series/tsl/tsl_type.hpp>
 
 #include <stdexcept>
 #include <string_view>
@@ -23,8 +25,7 @@ namespace details {
 
 template <typename T> struct tsd_item_reference_type;
 
-template <typename K, typename Item, auto... Properties>
-struct tsd_item_reference_type<TSD<K, Item, Properties...>> {
+template <typename K, typename Item, auto... Properties> struct tsd_item_reference_type<TSD<K, Item, Properties...>> {
     using type = REF<Item, Properties...>;
     using key_type = K;
 };
@@ -33,6 +34,17 @@ template <typename K, typename Item, auto... ItemProperties, auto... Properties>
 struct tsd_item_reference_type<TSD<K, REF<Item, ItemProperties...>, Properties...>> {
     using type = REF<Item, ItemProperties...>;
     using key_type = K;
+};
+
+template <typename T> struct tsl_item_reference_type;
+
+template <typename Item, auto Size, auto... Properties> struct tsl_item_reference_type<TSL<Item, Size, Properties...>> {
+    using type = REF<Item, Properties...>;
+};
+
+template <typename Item, auto... ItemProperties, auto Size, auto... Properties>
+struct tsl_item_reference_type<TSL<REF<Item, ItemProperties...>, Size, Properties...>> {
+    using type = REF<Item, ItemProperties...>;
 };
 
 } // namespace details
@@ -54,8 +66,8 @@ class In<REF<Target, TimeSeriesProperties...>, Properties...> {
        bool modified = false) noexcept
         : data_{runtime_type, last_updated, value, modified} {}
 
-    In(const EvaluationTime &last_updated, details::ReferenceBinding binding,
-       const TimeSeriesRuntimeType &runtime_type, bool modified = false) noexcept
+    In(const EvaluationTime &last_updated, details::ReferenceBinding binding, const TimeSeriesRuntimeType &runtime_type,
+       bool modified = false) noexcept
         : data_{runtime_type, last_updated, &binding.value(), modified}, binding_{binding} {}
 
     In(details::DynamicReferenceInputStorage &storage, const TimeSeriesRuntimeType &runtime_type,
@@ -99,6 +111,29 @@ class In<REF<Target, TimeSeriesProperties...>, Properties...> {
         return (*this)[Scalar<Key>::from(details::make_scalar_source<Key>(value))];
     }
 
+    template <typename T = Target>
+        requires details::is_time_series_list<T>
+    auto operator[](std::size_t index) const {
+        using Result = typename details::tsl_item_reference_type<T>::type;
+        if (!valid()) {
+            const auto &reference_type = static_cast<const TimeSeriesReferenceType &>(runtime_type().type());
+            const auto &tsl = resolve_time_series_runtime_type(reference_type.target_type());
+            return In<Result>{MIN_DT, nullptr, details::tsl_item_reference_runtime_type(tsl)};
+        }
+
+        const auto input = details::tsl_item_reference_input(value(), index);
+        const auto *result_runtime_type = input.runtime_type;
+        if (result_runtime_type == nullptr) {
+            const auto &reference_type = static_cast<const TimeSeriesReferenceType &>(runtime_type().type());
+            const auto &tsl = resolve_time_series_runtime_type(reference_type.target_type());
+            result_runtime_type = &details::tsl_item_reference_runtime_type(tsl);
+        }
+        if (!input.binding) {
+            return In<Result>{*input.last_updated, nullptr, *result_runtime_type, input.modified};
+        }
+        return In<Result>{*input.last_updated, input.binding, *result_runtime_type, input.modified};
+    }
+
     template <auto... InputTimeSeriesProperties, auto... InputProperties>
     void bind(const In<REF<Target, InputTimeSeriesProperties...>, InputProperties...> &input) const
         requires ParsedProperties::dynamic_binding
@@ -109,8 +144,7 @@ class In<REF<Target, TimeSeriesProperties...>, Properties...> {
                 dynamic_.storage->unbind(dynamic_.context->runtime_graph(), dynamic_.storage_offset);
                 data_ = details::TimeSeriesInputData{*declared_runtime_type, dynamic_.storage->last_updated(),
                                                      &dynamic_.storage->value(),
-                                                     dynamic_.storage->modified(
-                                                         dynamic_.context->evaluation_time())};
+                                                     dynamic_.storage->modified(dynamic_.context->evaluation_time())};
                 return;
             }
             throw std::invalid_argument{"a dynamic reference input requires an addressable input"};
@@ -157,8 +191,7 @@ class In<REF<Target, TimeSeriesProperties...>, Properties...> {
 
     mutable details::TimeSeriesInputData data_;
     details::ReferenceBinding binding_{};
-    [[no_unique_address]] std::conditional_t<ParsedProperties::dynamic_binding, DynamicBindingData,
-                                             EmptyDynamicBinding>
+    [[no_unique_address]] std::conditional_t<ParsedProperties::dynamic_binding, DynamicBindingData, EmptyDynamicBinding>
         dynamic_;
 };
 

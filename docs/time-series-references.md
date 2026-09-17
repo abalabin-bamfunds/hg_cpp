@@ -121,8 +121,8 @@ Each destination representation publishes once with its changed item IDs.
 Notification work is proportional to changed item references and their destinations.
 
 The reference provider owns references, subscriber groups, item notifications,
-and type-specific components. TSD item selection uses a lazily created TSD
-component.
+and type-specific components. TSD and fixed TSL item selection each use a
+lazily created component.
 
 A reference notification notifies its dynamic subscribers directly. Subscriber
 records retain the destination graph. A runtime observer uses that graph's
@@ -201,6 +201,12 @@ scheduling, and lifecycle.
 
 TSD representations use the shared-key structure defined by the
 [TSD layout](tsd-layout.md#shared-representations).
+
+A fixed TSL item selection uses its stable item ID. A runtime index creates
+selection state only for the selected item. An invalid, negative, or
+out-of-range index produces an invalid reference. A value item produces an item
+reference. A reference item forwards its stored reference. Updates notify only
+selections for the changed items.
 
 When an item is first used through a reference, its item reference receives a
 subscriber group from the provider that owns its root. Item updates notify that

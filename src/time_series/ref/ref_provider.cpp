@@ -420,7 +420,7 @@ void ReferenceProvider::add_subscriber(Reference reference, RuntimeGraph &graph,
 
 void ReferenceProvider::add_observer(Reference reference, RuntimeGraph &graph, void *receiver,
                                      RuntimeObserverFunction function) {
-    if (auto *root = reference.get<RootReference>()) {
+    if (reference.holds<RootReference>()) {
         add_root_observer(graph, receiver, function);
         return;
     }
@@ -440,7 +440,7 @@ void ReferenceProvider::remove_subscriber(Reference reference, RuntimeGraph &gra
 }
 
 void ReferenceProvider::remove_observer(Reference reference, RuntimeGraph &graph, const void *receiver) noexcept {
-    if (auto *root = reference.get<RootReference>()) {
+    if (reference.holds<RootReference>()) {
         remove_root_observer(graph, receiver);
         return;
     }
