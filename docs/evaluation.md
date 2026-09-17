@@ -85,6 +85,10 @@ the runtime graph's first outer cycle. It can request the context, inputs,
 scalars, output, and private state. It can update outputs and schedule future
 evaluation.
 
+Compiled scalar constants become valid at start. Their input notifications run
+after start functions so a value-to-reference node has established its runtime
+reference identity before it forwards the notification.
+
 `schedule_now()` schedules the current node for evaluation in the first cycle.
 
 ## Future scheduling

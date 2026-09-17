@@ -27,6 +27,9 @@ class Node {
         const auto &binding = compiled_node_->parameters()[parameter_index];
         const auto &wired_last_updated =
             *reinterpret_cast<const EvaluationTime *>(runtime_storage_ + binding.last_updated_offset());
+        if (binding.mode() == ParameterBindingMode::constant) {
+            return wired_last_updated;
+        }
         if (binding.mode() != ParameterBindingMode::reference) {
             return wired_last_updated;
         }
@@ -51,6 +54,9 @@ class Node {
 
     const void *input_value(std::size_t parameter_index) const noexcept {
         const auto &binding = compiled_node_->parameters()[parameter_index];
+        if (binding.mode() == ParameterBindingMode::constant) {
+            return binding.constant_data();
+        }
         if (binding.mode() != ParameterBindingMode::reference) {
             return runtime_storage_ + binding.value_offset();
         }

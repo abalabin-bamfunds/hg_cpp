@@ -17,7 +17,7 @@ Use `[dimension:value]` for each applicable dimension:
 - `feature`: `scalar-api`, `scalar-storage`, `scalar-collection`, `global-state`, `visitor`, `type-system`,
   `node-api`, `state`, `wiring`, `graph-compilation`, `test-graph`, `evaluation-context`, `evaluation-scratch`,
   `lifecycle`, `finalization`, `scheduling`, `future-scheduling`, `simulation`, `input-activity`, `validity`,
-  `invalidation`, `operator`,
+  `invalidation`, `operator`, `constant`,
   `time-series-storage`, `time-series-view`, `collection-change`, `reference`, `sampling`, `getitem`, `getattr`, or
   `nested-graph`
 - `series`: `value`, `fixed-tsl`, `tss`, `tsd`, `tsb`, `reference`, or `generic`
@@ -143,6 +143,7 @@ graph compilation or evaluation.
 - start, stop, invalidation, and future-scheduling metadata
 - repeated compilation and independent runtime graphs
 - scalar and state destruction
+- folded scalar constants and their direct bindings
 
 ### Evaluation
 

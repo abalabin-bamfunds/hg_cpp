@@ -47,6 +47,9 @@ auto result = add(lhs, rhs);
 Engine operators are declared in `bg::operators`. Each time series or scalar
 module registers the overloads it implements.
 
+`const_(scalar)` lifts a scalar to `TS<scalar, const>`. Graph compilation stores
+the scalar once and binds its consumers directly to that storage.
+
 An operator owns its registered overloads. Registration is permanent and is
 not concurrent with graph wiring. Adding an overload clears that operator's
 resolution cache. Existing wired graphs remain valid because the operator

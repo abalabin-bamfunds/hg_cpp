@@ -200,6 +200,7 @@ struct TimeSeriesInputPlan {
 
 struct RuntimeStorageLayout {
     std::size_t schedule_word_count{};
+    std::optional<std::uint32_t> constant_start_time_offset;
     std::size_t size{};
     std::size_t alignment{};
 };
@@ -213,6 +214,13 @@ struct NodePlan {
     CompiledNodeDataLayout compiled_data;
     std::vector<TimeSeriesInputPlan> time_series_inputs;
     FixedNodeLayout fixed;
+};
+
+struct FoldedConstantPlan {
+    std::size_t node;
+    std::size_t output;
+    std::size_t scalar;
+    StorageSection storage;
 };
 
 struct WiringPathLayout {
@@ -250,6 +258,8 @@ struct FixedStorageLayout {
     StorageSection output_destruction_offsets;
     StorageSection variable_memory;
     StorageSection initial_runtime_storage;
+    StorageSection constant_notifications;
+    StorageSection constant_dynamic_subscribers;
     std::size_t size{};
     std::size_t alignment{};
 };
@@ -264,10 +274,16 @@ struct CompilationPlan {
     std::span<const WiredNode> nodes;
     std::span<const WiredOutput> outputs;
     std::vector<NodePlan> node_plans;
+    std::vector<std::size_t> physical_node_indices;
+    std::vector<std::size_t> logical_node_indices;
+    std::vector<FoldedConstantPlan> folded_constants;
+    std::vector<std::size_t> folded_outputs;
     WiringPathLayout wiring_paths;
     NodeFunctionLayout starts;
     NodeFunctionLayout stops;
     std::vector<DynamicSubscribersPlan> dynamic_subscribers;
+    std::vector<InputNotificationSubscriberPlan> constant_notifications;
+    std::vector<ConstantDynamicSubscriber> constant_dynamic_subscribers;
     RuntimeStorageLayout runtime;
     FixedStorageLayout fixed;
     std::size_t scalar_destruction_count{};
@@ -277,6 +293,15 @@ struct CompilationPlan {
     bool uses_cycle_callbacks{};
 
     bool has_lifecycle() const noexcept { return !starts.nodes.empty() || !stops.nodes.empty(); }
+
+    bool is_folded_node(std::size_t node) const noexcept { return physical_node_indices[node] == WiredOutput::npos; }
+
+    std::size_t physical_node_index(std::size_t node) const noexcept { return physical_node_indices[node]; }
+
+    const FoldedConstantPlan *folded_constant(std::size_t output) const noexcept {
+        const auto index = folded_outputs[output];
+        return index == WiredOutput::npos ? nullptr : &folded_constants[index];
+    }
 };
 
 struct ConstructedScalar {
@@ -289,13 +314,15 @@ struct ConstructedNodeData {
     void *data;
 };
 
-[[nodiscard]] WiringPathLayout make_wiring_path_layout(std::span<const WiredNode> nodes) {
+[[nodiscard]] WiringPathLayout make_wiring_path_layout(std::span<const WiredNode> nodes,
+                                                        std::span<const std::size_t> logical_node_indices) {
     auto result = WiringPathLayout{};
-    result.node_paths.reserve(nodes.size());
+    result.node_paths.reserve(logical_node_indices.size());
 
     auto indices = std::unordered_map<const WiringPath *, std::uint32_t>{};
     auto missing = std::vector<const WiringPath *>{};
-    for (const auto &node : nodes) {
+    for (const auto node_index : logical_node_indices) {
+        const auto &node = nodes[node_index];
         auto *path = &node.path();
         missing.clear();
 
@@ -406,6 +433,9 @@ SubscriptionPlan &subscriber_list(std::size_t output, std::span<const WiredOutpu
 
 void plan_time_series_inputs(CompilationPlan &plan) {
     for (auto node_index = std::size_t{}; node_index < plan.nodes.size(); ++node_index) {
+        if (plan.is_folded_node(node_index)) {
+            continue;
+        }
         const auto &node = plan.nodes[node_index];
         auto input_index = std::size_t{};
 
@@ -432,7 +462,7 @@ void plan_time_series_inputs(CompilationPlan &plan) {
 }
 
 void plan_subscribers(std::span<const WiredNode> nodes, std::span<const WiredOutput> outputs,
-                      std::span<NodePlan> node_plans) {
+                      std::span<NodePlan> node_plans, CompilationPlan &plan) {
     const auto add_subscriber = [](std::vector<Subscriber> &subscribers, std::uint32_t node_index, bool is_active,
                                    bool is_required, bool is_active_optional) {
         if (!subscribers.empty() && !subscribers.back().has_dynamic_subscribers() &&
@@ -448,6 +478,9 @@ void plan_subscribers(std::span<const WiredNode> nodes, std::span<const WiredOut
     };
 
     for (auto target_index = std::size_t{}; target_index < nodes.size(); ++target_index) {
+        if (plan.is_folded_node(target_index)) {
+            continue;
+        }
         const auto &target = nodes[target_index];
         const auto &inputs = node_plans[target_index].time_series_inputs;
         for (auto input_index = std::size_t{}; input_index < inputs.size(); ++input_index) {
@@ -455,8 +488,14 @@ void plan_subscribers(std::span<const WiredNode> nodes, std::span<const WiredOut
             const auto &parameter = target.signature().parameters[input.parameter];
             const auto is_active = parameter.activity == active;
             const auto is_required = parameter.validity == required;
-            const auto subscriber_index = static_cast<std::uint32_t>(target_index);
+            const auto subscriber_index = static_cast<std::uint32_t>(plan.physical_node_index(target_index));
             const auto notification = target.node_template().input_notification(input_index);
+            if (plan.folded_constant(input.output) != nullptr) {
+                if (notification.function != nullptr) {
+                    plan.constant_notifications.push_back({subscriber_index, notification.data, notification.function});
+                }
+                continue;
+            }
             auto &subscriptions = subscriber_list(input.output, outputs, node_plans);
             if (input.dereferences_reference) {
                 subscriptions.reference_inputs.push_back({
@@ -488,6 +527,9 @@ void plan_subscribers(std::span<const WiredNode> nodes, std::span<const WiredOut
 
 void plan_dynamic_subscribers(CompilationPlan &plan) {
     for (auto node_index = std::size_t{}; node_index < plan.nodes.size(); ++node_index) {
+        if (plan.is_folded_node(node_index)) {
+            continue;
+        }
         const auto &node = plan.nodes[node_index];
         const auto layout = node.node_template().dynamic_subscribers_layout(node.signature());
         if (!layout) {
@@ -515,8 +557,14 @@ void resolve_dynamic_subscribers(CompilationPlan &plan) {
             throw std::logic_error{"dynamic subscribers are not pointer-aligned"};
         }
 
+        const auto packed = packed_offset(offset, "runtime storage reaches 1 GiB");
+        if (plan.folded_constant(dynamic.output) != nullptr) {
+            plan.constant_dynamic_subscribers.push_back(
+                {static_cast<std::uint32_t>(plan.physical_node_index(dynamic.node)), packed});
+            continue;
+        }
         subscriber_list(dynamic.output, plan.outputs, plan.node_plans)
-            .nodes.push_back(Subscriber::dynamic_subscribers(packed_offset(offset, "runtime storage reaches 1 GiB")));
+            .nodes.push_back(Subscriber::dynamic_subscribers(packed));
     }
 }
 
@@ -531,7 +579,8 @@ const TimeSeriesRuntimeType *input_runtime_type(const TimeSeriesInputPlan &input
 
 std::vector<const ScalarRuntimeType *> parameter_runtime_types(const WiredNode &node, const NodePlan &node_plan,
                                                                std::span<const WiredOutput> outputs,
-                                                               std::span<const NodePlan> node_plans) {
+                                                               std::span<const NodePlan> node_plans,
+                                                               const CompilationPlan &plan) {
     auto result = std::vector<const ScalarRuntimeType *>{};
     result.reserve(node.signature().parameters.size());
     auto input_index = std::size_t{};
@@ -539,6 +588,11 @@ std::vector<const ScalarRuntimeType *> parameter_runtime_types(const WiredNode &
     for (const auto &parameter : node.signature().parameters) {
         if (parameter.type->is_time_series()) {
             const auto &input = node_plan.time_series_inputs[input_index++];
+            if (const auto *constant = plan.folded_constant(input.output)) {
+                const auto &scalar = plan.nodes[constant->node].scalar_values()[constant->scalar];
+                result.push_back(&scalar.runtime_type());
+                continue;
+            }
             const auto layout = wired_output_layout(input.output, outputs, node_plans);
             const auto &requested_type = static_cast<const TimeSeriesType &>(*parameter.type);
             const auto *runtime_type = input_runtime_type(input, layout.runtime_type, requested_type);
@@ -561,15 +615,22 @@ std::vector<const ScalarRuntimeType *> parameter_runtime_types(const WiredNode &
 
 const TimeSeriesRuntimeType *find_output_runtime_type(const WiredNode &node, const NodePlan &node_plan,
                                                       std::span<const WiredOutput> outputs,
-                                                      std::span<const NodePlan> node_plans) {
+                                                      std::span<const NodePlan> node_plans,
+                                                      const CompilationPlan &plan) {
     if (node_plan.output.runtime_type != nullptr) {
         return node_plan.output.runtime_type;
     }
 
-    const auto parameter_types = parameter_runtime_types(node, node_plan, outputs, node_plans);
+    const auto parameter_types = parameter_runtime_types(node, node_plan, outputs, node_plans, plan);
     auto input_runtime_types = std::vector<const TimeSeriesRuntimeType *>{};
     input_runtime_types.reserve(node.input_output_indices().size());
     for (const auto &input : node_plan.time_series_inputs) {
+        if (plan.folded_constant(input.output) != nullptr) {
+            const auto &parameter =
+                static_cast<const TimeSeriesType &>(*node.signature().parameters[input.parameter].type);
+            input_runtime_types.push_back(&resolve_time_series_runtime_type(parameter));
+            continue;
+        }
         const auto output = wired_output_layout(input.output, outputs, node_plans);
         const auto &parameter = static_cast<const TimeSeriesType &>(*node.signature().parameters[input.parameter].type);
         const auto *runtime_type = input_runtime_type(input, output.runtime_type, parameter);
@@ -581,12 +642,12 @@ const TimeSeriesRuntimeType *find_output_runtime_type(const WiredNode &node, con
 
 [[nodiscard]] OutputLayout add_output_layout(StorageLayout &storage, const WiredNode &node, const NodePlan &node_plan,
                                              std::span<const WiredOutput> outputs,
-                                             std::span<const NodePlan> node_plans) {
+                                             std::span<const NodePlan> node_plans, const CompilationPlan &plan) {
     if (node.signature().output == nullptr) {
         return {};
     }
 
-    const auto *runtime_type = find_output_runtime_type(node, node_plan, outputs, node_plans);
+    const auto *runtime_type = find_output_runtime_type(node, node_plan, outputs, node_plans, plan);
     if (runtime_type == nullptr) {
         throw std::logic_error{"node output has no runtime type"};
     }
@@ -602,9 +663,10 @@ const TimeSeriesRuntimeType *find_output_runtime_type(const WiredNode &node, con
 }
 
 [[nodiscard]] StateLayout add_state_layout(StorageLayout &storage, const WiredNode &node, const NodePlan &node_plan,
-                                           std::span<const WiredOutput> outputs, std::span<const NodePlan> node_plans) {
+                                           std::span<const WiredOutput> outputs, std::span<const NodePlan> node_plans,
+                                           const CompilationPlan &plan) {
     auto layout = node.node_template().state_layout(
-        node.signature(), parameter_runtime_types(node, node_plan, outputs, node_plans), node.state_types());
+        node.signature(), parameter_runtime_types(node, node_plan, outputs, node_plans, plan), node.state_types());
     for ([[maybe_unused]] const auto *type : node.dynamic_reference_input_types()) {
         layout.size = align_up(layout.size, alignof(details::DynamicReferenceInputStorage));
         layout.field_offsets.push_back(layout.size);
@@ -621,14 +683,21 @@ const TimeSeriesRuntimeType *find_output_runtime_type(const WiredNode &node, con
             node.node_template().state_destruction_function(node.signature()) != nullptr};
 }
 
-void plan_runtime_storage(CompilationPlan &plan, std::size_t schedule_word_count) {
+void plan_runtime_storage(CompilationPlan &plan) {
     auto storage = StorageLayout{};
+    const auto schedule_word_count =
+        (plan.logical_node_indices.size() + std::numeric_limits<ScheduleWord>::digits - 1) /
+        std::numeric_limits<ScheduleWord>::digits;
     (void)storage.add<SchedulingInfo>(schedule_word_count);
     if (plan.uses_future_scheduling) {
         (void)storage.add<void *>();
     }
     if (plan.uses_cycle_callbacks) {
         (void)storage.add<void *>();
+    }
+    if (!plan.folded_constants.empty()) {
+        plan.runtime.constant_start_time_offset =
+            packed_offset(storage.add<EvaluationTime>().offset, "runtime storage reaches 1 GiB");
     }
 
     const auto add_item_samples = [&](this const auto &self, std::span<ItemSubscriptionPlan> items) -> void {
@@ -640,8 +709,11 @@ void plan_runtime_storage(CompilationPlan &plan, std::size_t schedule_word_count
     };
 
     for (auto i = std::size_t{}; i < plan.nodes.size(); ++i) {
+        if (plan.is_folded_node(i)) {
+            continue;
+        }
         auto &node_plan = plan.node_plans[i];
-        node_plan.output = add_output_layout(storage, plan.nodes[i], node_plan, plan.outputs, plan.node_plans);
+        node_plan.output = add_output_layout(storage, plan.nodes[i], node_plan, plan.outputs, plan.node_plans, plan);
         add_item_samples(node_plan.item_subscriptions);
 
         for (auto &input : node_plan.time_series_inputs) {
@@ -655,12 +727,14 @@ void plan_runtime_storage(CompilationPlan &plan, std::size_t schedule_word_count
             input.output_last_updated_offset = output_layout.last_updated_offset;
         }
 
-        node_plan.state = add_state_layout(storage, plan.nodes[i], node_plan, plan.outputs, plan.node_plans);
+        node_plan.state = add_state_layout(storage, plan.nodes[i], node_plan, plan.outputs, plan.node_plans, plan);
     }
 
     (void)packed_offset(storage.size(), "runtime storage reaches 1 GiB");
 
-    plan.runtime = {schedule_word_count, storage.size(), storage.alignment()};
+    plan.runtime.schedule_word_count = schedule_word_count;
+    plan.runtime.size = storage.size();
+    plan.runtime.alignment = storage.alignment();
 }
 
 std::size_t output_notification_size(const SubscriptionPlan &subscriptions) noexcept {
@@ -827,8 +901,8 @@ void plan_fixed_storage(CompilationPlan &plan) {
     auto storage = StorageLayout{};
     auto &layout = plan.fixed;
     layout.header = storage.add<details::CompiledStorageHeader>();
-    layout.node_offsets = storage.add<std::uint32_t>(plan.nodes.size());
-    layout.node_paths = storage.add<std::uint32_t>(plan.nodes.size());
+    layout.node_offsets = storage.add<std::uint32_t>(plan.logical_node_indices.size());
+    layout.node_paths = storage.add<std::uint32_t>(plan.logical_node_indices.size());
     if (plan.has_lifecycle()) {
         layout.start_functions = storage.add<EvaluationFunction>(plan.starts.nodes.size());
         layout.start_nodes = storage.add<std::uint32_t>(plan.starts.nodes.size());
@@ -844,21 +918,81 @@ void plan_fixed_storage(CompilationPlan &plan) {
         layout.variable_memory = storage.add<std::pmr::unsynchronized_pool_resource>();
     }
     layout.initial_runtime_storage = storage.add_bytes(plan.runtime.size, plan.runtime.alignment, plan.runtime.size);
+    layout.constant_notifications = storage.add<InputNotificationSubscriber>(plan.constant_notifications.size());
+    layout.constant_dynamic_subscribers =
+        storage.add<ConstantDynamicSubscriber>(plan.constant_dynamic_subscribers.size());
 
-    for (auto &node : plan.node_plans) {
-        const auto section = storage.add_bytes(node.fixed.size, node.fixed.alignment);
-        node.fixed.offset = section.offset;
+    for (auto node : plan.logical_node_indices) {
+        auto &fixed = plan.node_plans[node].fixed;
+        const auto section = storage.add_bytes(fixed.size, fixed.alignment);
+        fixed.offset = section.offset;
+    }
+    for (auto &constant : plan.folded_constants) {
+        const auto &scalar = plan.nodes[constant.node].scalar_values()[constant.scalar];
+        constant.storage = storage.add_bytes(scalar.runtime_type().size(), scalar.runtime_type().alignment());
     }
 
     layout.size = storage.size();
     layout.alignment = storage.alignment();
 }
 
-[[nodiscard]] CompilationPlan make_compilation_plan(const GraphWiring &wiring, std::size_t schedule_word_count) {
+[[nodiscard]] CompilationPlan make_compilation_plan(const GraphWiring &wiring) {
     auto result = CompilationPlan{};
     result.nodes = wiring.nodes();
     result.outputs = wiring.outputs();
     result.node_plans.resize(result.nodes.size());
+    result.physical_node_indices.assign(result.nodes.size(), WiredOutput::npos);
+    result.folded_outputs.assign(result.outputs.size(), WiredOutput::npos);
+
+    for (auto node_index = std::size_t{}; node_index < result.nodes.size(); ++node_index) {
+        const auto &node = result.nodes[node_index];
+        const auto folded = node.node_template().foldable_constant_output(node.signature());
+        if (!folded) {
+            result.physical_node_indices[node_index] = result.logical_node_indices.size();
+            result.logical_node_indices.push_back(node_index);
+            continue;
+        }
+
+        if (folded->scalar_parameter >= node.signature().parameters.size() ||
+            node.signature().parameters[folded->scalar_parameter].type->is_time_series() ||
+            node.signature().output == nullptr ||
+            node.signature().output->guarantee().value() != TimeSeriesGuarantee::const_) {
+            throw std::logic_error{"invalid foldable constant output"};
+        }
+        const auto *output = dynamic_cast<const TimeSeriesValueType *>(node.signature().output);
+        if (output == nullptr || &output->value_type() != node.signature().parameters[folded->scalar_parameter].type) {
+            throw std::logic_error{"foldable constant output does not match its scalar parameter"};
+        }
+
+        auto scalar = std::size_t{};
+        for (auto parameter = std::size_t{}; parameter < folded->scalar_parameter; ++parameter) {
+            scalar += static_cast<std::size_t>(!node.signature().parameters[parameter].type->is_time_series());
+        }
+        if (scalar >= node.scalar_values().size() || !node.scalar_values()[scalar].has_value()) {
+            throw std::logic_error{"foldable constant output requires one scalar value"};
+        }
+
+        const auto output_index = std::ranges::find_if(result.outputs, [=](const auto &candidate) {
+            return candidate.parent == WiredOutput::npos && candidate.node_index == node_index;
+        });
+        if (output_index == result.outputs.end()) {
+            throw std::logic_error{"foldable constant node has no root output"};
+        }
+        const auto index = static_cast<std::size_t>(output_index - result.outputs.begin());
+        result.folded_outputs[index] = result.folded_constants.size();
+        result.folded_constants.push_back({node_index, index, scalar, {}});
+    }
+
+    std::erase_if(result.folded_constants, [&](const auto &constant) {
+        return !std::ranges::any_of(result.nodes, [&](const auto &node) {
+            return !result.is_folded_node(&node - result.nodes.data()) &&
+                   std::ranges::find(node.input_output_indices(), constant.output) != node.input_output_indices().end();
+        });
+    });
+    std::fill(result.folded_outputs.begin(), result.folded_outputs.end(), WiredOutput::npos);
+    for (auto index = std::size_t{}; index < result.folded_constants.size(); ++index) {
+        result.folded_outputs[result.folded_constants[index].output] = index;
+    }
     for (const auto &output : result.outputs) {
         if (output.parent == WiredOutput::npos && output.runtime_type != nullptr) {
             result.node_plans[output.node_index].output.runtime_type = output.runtime_type;
@@ -866,22 +1000,34 @@ void plan_fixed_storage(CompilationPlan &plan) {
     }
 
     plan_time_series_inputs(result);
-    plan_subscribers(result.nodes, result.outputs, result.node_plans);
+    plan_subscribers(result.nodes, result.outputs, result.node_plans, result);
     plan_dynamic_subscribers(result);
-    result.wiring_paths = make_wiring_path_layout(result.nodes);
+    result.wiring_paths = make_wiring_path_layout(result.nodes, result.logical_node_indices);
 
     for (auto i = std::size_t{}; i < result.nodes.size(); ++i) {
+        if (result.is_folded_node(i)) {
+            continue;
+        }
         const auto &node = result.nodes[i];
         result.node_plans[i].invalidation = node.node_template().invalidation_behavior(node.signature());
-        result.starts.add(node.node_template().start_function(node.signature()), static_cast<std::uint32_t>(i));
-        result.stops.add(node.node_template().stop_function(node.signature()), static_cast<std::uint32_t>(i));
+        const auto physical = static_cast<std::uint32_t>(result.physical_node_index(i));
+        result.starts.add(node.node_template().start_function(node.signature()), physical);
+        result.stops.add(node.node_template().stop_function(node.signature()), physical);
         result.uses_future_scheduling |= node.node_template().uses_future_scheduling();
         result.uses_cycle_callbacks |= node.node_template().uses_cycle_callbacks();
         result.node_plans[i].compiled_data = node.node_template().compiled_data_layout(node.signature());
     }
+    for (const auto &constant : result.folded_constants) {
+        const auto &runtime_type = result.nodes[constant.node].scalar_values()[constant.scalar].runtime_type();
+        result.scalar_destruction_count += static_cast<std::size_t>(runtime_type.requires_destruction());
+        result.uses_variable_memory |= runtime_type.uses_variable_memory();
+    }
 
-    plan_runtime_storage(result, schedule_word_count);
+    plan_runtime_storage(result);
     for (auto i = std::size_t{}; i < result.nodes.size(); ++i) {
+        if (result.is_folded_node(i)) {
+            continue;
+        }
         auto &invalidation = result.node_plans[i].invalidation;
         const auto *output_type = result.nodes[i].signature().output;
         if (invalidation.mode == InvalidationMode::invalidate_output && output_type != nullptr &&
@@ -897,6 +1043,9 @@ void plan_fixed_storage(CompilationPlan &plan) {
         }));
 
     for (auto i = std::size_t{}; i < result.nodes.size(); ++i) {
+        if (result.is_folded_node(i)) {
+            continue;
+        }
         const auto &node = result.nodes[i];
         auto &node_plan = result.node_plans[i];
         node_plan.fixed = make_node_layout(node, node_plan);
@@ -922,12 +1071,10 @@ void plan_fixed_storage(CompilationPlan &plan) {
 class CompiledGraphBuilder {
   public:
     static void build(CompiledGraph &graph, const GraphWiring &wiring, allocator memory) {
-        const auto nodes = wiring.nodes();
-        if (nodes.size() > CompiledGraph::count_mask) {
+        auto plan = make_compilation_plan(wiring);
+        if (plan.logical_node_indices.size() > CompiledGraph::count_mask) {
             throw std::length_error{"a compiled graph has too many nodes"};
         }
-
-        auto plan = make_compilation_plan(wiring, CompiledGraph::schedule_word_count(nodes.size()));
         if (plan.scalar_destruction_count > CompiledGraph::count_mask) {
             throw std::length_error{"a compiled graph has too many scalars"};
         }
@@ -952,7 +1099,7 @@ class CompiledGraphBuilder {
             (plan.uses_future_scheduling ? CompiledGraph::future_scheduling_flag : std::uint32_t{});
         graph.runtime_storage_size_ = packed_offset(plan.runtime.size, "runtime storage reaches 1 GiB");
         graph.node_count_and_fixed_alignment_ =
-            static_cast<std::uint32_t>(plan.nodes.size()) |
+            static_cast<std::uint32_t>(plan.logical_node_indices.size()) |
             (alignment_exponent(plan.fixed.alignment, "invalid compiled storage alignment")
              << CompiledGraph::alignment_shift);
         graph.scalar_count_and_runtime_alignment_ =
@@ -997,7 +1144,10 @@ class CompiledGraphBuilder {
 
         construct_initial_runtime_storage(plan, storage);
         construct_output_destruction(plan, storage);
-        construct_nodes(plan, storage, upstream_memory, variable_memory, constructed_scalars, constructed_node_data);
+        auto scalar_destruction_index = std::size_t{};
+        construct_folded_constants(plan, storage, variable_memory, constructed_scalars, scalar_destruction_index);
+        construct_nodes(plan, storage, upstream_memory, variable_memory, constructed_scalars, scalar_destruction_index,
+                        constructed_node_data);
         rollback.release();
     }
 
@@ -1021,7 +1171,22 @@ class CompiledGraphBuilder {
                     offset(plan.fixed.variable_memory) |
                     (plan.uses_cycle_callbacks ? CompiledGraph::cycle_callbacks_flag : std::uint32_t{}),
                 .initial_runtime_storage_offset = offset(plan.fixed.initial_runtime_storage),
+                .constant_start_time_offset = plan.runtime.constant_start_time_offset.value_or(0),
+                .constant_notification_offset = offset(plan.fixed.constant_notifications),
+                .constant_notification_count = static_cast<std::uint32_t>(plan.constant_notifications.size()),
+                .constant_dynamic_subscriber_offset = offset(plan.fixed.constant_dynamic_subscribers),
+                .constant_dynamic_subscriber_count =
+                    static_cast<std::uint32_t>(plan.constant_dynamic_subscribers.size()),
             });
+
+        auto notifications = plan.fixed.constant_notifications.objects<InputNotificationSubscriber>(storage);
+        for (auto index = std::size_t{}; index < notifications.size(); ++index) {
+            const auto &source = plan.constant_notifications[index];
+            std::construct_at(notifications.data() + index, source.function, source.data, source.node_index);
+        }
+        std::uninitialized_copy(
+            plan.constant_dynamic_subscribers.begin(), plan.constant_dynamic_subscribers.end(),
+            plan.fixed.constant_dynamic_subscribers.objects<ConstantDynamicSubscriber>(storage).data());
     }
 
     static void construct_wiring_paths(const CompilationPlan &plan, std::byte *storage) {
@@ -1059,18 +1224,33 @@ class CompiledGraphBuilder {
             std::span{reinterpret_cast<SchedulingInfo *>(runtime_storage.data()), plan.runtime.schedule_word_count};
         std::uninitialized_value_construct(scheduling.begin(), scheduling.end());
 
-        for (auto node_index = std::size_t{}; node_index < plan.nodes.size(); ++node_index) {
-            const auto &parameters = plan.nodes[node_index].signature().parameters;
-            const auto has_required_input = std::ranges::any_of(parameters, [](const auto &parameter) {
-                return parameter.type->is_time_series() && parameter.validity == required;
+        if (plan.runtime.constant_start_time_offset) {
+            auto *start_time =
+                reinterpret_cast<EvaluationTime *>(runtime_storage.data() + *plan.runtime.constant_start_time_offset);
+            std::construct_at(start_time, MIN_DT);
+        }
+
+        for (const auto node_index : plan.logical_node_indices) {
+            const auto &node = plan.nodes[node_index];
+            const auto &inputs = plan.node_plans[node_index].time_series_inputs;
+            const auto required_inputs_are_constants = std::ranges::all_of(inputs, [&](const auto &input) {
+                return node.signature().parameters[input.parameter].validity != required ||
+                       plan.folded_constant(input.output) != nullptr;
             });
-            if (!has_required_input) {
-                auto &info = scheduling[node_index / CompiledGraph::schedule_word_bits];
-                info.inputs_valid(ScheduleWord{1} << (node_index % CompiledGraph::schedule_word_bits), true);
+            const auto physical = plan.physical_node_index(node_index);
+            auto &info = scheduling[physical / CompiledGraph::schedule_word_bits];
+            const auto mask = ScheduleWord{1} << (physical % CompiledGraph::schedule_word_bits);
+            info.inputs_valid(mask, required_inputs_are_constants);
+            if (std::ranges::any_of(inputs, [&](const auto &input) {
+                    return node.signature().parameters[input.parameter].activity == active &&
+                           plan.folded_constant(input.output) != nullptr;
+                })) {
+                info.evaluation |= mask;
             }
         }
 
-        for (const auto &node : plan.node_plans) {
+        for (const auto node_index : plan.logical_node_indices) {
+            const auto &node = plan.node_plans[node_index];
             const auto &output = node.output;
             if (output.runtime_type == nullptr) {
                 continue;
@@ -1090,7 +1270,8 @@ class CompiledGraphBuilder {
                 self(item.items);
             }
         };
-        for (const auto &node : plan.node_plans) {
+        for (const auto node_index : plan.logical_node_indices) {
+            const auto &node = plan.node_plans[node_index];
             initialize_item_samples(node.item_subscriptions);
             for (const auto &reference : node.time_series_inputs) {
                 if (!reference.dereferences_reference) {
@@ -1100,7 +1281,7 @@ class CompiledGraphBuilder {
             }
         }
 
-        for (auto i = std::size_t{}; i < plan.nodes.size(); ++i) {
+        for (const auto i : plan.logical_node_indices) {
             const auto &state = plan.node_plans[i].state;
             if (state.node.size == 0) {
                 continue;
@@ -1127,6 +1308,28 @@ class CompiledGraphBuilder {
         }
     }
 
+    static void construct_folded_constants(const CompilationPlan &plan, std::byte *storage, allocator variable_memory,
+                                           std::vector<ConstructedScalar> &constructed_scalars,
+                                           std::size_t &scalar_destruction_index) {
+        auto destruction_runtime_types =
+            plan.fixed.scalar_destruction_runtime_types.objects<const ScalarRuntimeType *>(storage);
+        auto destruction_offsets = plan.fixed.scalar_destruction_offsets.objects<std::uint32_t>(storage);
+        for (const auto &constant : plan.folded_constants) {
+            const auto &scalar = plan.nodes[constant.node].scalar_values()[constant.scalar];
+            auto *destination = storage + constant.storage.offset;
+            scalar.runtime_type().copy_construct(destination, scalar.data(), variable_memory);
+            if (!scalar.runtime_type().requires_destruction()) {
+                continue;
+            }
+
+            constructed_scalars.push_back({&scalar.runtime_type(), destination});
+            std::construct_at(destruction_runtime_types.data() + scalar_destruction_index, &scalar.runtime_type());
+            std::construct_at(destruction_offsets.data() + scalar_destruction_index,
+                              packed_offset(constant.storage.offset, "compiled fixed storage reaches 1 GiB"));
+            ++scalar_destruction_index;
+        }
+    }
+
     static void construct_parameters(const CompilationPlan &plan, std::size_t node_index, std::byte *storage,
                                      allocator variable_memory, std::vector<ConstructedScalar> &constructed_scalars,
                                      std::size_t &scalar_destruction_index) {
@@ -1146,6 +1349,17 @@ class CompiledGraphBuilder {
 
             if (parameter.type->is_time_series()) {
                 const auto &input = plan.node_plans[node_index].time_series_inputs[input_index++];
+                if (const auto *constant = plan.folded_constant(input.output)) {
+                    const auto parameter_offset =
+                        layout.offset + layout.parameters.offset + parameter_index * sizeof(ParameterBinding);
+                    std::construct_at(
+                        parameters.data() + parameter_index,
+                        ParameterBinding{*plan.runtime.constant_start_time_offset,
+                                         packed_offset(constant->storage.offset - parameter_offset,
+                                                       "a constant is more than 1 GiB from its parameter"),
+                                         parameter.activity, parameter.validity, ParameterBindingMode::constant});
+                    continue;
+                }
                 const auto resolved_output = wired_output_layout(input.output, plan.outputs, plan.node_plans);
                 if (input.dereferences_reference) {
                     std::construct_at(parameters.data() + parameter_index,
@@ -1225,10 +1439,15 @@ class CompiledGraphBuilder {
                 continue;
             }
 
-            const auto output = wired_output_layout(input.output, plan.outputs, plan.node_plans);
             const auto &parameter =
                 static_cast<const TimeSeriesType &>(*node.signature().parameters[parameter_index].type);
-            const auto *runtime_type = input_runtime_type(input, output.runtime_type, parameter);
+            const auto *runtime_type = [&] {
+                if (plan.folded_constant(input.output) != nullptr) {
+                    return &resolve_time_series_runtime_type(parameter);
+                }
+                const auto output = wired_output_layout(input.output, plan.outputs, plan.node_plans);
+                return input_runtime_type(input, output.runtime_type, parameter);
+            }();
             runtime_types[time_series_runtime_type_index] = runtime_type;
             ++time_series_runtime_type_index;
         }
@@ -1247,8 +1466,9 @@ class CompiledGraphBuilder {
 
     static const TimeSeriesRuntimeType &
     requested_reference_runtime_type(const CompilationPlan &plan, const ReferenceInputSubscriberPlan &subscriber) {
-        const auto &input = plan.node_plans[subscriber.node_index].time_series_inputs[subscriber.input_index];
-        const auto &parameter = *plan.nodes[subscriber.node_index].signature().parameters[input.parameter].type;
+        const auto node_index = plan.logical_node_indices[subscriber.node_index];
+        const auto &input = plan.node_plans[node_index].time_series_inputs[subscriber.input_index];
+        const auto &parameter = *plan.nodes[node_index].signature().parameters[input.parameter].type;
         const auto &requested_type = reference_input_target_type(parameter);
         return resolve_time_series_runtime_type(requested_type);
     }
@@ -1289,7 +1509,8 @@ class CompiledGraphBuilder {
                     continue;
                 }
 
-                const auto &input = plan.node_plans[subscriber.node_index].time_series_inputs[subscriber.input_index];
+                const auto node_index = plan.logical_node_indices[subscriber.node_index];
+                const auto &input = plan.node_plans[node_index].time_series_inputs[subscriber.input_index];
                 std::construct_at(records++, input.offset, subscriber.node_index, subscriber.active,
                                   subscriber.required, requested_reference_runtime_type(plan, subscriber));
             }
@@ -1308,7 +1529,8 @@ class CompiledGraphBuilder {
                     continue;
                 }
 
-                const auto &input = plan.node_plans[subscriber.node_index].time_series_inputs[subscriber.input_index];
+                const auto node_index = plan.logical_node_indices[subscriber.node_index];
+                const auto &input = plan.node_plans[node_index].time_series_inputs[subscriber.input_index];
                 std::construct_at(records++, input.offset, subscriber.notification.data, subscriber.node_index,
                                   subscriber.active, subscriber.required,
                                   requested_reference_runtime_type(plan, subscriber), subscriber.notification.function);
@@ -1356,12 +1578,13 @@ class CompiledGraphBuilder {
 
     static void construct_nodes(const CompilationPlan &plan, std::byte *storage, allocator compiled_memory,
                                 allocator variable_memory, std::vector<ConstructedScalar> &constructed_scalars,
+                                std::size_t &scalar_destruction_index,
                                 std::vector<ConstructedNodeData> &constructed_node_data) {
         auto compiled_allocator = compiled_memory;
         auto node_offsets = plan.fixed.node_offsets.objects<std::uint32_t>(storage);
-        auto scalar_destruction_index = std::size_t{};
 
-        for (auto i = std::size_t{}; i < plan.nodes.size(); ++i) {
+        for (auto physical = std::size_t{}; physical < plan.logical_node_indices.size(); ++physical) {
+            const auto i = plan.logical_node_indices[physical];
             const auto &node = plan.nodes[i];
             const auto &node_plan = plan.node_plans[i];
             const auto &layout = node_plan.fixed;
@@ -1454,7 +1677,7 @@ class CompiledGraphBuilder {
                         !node_plan.subscriptions.input_subscribers.empty(),
                     !node_plan.item_subscriptions.empty(), node.node_template().uses_node_invocation(),
                     static_cast<std::uint32_t>(node_plan.time_series_inputs.size()), node_plan.invalidation.mode});
-            std::construct_at(node_offsets.data() + i,
+            std::construct_at(node_offsets.data() + physical,
                               packed_offset(layout.offset, "compiled fixed storage reaches 1 GiB"));
         }
     }
@@ -1510,6 +1733,23 @@ CompiledGraph::OutputDestruction CompiledGraph::output_destruction() const noexc
 
     return {runtime_types,
             stored_objects<std::uint32_t>(fixed_storage_, offsets_offset, header.output_destruction_count)};
+}
+
+std::optional<std::size_t> CompiledGraph::constant_start_time_offset() const noexcept {
+    const auto offset = storage_header().constant_start_time_offset;
+    return offset == 0 ? std::nullopt : std::optional<std::size_t>{offset};
+}
+
+std::span<const InputNotificationSubscriber> CompiledGraph::constant_notifications() const noexcept {
+    const auto &header = storage_header();
+    return stored_objects<InputNotificationSubscriber>(fixed_storage_, header.constant_notification_offset,
+                                                       header.constant_notification_count);
+}
+
+std::span<const ConstantDynamicSubscriber> CompiledGraph::constant_dynamic_subscribers() const noexcept {
+    const auto &header = storage_header();
+    return stored_objects<ConstantDynamicSubscriber>(fixed_storage_, header.constant_dynamic_subscriber_offset,
+                                                     header.constant_dynamic_subscriber_count);
 }
 
 CompiledGraph::~CompiledGraph() {

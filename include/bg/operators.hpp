@@ -15,6 +15,7 @@ using COLLECTION = TimeSeriesVariable<"COLLECTION">;
 using ITEM = TimeSeriesVariable<"ITEM">;
 using K = ScalarVariable<"K", Hashable>;
 
+extern BG_EXPORT operator_<auto(SCALAR) -> TS<SCALAR, TimeSeriesGuarantee::const_>> const_;
 extern BG_EXPORT operator_<auto(COLLECTION, Union<K, TS<K>>) -> ITEM> getitem;
 extern BG_EXPORT operator_<auto(TSB<SCHEMA>, util::symbol) -> ITEM> getattr;
 

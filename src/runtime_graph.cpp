@@ -697,6 +697,9 @@ void RuntimeGraph::start(EvaluationTime evaluation_time, details::EvaluationScra
     started_ = true;
     const auto scratch_use = ScratchUse{*this, scratch};
     evaluation_time_ = evaluation_time;
+    if (const auto offset = compiled_graph_->constant_start_time_offset()) {
+        *reinterpret_cast<EvaluationTime *>(storage_ + *offset) = evaluation_time;
+    }
     const auto starts = compiled_graph_->start_functions();
     auto started_node_count = std::size_t{};
     auto function = starts.functions.begin();
@@ -719,6 +722,19 @@ void RuntimeGraph::start(EvaluationTime evaluation_time, details::EvaluationScra
         if (node.has_output()) {
             if (const auto change = output_change(node, output_was_valid)) {
                 publish_output(node, *change);
+            }
+        }
+    }
+    {
+        auto context = OutputChangeContext{*this};
+        for (const auto &notification : compiled_graph_->constant_notifications()) {
+            notification.notify(context, OutputChange::revalidation);
+        }
+        for (const auto &subscriber : compiled_graph_->constant_dynamic_subscribers()) {
+            auto *dynamic = *reinterpret_cast<details::DynamicSubscribers **>(
+                static_cast<std::byte *>(node(subscriber.node_index).state()) + subscriber.state_offset);
+            if (dynamic != nullptr) {
+                notify_dynamic_subscribers(*dynamic, OutputChange::revalidation);
             }
         }
     }

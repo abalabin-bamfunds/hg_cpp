@@ -31,6 +31,11 @@ struct NodeInvocationParameterMetadata {
     const Type *type;
 };
 
+struct ConstantDynamicSubscriber {
+    std::uint32_t node_index;
+    std::uint32_t state_offset;
+};
+
 struct NodeInvocationMetadata {
     std::uint32_t parameters_offset;
     std::uint32_t compiled_data_offset;
@@ -49,6 +54,7 @@ enum class ParameterBindingMode : std::uint8_t {
     time_series,
     reference,
     scalar,
+    constant,
 };
 
 class Subscriber {
@@ -202,7 +208,8 @@ class ParameterBinding {
   public:
     ParameterBindingMode mode() const noexcept {
         if ((location_and_flags_ & scalar_flag) != 0) {
-            return ParameterBindingMode::scalar;
+            return (value_offset_ & constant_flag) == 0 ? ParameterBindingMode::scalar
+                                                        : ParameterBindingMode::constant;
         }
         return (value_offset_ & reference_flag) == 0 ? ParameterBindingMode::time_series
                                                      : ParameterBindingMode::reference;
@@ -224,6 +231,11 @@ class ParameterBinding {
         return address + (location_and_flags_ & location_mask);
     }
 
+    const void *constant_data() const noexcept {
+        const auto *address = reinterpret_cast<const std::byte *>(this);
+        return address + (value_offset_ & value_location_mask);
+    }
+
     InputValidity validity() const noexcept { return (location_and_flags_ & optional_flag) == 0 ? required : optional; }
 
   private:
@@ -233,6 +245,7 @@ class ParameterBinding {
     static constexpr std::uint32_t optional_flag = std::uint32_t{1} << 30;
     static constexpr std::uint32_t location_mask = optional_flag - 1;
     static constexpr std::uint32_t reference_flag = std::uint32_t{1} << 31;
+    static constexpr std::uint32_t constant_flag = reference_flag;
     static constexpr std::uint32_t active_flag = std::uint32_t{1} << 30;
     static constexpr std::uint32_t value_location_mask = active_flag - 1;
 
@@ -248,11 +261,19 @@ class ParameterBinding {
     explicit ParameterBinding(std::uint32_t scalar_offset) noexcept
         : location_and_flags_{scalar_offset | scalar_flag}, value_offset_{} {}
 
+    ParameterBinding(std::uint32_t start_time_offset, std::uint32_t scalar_offset, InputActivity activity,
+                     InputValidity validity, ParameterBindingMode) noexcept
+        : location_and_flags_{start_time_offset | scalar_flag |
+                              (validity == optional ? optional_flag : std::uint32_t{})},
+          value_offset_{scalar_offset | constant_flag | (activity == bg::active ? active_flag : std::uint32_t{})} {}
+
     ParameterBinding() noexcept : location_and_flags_{scalar_flag | optional_flag}, value_offset_{} {}
 
     std::uint32_t location_and_flags_;
     std::uint32_t value_offset_;
 };
+
+static_assert(sizeof(ParameterBinding) == 8);
 
 // Begins a packed node record. Parameters, subscribers, optional metadata, and scalar values follow the fixed header.
 class CompiledNode {

@@ -27,9 +27,14 @@ struct CompiledStorageHeader {
     std::uint32_t output_destruction_count;
     std::uint32_t variable_memory_offset;
     std::uint32_t initial_runtime_storage_offset;
+    std::uint32_t constant_start_time_offset;
+    std::uint32_t constant_notification_offset;
+    std::uint32_t constant_notification_count;
+    std::uint32_t constant_dynamic_subscriber_offset;
+    std::uint32_t constant_dynamic_subscriber_count;
 };
 
-static_assert(sizeof(CompiledStorageHeader) == 40);
+static_assert(sizeof(CompiledStorageHeader) == 60);
 static_assert(std::is_trivially_copyable_v<CompiledStorageHeader>);
 
 } // namespace bg::details

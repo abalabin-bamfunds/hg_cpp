@@ -9,6 +9,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <optional>
 #include <span>
 
 namespace bg {
@@ -126,6 +127,9 @@ class CompiledGraph {
     NodeFunctions start_functions() const noexcept;
     NodeFunctions stop_functions() const noexcept;
     OutputDestruction output_destruction() const noexcept;
+    std::optional<std::size_t> constant_start_time_offset() const noexcept;
+    std::span<const InputNotificationSubscriber> constant_notifications() const noexcept;
+    std::span<const ConstantDynamicSubscriber> constant_dynamic_subscribers() const noexcept;
 
     const details::CompiledStorageHeader &storage_header() const noexcept {
         return *reinterpret_cast<const details::CompiledStorageHeader *>(fixed_storage_);
