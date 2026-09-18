@@ -170,6 +170,10 @@ Before completing a change, check:
 - Can any helper, wrapper, or layer be removed?
 - Does each new runtime downcast or namespace-scope helper indicate a missing
   abstraction or owner?
+- Does any special-case logic indicate a missing abstraction or inconsistent
+  representation? Prefer a solution that follows the normal design. Keep a
+  special case only when a concrete constraint requires it. Raise it with the
+  project owner before retaining it, and document the constraint.
 - Are names consistent with the terminology dictionary?
 - Does whitespace show the structure of the logic?
 - Do the supported compilers accept every selected feature?
