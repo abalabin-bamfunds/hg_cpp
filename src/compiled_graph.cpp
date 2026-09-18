@@ -1,6 +1,7 @@
 #include <bg/graph/compiled_graph.hpp>
 
 #include <bg/evaluation_time.hpp>
+#include <bg/graph/details/compiled_graph_builder.hpp>
 #include <bg/graph/graph_wiring.hpp>
 #include <bg/node/node_template.hpp>
 #include <bg/scalar/runtime_type.hpp>
@@ -247,6 +248,7 @@ struct FixedStorageLayout {
     StorageSection header;
     StorageSection node_offsets;
     StorageSection node_paths;
+    StorageSection constant_metadata;
     StorageSection start_functions;
     StorageSection start_nodes;
     StorageSection stop_functions;
@@ -283,7 +285,7 @@ struct CompilationPlan {
     NodeFunctionLayout stops;
     std::vector<DynamicSubscribersPlan> dynamic_subscribers;
     std::vector<InputNotificationSubscriberPlan> constant_notifications;
-    std::vector<ConstantDynamicSubscriber> constant_dynamic_subscribers;
+    std::vector<details::ConstantDynamicSubscriber> constant_dynamic_subscribers;
     RuntimeStorageLayout runtime;
     FixedStorageLayout fixed;
     std::size_t scalar_destruction_count{};
@@ -559,8 +561,7 @@ void resolve_dynamic_subscribers(CompilationPlan &plan) {
 
         const auto packed = packed_offset(offset, "runtime storage reaches 1 GiB");
         if (plan.folded_constant(dynamic.output) != nullptr) {
-            plan.constant_dynamic_subscribers.push_back(
-                {static_cast<std::uint32_t>(plan.physical_node_index(dynamic.node)), packed});
+            plan.constant_dynamic_subscribers.push_back({packed});
             continue;
         }
         subscriber_list(dynamic.output, plan.outputs, plan.node_plans)
@@ -903,6 +904,9 @@ void plan_fixed_storage(CompilationPlan &plan) {
     layout.header = storage.add<details::CompiledStorageHeader>();
     layout.node_offsets = storage.add<std::uint32_t>(plan.logical_node_indices.size());
     layout.node_paths = storage.add<std::uint32_t>(plan.logical_node_indices.size());
+    if (!plan.folded_constants.empty()) {
+        layout.constant_metadata = storage.add<details::ConstantMetadata>();
+    }
     if (plan.has_lifecycle()) {
         layout.start_functions = storage.add<EvaluationFunction>(plan.starts.nodes.size());
         layout.start_nodes = storage.add<std::uint32_t>(plan.starts.nodes.size());
@@ -920,7 +924,7 @@ void plan_fixed_storage(CompilationPlan &plan) {
     layout.initial_runtime_storage = storage.add_bytes(plan.runtime.size, plan.runtime.alignment, plan.runtime.size);
     layout.constant_notifications = storage.add<InputNotificationSubscriber>(plan.constant_notifications.size());
     layout.constant_dynamic_subscribers =
-        storage.add<ConstantDynamicSubscriber>(plan.constant_dynamic_subscribers.size());
+        storage.add<details::ConstantDynamicSubscriber>(plan.constant_dynamic_subscribers.size());
 
     for (auto node : plan.logical_node_indices) {
         auto &fixed = plan.node_plans[node].fixed;
@@ -946,37 +950,37 @@ void plan_fixed_storage(CompilationPlan &plan) {
 
     for (auto node_index = std::size_t{}; node_index < result.nodes.size(); ++node_index) {
         const auto &node = result.nodes[node_index];
-        const auto folded = node.node_template().foldable_constant_output(node.signature());
-        if (!folded) {
+        const auto constant = node.node_template().constant_output(node.signature());
+        if (!constant) {
             result.physical_node_indices[node_index] = result.logical_node_indices.size();
             result.logical_node_indices.push_back(node_index);
             continue;
         }
 
-        if (folded->scalar_parameter >= node.signature().parameters.size() ||
-            node.signature().parameters[folded->scalar_parameter].type->is_time_series() ||
+        if (constant->scalar_parameter >= node.signature().parameters.size() ||
+            node.signature().parameters[constant->scalar_parameter].type->is_time_series() ||
             node.signature().output == nullptr ||
             node.signature().output->guarantee().value() != TimeSeriesGuarantee::const_) {
-            throw std::logic_error{"invalid foldable constant output"};
+            throw std::logic_error{"invalid constant output"};
         }
         const auto *output = dynamic_cast<const TimeSeriesValueType *>(node.signature().output);
-        if (output == nullptr || &output->value_type() != node.signature().parameters[folded->scalar_parameter].type) {
-            throw std::logic_error{"foldable constant output does not match its scalar parameter"};
+        if (output == nullptr || &output->value_type() != node.signature().parameters[constant->scalar_parameter].type) {
+            throw std::logic_error{"constant output does not match its scalar parameter"};
         }
 
         auto scalar = std::size_t{};
-        for (auto parameter = std::size_t{}; parameter < folded->scalar_parameter; ++parameter) {
+        for (auto parameter = std::size_t{}; parameter < constant->scalar_parameter; ++parameter) {
             scalar += static_cast<std::size_t>(!node.signature().parameters[parameter].type->is_time_series());
         }
         if (scalar >= node.scalar_values().size() || !node.scalar_values()[scalar].has_value()) {
-            throw std::logic_error{"foldable constant output requires one scalar value"};
+            throw std::logic_error{"constant output requires one scalar value"};
         }
 
         const auto output_index = std::ranges::find_if(result.outputs, [=](const auto &candidate) {
             return candidate.parent == WiredOutput::npos && candidate.node_index == node_index;
         });
         if (output_index == result.outputs.end()) {
-            throw std::logic_error{"foldable constant node has no root output"};
+            throw std::logic_error{"constant node has no root output"};
         }
         const auto index = static_cast<std::size_t>(output_index - result.outputs.begin());
         result.folded_outputs[index] = result.folded_constants.size();
@@ -1037,9 +1041,10 @@ void plan_fixed_storage(CompilationPlan &plan) {
     }
     resolve_dynamic_subscribers(result);
 
-    result.output_destruction_count =
-        static_cast<std::size_t>(std::ranges::count_if(result.node_plans, [](const auto &node) {
-            return node.output.runtime_type != nullptr && node.output.runtime_type->requires_destruction();
+    result.output_destruction_count = static_cast<std::size_t>(std::ranges::count_if(
+        result.logical_node_indices, [&](const auto node_index) {
+            const auto &output = result.node_plans[node_index].output;
+            return output.runtime_type != nullptr && output.runtime_type->requires_destruction();
         }));
 
     for (auto i = std::size_t{}; i < result.nodes.size(); ++i) {
@@ -1070,13 +1075,20 @@ void plan_fixed_storage(CompilationPlan &plan) {
 
 class CompiledGraphBuilder {
   public:
-    static void build(CompiledGraph &graph, const GraphWiring &wiring, allocator memory) {
+    static void build(CompiledGraph &graph, const GraphWiring &wiring, allocator memory,
+                      std::span<std::size_t> remapped_node_indices = {}) {
         auto plan = make_compilation_plan(wiring);
         if (plan.logical_node_indices.size() > CompiledGraph::count_mask) {
             throw std::length_error{"a compiled graph has too many nodes"};
         }
         if (plan.scalar_destruction_count > CompiledGraph::count_mask) {
             throw std::length_error{"a compiled graph has too many scalars"};
+        }
+        for (auto &node_index : remapped_node_indices) {
+            if (node_index >= plan.physical_node_indices.size() || plan.is_folded_node(node_index)) {
+                throw std::logic_error{"a graph boundary cannot be a folded constant"};
+            }
+            node_index = plan.physical_node_index(node_index);
         }
 
         set_graph_metadata(graph, plan);
@@ -1169,15 +1181,22 @@ class CompiledGraphBuilder {
                 .output_destruction_count = static_cast<std::uint32_t>(plan.output_destruction_count),
                 .variable_memory_offset =
                     offset(plan.fixed.variable_memory) |
-                    (plan.uses_cycle_callbacks ? CompiledGraph::cycle_callbacks_flag : std::uint32_t{}),
+                    (plan.uses_cycle_callbacks ? CompiledGraph::cycle_callbacks_flag : std::uint32_t{}) |
+                    (!plan.folded_constants.empty() ? CompiledGraph::constants_flag : std::uint32_t{}),
                 .initial_runtime_storage_offset = offset(plan.fixed.initial_runtime_storage),
-                .constant_start_time_offset = plan.runtime.constant_start_time_offset.value_or(0),
-                .constant_notification_offset = offset(plan.fixed.constant_notifications),
-                .constant_notification_count = static_cast<std::uint32_t>(plan.constant_notifications.size()),
-                .constant_dynamic_subscriber_offset = offset(plan.fixed.constant_dynamic_subscribers),
-                .constant_dynamic_subscriber_count =
-                    static_cast<std::uint32_t>(plan.constant_dynamic_subscribers.size()),
             });
+
+        if (!plan.folded_constants.empty()) {
+            std::construct_at(
+                plan.fixed.constant_metadata.objects<details::ConstantMetadata>(storage).data(),
+                details::ConstantMetadata{
+                    .start_time_offset = *plan.runtime.constant_start_time_offset,
+                    .notification_offset = offset(plan.fixed.constant_notifications),
+                    .notification_count = static_cast<std::uint32_t>(plan.constant_notifications.size()),
+                    .dynamic_subscriber_offset = offset(plan.fixed.constant_dynamic_subscribers),
+                    .dynamic_subscriber_count = static_cast<std::uint32_t>(plan.constant_dynamic_subscribers.size()),
+                });
+        }
 
         auto notifications = plan.fixed.constant_notifications.objects<InputNotificationSubscriber>(storage);
         for (auto index = std::size_t{}; index < notifications.size(); ++index) {
@@ -1186,7 +1205,7 @@ class CompiledGraphBuilder {
         }
         std::uninitialized_copy(
             plan.constant_dynamic_subscribers.begin(), plan.constant_dynamic_subscribers.end(),
-            plan.fixed.constant_dynamic_subscribers.objects<ConstantDynamicSubscriber>(storage).data());
+            plan.fixed.constant_dynamic_subscribers.objects<details::ConstantDynamicSubscriber>(storage).data());
     }
 
     static void construct_wiring_paths(const CompilationPlan &plan, std::byte *storage) {
@@ -1297,8 +1316,8 @@ class CompiledGraphBuilder {
             plan.fixed.output_destruction_runtime_types.objects<const TimeSeriesRuntimeType *>(fixed_storage).begin();
         auto offsets = plan.fixed.output_destruction_offsets.objects<std::uint32_t>(fixed_storage).begin();
 
-        for (const auto &node : plan.node_plans) {
-            const auto &output = node.output;
+        for (const auto node_index : plan.logical_node_indices) {
+            const auto &output = plan.node_plans[node_index].output;
             if (output.runtime_type == nullptr || !output.runtime_type->requires_destruction()) {
                 continue;
             }
@@ -1352,12 +1371,12 @@ class CompiledGraphBuilder {
                 if (const auto *constant = plan.folded_constant(input.output)) {
                     const auto parameter_offset =
                         layout.offset + layout.parameters.offset + parameter_index * sizeof(ParameterBinding);
-                    std::construct_at(
-                        parameters.data() + parameter_index,
-                        ParameterBinding{*plan.runtime.constant_start_time_offset,
-                                         packed_offset(constant->storage.offset - parameter_offset,
-                                                       "a constant is more than 1 GiB from its parameter"),
-                                         parameter.activity, parameter.validity, ParameterBindingMode::constant});
+                    std::construct_at(parameters.data() + parameter_index,
+                                      ParameterBinding::constant(
+                                          *plan.runtime.constant_start_time_offset,
+                                          packed_offset(constant->storage.offset - parameter_offset,
+                                                        "a constant is more than 1 GiB from its parameter"),
+                                          parameter.validity));
                     continue;
                 }
                 const auto resolved_output = wired_output_layout(input.output, plan.outputs, plan.node_plans);
@@ -1683,10 +1702,23 @@ class CompiledGraphBuilder {
     }
 };
 
+std::shared_ptr<const CompiledGraph> details::compile_graph(const GraphWiring &wiring, allocator memory,
+                                                            std::span<std::size_t> node_indices) {
+    auto graph_allocator = std::pmr::polymorphic_allocator<CompiledGraph>{&memory.memory_resource()};
+    return std::allocate_shared<CompiledGraph>(graph_allocator, CompiledGraph::CompilationTag{}, wiring, memory,
+                                               node_indices);
+}
+
 CompiledGraph::CompiledGraph(const GraphWiring &wiring) : CompiledGraph(wiring, allocator{}) {}
 
 CompiledGraph::CompiledGraph(const GraphWiring &wiring, allocator memory) : fixed_allocator_(memory) {
     CompiledGraphBuilder::build(*this, wiring, memory);
+}
+
+CompiledGraph::CompiledGraph(CompilationTag, const GraphWiring &wiring, allocator memory,
+                             std::span<std::size_t> remapped_node_indices)
+    : fixed_allocator_(memory) {
+    CompiledGraphBuilder::build(*this, wiring, memory, remapped_node_indices);
 }
 
 const WiringPath &CompiledGraph::wiring_path(std::size_t node_index) const noexcept {
@@ -1736,20 +1768,29 @@ CompiledGraph::OutputDestruction CompiledGraph::output_destruction() const noexc
 }
 
 std::optional<std::size_t> CompiledGraph::constant_start_time_offset() const noexcept {
-    const auto offset = storage_header().constant_start_time_offset;
-    return offset == 0 ? std::nullopt : std::optional<std::size_t>{offset};
+    if (const auto *metadata = constant_metadata()) {
+        return metadata->start_time_offset;
+    }
+
+    return std::nullopt;
 }
 
 std::span<const InputNotificationSubscriber> CompiledGraph::constant_notifications() const noexcept {
-    const auto &header = storage_header();
-    return stored_objects<InputNotificationSubscriber>(fixed_storage_, header.constant_notification_offset,
-                                                       header.constant_notification_count);
+    if (const auto *metadata = constant_metadata()) {
+        return stored_objects<InputNotificationSubscriber>(fixed_storage_, metadata->notification_offset,
+                                                           metadata->notification_count);
+    }
+
+    return {};
 }
 
-std::span<const ConstantDynamicSubscriber> CompiledGraph::constant_dynamic_subscribers() const noexcept {
-    const auto &header = storage_header();
-    return stored_objects<ConstantDynamicSubscriber>(fixed_storage_, header.constant_dynamic_subscriber_offset,
-                                                     header.constant_dynamic_subscriber_count);
+std::span<const details::ConstantDynamicSubscriber> CompiledGraph::constant_dynamic_subscribers() const noexcept {
+    if (const auto *metadata = constant_metadata()) {
+        return stored_objects<details::ConstantDynamicSubscriber>(fixed_storage_, metadata->dynamic_subscriber_offset,
+                                                                  metadata->dynamic_subscriber_count);
+    }
+
+    return {};
 }
 
 CompiledGraph::~CompiledGraph() {

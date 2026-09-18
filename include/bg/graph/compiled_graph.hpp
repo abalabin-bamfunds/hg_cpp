@@ -2,6 +2,7 @@
 
 #include <bg/allocator.hpp>
 #include <bg/graph/compiled_node.hpp>
+#include <bg/graph/details/compiled_graph_builder.hpp>
 #include <bg/graph/details/compiled_storage_header.hpp>
 #include <bg/graph/details/scheduling_info.hpp>
 #include <bg/graph/wiring_path.hpp>
@@ -53,8 +54,23 @@ class CompiledGraph {
     const WiringPath &wiring_path(std::size_t node_index) const noexcept;
 
   private:
+    struct CompilationTag {
+      private:
+        friend std::shared_ptr<const CompiledGraph> details::compile_graph(const GraphWiring &, allocator,
+                                                                           std::span<std::size_t>);
+        CompilationTag() = default;
+    };
+
     friend class CompiledGraphBuilder;
     friend class RuntimeGraph;
+    friend std::shared_ptr<const CompiledGraph> details::compile_graph(const GraphWiring &, allocator,
+                                                                       std::span<std::size_t>);
+
+  public:
+    CompiledGraph(CompilationTag, const GraphWiring &wiring, allocator memory,
+                  std::span<std::size_t> remapped_node_indices);
+
+  private:
 
     struct NodeFunctions {
         std::span<const EvaluationFunction> functions;
@@ -78,7 +94,9 @@ class CompiledGraph {
     static constexpr std::uint32_t variable_memory_flag = std::uint32_t{1} << 31;
     static constexpr std::uint32_t future_scheduling_flag = std::uint32_t{1} << 30;
     static constexpr std::uint32_t cycle_callbacks_flag = std::uint32_t{1} << 31;
+    static constexpr std::uint32_t constants_flag = std::uint32_t{1} << 30;
     static constexpr std::uint32_t fixed_storage_size_mask = future_scheduling_flag - 1;
+    static constexpr std::uint32_t variable_memory_offset_mask = constants_flag - 1;
     static constexpr std::uint32_t alignment_shift = 26;
     static constexpr std::uint32_t count_mask = (std::uint32_t{1} << alignment_shift) - 1;
 
@@ -94,8 +112,20 @@ class CompiledGraph {
         return (storage_header().variable_memory_offset & cycle_callbacks_flag) != 0;
     }
 
+    bool has_constants() const noexcept {
+        return (storage_header().variable_memory_offset & constants_flag) != 0;
+    }
+
     std::size_t variable_memory_offset() const noexcept {
-        return storage_header().variable_memory_offset & ~cycle_callbacks_flag;
+        return storage_header().variable_memory_offset & variable_memory_offset_mask;
+    }
+
+    const details::ConstantMetadata *constant_metadata() const noexcept {
+        if (!has_constants()) {
+            return nullptr;
+        }
+
+        return storage_header().constant_metadata(node_count());
     }
 
     std::size_t future_schedule_offset() const noexcept {
@@ -129,7 +159,7 @@ class CompiledGraph {
     OutputDestruction output_destruction() const noexcept;
     std::optional<std::size_t> constant_start_time_offset() const noexcept;
     std::span<const InputNotificationSubscriber> constant_notifications() const noexcept;
-    std::span<const ConstantDynamicSubscriber> constant_dynamic_subscribers() const noexcept;
+    std::span<const details::ConstantDynamicSubscriber> constant_dynamic_subscribers() const noexcept;
 
     const details::CompiledStorageHeader &storage_header() const noexcept {
         return *reinterpret_cast<const details::CompiledStorageHeader *>(fixed_storage_);

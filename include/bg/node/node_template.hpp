@@ -31,8 +31,8 @@ struct DynamicSubscribersLayout {
     std::size_t state_offset;
 };
 
-// Identifies a TS value output that graph compilation can bind directly to one scalar parameter.
-struct FoldableConstantOutput {
+// A TS value output whose value is one scalar parameter and never changes.
+struct ConstantOutput {
     std::size_t scalar_parameter;
 };
 
@@ -49,10 +49,6 @@ class NodeTemplate : public WiringTemplate {
     virtual bool uses_node_invocation() const noexcept { return false; }
     virtual bool uses_future_scheduling() const noexcept { return false; }
     virtual bool uses_cycle_callbacks() const noexcept { return false; }
-    virtual std::optional<FoldableConstantOutput>
-    foldable_constant_output(const ResolvedSignature &) const noexcept {
-        return std::nullopt;
-    }
     virtual InputNotification input_notification(std::size_t) const noexcept { return {}; }
     virtual std::optional<DynamicSubscribersLayout>
     dynamic_subscribers_layout(const ResolvedSignature &) const noexcept {
@@ -73,6 +69,9 @@ class NodeTemplate : public WiringTemplate {
 
     virtual CompiledNodeDataLayout compiled_data_layout(const ResolvedSignature &) const noexcept { return {}; }
     virtual void construct_compiled_data(const ResolvedSignature &, void *, allocator &) const {}
+    virtual std::optional<ConstantOutput> constant_output(const ResolvedSignature &) const noexcept {
+        return std::nullopt;
+    }
 
   private:
     [[nodiscard]] std::optional<WiringPoint> wire(GraphWiring &wiring, ResolvedSignature signature,

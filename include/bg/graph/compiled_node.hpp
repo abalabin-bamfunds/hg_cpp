@@ -31,11 +31,6 @@ struct NodeInvocationParameterMetadata {
     const Type *type;
 };
 
-struct ConstantDynamicSubscriber {
-    std::uint32_t node_index;
-    std::uint32_t state_offset;
-};
-
 struct NodeInvocationMetadata {
     std::uint32_t parameters_offset;
     std::uint32_t compiled_data_offset;
@@ -261,11 +256,19 @@ class ParameterBinding {
     explicit ParameterBinding(std::uint32_t scalar_offset) noexcept
         : location_and_flags_{scalar_offset | scalar_flag}, value_offset_{} {}
 
-    ParameterBinding(std::uint32_t start_time_offset, std::uint32_t scalar_offset, InputActivity activity,
-                     InputValidity validity, ParameterBindingMode) noexcept
+    static ParameterBinding constant(std::uint32_t start_time_offset, std::uint32_t scalar_offset,
+                                     InputValidity validity) noexcept {
+        return ParameterBinding{constant_binding, start_time_offset, scalar_offset, validity};
+    }
+
+    struct constant_binding_t {};
+    static constexpr constant_binding_t constant_binding{};
+
+    ParameterBinding(constant_binding_t, std::uint32_t start_time_offset, std::uint32_t scalar_offset,
+                     InputValidity validity) noexcept
         : location_and_flags_{start_time_offset | scalar_flag |
                               (validity == optional ? optional_flag : std::uint32_t{})},
-          value_offset_{scalar_offset | constant_flag | (activity == bg::active ? active_flag : std::uint32_t{})} {}
+          value_offset_{scalar_offset | constant_flag} {}
 
     ParameterBinding() noexcept : location_and_flags_{scalar_flag | optional_flag}, value_offset_{} {}
 

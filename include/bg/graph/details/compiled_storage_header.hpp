@@ -7,7 +7,25 @@
 
 namespace bg::details {
 
-// Describes the variable sections of compiled graph storage. Node offsets and wiring-path indices follow this header.
+struct ConstantMetadata {
+    std::uint32_t start_time_offset;
+    std::uint32_t notification_offset;
+    std::uint32_t notification_count;
+    std::uint32_t dynamic_subscriber_offset;
+    std::uint32_t dynamic_subscriber_count;
+};
+
+static_assert(sizeof(ConstantMetadata) == 20);
+static_assert(std::is_trivially_copyable_v<ConstantMetadata>);
+
+struct ConstantDynamicSubscriber {
+    std::uint32_t runtime_storage_offset;
+};
+
+static_assert(sizeof(ConstantDynamicSubscriber) == 4);
+static_assert(std::is_trivially_copyable_v<ConstantDynamicSubscriber>);
+
+// Describes the variable sections of compiled graph storage. Node offsets, paths, and optional constant metadata follow.
 struct CompiledStorageHeader {
     std::span<const std::uint32_t> node_offsets(std::size_t node_count) const noexcept {
         return {reinterpret_cast<const std::uint32_t *>(this + 1), node_count};
@@ -15,6 +33,10 @@ struct CompiledStorageHeader {
 
     std::span<const std::uint32_t> node_paths(std::size_t node_count) const noexcept {
         return {node_offsets(node_count).data() + node_count, node_count};
+    }
+
+    const ConstantMetadata *constant_metadata(std::size_t node_count) const noexcept {
+        return reinterpret_cast<const ConstantMetadata *>(node_paths(node_count).data() + node_count);
     }
 
     std::uint32_t wiring_paths_offset;
@@ -27,14 +49,9 @@ struct CompiledStorageHeader {
     std::uint32_t output_destruction_count;
     std::uint32_t variable_memory_offset;
     std::uint32_t initial_runtime_storage_offset;
-    std::uint32_t constant_start_time_offset;
-    std::uint32_t constant_notification_offset;
-    std::uint32_t constant_notification_count;
-    std::uint32_t constant_dynamic_subscriber_offset;
-    std::uint32_t constant_dynamic_subscriber_count;
 };
 
-static_assert(sizeof(CompiledStorageHeader) == 60);
+static_assert(sizeof(CompiledStorageHeader) == 40);
 static_assert(std::is_trivially_copyable_v<CompiledStorageHeader>);
 
 } // namespace bg::details

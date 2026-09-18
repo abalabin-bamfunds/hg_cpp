@@ -1,6 +1,7 @@
 #include <bg/graph/details/nested.hpp>
 
 #include <bg/graph/compiled_graph.hpp>
+#include <bg/graph/details/compiled_graph_builder.hpp>
 #include <bg/graph/compiled_node.hpp>
 #include <bg/graph/graph_wiring.hpp>
 #include <bg/node.hpp>
@@ -77,14 +78,15 @@ class NestedNodeDefinition {
     const Signature &signature() const { return *signature_; }
 
     [[nodiscard]] compiled_data_type compile(const ResolvedSignature &, allocator &memory) const {
-        auto graph = std::allocate_shared<CompiledGraph>(
-            std::pmr::polymorphic_allocator<CompiledGraph>{&memory.memory_resource()}, *wiring_.wiring, memory);
+        auto node_indices = std::vector{wiring_.output_node};
+        node_indices.insert(node_indices.end(), wiring_.input_nodes.begin(), wiring_.input_nodes.end());
+        auto graph = compile_graph(*wiring_.wiring, memory, node_indices);
         auto result = compiled_data_type{
-            .graph = std::move(graph),
+            .graph = graph,
             .input_nodes = std::pmr::vector<std::size_t>{&memory.memory_resource()},
-            .output_node = wiring_.output_node,
+            .output_node = node_indices.front(),
         };
-        result.input_nodes.assign(wiring_.input_nodes.begin(), wiring_.input_nodes.end());
+        result.input_nodes.assign(node_indices.begin() + 1, node_indices.end());
         return result;
     }
 

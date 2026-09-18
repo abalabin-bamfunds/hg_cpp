@@ -731,8 +731,8 @@ void RuntimeGraph::start(EvaluationTime evaluation_time, details::EvaluationScra
             notification.notify(context, OutputChange::revalidation);
         }
         for (const auto &subscriber : compiled_graph_->constant_dynamic_subscribers()) {
-            auto *dynamic = *reinterpret_cast<details::DynamicSubscribers **>(
-                static_cast<std::byte *>(node(subscriber.node_index).state()) + subscriber.state_offset);
+            auto *dynamic =
+                *reinterpret_cast<details::DynamicSubscribers **>(storage_ + subscriber.runtime_storage_offset);
             if (dynamic != nullptr) {
                 notify_dynamic_subscribers(*dynamic, OutputChange::revalidation);
             }

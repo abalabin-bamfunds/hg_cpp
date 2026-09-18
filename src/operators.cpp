@@ -20,9 +20,8 @@ class ConstantNodeTemplate final : public NodeTemplate {
 
     EvaluationFunction evaluation_function(const ResolvedSignature &) const noexcept override { return nullptr; }
 
-    std::optional<FoldableConstantOutput>
-    foldable_constant_output(const ResolvedSignature &) const noexcept override {
-        return FoldableConstantOutput{0};
+    std::optional<ConstantOutput> constant_output(const ResolvedSignature &) const noexcept override {
+        return ConstantOutput{0};
     }
 };
 
