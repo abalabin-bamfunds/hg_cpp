@@ -32,10 +32,11 @@ class Operator : public WiringTemplate {
 
     struct Cache;
 
-    [[nodiscard]] std::optional<WiringPoint> invoke(GraphWiring &wiring, std::span<details::wiring_argument> arguments,
+    [[nodiscard]] std::optional<WiringPoint> invoke(GraphWiring &wiring,
+                                                    std::span<const WiringArgument> arguments,
                                                     const TypeMap *seed_type_map) const final;
     [[nodiscard]] std::optional<WiringPoint> wire(GraphWiring &, ResolvedSignature, const TypeMap &,
-                                                  std::span<details::wiring_argument>) const final;
+                                                  std::span<const WiringArgument>) const final;
 
     Signature prototype_;
     std::vector<std::unique_ptr<WiringTemplate>> overloads_;

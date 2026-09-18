@@ -2,6 +2,8 @@
 
 #include <bg/graph/compiled_graph.hpp>
 #include <bg/graph/details/nested.hpp>
+#include <bg/graph/details/normalized_wiring_arguments.hpp>
+#include <bg/graph/details/variadic_wiring_record.hpp>
 #include <bg/graph/graph_template.hpp>
 #include <bg/graph/wiring_context.hpp>
 #include <bg/node/node_template.hpp>
@@ -10,70 +12,81 @@
 #include <array>
 #include <concepts>
 #include <memory>
-#include <optional>
-#include <tuple>
-#include <type_traits>
 #include <utility>
 #include <vector>
-
-namespace bg::details {
-
-template <std::size_t Index, typename Argument>
-decltype(auto) nested_graph_argument(Argument &argument, const std::vector<std::optional<WiringPoint>> &inputs) {
-    if constexpr (wiring_point_argument<Argument>) {
-        return *inputs[Index];
-    } else {
-        return (argument);
-    }
-}
-
-template <typename Graph, typename Arguments, std::size_t... Index>
-[[nodiscard]] WiringPoint invoke_nested_graph(const Graph &graph, Arguments &arguments,
-                                              const std::vector<std::optional<WiringPoint>> &inputs,
-                                              std::index_sequence<Index...>) {
-    return static_cast<WiringPoint>(graph(nested_graph_argument<Index>(std::get<Index>(arguments), inputs)...));
-}
-
-} // namespace bg::details
 
 namespace bg {
 
 template <typename Graph, details::graph_code_argument Run, details::graph_code_argument... Arguments>
-    requires std::derived_from<Graph, WiringTemplate> && requires { typename Graph::result_type; }
+    requires std::derived_from<Graph, WiringTemplate> && requires {
+        typename Graph::result_type;
+    }
 [[nodiscard]] auto nested(const Graph &graph, Run &&run, Arguments &&...arguments) {
     using Result = typename Graph::result_type;
     static_assert(details::is_typed_wiring_point<Result>, "a nested graph must have an output");
     using Target = typename details::typed_wiring_point<Result>::time_series_type;
 
-    auto supplied = std::array<details::wiring_argument, sizeof...(Arguments)>{details::wiring_argument{arguments}...};
-    auto argument_types = std::vector<const Type *>{};
-    argument_types.reserve(supplied.size());
-    for (const auto &argument : supplied) {
-        argument_types.push_back(&argument.type());
-    }
-    const auto resolved = graph.signature().resolve(argument_types);
+    auto supplied =
+        std::array<WiringArgument, sizeof...(Arguments)>{WiringArgument{std::forward<Arguments>(arguments)}...};
+    auto &outer_wiring = WiringContext::current().wiring();
+    auto normalized_result = details::probe_wiring_arguments(graph.signature(), supplied);
+    auto &normalized = normalized_result.arguments;
+    auto resolution = graph.signature().resolve_wiring_arguments(normalized, normalized_result.logical_arguments);
+    const auto &resolved = resolution.signature;
 
     auto inner_wiring = std::make_shared<GraphWiring>();
-    auto inputs = std::vector<std::optional<WiringPoint>>(sizeof...(Arguments));
     auto input_nodes = std::vector<std::size_t>{};
     auto output_node = std::size_t{};
     {
         auto context = WiringContext{*inner_wiring};
+        auto inner_arguments = std::vector<WiringArgument>{};
+        inner_arguments.reserve(normalized.size());
+        const auto variadic = graph.signature().variadic_parameter();
         for (auto i = std::size_t{}; i < resolved.parameters.size(); ++i) {
-            if (!resolved.parameters[i].type->is_time_series()) {
+            if (variadic && i == *variadic) {
+                const auto &record = *details::variadic_wiring_record(normalized[i].time_series());
+                for (const auto &argument : record.arguments()) {
+                    inner_arguments.push_back(details::wiring_argument_access::borrow(argument));
+                    if (argument.is_time_series()) {
+                        const auto &type = static_cast<const TimeSeriesType &>(argument.type());
+                        const auto input = details::wire_nested_input(type);
+                        input_nodes.push_back(details::wired_output_node_index(*inner_wiring, input));
+                        details::wiring_argument_access::replace_time_series(inner_arguments.back(), input);
+                    }
+                }
                 continue;
             }
 
-            inputs[i] = details::wire_nested_input(static_cast<const TimeSeriesType &>(*resolved.parameters[i].type));
-            input_nodes.push_back(details::wired_output_node_index(*inner_wiring, *inputs[i]));
+            inner_arguments.push_back(details::wiring_argument_access::borrow(normalized[i]));
+            if (resolved.parameters[i].type->is_time_series()) {
+                const auto &type = static_cast<const TimeSeriesType &>(*resolved.parameters[i].type);
+                const auto input = details::wire_nested_input(type);
+                input_nodes.push_back(details::wired_output_node_index(*inner_wiring, input));
+                details::wiring_argument_access::replace_time_series(inner_arguments.back(), input);
+            }
         }
 
-        auto originals = std::forward_as_tuple(arguments...);
-        const auto output =
-            details::invoke_nested_graph(graph, originals, inputs, std::index_sequence_for<Arguments...>{});
+        const auto output = *static_cast<const WiringTemplate &>(graph)(
+            resolution.type_map, std::span<const WiringArgument>{inner_arguments});
         const auto boundary_output =
             details::wire_nested_output(output, static_cast<const TimeSeriesType &>(*resolved.output));
         output_node = details::wired_output_node_index(*inner_wiring, boundary_output);
+    }
+
+    auto flattened = resolved;
+    if (const auto variadic = graph.signature().variadic_parameter()) {
+        const auto &record = *details::variadic_wiring_record(normalized[*variadic].time_series());
+        flattened.parameters.erase(flattened.parameters.begin() + *variadic);
+        auto insertion = *variadic;
+        for (const auto &argument : record.arguments()) {
+            if (argument.is_scalar()) {
+                continue;
+            }
+            flattened.parameters.insert(
+                flattened.parameters.begin() + insertion,
+                {*argument.name(), &argument.type(), active, optional, false, details::VariadicMode::none});
+            ++insertion;
+        }
     }
 
     auto nested_wiring = details::NestedGraphWiring{
@@ -81,10 +94,26 @@ template <typename Graph, details::graph_code_argument Run, details::graph_code_
         .input_nodes = std::move(input_nodes),
         .output_node = output_node,
     };
-    auto node_template = details::make_nested_node(std::move(nested_wiring), resolved);
-    auto &outer_wiring = WiringContext::current().wiring();
+    auto node_template = details::make_nested_node(std::move(nested_wiring), flattened);
     const auto &owned_nested = outer_wiring.own_node_template(std::move(node_template));
-    auto output_point = *owned_nested(std::forward<Run>(run), std::forward<Arguments>(arguments)...);
+    auto outer_arguments = std::vector<WiringArgument>{};
+    outer_arguments.reserve(flattened.parameters.size() + 1);
+    outer_arguments.emplace_back(std::forward<Run>(run));
+    for (auto index = std::size_t{}; index < normalized.size(); ++index) {
+        if (graph.signature().variadic_parameter() && index == *graph.signature().variadic_parameter()) {
+            const auto &record = *details::variadic_wiring_record(normalized[index].time_series());
+            for (const auto &argument : record.arguments()) {
+                if (argument.is_scalar()) {
+                    continue;
+                }
+                outer_arguments.push_back(details::wiring_argument_access::borrow(argument));
+                details::wiring_argument_access::clear_name(outer_arguments.back());
+            }
+            continue;
+        }
+        outer_arguments.push_back(details::wiring_argument_access::borrow(normalized[index]));
+    }
+    auto output_point = *owned_nested(std::span<const WiringArgument>{outer_arguments});
     return wp<REF<Target>>{output_point};
 }
 

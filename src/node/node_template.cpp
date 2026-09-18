@@ -22,20 +22,17 @@ template <typename T> void combine_pointer(std::size_t &result, const T *value) 
     combine_hash(result, std::hash<const void *>{}(value));
 }
 
-std::optional<Scalar<>> scalar_value(const details::wiring_argument &argument) {
-    if (!argument.scalar_has_value()) {
+std::optional<Scalar<>> scalar_value(const WiringArgument &argument) {
+    if (!argument.present()) {
         return std::nullopt;
     }
-    if (const auto *view = argument.scalar_view()) {
-        return Scalar<>::from(view->runtime_type(), view->data());
-    }
-    return Scalar<>::from(argument.scalar_runtime_type(), argument.scalar_data());
+    return argument.scalar();
 }
 
 std::optional<std::size_t> node_hash(const NodeTemplate &node_template, const ResolvedSignature &signature,
                                      std::span<const std::size_t> input_output_indices,
                                      std::span<const ScalarType *const> state_types,
-                                     std::span<const details::wiring_argument> arguments) {
+                                     std::span<const WiringArgument> arguments) {
     auto result = std::size_t{};
     combine_pointer(result, &node_template);
     combine_pointer(result, signature.output);
@@ -54,12 +51,13 @@ std::optional<std::size_t> node_hash(const NodeTemplate &node_template, const Re
             continue;
         }
 
-        combine_pointer(result, &argument.scalar_type());
-        if (!argument.scalar_has_value()) {
+        combine_pointer(result, &argument.type());
+        if (!argument.present()) {
             combine_hash(result, 0);
             continue;
         }
-        if (!argument.scalar_type().supports_equality() || !argument.scalar_type().supports_hash()) {
+        const auto &type = static_cast<const ScalarType &>(argument.type());
+        if (!type.supports_equality() || !type.supports_hash()) {
             return std::nullopt;
         }
 
@@ -72,21 +70,28 @@ std::optional<std::size_t> node_hash(const NodeTemplate &node_template, const Re
 } // namespace
 
 std::optional<WiringPoint> NodeTemplate::wire(GraphWiring &wiring, ResolvedSignature signature, const TypeMap &type_map,
-                                              std::span<details::wiring_argument> arguments) const {
-    for (auto index = std::size_t{}; index < arguments.size(); ++index) {
-        if (!arguments[index].is_wiring_point()) {
+                                              std::span<const WiringArgument> arguments) const {
+    auto materialized_arguments = std::vector<WiringArgument>{};
+    materialized_arguments.reserve(arguments.size());
+    for (const auto &argument : arguments) {
+        materialized_arguments.push_back(details::wiring_argument_access::borrow(argument));
+    }
+
+    for (auto index = std::size_t{}; index < materialized_arguments.size(); ++index) {
+        auto &argument = materialized_arguments[index];
+        if (!argument.is_time_series()) {
             continue;
         }
 
         const auto &parameter = static_cast<const TimeSeriesType &>(*signature.parameters[index].type);
-        const auto source = details::materialize_wiring_point(arguments[index].wiring_point(), parameter);
-        arguments[index].wiring_point(source);
+        const auto source = details::materialize_wiring_point(argument.time_series(), parameter);
+        details::wiring_argument_access::replace_time_series(argument, source);
     }
 
     auto input_output_indices = std::vector<std::size_t>{};
-    for (const auto &argument : arguments) {
-        if (argument.is_wiring_point()) {
-            input_output_indices.push_back(wiring.output_index(argument.wiring_point()));
+    for (const auto &argument : materialized_arguments) {
+        if (argument.is_time_series()) {
+            input_output_indices.push_back(wiring.output_index(argument.time_series()));
         }
     }
 
@@ -94,45 +99,44 @@ std::optional<WiringPoint> NodeTemplate::wire(GraphWiring &wiring, ResolvedSigna
     auto dynamic_reference_inputs = dynamic_reference_input_types(type_map);
     const auto has_output = signature.output != nullptr;
     const auto hash = deduplicate_wiring() && has_output
-                          ? node_hash(*this, signature, input_output_indices, state_types, arguments)
+                          ? node_hash(*this, signature, input_output_indices, state_types, materialized_arguments)
                           : std::nullopt;
     if (hash) {
         if (const auto existing =
-                wiring.find_wired_node(*hash, *this, signature, input_output_indices, state_types, arguments)) {
+                wiring.find_wired_node(*hash, *this, signature, input_output_indices, state_types,
+                                       materialized_arguments)) {
             return existing;
         }
     }
 
     auto scalar_values = std::vector<WiredScalar>{};
-    scalar_values.reserve(arguments.size() - input_output_indices.size());
+    scalar_values.reserve(materialized_arguments.size() - input_output_indices.size());
     auto release_scalars = util::scope_exit{[&]() noexcept { wiring.destroy_scalars(scalar_values); }};
 
-    for (auto index = std::size_t{}; index < arguments.size(); ++index) {
-        const auto &argument = arguments[index];
-        if (argument.is_wiring_point()) {
+    for (auto index = std::size_t{}; index < materialized_arguments.size(); ++index) {
+        const auto &argument = materialized_arguments[index];
+        if (argument.is_time_series()) {
             continue;
         }
 
-        const auto &runtime_type = argument.scalar_runtime_type();
-        if (!argument.scalar_has_value()) {
+        if (!argument.present()) {
             if (!signature.parameters[index].accepts_absent_scalar) {
                 throw WiringError{"a required scalar parameter has no value"};
             }
 
-            scalar_values.push_back(WiredScalar{runtime_type, nullptr});
+            scalar_values.push_back(
+                WiredScalar{details::wiring_argument_access::scalar_runtime_type(argument), nullptr});
             continue;
         }
 
+        const auto scalar = argument.scalar();
+        const auto &runtime_type = scalar.runtime_type();
         auto scalar_memory = wiring.variable_allocator(runtime_type);
         auto *data = wiring.fixed_memory_.allocate(runtime_type.size(), runtime_type.alignment());
         auto release_data = util::scope_exit{
             [&]() noexcept { wiring.fixed_memory_.deallocate(data, runtime_type.size(), runtime_type.alignment()); }};
 
-        if (const auto *view = argument.scalar_view()) {
-            view->copy_construct(data, runtime_type, scalar_memory);
-        } else {
-            runtime_type.construct_from_value(data, argument.scalar_data(), scalar_memory);
-        }
+        runtime_type.construct_from_input(data, scalar, scalar_memory);
 
         auto destroy_data = util::scope_exit{[&]() noexcept { runtime_type.destroy(data, scalar_memory); }};
         scalar_values.push_back(WiredScalar{runtime_type, data});

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <bg/allocator.hpp>
-#include <bg/graph/details/wiring_argument.hpp>
+#include <bg/graph/wiring_argument.hpp>
 #include <bg/graph/wired_node.hpp>
 #include <bg/graph/wired_output.hpp>
 #include <bg/graph/wiring_path.hpp>
@@ -19,6 +19,7 @@
 namespace bg {
 
 class NodeTemplate;
+class Operator;
 class TimeSeriesRuntimeType;
 class TimeSeriesType;
 class WiringTemplate;
@@ -54,6 +55,7 @@ class GraphWiring {
 
   private:
     friend class NodeTemplate;
+    friend class Operator;
     friend class WiringPoint;
     friend class WiringTemplate;
     friend WiringPoint details::add_wiring_record(std::unique_ptr<details::WiringRecord> record);
@@ -66,13 +68,12 @@ class GraphWiring {
     friend WiringPoint details::wiring_point_for_item(WiringPoint parent, item_id_t item,
                                                       const TimeSeriesType &type);
     friend std::size_t details::wired_output_node_index(const GraphWiring &wiring, WiringPoint point);
-
     [[nodiscard]] std::optional<WiringPoint> invoke(const WiringTemplate &wiring_template,
-                                                    std::span<details::wiring_argument> arguments,
+                                                    std::span<const WiringArgument> arguments,
                                                     const TypeMap *seed_type_map = nullptr);
     [[nodiscard]] std::optional<WiringPoint> invoke_resolved(const WiringTemplate &wiring_template,
                                                              SignatureResolution resolution,
-                                                             std::span<details::wiring_argument> arguments,
+                                                             std::span<const WiringArgument> arguments,
                                                              util::symbol path_name);
     [[nodiscard]] std::size_t register_node(WiredNode node);
     void register_node_output(std::size_t node_index, WiringPoint output, std::optional<std::size_t> hash);
@@ -87,7 +88,7 @@ class GraphWiring {
                                                              const ResolvedSignature &signature,
                                                              std::span<const std::size_t> input_output_indices,
                                                              std::span<const ScalarType *const> state_types,
-                                                             std::span<const details::wiring_argument> arguments);
+                                                             std::span<const WiringArgument> arguments);
     void cache_wired_node(std::size_t hash, std::size_t node_index);
 
     [[nodiscard]] const WiringPath &make_path(util::symbol name, util::symbol label);

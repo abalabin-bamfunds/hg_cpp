@@ -53,7 +53,7 @@ class AggregateNodeTemplate final : public details::AggregateNodeTemplateBase {
     template <typename... Arguments> void operator()(Arguments &&...) const && = delete;
 
   private:
-    util::symbol label(const ResolvedSignature &signature, std::span<details::wiring_argument> arguments,
+    util::symbol label(const ResolvedSignature &signature, std::span<const WiringArgument> arguments,
                        util::symbol default_label) const override {
         if constexpr (std::same_as<Label, details::default_wiring_label>) {
             return default_label;

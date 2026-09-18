@@ -66,7 +66,7 @@ class NodeTemplate : public WiringTemplate {
   private:
     [[nodiscard]] std::optional<WiringPoint> wire(GraphWiring &wiring, ResolvedSignature signature,
                                                   const TypeMap &type_map,
-                                                  std::span<details::wiring_argument> arguments) const final;
+                                                  std::span<const WiringArgument> arguments) const final;
 };
 
 } // namespace bg

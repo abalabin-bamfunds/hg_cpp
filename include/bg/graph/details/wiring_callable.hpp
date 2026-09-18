@@ -1,6 +1,6 @@
 #pragma once
 
-#include <bg/graph/details/wiring_argument.hpp>
+#include <bg/graph/wiring_argument.hpp>
 #include <bg/graph/wiring_point.hpp>
 #include <bg/type/details/time_series_type.hpp>
 #include <bg/type/signature.hpp>
@@ -42,45 +42,39 @@ struct callable<Result (Class::*)(Arguments...) const noexcept> : callable<Resul
 
 template <typename Function> struct callable : callable<decltype(&Function::operator())> {};
 
-template <typename Parameter> [[nodiscard]] decltype(auto) graph_argument(wiring_argument &argument) {
+template <typename Parameter> [[nodiscard]] decltype(auto) graph_argument(const WiringArgument &argument) {
     using Value = std::remove_cvref_t<Parameter>;
 
     if constexpr (is_typed_wiring_point<Value>) {
         static_assert(!std::is_reference_v<Parameter>);
 
-        using TimeSeries = typename typed_wiring_point<Value>::time_series_type;
         // Signature resolution already validated the annotation. The wiring point retains its actual representation.
-        return wiring_point_annotation::make<TimeSeries>(argument.wiring_point());
+        return wiring_point_annotation::make_point<Value>(argument.time_series());
     } else if constexpr (std::same_as<Value, WiringPoint>) {
         static_assert(!std::is_reference_v<Parameter>);
 
-        return argument.wiring_point();
+        return argument.time_series();
     } else if constexpr (supported_optional_scalar_argument<Value>) {
         using ApiScalar = typename optional_scalar_argument<Value>::value_type;
         using Canonical = canonical_scalar_type_t<ApiScalar>;
 
-        if (!argument.scalar_has_value()) {
+        if (!argument.present()) {
             return Value{};
         }
-        const auto value = argument.scalar_view() == nullptr
-                               ? Scalar<>::from(argument.scalar_runtime_type(), argument.scalar_data())
-                               : Scalar<>::from(argument.scalar_view()->runtime_type(), argument.scalar_view()->data());
+        const auto value = argument.scalar();
         return Value{scalar_api_value<ApiScalar>(scalar_cast<Canonical>(value).value())};
     } else {
         static_assert(supported_scalar_argument<Value>);
         static_assert(!std::is_lvalue_reference_v<Parameter> || std::is_const_v<std::remove_reference_t<Parameter>>);
 
         using Canonical = canonical_scalar_type_t<Value>;
-        const auto scalar =
-            argument.scalar_view() == nullptr
-                ? Scalar<>::from(argument.scalar_runtime_type(), argument.scalar_data())
-                : Scalar<>::from(argument.scalar_view()->runtime_type(), argument.scalar_view()->data());
+        const auto scalar = argument.scalar();
         return scalar_api_value<Value>(scalar_cast<Canonical>(scalar).value());
     }
 }
 
 template <typename Function, std::size_t... Index>
-decltype(auto) invoke_graph_function(const Function &function, std::span<wiring_argument> arguments,
+decltype(auto) invoke_graph_function(const Function &function, std::span<const WiringArgument> arguments,
                                      std::index_sequence<Index...>) {
     using Callable = callable<Function>;
 
@@ -88,7 +82,7 @@ decltype(auto) invoke_graph_function(const Function &function, std::span<wiring_
 }
 
 template <typename Function>
-decltype(auto) invoke_graph_function(const Function &function, std::span<wiring_argument> arguments) {
+decltype(auto) invoke_graph_function(const Function &function, std::span<const WiringArgument> arguments) {
     return invoke_graph_function(function, arguments, std::make_index_sequence<callable<Function>::argument_count>{});
 }
 

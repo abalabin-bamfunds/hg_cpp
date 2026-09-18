@@ -58,6 +58,12 @@ template <typename TimeSeries, auto... Properties> struct input_field<In<TimeSer
     static constexpr InputActivity activity = Input::activity;
     static constexpr InputValidity validity = Input::validity;
     static constexpr bool dynamic_binding = Input::dynamic_binding;
+    static constexpr auto variadic_mode = [] {
+        if constexpr (requires { Input::variadic_mode; }) {
+            return Input::variadic_mode;
+        }
+        return VariadicMode::none;
+    }();
 
     static_assert(!dynamic_binding || is_time_series_reference<TimeSeries>,
                   "dynamic_binding requires a time series reference input");
@@ -98,8 +104,9 @@ using aggregate_output_time_series_t = decltype(aggregate_output_time_series_typ
 template <typename T> inline constexpr bool generic_scalar_state = generic_scalar<T>;
 
 template <typename T> struct scalar_field {
-    static constexpr bool value =
-        scalar_type_traits<T>::supports_implicit_argument && requires { cpp_scalar_type<canonical_scalar_type_t<T>>(); };
+    static constexpr bool value = scalar_type_traits<T>::supports_implicit_argument && requires {
+        cpp_scalar_type<canonical_scalar_type_t<T>>();
+    };
     static constexpr bool optional = false;
 
     using value_type = T;
@@ -436,7 +443,7 @@ void add_signature_field(std::vector<Parameter> &parameters, const TimeSeriesTyp
     if constexpr (input_field<Field>::value && !input_field<Field>::dynamic_binding) {
         parameters.push_back({util::symbol{util::aggregate_member_names<Definition>[Index]},
                               &input_type<Definition, Index>(), input_field<Field>::activity,
-                              input_field<Field>::validity});
+                              input_field<Field>::validity, false, input_field<Field>::variadic_mode});
     } else if constexpr (scalar_field<Field>::value) {
         parameters.push_back({util::symbol{util::aggregate_member_names<Definition>[Index]},
                               &scalar_type<Definition, Index>(), active, required, scalar_field<Field>::optional});

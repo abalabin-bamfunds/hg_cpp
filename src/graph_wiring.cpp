@@ -23,14 +23,11 @@ util::linear_hash_table::hash_type output_item_hash(std::size_t parent, item_id_
     return util::linear_hash_table::hash_code(result);
 }
 
-std::optional<Scalar<>> scalar_value(const details::wiring_argument &argument) {
-    if (!argument.scalar_has_value()) {
+std::optional<Scalar<>> scalar_value(const WiringArgument &argument) {
+    if (!argument.present()) {
         return std::nullopt;
     }
-    if (const auto *view = argument.scalar_view()) {
-        return Scalar<>::from(view->runtime_type(), view->data());
-    }
-    return Scalar<>::from(argument.scalar_runtime_type(), argument.scalar_data());
+    return argument.scalar();
 }
 
 bool same_signature(const ResolvedSignature &left, const ResolvedSignature &right) noexcept {
@@ -44,7 +41,7 @@ bool same_signature(const ResolvedSignature &left, const ResolvedSignature &righ
                               });
 }
 
-bool same_scalar_arguments(std::span<const WiredScalar> stored, std::span<const details::wiring_argument> arguments) {
+bool same_scalar_arguments(std::span<const WiredScalar> stored, std::span<const WiringArgument> arguments) {
     auto scalar_index = std::size_t{};
     for (const auto &argument : arguments) {
         if (!argument.is_scalar()) {
@@ -52,7 +49,7 @@ bool same_scalar_arguments(std::span<const WiredScalar> stored, std::span<const 
         }
 
         const auto &candidate = stored[scalar_index++];
-        if (candidate.has_value() != argument.scalar_has_value()) {
+        if (candidate.has_value() != argument.present()) {
             return false;
         }
         if (!candidate.has_value()) {
@@ -148,11 +145,11 @@ const WiringPath &GraphWiring::make_path(util::symbol name, util::symbol label) 
 }
 
 std::optional<WiringPoint> GraphWiring::invoke(const WiringTemplate &wiring_template,
-                                               std::span<details::wiring_argument> arguments,
+                                               std::span<const WiringArgument> arguments,
                                                const TypeMap *seed_type_map) {
     for (const auto &argument : arguments) {
-        if (argument.is_wiring_point()) {
-            const auto source = argument.wiring_point();
+        if (argument.is_time_series()) {
+            const auto source = argument.time_series();
             if (&source.graph() != this) {
                 throw WiringError{"a WiringPoint belongs to another GraphWiring"};
             }
@@ -164,7 +161,7 @@ std::optional<WiringPoint> GraphWiring::invoke(const WiringTemplate &wiring_temp
 
 std::optional<WiringPoint> GraphWiring::invoke_resolved(const WiringTemplate &wiring_template,
                                                         SignatureResolution resolution,
-                                                        std::span<details::wiring_argument> arguments,
+                                                        std::span<const WiringArgument> arguments,
                                                         util::symbol path_name) {
     auto signature = std::move(resolution.signature);
 
@@ -196,7 +193,7 @@ std::optional<WiringPoint> GraphWiring::find_wired_node(std::size_t hash, const 
                                                         const ResolvedSignature &signature,
                                                         std::span<const std::size_t> input_output_indices,
                                                         std::span<const ScalarType *const> state_types,
-                                                        std::span<const details::wiring_argument> arguments) {
+                                                        std::span<const WiringArgument> arguments) {
     const auto found = wired_nodes_.find(util::linear_hash_table::hash_code(hash), [&](auto position) {
         const auto &node = nodes_[position];
         return &node.node_template() == &node_template && same_signature(node.signature(), signature) &&

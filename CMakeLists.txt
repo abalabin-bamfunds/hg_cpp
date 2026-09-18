@@ -40,6 +40,7 @@ add_library(
     src/graph_wiring.cpp
     src/nested_graph.cpp
     src/nested.cpp
+    src/normalized_wiring_arguments.cpp
     src/operator.cpp
     src/operators.cpp
     src/node/aggregate_node_template_base.cpp
@@ -65,6 +66,7 @@ add_library(
     src/time_series/tsl/operators.cpp
     src/time_series/tsb/tsb_type.cpp
     src/time_series/tsb/tsb_runtime_type.cpp
+    src/time_series/tsb/wiring.cpp
     src/time_series/tsb/operators.cpp
     src/time_series/ref/dynamic_reference_input.cpp
     src/time_series/ref/ref_item_notifications.cpp
@@ -92,6 +94,7 @@ add_library(
     src/type.cpp
     src/type_of.cpp
     src/type_text.cpp
+    src/variadic_wiring_record.cpp
     src/variable.cpp
     src/version.cpp
     src/wiring_context.cpp

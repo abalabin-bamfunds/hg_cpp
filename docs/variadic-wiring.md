@@ -1,7 +1,5 @@
 # Variadic wiring
 
-Status: accepted design, not implemented.
-
 Variadic parameters collect wiring-time arguments into a wiring record. The
 record preserves argument order, names, and whether each argument was supplied
 as a scalar or time series.
@@ -14,7 +12,7 @@ positional arguments. `var_kwargs` captures named arguments written with
 A graph declares positional or named capture through a `wp` property:
 
 ```cpp
-graph([](wp<TSB<SCHEMA>, var_kwargs> arguments) {
+graph("name"_n = "configure", [](wp<TSB<SCHEMA>, var_kwargs> arguments) {
     auto argument = arguments["window"];
     if (argument.is_scalar()) {
         auto window = argument.scalar();
@@ -54,6 +52,11 @@ Passing the record to another variadic parameter preserves the original
 arguments. A forwarded record cannot be combined with additional captured
 arguments. Passing it to an ordinary TSB parameter materializes the normalized
 TSB. Positional fields use their decimal positions as names in that TSB schema.
+
+Resolvers and requirements see fixed arguments followed by individual captured
+arguments. They do not see the TSB wiring record. Positional captures use their
+flat argument indices as names. Named captures cannot reuse a fixed parameter
+name.
 
 A node can use the corresponding variadic input declaration:
 

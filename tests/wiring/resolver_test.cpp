@@ -1,12 +1,15 @@
+#include <bg/graph.hpp>
 #include <bg/graph/wiring_arguments.hpp>
 #include <bg/graph/wiring_context.hpp>
 #include <bg/graph/wiring_error.hpp>
+#include <bg/nested.hpp>
 #include <bg/node.hpp>
 #include <bg/operator.hpp>
 #include <bg/scalar/type.hpp>
 #include <bg/scalar/value.hpp>
 #include <bg/testing/test_wiring.hpp>
 #include <bg/time_series/time_series_variable.hpp>
+#include <bg/time_series/tsb/tsb.hpp>
 #include <bg/time_series/tsb/tsb_type.hpp>
 #include <bg/time_series/tsd/tsd_type.hpp>
 #include <bg/time_series/tsl/tsl_type.hpp>
@@ -16,10 +19,14 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <type_traits>
 #include <variant>
+#include <vector>
 
 namespace {
+
+using namespace bg::literals;
 
 using RESOLVED_SCALAR = bg::ScalarVariable<"RESOLVED_SCALAR">;
 using RESOLVED_NUMBER = bg::ScalarVariable<"RESOLVED_NUMBER", int, float>;
@@ -28,6 +35,8 @@ using DEPENDENT_VALUE = bg::ScalarVariable<"DEPENDENT_VALUE">;
 using CYCLIC_LEFT = bg::ScalarVariable<"CYCLIC_LEFT">;
 using CYCLIC_RIGHT = bg::ScalarVariable<"CYCLIC_RIGHT">;
 using RESOLVED_TIME_SERIES = bg::TimeSeriesVariable<"RESOLVED_TIME_SERIES">;
+using NESTED_RESULT = bg::ScalarVariable<"NESTED_RESULT">;
+using VARIADIC_RESULT = bg::ScalarVariable<"VARIADIC_RESULT">;
 
 template <template <typename> typename Field> struct ResolvedBundle {
     Field<bg::TS<int>> value;
@@ -106,6 +115,26 @@ struct resolved_bundle_source_definition {
     void evaluate() const {}
 };
 
+struct flat_positional_resolver_definition {
+    std::optional<int> fixed;
+    bg::In<bg::TSB<bg::SCHEMA>, bg::var_args> values;
+    bg::Out<bg::TS<VARIADIC_RESULT>> output;
+
+    inline static auto calls = 0;
+
+    static const bg::ScalarType &resolve(VARIADIC_RESULT, const bg::WiringArguments &arguments) {
+        ++calls;
+        REQUIRE(arguments.size() == 2);
+        CHECK_FALSE(arguments.present("fixed"));
+        CHECK(arguments.argument_name(1).text() == "1");
+
+        return bg::scalar_cast<std::int64_t>(*arguments.scalar(1)).value() == 7 ? bg::int_type()
+                                                                                : bg::float_type();
+    }
+
+    void evaluate() const {}
+};
+
 TEST_CASE("an aggregate resolver completes an output type",
           "[feature:operator][feature:wiring][definition:aggregate]") {
     resolved_source_definition::resolver_calls = 0;
@@ -134,6 +163,56 @@ TEST_CASE("an aggregate resolver completes an output type",
         REQUIRE(error.diagnostic()->candidates.size() == 1);
         CHECK(error.diagnostic()->candidates.front().stage == bg::WiringFailureStage::resolver);
     }
+}
+
+TEST_CASE("resolvers see one flat positional argument sequence",
+          "[feature:operator][feature:wiring][feature:variadic-wiring][definition:aggregate]") {
+    flat_positional_resolver_definition::calls = 0;
+
+    auto operation = bg::operator_<auto(int, bg::TS_T) -> bg::TS<int>>{"resolve", {"fixed", "values"}};
+    operation.overload(bg::node<flat_positional_resolver_definition>());
+    const auto sender = bg::graph(
+        "name"_n = "sender",
+        [&](std::optional<int> fixed,
+            bg::wp<bg::TSB<bg::SCHEMA>, bg::var_args> values) -> bg::wp<bg::TS<int>> {
+            return operation(fixed, values).as<bg::TS<int>>();
+        });
+
+    bg::testing::test_wiring([&] {
+        CHECK(&operation(std::optional<int>{}, std::optional<int>{}, 7).type() == &bg::TS<int>::type());
+        CHECK(&sender(std::optional<int>{}, std::optional<int>{}, 7).type() == &bg::TS<int>::type());
+    });
+
+    CHECK(flat_positional_resolver_definition::calls == 2);
+}
+
+TEST_CASE("resolvers find direct and forwarded named captures",
+          "[feature:operator][feature:wiring][feature:variadic-wiring][definition:function]") {
+    auto calls = 0;
+    auto operation = bg::operator_<auto(bg::TS_T) -> bg::TS<int>>{"resolve", {"values"}};
+    operation.overload(bg::node(
+        bg::eval = [](bg::In<bg::TSB<bg::SCHEMA>, bg::var_kwargs>, bg::Out<bg::TS<VARIADIC_RESULT>>) {},
+        bg::resolve<VARIADIC_RESULT> = [&](const bg::WiringArguments &arguments) -> const bg::ScalarType & {
+            ++calls;
+            REQUIRE(arguments.size() == 2);
+            CHECK(arguments.argument_index("kind") == 0);
+            CHECK(arguments.argument_index("value") == 1);
+
+            return bg::scalar_cast<std::int64_t>(*arguments.scalar("kind")).value() == 0 ? bg::int_type()
+                                                                                          : bg::float_type();
+        }));
+    const auto sender = bg::graph(
+        "name"_n = "sender",
+        [&](bg::wp<bg::TSB<bg::SCHEMA>, bg::var_kwargs> values) -> bg::wp<bg::TS<int>> {
+            return operation(values).as<bg::TS<int>>();
+        });
+
+    bg::testing::test_wiring([&] {
+        CHECK(&operation("kind"_n = 0, "value"_n = 1).type() == &bg::TS<int>::type());
+        CHECK(&sender("kind"_n = 0, "value"_n = 1).type() == &bg::TS<int>::type());
+    });
+
+    CHECK(calls == 2);
 }
 
 TEST_CASE("a callable resolver completes an output type", "[feature:operator][feature:wiring][definition:function]") {
@@ -273,6 +352,32 @@ TEST_CASE("a callable resolver can resolve a bundle schema variable",
         }));
 
     bg::testing::test_wiring([&] { CHECK(&operation().type() == &bg::TSB<ResolvedBundle>::type()); });
+}
+
+TEST_CASE("nested graph resolution provides wiring arguments to resolvers",
+          "[feature:wiring][feature:nested-graph][definition:function][shape:nested]") {
+    auto resolver_calls = 0;
+    auto resolvers = std::vector<bg::VariableResolver>{};
+    auto resolve_result = [&](const bg::TypeMap &, const bg::WiringArguments &arguments) -> bg::TypeMapValue {
+        ++resolver_calls;
+        const auto kind = bg::scalar_cast<std::int64_t>(*arguments.scalar("kind")).value();
+        return static_cast<const bg::Type *>(kind == 0 ? &bg::int_type() : &bg::float_type());
+    };
+    resolvers.emplace_back(&NESTED_RESULT::type(), resolve_result);
+    auto parameters = std::vector<bg::Parameter>{
+        {bg::util::symbol{"kind"}, &bg::cpp_scalar_type<std::int64_t>()},
+        {bg::util::symbol{"input"}, &bg::TS<int>::type()},
+    };
+    auto signature = bg::Signature{bg::util::symbol{"inner"}, std::move(parameters),
+                                   bg::TS<NESTED_RESULT>::type(), std::move(resolvers)};
+    auto inner = bg::GraphTemplate{std::move(signature),
+                                   [](int, bg::wp<bg::TS<int>> input) { return input; }};
+    const auto source = bg::node([](bg::Out<bg::TS<int>>) {});
+    const auto run = bg::node([](bg::Out<bg::TS<bool>>) {});
+
+    bg::testing::test_wiring(
+        [&] { CHECK(&bg::nested(inner, run(), 0, source()).type() == &bg::REF<bg::TS<int>>::type()); });
+    CHECK(resolver_calls == 1);
 }
 
 } // namespace

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <bg/graph/variadic_parameter.hpp>
 #include <bg/node/details/input_properties.hpp>
 #include <bg/node/input_fwd.hpp>
 #include <bg/node/input_properties.hpp>
@@ -84,9 +85,9 @@ class In<TSB<Schema, TimeSeriesProperties...>, Properties...> {
 };
 
 template <template <template <typename> typename> typename Schema, auto... TimeSeriesProperties, auto... Properties>
-    requires details::bundle_schema_variable_declaration<Schema<details::bundle_schema_field>>
+    requires(details::bundle_schema_variable_declaration<Schema<details::bundle_schema_field>>)
 class In<TSB<Schema, TimeSeriesProperties...>, Properties...> {
-    using ParsedProperties = details::input_properties<Properties...>;
+    using ParsedProperties = details::basic_input_properties<true, Properties...>;
     static_assert(ParsedProperties::valid);
 
   public:
@@ -133,6 +134,7 @@ class In<TSB<Schema, TimeSeriesProperties...>, Properties...> {
     static constexpr InputActivity activity = ParsedProperties::activity;
     static constexpr InputValidity validity = ParsedProperties::validity;
     static constexpr bool dynamic_binding = ParsedProperties::dynamic_binding;
+    static constexpr auto variadic_mode = details::variadic_mode<Properties...>();
 
   private:
     details::TimeSeriesInputData data_;

@@ -22,6 +22,14 @@
 namespace bg::details {
 
 template <typename T>
+inline constexpr VariadicMode graph_parameter_variadic_mode = [] {
+    if constexpr (is_typed_wiring_point<T>) {
+        return T::variadic_mode;
+    }
+    return VariadicMode::none;
+}();
+
+template <typename T>
 concept time_series_declaration = supported_time_series<T>;
 
 template <typename Function, std::size_t Index> const Type &graph_parameter_type(util::symbol name) {
@@ -58,7 +66,7 @@ void add_graph_parameter(std::vector<Parameter> &parameters, std::span<const std
 
     const util::symbol name{parameter_names.empty() ? std::to_string(Index) : std::string{parameter_names[Index]}};
     parameters.push_back({name, &graph_parameter_type<Function, Index>(name), active, required,
-                          supported_optional_scalar_argument<Value>});
+                          supported_optional_scalar_argument<Value>, graph_parameter_variadic_mode<Value>});
 }
 
 template <typename Function> const TimeSeriesType &graph_output_type() {

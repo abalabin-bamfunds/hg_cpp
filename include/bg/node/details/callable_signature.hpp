@@ -69,7 +69,8 @@ void add_callable_parameter(std::vector<Parameter> &parameters) {
         const auto text = Field::name.empty() ? std::to_string(parameters.size()) : std::string{Field::name};
         const auto name = util::symbol{text};
         parameters.push_back(
-            {name, &callable_input_type<Scope, Function, Index>(name), Field::activity, Field::validity});
+            {name, &callable_input_type<Scope, Function, Index>(name), Field::activity, Field::validity, false,
+             input_field<Field>::variadic_mode});
     } else {
         static_assert(scalar_field<Field>::value,
                       "a callable parameter must be In, a scalar, an optional scalar, or Out");

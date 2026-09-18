@@ -1,6 +1,7 @@
 #pragma once
 
 #include <bg/node/input_properties.hpp>
+#include <bg/graph/variadic_parameter.hpp>
 #include <bg/type/time_series_type.hpp>
 #include <bg/type/type_map.hpp>
 #include <bg/type/type_resolution_error.hpp>
@@ -8,6 +9,7 @@
 
 #include <compare>
 #include <functional>
+#include <optional>
 #include <span>
 #include <utility>
 #include <vector>
@@ -15,6 +17,7 @@
 namespace bg {
 
 class WiringArguments;
+class WiringArgument;
 
 struct Parameter {
     util::symbol name;
@@ -22,6 +25,7 @@ struct Parameter {
     InputActivity activity{active};
     InputValidity validity{required};
     bool accepts_absent_scalar{};
+    details::VariadicMode variadic_mode{details::VariadicMode::none};
 };
 
 struct VariableResolver {
@@ -50,6 +54,7 @@ struct ResolvedParameter {
     InputActivity activity;
     InputValidity validity;
     bool accepts_absent_scalar;
+    details::VariadicMode variadic_mode;
 };
 
 struct ResolvedSignature {
@@ -66,16 +71,23 @@ struct SignatureResolution {
 class Signature {
   public:
     Signature(util::symbol name, std::vector<Parameter> parameters, std::vector<VariableResolver> resolvers = {})
-        : name_(name), parameters_(std::move(parameters)), output_(nullptr), resolvers_(std::move(resolvers)) {}
+        : name_(name), parameters_(std::move(parameters)), output_(nullptr), resolvers_(std::move(resolvers)) {
+        validate_variadic_parameters();
+    }
 
     Signature(util::symbol name, std::vector<Parameter> parameters, const TimeSeriesType &output,
               std::vector<VariableResolver> resolvers = {})
-        : name_(name), parameters_(std::move(parameters)), output_(&output), resolvers_(std::move(resolvers)) {}
+        : name_(name), parameters_(std::move(parameters)), output_(&output), resolvers_(std::move(resolvers)) {
+        validate_variadic_parameters();
+    }
 
     [[nodiscard]] ResolvedSignature resolve(std::span<const Type *const> arguments) const;
     [[nodiscard]] SignatureResolution resolve_with_type_map(std::span<const Type *const> arguments) const;
     [[nodiscard]] SignatureResolution resolve_with_type_map(std::span<const Type *const> arguments,
                                                             const TypeMap &type_map) const;
+    [[nodiscard]] SignatureResolution resolve_wiring_arguments(std::span<const WiringArgument> arguments,
+                                                               std::span<const WiringArgument> logical_arguments,
+                                                               const TypeMap *type_map = nullptr) const;
     [[nodiscard]] TypeMap match_arguments(std::span<const Type *const> arguments,
                                           const TypeMap *type_map = nullptr) const;
     [[nodiscard]] ResolvedSignature complete_resolution(TypeMap &type_map,
@@ -87,10 +99,18 @@ class Signature {
 
     const Parameter &parameter(std::size_t index) const noexcept { return parameters_[index]; }
 
+    std::optional<std::size_t> variadic_parameter() const noexcept {
+        if (parameters_.empty() || parameters_.back().variadic_mode == details::VariadicMode::none) {
+            return std::nullopt;
+        }
+        return parameters_.size() - 1;
+    }
+
     bool has_output() const noexcept { return output_ != nullptr; }
     const TimeSeriesType *output() const noexcept { return output_; }
 
   private:
+    void validate_variadic_parameters() const;
     [[nodiscard]] SignatureResolution resolve_seeded(std::span<const Type *const> arguments, TypeMap type_map) const;
 
     util::symbol name_;
@@ -100,5 +120,10 @@ class Signature {
 };
 
 [[nodiscard]] std::partial_ordering compare_specificity(const Signature &left, const Signature &right);
+
+namespace details {
+[[nodiscard]] std::partial_ordering compare_parameter_specificity(const Signature &left, const Signature &right,
+                                                                  std::size_t parameter_count);
+}
 
 } // namespace bg

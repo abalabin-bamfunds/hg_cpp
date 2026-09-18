@@ -15,6 +15,7 @@
 #include <bg/graph/wired_scalar.hpp>
 #include <bg/graph/wiring_context.hpp>
 #include <bg/graph/wiring_arguments.hpp>
+#include <bg/graph/wiring_argument.hpp>
 #include <bg/graph/wiring_error.hpp>
 #include <bg/graph/wiring_point.hpp>
 #include <bg/graph/wiring_template.hpp>

@@ -1,5 +1,6 @@
 #include <bg/graph/operator.hpp>
 
+#include <bg/graph/details/normalized_wiring_arguments.hpp>
 #include <bg/graph/wiring_arguments.hpp>
 #include <bg/graph/wiring_context.hpp>
 #include <bg/graph/wiring_error.hpp>
@@ -34,10 +35,11 @@ WiringFailureStage failure_stage(TypeResolutionErrorCode code) noexcept {
 }
 
 std::partial_ordering compare_reference_affinity(const ResolvedSignature &left, const ResolvedSignature &right,
-                                                 std::span<const Type *const> arguments) noexcept {
+                                                 std::span<const Type *const> arguments,
+                                                 std::size_t parameter_count) noexcept {
     auto left_better = false;
     auto right_better = false;
-    for (auto index = std::size_t{}; index < arguments.size(); ++index) {
+    for (auto index = std::size_t{}; index < parameter_count; ++index) {
         const auto *argument = dynamic_cast<const TimeSeriesType *>(arguments[index]);
         const auto *left_parameter = dynamic_cast<const TimeSeriesType *>(left.parameters[index].type);
         const auto *right_parameter = dynamic_cast<const TimeSeriesType *>(right.parameters[index].type);
@@ -70,7 +72,34 @@ std::partial_ordering compare_reference_affinity(const ResolvedSignature &left, 
 bool preferred(const WiringTemplate &candidate, const ResolvedSignature &candidate_signature,
                const WiringTemplate &other, const ResolvedSignature &other_signature,
                std::span<const Type *const> arguments) {
-    const auto reference_affinity = compare_reference_affinity(candidate_signature, other_signature, arguments);
+    const auto candidate_variadic = candidate.signature().variadic_parameter().has_value();
+    const auto other_variadic = other.signature().variadic_parameter().has_value();
+    if (candidate_variadic != other_variadic) {
+        return !candidate_variadic;
+    }
+    if (candidate_variadic) {
+        const auto candidate_fixed = *candidate.signature().variadic_parameter();
+        const auto other_fixed = *other.signature().variadic_parameter();
+        const auto shared_fixed = std::min(candidate_fixed, other_fixed);
+        const auto reference_affinity =
+            compare_reference_affinity(candidate_signature, other_signature, arguments, shared_fixed);
+        if (reference_affinity != std::partial_ordering::equivalent) {
+            return reference_affinity == std::partial_ordering::less;
+        }
+        if (candidate_fixed == other_fixed) {
+            return compare_specificity(candidate.signature(), other.signature()) == std::partial_ordering::less;
+        }
+
+        const auto shared_specificity =
+            details::compare_parameter_specificity(candidate.signature(), other.signature(), shared_fixed);
+        const auto prefix_length =
+            candidate_fixed > other_fixed ? std::partial_ordering::less : std::partial_ordering::greater;
+        const auto preferences_agree =
+            shared_specificity == std::partial_ordering::equivalent || shared_specificity == prefix_length;
+        return preferences_agree && prefix_length == std::partial_ordering::less;
+    }
+    const auto reference_affinity =
+        compare_reference_affinity(candidate_signature, other_signature, arguments, arguments.size());
     if (reference_affinity != std::partial_ordering::equivalent) {
         return reference_affinity == std::partial_ordering::less;
     }
@@ -137,46 +166,49 @@ WiringDiagnostic diagnostic(const Signature &prototype, std::vector<util::symbol
 struct ArgumentKey {
     const Type *type;
     bool present;
+    std::optional<util::symbol> name;
 
     bool operator==(const ArgumentKey &) const noexcept = default;
 };
 
-std::vector<ArgumentKey> argument_key(std::span<const details::wiring_argument> arguments) {
+std::vector<ArgumentKey> argument_key(std::span<const WiringArgument> arguments) {
     auto result = std::vector<ArgumentKey>{};
     result.reserve(arguments.size());
 
     for (const auto &argument : arguments) {
-        result.push_back({&argument.type(), argument.present()});
+        result.push_back({&argument.type(), argument.present(), argument.name()});
     }
 
     return result;
 }
 
-bool matches(std::span<const ArgumentKey> key, std::span<const details::wiring_argument> arguments) {
+bool matches(std::span<const ArgumentKey> key, std::span<const WiringArgument> arguments) {
     return key.size() == arguments.size() && std::ranges::equal(key, arguments, {}, {}, [](const auto &argument) {
-               return ArgumentKey{&argument.type(), argument.present()};
+               return ArgumentKey{&argument.type(), argument.present(), argument.name()};
            });
 }
 
-std::optional<Scalar<>> scalar(std::span<const details::wiring_argument> arguments, std::size_t index) {
+std::optional<Scalar<>> scalar(std::span<const WiringArgument> arguments, std::size_t index) {
+    if (index >= arguments.size()) {
+        return std::nullopt;
+    }
+
     const auto &argument = arguments[index];
     if (!argument.is_scalar() || !argument.present()) {
         return std::nullopt;
     }
 
-    if (const auto *view = argument.scalar_view()) {
-        return Scalar<>::from(view->runtime_type(), view->data());
-    }
-
-    return Scalar<>::from(argument.scalar_runtime_type(), argument.scalar_data());
+    return argument.scalar();
 }
 
 struct ScalarRead {
+    const WiringTemplate *implementation;
     std::size_t index;
     ScalarValue<> value;
 };
 
 struct ScalarReads {
+    const WiringTemplate *implementation{};
     bool cacheable{true};
     std::vector<ScalarRead> values;
 };
@@ -188,11 +220,13 @@ void record_scalar_read(void *context, std::size_t index, Scalar<> value) {
         return;
     }
 
-    if (std::ranges::any_of(reads.values, [index](const auto &read) { return read.index == index; })) {
+    if (std::ranges::any_of(reads.values, [&](const auto &read) {
+            return read.implementation == reads.implementation && read.index == index;
+        })) {
         return;
     }
 
-    reads.values.push_back({index, ScalarValue<>{value}});
+    reads.values.push_back({reads.implementation, index, ScalarValue<>{value}});
 }
 
 } // namespace
@@ -222,7 +256,7 @@ void Operator::add_overload(std::unique_ptr<WiringTemplate> implementation) {
     cache_->entries.clear();
 }
 
-std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<details::wiring_argument> arguments,
+std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const WiringArgument> arguments,
                                             const TypeMap *seed_type_map) const {
     if (seed_type_map == nullptr) {
         for (const auto &entry : cache_->entries) {
@@ -230,16 +264,41 @@ std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<detai
                 continue;
             }
 
-            const auto scalar_values_match = std::ranges::all_of(entry.scalar_reads, [&](const auto &read) {
-                const auto current = scalar(arguments, read.index);
-                return current && read.value.view().equals(*current);
-            });
+            auto scalar_values_match = true;
+            auto read_implementation = static_cast<const WiringTemplate *>(nullptr);
+            auto probe = details::NormalizedWiringArguments{};
+            for (const auto &read : entry.scalar_reads) {
+                if (read.implementation != read_implementation) {
+                    try {
+                        probe = details::probe_wiring_arguments(read.implementation->signature(), arguments);
+                    } catch (const std::exception &) {
+                        scalar_values_match = false;
+                        break;
+                    }
+                    read_implementation = read.implementation;
+                }
+
+                const auto current = scalar(probe.logical_arguments, read.index);
+                if (!current || !read.value.view().equals(*current)) {
+                    scalar_values_match = false;
+                    break;
+                }
+            }
             if (!scalar_values_match) {
                 continue;
             }
 
+            auto committed = details::NormalizedWiringArguments{};
+            try {
+                committed = details::normalize_wiring_arguments(entry.implementation->signature(), arguments,
+                                                                 wiring.allocator_);
+            } catch (const std::exception &) {
+                continue;
+            }
+
             auto resolution = SignatureResolution{entry.resolution.signature, entry.resolution.type_map.copy()};
-            return invoke_resolved(wiring, *entry.implementation, std::move(resolution), arguments, prototype_.name());
+            return invoke_resolved(wiring, *entry.implementation, std::move(resolution), committed.arguments,
+                                   prototype_.name());
         }
     }
 
@@ -252,54 +311,85 @@ std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<detai
     struct Candidate {
         const WiringTemplate *implementation;
         SignatureResolution resolution;
+        std::vector<WiringArgument> arguments;
+        std::unique_ptr<details::WiringRecord> probe_record;
     };
 
     auto applicable = std::vector<Candidate>{};
     auto failures = std::vector<WiringCandidateDiagnostic>{};
+    auto scalar_reads = ScalarReads{};
     applicable.reserve(overloads_.size());
     failures.reserve(overloads_.size());
-    auto scalar_reads = ScalarReads{};
 
-    for (const auto &implementation : overloads_) {
-        auto resolution = std::optional<SignatureResolution>{};
-        try {
-            auto type_map = implementation->signature().match_arguments(argument_types, seed_type_map);
-            auto resolver_arguments =
-                WiringArguments{implementation->signature(), type_map, arguments, &scalar_reads, &record_scalar_read};
-            auto signature = implementation->signature().complete_resolution(type_map, &resolver_arguments);
-            resolution.emplace(SignatureResolution{std::move(signature), std::move(type_map)});
-        } catch (const TypeResolutionError &error) {
-            failures.push_back(failure(*implementation, error));
-            continue;
-        } catch (const std::exception &error) {
-            failures.push_back(failure(*implementation, WiringFailureStage::callback, error.what()));
-            throw WiringError{diagnostic(prototype_, current_path(), argument_types, std::move(failures))};
+    for (auto variadic = false;; variadic = true) {
+        for (const auto &implementation : overloads_) {
+            if (implementation->signature().variadic_parameter().has_value() != variadic) {
+                continue;
+            }
+
+            auto resolution = std::optional<SignatureResolution>{};
+            auto probe_record = std::unique_ptr<details::WiringRecord>{};
+            auto candidate_arguments = std::vector<WiringArgument>{};
+            auto logical_arguments = std::vector<WiringArgument>{};
+            try {
+                auto normalized = details::probe_wiring_arguments(implementation->signature(), arguments);
+                candidate_arguments = std::move(normalized.arguments);
+                logical_arguments = std::move(normalized.logical_arguments);
+                probe_record = std::move(normalized.probe_record);
+            } catch (const std::exception &error) {
+                failures.push_back(failure(*implementation, WiringFailureStage::argument_count, error.what()));
+                continue;
+            }
+            try {
+                auto candidate_types = std::vector<const Type *>{};
+                candidate_types.reserve(candidate_arguments.size());
+                for (const auto &argument : candidate_arguments) {
+                    candidate_types.push_back(&argument.type());
+                }
+                scalar_reads.implementation = implementation.get();
+                auto type_map = implementation->signature().match_arguments(candidate_types, seed_type_map);
+                auto resolver_arguments = WiringArguments{implementation->signature(), type_map, logical_arguments,
+                                                          &scalar_reads, &record_scalar_read};
+                auto signature = implementation->signature().complete_resolution(type_map, &resolver_arguments);
+                resolution.emplace(SignatureResolution{std::move(signature), std::move(type_map)});
+            } catch (const TypeResolutionError &error) {
+                failures.push_back(failure(*implementation, error));
+                continue;
+            } catch (const std::exception &error) {
+                failures.push_back(failure(*implementation, WiringFailureStage::callback, error.what()));
+                throw WiringError{diagnostic(prototype_, current_path(), argument_types, std::move(failures))};
+            }
+
+            RequirementResult requirement = accept;
+            try {
+                requirement = implementation->requirement(WiringArguments{implementation->signature(),
+                                                                          resolution->type_map, logical_arguments,
+                                                                          &scalar_reads, &record_scalar_read});
+            } catch (const std::exception &error) {
+                failures.push_back(failure(*implementation, WiringFailureStage::callback, error.what()));
+                throw WiringError{diagnostic(prototype_, current_path(), argument_types, std::move(failures))};
+            }
+
+            if (!requirement.accepted()) {
+                failures.push_back(failure(*implementation, WiringFailureStage::requirement,
+                                           requirement.message().empty() ? "requirement rejected the arguments"
+                                                                         : std::string{requirement.message()}));
+                continue;
+            }
+            applicable.push_back({implementation.get(), std::move(*resolution), std::move(candidate_arguments),
+                                  std::move(probe_record)});
         }
 
-        RequirementResult requirement = accept;
-        try {
-            requirement = implementation->requirement(WiringArguments{implementation->signature(), resolution->type_map,
-                                                                      arguments, &scalar_reads, &record_scalar_read});
-        } catch (const std::exception &error) {
-            failures.push_back(failure(*implementation, WiringFailureStage::callback, error.what()));
-            throw WiringError{diagnostic(prototype_, current_path(), argument_types, std::move(failures))};
+        if (!applicable.empty() || variadic) {
+            break;
         }
-
-        if (!requirement.accepted()) {
-            failures.push_back(failure(*implementation, WiringFailureStage::requirement,
-                                       requirement.message().empty() ? "requirement rejected the arguments"
-                                                                     : std::string{requirement.message()}));
-            continue;
-        }
-        applicable.push_back({implementation.get(), std::move(*resolution)});
     }
 
     Candidate *selected = nullptr;
     for (auto &candidate : applicable) {
         const auto least_generic = std::ranges::all_of(applicable, [&](const auto &other) {
-            return &candidate == &other ||
-                   preferred(*candidate.implementation, candidate.resolution.signature, *other.implementation,
-                             other.resolution.signature, argument_types);
+            return &candidate == &other || preferred(*candidate.implementation, candidate.resolution.signature,
+                                                     *other.implementation, other.resolution.signature, argument_types);
         });
         if (least_generic) {
             selected = &candidate;
@@ -328,12 +418,14 @@ std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<detai
                                    {selected->resolution.signature, selected->resolution.type_map.copy()}});
     }
 
-    return invoke_resolved(wiring, *selected->implementation, std::move(selected->resolution), arguments,
+    auto committed =
+        details::normalize_wiring_arguments(selected->implementation->signature(), arguments, wiring.allocator_);
+    return invoke_resolved(wiring, *selected->implementation, std::move(selected->resolution), committed.arguments,
                            prototype_.name());
 }
 
 std::optional<WiringPoint> Operator::wire(GraphWiring &, ResolvedSignature, const TypeMap &,
-                                          std::span<details::wiring_argument>) const {
+                                          std::span<const WiringArgument>) const {
     throw std::logic_error{"an operator must select an overload before wiring"};
 }
 

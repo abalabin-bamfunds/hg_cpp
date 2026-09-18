@@ -25,14 +25,14 @@ class WiringTemplate {
     template <typename... Arguments>
         requires(details::graph_code_argument<Arguments> && ...)
     std::optional<WiringPoint> operator()(Arguments &&...arguments) const & {
-        std::array<details::wiring_argument, sizeof...(Arguments)> values{
-            details::wiring_argument{std::forward<Arguments>(arguments)}...};
+        std::array<WiringArgument, sizeof...(Arguments)> values{
+            WiringArgument{std::forward<Arguments>(arguments)}...};
 
-        return WiringContext::current().wiring().invoke(*this, std::span<details::wiring_argument>{values});
+        return WiringContext::current().wiring().invoke(*this, std::span<const WiringArgument>{values});
     }
 
     std::optional<WiringPoint> operator()(std::span<const WiringPoint> arguments) const & {
-        auto values = std::vector<details::wiring_argument>{};
+        auto values = std::vector<WiringArgument>{};
         values.reserve(arguments.size());
 
         for (const auto argument : arguments) {
@@ -42,17 +42,21 @@ class WiringTemplate {
         return WiringContext::current().wiring().invoke(*this, values);
     }
 
+    std::optional<WiringPoint> operator()(std::span<const WiringArgument> arguments) const & {
+        return WiringContext::current().wiring().invoke(*this, arguments);
+    }
+
     template <typename... Arguments>
         requires(details::graph_code_argument<Arguments> && ...)
     std::optional<WiringPoint> operator()(const TypeMap &type_map, Arguments &&...arguments) const & {
-        std::array<details::wiring_argument, sizeof...(Arguments)> values{
-            details::wiring_argument{std::forward<Arguments>(arguments)}...};
+        std::array<WiringArgument, sizeof...(Arguments)> values{
+            WiringArgument{std::forward<Arguments>(arguments)}...};
 
-        return WiringContext::current().wiring().invoke(*this, std::span<details::wiring_argument>{values}, &type_map);
+        return WiringContext::current().wiring().invoke(*this, std::span<const WiringArgument>{values}, &type_map);
     }
 
     std::optional<WiringPoint> operator()(const TypeMap &type_map, std::span<const WiringPoint> arguments) const & {
-        auto values = std::vector<details::wiring_argument>{};
+        auto values = std::vector<WiringArgument>{};
         values.reserve(arguments.size());
 
         for (const auto argument : arguments) {
@@ -62,36 +66,42 @@ class WiringTemplate {
         return WiringContext::current().wiring().invoke(*this, values, &type_map);
     }
 
+    std::optional<WiringPoint> operator()(const TypeMap &type_map,
+                                          std::span<const WiringArgument> arguments) const & {
+        return WiringContext::current().wiring().invoke(*this, arguments, &type_map);
+    }
+
     template <typename... Arguments> std::optional<WiringPoint> operator()(Arguments &&...) const && = delete;
 
     std::optional<WiringPoint> operator()(std::span<const WiringPoint>) const && = delete;
     template <typename... Arguments>
     std::optional<WiringPoint> operator()(const TypeMap &, Arguments &&...) const && = delete;
     std::optional<WiringPoint> operator()(const TypeMap &, std::span<const WiringPoint>) const && = delete;
+    std::optional<WiringPoint> operator()(const TypeMap &, std::span<const WiringArgument>) const && = delete;
 
   protected:
     [[nodiscard]] std::optional<WiringPoint> invoke_resolved(GraphWiring &wiring, SignatureResolution resolution,
-                                                             std::span<details::wiring_argument> arguments,
+                                                             std::span<const WiringArgument> arguments,
                                                              util::symbol path_name) const;
     [[nodiscard]] std::optional<WiringPoint> invoke_resolved(GraphWiring &wiring, const WiringTemplate &implementation,
                                                              SignatureResolution resolution,
-                                                             std::span<details::wiring_argument> arguments,
+                                                             std::span<const WiringArgument> arguments,
                                                              util::symbol path_name) const;
 
   private:
     friend class GraphWiring;
 
     [[nodiscard]] virtual std::optional<WiringPoint>
-    invoke(GraphWiring &wiring, std::span<details::wiring_argument> arguments, const TypeMap *seed_type_map) const;
+    invoke(GraphWiring &wiring, std::span<const WiringArgument> arguments, const TypeMap *seed_type_map) const;
 
-    virtual util::symbol label(const ResolvedSignature &, std::span<details::wiring_argument>,
+    virtual util::symbol label(const ResolvedSignature &, std::span<const WiringArgument>,
                                util::symbol default_label) const {
         return default_label;
     }
 
     [[nodiscard]] virtual std::optional<WiringPoint> wire(GraphWiring &wiring, ResolvedSignature signature,
                                                           const TypeMap &type_map,
-                                                          std::span<details::wiring_argument> arguments) const = 0;
+                                                          std::span<const WiringArgument> arguments) const = 0;
 };
 
 } // namespace bg

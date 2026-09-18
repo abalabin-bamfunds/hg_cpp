@@ -18,8 +18,8 @@ and output modification.
 [docs/graph-wiring.md](docs/graph-wiring.md) defines graph functions, wiring
 templates, graph templates, wiring contexts, and wiring paths.
 
-[docs/variadic-wiring.md](docs/variadic-wiring.md) contains the accepted
-variadic wiring design. It is not implemented.
+[docs/variadic-wiring.md](docs/variadic-wiring.md) defines variadic parameters,
+capture, forwarding, materialization, and nested graph boundaries.
 
 [docs/operators.md](docs/operators.md) defines operators, overload resolution,
 requirements, resolution caching, and overload diagnostics.
@@ -93,7 +93,8 @@ Keep documentation brief and complete.
 ## Decision records
 
   - Documentation describes current behavior; `docs/decisions/` records why significant choices were made.
-  - Record only durable, non-obvious decisions implemented in committed code. Include the record in the same authorized commit.
+  - Record only durable, non-obvious decisions implemented in committed code.
+    Include the record in the same authorized commit.
   - Skip routine details, plans, experiments, and uncommitted work.
   - Link relevant documentation instead of duplicating it.
   - Preserve replaced decisions and mark them `superseded`.

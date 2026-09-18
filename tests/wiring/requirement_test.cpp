@@ -7,10 +7,12 @@
 #include <bg/scalar/value.hpp>
 #include <bg/testing/test_graph.hpp>
 #include <bg/testing/test_wiring.hpp>
+#include <bg/time_series/tsb/tsb.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <cstdint>
+#include <optional>
 #include <stdexcept>
 #include <string>
 
@@ -27,8 +29,8 @@ struct rejecting_copy_definition {
     bg::Out<bg::TS<float>> output;
 
     static bg::RequirementResult require(const bg::WiringArguments &arguments) {
-        CHECK(arguments.parameter_index("input") == 0);
-        CHECK(arguments.parameter_name(0).text() == "input");
+        CHECK(arguments.argument_index("input") == 0);
+        CHECK(arguments.argument_name(0).text() == "input");
         CHECK(arguments.present("input"));
         CHECK(&arguments.original_type("input") == &bg::TS<float>::type());
         CHECK(&arguments.resolved_type("input") == &bg::TS<float>::type());
@@ -38,6 +40,34 @@ struct rejecting_copy_definition {
     }
 
     void evaluate() const { output.set(*input); }
+};
+
+struct flat_positional_requirement_definition {
+    std::optional<int> fixed;
+    bg::In<bg::TSB<bg::SCHEMA>, bg::var_args> values;
+
+    inline static auto calls = 0;
+
+    static bg::RequirementResult require(const bg::WiringArguments &arguments) {
+        ++calls;
+        REQUIRE(arguments.size() == 2);
+        CHECK(arguments.argument_name(0).text() == "fixed");
+        CHECK(arguments.argument_name(1).text() == "1");
+        CHECK_FALSE(arguments.present(0));
+        CHECK(arguments.present(1));
+        CHECK(bg::scalar_cast<std::int64_t>(*arguments.scalar(1)).value() == 7);
+
+        return bg::accept;
+    }
+
+    void evaluate() const {}
+};
+
+struct named_capture_collision_definition {
+    int mode;
+    bg::In<bg::TSB<bg::SCHEMA>, bg::var_kwargs> values;
+
+    void evaluate() const {}
 };
 
 TEST_CASE("an aggregate requirement can explain why it rejected an overload",
@@ -58,6 +88,61 @@ TEST_CASE("an aggregate requirement can explain why it rejected an overload",
         CHECK(error.diagnostic()->candidates.front().stage == bg::WiringFailureStage::requirement);
         CHECK(std::string{error.what()}.contains("the test overload is disabled"));
     }
+}
+
+TEST_CASE("requirements see one flat positional argument sequence",
+          "[feature:operator][feature:wiring][feature:variadic-wiring][definition:aggregate]") {
+    flat_positional_requirement_definition::calls = 0;
+
+    auto operation = bg::operator_<void(int, bg::TS_T)>{"consume", {"fixed", "values"}};
+    operation.overload(bg::node<flat_positional_requirement_definition>());
+    const auto sender = bg::graph(
+        "name"_n = "sender", [&](std::optional<int> fixed, bg::wp<bg::TSB<bg::SCHEMA>, bg::var_args> values) {
+            operation(fixed, values);
+        });
+
+    bg::testing::test_wiring([&] { operation(std::optional<int>{}, std::optional<int>{}, 7); });
+    bg::testing::test_wiring([&] { sender(std::optional<int>{}, std::optional<int>{}, 7); });
+
+    CHECK(flat_positional_requirement_definition::calls == 2);
+}
+
+TEST_CASE("requirements find direct and forwarded named captures",
+          "[feature:operator][feature:wiring][feature:variadic-wiring][definition:function]") {
+    auto calls = 0;
+    auto operation = bg::operator_<void(bg::TS_T)>{"consume", {"values"}};
+    operation.overload(bg::node(
+        bg::eval = [](bg::In<bg::TSB<bg::SCHEMA>, bg::var_kwargs>) {},
+        bg::require = [&](const bg::WiringArguments &arguments) {
+            ++calls;
+            REQUIRE(arguments.size() == 2);
+            CHECK(arguments.argument_index("first") == 0);
+            CHECK(arguments.argument_index("second") == 1);
+            CHECK(arguments.argument_name(0).text() == "first");
+            CHECK(&arguments.original_type("first") == &bg::cpp_scalar_type<std::int64_t>());
+            CHECK(&arguments.resolved_type("first") == &bg::cpp_scalar_type<std::int64_t>());
+            CHECK(bg::scalar_cast<std::int64_t>(*arguments.scalar("second")).value() == 2);
+
+            return bg::accept;
+        }));
+    const auto sender = bg::graph(
+        "name"_n = "sender",
+        [&](bg::wp<bg::TSB<bg::SCHEMA>, bg::var_kwargs> values) { operation(values); });
+
+    bg::testing::test_wiring([&] { operation("first"_n = 1, "second"_n = 2); });
+    bg::testing::test_wiring([&] { sender("first"_n = 1, "second"_n = 2); });
+
+    CHECK(calls == 2);
+}
+
+TEST_CASE("a named capture cannot reuse a fixed parameter name",
+          "[feature:operator][feature:wiring][feature:variadic-wiring][definition:aggregate]") {
+    auto operation = bg::operator_<void(int, bg::TS_T)>{"consume", {"mode", "values"}};
+    operation.overload(bg::node<named_capture_collision_definition>());
+
+    bg::testing::test_wiring([&] {
+        CHECK_THROWS_AS(operation(1, "mode"_n = std::optional<int>{}), bg::WiringError);
+    });
 }
 
 struct zero_mode_copy_definition {

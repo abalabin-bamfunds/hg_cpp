@@ -102,10 +102,15 @@ A type resolver returns a reference or pointer to a persistent semantic type
 obtained from a declaration's `type()` function or a type registry.
 
 Resolvers and requirements receive a read-only wiring-argument view. It
-provides parameter names and presence, original argument types, available
-resolved parameter types, the current type map, and wired scalar values.
-Arguments can be addressed by index or parameter name. Scalar access through
-this view records the reads required by the resolution cache.
+provides argument names and presence, original argument types, available
+resolved types, the current type map, and wired scalar values. Arguments can be
+addressed by index or name. Scalar access through this view records the reads
+required by the resolution cache.
+
+The view presents one flat argument sequence. Fixed arguments come first and
+captured variadic arguments follow. Forwarding a variadic wiring record produces
+the same sequence as supplying its arguments directly. An absent fixed scalar
+keeps its position. An absent captured scalar is omitted with its pack entry.
 
 Callable node declarations use a resolver named for its variable:
 
@@ -195,12 +200,17 @@ Specificity follows these rules:
 10. Identical signatures remain ambiguous when more than one requirement
     succeeds.
 
+A fixed overload is preferred over a variadic overload. Among variadic
+overloads, reference affinity and type specificity compare their shared fixed
+parameters. A longer compatible fixed prefix is less generic.
+
 ## Resolution cache
 
 Each operator has a bounded resolution cache. Its keys include supplied
 argument types and presence, plus only the wiring-time scalar values read by a
 resolver or requirement function. Reads made by rejected candidates are part
-of the key when they can affect the selected result.
+of the key when they can affect the selected result. Cache validation rebuilds
+the flat argument sequence for the candidate that made each read.
 
 Resolution is not cached when a read scalar does not provide equality and
 hashing. Cache entries retain the selected operator-owned implementation and

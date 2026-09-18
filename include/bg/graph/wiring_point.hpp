@@ -1,6 +1,7 @@
 #pragma once
 
 #include <bg/graph/wiring_error.hpp>
+#include <bg/graph/variadic_parameter.hpp>
 #include <bg/time_series/time_series_variable.hpp>
 #include <bg/type/time_series_type.hpp>
 
@@ -18,7 +19,7 @@ struct wiring_point_annotation;
 const WiringRecord &wiring_record(WiringPoint point) noexcept;
 } // namespace details
 
-template <typename TimeSeries = TS_T> class wp;
+template <typename TimeSeries = TS_T, auto... Properties> class wp;
 
 class WiringPoint {
   public:
@@ -37,7 +38,9 @@ class WiringPoint {
     friend const details::WiringRecord &details::wiring_record(WiringPoint point) noexcept;
 };
 
-template <typename TimeSeries> class wp {
+template <typename TimeSeries, auto... Properties> class wp {
+    static_assert(sizeof...(Properties) == 0, "a non-TSB wiring point does not accept properties");
+
   public:
     wp(WiringPoint point) : point_(point) {
         if (!TimeSeries::type().accepts(point.type())) {
@@ -58,6 +61,7 @@ template <typename TimeSeries> class wp {
     template <typename Key> auto operator[](Key &&key) const;
 
     using time_series_type = TimeSeries;
+    static constexpr auto variadic_mode = details::variadic_mode<Properties...>();
 
   private:
     struct unchecked_t {};
@@ -76,14 +80,19 @@ template <typename TimeSeries> wp<TimeSeries> WiringPoint::as() const {
 namespace details {
 
 struct wiring_point_annotation {
+    template <typename Point> static Point make_point(WiringPoint point) noexcept {
+        return Point{point, typename Point::unchecked_t{}};
+    }
+
     template <typename TimeSeries> static wp<TimeSeries> make(WiringPoint point) noexcept {
-        return wp<TimeSeries>{point, typename wp<TimeSeries>::unchecked_t{}};
+        return make_point<wp<TimeSeries>>(point);
     }
 };
 
 template <typename T> struct typed_wiring_point : std::false_type {};
 
-template <typename TimeSeries> struct typed_wiring_point<wp<TimeSeries>> : std::true_type {
+template <typename TimeSeries, auto... Properties>
+struct typed_wiring_point<wp<TimeSeries, Properties...>> : std::true_type {
     using time_series_type = TimeSeries;
 };
 

@@ -430,8 +430,13 @@ std::partial_ordering compare_specificity(const Signature &left, const Signature
         return Order::unordered;
     }
 
+    return details::compare_parameter_specificity(left, right, left.parameter_count());
+}
+
+std::partial_ordering details::compare_parameter_specificity(const Signature &left, const Signature &right,
+                                                             std::size_t parameter_count) {
     auto comparison = Comparison{};
-    for (auto index = std::size_t{}; index < left.parameter_count(); ++index) {
+    for (auto index = std::size_t{}; index < parameter_count; ++index) {
         comparison.order = combine(
             comparison.order, compare_types(*left.parameter(index).type, *right.parameter(index).type, comparison));
     }

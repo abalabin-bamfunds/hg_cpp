@@ -7,7 +7,8 @@
 #include <bg/graph/wiring_arguments.hpp>
 #include <bg/operators.hpp>
 #include <bg/scalar/value.hpp>
-#include <bg/time_series/tsb/tsb.hpp>
+#include <bg/time_series/tsb/details/wiring.hpp>
+#include <bg/time_series/tsb/tsb_type.hpp>
 #include <bg/type/time_series_bundle_type.hpp>
 #include <bg/type/time_series_variable.hpp>
 
@@ -57,8 +58,8 @@ struct TimeSeriesBundleGetattr {
         const auto index = field_index(type, name);
 
         const auto &record = wiring_record(bundle);
-        if (const auto *free_bundle = dynamic_cast<const FreeTimeSeriesBundleWiringRecord *>(&record)) {
-            return wp<TS_T>{free_bundle->field(index)};
+        if (const auto field = free_time_series_bundle_field(record, index)) {
+            return wp<TS_T>{*field};
         }
 
         const auto field = type.item_id(index);

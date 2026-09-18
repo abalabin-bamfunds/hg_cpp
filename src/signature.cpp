@@ -8,6 +8,7 @@
 #include <bg/util/scope_exit.hpp>
 
 #include <algorithm>
+#include <stdexcept>
 
 namespace bg {
 namespace {
@@ -98,6 +99,18 @@ const TypeMapValue *resolve_missing_mapping(void *context, TypeMap &type_map, co
 
 } // namespace
 
+void Signature::validate_variadic_parameters() const {
+    for (auto index = std::size_t{}; index < parameters_.size(); ++index) {
+        if (parameters_[index].variadic_mode != details::VariadicMode::none && index + 1 != parameters_.size()) {
+            throw std::invalid_argument{"a variadic parameter must be final"};
+        }
+        if (parameters_[index].variadic_mode != details::VariadicMode::none &&
+            dynamic_cast<const TimeSeriesBundleType *>(parameters_[index].type) == nullptr) {
+            throw std::invalid_argument{"a variadic parameter must be a TSB"};
+        }
+    }
+}
+
 ResolvedSignature Signature::resolve(std::span<const Type *const> arguments) const {
     return std::move(resolve_with_type_map(arguments).signature);
 }
@@ -137,6 +150,21 @@ SignatureResolution Signature::resolve_with_type_map(std::span<const Type *const
     return resolve_seeded(arguments, type_map.copy());
 }
 
+SignatureResolution Signature::resolve_wiring_arguments(std::span<const WiringArgument> arguments,
+                                                        std::span<const WiringArgument> logical_arguments,
+                                                        const TypeMap *seed) const {
+    auto argument_types = std::vector<const Type *>{};
+    argument_types.reserve(arguments.size());
+    for (const auto &argument : arguments) {
+        argument_types.push_back(&argument.type());
+    }
+
+    auto type_map = match_arguments(argument_types, seed);
+    auto wiring_arguments = WiringArguments{*this, type_map, logical_arguments};
+    auto signature = complete_resolution(type_map, &wiring_arguments);
+    return {std::move(signature), std::move(type_map)};
+}
+
 ResolvedSignature Signature::complete_resolution(TypeMap &type_map, const WiringArguments *arguments) const {
     auto resolver_context = ResolverContext{resolvers_, arguments, std::vector<ResolverState>(resolvers_.size())};
     type_map.missing_mapping_handler(&resolver_context, &resolve_missing_mapping);
@@ -158,7 +186,8 @@ ResolvedSignature Signature::complete_resolution(TypeMap &type_map, const Wiring
         }
 
         parameters.push_back(
-            {parameter.name, &type, parameter.activity, parameter.validity, parameter.accepts_absent_scalar});
+            {parameter.name, &type, parameter.activity, parameter.validity, parameter.accepts_absent_scalar,
+             parameter.variadic_mode});
     }
 
     const TimeSeriesType *output = nullptr;

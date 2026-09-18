@@ -34,7 +34,9 @@ template <typename TimeSeries> using getitem_result_t = typename getitem_result<
 
 } // namespace details
 
-template <typename TimeSeries> template <typename Key> auto wp<TimeSeries>::operator[](Key &&key) const {
+template <typename TimeSeries, auto... Properties>
+template <typename Key>
+auto wp<TimeSeries, Properties...>::operator[](Key &&key) const {
     return operators::getitem(*this, std::forward<Key>(key)).template as<details::getitem_result_t<TimeSeries>>();
 }
 
