@@ -11,19 +11,10 @@ struct ConstantMetadata {
     std::uint32_t start_time_offset;
     std::uint32_t notification_offset;
     std::uint32_t notification_count;
-    std::uint32_t dynamic_subscriber_offset;
-    std::uint32_t dynamic_subscriber_count;
 };
 
-static_assert(sizeof(ConstantMetadata) == 20);
+static_assert(sizeof(ConstantMetadata) == 12);
 static_assert(std::is_trivially_copyable_v<ConstantMetadata>);
-
-struct ConstantDynamicSubscriber {
-    std::uint32_t runtime_storage_offset;
-};
-
-static_assert(sizeof(ConstantDynamicSubscriber) == 4);
-static_assert(std::is_trivially_copyable_v<ConstantDynamicSubscriber>);
 
 // Describes the variable sections of compiled graph storage. Node offsets, paths, and optional constant metadata follow.
 struct CompiledStorageHeader {

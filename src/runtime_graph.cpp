@@ -564,15 +564,6 @@ std::optional<EvaluationTime> RuntimeGraph::next_scheduled_time() const noexcept
 
 void RuntimeGraph::notify_subscribers(std::span<const Subscriber> subscribers, OutputChange change) {
     for (const auto &subscriber : subscribers) {
-        if (subscriber.has_dynamic_subscribers()) {
-            auto *dynamic_subscribers =
-                *reinterpret_cast<details::DynamicSubscribers **>(storage_ + subscriber.dynamic_subscribers_offset());
-            if (dynamic_subscribers != nullptr) {
-                notify_dynamic_subscribers(*dynamic_subscribers, change);
-            }
-            continue;
-        }
-
         notify_node_subscriber(subscriber.node_index(), subscriber.active(), subscriber.required(),
                                subscriber.active_optional(), change);
     }
@@ -729,13 +720,6 @@ void RuntimeGraph::start(EvaluationTime evaluation_time, details::EvaluationScra
         auto context = OutputChangeContext{*this};
         for (const auto &notification : compiled_graph_->constant_notifications()) {
             notification.notify(context, OutputChange::revalidation);
-        }
-        for (const auto &subscriber : compiled_graph_->constant_dynamic_subscribers()) {
-            auto *dynamic =
-                *reinterpret_cast<details::DynamicSubscribers **>(storage_ + subscriber.runtime_storage_offset);
-            if (dynamic != nullptr) {
-                notify_dynamic_subscribers(*dynamic, OutputChange::revalidation);
-            }
         }
     }
     stop_on_failure.release();

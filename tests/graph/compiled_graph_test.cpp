@@ -86,15 +86,6 @@ TEST_CASE("compiled nodes keep hot data in node-local sections", "[compiled_grap
     CHECK(graph.fixed_storage_size() == 236);
 }
 
-TEST_CASE("compiled dynamic subscribers address the complete runtime storage",
-          "[compiled_graph][subscriptions][feature:graph-compilation]") {
-    constexpr auto offset = (std::size_t{1} << 30) - alignof(void *);
-    const auto subscriber = bg::Subscriber::dynamic_subscribers(static_cast<std::uint32_t>(offset));
-
-    CHECK(subscriber.has_dynamic_subscribers());
-    CHECK(subscriber.dynamic_subscribers_offset() == offset);
-}
-
 namespace {
 
 struct reference_subscription_source {

@@ -25,12 +25,6 @@ struct CompiledNodeDataLayout {
     CompiledNodeDataDestructionFunction destruction_function{};
 };
 
-// Routes changes from one time series input to a dynamic subscriber list stored in node state.
-struct DynamicSubscribersLayout {
-    std::size_t source_input;
-    std::size_t state_offset;
-};
-
 // A TS value output whose value is one scalar parameter and never changes.
 struct ConstantOutput {
     std::size_t scalar_parameter;
@@ -50,10 +44,6 @@ class NodeTemplate : public WiringTemplate {
     virtual bool uses_future_scheduling() const noexcept { return false; }
     virtual bool uses_cycle_callbacks() const noexcept { return false; }
     virtual InputNotification input_notification(std::size_t) const noexcept { return {}; }
-    virtual std::optional<DynamicSubscribersLayout>
-    dynamic_subscribers_layout(const ResolvedSignature &) const noexcept {
-        return std::nullopt;
-    }
     virtual NodeStateLayout state_layout(const ResolvedSignature &, std::span<const ScalarRuntimeType *const>,
                                          std::span<const ScalarType *const>) const {
         return {};

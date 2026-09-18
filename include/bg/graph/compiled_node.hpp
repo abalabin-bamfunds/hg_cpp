@@ -58,12 +58,6 @@ class Subscriber {
         : node_index_and_flags_{node_index | (active ? active_flag : 0) | (required ? required_flag : 0) |
                                 (active_optional ? active_optional_flag : 0)} {}
 
-    // A dynamic entry stores a pointer-aligned runtime-storage offset instead of a node index.
-    static Subscriber dynamic_subscribers(std::uint32_t offset) noexcept {
-        return Subscriber{dynamic_subscribers_flag |
-                          static_cast<std::uint32_t>(offset / dynamic_subscribers_alignment)};
-    }
-
     std::size_t node_index() const noexcept { return node_index_and_flags_ & node_index_mask; }
 
     bool active() const noexcept { return (node_index_and_flags_ & active_flag) != 0; }
@@ -72,22 +66,11 @@ class Subscriber {
 
     bool active_optional() const noexcept { return (node_index_and_flags_ & active_optional_flag) != 0; }
 
-    bool has_dynamic_subscribers() const noexcept { return (node_index_and_flags_ & dynamic_subscribers_flag) != 0; }
-
-    std::size_t dynamic_subscribers_offset() const noexcept {
-        return (node_index_and_flags_ & dynamic_subscribers_offset_mask) * dynamic_subscribers_alignment;
-    }
-
   private:
     static constexpr std::uint32_t active_flag = std::uint32_t{1} << 31;
     static constexpr std::uint32_t required_flag = std::uint32_t{1} << 30;
     static constexpr std::uint32_t active_optional_flag = std::uint32_t{1} << 29;
-    static constexpr std::uint32_t dynamic_subscribers_flag = std::uint32_t{1} << 28;
-    static constexpr std::uint32_t node_index_mask = dynamic_subscribers_flag - 1;
-    static constexpr std::uint32_t dynamic_subscribers_offset_mask = dynamic_subscribers_flag - 1;
-    static constexpr std::size_t dynamic_subscribers_alignment = alignof(void *);
-
-    explicit Subscriber(std::uint32_t value) noexcept : node_index_and_flags_{value} {}
+    static constexpr std::uint32_t node_index_mask = active_optional_flag - 1;
 
     std::uint32_t node_index_and_flags_;
 };

@@ -1,12 +1,10 @@
 #include <bg/graph/compiled_graph.hpp>
-#include <bg/graph/dynamic_subscribers.hpp>
 #include <bg/graph/graph_wiring.hpp>
 #include <bg/graph/runtime_graph.hpp>
 #include <bg/graph/wiring_context.hpp>
 #include <bg/graph.hpp>
 #include <bg/nested.hpp>
 #include <bg/node.hpp>
-#include <bg/node/node_template.hpp>
 #include <bg/operators.hpp>
 #include <bg/testing/test_graph.hpp>
 
@@ -14,9 +12,7 @@
 
 #include <array>
 #include <chrono>
-#include <memory>
 #include <optional>
-#include <span>
 #include <string>
 
 namespace {
@@ -93,65 +89,11 @@ struct constant_required_sum {
     inline static int evaluations{};
 };
 
-struct dynamic_constant_sink {
-    void evaluate() const { ++evaluations; }
-
-    inline static int evaluations{};
-};
-
 struct constant_timestamp_sink {
     bg::In<bg::TS<std::int64_t, bg::TimeSeriesGuarantee::const_>> input;
     bg::Out<bg::TS<std::int64_t>> output;
 
     void evaluate() const { output.set((input.last_updated() - bg::MIN_DT).count()); }
-};
-
-class dynamic_constant_subscriber final : public bg::NodeTemplate {
-  public:
-    const bg::Signature &signature() const override {
-        static const auto signature = bg::Signature{
-            bg::util::symbol{"dynamic_constant_subscriber"},
-            {{bg::util::symbol{"input"}, &bg::TS<std::int64_t, bg::TimeSeriesGuarantee::const_>::type()}},
-        };
-        return signature;
-    }
-
-    bg::EvaluationFunction evaluation_function(const bg::ResolvedSignature &) const noexcept override { return nullptr; }
-
-    bg::EvaluationFunction start_function(const bg::ResolvedSignature &) const noexcept override { return &start; }
-
-    bg::NodeStateLayout state_layout(const bg::ResolvedSignature &, std::span<const bg::ScalarRuntimeType *const>,
-                                     std::span<const bg::ScalarType *const>) const override {
-        return {.size = sizeof(bg::details::DynamicSubscribers *),
-                .alignment = alignof(bg::details::DynamicSubscribers *),
-                .field_offsets = {},
-                .generic_runtime_types = {}};
-    }
-
-    void construct_initial_state(const bg::NodeStateLayout &, void *storage) const noexcept override {
-        std::construct_at(static_cast<bg::details::DynamicSubscribers **>(storage), nullptr);
-    }
-
-    bg::EvaluationFunction state_destruction_function(const bg::ResolvedSignature &) const noexcept override {
-        return &destroy_state;
-    }
-
-    std::optional<bg::DynamicSubscribersLayout>
-    dynamic_subscribers_layout(const bg::ResolvedSignature &) const noexcept override {
-        return bg::DynamicSubscribersLayout{.source_input = 0, .state_offset = 0};
-    }
-
-  private:
-    static void start(const bg::CompiledNode &node, void *runtime_storage, bg::EvaluationContext *context) {
-        auto *subscribers = static_cast<bg::details::DynamicSubscribers **>(bg::Node{node, runtime_storage}.state());
-        bg::details::DynamicSubscribers::ensure(*subscribers, context->runtime_graph().allocation())
-            .add(context->runtime_graph(), 0, 0, 1, true, false);
-    }
-
-    static void destroy_state(const bg::CompiledNode &node, void *runtime_storage, bg::EvaluationContext *) noexcept {
-        auto *subscribers = static_cast<bg::details::DynamicSubscribers **>(bg::Node{node, runtime_storage}.state());
-        bg::details::DynamicSubscribers::release(*subscribers);
-    }
 };
 
 [[nodiscard]] bg::EvaluationTime time(std::int64_t microseconds) {
@@ -295,28 +237,6 @@ TEST_CASE("a constant waits for another required input",
 
     CHECK(actual.equals({std::nullopt, 7}));
     CHECK(constant_required_sum::evaluations == 1);
-}
-
-TEST_CASE("a constant notifies dynamic subscribers at start",
-          "[feature:constant][feature:scheduling][transition:start]") {
-    using namespace bg::operators;
-
-    dynamic_constant_sink::evaluations = 0;
-    const auto source = dynamic_constant_subscriber{};
-    const auto sink = bg::node<dynamic_constant_sink>();
-    auto wiring = bg::GraphWiring{};
-    {
-        auto context = bg::WiringContext{wiring};
-        source(const_(1).as<bg::TS<std::int64_t, bg::TimeSeriesGuarantee::const_>>());
-        sink();
-    }
-
-    const auto compiled = bg::CompiledGraph{wiring};
-    auto runtime = bg::RuntimeGraph{compiled};
-    runtime.start(time(1));
-    runtime.evaluate(time(1));
-
-    CHECK(dynamic_constant_sink::evaluations == 1);
 }
 
 TEST_CASE("an inner constant uses its own start time",

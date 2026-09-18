@@ -261,15 +261,8 @@ struct FixedStorageLayout {
     StorageSection variable_memory;
     StorageSection initial_runtime_storage;
     StorageSection constant_notifications;
-    StorageSection constant_dynamic_subscribers;
     std::size_t size{};
     std::size_t alignment{};
-};
-
-struct DynamicSubscribersPlan {
-    std::size_t output;
-    std::size_t node;
-    std::size_t state_offset;
 };
 
 struct CompilationPlan {
@@ -283,9 +276,7 @@ struct CompilationPlan {
     WiringPathLayout wiring_paths;
     NodeFunctionLayout starts;
     NodeFunctionLayout stops;
-    std::vector<DynamicSubscribersPlan> dynamic_subscribers;
     std::vector<InputNotificationSubscriberPlan> constant_notifications;
-    std::vector<details::ConstantDynamicSubscriber> constant_dynamic_subscribers;
     RuntimeStorageLayout runtime;
     FixedStorageLayout fixed;
     std::size_t scalar_destruction_count{};
@@ -467,8 +458,7 @@ void plan_subscribers(std::span<const WiredNode> nodes, std::span<const WiredOut
                       std::span<NodePlan> node_plans, CompilationPlan &plan) {
     const auto add_subscriber = [](std::vector<Subscriber> &subscribers, std::uint32_t node_index, bool is_active,
                                    bool is_required, bool is_active_optional) {
-        if (!subscribers.empty() && !subscribers.back().has_dynamic_subscribers() &&
-            subscribers.back().node_index() == node_index) {
+        if (!subscribers.empty() && subscribers.back().node_index() == node_index) {
             const auto &existing = subscribers.back();
             subscribers.back() =
                 Subscriber{node_index, existing.active() || is_active, existing.required() || is_required,
@@ -524,48 +514,6 @@ void plan_subscribers(std::span<const WiredNode> nodes, std::span<const WiredOut
                 }
             }
         }
-    }
-}
-
-void plan_dynamic_subscribers(CompilationPlan &plan) {
-    for (auto node_index = std::size_t{}; node_index < plan.nodes.size(); ++node_index) {
-        if (plan.is_const_node(node_index)) {
-            continue;
-        }
-        const auto &node = plan.nodes[node_index];
-        const auto layout = node.node_template().dynamic_subscribers_layout(node.signature());
-        if (!layout) {
-            continue;
-        }
-        if (layout->source_input >= node.input_output_indices().size()) {
-            throw std::logic_error{"dynamic subscriber source input is out of range"};
-        }
-
-        const auto output = plan.node_plans[node_index].time_series_inputs[layout->source_input].output;
-        (void)subscriber_list(output, plan.outputs, plan.node_plans);
-        plan.dynamic_subscribers.push_back({output, node_index, layout->state_offset});
-    }
-}
-
-void resolve_dynamic_subscribers(CompilationPlan &plan) {
-    for (const auto &dynamic : plan.dynamic_subscribers) {
-        const auto &state = plan.node_plans[dynamic.node].state;
-        if (dynamic.state_offset + sizeof(details::DynamicSubscribers *) > state.node.size) {
-            throw std::logic_error{"dynamic subscribers are outside node state"};
-        }
-
-        const auto offset = state.offset + dynamic.state_offset;
-        if (offset % alignof(details::DynamicSubscribers *) != 0) {
-            throw std::logic_error{"dynamic subscribers are not pointer-aligned"};
-        }
-
-        const auto packed = packed_offset(offset, "runtime storage reaches 1 GiB");
-        if (plan.constant_for_output(dynamic.output) != nullptr) {
-            plan.constant_dynamic_subscribers.push_back({packed});
-            continue;
-        }
-        subscriber_list(dynamic.output, plan.outputs, plan.node_plans)
-            .nodes.push_back(Subscriber::dynamic_subscribers(packed));
     }
 }
 
@@ -923,8 +871,6 @@ void plan_fixed_storage(CompilationPlan &plan) {
     }
     layout.initial_runtime_storage = storage.add_bytes(plan.runtime.size, plan.runtime.alignment, plan.runtime.size);
     layout.constant_notifications = storage.add<InputNotificationSubscriber>(plan.constant_notifications.size());
-    layout.constant_dynamic_subscribers =
-        storage.add<details::ConstantDynamicSubscriber>(plan.constant_dynamic_subscribers.size());
 
     for (auto node : plan.wired_node_indices) {
         auto &fixed = plan.node_plans[node].fixed;
@@ -1005,7 +951,6 @@ void plan_fixed_storage(CompilationPlan &plan) {
 
     plan_time_series_inputs(result);
     plan_subscribers(result.nodes, result.outputs, result.node_plans, result);
-    plan_dynamic_subscribers(result);
     result.wiring_paths = make_wiring_path_layout(result.nodes, result.wired_node_indices);
 
     for (auto i = std::size_t{}; i < result.nodes.size(); ++i) {
@@ -1039,8 +984,6 @@ void plan_fixed_storage(CompilationPlan &plan) {
             invalidation.mode = InvalidationMode::preserve_output;
         }
     }
-    resolve_dynamic_subscribers(result);
-
     result.output_destruction_count = static_cast<std::size_t>(std::ranges::count_if(
         result.wired_node_indices, [&](const auto node_index) {
             const auto &output = result.node_plans[node_index].output;
@@ -1193,8 +1136,6 @@ class CompiledGraphBuilder {
                     .start_time_offset = *plan.runtime.constant_start_time_offset,
                     .notification_offset = offset(plan.fixed.constant_notifications),
                     .notification_count = static_cast<std::uint32_t>(plan.constant_notifications.size()),
-                    .dynamic_subscriber_offset = offset(plan.fixed.constant_dynamic_subscribers),
-                    .dynamic_subscriber_count = static_cast<std::uint32_t>(plan.constant_dynamic_subscribers.size()),
                 });
         }
 
@@ -1203,9 +1144,6 @@ class CompiledGraphBuilder {
             const auto &source = plan.constant_notifications[index];
             std::construct_at(notifications.data() + index, source.function, source.data, source.node_index);
         }
-        std::uninitialized_copy(
-            plan.constant_dynamic_subscribers.begin(), plan.constant_dynamic_subscribers.end(),
-            plan.fixed.constant_dynamic_subscribers.objects<details::ConstantDynamicSubscriber>(storage).data());
     }
 
     static void construct_wiring_paths(const CompilationPlan &plan, std::byte *storage) {
@@ -1779,15 +1717,6 @@ std::span<const InputNotificationSubscriber> CompiledGraph::constant_notificatio
     if (const auto *metadata = constant_metadata()) {
         return stored_objects<InputNotificationSubscriber>(fixed_storage_, metadata->notification_offset,
                                                            metadata->notification_count);
-    }
-
-    return {};
-}
-
-std::span<const details::ConstantDynamicSubscriber> CompiledGraph::constant_dynamic_subscribers() const noexcept {
-    if (const auto *metadata = constant_metadata()) {
-        return stored_objects<details::ConstantDynamicSubscriber>(fixed_storage_, metadata->dynamic_subscriber_offset,
-                                                                  metadata->dynamic_subscriber_count);
     }
 
     return {};
