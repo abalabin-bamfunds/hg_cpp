@@ -13,7 +13,7 @@ class GraphWiring;
 
 namespace details {
 
-// Compiles a graph and remaps the supplied logical node indices to physical node indices.
+// Compiles a graph and replaces each supplied wired-node index with its compiled-node index.
 std::shared_ptr<const CompiledGraph> compile_graph(const GraphWiring &wiring, allocator memory,
                                                    std::span<std::size_t> node_indices);
 

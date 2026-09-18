@@ -143,7 +143,7 @@ graph compilation or evaluation.
 - start, stop, invalidation, and future-scheduling metadata
 - repeated compilation and independent runtime graphs
 - scalar and state destruction
-- folded scalar constants and their direct bindings
+- const nodes and their direct bindings
 
 ### Evaluation
 

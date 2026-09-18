@@ -209,7 +209,7 @@ TEST_CASE("a constant value updates only in the first test graph cycle",
     CHECK(bg::testing::test_graph(graph, std::array<std::int64_t, 2>{1, 2}).equals({3, std::nullopt}));
 }
 
-TEST_CASE("one folded constant serves active and passive consumers",
+TEST_CASE("one constant serves active and passive consumers",
           "[feature:constant][feature:graph-compilation][feature:input-activity][feature:scheduling][series:value]"
           "[scalar:integer][guarantee:const][shape:fan-out][activity:active][activity:passive]") {
     using namespace bg::operators;
@@ -256,7 +256,7 @@ TEST_CASE("a string constant uses compiled scalar storage",
     CHECK(string_constant_sink::last_updated == time(1));
 }
 
-TEST_CASE("a constant value-to-reference binding keeps the reference node physical",
+TEST_CASE("a constant value-to-reference binding keeps the reference node in the compiled graph",
           "[feature:constant][feature:reference][feature:graph-compilation][series:reference][series:value]"
           "[binding:value-to-reference][scalar:integer][guarantee:const][shape:chain][transition:start]") {
     using namespace bg::operators;

@@ -68,10 +68,9 @@ class CompiledGraph {
 
   public:
     CompiledGraph(CompilationTag, const GraphWiring &wiring, allocator memory,
-                  std::span<std::size_t> remapped_node_indices);
+                  std::span<std::size_t> node_indices);
 
   private:
-
     struct NodeFunctions {
         std::span<const EvaluationFunction> functions;
         std::span<const std::uint32_t> nodes;
