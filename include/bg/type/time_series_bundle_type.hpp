@@ -46,6 +46,10 @@ class TimeSeriesBundleType : public FixedItemTimeSeriesType {
   public:
     VISITOR_SUPPORT()
 
+    static const TimeSeriesBundleType &from_fields(
+        std::span<const BundleField> fields,
+        TimeSeriesGuarantee guarantee = TimeSeriesGuarantee::ordinary);
+
     const BundleSchemaType &schema_type() const noexcept { return *schema_; }
     const BundleSchema &schema() const;
     std::size_t item_count() const noexcept final;

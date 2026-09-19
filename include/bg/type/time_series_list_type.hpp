@@ -13,6 +13,10 @@ class TimeSeriesListType : public FixedItemTimeSeriesType {
   public:
     VISITOR_SUPPORT()
 
+    static const TimeSeriesListType &from_items(
+        std::span<const TimeSeriesType *const> items,
+        TimeSeriesGuarantee guarantee = TimeSeriesGuarantee::ordinary);
+
     const TimeSeriesType &item_type() const noexcept { return *item_type_; }
     const SizeParameter &size() const noexcept { return size_; }
     std::size_t item_count() const noexcept final { return size_.value().value_or(std::dynamic_extent); }

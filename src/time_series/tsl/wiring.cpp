@@ -6,17 +6,14 @@
 #include <bg/graph/details/wired_output.hpp>
 #include <bg/graph/details/wiring_record.hpp>
 #include <bg/graph/runtime_graph.hpp>
-#include <bg/graph/wiring_context.hpp>
 #include <bg/graph/wiring_error.hpp>
 #include <bg/node/node_template.hpp>
 #include <bg/time_series/tsl/tsl_free_runtime_type.hpp>
 #include <bg/type/time_series_list_type.hpp>
-#include <bg/type/time_series_reference_type.hpp>
 #include <bg/type/type_map.hpp>
 #include <bg/type/type_resolution_error.hpp>
 
 #include <algorithm>
-#include <charconv>
 #include <memory>
 #include <mutex>
 #include <ranges>
@@ -26,46 +23,6 @@
 
 namespace bg::details {
 namespace {
-
-const TimeSeriesType &target_type_of(const TimeSeriesType &type) noexcept {
-    if (const auto *reference = dynamic_cast<const TimeSeriesReferenceType *>(&type)) {
-        return reference->target_type();
-    }
-    return type;
-}
-
-const TimeSeriesListType &list_type(const TimeSeriesType &type) {
-    const auto *list = dynamic_cast<const TimeSeriesListType *>(&target_type_of(type));
-    if (list == nullptr) {
-        throw WiringError{"variadic TSL wiring requires a TSL"};
-    }
-    return *list;
-}
-
-const TimeSeriesListType &fixed_list_type(const TimeSeriesType &type) {
-    const auto &list = list_type(type);
-    if (list.item_count() == std::dynamic_extent) {
-        throw WiringError{"variadic TSL wiring requires a fixed TSL"};
-    }
-    return list;
-}
-
-const TimeSeriesListType &argument_type(std::span<const WiringPoint> items) {
-    const auto &first = target_type_of(items.front().type());
-    auto guarantee = *first.guarantee().value();
-    const auto &shape = first.with_guarantee(TimeSeriesGuarantee::ordinary);
-
-    for (const auto item : items | std::views::drop(1)) {
-        const auto &candidate = target_type_of(item.type());
-        if (&candidate.with_guarantee(TimeSeriesGuarantee::ordinary) != &shape) {
-            throw WiringError{"a variadic TSL requires compatible item types"};
-        }
-        guarantee = weakest(guarantee, *candidate.guarantee().value());
-    }
-
-    return time_series_list_type(first.with_guarantee(guarantee), items.size(),
-                                 TimeSeriesGuarantee::ordinary);
-}
 
 class FreeFixedTimeSeriesListNodeTemplate final : public NodeTemplate {
   public:
@@ -153,19 +110,22 @@ WiringPoint materialize_fixed_time_series_list(std::span<const WiringPoint> item
 
 class FreeFixedTimeSeriesListWiringRecord final : public WiringRecord {
   public:
-    explicit FreeFixedTimeSeriesListWiringRecord(std::span<const WiringPoint> items)
-        : WiringRecord{argument_type(items)}, items_{items.begin(), items.end()} {}
+    FreeFixedTimeSeriesListWiringRecord(const TimeSeriesListType &type, std::span<const WiringPoint> items)
+        : WiringRecord{type}, items_{items.begin(), items.end()} {}
 
     WiringPoint item(std::size_t index) const { return items_.at(index); }
 
   private:
     WiringPoint materialize(const TimeSeriesType &target_type) const override {
-        const auto &list = fixed_list_type(target_type);
-        if (list.item_count() != items_.size()) {
+        const auto *list = type_cast<TimeSeriesListType>(&target_type.target_type());
+        if (list == nullptr || list->item_count() == std::dynamic_extent) {
+            throw WiringError{"a free fixed TSL requires a fixed TSL parameter"};
+        }
+        if (list->item_count() != items_.size()) {
             throw WiringError{"a free fixed TSL requires a matching fixed TSL parameter"};
         }
 
-        const auto result = materialize_fixed_time_series_list(items_, list);
+        const auto result = materialize_fixed_time_series_list(items_, *list);
         return materialize_wiring_point(result, target_type);
     }
 
@@ -174,13 +134,12 @@ class FreeFixedTimeSeriesListWiringRecord final : public WiringRecord {
 
 class TimeSeriesListItemWiringRecord final : public WiringRecord {
   public:
-    TimeSeriesListItemWiringRecord(WiringPoint list, std::size_t index)
-        : WiringRecord{list_type(list.type()).item_type(index)}, list_{list},
-          item_{list_type(list.type()).item_id(index)} {}
+    TimeSeriesListItemWiringRecord(WiringPoint list, const TimeSeriesListType &type, std::size_t index)
+        : WiringRecord{type.item_type(index)}, list_{list}, item_{type.item_id(index)} {}
 
   private:
     WiringPoint materialize(const TimeSeriesType &requested_type) const override {
-        const auto &type = list_type(list_.type());
+        const auto &type = type_cast<TimeSeriesListType>(list_.type().target_type());
         const auto list = materialize_wiring_point(list_, type);
         const auto item = wiring_point_for_item(list, item_, this->type());
         return materialize_wiring_point(item, requested_type);
@@ -193,8 +152,11 @@ class TimeSeriesListItemWiringRecord final : public WiringRecord {
 class TimeSeriesListVariadicWiringOperations final : public VariadicWiringOperations {
   public:
     void validate_parameter(const TimeSeriesType &type, VariadicMode mode) const override {
-        const auto &list = list_type(type);
-        if (list.size().value() == std::optional{std::dynamic_extent}) {
+        const auto *list = type_cast<TimeSeriesListType>(&type.target_type());
+        if (list == nullptr) {
+            throw std::invalid_argument{"a variadic TSL parameter requires a TSL"};
+        }
+        if (list->size().value() == std::optional{std::dynamic_extent}) {
             throw std::invalid_argument{"a variadic TSL parameter requires a fixed size or size variable"};
         }
         if (mode != VariadicMode::positional) {
@@ -205,36 +167,36 @@ class TimeSeriesListVariadicWiringOperations final : public VariadicWiringOperat
     VariadicCapture capture(const TimeSeriesType &parameter_type, VariadicMode,
                             std::vector<WiringArgument> arguments, allocator *memory) const override {
         auto captured = std::vector<WiringArgument>{};
-        auto items = std::vector<WiringPoint>{};
+        auto item_types = std::vector<const TimeSeriesType *>{};
         captured.reserve(arguments.size());
-        items.reserve(arguments.size());
+        item_types.reserve(arguments.size());
 
         for (auto &argument : arguments) {
             if (argument.is_scalar()) {
                 throw WiringError{"a variadic TSL accepts only time series arguments"};
             }
-            if (argument.name().has_value() &&
-                !wiring_argument_access::name_from_variadic_capture(argument)) {
-                throw WiringError{"var_args does not accept named arguments"};
-            }
 
-            const auto name = util::symbol{std::to_string(items.size())};
+            const auto name = util::symbol{std::to_string(item_types.size())};
             wiring_argument_access::set_variadic_name(argument, name);
-            items.push_back(argument.time_series());
+            item_types.push_back(&argument.time_series().type());
             captured.push_back(memory == nullptr ? wiring_argument_access::borrow(argument)
                                                  : wiring_argument_access::clone(argument, *memory));
         }
 
-        if (!items.empty()) {
-            return {&argument_type(items), std::move(captured)};
+        if (!item_types.empty()) {
+            try {
+                return {&TimeSeriesListType::from_items(item_types), std::move(captured)};
+            } catch (const std::invalid_argument &error) {
+                throw WiringError{error.what()};
+            }
         }
 
-        const auto &parameter = list_type(parameter_type);
+        const auto &parameter = type_cast<TimeSeriesListType>(parameter_type.target_type());
         auto type_map = TypeMap{};
         const TimeSeriesType *item;
         try {
             const auto &resolved_item = parameter.item_type().resolve(type_map);
-            item = dynamic_cast<const TimeSeriesType *>(&resolved_item);
+            item = type_cast<TimeSeriesType>(&resolved_item);
             if (item == nullptr) {
                 throw WiringError{"an empty variadic TSL requires a concrete item type"};
             }
@@ -251,13 +213,12 @@ class TimeSeriesListVariadicWiringOperations final : public VariadicWiringOperat
     }
 
     bool accepts_direct(const TimeSeriesType &type) const noexcept override {
-        const auto &target = target_type_of(type);
-        return dynamic_cast<const TimeSeriesListType *>(&target) != nullptr &&
-               static_cast<const TimeSeriesListType &>(target).item_count() != std::dynamic_extent;
+        const auto *list = type_cast<TimeSeriesListType>(&type.target_type());
+        return list != nullptr && list->item_count() != std::dynamic_extent;
     }
 
     std::size_t item_count(const TimeSeriesType &type) const noexcept override {
-        return static_cast<const TimeSeriesListType &>(target_type_of(type)).item_count();
+        return type_cast<TimeSeriesListType>(type.target_type()).item_count();
     }
 
     util::symbol item_name(const TimeSeriesType &, std::size_t index) const override {
@@ -265,7 +226,7 @@ class TimeSeriesListVariadicWiringOperations final : public VariadicWiringOperat
     }
 
     const TimeSeriesType &item_type(const TimeSeriesType &type, std::size_t) const override {
-        return static_cast<const TimeSeriesListType &>(target_type_of(type)).item_type();
+        return type_cast<TimeSeriesListType>(type.target_type()).item_type();
     }
 
     WiringPoint item(WiringPoint collection, std::size_t index) const override {
@@ -280,7 +241,12 @@ class TimeSeriesListVariadicWiringOperations final : public VariadicWiringOperat
             items.push_back(argument.time_series());
         }
 
-        const auto result = materialize_fixed_time_series_list(items, fixed_list_type(target_type));
+        const auto *list = type_cast<TimeSeriesListType>(&target_type.target_type());
+        if (list == nullptr || list->item_count() == std::dynamic_extent) {
+            throw WiringError{"variadic TSL wiring requires a fixed TSL"};
+        }
+
+        const auto result = materialize_fixed_time_series_list(items, *list);
         return materialize_wiring_point(result, target_type);
     }
 };
@@ -288,12 +254,28 @@ class TimeSeriesListVariadicWiringOperations final : public VariadicWiringOperat
 } // namespace
 
 WiringPoint make_free_fixed_time_series_list(std::span<const WiringPoint> items) {
-    return add_wiring_record(std::make_unique<FreeFixedTimeSeriesListWiringRecord>(items));
+    auto item_types = std::vector<const TimeSeriesType *>{};
+    item_types.reserve(items.size());
+    for (const auto item : items) {
+        item_types.push_back(&item.type());
+    }
+
+    const TimeSeriesListType *type;
+    try {
+        type = &TimeSeriesListType::from_items(item_types);
+    } catch (const std::invalid_argument &error) {
+        throw WiringError{error.what()};
+    }
+
+    return add_wiring_record(std::make_unique<FreeFixedTimeSeriesListWiringRecord>(*type, items));
 }
 
 WiringPoint time_series_list_item(WiringPoint list, std::size_t index) {
-    const auto &semantic_type = list_type(list.type());
-    if (index >= semantic_type.item_count()) {
+    const auto *semantic_type = type_cast<TimeSeriesListType>(&list.type().target_type());
+    if (semantic_type == nullptr) {
+        throw WiringError{"TSL item selection requires a TSL"};
+    }
+    if (index >= semantic_type->item_count()) {
         throw WiringError{"time series list index is out of range"};
     }
 
@@ -302,8 +284,8 @@ WiringPoint time_series_list_item(WiringPoint list, std::size_t index) {
         return free->item(index);
     }
 
-    const auto item = semantic_type.item_id(index);
-    auto selected = std::make_unique<TimeSeriesListItemWiringRecord>(list, index);
+    const auto item = semantic_type->item_id(index);
+    auto selected = std::make_unique<TimeSeriesListItemWiringRecord>(list, *semantic_type, index);
     return add_item_wiring_record(list, item, std::move(selected));
 }
 

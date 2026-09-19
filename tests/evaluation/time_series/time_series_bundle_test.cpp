@@ -228,8 +228,9 @@ TEST_CASE("a free bundle rejects duplicate field names",
     const auto value = bg::node([](bg::Out<bg::TS<float>>) {});
     const auto sum = bg::node<bundle_sum_definition>();
 
-    CHECK_THROWS(
-        bg::run_graph([&] { return sum(bg::bundle("count"_n = count(), "count"_n = count(), "value"_n = value())); }));
+    CHECK_THROWS_AS(
+        bg::run_graph([&] { return sum(bg::bundle("count"_n = count(), "count"_n = count(), "value"_n = value())); }),
+        bg::WiringError);
 }
 
 TEST_CASE("a named bundle input accepts extra free bundle fields",

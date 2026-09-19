@@ -53,7 +53,7 @@ void validate_fields(const BundleSchema *base, std::span<const BundleField> fiel
     fields.reserve(schema.direct_fields().size());
     for (const auto &[name, type] : schema.direct_fields()) {
         const auto &resolved = type->resolve(type_map);
-        const auto *time_series = dynamic_cast<const TimeSeriesType *>(&resolved);
+        const auto *time_series = type_cast<TimeSeriesType>(&resolved);
         if (time_series == nullptr) {
             throw TypeResolutionError{TypeResolutionErrorCode::invalid_type_map, name,
                                       "bundle field did not resolve to a time series type"};
@@ -77,6 +77,16 @@ const BundleSchema &schema_with_minimum_guarantee(const BundleSchema &schema, Ti
 }
 
 } // namespace
+
+const TimeSeriesBundleType &TimeSeriesBundleType::from_fields(std::span<const BundleField> fields,
+                                                              TimeSeriesGuarantee guarantee) {
+    if (std::ranges::any_of(fields,
+                            [](const auto &field) { return field.type == nullptr || !field.type->is_resolved(); })) {
+        throw std::invalid_argument{"a time series bundle type requires resolved field types"};
+    }
+
+    return time_series_bundle_type(unnamed_bundle_schema(fields), guarantee);
+}
 
 BundleSchema::BundleSchema(util::symbol name, const void *identity, const BundleSchema *base,
                            std::vector<BundleField> fields)
@@ -157,7 +167,7 @@ const TimeSeriesType &TimeSeriesBundleType::with_guarantee(TimeSeriesGuarantee g
 }
 
 bool TimeSeriesBundleType::do_match(const Type &supplied, TypeMap &type_map) const {
-    const auto *bundle = dynamic_cast<const TimeSeriesBundleType *>(&supplied);
+    const auto *bundle = type_cast<TimeSeriesBundleType>(&supplied);
     if (bundle == nullptr || !bundle->is_resolved()) {
         return false;
     }

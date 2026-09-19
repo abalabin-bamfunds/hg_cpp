@@ -17,14 +17,6 @@
 namespace bg::details {
 namespace {
 
-const TimeSeriesBundleType &bundle_type(const Type &type) {
-    const auto *bundle = dynamic_cast<const TimeSeriesBundleType *>(&type);
-    if (bundle == nullptr) {
-        throw WiringError{"getattr requires a TSB"};
-    }
-    return *bundle;
-}
-
 struct TimeSeriesBundleGetattr {
     wp<TS_T> operator()(wp<TSB<SCHEMA>> bundle, util::symbol name) const {
         return wp<TS_T>{time_series_bundle_field(bundle, name)};
@@ -35,7 +27,8 @@ Signature getattr_signature() {
     auto resolvers = std::vector<VariableResolver>{};
     resolvers.emplace_back(&TimeSeriesVariableInstance<TS_T>::get(),
                            [](const TypeMap &, const WiringArguments &arguments) -> TypeMapValue {
-                               const auto &type = bundle_type(arguments.resolved_type("bundle"));
+                               const auto &type =
+                                   type_cast<TimeSeriesBundleType>(arguments.resolved_type("bundle"));
                                const auto value = arguments.scalar("name");
                                const auto name = scalar_cast<util::symbol>(*value).value();
                                const auto *field = type.schema().find(name);

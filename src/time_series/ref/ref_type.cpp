@@ -39,7 +39,7 @@ struct ReferenceTypeKeyHash {
 
 const TimeSeriesReferenceType &time_series_reference_type(const TimeSeriesType &target_type,
                                                           TimeSeriesGuarantee guarantee) {
-    if (dynamic_cast<const TimeSeriesReferenceType *>(&target_type) != nullptr) {
+    if (type_cast<TimeSeriesReferenceType>(&target_type) != nullptr) {
         throw std::invalid_argument{"a time series reference cannot target another reference"};
     }
 
@@ -62,8 +62,8 @@ const TimeSeriesType &TimeSeriesReferenceType::with_guarantee(TimeSeriesGuarante
 
 const Type &GenericTimeSeriesReferenceType::resolve(const TypeMap &type_map) const {
     const auto &resolved_target = target_type().resolve(type_map);
-    const auto *target = dynamic_cast<const TimeSeriesType *>(&resolved_target);
-    if (target == nullptr || dynamic_cast<const TimeSeriesReferenceType *>(target) != nullptr) {
+    const auto *target = type_cast<TimeSeriesType>(&resolved_target);
+    if (target == nullptr || type_cast<TimeSeriesReferenceType>(target) != nullptr) {
         throw TypeResolutionError{TypeResolutionErrorCode::invalid_type_map, util::symbol{"REF"},
                                   "reference target did not resolve to a non-reference time series type"};
     }

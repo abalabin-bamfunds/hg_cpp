@@ -2,6 +2,10 @@
 
 #include <ddv/visitable.h>
 
+#include <concepts>
+#include <type_traits>
+#include <typeinfo>
+
 namespace bg {
 
 class DictScalarType;
@@ -22,6 +26,15 @@ using TypeVisitor = ddv::mux<Type, ScalarType, ListScalarType, SetScalarType, Di
                              TimeSeriesValueType, TimeSeriesReferenceType, TimeSeriesListType, TimeSeriesBundleType,
                              TimeSeriesSetType, TimeSeriesDictionaryType>;
 
+template <typename Target, typename Visitor> struct is_type_cast_target;
+
+template <typename Target, typename... Categories>
+struct is_type_cast_target<Target, ddv::mux<Categories...>>
+    : std::bool_constant<(std::same_as<Target, Categories> || ...)> {};
+
+template <typename Target>
+concept type_cast_target = is_type_cast_target<Target, TypeVisitor>::value;
+
 class Type : public ddv::visitable<Type, TypeVisitor> {
   public:
     virtual ~Type();
@@ -38,5 +51,53 @@ class Type : public ddv::visitable<Type, TypeVisitor> {
   protected:
     [[nodiscard]] virtual bool do_match(const Type &supplied, TypeMap &) const { return this == &supplied; }
 };
+
+template <type_cast_target Target> Target *type_cast(Type *type) noexcept {
+    if constexpr (std::same_as<Target, Type>) {
+        return type;
+    } else if constexpr (std::same_as<Target, ScalarType>) {
+        return type != nullptr && type->is_scalar() ? static_cast<Target *>(type) : nullptr;
+    } else if constexpr (std::same_as<Target, TimeSeriesType>) {
+        return type != nullptr && type->is_time_series() ? static_cast<Target *>(type) : nullptr;
+    } else {
+        auto *result = static_cast<Target *>(nullptr);
+        if (type != nullptr) {
+            type->visit([&](Target *value) { result = value; }, ddv::noop);
+        }
+        return result;
+    }
+}
+
+template <type_cast_target Target> const Target *type_cast(const Type *type) noexcept {
+    if constexpr (std::same_as<Target, Type>) {
+        return type;
+    } else if constexpr (std::same_as<Target, ScalarType>) {
+        return type != nullptr && type->is_scalar() ? static_cast<const Target *>(type) : nullptr;
+    } else if constexpr (std::same_as<Target, TimeSeriesType>) {
+        return type != nullptr && type->is_time_series() ? static_cast<const Target *>(type) : nullptr;
+    } else {
+        const auto *result = static_cast<const Target *>(nullptr);
+        if (type != nullptr) {
+            type->visit([&](const Target *value) { result = value; }, ddv::noop);
+        }
+        return result;
+    }
+}
+
+template <type_cast_target Target> Target &type_cast(Type &type) {
+    auto *result = type_cast<Target>(&type);
+    if (result == nullptr) {
+        throw std::bad_cast{};
+    }
+    return *result;
+}
+
+template <type_cast_target Target> const Target &type_cast(const Type &type) {
+    const auto *result = type_cast<Target>(&type);
+    if (result == nullptr) {
+        throw std::bad_cast{};
+    }
+    return *result;
+}
 
 } // namespace bg

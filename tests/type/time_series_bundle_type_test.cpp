@@ -1,4 +1,5 @@
 #include <bg/scalar/cpp_runtime_type.hpp>
+#include <bg/time_series/time_series_type.hpp>
 #include <bg/time_series/ts/ts_output.hpp>
 #include <bg/time_series/tsb/tsb_type.hpp>
 #include <bg/type/details/time_series_type.hpp>
@@ -8,7 +9,9 @@
 #include <bg/type/variable.hpp>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers.hpp>
 
+#include <array>
 #include <stdexcept>
 
 namespace {
@@ -39,6 +42,41 @@ TEST_CASE("bundle schemas include inherited fields",
     CHECK(&type.item_type(0) == &bg::TS<int>::type());
     CHECK(&type.item_type(1) == &bg::TS<float>::type());
     CHECK(type.schema().base() != nullptr);
+}
+
+TEST_CASE("a time series bundle type derives an unnamed schema from resolved fields",
+          "[type_system][tsb][series:tsb][feature:type-system][schema:unnamed][guarantee:final]") {
+    const auto fields = std::array{
+        bg::BundleField{bg::util::symbol{"count"}, &bg::TS<int>::type()},
+        bg::BundleField{bg::util::symbol{"value"}, &bg::TS<float>::type()},
+        bg::BundleField{bg::util::symbol{"reference"}, &bg::REF<bg::TS<float>>::type()},
+    };
+
+    const auto &type = bg::TimeSeriesBundleType::from_fields(fields, bg::TimeSeriesGuarantee::final);
+
+    CHECK(type.item_count() == 3);
+    CHECK(type.guarantee().value() == bg::TimeSeriesGuarantee::final);
+    CHECK(type.item_type(0).guarantee().value() == bg::TimeSeriesGuarantee::final);
+    CHECK(&type.item_type(2) ==
+          &bg::REF<bg::TS<float>, bg::TimeSeriesGuarantee::final>::type());
+}
+
+TEST_CASE("a time series bundle type requires concrete fields",
+          "[type_system][tsb][series:tsb][feature:type-system][schema:unnamed][declaration:generic]") {
+    const auto null_field = std::array{bg::BundleField{bg::util::symbol{"value"}, nullptr}};
+    const auto unresolved_field =
+        std::array{bg::BundleField{bg::util::symbol{"value"}, &bg::TS<bg::SCALAR>::type()}};
+    const auto duplicate_fields = std::array{
+        bg::BundleField{bg::util::symbol{"value"}, &bg::TS<int>::type()},
+        bg::BundleField{bg::util::symbol{"value"}, &bg::TS<float>::type()},
+    };
+
+    CHECK_THROWS_WITH(bg::TimeSeriesBundleType::from_fields(null_field),
+                      "a time series bundle type requires resolved field types");
+    CHECK_THROWS_WITH(bg::TimeSeriesBundleType::from_fields(unresolved_field),
+                      "a time series bundle type requires resolved field types");
+    CHECK_THROWS_WITH(bg::TimeSeriesBundleType::from_fields(duplicate_fields),
+                      "a time series bundle schema has duplicate field names");
 }
 
 namespace {

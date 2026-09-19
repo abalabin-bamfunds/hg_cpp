@@ -6,7 +6,9 @@
 #include <bg/type/time_series_value_type.hpp>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers.hpp>
 
+#include <array>
 #include <type_traits>
 
 namespace {
@@ -34,6 +36,38 @@ TEST_CASE("resolved time series list types are canonical",
     CHECK(list.item_count() == 3);
     CHECK(&list.item_type(2) == &item);
     CHECK_THROWS_AS(list.item_type(3), std::out_of_range);
+}
+
+TEST_CASE("a time series list type derives its shape from resolved items",
+          "[type_system][tsl][series:fixed-tsl][feature:type-system]"
+          "[guarantee:ordinary][guarantee:final]") {
+    const auto &ordinary = bg::TS<float>::type();
+    const auto &final = bg::TS<float, bg::TimeSeriesGuarantee::final>::type();
+    const auto &reference = bg::REF<bg::TS<float, bg::TimeSeriesGuarantee::final>>::type();
+    const auto items = std::array<const bg::TimeSeriesType *, 3>{&ordinary, &final, &reference};
+
+    const auto &list = bg::TimeSeriesListType::from_items(items, bg::TimeSeriesGuarantee::final);
+
+    CHECK(list.item_count() == 3);
+    CHECK(list.guarantee().value() == bg::TimeSeriesGuarantee::final);
+    CHECK(&list.item_type() == &final);
+}
+
+TEST_CASE("a time series list type requires concrete homogeneous items",
+          "[type_system][tsl][series:fixed-tsl][feature:type-system][declaration:generic]") {
+    const auto empty = std::array<const bg::TimeSeriesType *, 0>{};
+    const auto null_item = std::array<const bg::TimeSeriesType *, 1>{nullptr};
+    const auto unresolved = std::array<const bg::TimeSeriesType *, 1>{&bg::TS<bg::SCALAR>::type()};
+    const auto mixed = std::array<const bg::TimeSeriesType *, 2>{&bg::TS<int>::type(), &bg::TS<float>::type()};
+
+    CHECK_THROWS_WITH(bg::TimeSeriesListType::from_items(empty),
+                      "a time series list type requires at least one item");
+    CHECK_THROWS_WITH(bg::TimeSeriesListType::from_items(null_item),
+                      "a time series list type requires resolved item types");
+    CHECK_THROWS_WITH(bg::TimeSeriesListType::from_items(unresolved),
+                      "a time series list type requires resolved item types");
+    CHECK_THROWS_WITH(bg::TimeSeriesListType::from_items(mixed),
+                      "a time series list requires compatible item types");
 }
 
 TEST_CASE("a list guarantee strengthens its item guarantee",

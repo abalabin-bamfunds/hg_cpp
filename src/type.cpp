@@ -16,8 +16,8 @@ bool Type::accepts(const Type &supplied) const {
 }
 
 bool Type::match(const Type &supplied, TypeMap &type_map) const {
-    const auto *parameter_reference = dynamic_cast<const TimeSeriesReferenceType *>(this);
-    const auto *argument_reference = dynamic_cast<const TimeSeriesReferenceType *>(&supplied);
+    const auto *parameter_reference = type_cast<TimeSeriesReferenceType>(this);
+    const auto *argument_reference = type_cast<TimeSeriesReferenceType>(&supplied);
 
     if (parameter_reference == nullptr) {
         return do_match(argument_reference == nullptr ? supplied : argument_reference->target_type(), type_map);

@@ -13,6 +13,9 @@ interfaces are `ScalarType` and `TimeSeriesType`. Each type exposes its structur
 through the applicable interface. Matching and resolution use virtual operations
 on these interfaces.
 
+`type_cast<T>()` casts between the structural categories in `TypeVisitor`.
+Pointer casts return null on mismatch. Reference casts throw `std::bad_cast`.
+
 Generic and resolved instances of one type form share its semantic interface.
 For example, both `TS<float, G>` and `TS<float, final>` are time series value
 types. `TSD<K, V>` remains a time series dictionary type before its components
@@ -83,6 +86,9 @@ The [scalar API](scalar-api.md) defines C++ access and ownership.
 Each time series form exposes its components through a `TimeSeriesType`
 interface. For example, `TSD<K, V, G>` exposes its key type, item time series
 type, and guarantee.
+
+`TimeSeriesType::target_type()` returns the type itself. A reference type
+returns the time series type that it references.
 
 A variable scalar component provides a type-erased scalar view. A variable time
 series component provides a type-erased time series view. This lets one compiled

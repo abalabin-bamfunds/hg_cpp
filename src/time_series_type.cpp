@@ -10,15 +10,13 @@ namespace bg {
 namespace {
 
 bool item_requires_reference_representation(const TimeSeriesType &requested, const TimeSeriesType &supplied) noexcept {
-    const auto *requested_reference = dynamic_cast<const TimeSeriesReferenceType *>(&requested);
-    const auto *supplied_reference = dynamic_cast<const TimeSeriesReferenceType *>(&supplied);
+    const auto *requested_reference = type_cast<TimeSeriesReferenceType>(&requested);
+    const auto *supplied_reference = type_cast<TimeSeriesReferenceType>(&supplied);
     if ((requested_reference == nullptr) != (supplied_reference == nullptr)) {
         return true;
     }
 
-    const auto &requested_target = requested_reference == nullptr ? requested : requested_reference->target_type();
-    const auto &supplied_target = supplied_reference == nullptr ? supplied : supplied_reference->target_type();
-    return requested_target.requires_reference_representation_for(supplied_target);
+    return requested.target_type().requires_reference_representation_for(supplied.target_type());
 }
 
 } // namespace

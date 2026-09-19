@@ -5,7 +5,7 @@
 namespace bg {
 
 bool GenericTimeSeriesVariableType::do_match(const Type &supplied, TypeMap &type_map) const {
-    const auto *time_series = dynamic_cast<const TimeSeriesType *>(&supplied);
+    const auto *time_series = type_cast<TimeSeriesType>(&supplied);
     if (time_series == nullptr || !time_series->is_resolved()) {
         return false;
     }
@@ -22,7 +22,7 @@ bool GenericTimeSeriesVariableType::do_match(const Type &supplied, TypeMap &type
 
 const Type &GenericTimeSeriesVariableType::resolve(const TypeMap &type_map) const {
     const auto &resolved = variable_->resolve(type_map);
-    const auto *time_series = dynamic_cast<const TimeSeriesType *>(&resolved);
+    const auto *time_series = type_cast<TimeSeriesType>(&resolved);
     if (time_series == nullptr) {
         throw TypeResolutionError{TypeResolutionErrorCode::invalid_type_map, util::symbol{"time series variable"},
                                   "time series variable resolved outside its category"};

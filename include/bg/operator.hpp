@@ -50,7 +50,7 @@ Signature make_typed_operator_signature(util::symbol name, std::span<const std::
         return {name, std::move(parameters)};
     } else {
         const auto &output = operator_declaration_type<Result>();
-        const auto *time_series = dynamic_cast<const TimeSeriesType *>(&output);
+        const auto *time_series = type_cast<TimeSeriesType>(&output);
         if (time_series == nullptr) {
             throw std::invalid_argument{"an operator prototype output must be a time series type"};
         }

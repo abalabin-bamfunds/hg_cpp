@@ -4,6 +4,7 @@
 #include <bg/type/type_resolution_error.hpp>
 #include <bg/util/symbol.hpp>
 
+#include <algorithm>
 #include <memory>
 #include <mutex>
 #include <stdexcept>
@@ -41,6 +42,30 @@ struct ListTypeKeyHash {
 
 } // namespace
 
+const TimeSeriesListType &TimeSeriesListType::from_items(std::span<const TimeSeriesType *const> items,
+                                                        TimeSeriesGuarantee collection_guarantee) {
+    if (items.empty()) {
+        throw std::invalid_argument{"a time series list type requires at least one item"};
+    }
+    if (std::ranges::any_of(items, [](const auto *item) { return item == nullptr || !item->is_resolved(); })) {
+        throw std::invalid_argument{"a time series list type requires resolved item types"};
+    }
+
+    const auto &first = items.front()->target_type();
+    auto guarantee = *first.guarantee().value();
+    const auto &shape = first.with_guarantee(TimeSeriesGuarantee::ordinary);
+
+    for (const auto *item : items.subspan(1)) {
+        const auto &candidate = item->target_type();
+        if (&candidate.with_guarantee(TimeSeriesGuarantee::ordinary) != &shape) {
+            throw std::invalid_argument{"a time series list requires compatible item types"};
+        }
+        guarantee = weakest(guarantee, *candidate.guarantee().value());
+    }
+
+    return time_series_list_type(first.with_guarantee(guarantee), items.size(), collection_guarantee);
+}
+
 const TimeSeriesType &TimeSeriesListType::item_type(std::size_t index) const {
     if (index >= item_count()) {
         throw std::out_of_range{"time series list item index is out of range"};
@@ -57,7 +82,7 @@ const TimeSeriesType &TimeSeriesListType::with_guarantee(TimeSeriesGuarantee gua
 }
 
 bool TimeSeriesListType::do_match(const Type &supplied, TypeMap &type_map) const {
-    const auto *list = dynamic_cast<const TimeSeriesListType *>(&supplied);
+    const auto *list = type_cast<TimeSeriesListType>(&supplied);
     if (list == nullptr || !list->is_resolved()) {
         return false;
     }
@@ -74,7 +99,7 @@ bool TimeSeriesListType::do_match(const Type &supplied, TypeMap &type_map) const
 
 const Type &GenericTimeSeriesListType::resolve(const TypeMap &type_map) const {
     const auto &resolved_item = item_type().resolve(type_map);
-    const auto *time_series = dynamic_cast<const TimeSeriesType *>(&resolved_item);
+    const auto *time_series = type_cast<TimeSeriesType>(&resolved_item);
     if (time_series == nullptr) {
         throw TypeResolutionError{TypeResolutionErrorCode::invalid_type_map, util::symbol{"TSL"},
                                   "time series list item did not resolve to a time series type"};

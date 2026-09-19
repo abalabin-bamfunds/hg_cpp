@@ -40,20 +40,19 @@ const TimeSeriesType &TimeSeriesDictionaryType::with_guarantee(TimeSeriesGuarant
 }
 
 bool TimeSeriesDictionaryType::requires_reference_representation_for(const TimeSeriesType &supplied) const noexcept {
-    const auto *tsd = dynamic_cast<const TimeSeriesDictionaryType *>(&supplied);
+    const auto *tsd = type_cast<TimeSeriesDictionaryType>(&supplied);
     if (tsd == nullptr) {
         return false;
     }
 
-    const auto value_is_reference = dynamic_cast<const TimeSeriesReferenceType *>(&value_type()) != nullptr;
-    const auto supplied_value_is_reference =
-        dynamic_cast<const TimeSeriesReferenceType *>(&tsd->value_type()) != nullptr;
+    const auto value_is_reference = type_cast<TimeSeriesReferenceType>(&value_type()) != nullptr;
+    const auto supplied_value_is_reference = type_cast<TimeSeriesReferenceType>(&tsd->value_type()) != nullptr;
     return value_is_reference != supplied_value_is_reference ||
            value_type().requires_reference_representation_for(tsd->value_type());
 }
 
 bool TimeSeriesDictionaryType::do_match(const Type &supplied, TypeMap &type_map) const {
-    const auto *dictionary = dynamic_cast<const TimeSeriesDictionaryType *>(&supplied);
+    const auto *dictionary = type_cast<TimeSeriesDictionaryType>(&supplied);
     if (dictionary == nullptr || !dictionary->is_resolved()) {
         return false;
     }
@@ -71,8 +70,8 @@ bool TimeSeriesDictionaryType::do_match(const Type &supplied, TypeMap &type_map)
 const Type &GenericTimeSeriesDictionaryType::resolve(const TypeMap &type_map) const {
     const auto &resolved_key = key_type().resolve(type_map);
     const auto &resolved_value = value_type().resolve(type_map);
-    const auto *key = dynamic_cast<const ScalarType *>(&resolved_key);
-    const auto *value = dynamic_cast<const TimeSeriesType *>(&resolved_value);
+    const auto *key = type_cast<ScalarType>(&resolved_key);
+    const auto *value = type_cast<TimeSeriesType>(&resolved_value);
     if (key == nullptr || value == nullptr) {
         throw TypeResolutionError{TypeResolutionErrorCode::invalid_type_map, util::symbol{"TSD"},
                                   "time series dictionary components did not resolve to the required types"};

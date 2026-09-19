@@ -32,7 +32,7 @@ class ResolvedDictScalarType final : public DictScalarType {
 } // namespace
 
 bool GenericDictScalarType::do_match(const Type &supplied, TypeMap &type_map) const {
-    const auto *dict = dynamic_cast<const DictScalarType *>(&supplied);
+    const auto *dict = type_cast<DictScalarType>(&supplied);
     if (dict == nullptr || !dict->is_resolved()) {
         return false;
     }
@@ -49,8 +49,8 @@ bool GenericDictScalarType::do_match(const Type &supplied, TypeMap &type_map) co
 const Type &GenericDictScalarType::resolve(const TypeMap &type_map) const {
     const auto &key = key_type_->resolve(type_map);
     const auto &mapped = mapped_type_->resolve(type_map);
-    const auto *key_scalar = dynamic_cast<const ScalarType *>(&key);
-    const auto *mapped_scalar = dynamic_cast<const ScalarType *>(&mapped);
+    const auto *key_scalar = type_cast<ScalarType>(&key);
+    const auto *mapped_scalar = type_cast<ScalarType>(&mapped);
     if (key_scalar == nullptr || mapped_scalar == nullptr) {
         throw TypeResolutionError{TypeResolutionErrorCode::invalid_type_map, util::symbol{"Dict"},
                                   "dictionary components did not resolve to scalar types"};

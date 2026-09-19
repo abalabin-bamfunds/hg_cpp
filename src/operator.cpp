@@ -40,16 +40,16 @@ std::partial_ordering compare_reference_affinity(const ResolvedSignature &left, 
     auto left_better = false;
     auto right_better = false;
     for (auto index = std::size_t{}; index < parameter_count; ++index) {
-        const auto *argument = dynamic_cast<const TimeSeriesType *>(arguments[index]);
-        const auto *left_parameter = dynamic_cast<const TimeSeriesType *>(left.parameters[index].type);
-        const auto *right_parameter = dynamic_cast<const TimeSeriesType *>(right.parameters[index].type);
+        const auto *argument = type_cast<TimeSeriesType>(arguments[index]);
+        const auto *left_parameter = type_cast<TimeSeriesType>(left.parameters[index].type);
+        const auto *right_parameter = type_cast<TimeSeriesType>(right.parameters[index].type);
         if (argument == nullptr || left_parameter == nullptr || right_parameter == nullptr) {
             continue;
         }
 
-        const auto *argument_reference = dynamic_cast<const TimeSeriesReferenceType *>(argument);
-        const auto *left_reference = dynamic_cast<const TimeSeriesReferenceType *>(left_parameter);
-        const auto *right_reference = dynamic_cast<const TimeSeriesReferenceType *>(right_parameter);
+        const auto *argument_reference = type_cast<TimeSeriesReferenceType>(argument);
+        const auto *left_reference = type_cast<TimeSeriesReferenceType>(left_parameter);
+        const auto *right_reference = type_cast<TimeSeriesReferenceType>(right_parameter);
         const auto left_matches = (left_reference != nullptr) == (argument_reference != nullptr);
         const auto right_matches = (right_reference != nullptr) == (argument_reference != nullptr);
         left_better |= left_matches && !right_matches;

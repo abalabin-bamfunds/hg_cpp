@@ -28,14 +28,14 @@ class ResolvedListScalarType final : public ListScalarType {
 } // namespace
 
 bool GenericListScalarType::do_match(const Type &supplied, TypeMap &type_map) const {
-    const auto *list = dynamic_cast<const ListScalarType *>(&supplied);
+    const auto *list = type_cast<ListScalarType>(&supplied);
 
     return list != nullptr && list->is_resolved() && item_type_->match(list->item_type(), type_map);
 }
 
 const Type &GenericListScalarType::resolve(const TypeMap &type_map) const {
     const auto &item = item_type_->resolve(type_map);
-    const auto *scalar = dynamic_cast<const ScalarType *>(&item);
+    const auto *scalar = type_cast<ScalarType>(&item);
     if (scalar == nullptr) {
         throw TypeResolutionError{TypeResolutionErrorCode::invalid_type_map, util::symbol{"List"},
                                   "list item did not resolve to a scalar type"};

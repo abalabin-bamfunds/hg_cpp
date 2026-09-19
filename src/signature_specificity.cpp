@@ -279,8 +279,8 @@ Order compare_resolved(const Type &left, const Type &right) {
 }
 
 Order compare_types(const Type &left, const Type &right, Comparison &comparison) {
-    const auto *left_reference = dynamic_cast<const TimeSeriesReferenceType *>(&left);
-    const auto *right_reference = dynamic_cast<const TimeSeriesReferenceType *>(&right);
+    const auto *left_reference = type_cast<TimeSeriesReferenceType>(&left);
+    const auto *right_reference = type_cast<TimeSeriesReferenceType>(&right);
     if (left_reference != nullptr || right_reference != nullptr) {
         const auto &left_target = left_reference == nullptr ? left : left_reference->target_type();
         const auto &right_target = right_reference == nullptr ? right : right_reference->target_type();
@@ -334,18 +334,18 @@ Order compare_types(const Type &left, const Type &right, Comparison &comparison)
         return Order::equivalent;
     }
 
-    if (const auto *left_list = dynamic_cast<const ListScalarType *>(&left)) {
-        if (const auto *right_list = dynamic_cast<const ListScalarType *>(&right)) {
+    if (const auto *left_list = type_cast<ListScalarType>(&left)) {
+        if (const auto *right_list = type_cast<ListScalarType>(&right)) {
             return compare_types(left_list->item_type(), right_list->item_type(), comparison);
         }
     }
-    if (const auto *left_set = dynamic_cast<const SetScalarType *>(&left)) {
-        if (const auto *right_set = dynamic_cast<const SetScalarType *>(&right)) {
+    if (const auto *left_set = type_cast<SetScalarType>(&left)) {
+        if (const auto *right_set = type_cast<SetScalarType>(&right)) {
             return compare_types(left_set->item_type(), right_set->item_type(), comparison);
         }
     }
-    if (const auto *left_dict = dynamic_cast<const DictScalarType *>(&left)) {
-        if (const auto *right_dict = dynamic_cast<const DictScalarType *>(&right)) {
+    if (const auto *left_dict = type_cast<DictScalarType>(&left)) {
+        if (const auto *right_dict = type_cast<DictScalarType>(&right)) {
             auto result = compare_types(left_dict->key_type(), right_dict->key_type(), comparison);
             return combine(result, compare_types(left_dict->mapped_type(), right_dict->mapped_type(), comparison));
         }
@@ -355,34 +355,34 @@ Order compare_types(const Type &left, const Type &right, Comparison &comparison)
             return compare_types(left_type->type(), right_type->type(), comparison);
         }
     }
-    if (const auto *left_value = dynamic_cast<const TimeSeriesValueType *>(&left)) {
-        if (const auto *right_value = dynamic_cast<const TimeSeriesValueType *>(&right)) {
+    if (const auto *left_value = type_cast<TimeSeriesValueType>(&left)) {
+        if (const auto *right_value = type_cast<TimeSeriesValueType>(&right)) {
             auto result = compare_types(left_value->value_type(), right_value->value_type(), comparison);
             return combine(result, compare_guarantees(left_value->guarantee(), right_value->guarantee(), comparison));
         }
     }
-    if (const auto *left_list = dynamic_cast<const TimeSeriesListType *>(&left)) {
-        if (const auto *right_list = dynamic_cast<const TimeSeriesListType *>(&right)) {
+    if (const auto *left_list = type_cast<TimeSeriesListType>(&left)) {
+        if (const auto *right_list = type_cast<TimeSeriesListType>(&right)) {
             auto result = compare_types(left_list->item_type(), right_list->item_type(), comparison);
             result = combine(result, compare_sizes(left_list->size(), right_list->size(), comparison));
             return combine(result, compare_guarantees(left_list->guarantee(), right_list->guarantee(), comparison));
         }
     }
-    if (const auto *left_set = dynamic_cast<const TimeSeriesSetType *>(&left)) {
-        if (const auto *right_set = dynamic_cast<const TimeSeriesSetType *>(&right)) {
+    if (const auto *left_set = type_cast<TimeSeriesSetType>(&left)) {
+        if (const auto *right_set = type_cast<TimeSeriesSetType>(&right)) {
             auto result = compare_types(left_set->item_type(), right_set->item_type(), comparison);
             return combine(result, compare_guarantees(left_set->guarantee(), right_set->guarantee(), comparison));
         }
     }
-    if (const auto *left_dict = dynamic_cast<const TimeSeriesDictionaryType *>(&left)) {
-        if (const auto *right_dict = dynamic_cast<const TimeSeriesDictionaryType *>(&right)) {
+    if (const auto *left_dict = type_cast<TimeSeriesDictionaryType>(&left)) {
+        if (const auto *right_dict = type_cast<TimeSeriesDictionaryType>(&right)) {
             auto result = compare_types(left_dict->key_type(), right_dict->key_type(), comparison);
             result = combine(result, compare_types(left_dict->value_type(), right_dict->value_type(), comparison));
             return combine(result, compare_guarantees(left_dict->guarantee(), right_dict->guarantee(), comparison));
         }
     }
-    if (const auto *left_bundle = dynamic_cast<const TimeSeriesBundleType *>(&left)) {
-        if (const auto *right_bundle = dynamic_cast<const TimeSeriesBundleType *>(&right)) {
+    if (const auto *left_bundle = type_cast<TimeSeriesBundleType>(&left)) {
+        if (const auto *right_bundle = type_cast<TimeSeriesBundleType>(&right)) {
             auto result = compare_types(left_bundle->schema_type(), right_bundle->schema_type(), comparison);
             return combine(result, compare_guarantees(left_bundle->guarantee(), right_bundle->guarantee(), comparison));
         }

@@ -9,7 +9,7 @@ class TimeSeriesReferenceType : public TimeSeriesType {
   public:
     VISITOR_SUPPORT()
 
-    const TimeSeriesType &target_type() const noexcept { return *target_type_; }
+    const TimeSeriesType &target_type() const noexcept override { return *target_type_; }
     [[nodiscard]] const TimeSeriesType &with_guarantee(TimeSeriesGuarantee guarantee) const override;
 
   protected:

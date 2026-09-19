@@ -76,14 +76,6 @@ std::uint32_t packed_offset(std::size_t value, const char *description) {
     return exponent;
 }
 
-const TimeSeriesType &reference_input_target_type(const Type &parameter_type) noexcept {
-    const auto &time_series_type = static_cast<const TimeSeriesType &>(parameter_type);
-    if (const auto *reference = dynamic_cast<const TimeSeriesReferenceType *>(&time_series_type)) {
-        return reference->target_type();
-    }
-    return time_series_type;
-}
-
 template <typename T>
 std::span<const T> stored_objects(const std::byte *storage, std::uint32_t offset, std::size_t count) noexcept {
     if (count == 0) {
@@ -441,8 +433,8 @@ void plan_time_series_inputs(CompilationPlan &plan) {
 
             const auto output = node.input_output_indices()[input_index++];
             const auto output_is_reference =
-                dynamic_cast<const TimeSeriesReferenceType *>(plan.outputs[output].type) != nullptr;
-            const auto input_is_reference = dynamic_cast<const TimeSeriesReferenceType *>(parameter.type) != nullptr;
+                type_cast<TimeSeriesReferenceType>(plan.outputs[output].type) != nullptr;
+            const auto input_is_reference = type_cast<TimeSeriesReferenceType>(parameter.type) != nullptr;
             plan.node_plans[node_index].time_series_inputs.push_back({
                 .parameter = static_cast<std::uint32_t>(parameter_index),
                 .output = output,
@@ -909,8 +901,9 @@ void plan_fixed_storage(CompilationPlan &plan) {
             node.signature().output->guarantee().value() != TimeSeriesGuarantee::const_) {
             throw std::logic_error{"invalid constant output"};
         }
-        const auto *output = dynamic_cast<const TimeSeriesValueType *>(node.signature().output);
-        if (output == nullptr || &output->value_type() != node.signature().parameters[constant->scalar_parameter].type) {
+        const auto *output = type_cast<TimeSeriesValueType>(node.signature().output);
+        if (output == nullptr ||
+            &output->value_type() != node.signature().parameters[constant->scalar_parameter].type) {
             throw std::logic_error{"constant output does not match its scalar parameter"};
         }
 
@@ -1426,7 +1419,7 @@ class CompiledGraphBuilder {
         const auto node_index = plan.wired_node_indices[subscriber.node_index];
         const auto &input = plan.node_plans[node_index].time_series_inputs[subscriber.input_index];
         const auto &parameter = *plan.nodes[node_index].signature().parameters[input.parameter].type;
-        const auto &requested_type = reference_input_target_type(parameter);
+        const auto &requested_type = type_cast<TimeSeriesType>(parameter).target_type();
         return resolve_time_series_runtime_type(requested_type);
     }
 

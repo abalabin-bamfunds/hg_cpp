@@ -28,13 +28,13 @@ class ResolvedSetScalarType final : public SetScalarType {
 } // namespace
 
 bool GenericSetScalarType::do_match(const Type &supplied, TypeMap &type_map) const {
-    const auto *set = dynamic_cast<const SetScalarType *>(&supplied);
+    const auto *set = type_cast<SetScalarType>(&supplied);
     return set != nullptr && set->is_resolved() && item_type_->match(set->item_type(), type_map);
 }
 
 const Type &GenericSetScalarType::resolve(const TypeMap &type_map) const {
     const auto &item = item_type_->resolve(type_map);
-    const auto *scalar = dynamic_cast<const ScalarType *>(&item);
+    const auto *scalar = type_cast<ScalarType>(&item);
     if (scalar == nullptr) {
         throw TypeResolutionError{TypeResolutionErrorCode::invalid_type_map, util::symbol{"Set"},
                                   "set item did not resolve to a scalar type"};

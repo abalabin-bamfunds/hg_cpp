@@ -70,9 +70,6 @@ NormalizedWiringArguments normalize(const Signature &signature, std::span<const 
 
     const auto captured = arguments.subspan(*variadic);
     for (const auto &argument : captured) {
-        if (argument.name().has_value() && name_conflicts_with_fixed(*argument.name())) {
-            throw WiringError{"a variadic argument name conflicts with a fixed parameter"};
-        }
         if (argument.is_time_series()) {
             const auto *record = variadic_wiring_record(argument.time_series());
             if (record != nullptr && captured.size() != 1) {
@@ -83,6 +80,9 @@ NormalizedWiringArguments normalize(const Signature &signature, std::span<const 
 
     if (captured.size() == 1 && captured.front().is_time_series()) {
         if (const auto *record = variadic_wiring_record(captured.front().time_series())) {
+            if (captured.front().name().has_value()) {
+                throw WiringError{"a forwarded variadic wiring record cannot be named"};
+            }
             if (record->mode() != parameter.variadic_mode) {
                 throw WiringError{"a variadic wiring record has an incompatible capture mode"};
             }
@@ -110,6 +110,28 @@ NormalizedWiringArguments normalize(const Signature &signature, std::span<const 
         append_record_arguments(*record);
         normalized.emplace_back(record->probe_point());
         return {std::move(normalized), std::move(descriptors), std::move(record)};
+    }
+
+    auto captured_names = std::vector<util::symbol>{};
+    captured_names.reserve(captured.size());
+    for (const auto &argument : captured) {
+        const auto name = argument.name();
+        if (!named && name.has_value() && !wiring_argument_access::name_from_variadic_capture(argument)) {
+            throw WiringError{"var_args does not accept named arguments"};
+        }
+        if (!named) {
+            continue;
+        }
+        if (!name.has_value()) {
+            throw WiringError{"var_kwargs requires named arguments"};
+        }
+        if (name_conflicts_with_fixed(*name)) {
+            throw WiringError{"a variadic argument name conflicts with a fixed parameter"};
+        }
+        if (std::ranges::find(captured_names, *name) != captured_names.end()) {
+            throw WiringError{"a variadic parameter has duplicate argument names"};
+        }
+        captured_names.push_back(*name);
     }
 
     auto remaining = std::vector<WiringArgument>{};

@@ -12,6 +12,7 @@
 #include <bg/type/time_series_list_type.hpp>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers.hpp>
 
 #include <array>
 #include <cstdint>
@@ -85,7 +86,8 @@ TEST_CASE("a variadic TSL rejects scalars and incompatible item types",
 
     testing::test_wiring([&] {
         CHECK_THROWS_AS(sink(1), WiringError);
-        CHECK_THROWS_AS(sink(integer(), floating()), WiringError);
+        CHECK_THROWS_WITH(sink(integer(), floating()),
+                          "a time series list requires compatible item types");
     });
 }
 

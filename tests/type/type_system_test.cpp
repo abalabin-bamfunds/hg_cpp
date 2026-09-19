@@ -6,6 +6,7 @@
 #include <bg/time_series/tsl/tsl_type.hpp>
 #include <bg/type/scalar_type.hpp>
 #include <bg/type/signature.hpp>
+#include <bg/type/time_series_bundle_type.hpp>
 #include <bg/type/time_series_list_type.hpp>
 #include <bg/type/time_series_reference_type.hpp>
 #include <bg/type/time_series_value_type.hpp>
@@ -26,16 +27,55 @@ namespace {
 static_assert(std::derived_from<bg::GenericTimeSeriesValueType, bg::TimeSeriesValueType>);
 static_assert(!std::constructible_from<bg::TypeVariableType<bg::ScalarType>, bg::util::symbol,
                                        std::vector<const bg::TimeSeriesType *>>);
+static_assert(bg::type_cast_target<bg::Type>);
+static_assert(bg::type_cast_target<bg::ScalarType>);
+static_assert(bg::type_cast_target<bg::TimeSeriesListType>);
+static_assert(!bg::type_cast_target<bg::TypeScalarType>);
+static_assert(!bg::type_cast_target<bg::BundleSchemaType>);
+static_assert(!bg::type_cast_target<bg::GenericTimeSeriesVariableType>);
 
 [[nodiscard]] bool is_value_type(const bg::Type *type, const bg::ScalarType &value_type,
                                  bg::TimeSeriesGuarantee guarantee) {
-    const auto *time_series = dynamic_cast<const bg::TimeSeriesValueType *>(type);
+    const auto *time_series = bg::type_cast<bg::TimeSeriesValueType>(type);
 
     return time_series != nullptr && &time_series->value_type() == &value_type &&
            time_series->guarantee().value() == guarantee;
 }
 
 } // namespace
+
+TEST_CASE("a non-reference time series is its own target type", "[type_system][feature:type-system]") {
+    const auto &value = bg::TS<float>::type();
+
+    CHECK(&value.target_type() == &value);
+}
+
+TEST_CASE("a time series reference exposes its target type",
+          "[type_system][reference][feature:type-system]") {
+    const auto &target = bg::TS<float>::type();
+
+    CHECK(&bg::REF<bg::TS<float>>::type().target_type() == &target);
+}
+
+TEST_CASE("a semantic type cast preserves const", "[type_system][feature:type-system]") {
+    const bg::Type *type = &bg::TS<float>::type();
+
+    static_assert(std::same_as<decltype(bg::type_cast<bg::TimeSeriesValueType>(type)),
+                               const bg::TimeSeriesValueType *>);
+    CHECK(bg::type_cast<bg::TimeSeriesValueType>(type) == type);
+}
+
+TEST_CASE("semantic types cast through their visitor categories", "[type_system][feature:type-system]") {
+    auto value = bg::GenericTimeSeriesValueType{bg::float_type(), bg::TimeSeriesGuarantee::ordinary};
+    bg::Type &type = value;
+
+    CHECK(bg::type_cast<bg::Type>(&type) == &type);
+    CHECK(bg::type_cast<bg::TimeSeriesType>(&type) == &value);
+    CHECK(bg::type_cast<bg::TimeSeriesValueType>(&type) == &value);
+    CHECK(bg::type_cast<bg::TimeSeriesListType>(&type) == nullptr);
+    CHECK(&bg::type_cast<bg::TimeSeriesValueType>(type) == &value);
+    CHECK_THROWS_AS(bg::type_cast<bg::TimeSeriesListType>(type), std::bad_cast);
+}
 
 TEST_CASE("evaluation time has a scalar graph type", "[type_system][feature:type-system]") {
     CHECK(&bg::cpp_scalar_type<bg::EvaluationTime>() == &bg::evaluation_time_type());

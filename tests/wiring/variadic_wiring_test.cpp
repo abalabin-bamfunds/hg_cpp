@@ -8,6 +8,7 @@
 #include <bg/time_series/tsb/tsb.hpp>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers.hpp>
 
 #include <array>
 #include <cstdint>
@@ -137,6 +138,13 @@ struct OptionalFixedVariadicNode {
     void evaluate() const {}
 };
 
+struct NamedFixedVariadicGraph {
+    int fixed;
+    wp<TSB<SCHEMA>, var_kwargs> values;
+
+    void wire() const {}
+};
+
 struct RejectingVariadicNode {
     In<TSB<SCHEMA>, var_args> values;
 
@@ -193,6 +201,9 @@ TEST_CASE("a variadic graph forwards a complete pack only",
     const auto combined = graph("name"_n = "combined", [&](wp<TSB<SCHEMA>, var_args> values) {
         receiver(values, 2);
     });
+    const auto named = graph("name"_n = "named", [&](wp<TSB<SCHEMA>, var_args> values) {
+        receiver("values"_n = values);
+    });
     const auto fixed = graph("name"_n = "fixed", [](int) {});
     const auto renamed = graph("name"_n = "renamed", [&](wp<TSB<SCHEMA>, var_args> values) {
         fixed("value"_n = values[0]);
@@ -201,7 +212,19 @@ TEST_CASE("a variadic graph forwards a complete pack only",
     testing::test_wiring([&] { sender(1); });
     testing::test_wiring([&] { selected(1); });
     CHECK_THROWS_AS(testing::test_wiring([&] { combined(1); }), WiringError);
+    CHECK_THROWS_WITH(testing::test_wiring([&] { named(1); }),
+                      "a forwarded variadic wiring record cannot be named");
     CHECK_THROWS_AS(testing::test_wiring([&] { renamed(1); }), WiringError);
+}
+
+TEST_CASE("named variadic arguments are validated before absent values are removed",
+          "[feature:wiring][feature:variadic-wiring][series:tsb][schema:generic]"
+          "[definition:aggregate]") {
+    const auto tested = graph<NamedFixedVariadicGraph>();
+
+    CHECK_THROWS_WITH(
+        testing::test_wiring([&] { tested(1, "fixed"_n = std::optional<int>{}); }),
+        "a variadic argument name conflicts with a fixed parameter");
 }
 
 TEST_CASE("a forwarded variadic pack retains its capture mode",

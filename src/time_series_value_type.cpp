@@ -80,7 +80,7 @@ const TimeSeriesType &TimeSeriesValueType::with_guarantee(TimeSeriesGuarantee gu
 }
 
 bool GenericTimeSeriesValueType::do_match(const Type &supplied, TypeMap &type_map) const {
-    const auto *time_series = dynamic_cast<const TimeSeriesValueType *>(&supplied);
+    const auto *time_series = type_cast<TimeSeriesValueType>(&supplied);
     if (time_series == nullptr || !time_series->is_resolved()) {
         return false;
     }
@@ -98,7 +98,7 @@ bool GenericTimeSeriesValueType::do_match(const Type &supplied, TypeMap &type_ma
 
 const Type &GenericTimeSeriesValueType::resolve(const TypeMap &type_map) const {
     const auto &resolved_value_type = value_type().resolve(type_map);
-    const auto *scalar_type = dynamic_cast<const ScalarType *>(&resolved_value_type);
+    const auto *scalar_type = type_cast<ScalarType>(&resolved_value_type);
     if (scalar_type == nullptr) {
         throw TypeResolutionError{TypeResolutionErrorCode::invalid_type_map, util::symbol{"TS"},
                                   "time series value type did not resolve to a scalar type"};

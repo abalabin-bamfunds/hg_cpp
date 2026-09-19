@@ -27,6 +27,16 @@ TEST_CASE("a free fixed time series list is materialized when consumed",
     CHECK(wiring.nodes()[2].input_output_indices().size() == 2);
 }
 
+TEST_CASE("a free fixed time series list reports incompatible item types as a wiring error",
+          "[wiring][tsl][series:fixed-tsl][representation:free][feature:wiring]") {
+    const auto integer = bg::node([](bg::Out<bg::TS<int>>) {});
+    const auto floating = bg::node([](bg::Out<bg::TS<float>>) {});
+    auto wiring = bg::GraphWiring{};
+
+    const auto context = bg::WiringContext{wiring};
+    CHECK_THROWS_AS(bg::tsl(integer(), floating()), bg::WiringError);
+}
+
 TEST_CASE("a free fixed time series list reuses materialization for the same input type",
           "[wiring][tsl][series:fixed-tsl][representation:free][feature:wiring]"
           "[binding:representation][shape:fan-out]") {

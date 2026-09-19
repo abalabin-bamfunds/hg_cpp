@@ -49,15 +49,15 @@ void append_scalar(std::string &result, const ScalarType &type) {
 
     if (const auto *variable = dynamic_cast<const Variable *>(&type)) {
         result += variable->name().text();
-    } else if (const auto *list = dynamic_cast<const ListScalarType *>(&type)) {
+    } else if (const auto *list = type_cast<ListScalarType>(&type)) {
         result += "List<";
         append_type_text(result, list->item_type());
         result += '>';
-    } else if (const auto *set = dynamic_cast<const SetScalarType *>(&type)) {
+    } else if (const auto *set = type_cast<SetScalarType>(&type)) {
         result += "Set<";
         append_type_text(result, set->item_type());
         result += '>';
-    } else if (const auto *dict = dynamic_cast<const DictScalarType *>(&type)) {
+    } else if (const auto *dict = type_cast<DictScalarType>(&type)) {
         result += "Dict<";
         append_type_text(result, dict->key_type());
         result += ", ";
@@ -75,7 +75,7 @@ void append_scalar(std::string &result, const ScalarType &type) {
 } // namespace
 
 void append_type_text(std::string &result, const Type &type) {
-    if (const auto *scalar = dynamic_cast<const ScalarType *>(&type)) {
+    if (const auto *scalar = type_cast<ScalarType>(&type)) {
         append_scalar(result, *scalar);
         return;
     }
@@ -88,21 +88,21 @@ void append_type_text(std::string &result, const Type &type) {
         append_guarantee(result, variable->guarantee());
         return;
     }
-    if (const auto *value = dynamic_cast<const TimeSeriesValueType *>(&type)) {
+    if (const auto *value = type_cast<TimeSeriesValueType>(&type)) {
         result += "TS<";
         append_type_text(result, value->value_type());
         append_guarantee(result, value->guarantee());
         result += '>';
         return;
     }
-    if (const auto *reference = dynamic_cast<const TimeSeriesReferenceType *>(&type)) {
+    if (const auto *reference = type_cast<TimeSeriesReferenceType>(&type)) {
         result += "REF<";
         append_type_text(result, reference->target_type());
         append_guarantee(result, reference->guarantee());
         result += '>';
         return;
     }
-    if (const auto *list = dynamic_cast<const TimeSeriesListType *>(&type)) {
+    if (const auto *list = type_cast<TimeSeriesListType>(&type)) {
         result += "TSL<";
         append_type_text(result, list->item_type());
         result += ", ";
@@ -115,14 +115,14 @@ void append_type_text(std::string &result, const Type &type) {
         result += '>';
         return;
     }
-    if (const auto *set = dynamic_cast<const TimeSeriesSetType *>(&type)) {
+    if (const auto *set = type_cast<TimeSeriesSetType>(&type)) {
         result += "TSS<";
         append_type_text(result, set->item_type());
         append_guarantee(result, set->guarantee());
         result += '>';
         return;
     }
-    if (const auto *dict = dynamic_cast<const TimeSeriesDictionaryType *>(&type)) {
+    if (const auto *dict = type_cast<TimeSeriesDictionaryType>(&type)) {
         result += "TSD<";
         append_type_text(result, dict->key_type());
         result += ", ";
@@ -131,7 +131,7 @@ void append_type_text(std::string &result, const Type &type) {
         result += '>';
         return;
     }
-    if (const auto *bundle = dynamic_cast<const TimeSeriesBundleType *>(&type)) {
+    if (const auto *bundle = type_cast<TimeSeriesBundleType>(&type)) {
         result += "TSB<";
         append_type_text(result, bundle->schema_type());
         append_guarantee(result, bundle->guarantee());

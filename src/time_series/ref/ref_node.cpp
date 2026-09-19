@@ -106,8 +106,8 @@ const NodeTemplate &reference_node_template(const TimeSeriesType &argument, cons
 }
 
 WiringPoint materialize_reference(WiringPoint argument, const TimeSeriesType &requested_type) {
-    const auto *requested_reference = dynamic_cast<const TimeSeriesReferenceType *>(&requested_type);
-    const auto *argument_reference = dynamic_cast<const TimeSeriesReferenceType *>(&argument.type());
+    const auto *requested_reference = type_cast<TimeSeriesReferenceType>(&requested_type);
+    const auto *argument_reference = type_cast<TimeSeriesReferenceType>(&argument.type());
 
     if (requested_reference != nullptr && argument_reference == nullptr) {
         const auto &reference_type =

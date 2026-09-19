@@ -12,7 +12,6 @@
 #include <bg/operators.hpp>
 #include <bg/time_series/tsb/tsb_free_runtime_type.hpp>
 #include <bg/type/time_series_bundle_type.hpp>
-#include <bg/type/time_series_reference_type.hpp>
 
 #include <algorithm>
 #include <cstdint>
@@ -90,31 +89,17 @@ const NodeTemplate &free_time_series_bundle_node_template(const TimeSeriesBundle
     return result;
 }
 
-const TimeSeriesType &target_type_of(const TimeSeriesType &type) noexcept {
-    if (const auto *reference = dynamic_cast<const TimeSeriesReferenceType *>(&type)) {
-        return reference->target_type();
-    }
-    return type;
-}
-
-const TimeSeriesBundleType &bundle_type(const TimeSeriesType &type) {
-    const auto *bundle = dynamic_cast<const TimeSeriesBundleType *>(&target_type_of(type));
-    if (bundle == nullptr) {
-        throw WiringError{"variadic TSB wiring requires a TSB"};
-    }
-    return *bundle;
-}
-
 class FreeTimeSeriesBundleWiringRecord final : public WiringRecord {
   public:
-    explicit FreeTimeSeriesBundleWiringRecord(std::span<const NamedBundleWiringPoint> fields)
-        : WiringRecord{argument_type(fields)}, fields_{fields.begin(), fields.end()} {}
+    FreeTimeSeriesBundleWiringRecord(const TimeSeriesBundleType &type,
+                                     std::span<const NamedBundleWiringPoint> fields)
+        : WiringRecord{type}, fields_{fields.begin(), fields.end()} {}
 
     WiringPoint field(std::size_t index) const { return fields_.at(index).point; }
 
   private:
     WiringPoint materialize(const TimeSeriesType &target_type) const override {
-        const auto *bundle = dynamic_cast<const TimeSeriesBundleType *>(&target_type_of(target_type));
+        const auto *bundle = type_cast<TimeSeriesBundleType>(&target_type.target_type());
         if (bundle == nullptr) {
             throw WiringError{"a free TSB requires a TSB parameter"};
         }
@@ -123,31 +108,14 @@ class FreeTimeSeriesBundleWiringRecord final : public WiringRecord {
         return materialize_wiring_point(result, target_type);
     }
 
-    static const TimeSeriesBundleType &argument_type(std::span<const NamedBundleWiringPoint> fields) {
-        for (auto left = std::size_t{}; left < fields.size(); ++left) {
-            for (auto right = left + 1; right < fields.size(); ++right) {
-                if (fields[left].name == fields[right].name) {
-                    throw std::invalid_argument{"a free TSB has duplicate field names"};
-                }
-            }
-        }
-
-        auto schema_fields = std::vector<BundleField>{};
-        schema_fields.reserve(fields.size());
-        for (const auto &[name, point] : fields) {
-            schema_fields.push_back({name, &point.type()});
-        }
-        return time_series_bundle_type(unnamed_bundle_schema(schema_fields), TimeSeriesGuarantee::ordinary);
-    }
-
     std::vector<NamedBundleWiringPoint> fields_;
 };
 
 class TimeSeriesBundleFieldWiringRecord final : public WiringRecord {
   public:
-    TimeSeriesBundleFieldWiringRecord(WiringPoint bundle, std::size_t index)
-        : WiringRecord{bundle_type(bundle.type()).item_type(index)}, bundle_{bundle},
-          field_{bundle_type(bundle.type()).item_id(index)} {}
+    TimeSeriesBundleFieldWiringRecord(WiringPoint bundle, const TimeSeriesBundleType &type,
+                                      std::size_t index)
+        : WiringRecord{type.item_type(index)}, bundle_{bundle}, field_{type.item_id(index)} {}
 
   private:
     WiringPoint materialize(const TimeSeriesType &requested_type) const override {
@@ -163,33 +131,19 @@ class TimeSeriesBundleFieldWiringRecord final : public WiringRecord {
 class TimeSeriesBundleVariadicWiringOperations final : public VariadicWiringOperations {
   public:
     void validate_parameter(const TimeSeriesType &type, VariadicMode) const override {
-        (void)bundle_type(type);
+        if (type_cast<TimeSeriesBundleType>(&type.target_type()) == nullptr) {
+            throw std::invalid_argument{"a variadic TSB parameter requires a TSB"};
+        }
     }
 
     VariadicCapture capture(const TimeSeriesType &, VariadicMode mode,
                             std::vector<WiringArgument> arguments, allocator *memory) const override {
         auto fields = std::vector<BundleField>{};
-        auto names = std::vector<util::symbol>{};
         auto captured = std::vector<WiringArgument>{};
         fields.reserve(arguments.size());
-        names.reserve(arguments.size());
         captured.reserve(arguments.size());
 
         for (auto &argument : arguments) {
-            if (mode == VariadicMode::positional && argument.name().has_value() &&
-                !wiring_argument_access::name_from_variadic_capture(argument)) {
-                throw WiringError{"var_args does not accept named arguments"};
-            }
-            if (mode == VariadicMode::named && !argument.name().has_value()) {
-                throw WiringError{"var_kwargs requires named arguments"};
-            }
-            if (mode == VariadicMode::named) {
-                const auto name = *argument.name();
-                if (std::ranges::find(names, name) != names.end()) {
-                    throw WiringError{"a variadic parameter has duplicate argument names"};
-                }
-                names.push_back(name);
-            }
             if (argument.is_scalar() && !argument.present()) {
                 continue;
             }
@@ -197,37 +151,49 @@ class TimeSeriesBundleVariadicWiringOperations final : public VariadicWiringOper
             const auto name = mode == VariadicMode::positional
                                   ? util::symbol{std::to_string(fields.size())}
                                   : *argument.name();
-            const auto *type = &argument.type();
+            const TimeSeriesType *type;
             if (argument.is_scalar()) {
-                const auto &value = time_series_value_type(
-                    static_cast<const ScalarType &>(argument.type()), TimeSeriesGuarantee::const_);
+                const auto *scalar = type_cast<ScalarType>(&argument.type());
+                if (scalar == nullptr) {
+                    throw WiringError{"a variadic TSB scalar argument requires a scalar type"};
+                }
+
+                const auto &value = time_series_value_type(*scalar, TimeSeriesGuarantee::const_);
                 (void)resolve_time_series_runtime_type(value);
                 type = &value;
+            } else {
+                type = type_cast<TimeSeriesType>(&argument.type());
+                if (type == nullptr) {
+                    throw WiringError{"a variadic TSB time series argument requires a time series type"};
+                }
             }
-            fields.push_back({name, static_cast<const TimeSeriesType *>(type)});
+            fields.push_back({name, type});
             wiring_argument_access::set_variadic_name(argument, name);
             captured.push_back(memory == nullptr ? wiring_argument_access::borrow(argument)
                                                  : wiring_argument_access::clone(argument, *memory));
         }
 
-        return {&time_series_bundle_type(unnamed_bundle_schema(fields), TimeSeriesGuarantee::ordinary),
-                std::move(captured)};
+        try {
+            return {&TimeSeriesBundleType::from_fields(fields), std::move(captured)};
+        } catch (const std::invalid_argument &error) {
+            throw WiringError{error.what()};
+        }
     }
 
     bool accepts_direct(const TimeSeriesType &type) const noexcept override {
-        return dynamic_cast<const TimeSeriesBundleType *>(&target_type_of(type)) != nullptr;
+        return type_cast<TimeSeriesBundleType>(&type.target_type()) != nullptr;
     }
 
     std::size_t item_count(const TimeSeriesType &type) const noexcept override {
-        return static_cast<const TimeSeriesBundleType &>(target_type_of(type)).item_count();
+        return type_cast<TimeSeriesBundleType>(type.target_type()).item_count();
     }
 
     util::symbol item_name(const TimeSeriesType &type, std::size_t index) const override {
-        return static_cast<const TimeSeriesBundleType &>(target_type_of(type)).item_name(index);
+        return type_cast<TimeSeriesBundleType>(type.target_type()).item_name(index);
     }
 
     const TimeSeriesType &item_type(const TimeSeriesType &type, std::size_t index) const override {
-        return static_cast<const TimeSeriesBundleType &>(target_type_of(type)).item_type(index);
+        return type_cast<TimeSeriesBundleType>(type.target_type()).item_type(index);
     }
 
     WiringPoint item(WiringPoint collection, std::size_t index) const override {
@@ -236,7 +202,11 @@ class TimeSeriesBundleVariadicWiringOperations final : public VariadicWiringOper
 
     WiringPoint materialize(std::span<const WiringArgument> arguments,
                             const TimeSeriesType &target_type) const override {
-        const auto &bundle = bundle_type(target_type);
+        const auto *bundle = type_cast<TimeSeriesBundleType>(&target_type.target_type());
+        if (bundle == nullptr) {
+            throw WiringError{"variadic TSB wiring requires a TSB"};
+        }
+
         auto fields = std::vector<NamedBundleWiringPoint>{};
         fields.reserve(arguments.size());
         for (const auto &argument : arguments) {
@@ -245,14 +215,27 @@ class TimeSeriesBundleVariadicWiringOperations final : public VariadicWiringOper
                                    : static_cast<WiringPoint>(operators::const_(argument));
             fields.push_back({*argument.name(), point});
         }
-        return materialize_wiring_point(materialize_time_series_bundle(fields, bundle), target_type);
+        return materialize_wiring_point(materialize_time_series_bundle(fields, *bundle), target_type);
     }
 };
 
 } // namespace
 
 WiringPoint make_free_time_series_bundle(std::span<const NamedBundleWiringPoint> fields) {
-    return add_wiring_record(std::make_unique<FreeTimeSeriesBundleWiringRecord>(fields));
+    auto field_types = std::vector<BundleField>{};
+    field_types.reserve(fields.size());
+    for (const auto &[name, point] : fields) {
+        field_types.push_back({name, &point.type()});
+    }
+
+    const TimeSeriesBundleType *type;
+    try {
+        type = &TimeSeriesBundleType::from_fields(field_types);
+    } catch (const std::invalid_argument &error) {
+        throw WiringError{error.what()};
+    }
+
+    return add_wiring_record(std::make_unique<FreeTimeSeriesBundleWiringRecord>(*type, fields));
 }
 
 WiringPoint materialize_time_series_bundle(std::span<const NamedBundleWiringPoint> fields,
@@ -275,21 +258,32 @@ WiringPoint materialize_time_series_bundle(std::span<const NamedBundleWiringPoin
 }
 
 WiringPoint time_series_bundle_field(WiringPoint bundle, std::size_t index) {
+    const auto *type = type_cast<TimeSeriesBundleType>(&bundle.type().target_type());
+    if (type == nullptr) {
+        throw WiringError{"TSB field selection requires a TSB"};
+    }
+    if (index >= type->item_count()) {
+        throw WiringError{"time series bundle field index is out of range"};
+    }
+
     const auto &record = wiring_record(bundle);
     if (const auto *free = dynamic_cast<const FreeTimeSeriesBundleWiringRecord *>(&record)) {
         return free->field(index);
     }
 
-    const auto &bundle_type = static_cast<const TimeSeriesBundleType &>(target_type_of(bundle.type()));
-    const auto field = bundle_type.item_id(index);
-    auto selected = std::make_unique<TimeSeriesBundleFieldWiringRecord>(bundle, index);
+    const auto field = type->item_id(index);
+    auto selected = std::make_unique<TimeSeriesBundleFieldWiringRecord>(bundle, *type, index);
     return add_item_wiring_record(bundle, field, std::move(selected));
 }
 
 WiringPoint time_series_bundle_field(WiringPoint bundle, util::symbol name) {
-    const auto &type = static_cast<const TimeSeriesBundleType &>(target_type_of(bundle.type()));
-    for (auto index = std::size_t{}; index < type.item_count(); ++index) {
-        if (type.item_name(index) == name) {
+    const auto *type = type_cast<TimeSeriesBundleType>(&bundle.type().target_type());
+    if (type == nullptr) {
+        throw WiringError{"TSB field selection requires a TSB"};
+    }
+
+    for (auto index = std::size_t{}; index < type->item_count(); ++index) {
+        if (type->item_name(index) == name) {
             return time_series_bundle_field(bundle, index);
         }
     }
