@@ -6,6 +6,7 @@
 #include <bg/node/input_properties.hpp>
 #include <bg/time_series/details/input_data.hpp>
 #include <bg/time_series/time_series_input.hpp>
+#include <bg/time_series/tsb/details/wiring.hpp>
 #include <bg/time_series/tsb/tsb_type.hpp>
 #include <bg/type/time_series_bundle_type.hpp>
 

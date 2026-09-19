@@ -2,6 +2,7 @@
 
 #include <bg/evaluation_context.hpp>
 #include <bg/graph/node.hpp>
+#include <bg/graph/details/variadic_wiring_operations.hpp>
 #include <bg/node/details/aggregate_resolver.hpp>
 #include <bg/node/input.hpp>
 #include <bg/node/output.hpp>
@@ -441,9 +442,17 @@ void add_signature_field(std::vector<Parameter> &parameters, const TimeSeriesTyp
     using Field = std::remove_cv_t<util::aggregate_member_type<Index, Definition>>;
 
     if constexpr (input_field<Field>::value && !input_field<Field>::dynamic_binding) {
-        parameters.push_back({util::symbol{util::aggregate_member_names<Definition>[Index]},
-                              &input_type<Definition, Index>(), input_field<Field>::activity,
-                              input_field<Field>::validity, false, input_field<Field>::variadic_mode});
+        constexpr auto mode = input_field<Field>::variadic_mode;
+        if constexpr (mode == VariadicMode::none) {
+            parameters.push_back({util::symbol{util::aggregate_member_names<Definition>[Index]},
+                                  &input_type<Definition, Index>(), input_field<Field>::activity,
+                                  input_field<Field>::validity});
+        } else {
+            parameters.push_back({util::symbol{util::aggregate_member_names<Definition>[Index]},
+                                  &input_type<Definition, Index>(), input_field<Field>::activity,
+                                  input_field<Field>::validity, false, mode,
+                                  variadic_wiring_operations<typename input_field<Field>::time_series_type>()});
+        }
     } else if constexpr (scalar_field<Field>::value) {
         parameters.push_back({util::symbol{util::aggregate_member_names<Definition>[Index]},
                               &scalar_type<Definition, Index>(), active, required, scalar_field<Field>::optional});

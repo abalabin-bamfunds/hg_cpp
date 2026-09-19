@@ -1,6 +1,6 @@
 # Variadic wiring records
 
-Status: accepted
+Status: superseded by [0005](0005-type-specific-variadic-collections.md)
 
 ## Context
 

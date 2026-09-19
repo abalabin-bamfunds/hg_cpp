@@ -188,7 +188,8 @@ bool matches(std::span<const ArgumentKey> key, std::span<const WiringArgument> a
            });
 }
 
-std::optional<Scalar<>> scalar(std::span<const WiringArgument> arguments, std::size_t index) {
+std::optional<Scalar<>> scalar(std::span<const details::WiringArgumentDescriptor> arguments,
+                               std::size_t index) {
     if (index >= arguments.size()) {
         return std::nullopt;
     }
@@ -278,7 +279,7 @@ std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const
                     read_implementation = read.implementation;
                 }
 
-                const auto current = scalar(probe.logical_arguments, read.index);
+                const auto current = scalar(probe.descriptors, read.index);
                 if (!current || !read.value.view().equals(*current)) {
                     scalar_values_match = false;
                     break;
@@ -330,11 +331,11 @@ std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const
             auto resolution = std::optional<SignatureResolution>{};
             auto probe_record = std::unique_ptr<details::WiringRecord>{};
             auto candidate_arguments = std::vector<WiringArgument>{};
-            auto logical_arguments = std::vector<WiringArgument>{};
+            auto descriptors = std::vector<details::WiringArgumentDescriptor>{};
             try {
                 auto normalized = details::probe_wiring_arguments(implementation->signature(), arguments);
                 candidate_arguments = std::move(normalized.arguments);
-                logical_arguments = std::move(normalized.logical_arguments);
+                descriptors = std::move(normalized.descriptors);
                 probe_record = std::move(normalized.probe_record);
             } catch (const std::exception &error) {
                 failures.push_back(failure(*implementation, WiringFailureStage::argument_count, error.what()));
@@ -348,7 +349,7 @@ std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const
                 }
                 scalar_reads.implementation = implementation.get();
                 auto type_map = implementation->signature().match_arguments(candidate_types, seed_type_map);
-                auto resolver_arguments = WiringArguments{implementation->signature(), type_map, logical_arguments,
+                auto resolver_arguments = WiringArguments{implementation->signature(), type_map, descriptors,
                                                           &scalar_reads, &record_scalar_read};
                 auto signature = implementation->signature().complete_resolution(type_map, &resolver_arguments);
                 resolution.emplace(SignatureResolution{std::move(signature), std::move(type_map)});
@@ -363,7 +364,7 @@ std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const
             RequirementResult requirement = accept;
             try {
                 requirement = implementation->requirement(WiringArguments{implementation->signature(),
-                                                                          resolution->type_map, logical_arguments,
+                                                                          resolution->type_map, descriptors,
                                                                           &scalar_reads, &record_scalar_read});
             } catch (const std::exception &error) {
                 failures.push_back(failure(*implementation, WiringFailureStage::callback, error.what()));

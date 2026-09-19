@@ -1,4 +1,5 @@
 #include <bg/time_series/tsl/tsl_runtime_type.hpp>
+#include <bg/time_series/tsl/tsl_free_runtime_type.hpp>
 
 #include <memory>
 #include <mutex>
@@ -6,6 +7,133 @@
 #include <vector>
 
 namespace bg::details {
+
+Node free_list_node(const free_fixed_time_series_list_storage &storage) noexcept {
+    return Node::from_output(*storage.node, const_cast<free_fixed_time_series_list_storage *>(&storage));
+}
+
+bool free_list_valid(const free_fixed_time_series_list_storage &storage) noexcept {
+    if (storage.node == nullptr) {
+        return false;
+    }
+
+    const auto node = free_list_node(storage);
+    if (node.input_count() == 0) {
+        return true;
+    }
+
+    for (auto index = std::size_t{}; index < node.input_count(); ++index) {
+        if (node.input_last_updated(index) > MIN_DT) {
+            return true;
+        }
+    }
+    return false;
+}
+
+FreeFixedTimeSeriesListRuntimeType::FreeFixedTimeSeriesListRuntimeType(const TimeSeriesListType &type)
+    : TimeSeriesRuntimeType{type,
+                            sizeof(free_fixed_time_series_list_storage),
+                            alignof(free_fixed_time_series_list_storage),
+                            type.item_count() > util::index<>::inline_capacity,
+                            false,
+                            true} {}
+
+bool FreeFixedTimeSeriesListRuntimeType::collection_valid(const void *value) const noexcept {
+    return free_list_valid(*static_cast<const free_fixed_time_series_list_storage *>(value));
+}
+
+std::size_t FreeFixedTimeSeriesListRuntimeType::item_count(const void *) const {
+    return static_cast<const TimeSeriesListType &>(type()).item_count();
+}
+
+TimeSeriesRuntimeType::ConstItem FreeFixedTimeSeriesListRuntimeType::item(const void *value, item_id_t id) const {
+    if (id >= item_count(value)) {
+        throw std::out_of_range{"time series list item index is out of range"};
+    }
+
+    const auto &storage = *static_cast<const free_fixed_time_series_list_storage *>(value);
+    const auto node = free_list_node(storage);
+    const auto input = node.time_series_input(id, id);
+    return {input.runtime_type(), node.input_last_updated(id), input.data()};
+}
+
+void FreeFixedTimeSeriesListRuntimeType::for_each_item_id(const void *value, void *context,
+                                                         ItemIdFunction function) const {
+    for (auto id = item_id_t{}; id < item_count(value); ++id) {
+        function(context, id);
+    }
+}
+
+bool FreeFixedTimeSeriesListRuntimeType::item_updated(const EvaluationTime &last_updated, const void *value,
+                                                      item_id_t id) const noexcept {
+    const auto &storage = *static_cast<const free_fixed_time_series_list_storage *>(value);
+    return last_updated > MIN_DT && storage.change_time == last_updated && storage.updated.contains(id);
+}
+
+void FreeFixedTimeSeriesListRuntimeType::for_each_updated_item(const EvaluationTime &last_updated,
+                                                               const void *value, void *context,
+                                                               ItemIdFunction function) const {
+    const auto &storage = *static_cast<const free_fixed_time_series_list_storage *>(value);
+    if (last_updated <= MIN_DT || storage.change_time != last_updated) {
+        return;
+    }
+    for (const auto index : storage.updated) {
+        function(context, index);
+    }
+}
+
+void FreeFixedTimeSeriesListRuntimeType::for_each_modified_item(
+    const EvaluationTime &last_updated, const void *value, EvaluationTime evaluation_time, void *context,
+    ModifiedItemFunction function) const {
+    const auto &storage = *static_cast<const free_fixed_time_series_list_storage *>(value);
+    if (storage.node == nullptr) {
+        return;
+    }
+
+    const auto node = free_list_node(storage);
+    const auto publish = [&](std::size_t index, const EvaluationTime &item_last_updated) {
+        const auto input = node.time_series_input(index, index);
+        function(context, {static_cast<item_id_t>(index), &input.runtime_type(), &item_last_updated, input.data()});
+    };
+
+    if (last_updated <= MIN_DT) {
+        for (auto index = std::size_t{}; index < node.input_count(); ++index) {
+            publish(index, MIN_DT);
+        }
+        return;
+    }
+    if (storage.change_time != evaluation_time) {
+        return;
+    }
+    for (const auto index : storage.updated) {
+        publish(index, node.input_last_updated(index));
+    }
+}
+
+void FreeFixedTimeSeriesListRuntimeType::construct_initial_value(void *destination) const noexcept {
+    std::construct_at(static_cast<free_fixed_time_series_list_storage *>(destination));
+}
+
+void FreeFixedTimeSeriesListRuntimeType::destroy_value(void *value, allocator &memory) const noexcept {
+    auto *storage = static_cast<free_fixed_time_series_list_storage *>(value);
+    storage->updated.release(memory);
+    std::destroy_at(storage);
+}
+
+const TimeSeriesRuntimeType &free_fixed_time_series_list_runtime_type(const TimeSeriesListType &type) {
+    static auto mutex = std::mutex{};
+    static auto runtime_types = std::vector<std::unique_ptr<FreeFixedTimeSeriesListRuntimeType>>{};
+
+    const auto lock = std::lock_guard{mutex};
+    const auto existing = std::ranges::find_if(
+        runtime_types, [&](const auto &candidate) { return &candidate->type() == &type; });
+    if (existing != runtime_types.end()) {
+        return **existing;
+    }
+
+    runtime_types.push_back(std::make_unique<FreeFixedTimeSeriesListRuntimeType>(type));
+    return *runtime_types.back();
+}
 
 const TimeSeriesRuntimeType &
 fixed_time_series_list_runtime_type(const TimeSeriesListType &type, const TimeSeriesRuntimeType &item) {

@@ -132,7 +132,8 @@ graph compilation or evaluation.
 - node-call deduplication, opt-out, and identity inputs
 - operator overload applicability, selection, requirements, resolvers, and caching
 - incompatible types, graph ownership errors, and invalid results
-- variadic capture, forwarding, materialization, nested boundaries, and operator selection
+- variadic capture by TSB and homogeneous TSL, forwarding, materialization, exact-name direct collection binding,
+  nested boundaries, and operator selection
 
 ### Graph compilation
 

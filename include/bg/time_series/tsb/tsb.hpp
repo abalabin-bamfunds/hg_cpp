@@ -1,6 +1,7 @@
 #pragma once
 
 #include <bg/graph/details/variadic_wiring_record.hpp>
+#include <bg/graph/details/variadic_wiring_operations.hpp>
 #include <bg/graph/wiring_error.hpp>
 #include <bg/operators.hpp>
 #include <bg/time_series/tsb/details/wiring.hpp>
@@ -121,32 +122,25 @@ class wp<TSB<Schema, TimeSeriesProperties...>, WiringProperties...> {
 
     operator WiringPoint() const noexcept { return point_; }
 
-    std::size_t size() const noexcept { return record().arguments().size(); }
+    std::size_t size() const noexcept { return record().size(); }
 
-    const WiringArgument &operator[](std::size_t index) const {
-        const auto arguments = record().arguments();
-        if (index >= arguments.size()) {
-            throw std::out_of_range{"a variadic wiring parameter index is out of range"};
-        }
-        return arguments[index];
-    }
+    WiringArgument operator[](std::size_t index) const { return record().argument(index); }
 
-    const WiringArgument &operator[](std::string_view name) const {
-        const auto value = find(name);
+    WiringArgument operator[](std::string_view name) const {
+        auto value = find(name);
         if (!value) {
             throw WiringError{"a variadic wiring parameter has no argument with the requested name"};
         }
-        return value->get();
+        return std::move(*value);
     }
 
-    std::optional<std::reference_wrapper<const WiringArgument>> find(std::string_view name) const noexcept {
-        const auto arguments = record().arguments();
-        const auto found =
-            std::ranges::find_if(arguments, [&](const auto &argument) { return argument.name()->text() == name; });
-        if (found == arguments.end()) {
-            return std::nullopt;
+    std::optional<WiringArgument> find(std::string_view name) const {
+        for (auto index = std::size_t{}; index < size(); ++index) {
+            if (record().item_name(index).text() == name) {
+                return record().argument(index);
+            }
         }
-        return std::cref(*found);
+        return std::nullopt;
     }
 
     const GraphWiring &graph() const noexcept { return point_.graph(); }

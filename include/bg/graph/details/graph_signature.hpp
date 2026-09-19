@@ -1,6 +1,7 @@
 #pragma once
 
 #include <bg/graph/details/wiring_callable.hpp>
+#include <bg/graph/details/variadic_wiring_operations.hpp>
 #include <bg/type/details/time_series_type.hpp>
 #include <bg/type/guarantee_variable.hpp>
 #include <bg/type/scalar_variable.hpp>
@@ -65,8 +66,21 @@ void add_graph_parameter(std::vector<Parameter> &parameters, std::span<const std
     using Value = std::remove_cvref_t<typename callable<Function>::template argument_type<Index>>;
 
     const util::symbol name{parameter_names.empty() ? std::to_string(Index) : std::string{parameter_names[Index]}};
-    parameters.push_back({name, &graph_parameter_type<Function, Index>(name), active, required,
-                          supported_optional_scalar_argument<Value>, graph_parameter_variadic_mode<Value>});
+    if constexpr (is_typed_wiring_point<Value>) {
+        using TimeSeries = typename typed_wiring_point<Value>::time_series_type;
+        constexpr auto mode = graph_parameter_variadic_mode<Value>;
+        if constexpr (mode == VariadicMode::none) {
+            parameters.push_back({name, &graph_parameter_type<Function, Index>(name), active, required,
+                                  supported_optional_scalar_argument<Value>, mode});
+        } else {
+            parameters.push_back({name, &graph_parameter_type<Function, Index>(name), active, required,
+                                  supported_optional_scalar_argument<Value>, mode,
+                                  variadic_wiring_operations<TimeSeries>()});
+        }
+    } else {
+        parameters.push_back({name, &graph_parameter_type<Function, Index>(name), active, required,
+                              supported_optional_scalar_argument<Value>, graph_parameter_variadic_mode<Value>});
+    }
 }
 
 template <typename Function> const TimeSeriesType &graph_output_type() {

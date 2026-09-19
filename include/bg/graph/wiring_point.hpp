@@ -39,7 +39,7 @@ class WiringPoint {
 };
 
 template <typename TimeSeries, auto... Properties> class wp {
-    static_assert(sizeof...(Properties) == 0, "a non-TSB wiring point does not accept properties");
+    static_assert(sizeof...(Properties) == 0, "this wiring point type does not accept properties");
 
   public:
     wp(WiringPoint point) : point_(point) {

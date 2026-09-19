@@ -1,5 +1,6 @@
 #pragma once
 
+#include <bg/graph/details/wiring_argument_descriptor.hpp>
 #include <bg/graph/wiring_argument.hpp>
 #include <bg/scalar/scalar.hpp>
 #include <bg/type/signature.hpp>
@@ -63,7 +64,7 @@ class WiringArguments {
             return std::nullopt;
         }
 
-        auto value = argument.scalar();
+        auto value = *argument.scalar();
         if (scalar_read_ != nullptr) {
             scalar_read_(scalar_read_context_, index, value);
         }
@@ -82,7 +83,8 @@ class WiringArguments {
     using ScalarReadFunction = void (*)(void *, std::size_t, Scalar<>);
 
     WiringArguments(const Signature &signature, const TypeMap &type_map,
-                    std::span<const WiringArgument> arguments, void *scalar_read_context = nullptr,
+                    std::span<const details::WiringArgumentDescriptor> arguments,
+                    void *scalar_read_context = nullptr,
                     ScalarReadFunction scalar_read = nullptr) noexcept
         : signature_{&signature}, type_map_{&type_map}, arguments_{arguments},
           scalar_read_context_{scalar_read_context}, scalar_read_{scalar_read} {}
@@ -103,7 +105,7 @@ class WiringArguments {
 
     const Signature *signature_;
     const TypeMap *type_map_;
-    std::span<const WiringArgument> arguments_;
+    std::span<const details::WiringArgumentDescriptor> arguments_;
     void *scalar_read_context_;
     ScalarReadFunction scalar_read_;
 };

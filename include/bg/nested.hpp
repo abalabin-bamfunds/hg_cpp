@@ -31,7 +31,7 @@ template <typename Graph, details::graph_code_argument Run, details::graph_code_
     auto &outer_wiring = WiringContext::current().wiring();
     auto normalized_result = details::probe_wiring_arguments(graph.signature(), supplied);
     auto &normalized = normalized_result.arguments;
-    auto resolution = graph.signature().resolve_wiring_arguments(normalized, normalized_result.logical_arguments);
+    auto resolution = graph.signature().resolve_wiring_arguments(normalized, normalized_result.descriptors);
     const auto &resolved = resolution.signature;
 
     auto inner_wiring = std::make_shared<GraphWiring>();
@@ -45,7 +45,18 @@ template <typename Graph, details::graph_code_argument Run, details::graph_code_
         for (auto i = std::size_t{}; i < resolved.parameters.size(); ++i) {
             if (variadic && i == *variadic) {
                 const auto &record = *details::variadic_wiring_record(normalized[i].time_series());
-                for (const auto &argument : record.arguments()) {
+                if (record.direct_collection()) {
+                    const auto &type = static_cast<const TimeSeriesType &>(*resolved.parameters[i].type);
+                    const auto input = details::wire_nested_input(type);
+                    input_nodes.push_back(details::wired_output_node_index(*inner_wiring, input));
+                    auto argument = WiringArgument{input};
+                    details::wiring_argument_access::set_variadic_name(argument, resolved.parameters[i].name);
+                    inner_arguments.push_back(std::move(argument));
+                    continue;
+                }
+
+                for (auto item = std::size_t{}; item < record.size(); ++item) {
+                    auto argument = record.argument(item);
                     inner_arguments.push_back(details::wiring_argument_access::borrow(argument));
                     if (argument.is_time_series()) {
                         const auto &type = static_cast<const TimeSeriesType &>(argument.type());
@@ -76,16 +87,22 @@ template <typename Graph, details::graph_code_argument Run, details::graph_code_
     auto flattened = resolved;
     if (const auto variadic = graph.signature().variadic_parameter()) {
         const auto &record = *details::variadic_wiring_record(normalized[*variadic].time_series());
-        flattened.parameters.erase(flattened.parameters.begin() + *variadic);
-        auto insertion = *variadic;
-        for (const auto &argument : record.arguments()) {
-            if (argument.is_scalar()) {
-                continue;
+        if (record.direct_collection()) {
+            flattened.parameters[*variadic].variadic_mode = details::VariadicMode::none;
+        } else {
+            flattened.parameters.erase(flattened.parameters.begin() + *variadic);
+            auto insertion = *variadic;
+            for (auto item = std::size_t{}; item < record.size(); ++item) {
+                const auto argument = record.argument(item);
+                if (argument.is_scalar()) {
+                    continue;
+                }
+                flattened.parameters.insert(
+                    flattened.parameters.begin() + insertion,
+                    {*argument.name(), &argument.type(), active, optional, false,
+                     details::VariadicMode::none});
+                ++insertion;
             }
-            flattened.parameters.insert(
-                flattened.parameters.begin() + insertion,
-                {*argument.name(), &argument.type(), active, optional, false, details::VariadicMode::none});
-            ++insertion;
         }
     }
 
@@ -102,7 +119,13 @@ template <typename Graph, details::graph_code_argument Run, details::graph_code_
     for (auto index = std::size_t{}; index < normalized.size(); ++index) {
         if (graph.signature().variadic_parameter() && index == *graph.signature().variadic_parameter()) {
             const auto &record = *details::variadic_wiring_record(normalized[index].time_series());
-            for (const auto &argument : record.arguments()) {
+            if (const auto collection = record.direct_collection()) {
+                outer_arguments.emplace_back(*collection);
+                continue;
+            }
+
+            for (auto item = std::size_t{}; item < record.size(); ++item) {
+                const auto argument = record.argument(item);
                 if (argument.is_scalar()) {
                     continue;
                 }

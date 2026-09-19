@@ -48,6 +48,16 @@ its type. A scalar of type `S` becomes `TS<S, const_>`. `SCHEMA` resolves to the
 schema of this normalized TSB. An absent optional scalar is omitted. Wiring
 rejects a scalar that cannot be stored in a time series.
 
+A `TSL<TS_T, SIZE>` parameter with `var_args` captures homogeneous time series.
+It rejects scalars and resolves `SIZE` from the capture count. An empty capture
+requires a concrete item type and collection guarantee so that wiring can
+resolve the list type.
+
+A single TSL or TSB argument supplied with the variadic parameter's exact name
+binds as one collection. Its items remain available as individual arguments to
+resolvers and requirements. Item and field selection stays lazy. Otherwise the
+argument follows the parameter's ordinary capture rules.
+
 Passing the record to another variadic parameter preserves the original
 arguments. A forwarded record cannot be combined with additional captured
 arguments. Passing it to an ordinary TSB parameter materializes the normalized
@@ -72,9 +82,11 @@ fields alias their inputs. Scalar fields materialize through `const_` and appear
 as const time series with the graph's shared start timestamp. An empty pack
 materializes as a valid empty TSB at graph start.
 
+An empty variadic TSL also becomes valid when its materialization node starts.
+
 A nested graph preserves the pack across its boundary. Each captured time
 series crosses as a reference. Each captured scalar becomes immutable data in
-the inner compiled graph.
+the inner compiled graph. A directly bound collection crosses as one reference.
 
 A variadic graph or node can be an operator overload. A matching fixed-parameter
 overload is preferred over a variadic overload before type specificity is

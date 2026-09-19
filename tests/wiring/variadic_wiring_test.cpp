@@ -167,7 +167,7 @@ TEST_CASE("a named variadic graph finds its arguments",
     const auto tested = graph("name"_n = "variadic", [&](wp<TSB<SCHEMA>, var_kwargs> values) {
         REQUIRE(values.size() == 2);
         REQUIRE(values.find("window"));
-        CHECK(values.find("window")->get().name()->text() == "window");
+        CHECK(values.find("window")->name()->text() == "window");
         CHECK(values["limit"].is_scalar());
         CHECK_FALSE(values.find("missing"));
         CHECK_THROWS_AS(values["missing"], WiringError);

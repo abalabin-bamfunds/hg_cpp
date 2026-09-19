@@ -85,6 +85,7 @@ add_executable(
     wiring/requirement_test.cpp
     wiring/resolver_test.cpp
     wiring/time_series_bundle_wiring_test.cpp
+    wiring/variadic_collection_wiring_test.cpp
     wiring/variadic_wiring_test.cpp
     wiring/time_series_dict_wiring_test.cpp
     wiring/time_series_list_wiring_test.cpp

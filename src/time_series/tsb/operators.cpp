@@ -12,27 +12,10 @@
 #include <bg/type/time_series_bundle_type.hpp>
 #include <bg/type/time_series_variable.hpp>
 
-#include <memory>
 #include <vector>
 
 namespace bg::details {
 namespace {
-
-class TimeSeriesBundleFieldWiringRecord final : public WiringRecord {
-  public:
-    TimeSeriesBundleFieldWiringRecord(WiringPoint bundle, item_id_t field, const TimeSeriesType &type)
-        : WiringRecord{type}, bundle_{bundle}, field_{field} {}
-
-  private:
-    WiringPoint materialize(const TimeSeriesType &requested_type) const override {
-        const auto bundle = materialize_wiring_point(bundle_, bundle_.type());
-        const auto field = wiring_point_for_item(bundle, field_, type());
-        return materialize_wiring_point(field, requested_type);
-    }
-
-    WiringPoint bundle_;
-    item_id_t field_;
-};
 
 const TimeSeriesBundleType &bundle_type(const Type &type) {
     const auto *bundle = dynamic_cast<const TimeSeriesBundleType *>(&type);
@@ -42,29 +25,9 @@ const TimeSeriesBundleType &bundle_type(const Type &type) {
     return *bundle;
 }
 
-std::size_t field_index(const TimeSeriesBundleType &type, util::symbol name) {
-    for (auto index = std::size_t{}; index < type.item_count(); ++index) {
-        if (type.item_name(index) == name) {
-            return index;
-        }
-    }
-
-    throw WiringError{"a TSB has no field with the requested name"};
-}
-
 struct TimeSeriesBundleGetattr {
     wp<TS_T> operator()(wp<TSB<SCHEMA>> bundle, util::symbol name) const {
-        const auto &type = bundle_type(bundle.type());
-        const auto index = field_index(type, name);
-
-        const auto &record = wiring_record(bundle);
-        if (const auto field = free_time_series_bundle_field(record, index)) {
-            return wp<TS_T>{*field};
-        }
-
-        const auto field = type.item_id(index);
-        auto selected = std::make_unique<TimeSeriesBundleFieldWiringRecord>(bundle, field, type.item_type(index));
-        return wp<TS_T>{add_item_wiring_record(bundle, field, std::move(selected))};
+        return wp<TS_T>{time_series_bundle_field(bundle, name)};
     }
 };
 

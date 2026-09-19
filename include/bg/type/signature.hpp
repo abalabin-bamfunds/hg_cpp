@@ -19,6 +19,11 @@ namespace bg {
 class WiringArguments;
 class WiringArgument;
 
+namespace details {
+class WiringArgumentDescriptor;
+class VariadicWiringOperations;
+}
+
 struct Parameter {
     util::symbol name;
     const Type *type;
@@ -26,6 +31,7 @@ struct Parameter {
     InputValidity validity{required};
     bool accepts_absent_scalar{};
     details::VariadicMode variadic_mode{details::VariadicMode::none};
+    const details::VariadicWiringOperations *variadic_operations{};
 };
 
 struct VariableResolver {
@@ -85,9 +91,10 @@ class Signature {
     [[nodiscard]] SignatureResolution resolve_with_type_map(std::span<const Type *const> arguments) const;
     [[nodiscard]] SignatureResolution resolve_with_type_map(std::span<const Type *const> arguments,
                                                             const TypeMap &type_map) const;
-    [[nodiscard]] SignatureResolution resolve_wiring_arguments(std::span<const WiringArgument> arguments,
-                                                               std::span<const WiringArgument> logical_arguments,
-                                                               const TypeMap *type_map = nullptr) const;
+    [[nodiscard]] SignatureResolution resolve_wiring_arguments(
+        std::span<const WiringArgument> arguments,
+        std::span<const details::WiringArgumentDescriptor> descriptors,
+        const TypeMap *type_map = nullptr) const;
     [[nodiscard]] TypeMap match_arguments(std::span<const Type *const> arguments,
                                           const TypeMap *type_map = nullptr) const;
     [[nodiscard]] ResolvedSignature complete_resolution(TypeMap &type_map,

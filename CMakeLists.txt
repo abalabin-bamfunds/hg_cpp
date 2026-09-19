@@ -62,6 +62,7 @@ add_library(
     src/symbol.cpp
     src/time_series/tsl/tsl_type.cpp
     src/time_series/tsl/tsl_runtime_type.cpp
+    src/time_series/tsl/wiring.cpp
     src/time_series/tsl/tsl_item_subscription.cpp
     src/time_series/tsl/operators.cpp
     src/time_series/tsb/tsb_type.cpp

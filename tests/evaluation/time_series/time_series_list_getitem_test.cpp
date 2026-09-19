@@ -150,6 +150,23 @@ TEST_CASE("fixed TSL getitem follows a list across a nested graph boundary",
     CHECK(actual.equals<int>({1, std::nullopt, 3, 40}));
 }
 
+TEST_CASE("scalar getitem reads a reference-backed fixed list",
+          "[evaluation][series:fixed-tsl][series:value][feature:getitem][feature:nested-graph]"
+          "[representation:native][binding:value-to-reference][binding:reference-to-value][shape:nested]") {
+    const auto make_list = node([](In<TS<int>> input, Out<TSL<TS<int>, 2>> output) {
+        output[0].set(*input);
+        output[1].set(*input * 10);
+    });
+    const auto inner = graph("name"_n = "make_list", [&](wp<TS<int>> input) { return make_list(input); });
+    const auto outer = [&](wp<TS<int>> input, wp<TS<bool>> run) -> wp<TS<int>> {
+        return nested(inner, run, input)[std::int64_t{1}].as<TS<int>>();
+    };
+
+    const auto actual = testing::test_graph(outer, std::array{1, 2, 3}, std::array{true, true, true});
+
+    CHECK(actual.equals({10, 20, 30}));
+}
+
 TEST_CASE("fixed TSL getitem follows a free list into a nested graph",
           "[evaluation][series:fixed-tsl][series:value][feature:getitem][feature:nested-graph]"
           "[representation:free][binding:value-to-reference][binding:reference-to-value][shape:nested]"

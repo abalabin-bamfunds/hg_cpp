@@ -28,9 +28,9 @@ std::optional<WiringPoint> WiringTemplate::invoke(GraphWiring &wiring,
                                                   const TypeMap *seed_type_map) const {
     auto probe = details::probe_wiring_arguments(signature(), arguments);
     auto resolution =
-        signature().resolve_wiring_arguments(probe.arguments, probe.logical_arguments, seed_type_map);
+        signature().resolve_wiring_arguments(probe.arguments, probe.descriptors, seed_type_map);
     const auto requirement_result =
-        requirement(WiringArguments{signature(), resolution.type_map, probe.logical_arguments});
+        requirement(WiringArguments{signature(), resolution.type_map, probe.descriptors});
     if (!requirement_result.accepted()) {
         auto message = std::string{"wiring-template requirement rejected the arguments"};
         if (!requirement_result.message().empty()) {

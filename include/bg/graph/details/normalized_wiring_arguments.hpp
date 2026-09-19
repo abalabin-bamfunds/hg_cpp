@@ -1,6 +1,7 @@
 #pragma once
 
 #include <bg/allocator.hpp>
+#include <bg/graph/details/wiring_argument_descriptor.hpp>
 #include <bg/graph/details/wiring_record.hpp>
 #include <bg/graph/wiring_argument.hpp>
 #include <bg/type/signature.hpp>
@@ -13,7 +14,7 @@ namespace bg::details {
 
 struct NormalizedWiringArguments {
     std::vector<WiringArgument> arguments;
-    std::vector<WiringArgument> logical_arguments;
+    std::vector<WiringArgumentDescriptor> descriptors;
     std::unique_ptr<WiringRecord> probe_record;
 };
 

@@ -7,6 +7,7 @@
 #include <bg/time_series/ref/ref_input.hpp>
 #include <bg/time_series/time_series_input.hpp>
 #include <bg/time_series/ts/ts_input.hpp>
+#include <bg/time_series/tsl/details/wiring.hpp>
 #include <bg/time_series/tsl/tsl_runtime_type.hpp>
 #include <bg/time_series/tsl/tsl_storage.hpp>
 #include <bg/time_series/tsl/tsl_type.hpp>
@@ -17,7 +18,7 @@ namespace bg {
 
 template <typename Item, auto Size, auto... TimeSeriesProperties, auto... Properties>
 class In<TSL<Item, Size, TimeSeriesProperties...>, Properties...> {
-    using ParsedProperties = details::input_properties<Properties...>;
+    using ParsedProperties = details::basic_input_properties<true, Properties...>;
     static_assert(ParsedProperties::valid);
 
   public:
@@ -75,6 +76,7 @@ class In<TSL<Item, Size, TimeSeriesProperties...>, Properties...> {
     static constexpr InputActivity activity = ParsedProperties::activity;
     static constexpr InputValidity validity = ParsedProperties::validity;
     static constexpr bool dynamic_binding = ParsedProperties::dynamic_binding;
+    static constexpr auto variadic_mode = details::variadic_mode<Properties...>();
 
   private:
     details::TimeSeriesInputData data_;
