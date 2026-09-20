@@ -1,6 +1,7 @@
 #pragma once
 
 #include <bg/allocator.hpp>
+#include <bg/graph/graph_argument.hpp>
 #include <bg/graph/wiring_point.hpp>
 #include <bg/scalar/cpp_runtime_type.hpp>
 #include <bg/scalar/value.hpp>
@@ -92,6 +93,8 @@ class WiringArgument {
 
     WiringArgument(WiringPoint point) : value_(TimeSeriesArgument{point}) {}
 
+    WiringArgument(GraphArgument graph) : value_(std::move(graph)) {}
+
     template <typename T>
         requires details::is_typed_wiring_point<T>
     WiringArgument(T point) : WiringArgument{static_cast<WiringPoint>(point)} {}
@@ -125,7 +128,8 @@ class WiringArgument {
     }
 
     bool is_time_series() const noexcept { return std::holds_alternative<TimeSeriesArgument>(value_); }
-    bool is_scalar() const noexcept { return !is_time_series(); }
+    bool is_scalar() const noexcept { return std::holds_alternative<ScalarArgument>(value_); }
+    bool is_graph() const noexcept { return std::holds_alternative<GraphArgument>(value_); }
     bool present() const noexcept {
         const auto *scalar = std::get_if<ScalarArgument>(&value_);
         return scalar == nullptr || scalar->owned.has_value() || scalar->data != nullptr || scalar->view != nullptr;
@@ -135,7 +139,10 @@ class WiringArgument {
         if (is_time_series()) {
             return *std::get<TimeSeriesArgument>(value_).resolution_type;
         }
-        return scalar_type();
+        if (is_scalar()) {
+            return scalar_type();
+        }
+        return graph().exact_type();
     }
 
     WiringPoint time_series() const {
@@ -154,6 +161,13 @@ class WiringArgument {
             return Scalar<>::from(value->runtime_type(), value->data());
         }
         return Scalar<>::from(scalar_runtime_type(), scalar_data());
+    }
+
+    const GraphArgument &graph() const {
+        if (!is_graph()) {
+            throw std::logic_error{"a wiring argument does not contain a graph"};
+        }
+        return std::get<GraphArgument>(value_);
     }
 
   private:
@@ -181,9 +195,12 @@ class WiringArgument {
     }
     bool scalar_has_value() const noexcept { return scalar_data() != nullptr || scalar_view() != nullptr; }
 
-    static std::variant<TimeSeriesArgument, ScalarArgument> copy_value(const WiringArgument &other) {
+    static std::variant<TimeSeriesArgument, ScalarArgument, GraphArgument> copy_value(const WiringArgument &other) {
         if (other.is_time_series()) {
             return std::get<TimeSeriesArgument>(other.value_);
+        }
+        if (other.is_graph()) {
+            return std::get<GraphArgument>(other.value_);
         }
         return ScalarArgument{other.scalar_type(), other.scalar_runtime_type(), other.scalar_data(),
                               other.scalar_view()};
@@ -192,7 +209,7 @@ class WiringArgument {
     friend struct details::wiring_argument_access;
 
     WiringArgument clone(allocator &memory) const {
-        if (is_time_series() || !scalar_has_value()) {
+        if (!is_scalar() || !scalar_has_value()) {
             return *this;
         }
 
@@ -204,7 +221,8 @@ class WiringArgument {
     }
 
     explicit WiringArgument(ScalarArgument scalar) : value_(std::move(scalar)) {}
-    explicit WiringArgument(std::variant<TimeSeriesArgument, ScalarArgument> value) : value_(std::move(value)) {}
+    explicit WiringArgument(std::variant<TimeSeriesArgument, ScalarArgument, GraphArgument> value)
+        : value_(std::move(value)) {}
 
     template <typename T> static ScalarArgument make_scalar_argument(T &&value) {
         using Source = std::remove_cvref_t<T>;
@@ -227,7 +245,7 @@ class WiringArgument {
         return make_scalar_argument(*value);
     }
 
-    std::variant<TimeSeriesArgument, ScalarArgument> value_;
+    std::variant<TimeSeriesArgument, ScalarArgument, GraphArgument> value_;
     std::optional<util::symbol> name_;
     details::VariadicMode variadic_capture_mode_{details::VariadicMode::none};
 };
@@ -258,7 +276,8 @@ struct wiring_argument_access {
 template <typename T>
 concept graph_code_argument_value =
     wiring_point_argument<T> || supported_scalar_argument<T> || supported_optional_scalar_argument<T> ||
-    supported_scalar_value_argument<T> || std::same_as<std::remove_cvref_t<T>, WiringArgument>;
+    supported_scalar_value_argument<T> || std::same_as<std::remove_cvref_t<T>, GraphArgument> ||
+    std::same_as<std::remove_cvref_t<T>, WiringArgument>;
 
 template <typename T>
 concept graph_code_argument = graph_code_argument_value<T> ||

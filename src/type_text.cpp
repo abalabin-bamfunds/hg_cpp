@@ -1,5 +1,6 @@
 #include <bg/type/type_text.hpp>
 
+#include <bg/graph/graph_argument.hpp>
 #include <bg/scalar/dict/scalar_type.hpp>
 #include <bg/scalar/list/scalar_type.hpp>
 #include <bg/scalar/set/scalar_type.hpp>
@@ -75,6 +76,10 @@ void append_scalar(std::string &result, const ScalarType &type) {
 } // namespace
 
 void append_type_text(std::string &result, const Type &type) {
+    if (type.is_graph()) {
+        result += "graph";
+        return;
+    }
     if (const auto *scalar = type_cast<ScalarType>(&type)) {
         append_scalar(result, *scalar);
         return;

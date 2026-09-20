@@ -75,6 +75,12 @@ class WiringArguments {
 
     std::optional<Scalar<>> scalar(std::string_view name) const { return scalar(argument_index(name)); }
 
+    const GraphArgument *graph(std::size_t index) const noexcept { return arguments_[index].graph(); }
+
+    const GraphArgument *graph(util::symbol name) const { return graph(argument_index(name)); }
+
+    const GraphArgument *graph(std::string_view name) const { return graph(argument_index(name)); }
+
   private:
     friend class WiringTemplate;
     friend class Operator;

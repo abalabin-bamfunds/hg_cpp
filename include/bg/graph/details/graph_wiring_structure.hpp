@@ -10,6 +10,7 @@
 namespace bg {
 
 class GraphWiring;
+class TimeSeriesType;
 namespace details {
 
 // An owning, index-independent description of one isolated graph wiring.
@@ -21,6 +22,9 @@ class GraphWiringStructure {
 
     bool cacheable() const noexcept;
     std::size_t hash() const noexcept;
+    std::size_t boundary_count() const noexcept;
+    const TimeSeriesType &boundary_type(std::size_t index) const noexcept;
+    const TimeSeriesType *result_type() const noexcept;
 
     friend bool operator==(const GraphWiringStructure &left, const GraphWiringStructure &right);
 

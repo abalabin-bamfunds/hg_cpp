@@ -204,6 +204,16 @@ A fixed overload is preferred over a variadic overload. Among variadic
 overloads, reference affinity and type specificity compare their shared fixed
 parameters. A longer compatible fixed prefix is less generic.
 
+## Graph arguments
+
+A higher-order operation can receive a graph as an owning wiring argument.
+Graph arguments do not enter node storage or variadic collections.
+
+An overload can accept any graph, one exact graph structure, or a graph pattern.
+Pattern matching wires the pattern against the supplied graph's ordered boundary
+types and compares the resulting structure. Exact structures and patterns are
+less generic than the any-graph type. Distinct patterns are unordered.
+
 ## Resolution cache
 
 Each operator has a bounded resolution cache. Its keys include supplied
@@ -211,6 +221,10 @@ argument types and presence, plus only the wiring-time scalar values read by a
 resolver or requirement function. Reads made by rejected candidates are part
 of the key when they can affect the selected result. Cache validation rebuilds
 the flat argument sequence for the candidate that made each read.
+
+Graph arguments use graph structure in the key. Graph arguments with equal
+structures share a cache entry. A graph structure that contains a value without
+equality or hashing bypasses the cache.
 
 Resolution is not cached when a read scalar does not provide equality and
 hashing. Cache entries retain the selected operator-owned implementation and

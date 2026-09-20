@@ -9,6 +9,7 @@
 namespace bg {
 
 class DictScalarType;
+class GraphArgumentType;
 class ListScalarType;
 class ScalarType;
 class SetScalarType;
@@ -22,7 +23,8 @@ class TimeSeriesValueType;
 class Type;
 class TypeMap;
 
-using TypeVisitor = ddv::mux<Type, ScalarType, ListScalarType, SetScalarType, DictScalarType, TimeSeriesType,
+using TypeVisitor = ddv::mux<Type, ScalarType, ListScalarType, SetScalarType, DictScalarType, GraphArgumentType,
+                             TimeSeriesType,
                              TimeSeriesValueType, TimeSeriesReferenceType, TimeSeriesListType, TimeSeriesBundleType,
                              TimeSeriesSetType, TimeSeriesDictionaryType>;
 
@@ -42,6 +44,7 @@ class Type : public ddv::visitable<Type, TypeVisitor> {
     VISITOR_SUPPORT()
 
     virtual bool is_resolved() const noexcept = 0;
+    virtual bool is_graph() const noexcept { return false; }
     virtual bool is_scalar() const noexcept { return false; }
     virtual bool is_time_series() const noexcept { return false; }
     [[nodiscard]] bool accepts(const Type &supplied) const;
@@ -59,6 +62,8 @@ template <type_cast_target Target> Target *type_cast(Type *type) noexcept {
         return type != nullptr && type->is_scalar() ? static_cast<Target *>(type) : nullptr;
     } else if constexpr (std::same_as<Target, TimeSeriesType>) {
         return type != nullptr && type->is_time_series() ? static_cast<Target *>(type) : nullptr;
+    } else if constexpr (std::same_as<Target, GraphArgumentType>) {
+        return type != nullptr && type->is_graph() ? static_cast<Target *>(type) : nullptr;
     } else {
         auto *result = static_cast<Target *>(nullptr);
         if (type != nullptr) {
@@ -75,6 +80,8 @@ template <type_cast_target Target> const Target *type_cast(const Type *type) noe
         return type != nullptr && type->is_scalar() ? static_cast<const Target *>(type) : nullptr;
     } else if constexpr (std::same_as<Target, TimeSeriesType>) {
         return type != nullptr && type->is_time_series() ? static_cast<const Target *>(type) : nullptr;
+    } else if constexpr (std::same_as<Target, GraphArgumentType>) {
+        return type != nullptr && type->is_graph() ? static_cast<const Target *>(type) : nullptr;
     } else {
         const auto *result = static_cast<const Target *>(nullptr);
         if (type != nullptr) {

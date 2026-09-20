@@ -2,6 +2,7 @@
 
 #include <bg/util/symbol.hpp>
 
+#include <memory>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -24,6 +25,7 @@ enum class WiringFailureStage {
 struct WiringParameterDiagnostic {
     util::symbol name;
     const Type *type;
+    std::shared_ptr<const Type> type_owner;
 };
 
 struct WiringSignatureDiagnostic {

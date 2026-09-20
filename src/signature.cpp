@@ -211,7 +211,7 @@ ResolvedSignature Signature::complete_resolution(TypeMap &type_map, const Wiring
     for (const Parameter &parameter : parameters_) {
         const Type &type = parameter.type->resolve(type_map);
 
-        if (!type.is_scalar() && !type.is_time_series()) {
+        if (!type.is_scalar() && !type.is_time_series() && !type.is_graph()) {
             throw TypeResolutionError{TypeResolutionErrorCode::invalid_type_map, parameter.name,
                                       "parameter resolved outside its supported categories"};
         }

@@ -54,6 +54,13 @@ template <typename Parameter> [[nodiscard]] decltype(auto) graph_argument(const 
         static_assert(!std::is_reference_v<Parameter>);
 
         return argument.time_series();
+    } else if constexpr (std::same_as<Value, GraphArgument>) {
+        static_assert(!std::is_reference_v<Parameter> ||
+                      (std::is_lvalue_reference_v<Parameter> &&
+                       std::is_const_v<std::remove_reference_t<Parameter>>),
+                      "a graph argument parameter must be a value or const lvalue reference");
+
+        return argument.graph();
     } else if constexpr (supported_optional_scalar_argument<Value>) {
         using ApiScalar = typename optional_scalar_argument<Value>::value_type;
         using Canonical = canonical_scalar_type_t<ApiScalar>;
@@ -108,6 +115,8 @@ template <typename Function, std::size_t Index> bool wiring_parameter_matches(co
         }
     } else if constexpr (std::same_as<Value, WiringPoint>) {
         return parameter.type->is_time_series();
+    } else if constexpr (std::same_as<Value, GraphArgument>) {
+        return parameter.type->is_graph();
     } else if constexpr (supported_optional_scalar_argument<Value>) {
         using Scalar = typename optional_scalar_argument<Value>::value_type;
 

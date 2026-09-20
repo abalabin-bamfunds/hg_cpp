@@ -127,6 +127,12 @@ A graph function constructs graph code by invoking wiring templates. A graph
 template gives that function a checked signature and a diagnostic boundary.
 Its call expands into the active `GraphWiring`.
 
+Graph structure comparison treats declared inputs as ordered external
+boundaries. Their producer stub nodes are not part of the structure. All other
+nodes remain part of it, including outputless nodes. Boundary types, the result,
+node definitions, connections, and stored scalar values are semantic. Local
+node indices, wiring paths, and parameter names are not.
+
 `graph(...)` infers the signature from the graph function. A time series
 parameter uses `wp<TS_T>`. Scalar parameters use their scalar types. The return
 type is `wp<TS_T>` or `void`.

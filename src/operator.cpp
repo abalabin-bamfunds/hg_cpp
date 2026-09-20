@@ -150,42 +150,60 @@ WiringCandidateDiagnostic failure(const WiringTemplate &implementation, WiringFa
 }
 
 WiringDiagnostic diagnostic(const Signature &prototype, std::vector<util::symbol> path,
-                            std::span<const Type *const> argument_types,
+                            std::span<const WiringArgument> supplied,
                             std::vector<WiringCandidateDiagnostic> candidates, bool ambiguous = false) {
     auto arguments = std::vector<WiringParameterDiagnostic>{};
-    arguments.reserve(argument_types.size());
-    for (auto index = std::size_t{}; index < argument_types.size(); ++index) {
+    arguments.reserve(supplied.size());
+    for (auto index = std::size_t{}; index < supplied.size(); ++index) {
         const auto name =
             index < prototype.parameter_count() ? prototype.parameter(index).name : util::symbol{std::to_string(index)};
-        arguments.push_back({name, argument_types[index]});
+        auto type_owner = supplied[index].is_graph()
+                              ? std::shared_ptr<const Type>{
+                                    details::graph_argument_access::type_owner(supplied[index].graph())}
+                              : std::shared_ptr<const Type>{};
+        arguments.push_back({name, &supplied[index].type(), std::move(type_owner)});
     }
 
     return {prototype.name(), std::move(path), std::move(arguments), std::move(candidates), ambiguous};
 }
 
 struct ArgumentKey {
-    const Type *type;
+    const Type *type{};
+    std::shared_ptr<const GraphArgumentType> graph_type;
     bool present;
     std::optional<util::symbol> name;
 
-    bool operator==(const ArgumentKey &) const noexcept = default;
+    bool operator==(const ArgumentKey &other) const {
+        if (present != other.present || name != other.name ||
+            static_cast<bool>(graph_type) != static_cast<bool>(other.graph_type)) {
+            return false;
+        }
+        if (!graph_type) {
+            return type == other.type;
+        }
+        return graph_type->structure() != nullptr && other.graph_type->structure() != nullptr &&
+               *graph_type->structure() == *other.graph_type->structure();
+    }
 };
 
-std::vector<ArgumentKey> argument_key(std::span<const WiringArgument> arguments) {
+std::optional<std::vector<ArgumentKey>> argument_key(std::span<const WiringArgument> arguments) {
     auto result = std::vector<ArgumentKey>{};
     result.reserve(arguments.size());
 
     for (const auto &argument : arguments) {
-        result.push_back({&argument.type(), argument.present(), argument.name()});
+        if (!argument.is_graph()) {
+            result.push_back({&argument.type(), {}, argument.present(), argument.name()});
+            continue;
+        }
+
+        const auto &graph = argument.graph();
+        if (!graph.structure().cacheable()) {
+            return std::nullopt;
+        }
+        result.push_back({nullptr, details::graph_argument_access::type_owner(graph), true, argument.name()});
     }
 
     return result;
-}
-
-bool matches(std::span<const ArgumentKey> key, std::span<const WiringArgument> arguments) {
-    return key.size() == arguments.size() && std::ranges::equal(key, arguments, {}, {}, [](const auto &argument) {
-               return ArgumentKey{&argument.type(), argument.present(), argument.name()};
-           });
 }
 
 std::optional<Scalar<>> scalar(std::span<const details::WiringArgumentDescriptor> arguments,
@@ -247,10 +265,13 @@ struct Operator::Cache {
 
 Operator::Operator(Signature prototype) : prototype_{std::move(prototype)}, cache_{std::make_unique<Cache>()} {}
 
+Operator::Operator(Signature prototype, dependent_result_t)
+    : prototype_{std::move(prototype)}, dependent_result_{true}, cache_{std::make_unique<Cache>()} {}
+
 Operator::~Operator() = default;
 
 void Operator::add_overload(std::unique_ptr<WiringTemplate> implementation) {
-    if (implementation->signature().has_output() != prototype_.has_output()) {
+    if (!dependent_result_ && implementation->signature().has_output() != prototype_.has_output()) {
         throw std::invalid_argument{"an operator overload has the wrong output shape"};
     }
     overloads_.push_back(std::move(implementation));
@@ -259,9 +280,10 @@ void Operator::add_overload(std::unique_ptr<WiringTemplate> implementation) {
 
 std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const WiringArgument> arguments,
                                             const TypeMap *seed_type_map) const {
-    if (seed_type_map == nullptr) {
+    auto cache_key = seed_type_map == nullptr ? argument_key(arguments) : std::nullopt;
+    if (cache_key) {
         for (const auto &entry : cache_->entries) {
-            if (!matches(entry.arguments, arguments)) {
+            if (!std::ranges::equal(entry.arguments, *cache_key)) {
                 continue;
             }
 
@@ -358,7 +380,7 @@ std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const
                 continue;
             } catch (const std::exception &error) {
                 failures.push_back(failure(*implementation, WiringFailureStage::callback, error.what()));
-                throw WiringError{diagnostic(prototype_, current_path(), argument_types, std::move(failures))};
+                throw WiringError{diagnostic(prototype_, current_path(), arguments, std::move(failures))};
             }
 
             RequirementResult requirement = accept;
@@ -368,7 +390,7 @@ std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const
                                                                           &scalar_reads, &record_scalar_read});
             } catch (const std::exception &error) {
                 failures.push_back(failure(*implementation, WiringFailureStage::callback, error.what()));
-                throw WiringError{diagnostic(prototype_, current_path(), argument_types, std::move(failures))};
+                throw WiringError{diagnostic(prototype_, current_path(), arguments, std::move(failures))};
             }
 
             if (!requirement.accepted()) {
@@ -406,14 +428,14 @@ std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const
                 failures.push_back(failure(*candidate.implementation, WiringFailureStage::applicable, "applicable"));
             }
         }
-        throw WiringError{diagnostic(prototype_, current_path(), argument_types, std::move(failures), ambiguous)};
+        throw WiringError{diagnostic(prototype_, current_path(), arguments, std::move(failures), ambiguous)};
     }
 
-    if (seed_type_map == nullptr && scalar_reads.cacheable) {
+    if (scalar_reads.cacheable && cache_key) {
         if (cache_->entries.size() == Cache::maximum_entries) {
             cache_->entries.pop_front();
         }
-        cache_->entries.push_back({argument_key(arguments),
+        cache_->entries.push_back({std::move(*cache_key),
                                    std::move(scalar_reads.values),
                                    selected->implementation,
                                    {selected->resolution.signature, selected->resolution.type_map.copy()}});

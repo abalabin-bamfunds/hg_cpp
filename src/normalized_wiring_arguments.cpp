@@ -127,6 +127,10 @@ NormalizedWiringArguments normalize(const Signature &signature, std::span<const 
         const auto mode = parameter.variadic_mode;
         const auto &operations = *parameter.variadic_operations;
 
+        if (std::ranges::any_of(capture.arguments, [](const auto *argument) { return argument->is_graph(); })) {
+            throw WiringError{"a variadic parameter cannot capture a graph argument"};
+        }
+
         for (const auto *argument : capture.arguments) {
             if (!argument->is_time_series()) {
                 continue;

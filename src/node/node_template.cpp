@@ -71,6 +71,10 @@ std::optional<std::size_t> node_hash(const NodeTemplate &node_template, const Re
 
 std::optional<WiringPoint> NodeTemplate::wire(GraphWiring &wiring, ResolvedSignature signature, const TypeMap &type_map,
                                               std::span<const WiringArgument> arguments) const {
+    if (std::ranges::any_of(arguments, &WiringArgument::is_graph)) {
+        throw WiringError{"a graph argument cannot be stored by a node"};
+    }
+
     auto materialized_arguments = std::vector<WiringArgument>{};
     materialized_arguments.reserve(arguments.size());
     for (const auto &argument : arguments) {
