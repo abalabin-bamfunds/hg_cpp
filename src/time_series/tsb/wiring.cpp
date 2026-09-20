@@ -168,7 +168,7 @@ class TimeSeriesBundleVariadicWiringOperations final : public VariadicWiringOper
                 }
             }
             fields.push_back({name, type});
-            wiring_argument_access::set_variadic_name(argument, name);
+            wiring_argument_access::set_variadic_name(argument, name, mode);
             captured.push_back(memory == nullptr ? wiring_argument_access::borrow(argument)
                                                  : wiring_argument_access::clone(argument, *memory));
         }

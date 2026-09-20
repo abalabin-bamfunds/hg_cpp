@@ -24,6 +24,12 @@ using namespace bg::literals;
 
 using DIRECT_RESULT = ScalarVariable<"DIRECT_RESULT">;
 
+template <template <typename> typename Field>
+using ARGS = BundleSchemaVariableDeclaration<"ARGS", Field>;
+
+template <template <typename> typename Field>
+using KWARGS = BundleSchemaVariableDeclaration<"KWARGS", Field>;
+
 template <template <typename> typename Field> struct TestBundle {
     Field<TS<std::int64_t>> count;
     Field<TS<float>> value;
@@ -51,6 +57,25 @@ TEST_CASE("a callable variadic TSL captures homogeneous time series and resolves
     });
 
     testing::test_wiring([&] { tested(source(), source()); });
+}
+
+TEST_CASE("each variadic pack uses its declared collection operations",
+          "[feature:wiring][feature:variadic-wiring][series:fixed-tsl][series:tsb]"
+          "[schema:generic][declaration:generic][definition:function]") {
+    const auto source = node([](Out<TS<std::int64_t>>) {});
+    const auto tested = graph(
+        "name"_n = "mixed_collections",
+        [](wp<TSL<TS_T, SIZE>, var_args> positional, wp<TSB<KWARGS>, var_kwargs> named) {
+            CHECK(positional.size() == 2);
+            CHECK(named.size() == 1);
+
+            const auto &list = static_cast<const TimeSeriesListType &>(positional.type());
+            CHECK(list.item_count() == 2);
+            CHECK(&list.item_type() == &TS<std::int64_t>::type());
+            CHECK(named["limit"].is_scalar());
+        });
+
+    testing::test_wiring([&] { tested(source(), source(), "limit"_n = 3); });
 }
 
 TEST_CASE("an aggregate variadic TSL materializes as one runtime-sized list",
@@ -202,6 +227,18 @@ struct DirectBundleGraph {
     }
 };
 
+struct DirectDualBundleGraph {
+    wp<TSB<ARGS>, var_args> positional;
+    wp<TSB<KWARGS>, var_kwargs> named;
+
+    void wire() const {
+        REQUIRE(positional.size() == 2);
+        REQUIRE(named.size() == 2);
+        CHECK(&positional[0].type() == &TS<std::int64_t>::type());
+        CHECK(&named["value"].type() == &TS<float>::type());
+    }
+};
+
 } // namespace
 
 TEST_CASE("an exact named TSB binds as one collection and supports lazy field selection",
@@ -213,6 +250,20 @@ TEST_CASE("an exact named TSB binds as one collection and supports lazy field se
 
     const auto context = WiringContext{wiring};
     tested("values"_n = source());
+
+    CHECK(wiring.nodes().size() == 1);
+    CHECK(wiring.outputs().size() == 1);
+}
+
+TEST_CASE("positional and named packs accept direct collections by their parameter names",
+          "[feature:wiring][feature:variadic-wiring][feature:getattr][series:tsb][schema:named]"
+          "[binding:direct][definition:aggregate][representation:native]") {
+    const auto source = node([](Out<TSB<TestBundle>>) {});
+    const auto tested = graph<DirectDualBundleGraph>();
+    auto wiring = GraphWiring{};
+
+    const auto context = WiringContext{wiring};
+    tested("positional"_n = source(), "named"_n = source());
 
     CHECK(wiring.nodes().size() == 1);
     CHECK(wiring.outputs().size() == 1);

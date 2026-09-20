@@ -177,7 +177,7 @@ class TimeSeriesListVariadicWiringOperations final : public VariadicWiringOperat
             }
 
             const auto name = util::symbol{std::to_string(item_types.size())};
-            wiring_argument_access::set_variadic_name(argument, name);
+            wiring_argument_access::set_variadic_name(argument, name, VariadicMode::positional);
             item_types.push_back(&argument.time_series().type());
             captured.push_back(memory == nullptr ? wiring_argument_access::borrow(argument)
                                                  : wiring_argument_access::clone(argument, *memory));

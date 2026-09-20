@@ -72,14 +72,14 @@ std::partial_ordering compare_reference_affinity(const ResolvedSignature &left, 
 bool preferred(const WiringTemplate &candidate, const ResolvedSignature &candidate_signature,
                const WiringTemplate &other, const ResolvedSignature &other_signature,
                std::span<const Type *const> arguments) {
-    const auto candidate_variadic = candidate.signature().variadic_parameter().has_value();
-    const auto other_variadic = other.signature().variadic_parameter().has_value();
+    const auto candidate_variadic = candidate.signature().has_variadic_parameters();
+    const auto other_variadic = other.signature().has_variadic_parameters();
     if (candidate_variadic != other_variadic) {
         return !candidate_variadic;
     }
     if (candidate_variadic) {
-        const auto candidate_fixed = *candidate.signature().variadic_parameter();
-        const auto other_fixed = *other.signature().variadic_parameter();
+        const auto candidate_fixed = *candidate.signature().first_variadic_parameter();
+        const auto other_fixed = *other.signature().first_variadic_parameter();
         const auto shared_fixed = std::min(candidate_fixed, other_fixed);
         const auto reference_affinity =
             compare_reference_affinity(candidate_signature, other_signature, arguments, shared_fixed);
@@ -313,7 +313,7 @@ std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const
         const WiringTemplate *implementation;
         SignatureResolution resolution;
         std::vector<WiringArgument> arguments;
-        std::unique_ptr<details::WiringRecord> probe_record;
+        std::vector<std::unique_ptr<details::WiringRecord>> probe_records;
     };
 
     auto applicable = std::vector<Candidate>{};
@@ -324,19 +324,19 @@ std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const
 
     for (auto variadic = false;; variadic = true) {
         for (const auto &implementation : overloads_) {
-            if (implementation->signature().variadic_parameter().has_value() != variadic) {
+            if (implementation->signature().has_variadic_parameters() != variadic) {
                 continue;
             }
 
             auto resolution = std::optional<SignatureResolution>{};
-            auto probe_record = std::unique_ptr<details::WiringRecord>{};
+            auto probe_records = std::vector<std::unique_ptr<details::WiringRecord>>{};
             auto candidate_arguments = std::vector<WiringArgument>{};
             auto descriptors = std::vector<details::WiringArgumentDescriptor>{};
             try {
                 auto normalized = details::probe_wiring_arguments(implementation->signature(), arguments);
                 candidate_arguments = std::move(normalized.arguments);
                 descriptors = std::move(normalized.descriptors);
-                probe_record = std::move(normalized.probe_record);
+                probe_records = std::move(normalized.probe_records);
             } catch (const std::exception &error) {
                 failures.push_back(failure(*implementation, WiringFailureStage::argument_count, error.what()));
                 continue;
@@ -378,7 +378,7 @@ std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const
                 continue;
             }
             applicable.push_back({implementation.get(), std::move(*resolution), std::move(candidate_arguments),
-                                  std::move(probe_record)});
+                                  std::move(probe_records)});
         }
 
         if (!applicable.empty() || variadic) {

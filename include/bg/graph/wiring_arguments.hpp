@@ -19,11 +19,11 @@ class WiringArguments {
     std::size_t size() const noexcept { return arguments_.size(); }
 
     util::symbol argument_name(std::size_t index) const {
-        if (index < fixed_argument_count()) {
+        const auto mode = arguments_[index].variadic_mode();
+        if (mode == details::VariadicMode::none) {
             return signature_->parameter(index).name;
         }
-        const auto variadic = *signature_->variadic_parameter();
-        if (signature_->parameter(variadic).variadic_mode == details::VariadicMode::positional) {
+        if (mode == details::VariadicMode::positional) {
             return util::symbol{std::to_string(index)};
         }
         return *arguments_[index].name();
@@ -46,7 +46,7 @@ class WiringArguments {
     const Type &original_type(std::string_view name) const { return original_type(argument_index(name)); }
 
     const Type &resolved_type(std::size_t index) const {
-        if (index >= fixed_argument_count()) {
+        if (arguments_[index].variadic_mode() != details::VariadicMode::none) {
             return original_type(index);
         }
         return signature_->parameter(index).type->resolve(*type_map_);
@@ -88,10 +88,6 @@ class WiringArguments {
                     ScalarReadFunction scalar_read = nullptr) noexcept
         : signature_{&signature}, type_map_{&type_map}, arguments_{arguments},
           scalar_read_context_{scalar_read_context}, scalar_read_{scalar_read} {}
-
-    std::size_t fixed_argument_count() const noexcept {
-        return signature_->variadic_parameter().value_or(signature_->parameter_count());
-    }
 
     std::size_t find_argument(std::string_view name) const {
         for (auto index = std::size_t{}; index < arguments_.size(); ++index) {

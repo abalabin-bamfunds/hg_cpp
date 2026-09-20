@@ -4,10 +4,27 @@ Variadic parameters collect wiring-time arguments into a wiring record. The
 record preserves argument order, names, and whether each argument was supplied
 as a scalar or time series.
 
-A signature can have one variadic parameter. It follows all fixed parameters
-and uses either `var_args` or `var_kwargs`. `var_args` captures the remaining
-positional arguments. `var_kwargs` captures named arguments written with
-`"name"_n = value`. Duplicate names are rejected.
+A signature can have one `var_args` parameter followed by one `var_kwargs`
+parameter. Both follow all fixed parameters. Either parameter may be omitted.
+`var_args` captures positional arguments. `var_kwargs` captures named arguments
+written with `"name"_n = value`. Duplicate names are rejected.
+
+```cpp
+template <template <typename> typename Field>
+using ARGS = BundleSchemaVariableDeclaration<"ARGS", Field>;
+
+template <template <typename> typename Field>
+using KWARGS = BundleSchemaVariableDeclaration<"KWARGS", Field>;
+
+graph("name"_n = "configure",
+      [](wp<TSB<ARGS>, var_args> inputs,
+         wp<TSB<KWARGS>, var_kwargs> options) {
+          // inputs and options are independent wiring records.
+      });
+```
+
+The packs normally use different schema variables because repeating one
+variable requires both captured bundles to have the same schema.
 
 A graph declares positional or named capture through a `wp` property:
 
@@ -58,15 +75,16 @@ binds as one collection. Its items remain available as individual arguments to
 resolvers and requirements. Item and field selection stays lazy. Otherwise the
 argument follows the parameter's ordinary capture rules.
 
-Passing the record to another variadic parameter preserves the original
-arguments. A forwarded record cannot be combined with additional captured
-arguments. Passing it to an ordinary TSB parameter materializes the normalized
-TSB. Positional fields use their decimal positions as names in that TSB schema.
+Passing a record to another parameter with the same capture mode preserves the
+original arguments. A forwarded record cannot be combined with additional
+arguments in its own pack. The other pack remains independent. Passing a record
+to an ordinary TSB parameter materializes the normalized TSB. Positional fields
+use their decimal positions as names in that TSB schema.
 
-Resolvers and requirements see fixed arguments followed by individual captured
-arguments. They do not see the TSB wiring record. Positional captures use their
-flat argument indices as names. Named captures cannot reuse a fixed parameter
-name.
+Resolvers and requirements see fixed arguments, positional arguments, then
+named arguments. They do not see the TSB wiring records. Positional captures
+use their flat argument indices as names. Named captures cannot reuse a fixed
+parameter name.
 
 A node can use the corresponding variadic input declaration:
 
@@ -84,7 +102,7 @@ materializes as a valid empty TSB at graph start.
 
 An empty variadic TSL also becomes valid when its materialization node starts.
 
-A nested graph preserves the pack across its boundary. Each captured time
+A nested graph preserves each pack across its boundary. Each captured time
 series crosses as a reference. Each captured scalar becomes immutable data in
 the inner compiled graph. A directly bound collection crosses as one reference.
 

@@ -106,12 +106,25 @@ class Signature {
 
     const Parameter &parameter(std::size_t index) const noexcept { return parameters_[index]; }
 
-    std::optional<std::size_t> variadic_parameter() const noexcept {
-        if (parameters_.empty() || parameters_.back().variadic_mode == details::VariadicMode::none) {
-            return std::nullopt;
+    std::optional<std::size_t> variadic_parameter(details::VariadicMode mode) const noexcept {
+        for (auto index = std::size_t{}; index < parameters_.size(); ++index) {
+            if (parameters_[index].variadic_mode == mode) {
+                return index;
+            }
         }
-        return parameters_.size() - 1;
+        return std::nullopt;
     }
+
+    std::optional<std::size_t> first_variadic_parameter() const noexcept {
+        for (auto index = std::size_t{}; index < parameters_.size(); ++index) {
+            if (parameters_[index].variadic_mode != details::VariadicMode::none) {
+                return index;
+            }
+        }
+        return std::nullopt;
+    }
+
+    bool has_variadic_parameters() const noexcept { return first_variadic_parameter().has_value(); }
 
     bool has_output() const noexcept { return output_ != nullptr; }
     const TimeSeriesType *output() const noexcept { return output_; }

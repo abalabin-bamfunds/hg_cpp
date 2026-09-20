@@ -102,21 +102,42 @@ const TypeMapValue *resolve_missing_mapping(void *context, TypeMap &type_map, co
 } // namespace
 
 void Signature::validate_variadic_parameters() const {
+    auto positional_seen = false;
+    auto named_seen = false;
+    auto variadic_seen = false;
+
     for (auto index = std::size_t{}; index < parameters_.size(); ++index) {
-        if (parameters_[index].variadic_mode != details::VariadicMode::none && index + 1 != parameters_.size()) {
-            throw std::invalid_argument{"a variadic parameter must be final"};
+        const auto mode = parameters_[index].variadic_mode;
+        if (mode == details::VariadicMode::none) {
+            if (variadic_seen) {
+                throw std::invalid_argument{"a fixed parameter cannot follow a variadic parameter"};
+            }
+            continue;
         }
-        if (parameters_[index].variadic_mode != details::VariadicMode::none &&
-            (!parameters_[index].type->is_time_series() || parameters_[index].variadic_operations == nullptr)) {
+
+        variadic_seen = true;
+        if (mode == details::VariadicMode::positional) {
+            if (positional_seen) {
+                throw std::invalid_argument{"a signature cannot have more than one var_args parameter"};
+            }
+            if (named_seen) {
+                throw std::invalid_argument{"var_args cannot follow var_kwargs"};
+            }
+            positional_seen = true;
+        } else {
+            if (named_seen) {
+                throw std::invalid_argument{"a signature cannot have more than one var_kwargs parameter"};
+            }
+            named_seen = true;
+        }
+
+        if (!parameters_[index].type->is_time_series() || parameters_[index].variadic_operations == nullptr) {
             throw std::invalid_argument{"parameter '" + std::string{parameters_[index].name.text()} +
                                         "' in signature '" + std::string{name_.text()} +
                                         "' does not support variadic wiring"};
         }
-        if (parameters_[index].variadic_mode != details::VariadicMode::none) {
-            parameters_[index].variadic_operations->validate_parameter(
-                static_cast<const TimeSeriesType &>(*parameters_[index].type),
-                parameters_[index].variadic_mode);
-        }
+        parameters_[index].variadic_operations->validate_parameter(
+            static_cast<const TimeSeriesType &>(*parameters_[index].type), mode);
     }
 }
 

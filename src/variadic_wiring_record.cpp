@@ -42,7 +42,7 @@ WiringArgument VariadicWiringRecord::argument(std::size_t index) const {
     }
 
     auto result = WiringArgument{operations_->item(*direct_, index)};
-    wiring_argument_access::set_variadic_name(result, operations_->item_name(direct_->type(), index));
+    wiring_argument_access::set_variadic_name(result, operations_->item_name(direct_->type(), index), mode_);
     return result;
 }
 
@@ -52,14 +52,14 @@ std::vector<WiringArgumentDescriptor> VariadicWiringRecord::argument_descriptors
 
     if (!direct_) {
         for (const auto &argument : arguments_) {
-            result.emplace_back(argument);
+            result.emplace_back(argument, mode_);
         }
         return result;
     }
 
     for (auto index = std::size_t{}; index < size(); ++index) {
         result.emplace_back(operations_->item_name(direct_->type(), index),
-                            operations_->item_type(direct_->type(), index));
+                            operations_->item_type(direct_->type(), index), mode_);
     }
     return result;
 }

@@ -78,7 +78,7 @@ class WiringArgument {
   public:
     WiringArgument(const WiringArgument &other)
         : value_{copy_value(other)}, name_{other.name_},
-          name_from_variadic_capture_{other.name_from_variadic_capture_} {
+          variadic_capture_mode_{other.variadic_capture_mode_} {
         if (auto *scalar = std::get_if<ScalarArgument>(&value_); scalar != nullptr && other.scalar_has_value()) {
             scalar->owned.emplace(other.scalar());
             scalar->data = nullptr;
@@ -121,7 +121,7 @@ class WiringArgument {
         requires requires(T &&value) { WiringArgument{std::forward<T>(value)}; }
     WiringArgument(details::named_argument<Name, T> value) : WiringArgument{std::move(value.value)} {
         name_ = util::symbol{Name.view()};
-        name_from_variadic_capture_ = false;
+        variadic_capture_mode_ = details::VariadicMode::none;
     }
 
     bool is_time_series() const noexcept { return std::holds_alternative<TimeSeriesArgument>(value_); }
@@ -160,7 +160,7 @@ class WiringArgument {
     static WiringArgument borrow(const WiringArgument &other) {
         auto result = WiringArgument{copy_value(other)};
         result.name_ = other.name_;
-        result.name_from_variadic_capture_ = other.name_from_variadic_capture_;
+        result.variadic_capture_mode_ = other.variadic_capture_mode_;
         return result;
     }
 
@@ -199,7 +199,7 @@ class WiringArgument {
         auto result = WiringArgument{ScalarArgument{scalar_type(), scalar_runtime_type()}};
         std::get<ScalarArgument>(result.value_).owned.emplace(scalar(), memory);
         result.name_ = name_;
-        result.name_from_variadic_capture_ = name_from_variadic_capture_;
+        result.variadic_capture_mode_ = variadic_capture_mode_;
         return result;
     }
 
@@ -229,7 +229,7 @@ class WiringArgument {
 
     std::variant<TimeSeriesArgument, ScalarArgument> value_;
     std::optional<util::symbol> name_;
-    bool name_from_variadic_capture_{};
+    details::VariadicMode variadic_capture_mode_{details::VariadicMode::none};
 };
 
 } // namespace bg
@@ -242,12 +242,12 @@ struct wiring_argument_access {
     static void replace_time_series(WiringArgument &argument, WiringPoint point) {
         argument.replace_time_series(point);
     }
-    static bool name_from_variadic_capture(const WiringArgument &argument) noexcept {
-        return argument.name_from_variadic_capture_;
+    static VariadicMode variadic_capture_mode(const WiringArgument &argument) noexcept {
+        return argument.variadic_capture_mode_;
     }
-    static void set_variadic_name(WiringArgument &argument, util::symbol name) noexcept {
+    static void set_variadic_name(WiringArgument &argument, util::symbol name, VariadicMode mode) noexcept {
         argument.name_ = name;
-        argument.name_from_variadic_capture_ = true;
+        argument.variadic_capture_mode_ = mode;
     }
     static const ScalarRuntimeType &scalar_runtime_type(const WiringArgument &argument) noexcept {
         return argument.scalar_runtime_type();

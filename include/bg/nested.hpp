@@ -41,16 +41,16 @@ template <typename Graph, details::graph_code_argument Run, details::graph_code_
         auto context = WiringContext{*inner_wiring};
         auto inner_arguments = std::vector<WiringArgument>{};
         inner_arguments.reserve(normalized.size());
-        const auto variadic = graph.signature().variadic_parameter();
         for (auto i = std::size_t{}; i < resolved.parameters.size(); ++i) {
-            if (variadic && i == *variadic) {
+            if (resolved.parameters[i].variadic_mode != details::VariadicMode::none) {
                 const auto &record = *details::variadic_wiring_record(normalized[i].time_series());
                 if (record.direct_collection()) {
                     const auto &type = static_cast<const TimeSeriesType &>(*resolved.parameters[i].type);
                     const auto input = details::wire_nested_input(type);
                     input_nodes.push_back(details::wired_output_node_index(*inner_wiring, input));
                     auto argument = WiringArgument{input};
-                    details::wiring_argument_access::set_variadic_name(argument, resolved.parameters[i].name);
+                    details::wiring_argument_access::set_variadic_name(
+                        argument, resolved.parameters[i].name, resolved.parameters[i].variadic_mode);
                     inner_arguments.push_back(std::move(argument));
                     continue;
                 }
@@ -84,24 +84,28 @@ template <typename Graph, details::graph_code_argument Run, details::graph_code_
         output_node = details::wired_output_node_index(*inner_wiring, boundary_output);
     }
 
-    auto flattened = resolved;
-    if (const auto variadic = graph.signature().variadic_parameter()) {
-        const auto &record = *details::variadic_wiring_record(normalized[*variadic].time_series());
+    auto flattened = ResolvedSignature{resolved.name, {}, resolved.output};
+    flattened.parameters.reserve(resolved.parameters.size());
+    for (auto index = std::size_t{}; index < resolved.parameters.size(); ++index) {
+        const auto &parameter = resolved.parameters[index];
+        if (parameter.variadic_mode == details::VariadicMode::none) {
+            flattened.parameters.push_back(parameter);
+            continue;
+        }
+
+        const auto &record = *details::variadic_wiring_record(normalized[index].time_series());
         if (record.direct_collection()) {
-            flattened.parameters[*variadic].variadic_mode = details::VariadicMode::none;
+            auto direct = parameter;
+            direct.variadic_mode = details::VariadicMode::none;
+            flattened.parameters.push_back(direct);
         } else {
-            flattened.parameters.erase(flattened.parameters.begin() + *variadic);
-            auto insertion = *variadic;
             for (auto item = std::size_t{}; item < record.size(); ++item) {
                 const auto argument = record.argument(item);
                 if (argument.is_scalar()) {
                     continue;
                 }
-                flattened.parameters.insert(
-                    flattened.parameters.begin() + insertion,
-                    {*argument.name(), &argument.type(), active, optional, false,
-                     details::VariadicMode::none});
-                ++insertion;
+                flattened.parameters.push_back(
+                    {*argument.name(), &argument.type(), active, optional, false, details::VariadicMode::none});
             }
         }
     }
@@ -117,7 +121,7 @@ template <typename Graph, details::graph_code_argument Run, details::graph_code_
     outer_arguments.reserve(flattened.parameters.size() + 1);
     outer_arguments.emplace_back(std::forward<Run>(run));
     for (auto index = std::size_t{}; index < normalized.size(); ++index) {
-        if (graph.signature().variadic_parameter() && index == *graph.signature().variadic_parameter()) {
+        if (resolved.parameters[index].variadic_mode != details::VariadicMode::none) {
             const auto &record = *details::variadic_wiring_record(normalized[index].time_series());
             if (const auto collection = record.direct_collection()) {
                 outer_arguments.emplace_back(*collection);

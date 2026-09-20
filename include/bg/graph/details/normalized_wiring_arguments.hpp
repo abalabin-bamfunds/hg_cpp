@@ -15,7 +15,7 @@ namespace bg::details {
 struct NormalizedWiringArguments {
     std::vector<WiringArgument> arguments;
     std::vector<WiringArgumentDescriptor> descriptors;
-    std::unique_ptr<WiringRecord> probe_record;
+    std::vector<std::unique_ptr<WiringRecord>> probe_records;
 };
 
 [[nodiscard]] NormalizedWiringArguments normalize_wiring_arguments(const Signature &signature,
