@@ -125,6 +125,14 @@ template <details::runtime_signature_node Definition> class RuntimeSignatureNode
 
     const Signature &signature() const override { return definition_.signature(); }
 
+    NodeTemplateIdentity definition_identity() const override {
+        if constexpr (requires { { definition_.definition_identity() } -> std::same_as<NodeTemplateIdentity>; }) {
+            return definition_.definition_identity();
+        } else {
+            return NodeTemplate::definition_identity();
+        }
+    }
+
     bool deduplicate_wiring() const noexcept override {
         if constexpr (requires { definition_.deduplicate_wiring(); }) {
             return definition_.deduplicate_wiring();

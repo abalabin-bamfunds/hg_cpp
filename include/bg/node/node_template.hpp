@@ -6,11 +6,13 @@
 #include <bg/graph/wiring_template.hpp>
 #include <bg/node/invalidation.hpp>
 #include <bg/node/state_layout.hpp>
+#include <bg/node/node_template_identity.hpp>
 #include <bg/time_series/time_series_runtime_type.hpp>
 #include <bg/type/signature.hpp>
 
 #include <cstddef>
 #include <optional>
+#include <utility>
 #include <vector>
 
 namespace bg {
@@ -32,6 +34,10 @@ struct ConstantOutput {
 
 class NodeTemplate : public WiringTemplate {
   public:
+    NodeTemplate() : definition_identity_{NodeTemplateIdentity::unique()} {}
+
+    // The returned value remains valid after this template object is destroyed.
+    virtual NodeTemplateIdentity definition_identity() const { return definition_identity_; }
     virtual bool deduplicate_wiring() const noexcept { return true; }
     virtual EvaluationFunction evaluation_function(const ResolvedSignature &signature) const noexcept = 0;
     virtual EvaluationFunction start_function(const ResolvedSignature &) const noexcept { return nullptr; }
@@ -63,10 +69,15 @@ class NodeTemplate : public WiringTemplate {
         return std::nullopt;
     }
 
+  protected:
+    explicit NodeTemplate(NodeTemplateIdentity identity) : definition_identity_{std::move(identity)} {}
+
   private:
     [[nodiscard]] std::optional<WiringPoint> wire(GraphWiring &wiring, ResolvedSignature signature,
                                                   const TypeMap &type_map,
                                                   std::span<const WiringArgument> arguments) const final;
+
+    NodeTemplateIdentity definition_identity_;
 };
 
 } // namespace bg

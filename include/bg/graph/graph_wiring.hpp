@@ -26,6 +26,7 @@ class WiringTemplate;
 
 namespace details {
 class WiringRecord;
+class GraphWiringStructure;
 WiringPoint add_wiring_record(std::unique_ptr<WiringRecord> record);
 WiringPoint add_item_wiring_record(WiringPoint parent, item_id_t item,
                                    std::unique_ptr<WiringRecord> record);
@@ -34,6 +35,10 @@ WiringPoint add_wired_output(GraphWiring &wiring, WiredOutput output);
 void set_wired_output_runtime_type(WiringPoint output, const TimeSeriesRuntimeType &runtime_type);
 WiringPoint wiring_point_for_item(WiringPoint parent, item_id_t item, const TimeSeriesType &type);
 std::size_t wired_output_node_index(const GraphWiring &wiring, WiringPoint point);
+GraphWiringStructure graph_wiring_structure(const GraphWiring &, std::span<const WiringPoint>,
+                                            std::optional<WiringPoint>);
+GraphWiringStructure graph_wiring_structure(const GraphWiring &, std::span<const std::size_t>,
+                                            std::optional<std::size_t>);
 } // namespace details
 
 class GraphWiring {
@@ -68,6 +73,10 @@ class GraphWiring {
     friend WiringPoint details::wiring_point_for_item(WiringPoint parent, item_id_t item,
                                                       const TimeSeriesType &type);
     friend std::size_t details::wired_output_node_index(const GraphWiring &wiring, WiringPoint point);
+    friend details::GraphWiringStructure details::graph_wiring_structure(
+        const GraphWiring &, std::span<const WiringPoint>, std::optional<WiringPoint>);
+    friend details::GraphWiringStructure details::graph_wiring_structure(
+        const GraphWiring &, std::span<const std::size_t>, std::optional<std::size_t>);
     [[nodiscard]] std::optional<WiringPoint> invoke(const WiringTemplate &wiring_template,
                                                     std::span<const WiringArgument> arguments,
                                                     const TypeMap *seed_type_map = nullptr);

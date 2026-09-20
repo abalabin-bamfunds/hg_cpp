@@ -82,6 +82,7 @@ add_executable(
     value/time_series/set/storage_test.cpp
     wiring/graph_template_test.cpp
     wiring/graph_wiring_test.cpp
+    wiring/graph_wiring_structure_test.cpp
     wiring/operator_test.cpp
     wiring/requirement_test.cpp
     wiring/resolver_test.cpp

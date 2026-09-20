@@ -2,6 +2,7 @@
 
 #include <bg/graph/compiled_graph.hpp>
 #include <bg/graph/details/compiled_graph_builder.hpp>
+#include <bg/graph/details/graph_wiring_structure.hpp>
 #include <bg/graph/compiled_node.hpp>
 #include <bg/graph/graph_wiring.hpp>
 #include <bg/node.hpp>
@@ -76,6 +77,11 @@ class NestedNodeDefinition {
     }
 
     const Signature &signature() const { return *signature_; }
+
+    NodeTemplateIdentity definition_identity() const {
+        auto structure = graph_wiring_structure(*wiring_.wiring, wiring_.input_nodes, wiring_.output_node);
+        return NodeTemplateIdentity::from_value(std::move(structure));
+    }
 
     [[nodiscard]] compiled_data_type compile(const ResolvedSignature &, allocator &memory) const {
         auto node_indices = std::vector{wiring_.output_node};

@@ -41,7 +41,8 @@ struct AggregateNodeDescriptor {
 
 class AggregateNodeTemplateBase : public NodeTemplate {
   public:
-    explicit AggregateNodeTemplateBase(const AggregateNodeDescriptor &descriptor) noexcept : descriptor_{&descriptor} {}
+    explicit AggregateNodeTemplateBase(const AggregateNodeDescriptor &descriptor)
+        : NodeTemplate{NodeTemplateIdentity::persistent(&descriptor)}, descriptor_{&descriptor} {}
 
     const Signature &signature() const final;
     bool deduplicate_wiring() const noexcept final;

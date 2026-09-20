@@ -38,6 +38,7 @@ add_library(
     bg SHARED
     src/compiled_graph.cpp
     src/graph_wiring.cpp
+    src/graph_wiring_structure.cpp
     src/nested_graph.cpp
     src/nested.cpp
     src/normalized_wiring_arguments.cpp
