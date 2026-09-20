@@ -7,6 +7,7 @@ add_executable(
     evaluation/engine/simulation_evaluation_engine_test.cpp
     evaluation/lifecycle/runtime_lifecycle_test.cpp
     evaluation/map_runtime_node_test.cpp
+    evaluation/map_test.cpp
     evaluation/nested_graph_test.cpp
     evaluation/nested_graph_owner_test.cpp
     evaluation/scheduling/future_scheduling_test.cpp
@@ -86,6 +87,7 @@ add_executable(
     wiring/graph_wiring_test.cpp
     wiring/graph_wiring_structure_test.cpp
     wiring/map_call_test.cpp
+    wiring/map_test.cpp
     wiring/operator_test.cpp
     wiring/requirement_test.cpp
     wiring/resolver_test.cpp

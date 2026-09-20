@@ -43,6 +43,7 @@ add_library(
     src/nested_graph.cpp
     src/nested.cpp
     src/map_node.cpp
+    src/map.cpp
     src/normalized_wiring_arguments.cpp
     src/operator.cpp
     src/operators.cpp

@@ -107,6 +107,10 @@ template <typename Argument> struct map_argument_traits {
     using per_key_type = std::remove_cvref_t<Argument>;
 };
 
+template <typename Target, auto... Properties>
+struct map_argument_traits<wp<REF<Target, Properties...>>>
+    : map_argument_traits<wp<Target>> {};
+
 template <typename K, typename Item, auto... Properties> struct map_argument_traits<wp<TSD<K, Item, Properties...>>> {
     static constexpr auto kind = MapArgumentKind::mapped_tsd;
     static constexpr bool forwarded_per_key = true;
