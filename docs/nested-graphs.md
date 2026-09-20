@@ -50,6 +50,11 @@ Adding or cancelling inner schedules updates that time. This allows the outer
 evaluation engine to select the next outer cycle without inspecting inner
 scheduling storage.
 
+When one node owns several inner graphs, each inner graph reports an
+owner-supplied instance token with immediate scheduling and future-schedule
+changes. The owner uses these notifications to track ready instances and its
+earliest future time. It does not inspect every inner graph.
+
 ## Lifecycle
 
 An inner runtime graph can start after its outer graph and stop before it. Its

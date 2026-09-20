@@ -15,14 +15,32 @@ namespace bg {
 
 void NestedGraph::start(const CompiledNestedGraph &compiled, EvaluationContext &context,
                         std::span<const NestedGraphInput> inputs) {
+    start(compiled, context, inputs, nullptr);
+}
+
+void NestedGraph::start(const CompiledNestedGraph &compiled, EvaluationContext &context,
+                        std::span<const NestedGraphInput> inputs, RuntimeGraphOwner owner) {
+    if (owner.callbacks == nullptr || owner.callbacks->inner_scheduled == nullptr ||
+        owner.callbacks->future_schedule_changed == nullptr) {
+        throw std::invalid_argument{"a runtime graph owner requires scheduling callbacks"};
+    }
+
+    start(compiled, context, inputs, &owner);
+}
+
+void NestedGraph::start(const CompiledNestedGraph &compiled, EvaluationContext &context,
+                        std::span<const NestedGraphInput> inputs, const RuntimeGraphOwner *owner) {
     if (active_ != nullptr) {
         throw std::logic_error{"the nested graph is already running"};
     }
 
     auto &parent = context.runtime_graph();
     active_ = parent.allocator_.new_object<RuntimeGraph>(*compiled.graph, parent.allocator_, parent.global_state());
-    active_->parent_ = &parent;
-    active_->owner_node_index_ = context.node_index();
+    if (owner == nullptr) {
+        active_->set_owner(parent, context.node_index());
+    } else {
+        active_->set_owner(parent, context.node_index(), *owner);
+    }
     active_->suppress_parent_scheduling_ = true;
     active_->evaluation_time_ = context.evaluation_time();
 
@@ -78,7 +96,7 @@ void NestedGraph::stop(EvaluationContext &context) {
     active_->suppress_parent_scheduling_ = true;
     active_->stop(*context.runtime_graph().scratch_);
     active_->suppress_parent_scheduling_ = false;
-    active_->parent_ = nullptr;
+    active_->clear_owner();
     retired_ = active_;
     active_ = nullptr;
     if (!context.runtime_graph().stopped_) {
@@ -120,6 +138,7 @@ void NestedGraph::stop_and_destroy(EvaluationContext &context) noexcept {
     if (active_ != nullptr) {
         active_->suppress_parent_scheduling_ = true;
         active_->stop(*context.runtime_graph().scratch_);
+        active_->clear_owner();
         destroy(active_);
         active_ = nullptr;
     }

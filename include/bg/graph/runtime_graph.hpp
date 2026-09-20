@@ -5,6 +5,7 @@
 #include <bg/global_state.hpp>
 #include <bg/graph/compiled_graph.hpp>
 #include <bg/graph/node.hpp>
+#include <bg/graph/runtime_graph_owner.hpp>
 
 #include <cstddef>
 #include <memory>
@@ -58,6 +59,7 @@ class RuntimeGraph {
     friend OutputChangeContext;
     friend SimulationEvaluationEngine;
     friend NestedGraph;
+    friend RuntimeGraphOwnerContext;
     friend details::ReferenceProvider;
     friend testing::RuntimeGraphAccess;
 
@@ -82,7 +84,11 @@ class RuntimeGraph {
     FutureSchedule *future_schedule() const noexcept;
     void activate_scheduled(EvaluationTime evaluation_time) noexcept;
     void clear_future_schedule() noexcept;
-    void mirror_future_schedule();
+    void notify_future_schedule_changed(std::optional<EvaluationTime> previous);
+    void notify_owner_scheduled() noexcept;
+    void set_owner(RuntimeGraph &graph, std::size_t node_index) noexcept;
+    void set_owner(RuntimeGraph &graph, std::size_t node_index, RuntimeGraphOwner owner) noexcept;
+    void clear_owner() noexcept;
     CycleCallbacks *&cycle_callbacks() noexcept;
     CycleCallbacks *cycle_callbacks() const noexcept;
     RuntimeGraph &outer_graph() noexcept;
@@ -115,12 +121,28 @@ class RuntimeGraph {
     EvaluationTime last_evaluation_time_{MIN_DT};
     EvaluationTime evaluation_time_{MIN_DT};
     details::EvaluationScratch *scratch_{};
+    struct DirectOwner {
+        std::size_t node_index{};
+        ScheduleHandle future_schedule{};
+    };
+
+    struct CallbackOwner {
+        std::size_t node_index{};
+        RuntimeGraphOwner owner{};
+    };
+
+    // An inner graph uses either the compact direct nested() connection or a callback connection for a keyed owner.
+    union Owner {
+        constexpr Owner() noexcept : direct{} {}
+
+        DirectOwner direct;
+        CallbackOwner callback;
+    } owner_;
+
     RuntimeGraph *parent_{};
-    std::size_t owner_node_index_{};
-    ScheduleHandle parent_schedule_{};
-    std::optional<EvaluationTime> parent_schedule_time_;
     PendingInputNotifications *pending_input_notifications_{};
     bool suppress_parent_scheduling_ : 1 {};
+    bool callback_owner_ : 1 {};
     bool started_ : 1 {};
     bool stopped_ : 1 {};
 };

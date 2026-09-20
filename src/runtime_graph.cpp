@@ -23,6 +23,12 @@ namespace bg {
 OutputChangeContext::OutputChangeContext(RuntimeGraph &runtime_graph) noexcept
     : runtime_graph_{&runtime_graph}, evaluation_time_{runtime_graph.evaluation_time()} {}
 
+ScheduleHandle RuntimeGraphOwnerContext::schedule_at(EvaluationTime time) const {
+    return graph_->schedule_at(node_index_, time);
+}
+
+void RuntimeGraphOwnerContext::cancel(ScheduleHandle handle) const noexcept { graph_->cancel(node_index_, handle); }
+
 EvaluationTime OutputChangeContext::evaluation_time() const noexcept { return evaluation_time_; }
 
 void OutputChangeContext::schedule_validity_check(RuntimeGraph &graph, std::size_t node_index) const noexcept {
@@ -343,8 +349,8 @@ void RuntimeGraph::initialize_storage() {
 }
 
 RuntimeGraph::~RuntimeGraph() {
-    if (parent_ != nullptr && parent_schedule_time_) {
-        parent_->cancel(owner_node_index_, parent_schedule_);
+    if (parent_ != nullptr && !callback_owner_ && owner_.direct.future_schedule.id_ != 0) {
+        parent_->cancel(owner_.direct.node_index, owner_.direct.future_schedule);
     }
 
     if (storage_ != nullptr) {
@@ -412,9 +418,7 @@ void RuntimeGraph::schedule(std::size_t node_index) noexcept {
     auto &word = scheduling[word_index].evaluation;
     word |= ScheduleWord{1} << (node_index % CompiledGraph::schedule_word_bits);
 
-    if (parent_ != nullptr && !suppress_parent_scheduling_) {
-        parent_->schedule(owner_node_index_);
-    }
+    notify_owner_scheduled();
 }
 
 void RuntimeGraph::schedule_validity_check(std::size_t node_index) noexcept {
@@ -422,9 +426,7 @@ void RuntimeGraph::schedule_validity_check(std::size_t node_index) noexcept {
     auto &word = scheduling[node_index / CompiledGraph::schedule_word_bits].validity_check;
     word |= ScheduleWord{1} << (node_index % CompiledGraph::schedule_word_bits);
 
-    if (parent_ != nullptr && !suppress_parent_scheduling_) {
-        parent_->schedule(owner_node_index_);
-    }
+    notify_owner_scheduled();
 }
 
 ScheduleHandle RuntimeGraph::schedule_at(std::size_t node_index, EvaluationTime time) {
@@ -440,15 +442,17 @@ ScheduleHandle RuntimeGraph::schedule_at(std::size_t node_index, EvaluationTime 
         future_schedule() = allocator_.new_object<FutureSchedule>(allocator_);
     }
 
+    const auto previous = next_scheduled_time();
     auto result = ScheduleHandle{future_schedule()->add(time, node_index)};
-    mirror_future_schedule();
+    notify_future_schedule_changed(previous);
     return result;
 }
 
 void RuntimeGraph::cancel(std::size_t node_index, ScheduleHandle handle) noexcept {
     if (compiled_graph_->has_future_scheduling() && future_schedule() != nullptr && handle.id_ != 0) {
+        const auto previous = next_scheduled_time();
         future_schedule()->cancel(node_index, handle.id_);
-        mirror_future_schedule();
+        notify_future_schedule_changed(previous);
     }
 }
 
@@ -462,38 +466,75 @@ RuntimeGraph::FutureSchedule *RuntimeGraph::future_schedule() const noexcept {
 
 void RuntimeGraph::activate_scheduled(EvaluationTime evaluation_time) noexcept {
     if (compiled_graph_->has_future_scheduling() && future_schedule() != nullptr) {
+        const auto previous = next_scheduled_time();
         future_schedule()->activate(*this, evaluation_time);
-        mirror_future_schedule();
+        notify_future_schedule_changed(previous);
     }
 }
 
 void RuntimeGraph::clear_future_schedule() noexcept {
     if (compiled_graph_->has_future_scheduling() && future_schedule() != nullptr) {
+        const auto previous = next_scheduled_time();
         future_schedule()->clear();
-        mirror_future_schedule();
+        notify_future_schedule_changed(previous);
     }
 }
 
-void RuntimeGraph::mirror_future_schedule() {
+void RuntimeGraph::notify_future_schedule_changed(std::optional<EvaluationTime> previous) {
     if (parent_ == nullptr) {
         return;
     }
 
     const auto next = next_scheduled_time();
-    if (next == parent_schedule_time_) {
+    if (next == previous) {
         return;
     }
 
-    if (parent_schedule_time_) {
-        parent_->cancel(owner_node_index_, parent_schedule_);
-        parent_schedule_ = {};
-        parent_schedule_time_.reset();
+    if (callback_owner_) {
+        auto context = RuntimeGraphOwnerContext{*parent_, owner_.callback.node_index};
+        const auto &owner = owner_.callback.owner;
+        owner.callbacks->future_schedule_changed(context, owner.receiver, owner.token, next);
+        return;
     }
 
-    if (next) {
-        parent_schedule_ = parent_->schedule_at(owner_node_index_, *next);
-        parent_schedule_time_ = next;
+    if (owner_.direct.future_schedule.id_ != 0) {
+        parent_->cancel(owner_.direct.node_index, owner_.direct.future_schedule);
+        owner_.direct.future_schedule = {};
     }
+    if (next) {
+        owner_.direct.future_schedule = parent_->schedule_at(owner_.direct.node_index, *next);
+    }
+}
+
+void RuntimeGraph::notify_owner_scheduled() noexcept {
+    if (parent_ == nullptr || suppress_parent_scheduling_) {
+        return;
+    }
+
+    const auto node_index = callback_owner_ ? owner_.callback.node_index : owner_.direct.node_index;
+    if (callback_owner_) {
+        const auto &owner = owner_.callback.owner;
+        owner.callbacks->inner_scheduled(owner.receiver, owner.token);
+    }
+    parent_->schedule(node_index);
+}
+
+void RuntimeGraph::set_owner(RuntimeGraph &graph, std::size_t node_index) noexcept {
+    parent_ = &graph;
+    owner_.direct = {.node_index = node_index};
+    callback_owner_ = false;
+}
+
+void RuntimeGraph::set_owner(RuntimeGraph &graph, std::size_t node_index, RuntimeGraphOwner owner) noexcept {
+    parent_ = &graph;
+    owner_.callback = {.node_index = node_index, .owner = owner};
+    callback_owner_ = true;
+}
+
+void RuntimeGraph::clear_owner() noexcept {
+    parent_ = nullptr;
+    owner_.direct = {};
+    callback_owner_ = false;
 }
 
 RuntimeGraph::CycleCallbacks *&RuntimeGraph::cycle_callbacks() noexcept {
@@ -626,9 +667,7 @@ void RuntimeGraph::queue_input_notification(InputNotificationFunction function, 
     }
 
     pending_input_notifications_->records.push_back({function, node_index, data, change});
-    if (parent_ != nullptr && !suppress_parent_scheduling_) {
-        parent_->schedule(owner_node_index_);
-    }
+    notify_owner_scheduled();
 }
 
 void RuntimeGraph::run_input_notifications() {

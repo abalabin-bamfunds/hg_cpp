@@ -7,6 +7,7 @@ add_executable(
     evaluation/engine/simulation_evaluation_engine_test.cpp
     evaluation/lifecycle/runtime_lifecycle_test.cpp
     evaluation/nested_graph_test.cpp
+    evaluation/nested_graph_owner_test.cpp
     evaluation/scheduling/future_scheduling_test.cpp
     evaluation/scheduling/runtime_scheduling_test.cpp
     evaluation/storage/runtime_storage_test.cpp
