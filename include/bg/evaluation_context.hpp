@@ -27,6 +27,7 @@ class EvaluationContext {
     void schedule_now() const noexcept;
     ScheduleHandle schedule_at(EvaluationTime time) const;
     void cancel(ScheduleHandle handle) const noexcept;
+    void add_cycle_callback(void *receiver, void (*function)(void *) noexcept) const;
 
   private:
     friend RuntimeGraph;

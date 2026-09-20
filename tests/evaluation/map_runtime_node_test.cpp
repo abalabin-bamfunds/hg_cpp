@@ -7,9 +7,13 @@
 #include <bg/node.hpp>
 #include <bg/operators.hpp>
 #include <bg/testing/test_graph.hpp>
+#include <bg/time_series/tss/tss_type.hpp>
 #include <bg/time_series/tsd/tsd_type.hpp>
 
 #include <catch2/catch_test_macros.hpp>
+
+#include "../runtime_graph_access.hpp"
+#include "../utils/counting_memory_resource.hpp"
 
 #include <array>
 #include <chrono>
@@ -23,9 +27,20 @@ using namespace bg::literals;
 
 namespace {
 
-const auto add_key = node([](In<TS<int>> value, In<TS<std::int64_t>> key, Out<TS<int>> output) {
-    output.set(*value + static_cast<int>(*key));
-});
+struct AddKey {
+    In<TS<int>> value;
+    In<TS<std::int64_t>> key;
+    Out<TS<int>> output;
+
+    inline static std::array<std::size_t, 3> evaluations{};
+
+    void evaluate() const {
+        ++evaluations.at(static_cast<std::size_t>(*key));
+        output.set(*value + static_cast<int>(*key));
+    }
+};
+
+const auto add_key = node<AddKey>();
 
 const auto add_available = node([](In<TS<int>, optional> left, In<TS<int>, optional> right, Out<TS<int>> output) {
     output.set((left.valid() ? *left : 0) + (right.valid() ? *right : 0));
@@ -78,6 +93,27 @@ struct MapSink {
 };
 
 const auto map_sink = node<MapSink>();
+
+struct ControlledKeys {
+    Out<TSS<std::int64_t>> output;
+
+    inline static bool present{};
+
+    void evaluate() const {
+        if (present) {
+            output.insert(1);
+            output.insert(2);
+        } else {
+            output.erase(1);
+        }
+    }
+};
+
+const auto controlled_keys = node<ControlledKeys>();
+
+EvaluationTime time(std::int64_t microseconds) {
+    return MIN_DT + std::chrono::microseconds{microseconds};
+}
 
 wp<TSD<std::int64_t, REF<TS<int>>>> wire_keyed_map(wp<TSD<std::int64_t, REF<TS<int>>>> values) {
     auto inner = std::make_shared<GraphWiring>();
@@ -191,6 +227,31 @@ wp<TSD<std::int64_t, REF<TS<std::int64_t, TimeSeriesGuarantee::const_>>>> wire_s
     auto &wiring = WiringContext::current().wiring();
     const auto &owned = wiring.own_node_template(std::move(node_template));
     return wp<TSD<std::int64_t, REF<TS<std::int64_t, TimeSeriesGuarantee::const_>>>>{*owned(keys)};
+}
+
+void wire_source_sink_map(wp<TSS<std::int64_t>> keys) {
+    auto inner = std::make_shared<GraphWiring>();
+    auto key_node = std::size_t{};
+    {
+        auto context = WiringContext{*inner};
+        const auto key = details::wire_nested_constant_input(TS<std::int64_t, TimeSeriesGuarantee::const_>::type());
+        key_node = details::wired_output_node_index(*inner, key);
+    }
+
+    auto signature = ResolvedSignature{
+        .name = util::symbol{"test_source_sink_map"},
+        .parameters = {{.name = util::symbol{"keys"},
+                        .type = &keys.type().target_type(),
+                        .activity = active,
+                        .validity = required}},
+        .output = nullptr,
+    };
+    auto node_template = details::make_map_node(
+        {.wiring = std::move(inner), .key_input_node = key_node, .key_set_parameter = 0}, signature);
+    auto &wiring = WiringContext::current().wiring();
+    const auto &owned = wiring.own_node_template(std::move(node_template));
+    const auto output = owned(keys);
+    REQUIRE_FALSE(output);
 }
 
 wp<TSD<std::int64_t, REF<TS<int>>>> wire_delayed_map(wp<TSD<std::int64_t, REF<TS<int>>>> values) {
@@ -362,8 +423,12 @@ TEST_CASE("map starts and stops one inner graph repeatedly",
 TEST_CASE("mapped target ticks evaluate only the selected inner graph",
           "[evaluation][series:tsd][reference][feature:nested-graph][shape:nested][transition:update]") {
     const auto targets = node([](In<TS<int>> command, Out<TSD<std::int64_t, TS<int>>> output) {
-        output[1].set(*command);
-        output[2].set(*command * 10);
+        if (*command == 0) {
+            output[1].set(10);
+            output[2].set(20);
+        } else {
+            output[*command].set(*command * 10);
+        }
     });
     const auto rekey =
         node([](In<REF<TS<int>>> first, In<REF<TS<int>>> second,
@@ -376,10 +441,43 @@ TEST_CASE("mapped target ticks evaluate only the selected inner graph",
         const auto mapped = wire_keyed_map(rekey(values[std::int64_t{1}], values[std::int64_t{2}]));
         return mapped[std::int64_t{2}];
     };
+    AddKey::evaluations.fill(0);
 
-    const auto actual = testing::test_graph(graph, std::array{1, 2, 3});
+    const auto actual = testing::test_graph(graph, std::array{0, 2});
 
-    CHECK(actual.equals<int>({12, 22, 32}));
+    CHECK(actual.equals<int>({22, 22}));
+    CHECK(AddKey::evaluations == std::array<std::size_t, 3>{0, 1, 2});
+}
+
+TEST_CASE("stopped map inner graphs are reclaimed at the start of the next outer cycle",
+          "[evaluation][series:tss][feature:nested-graph][shape:nested][transition:removal][allocation]") {
+    auto wiring = GraphWiring{};
+    {
+        const auto context = WiringContext{wiring};
+        wire_source_sink_map(controlled_keys());
+    }
+
+    const auto compiled = CompiledGraph{wiring};
+    auto memory = counting_memory_resource{};
+    {
+        auto runtime = RuntimeGraph{compiled, allocator{memory}};
+        ControlledKeys::present = true;
+        runtime.start(time(1));
+        testing::RuntimeGraphAccess::schedule(runtime, 0);
+        runtime.evaluate(time(1));
+
+        ControlledKeys::present = false;
+        testing::RuntimeGraphAccess::schedule(runtime, 0);
+        runtime.evaluate(time(2));
+        const auto retired_allocations = memory.allocations();
+
+        runtime.evaluate(time(3));
+
+        // The inner runtime graph object, its storage, and MapInnerGraph each use one allocation.
+        CHECK(retired_allocations - memory.allocations() == 3);
+    }
+
+    CHECK(memory.allocations() == 0);
 }
 
 TEST_CASE("map uses the union of mapped dictionary key sets and binds missing values",
@@ -407,7 +505,7 @@ TEST_CASE("map uses the union of mapped dictionary key sets and binds missing va
     CHECK(actual.equals<int>({1, 2, std::nullopt, 7}));
 }
 
-TEST_CASE("a TSS controls source map children",
+TEST_CASE("a TSS controls source map inner graphs",
           "[evaluation][series:tss][series:tsd][reference][feature:nested-graph][shape:nested]"
           "[transition:addition][transition:removal]") {
     const auto make_keys = node([](In<TS<bool>> present, Out<TSS<std::int64_t>> output) {
@@ -424,7 +522,7 @@ TEST_CASE("a TSS controls source map children",
     CHECK(actual.equals<std::int64_t>({1, std::nullopt, 1}));
 }
 
-TEST_CASE("a TSD controls source map children",
+TEST_CASE("a TSD controls source map inner graphs",
           "[evaluation][series:tsd][reference][feature:nested-graph][shape:nested]"
           "[transition:addition][transition:removal]") {
     const auto make_keys = node([](In<TS<bool>> present, Out<TSD<std::int64_t, TS<int>>> output) {
@@ -469,7 +567,7 @@ TEST_CASE("a sink map evaluates one inner graph for each live key",
     CHECK(MapSink::values == std::vector{1, 2, 3});
 }
 
-TEST_CASE("a pass-through reference replacement updates each live child",
+TEST_CASE("a pass-through reference replacement updates each running map inner graph",
           "[evaluation][series:tsd][reference][feature:nested-graph][shape:nested]"
           "[binding:reference-to-reference][transition:update]") {
     const auto target = node([](In<TS<int>> value, int scale, Out<TS<int>> output) {
@@ -496,7 +594,7 @@ TEST_CASE("a pass-through reference replacement updates each live child",
     CHECK(actual.equals<int>({11, 202, 33}));
 }
 
-TEST_CASE("a mapped child reports future work through the map owner",
+TEST_CASE("a map inner graph reports future work through the map owner",
           "[evaluation][series:tsd][reference][feature:nested-graph][shape:nested]"
           "[feature:future-scheduling]") {
     const auto target = node([](In<TS<int>> value, Out<TS<int>> output) { output.set(*value); });
@@ -517,7 +615,7 @@ TEST_CASE("a mapped child reports future work through the map owner",
     CHECK(actual[2]->value() == 5);
 }
 
-TEST_CASE("map schedules the next future time after one child becomes due",
+TEST_CASE("map schedules the next future time after one inner graph becomes due",
           "[evaluation][series:tsd][reference][feature:nested-graph][shape:nested]"
           "[feature:future-scheduling]") {
     const auto targets = node([](In<TS<int>>, Out<TSD<std::int64_t, TS<int>>> output) {

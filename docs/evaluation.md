@@ -73,6 +73,7 @@ The context provides:
 - the outer graph's [global state](global-state.md)
 - immediate and future scheduling
 - cancellation of future scheduling
+- registration of outer-cycle callbacks
 
 ## Start
 

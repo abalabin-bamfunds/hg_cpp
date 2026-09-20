@@ -894,6 +894,12 @@ void EvaluationContext::cancel(ScheduleHandle handle) const noexcept {
     runtime_graph_->cancel(node_index_, handle);
 }
 
+void EvaluationContext::add_cycle_callback(void *receiver, void (*function)(void *) noexcept) const {
+    if (!runtime_graph_->stopped_) {
+        runtime_graph_->add_cycle_callback(receiver, function);
+    }
+}
+
 GlobalState &EvaluationContext::global_state() const noexcept {
     return runtime_graph_->global_state();
 }
