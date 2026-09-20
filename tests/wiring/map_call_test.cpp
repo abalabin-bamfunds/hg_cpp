@@ -17,7 +17,7 @@ using namespace bg;
 using namespace bg::literals;
 
 TEST_CASE("map call preprocessing keeps positional and named argument types",
-          "[feature:wiring][feature:variadic-wiring][series:tsd]") {
+          "[feature:map][feature:wiring][feature:variadic-wiring][series:tsd]") {
     const auto dictionary = node([](Out<TSD<std::int64_t, TS<float>>>) {});
 
     testing::test_wiring([&] {
@@ -38,44 +38,41 @@ TEST_CASE("map call preprocessing keeps positional and named argument types",
     });
 }
 
-TEST_CASE("map argument traits derive per-key callable argument types",
-          "[feature:wiring][feature:variadic-wiring][series:tsd][feature:reference]") {
+TEST_CASE("map derives graph-function argument types",
+          "[feature:map][feature:wiring][feature:variadic-wiring][series:tsd][feature:reference]") {
     using ValueDictionary = details::map_argument_traits<wp<TSD<std::int64_t, TS<float>>>>;
     using ReferenceDictionary =
         details::map_argument_traits<wp<TSD<std::int64_t, REF<TS<float>, TimeSeriesGuarantee::final>>>>;
     using NamedDictionary =
         details::map_argument_traits<details::named_argument<"values", wp<TSD<std::int64_t, TS<float>>>>>;
+    using GraphFunctionNamedDictionary = details::map_graph_function_parameter_t<
+        details::named_argument<"values", wp<TSD<std::int64_t, TS<float>>>>>;
     using KeySet = details::map_argument_traits<wp<TSS<std::int64_t>>>;
     using PassedDictionary = details::map_argument_traits<pass_through_argument<wp<TSD<std::int64_t, TS<float>>>>>;
 
-    STATIC_CHECK(ValueDictionary::kind == details::MapArgumentKind::mapped_tsd);
     STATIC_CHECK(std::same_as<typename ValueDictionary::per_key_type, wp<TS<float>>>);
     STATIC_CHECK(std::same_as<typename ReferenceDictionary::per_key_type, wp<TS<float>>>);
     STATIC_CHECK(
         std::same_as<typename NamedDictionary::per_key_type, details::named_argument<"values", wp<TS<float>>>>);
+    STATIC_CHECK(std::same_as<GraphFunctionNamedDictionary, wp<TS<float>>>);
 
-    STATIC_CHECK(KeySet::kind == details::MapArgumentKind::key_set_candidate);
-    STATIC_CHECK(KeySet::forwarded_per_key);
-    STATIC_CHECK(KeySet::consumed_as_key_set);
+    STATIC_CHECK(KeySet::key_set_candidate);
     STATIC_CHECK(std::same_as<typename KeySet::per_key_type, wp<TSS<std::int64_t>>>);
 
-    STATIC_CHECK(PassedDictionary::kind == details::MapArgumentKind::pass_through);
-    STATIC_CHECK(PassedDictionary::forwarded_per_key);
     STATIC_CHECK(std::same_as<typename PassedDictionary::per_key_type, wp<TSD<std::int64_t, TS<float>>>>);
     STATIC_CHECK(std::same_as<typename details::map_argument_traits<int>::per_key_type, int>);
 }
 
 TEST_CASE("pass-through arguments retain their values and do not supply a map key",
-          "[feature:wiring][feature:variadic-wiring][series:tsd]") {
+          "[feature:map][feature:wiring][feature:variadic-wiring][series:tsd]") {
     auto argument = pass_through(std::string{"value"});
 
     CHECK(argument.value == "value");
-    STATIC_CHECK(details::map_argument_traits<decltype(argument)>::kind == details::MapArgumentKind::pass_through);
     STATIC_CHECK(std::same_as<typename details::map_argument_traits<decltype(argument)>::key_type, void>);
 }
 
 TEST_CASE("map calls require one concrete key type",
-          "[feature:wiring][feature:variadic-wiring][series:tsd][series:tss]") {
+          "[feature:map][feature:wiring][feature:variadic-wiring][series:tsd][series:tss]") {
     using NoKey = details::map_call_traits<int, details::named_argument<"scale", double>>;
     using GenericKey = details::map_call_traits<wp<TSD<SCALAR, TS<float>>>>;
     using DifferentKeys = details::map_call_traits<wp<TSD<std::int64_t, TS<float>>>, wp<TSS<bool>>>;
@@ -96,7 +93,8 @@ TEST_CASE("map calls require one concrete key type",
     });
 }
 
-TEST_CASE("a sole TSS is inferred as the key-set controller", "[feature:wiring][feature:variadic-wiring][series:tss]") {
+TEST_CASE("map infers a sole TSS as its key set",
+          "[feature:map][feature:wiring][feature:variadic-wiring][series:tss]") {
     const auto keys = node([](Out<TSS<std::int64_t>>) {});
 
     testing::test_wiring([&] {
@@ -115,16 +113,16 @@ TEST_CASE("a sole TSS is inferred as the key-set controller", "[feature:wiring][
     });
 }
 
-TEST_CASE("an unselected TSS remains a forwarded argument", "[feature:wiring][feature:variadic-wiring][series:tss]") {
+TEST_CASE("map forwards an unselected TSS to its graph function",
+          "[feature:map][feature:wiring][feature:variadic-wiring][series:tss]") {
     using KeySet = details::map_argument_traits<wp<TSS<std::int64_t>>>;
 
-    STATIC_CHECK(KeySet::forwarded_per_key);
-    STATIC_CHECK(KeySet::consumed_as_key_set);
+    STATIC_CHECK(KeySet::key_set_candidate);
     STATIC_CHECK(std::same_as<typename KeySet::per_key_type, wp<TSS<std::int64_t>>>);
 }
 
 TEST_CASE("multiple TSS candidates require an explicit key-set selector",
-          "[feature:wiring][feature:variadic-wiring][series:tss]") {
+          "[feature:map][feature:wiring][feature:variadic-wiring][series:tss]") {
     using Ambiguous = details::map_call_traits<wp<TSS<std::int64_t>>, wp<TSS<std::int64_t>>>;
     using Selected = details::map_call_traits<wp<TSS<std::int64_t>>, wp<TSS<std::int64_t>>,
                                               details::named_argument<"__key_set_arg__", int>>;
@@ -144,18 +142,17 @@ TEST_CASE("multiple TSS candidates require an explicit key-set selector",
     });
 }
 
-TEST_CASE("a selected TSD remains a mapped callable argument",
-          "[feature:wiring][feature:variadic-wiring][series:tsd]") {
+TEST_CASE("a selected TSD remains an argument of the mapped graph",
+          "[feature:map][feature:wiring][feature:variadic-wiring][series:tsd]") {
     using Dictionary = wp<TSD<std::int64_t, TS<float>>>;
     using Selected = details::map_call_traits<Dictionary, details::named_argument<"__key_set_arg__", std::string>>;
 
     STATIC_CHECK(Selected::valid);
-    STATIC_CHECK(details::map_argument_traits<Dictionary>::kind == details::MapArgumentKind::mapped_tsd);
-    STATIC_CHECK(details::map_argument_traits<Dictionary>::forwarded_per_key);
+    STATIC_CHECK(std::same_as<typename details::map_argument_traits<Dictionary>::per_key_type, wp<TS<float>>>);
 }
 
 TEST_CASE("pass-through collections are excluded from map key candidates",
-          "[feature:wiring][feature:variadic-wiring][series:tsd][series:tss]") {
+          "[feature:map][feature:wiring][feature:variadic-wiring][series:tsd][series:tss]") {
     using PassedDictionary = pass_through_argument<wp<TSD<std::int64_t, TS<float>>>>;
     using PassedSet = pass_through_argument<wp<TSS<std::int64_t>>>;
 
@@ -163,7 +160,8 @@ TEST_CASE("pass-through collections are excluded from map key candidates",
     STATIC_CHECK(details::map_call_traits<PassedSet>::error == details::MapCallError::no_key_type);
 }
 
-TEST_CASE("map call preprocessing rejects duplicate options", "[feature:wiring][feature:variadic-wiring][series:tsd]") {
+TEST_CASE("map call preprocessing rejects duplicate options",
+          "[feature:map][feature:wiring][feature:variadic-wiring][series:tsd]") {
     const auto dictionary = node([](Out<TSD<std::int64_t, TS<float>>>) {});
 
     testing::test_wiring([&] {
@@ -174,7 +172,8 @@ TEST_CASE("map call preprocessing rejects duplicate options", "[feature:wiring][
     });
 }
 
-TEST_CASE("map selectors preserve supported index and name forms", "[feature:wiring][feature:variadic-wiring]") {
+TEST_CASE("map selectors preserve supported index and name forms",
+          "[feature:map][feature:wiring][feature:variadic-wiring]") {
     const auto from_view = details::MapArgumentSelector{std::string_view{"value"}};
     const auto from_symbol = details::MapArgumentSelector{util::symbol{"other"}};
 

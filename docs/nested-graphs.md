@@ -55,6 +55,9 @@ owner-supplied instance token with immediate scheduling and future-schedule
 changes. The owner uses these notifications to track ready instances and its
 earliest future time. It does not inspect every inner graph.
 
+The [`map` operator](map.md) uses this interface to own one inner runtime graph
+per current key.
+
 ## Lifecycle
 
 An inner runtime graph can start after its outer graph and stop before it. Its

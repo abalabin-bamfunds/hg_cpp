@@ -39,36 +39,37 @@ const TimeSeriesType &mapped_dictionary_type(const TimeSeriesDictionaryType &dic
 
 struct PlanBuilder {
     PlanBuilder(const WiringTemplate &function, std::vector<MapSuppliedArgument> positional,
-                std::vector<MapSuppliedArgument> named, const ScalarType &key_type,
+                std::vector<MapSuppliedArgument> named,
                 const std::optional<MapArgumentSelector> &key_argument,
                 const std::optional<MapArgumentSelector> &key_set_argument,
                 bool preserve_named_arguments)
-        : function{function}, positional{std::move(positional)}, named{std::move(named)}, key_type{key_type},
+        : function{function}, positional{std::move(positional)}, named{std::move(named)},
           key_argument{key_argument}, key_set_argument{key_set_argument},
           preserve_named_arguments{preserve_named_arguments}, wiring{std::make_shared<GraphWiring>()} {}
 
     GraphArgument build() {
+        resolve_key_type();
         resolve_key_set_argument();
         resolve_key_argument();
 
-        auto callable_arguments = std::vector<WiringArgument>{};
+        auto graph_arguments = std::vector<WiringArgument>{};
         auto boundaries = std::vector<WiringPoint>{};
-        callable_arguments.reserve(positional.size() + named.size() +
-                                   static_cast<std::size_t>(key_parameter.has_value()));
+        graph_arguments.reserve(positional.size() + named.size() +
+                                static_cast<std::size_t>(key_parameter.has_value()));
 
         auto context = WiringContext{*wiring};
-        auto callable_index = std::size_t{};
+        auto graph_parameter = std::size_t{};
         const auto append_key = [&] {
-            if (!key_parameter || callable_index != *key_parameter) {
+            if (!key_parameter || graph_parameter != *key_parameter) {
                 return;
             }
 
-            const auto &key = time_series_value_type(key_type, TimeSeriesGuarantee::const_);
+            const auto &key = time_series_value_type(*key_type, TimeSeriesGuarantee::const_);
             const auto boundary = wire_nested_constant_input(key);
             key_input_node = wired_output_node_index(*wiring, boundary);
             boundaries.push_back(boundary);
-            callable_arguments.emplace_back(boundary);
-            ++callable_index;
+            graph_arguments.emplace_back(boundary);
+            ++graph_parameter;
         };
 
         const auto append = [&](MapSuppliedArgument &argument, std::size_t user_index) {
@@ -77,8 +78,8 @@ struct PlanBuilder {
                 return;
             }
 
-            callable_arguments.push_back(callable_argument(argument, boundaries));
-            ++callable_index;
+            graph_arguments.push_back(graph_argument(argument, boundaries));
+            ++graph_parameter;
         };
 
         for (auto index = std::size_t{}; index < positional.size(); ++index) {
@@ -88,11 +89,11 @@ struct PlanBuilder {
             append(named[index], positional.size() + index);
         }
         append_key();
-        if (key_parameter && callable_index <= *key_parameter) {
+        if (key_parameter && graph_parameter <= *key_parameter) {
             throw WiringError{"__key_arg__ selects a graph parameter that is out of range"};
         }
 
-        const auto result = function(std::span<const WiringArgument>{callable_arguments});
+        const auto result = function(std::span<const WiringArgument>{graph_arguments});
         const auto structure = graph_wiring_structure(*wiring, boundaries, result);
         if (result) {
             const auto boundary = wire_nested_output(*result, result->type());
@@ -100,11 +101,11 @@ struct PlanBuilder {
             output_target = &type_cast<TimeSeriesReferenceType>(boundary.type()).target_type();
         }
 
-        append_controller();
+        append_key_set_parameter();
         const auto output = output_target == nullptr
                                 ? nullptr
                                 : &time_series_dictionary_type(
-                                      key_type,
+                                      *key_type,
                                       time_series_reference_type(*output_target,
                                                                  TimeSeriesGuarantee::deduplicated),
                                       TimeSeriesGuarantee::ordinary);
@@ -113,13 +114,12 @@ struct PlanBuilder {
                                     .inputs = std::move(inputs),
                                     .key_input_node = key_input_node,
                                     .output_node = output_node,
-                                    .key_set_parameter = controller_parameter};
+                                    .key_set_parameter = key_set_parameter};
         auto plan = std::make_shared<MapPlan>(MapPlan{
             .graph = std::move(graph),
             .outer_signature = std::move(signature),
             .outer_arguments = std::move(outer_arguments),
-            .output_type = output,
-            .dictionary_controller_parameter = dictionary_controller_parameter,
+            .dictionary_key_set_parameter = dictionary_key_set_parameter,
         });
         return GraphArgument{structure, std::move(plan)};
     }
@@ -140,11 +140,67 @@ struct PlanBuilder {
         return type_cast<TimeSeriesDictionaryType>(&argument_time_series(argument)) != nullptr;
     }
 
+    void resolve_key_type() {
+        const auto inspect = [&](const MapSuppliedArgument &argument) {
+            if (argument.pass_through || !argument.value.is_time_series()) {
+                return;
+            }
+
+            const auto &type = argument_time_series(argument.value);
+            const ScalarType *candidate{};
+            if (const auto *dictionary = type_cast<TimeSeriesDictionaryType>(&type)) {
+                candidate = &dictionary->key_type();
+            } else if (const auto *set = type_cast<TimeSeriesSetType>(&type)) {
+                candidate = &set->item_type();
+            } else {
+                return;
+            }
+
+            if (key_type != nullptr && key_type != candidate) {
+                throw WiringError{"all map TSD and TSS arguments must have the same key type"};
+            }
+            key_type = candidate;
+        };
+
+        for (const auto &argument : positional) {
+            inspect(argument);
+        }
+        for (const auto &argument : named) {
+            inspect(argument);
+        }
+        if (key_type == nullptr) {
+            throw WiringError{"a map call requires a TSD or TSS argument"};
+        }
+        if (!key_type->is_resolved()) {
+            throw WiringError{"a map call requires a concrete key type"};
+        }
+    }
+
     void resolve_key_set_argument() {
-        if (!key_set_argument) {
+        if (key_set_argument) {
+            selected_key_set = *selected_map_argument_index(key_set_argument, positional, named);
+        } else {
+            const auto inspect = [&](const MapSuppliedArgument &argument, std::size_t index) {
+                if (argument.pass_through || !argument.value.is_time_series() || !is_set(argument.value)) {
+                    return;
+                }
+                if (selected_key_set) {
+                    throw WiringError{"a map call with multiple TSS arguments requires __key_set_arg__"};
+                }
+                selected_key_set = index;
+            };
+
+            for (auto index = std::size_t{}; index < positional.size(); ++index) {
+                inspect(positional[index], index);
+            }
+            for (auto index = std::size_t{}; index < named.size(); ++index) {
+                inspect(named[index], positional.size() + index);
+            }
+        }
+        if (!selected_key_set) {
             return;
         }
-        selected_key_set = *selected_map_argument_index(key_set_argument, positional, named);
+
         auto &argument = supplied(*selected_key_set);
         if (argument.pass_through || (!is_set(argument.value) && !is_dictionary(argument.value))) {
             throw WiringError{"__key_set_arg__ must select a mapped TSD or a TSS"};
@@ -154,7 +210,7 @@ struct PlanBuilder {
         const auto &selected_key = type_cast<TimeSeriesDictionaryType>(&selected_type) != nullptr
                                        ? type_cast<TimeSeriesDictionaryType>(selected_type).key_type()
                                        : type_cast<TimeSeriesSetType>(selected_type).item_type();
-        if (&selected_key != &key_type) {
+        if (&selected_key != key_type) {
             throw WiringError{"the selected map key set has a different key type"};
         }
     }
@@ -186,8 +242,8 @@ struct PlanBuilder {
         return index < positional.size() ? positional[index] : named[index - positional.size()];
     }
 
-    WiringArgument callable_argument(MapSuppliedArgument &supplied_argument,
-                                     std::vector<WiringPoint> &boundaries) {
+    WiringArgument graph_argument(MapSuppliedArgument &supplied_argument,
+                                  std::vector<WiringPoint> &boundaries) {
         auto argument = wiring_argument_access::borrow(supplied_argument.value);
         if (!preserve_named_arguments) {
             wiring_argument_access::clear_name(argument);
@@ -203,9 +259,9 @@ struct PlanBuilder {
         const auto boundary = wire_nested_input(inner_type);
         boundaries.push_back(boundary);
 
-        auto callable = WiringArgument{boundary};
+        auto graph_argument = WiringArgument{boundary};
         if (const auto name = argument.name()) {
-            wiring_argument_access::set_variadic_name(callable, *name, VariadicMode::none);
+            wiring_argument_access::set_variadic_name(graph_argument, *name, VariadicMode::none);
         }
 
         const auto parameter_index = parameters.size();
@@ -219,37 +275,37 @@ struct PlanBuilder {
         wiring_argument_access::clear_name(outer_arguments.back());
         inputs.push_back({mapped ? MapInputKind::mapped : MapInputKind::pass_through,
                           parameter_index, wired_output_node_index(*wiring, boundary)});
-        return callable;
+        return graph_argument;
     }
 
     util::symbol argument_name(const WiringArgument &argument, std::size_t index) const {
         return argument.name().value_or(util::symbol{std::to_string(index)});
     }
 
-    void append_controller() {
+    void append_key_set_parameter() {
         if (!selected_key_set) {
             return;
         }
 
         auto &selected = supplied(*selected_key_set);
         const auto &type = argument_time_series(selected.value);
-        auto controller = selected.value.time_series();
-        const TimeSeriesType *controller_type = &type;
+        auto key_set_argument = selected.value.time_series();
+        const TimeSeriesType *key_set_type = &type;
         if (const auto *dictionary = type_cast<TimeSeriesDictionaryType>(&type)) {
-            controller_type = &dictionary->key_set_type();
-            dictionary_controller_parameter = parameters.size();
+            key_set_type = &dictionary->key_set_type();
+            dictionary_key_set_parameter = parameters.size();
         }
 
-        controller_parameter = parameters.size();
-        parameters.push_back({util::symbol{"__key_set__"}, controller_type, active, required, false,
+        key_set_parameter = parameters.size();
+        parameters.push_back({util::symbol{"__key_set__"}, key_set_type, active, required, false,
                               VariadicMode::none});
-        outer_arguments.emplace_back(controller);
+        outer_arguments.emplace_back(key_set_argument);
     }
 
     const WiringTemplate &function;
     std::vector<MapSuppliedArgument> positional;
     std::vector<MapSuppliedArgument> named;
-    const ScalarType &key_type;
+    const ScalarType *key_type{};
     const std::optional<MapArgumentSelector> &key_argument;
     const std::optional<MapArgumentSelector> &key_set_argument;
     bool preserve_named_arguments;
@@ -261,8 +317,8 @@ struct PlanBuilder {
     std::optional<std::size_t> key_parameter;
     std::optional<std::size_t> key_input_node;
     std::optional<std::size_t> output_node;
-    std::optional<std::size_t> controller_parameter;
-    std::optional<std::size_t> dictionary_controller_parameter;
+    std::optional<std::size_t> key_set_parameter;
+    std::optional<std::size_t> dictionary_key_set_parameter;
     const TimeSeriesType *output_target{};
 };
 
@@ -295,16 +351,15 @@ selected_map_argument_index(const std::optional<MapArgumentSelector> &selector,
 GraphArgument build_map_plan(const WiringTemplate &function,
                              std::vector<MapSuppliedArgument> positional,
                              std::vector<MapSuppliedArgument> named,
-                             const ScalarType &key_type,
                              const std::optional<MapArgumentSelector> &key_argument,
                              const std::optional<MapArgumentSelector> &key_set_argument,
                              bool preserve_named_arguments) {
-    return PlanBuilder{function, std::move(positional), std::move(named), key_type, key_argument,
+    return PlanBuilder{function, std::move(positional), std::move(named), key_argument,
                        key_set_argument, preserve_named_arguments}
         .build();
 }
 
-const MapPlan &map_plan(const GraphArgument &argument) {
+const MapPlan &MapPlan::from(const GraphArgument &argument) {
     const auto plan = graph_argument_access::payload<MapPlan>(argument);
     if (!plan) {
         throw WiringError{"the default map overload requires a map graph argument"};
@@ -312,20 +367,19 @@ const MapPlan &map_plan(const GraphArgument &argument) {
     return *plan;
 }
 
-std::optional<WiringPoint> wire_map_plan(const GraphArgument &argument) {
-    const auto &plan = map_plan(argument);
-    auto node_template = make_map_node(plan.graph, plan.outer_signature);
+std::optional<WiringPoint> MapPlan::wire() const {
+    auto node_template = make_map_node(graph, outer_signature);
     auto &outer = WiringContext::current().wiring();
     const auto &owned = outer.own_node_template(std::move(node_template));
 
-    auto arguments = plan.outer_arguments;
-    if (plan.dictionary_controller_parameter) {
-        auto &controller = arguments[*plan.dictionary_controller_parameter];
+    auto arguments = outer_arguments;
+    if (dictionary_key_set_parameter) {
+        auto &key_set = arguments[*dictionary_key_set_parameter];
         const auto materialized = materialize_wiring_point(
-            controller.time_series(), controller.time_series().type());
+            key_set.time_series(), key_set.time_series().type());
         const auto &key_set_type = static_cast<const TimeSeriesType &>(
-            *plan.outer_signature.parameters[*plan.dictionary_controller_parameter].type);
-        controller = WiringArgument{
+            *outer_signature.parameters[*dictionary_key_set_parameter].type);
+        key_set = WiringArgument{
             wiring_point_for_item(materialized, key_set_item_id, key_set_type)};
     }
 
@@ -363,7 +417,7 @@ Signature default_map_signature(bool output) {
             if (function == nullptr) {
                 return static_cast<const Type *>(nullptr);
             }
-            return static_cast<const Type *>(details::map_plan(*function).output_type);
+            return static_cast<const Type *>(details::MapPlan::from(*function).outer_signature.output);
         }}};
     return {util::symbol{"default_map"}, std::move(parameters), result, std::move(resolvers)};
 }
@@ -377,7 +431,7 @@ class DefaultValueMapTemplate final : public WiringTemplate {
   private:
     std::optional<WiringPoint> wire(GraphWiring &, ResolvedSignature, const TypeMap &,
                                     std::span<const WiringArgument> arguments) const final {
-        return details::wire_map_plan(arguments.front().graph());
+        return details::MapPlan::from(arguments.front().graph()).wire();
     }
 
     Signature signature_;
@@ -391,7 +445,7 @@ class DefaultSinkMapTemplate final : public WiringTemplate {
 
     RequirementResult requirement(const WiringArguments &arguments) const final {
         const auto *function = arguments.graph(0);
-        return function != nullptr && details::map_plan(*function).output_type == nullptr
+        return function != nullptr && details::MapPlan::from(*function).outer_signature.output == nullptr
                    ? accept
                    : reject("the mapped graph produces an output");
     }
@@ -399,7 +453,7 @@ class DefaultSinkMapTemplate final : public WiringTemplate {
   private:
     std::optional<WiringPoint> wire(GraphWiring &, ResolvedSignature, const TypeMap &,
                                     std::span<const WiringArgument> arguments) const final {
-        return details::wire_map_plan(arguments.front().graph());
+        return details::MapPlan::from(arguments.front().graph()).wire();
     }
 
     Signature signature_;

@@ -80,13 +80,6 @@ class MapArgumentSelector {
     std::variant<std::size_t, util::symbol> value_;
 };
 
-enum class MapArgumentKind {
-    ordinary,
-    mapped_tsd,
-    key_set_candidate,
-    pass_through,
-};
-
 template <typename TimeSeries> struct map_reference_target {
     using type = std::remove_cv_t<TimeSeries>;
 };
@@ -99,9 +92,7 @@ template <typename TimeSeries>
 using map_reference_target_t = typename map_reference_target<std::remove_cv_t<TimeSeries>>::type;
 
 template <typename Argument> struct map_argument_traits {
-    static constexpr auto kind = MapArgumentKind::ordinary;
-    static constexpr bool forwarded_per_key = true;
-    static constexpr bool consumed_as_key_set = false;
+    static constexpr bool key_set_candidate = false;
 
     using key_type = void;
     using per_key_type = std::remove_cvref_t<Argument>;
@@ -112,27 +103,21 @@ struct map_argument_traits<wp<REF<Target, Properties...>>>
     : map_argument_traits<wp<Target>> {};
 
 template <typename K, typename Item, auto... Properties> struct map_argument_traits<wp<TSD<K, Item, Properties...>>> {
-    static constexpr auto kind = MapArgumentKind::mapped_tsd;
-    static constexpr bool forwarded_per_key = true;
-    static constexpr bool consumed_as_key_set = false;
+    static constexpr bool key_set_candidate = false;
 
     using key_type = K;
     using per_key_type = wp<map_reference_target_t<Item>>;
 };
 
 template <typename K, auto... Properties> struct map_argument_traits<wp<TSS<K, Properties...>>> {
-    static constexpr auto kind = MapArgumentKind::key_set_candidate;
-    static constexpr bool forwarded_per_key = true;
-    static constexpr bool consumed_as_key_set = true;
+    static constexpr bool key_set_candidate = true;
 
     using key_type = K;
     using per_key_type = wp<TSS<K, Properties...>>;
 };
 
 template <typename T> struct map_argument_traits<pass_through_argument<T>> {
-    static constexpr auto kind = MapArgumentKind::pass_through;
-    static constexpr bool forwarded_per_key = true;
-    static constexpr bool consumed_as_key_set = false;
+    static constexpr bool key_set_candidate = false;
 
     using key_type = void;
     using per_key_type = T;
@@ -154,12 +139,26 @@ struct map_argument_traits<named_argument<Name, Value>> : map_argument_traits<Va
 
 template <typename Argument> using map_argument_traits_t = map_argument_traits<std::remove_cvref_t<Argument>>;
 
+template <typename Argument> struct map_argument_value {
+    using type = std::remove_cvref_t<Argument>;
+};
+
+template <util::compile_time_string Name, typename Value>
+struct map_argument_value<named_argument<Name, Value>> : map_argument_value<Value> {};
+
+template <typename Value>
+struct map_argument_value<pass_through_argument<Value>> : map_argument_value<Value> {};
+
+template <typename Argument>
+inline constexpr bool untyped_map_wiring_point =
+    std::same_as<typename map_argument_value<std::remove_cvref_t<Argument>>::type, wp<>>;
+
 template <typename Argument>
 inline constexpr bool map_key_candidate = !std::same_as<typename map_argument_traits_t<Argument>::key_type, void>;
 
 template <typename Argument>
 inline constexpr bool map_key_set_candidate =
-    map_argument_traits_t<Argument>::kind == MapArgumentKind::key_set_candidate;
+    map_argument_traits_t<Argument>::key_set_candidate;
 
 template <typename... Arguments> struct first_map_key {
     using type = void;
@@ -227,6 +226,13 @@ template <typename PositionalTuple, typename NamedTuple, typename Key> struct Ma
     std::optional<MapArgumentSelector> key_set_arg;
 };
 
+template <typename PositionalTuple, typename NamedTuple> struct MapGraphCallPreprocessing {
+    PositionalTuple positional;
+    NamedTuple named;
+    std::optional<MapArgumentSelector> key_arg;
+    std::optional<MapArgumentSelector> key_set_arg;
+};
+
 template <typename Argument> auto positional_map_argument(Argument &&argument) {
     if constexpr (!is_map_option<Argument> && !is_named_argument_v<Argument>) {
         return std::tuple<std::decay_t<Argument>>{std::forward<Argument>(argument)};
@@ -281,13 +287,29 @@ template <typename... Arguments> void validate_map_call() {
     } else if constexpr (error == MapCallError::duplicate_key_set_argument) {
         throw WiringError{"a map call accepts one __key_set_arg__ option"};
     } else if constexpr (error == MapCallError::no_key_type) {
-        throw WiringError{"a map call requires a TSD or TSS argument"};
+        if constexpr ((untyped_map_wiring_point<Arguments> || ...)) {
+            throw WiringError{
+                "a map graph function requires typed TSD or TSS arguments; use a graph template with wp<>"};
+        } else {
+            throw WiringError{"a map call requires a TSD or TSS argument"};
+        }
     } else if constexpr (error == MapCallError::generic_key_type) {
         throw WiringError{"a map call requires a concrete key type"};
     } else if constexpr (error == MapCallError::inconsistent_key_types) {
         throw WiringError{"all map TSD and TSS arguments must have the same key type"};
     } else if constexpr (error == MapCallError::ambiguous_key_set) {
         throw WiringError{"a map call with multiple TSS arguments requires __key_set_arg__"};
+    }
+}
+
+template <typename... Arguments> void validate_map_options() {
+    constexpr auto key_argument_count = named_argument_count<map_key_argument_name, Arguments...>;
+    constexpr auto key_set_argument_count = named_argument_count<map_key_set_argument_name, Arguments...>;
+
+    if constexpr (key_argument_count > 1) {
+        throw WiringError{"a map call accepts one __key_arg__ option"};
+    } else if constexpr (key_set_argument_count > 1) {
+        throw WiringError{"a map call accepts one __key_set_arg__ option"};
     }
 }
 
@@ -305,6 +327,22 @@ template <typename... Arguments> auto preprocess_map_call(Arguments &&...argumen
 
     using Key = typename map_call_traits<Arguments...>::key_type;
     return MapCallPreprocessing<decltype(positional), decltype(named), Key>{
+        .positional = std::move(positional),
+        .named = std::move(named),
+        .key_arg = std::move(key_arg),
+        .key_set_arg = std::move(key_set_arg),
+    };
+}
+
+template <typename... Arguments> auto preprocess_map_graph_call(Arguments &&...arguments) {
+    validate_map_options<Arguments...>();
+
+    auto key_arg = map_option_selector<map_key_argument_name>(arguments...);
+    auto key_set_arg = map_option_selector<map_key_set_argument_name>(arguments...);
+    auto positional = std::tuple_cat(positional_map_argument(std::forward<Arguments>(arguments))...);
+    auto named = std::tuple_cat(named_map_argument(std::forward<Arguments>(arguments))...);
+
+    return MapGraphCallPreprocessing<decltype(positional), decltype(named)>{
         .positional = std::move(positional),
         .named = std::move(named),
         .key_arg = std::move(key_arg),

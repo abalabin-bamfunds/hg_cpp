@@ -39,6 +39,9 @@ outer graph and its inner graphs.
 [docs/nested-graphs.md](docs/nested-graphs.md) defines nested graph boundaries,
 ownership, lifecycle, and scheduling.
 
+[docs/map.md](docs/map.md) defines map arguments, key selection, output,
+evaluation, and lifecycle.
+
 [docs/testing.md](docs/testing.md) defines test organization and required
 coverage.
 

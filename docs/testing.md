@@ -17,7 +17,7 @@ Use `[dimension:value]` for each applicable dimension:
 - `feature`: `scalar-api`, `scalar-storage`, `scalar-collection`, `global-state`, `visitor`, `type-system`,
   `node-api`, `state`, `wiring`, `graph-compilation`, `test-graph`, `evaluation-context`, `evaluation-scratch`,
   `lifecycle`, `finalization`, `scheduling`, `future-scheduling`, `simulation`, `input-activity`, `validity`,
-  `invalidation`, `operator`, `constant`, `graph-argument`,
+  `invalidation`, `operator`, `constant`, `graph-argument`, `map`,
   `time-series-storage`, `time-series-view`, `collection-change`, `reference`, `sampling`, `getitem`, `getattr`,
   `nested-graph`, or `variadic-wiring`
 - `series`: `value`, `fixed-tsl`, `tss`, `tsd`, `tsb`, `reference`, or `generic`
@@ -135,6 +135,7 @@ graph compilation or evaluation.
 - incompatible types, graph ownership errors, and invalid results
 - variadic capture by TSB and homogeneous TSL, forwarding, materialization, exact-name direct collection binding,
   nested boundaries, and operator selection
+- map argument selection, graph-function adaptation, overload selection, graph identity, and diagnostics
 
 ### Graph compilation
 
@@ -162,6 +163,7 @@ graph compilation or evaluation.
 - outer and inner graph failure behavior
 - cycle callbacks and deferred storage reclamation
 - global state shared by outer and inner graphs
+- mapped TSD unions, selected key sets, per-key inner graph evaluation, scheduling, and lifecycle
 
 ### Time series references
 

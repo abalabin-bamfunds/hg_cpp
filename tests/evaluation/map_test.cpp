@@ -4,6 +4,7 @@
 #include <bg/node.hpp>
 #include <bg/operators.hpp>
 #include <bg/testing/test_graph.hpp>
+#include <bg/time_series/tsb/tsb.hpp>
 #include <bg/time_series/tsd/tsd_type.hpp>
 #include <bg/time_series/tss/tss_type.hpp>
 
@@ -48,7 +49,7 @@ TEST_CASE("map applies a graph to each TSD item",
     CHECK(actual.equals<int>({2, 5, 10}));
 }
 
-TEST_CASE("map invokes a raw generic graph callable",
+TEST_CASE("map invokes a generic graph function",
           "[feature:map][feature:nested-graph][feature:operator][series:tsd][shape:nested]"
           "[definition:function]") {
     const auto tested = [&](wp<TS<int>> value) {
@@ -62,7 +63,40 @@ TEST_CASE("map invokes a raw generic graph callable",
     CHECK(actual.equals<int>({3, 6}));
 }
 
-TEST_CASE("map infers a leading key for a raw value graph",
+TEST_CASE("map passes a named argument positionally to a graph function",
+          "[feature:map][feature:nested-graph][feature:operator][feature:variadic-wiring]"
+          "[series:tsd][shape:nested][definition:function]") {
+    const auto tested = [&](wp<TS<int>> value) {
+        return map([](auto item) { return increment(item); },
+                   "item"_n = values_at_key_one(value))[std::int64_t{1}]
+            .as<TS<int>>();
+    };
+
+    const auto actual = testing::test_graph(tested, std::array{2, 5});
+
+    CHECK(actual.equals<int>({3, 6}));
+}
+
+TEST_CASE("map retains a named argument for a graph template",
+          "[feature:map][feature:nested-graph][feature:operator][feature:variadic-wiring]"
+          "[series:tsd][series:tsb][schema:generic][shape:nested][definition:function]") {
+    const auto named_identity = graph(
+        "name"_n = "named_identity",
+        [](wp<TSB<SCHEMA>, var_kwargs> arguments) {
+            return wp<TS<int>>{arguments["item"].time_series()};
+        });
+    const auto tested = [&](wp<TS<int>> value) {
+        return map(named_identity,
+                   "item"_n = values_at_key_one(value))[std::int64_t{1}]
+            .as<TS<int>>();
+    };
+
+    const auto actual = testing::test_graph(tested, std::array{2, 5});
+
+    CHECK(actual.equals<int>({2, 5}));
+}
+
+TEST_CASE("map infers a leading key for a graph function with an output",
           "[feature:map][feature:nested-graph][feature:operator][series:tsd][shape:nested]"
           "[guarantee:const][definition:function]") {
     const auto add_key = node([](In<TS<int>> value,
@@ -150,7 +184,7 @@ TEST_CASE("map runs a source graph for keys selected by a TSS",
     CHECK(actual.equals<std::int64_t>({7, std::nullopt, 7}));
 }
 
-TEST_CASE("map infers a leading key for a raw source graph",
+TEST_CASE("map infers a leading key for a source graph function",
           "[feature:map][feature:nested-graph][feature:operator][series:tss][series:tsd]"
           "[shape:nested][guarantee:const][definition:function]") {
     const auto keys = node([](In<TS<bool>> present, Out<TSS<std::int64_t>> output) {
@@ -178,7 +212,7 @@ struct RecordingSink {
     void evaluate() const { values.push_back(*value); }
 };
 
-TEST_CASE("map supports sink graph callables",
+TEST_CASE("map supports sink graph functions",
           "[feature:map][feature:nested-graph][feature:operator][series:tsd][shape:nested]"
           "[definition:function]") {
     const auto sink = node<RecordingSink>();
@@ -194,7 +228,7 @@ TEST_CASE("map supports sink graph callables",
     CHECK(RecordingSink::values == std::vector{1, 2, 3});
 }
 
-TEST_CASE("an explicit TSD controls the map key set",
+TEST_CASE("map uses an explicitly selected TSD key set",
           "[feature:map][feature:nested-graph][feature:operator][series:tsd][shape:nested]"
           "[transition:addition][transition:removal]") {
     const auto values = node([](In<TS<int>> value,
@@ -202,8 +236,8 @@ TEST_CASE("an explicit TSD controls the map key set",
         output[1].set(*value);
         output[2].set(*value * 10);
     });
-    const auto controller = node([](In<TS<bool>> present,
-                                    Out<TSD<std::int64_t, TS<int>>> output) {
+    const auto key_set = node([](In<TS<bool>> present,
+                                 Out<TSD<std::int64_t, TS<int>>> output) {
         if (*present) {
             output[1].set(0);
         } else {
@@ -214,7 +248,7 @@ TEST_CASE("an explicit TSD controls the map key set",
         "name"_n = "select_value",
         [](wp<TS<int>> value, wp<TS<int>>) { return value; });
     const auto tested = [&](wp<TS<int>> value, wp<TS<bool>> present) {
-        const auto result = map(select_value, values(value), controller(present),
+        const auto result = map(select_value, values(value), key_set(present),
                                 "__key_set_arg__"_n = 1);
         return result[std::int64_t{1}].as<TS<int>>();
     };
@@ -225,7 +259,7 @@ TEST_CASE("an explicit TSD controls the map key set",
     CHECK(actual.equals<int>({3, std::nullopt, 5}));
 }
 
-TEST_CASE("an explicit TSS controls a source map",
+TEST_CASE("map uses an explicitly selected TSS key set for a source graph",
           "[feature:map][feature:nested-graph][feature:operator][series:tss][series:tsd]"
           "[shape:nested][guarantee:const]") {
     const auto keys = node([](In<TS<bool>>, std::int64_t key, Out<TSS<std::int64_t>> output) {

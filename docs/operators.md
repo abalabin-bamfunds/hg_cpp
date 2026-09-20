@@ -214,6 +214,11 @@ Pattern matching wires the pattern against the supplied graph's ordered boundary
 types and compares the resulting structure. Exact structures and patterns are
 less generic than the any-graph type. Distinct patterns are unordered.
 
+The [`map` operator](map.md) passes the mapped graph as a graph argument. An
+overload can therefore select an implementation from the graph structure and
+the supplied map arguments without compiling a separate inner graph for each
+key.
+
 ## Resolution cache
 
 Each operator has a bounded resolution cache. Its keys include supplied

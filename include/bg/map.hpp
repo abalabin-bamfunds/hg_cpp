@@ -19,16 +19,18 @@ class MapOperator : public Operator {
     template <typename Graph, typename... Arguments>
         requires std::derived_from<std::remove_cvref_t<Graph>, WiringTemplate> &&
                  requires { typename std::remove_cvref_t<Graph>::result_type; }
-    [[nodiscard]] auto operator()(const Graph &function, Arguments &&...arguments) {
+    auto operator()(const Graph &function, Arguments &&...arguments) const & {
         return details::invoke_map_graph(*this, function, std::forward<Arguments>(arguments)...);
     }
 
     template <typename Function, typename... Arguments>
         requires(!std::derived_from<std::remove_cvref_t<Function>, WiringTemplate>)
-    [[nodiscard]] auto operator()(Function &&function, Arguments &&...arguments) {
-        return details::invoke_raw_map_graph(*this, std::forward<Function>(function),
-                                             std::forward<Arguments>(arguments)...);
+    auto operator()(Function &&function, Arguments &&...arguments) const & {
+        return details::invoke_map_graph_function(*this, std::forward<Function>(function),
+                                                  std::forward<Arguments>(arguments)...);
     }
+
+    template <typename Function, typename... Arguments> auto operator()(Function &&, Arguments &&...) && = delete;
 };
 
 extern BG_EXPORT MapOperator map;

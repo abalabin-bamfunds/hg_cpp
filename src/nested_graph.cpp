@@ -143,9 +143,7 @@ void NestedGraph::stop(EvaluationContext &context) {
         return;
     }
 
-    if (!context.runtime_graph().stopped_) {
-        context.runtime_graph().add_cycle_callback(this, destroy_retired_callback);
-    }
+    context.add_cycle_callback(this, destroy_retired_callback);
 
     active_->suppress_parent_scheduling_ = true;
     active_->stop(*context.runtime_graph().scratch_);

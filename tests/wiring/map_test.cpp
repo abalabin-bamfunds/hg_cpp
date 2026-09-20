@@ -109,7 +109,7 @@ TEST_CASE("map overloads distinguish graph structure and reuse alpha-equivalent 
     CHECK(multiply_requirements == 1);
 }
 
-TEST_CASE("map accepts a cacheable capturing graph callable",
+TEST_CASE("map accepts a cacheable capturing graph function",
           "[feature:map][feature:operator][feature:graph-argument][feature:nested-graph]"
           "[feature:wiring][series:tsd][definition:function]") {
     const auto values = node([](Out<TSD<std::int64_t, TS<int>>>) {});
@@ -147,6 +147,45 @@ TEST_CASE("map preserves the mapped item guarantee",
     });
 }
 
+TEST_CASE("map resolves an untyped wiring point from its semantic type",
+          "[feature:map][feature:operator][feature:wiring][series:tsd][series:tss]"
+          "[declaration:runtime][guarantee:const]") {
+    const auto values = node([](Out<TSD<std::int64_t, TS<int>>>) {});
+    const auto keys = node([](Out<TSS<std::int64_t>>) {});
+    const auto identity = graph(
+        "name"_n = "identity",
+        [](wp<TS<int>> value) { return value; });
+    const auto key_source = graph(
+        "name"_n = "key_source",
+        [](wp<TS<std::int64_t, TimeSeriesGuarantee::const_>> key) { return key; });
+
+    testing::test_wiring([&] {
+        const auto values_result = map(identity, wp<>{values()});
+        const auto &expected_values = TSD<
+            std::int64_t,
+            REF<TS<int>, TimeSeriesGuarantee::deduplicated>>::type();
+        CHECK(&values_result.type() == &expected_values);
+
+        const auto keys_result = map(key_source, wp<>{keys()}, "__key_arg__"_n = 0);
+        const auto &expected_keys = TSD<
+            std::int64_t,
+            REF<TS<std::int64_t, TimeSeriesGuarantee::const_>,
+                TimeSeriesGuarantee::deduplicated>>::type();
+        CHECK(&keys_result.type() == &expected_keys);
+    });
+}
+
+TEST_CASE("a map graph function requires typed collection arguments",
+          "[feature:map][feature:wiring][series:tsd][declaration:runtime][definition:function]") {
+    const auto values = node([](Out<TSD<std::int64_t, TS<int>>>) {});
+
+    testing::test_wiring([&] {
+        CHECK_THROWS_WITH(
+            map([](auto value) { return value; }, wp<>{values()}),
+            "a map graph function requires typed TSD or TSS arguments; use a graph template with wp<>");
+    });
+}
+
 TEST_CASE("map reports invalid selectors and incompatible key types",
           "[feature:map][feature:operator][feature:wiring][series:tsd]") {
     const auto integers = node([](Out<TSD<std::int64_t, TS<int>>>) {});
@@ -174,17 +213,17 @@ TEST_CASE("map reports invalid selectors and incompatible key types",
         "all map TSD and TSS arguments must have the same key type");
 }
 
-TEST_CASE("a raw map callable requires an explicit selector when leading key use is ambiguous",
+TEST_CASE("a map graph function requires an explicit selector when leading key use is ambiguous",
           "[feature:map][feature:operator][feature:wiring][series:tsd][guarantee:const]") {
     const auto values = node([](Out<TSD<std::int64_t, TS<int>>>) {});
-    const auto callable = [](auto first, auto...) { return first; };
+    const auto function = [](auto first, auto...) { return first; };
 
     testing::test_wiring([&] {
         CHECK_THROWS_WITH(
-            map(callable, values()),
-            "a raw map callable accepts arguments with and without a leading key; provide __key_arg__");
+            map(function, values()),
+            "a map graph function accepts arguments with and without a leading key; provide __key_arg__");
 
-        const auto result = map(callable, values(), "__key_arg__"_n = 0);
+        const auto result = map(function, values(), "__key_arg__"_n = 0);
         const auto &expected = TSD<
             std::int64_t,
             REF<TS<std::int64_t, TimeSeriesGuarantee::const_>,

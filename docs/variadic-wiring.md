@@ -109,3 +109,6 @@ the inner compiled graph. A directly bound collection crosses as one reference.
 A variadic graph or node can be an operator overload. A matching fixed-parameter
 overload is preferred over a variadic overload before type specificity is
 compared.
+
+The [`map` operator](map.md) accepts positional and named graph arguments through
+the same variadic wiring records. Its map options are not part of those records.

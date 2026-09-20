@@ -93,7 +93,7 @@ struct MapInnerGraph {
     NestedGraph graph;
     MapEntry *entry{};
     MapInnerGraph *next_ready{};
-    MapInnerGraph *next_retired{};
+    MapInnerGraph *next_stopped{};
     EvaluationTime future_time{MIN_DT};
     std::size_t future_index{no_future};
     bool ready{};
@@ -103,7 +103,7 @@ struct MapEntry {
     const ScalarValue<> *key{};
     MapInnerGraph *inner_graph{};
     std::uint32_t presence_count{};
-    std::uint32_t retired_inner_graph_count : 31 {};
+    std::uint32_t stopped_inner_graph_count : 31 {};
     std::uint32_t touched : 1 {};
 };
 
@@ -139,7 +139,7 @@ class MapRuntimeState {
 
         for (auto [key, entry] : entries_) {
             if (entry.inner_graph != nullptr) {
-                retire_inner_graph(invocation.context(), entry);
+                defer_inner_graph_destruction(invocation.context(), entry);
             }
         }
     }
@@ -153,9 +153,9 @@ class MapRuntimeState {
                 entry.inner_graph = nullptr;
             }
         }
-        while (retired_inner_graphs_ != nullptr) {
-            auto *inner_graph = retired_inner_graphs_;
-            retired_inner_graphs_ = inner_graph->next_retired;
+        while (stopped_inner_graphs_ != nullptr) {
+            auto *inner_graph = stopped_inner_graphs_;
+            stopped_inner_graphs_ = inner_graph->next_stopped;
             inner_graph->graph.stop_and_destroy(invocation.context());
             memory_.delete_object(inner_graph);
         }
@@ -354,7 +354,7 @@ class MapRuntimeState {
 
     template <typename Invocation> void stop_inner_graph(const CompiledMapGraph &compiled, Invocation invocation,
                                                          MapEntry &entry) {
-        retire_inner_graph(invocation.context(), entry);
+        defer_inner_graph_destruction(invocation.context(), entry);
 
         if (compiled.nested.output_node) {
             auto output = node_invocation_access::output<TSD<SCALAR, REF<TS_T>>>(invocation);
@@ -363,20 +363,20 @@ class MapRuntimeState {
         }
     }
 
-    void retire_inner_graph(EvaluationContext &context, MapEntry &entry) {
+    void defer_inner_graph_destruction(EvaluationContext &context, MapEntry &entry) {
         auto *inner_graph = entry.inner_graph;
 
         if (!inner_graph_cleanup_pending_) {
-            context.add_cycle_callback(this, reclaim_retired_inner_graphs_callback);
+            context.add_cycle_callback(this, destroy_stopped_inner_graphs_callback);
             inner_graph_cleanup_pending_ = true;
         }
 
         inner_graph->graph.stop(context);
 
         entry.inner_graph = nullptr;
-        inner_graph->next_retired = retired_inner_graphs_;
-        retired_inner_graphs_ = inner_graph;
-        ++entry.retired_inner_graph_count;
+        inner_graph->next_stopped = stopped_inner_graphs_;
+        stopped_inner_graphs_ = inner_graph;
+        ++entry.stopped_inner_graph_count;
     }
 
     static NestedGraphInput pass_through_reference(const In<TS_T> &input) {
@@ -481,19 +481,19 @@ class MapRuntimeState {
         }
     }
 
-    static void reclaim_retired_inner_graphs_callback(void *receiver) noexcept {
-        static_cast<MapRuntimeState *>(receiver)->reclaim_retired_inner_graphs();
+    static void destroy_stopped_inner_graphs_callback(void *receiver) noexcept {
+        static_cast<MapRuntimeState *>(receiver)->destroy_stopped_inner_graphs();
     }
 
-    void reclaim_retired_inner_graphs() noexcept {
+    void destroy_stopped_inner_graphs() noexcept {
         inner_graph_cleanup_pending_ = false;
-        while (retired_inner_graphs_ != nullptr) {
-            auto *inner_graph = retired_inner_graphs_;
-            retired_inner_graphs_ = inner_graph->next_retired;
+        while (stopped_inner_graphs_ != nullptr) {
+            auto *inner_graph = stopped_inner_graphs_;
+            stopped_inner_graphs_ = inner_graph->next_stopped;
             auto &entry = *inner_graph->entry;
             memory_.delete_object(inner_graph);
-            --entry.retired_inner_graph_count;
-            if (entry.retired_inner_graph_count == 0 && entry.inner_graph == nullptr && entry.presence_count == 0) {
+            --entry.stopped_inner_graph_count;
+            if (entry.stopped_inner_graph_count == 0 && entry.inner_graph == nullptr && entry.presence_count == 0) {
                 entries_.erase(entry.key->view(), memory_.memory_resource());
             }
         }
@@ -501,7 +501,7 @@ class MapRuntimeState {
 
     void remove_unused_entries() {
         for (auto *entry : touched_) {
-            if (entry->inner_graph == nullptr && entry->retired_inner_graph_count == 0 &&
+            if (entry->inner_graph == nullptr && entry->stopped_inner_graph_count == 0 &&
                 entry->presence_count == 0) {
                 entries_.erase(entry->key->view(), memory_.memory_resource());
             }
@@ -628,7 +628,7 @@ class MapRuntimeState {
     std::pmr::vector<PendingBoundaryUpdate> boundary_updates_;
     std::pmr::vector<NestedGraphInput> nested_inputs_;
     MapInnerGraph *ready_{};
-    MapInnerGraph *retired_inner_graphs_{};
+    MapInnerGraph *stopped_inner_graphs_{};
     ScheduleHandle outer_future_{};
     std::optional<EvaluationTime> outer_future_time_;
     bool inner_graph_cleanup_pending_{};
@@ -713,7 +713,9 @@ class MapNodeDefinition {
             .nested = {.graph = std::move(graph),
                        .input_nodes = std::pmr::vector<std::size_t>{&memory.memory_resource()},
                        .constant_input_nodes = std::pmr::vector<std::size_t>{&memory.memory_resource()},
-                       .output_node = wiring_.output_node ? std::optional{node_indices[output_position]} : std::nullopt},
+                       .output_node = wiring_.output_node
+                                          ? std::optional{node_indices[output_position]}
+                                          : std::nullopt},
             .inputs = std::pmr::vector<CompiledMapInput>{&memory.memory_resource()},
         };
         result.nested.input_nodes.reserve(wiring_.inputs.size());

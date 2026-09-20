@@ -398,7 +398,7 @@ wp<TSD<std::int64_t, REF<TS<int>>>> wire_pass_through_map(
 } // namespace
 
 TEST_CASE("map starts and stops one inner graph repeatedly",
-          "[evaluation][series:tsd][reference][feature:nested-graph][shape:nested]"
+          "[feature:map][feature:nested-graph][feature:reference][series:tsd][shape:nested]"
           "[transition:removal][transition:resurrection]") {
     const auto target = node([](In<TS<int>> command, Out<TS<int>> output) { output.set(std::abs(*command)); });
     const auto make_values =
@@ -421,7 +421,8 @@ TEST_CASE("map starts and stops one inner graph repeatedly",
 }
 
 TEST_CASE("mapped target ticks evaluate only the selected inner graph",
-          "[evaluation][series:tsd][reference][feature:nested-graph][shape:nested][transition:update]") {
+          "[feature:map][feature:nested-graph][feature:reference][series:tsd][shape:nested]"
+          "[transition:update]") {
     const auto targets = node([](In<TS<int>> command, Out<TSD<std::int64_t, TS<int>>> output) {
         if (*command == 0) {
             output[1].set(10);
@@ -449,8 +450,9 @@ TEST_CASE("mapped target ticks evaluate only the selected inner graph",
     CHECK(AddKey::evaluations == std::array<std::size_t, 3>{0, 1, 2});
 }
 
-TEST_CASE("stopped map inner graphs are reclaimed at the start of the next outer cycle",
-          "[evaluation][series:tss][feature:nested-graph][shape:nested][transition:removal][allocation]") {
+TEST_CASE("stopped map inner graphs are destroyed at the start of the next outer cycle",
+          "[feature:map][feature:nested-graph][feature:lifecycle][series:tss][shape:nested]"
+          "[transition:removal]") {
     auto wiring = GraphWiring{};
     {
         const auto context = WiringContext{wiring};
@@ -469,19 +471,19 @@ TEST_CASE("stopped map inner graphs are reclaimed at the start of the next outer
         ControlledKeys::present = false;
         testing::RuntimeGraphAccess::schedule(runtime, 0);
         runtime.evaluate(time(2));
-        const auto retired_allocations = memory.allocations();
+        const auto stopped_allocations = memory.allocations();
 
         runtime.evaluate(time(3));
 
         // The inner runtime graph object, its storage, and MapInnerGraph each use one allocation.
-        CHECK(retired_allocations - memory.allocations() == 3);
+        CHECK(stopped_allocations - memory.allocations() == 3);
     }
 
     CHECK(memory.allocations() == 0);
 }
 
 TEST_CASE("map uses the union of mapped dictionary key sets and binds missing values",
-          "[evaluation][series:tsd][reference][feature:nested-graph][shape:nested]"
+          "[feature:map][feature:nested-graph][feature:reference][series:tsd][shape:nested]"
           "[transition:addition][transition:removal]") {
     const auto target = node([](In<TS<int>> value, Out<TS<int>> output) { output.set(std::abs(*value)); });
     const auto make_values =
@@ -505,8 +507,8 @@ TEST_CASE("map uses the union of mapped dictionary key sets and binds missing va
     CHECK(actual.equals<int>({1, 2, std::nullopt, 7}));
 }
 
-TEST_CASE("a TSS controls source map inner graphs",
-          "[evaluation][series:tss][series:tsd][reference][feature:nested-graph][shape:nested]"
+TEST_CASE("map uses a TSS key set for a source graph",
+          "[feature:map][feature:nested-graph][feature:reference][series:tss][series:tsd][shape:nested]"
           "[transition:addition][transition:removal]") {
     const auto make_keys = node([](In<TS<bool>> present, Out<TSS<std::int64_t>> output) {
         if (*present) {
@@ -522,8 +524,8 @@ TEST_CASE("a TSS controls source map inner graphs",
     CHECK(actual.equals<std::int64_t>({1, std::nullopt, 1}));
 }
 
-TEST_CASE("a TSD controls source map inner graphs",
-          "[evaluation][series:tsd][reference][feature:nested-graph][shape:nested]"
+TEST_CASE("map uses a selected TSD key set for a source graph",
+          "[feature:map][feature:nested-graph][feature:reference][series:tsd][shape:nested]"
           "[transition:addition][transition:removal]") {
     const auto make_keys = node([](In<TS<bool>> present, Out<TSD<std::int64_t, TS<int>>> output) {
         if (*present) {
@@ -542,7 +544,7 @@ TEST_CASE("a TSD controls source map inner graphs",
 }
 
 TEST_CASE("a sink map evaluates one inner graph for each live key",
-          "[evaluation][series:tsd][reference][feature:nested-graph][shape:nested]"
+          "[feature:map][feature:nested-graph][feature:reference][series:tsd][shape:nested]"
           "[transition:addition][transition:update][transition:removal]") {
     const auto target = node([](In<TS<int>> command, Out<TS<int>> output) { output.set(std::abs(*command)); });
     const auto make_values =
@@ -568,7 +570,7 @@ TEST_CASE("a sink map evaluates one inner graph for each live key",
 }
 
 TEST_CASE("a pass-through reference replacement updates each running map inner graph",
-          "[evaluation][series:tsd][reference][feature:nested-graph][shape:nested]"
+          "[feature:map][feature:nested-graph][feature:reference][series:tsd][shape:nested]"
           "[binding:reference-to-reference][transition:update]") {
     const auto target = node([](In<TS<int>> value, int scale, Out<TS<int>> output) {
         output.set(*value * scale);
@@ -595,7 +597,7 @@ TEST_CASE("a pass-through reference replacement updates each running map inner g
 }
 
 TEST_CASE("a map inner graph reports future work through the map owner",
-          "[evaluation][series:tsd][reference][feature:nested-graph][shape:nested]"
+          "[feature:map][feature:nested-graph][feature:reference][series:tsd][shape:nested]"
           "[feature:future-scheduling]") {
     const auto target = node([](In<TS<int>> value, Out<TS<int>> output) { output.set(*value); });
     const auto make_values =
@@ -616,7 +618,7 @@ TEST_CASE("a map inner graph reports future work through the map owner",
 }
 
 TEST_CASE("map schedules the next future time after one inner graph becomes due",
-          "[evaluation][series:tsd][reference][feature:nested-graph][shape:nested]"
+          "[feature:map][feature:nested-graph][feature:reference][series:tsd][shape:nested]"
           "[feature:future-scheduling]") {
     const auto targets = node([](In<TS<int>>, Out<TSD<std::int64_t, TS<int>>> output) {
         output[1].set(2);
@@ -644,7 +646,7 @@ TEST_CASE("map schedules the next future time after one inner graph becomes due"
 }
 
 TEST_CASE("a map consumes and produces TSD references across two nested graph boundaries",
-          "[evaluation][series:tsd][reference][feature:nested-graph][shape:doubly-nested]"
+          "[feature:map][feature:nested-graph][feature:reference][series:tsd][shape:doubly-nested]"
           "[binding:reference-to-reference][transition:stop][transition:restart]") {
     const auto make_values =
         node([](In<REF<TS<int>>> value, Out<TSD<std::int64_t, REF<TS<int>>>> output) {

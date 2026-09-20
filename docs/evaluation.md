@@ -128,6 +128,9 @@ it applies new input updates. This keeps removed storage available for the
 complete cycle in which it was removed and releases downstream objects before
 objects that they can reference.
 
+`EvaluationContext::add_cycle_callback()` registers one callback. Registration
+during stop has no effect because stop code must perform its own cleanup.
+
 A failed or stopped runtime graph discards its pending callbacks. Its stop code
 performs the required cleanup.
 
