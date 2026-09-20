@@ -83,6 +83,7 @@ add_executable(
     wiring/graph_template_test.cpp
     wiring/graph_wiring_test.cpp
     wiring/graph_wiring_structure_test.cpp
+    wiring/map_call_test.cpp
     wiring/operator_test.cpp
     wiring/requirement_test.cpp
     wiring/resolver_test.cpp

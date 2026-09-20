@@ -19,6 +19,7 @@
 #include <bg/graph/wiring_error.hpp>
 #include <bg/graph/wiring_point.hpp>
 #include <bg/graph/wiring_template.hpp>
+#include <bg/map.hpp>
 #include <bg/nested.hpp>
 #include <bg/node.hpp>
 #include <bg/operator.hpp>
