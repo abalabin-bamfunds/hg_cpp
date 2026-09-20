@@ -6,6 +6,7 @@ add_executable(
     evaluation/context/evaluation_scratch_test.cpp
     evaluation/engine/simulation_evaluation_engine_test.cpp
     evaluation/lifecycle/runtime_lifecycle_test.cpp
+    evaluation/map_runtime_node_test.cpp
     evaluation/nested_graph_test.cpp
     evaluation/nested_graph_owner_test.cpp
     evaluation/scheduling/future_scheduling_test.cpp

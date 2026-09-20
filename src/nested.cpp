@@ -15,6 +15,8 @@
 #include <bg/time_series/time_series_variable.hpp>
 #include <bg/type/time_series_reference_type.hpp>
 #include <bg/type/time_series_value_type.hpp>
+#include <bg/type/scalar_variable.hpp>
+#include <bg/type/type.hpp>
 
 #include <memory>
 #include <stdexcept>
@@ -39,7 +41,16 @@ struct NestedOutput {
     void evaluate() const { output.copy(value); }
 };
 
+struct NestedConstantInput {
+    static constexpr bool deduplicate_wiring = false;
+
+    Out<TS<SCALAR, TimeSeriesGuarantee::const_>> output;
+
+    void evaluate() const noexcept {}
+};
+
 const auto nested_input_node = node<NestedInput>();
+const auto nested_constant_input_node = node<NestedConstantInput>();
 const auto nested_output_node = node<NestedOutput>();
 
 struct NestedNodeState {
@@ -90,6 +101,7 @@ class NestedNodeDefinition {
         auto result = compiled_data_type{
             .graph = graph,
             .input_nodes = std::pmr::vector<std::size_t>{&memory.memory_resource()},
+            .constant_input_nodes = std::pmr::vector<std::size_t>{&memory.memory_resource()},
             .output_node = node_indices.front(),
         };
         result.input_nodes.assign(node_indices.begin() + 1, node_indices.end());
@@ -160,6 +172,13 @@ WiringPoint wire_nested_input(const TimeSeriesType &type) {
     auto type_map = TypeMap{};
     type_map.set(TimeSeriesVariableInstance<TS_T>::get(), &type);
     return static_cast<WiringPoint>(nested_input_node(type_map));
+}
+
+WiringPoint wire_nested_constant_input(const TimeSeriesType &type) {
+    const auto &value = type_cast<TimeSeriesValueType>(type);
+    auto type_map = TypeMap{};
+    type_map.set(ScalarVariableInstance<SCALAR>::get(), &value.value_type());
+    return static_cast<WiringPoint>(nested_constant_input_node(type_map));
 }
 
 WiringPoint wire_nested_output(WiringPoint output, const TimeSeriesType &type) {
