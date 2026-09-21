@@ -28,10 +28,10 @@ struct MapInputBoundary {
 // Describes an isolated inner graph after its public arguments have been replaced by boundary nodes.
 struct MapGraphWiring {
     std::shared_ptr<const GraphWiring> wiring;
-    std::vector<MapInputBoundary> inputs;
-    std::optional<std::size_t> key_input_node;
-    std::optional<std::size_t> output_node;
-    std::optional<std::size_t> key_set_parameter;
+    std::vector<MapInputBoundary> inputs{};
+    std::optional<std::size_t> key_input_node{};
+    std::optional<std::size_t> output_node{};
+    std::optional<std::size_t> key_set_parameter{};
 };
 
 [[nodiscard]] std::unique_ptr<NodeTemplate> make_map_node(MapGraphWiring wiring,

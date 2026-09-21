@@ -55,18 +55,18 @@ struct ParameterShape {
 
 struct StoredScalar {
     const ScalarRuntimeType *runtime_type;
-    std::optional<ScalarValue<>> value;
+    std::optional<ScalarValue<>> value{};
 };
 
 struct NodeShape {
     NodeTemplateIdentity identity;
-    std::vector<ParameterShape> parameters;
+    std::vector<ParameterShape> parameters{};
     const TimeSeriesType *output;
-    const TimeSeriesRuntimeType *output_runtime_type;
-    std::vector<const ScalarType *> state_types;
-    std::vector<const TimeSeriesType *> dynamic_reference_input_types;
-    std::vector<StoredScalar> scalars;
-    std::vector<Endpoint> inputs;
+    const TimeSeriesRuntimeType *output_runtime_type{};
+    std::vector<const ScalarType *> state_types{};
+    std::vector<const TimeSeriesType *> dynamic_reference_input_types{};
+    std::vector<StoredScalar> scalars{};
+    std::vector<Endpoint> inputs{};
 };
 
 std::size_t endpoint_path_hash(const Endpoint &endpoint) noexcept {

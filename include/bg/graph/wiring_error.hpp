@@ -25,7 +25,7 @@ enum class WiringFailureStage {
 struct WiringParameterDiagnostic {
     util::symbol name;
     const Type *type;
-    std::shared_ptr<const Type> type_owner;
+    std::shared_ptr<const Type> type_owner{};
 };
 
 struct WiringSignatureDiagnostic {

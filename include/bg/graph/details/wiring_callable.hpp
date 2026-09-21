@@ -92,7 +92,14 @@ decltype(auto) invoke_graph_function(const Function &function, std::span<const W
                                      std::index_sequence<Index...>) {
     using Callable = callable<Function>;
 
-    return std::invoke(function, graph_argument<typename Callable::template argument_type<Index>>(arguments[Index])...);
+    if constexpr (sizeof...(Index) == 0) {
+        static_cast<void>(arguments);
+        return std::invoke(function);
+    } else {
+        return std::invoke(
+            function,
+            graph_argument<typename Callable::template argument_type<Index>>(arguments[Index])...);
+    }
 }
 
 template <typename Function>

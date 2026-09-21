@@ -16,6 +16,7 @@
 #include <optional>
 #include <span>
 #include <stdexcept>
+#include <string_view>
 
 namespace {
 
@@ -623,7 +624,7 @@ TEST_CASE("a positional variadic graph omits absent scalars without sparse field
 TEST_CASE("an operator selects a fixed overload before a variadic overload",
           "[feature:wiring][feature:variadic-wiring][feature:operator][series:tsb][schema:generic]"
           "[definition:function]") {
-    auto selected = "";
+    auto selected = std::string_view{};
     auto operation = operator_<auto(TS_T) -> TS_T>{"choose", {"value"}};
     operation.overload(graph("name"_n = "fixed", [&](wp<TS<int>> value) {
         selected = "fixed";
@@ -645,7 +646,7 @@ TEST_CASE("an operator selects a fixed overload before a variadic overload",
 TEST_CASE("a variadic operator prefers the longer compatible fixed prefix",
           "[feature:wiring][feature:variadic-wiring][feature:operator][series:tsb][schema:generic]"
           "[definition:function]") {
-    auto selected = "";
+    auto selected = std::string_view{};
     auto operation = operator_<auto(TS_T, TS_T) -> TS_T>{"choose", {"first", "second"}};
     operation.overload(graph("name"_n = "short", [&](wp<TS_T> first, wp<TSB<SCHEMA>, var_args>) {
         selected = "short";
@@ -666,7 +667,7 @@ TEST_CASE("a variadic operator prefers the longer compatible fixed prefix",
 TEST_CASE("a variadic operator compares reference affinity on fixed parameters",
           "[feature:wiring][feature:variadic-wiring][feature:operator][series:tsb][schema:generic]"
           "[binding:value-to-reference][binding:reference-to-reference][definition:function]") {
-    auto selected = "";
+    auto selected = std::string_view{};
     auto operation = operator_<auto(TS_T, TS_T) -> TS_T>{"choose", {"first", "second"}};
     operation.overload(graph("name"_n = "value", [&](wp<TS<int>> first, wp<TSB<SCHEMA>, var_args>) {
         selected = "value";

@@ -57,10 +57,10 @@ struct VariableResolver {
 struct ResolvedParameter {
     util::symbol name;
     const Type *type;
-    InputActivity activity;
-    InputValidity validity;
-    bool accepts_absent_scalar;
-    details::VariadicMode variadic_mode;
+    InputActivity activity{active};
+    InputValidity validity{required};
+    bool accepts_absent_scalar{};
+    details::VariadicMode variadic_mode{details::VariadicMode::none};
 };
 
 struct ResolvedSignature {

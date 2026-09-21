@@ -41,7 +41,7 @@ struct CompiledMapInput {
 struct CompiledMapGraph {
     CompiledNestedGraph nested;
     std::pmr::vector<CompiledMapInput> inputs;
-    std::optional<std::uint32_t> key_set_parameter;
+    std::optional<std::uint32_t> key_set_parameter{};
 };
 
 struct MapNodeIdentity {
