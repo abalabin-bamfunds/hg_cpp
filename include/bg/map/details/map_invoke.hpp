@@ -59,21 +59,22 @@ template <typename Tuple> std::vector<MapSuppliedArgument> map_supplied_argument
     return map_supplied_arguments(tuple, std::make_index_sequence<std::tuple_size_v<Tuple>>{});
 }
 
-template <typename Operation, typename Positional, typename Named, typename Options,
+template <typename SelectOverload, typename Positional, typename Named, typename Options,
           std::size_t... P, std::size_t... N, std::size_t... O>
-decltype(auto) invoke_map_operator(const Operation &operation, const GraphArgument &function,
+decltype(auto) select_map_overload(SelectOverload &&select_overload, const GraphArgument &function,
                                    Positional &positional, Named &named, Options &options,
                                    std::index_sequence<P...>, std::index_sequence<N...>,
                                    std::index_sequence<O...>) {
-    return static_cast<const WiringTemplate &>(operation)(
-        function, unwrap_map_argument(std::get<P>(positional))...,
-        unwrap_map_argument(std::get<N>(named))..., std::get<O>(options)...);
+    return std::invoke(std::forward<SelectOverload>(select_overload), function,
+                       unwrap_map_argument(std::get<P>(positional))...,
+                       unwrap_map_argument(std::get<N>(named))..., std::get<O>(options)...);
 }
 
-template <typename Operation, typename Positional, typename Named, typename Options>
-decltype(auto) invoke_map_operator(const Operation &operation, const GraphArgument &function,
+template <typename SelectOverload, typename Positional, typename Named, typename Options>
+decltype(auto) select_map_overload(SelectOverload &&select_overload, const GraphArgument &function,
                                    Positional &positional, Named &named, Options &options) {
-    return invoke_map_operator(operation, function, positional, named, options,
+    return select_map_overload(std::forward<SelectOverload>(select_overload), function, positional,
+                               named, options,
                                std::make_index_sequence<std::tuple_size_v<Positional>>{},
                                std::make_index_sequence<std::tuple_size_v<Named>>{},
                                std::make_index_sequence<std::tuple_size_v<Options>>{});
@@ -216,24 +217,26 @@ void dispatch_map_graph_function(const Function &function, Callback &callback,
     }
 }
 
-template <typename Operation, typename Graph, typename Call>
-std::optional<WiringPoint> invoke_preprocessed_map(const Operation &operation, const Graph &function,
-                                                   Call &call, bool preserve_named_arguments) {
+template <typename SelectOverload, typename Graph, typename Call>
+wp<> invoke_preprocessed_map(SelectOverload &&select_overload, const Graph &function, Call &call,
+                             bool preserve_named_arguments) {
     auto graph_argument = build_map_plan(
         function, map_supplied_arguments(call.positional), map_supplied_arguments(call.named),
         call.key_arg, call.key_set_arg, preserve_named_arguments);
-    return invoke_map_operator(operation, graph_argument, call.positional, call.named, call.options);
+    return select_map_overload(std::forward<SelectOverload>(select_overload), graph_argument,
+                               call.positional, call.named, call.options);
 }
 
-template <typename Operation, typename Graph, typename... Arguments>
-auto invoke_map_graph(const Operation &operation, const Graph &function, Arguments &&...arguments) {
+template <typename SelectOverload, typename Graph, typename... Arguments>
+auto invoke_map_graph(SelectOverload &&select_overload, const Graph &function,
+                      Arguments &&...arguments) {
     auto call = preprocess_map_graph_call(std::forward<Arguments>(arguments)...);
-    const auto result = invoke_preprocessed_map(operation, function, call, true);
-    return result ? wp<>{*result} : wp<>{};
+    return invoke_preprocessed_map(std::forward<SelectOverload>(select_overload), function, call, true);
 }
 
-template <typename Operation, typename Function, typename... Arguments>
-auto invoke_map_graph_function(const Operation &operation, Function &&function, Arguments &&...arguments) {
+template <typename SelectOverload, typename Function, typename... Arguments>
+auto invoke_map_graph_function(SelectOverload &&select_overload, Function &&function,
+                               Arguments &&...arguments) {
     if constexpr (!map_call_traits<Arguments...>::valid) {
         validate_map_call<Arguments...>();
     } else {
@@ -290,29 +293,33 @@ auto invoke_map_graph_function(const Operation &operation, Function &&function, 
                 throw WiringError{"a map graph function requires an indexed __key_arg__ selector"};
             }();
 
-            auto result = std::optional<WiringPoint>{};
-            auto invoke = [&](const auto &bound) {
-                result = invoke_preprocessed_map(operation, bound, call, false);
+            auto result = wp<>{};
+            auto materialize = [&](const auto &bound) {
+                result = invoke_preprocessed_map(select_overload, bound, call, false);
             };
-            dispatch_map_graph_function<0, false, Supplied, StoredFunction, decltype(invoke), Key>(
-                stored_function, invoke, selected_key_set, key_parameter);
-            return result ? wp<>{*result} : wp<>{};
+            dispatch_map_graph_function<0, false, Supplied, StoredFunction, decltype(materialize), Key>(
+                stored_function, materialize, selected_key_set, key_parameter);
+            return result;
         }
     }
 }
 
-struct map_operator_invocation {
-    template <typename Operation, typename Graph, typename... Arguments>
+struct map_operator_implementation {
+    template <typename SelectOverload, typename Graph, typename... Arguments>
         requires std::derived_from<std::remove_cvref_t<Graph>, WiringTemplate> &&
                  requires { typename std::remove_cvref_t<Graph>::result_type; }
-    static auto invoke(const Operation &operation, const Graph &function, Arguments &&...arguments) {
-        return invoke_map_graph(operation, function, std::forward<Arguments>(arguments)...);
+    static auto invoke(SelectOverload &&select_overload, const Graph &function,
+                       Arguments &&...arguments) {
+        return invoke_map_graph(std::forward<SelectOverload>(select_overload), function,
+                                std::forward<Arguments>(arguments)...);
     }
 
-    template <typename Operation, typename Function, typename... Arguments>
+    template <typename SelectOverload, typename Function, typename... Arguments>
         requires(!std::derived_from<std::remove_cvref_t<Function>, WiringTemplate>)
-    static auto invoke(const Operation &operation, Function &&function, Arguments &&...arguments) {
-        return invoke_map_graph_function(operation, std::forward<Function>(function),
+    static auto invoke(SelectOverload &&select_overload, Function &&function,
+                       Arguments &&...arguments) {
+        return invoke_map_graph_function(std::forward<SelectOverload>(select_overload),
+                                         std::forward<Function>(function),
                                          std::forward<Arguments>(arguments)...);
     }
 };

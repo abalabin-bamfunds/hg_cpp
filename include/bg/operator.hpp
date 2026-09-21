@@ -6,6 +6,7 @@
 
 #include <concepts>
 #include <cstddef>
+#include <functional>
 #include <initializer_list>
 #include <optional>
 #include <span>
@@ -17,7 +18,14 @@
 
 namespace bg::details {
 
-struct direct_operator_invocation {};
+struct default_operator_implementation {
+    template <typename SelectOverload, typename... Arguments>
+        requires(graph_code_argument<Arguments> && ...)
+    static decltype(auto) invoke(SelectOverload &&select_overload, Arguments &&...arguments) {
+        return std::invoke(std::forward<SelectOverload>(select_overload),
+                           std::forward<Arguments>(arguments)...);
+    }
+};
 
 template <typename Declaration> const Type &operator_declaration_type() {
     using Value = std::remove_cv_t<Declaration>;
@@ -74,7 +82,7 @@ template <typename Result, typename... Arguments> struct operator_prototype<Resu
 
 namespace bg {
 
-template <typename Prototype, typename Invocation = details::direct_operator_invocation>
+template <typename Prototype, typename Implementation = details::default_operator_implementation>
 class operator_ : public Operator {
   public:
     explicit operator_(std::string_view name, std::span<const std::string_view> parameter_names = {})
@@ -84,18 +92,12 @@ class operator_ : public Operator {
         : operator_(name, std::span<const std::string_view>{parameter_names}) {}
 
     template <typename... Arguments>
-        requires((std::same_as<Invocation, details::direct_operator_invocation> &&
-                  (details::graph_code_argument<Arguments> && ...)) ||
-                 (!std::same_as<Invocation, details::direct_operator_invocation> &&
-                  requires(const operator_ &operation, Arguments &&...arguments) {
-                      Invocation::invoke(operation, std::forward<Arguments>(arguments)...);
-                  }))
     auto operator()(Arguments &&...arguments) const & {
-        if constexpr (std::same_as<Invocation, details::direct_operator_invocation>) {
-            return public_result(WiringTemplate::operator()(std::forward<Arguments>(arguments)...));
-        } else {
-            return Invocation::invoke(*this, std::forward<Arguments>(arguments)...);
-        }
+        const auto select_overload = [this]<typename... Prepared>(Prepared &&...prepared) {
+            return public_result(WiringTemplate::operator()(std::forward<Prepared>(prepared)...));
+        };
+
+        return Implementation::invoke(select_overload, std::forward<Arguments>(arguments)...);
     }
 
     auto operator()(std::span<const WiringPoint> arguments) const & {

@@ -35,6 +35,12 @@ add.overload(bg::node<add_integers>());
 add.overload(add_numbers_graph);
 ```
 
+The optional second `operator_` template argument defines C++ call preparation.
+Its `invoke` function receives the original arguments and a continuation that
+runs normal overload resolution. This supports arguments, such as generic C++
+lambdas, that must be converted while their concrete C++ types are available.
+The preparation code does not select or invoke an overload itself.
+
 The prototype determines the C++ return type. An output operator returns `wp<>`
 because overloads can produce different output types. A sink overload returns
 an empty `wp<>`. An outputless operator returns `void` and accepts only sink

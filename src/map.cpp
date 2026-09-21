@@ -458,7 +458,7 @@ class DefaultSinkMapTemplate final : public WiringTemplate {
 } // namespace
 
 operator_<auto(GRAPH_T, TSB<details::MAP_POSITIONAL>, TSB<details::MAP_NAMED>) -> TS_T,
-          details::map_operator_invocation>
+          details::map_operator_implementation>
     map{"map", {"graph", "args", "kwargs"}};
 
 namespace {

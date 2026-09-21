@@ -11,6 +11,10 @@ template accepts typed or untyped wiring points because wiring resolves their
 semantic types. A C++ graph function requires typed TSD and TSS arguments so
 that C++ can derive its per-key parameter types before invoking it.
 
+Map's operator implementation converts a graph function to a graph argument
+before normal overload resolution. This keeps generic lambdas unannotated while
+allowing overloads to match the resulting graph signature and structure.
+
 ## Arguments
 
 A TSD argument is mapped by default. The inner graph receives the item for its

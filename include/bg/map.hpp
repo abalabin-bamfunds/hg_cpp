@@ -21,7 +21,7 @@ using MAP_NAMED = BundleSchemaVariableDeclaration<"MAP_NAMED", Field>;
 
 extern BG_EXPORT operator_<
     auto(GRAPH_T, TSB<details::MAP_POSITIONAL>, TSB<details::MAP_NAMED>) -> TS_T,
-    details::map_operator_invocation>
+    details::map_operator_implementation>
     map;
 
 } // namespace bg
