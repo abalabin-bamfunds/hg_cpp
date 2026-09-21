@@ -5,6 +5,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers.hpp>
 
+#include <array>
 #include <cstdint>
 #include <string>
 #include <string_view>
@@ -173,6 +174,28 @@ TEST_CASE("map call preprocessing rejects duplicate options",
         CHECK_THROWS_WITH(details::preprocess_map_call(dictionary(), "__key_set_arg__"_n = 0, "__key_set_arg__"_n = 1),
                           "a map call accepts one __key_set_arg__ option");
     });
+}
+
+TEST_CASE("runtime map call preprocessing rejects invalid options",
+          "[feature:map][feature:wiring][feature:variadic-wiring][definition:runtime]") {
+    const auto duplicate_options = std::array{
+        MapArgument{WiringArgument{util::symbol{"__key_arg__"}, std::int64_t{0}}},
+        MapArgument{WiringArgument{util::symbol{"__key_arg__"}, std::int64_t{1}}},
+    };
+    CHECK_THROWS_WITH(details::preprocess_runtime_map_call(duplicate_options),
+                      "a map call accepts one __key_arg__ option");
+
+    const auto pass_through_option = std::array{
+        MapArgument{WiringArgument{util::symbol{"__key_set_arg__"}, std::int64_t{0}}, true},
+    };
+    CHECK_THROWS_WITH(details::preprocess_runtime_map_call(pass_through_option),
+                      "a map option cannot be pass-through");
+
+    const auto invalid_selector = std::array{
+        MapArgument{WiringArgument{util::symbol{"__key_arg__"}, true}},
+    };
+    CHECK_THROWS_WITH(details::preprocess_runtime_map_call(invalid_selector),
+                      "a map argument selector must be an integer or a name");
 }
 
 TEST_CASE("map selectors preserve supported index and name forms",

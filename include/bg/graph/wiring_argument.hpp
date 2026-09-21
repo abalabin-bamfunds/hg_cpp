@@ -96,6 +96,12 @@ class WiringArgument {
     WiringArgument(GraphArgument graph) : value_(std::move(graph)) {}
 
     template <typename T>
+        requires requires(T &&value) { WiringArgument{std::forward<T>(value)}; }
+    WiringArgument(util::symbol name, T &&value) : WiringArgument{std::forward<T>(value)} {
+        name_ = name;
+    }
+
+    template <typename T>
         requires details::graph_argument_facade<T>
     WiringArgument(const T &graph) : WiringArgument{graph.graph_argument()} {}
 

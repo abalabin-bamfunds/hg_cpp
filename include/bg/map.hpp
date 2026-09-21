@@ -2,6 +2,7 @@
 
 #include <bg/export.hpp>
 #include <bg/graph/graph_type.hpp>
+#include <bg/map_argument.hpp>
 #include <bg/map/details/map_invoke.hpp>
 #include <bg/operator.hpp>
 #include <bg/time_series/schema_variable.hpp>

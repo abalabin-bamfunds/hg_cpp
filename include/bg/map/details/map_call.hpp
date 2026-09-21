@@ -2,6 +2,8 @@
 
 #include <bg/graph/wiring_error.hpp>
 #include <bg/graph/wiring_point.hpp>
+#include <bg/map_argument.hpp>
+#include <bg/scalar/value.hpp>
 #include <bg/scalar/type.hpp>
 #include <bg/time_series/time_series_type.hpp>
 #include <bg/time_series/tsd/tsd_type.hpp>
@@ -13,22 +15,16 @@
 #include <concepts>
 #include <cstddef>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <tuple>
 #include <type_traits>
 #include <utility>
 #include <variant>
+#include <vector>
 
 namespace bg {
-
-template <typename T> struct pass_through_argument {
-    T value;
-};
-
-template <typename T> auto pass_through(T &&value) {
-    return pass_through_argument<std::decay_t<T>>{std::forward<T>(value)};
-}
 
 namespace details {
 
@@ -237,6 +233,14 @@ struct MapGraphCallPreprocessing {
     std::optional<MapArgumentSelector> key_set_arg;
 };
 
+struct RuntimeMapCallPreprocessing {
+    std::vector<MapArgument> positional;
+    std::vector<MapArgument> named;
+    std::vector<WiringArgument> options;
+    std::optional<MapArgumentSelector> key_arg;
+    std::optional<MapArgumentSelector> key_set_arg;
+};
+
 template <typename Argument> auto positional_map_argument(Argument &&argument) {
     if constexpr (!is_map_option<Argument> && !is_named_argument_v<Argument>) {
         return std::tuple<std::decay_t<Argument>>{std::forward<Argument>(argument)};
@@ -374,6 +378,61 @@ template <typename... Arguments> auto preprocess_map_graph_call(Arguments &&...a
         .key_arg = std::move(key_arg),
         .key_set_arg = std::move(key_set_arg),
     };
+}
+
+inline MapArgumentSelector runtime_map_argument_selector(const WiringArgument &argument) {
+    if (!argument.is_scalar() || !argument.present()) {
+        throw WiringError{"a map argument selector must be a present scalar"};
+    }
+
+    const auto value = argument.scalar();
+    if (&value.type() == &int64_type()) {
+        return MapArgumentSelector{scalar_cast<std::int64_t>(value).value()};
+    }
+    if (&value.type() == &string_type()) {
+        return MapArgumentSelector{scalar_cast<string>(value).value()};
+    }
+    if (&value.type() == &symbol_type()) {
+        return MapArgumentSelector{scalar_cast<util::symbol>(value).value()};
+    }
+
+    throw WiringError{"a map argument selector must be an integer or a name"};
+}
+
+inline RuntimeMapCallPreprocessing preprocess_runtime_map_call(std::span<const MapArgument> arguments) {
+    auto result = RuntimeMapCallPreprocessing{};
+    result.positional.reserve(arguments.size());
+    result.named.reserve(arguments.size());
+
+    const auto key_argument_name = util::symbol{map_key_argument_name.view()};
+    const auto key_set_argument_name = util::symbol{map_key_set_argument_name.view()};
+    for (const auto &argument : arguments) {
+        const auto name = argument.value.name();
+        const auto key_argument = name == key_argument_name;
+        const auto key_set_argument = name == key_set_argument_name;
+        if (key_argument || key_set_argument) {
+            if (argument.pass_through) {
+                throw WiringError{"a map option cannot be pass-through"};
+            }
+
+            auto &selector = key_argument ? result.key_arg : result.key_set_arg;
+            if (selector) {
+                throw WiringError{key_argument ? "a map call accepts one __key_arg__ option"
+                                               : "a map call accepts one __key_set_arg__ option"};
+            }
+            selector = runtime_map_argument_selector(argument.value);
+            result.options.push_back(argument.value);
+            continue;
+        }
+
+        if (name) {
+            result.named.push_back(argument);
+        } else {
+            result.positional.push_back(argument);
+        }
+    }
+
+    return result;
 }
 
 } // namespace details

@@ -3,6 +3,7 @@
 #include <bg/graph/details/map_node.hpp>
 #include <bg/graph/graph_argument.hpp>
 #include <bg/graph/wiring_argument.hpp>
+#include <bg/map_argument.hpp>
 
 #include <memory>
 #include <optional>
@@ -17,11 +18,6 @@ namespace details {
 
 class MapArgumentSelector;
 
-struct MapSuppliedArgument {
-    WiringArgument value;
-    bool pass_through{};
-};
-
 struct MapPlan {
     MapGraphWiring graph;
     ResolvedSignature outer_signature;
@@ -34,12 +30,12 @@ struct MapPlan {
 
 std::optional<std::size_t>
 selected_map_argument_index(const std::optional<MapArgumentSelector> &selector,
-                            const std::vector<MapSuppliedArgument> &positional,
-                            const std::vector<MapSuppliedArgument> &named);
+                            const std::vector<MapArgument> &positional,
+                            const std::vector<MapArgument> &named);
 
 GraphArgument build_map_plan(const WiringTemplate &function,
-                             std::vector<MapSuppliedArgument> positional,
-                             std::vector<MapSuppliedArgument> named,
+                             std::vector<MapArgument> positional,
+                             std::vector<MapArgument> named,
                              const std::optional<MapArgumentSelector> &key_argument,
                              const std::optional<MapArgumentSelector> &key_set_argument,
                              bool preserve_named_arguments = true);

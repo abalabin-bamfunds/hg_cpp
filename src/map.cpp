@@ -38,8 +38,8 @@ const TimeSeriesType &mapped_dictionary_type(const TimeSeriesDictionaryType &dic
 }
 
 struct PlanBuilder {
-    PlanBuilder(const WiringTemplate &function, std::vector<MapSuppliedArgument> positional,
-                std::vector<MapSuppliedArgument> named,
+    PlanBuilder(const WiringTemplate &function, std::vector<MapArgument> positional,
+                std::vector<MapArgument> named,
                 const std::optional<MapArgumentSelector> &key_argument,
                 const std::optional<MapArgumentSelector> &key_set_argument,
                 bool preserve_named_arguments)
@@ -72,7 +72,7 @@ struct PlanBuilder {
             ++graph_parameter;
         };
 
-        const auto append = [&](MapSuppliedArgument &argument, std::size_t user_index) {
+        const auto append = [&](MapArgument &argument, std::size_t user_index) {
             append_key();
             if (selected_key_set == user_index && is_set(argument.value)) {
                 return;
@@ -141,7 +141,7 @@ struct PlanBuilder {
     }
 
     void resolve_key_type() {
-        const auto inspect = [&](const MapSuppliedArgument &argument) {
+        const auto inspect = [&](const MapArgument &argument) {
             if (argument.pass_through || !argument.value.is_time_series()) {
                 return;
             }
@@ -180,7 +180,7 @@ struct PlanBuilder {
         if (key_set_argument) {
             selected_key_set = *selected_map_argument_index(key_set_argument, positional, named);
         } else {
-            const auto inspect = [&](const MapSuppliedArgument &argument, std::size_t index) {
+            const auto inspect = [&](const MapArgument &argument, std::size_t index) {
                 if (argument.pass_through || !argument.value.is_time_series() || !is_set(argument.value)) {
                     return;
                 }
@@ -238,11 +238,11 @@ struct PlanBuilder {
         }
     }
 
-    MapSuppliedArgument &supplied(std::size_t index) {
+    MapArgument &supplied(std::size_t index) {
         return index < positional.size() ? positional[index] : named[index - positional.size()];
     }
 
-    WiringArgument graph_argument(MapSuppliedArgument &supplied_argument,
+    WiringArgument graph_argument(MapArgument &supplied_argument,
                                   std::vector<WiringPoint> &boundaries) {
         auto argument = wiring_argument_access::borrow(supplied_argument.value);
         if (!preserve_named_arguments) {
@@ -303,8 +303,8 @@ struct PlanBuilder {
     }
 
     const WiringTemplate &function;
-    std::vector<MapSuppliedArgument> positional;
-    std::vector<MapSuppliedArgument> named;
+    std::vector<MapArgument> positional;
+    std::vector<MapArgument> named;
     const ScalarType *key_type{};
     const std::optional<MapArgumentSelector> &key_argument;
     const std::optional<MapArgumentSelector> &key_set_argument;
@@ -326,8 +326,8 @@ struct PlanBuilder {
 
 std::optional<std::size_t>
 selected_map_argument_index(const std::optional<MapArgumentSelector> &selector,
-                            const std::vector<MapSuppliedArgument> &positional,
-                            const std::vector<MapSuppliedArgument> &named) {
+                            const std::vector<MapArgument> &positional,
+                            const std::vector<MapArgument> &named) {
     if (!selector) {
         return std::nullopt;
     }
@@ -349,8 +349,8 @@ selected_map_argument_index(const std::optional<MapArgumentSelector> &selector,
 }
 
 GraphArgument build_map_plan(const WiringTemplate &function,
-                             std::vector<MapSuppliedArgument> positional,
-                             std::vector<MapSuppliedArgument> named,
+                             std::vector<MapArgument> positional,
+                             std::vector<MapArgument> named,
                              const std::optional<MapArgumentSelector> &key_argument,
                              const std::optional<MapArgumentSelector> &key_set_argument,
                              bool preserve_named_arguments) {

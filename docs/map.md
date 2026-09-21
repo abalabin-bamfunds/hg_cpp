@@ -15,6 +15,34 @@ Map's operator implementation converts a graph function to a graph argument
 before normal overload resolution. This keeps generic lambdas unannotated while
 allowing overloads to match the resulting graph signature and structure.
 
+## Runtime calls
+
+A caller that obtains the graph template and arguments at runtime passes a
+`WiringTemplate` and a span of `MapArgument` values. `WiringArgument` retains
+the semantic type and value without exposing its original C++ wrapper type.
+`MapArgument::pass_through` applies the normal pass-through behavior.
+
+```cpp
+const bg::WiringTemplate &runtime_graph = graph_template;
+std::vector<bg::MapArgument> arguments{
+    {bg::WiringArgument{values}},
+    {bg::WiringArgument{factors}, true},
+};
+
+auto result = bg::map(runtime_graph, std::span<const bg::MapArgument>{arguments});
+```
+
+A runtime named argument stores its name in the `WiringArgument`. This includes
+map options:
+
+```cpp
+arguments.push_back({bg::WiringArgument{
+    bg::util::symbol{"__key_set_arg__"}, std::int64_t{0}}});
+```
+
+Generic C++ lambdas use the typed call because their call interface exists only
+at compile time.
+
 ## Arguments
 
 A TSD argument is mapped by default. The inner graph receives the item for its

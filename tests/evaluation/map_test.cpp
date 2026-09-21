@@ -13,6 +13,7 @@
 #include <array>
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <vector>
 
 namespace {
@@ -61,6 +62,37 @@ TEST_CASE("map invokes a generic graph function",
     const auto actual = testing::test_graph(tested, std::array{2, 5});
 
     CHECK(actual.equals<int>({3, 6}));
+}
+
+TEST_CASE("map invokes a graph through runtime arguments",
+          "[feature:map][feature:nested-graph][feature:operator][series:tsd][shape:nested]"
+          "[guarantee:const][definition:runtime]") {
+    const auto add_key = node([](In<TS<int>> value,
+                                 In<TS<std::int64_t, TimeSeriesGuarantee::const_>> key,
+                                 Out<TS<int>> output) {
+        output.set(*value + static_cast<int>(*key));
+    });
+    const auto mapped = graph(
+        "name"_n = "runtime_add_key",
+        [add_key](wp<TS<int>> value,
+                  wp<TS<std::int64_t, TimeSeriesGuarantee::const_>> key) {
+            return add_key(value, key);
+        });
+    const auto tested = [&](wp<TS<int>> value) {
+        const auto arguments = std::vector<MapArgument>{
+            {WiringArgument{values_at_key_one(value)}},
+            {WiringArgument{util::symbol{"__key_arg__"}, std::int64_t{1}}},
+        };
+        const WiringTemplate &runtime_graph = mapped;
+        const auto runtime_arguments = std::span<const MapArgument>{arguments};
+        return map(runtime_graph, runtime_arguments)
+            [std::int64_t{1}]
+                .as<TS<int>>();
+    };
+
+    const auto actual = testing::test_graph(tested, std::array{3, 7});
+
+    CHECK(actual.equals<int>({4, 8}));
 }
 
 TEST_CASE("map passes a named argument positionally to a graph function",

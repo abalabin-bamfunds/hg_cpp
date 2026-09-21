@@ -12,6 +12,7 @@
 #include <memory>
 #include <optional>
 #include <span>
+#include <vector>
 
 namespace {
 
@@ -150,6 +151,14 @@ TEST_CASE("map overloads distinguish graph structure and reuse alpha-equivalent 
               &TSD<std::int64_t, TS<int>>::type());
         CHECK(&operation(multiply, integer_values, float_values).type() ==
               &TSD<std::int64_t, TS<float>>::type());
+
+        const auto runtime_arguments = std::vector<MapArgument>{
+            {WiringArgument{integer_values}},
+            {WiringArgument{float_values}},
+        };
+        const WiringTemplate &runtime_add = add;
+        CHECK(&operation(runtime_add, std::span<const MapArgument>{runtime_arguments}).type() ==
+              &TSD<std::int64_t, TS<int>>::type());
     });
 
     CHECK(add_requirements == 1);
@@ -174,6 +183,48 @@ TEST_CASE("map overloads receive map options",
 
         CHECK(selected);
         CHECK(&result.type() == &input.type());
+
+        selected = false;
+        const auto runtime_arguments = std::vector<MapArgument>{
+            {WiringArgument{input}},
+            {WiringArgument{util::symbol{"__key_set_arg__"}, std::int64_t{0}}},
+        };
+        const WiringTemplate &runtime_identity = identity;
+        const auto runtime_result =
+            operation(runtime_identity, std::span<const MapArgument>{runtime_arguments});
+
+        CHECK(selected);
+        CHECK(&runtime_result.type() == &input.type());
+    });
+}
+
+TEST_CASE("map accepts fully runtime graph and argument values",
+          "[feature:map][feature:operator][feature:graph-argument][feature:wiring]"
+          "[series:tsd][definition:runtime]") {
+    const auto values = node([](Out<TSD<std::int64_t, TS<int>>>) {});
+    const auto other_keys = node([](Out<TSD<bool, TS<float>>>) {});
+    const auto identity = graph(
+        "name"_n = "runtime_identity",
+        [](wp<TS<int>> value, wp<TSD<bool, TS<float>>>) { return value; });
+    const auto sink = graph(
+        "name"_n = "runtime_sink",
+        [](wp<TS<int>>, wp<TSD<bool, TS<float>>>) {});
+
+    testing::test_wiring([&] {
+        const auto arguments = std::vector<MapArgument>{
+            {WiringArgument{values()}},
+            {WiringArgument{other_keys()}, true},
+        };
+        const WiringTemplate &runtime_identity = identity;
+        const WiringTemplate &runtime_sink = sink;
+
+        const auto result = map(runtime_identity, std::span<const MapArgument>{arguments});
+        const auto &expected = TSD<
+            std::int64_t,
+            REF<TS<int>, TimeSeriesGuarantee::deduplicated>>::type();
+
+        CHECK(&result.type() == &expected);
+        CHECK_FALSE(map(runtime_sink, std::span<const MapArgument>{arguments}).has_output());
     });
 }
 
