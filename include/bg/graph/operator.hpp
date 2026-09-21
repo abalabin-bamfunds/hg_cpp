@@ -27,13 +27,6 @@ class Operator : public WiringTemplate {
         return result;
     }
 
-  protected:
-    struct dependent_result_t {};
-    static constexpr auto dependent_result = dependent_result_t{};
-
-    Operator(Signature prototype, dependent_result_t);
-    Operator(Signature prototype, bool dependent_result);
-
   private:
     void add_overload(std::unique_ptr<WiringTemplate> implementation);
 
@@ -46,7 +39,6 @@ class Operator : public WiringTemplate {
                                                   std::span<const WiringArgument>) const final;
 
     Signature prototype_;
-    bool dependent_result_{};
     std::vector<std::unique_ptr<WiringTemplate>> overloads_;
     mutable std::unique_ptr<Cache> cache_;
 };

@@ -265,17 +265,11 @@ struct Operator::Cache {
 
 Operator::Operator(Signature prototype) : prototype_{std::move(prototype)}, cache_{std::make_unique<Cache>()} {}
 
-Operator::Operator(Signature prototype, dependent_result_t)
-    : prototype_{std::move(prototype)}, dependent_result_{true}, cache_{std::make_unique<Cache>()} {}
-
-Operator::Operator(Signature prototype, bool dependent_result)
-    : prototype_{std::move(prototype)}, dependent_result_{dependent_result}, cache_{std::make_unique<Cache>()} {}
-
 Operator::~Operator() = default;
 
 void Operator::add_overload(std::unique_ptr<WiringTemplate> implementation) {
-    if (!dependent_result_ && implementation->signature().has_output() != prototype_.has_output()) {
-        throw std::invalid_argument{"an operator overload has the wrong output shape"};
+    if (!prototype_.has_output() && implementation->signature().has_output()) {
+        throw std::invalid_argument{"an outputless operator cannot have an output overload"};
     }
     overloads_.push_back(std::move(implementation));
     cache_->entries.clear();

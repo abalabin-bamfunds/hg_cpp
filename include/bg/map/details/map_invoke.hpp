@@ -302,8 +302,6 @@ auto invoke_map_graph_function(const Operation &operation, Function &&function, 
 }
 
 struct map_operator_invocation {
-    static constexpr bool dependent_result = true;
-
     template <typename Operation, typename Graph, typename... Arguments>
         requires std::derived_from<std::remove_cvref_t<Graph>, WiringTemplate> &&
                  requires { typename std::remove_cvref_t<Graph>::result_type; }

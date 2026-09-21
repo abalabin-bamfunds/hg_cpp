@@ -253,11 +253,21 @@ TEST_CASE("conflicting contained reference preferences are ambiguous",
     CHECK_THROWS_AS(bg::testing::test_wiring([&] { operation(reference_source(), value_source()); }), bg::WiringError);
 }
 
-TEST_CASE("an operator rejects an overload with a different output shape", "[feature:operator][feature:wiring]") {
+TEST_CASE("an output operator returns an empty wiring point for a sink overload",
+          "[feature:operator][feature:wiring]") {
     auto operation = bg::operator_<auto(bg::TS<float>)->bg::TS<float>>{"identity", {"value"}};
     const auto sink = bg::graph("name"_n = "sink", [](bg::wp<bg::TS<float>>) {});
+    const auto source = bg::node([](bg::Out<bg::TS<float>>) {});
+    operation.overload(sink);
 
-    CHECK_THROWS_AS(operation.overload(sink), std::invalid_argument);
+    bg::testing::test_wiring([&] { CHECK_FALSE(operation(source()).has_output()); });
+}
+
+TEST_CASE("an outputless operator rejects a value overload", "[feature:operator][feature:wiring]") {
+    auto operation = bg::operator_<void(bg::TS<float>)>{"consume", {"value"}};
+    const auto identity = bg::graph("name"_n = "identity", [](bg::wp<bg::TS<float>> value) { return value; });
+
+    CHECK_THROWS_AS(operation.overload(identity), std::invalid_argument);
 }
 
 TEST_CASE("an outputless operator invokes an outputless overload",

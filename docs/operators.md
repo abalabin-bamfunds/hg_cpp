@@ -35,10 +35,10 @@ add.overload(bg::node<add_integers>());
 add.overload(add_numbers_graph);
 ```
 
-The prototype determines whether the operator produces an output. Every
-overload must have the same output presence as the prototype. An output operator
-returns `wp<>` because overloads can produce different output types. An
-outputless operator returns `void`.
+The prototype determines the C++ return type. An output operator returns `wp<>`
+because overloads can produce different output types. A sink overload returns
+an empty `wp<>`. An outputless operator returns `void` and accepts only sink
+overloads.
 
 ```cpp
 auto result = add(lhs, rhs);

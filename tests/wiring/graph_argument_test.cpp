@@ -165,11 +165,6 @@ Signature graph_overload_signature(util::symbol name, const GraphArgumentType &t
     return Signature{name, std::move(parameters)};
 }
 
-class TestDependentOperator final : public Operator {
-  public:
-    explicit TestDependentOperator(Signature prototype) : Operator(std::move(prototype), dependent_result) {}
-};
-
 class GraphOverload final : public WiringTemplate {
   public:
     GraphOverload(util::symbol name, details::GraphWiringStructure structure, bool output,
@@ -475,11 +470,11 @@ TEST_CASE("graph patterns are less generic than any graph and distinct patterns 
     CHECK(compare_specificity(add_signature, multiply_signature) == std::partial_ordering::unordered);
 }
 
-TEST_CASE("a dependent-result operator selects source, value, and sink graph overloads",
+TEST_CASE("an output operator selects source, value, and sink graph overloads",
           "[feature:operator][feature:wiring][feature:graph-argument]") {
     auto selected = std::string{};
-    auto operation = TestDependentOperator{
-        Signature{util::symbol{"map"}, {{util::symbol{"function"}, &GraphArgument::type()}}}};
+    auto operation = Operator{
+        Signature{util::symbol{"map"}, {{util::symbol{"function"}, &GraphArgument::type()}}, TS_T::type()}};
     operation.overload(GraphOverload{util::symbol{"value"}, identity_structure(), true, selected});
     operation.overload(GraphOverload{util::symbol{"source"}, source_structure(), true, selected});
     operation.overload(GraphOverload{util::symbol{"sink"}, sink_structure(), false, selected});
@@ -507,8 +502,8 @@ TEST_CASE("operator caching uses graph structure and bypasses uncacheable struct
           "[feature:operator][feature:wiring][feature:graph-argument]") {
     auto selected = std::string{};
     auto requirements = 0;
-    auto operation = TestDependentOperator{
-        Signature{util::symbol{"map"}, {{util::symbol{"function"}, &GraphArgument::type()}}}};
+    auto operation = Operator{
+        Signature{util::symbol{"map"}, {{util::symbol{"function"}, &GraphArgument::type()}}, TS_T::type()}};
     operation.overload(GraphOverload{util::symbol{"generic"}, true, selected, &requirements});
 
     testing::test_wiring([&] {
@@ -526,8 +521,8 @@ TEST_CASE("operator caching uses graph structure and bypasses uncacheable struct
 
 TEST_CASE("operator diagnostics retain graph argument types",
           "[feature:operator][feature:wiring][feature:graph-argument]") {
-    auto operation = TestDependentOperator{
-        Signature{util::symbol{"map"}, {{util::symbol{"function"}, &GraphArgument::type()}}}};
+    auto operation = Operator{
+        Signature{util::symbol{"map"}, {{util::symbol{"function"}, &GraphArgument::type()}}, TS_T::type()}};
     auto failure = std::optional<WiringError>{};
 
     try {
