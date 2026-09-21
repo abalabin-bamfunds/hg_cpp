@@ -17,6 +17,10 @@
 
 namespace bg::details {
 
+struct direct_operator_invocation {
+    static constexpr bool dependent_result = false;
+};
+
 template <typename Declaration> const Type &operator_declaration_type() {
     using Value = std::remove_cv_t<Declaration>;
 
@@ -72,18 +76,29 @@ template <typename Result, typename... Arguments> struct operator_prototype<Resu
 
 namespace bg {
 
-template <typename Prototype> class operator_ : public Operator {
+template <typename Prototype, typename Invocation = details::direct_operator_invocation>
+class operator_ : public Operator {
   public:
     explicit operator_(std::string_view name, std::span<const std::string_view> parameter_names = {})
-        : Operator(details::operator_prototype<Prototype>::signature(util::symbol{name}, parameter_names)) {}
+        : Operator(details::operator_prototype<Prototype>::signature(util::symbol{name}, parameter_names),
+                   Invocation::dependent_result) {}
 
     operator_(std::string_view name, std::initializer_list<std::string_view> parameter_names)
         : operator_(name, std::span<const std::string_view>{parameter_names}) {}
 
     template <typename... Arguments>
-        requires(details::graph_code_argument<Arguments> && ...)
+        requires((std::same_as<Invocation, details::direct_operator_invocation> &&
+                  (details::graph_code_argument<Arguments> && ...)) ||
+                 (!std::same_as<Invocation, details::direct_operator_invocation> &&
+                  requires(const operator_ &operation, Arguments &&...arguments) {
+                      Invocation::invoke(operation, std::forward<Arguments>(arguments)...);
+                  }))
     auto operator()(Arguments &&...arguments) const & {
-        return public_result(WiringTemplate::operator()(std::forward<Arguments>(arguments)...));
+        if constexpr (std::same_as<Invocation, details::direct_operator_invocation>) {
+            return public_result(WiringTemplate::operator()(std::forward<Arguments>(arguments)...));
+        } else {
+            return Invocation::invoke(*this, std::forward<Arguments>(arguments)...);
+        }
     }
 
     auto operator()(std::span<const WiringPoint> arguments) const & {
@@ -104,7 +119,9 @@ template <typename Prototype> class operator_ : public Operator {
 
   private:
     static auto public_result(std::optional<WiringPoint> result) {
-        if constexpr (details::operator_prototype<Prototype>::has_output) {
+        if constexpr (Invocation::dependent_result) {
+            return result ? wp<>{*result} : wp<>{};
+        } else if constexpr (details::operator_prototype<Prototype>::has_output) {
             return wp<>{*result};
         } else if (result) {
             throw std::logic_error{"an outputless operator overload produced an output"};

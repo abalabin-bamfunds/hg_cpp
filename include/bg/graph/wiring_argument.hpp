@@ -96,6 +96,10 @@ class WiringArgument {
     WiringArgument(GraphArgument graph) : value_(std::move(graph)) {}
 
     template <typename T>
+        requires details::graph_argument_facade<T>
+    WiringArgument(const T &graph) : WiringArgument{graph.graph_argument()} {}
+
+    template <typename T>
         requires details::is_typed_wiring_point<T>
     WiringArgument(T point) : WiringArgument{static_cast<WiringPoint>(point)} {}
 
@@ -277,7 +281,7 @@ template <typename T>
 concept graph_code_argument_value =
     wiring_point_argument<T> || supported_scalar_argument<T> || supported_optional_scalar_argument<T> ||
     supported_scalar_value_argument<T> || std::same_as<std::remove_cvref_t<T>, GraphArgument> ||
-    std::same_as<std::remove_cvref_t<T>, WiringArgument>;
+    std::same_as<std::remove_cvref_t<T>, WiringArgument> || graph_argument_facade<T>;
 
 template <typename T>
 concept graph_code_argument = graph_code_argument_value<T> ||

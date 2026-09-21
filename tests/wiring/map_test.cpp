@@ -18,6 +18,14 @@ namespace {
 using namespace bg;
 using namespace bg::literals;
 
+using MAP_LEFT = ScalarVariable<"MAP_LEFT">;
+using MAP_RIGHT = ScalarVariable<"MAP_RIGHT">;
+
+inline constexpr auto first_argument_pattern = graph_pattern(
+    [](auto first, auto) {
+        return first;
+    });
+
 class PatternMapOverload final : public WiringTemplate {
   public:
     template <typename Pattern>
@@ -59,6 +67,45 @@ class PatternMapOverload final : public WiringTemplate {
     int *requirement_calls_;
 };
 
+class MapOptionOverload final : public WiringTemplate {
+  public:
+    template <typename Pattern>
+    MapOptionOverload(const Pattern &pattern, bool &selected)
+        : graph_type_{std::make_shared<GraphArgumentType>(
+              std::make_shared<const Pattern>(pattern))},
+          signature_{
+              util::symbol{"map_option"},
+              {{util::symbol{"graph"}, graph_type_.get()},
+               {util::symbol{"values"}, &TSD<std::int64_t, TS<int>>::type()},
+               {util::symbol{"options"}, &TSB<details::MAP_NAMED>::type(), active, required, false,
+                details::VariadicMode::named,
+                details::variadic_wiring_operations<TSB<details::MAP_NAMED>>()}},
+              TSD<std::int64_t, TS<int>>::type()},
+          selected_{&selected} {}
+
+    const Signature &signature() const final { return signature_; }
+
+    RequirementResult requirement(const WiringArguments &arguments) const final {
+        const auto key_set_argument = arguments.scalar("__key_set_arg__");
+        if (!key_set_argument || scalar_cast<std::int64_t>(*key_set_argument).value() != 0) {
+            return reject("the key selector was not forwarded");
+        }
+
+        return accept;
+    }
+
+  private:
+    std::optional<WiringPoint> wire(GraphWiring &, ResolvedSignature, const TypeMap &,
+                                    std::span<const WiringArgument> arguments) const final {
+        *selected_ = true;
+        return arguments[1].time_series();
+    }
+
+    std::shared_ptr<const GraphArgumentType> graph_type_;
+    Signature signature_;
+    bool *selected_;
+};
+
 TEST_CASE("map overloads distinguish graph structure and reuse alpha-equivalent structure",
           "[feature:map][feature:operator][feature:graph-argument][feature:nested-graph]"
           "[feature:wiring][series:tsd]") {
@@ -85,7 +132,7 @@ TEST_CASE("map overloads distinguish graph structure and reuse alpha-equivalent 
 
     auto add_requirements = 0;
     auto multiply_requirements = 0;
-    auto operation = MapOperator{};
+    auto operation = std::remove_cvref_t<decltype(map)>{"map", {"graph", "args", "kwargs"}};
     operation.overload(PatternMapOverload{
         util::symbol{"add_map"}, add, TSD<std::int64_t, TS<int>>::type(), 1,
         add_requirements});
@@ -107,6 +154,58 @@ TEST_CASE("map overloads distinguish graph structure and reuse alpha-equivalent 
 
     CHECK(add_requirements == 1);
     CHECK(multiply_requirements == 1);
+}
+
+TEST_CASE("map overloads receive map options",
+          "[feature:map][feature:operator][feature:graph-argument][feature:variadic-wiring]"
+          "[feature:wiring][series:tsd]") {
+    const auto values = node([](Out<TSD<std::int64_t, TS<int>>>) {});
+    const auto identity = graph(
+        "name"_n = "identity_with_key_option",
+        [](wp<TS<int>> value) { return value; });
+
+    auto selected = false;
+    auto operation = std::remove_cvref_t<decltype(map)>{"map", {"graph", "args", "kwargs"}};
+    operation.overload(MapOptionOverload{identity, selected});
+
+    testing::test_wiring([&] {
+        const auto input = values();
+        const auto result = operation(identity, input, "__key_set_arg__"_n = 0);
+
+        CHECK(selected);
+        CHECK(&result.type() == &input.type());
+    });
+}
+
+TEST_CASE("map overloads declare graph signatures and patterns in their parameters",
+          "[feature:map][feature:operator][feature:type-system][feature:graph-argument]"
+          "[feature:wiring][series:tsd][definition:function]") {
+    const auto integers = node([](Out<TSD<std::int64_t, TS<int>>>) {});
+    const auto floats = node([](Out<TSD<std::int64_t, TS<float>>>) {});
+    const auto first = graph(
+        "name"_n = "first",
+        [](wp<TS<int>> left, wp<TS<float>>) {
+            return left;
+        });
+
+    auto selected = false;
+    const auto implementation = graph(
+        "name"_n = "first_map",
+        [&selected](GRAPH<auto(TS<MAP_LEFT>, TS<MAP_RIGHT>) -> TS<MAP_LEFT>, first_argument_pattern>,
+                    wp<TSD<std::int64_t, TS<int>>> integer_values,
+                    wp<TSD<std::int64_t, TS<float>>>) {
+            selected = true;
+            return integer_values;
+        });
+    auto operation = std::remove_cvref_t<decltype(map)>{"map", {"graph", "args", "kwargs"}};
+    operation.overload(implementation);
+
+    testing::test_wiring([&] {
+        const auto result = operation(first, integers(), floats());
+
+        CHECK(selected);
+        CHECK(&result.type() == &TSD<std::int64_t, TS<int>>::type());
+    });
 }
 
 TEST_CASE("map accepts a cacheable capturing graph function",
@@ -144,6 +243,24 @@ TEST_CASE("map preserves the mapped item guarantee",
                 TimeSeriesGuarantee::deduplicated>>::type();
 
         CHECK(&result.type() == &expected);
+    });
+}
+
+TEST_CASE("a sink map returns a wiring point without an output",
+          "[feature:map][feature:operator][feature:wiring][series:tsd]") {
+    const auto values = node([](Out<TSD<std::int64_t, TS<int>>>) {});
+    const auto sink = graph(
+        "name"_n = "sink",
+        [](wp<TS<int>>) {});
+
+    testing::test_wiring([&] {
+        const auto result = map(sink, values());
+
+        CHECK_FALSE(result.has_output());
+        CHECK_FALSE(static_cast<bool>(result));
+        CHECK_THROWS_WITH(result.type(), "a wiring point has no output");
+        CHECK_THROWS_WITH(result.graph(), "a wiring point has no output");
+        CHECK_THROWS_WITH(result.as<TS<int>>(), "a wiring point has no output");
     });
 }
 

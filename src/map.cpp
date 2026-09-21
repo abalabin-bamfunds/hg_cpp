@@ -391,19 +391,15 @@ std::optional<WiringPoint> MapPlan::wire() const {
 namespace bg {
 namespace {
 
-template <template <typename> typename Field>
-using MAP_POSITIONAL = BundleSchemaVariableDeclaration<"MAP_POSITIONAL", Field>;
-
-template <template <typename> typename Field>
-using MAP_NAMED = BundleSchemaVariableDeclaration<"MAP_NAMED", Field>;
-
 Signature default_map_signature(bool output) {
     auto parameters = std::vector<Parameter>{
         {util::symbol{"function"}, &GraphArgument::type()},
-        {util::symbol{"args"}, &TSB<MAP_POSITIONAL>::type(), active, required, false,
-         details::VariadicMode::positional, details::variadic_wiring_operations<TSB<MAP_POSITIONAL>>()},
-        {util::symbol{"kwargs"}, &TSB<MAP_NAMED>::type(), active, required, false,
-         details::VariadicMode::named, details::variadic_wiring_operations<TSB<MAP_NAMED>>()},
+        {util::symbol{"args"}, &TSB<details::MAP_POSITIONAL>::type(), active, required, false,
+         details::VariadicMode::positional,
+         details::variadic_wiring_operations<TSB<details::MAP_POSITIONAL>>()},
+        {util::symbol{"kwargs"}, &TSB<details::MAP_NAMED>::type(), active, required, false,
+         details::VariadicMode::named,
+         details::variadic_wiring_operations<TSB<details::MAP_NAMED>>()},
     };
     if (!output) {
         return {util::symbol{"default_map"}, std::move(parameters)};
@@ -461,13 +457,18 @@ class DefaultSinkMapTemplate final : public WiringTemplate {
 
 } // namespace
 
-MapOperator::MapOperator()
-    : Operator(Signature{util::symbol{"map"}, {{util::symbol{"function"}, &GraphArgument::type()}}},
-               dependent_result) {
-    overload(DefaultValueMapTemplate{});
-    overload(DefaultSinkMapTemplate{});
-}
+operator_<auto(GRAPH_T, TSB<details::MAP_POSITIONAL>, TSB<details::MAP_NAMED>) -> TS_T,
+          details::map_operator_invocation>
+    map{"map", {"graph", "args", "kwargs"}};
 
-MapOperator map;
+namespace {
+
+const auto register_default_map_overloads = [] {
+    map.overload(DefaultValueMapTemplate{});
+    map.overload(DefaultSinkMapTemplate{});
+    return true;
+}();
+
+} // namespace
 
 } // namespace bg

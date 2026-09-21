@@ -216,19 +216,23 @@ template <typename... Arguments> struct map_call_traits {
 
 template <typename K> using map_key_argument_t = wp<TS<K, TimeSeriesGuarantee::const_>>;
 
-template <typename PositionalTuple, typename NamedTuple, typename Key> struct MapCallPreprocessing {
+template <typename PositionalTuple, typename NamedTuple, typename OptionsTuple, typename Key>
+struct MapCallPreprocessing {
     using key_type = Key;
     using inserted_key_type = map_key_argument_t<Key>;
 
     PositionalTuple positional;
     NamedTuple named;
+    OptionsTuple options;
     std::optional<MapArgumentSelector> key_arg;
     std::optional<MapArgumentSelector> key_set_arg;
 };
 
-template <typename PositionalTuple, typename NamedTuple> struct MapGraphCallPreprocessing {
+template <typename PositionalTuple, typename NamedTuple, typename OptionsTuple>
+struct MapGraphCallPreprocessing {
     PositionalTuple positional;
     NamedTuple named;
+    OptionsTuple options;
     std::optional<MapArgumentSelector> key_arg;
     std::optional<MapArgumentSelector> key_set_arg;
 };
@@ -247,6 +251,24 @@ template <typename Argument> auto named_map_argument(Argument &&argument) {
     } else {
         return std::tuple<>{};
     }
+}
+
+template <util::compile_time_string Name, typename Value>
+auto map_option_argument(named_argument<Name, Value> argument) {
+    if constexpr (!is_map_option<named_argument<Name, Value>>) {
+        return std::tuple<>{};
+    } else if constexpr (std::same_as<std::remove_cv_t<Value>, const char *> ||
+                         std::same_as<std::remove_cv_t<Value>, char *>) {
+        return std::tuple{named_argument<Name, std::string>{std::string{argument.value}}};
+    } else {
+        return std::tuple<named_argument<Name, Value>>{std::move(argument)};
+    }
+}
+
+template <typename Argument>
+    requires(!is_named_argument_v<Argument>)
+auto map_option_argument(Argument &&) {
+    return std::tuple<>{};
 }
 
 template <util::compile_time_string Name, typename... Arguments>
@@ -324,11 +346,13 @@ template <typename... Arguments> auto preprocess_map_call(Arguments &&...argumen
 
     auto positional = std::tuple_cat(positional_map_argument(std::forward<Arguments>(arguments))...);
     auto named = std::tuple_cat(named_map_argument(std::forward<Arguments>(arguments))...);
+    auto options = std::tuple_cat(map_option_argument(std::forward<Arguments>(arguments))...);
 
     using Key = typename map_call_traits<Arguments...>::key_type;
-    return MapCallPreprocessing<decltype(positional), decltype(named), Key>{
+    return MapCallPreprocessing<decltype(positional), decltype(named), decltype(options), Key>{
         .positional = std::move(positional),
         .named = std::move(named),
+        .options = std::move(options),
         .key_arg = std::move(key_arg),
         .key_set_arg = std::move(key_set_arg),
     };
@@ -341,10 +365,12 @@ template <typename... Arguments> auto preprocess_map_graph_call(Arguments &&...a
     auto key_set_arg = map_option_selector<map_key_set_argument_name>(arguments...);
     auto positional = std::tuple_cat(positional_map_argument(std::forward<Arguments>(arguments))...);
     auto named = std::tuple_cat(named_map_argument(std::forward<Arguments>(arguments))...);
+    auto options = std::tuple_cat(map_option_argument(std::forward<Arguments>(arguments))...);
 
-    return MapGraphCallPreprocessing<decltype(positional), decltype(named)>{
+    return MapGraphCallPreprocessing<decltype(positional), decltype(named), decltype(options)>{
         .positional = std::move(positional),
         .named = std::move(named),
+        .options = std::move(options),
         .key_arg = std::move(key_arg),
         .key_set_arg = std::move(key_set_arg),
     };

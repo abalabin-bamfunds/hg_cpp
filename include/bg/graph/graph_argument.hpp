@@ -6,8 +6,11 @@
 #include <concepts>
 #include <memory>
 #include <optional>
+#include <span>
+#include <type_traits>
 #include <typeinfo>
 #include <utility>
+#include <vector>
 
 namespace bg::details {
 struct graph_argument_access;
@@ -20,14 +23,24 @@ class WiringTemplate;
 class GraphArgumentType final : public Type {
   public:
     GraphArgumentType() = default;
-    explicit GraphArgumentType(details::GraphWiringStructure structure) : structure_{std::move(structure)} {}
-    explicit GraphArgumentType(std::shared_ptr<const WiringTemplate> pattern) : pattern_{std::move(pattern)} {}
+    explicit GraphArgumentType(details::GraphWiringStructure structure);
+    explicit GraphArgumentType(std::shared_ptr<const WiringTemplate> pattern);
+    GraphArgumentType(std::vector<const Type *> parameters, const TimeSeriesType *output,
+                      std::shared_ptr<const WiringTemplate> pattern = {},
+                      const void *pattern_identity = nullptr);
 
     VISITOR_SUPPORT()
 
-    bool is_resolved() const noexcept final { return true; }
+    bool is_resolved() const noexcept final;
     bool is_graph() const noexcept final { return true; }
-    const Type &resolve(const TypeMap &) const final { return *this; }
+    const Type &resolve(const TypeMap &) const final;
+
+    bool has_signature() const noexcept { return signature_; }
+    std::span<const Type *const> parameters() const noexcept { return parameters_; }
+    const TimeSeriesType *output() const noexcept { return output_; }
+    bool constrained_structure() const noexcept { return structure_.has_value() || pattern_ != nullptr; }
+    bool accepts_declaration(const GraphArgumentType &supplied) const;
+    bool same_constraint(const GraphArgumentType &other) const;
 
     const details::GraphWiringStructure *structure() const noexcept {
         return structure_ ? &*structure_ : nullptr;
@@ -37,11 +50,21 @@ class GraphArgumentType final : public Type {
     bool do_match(const Type &supplied, TypeMap &) const final;
 
   private:
+    bool match_signature(const GraphArgumentType &supplied, TypeMap &type_map) const;
     bool matches_pattern(const details::GraphWiringStructure &supplied) const;
 
+    bool signature_{};
+    std::vector<const Type *> parameters_;
+    const TimeSeriesType *output_{};
     std::optional<details::GraphWiringStructure> structure_;
     std::shared_ptr<const WiringTemplate> pattern_;
+    const void *pattern_identity_{};
 };
+
+const GraphArgumentType &graph_argument_type(std::span<const Type *const> parameters,
+                                             const TimeSeriesType *output,
+                                             std::shared_ptr<const WiringTemplate> pattern = {},
+                                             const void *pattern_identity = nullptr);
 
 // An owning wiring-time graph value. Its payload is interpreted only by the
 // higher-order operation that constructed it.
@@ -85,6 +108,12 @@ struct graph_argument_access {
         }
         return std::static_pointer_cast<const Payload>(argument.payload_);
     }
+};
+
+template <typename T>
+concept graph_argument_facade = requires(const std::remove_cvref_t<T> &value) {
+    { value.graph_argument() } -> std::same_as<const GraphArgument &>;
+    { std::remove_cvref_t<T>::type() } -> std::same_as<const GraphArgumentType &>;
 };
 
 } // namespace bg::details

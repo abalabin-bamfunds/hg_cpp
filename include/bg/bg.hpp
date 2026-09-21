@@ -7,6 +7,7 @@
 #include <bg/graph/compiled_graph.hpp>
 #include <bg/graph/compiled_node.hpp>
 #include <bg/graph/graph_argument.hpp>
+#include <bg/graph/graph_type.hpp>
 #include <bg/graph/graph_wiring.hpp>
 #include <bg/graph/nested_graph.hpp>
 #include <bg/graph/node.hpp>

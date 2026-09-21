@@ -131,7 +131,8 @@ graph compilation or evaluation.
 - wiring paths, labels, and diagnostics
 - node-call deduplication, opt-out, and identity inputs
 - operator overload applicability, selection, requirements, resolvers, and caching
-- graph arguments, including exact and pattern matching, structure-based caching, and callable and aggregate graphs
+- graph arguments, including signature type resolution, repeated variables, exact and pattern matching,
+  structure-based caching, and callable and aggregate graphs
 - incompatible types, graph ownership errors, and invalid results
 - variadic capture by TSB and homogeneous TSL, forwarding, materialization, exact-name direct collection binding,
   nested boundaries, and operator selection

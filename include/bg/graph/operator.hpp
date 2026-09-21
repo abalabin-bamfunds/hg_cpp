@@ -32,6 +32,7 @@ class Operator : public WiringTemplate {
     static constexpr auto dependent_result = dependent_result_t{};
 
     Operator(Signature prototype, dependent_result_t);
+    Operator(Signature prototype, bool dependent_result);
 
   private:
     void add_overload(std::unique_ptr<WiringTemplate> implementation);

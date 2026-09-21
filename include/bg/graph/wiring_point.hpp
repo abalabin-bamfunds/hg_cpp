@@ -23,15 +23,20 @@ template <typename TimeSeries = TS_T, auto... Properties> class wp;
 
 class WiringPoint {
   public:
-    const GraphWiring &graph() const noexcept;
-    const TimeSeriesType &type() const noexcept;
+    WiringPoint() noexcept = default;
+
+    bool has_output() const noexcept { return record_ != nullptr; }
+    explicit operator bool() const noexcept { return has_output(); }
+
+    const GraphWiring &graph() const;
+    const TimeSeriesType &type() const;
 
     template <typename TimeSeries> wp<TimeSeries> as() const;
 
   private:
     explicit WiringPoint(const details::WiringRecord &record) noexcept : record_(&record) {}
 
-    const details::WiringRecord *record_;
+    const details::WiringRecord *record_{};
 
     friend class GraphWiring;
     friend class details::WiringRecord;
@@ -42,6 +47,10 @@ template <typename TimeSeries, auto... Properties> class wp {
     static_assert(sizeof...(Properties) == 0, "this wiring point type does not accept properties");
 
   public:
+    wp() noexcept
+        requires(std::same_as<TimeSeries, TS_T> && sizeof...(Properties) == 0)
+    = default;
+
     wp(WiringPoint point) : point_(point) {
         if (!TimeSeries::type().accepts(point.type())) {
             throw WiringError{"a WiringPoint is incompatible with the requested type"};
@@ -53,8 +62,11 @@ template <typename TimeSeries, auto... Properties> class wp {
 
     operator WiringPoint() const noexcept { return point_; }
 
-    const GraphWiring &graph() const noexcept { return point_.graph(); }
-    const TimeSeriesType &type() const noexcept { return point_.type(); }
+    bool has_output() const noexcept { return point_.has_output(); }
+    explicit operator bool() const noexcept { return has_output(); }
+
+    const GraphWiring &graph() const { return point_.graph(); }
+    const TimeSeriesType &type() const { return point_.type(); }
 
     template <typename Target> wp<Target> as() const { return point_.template as<Target>(); }
 

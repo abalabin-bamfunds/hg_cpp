@@ -59,21 +59,24 @@ template <typename Tuple> std::vector<MapSuppliedArgument> map_supplied_argument
     return map_supplied_arguments(tuple, std::make_index_sequence<std::tuple_size_v<Tuple>>{});
 }
 
-template <typename Operation, typename Positional, typename Named, std::size_t... P, std::size_t... N>
+template <typename Operation, typename Positional, typename Named, typename Options,
+          std::size_t... P, std::size_t... N, std::size_t... O>
 decltype(auto) invoke_map_operator(const Operation &operation, const GraphArgument &function,
-                                   Positional &positional, Named &named,
-                                   std::index_sequence<P...>, std::index_sequence<N...>) {
+                                   Positional &positional, Named &named, Options &options,
+                                   std::index_sequence<P...>, std::index_sequence<N...>,
+                                   std::index_sequence<O...>) {
     return static_cast<const WiringTemplate &>(operation)(
         function, unwrap_map_argument(std::get<P>(positional))...,
-        unwrap_map_argument(std::get<N>(named))...);
+        unwrap_map_argument(std::get<N>(named))..., std::get<O>(options)...);
 }
 
-template <typename Operation, typename Positional, typename Named>
+template <typename Operation, typename Positional, typename Named, typename Options>
 decltype(auto) invoke_map_operator(const Operation &operation, const GraphArgument &function,
-                                   Positional &positional, Named &named) {
-    return invoke_map_operator(operation, function, positional, named,
+                                   Positional &positional, Named &named, Options &options) {
+    return invoke_map_operator(operation, function, positional, named, options,
                                std::make_index_sequence<std::tuple_size_v<Positional>>{},
-                               std::make_index_sequence<std::tuple_size_v<Named>>{});
+                               std::make_index_sequence<std::tuple_size_v<Named>>{},
+                               std::make_index_sequence<std::tuple_size_v<Options>>{});
 }
 
 template <typename T> struct map_graph_function_parameter {
@@ -219,25 +222,14 @@ std::optional<WiringPoint> invoke_preprocessed_map(const Operation &operation, c
     auto graph_argument = build_map_plan(
         function, map_supplied_arguments(call.positional), map_supplied_arguments(call.named),
         call.key_arg, call.key_set_arg, preserve_named_arguments);
-    return invoke_map_operator(operation, graph_argument, call.positional, call.named);
+    return invoke_map_operator(operation, graph_argument, call.positional, call.named, call.options);
 }
 
 template <typename Operation, typename Graph, typename... Arguments>
 auto invoke_map_graph(const Operation &operation, const Graph &function, Arguments &&...arguments) {
-    using Result = typename std::remove_cvref_t<Graph>::result_type;
     auto call = preprocess_map_graph_call(std::forward<Arguments>(arguments)...);
     const auto result = invoke_preprocessed_map(operation, function, call, true);
-
-    if constexpr (std::same_as<Result, void>) {
-        if (result) {
-            throw WiringError{"a sink map overload produced an output"};
-        }
-    } else {
-        if (!result) {
-            throw WiringError{"a value map overload produced no output"};
-        }
-        return wp<>{*result};
-    }
+    return result ? wp<>{*result} : wp<>{};
 }
 
 template <typename Operation, typename Function, typename... Arguments>
@@ -304,18 +296,27 @@ auto invoke_map_graph_function(const Operation &operation, Function &&function, 
             };
             dispatch_map_graph_function<0, false, Supplied, StoredFunction, decltype(invoke), Key>(
                 stored_function, invoke, selected_key_set, key_parameter);
-            if constexpr (result_shape == MapGraphFunctionResult::sink) {
-                if (result) {
-                    throw WiringError{"a sink map overload produced an output"};
-                }
-            } else {
-                if (!result) {
-                    throw WiringError{"a value map overload produced no output"};
-                }
-                return wp<>{*result};
-            }
+            return result ? wp<>{*result} : wp<>{};
         }
     }
 }
+
+struct map_operator_invocation {
+    static constexpr bool dependent_result = true;
+
+    template <typename Operation, typename Graph, typename... Arguments>
+        requires std::derived_from<std::remove_cvref_t<Graph>, WiringTemplate> &&
+                 requires { typename std::remove_cvref_t<Graph>::result_type; }
+    static auto invoke(const Operation &operation, const Graph &function, Arguments &&...arguments) {
+        return invoke_map_graph(operation, function, std::forward<Arguments>(arguments)...);
+    }
+
+    template <typename Operation, typename Function, typename... Arguments>
+        requires(!std::derived_from<std::remove_cvref_t<Function>, WiringTemplate>)
+    static auto invoke(const Operation &operation, Function &&function, Arguments &&...arguments) {
+        return invoke_map_graph_function(operation, std::forward<Function>(function),
+                                         std::forward<Arguments>(arguments)...);
+    }
+};
 
 } // namespace bg::details

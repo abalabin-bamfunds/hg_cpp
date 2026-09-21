@@ -39,6 +39,12 @@ struct other_boundary_node {
     void evaluate() const {}
 };
 
+struct float_boundary_node {
+    static constexpr bool deduplicate_wiring = false;
+    Out<TS<float>> output;
+    void evaluate() const {}
+};
+
 struct add_node {
     In<TS<int>> left;
     In<TS<int>> right;
@@ -52,6 +58,20 @@ struct multiply_node {
     Out<TS<int>> output;
     void evaluate() const {}
 };
+
+const auto add_operation = node<add_node>();
+
+inline constexpr auto addition_pattern = graph_pattern(
+    [](wp<TS<int>> left, wp<TS<int>> right) {
+        return add_operation(left, right);
+    });
+
+inline constexpr auto binary_first_pattern = graph_pattern(
+    [](auto left, auto) {
+        return left;
+    });
+
+using GRAPH_VALUE = ScalarVariable<"GRAPH_VALUE">;
 
 struct opaque_value {
     int value;
@@ -215,6 +235,16 @@ struct aggregate_graph_argument_sink {
     }
 };
 
+struct typed_aggregate_graph_argument_sink {
+    GRAPH<auto(TS<GRAPH_VALUE>, TS<GRAPH_VALUE>) -> TS<GRAPH_VALUE>> function;
+
+    void wire() const {
+        if (function.graph_argument().structure().boundary_count() != 2) {
+            throw std::logic_error{"the graph argument has the wrong boundary count"};
+        }
+    }
+};
+
 } // namespace
 
 TEST_CASE("graph argument matching supports any, exact, and generic patterns",
@@ -236,6 +266,141 @@ TEST_CASE("graph argument matching supports any, exact, and generic patterns",
     CHECK(exact.accepts(supplied.exact_type()));
     CHECK_FALSE(other.accepts(supplied.exact_type()));
     CHECK(pattern.accepts(supplied.exact_type()));
+}
+
+TEST_CASE("graph types resolve variables from their parameters and output",
+          "[feature:operator][feature:type-system][feature:graph-argument]") {
+    using VALUE = ScalarVariable<"VALUE">;
+    using Function = GRAPH<auto(TS<VALUE>, TS<VALUE>) -> TS<VALUE>>;
+
+    const auto supplied = argument(binary_structure<add_node>());
+    auto type_map = TypeMap{};
+
+    REQUIRE(Function::type().match(supplied.exact_type(), type_map));
+    CHECK(&Function::type().resolve(type_map) ==
+          &graph_argument_type(
+              std::array<const Type *, 2>{&TS<int>::type(), &TS<int>::type()}, &TS<int>::type()));
+    CHECK(std::get<const Type *>(*type_map.find(VALUE::type())) == &cpp_scalar_type<int>());
+}
+
+TEST_CASE("graph types resolve scalar parameters with the same variables as time series parameters",
+          "[feature:operator][feature:type-system][feature:graph-argument][argument:scalar]") {
+    using VALUE = ScalarVariable<"VALUE">;
+    using Function = GRAPH<auto(VALUE, TS<VALUE>) -> TS<VALUE>>;
+
+    const auto supplied = GraphArgumentType{
+        std::vector<const Type *>{&cpp_scalar_type<int>(), &TS<int>::type()}, &TS<int>::type()};
+    auto type_map = TypeMap{};
+
+    REQUIRE(Function::type().match(supplied, type_map));
+    CHECK(std::get<const Type *>(*type_map.find(VALUE::type())) == &cpp_scalar_type<int>());
+}
+
+TEST_CASE("repeated variables in graph types reject inconsistent graph signatures",
+          "[feature:operator][feature:type-system][feature:graph-argument]") {
+    using VALUE = ScalarVariable<"VALUE">;
+    using Function = GRAPH<auto(TS<VALUE>, TS<VALUE>) -> TS<VALUE>>;
+
+    const auto mixed = GraphArgumentType{
+        std::vector<const Type *>{&TS<int>::type(), &TS<float>::type()}, &TS<int>::type()};
+    auto type_map = TypeMap{};
+
+    CHECK_FALSE(Function::type().match(mixed, type_map));
+    CHECK(type_map.find(VALUE::type()) == nullptr);
+}
+
+TEST_CASE("repeated variables make graph types more specific",
+          "[feature:operator][feature:type-system][feature:graph-argument]") {
+    using VALUE = ScalarVariable<"VALUE">;
+    using LEFT = ScalarVariable<"LEFT">;
+    using RIGHT = ScalarVariable<"RIGHT">;
+    using RESULT = ScalarVariable<"RESULT">;
+    using Same = GRAPH<auto(TS<VALUE>, TS<VALUE>) -> TS<VALUE>>;
+    using Independent = GRAPH<auto(TS<LEFT>, TS<RIGHT>) -> TS<RESULT>>;
+
+    const auto same = Signature{util::symbol{"same"}, {{util::symbol{"function"}, &Same::type()}}};
+    const auto independent =
+        Signature{util::symbol{"independent"}, {{util::symbol{"function"}, &Independent::type()}}};
+
+    CHECK(compare_specificity(same, independent) == std::partial_ordering::less);
+    CHECK(compare_specificity(independent, same) == std::partial_ordering::greater);
+}
+
+TEST_CASE("graph patterns constrain graph types during matching",
+          "[feature:operator][feature:type-system][feature:graph-argument]") {
+    using Addition = GRAPH<auto(TS<int>, TS<int>) -> TS<int>, addition_pattern>;
+
+    const auto add = argument(binary_structure<add_node>());
+    const auto multiply = argument(binary_structure<multiply_node>());
+
+    CHECK(Addition::type().accepts(add.exact_type()));
+    CHECK_FALSE(Addition::type().accepts(multiply.exact_type()));
+}
+
+TEST_CASE("graph types with the same pattern retain signature specificity",
+          "[feature:operator][feature:type-system][feature:graph-argument]") {
+    using VALUE = ScalarVariable<"VALUE">;
+    using Generic = GRAPH<auto(TS<VALUE>, TS<VALUE>) -> TS<VALUE>, binary_first_pattern>;
+    using Exact = GRAPH<auto(TS<int>, TS<int>) -> TS<int>, binary_first_pattern>;
+
+    const auto generic =
+        Signature{util::symbol{"generic"}, {{util::symbol{"function"}, &Generic::type()}}};
+    const auto exact = Signature{util::symbol{"exact"}, {{util::symbol{"function"}, &Exact::type()}}};
+
+    CHECK(compare_specificity(exact, generic) == std::partial_ordering::less);
+    CHECK(compare_specificity(generic, exact) == std::partial_ordering::greater);
+}
+
+TEST_CASE("a callable operator overload resolves variables nested in a graph type",
+          "[feature:operator][feature:type-system][feature:graph-argument][definition:function]") {
+    const auto result_source = node<graph_result_node>();
+    const auto implementation = graph(
+        "name"_n = "typed_graph_overload",
+        [result_source](GRAPH<auto(TS<GRAPH_VALUE>, TS<GRAPH_VALUE>) -> TS<GRAPH_VALUE>> function) {
+            CHECK(function.graph_argument().structure().boundary_count() == 2);
+            return result_source();
+        });
+    auto operation = operator_<auto(GRAPH_T) -> TS_T>{"apply", {"function"}};
+    operation.overload(implementation);
+
+    testing::test_wiring([&] {
+        const auto result = operation(argument(binary_structure<add_node>()));
+        CHECK(&result.type() == &TS<int>::type());
+    });
+}
+
+TEST_CASE("graph type variables constrain other overload parameters",
+          "[feature:operator][feature:type-system][feature:graph-argument][definition:function]") {
+    using VALUE = ScalarVariable<"VALUE">;
+
+    const auto result_source = node<graph_result_node>();
+    const auto implementation = graph(
+        "name"_n = "graph_and_value",
+        [result_source](GRAPH<auto(TS<VALUE>) -> TS<VALUE>>, wp<TS<VALUE>>) {
+            return result_source();
+        });
+    auto operation = operator_<auto(GRAPH_T, TS_T) -> TS_T>{"apply", {"function", "value"}};
+    operation.overload(implementation);
+
+    testing::test_wiring([&] {
+        const auto integer_source = node<boundary_node>();
+        const auto floating_point_source = node<float_boundary_node>();
+        const auto integer = integer_source();
+        const auto floating_point = floating_point_source();
+        const auto function = argument(identity_structure());
+
+        CHECK(&operation(function, integer).type() == &TS<int>::type());
+        CHECK_THROWS_AS(operation(function, floating_point), WiringError);
+    });
+}
+
+TEST_CASE("an aggregate graph resolves variables nested in a graph type",
+          "[feature:wiring][feature:type-system][feature:graph-argument][definition:aggregate]") {
+    const auto sink = graph<typed_aggregate_graph_argument_sink>();
+
+    testing::test_wiring([&] {
+        sink(argument(binary_structure<add_node>()));
+    });
 }
 
 TEST_CASE("graph structure treats declared inputs as external boundaries",
@@ -375,7 +540,8 @@ TEST_CASE("operator diagnostics retain graph argument types",
     REQUIRE(failure->diagnostic());
     REQUIRE(failure->diagnostic()->arguments.size() == 1);
     CHECK(failure->diagnostic()->arguments[0].type->is_graph());
-    CHECK(std::string_view{failure->what()}.contains("function: graph"));
+    CHECK(std::string_view{failure->what()}.contains(
+        "function: GRAPH<auto(TS<int>) -> TS<int>>"));
 }
 
 TEST_CASE("variadic parameters reject graph arguments",

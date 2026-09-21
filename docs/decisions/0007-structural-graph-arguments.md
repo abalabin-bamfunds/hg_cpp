@@ -16,6 +16,11 @@ their producer stub nodes do not affect identity. Match a graph pattern by
 wiring it against the supplied boundary types in an isolated graph and
 comparing the resulting structure.
 
+Represent a declared graph signature as a graph type. Match its parameter and
+result types through the caller's type map. This lets type variables relate a
+graph signature to the other parameters of a higher-order operation. Apply an
+optional graph pattern as an additional structural constraint.
+
 Use graph structure in operator cache keys. Bypass caching when the structure
 contains a value that cannot be compared and hashed.
 

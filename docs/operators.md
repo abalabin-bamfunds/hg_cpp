@@ -209,10 +209,41 @@ parameters. A longer compatible fixed prefix is less generic.
 A higher-order operation can receive a graph as an owning wiring argument.
 Graph arguments do not enter node storage or variadic collections.
 
+`GRAPH<auto(parameters...) -> result>` declares a graph parameter with a
+boundary signature. `GRAPH_T` accepts any graph. Scalar and time series type
+variables inside `GRAPH` use the overload's normal type map. Repeated variables
+therefore constrain the complete graph signature and participate in
+specificity.
+
+```cpp
+using namespace bg::literals;
+
+using VALUE = bg::ScalarVariable<"VALUE">;
+
+auto implementation = bg::graph(
+    "name"_n = "same_type_graph",
+    [](bg::GRAPH<auto(bg::TS<VALUE>, bg::TS<VALUE>) -> bg::TS<VALUE>> function) {
+        // ...
+    });
+```
+
 An overload can accept any graph, one exact graph structure, or a graph pattern.
 Pattern matching wires the pattern against the supplied graph's ordered boundary
 types and compares the resulting structure. Exact structures and patterns are
 less generic than the any-graph type. Distinct patterns are unordered.
+
+`graph_pattern(function)` adds a structural constraint to a graph type:
+
+```cpp
+inline constexpr auto addition = bg::graph_pattern(
+    [](auto lhs, auto rhs) {
+        return bg::operators::add(lhs, rhs);
+    });
+
+using ADDITION = bg::GRAPH<
+    auto(bg::TS<VALUE>, bg::TS<VALUE>) -> bg::TS<VALUE>,
+    addition>;
+```
 
 The [`map` operator](map.md) passes the mapped graph as a graph argument. An
 overload can therefore select an implementation from the graph structure and

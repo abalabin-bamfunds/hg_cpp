@@ -13,6 +13,7 @@ namespace bg::details {
 template <typename T>
 inline constexpr bool supported_graph_field =
     is_typed_wiring_point<T> || std::same_as<std::remove_cv_t<T>, GraphArgument> ||
+    graph_argument_facade<T> ||
     supported_scalar_argument<T> || supported_optional_scalar_argument<T>;
 
 template <typename Definition, std::size_t... Index>

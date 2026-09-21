@@ -268,6 +268,9 @@ Operator::Operator(Signature prototype) : prototype_{std::move(prototype)}, cach
 Operator::Operator(Signature prototype, dependent_result_t)
     : prototype_{std::move(prototype)}, dependent_result_{true}, cache_{std::make_unique<Cache>()} {}
 
+Operator::Operator(Signature prototype, bool dependent_result)
+    : prototype_{std::move(prototype)}, dependent_result_{dependent_result}, cache_{std::make_unique<Cache>()} {}
+
 Operator::~Operator() = default;
 
 void Operator::add_overload(std::unique_ptr<WiringTemplate> implementation) {

@@ -76,8 +76,26 @@ void append_scalar(std::string &result, const ScalarType &type) {
 } // namespace
 
 void append_type_text(std::string &result, const Type &type) {
-    if (type.is_graph()) {
-        result += "graph";
+    if (const auto *graph = type_cast<GraphArgumentType>(&type)) {
+        if (!graph->has_signature()) {
+            result += "GRAPH_T";
+            return;
+        }
+
+        result += "GRAPH<auto(";
+        for (auto index = std::size_t{}; index < graph->parameters().size(); ++index) {
+            if (index != 0) {
+                result += ", ";
+            }
+            append_type_text(result, *graph->parameters()[index]);
+        }
+        result += ") -> ";
+        if (graph->output() == nullptr) {
+            result += "void";
+        } else {
+            append_type_text(result, *graph->output());
+        }
+        result += '>';
         return;
     }
     if (const auto *scalar = type_cast<ScalarType>(&type)) {

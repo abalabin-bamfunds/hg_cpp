@@ -1,5 +1,6 @@
 #include <bg/type/signature.hpp>
 
+#include <bg/graph/graph_argument.hpp>
 #include <bg/scalar/dict/scalar_type.hpp>
 #include <bg/scalar/list/scalar_type.hpp>
 #include <bg/scalar/set/scalar_type.hpp>
@@ -332,6 +333,38 @@ Order compare_types(const Type &left, const Type &right, Comparison &comparison)
 
     if (&left == &right) {
         return Order::equivalent;
+    }
+
+    if (const auto *left_graph = type_cast<GraphArgumentType>(&left)) {
+        const auto *right_graph = type_cast<GraphArgumentType>(&right);
+        if (right_graph == nullptr) {
+            return Order::unordered;
+        }
+        if (left_graph->has_signature() != right_graph->has_signature()) {
+            return left_graph->has_signature() ? Order::less : Order::greater;
+        }
+        if (!left_graph->has_signature()) {
+            return Order::equivalent;
+        }
+        if (left_graph->parameters().size() != right_graph->parameters().size() ||
+            (left_graph->output() == nullptr) != (right_graph->output() == nullptr)) {
+            return Order::unordered;
+        }
+
+        auto result = Order::equivalent;
+        for (auto index = std::size_t{}; index < left_graph->parameters().size(); ++index) {
+            result = combine(result, compare_types(*left_graph->parameters()[index],
+                                                   *right_graph->parameters()[index], comparison));
+        }
+        if (left_graph->output() != nullptr) {
+            result = combine(result, compare_types(*left_graph->output(), *right_graph->output(), comparison));
+        }
+        if (left_graph->constrained_structure() != right_graph->constrained_structure()) {
+            result = combine(result, left_graph->constrained_structure() ? Order::less : Order::greater);
+        } else if (left_graph->constrained_structure() && !left_graph->same_constraint(*right_graph)) {
+            result = combine(result, Order::unordered);
+        }
+        return result;
     }
 
     if (const auto *left_list = type_cast<ListScalarType>(&left)) {

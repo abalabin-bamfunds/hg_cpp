@@ -1,38 +1,27 @@
 #pragma once
 
 #include <bg/export.hpp>
+#include <bg/graph/graph_type.hpp>
 #include <bg/map/details/map_invoke.hpp>
 #include <bg/operator.hpp>
-
-#include <concepts>
-#include <type_traits>
-#include <utility>
+#include <bg/time_series/schema_variable.hpp>
+#include <bg/time_series/tsb/tsb_type.hpp>
 
 namespace bg {
 
-class MapOperator : public Operator {
-  public:
-    MapOperator();
+namespace details {
 
-    using Operator::overload;
+template <template <typename> typename Field>
+using MAP_POSITIONAL = BundleSchemaVariableDeclaration<"MAP_POSITIONAL", Field>;
 
-    template <typename Graph, typename... Arguments>
-        requires std::derived_from<std::remove_cvref_t<Graph>, WiringTemplate> &&
-                 requires { typename std::remove_cvref_t<Graph>::result_type; }
-    auto operator()(const Graph &function, Arguments &&...arguments) const & {
-        return details::invoke_map_graph(*this, function, std::forward<Arguments>(arguments)...);
-    }
+template <template <typename> typename Field>
+using MAP_NAMED = BundleSchemaVariableDeclaration<"MAP_NAMED", Field>;
 
-    template <typename Function, typename... Arguments>
-        requires(!std::derived_from<std::remove_cvref_t<Function>, WiringTemplate>)
-    auto operator()(Function &&function, Arguments &&...arguments) const & {
-        return details::invoke_map_graph_function(*this, std::forward<Function>(function),
-                                                  std::forward<Arguments>(arguments)...);
-    }
+} // namespace details
 
-    template <typename Function, typename... Arguments> auto operator()(Function &&, Arguments &&...) && = delete;
-};
-
-extern BG_EXPORT MapOperator map;
+extern BG_EXPORT operator_<
+    auto(GRAPH_T, TSB<details::MAP_POSITIONAL>, TSB<details::MAP_NAMED>) -> TS_T,
+    details::map_operator_invocation>
+    map;
 
 } // namespace bg

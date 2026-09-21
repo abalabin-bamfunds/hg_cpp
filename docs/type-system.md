@@ -8,10 +8,10 @@ generic signatures, and time series guarantees.
 
 ## Type model
 
-Generic and resolved types use one hierarchy rooted at `Type`. Its two main
-interfaces are `ScalarType` and `TimeSeriesType`. Each type exposes its structure
-through the applicable interface. Matching and resolution use virtual operations
-on these interfaces.
+Generic and resolved types use one hierarchy rooted at `Type`. Its main
+categories are scalar, time series, and graph types. Each type exposes its
+structure through the applicable interface. Matching and resolution use virtual
+operations on these interfaces.
 
 `type_cast<T>()` casts between the structural categories in `TypeVisitor`.
 Pointer casts return null on mismatch. Reference casts throw `std::bad_cast`.
@@ -21,9 +21,9 @@ For example, both `TS<float, G>` and `TS<float, final>` are time series value
 types. `TSD<K, V>` remains a time series dictionary type before its components
 are resolved.
 
-`is_scalar()` and `is_time_series()` report the known category. A variable over
-`Type` reports neither until resolution. Every type in a resolved signature
-reports exactly one.
+`is_scalar()`, `is_time_series()`, and `is_graph()` report the known category. A
+variable over `Type` reports none until resolution. Every parameter in a
+resolved signature reports one supported category.
 
 Type objects are process-wide so modules can register types before an engine
 exists. Resolved objects are immutable and canonical. Equivalent types have the
@@ -45,6 +45,11 @@ Scalar variable declarations expose the same access, for example
 `SCALAR::type()`. Resolved scalar types come from their type registry.
 
 Runtime types define physical storage separately from this hierarchy.
+
+A graph type contains its parameter types and optional time series result type.
+Its nested variables use the surrounding signature's type map. The
+[`GRAPH` declaration](operators.md#graph-arguments) can also constrain graph
+structure.
 
 ## Runtime types
 

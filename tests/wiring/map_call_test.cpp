@@ -26,6 +26,9 @@ TEST_CASE("map call preprocessing keeps positional and named argument types",
 
         STATIC_CHECK(std::same_as<decltype(call.positional), std::tuple<wp<TSD<std::int64_t, TS<float>>>, int>>);
         STATIC_CHECK(std::same_as<decltype(call.named), std::tuple<details::named_argument<"scale", double>>>);
+        STATIC_CHECK(std::same_as<decltype(call.options),
+                                  std::tuple<details::named_argument<"__key_arg__", int>,
+                                             details::named_argument<"__key_set_arg__", std::string>>>);
         STATIC_CHECK(std::same_as<typename decltype(call)::key_type, std::int64_t>);
         STATIC_CHECK(std::same_as<typename decltype(call)::inserted_key_type,
                                   wp<TS<std::int64_t, TimeSeriesGuarantee::const_>>>);

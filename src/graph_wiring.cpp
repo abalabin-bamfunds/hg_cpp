@@ -68,11 +68,17 @@ bool same_scalar_arguments(std::span<const WiredScalar> stored, std::span<const 
 
 } // namespace
 
-const GraphWiring &WiringPoint::graph() const noexcept {
+const GraphWiring &WiringPoint::graph() const {
+    if (!has_output()) {
+        throw WiringError{"a wiring point has no output"};
+    }
     return record_->graph();
 }
 
-const TimeSeriesType &WiringPoint::type() const noexcept {
+const TimeSeriesType &WiringPoint::type() const {
+    if (!has_output()) {
+        throw WiringError{"a wiring point has no output"};
+    }
     return record_->type();
 }
 

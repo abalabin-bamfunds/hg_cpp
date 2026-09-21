@@ -137,6 +137,11 @@ node indices, wiring paths, and parameter names are not.
 parameter uses `wp<TS_T>`. Scalar parameters use their scalar types. The return
 type is `wp<TS_T>` or `void`.
 
+A higher-order graph uses `GRAPH<auto(parameters...) -> result>` for a graph
+parameter. The declaration checks the supplied graph boundary signature and
+passes its variables through normal type resolution. Structural constraints
+use [`graph_pattern`](operators.md#graph-arguments).
+
 A lambda graph requires a `"name"_n` argument. Its optional label uses
 `"label"_n`. The graph function is the only positional argument:
 

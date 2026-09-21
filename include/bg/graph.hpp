@@ -1,6 +1,7 @@
 #pragma once
 
 #include <bg/graph/details/graph_factory.hpp>
+#include <bg/graph/graph_type.hpp>
 
 #include <utility>
 
