@@ -19,6 +19,7 @@
 #include <bg/type/time_series_set_type.hpp>
 #include <bg/type/time_series_value_type.hpp>
 #include <bg/util/hash_dictionary.hpp>
+#include <bg/util/index.hpp>
 #include <bg/util/scope_exit.hpp>
 
 #include <cstdint>
@@ -85,25 +86,14 @@ struct ScalarValueEqual {
     }
 };
 
-struct MapEntry;
-
-struct MapInnerGraph {
+struct MapEntry {
     static constexpr auto not_in_schedule_heap = std::numeric_limits<std::size_t>::max();
 
     NestedGraph graph;
-    MapEntry *entry{};
-    MapInnerGraph *next_ready{};
-    MapInnerGraph *next_stopped{};
     EvaluationTime scheduled_time{MIN_DT};
     std::size_t schedule_heap_index{not_in_schedule_heap};
-    bool ready{};
-};
-
-struct MapEntry {
-    const ScalarValue<> *key{};
-    MapInnerGraph *inner_graph{};
-    std::uint32_t presence_count{};
-    std::uint32_t stopped_inner_graph_count : 31 {};
+    std::uint32_t position{};
+    std::uint32_t presence_count : 31 {};
     std::uint32_t touched : 1 {};
 };
 
@@ -116,12 +106,16 @@ class MapRuntimeState {
   public:
     explicit MapRuntimeState(allocator memory)
         : memory_{memory}, schedule_heap_{&memory.memory_resource()}, touched_{&memory.memory_resource()},
-          boundary_updates_{&memory.memory_resource()}, nested_inputs_{&memory.memory_resource()} {}
+          boundary_updates_{&memory.memory_resource()}, nested_inputs_{&memory.memory_resource()},
+          stopped_entries_{&memory.memory_resource()} {}
 
     MapRuntimeState(const MapRuntimeState &) = delete;
     MapRuntimeState &operator=(const MapRuntimeState &) = delete;
 
-    ~MapRuntimeState() { entries_.release(memory_.memory_resource()); }
+    ~MapRuntimeState() {
+        ready_.release(memory_.memory_resource());
+        entries_.release(memory_.memory_resource());
+    }
 
     template <typename Invocation> void evaluate(const CompiledMapGraph &compiled, Invocation invocation) {
         activate_due(invocation.context());
@@ -131,15 +125,15 @@ class MapRuntimeState {
         update_boundaries(compiled, invocation);
         update_pass_through_inputs(compiled, invocation);
         evaluate_ready(compiled, invocation);
-        remove_unused_entries();
     }
 
     template <typename Invocation> void stop(const CompiledMapGraph &, Invocation invocation) noexcept {
         clear_schedule_tracking(invocation.context());
 
         for (auto [key, entry] : entries_) {
-            if (entry.inner_graph != nullptr) {
-                defer_inner_graph_destruction(invocation.context(), entry);
+            if (entry.graph.running()) {
+                entry.graph.stop(invocation.context());
+                ready_.reset(entry.position);
             }
         }
     }
@@ -147,17 +141,7 @@ class MapRuntimeState {
     template <typename Invocation> void destroy(Invocation invocation) noexcept {
         clear_schedule_tracking(invocation.context());
         for (auto [key, entry] : entries_) {
-            if (entry.inner_graph != nullptr) {
-                entry.inner_graph->graph.stop_and_destroy(invocation.context());
-                memory_.delete_object(entry.inner_graph);
-                entry.inner_graph = nullptr;
-            }
-        }
-        while (stopped_inner_graphs_ != nullptr) {
-            auto *inner_graph = stopped_inner_graphs_;
-            stopped_inner_graphs_ = inner_graph->next_stopped;
-            inner_graph->graph.stop_and_destroy(invocation.context());
-            memory_.delete_object(inner_graph);
+            entry.graph.stop_and_destroy(invocation.context());
         }
 
         auto memory = invocation.context().runtime_graph().allocation();
@@ -166,14 +150,14 @@ class MapRuntimeState {
 
     static void inner_graph_scheduled(void *receiver, RuntimeGraphOwnerCallbacks::token_type token) noexcept {
         auto &state = *static_cast<MapRuntimeState *>(receiver);
-        state.mark_ready(*reinterpret_cast<MapInnerGraph *>(token));
+        state.mark_ready(static_cast<Entries::size_type>(token));
     }
 
     static void inner_graph_timed_schedule_changed(RuntimeGraphOwnerContext &context, void *receiver,
-                                                    RuntimeGraphOwnerCallbacks::token_type token,
-                                                    std::optional<EvaluationTime> time) {
+                                                   RuntimeGraphOwnerCallbacks::token_type token,
+                                                   std::optional<EvaluationTime> time) {
         auto &state = *static_cast<MapRuntimeState *>(receiver);
-        state.set_scheduled_time(context, *reinterpret_cast<MapInnerGraph *>(token), time);
+        state.set_scheduled_time(context, state.entries_.value_at(static_cast<Entries::size_type>(token)), time);
     }
 
     static constexpr RuntimeGraphOwnerCallbacks owner_callbacks{
@@ -184,8 +168,7 @@ class MapRuntimeState {
   private:
     using Entries = util::hash_dictionary<ScalarValue<>, MapEntry, ScalarValueHash, ScalarValueEqual>;
 
-    template <typename Invocation>
-    static In<TS_T> input(Invocation invocation, std::size_t parameter_index) {
+    template <typename Invocation> static In<TS_T> input(Invocation invocation, std::size_t parameter_index) {
         return node_invocation_access::input<In<TS_T>>(invocation, parameter_index, parameter_index);
     }
 
@@ -195,10 +178,11 @@ class MapRuntimeState {
         }
 
         auto stored_key = ScalarValue<>{Scalar<>::from(key), memory_};
-        auto [entry, inserted] =
-            entries_.try_emplace(std::move(stored_key), memory_.memory_resource());
+        auto [entry, inserted] = entries_.try_emplace(std::move(stored_key), memory_.memory_resource());
         (void)inserted;
-        entry->key = entries_.find_key(key);
+        entry->position = entries_.find_position(key);
+        // Owner scheduling callbacks are noexcept, so allocate the ready bit before the graph can invoke them.
+        ready_.grow(entry->position + 1, memory_.memory_resource());
         return *entry;
     }
 
@@ -233,17 +217,14 @@ class MapRuntimeState {
     }
 
     template <typename Function> static void visit_added_keys(const In<TS_T> &input, Function &&function) {
-        input.visit(
-            [&](const In<TSS<SCALAR>> *set) { set->for_each_added(function); },
-            [&](const In<TSD<SCALAR, TS_T>> *dictionary) { dictionary->for_each_added(function); },
-            ddv::noop);
+        input.visit([&](const In<TSS<SCALAR>> *set) { set->for_each_added(function); },
+                    [&](const In<TSD<SCALAR, TS_T>> *dictionary) { dictionary->for_each_added(function); }, ddv::noop);
     }
 
     template <typename Function> static void visit_removed_keys(const In<TS_T> &input, Function &&function) {
-        input.visit(
-            [&](const In<TSS<SCALAR>> *set) { set->for_each_removed(function); },
-            [&](const In<TSD<SCALAR, TS_T>> *dictionary) { dictionary->for_each_removed(function); },
-            ddv::noop);
+        input.visit([&](const In<TSS<SCALAR>> *set) { set->for_each_removed(function); },
+                    [&](const In<TSD<SCALAR, TS_T>> *dictionary) { dictionary->for_each_removed(function); },
+                    ddv::noop);
     }
 
     template <typename Invocation> void process_key_changes(const CompiledMapGraph &compiled, Invocation invocation) {
@@ -301,7 +282,7 @@ class MapRuntimeState {
         for (auto *entry : touched_) {
             entry->touched = false;
             const auto should_run = entry->presence_count != 0;
-            if (should_run == (entry->inner_graph != nullptr)) {
+            if (should_run == entry->graph.running()) {
                 continue;
             }
 
@@ -311,67 +292,57 @@ class MapRuntimeState {
                 stop_inner_graph(compiled, invocation, *entry);
             }
         }
+        touched_.clear();
     }
 
-    template <typename Invocation> void start_inner_graph(const CompiledMapGraph &compiled, Invocation invocation,
-                                                          MapEntry &entry) {
+    template <typename Invocation>
+    void start_inner_graph(const CompiledMapGraph &compiled, Invocation invocation, MapEntry &entry) {
         nested_inputs_.clear();
         nested_inputs_.reserve(compiled.inputs.size());
         for (const auto &description : compiled.inputs) {
             const auto outer = input(invocation, description.parameter_index);
             nested_inputs_.push_back(description.kind == MapInputKind::mapped
-                                         ? mapped_reference(outer, entry.key->view())
+                                         ? mapped_reference(outer, entries_.key_at(entry.position).view())
                                          : pass_through_reference(outer));
         }
 
-        entry.inner_graph = memory_.new_object<MapInnerGraph>();
-        entry.inner_graph->entry = &entry;
-        auto rollback = util::scope_exit{[&]() noexcept {
-            auto *inner_graph = std::exchange(entry.inner_graph, nullptr);
-            inner_graph->graph.stop_and_destroy(invocation.context());
-            memory_.delete_object(inner_graph);
-        }};
+        auto rollback = util::scope_exit{[&]() noexcept { entry.graph.stop_and_destroy(invocation.context()); }};
         const auto owner = RuntimeGraphOwner{
             .receiver = this,
-            .token = reinterpret_cast<RuntimeGraphOwnerCallbacks::token_type>(entry.inner_graph),
+            .token = entry.position,
             .callbacks = &owner_callbacks,
         };
         if (compiled.nested.constant_input_nodes.empty()) {
-            entry.inner_graph->graph.start(compiled.nested, invocation.context(), nested_inputs_, owner);
+            entry.graph.start(compiled.nested, invocation.context(), nested_inputs_, owner);
         } else {
-            const auto constant = NestedGraphConstantInput{entry.key->view()};
-            entry.inner_graph->graph.start(compiled.nested, invocation.context(), nested_inputs_,
-                                           std::span<const NestedGraphConstantInput>{&constant, 1}, owner);
+            const auto constant = NestedGraphConstantInput{entries_.key_at(entry.position).view()};
+            entry.graph.start(compiled.nested, invocation.context(), nested_inputs_,
+                              std::span<const NestedGraphConstantInput>{&constant, 1}, owner);
         }
-        mark_ready(*entry.inner_graph);
+        mark_ready(entry.position);
         rollback.release();
     }
 
-    template <typename Invocation> void stop_inner_graph(const CompiledMapGraph &compiled, Invocation invocation,
-                                                         MapEntry &entry) {
-        defer_inner_graph_destruction(invocation.context(), entry);
+    template <typename Invocation>
+    void stop_inner_graph(const CompiledMapGraph &compiled, Invocation invocation, MapEntry &entry) {
+        stop_inner_graph(invocation.context(), entry);
 
         if (compiled.nested.output_node) {
             auto output = node_invocation_access::output<TSD<SCALAR, REF<TS_T>>>(invocation);
-            const auto key = entry.key->view();
+            const auto key = entries_.key_at(entry.position).view();
             output.erase(Scalar<SCALAR>::from(key));
         }
     }
 
-    void defer_inner_graph_destruction(EvaluationContext &context, MapEntry &entry) {
-        auto *inner_graph = entry.inner_graph;
-
-        if (!inner_graph_cleanup_pending_) {
-            context.add_cycle_callback(this, destroy_stopped_inner_graphs_callback);
-            inner_graph_cleanup_pending_ = true;
+    void stop_inner_graph(EvaluationContext &context, MapEntry &entry) {
+        if (!stopped_entry_cleanup_pending_) {
+            context.add_cycle_callback(this, destroy_stopped_entries_callback);
+            stopped_entry_cleanup_pending_ = true;
         }
 
-        inner_graph->graph.stop(context);
-
-        entry.inner_graph = nullptr;
-        inner_graph->next_stopped = stopped_inner_graphs_;
-        stopped_inner_graphs_ = inner_graph;
-        ++entry.stopped_inner_graph_count;
+        entry.graph.stop(context);
+        ready_.reset(entry.position);
+        stopped_entries_.push_back(entry.position);
     }
 
     static NestedGraphInput pass_through_reference(const In<TS_T> &input) {
@@ -405,15 +376,15 @@ class MapRuntimeState {
     template <typename Invocation> void update_boundaries(const CompiledMapGraph &compiled, Invocation invocation) {
         for (const auto update : boundary_updates_) {
             auto &entry = *update.entry;
-            if (entry.inner_graph == nullptr) {
+            if (!entry.graph.running()) {
                 continue;
             }
 
             const auto &description = compiled.inputs[update.input_index];
             const auto outer = input(invocation, description.parameter_index);
-            entry.inner_graph->graph.update_input(compiled.nested, description.inner_input_index,
-                                                  mapped_reference(outer, entry.key->view()));
-            mark_ready(*entry.inner_graph);
+            entry.graph.update_input(compiled.nested, description.inner_input_index,
+                                     mapped_reference(outer, entries_.key_at(entry.position).view()));
+            mark_ready(entry.position);
         }
     }
 
@@ -430,44 +401,43 @@ class MapRuntimeState {
             }
             const auto reference = pass_through_reference(outer);
             for (auto [key, entry] : entries_) {
-                if (entry.inner_graph == nullptr) {
+                if (!entry.graph.running()) {
                     continue;
                 }
-                entry.inner_graph->graph.update_input(compiled.nested, description.inner_input_index, reference);
-                mark_ready(*entry.inner_graph);
+                entry.graph.update_input(compiled.nested, description.inner_input_index, reference);
+                mark_ready(entry.position);
             }
         }
     }
 
-    void mark_ready(MapInnerGraph &inner_graph) noexcept {
-        if (inner_graph.entry->inner_graph != &inner_graph || inner_graph.ready) {
+    void mark_ready(Entries::size_type position) noexcept {
+        auto &entry = entries_.value_at(position);
+        if (!entry.graph.running()) {
             return;
         }
-        inner_graph.ready = true;
-        inner_graph.next_ready = ready_;
-        ready_ = &inner_graph;
+        ready_.set(position, memory_.memory_resource());
     }
 
     template <typename Invocation> void evaluate_ready(const CompiledMapGraph &compiled, Invocation invocation) {
-        while (ready_ != nullptr) {
-            auto *inner_graph = ready_;
-            ready_ = inner_graph->next_ready;
-            inner_graph->next_ready = nullptr;
-            inner_graph->ready = false;
-            auto &entry = *inner_graph->entry;
-            if (entry.inner_graph != inner_graph) {
+        for (auto position = ready_.begin(); position != ready_.end();) {
+            const auto current = *position;
+            ++position;
+            ready_.reset(current);
+
+            auto &entry = entries_.value_at(current);
+            if (!entry.graph.running()) {
                 continue;
             }
 
-            inner_graph->graph.evaluate(invocation.context());
+            entry.graph.evaluate(invocation.context());
             if (!compiled.nested.output_node) {
                 continue;
             }
 
             auto output = node_invocation_access::output<TSD<SCALAR, REF<TS_T>>>(invocation);
-            const auto key = entry.key->view();
+            const auto key = entries_.key_at(current).view();
             auto item = output[Scalar<SCALAR>::from(key)];
-            const auto result = inner_graph->graph.output(compiled.nested);
+            const auto result = entry.graph.output(compiled.nested);
             if (result) {
                 item.set_value(result);
             } else {
@@ -476,31 +446,16 @@ class MapRuntimeState {
         }
     }
 
-    static void destroy_stopped_inner_graphs_callback(void *receiver) noexcept {
-        static_cast<MapRuntimeState *>(receiver)->destroy_stopped_inner_graphs();
+    static void destroy_stopped_entries_callback(void *receiver) noexcept {
+        static_cast<MapRuntimeState *>(receiver)->destroy_stopped_entries();
     }
 
-    void destroy_stopped_inner_graphs() noexcept {
-        inner_graph_cleanup_pending_ = false;
-        while (stopped_inner_graphs_ != nullptr) {
-            auto *inner_graph = stopped_inner_graphs_;
-            stopped_inner_graphs_ = inner_graph->next_stopped;
-            auto &entry = *inner_graph->entry;
-            memory_.delete_object(inner_graph);
-            --entry.stopped_inner_graph_count;
-            if (entry.stopped_inner_graph_count == 0 && entry.inner_graph == nullptr && entry.presence_count == 0) {
-                entries_.erase(entry.key->view(), memory_.memory_resource());
-            }
+    void destroy_stopped_entries() noexcept {
+        stopped_entry_cleanup_pending_ = false;
+        for (const auto position : stopped_entries_) {
+            entries_.erase(entries_.key_at(position).view(), memory_.memory_resource());
         }
-    }
-
-    void remove_unused_entries() {
-        for (auto *entry : touched_) {
-            if (entry->inner_graph == nullptr && entry->stopped_inner_graph_count == 0 &&
-                entry->presence_count == 0) {
-                entries_.erase(entry->key->view(), memory_.memory_resource());
-            }
-        }
+        stopped_entries_.clear();
     }
 
     void clear_schedule_tracking(EvaluationContext &context) noexcept {
@@ -509,14 +464,14 @@ class MapRuntimeState {
             outer_schedule_ = {};
             outer_scheduled_time_.reset();
         }
-        for (auto *inner_graph : schedule_heap_) {
-            inner_graph->schedule_heap_index = MapInnerGraph::not_in_schedule_heap;
-            inner_graph->scheduled_time = MIN_DT;
+        for (auto *entry : schedule_heap_) {
+            entry->schedule_heap_index = MapEntry::not_in_schedule_heap;
+            entry->scheduled_time = MIN_DT;
         }
         schedule_heap_.clear();
     }
 
-    static bool scheduled_before(const MapInnerGraph *left, const MapInnerGraph *right) noexcept {
+    static bool scheduled_before(const MapEntry *left, const MapEntry *right) noexcept {
         return left->scheduled_time < right->scheduled_time;
     }
 
@@ -544,10 +499,9 @@ class MapRuntimeState {
                 return;
             }
             const auto right = left + 1;
-            const auto first = right < schedule_heap_.size() &&
-                                       scheduled_before(schedule_heap_[right], schedule_heap_[left])
-                                   ? right
-                                   : left;
+            const auto first =
+                right < schedule_heap_.size() && scheduled_before(schedule_heap_[right], schedule_heap_[left]) ? right
+                                                                                                               : left;
             if (!scheduled_before(schedule_heap_[first], schedule_heap_[index])) {
                 return;
             }
@@ -556,12 +510,12 @@ class MapRuntimeState {
         }
     }
 
-    void remove_from_schedule_heap(MapInnerGraph &inner_graph) noexcept {
-        if (inner_graph.schedule_heap_index == MapInnerGraph::not_in_schedule_heap) {
+    void remove_from_schedule_heap(MapEntry &entry) noexcept {
+        if (entry.schedule_heap_index == MapEntry::not_in_schedule_heap) {
             return;
         }
-        const auto index = inner_graph.schedule_heap_index;
-        inner_graph.schedule_heap_index = MapInnerGraph::not_in_schedule_heap;
+        const auto index = entry.schedule_heap_index;
+        entry.schedule_heap_index = MapEntry::not_in_schedule_heap;
         if (index == schedule_heap_.size() - 1) {
             schedule_heap_.pop_back();
             return;
@@ -574,22 +528,21 @@ class MapRuntimeState {
         move_down_schedule_heap(schedule_heap_[index]->schedule_heap_index);
     }
 
-    void set_scheduled_time(RuntimeGraphOwnerContext &context, MapInnerGraph &inner_graph,
-                            std::optional<EvaluationTime> time) {
-        const auto previous_first =
-            schedule_heap_.empty() ? std::optional<EvaluationTime>{}
-                                   : std::optional<EvaluationTime>{schedule_heap_.front()->scheduled_time};
-        remove_from_schedule_heap(inner_graph);
-        inner_graph.scheduled_time = time.value_or(MIN_DT);
+    void set_scheduled_time(RuntimeGraphOwnerContext &context, MapEntry &entry, std::optional<EvaluationTime> time) {
+        const auto previous_first = schedule_heap_.empty()
+                                        ? std::optional<EvaluationTime>{}
+                                        : std::optional<EvaluationTime>{schedule_heap_.front()->scheduled_time};
+        remove_from_schedule_heap(entry);
+        entry.scheduled_time = time.value_or(MIN_DT);
         if (time) {
-            inner_graph.schedule_heap_index = schedule_heap_.size();
-            schedule_heap_.push_back(&inner_graph);
-            move_up_schedule_heap(inner_graph.schedule_heap_index);
+            entry.schedule_heap_index = schedule_heap_.size();
+            schedule_heap_.push_back(&entry);
+            move_up_schedule_heap(entry.schedule_heap_index);
         }
 
-        const auto next_first =
-            schedule_heap_.empty() ? std::optional<EvaluationTime>{}
-                                   : std::optional<EvaluationTime>{schedule_heap_.front()->scheduled_time};
+        const auto next_first = schedule_heap_.empty()
+                                    ? std::optional<EvaluationTime>{}
+                                    : std::optional<EvaluationTime>{schedule_heap_.front()->scheduled_time};
         if (next_first == previous_first) {
             return;
         }
@@ -610,10 +563,10 @@ class MapRuntimeState {
             outer_scheduled_time_.reset();
         }
         while (!schedule_heap_.empty() && schedule_heap_.front()->scheduled_time <= evaluation_time) {
-            auto *inner_graph = schedule_heap_.front();
-            remove_from_schedule_heap(*inner_graph);
-            inner_graph->scheduled_time = MIN_DT;
-            mark_ready(*inner_graph);
+            auto *entry = schedule_heap_.front();
+            remove_from_schedule_heap(*entry);
+            entry->scheduled_time = MIN_DT;
+            mark_ready(entry->position);
         }
         if (!outer_scheduled_time_ && !schedule_heap_.empty()) {
             outer_scheduled_time_ = schedule_heap_.front()->scheduled_time;
@@ -623,19 +576,18 @@ class MapRuntimeState {
 
     allocator memory_;
     Entries entries_;
-    std::pmr::vector<MapInnerGraph *> schedule_heap_;
+    std::pmr::vector<MapEntry *> schedule_heap_;
     std::pmr::vector<MapEntry *> touched_;
     std::pmr::vector<PendingBoundaryUpdate> boundary_updates_;
     std::pmr::vector<NestedGraphInput> nested_inputs_;
-    MapInnerGraph *ready_{};
-    MapInnerGraph *stopped_inner_graphs_{};
+    util::index<> ready_;
+    std::pmr::vector<Entries::size_type> stopped_entries_;
     ScheduleHandle outer_schedule_{};
     std::optional<EvaluationTime> outer_scheduled_time_;
-    bool inner_graph_cleanup_pending_{};
+    bool stopped_entry_cleanup_pending_{};
 };
 
-static_assert(sizeof(MapInnerGraph) <= 8 * sizeof(void *));
-static_assert(sizeof(MapEntry) <= 3 * sizeof(void *));
+static_assert(sizeof(MapEntry) <= 5 * sizeof(void *));
 
 struct MapNodeState {
     MapRuntimeState *runtime{};

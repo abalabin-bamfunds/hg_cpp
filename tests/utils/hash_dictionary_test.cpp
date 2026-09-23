@@ -186,14 +186,19 @@ TEST_CASE("a hash dictionary reuses one position for its key and value", "[hash_
 
     dictionary.try_emplace(1, memory, 10);
     dictionary.try_emplace(2, memory, 20);
+    const auto position = dictionary.find_position(1);
     auto first = dictionary.begin();
     const auto *key_position = &(*first).key;
     const auto *value_position = &(*first).value;
+
+    CHECK(dictionary.key_at(position) == 1);
+    CHECK(dictionary.value_at(position) == 10);
 
     REQUIRE(dictionary.erase(1, memory));
     dictionary.try_emplace(3, memory, 30);
 
     auto replacement = dictionary.begin();
+    CHECK(dictionary.find_position(3) == position);
     CHECK((*replacement).key == 3);
     CHECK(&(*replacement).key == key_position);
     CHECK(&(*replacement).value == value_position);

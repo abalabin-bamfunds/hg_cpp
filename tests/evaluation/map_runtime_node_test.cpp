@@ -450,6 +450,26 @@ TEST_CASE("mapped target ticks evaluate only the selected inner graph",
     CHECK(AddKey::evaluations == std::array<std::size_t, 3>{0, 1, 2});
 }
 
+TEST_CASE("map evaluates more inner graphs than the ready bitmap inline capacity",
+          "[feature:map][feature:nested-graph][feature:reference][series:tsd][shape:nested]") {
+    const auto make_values =
+        node([](In<REF<TS<int>>> value, Out<TSD<std::int64_t, REF<TS<int>>>> output) {
+            for (auto key = std::int64_t{}; key < 100; ++key) {
+                output[key].copy(value);
+            }
+        });
+    const auto graph = [&](wp<TS<int>> value) {
+        wire_sink_map(make_values(value.as<REF<TS<int>>>()));
+        return value;
+    };
+    MapSink::values.clear();
+
+    const auto result = testing::test_graph(graph, std::array{7});
+
+    CHECK(result.equals<int>({7}));
+    CHECK(MapSink::values.size() == 100);
+}
+
 TEST_CASE("stopped map inner graphs are destroyed at the start of the next outer cycle",
           "[feature:map][feature:nested-graph][feature:lifecycle][series:tss][shape:nested]"
           "[transition:removal]") {
@@ -475,8 +495,8 @@ TEST_CASE("stopped map inner graphs are destroyed at the start of the next outer
 
         runtime.evaluate(time(3));
 
-        // The inner runtime graph object, its storage, and MapInnerGraph each use one allocation.
-        CHECK(stopped_allocations - memory.allocations() == 3);
+        // The inner runtime graph object and its storage each use one allocation.
+        CHECK(stopped_allocations - memory.allocations() == 2);
     }
 
     CHECK(memory.allocations() == 0);

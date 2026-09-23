@@ -104,6 +104,13 @@ class hash_dictionary {
         return position == occupancy_index::npos ? nullptr : &keys_.key_at(position);
     }
 
+    template <typename Lookup> size_type find_position(const Lookup &key) const { return keys_.find_position(key); }
+
+    Key &key_at(size_type position) noexcept { return keys_.key_at(position); }
+    const Key &key_at(size_type position) const noexcept { return keys_.key_at(position); }
+    Value &value_at(size_type position) noexcept { return values_[position]; }
+    const Value &value_at(size_type position) const noexcept { return values_[position]; }
+
     template <typename Lookup> bool contains(const Lookup &key) const { return find(key) != nullptr; }
 
     template <typename Predicate> Value *find_with(std::size_t hash, Predicate &&matches) {
