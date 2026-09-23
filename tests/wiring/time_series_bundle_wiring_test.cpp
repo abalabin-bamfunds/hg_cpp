@@ -2,6 +2,7 @@
 #include <bg/graph/wiring_context.hpp>
 #include <bg/node.hpp>
 #include <bg/operators.hpp>
+#include <bg/testing/test_wiring.hpp>
 #include <bg/time_series/tsb/tsb.hpp>
 
 #include <catch2/catch_test_macros.hpp>
@@ -13,6 +14,11 @@ namespace {
 template <template <typename> typename Field> struct TestBundle {
     Field<bg::TS<int>> count;
     Field<bg::TS<float>> value;
+};
+
+template <template <typename> typename Field> struct ReferenceFieldBundle {
+    Field<bg::TS<int, bg::TimeSeriesGuarantee::final>> value;
+    Field<bg::REF<bg::TS<float, bg::TimeSeriesGuarantee::final>, bg::TimeSeriesGuarantee::final>> selected;
 };
 
 } // namespace
@@ -102,4 +108,42 @@ TEST_CASE("getattr selects a field from an unnamed free TSB",
     CHECK(&count.type() == &bg::TS<int>::type());
     CHECK(wiring.nodes().size() == 2);
     CHECK(wiring.outputs().size() == 2);
+}
+
+TEST_CASE("getattr on a TSB reference returns a reference to a value field",
+          "[feature:getattr][feature:operator][series:tsb][series:reference][guarantee:final]") {
+    using namespace bg::util::literals;
+
+    const auto source = bg::node([](bg::Out<bg::TSB<ReferenceFieldBundle>>) {});
+    const auto reference = bg::node(
+        [](bg::In<bg::REF<bg::TSB<ReferenceFieldBundle>, bg::TimeSeriesGuarantee::ordinary>> input,
+           bg::Out<bg::REF<bg::TSB<ReferenceFieldBundle>, bg::TimeSeriesGuarantee::ordinary>> output) {
+            output.copy(input);
+        });
+
+    bg::testing::test_wiring([&] {
+        const auto selected = bg::operators::getattr(reference(source()), "value"_sym);
+
+        CHECK(&selected.type() ==
+              &bg::REF<bg::TS<int, bg::TimeSeriesGuarantee::final>, bg::TimeSeriesGuarantee::ordinary>::type());
+    });
+}
+
+TEST_CASE("getattr on a TSB reference preserves a reference field guarantee",
+          "[feature:getattr][feature:operator][series:tsb][series:reference][guarantee:final]") {
+    using namespace bg::util::literals;
+
+    const auto source = bg::node([](bg::Out<bg::TSB<ReferenceFieldBundle, bg::TimeSeriesGuarantee::final>>) {});
+    const auto reference = bg::node(
+        [](bg::In<bg::REF<bg::TSB<ReferenceFieldBundle, bg::TimeSeriesGuarantee::final>,
+                         bg::TimeSeriesGuarantee::const_>> input,
+           bg::Out<bg::REF<bg::TSB<ReferenceFieldBundle, bg::TimeSeriesGuarantee::final>,
+                          bg::TimeSeriesGuarantee::const_>> output) { output.copy(input); });
+
+    bg::testing::test_wiring([&] {
+        const auto selected = bg::operators::getattr(reference(source()), "selected"_sym);
+
+        CHECK(&selected.type() ==
+              &bg::REF<bg::TS<float, bg::TimeSeriesGuarantee::final>, bg::TimeSeriesGuarantee::final>::type());
+    });
 }

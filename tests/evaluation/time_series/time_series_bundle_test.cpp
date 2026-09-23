@@ -13,6 +13,7 @@
 
 #include <array>
 #include <chrono>
+#include <optional>
 #include <vector>
 
 namespace {
@@ -131,6 +132,44 @@ TEST_CASE("a typed TSB wiring point selects an inherited field",
     const auto actual = bg::testing::test_graph(graph);
 
     CHECK(actual.equals({2}));
+}
+
+template <template <typename> typename Field> struct ReferenceBundle {
+    Field<bg::TS<int>> value;
+    Field<bg::REF<bg::TS<int>>> selected;
+};
+
+TEST_CASE("getattr follows a reference field in a referenced native bundle",
+          "[evaluation][series:tsb][series:reference][feature:getattr][schema:named]"
+          "[representation:native][binding:reference-to-reference][transition:update]") {
+    const auto select = bg::node(
+        [](bg::In<bg::TS<bool>> use_second, bg::In<bg::REF<bg::TS<int>>> first,
+           bg::In<bg::REF<bg::TS<int>>> second, bg::Out<bg::REF<bg::TS<int>>> output) {
+            output.copy(*use_second ? second : first);
+        });
+    const auto make_bundle = bg::node(
+        [](bg::In<bg::TS<int>> value, bg::In<bg::REF<bg::TS<int>>> selected,
+           bg::Out<bg::TSB<ReferenceBundle>> output) {
+            output->value.set(*value);
+            output->selected.copy(selected);
+        });
+    const auto reference = bg::node(
+        [](bg::In<bg::REF<bg::TSB<ReferenceBundle>>> input,
+           bg::Out<bg::REF<bg::TSB<ReferenceBundle>>> output) { output.copy(input); });
+    const auto graph = [&](bg::wp<bg::TS<int>> first, bg::wp<bg::TS<int>> second,
+                           bg::wp<bg::TS<bool>> use_second, bg::wp<bg::TS<int>> value) {
+        const auto selected = select(use_second, first, second);
+        const auto bundle_reference = reference(make_bundle(value, selected));
+        const auto bundle = bg::wp<bg::TSB<ReferenceBundle>>{bundle_reference};
+
+        return bundle->selected;
+    };
+
+    const auto actual = bg::testing::test_graph(
+        graph, std::array{10, 20, 30}, std::array{100, 200, 300},
+        std::array<std::optional<bool>, 3>{false, true, std::nullopt}, std::array{1, 2, 3});
+
+    CHECK(actual.equals({10, 200, 300}));
 }
 
 TEST_CASE("a typed free TSB wiring point selects its original source",

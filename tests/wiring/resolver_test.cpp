@@ -70,6 +70,21 @@ struct resolved_source_definition {
     void evaluate() const {}
 };
 
+struct resolved_graph_definition {
+    bg::wp<bg::TS_T> input;
+    int kind;
+
+    inline static auto resolver_calls = 0;
+
+    static const bg::ScalarType *resolve(RESOLVED_SCALAR, const bg::WiringArguments &arguments) {
+        ++resolver_calls;
+        return bg::scalar_cast<std::int64_t>(*arguments.scalar("kind")).value() == 0 ? &bg::int_type()
+                                                                                      : &bg::float_type();
+    }
+
+    bg::wp<bg::TS<RESOLVED_SCALAR>> wire() const { return bg::wp<bg::TS<RESOLVED_SCALAR>>{input}; }
+};
+
 struct invalid_number_source_definition {
     bg::Out<bg::TS<RESOLVED_NUMBER>> output;
 
@@ -163,6 +178,22 @@ TEST_CASE("an aggregate resolver completes an output type",
         REQUIRE(error.diagnostic()->candidates.size() == 1);
         CHECK(error.diagnostic()->candidates.front().stage == bg::WiringFailureStage::resolver);
     }
+}
+
+TEST_CASE("an aggregate graph resolver completes its output type",
+          "[feature:wiring][definition:aggregate][declaration:generic]") {
+    resolved_graph_definition::resolver_calls = 0;
+
+    const auto resolved = bg::graph<resolved_graph_definition>();
+    const auto integer_source = bg::node([](bg::Out<bg::TS<int>>) {});
+    const auto float_source = bg::node([](bg::Out<bg::TS<float>>) {});
+
+    bg::testing::test_wiring([&] {
+        CHECK(&resolved(integer_source(), 0).type() == &bg::TS<int>::type());
+        CHECK(&resolved(float_source(), 1).type() == &bg::TS<float>::type());
+    });
+
+    CHECK(resolved_graph_definition::resolver_calls == 2);
 }
 
 TEST_CASE("resolvers see one flat positional argument sequence",

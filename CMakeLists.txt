@@ -67,13 +67,13 @@ add_library(
     src/time_series/tsl/tsl_type.cpp
     src/time_series/tsl/tsl_runtime_type.cpp
     src/time_series/tsl/wiring.cpp
-    src/time_series/tsl/tsl_item_subscription.cpp
     src/time_series/tsl/operators.cpp
     src/time_series/tsb/tsb_type.cpp
     src/time_series/tsb/tsb_runtime_type.cpp
     src/time_series/tsb/wiring.cpp
     src/time_series/tsb/operators.cpp
     src/time_series/ref/dynamic_reference_input.cpp
+    src/time_series/ref/fixed_item_selection.cpp
     src/time_series/ref/ref_item_notifications.cpp
     src/time_series/ref/ref_notification.cpp
     src/time_series/ref/ref_provider.cpp

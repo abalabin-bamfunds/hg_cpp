@@ -162,6 +162,15 @@ util::symbol TimeSeriesBundleType::item_name(std::size_t index) const {
     return schema().field(index).name;
 }
 
+std::optional<std::size_t> TimeSeriesBundleType::find_item_index(util::symbol name) const {
+    for (auto index = std::size_t{}; index < item_count(); ++index) {
+        if (item_name(index) == name) {
+            return index;
+        }
+    }
+    return std::nullopt;
+}
+
 const TimeSeriesType &TimeSeriesBundleType::with_guarantee(TimeSeriesGuarantee guarantee) const {
     return time_series_bundle_type(schema(), guarantee);
 }

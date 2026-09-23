@@ -103,6 +103,7 @@ template <typename Function> const TimeSeriesType &graph_output_type() {
 
 template <typename Function, std::size_t... Index>
 [[nodiscard]] Signature make_graph_signature(util::symbol name, std::span<const std::string_view> parameter_names,
+                                             std::vector<VariableResolver> resolvers,
                                              std::index_sequence<Index...>) {
     if (!parameter_names.empty() && parameter_names.size() != sizeof...(Index)) {
         throw std::invalid_argument{"a graph definition has the wrong number of parameter names"};
@@ -114,17 +115,24 @@ template <typename Function, std::size_t... Index>
 
     using Result = std::remove_cvref_t<typename callable<Function>::result_type>;
     if constexpr (std::same_as<Result, void>) {
-        return {name, std::move(parameters)};
+        return {name, std::move(parameters), std::move(resolvers)};
     } else {
-        return {name, std::move(parameters), graph_output_type<Function>()};
+        return {name, std::move(parameters), graph_output_type<Function>(), std::move(resolvers)};
     }
 }
 
 template <typename Function>
 [[nodiscard]] Signature make_graph_signature(util::symbol name,
-                                             std::span<const std::string_view> parameter_names = {}) {
-    return make_graph_signature<Function>(name, parameter_names,
+                                             std::span<const std::string_view> parameter_names,
+                                             std::vector<VariableResolver> resolvers) {
+    return make_graph_signature<Function>(name, parameter_names, std::move(resolvers),
                                           std::make_index_sequence<callable<Function>::argument_count>{});
+}
+
+template <typename Function>
+[[nodiscard]] Signature make_graph_signature(util::symbol name,
+                                             std::span<const std::string_view> parameter_names = {}) {
+    return make_graph_signature<Function>(name, parameter_names, {});
 }
 
 } // namespace bg::details

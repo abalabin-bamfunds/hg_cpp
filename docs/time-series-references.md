@@ -124,12 +124,18 @@ proportional to changed item references and their destinations.
 
 The reference provider is created only when a root needs dynamic behavior. It
 owns representations, subscriber groups, item-notification groups, and
-type-specific components. TSD and fixed TSL item selection each use one lazily
-created component per root.
+type-specific components. TSD selection and fixed TSL or TSB item selection
+each use one lazily created component per root.
 
 A reference notification notifies its dynamic subscribers directly. Subscriber
 records retain the destination graph. A runtime observer uses that graph's
 context and the notification's outer-cycle time.
+
+A dynamic input callback runs immediately when its receiving graph has entered
+the current outer cycle. Otherwise, the receiving graph queues it until cycle
+entry. This ensures that deferred cleanup runs before a callback accesses that
+graph while preserving same-cycle changes from an inner graph to its outer
+graph.
 
 When a reference changes target:
 
@@ -210,11 +216,11 @@ scheduling, and lifecycle.
 TSD representations use the shared-key structure defined by the
 [TSD layout](tsd-layout.md#shared-representations).
 
-A fixed TSL item selection uses its stable item ID. A runtime index creates
-selection state only for the selected item. An invalid, negative, or
-out-of-range index produces an invalid reference. A value item produces an item
-reference. A reference item forwards its stored reference. Updates notify only
-selections for the changed items.
+A fixed TSL item or TSB field selection uses its stable item ID. A runtime
+selection creates state only for the selected item. An invalid, negative, or
+out-of-range TSL index produces an invalid reference. A value item produces an
+item reference. A reference item forwards its stored reference. Updates notify
+only selections for the changed items.
 
 When an item is first used through a reference, its item reference receives a
 subscriber group from the provider that owns its root. Item updates notify that

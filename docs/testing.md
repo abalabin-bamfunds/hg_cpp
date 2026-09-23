@@ -177,6 +177,7 @@ graph compilation or evaluation.
 - representation creation and reuse
 - dictionary item selection with scalar and time series keys
 - fixed-list item selection with scalar and time series indices
+- bundle field selection through value and reference fields, including nested graph boundaries
 - keyed subscriptions for present, missing, removed, and restored items
 
 ### Collection time series

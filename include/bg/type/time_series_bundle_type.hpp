@@ -5,6 +5,7 @@
 #include <bg/util/symbol.hpp>
 
 #include <cstddef>
+#include <optional>
 #include <span>
 #include <utility>
 #include <vector>
@@ -55,6 +56,7 @@ class TimeSeriesBundleType : public FixedItemTimeSeriesType {
     std::size_t item_count() const noexcept final;
     const TimeSeriesType &item_type(std::size_t index) const final;
     util::symbol item_name(std::size_t index) const;
+    std::optional<std::size_t> find_item_index(util::symbol name) const;
     [[nodiscard]] const TimeSeriesType &with_guarantee(TimeSeriesGuarantee guarantee) const override;
 
   protected:

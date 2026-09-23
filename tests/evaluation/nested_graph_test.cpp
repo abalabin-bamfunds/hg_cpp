@@ -374,4 +374,129 @@ TEST_CASE("a free bundle reference passes through a nested graph",
     CHECK(actual.equals({11, 22, std::nullopt, 44}));
 }
 
+template <template <typename> typename Field> struct NestedReferenceBundle {
+    Field<bg::TS<std::int64_t>> value;
+    Field<bg::REF<bg::TS<std::int64_t>, bg::TimeSeriesGuarantee::ordinary>> selected;
+};
+
+TEST_CASE("an outer free bundle reference field rebinds across a nested graph boundary",
+          "[evaluation][nested][reference][tsb][series:tsb][free][representation:free][boundary]"
+          "[feature:nested-graph][shape:nested][scalar:integer][binding:value-to-reference]"
+          "[binding:reference-to-value][binding:reference-to-reference][transition:update]") {
+    const auto select = bg::node(
+        [](bg::In<bg::TS<bool>> use_second, bg::In<bg::REF<bg::TS<std::int64_t>>> first,
+           bg::In<bg::REF<bg::TS<std::int64_t>>> second, bg::Out<bg::REF<bg::TS<std::int64_t>>> output) {
+            output.copy(*use_second ? second : first);
+        });
+    const auto add = bg::node(
+        [](bg::In<bg::TS<std::int64_t>> left, bg::In<bg::TS<std::int64_t>> right,
+           bg::Out<bg::TS<std::int64_t>> output) { output.set(*left + *right); });
+    const auto inner = bg::graph(
+        "name"_n = "consume_outer_free_reference_bundle",
+        [&](bg::wp<bg::TSB<NestedReferenceBundle>> input) -> bg::wp<bg::TS<std::int64_t>> {
+            return add(input->value, input->selected);
+        });
+    const auto outer = [&](bg::wp<bg::TS<std::int64_t>> first, bg::wp<bg::TS<std::int64_t>> second,
+                           bg::wp<bg::TS<bool>> use_second, bg::wp<bg::TS<std::int64_t>> value,
+                           bg::wp<bg::TS<bool>> run) {
+        const auto selected = select(use_second, first, second);
+        const auto bundle = bg::bundle("value"_n = value, "selected"_n = selected);
+        return bg::nested(inner, run, bundle);
+    };
+
+    const auto actual = bg::testing::test_graph(
+        outer,
+        std::array<std::optional<std::int64_t>, 5>{10, 20, 30, std::nullopt, std::nullopt},
+        std::array<std::optional<std::int64_t>, 5>{100, 200, std::nullopt, 300, std::nullopt},
+        std::array<std::optional<bool>, 5>{false, true, std::nullopt, std::nullopt, std::nullopt},
+        std::array<std::optional<std::int64_t>, 5>{1, 2, std::nullopt, std::nullopt, 3},
+        std::array<std::optional<bool>, 5>{true, std::nullopt, std::nullopt, std::nullopt, std::nullopt});
+
+    CHECK(actual.equals({11, 202, std::nullopt, 302, 303}));
+}
+
+TEST_CASE("an inner free bundle reference field rebinds across a nested graph boundary",
+          "[evaluation][nested][reference][tsb][series:tsb][free][representation:free][boundary]"
+          "[feature:nested-graph][shape:nested][scalar:integer][binding:value-to-reference]"
+          "[binding:reference-to-value][binding:reference-to-reference][transition:update]") {
+    const auto select = bg::node(
+        [](bg::In<bg::TS<bool>> use_second, bg::In<bg::REF<bg::TS<std::int64_t>>> first,
+           bg::In<bg::REF<bg::TS<std::int64_t>>> second, bg::Out<bg::REF<bg::TS<std::int64_t>>> output) {
+            output.copy(*use_second ? second : first);
+        });
+    const auto add = bg::node(
+        [](bg::In<bg::TS<std::int64_t>> left, bg::In<bg::TS<std::int64_t>> right,
+           bg::Out<bg::TS<std::int64_t>> output) { output.set(*left + *right); });
+    const auto materialize = bg::graph(
+        "name"_n = "materialize_free_reference_bundle",
+        [](bg::wp<bg::TSB<NestedReferenceBundle>> input) -> bg::wp<bg::TSB<NestedReferenceBundle>> { return input; });
+    const auto inner = bg::graph(
+        "name"_n = "produce_inner_free_reference_bundle",
+        [&](bg::wp<bg::TS<std::int64_t>> first, bg::wp<bg::TS<std::int64_t>> second,
+            bg::wp<bg::TS<bool>> use_second,
+            bg::wp<bg::TS<std::int64_t>> value) -> bg::wp<bg::TSB<NestedReferenceBundle>> {
+            const auto selected = select(use_second, first, second);
+            return materialize(bg::bundle("value"_n = value, "selected"_n = selected));
+        });
+    const auto outer = [&](bg::wp<bg::TS<std::int64_t>> first, bg::wp<bg::TS<std::int64_t>> second,
+                           bg::wp<bg::TS<bool>> use_second, bg::wp<bg::TS<std::int64_t>> value,
+                           bg::wp<bg::TS<bool>> run) {
+        const auto reference = bg::nested(inner, run, first, second, use_second, value);
+        const auto bundle = bg::wp<bg::TSB<NestedReferenceBundle>>{reference};
+        return add(bundle->value, bundle->selected);
+    };
+
+    const auto actual = bg::testing::test_graph(
+        outer,
+        std::array<std::optional<std::int64_t>, 5>{10, 20, 30, std::nullopt, std::nullopt},
+        std::array<std::optional<std::int64_t>, 5>{100, 200, std::nullopt, 300, std::nullopt},
+        std::array<std::optional<bool>, 5>{false, true, std::nullopt, std::nullopt, std::nullopt},
+        std::array<std::optional<std::int64_t>, 5>{1, 2, std::nullopt, std::nullopt, 3},
+        std::array<std::optional<bool>, 5>{true, std::nullopt, std::nullopt, std::nullopt, std::nullopt});
+
+    CHECK(actual.equals({11, 202, std::nullopt, 302, 303}));
+}
+
+TEST_CASE("a free bundle reference field survives two boundaries and repeated lifecycle changes",
+          "[evaluation][nested][reference][tsb][series:tsb][free][representation:free][boundary]"
+          "[feature:nested-graph][shape:doubly-nested][scalar:integer][binding:value-to-reference]"
+          "[binding:reference-to-value][binding:reference-to-reference][transition:update]"
+          "[transition:stop][transition:restart]") {
+    const auto select = bg::node(
+        [](bg::In<bg::TS<bool>> use_second, bg::In<bg::REF<bg::TS<std::int64_t>>> first,
+           bg::In<bg::REF<bg::TS<std::int64_t>>> second, bg::Out<bg::REF<bg::TS<std::int64_t>>> output) {
+            output.copy(*use_second ? second : first);
+        });
+    const auto add = bg::node(
+        [](bg::In<bg::TS<std::int64_t>> left, bg::In<bg::TS<std::int64_t>> right,
+           bg::Out<bg::TS<std::int64_t>> output) { output.set(*left + *right); });
+    const auto pass_through = bg::graph(
+        "name"_n = "pass_free_reference_bundle",
+        [](bg::wp<bg::TSB<NestedReferenceBundle>> input) -> bg::wp<bg::TSB<NestedReferenceBundle>> { return input; });
+    const auto outer = [&](bg::wp<bg::TS<std::int64_t>> first, bg::wp<bg::TS<std::int64_t>> second,
+                           bg::wp<bg::TS<bool>> use_second, bg::wp<bg::TS<std::int64_t>> value,
+                           bg::wp<bg::TS<bool>> run) {
+        const auto selected = select(use_second, first, second);
+        const auto bundle = bg::bundle("value"_n = value, "selected"_n = selected);
+        const auto first_boundary = bg::nested(pass_through, run, bundle);
+        const auto second_boundary = bg::nested(pass_through, run, first_boundary);
+        const auto result = bg::wp<bg::TSB<NestedReferenceBundle>>{second_boundary};
+        return add(result->value, result->selected);
+    };
+
+    const auto actual = bg::testing::test_graph(
+        outer,
+        std::array<std::optional<std::int64_t>, 8>{10, 20, 30, std::nullopt, 40, std::nullopt, std::nullopt, 50},
+        std::array<std::optional<std::int64_t>, 8>{100, 200, std::nullopt, 300, 400, std::nullopt, 500,
+                                                  std::nullopt},
+        std::array<std::optional<bool>, 8>{false, true, std::nullopt, std::nullopt, false, std::nullopt,
+                                           std::nullopt, std::nullopt},
+        std::array<std::optional<std::int64_t>, 8>{1, 2, std::nullopt, std::nullopt, 4, std::nullopt,
+                                                   std::nullopt, std::nullopt},
+        std::array<std::optional<bool>, 8>{true, std::nullopt, std::nullopt, false, std::nullopt, true,
+                                           std::nullopt, std::nullopt});
+
+    CHECK(actual.equals({11, 202, std::nullopt, std::nullopt, std::nullopt, 44, std::nullopt, 54}));
+}
+
 } // namespace

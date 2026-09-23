@@ -279,7 +279,7 @@ TEST_CASE("graph types resolve variables from their parameters and output",
 }
 
 TEST_CASE("graph types resolve scalar parameters with the same variables as time series parameters",
-          "[feature:operator][feature:type-system][feature:graph-argument][argument:scalar]") {
+          "[feature:operator][feature:type-system][feature:graph-argument][scalar:integer]") {
     using VALUE = ScalarVariable<"VALUE">;
     using Function = GRAPH<auto(VALUE, TS<VALUE>) -> TS<VALUE>>;
 

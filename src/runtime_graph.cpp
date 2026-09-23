@@ -645,8 +645,9 @@ void RuntimeGraph::notify_dynamic_subscribers(details::DynamicSubscribers &subsc
     });
 
     subscribers.for_each_input_subscriber([&](const auto &subscriber) {
-        if (subscriber.graph == this) {
-            auto context = OutputChangeContext{*this};
+        // A graph that has entered this outer cycle has already run deferred cleanup and can apply the callback now.
+        if (subscriber.graph == this || subscriber.graph->last_evaluation_time_ == evaluation_time_) {
+            auto context = OutputChangeContext{*subscriber.graph, evaluation_time_};
             subscriber.function(context, subscriber.node_index, subscriber.data, change);
             return;
         }

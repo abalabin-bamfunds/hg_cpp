@@ -6,6 +6,7 @@
 #include <bg/node/input_properties.hpp>
 #include <bg/time_series/details/input_data.hpp>
 #include <bg/time_series/ref/dynamic_reference_input.hpp>
+#include <bg/time_series/ref/fixed_item_selection.hpp>
 #include <bg/time_series/ref/ref_runtime_type.hpp>
 #include <bg/time_series/ref/ref_storage.hpp>
 #include <bg/time_series/time_series_input.hpp>
@@ -13,8 +14,10 @@
 #include <bg/time_series/time_series_type.hpp>
 #include <bg/time_series/tsd/tsd_key_subscription.hpp>
 #include <bg/time_series/tsd/tsd_type.hpp>
-#include <bg/time_series/tsl/tsl_item_subscription.hpp>
+#include <bg/time_series/tsb/tsb_type.hpp>
 #include <bg/time_series/tsl/tsl_type.hpp>
+#include <bg/type/time_series_bundle_type.hpp>
+#include <bg/type/time_series_list_type.hpp>
 
 #include <stdexcept>
 #include <string_view>
@@ -115,18 +118,17 @@ class In<REF<Target, TimeSeriesProperties...>, Properties...> {
         requires details::is_time_series_list<T>
     auto operator[](std::size_t index) const {
         using Result = typename details::tsl_item_reference_type<T>::type;
+        const auto &reference_type = type_cast<TimeSeriesReferenceType>(runtime_type().type());
+        const auto &tsl_type = type_cast<TimeSeriesListType>(reference_type.target_type());
         if (!valid()) {
-            const auto &reference_type = static_cast<const TimeSeriesReferenceType &>(runtime_type().type());
-            const auto &tsl = resolve_time_series_runtime_type(reference_type.target_type());
-            return In<Result>{MIN_DT, nullptr, details::tsl_item_reference_runtime_type(tsl)};
+            const auto &result_runtime_type = details::fixed_item_reference_runtime_type(tsl_type.item_type());
+            return In<Result>{MIN_DT, nullptr, result_runtime_type};
         }
 
-        const auto input = details::tsl_item_reference_input(value(), index);
+        const auto input = details::fixed_item_reference_input(value(), tsl_type.item_id(index));
         const auto *result_runtime_type = input.runtime_type;
         if (result_runtime_type == nullptr) {
-            const auto &reference_type = static_cast<const TimeSeriesReferenceType &>(runtime_type().type());
-            const auto &tsl = resolve_time_series_runtime_type(reference_type.target_type());
-            result_runtime_type = &details::tsl_item_reference_runtime_type(tsl);
+            result_runtime_type = &details::fixed_item_reference_runtime_type(tsl_type.item_type());
         }
         if (!input.binding) {
             return In<Result>{*input.last_updated, nullptr, *result_runtime_type, input.modified};
@@ -134,9 +136,46 @@ class In<REF<Target, TimeSeriesProperties...>, Properties...> {
         return In<Result>{*input.last_updated, input.binding, *result_runtime_type, input.modified};
     }
 
-    template <auto... InputTimeSeriesProperties, auto... InputProperties>
-    void bind(const In<REF<Target, InputTimeSeriesProperties...>, InputProperties...> &input) const
-        requires ParsedProperties::dynamic_binding
+    template <typename T = Target>
+        requires details::is_time_series_bundle<T>
+    In<REF<TS_T>> operator[](std::size_t index) const {
+        const auto &reference_type = type_cast<TimeSeriesReferenceType>(runtime_type().type());
+        const auto &bundle_type = type_cast<TimeSeriesBundleType>(reference_type.target_type());
+        if (index >= bundle_type.item_count()) {
+            throw std::out_of_range{"time series bundle field index is out of range"};
+        }
+
+        const auto fallback_runtime_type = [&]() -> const TimeSeriesRuntimeType & {
+            return details::fixed_item_reference_runtime_type(bundle_type.item_type(index));
+        };
+        if (!valid()) {
+            return {MIN_DT, nullptr, fallback_runtime_type()};
+        }
+
+        const auto input = details::fixed_item_reference_input(value(), bundle_type.item_id(index));
+        const auto &result_runtime_type = input.runtime_type == nullptr ? fallback_runtime_type() : *input.runtime_type;
+        if (!input.binding) {
+            return {*input.last_updated, nullptr, result_runtime_type, input.modified};
+        }
+        return {*input.last_updated, input.binding, result_runtime_type, input.modified};
+    }
+
+    template <typename T = Target>
+        requires details::is_time_series_bundle<T>
+    In<REF<TS_T>> operator[](util::symbol name) const {
+        const auto &reference_type = type_cast<TimeSeriesReferenceType>(runtime_type().type());
+        const auto &bundle_type = type_cast<TimeSeriesBundleType>(reference_type.target_type());
+        const auto index = bundle_type.find_item_index(name);
+        if (!index) {
+            throw std::out_of_range{"time series bundle has no field with the requested name"};
+        }
+        return (*this)[*index];
+    }
+
+    template <typename InputTarget, auto... InputTimeSeriesProperties, auto... InputProperties>
+    void bind(const In<REF<InputTarget, InputTimeSeriesProperties...>, InputProperties...> &input) const
+        requires(ParsedProperties::dynamic_binding &&
+                 (std::same_as<InputTarget, Target> || details::time_series_variable<InputTarget>))
     {
         const auto *declared_runtime_type = &data_.runtime_type();
         if (!input.binding_) {

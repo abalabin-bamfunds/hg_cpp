@@ -35,7 +35,7 @@ template <template <template <typename> typename> typename Schema> class BundleW
 
         template <typename Field> wp<Field> make(std::size_t index) const {
             const auto &type = TSB<Schema>::type();
-            return operators::getattr(bundle_, type.item_name(index)).template as<Field>();
+            return wiring_point_annotation::make<Field>(operators::getattr(bundle_, type.item_name(index)));
         }
 
       private:

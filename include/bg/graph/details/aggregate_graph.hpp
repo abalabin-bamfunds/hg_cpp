@@ -1,6 +1,7 @@
 #pragma once
 
 #include <bg/graph/details/graph_signature.hpp>
+#include <bg/node/details/aggregate_resolver.hpp>
 #include <bg/util/reflection.hpp>
 
 #include <concepts>
@@ -43,6 +44,32 @@ template <typename Definition>
 using aggregate_graph_function_t =
     aggregate_graph_function<Definition, std::make_index_sequence<util::aggregate_member_count<Definition>>>;
 
+template <typename Definition, typename Field>
+void append_aggregate_graph_field_resolvers(std::vector<VariableResolver> &resolvers) {
+    using Value = std::remove_cv_t<Field>;
+
+    if constexpr (is_typed_wiring_point<Value>) {
+        append_aggregate_resolvers<Definition, typename typed_wiring_point<Value>::time_series_type>(resolvers);
+    } else if constexpr (graph_argument_facade<Value>) {
+        append_aggregate_resolvers<Definition, Value>(resolvers);
+    }
+}
+
+template <typename Definition, std::size_t... Index>
+std::vector<VariableResolver> aggregate_graph_resolvers(std::index_sequence<Index...>) {
+    auto resolvers = std::vector<VariableResolver>{};
+    (append_aggregate_graph_field_resolvers<Definition,
+                                            util::aggregate_member_type<Index, Definition>>(resolvers),
+     ...);
+
+    using Result = std::remove_cvref_t<decltype(std::declval<const Definition &>().wire())>;
+    if constexpr (is_typed_wiring_point<Result>) {
+        append_aggregate_resolvers<Definition, typename typed_wiring_point<Result>::time_series_type>(resolvers);
+    }
+
+    return resolvers;
+}
+
 template <typename Definition, bool = std::is_aggregate_v<Definition>>
 struct aggregate_graph_definition : std::false_type {};
 
@@ -57,9 +84,11 @@ template <typename Definition>
 template <typename Definition> [[nodiscard]] Signature aggregate_graph_signature() {
     using Function = aggregate_graph_function_t<Definition>;
     constexpr auto &member_names = util::aggregate_member_names<Definition>;
+    using Index = std::make_index_sequence<util::aggregate_member_count<Definition>>;
 
     return make_graph_signature<Function>(util::symbol{util::unqualified_type_name<Definition>()},
-                                          std::span<const std::string_view>{member_names});
+                                          std::span<const std::string_view>{member_names},
+                                          aggregate_graph_resolvers<Definition>(Index{}));
 }
 
 } // namespace bg::details

@@ -28,15 +28,21 @@ template <typename Collection> struct ItemSelection {
 
     void set_release_queue_index(std::uint32_t index) noexcept {
         assert(index < release_queue_index_mask);
-        state_ = (state_ & retained_flag) | (index + 1);
+        state_ = (state_ & selection_flags) | (index + 1);
     }
 
-    void clear_release_queue_index() noexcept { state_ &= retained_flag; }
+    void clear_release_queue_index() noexcept { state_ &= selection_flags; }
 
     bool retained() const noexcept { return (state_ & retained_flag) != 0; }
 
     void set_retained(bool value) noexcept {
-        state_ = (state_ & release_queue_index_mask) | (value ? retained_flag : 0);
+        state_ = (state_ & ~retained_flag) | (value ? retained_flag : 0);
+    }
+
+    bool stores_reference() const noexcept { return (state_ & stores_reference_flag) != 0; }
+
+    void set_stores_reference(bool value) noexcept {
+        state_ = (state_ & ~stores_reference_flag) | (value ? stores_reference_flag : 0);
     }
 
     Collection *collection{};
@@ -52,7 +58,9 @@ template <typename Collection> struct ItemSelection {
 
   private:
     static constexpr auto retained_flag = std::uint32_t{1} << 31;
-    static constexpr auto release_queue_index_mask = ~retained_flag;
+    static constexpr auto stores_reference_flag = std::uint32_t{1} << 30;
+    static constexpr auto selection_flags = retained_flag | stores_reference_flag;
+    static constexpr auto release_queue_index_mask = ~selection_flags;
     std::uint32_t state_{};
 };
 
@@ -60,17 +68,15 @@ template <typename Owner, typename RuntimeType> struct ObservedItemCollection {
     using Selection = ItemSelection<ObservedItemCollection>;
     using SelectionMap = util::hash_dictionary<item_id_t, Selection>;
 
-    ObservedItemCollection(Owner &owner, Reference reference, const RuntimeType &runtime_type, const void *storage,
-                           bool stores_references) noexcept
-        : owner{&owner}, reference{reference}, runtime_type{&runtime_type}, storage{storage},
-          stores_references{stores_references} {}
+    ObservedItemCollection(Owner &owner, Reference reference, const RuntimeType &runtime_type,
+                           const void *storage) noexcept
+        : owner{&owner}, reference{reference}, runtime_type{&runtime_type}, storage{storage} {}
 
     Owner *owner;
     Reference reference;
     const RuntimeType *runtime_type;
     const void *storage;
     SelectionMap items;
-    bool stores_references;
     bool observing_reference{};
 };
 
@@ -85,13 +91,12 @@ template <typename Derived, typename RuntimeType> class ItemSelectionSubscriptio
 
     ~ItemSelectionSubscriptions() override { assert(collections_.empty()); }
 
-    Collection &require_collection(Reference reference, const RuntimeType &runtime_type, const void *storage,
-                                   bool stores_references) {
+    Collection &require_collection(Reference reference, const RuntimeType &runtime_type, const void *storage) {
         if (auto *existing = find_collection(reference, runtime_type, storage)) {
             return *existing;
         }
 
-        auto *result = memory_.new_object<Collection>(derived(), reference, runtime_type, storage, stores_references);
+        auto *result = memory_.new_object<Collection>(derived(), reference, runtime_type, storage);
         auto release = util::scope_exit{[&]() noexcept { release_collection(*result); }};
         collections_.push_back(result);
         auto remove_entry = util::scope_exit{[&]() noexcept { collections_.pop_back(); }};
@@ -103,8 +108,9 @@ template <typename Derived, typename RuntimeType> class ItemSelectionSubscriptio
         return *result;
     }
 
-    Selection &require_selection(Collection &collection, item_id_t id) {
+    Selection &require_selection(Collection &collection, item_id_t id, bool stores_reference) {
         if (auto *entry = collection.items.find(id)) {
+            assert(entry->stores_reference() == stores_reference);
             return *entry;
         }
 
@@ -113,7 +119,7 @@ template <typename Derived, typename RuntimeType> class ItemSelectionSubscriptio
         }
 
         auto *value_item_reference =
-            collection.stores_references ? nullptr : memory_.new_object<ItemReference>(collection.reference, id);
+            stores_reference ? nullptr : memory_.new_object<ItemReference>(collection.reference, id);
         auto release_item_reference = util::scope_exit{[&]() noexcept {
             if (value_item_reference != nullptr) {
                 memory_.delete_object(value_item_reference);
@@ -125,6 +131,7 @@ template <typename Derived, typename RuntimeType> class ItemSelectionSubscriptio
         entry->collection = &collection;
         entry->selection.value_item_reference = value_item_reference;
         entry->id = id;
+        entry->set_stores_reference(stores_reference);
         release_item_reference.release();
         ++entry_count_;
         return *entry;
@@ -136,8 +143,8 @@ template <typename Derived, typename RuntimeType> class ItemSelectionSubscriptio
         if (derived().contains_item(collection, entry.id)) {
             const auto item = collection.runtime_type->item(collection.storage, entry.id);
             if (item.last_updated > MIN_DT) {
-                value = collection.stores_references ? item.runtime_type.reference(item.value)
-                                                     : Reference{entry.selection.value_item_reference};
+                value = entry.stores_reference() ? item.runtime_type.reference(item.value)
+                                                 : Reference{entry.selection.value_item_reference};
             }
         }
         if (value == entry.selected_reference) {
@@ -186,7 +193,7 @@ template <typename Derived, typename RuntimeType> class ItemSelectionSubscriptio
                                 std::size_t notification_data, std::uint32_t node_index,
                                 InputNotificationFunction notification) {
         remove_from_release_queue(entry);
-        if (entry.collection->stores_references) {
+        if (entry.stores_reference()) {
             auto &subscribers = DynamicSubscribers::ensure(entry.selection.reference_item_subscribers, memory_);
             subscribers.add(graph, input_offset, notification_data, node_index, false, false, notification);
             return;
@@ -197,7 +204,7 @@ template <typename Derived, typename RuntimeType> class ItemSelectionSubscriptio
     }
 
     void remove_binding_subscriber(Selection &entry, RuntimeGraph &graph, std::size_t input_offset) noexcept {
-        if (entry.collection->stores_references) {
+        if (entry.stores_reference()) {
             entry.selection.reference_item_subscribers->remove(graph, input_offset);
         } else {
             ReferenceProvider::remove_subscriber(Reference{entry.selection.value_item_reference}, graph, input_offset);
@@ -269,7 +276,7 @@ template <typename Derived, typename RuntimeType> class ItemSelectionSubscriptio
     }
 
     bool has_active_subscribers(const Selection &entry) const noexcept {
-        if (entry.collection->stores_references) {
+        if (entry.stores_reference()) {
             return entry.selection.reference_item_subscribers != nullptr &&
                    !entry.selection.reference_item_subscribers->empty();
         }
@@ -281,7 +288,7 @@ template <typename Derived, typename RuntimeType> class ItemSelectionSubscriptio
         assert(!has_active_subscribers(entry));
         derived().release_item_retention(collection, entry);
 
-        if (!collection.stores_references) {
+        if (!entry.stores_reference()) {
             if (!provider_->release_item_reference(*entry.selection.value_item_reference)) {
                 queue_release(entry);
                 return;
@@ -311,7 +318,7 @@ template <typename Derived, typename RuntimeType> class ItemSelectionSubscriptio
         for (const auto item : collection.items) {
             auto &entry = item.value;
             derived().release_item_retention(collection, entry);
-            if (!collection.stores_references) {
+            if (!entry.stores_reference()) {
                 memory_.delete_object(entry.selection.value_item_reference);
             } else {
                 DynamicSubscribers::release(entry.selection.reference_item_subscribers);
@@ -390,7 +397,7 @@ template <typename Derived, typename RuntimeType> class ItemSelectionSubscriptio
         const auto value_changed = refresh(entry, context.evaluation_time());
         const auto is_valid = static_cast<bool>(entry.selected_reference);
 
-        if (entry.collection->stores_references && !value_changed) {
+        if (entry.stores_reference() && !value_changed) {
             return;
         }
         if (!is_valid) {
@@ -404,7 +411,7 @@ template <typename Derived, typename RuntimeType> class ItemSelectionSubscriptio
     }
 
     static void notify_selection(OutputChangeContext &context, Selection &entry, OutputChange change) {
-        if (entry.collection->stores_references) {
+        if (entry.stores_reference()) {
             context.notify_subscribers(entry.selection.reference_item_subscribers, change);
         } else {
             ReferenceProvider::notify(Reference{entry.selection.value_item_reference}, context, change);

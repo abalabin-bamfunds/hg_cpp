@@ -41,9 +41,9 @@ class TsdKeySubscriptions final
 
         const auto &reference_runtime_type =
             time_series_reference_runtime_type(resolved_tsd_item_reference_type(*retained.runtime_type));
-        auto &tsd = require_collection(reference, *retained.runtime_type, retained.value,
-                                       retained.runtime_type->item_runtime_type().is_reference());
-        auto &entry = require_selection(tsd, retained.id);
+        const auto stores_reference = retained.runtime_type->item_runtime_type().is_reference();
+        auto &tsd = require_collection(reference, *retained.runtime_type, retained.value);
+        auto &entry = require_selection(tsd, retained.id, stores_reference);
         if (!entry.retained()) {
             entry.set_retained(true);
             release_retention.release();
