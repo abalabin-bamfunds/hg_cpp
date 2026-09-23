@@ -210,3 +210,5 @@ For each reusable node and graph, test:
 
 Build the `benchmark` preset and run `build/benchmark/benchmarks/bg_container_benchmark`
 to compare the custom hash dictionary with the standard library implementation.
+The [high-count map benchmark](../benchmarks/high_count_map.md) defines the
+portable map workload and the format for commit-keyed comparison results.
