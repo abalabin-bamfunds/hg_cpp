@@ -263,6 +263,37 @@ TEST_CASE("graph argument matching supports any, exact, and generic patterns",
     CHECK(pattern.accepts(supplied.exact_type()));
 }
 
+TEST_CASE("operator cache constraints retain every ordered graph structure",
+          "[feature:operator][feature:wiring][feature:graph-argument]") {
+    const auto identity = identity_structure();
+    const auto addition = binary_structure<add_node>();
+    const auto multiplication = binary_structure<multiply_node>();
+    const auto uncacheable = uncacheable_structure();
+
+    const auto first = GraphArgumentType{
+        std::vector<details::GraphWiringStructure>{identity, addition}};
+    const auto one_graph_set = GraphArgumentType{
+        std::vector<details::GraphWiringStructure>{identity}};
+    const auto one_graph = GraphArgumentType{identity};
+    const auto equivalent = GraphArgumentType{
+        std::vector<details::GraphWiringStructure>{identity, addition}};
+    const auto different_second = GraphArgumentType{
+        std::vector<details::GraphWiringStructure>{identity, multiplication}};
+    const auto reversed = GraphArgumentType{
+        std::vector<details::GraphWiringStructure>{addition, identity}};
+    const auto not_cacheable = GraphArgumentType{
+        std::vector<details::GraphWiringStructure>{identity, uncacheable}};
+
+    CHECK(first.same_constraint(equivalent));
+    CHECK_FALSE(first.same_constraint(different_second));
+    CHECK_FALSE(first.same_constraint(reversed));
+    CHECK_FALSE(one_graph_set.same_constraint(one_graph));
+    CHECK(first.cacheable_constraint());
+    CHECK_FALSE(not_cacheable.cacheable_constraint());
+    CHECK(first.structure() == nullptr);
+    CHECK(one_graph_set.structure() == nullptr);
+}
+
 TEST_CASE("graph types resolve variables from their parameters and output",
           "[feature:operator][feature:type-system][feature:graph-argument]") {
     using VALUE = ScalarVariable<"VALUE">;

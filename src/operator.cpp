@@ -181,8 +181,7 @@ struct ArgumentKey {
         if (!graph_type) {
             return type == other.type;
         }
-        return graph_type->structure() != nullptr && other.graph_type->structure() != nullptr &&
-               *graph_type->structure() == *other.graph_type->structure();
+        return graph_type->same_constraint(*other.graph_type);
     }
 };
 
@@ -197,7 +196,7 @@ std::optional<std::vector<ArgumentKey>> argument_key(std::span<const WiringArgum
         }
 
         const auto &graph = argument.graph();
-        if (!graph.structure().cacheable()) {
+        if (!graph.exact_type().cacheable_constraint()) {
             return std::nullopt;
         }
         result.push_back({nullptr, details::graph_argument_access::type_owner(graph), true, argument.name()});

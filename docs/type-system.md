@@ -291,6 +291,10 @@ An input accepts a source with the same or a stronger guarantee. A guarantee
 variable can declare a literal minimum. When several inputs map the same
 variable, it resolves to their weakest guarantee. A scalar contributes `const`.
 
+Compatible time series that differ only in their top-level guarantee have a
+common type with the weakest guarantee. This lets one output represent several
+alternative producers without discarding their shared time series structure.
+
 An omitted input guarantee accepts and preserves the source guarantee. An
 omitted output guarantee resolves to `ordinary`, except that a `REF` output
 resolves to `deduplicated`. An explicit `ordinary` guarantee disables this

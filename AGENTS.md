@@ -42,6 +42,9 @@ ownership, lifecycle, and scheduling.
 [docs/map.md](docs/map.md) defines map arguments, key selection, output,
 evaluation, and lifecycle.
 
+[docs/switch.md](docs/switch.md) defines case selection, arguments, output,
+evaluation, and lifecycle.
+
 [docs/testing.md](docs/testing.md) defines test organization and required
 coverage.
 

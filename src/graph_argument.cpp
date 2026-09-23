@@ -34,12 +34,21 @@ class GraphArgumentBoundaryNode final : public NodeTemplate {
 } // namespace
 
 GraphArgumentType::GraphArgumentType(details::GraphWiringStructure structure)
-    : signature_{true}, structure_{std::move(structure)} {
-    parameters_.reserve(structure_->boundary_count());
-    for (auto index = std::size_t{}; index < structure_->boundary_count(); ++index) {
-        parameters_.push_back(&structure_->boundary_type(index));
+    : signature_{true}, structures_{std::move(structure)} {
+    const auto &stored = *this->structure();
+    parameters_.reserve(stored.boundary_count());
+    for (auto index = std::size_t{}; index < stored.boundary_count(); ++index) {
+        parameters_.push_back(&stored.boundary_type(index));
     }
-    output_ = structure_->result_type();
+    output_ = stored.result_type();
+}
+
+GraphArgumentType::GraphArgumentType(std::vector<details::GraphWiringStructure> structures)
+    : structures_{std::move(structures)} {
+    auto &stored = std::get<std::vector<details::GraphWiringStructure>>(structures_);
+    if (stored.empty()) {
+        structures_.emplace<std::monostate>();
+    }
 }
 
 GraphArgumentType::GraphArgumentType(std::shared_ptr<const WiringTemplate> pattern)
@@ -64,16 +73,54 @@ bool GraphArgumentType::is_resolved() const noexcept {
                            (output_ == nullptr || output_->is_resolved()));
 }
 
+bool GraphArgumentType::constrained_structure() const noexcept {
+    return structure_count() != 0 || pattern_ != nullptr;
+}
+
+std::size_t GraphArgumentType::structure_count() const noexcept {
+    if (std::holds_alternative<details::GraphWiringStructure>(structures_)) {
+        return 1;
+    }
+    if (const auto *multiple =
+            std::get_if<std::vector<details::GraphWiringStructure>>(&structures_)) {
+        return multiple->size();
+    }
+    return 0;
+}
+
+const details::GraphWiringStructure &
+GraphArgumentType::structure_at(std::size_t index) const noexcept {
+    if (const auto *single = std::get_if<details::GraphWiringStructure>(&structures_)) {
+        return *single;
+    }
+    return std::get<std::vector<details::GraphWiringStructure>>(structures_)[index];
+}
+
 bool GraphArgumentType::same_constraint(const GraphArgumentType &other) const {
     if (static_cast<bool>(pattern_) != static_cast<bool>(other.pattern_) ||
-        structure_.has_value() != other.structure_.has_value()) {
+        structures_.index() != other.structures_.index() ||
+        structure_count() != other.structure_count()) {
         return false;
     }
     if (pattern_) {
         return pattern_identity_ == other.pattern_identity_;
     }
-    if (structure_) {
-        return *structure_ == *other.structure_;
+    for (auto index = std::size_t{}; index < structure_count(); ++index) {
+        if (!(structure_at(index) == other.structure_at(index))) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool GraphArgumentType::cacheable_constraint() const noexcept {
+    if (structure_count() == 0) {
+        return false;
+    }
+    for (auto index = std::size_t{}; index < structure_count(); ++index) {
+        if (!structure_at(index).cacheable()) {
+            return false;
+        }
     }
     return true;
 }
@@ -138,10 +185,10 @@ bool GraphArgumentType::do_match(const Type &supplied, TypeMap &type_map) const 
         return false;
     }
     if (pattern_) {
-        if (!graph->structure_ || !matches_pattern(*graph->structure_)) {
+        if (graph->structure() == nullptr || !matches_pattern(*graph->structure())) {
             return false;
         }
-    } else if (structure_ && (!graph->structure_ || *structure_ != *graph->structure_)) {
+    } else if (structure_count() != 0 && !same_constraint(*graph)) {
         return false;
     }
 

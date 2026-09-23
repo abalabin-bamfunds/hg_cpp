@@ -30,6 +30,22 @@ const TimeSeriesType &TimeSeriesType::with_guarantee(TimeSeriesGuarantee guarant
                               "an unresolved time series type cannot change guarantee"};
 }
 
+const TimeSeriesType *TimeSeriesType::common_type(const TimeSeriesType &other) const {
+    const auto own_guarantee = guarantee().value();
+    const auto other_guarantee = other.guarantee().value();
+    if (!is_resolved() || !other.is_resolved() || !own_guarantee || !other_guarantee) {
+        return nullptr;
+    }
+
+    const auto &own_shape = with_guarantee(TimeSeriesGuarantee::ordinary);
+    const auto &other_shape = other.with_guarantee(TimeSeriesGuarantee::ordinary);
+    if (&own_shape != &other_shape) {
+        return nullptr;
+    }
+
+    return &own_shape.with_guarantee(weakest(*own_guarantee, *other_guarantee));
+}
+
 bool FixedItemTimeSeriesType::requires_reference_representation_for(const TimeSeriesType &supplied) const noexcept {
     const auto *collection = dynamic_cast<const FixedItemTimeSeriesType *>(&supplied);
     if (collection == nullptr) {

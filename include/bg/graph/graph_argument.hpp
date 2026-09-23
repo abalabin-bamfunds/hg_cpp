@@ -5,11 +5,12 @@
 
 #include <concepts>
 #include <memory>
-#include <optional>
 #include <span>
+#include <stdexcept>
 #include <type_traits>
 #include <typeinfo>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace bg::details {
@@ -24,6 +25,7 @@ class GraphArgumentType final : public Type {
   public:
     GraphArgumentType() = default;
     explicit GraphArgumentType(details::GraphWiringStructure structure);
+    explicit GraphArgumentType(std::vector<details::GraphWiringStructure> structures);
     explicit GraphArgumentType(std::shared_ptr<const WiringTemplate> pattern);
     GraphArgumentType(std::vector<const Type *> parameters, const TimeSeriesType *output,
                       std::shared_ptr<const WiringTemplate> pattern = {},
@@ -38,12 +40,13 @@ class GraphArgumentType final : public Type {
     bool has_signature() const noexcept { return signature_; }
     std::span<const Type *const> parameters() const noexcept { return parameters_; }
     const TimeSeriesType *output() const noexcept { return output_; }
-    bool constrained_structure() const noexcept { return structure_.has_value() || pattern_ != nullptr; }
+    bool constrained_structure() const noexcept;
+    bool cacheable_constraint() const noexcept;
     bool accepts_declaration(const GraphArgumentType &supplied) const;
     bool same_constraint(const GraphArgumentType &other) const;
 
     const details::GraphWiringStructure *structure() const noexcept {
-        return structure_ ? &*structure_ : nullptr;
+        return std::get_if<details::GraphWiringStructure>(&structures_);
     }
 
   protected:
@@ -52,11 +55,17 @@ class GraphArgumentType final : public Type {
   private:
     bool match_signature(const GraphArgumentType &supplied, TypeMap &type_map) const;
     bool matches_pattern(const details::GraphWiringStructure &supplied) const;
+    std::size_t structure_count() const noexcept;
+    const details::GraphWiringStructure &structure_at(std::size_t index) const noexcept;
+
+    using StructureConstraint =
+        std::variant<std::monostate, details::GraphWiringStructure,
+                     std::vector<details::GraphWiringStructure>>;
 
     bool signature_{};
     std::vector<const Type *> parameters_;
     const TimeSeriesType *output_{};
-    std::optional<details::GraphWiringStructure> structure_;
+    StructureConstraint structures_;
     std::shared_ptr<const WiringTemplate> pattern_;
     const void *pattern_identity_{};
 };
@@ -74,16 +83,34 @@ class GraphArgument {
         : type_{std::make_shared<GraphArgumentType>(std::move(structure))}, payload_{std::move(payload)},
           payload_type_{&typeid(void)} {}
 
+    GraphArgument(std::vector<details::GraphWiringStructure> structures,
+                  std::shared_ptr<const void> payload)
+        : type_{std::make_shared<GraphArgumentType>(std::move(structures))},
+          payload_{std::move(payload)}, payload_type_{&typeid(void)} {}
+
     template <typename Payload>
         requires(!std::same_as<std::remove_cv_t<Payload>, void>)
     GraphArgument(details::GraphWiringStructure structure, std::shared_ptr<Payload> payload)
         : type_{std::make_shared<GraphArgumentType>(std::move(structure))}, payload_{std::move(payload)},
           payload_type_{&typeid(Payload)} {}
 
+    template <typename Payload>
+        requires(!std::same_as<std::remove_cv_t<Payload>, void>)
+    GraphArgument(std::vector<details::GraphWiringStructure> structures,
+                  std::shared_ptr<Payload> payload)
+        : type_{std::make_shared<GraphArgumentType>(std::move(structures))},
+          payload_{std::move(payload)}, payload_type_{&typeid(Payload)} {}
+
     static const GraphArgumentType &type() noexcept;
 
     const GraphArgumentType &exact_type() const noexcept { return *type_; }
-    const details::GraphWiringStructure &structure() const noexcept { return *type_->structure(); }
+    const details::GraphWiringStructure &structure() const {
+        const auto *structure = type_->structure();
+        if (structure == nullptr) {
+            throw std::logic_error{"a graph argument does not contain one graph structure"};
+        }
+        return *structure;
+    }
 
   private:
     friend struct details::graph_argument_access;

@@ -17,7 +17,7 @@ Use `[dimension:value]` for each applicable dimension:
 - `feature`: `scalar-api`, `scalar-storage`, `scalar-collection`, `global-state`, `visitor`, `type-system`,
   `node-api`, `state`, `wiring`, `graph-compilation`, `test-graph`, `evaluation-context`, `evaluation-scratch`,
   `lifecycle`, `finalization`, `scheduling`, `timed-scheduling`, `simulation`, `input-activity`, `validity`,
-  `invalidation`, `operator`, `constant`, `graph-argument`, `map`,
+  `invalidation`, `operator`, `constant`, `graph-argument`, `map`, `switch`,
   `time-series-storage`, `time-series-view`, `collection-change`, `reference`, `sampling`, `getitem`, `getattr`,
   `nested-graph`, or `variadic-wiring`
 - `series`: `value`, `fixed-tsl`, `tss`, `tsd`, `tsb`, `reference`, or `generic`
@@ -29,7 +29,7 @@ Use `[dimension:value]` for each applicable dimension:
 - `declaration`: `concrete`, `partially-generic`, `generic`, or `runtime`
 - `binding`: `direct`, `value-to-reference`, `reference-to-value`, `reference-to-reference`, `covariant`, or
   `representation`
-- `shape`: `single-node`, `chain`, `fan-out`, `diamond`, `nested`, or `doubly-nested`
+- `shape`: `single-node`, `chain`, `fan-out`, `diamond`, `nested`, `doubly-nested`, `source`, or `sink`
 - `activity`: `active` or `passive`
 - `validity`: `required` or `optional`
 - `guarantee`: `ordinary`, `deduplicated`, `final`, or `const`
@@ -137,6 +137,7 @@ graph compilation or evaluation.
 - variadic capture by TSB and homogeneous TSL, forwarding, materialization, exact-name direct collection binding,
   nested boundaries, and operator selection
 - map argument selection, graph-function adaptation, overload selection, graph identity, and diagnostics
+- switch case preparation, argument selection, overload selection, compatibility, and diagnostics
 
 ### Graph compilation
 
@@ -165,6 +166,7 @@ graph compilation or evaluation.
 - cycle callbacks and deferred storage reclamation
 - global state shared by outer and inner graphs
 - mapped TSD unions, selected key sets, per-key inner graph evaluation, scheduling, and lifecycle
+- switch selection, default selection, inner graph evaluation, scheduling, lifecycle, and composition with map
 
 ### Time series references
 

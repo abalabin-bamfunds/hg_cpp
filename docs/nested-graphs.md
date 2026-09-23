@@ -56,7 +56,8 @@ scheduled time. The owner uses these notifications to track ready instances and
 its earliest scheduled time. It does not inspect every inner graph.
 
 The [`map` operator](map.md) uses this interface to own one inner runtime graph
-per current key.
+per current key. The [`switch_` operator](switch.md) uses it to own the selected
+inner runtime graph.
 
 ## Lifecycle
 

@@ -256,6 +256,9 @@ overload can therefore select an implementation from the graph structure and
 the supplied map arguments without compiling a separate inner graph for each
 key.
 
+The [`switch_` operator](switch.md) prepares its heterogeneous case definitions
+before normal overload resolution.
+
 ## Resolution cache
 
 Each operator has a bounded resolution cache. Its keys include supplied

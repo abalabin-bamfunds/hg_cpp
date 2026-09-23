@@ -44,6 +44,8 @@ add_library(
     src/nested.cpp
     src/map_node.cpp
     src/map.cpp
+    src/switch_node.cpp
+    src/switch.cpp
     src/normalized_wiring_arguments.cpp
     src/operator.cpp
     src/operators.cpp

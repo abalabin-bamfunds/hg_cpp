@@ -133,6 +133,18 @@ TEST_CASE("type compatibility can be checked without retaining a type map",
     CHECK_FALSE(bg::TS<int>::type().accepts(bg::TS<float>::type()));
 }
 
+TEST_CASE("compatible time-series types have a common weakest guarantee",
+          "[type_system][feature:type-system][guarantee:ordinary][guarantee:final]"
+          "[guarantee:const]") {
+    const auto &ordinary = bg::TS<int>::type();
+    const auto &final = bg::TS<int, bg::TimeSeriesGuarantee::final>::type();
+    const auto &constant = bg::TS<int, bg::TimeSeriesGuarantee::const_>::type();
+
+    CHECK(final.common_type(ordinary) == &ordinary);
+    CHECK(final.common_type(constant) == &final);
+    CHECK(ordinary.common_type(bg::TS<float>::type()) == nullptr);
+}
+
 TEST_CASE("a time series variable and its guarantee resolve independently",
           "[type_system][feature:type-system][declaration:generic][guarantee:ordinary][guarantee:final]") {
     auto left = bg::TypeVariableType<bg::TimeSeriesType>{bg::util::symbol{"Left"}};
