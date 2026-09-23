@@ -232,22 +232,17 @@ class MapRuntimeState {
         }
     }
 
-    template <typename Function> static void visit_keys(const In<TS_T> &input, bool added, Function &&function) {
+    template <typename Function> static void visit_added_keys(const In<TS_T> &input, Function &&function) {
         input.visit(
-            [&](const In<TSS<SCALAR>> *set) {
-                if (added) {
-                    set->for_each_added(function);
-                } else {
-                    set->for_each_removed(function);
-                }
-            },
-            [&](const In<TSD<SCALAR, TS_T>> *dictionary) {
-                if (added) {
-                    dictionary->for_each_added(function);
-                } else {
-                    dictionary->for_each_removed(function);
-                }
-            },
+            [&](const In<TSS<SCALAR>> *set) { set->for_each_added(function); },
+            [&](const In<TSD<SCALAR, TS_T>> *dictionary) { dictionary->for_each_added(function); },
+            ddv::noop);
+    }
+
+    template <typename Function> static void visit_removed_keys(const In<TS_T> &input, Function &&function) {
+        input.visit(
+            [&](const In<TSS<SCALAR>> *set) { set->for_each_removed(function); },
+            [&](const In<TSD<SCALAR, TS_T>> *dictionary) { dictionary->for_each_removed(function); },
             ddv::noop);
     }
 
@@ -258,8 +253,8 @@ class MapRuntimeState {
         if (compiled.key_set_parameter) {
             const auto key_set = input(invocation, *compiled.key_set_parameter);
             if (key_set.modified()) {
-                visit_keys(key_set, false, [&](const auto &key) { set_key_set_presence(key, false); });
-                visit_keys(key_set, true, [&](const auto &key) { set_key_set_presence(key, true); });
+                visit_removed_keys(key_set, [&](const auto &key) { set_key_set_presence(key, false); });
+                visit_added_keys(key_set, [&](const auto &key) { set_key_set_presence(key, true); });
             }
         }
 
