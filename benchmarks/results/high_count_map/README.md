@@ -18,5 +18,8 @@ enough environment information to identify the operating system, processor,
 compiler or interpreter, and CPU affinity. Record the benchmark adapter commit
 when the implementation is maintained outside the engine source commit.
 
+Schema version 1 adapters can report one combined `lifecycle` latency class.
+New adapters report the four lifecycle phases defined by the benchmark.
+
 Compare performance only between runs from equivalent environments. The source
 commit key tracks changes within an engine; it does not remove machine noise.

@@ -164,4 +164,6 @@ taskset -c 0 build/benchmark/benchmarks/bg_high_count_map_benchmark --profile 25
 ```
 
 Use an available CPU instead of CPU 0 when required. Redirect standard output
-to the result file only after the process exits successfully.
+to a temporary file only after the process exits successfully. Add the source
+commit and environment metadata required by the results format before moving
+the file under `results/high_count_map`.
