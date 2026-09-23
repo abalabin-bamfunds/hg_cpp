@@ -6,8 +6,10 @@
 #include <bg/graph/graph_wiring.hpp>
 #include <bg/graph/wiring_arguments.hpp>
 #include <bg/graph/wiring_context.hpp>
-#include <bg/map/details/map_plan.hpp>
+#include <bg/map/details/default_map_wiring.hpp>
 #include <bg/node/node_template.hpp>
+#include <bg/scalar/type.hpp>
+#include <bg/scalar/value.hpp>
 #include <bg/time_series/time_series_type.hpp>
 #include <bg/time_series/tsb/details/wiring.hpp>
 #include <bg/time_series/tsb/tsb_type.hpp>
@@ -18,6 +20,7 @@
 #include <bg/type/time_series_variable.hpp>
 
 #include <algorithm>
+#include <ranges>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -37,24 +40,202 @@ const TimeSeriesType &mapped_dictionary_type(const TimeSeriesDictionaryType &dic
     return time_series_dictionary_type(dictionary.key_type(), reference, dictionary_guarantee);
 }
 
-struct PlanBuilder {
-    PlanBuilder(const WiringTemplate &function, std::vector<MapArgument> positional,
-                std::vector<MapArgument> named,
-                const std::optional<MapArgumentSelector> &key_argument,
-                const std::optional<MapArgumentSelector> &key_set_argument,
-                bool preserve_named_arguments)
-        : function{function}, positional{std::move(positional)}, named{std::move(named)},
-          key_argument{key_argument}, key_set_argument{key_set_argument},
+class MapCallResolver {
+  public:
+    explicit MapCallResolver(std::span<const MapArgument> arguments) : arguments_{arguments} {}
+
+    ResolvedMapCall resolve() {
+        split_arguments();
+        resolve_key_type();
+        resolve_key_set();
+        return std::move(result_);
+    }
+
+  private:
+    static const TimeSeriesType *collection_type(const MapArgument &argument) {
+        if (argument.pass_through || !argument.value.is_time_series()) {
+            return nullptr;
+        }
+
+        return &static_cast<const TimeSeriesType &>(argument.value.type()).target_type();
+    }
+
+    static MapArgumentSelector selector(const WiringArgument &argument) {
+        if (!argument.is_scalar() || !argument.present()) {
+            throw WiringError{"a map argument selector must be a present scalar"};
+        }
+
+        const auto value = argument.scalar();
+        if (&value.type() == &int64_type()) {
+            return MapArgumentSelector{scalar_cast<std::int64_t>(value).value()};
+        }
+        if (&value.type() == &string_type()) {
+            return MapArgumentSelector{scalar_cast<string>(value).value()};
+        }
+        if (&value.type() == &symbol_type()) {
+            return MapArgumentSelector{scalar_cast<util::symbol>(value).value()};
+        }
+
+        throw WiringError{"a map argument selector must be an integer or a name"};
+    }
+
+    void split_arguments() {
+        result_.positional.reserve(arguments_.size());
+        result_.named.reserve(arguments_.size());
+
+        const auto key_argument_name = util::symbol{map_key_argument_name.view()};
+        const auto key_set_argument_name = util::symbol{map_key_set_argument_name.view()};
+        for (const auto &argument : arguments_) {
+            const auto name = argument.value.name();
+            const auto is_key_argument = name == key_argument_name;
+            const auto is_key_set_argument = name == key_set_argument_name;
+            if (is_key_argument || is_key_set_argument) {
+                add_option(argument, is_key_argument);
+            } else if (name) {
+                result_.named.push_back(argument);
+            } else {
+                result_.positional.push_back(argument);
+            }
+        }
+    }
+
+    void add_option(const MapArgument &argument, bool is_key_argument) {
+        if (argument.pass_through) {
+            throw WiringError{"a map option cannot be pass-through"};
+        }
+
+        auto &destination = is_key_argument ? result_.key_argument : key_set_argument_;
+        if (destination) {
+            throw WiringError{is_key_argument ? "a map call accepts one __key_arg__ option"
+                                              : "a map call accepts one __key_set_arg__ option"};
+        }
+
+        destination = selector(argument.value);
+        result_.options.push_back(argument.value);
+    }
+
+    void resolve_key_type() {
+        const auto inspect = [&](const MapArgument &argument) {
+            const auto *type = collection_type(argument);
+            if (type == nullptr) {
+                return;
+            }
+
+            const ScalarType *candidate{};
+            if (const auto *dictionary = type_cast<TimeSeriesDictionaryType>(type)) {
+                candidate = &dictionary->key_type();
+            } else if (const auto *set = type_cast<TimeSeriesSetType>(type)) {
+                candidate = &set->item_type();
+            } else {
+                return;
+            }
+
+            if (result_.key_type != nullptr && result_.key_type != candidate) {
+                throw WiringError{"all map TSD and TSS arguments must have the same key type"};
+            }
+            result_.key_type = candidate;
+        };
+
+        for (const auto &argument : result_.positional) {
+            inspect(argument);
+        }
+        for (const auto &argument : result_.named) {
+            inspect(argument);
+        }
+
+        if (result_.key_type == nullptr) {
+            throw WiringError{"a map call requires a TSD or TSS argument"};
+        }
+        if (!result_.key_type->is_resolved()) {
+            throw WiringError{"a map call requires a concrete key type"};
+        }
+    }
+
+    void resolve_key_set() {
+        if (key_set_argument_) {
+            result_.selected_key_set = selected_argument(*key_set_argument_);
+        } else {
+            infer_key_set();
+        }
+        if (!result_.selected_key_set) {
+            return;
+        }
+
+        const auto &argument = supplied(*result_.selected_key_set);
+        const auto *type = collection_type(argument);
+        const auto *dictionary = type == nullptr ? nullptr : type_cast<TimeSeriesDictionaryType>(type);
+        const auto *set = type == nullptr ? nullptr : type_cast<TimeSeriesSetType>(type);
+        if (dictionary == nullptr && set == nullptr) {
+            throw WiringError{"__key_set_arg__ must select a mapped TSD or a TSS"};
+        }
+
+        const auto &selected_key = dictionary != nullptr ? dictionary->key_type() : set->item_type();
+        if (&selected_key != result_.key_type) {
+            throw WiringError{"the selected map key set has a different key type"};
+        }
+        result_.omit_selected_key_set_argument = set != nullptr;
+    }
+
+    void infer_key_set() {
+        const auto inspect = [&](const MapArgument &argument, std::size_t index) {
+            const auto *type = collection_type(argument);
+            if (type == nullptr || type_cast<TimeSeriesSetType>(type) == nullptr) {
+                return;
+            }
+            if (result_.selected_key_set) {
+                throw WiringError{"a map call with multiple TSS arguments requires __key_set_arg__"};
+            }
+            result_.selected_key_set = index;
+        };
+
+        for (auto index = std::size_t{}; index < result_.positional.size(); ++index) {
+            inspect(result_.positional[index], index);
+        }
+        for (auto index = std::size_t{}; index < result_.named.size(); ++index) {
+            inspect(result_.named[index], result_.positional.size() + index);
+        }
+    }
+
+    std::size_t selected_argument(const MapArgumentSelector &selected) const {
+        if (const auto index = selected.index()) {
+            if (*index >= result_.positional.size() + result_.named.size()) {
+                throw WiringError{"a map argument selector index is out of range"};
+            }
+            return *index;
+        }
+
+        const auto name = *selected.name();
+        const auto found = std::ranges::find_if(result_.named, [&](const auto &argument) {
+            return argument.value.name() == name;
+        });
+        if (found == result_.named.end()) {
+            throw WiringError{"a map argument selector names an unknown argument"};
+        }
+        return result_.positional.size() + static_cast<std::size_t>(found - result_.named.begin());
+    }
+
+    const MapArgument &supplied(std::size_t index) const {
+        return index < result_.positional.size() ? result_.positional[index]
+                                                 : result_.named[index - result_.positional.size()];
+    }
+
+    std::span<const MapArgument> arguments_;
+    ResolvedMapCall result_;
+    std::optional<MapArgumentSelector> key_set_argument_;
+};
+
+struct MapGraphArgumentBuilder {
+    MapGraphArgumentBuilder(const WiringTemplate &function, ResolvedMapCall call,
+                            bool preserve_named_arguments)
+        : function{function}, call{std::move(call)},
           preserve_named_arguments{preserve_named_arguments}, wiring{std::make_shared<GraphWiring>()} {}
 
     GraphArgument build() {
-        resolve_key_type();
-        resolve_key_set_argument();
         resolve_key_argument();
 
         auto graph_arguments = std::vector<WiringArgument>{};
         auto boundaries = std::vector<WiringPoint>{};
-        graph_arguments.reserve(positional.size() + named.size() +
+        graph_arguments.reserve(call.positional.size() + call.named.size() +
                                 static_cast<std::size_t>(key_parameter.has_value()));
 
         auto context = WiringContext{*wiring};
@@ -64,7 +245,7 @@ struct PlanBuilder {
                 return;
             }
 
-            const auto &key = time_series_value_type(*key_type, TimeSeriesGuarantee::const_);
+            const auto &key = time_series_value_type(*call.key_type, TimeSeriesGuarantee::const_);
             const auto boundary = wire_nested_constant_input(key);
             key_input_node = wired_output_node_index(*wiring, boundary);
             boundaries.push_back(boundary);
@@ -74,7 +255,7 @@ struct PlanBuilder {
 
         const auto append = [&](MapArgument &argument, std::size_t user_index) {
             append_key();
-            if (selected_key_set == user_index && is_set(argument.value)) {
+            if (call.selected_key_set == user_index && call.omit_selected_key_set_argument) {
                 return;
             }
 
@@ -82,11 +263,11 @@ struct PlanBuilder {
             ++graph_parameter;
         };
 
-        for (auto index = std::size_t{}; index < positional.size(); ++index) {
-            append(positional[index], index);
+        for (auto index = std::size_t{}; index < call.positional.size(); ++index) {
+            append(call.positional[index], index);
         }
-        for (auto index = std::size_t{}; index < named.size(); ++index) {
-            append(named[index], positional.size() + index);
+        for (auto index = std::size_t{}; index < call.named.size(); ++index) {
+            append(call.named[index], call.positional.size() + index);
         }
         append_key();
         if (key_parameter && graph_parameter <= *key_parameter) {
@@ -105,7 +286,7 @@ struct PlanBuilder {
         const auto output = output_target == nullptr
                                 ? nullptr
                                 : &time_series_dictionary_type(
-                                      *key_type,
+                                      *call.key_type,
                                       time_series_reference_type(*output_target,
                                                                  TimeSeriesGuarantee::deduplicated),
                                       TimeSeriesGuarantee::ordinary);
@@ -115,13 +296,13 @@ struct PlanBuilder {
                                     .key_input_node = key_input_node,
                                     .output_node = output_node,
                                     .key_set_parameter = key_set_parameter};
-        auto plan = std::make_shared<MapPlan>(MapPlan{
+        auto default_wiring = std::make_shared<DefaultMapWiring>(DefaultMapWiring{
             .graph = std::move(graph),
             .outer_signature = std::move(signature),
             .outer_arguments = std::move(outer_arguments),
             .dictionary_key_set_parameter = dictionary_key_set_parameter,
         });
-        return GraphArgument{structure, std::move(plan)};
+        return GraphArgument{structure, std::move(default_wiring)};
     }
 
   private:
@@ -132,97 +313,14 @@ struct PlanBuilder {
         return static_cast<const TimeSeriesType &>(argument.type()).target_type();
     }
 
-    static bool is_set(const WiringArgument &argument) {
-        return type_cast<TimeSeriesSetType>(&argument_time_series(argument)) != nullptr;
-    }
-
-    static bool is_dictionary(const WiringArgument &argument) {
-        return type_cast<TimeSeriesDictionaryType>(&argument_time_series(argument)) != nullptr;
-    }
-
-    void resolve_key_type() {
-        const auto inspect = [&](const MapArgument &argument) {
-            if (argument.pass_through || !argument.value.is_time_series()) {
-                return;
-            }
-
-            const auto &type = argument_time_series(argument.value);
-            const ScalarType *candidate{};
-            if (const auto *dictionary = type_cast<TimeSeriesDictionaryType>(&type)) {
-                candidate = &dictionary->key_type();
-            } else if (const auto *set = type_cast<TimeSeriesSetType>(&type)) {
-                candidate = &set->item_type();
-            } else {
-                return;
-            }
-
-            if (key_type != nullptr && key_type != candidate) {
-                throw WiringError{"all map TSD and TSS arguments must have the same key type"};
-            }
-            key_type = candidate;
-        };
-
-        for (const auto &argument : positional) {
-            inspect(argument);
-        }
-        for (const auto &argument : named) {
-            inspect(argument);
-        }
-        if (key_type == nullptr) {
-            throw WiringError{"a map call requires a TSD or TSS argument"};
-        }
-        if (!key_type->is_resolved()) {
-            throw WiringError{"a map call requires a concrete key type"};
-        }
-    }
-
-    void resolve_key_set_argument() {
-        if (key_set_argument) {
-            selected_key_set = *selected_map_argument_index(key_set_argument, positional, named);
-        } else {
-            const auto inspect = [&](const MapArgument &argument, std::size_t index) {
-                if (argument.pass_through || !argument.value.is_time_series() || !is_set(argument.value)) {
-                    return;
-                }
-                if (selected_key_set) {
-                    throw WiringError{"a map call with multiple TSS arguments requires __key_set_arg__"};
-                }
-                selected_key_set = index;
-            };
-
-            for (auto index = std::size_t{}; index < positional.size(); ++index) {
-                inspect(positional[index], index);
-            }
-            for (auto index = std::size_t{}; index < named.size(); ++index) {
-                inspect(named[index], positional.size() + index);
-            }
-        }
-        if (!selected_key_set) {
-            return;
-        }
-
-        auto &argument = supplied(*selected_key_set);
-        if (argument.pass_through || (!is_set(argument.value) && !is_dictionary(argument.value))) {
-            throw WiringError{"__key_set_arg__ must select a mapped TSD or a TSS"};
-        }
-
-        const auto &selected_type = argument_time_series(argument.value);
-        const auto &selected_key = type_cast<TimeSeriesDictionaryType>(&selected_type) != nullptr
-                                       ? type_cast<TimeSeriesDictionaryType>(selected_type).key_type()
-                                       : type_cast<TimeSeriesSetType>(selected_type).item_type();
-        if (&selected_key != key_type) {
-            throw WiringError{"the selected map key set has a different key type"};
-        }
-    }
-
     void resolve_key_argument() {
-        if (key_argument) {
-            if (const auto index = key_argument->index()) {
+        if (call.key_argument) {
+            if (const auto index = call.key_argument->index()) {
                 key_parameter = *index;
                 return;
             }
 
-            const auto name = *key_argument->name();
+            const auto name = *call.key_argument->name();
             for (auto index = std::size_t{}; index < function.signature().parameter_count(); ++index) {
                 if (function.signature().parameter(index).name == name) {
                     key_parameter = index;
@@ -239,7 +337,8 @@ struct PlanBuilder {
     }
 
     MapArgument &supplied(std::size_t index) {
-        return index < positional.size() ? positional[index] : named[index - positional.size()];
+        return index < call.positional.size() ? call.positional[index]
+                                              : call.named[index - call.positional.size()];
     }
 
     WiringArgument graph_argument(MapArgument &supplied_argument,
@@ -283,11 +382,11 @@ struct PlanBuilder {
     }
 
     void append_key_set_parameter() {
-        if (!selected_key_set) {
+        if (!call.selected_key_set) {
             return;
         }
 
-        auto &selected = supplied(*selected_key_set);
+        auto &selected = supplied(*call.selected_key_set);
         const auto &type = argument_time_series(selected.value);
         auto key_set_argument = selected.value.time_series();
         const TimeSeriesType *key_set_type = &type;
@@ -303,17 +402,12 @@ struct PlanBuilder {
     }
 
     const WiringTemplate &function;
-    std::vector<MapArgument> positional;
-    std::vector<MapArgument> named;
-    const ScalarType *key_type{};
-    const std::optional<MapArgumentSelector> &key_argument;
-    const std::optional<MapArgumentSelector> &key_set_argument;
+    ResolvedMapCall call;
     bool preserve_named_arguments;
     std::shared_ptr<GraphWiring> wiring;
     std::vector<ResolvedParameter> parameters;
     std::vector<WiringArgument> outer_arguments;
     std::vector<MapInputBoundary> inputs;
-    std::optional<std::size_t> selected_key_set;
     std::optional<std::size_t> key_parameter;
     std::optional<std::size_t> key_input_node;
     std::optional<std::size_t> output_node;
@@ -324,50 +418,25 @@ struct PlanBuilder {
 
 } // namespace
 
-std::optional<std::size_t>
-selected_map_argument_index(const std::optional<MapArgumentSelector> &selector,
-                            const std::vector<MapArgument> &positional,
-                            const std::vector<MapArgument> &named) {
-    if (!selector) {
-        return std::nullopt;
-    }
-    if (const auto index = selector->index()) {
-        if (*index >= positional.size() + named.size()) {
-            throw WiringError{"a map argument selector index is out of range"};
-        }
-        return *index;
-    }
-
-    const auto name = *selector->name();
-    const auto found = std::ranges::find_if(named, [&](const auto &argument) {
-        return argument.value.name() == name;
-    });
-    if (found == named.end()) {
-        throw WiringError{"a map argument selector names an unknown argument"};
-    }
-    return positional.size() + static_cast<std::size_t>(found - named.begin());
+ResolvedMapCall resolve_map_call(std::span<const MapArgument> arguments) {
+    return MapCallResolver{arguments}.resolve();
 }
 
-GraphArgument build_map_plan(const WiringTemplate &function,
-                             std::vector<MapArgument> positional,
-                             std::vector<MapArgument> named,
-                             const std::optional<MapArgumentSelector> &key_argument,
-                             const std::optional<MapArgumentSelector> &key_set_argument,
-                             bool preserve_named_arguments) {
-    return PlanBuilder{function, std::move(positional), std::move(named), key_argument,
-                       key_set_argument, preserve_named_arguments}
+GraphArgument build_map_graph_argument(const WiringTemplate &function, ResolvedMapCall call,
+                                       bool preserve_named_arguments) {
+    return MapGraphArgumentBuilder{function, std::move(call), preserve_named_arguments}
         .build();
 }
 
-const MapPlan &MapPlan::from(const GraphArgument &argument) {
-    const auto plan = graph_argument_access::payload<MapPlan>(argument);
-    if (!plan) {
+const DefaultMapWiring &DefaultMapWiring::from(const GraphArgument &argument) {
+    const auto wiring = graph_argument_access::payload<DefaultMapWiring>(argument);
+    if (!wiring) {
         throw WiringError{"the default map overload requires a map graph argument"};
     }
-    return *plan;
+    return *wiring;
 }
 
-std::optional<WiringPoint> MapPlan::wire() const {
+std::optional<WiringPoint> DefaultMapWiring::wire() const {
     auto node_template = make_map_node(graph, outer_signature);
     auto &outer = WiringContext::current().wiring();
     const auto &owned = outer.own_node_template(std::move(node_template));
@@ -413,7 +482,8 @@ Signature default_map_signature(bool output) {
             if (function == nullptr) {
                 return static_cast<const Type *>(nullptr);
             }
-            return static_cast<const Type *>(details::MapPlan::from(*function).outer_signature.output);
+            return static_cast<const Type *>(
+                details::DefaultMapWiring::from(*function).outer_signature.output);
         }}};
     return {util::symbol{"default_map"}, std::move(parameters), result, std::move(resolvers)};
 }
@@ -427,7 +497,7 @@ class DefaultValueMapTemplate final : public WiringTemplate {
   private:
     std::optional<WiringPoint> wire(GraphWiring &, ResolvedSignature, const TypeMap &,
                                     std::span<const WiringArgument> arguments) const final {
-        return details::MapPlan::from(arguments.front().graph()).wire();
+        return details::DefaultMapWiring::from(arguments.front().graph()).wire();
     }
 
     Signature signature_;
@@ -441,7 +511,8 @@ class DefaultSinkMapTemplate final : public WiringTemplate {
 
     RequirementResult requirement(const WiringArguments &arguments) const final {
         const auto *function = arguments.graph(0);
-        return function != nullptr && details::MapPlan::from(*function).outer_signature.output == nullptr
+        return function != nullptr &&
+                       details::DefaultMapWiring::from(*function).outer_signature.output == nullptr
                    ? accept
                    : reject("the mapped graph produces an output");
     }
@@ -449,7 +520,7 @@ class DefaultSinkMapTemplate final : public WiringTemplate {
   private:
     std::optional<WiringPoint> wire(GraphWiring &, ResolvedSignature, const TypeMap &,
                                     std::span<const WiringArgument> arguments) const final {
-        return details::MapPlan::from(arguments.front().graph()).wire();
+        return details::DefaultMapWiring::from(arguments.front().graph()).wire();
     }
 
     Signature signature_;

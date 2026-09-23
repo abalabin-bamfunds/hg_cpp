@@ -55,6 +55,18 @@ struct time_series_reference<REF<Target, Properties...>> : std::true_type {
 template <typename T>
 inline constexpr bool is_time_series_reference = time_series_reference<std::remove_cv_t<T>>::value;
 
+template <typename T> struct dereferenced_time_series {
+    using type = std::remove_cv_t<T>;
+};
+
+template <typename Target, auto... Properties>
+struct dereferenced_time_series<REF<Target, Properties...>> {
+    using type = Target;
+};
+
+template <typename T>
+using dereferenced_time_series_t = typename dereferenced_time_series<std::remove_cv_t<T>>::type;
+
 } // namespace details
 
 } // namespace bg

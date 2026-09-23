@@ -375,7 +375,7 @@ TEST_CASE("map reports invalid selectors and incompatible key types",
         "a map argument selector index is out of range");
     CHECK_THROWS_WITH(
         testing::test_wiring([&] {
-            (void)map([](auto left, auto right) { return left; }, integers(),
+            (void)map([](auto left, auto) { return left; }, integers(),
                       floating_point_keys());
         }),
         "all map TSD and TSS arguments must have the same key type");

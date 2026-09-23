@@ -2,10 +2,11 @@
 
 #include <bg/graph.hpp>
 #include <bg/map/details/map_call.hpp>
-#include <bg/map/details/map_plan.hpp>
+#include <bg/map/details/default_map_wiring.hpp>
 #include <bg/operator.hpp>
 
 #include <functional>
+#include <iterator>
 #include <optional>
 #include <span>
 #include <tuple>
@@ -81,18 +82,9 @@ decltype(auto) select_map_overload(SelectOverload &&select_overload, const Graph
                                std::make_index_sequence<std::tuple_size_v<Options>>{});
 }
 
-template <typename T> struct map_graph_function_parameter {
-    using type = typename map_argument_traits_t<T>::per_key_type;
-};
-
-template <util::compile_time_string Name, typename T>
-struct map_graph_function_parameter<named_argument<Name, T>> {
-    using type = typename map_argument_traits_t<T>::per_key_type;
-};
-
 template <typename T>
 using map_graph_function_parameter_t =
-    typename map_graph_function_parameter<std::remove_cvref_t<T>>::type;
+    typename map_callable_argument_t<T>::parameter_type;
 
 template <typename Function, typename... Arguments> struct BoundMapGraphFunction {
     Function function;
@@ -154,13 +146,13 @@ consteval MapGraphFunctionResult map_graph_function_result() {
         return result;
     } else {
         using Argument = std::tuple_element_t<Index, Supplied>;
-        if constexpr (!SetOmitted && map_key_set_candidate<Argument>) {
+        if constexpr (!SetOmitted && map_callable_key_set<Argument>) {
             result = combine_map_graph_function_results(
                 result,
                 map_graph_function_result<Index + 1, HasKey, KeyInserted, true, OmitSoleSet, Supplied,
                                           Function, Key, Parameters...>());
         }
-        if constexpr (!OmitSoleSet || SetOmitted || !map_key_set_candidate<Argument>) {
+        if constexpr (!OmitSoleSet || SetOmitted || !map_callable_key_set<Argument>) {
             using Parameter = map_graph_function_parameter_t<Argument>;
             result = combine_map_graph_function_results(
                 result,
@@ -203,7 +195,7 @@ void dispatch_map_graph_function(const Function &function, Callback &callback,
         return;
     } else {
         using Supplied = std::tuple_element_t<Index, Arguments>;
-        if constexpr (map_key_set_candidate<Supplied>) {
+        if constexpr (map_callable_key_set<Supplied>) {
             if (selected_key_set == Index) {
                 dispatch_map_graph_function<Index + 1, KeyInserted, Arguments, Function, Callback, Key,
                                             Parameters...>(
@@ -218,12 +210,24 @@ void dispatch_map_graph_function(const Function &function, Callback &callback,
     }
 }
 
+template <typename Call>
+ResolvedMapCall resolve_map_call(Call &call) {
+    auto arguments = map_supplied_arguments(call.positional);
+    auto named = map_supplied_arguments(call.named);
+    auto options = map_supplied_arguments(call.options);
+    arguments.reserve(arguments.size() + named.size() + options.size());
+    arguments.insert(arguments.end(), std::make_move_iterator(named.begin()),
+                     std::make_move_iterator(named.end()));
+    arguments.insert(arguments.end(), std::make_move_iterator(options.begin()),
+                     std::make_move_iterator(options.end()));
+    return resolve_map_call(std::span<const MapArgument>{arguments});
+}
+
 template <typename SelectOverload, typename Graph, typename Call>
 wp<> invoke_preprocessed_map(SelectOverload &&select_overload, const Graph &function, Call &call,
-                             bool preserve_named_arguments) {
-    auto graph_argument = build_map_plan(
-        function, map_supplied_arguments(call.positional), map_supplied_arguments(call.named),
-        call.key_arg, call.key_set_arg, preserve_named_arguments);
+                             ResolvedMapCall resolved_call, bool preserve_named_arguments) {
+    auto graph_argument = build_map_graph_argument(
+        function, std::move(resolved_call), preserve_named_arguments);
     return select_map_overload(std::forward<SelectOverload>(select_overload), graph_argument,
                                call.positional, call.named, call.options);
 }
@@ -231,16 +235,17 @@ wp<> invoke_preprocessed_map(SelectOverload &&select_overload, const Graph &func
 template <typename SelectOverload, typename Graph, typename... Arguments>
 auto invoke_map_graph(SelectOverload &&select_overload, const Graph &function,
                       Arguments &&...arguments) {
-    auto call = preprocess_map_graph_call(std::forward<Arguments>(arguments)...);
-    return invoke_preprocessed_map(std::forward<SelectOverload>(select_overload), function, call, true);
+    auto call = group_map_call_arguments(std::forward<Arguments>(arguments)...);
+    auto resolved_call = resolve_map_call(call);
+    return invoke_preprocessed_map(std::forward<SelectOverload>(select_overload), function, call,
+                                   std::move(resolved_call), true);
 }
 
 template <typename SelectOverload>
 auto invoke_runtime_map_graph(SelectOverload &&select_overload, const WiringTemplate &function,
                               std::span<const MapArgument> arguments) {
-    auto call = preprocess_runtime_map_call(arguments);
-    auto graph_argument = build_map_plan(function, call.positional, call.named, call.key_arg,
-                                         call.key_set_arg);
+    auto call = resolve_map_call(arguments);
+    auto graph_argument = build_map_graph_argument(function, call);
 
     auto overload_arguments = std::vector<WiringArgument>{};
     overload_arguments.reserve(1 + call.positional.size() + call.named.size() + call.options.size());
@@ -262,21 +267,25 @@ auto invoke_runtime_map_graph(SelectOverload &&select_overload, const WiringTemp
 template <typename SelectOverload, typename Function, typename... Arguments>
 auto invoke_map_graph_function(SelectOverload &&select_overload, Function &&function,
                                Arguments &&...arguments) {
-    if constexpr (!map_call_traits<Arguments...>::valid) {
-        validate_map_call<Arguments...>();
+    using KeyScalar = typename first_map_callable_key<Arguments...>::type;
+    if constexpr (std::same_as<KeyScalar, void>) {
+        auto call = group_map_call_arguments(std::forward<Arguments>(arguments)...);
+        (void)resolve_map_call(call);
+        throw WiringError{
+            "a map graph function requires typed TSD or TSS arguments; use a graph template with wp<>"};
     } else {
         using StoredFunction = std::decay_t<Function>;
         auto stored_function = StoredFunction{std::forward<Function>(function)};
-        auto call = preprocess_map_call(std::forward<Arguments>(arguments)...);
-        auto positional = map_supplied_arguments(call.positional);
-        auto named = map_supplied_arguments(call.named);
-        const auto selected_key_set = selected_map_argument_index(call.key_set_arg, positional, named);
+        auto call = group_map_call_arguments(std::forward<Arguments>(arguments)...);
+        auto resolved_call = resolve_map_call(call);
+        const auto selected_key_set = resolved_call.selected_key_set;
         using Supplied = decltype(std::tuple_cat(call.positional, call.named));
-        using Key = typename decltype(call)::inserted_key_type;
-        constexpr auto explicit_key = map_call_traits<Arguments...>::key_argument_count != 0;
+        using Key = map_key_parameter_t<KeyScalar>;
+        constexpr auto explicit_key = named_argument_count<map_key_argument_name, Arguments...> != 0;
+        constexpr auto key_set_count =
+            (std::size_t{} + ... + static_cast<std::size_t>(map_callable_key_set<Arguments>));
         constexpr auto omit_sole_set =
-            map_call_traits<Arguments...>::key_set_candidate_count == 1 &&
-            map_call_traits<Arguments...>::key_set_argument_count == 0;
+            key_set_count == 1 && named_argument_count<map_key_set_argument_name, Arguments...> == 0;
         constexpr auto no_key_shape =
             map_graph_function_result<0, false, false, false, omit_sole_set, Supplied, StoredFunction, Key>();
         constexpr auto leading_key_shape =
@@ -306,13 +315,13 @@ auto invoke_map_graph_function(SelectOverload &&select_overload, Function &&func
                           "map graph function argument sequences must have one output shape");
 
             if constexpr (inferred_key) {
-                call.key_arg.emplace(std::size_t{0});
+                resolved_call.key_argument.emplace(std::size_t{0});
             }
             const auto key_parameter = [&] {
-                if (!call.key_arg) {
+                if (!resolved_call.key_argument) {
                     return std::optional<std::size_t>{};
                 }
-                if (const auto index = call.key_arg->index()) {
+                if (const auto index = resolved_call.key_argument->index()) {
                     return std::optional{*index};
                 }
                 throw WiringError{"a map graph function requires an indexed __key_arg__ selector"};
@@ -320,7 +329,8 @@ auto invoke_map_graph_function(SelectOverload &&select_overload, Function &&func
 
             auto result = wp<>{};
             auto materialize = [&](const auto &bound) {
-                result = invoke_preprocessed_map(select_overload, bound, call, false);
+                result = invoke_preprocessed_map(select_overload, bound, call,
+                                                 std::move(resolved_call), false);
             };
             dispatch_map_graph_function<0, false, Supplied, StoredFunction, decltype(materialize), Key>(
                 stored_function, materialize, selected_key_set, key_parameter);
