@@ -47,6 +47,38 @@ template <typename T, std::uint32_t InitialElements = 8> class bunch_blocks {
     bunch_blocks(bunch_blocks &&) = delete;
     bunch_blocks &operator=(bunch_blocks &&) = delete;
 
+    class const_accessor {
+      public:
+        const_accessor() = default;
+
+        const T &operator[](size_type position) const noexcept {
+            const auto wide_position = static_cast<std::uint64_t>(position);
+            if (data_ == nullptr || wide_position < first_ || wide_position >= end_) {
+                const auto [block_index, offset] = locate(position);
+                const auto &block = blocks_->block_at(block_index);
+                assert(block.data != nullptr);
+
+                data_ = block.data;
+                first_ = wide_position - offset;
+                end_ = first_ + block_capacity(block_index);
+            }
+
+            return data_[wide_position - first_];
+        }
+
+      private:
+        friend class bunch_blocks;
+
+        explicit const_accessor(const bunch_blocks &blocks) noexcept : blocks_{&blocks} {}
+
+        const bunch_blocks *blocks_{};
+        mutable const T *data_{};
+        mutable std::uint64_t first_{};
+        mutable std::uint64_t end_{};
+    };
+
+    const_accessor accessor() const noexcept { return const_accessor{*this}; }
+
     static constexpr location locate(size_type position) noexcept {
         if (position < first_capped_position) {
             const auto scaled = position / initial_elements + 1;

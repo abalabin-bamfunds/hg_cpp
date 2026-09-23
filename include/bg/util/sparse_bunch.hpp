@@ -13,11 +13,12 @@
 
 namespace bg::util {
 
-// Stores one typed column whose constructed positions are owned by an external occupancy index.
+// Stores one typed column whose constructed positions are described externally.
 // The caller must use one memory resource for all storage changes and release storage before destruction.
 template <typename T, std::uint32_t InitialElements = 8> class sparse_bunch {
   public:
     using size_type = std::uint32_t;
+    using const_accessor = typename details::bunch_blocks<T, InitialElements>::const_accessor;
 
     sparse_bunch() = default;
 
@@ -63,6 +64,16 @@ template <typename T, std::uint32_t InitialElements = 8> class sparse_bunch {
         release_with(positions, memory, [](T *value) noexcept { std::destroy_at(value); });
     }
 
+    // Releases storage constructed at every position in [0, extent).
+    void release_prefix(size_type extent, std::pmr::memory_resource &memory) noexcept {
+        for (auto position = size_type{}; position != extent; ++position) {
+            std::destroy_at(blocks_.get(position));
+            blocks_.removed(position, memory);
+        }
+
+        blocks_.release(memory);
+    }
+
     template <typename Destructor>
         requires std::invocable<Destructor &, T *>
     void release_with(const occupancy_index &positions, std::pmr::memory_resource &memory,
@@ -85,6 +96,8 @@ template <typename T, std::uint32_t InitialElements = 8> class sparse_bunch {
 
     T &operator[](size_type position) noexcept { return *blocks_.get(position); }
     const T &operator[](size_type position) const noexcept { return *blocks_.get(position); }
+
+    const_accessor accessor() const noexcept { return blocks_.accessor(); }
 
     size_type allocated_block_count() const noexcept { return blocks_.allocated_block_count(); }
 

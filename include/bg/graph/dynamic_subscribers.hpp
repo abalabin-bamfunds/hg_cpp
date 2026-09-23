@@ -2,12 +2,15 @@
 
 #include <bg/allocator.hpp>
 #include <bg/graph/output_notification.hpp>
+#include <bg/util/adaptive_set.hpp>
 
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <memory_resource>
+#include <utility>
 #include <vector>
 
 namespace bg {
@@ -17,8 +20,8 @@ class RuntimeGraph;
 namespace details {
 
 struct DynamicNodeSubscriber {
-    DynamicNodeSubscriber(RuntimeGraph &target_graph, std::uint32_t input_offset, std::uint32_t node_index,
-                          bool active, bool required) noexcept
+    DynamicNodeSubscriber(RuntimeGraph &target_graph, std::uint32_t input_offset, std::uint32_t node_index, bool active,
+                          bool required) noexcept
         : graph{&target_graph}, input_offset{input_offset},
           node_and_flags{node_index | (active ? active_flag : 0) | (required ? required_flag : 0) |
                          (active && !required ? active_optional_flag : 0)} {}
@@ -27,6 +30,13 @@ struct DynamicNodeSubscriber {
     bool active() const noexcept { return (node_and_flags & active_flag) != 0; }
     bool required() const noexcept { return (node_and_flags & required_flag) != 0; }
     bool active_optional() const noexcept { return (node_and_flags & active_optional_flag) != 0; }
+
+    struct Identity {
+        RuntimeGraph *graph;
+        std::uint32_t input_offset;
+    };
+
+    Identity identity() const noexcept { return {graph, input_offset}; }
 
     RuntimeGraph *graph;
     std::uint32_t input_offset;
@@ -37,6 +47,33 @@ struct DynamicNodeSubscriber {
     static constexpr std::uint32_t required_flag = std::uint32_t{1} << 30;
     static constexpr std::uint32_t active_optional_flag = std::uint32_t{1} << 29;
     static constexpr std::uint32_t node_index_mask = active_optional_flag - 1;
+};
+
+struct DynamicNodeSubscriberHash {
+    std::size_t operator()(const DynamicNodeSubscriber &subscriber) const noexcept {
+        return operator()(subscriber.identity());
+    }
+
+    std::size_t operator()(DynamicNodeSubscriber::Identity subscriber) const noexcept {
+        // Mix aligned graph addresses because linear_hash_table selects buckets from the low hash bits.
+        auto value = static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(subscriber.graph)) ^
+                     (static_cast<std::uint64_t>(subscriber.input_offset) << 32);
+        value ^= value >> 30;
+        value *= std::uint64_t{0xbf58476d1ce4e5b9};
+        value ^= value >> 27;
+        value *= std::uint64_t{0x94d049bb133111eb};
+        return static_cast<std::size_t>(value ^ (value >> 31));
+    }
+};
+
+struct DynamicNodeSubscriberEqual {
+    bool operator()(const DynamicNodeSubscriber &left, const DynamicNodeSubscriber &right) const noexcept {
+        return operator()(left, right.identity());
+    }
+
+    bool operator()(const DynamicNodeSubscriber &left, DynamicNodeSubscriber::Identity right) const noexcept {
+        return left.graph == right.graph && left.input_offset == right.input_offset;
+    }
 };
 
 struct DynamicInputSubscriber {
@@ -61,7 +98,7 @@ struct RuntimeObserver {
 };
 
 struct DynamicSubscribers {
-    explicit DynamicSubscribers(allocator memory) : node_subscribers_{&memory.memory_resource()} {}
+    explicit DynamicSubscribers(allocator memory) : memory_{memory} {}
 
     [[nodiscard]] static DynamicSubscribers &ensure(DynamicSubscribers *&subscribers, allocator memory) {
         if (subscribers != nullptr) {
@@ -77,21 +114,21 @@ struct DynamicSubscribers {
             return;
         }
 
-        auto *memory = subscribers->node_subscribers_.get_allocator().resource();
-        auto allocation = allocator{*memory};
+        auto allocation = subscribers->memory_;
         if (subscribers->input_subscribers_ != nullptr) {
             allocation.delete_object(subscribers->input_subscribers_);
         }
         if (subscribers->observers_ != nullptr) {
             allocation.delete_object(subscribers->observers_);
         }
+        subscribers->node_subscribers_.release(allocation);
         allocation.delete_object(subscribers);
     }
 
     void add(RuntimeGraph &graph, std::uint32_t input_offset, std::size_t data, std::uint32_t node_index, bool active,
              bool required, InputNotificationFunction input_function = nullptr) {
         if (active || required) {
-            node_subscribers_.emplace_back(graph, input_offset, node_index, active, required);
+            node_subscribers_.insert(DynamicNodeSubscriber{graph, input_offset, node_index, active, required}, memory_);
         }
         if (input_function != nullptr) {
             input_subscribers().records.emplace_back(graph, input_offset, data, node_index, input_function);
@@ -99,13 +136,8 @@ struct DynamicSubscribers {
     }
 
     void remove(RuntimeGraph &graph, std::size_t input_offset) noexcept {
-        const auto record = std::ranges::find_if(node_subscribers_, [&](const auto &candidate) {
-            return candidate.graph == &graph && candidate.input_offset == input_offset;
-        });
-        if (record != node_subscribers_.end()) {
-            *record = node_subscribers_.back();
-            node_subscribers_.pop_back();
-        }
+        node_subscribers_.erase(DynamicNodeSubscriber::Identity{&graph, static_cast<std::uint32_t>(input_offset)},
+                                memory_);
 
         if (input_subscribers_ == nullptr) {
             return;
@@ -179,21 +211,24 @@ struct DynamicSubscribers {
 
     InputSubscribers &input_subscribers() {
         if (input_subscribers_ == nullptr) {
-            auto *memory = node_subscribers_.get_allocator().resource();
-            input_subscribers_ = allocator{*memory}.new_object<InputSubscribers>(allocator{*memory});
+            input_subscribers_ = memory_.new_object<InputSubscribers>(memory_);
         }
         return *input_subscribers_;
     }
 
     Observers &observers() {
         if (observers_ == nullptr) {
-            auto *memory = node_subscribers_.get_allocator().resource();
-            observers_ = allocator{*memory}.new_object<Observers>(allocator{*memory});
+            observers_ = memory_.new_object<Observers>(memory_);
         }
         return *observers_;
     }
 
-    std::pmr::vector<DynamicNodeSubscriber> node_subscribers_;
+    static constexpr auto node_subscriber_index_threshold = std::uint32_t{32};
+
+    allocator memory_;
+    util::adaptive_set<DynamicNodeSubscriber, node_subscriber_index_threshold, DynamicNodeSubscriberHash,
+                       DynamicNodeSubscriberEqual>
+        node_subscribers_;
     InputSubscribers *input_subscribers_{};
     Observers *observers_{};
 };

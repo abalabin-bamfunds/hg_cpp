@@ -124,3 +124,17 @@ TEST_CASE("a sparse bunch destroys each occupied value once", "[sparse_bunch][co
     CHECK(counted_value::live == 0);
     CHECK(memory.allocations() == 0);
 }
+
+TEST_CASE("a sparse bunch releases a constructed prefix", "[sparse_bunch][coverage-exempt]") {
+    auto memory = counting_memory_resource{};
+    auto values = bg::util::sparse_bunch<counted_value, 1>{};
+
+    for (auto position = std::uint32_t{}; position != 9; ++position) {
+        values.emplace_at(position, memory, position);
+    }
+    REQUIRE(counted_value::live == 9);
+
+    values.release_prefix(9, memory);
+    CHECK(counted_value::live == 0);
+    CHECK(memory.allocations() == 0);
+}

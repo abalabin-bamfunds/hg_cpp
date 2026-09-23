@@ -80,6 +80,8 @@ class occupancy_index {
     bool contains(size_type position) const noexcept { return positions_.contains(position); }
     size_type size() const noexcept { return count_; }
     bool empty() const noexcept { return count_ == 0; }
+    bool dense() const noexcept { return count_ == positions_.size(); }
+    size_type extent() const noexcept { return positions_.size(); }
     size_type capacity() const noexcept { return positions_.capacity(); }
 
     void swap(occupancy_index &other) noexcept {
