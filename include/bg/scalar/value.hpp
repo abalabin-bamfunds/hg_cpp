@@ -246,6 +246,23 @@ bool operator==(const Left &left, const Right &right) noexcept {
     }
 }
 
+struct ScalarHash {
+    using is_transparent = void;
+
+    template <details::ScalarHandle Value> std::size_t operator()(const Value &value) const noexcept {
+        return Scalar<>::from(value).hash();
+    }
+};
+
+struct ScalarEqual {
+    using is_transparent = void;
+
+    template <details::ScalarHandle Left, details::ScalarHandle Right>
+    bool operator()(const Left &left, const Right &right) const noexcept {
+        return Scalar<>::from(left).equals(Scalar<>::from(right));
+    }
+};
+
 template <typename Target, typename Source>
     requires(!details::scalar_variable<Target>)
 [[nodiscard]] Scalar<Target> unchecked_scalar_cast(const Scalar<Source> &source) noexcept {

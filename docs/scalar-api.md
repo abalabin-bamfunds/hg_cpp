@@ -48,6 +48,9 @@ its type, equality, and hashing operations when its scalar type supports them.
 `ScalarValue<T>::view()` returns a `Scalar<T>`. The returned view remains valid
 while the owner retains that value.
 
+`ScalarHash` and `ScalarEqual` provide transparent hashing and equality for
+containers that accept any combination of `Scalar` and `ScalarValue` handles.
+
 Use `ScalarValue` when a value must outlive a borrowed view. A constructor can
 accept a `bg::allocator` for owned storage.
 

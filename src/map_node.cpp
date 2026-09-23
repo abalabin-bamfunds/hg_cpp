@@ -67,25 +67,6 @@ struct MapNodeIdentity {
     bool operator==(const MapNodeIdentity &) const = default;
 };
 
-struct ScalarValueHash {
-    using is_transparent = void;
-
-    std::size_t operator()(const ScalarValue<> &value) const noexcept { return value.hash(); }
-
-    template <typename T> std::size_t operator()(const Scalar<T> &value) const noexcept {
-        return Scalar<>::from(value).hash();
-    }
-};
-
-struct ScalarValueEqual {
-    using is_transparent = void;
-
-    template <typename Left, typename Right>
-    bool operator()(const Left &left, const Right &right) const noexcept {
-        return Scalar<>::from(left).equals(Scalar<>::from(right));
-    }
-};
-
 struct MapEntry {
     static constexpr auto not_in_schedule_heap = std::numeric_limits<std::size_t>::max();
 
@@ -166,7 +147,7 @@ class MapRuntimeState {
     };
 
   private:
-    using Entries = util::hash_dictionary<ScalarValue<>, MapEntry, ScalarValueHash, ScalarValueEqual>;
+    using Entries = util::hash_dictionary<ScalarValue<>, MapEntry, ScalarHash, ScalarEqual>;
 
     template <typename Invocation> static In<TS_T> input(Invocation invocation, std::size_t parameter_index) {
         return node_invocation_access::input<In<TS_T>>(invocation, parameter_index, parameter_index);

@@ -56,6 +56,18 @@ TEST_CASE("pointer-sized scalar values compare and hash from inline storage",
     CHECK(left.hash() == equal.hash());
 }
 
+TEST_CASE("scalar hash and equality support heterogeneous scalar handles",
+          "[value][scalar][feature:scalar-api][scalar:integer]") {
+    const auto stored = bg::ScalarValue<>{42};
+    const auto equal = bg::ScalarValue{42};
+    const auto different = bg::ScalarValue{43};
+
+    CHECK(bg::ScalarHash{}(stored) == bg::ScalarHash{}(equal.view()));
+    CHECK(bg::ScalarEqual{}(stored, equal.view()));
+    CHECK(bg::ScalarEqual{}(equal.view(), stored));
+    CHECK_FALSE(bg::ScalarEqual{}(stored, different.view()));
+}
+
 TEST_CASE("an evaluation time scalar value retains its graph type",
           "[value][scalar][feature:scalar-api][scalar:evaluation-time]") {
     const auto source = bg::MIN_DT + std::chrono::microseconds{42};
