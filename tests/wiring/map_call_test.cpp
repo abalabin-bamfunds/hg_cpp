@@ -123,22 +123,47 @@ TEST_CASE("map resolves explicit and inferred key arguments for every graph form
 TEST_CASE("map reports option errors through its public call forms",
           "[feature:map][feature:wiring][series:tsd][definition:function][definition:runtime]") {
     const auto values = node([](Out<TSD<std::int64_t, TS<float>>>) {});
-    const auto graph_template = graph(
-        "name"_n = "map_options",
-        [](wp<TS<float>> value) { return value; });
+    const auto function = [](wp<TS<float>> value) { return value; };
+    const auto graph_template = graph("name"_n = "map_options", function);
 
     testing::test_wiring([&] {
         CHECK_THROWS_WITH(
             map(graph_template, values(), "__key_arg__"_n = 0, "__key_arg__"_n = 1),
             "a map call accepts one __key_arg__ option");
+        CHECK_THROWS_WITH(
+            map(graph_template, values(), "__key_set_arg__"_n = 0,
+                "__key_set_arg__"_n = 0),
+            "a map call accepts one __key_set_arg__ option");
+        CHECK_THROWS_WITH(map(graph_template, values(), "__key_set_arg__"_n = -1),
+                          "a map argument selector index must be non-negative");
+        CHECK_THROWS_WITH(map(function, "value"_n = values(),
+                              "__key_set_arg__"_n = "missing"),
+                          "a map argument selector names an unknown argument");
+
+        CHECK_NOTHROW(map(function, "value"_n = values(),
+                          "__key_set_arg__"_n = "value"));
 
         const auto invalid_selector = std::array{
             MapArgument{WiringArgument{values()}},
             MapArgument{WiringArgument{util::symbol{"__key_arg__"}, true}},
         };
+        const auto duplicate_key_arguments = std::array{
+            MapArgument{WiringArgument{values()}},
+            MapArgument{WiringArgument{util::symbol{"__key_arg__"}, std::int64_t{0}}},
+            MapArgument{WiringArgument{util::symbol{"__key_arg__"}, std::int64_t{0}}},
+        };
+        const auto pass_through_option = std::array{
+            MapArgument{WiringArgument{values()}},
+            MapArgument{WiringArgument{util::symbol{"__key_set_arg__"}, std::int64_t{0}}, true},
+        };
         const WiringTemplate &runtime_graph = graph_template;
         CHECK_THROWS_WITH(map(runtime_graph, std::span<const MapArgument>{invalid_selector}),
                           "a map argument selector must be an integer or a name");
+        CHECK_THROWS_WITH(map(runtime_graph,
+                              std::span<const MapArgument>{duplicate_key_arguments}),
+                          "a map call accepts one __key_arg__ option");
+        CHECK_THROWS_WITH(map(runtime_graph, std::span<const MapArgument>{pass_through_option}),
+                          "a map option cannot be pass-through");
     });
 }
 
