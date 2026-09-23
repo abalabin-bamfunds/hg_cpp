@@ -10,7 +10,7 @@ add_executable(
     evaluation/map_test.cpp
     evaluation/nested_graph_test.cpp
     evaluation/nested_graph_owner_test.cpp
-    evaluation/scheduling/future_scheduling_test.cpp
+    evaluation/scheduling/timed_scheduling_test.cpp
     evaluation/scheduling/runtime_scheduling_test.cpp
     evaluation/storage/runtime_storage_test.cpp
     evaluation/storage/runtime_views_test.cpp

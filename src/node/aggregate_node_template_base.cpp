@@ -44,8 +44,8 @@ bool AggregateNodeTemplateBase::uses_output_runtime_type() const noexcept {
     return descriptor_->uses_output_runtime_type;
 }
 
-bool AggregateNodeTemplateBase::uses_future_scheduling() const noexcept {
-    return descriptor_->uses_future_scheduling;
+bool AggregateNodeTemplateBase::uses_timed_scheduling() const noexcept {
+    return descriptor_->uses_timed_scheduling;
 }
 
 NodeStateLayout

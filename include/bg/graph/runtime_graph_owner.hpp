@@ -32,8 +32,8 @@ struct RuntimeGraphOwnerCallbacks {
     // Records that this inner graph has immediate work. The runtime schedules the owning node after this callback.
     void (*inner_scheduled)(void *receiver, token_type token) noexcept;
 
-    // Updates the owner's keyed future schedule. The callback mirrors the owner's earliest time through context.
-    void (*future_schedule_changed)(RuntimeGraphOwnerContext &context, void *receiver, token_type token,
+    // Updates the scheduled time for one owned inner graph and mirrors the owner's earliest time through context.
+    void (*timed_schedule_changed)(RuntimeGraphOwnerContext &context, void *receiver, token_type token,
                                     std::optional<EvaluationTime> time);
 };
 

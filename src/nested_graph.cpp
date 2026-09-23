@@ -22,7 +22,7 @@ void NestedGraph::start(const CompiledNestedGraph &compiled, EvaluationContext &
 void NestedGraph::start(const CompiledNestedGraph &compiled, EvaluationContext &context,
                         std::span<const NestedGraphInput> inputs, RuntimeGraphOwner owner) {
     if (owner.callbacks == nullptr || owner.callbacks->inner_scheduled == nullptr ||
-        owner.callbacks->future_schedule_changed == nullptr) {
+        owner.callbacks->timed_schedule_changed == nullptr) {
         throw std::invalid_argument{"a runtime graph owner requires scheduling callbacks"};
     }
 
@@ -33,7 +33,7 @@ void NestedGraph::start(const CompiledNestedGraph &compiled, EvaluationContext &
                         std::span<const NestedGraphInput> inputs,
                         std::span<const NestedGraphConstantInput> constants, RuntimeGraphOwner owner) {
     if (owner.callbacks == nullptr || owner.callbacks->inner_scheduled == nullptr ||
-        owner.callbacks->future_schedule_changed == nullptr) {
+        owner.callbacks->timed_schedule_changed == nullptr) {
         throw std::invalid_argument{"a runtime graph owner requires scheduling callbacks"};
     }
 

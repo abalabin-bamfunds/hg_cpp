@@ -14,7 +14,7 @@
 namespace {
 
 struct scheduled_source_definition {
-    static constexpr bool uses_future_scheduling = true;
+    static constexpr bool uses_timed_scheduling = true;
 
     bg::Out<bg::TS<int>> output;
 
@@ -52,7 +52,7 @@ struct int_sink_definition {
 
 } // namespace
 
-TEST_CASE("a simulation evaluation engine runs until future scheduling is empty",
+TEST_CASE("a simulation evaluation engine runs until timed scheduling is empty",
           "[evaluation][simulation][feature:simulation][series:value][scalar:integer]") {
     const auto scheduled_source = bg::node<scheduled_source_definition>();
     const auto int_sink = bg::node<int_sink_definition>();
@@ -78,7 +78,7 @@ TEST_CASE("a simulation evaluation engine runs until future scheduling is empty"
 namespace {
 
 struct unordered_schedule_definition {
-    static constexpr bool uses_future_scheduling = true;
+    static constexpr bool uses_timed_scheduling = true;
 
     int value;
 
@@ -95,7 +95,7 @@ struct unordered_schedule_definition {
 
 } // namespace
 
-TEST_CASE("future scheduling orders requests by evaluation time",
+TEST_CASE("timed scheduling orders requests by evaluation time",
           "[evaluation][simulation][feature:simulation][series:value][scalar:integer]") {
     const auto unordered_schedule = bg::node<unordered_schedule_definition>();
     auto wiring = bg::GraphWiring{};

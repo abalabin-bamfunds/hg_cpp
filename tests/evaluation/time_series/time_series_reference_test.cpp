@@ -14,7 +14,7 @@
 namespace {
 
 struct changing_reference_target {
-    static constexpr bool uses_future_scheduling = true;
+    static constexpr bool uses_timed_scheduling = true;
 
     bg::State<int> step;
     bg::Out<bg::TS<int>> output;
@@ -139,7 +139,7 @@ struct sampled_right_source {
 };
 
 struct sampled_condition_source {
-    static constexpr bool uses_future_scheduling = true;
+    static constexpr bool uses_timed_scheduling = true;
 
     bg::Out<bg::TS<int>> output;
 
@@ -255,7 +255,7 @@ TEST_CASE("changing a reference to an invalid target invalidates required consum
 namespace {
 
 struct referenced_list_source {
-    static constexpr bool uses_future_scheduling = true;
+    static constexpr bool uses_timed_scheduling = true;
 
     bg::Out<bg::TSL<bg::TS<int>, 2>> output;
 
@@ -419,7 +419,7 @@ TEST_CASE("a reference stored in a fixed collection item updates its consumer",
 namespace {
 
 struct invalidating_reference {
-    static constexpr bool uses_future_scheduling = true;
+    static constexpr bool uses_timed_scheduling = true;
 
     bg::In<bg::REF<bg::TS<int>>, bg::passive, bg::optional> target;
     bg::State<int> step;

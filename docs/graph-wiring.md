@@ -182,7 +182,7 @@ inline const auto scaled_graph = bg::graph<scaled>();
 ## Direct execution
 
 `run_graph(function)` wires and compiles the graph, then runs it as a simulation
-until no future evaluation remains. `run_graph(function, state)` uses the
+until no scheduled evaluation remains. `run_graph(function, state)` uses the
 supplied [global state](global-state.md), which can outlive the run.
 
 ## Wiring paths

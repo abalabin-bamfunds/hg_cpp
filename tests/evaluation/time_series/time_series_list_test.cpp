@@ -152,7 +152,7 @@ TEST_CASE("a node can select an item from a free fixed time series list",
 namespace {
 
 struct changing_list_source_definition {
-    static constexpr bool uses_future_scheduling = true;
+    static constexpr bool uses_timed_scheduling = true;
 
     bg::Out<bg::TSL<bg::TS<int>, 3>> output;
 
@@ -216,7 +216,7 @@ TEST_CASE("a fixed time series list schedules subscribers of changed items",
 namespace {
 
 struct nested_list_source_definition {
-    static constexpr bool uses_future_scheduling = true;
+    static constexpr bool uses_timed_scheduling = true;
 
     bg::Out<bg::TSL<bg::TSL<bg::TS<int>, 2>, 2>> output;
 
@@ -279,7 +279,7 @@ TEST_CASE("nested time series lists schedule subscribers of changed items",
 namespace {
 
 struct invalidating_list_source_definition {
-    static constexpr bool uses_future_scheduling = true;
+    static constexpr bool uses_timed_scheduling = true;
 
     bg::State<int> step;
     bg::Out<bg::TSL<bg::TS<int>, 3>> output;
@@ -365,7 +365,7 @@ TEST_CASE("invalidating a list invalidates its items",
 namespace {
 
 struct partially_invalidating_list_source_definition {
-    static constexpr bool uses_future_scheduling = true;
+    static constexpr bool uses_timed_scheduling = true;
 
     bg::Out<bg::TSL<bg::TS<int>, 3>> output;
 
@@ -409,7 +409,7 @@ TEST_CASE("a list remains valid while one item remains valid",
 namespace {
 
 struct invalidating_value_source_definition {
-    static constexpr bool uses_future_scheduling = true;
+    static constexpr bool uses_timed_scheduling = true;
 
     bg::Out<bg::TS<int>> output;
 
@@ -448,7 +448,7 @@ TEST_CASE("required-input invalidation invalidates list items",
 namespace {
 
 struct invalidating_nested_list_source_definition {
-    static constexpr bool uses_future_scheduling = true;
+    static constexpr bool uses_timed_scheduling = true;
 
     bg::State<int> step;
     bg::Out<bg::TSL<bg::TSL<bg::TS<int>, 2>, 2>> output;
@@ -527,7 +527,7 @@ TEST_CASE("sequential item views reuse evaluation scratch storage",
 namespace {
 
 struct canceled_nested_dictionary_source_definition {
-    static constexpr bool uses_future_scheduling = true;
+    static constexpr bool uses_timed_scheduling = true;
 
     bg::Out<bg::TSL<bg::TSD<std::int64_t, bg::TS<int>>, 2>> output;
 

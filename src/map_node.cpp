@@ -88,14 +88,14 @@ struct ScalarValueEqual {
 struct MapEntry;
 
 struct MapInnerGraph {
-    static constexpr auto no_future = std::numeric_limits<std::size_t>::max();
+    static constexpr auto not_in_schedule_heap = std::numeric_limits<std::size_t>::max();
 
     NestedGraph graph;
     MapEntry *entry{};
     MapInnerGraph *next_ready{};
     MapInnerGraph *next_stopped{};
-    EvaluationTime future_time{MIN_DT};
-    std::size_t future_index{no_future};
+    EvaluationTime scheduled_time{MIN_DT};
+    std::size_t schedule_heap_index{not_in_schedule_heap};
     bool ready{};
 };
 
@@ -115,7 +115,7 @@ struct PendingBoundaryUpdate {
 class MapRuntimeState {
   public:
     explicit MapRuntimeState(allocator memory)
-        : memory_{memory}, future_{&memory.memory_resource()}, touched_{&memory.memory_resource()},
+        : memory_{memory}, schedule_heap_{&memory.memory_resource()}, touched_{&memory.memory_resource()},
           boundary_updates_{&memory.memory_resource()}, nested_inputs_{&memory.memory_resource()} {}
 
     MapRuntimeState(const MapRuntimeState &) = delete;
@@ -135,7 +135,7 @@ class MapRuntimeState {
     }
 
     template <typename Invocation> void stop(const CompiledMapGraph &, Invocation invocation) noexcept {
-        clear_future_tracking(invocation.context());
+        clear_schedule_tracking(invocation.context());
 
         for (auto [key, entry] : entries_) {
             if (entry.inner_graph != nullptr) {
@@ -145,7 +145,7 @@ class MapRuntimeState {
     }
 
     template <typename Invocation> void destroy(Invocation invocation) noexcept {
-        clear_future_tracking(invocation.context());
+        clear_schedule_tracking(invocation.context());
         for (auto [key, entry] : entries_) {
             if (entry.inner_graph != nullptr) {
                 entry.inner_graph->graph.stop_and_destroy(invocation.context());
@@ -169,16 +169,16 @@ class MapRuntimeState {
         state.mark_ready(*reinterpret_cast<MapInnerGraph *>(token));
     }
 
-    static void inner_graph_future_schedule_changed(RuntimeGraphOwnerContext &context, void *receiver,
+    static void inner_graph_timed_schedule_changed(RuntimeGraphOwnerContext &context, void *receiver,
                                                     RuntimeGraphOwnerCallbacks::token_type token,
                                                     std::optional<EvaluationTime> time) {
         auto &state = *static_cast<MapRuntimeState *>(receiver);
-        state.set_future(context, *reinterpret_cast<MapInnerGraph *>(token), time);
+        state.set_scheduled_time(context, *reinterpret_cast<MapInnerGraph *>(token), time);
     }
 
     static constexpr RuntimeGraphOwnerCallbacks owner_callbacks{
         .inner_scheduled = inner_graph_scheduled,
-        .future_schedule_changed = inner_graph_future_schedule_changed,
+        .timed_schedule_changed = inner_graph_timed_schedule_changed,
     };
 
   private:
@@ -508,129 +508,134 @@ class MapRuntimeState {
         }
     }
 
-    void clear_future_tracking(EvaluationContext &context) noexcept {
-        if (outer_future_time_) {
-            context.cancel(outer_future_);
-            outer_future_ = {};
-            outer_future_time_.reset();
+    void clear_schedule_tracking(EvaluationContext &context) noexcept {
+        if (outer_scheduled_time_) {
+            context.cancel(outer_schedule_);
+            outer_schedule_ = {};
+            outer_scheduled_time_.reset();
         }
-        for (auto *inner_graph : future_) {
-            inner_graph->future_index = MapInnerGraph::no_future;
-            inner_graph->future_time = MIN_DT;
+        for (auto *inner_graph : schedule_heap_) {
+            inner_graph->schedule_heap_index = MapInnerGraph::not_in_schedule_heap;
+            inner_graph->scheduled_time = MIN_DT;
         }
-        future_.clear();
+        schedule_heap_.clear();
     }
 
-    static bool future_before(const MapInnerGraph *left, const MapInnerGraph *right) noexcept {
-        return left->future_time < right->future_time;
+    static bool scheduled_before(const MapInnerGraph *left, const MapInnerGraph *right) noexcept {
+        return left->scheduled_time < right->scheduled_time;
     }
 
-    void swap_future(std::size_t left, std::size_t right) noexcept {
-        std::swap(future_[left], future_[right]);
-        future_[left]->future_index = left;
-        future_[right]->future_index = right;
+    void swap_schedule_heap_items(std::size_t left, std::size_t right) noexcept {
+        std::swap(schedule_heap_[left], schedule_heap_[right]);
+        schedule_heap_[left]->schedule_heap_index = left;
+        schedule_heap_[right]->schedule_heap_index = right;
     }
 
-    void move_future_up(std::size_t index) noexcept {
+    void move_up_schedule_heap(std::size_t index) noexcept {
         while (index != 0) {
             const auto parent = (index - 1) / 2;
-            if (!future_before(future_[index], future_[parent])) {
+            if (!scheduled_before(schedule_heap_[index], schedule_heap_[parent])) {
                 break;
             }
-            swap_future(index, parent);
+            swap_schedule_heap_items(index, parent);
             index = parent;
         }
     }
 
-    void move_future_down(std::size_t index) noexcept {
+    void move_down_schedule_heap(std::size_t index) noexcept {
         while (true) {
             const auto left = index * 2 + 1;
-            if (left >= future_.size()) {
+            if (left >= schedule_heap_.size()) {
                 return;
             }
             const auto right = left + 1;
-            const auto first = right < future_.size() && future_before(future_[right], future_[left]) ? right : left;
-            if (!future_before(future_[first], future_[index])) {
+            const auto first = right < schedule_heap_.size() &&
+                                       scheduled_before(schedule_heap_[right], schedule_heap_[left])
+                                   ? right
+                                   : left;
+            if (!scheduled_before(schedule_heap_[first], schedule_heap_[index])) {
                 return;
             }
-            swap_future(index, first);
+            swap_schedule_heap_items(index, first);
             index = first;
         }
     }
 
-    void remove_future(MapInnerGraph &inner_graph) noexcept {
-        if (inner_graph.future_index == MapInnerGraph::no_future) {
+    void remove_from_schedule_heap(MapInnerGraph &inner_graph) noexcept {
+        if (inner_graph.schedule_heap_index == MapInnerGraph::not_in_schedule_heap) {
             return;
         }
-        const auto index = inner_graph.future_index;
-        inner_graph.future_index = MapInnerGraph::no_future;
-        if (index == future_.size() - 1) {
-            future_.pop_back();
+        const auto index = inner_graph.schedule_heap_index;
+        inner_graph.schedule_heap_index = MapInnerGraph::not_in_schedule_heap;
+        if (index == schedule_heap_.size() - 1) {
+            schedule_heap_.pop_back();
             return;
         }
 
-        future_[index] = future_.back();
-        future_.pop_back();
-        future_[index]->future_index = index;
-        move_future_up(index);
-        move_future_down(future_[index]->future_index);
+        schedule_heap_[index] = schedule_heap_.back();
+        schedule_heap_.pop_back();
+        schedule_heap_[index]->schedule_heap_index = index;
+        move_up_schedule_heap(index);
+        move_down_schedule_heap(schedule_heap_[index]->schedule_heap_index);
     }
 
-    void set_future(RuntimeGraphOwnerContext &context, MapInnerGraph &inner_graph,
-                    std::optional<EvaluationTime> time) {
-        const auto previous_first = future_.empty() ? std::optional<EvaluationTime>{}
-                                                    : std::optional<EvaluationTime>{future_.front()->future_time};
-        remove_future(inner_graph);
-        inner_graph.future_time = time.value_or(MIN_DT);
+    void set_scheduled_time(RuntimeGraphOwnerContext &context, MapInnerGraph &inner_graph,
+                            std::optional<EvaluationTime> time) {
+        const auto previous_first =
+            schedule_heap_.empty() ? std::optional<EvaluationTime>{}
+                                   : std::optional<EvaluationTime>{schedule_heap_.front()->scheduled_time};
+        remove_from_schedule_heap(inner_graph);
+        inner_graph.scheduled_time = time.value_or(MIN_DT);
         if (time) {
-            inner_graph.future_index = future_.size();
-            future_.push_back(&inner_graph);
-            move_future_up(inner_graph.future_index);
+            inner_graph.schedule_heap_index = schedule_heap_.size();
+            schedule_heap_.push_back(&inner_graph);
+            move_up_schedule_heap(inner_graph.schedule_heap_index);
         }
 
-        const auto next_first = future_.empty() ? std::optional<EvaluationTime>{}
-                                                : std::optional<EvaluationTime>{future_.front()->future_time};
+        const auto next_first =
+            schedule_heap_.empty() ? std::optional<EvaluationTime>{}
+                                   : std::optional<EvaluationTime>{schedule_heap_.front()->scheduled_time};
         if (next_first == previous_first) {
             return;
         }
-        if (outer_future_time_) {
-            context.cancel(outer_future_);
-            outer_future_ = {};
+        if (outer_scheduled_time_) {
+            context.cancel(outer_schedule_);
+            outer_schedule_ = {};
         }
-        outer_future_time_ = next_first;
+        outer_scheduled_time_ = next_first;
         if (next_first) {
-            outer_future_ = context.schedule_at(*next_first);
+            outer_schedule_ = context.schedule_at(*next_first);
         }
     }
 
     void activate_due(EvaluationContext &context) {
         const auto evaluation_time = context.evaluation_time();
-        if (outer_future_time_ && *outer_future_time_ <= evaluation_time) {
-            outer_future_ = {};
-            outer_future_time_.reset();
+        if (outer_scheduled_time_ && *outer_scheduled_time_ <= evaluation_time) {
+            outer_schedule_ = {};
+            outer_scheduled_time_.reset();
         }
-        while (!future_.empty() && future_.front()->future_time <= evaluation_time) {
-            auto *inner_graph = future_.front();
-            remove_future(*inner_graph);
-            inner_graph->future_time = MIN_DT;
+        while (!schedule_heap_.empty() && schedule_heap_.front()->scheduled_time <= evaluation_time) {
+            auto *inner_graph = schedule_heap_.front();
+            remove_from_schedule_heap(*inner_graph);
+            inner_graph->scheduled_time = MIN_DT;
             mark_ready(*inner_graph);
         }
-        if (!outer_future_time_ && !future_.empty()) {
-            outer_future_time_ = future_.front()->future_time;
-            outer_future_ = context.schedule_at(*outer_future_time_);
+        if (!outer_scheduled_time_ && !schedule_heap_.empty()) {
+            outer_scheduled_time_ = schedule_heap_.front()->scheduled_time;
+            outer_schedule_ = context.schedule_at(*outer_scheduled_time_);
         }
     }
 
     allocator memory_;
     Entries entries_;
-    std::pmr::vector<MapInnerGraph *> future_;
+    std::pmr::vector<MapInnerGraph *> schedule_heap_;
     std::pmr::vector<MapEntry *> touched_;
     std::pmr::vector<PendingBoundaryUpdate> boundary_updates_;
     std::pmr::vector<NestedGraphInput> nested_inputs_;
     MapInnerGraph *ready_{};
     MapInnerGraph *stopped_inner_graphs_{};
-    ScheduleHandle outer_future_{};
-    std::optional<EvaluationTime> outer_future_time_;
+    ScheduleHandle outer_schedule_{};
+    std::optional<EvaluationTime> outer_scheduled_time_;
     bool inner_graph_cleanup_pending_{};
 };
 
@@ -647,7 +652,7 @@ class MapNodeDefinition {
     using state_type = MapNodeState;
 
     static constexpr bool uses_cycle_callbacks = true;
-    static constexpr bool uses_future_scheduling = true;
+    static constexpr bool uses_timed_scheduling = true;
 
     MapNodeDefinition(MapGraphWiring wiring, const ResolvedSignature &outer_signature)
         : wiring_{std::move(wiring)} {

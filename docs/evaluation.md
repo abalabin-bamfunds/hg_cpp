@@ -71,8 +71,8 @@ The context provides:
 - access to the runtime graph's `bg::allocator`
 - temporary scratch storage for the current node invocation
 - the outer graph's [global state](global-state.md)
-- immediate and future scheduling
-- cancellation of future scheduling
+- immediate and timed scheduling
+- cancellation of timed scheduling
 - registration of outer-cycle callbacks
 
 ## Start
@@ -83,7 +83,7 @@ time. A runtime graph can start once.
 
 Start uses the same parameter packing as evaluation and the evaluation time of
 the runtime graph's first outer cycle. It can request the context, inputs,
-scalars, output, and private state. It can update outputs and schedule future
+scalars, output, and private state. It can update outputs and schedule later
 evaluation.
 
 Compiled scalar constants become valid at start. Their input notifications run
@@ -92,22 +92,22 @@ reference identity before it forwards the notification.
 
 `schedule_now()` schedules the current node for evaluation in the first cycle.
 
-## Future scheduling
+## Timed scheduling
 
-`schedule_at(time)` schedules the current node at a future evaluation time. A
+`schedule_at(time)` schedules the current node for a later evaluation time. A
 node can have several pending times. Scheduling records due at the same time
 coalesce because the node evaluates once in that outer cycle.
 
 `schedule_at` returns a handle. `cancel(handle)` cancels that pending evaluation
 if the handle still identifies it.
 
-An aggregate node that uses future scheduling declares:
+An aggregate node that uses timed scheduling declares:
 
 ```cpp
-static constexpr bool uses_future_scheduling = true;
+static constexpr bool uses_timed_scheduling = true;
 ```
 
-A graph has future-scheduling state only when a node declares its use. The
+A graph has timed scheduling state only when a node declares its use. The
 runtime graph reports the earliest pending time. `evaluate(time)` schedules
 requests due at that time before it processes nodes.
 
@@ -115,7 +115,7 @@ requests due at that time before it processes nodes.
 
 `SimulationEvaluationEngine` starts a runtime graph and evaluates its first
 outer cycle. It then advances to each next scheduled time and calls
-`evaluate(time)`. It stops the runtime graph when no future evaluation remains.
+`evaluate(time)`. It stops the runtime graph when no scheduled evaluation remains.
 
 A later real-time evaluation engine can wait for each scheduled time while
 using the same runtime graph interface.

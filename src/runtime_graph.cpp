@@ -56,7 +56,7 @@ void notify_input_subscribers(OutputChangeContext &context, const TimeSeriesRunt
     }
 }
 
-class RuntimeGraph::FutureSchedule {
+class RuntimeGraph::TimedSchedule {
     struct Record {
         EvaluationTime time;
         std::uint64_t id;
@@ -68,7 +68,7 @@ class RuntimeGraph::FutureSchedule {
     };
 
   public:
-    explicit FutureSchedule(allocator memory) : records_{&memory.memory_resource()} {}
+    explicit TimedSchedule(allocator memory) : records_{&memory.memory_resource()} {}
 
     [[nodiscard]] std::uint64_t add(EvaluationTime time, std::size_t node_index) {
         const auto id = next_id_++;
@@ -349,8 +349,8 @@ void RuntimeGraph::initialize_storage() {
 }
 
 RuntimeGraph::~RuntimeGraph() {
-    if (parent_ != nullptr && !callback_owner_ && owner_.direct.future_schedule.id_ != 0) {
-        parent_->cancel(owner_.direct.node_index, owner_.direct.future_schedule);
+    if (parent_ != nullptr && !callback_owner_ && owner_.direct.timed_schedule.id_ != 0) {
+        parent_->cancel(owner_.direct.node_index, owner_.direct.timed_schedule);
     }
 
     if (storage_ != nullptr) {
@@ -390,8 +390,8 @@ RuntimeGraph::~RuntimeGraph() {
         }
     }
 
-    if (compiled_graph_->has_future_scheduling() && future_schedule() != nullptr) {
-        allocator_.delete_object(future_schedule());
+    if (compiled_graph_->has_timed_scheduling() && timed_schedule() != nullptr) {
+        allocator_.delete_object(timed_schedule());
     }
 
     if (compiled_graph_->has_cycle_callbacks() && cycle_callbacks() != nullptr) {
@@ -431,56 +431,56 @@ void RuntimeGraph::schedule_validity_check(std::size_t node_index) noexcept {
 
 ScheduleHandle RuntimeGraph::schedule_at(std::size_t node_index, EvaluationTime time) {
     if (time <= evaluation_time_) {
-        throw std::invalid_argument{"a scheduled evaluation time must be in the future"};
+        throw std::invalid_argument{"a scheduled evaluation time must be after the current evaluation time"};
     }
 
-    if (!compiled_graph_->has_future_scheduling()) {
-        throw std::logic_error{"the graph does not declare future scheduling"};
+    if (!compiled_graph_->has_timed_scheduling()) {
+        throw std::logic_error{"the graph does not declare timed scheduling"};
     }
 
-    if (future_schedule() == nullptr) {
-        future_schedule() = allocator_.new_object<FutureSchedule>(allocator_);
+    if (timed_schedule() == nullptr) {
+        timed_schedule() = allocator_.new_object<TimedSchedule>(allocator_);
     }
 
     const auto previous = next_scheduled_time();
-    auto result = ScheduleHandle{future_schedule()->add(time, node_index)};
-    notify_future_schedule_changed(previous);
+    auto result = ScheduleHandle{timed_schedule()->add(time, node_index)};
+    notify_timed_schedule_changed(previous);
     return result;
 }
 
 void RuntimeGraph::cancel(std::size_t node_index, ScheduleHandle handle) noexcept {
-    if (compiled_graph_->has_future_scheduling() && future_schedule() != nullptr && handle.id_ != 0) {
+    if (compiled_graph_->has_timed_scheduling() && timed_schedule() != nullptr && handle.id_ != 0) {
         const auto previous = next_scheduled_time();
-        future_schedule()->cancel(node_index, handle.id_);
-        notify_future_schedule_changed(previous);
+        timed_schedule()->cancel(node_index, handle.id_);
+        notify_timed_schedule_changed(previous);
     }
 }
 
-RuntimeGraph::FutureSchedule *&RuntimeGraph::future_schedule() noexcept {
-    return *reinterpret_cast<FutureSchedule **>(storage_ + compiled_graph_->future_schedule_offset());
+RuntimeGraph::TimedSchedule *&RuntimeGraph::timed_schedule() noexcept {
+    return *reinterpret_cast<TimedSchedule **>(storage_ + compiled_graph_->timed_schedule_offset());
 }
 
-RuntimeGraph::FutureSchedule *RuntimeGraph::future_schedule() const noexcept {
-    return *reinterpret_cast<FutureSchedule *const *>(storage_ + compiled_graph_->future_schedule_offset());
+RuntimeGraph::TimedSchedule *RuntimeGraph::timed_schedule() const noexcept {
+    return *reinterpret_cast<TimedSchedule *const *>(storage_ + compiled_graph_->timed_schedule_offset());
 }
 
 void RuntimeGraph::activate_scheduled(EvaluationTime evaluation_time) noexcept {
-    if (compiled_graph_->has_future_scheduling() && future_schedule() != nullptr) {
+    if (compiled_graph_->has_timed_scheduling() && timed_schedule() != nullptr) {
         const auto previous = next_scheduled_time();
-        future_schedule()->activate(*this, evaluation_time);
-        notify_future_schedule_changed(previous);
+        timed_schedule()->activate(*this, evaluation_time);
+        notify_timed_schedule_changed(previous);
     }
 }
 
-void RuntimeGraph::clear_future_schedule() noexcept {
-    if (compiled_graph_->has_future_scheduling() && future_schedule() != nullptr) {
+void RuntimeGraph::clear_timed_schedule() noexcept {
+    if (compiled_graph_->has_timed_scheduling() && timed_schedule() != nullptr) {
         const auto previous = next_scheduled_time();
-        future_schedule()->clear();
-        notify_future_schedule_changed(previous);
+        timed_schedule()->clear();
+        notify_timed_schedule_changed(previous);
     }
 }
 
-void RuntimeGraph::notify_future_schedule_changed(std::optional<EvaluationTime> previous) {
+void RuntimeGraph::notify_timed_schedule_changed(std::optional<EvaluationTime> previous) {
     if (parent_ == nullptr) {
         return;
     }
@@ -493,16 +493,16 @@ void RuntimeGraph::notify_future_schedule_changed(std::optional<EvaluationTime> 
     if (callback_owner_) {
         auto context = RuntimeGraphOwnerContext{*parent_, owner_.callback.node_index};
         const auto &owner = owner_.callback.owner;
-        owner.callbacks->future_schedule_changed(context, owner.receiver, owner.token, next);
+        owner.callbacks->timed_schedule_changed(context, owner.receiver, owner.token, next);
         return;
     }
 
-    if (owner_.direct.future_schedule.id_ != 0) {
-        parent_->cancel(owner_.direct.node_index, owner_.direct.future_schedule);
-        owner_.direct.future_schedule = {};
+    if (owner_.direct.timed_schedule.id_ != 0) {
+        parent_->cancel(owner_.direct.node_index, owner_.direct.timed_schedule);
+        owner_.direct.timed_schedule = {};
     }
     if (next) {
-        owner_.direct.future_schedule = parent_->schedule_at(owner_.direct.node_index, *next);
+        owner_.direct.timed_schedule = parent_->schedule_at(owner_.direct.node_index, *next);
     }
 }
 
@@ -596,11 +596,11 @@ void RuntimeGraph::clear_cycle_callbacks() noexcept {
 }
 
 std::optional<EvaluationTime> RuntimeGraph::next_scheduled_time() const noexcept {
-    if (!compiled_graph_->has_future_scheduling() || future_schedule() == nullptr) {
+    if (!compiled_graph_->has_timed_scheduling() || timed_schedule() == nullptr) {
         return std::nullopt;
     }
 
-    return future_schedule()->next_time();
+    return timed_schedule()->next_time();
 }
 
 void RuntimeGraph::notify_subscribers(std::span<const Subscriber> subscribers, OutputChange change) {
@@ -778,7 +778,7 @@ void RuntimeGraph::stop_nodes(std::size_t node_count) noexcept {
         stops.functions[i](node, storage_, &context);
     }
 
-    clear_future_schedule();
+    clear_timed_schedule();
     clear_cycle_callbacks();
 }
 

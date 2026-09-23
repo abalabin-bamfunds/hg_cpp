@@ -91,10 +91,10 @@ class CompiledGraph {
     }
 
     static constexpr std::uint32_t variable_memory_flag = std::uint32_t{1} << 31;
-    static constexpr std::uint32_t future_scheduling_flag = std::uint32_t{1} << 30;
+    static constexpr std::uint32_t timed_scheduling_flag = std::uint32_t{1} << 30;
     static constexpr std::uint32_t cycle_callbacks_flag = std::uint32_t{1} << 31;
     static constexpr std::uint32_t constants_flag = std::uint32_t{1} << 30;
-    static constexpr std::uint32_t fixed_storage_size_mask = future_scheduling_flag - 1;
+    static constexpr std::uint32_t fixed_storage_size_mask = timed_scheduling_flag - 1;
     static constexpr std::uint32_t variable_memory_offset_mask = constants_flag - 1;
     static constexpr std::uint32_t alignment_shift = 26;
     static constexpr std::uint32_t count_mask = (std::uint32_t{1} << alignment_shift) - 1;
@@ -103,8 +103,8 @@ class CompiledGraph {
         return (fixed_storage_size_and_flags_ & variable_memory_flag) != 0;
     }
 
-    bool has_future_scheduling() const noexcept {
-        return (fixed_storage_size_and_flags_ & future_scheduling_flag) != 0;
+    bool has_timed_scheduling() const noexcept {
+        return (fixed_storage_size_and_flags_ & timed_scheduling_flag) != 0;
     }
 
     bool has_cycle_callbacks() const noexcept {
@@ -127,7 +127,7 @@ class CompiledGraph {
         return storage_header().constant_metadata(node_count());
     }
 
-    std::size_t future_schedule_offset() const noexcept {
+    std::size_t timed_schedule_offset() const noexcept {
         const auto scheduling_size = schedule_word_count() * sizeof(SchedulingInfo);
 
         return (scheduling_size + alignof(void *) - 1) & ~(alignof(void *) - 1);
@@ -135,7 +135,7 @@ class CompiledGraph {
 
     std::size_t cycle_callbacks_offset() const noexcept {
         auto offset = schedule_word_count() * sizeof(SchedulingInfo);
-        if (has_future_scheduling()) {
+        if (has_timed_scheduling()) {
             offset = (offset + alignof(void *) - 1) & ~(alignof(void *) - 1);
             offset += sizeof(void *);
         }

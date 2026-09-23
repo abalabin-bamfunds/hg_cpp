@@ -16,7 +16,7 @@
 namespace {
 
 struct dict_source_definition {
-    static constexpr bool uses_future_scheduling = true;
+    static constexpr bool uses_timed_scheduling = true;
 
     bg::State<int> step;
     bg::Out<bg::TSD<std::int64_t, bg::TS<int>>> output;
@@ -308,7 +308,7 @@ TEST_CASE("a node can read one dictionary item",
 namespace {
 
 struct delayed_selected_item_definition {
-    static constexpr bool uses_future_scheduling = true;
+    static constexpr bool uses_timed_scheduling = true;
 
     bg::State<int> step;
     bg::Out<bg::TSD<std::int64_t, bg::TS<int>>> output;
@@ -370,7 +370,7 @@ TEST_CASE("a node can publish a contained dictionary reference",
 namespace {
 
 struct list_dictionary_source_definition {
-    static constexpr bool uses_future_scheduling = true;
+    static constexpr bool uses_timed_scheduling = true;
 
     bg::Out<bg::TSD<std::int64_t, bg::TSL<bg::TS<int>, 2>>> output;
 
@@ -442,7 +442,7 @@ TEST_CASE("a node can select a dictionary item using a time series key",
 namespace {
 
 struct resurrecting_selected_item_definition {
-    static constexpr bool uses_future_scheduling = true;
+    static constexpr bool uses_timed_scheduling = true;
 
     bg::Out<bg::TSD<std::int64_t, bg::TS<int>>> output;
 
@@ -567,7 +567,7 @@ TEST_CASE("adding and removing a new dictionary item in one invocation produces 
 namespace {
 
 struct resurrecting_source_definition {
-    static constexpr bool uses_future_scheduling = true;
+    static constexpr bool uses_timed_scheduling = true;
 
     bg::Out<bg::TSD<std::int64_t, bg::TS<int>>> output;
 
@@ -606,7 +606,7 @@ TEST_CASE("resurrecting a dictionary item reports a modification",
 namespace {
 
 struct nested_item_resurrecting_source_definition {
-    static constexpr bool uses_future_scheduling = true;
+    static constexpr bool uses_timed_scheduling = true;
 
     bg::Out<bg::TSD<std::int64_t, bg::TSD<std::int64_t, bg::TS<int>>>> output;
 
@@ -683,7 +683,7 @@ TEST_CASE("a generic dictionary view uses its resolved item type",
 namespace {
 
 struct empty_dict_source_definition {
-    static constexpr bool uses_future_scheduling = true;
+    static constexpr bool uses_timed_scheduling = true;
 
     bg::State<int> step;
     bg::Out<bg::TSD<std::int64_t, bg::TS<int>>> output;
@@ -753,7 +753,7 @@ TEST_CASE("a dictionary becomes valid on its first empty tick and remains valid"
 namespace {
 
 struct invalidating_dict_input_definition {
-    static constexpr bool uses_future_scheduling = true;
+    static constexpr bool uses_timed_scheduling = true;
 
     bg::Out<bg::TS<int>> output;
 
@@ -875,7 +875,7 @@ TEST_CASE("an invalid dictionary input has no entries to enumerate",
 namespace {
 
 struct exact_int_dictionary_source_definition {
-    static constexpr bool uses_future_scheduling = true;
+    static constexpr bool uses_timed_scheduling = true;
 
     bg::Out<bg::TSD<int, bg::TS<int>>> output;
 

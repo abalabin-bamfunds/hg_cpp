@@ -96,4 +96,4 @@ next outer cycle.
 
 A mapped item update evaluates only the inner runtime graph for that key. A
 pass-through input update evaluates every current inner runtime graph. Immediate
-and future scheduling follow the [nested graph rules](nested-graphs.md#evaluation).
+and timed scheduling follow the [nested graph rules](nested-graphs.md#evaluation).

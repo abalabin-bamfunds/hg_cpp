@@ -31,7 +31,7 @@
 namespace bg::testing::details {
 
 struct Source {
-    static constexpr bool uses_future_scheduling = true;
+    static constexpr bool uses_timed_scheduling = true;
 
     Scalar<List<SCALAR>> values;
     Scalar<List<EvaluationTime>> times;

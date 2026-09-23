@@ -54,7 +54,7 @@ struct DelayedValue {
     In<TS<int>, passive> input;
     Out<TS<int>> output;
 
-    static constexpr bool uses_future_scheduling = true;
+    static constexpr bool uses_timed_scheduling = true;
 
     void start(EvaluationContext *context) const {
         context->schedule_at(context->evaluation_time() + std::chrono::microseconds{2});
@@ -69,7 +69,7 @@ struct VariableDelay {
     In<TS<int>, passive> input;
     Out<TS<int>> output;
 
-    static constexpr bool uses_future_scheduling = true;
+    static constexpr bool uses_timed_scheduling = true;
     inline static std::vector<int> evaluations;
 
     void start(EvaluationContext *context) const {
@@ -596,9 +596,9 @@ TEST_CASE("a pass-through reference replacement updates each running map inner g
     CHECK(actual.equals<int>({11, 202, 33}));
 }
 
-TEST_CASE("a map inner graph reports future work through the map owner",
+TEST_CASE("a map inner graph reports timed work through the map owner",
           "[feature:map][feature:nested-graph][feature:reference][series:tsd][shape:nested]"
-          "[feature:future-scheduling]") {
+          "[feature:timed-scheduling]") {
     const auto target = node([](In<TS<int>> value, Out<TS<int>> output) { output.set(*value); });
     const auto make_values =
         node([](In<REF<TS<int>>> value, Out<TSD<std::int64_t, REF<TS<int>>>> output) {
@@ -617,9 +617,9 @@ TEST_CASE("a map inner graph reports future work through the map owner",
     CHECK(actual[2]->value() == 5);
 }
 
-TEST_CASE("map schedules the next future time after one inner graph becomes due",
+TEST_CASE("map schedules the next scheduled time after one inner graph becomes due",
           "[feature:map][feature:nested-graph][feature:reference][series:tsd][shape:nested]"
-          "[feature:future-scheduling]") {
+          "[feature:timed-scheduling]") {
     const auto targets = node([](In<TS<int>>, Out<TSD<std::int64_t, TS<int>>> output) {
         output[1].set(2);
         output[2].set(4);

@@ -190,9 +190,9 @@ template <details::runtime_signature_node Definition> class RuntimeSignatureNode
     bool uses_output_runtime_type() const noexcept override { return definition_.signature().has_output(); }
     bool uses_node_invocation() const noexcept override { return true; }
 
-    bool uses_future_scheduling() const noexcept override {
-        if constexpr (requires { Definition::uses_future_scheduling; }) {
-            return Definition::uses_future_scheduling;
+    bool uses_timed_scheduling() const noexcept override {
+        if constexpr (requires { Definition::uses_timed_scheduling; }) {
+            return Definition::uses_timed_scheduling;
         }
         return false;
     }

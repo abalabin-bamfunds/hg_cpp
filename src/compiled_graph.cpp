@@ -274,7 +274,7 @@ struct CompilationPlan {
     std::size_t scalar_destruction_count{};
     std::size_t output_destruction_count{};
     bool uses_variable_memory{};
-    bool uses_future_scheduling{};
+    bool uses_timed_scheduling{};
     bool uses_cycle_callbacks{};
 
     bool has_lifecycle() const noexcept { return !starts.nodes.empty() || !stops.nodes.empty(); }
@@ -630,7 +630,7 @@ void plan_runtime_storage(CompilationPlan &plan) {
         (plan.wired_node_indices.size() + std::numeric_limits<ScheduleWord>::digits - 1) /
         std::numeric_limits<ScheduleWord>::digits;
     (void)storage.add<SchedulingInfo>(schedule_word_count);
-    if (plan.uses_future_scheduling) {
+    if (plan.uses_timed_scheduling) {
         (void)storage.add<void *>();
     }
     if (plan.uses_cycle_callbacks) {
@@ -955,7 +955,7 @@ void plan_fixed_storage(CompilationPlan &plan) {
         const auto compiled_node = static_cast<std::uint32_t>(result.compiled_node_index(i));
         result.starts.add(node.node_template().start_function(node.signature()), compiled_node);
         result.stops.add(node.node_template().stop_function(node.signature()), compiled_node);
-        result.uses_future_scheduling |= node.node_template().uses_future_scheduling();
+        result.uses_timed_scheduling |= node.node_template().uses_timed_scheduling();
         result.uses_cycle_callbacks |= node.node_template().uses_cycle_callbacks();
         result.node_plans[i].compiled_data = node.node_template().compiled_data_layout(node.signature());
     }
@@ -1044,7 +1044,7 @@ class CompiledGraphBuilder {
         const auto fixed_size = packed_offset(plan.fixed.size, "compiled fixed storage reaches 1 GiB");
         graph.fixed_storage_size_and_flags_ =
             fixed_size | (plan.uses_variable_memory ? CompiledGraph::variable_memory_flag : std::uint32_t{}) |
-            (plan.uses_future_scheduling ? CompiledGraph::future_scheduling_flag : std::uint32_t{});
+            (plan.uses_timed_scheduling ? CompiledGraph::timed_scheduling_flag : std::uint32_t{});
         graph.runtime_storage_size_ = packed_offset(plan.runtime.size, "runtime storage reaches 1 GiB");
         graph.node_count_and_fixed_alignment_ =
             static_cast<std::uint32_t>(plan.wired_node_indices.size()) |

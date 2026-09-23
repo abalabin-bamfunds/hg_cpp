@@ -27,15 +27,15 @@ class InnerGraphOwner {
   public:
     void scheduled(std::size_t token) { immediate_.push_back(token); }
 
-    void future_schedule_changed(bg::RuntimeGraphOwnerContext &context, std::size_t token,
+    void timed_schedule_changed(bg::RuntimeGraphOwnerContext &context, std::size_t token,
                                  std::optional<bg::EvaluationTime> time) {
         const auto previous_earliest = earliest();
-        if (const auto existing = future_by_token_.find(token); existing != future_by_token_.end()) {
-            future_.erase(existing->second);
-            future_by_token_.erase(existing);
+        if (const auto existing = schedule_by_token_.find(token); existing != schedule_by_token_.end()) {
+            schedule_.erase(existing->second);
+            schedule_by_token_.erase(existing);
         }
         if (time) {
-            future_by_token_.emplace(token, future_.emplace(*time, token));
+            schedule_by_token_.emplace(token, schedule_.emplace(*time, token));
         }
 
         update_outer_schedule(context, previous_earliest);
@@ -46,11 +46,11 @@ class InnerGraphOwner {
         immediate_.clear();
 
         const auto previous_earliest = earliest();
-        while (!future_.empty() && future_.begin()->first <= context.evaluation_time()) {
-            const auto token = future_.begin()->second;
-            evaluated_future_.push_back(token);
-            future_by_token_.erase(token);
-            future_.erase(future_.begin());
+        while (!schedule_.empty() && schedule_.begin()->first <= context.evaluation_time()) {
+            const auto token = schedule_.begin()->second;
+            evaluated_tokens_.push_back(token);
+            schedule_by_token_.erase(token);
+            schedule_.erase(schedule_.begin());
         }
 
         if (earliest() != previous_earliest) {
@@ -65,18 +65,18 @@ class InnerGraphOwner {
     }
 
     const std::vector<std::size_t> &evaluated_immediate() const noexcept { return evaluated_immediate_; }
-    const std::vector<std::size_t> &evaluated_future() const noexcept { return evaluated_future_; }
+    const std::vector<std::size_t> &evaluated_tokens() const noexcept { return evaluated_tokens_; }
 
     static const bg::RuntimeGraphOwnerCallbacks callbacks;
 
   private:
-    using Future = std::multimap<bg::EvaluationTime, std::size_t>;
+    using Schedule = std::multimap<bg::EvaluationTime, std::size_t>;
 
     std::optional<bg::EvaluationTime> earliest() const noexcept {
-        if (future_.empty()) {
+        if (schedule_.empty()) {
             return std::nullopt;
         }
-        return future_.begin()->first;
+        return schedule_.begin()->first;
     }
 
     void update_outer_schedule(bg::RuntimeGraphOwnerContext &context,
@@ -95,9 +95,9 @@ class InnerGraphOwner {
 
     std::vector<std::size_t> immediate_;
     std::vector<std::size_t> evaluated_immediate_;
-    std::vector<std::size_t> evaluated_future_;
-    Future future_;
-    std::map<std::size_t, Future::iterator> future_by_token_;
+    std::vector<std::size_t> evaluated_tokens_;
+    Schedule schedule_;
+    std::map<std::size_t, Schedule::iterator> schedule_by_token_;
     std::optional<bg::ScheduleHandle> outer_schedule_;
 };
 
@@ -105,14 +105,14 @@ const bg::RuntimeGraphOwnerCallbacks InnerGraphOwner::callbacks{
     .inner_scheduled = [](void *receiver, std::size_t token) noexcept {
         static_cast<InnerGraphOwner *>(receiver)->scheduled(token);
     },
-    .future_schedule_changed = [](bg::RuntimeGraphOwnerContext &context, void *receiver, std::size_t token,
+    .timed_schedule_changed = [](bg::RuntimeGraphOwnerContext &context, void *receiver, std::size_t token,
                                   std::optional<bg::EvaluationTime> time) {
-        static_cast<InnerGraphOwner *>(receiver)->future_schedule_changed(context, token, time);
+        static_cast<InnerGraphOwner *>(receiver)->timed_schedule_changed(context, token, time);
     },
 };
 
 struct OwnerNode {
-    static constexpr bool uses_future_scheduling = true;
+    static constexpr bool uses_timed_scheduling = true;
 
     void evaluate(bg::EvaluationContext *context) const { owner->evaluate(*context); }
 
@@ -120,7 +120,7 @@ struct OwnerNode {
 };
 
 struct InnerNode {
-    static constexpr bool uses_future_scheduling = true;
+    static constexpr bool uses_timed_scheduling = true;
 
     int delay;
 
@@ -186,8 +186,8 @@ TEST_CASE("multiple inner graphs identify immediate scheduling to their owner",
     outer.stop();
 }
 
-TEST_CASE("multiple inner graphs report future schedule changes without an owner scan",
-          "[evaluation][nested][scheduling][future_scheduling][feature:nested-graph][shape:nested]") {
+TEST_CASE("multiple inner graphs report scheduled-time changes without an owner scan",
+          "[evaluation][nested][scheduling][timed_scheduling][feature:nested-graph][shape:nested]") {
     const auto outer_compiled = make_owner_graph();
     const auto first_compiled = make_inner_graph(2);
     const auto second_compiled = make_inner_graph(4);
@@ -205,11 +205,11 @@ TEST_CASE("multiple inner graphs report future schedule changes without an owner
     REQUIRE(outer.next_scheduled_time() == time(3));
 
     outer.evaluate(time(3));
-    CHECK(owner.evaluated_future() == std::vector<std::size_t>{7});
+    CHECK(owner.evaluated_tokens() == std::vector<std::size_t>{7});
     REQUIRE(outer.next_scheduled_time() == time(5));
 
     outer.evaluate(time(5));
-    CHECK(owner.evaluated_future() == std::vector<std::size_t>{7, 11});
+    CHECK(owner.evaluated_tokens() == std::vector<std::size_t>{7, 11});
     CHECK_FALSE(outer.next_scheduled_time());
 
     first.stop();
@@ -217,8 +217,8 @@ TEST_CASE("multiple inner graphs report future schedule changes without an owner
     outer.stop();
 }
 
-TEST_CASE("stopping one inner graph removes only its keyed future schedule",
-          "[evaluation][nested][lifecycle][future_scheduling][feature:nested-graph][shape:nested]"
+TEST_CASE("stopping one inner graph removes only its scheduled time",
+          "[evaluation][nested][lifecycle][timed_scheduling][feature:nested-graph][shape:nested]"
           "[transition:stop]") {
     const auto outer_compiled = make_owner_graph();
     const auto first_compiled = make_inner_graph(2);
@@ -240,7 +240,7 @@ TEST_CASE("stopping one inner graph removes only its keyed future schedule",
     REQUIRE(outer.next_scheduled_time() == time(5));
     outer.evaluate(time(5));
 
-    CHECK(owner.evaluated_future() == std::vector<std::size_t>{11});
+    CHECK(owner.evaluated_tokens() == std::vector<std::size_t>{11});
 
     second.stop();
     outer.stop();

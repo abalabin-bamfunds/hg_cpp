@@ -323,9 +323,9 @@ template <typename Definition>
 inline constexpr bool aggregate_node_preserves_output =
     requires { requires std::same_as<std::remove_cv_t<decltype(Definition::on_invalidation)>, PreserveOutput>; };
 
-template <typename Definition> [[nodiscard]] consteval bool aggregate_uses_future_scheduling() {
-    if constexpr (requires { Definition::uses_future_scheduling; }) {
-        return Definition::uses_future_scheduling;
+template <typename Definition> [[nodiscard]] consteval bool aggregate_uses_timed_scheduling() {
+    if constexpr (requires { Definition::uses_timed_scheduling; }) {
+        return Definition::uses_timed_scheduling;
     }
 
     return false;

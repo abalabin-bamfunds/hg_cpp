@@ -37,7 +37,7 @@ BG_BENCHMARK_NOINLINE void consume(std::size_t value) noexcept {
 #undef BG_BENCHMARK_NOINLINE
 
 struct value_source_definition {
-    static constexpr bool uses_future_scheduling = true;
+    static constexpr bool uses_timed_scheduling = true;
 
     bg::Out<bg::TS<int>> output;
 

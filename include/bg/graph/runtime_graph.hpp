@@ -67,7 +67,7 @@ class RuntimeGraph {
     using SchedulingInfo = CompiledGraph::SchedulingInfo;
 
     class ScheduledNodes;
-    class FutureSchedule;
+    class TimedSchedule;
     class CycleCallbacks;
     class ScratchUse;
     class OutputChangePublisher;
@@ -80,11 +80,11 @@ class RuntimeGraph {
     void schedule_validity_check(std::size_t node_index) noexcept;
     ScheduleHandle schedule_at(std::size_t node_index, EvaluationTime time);
     void cancel(std::size_t node_index, ScheduleHandle handle) noexcept;
-    FutureSchedule *&future_schedule() noexcept;
-    FutureSchedule *future_schedule() const noexcept;
+    TimedSchedule *&timed_schedule() noexcept;
+    TimedSchedule *timed_schedule() const noexcept;
     void activate_scheduled(EvaluationTime evaluation_time) noexcept;
-    void clear_future_schedule() noexcept;
-    void notify_future_schedule_changed(std::optional<EvaluationTime> previous);
+    void clear_timed_schedule() noexcept;
+    void notify_timed_schedule_changed(std::optional<EvaluationTime> previous);
     void notify_owner_scheduled() noexcept;
     void set_owner(RuntimeGraph &graph, std::size_t node_index) noexcept;
     void set_owner(RuntimeGraph &graph, std::size_t node_index, RuntimeGraphOwner owner) noexcept;
@@ -123,7 +123,7 @@ class RuntimeGraph {
     details::EvaluationScratch *scratch_{};
     struct DirectOwner {
         std::size_t node_index{};
-        ScheduleHandle future_schedule{};
+        ScheduleHandle timed_schedule{};
     };
 
     struct CallbackOwner {

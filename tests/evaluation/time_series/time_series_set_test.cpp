@@ -13,7 +13,7 @@
 namespace {
 
 struct set_source_definition {
-    static constexpr bool uses_future_scheduling = true;
+    static constexpr bool uses_timed_scheduling = true;
 
     bg::State<int> step;
     bg::Out<bg::TSS<std::int64_t>> output;
@@ -122,7 +122,7 @@ TEST_CASE("adding and removing a set item in one invocation produces a tick",
 namespace {
 
 struct invalidating_value_source_definition {
-    static constexpr bool uses_future_scheduling = true;
+    static constexpr bool uses_timed_scheduling = true;
 
     bg::Out<bg::TS<int>> output;
 
@@ -166,7 +166,7 @@ TEST_CASE("a time series set preserves its value when a required input becomes i
 namespace {
 
 struct exact_int_set_source_definition {
-    static constexpr bool uses_future_scheduling = true;
+    static constexpr bool uses_timed_scheduling = true;
 
     bg::Out<bg::TSS<int>> output;
 

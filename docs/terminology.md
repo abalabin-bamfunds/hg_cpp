@@ -189,6 +189,10 @@ A node input that does not schedule the node when its time series changes. The
 node reads its current state when another input or the engine schedules
 evaluation.
 
+### timed scheduling
+
+Scheduling a node for evaluation at a specified later evaluation time.
+
 ### input validity constraint
 
 A rule on a node input that states whether its time series must be valid before

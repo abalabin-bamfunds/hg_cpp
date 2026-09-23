@@ -164,7 +164,7 @@ TEST_CASE("a nested graph can own another nested graph",
 }
 
 struct InnerTimer {
-    static constexpr bool uses_future_scheduling = true;
+    static constexpr bool uses_timed_scheduling = true;
 
     bg::In<bg::TS<std::int64_t>, bg::passive> input;
     bg::State<int> step;
@@ -184,7 +184,7 @@ struct InnerTimer {
     }
 };
 
-TEST_CASE("future inner scheduling selects an outer cycle",
+TEST_CASE("timed inner scheduling selects an outer cycle",
           "[evaluation][nested][scheduling][feature:nested-graph][shape:nested][scalar:integer]"
           "[series:value]") {
     const auto timer = bg::node<InnerTimer>();

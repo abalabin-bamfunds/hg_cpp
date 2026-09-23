@@ -45,15 +45,15 @@ Scheduling an inner node from outside its current evaluation schedules the
 owning node. This propagation repeats through each containing graph. The owning
 node then evaluates the inner graph at the current outer-cycle time.
 
-An inner graph mirrors its earliest future scheduled time to its owning node.
+An inner graph mirrors its earliest scheduled time to its owning node.
 Adding or cancelling inner schedules updates that time. This allows the outer
 evaluation engine to select the next outer cycle without inspecting inner
 scheduling storage.
 
 When one node owns several inner graphs, each inner graph reports an
-owner-supplied instance token with immediate scheduling and future-schedule
-changes. The owner uses these notifications to track ready instances and its
-earliest future time. It does not inspect every inner graph.
+owner-supplied instance token with immediate scheduling and changes to its
+scheduled time. The owner uses these notifications to track ready instances and
+its earliest scheduled time. It does not inspect every inner graph.
 
 The [`map` operator](map.md) uses this interface to own one inner runtime graph
 per current key.
@@ -65,7 +65,7 @@ start time is the current outer-cycle time. One runtime graph instance starts
 once; a later start creates a new instance from the same compiled graph.
 
 Stopping an inner graph runs its stop functions and discards its scheduled work,
-future scheduling, and cycle callbacks. Its boundary references retain their
+timed scheduling, and cycle callbacks. Its boundary references retain their
 targets while inactive, and their changes are ignored. A new instance samples
 the boundary inputs when it starts.
 

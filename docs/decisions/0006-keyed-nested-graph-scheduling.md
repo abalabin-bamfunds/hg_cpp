@@ -11,8 +11,8 @@ identifying the inner graph would require the owner to inspect every instance.
 
 An inner runtime graph can carry an owner-supplied instance token and shared
 callbacks. It reports the token when it receives immediate work and when its
-earliest future time changes. The owner tracks ready instances and future times
-by token and mirrors only its earliest time to the outer graph.
+earliest scheduled time changes. The owner tracks ready instances and scheduled
+times by token and mirrors only its earliest time to the outer graph.
 
 The existing single-inner-graph connection remains a direct representation.
 The runtime stores direct and callback connections in the same union.

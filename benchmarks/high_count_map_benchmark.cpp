@@ -521,7 +521,7 @@ struct BenchmarkSource {
     State<std::size_t> next_step;
     Out<TSB<BenchmarkInputs>> output;
 
-    static constexpr bool uses_future_scheduling = true;
+    static constexpr bool uses_timed_scheduling = true;
 
     void start(EvaluationContext *context) const { context->schedule_now(); }
 

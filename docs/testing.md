@@ -16,7 +16,7 @@ Use `[dimension:value]` for each applicable dimension:
 
 - `feature`: `scalar-api`, `scalar-storage`, `scalar-collection`, `global-state`, `visitor`, `type-system`,
   `node-api`, `state`, `wiring`, `graph-compilation`, `test-graph`, `evaluation-context`, `evaluation-scratch`,
-  `lifecycle`, `finalization`, `scheduling`, `future-scheduling`, `simulation`, `input-activity`, `validity`,
+  `lifecycle`, `finalization`, `scheduling`, `timed-scheduling`, `simulation`, `input-activity`, `validity`,
   `invalidation`, `operator`, `constant`, `graph-argument`, `map`,
   `time-series-storage`, `time-series-view`, `collection-change`, `reference`, `sampling`, `getitem`, `getattr`,
   `nested-graph`, or `variadic-wiring`
@@ -145,7 +145,7 @@ graph compilation or evaluation.
 - packed scalar, state, input, output, and view data
 - runtime storage initialization by byte copy
 - subscriber data for activity and validity changes
-- start, stop, invalidation, and future-scheduling metadata
+- start, stop, invalidation, and timed scheduling metadata
 - repeated compilation and independent runtime graphs
 - scalar and state destruction
 - const nodes and their direct bindings
@@ -159,7 +159,7 @@ graph compilation or evaluation.
 - required-input validity caching, invalidation, and revalidation
 - output update and invalidation propagation
 - invalidation behavior selected by a node
-- future scheduling, cancellation, ordering, and coalescing
+- timed scheduling, cancellation, ordering, and coalescing
 - simulation time progression and termination
 - outer and inner graph failure behavior
 - cycle callbacks and deferred storage reclamation
