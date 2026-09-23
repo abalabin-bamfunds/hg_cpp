@@ -70,12 +70,12 @@ struct MapNodeIdentity {
 struct MapEntry {
     static constexpr auto not_in_schedule_heap = std::numeric_limits<std::size_t>::max();
 
-    NestedGraph graph;
-    EvaluationTime scheduled_time{MIN_DT};
+    NestedGraph inner_graph;
+    EvaluationTime next_scheduled_time{MIN_DT};
     std::size_t schedule_heap_index{not_in_schedule_heap};
-    std::uint32_t position{};
-    std::uint32_t presence_count : 31 {};
-    std::uint32_t touched : 1 {};
+    std::uint32_t entry_index{};
+    std::uint32_t key_presence_count : 31 {};
+    std::uint32_t presence_change_queued : 1 {};
 };
 
 struct PendingBoundaryUpdate {
@@ -86,9 +86,10 @@ struct PendingBoundaryUpdate {
 class MapRuntimeState {
   public:
     explicit MapRuntimeState(allocator memory)
-        : memory_{memory}, schedule_heap_{&memory.memory_resource()}, touched_{&memory.memory_resource()},
-          boundary_updates_{&memory.memory_resource()}, nested_inputs_{&memory.memory_resource()},
-          stopped_entries_{&memory.memory_resource()} {}
+        : memory_{memory}, schedule_heap_{&memory.memory_resource()},
+          pending_presence_changes_{&memory.memory_resource()}, boundary_updates_{&memory.memory_resource()},
+          nested_inputs_{&memory.memory_resource()},
+          entries_pending_removal_{&memory.memory_resource()} {}
 
     MapRuntimeState(const MapRuntimeState &) = delete;
     MapRuntimeState &operator=(const MapRuntimeState &) = delete;
@@ -102,7 +103,7 @@ class MapRuntimeState {
         activate_due(invocation.context());
 
         process_key_changes(compiled, invocation);
-        reconcile_keys(compiled, invocation);
+        apply_presence_changes(compiled, invocation);
         update_boundaries(compiled, invocation);
         update_pass_through_inputs(compiled, invocation);
         evaluate_ready(compiled, invocation);
@@ -112,9 +113,9 @@ class MapRuntimeState {
         clear_schedule_tracking(invocation.context());
 
         for (auto [key, entry] : entries_) {
-            if (entry.graph.running()) {
-                entry.graph.stop(invocation.context());
-                ready_.reset(entry.position);
+            if (entry.inner_graph.running()) {
+                entry.inner_graph.stop(invocation.context());
+                ready_.reset(entry.entry_index);
             }
         }
     }
@@ -122,7 +123,7 @@ class MapRuntimeState {
     template <typename Invocation> void destroy(Invocation invocation) noexcept {
         clear_schedule_tracking(invocation.context());
         for (auto [key, entry] : entries_) {
-            entry.graph.stop_and_destroy(invocation.context());
+            entry.inner_graph.stop_and_destroy(invocation.context());
         }
 
         auto memory = invocation.context().runtime_graph().allocation();
@@ -138,7 +139,7 @@ class MapRuntimeState {
                                                    RuntimeGraphOwnerCallbacks::token_type token,
                                                    std::optional<EvaluationTime> time) {
         auto &state = *static_cast<MapRuntimeState *>(receiver);
-        state.set_scheduled_time(context, state.entries_.value_at(static_cast<Entries::size_type>(token)), time);
+        state.set_next_scheduled_time(context, state.entries_.value_at(static_cast<Entries::size_type>(token)), time);
     }
 
     static constexpr RuntimeGraphOwnerCallbacks owner_callbacks{
@@ -161,39 +162,39 @@ class MapRuntimeState {
         auto stored_key = ScalarValue<>{Scalar<>::from(key), memory_};
         auto [entry, inserted] = entries_.try_emplace(std::move(stored_key), memory_.memory_resource());
         (void)inserted;
-        entry->position = entries_.find_position(key);
+        entry->entry_index = entries_.find_position(key);
         // Owner scheduling callbacks are noexcept, so allocate the ready bit before the graph can invoke them.
-        ready_.grow(entry->position + 1, memory_.memory_resource());
+        ready_.grow(entry->entry_index + 1, memory_.memory_resource());
         return *entry;
     }
 
     template <typename Key> MapEntry *find_entry(const Key &key) { return entries_.find(key); }
 
-    void touch(MapEntry &entry) {
-        if (entry.touched) {
+    void queue_presence_change(MapEntry &entry) {
+        if (entry.presence_change_queued) {
             return;
         }
-        entry.touched = true;
-        touched_.push_back(&entry);
+        entry.presence_change_queued = true;
+        pending_presence_changes_.push_back(&entry);
     }
 
-    template <typename Key> void remove_presence(const Key &key) {
+    template <typename Key> void remove_key_presence(const Key &key) {
         auto *entry = find_entry(key);
-        if (entry == nullptr || entry->presence_count == 0) {
+        if (entry == nullptr || entry->key_presence_count == 0) {
             return;
         }
-        --entry->presence_count;
-        touch(*entry);
+        --entry->key_presence_count;
+        queue_presence_change(*entry);
     }
 
     template <typename Key> void set_key_set_presence(const Key &key, bool present) {
         if (present) {
             auto &entry = require_entry(key);
-            entry.presence_count = 1;
-            touch(entry);
+            entry.key_presence_count = 1;
+            queue_presence_change(entry);
         } else if (auto *entry = find_entry(key)) {
-            entry->presence_count = 0;
-            touch(*entry);
+            entry->key_presence_count = 0;
+            queue_presence_change(*entry);
         }
     }
 
@@ -209,7 +210,7 @@ class MapRuntimeState {
     }
 
     template <typename Invocation> void process_key_changes(const CompiledMapGraph &compiled, Invocation invocation) {
-        touched_.clear();
+        pending_presence_changes_.clear();
         boundary_updates_.clear();
 
         if (compiled.key_set_parameter) {
@@ -235,7 +236,7 @@ class MapRuntimeState {
                 [&](const In<TSD<SCALAR, TS_T>> *dictionary) {
                     dictionary->for_each_removed([&](const auto &key) {
                         if (!compiled.key_set_parameter) {
-                            remove_presence(key);
+                            remove_key_presence(key);
                         }
                         if (auto *entry = find_entry(key)) {
                             boundary_updates_.push_back({entry, static_cast<std::uint32_t>(input_index)});
@@ -244,8 +245,8 @@ class MapRuntimeState {
                     dictionary->for_each_added([&](const auto &key) {
                         auto &entry = require_entry(key);
                         if (!compiled.key_set_parameter) {
-                            ++entry.presence_count;
-                            touch(entry);
+                            ++entry.key_presence_count;
+                            queue_presence_change(entry);
                         }
                         boundary_updates_.push_back({&entry, static_cast<std::uint32_t>(input_index)});
                     });
@@ -259,11 +260,12 @@ class MapRuntimeState {
         }
     }
 
-    template <typename Invocation> void reconcile_keys(const CompiledMapGraph &compiled, Invocation invocation) {
-        for (auto *entry : touched_) {
-            entry->touched = false;
-            const auto should_run = entry->presence_count != 0;
-            if (should_run == entry->graph.running()) {
+    template <typename Invocation> void apply_presence_changes(const CompiledMapGraph &compiled,
+                                                               Invocation invocation) {
+        for (auto *entry : pending_presence_changes_) {
+            entry->presence_change_queued = false;
+            const auto should_run = entry->key_presence_count != 0;
+            if (should_run == entry->inner_graph.running()) {
                 continue;
             }
 
@@ -273,7 +275,7 @@ class MapRuntimeState {
                 stop_inner_graph(compiled, invocation, *entry);
             }
         }
-        touched_.clear();
+        pending_presence_changes_.clear();
     }
 
     template <typename Invocation>
@@ -283,24 +285,25 @@ class MapRuntimeState {
         for (const auto &description : compiled.inputs) {
             const auto outer = input(invocation, description.parameter_index);
             nested_inputs_.push_back(description.kind == MapInputKind::mapped
-                                         ? mapped_reference(outer, entries_.key_at(entry.position).view())
+                                         ? mapped_reference(outer, entries_.key_at(entry.entry_index).view())
                                          : pass_through_reference(outer));
         }
 
-        auto rollback = util::scope_exit{[&]() noexcept { entry.graph.stop_and_destroy(invocation.context()); }};
+        auto rollback =
+            util::scope_exit{[&]() noexcept { entry.inner_graph.stop_and_destroy(invocation.context()); }};
         const auto owner = RuntimeGraphOwner{
             .receiver = this,
-            .token = entry.position,
+            .token = entry.entry_index,
             .callbacks = &owner_callbacks,
         };
         if (compiled.nested.constant_input_nodes.empty()) {
-            entry.graph.start(compiled.nested, invocation.context(), nested_inputs_, owner);
+            entry.inner_graph.start(compiled.nested, invocation.context(), nested_inputs_, owner);
         } else {
-            const auto constant = NestedGraphConstantInput{entries_.key_at(entry.position).view()};
-            entry.graph.start(compiled.nested, invocation.context(), nested_inputs_,
-                              std::span<const NestedGraphConstantInput>{&constant, 1}, owner);
+            const auto constant = NestedGraphConstantInput{entries_.key_at(entry.entry_index).view()};
+            entry.inner_graph.start(compiled.nested, invocation.context(), nested_inputs_,
+                                    std::span<const NestedGraphConstantInput>{&constant, 1}, owner);
         }
-        mark_ready(entry.position);
+        mark_ready(entry.entry_index);
         rollback.release();
     }
 
@@ -310,20 +313,20 @@ class MapRuntimeState {
 
         if (compiled.nested.output_node) {
             auto output = node_invocation_access::output<TSD<SCALAR, REF<TS_T>>>(invocation);
-            const auto key = entries_.key_at(entry.position).view();
+            const auto key = entries_.key_at(entry.entry_index).view();
             output.erase(Scalar<SCALAR>::from(key));
         }
     }
 
     void stop_inner_graph(EvaluationContext &context, MapEntry &entry) {
-        if (!stopped_entry_cleanup_pending_) {
-            context.add_cycle_callback(this, destroy_stopped_entries_callback);
-            stopped_entry_cleanup_pending_ = true;
+        if (!entry_removal_callback_pending_) {
+            context.add_cycle_callback(this, remove_stopped_entries_callback);
+            entry_removal_callback_pending_ = true;
         }
 
-        entry.graph.stop(context);
-        ready_.reset(entry.position);
-        stopped_entries_.push_back(entry.position);
+        entry.inner_graph.stop(context);
+        ready_.reset(entry.entry_index);
+        entries_pending_removal_.push_back(entry.entry_index);
     }
 
     static NestedGraphInput pass_through_reference(const In<TS_T> &input) {
@@ -357,15 +360,15 @@ class MapRuntimeState {
     template <typename Invocation> void update_boundaries(const CompiledMapGraph &compiled, Invocation invocation) {
         for (const auto update : boundary_updates_) {
             auto &entry = *update.entry;
-            if (!entry.graph.running()) {
+            if (!entry.inner_graph.running()) {
                 continue;
             }
 
             const auto &description = compiled.inputs[update.input_index];
             const auto outer = input(invocation, description.parameter_index);
-            entry.graph.update_input(compiled.nested, description.inner_input_index,
-                                     mapped_reference(outer, entries_.key_at(entry.position).view()));
-            mark_ready(entry.position);
+            entry.inner_graph.update_input(compiled.nested, description.inner_input_index,
+                                           mapped_reference(outer, entries_.key_at(entry.entry_index).view()));
+            mark_ready(entry.entry_index);
         }
     }
 
@@ -382,43 +385,43 @@ class MapRuntimeState {
             }
             const auto reference = pass_through_reference(outer);
             for (auto [key, entry] : entries_) {
-                if (!entry.graph.running()) {
+                if (!entry.inner_graph.running()) {
                     continue;
                 }
-                entry.graph.update_input(compiled.nested, description.inner_input_index, reference);
-                mark_ready(entry.position);
+                entry.inner_graph.update_input(compiled.nested, description.inner_input_index, reference);
+                mark_ready(entry.entry_index);
             }
         }
     }
 
-    void mark_ready(Entries::size_type position) noexcept {
-        auto &entry = entries_.value_at(position);
-        if (!entry.graph.running()) {
+    void mark_ready(Entries::size_type entry_index) noexcept {
+        auto &entry = entries_.value_at(entry_index);
+        if (!entry.inner_graph.running()) {
             return;
         }
-        ready_.set(position, memory_.memory_resource());
+        ready_.set(entry_index, memory_.memory_resource());
     }
 
     template <typename Invocation> void evaluate_ready(const CompiledMapGraph &compiled, Invocation invocation) {
-        for (auto position = ready_.begin(); position != ready_.end();) {
-            const auto current = *position;
-            ++position;
-            ready_.reset(current);
+        for (auto ready_entry = ready_.begin(); ready_entry != ready_.end();) {
+            const auto entry_index = *ready_entry;
+            ++ready_entry;
+            ready_.reset(entry_index);
 
-            auto &entry = entries_.value_at(current);
-            if (!entry.graph.running()) {
+            auto &entry = entries_.value_at(entry_index);
+            if (!entry.inner_graph.running()) {
                 continue;
             }
 
-            entry.graph.evaluate(invocation.context());
+            entry.inner_graph.evaluate(invocation.context());
             if (!compiled.nested.output_node) {
                 continue;
             }
 
             auto output = node_invocation_access::output<TSD<SCALAR, REF<TS_T>>>(invocation);
-            const auto key = entries_.key_at(current).view();
+            const auto key = entries_.key_at(entry_index).view();
             auto item = output[Scalar<SCALAR>::from(key)];
-            const auto result = entry.graph.output(compiled.nested);
+            const auto result = entry.inner_graph.output(compiled.nested);
             if (result) {
                 item.set_value(result);
             } else {
@@ -427,16 +430,16 @@ class MapRuntimeState {
         }
     }
 
-    static void destroy_stopped_entries_callback(void *receiver) noexcept {
-        static_cast<MapRuntimeState *>(receiver)->destroy_stopped_entries();
+    static void remove_stopped_entries_callback(void *receiver) noexcept {
+        static_cast<MapRuntimeState *>(receiver)->remove_stopped_entries();
     }
 
-    void destroy_stopped_entries() noexcept {
-        stopped_entry_cleanup_pending_ = false;
-        for (const auto position : stopped_entries_) {
-            entries_.erase(entries_.key_at(position).view(), memory_.memory_resource());
+    void remove_stopped_entries() noexcept {
+        entry_removal_callback_pending_ = false;
+        for (const auto entry_index : entries_pending_removal_) {
+            entries_.erase(entries_.key_at(entry_index).view(), memory_.memory_resource());
         }
-        stopped_entries_.clear();
+        entries_pending_removal_.clear();
     }
 
     void clear_schedule_tracking(EvaluationContext &context) noexcept {
@@ -447,13 +450,13 @@ class MapRuntimeState {
         }
         for (auto *entry : schedule_heap_) {
             entry->schedule_heap_index = MapEntry::not_in_schedule_heap;
-            entry->scheduled_time = MIN_DT;
+            entry->next_scheduled_time = MIN_DT;
         }
         schedule_heap_.clear();
     }
 
     static bool scheduled_before(const MapEntry *left, const MapEntry *right) noexcept {
-        return left->scheduled_time < right->scheduled_time;
+        return left->next_scheduled_time < right->next_scheduled_time;
     }
 
     void swap_schedule_heap_items(std::size_t left, std::size_t right) noexcept {
@@ -509,12 +512,13 @@ class MapRuntimeState {
         move_down_schedule_heap(schedule_heap_[index]->schedule_heap_index);
     }
 
-    void set_scheduled_time(RuntimeGraphOwnerContext &context, MapEntry &entry, std::optional<EvaluationTime> time) {
+    void set_next_scheduled_time(RuntimeGraphOwnerContext &context, MapEntry &entry,
+                                 std::optional<EvaluationTime> time) {
         const auto previous_first = schedule_heap_.empty()
                                         ? std::optional<EvaluationTime>{}
-                                        : std::optional<EvaluationTime>{schedule_heap_.front()->scheduled_time};
+                                        : std::optional<EvaluationTime>{schedule_heap_.front()->next_scheduled_time};
         remove_from_schedule_heap(entry);
-        entry.scheduled_time = time.value_or(MIN_DT);
+        entry.next_scheduled_time = time.value_or(MIN_DT);
         if (time) {
             entry.schedule_heap_index = schedule_heap_.size();
             schedule_heap_.push_back(&entry);
@@ -523,7 +527,7 @@ class MapRuntimeState {
 
         const auto next_first = schedule_heap_.empty()
                                     ? std::optional<EvaluationTime>{}
-                                    : std::optional<EvaluationTime>{schedule_heap_.front()->scheduled_time};
+                                    : std::optional<EvaluationTime>{schedule_heap_.front()->next_scheduled_time};
         if (next_first == previous_first) {
             return;
         }
@@ -543,14 +547,14 @@ class MapRuntimeState {
             outer_schedule_ = {};
             outer_scheduled_time_.reset();
         }
-        while (!schedule_heap_.empty() && schedule_heap_.front()->scheduled_time <= evaluation_time) {
+        while (!schedule_heap_.empty() && schedule_heap_.front()->next_scheduled_time <= evaluation_time) {
             auto *entry = schedule_heap_.front();
             remove_from_schedule_heap(*entry);
-            entry->scheduled_time = MIN_DT;
-            mark_ready(entry->position);
+            entry->next_scheduled_time = MIN_DT;
+            mark_ready(entry->entry_index);
         }
         if (!outer_scheduled_time_ && !schedule_heap_.empty()) {
-            outer_scheduled_time_ = schedule_heap_.front()->scheduled_time;
+            outer_scheduled_time_ = schedule_heap_.front()->next_scheduled_time;
             outer_schedule_ = context.schedule_at(*outer_scheduled_time_);
         }
     }
@@ -558,14 +562,14 @@ class MapRuntimeState {
     allocator memory_;
     Entries entries_;
     std::pmr::vector<MapEntry *> schedule_heap_;
-    std::pmr::vector<MapEntry *> touched_;
+    std::pmr::vector<MapEntry *> pending_presence_changes_;
     std::pmr::vector<PendingBoundaryUpdate> boundary_updates_;
     std::pmr::vector<NestedGraphInput> nested_inputs_;
     util::index<> ready_;
-    std::pmr::vector<Entries::size_type> stopped_entries_;
+    std::pmr::vector<Entries::size_type> entries_pending_removal_;
     ScheduleHandle outer_schedule_{};
     std::optional<EvaluationTime> outer_scheduled_time_;
-    bool stopped_entry_cleanup_pending_{};
+    bool entry_removal_callback_pending_{};
 };
 
 static_assert(sizeof(MapEntry) <= 5 * sizeof(void *));
