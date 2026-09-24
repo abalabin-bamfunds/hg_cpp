@@ -71,15 +71,6 @@ void MapEntries::mark_ready(size_type entry_index) noexcept {
     mark_ready(table_.value_at(entry_index));
 }
 
-EvaluationResult MapEntries::evaluate(Entry &entry, EvaluationContext &context, RuntimeGraphEvaluation &evaluation) {
-    return entry.inner_graph.evaluate(context, evaluation);
-}
-
-void MapEntries::update_input(Entry &entry, const CompiledNestedGraph &compiled, std::size_t input_index,
-                              NestedGraphInput input) {
-    entry.inner_graph.update_input(compiled, input_index, input);
-}
-
 void MapEntries::inner_graph_scheduled(void *receiver, RuntimeGraphOwnerCallbacks::token_type token) noexcept {
     static_cast<MapEntries *>(receiver)->mark_ready(static_cast<size_type>(token));
 }

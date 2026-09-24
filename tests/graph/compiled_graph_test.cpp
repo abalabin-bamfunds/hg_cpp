@@ -42,7 +42,7 @@ class scale_template final : public bg::NodeTemplate {
     }
 
   private:
-    static void evaluate(const bg::CompiledNode &, void *, bg::EvaluationContext *) {}
+    static bool evaluate(const bg::CompiledNode &, void *, bg::EvaluationContext *) { return true; }
 };
 
 } // namespace

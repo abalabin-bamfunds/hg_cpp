@@ -72,7 +72,7 @@ class CompiledGraph {
 
   private:
     struct NodeFunctions {
-        std::span<const EvaluationFunction> functions;
+        std::span<const NodeFunction> functions;
         std::span<const std::uint32_t> nodes;
     };
 

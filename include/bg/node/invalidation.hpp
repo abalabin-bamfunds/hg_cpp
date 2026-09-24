@@ -14,7 +14,7 @@ enum class InvalidationMode : std::uint8_t {
 
 struct InvalidationBehavior {
     InvalidationMode mode{InvalidationMode::invalidate_output};
-    EvaluationFunction function{};
+    NodeFunction function{};
 };
 
 struct PreserveOutput {};

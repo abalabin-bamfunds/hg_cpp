@@ -40,8 +40,8 @@ class NodeTemplate : public WiringTemplate {
     virtual NodeTemplateIdentity definition_identity() const { return definition_identity_; }
     virtual bool deduplicate_wiring() const noexcept { return true; }
     virtual EvaluationFunction evaluation_function(const ResolvedSignature &signature) const noexcept = 0;
-    virtual EvaluationFunction start_function(const ResolvedSignature &) const noexcept { return nullptr; }
-    virtual EvaluationFunction stop_function(const ResolvedSignature &) const noexcept { return nullptr; }
+    virtual NodeFunction start_function(const ResolvedSignature &) const noexcept { return nullptr; }
+    virtual NodeFunction stop_function(const ResolvedSignature &) const noexcept { return nullptr; }
     virtual InvalidationBehavior invalidation_behavior(const ResolvedSignature &) const noexcept { return {}; }
     virtual bool uses_time_series_input_runtime_type(std::size_t) const noexcept { return false; }
     virtual bool uses_scalar_input_runtime_type(std::size_t) const noexcept { return false; }
@@ -55,7 +55,7 @@ class NodeTemplate : public WiringTemplate {
         return {};
     }
     virtual void construct_initial_state(const NodeStateLayout &, void *) const noexcept {}
-    virtual EvaluationFunction state_destruction_function(const ResolvedSignature &) const noexcept { return nullptr; }
+    virtual NodeFunction state_destruction_function(const ResolvedSignature &) const noexcept { return nullptr; }
 
     [[nodiscard]] virtual std::vector<const TimeSeriesType *> dynamic_reference_input_types(const TypeMap &) const {
         return {};

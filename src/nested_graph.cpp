@@ -3,13 +3,13 @@
 #include <bg/allocator.hpp>
 #include <bg/evaluation_context.hpp>
 #include <bg/graph/compiled_graph.hpp>
-#include <bg/graph/details/runtime_graph_evaluation.hpp>
 #include <bg/graph/node.hpp>
 #include <bg/graph/runtime_graph.hpp>
 #include <bg/time_series/ref/ref_storage.hpp>
 #include <bg/time_series/time_series_runtime_type.hpp>
 #include <bg/util/scope_exit.hpp>
 
+#include <limits>
 #include <memory>
 #include <stdexcept>
 
@@ -133,15 +133,18 @@ void NestedGraph::initialize_constant(std::size_t node_index, const NestedGraphC
     runtime_node.output_last_updated() = start_time;
 }
 
-details::EvaluationResult NestedGraph::evaluate(
-    EvaluationContext &context, details::RuntimeGraphEvaluation &evaluation) {
+bool NestedGraph::evaluate(EvaluationContext &context) {
     active_->suppress_parent_scheduling_ = true;
     auto restore = util::scope_exit{[&]() noexcept { active_->suppress_parent_scheduling_ = false; }};
-    auto result = active_->continue_evaluation(context, evaluation);
-    if (result) {
+    const auto complete = active_->continue_evaluation(context);
+    if (!complete) {
         restore.release();
     }
-    return result;
+    return complete;
+}
+
+bool NestedGraph::evaluation_pending() const noexcept {
+    return active_ != nullptr && active_->paused_node_index_ != std::numeric_limits<std::uint32_t>::max();
 }
 
 void NestedGraph::stop(EvaluationContext &context) {

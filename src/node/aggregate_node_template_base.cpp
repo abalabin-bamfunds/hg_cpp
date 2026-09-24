@@ -20,11 +20,11 @@ EvaluationFunction AggregateNodeTemplateBase::evaluation_function(const Resolved
     return descriptor_->evaluation_function;
 }
 
-EvaluationFunction AggregateNodeTemplateBase::start_function(const ResolvedSignature &) const noexcept {
+NodeFunction AggregateNodeTemplateBase::start_function(const ResolvedSignature &) const noexcept {
     return descriptor_->start_function;
 }
 
-EvaluationFunction AggregateNodeTemplateBase::stop_function(const ResolvedSignature &) const noexcept {
+NodeFunction AggregateNodeTemplateBase::stop_function(const ResolvedSignature &) const noexcept {
     return descriptor_->stop_function;
 }
 
@@ -64,7 +64,7 @@ void AggregateNodeTemplateBase::construct_initial_state(const NodeStateLayout &l
     }
 }
 
-EvaluationFunction AggregateNodeTemplateBase::state_destruction_function(const ResolvedSignature &) const noexcept {
+NodeFunction AggregateNodeTemplateBase::state_destruction_function(const ResolvedSignature &) const noexcept {
     return descriptor_->state_destruction_function;
 }
 

@@ -24,13 +24,13 @@ enum class AggregateRuntimeTypeUse : unsigned char {
 struct AggregateNodeDescriptor {
     const Signature *signature;
     EvaluationFunction evaluation_function;
-    EvaluationFunction start_function;
-    EvaluationFunction stop_function;
+    NodeFunction start_function;
+    NodeFunction stop_function;
     InvalidationBehavior invalidation_behavior;
     std::span<const AggregateRuntimeTypeUse> parameter_runtime_type_uses;
     AggregateStateLayoutFunction state_layout;
     AggregateStateConstructionFunction construct_initial_state;
-    EvaluationFunction state_destruction_function;
+    NodeFunction state_destruction_function;
     AggregateStateTypesFunction resolve_state_types;
     AggregateDynamicReferenceInputTypesFunction dynamic_reference_input_types;
     AggregateRequirementFunction requirement;
@@ -48,8 +48,8 @@ class AggregateNodeTemplateBase : public NodeTemplate {
     bool deduplicate_wiring() const noexcept final;
     RequirementResult requirement(const WiringArguments &arguments) const final;
     EvaluationFunction evaluation_function(const ResolvedSignature &) const noexcept final;
-    EvaluationFunction start_function(const ResolvedSignature &) const noexcept final;
-    EvaluationFunction stop_function(const ResolvedSignature &) const noexcept final;
+    NodeFunction start_function(const ResolvedSignature &) const noexcept final;
+    NodeFunction stop_function(const ResolvedSignature &) const noexcept final;
     InvalidationBehavior invalidation_behavior(const ResolvedSignature &) const noexcept final;
     bool uses_time_series_input_runtime_type(std::size_t parameter_index) const noexcept final;
     bool uses_scalar_input_runtime_type(std::size_t parameter_index) const noexcept final;
@@ -59,7 +59,7 @@ class AggregateNodeTemplateBase : public NodeTemplate {
                                  std::span<const ScalarRuntimeType *const> parameter_runtime_types,
                                  std::span<const ScalarType *const> state_types) const final;
     void construct_initial_state(const NodeStateLayout &layout, void *storage) const noexcept final;
-    EvaluationFunction state_destruction_function(const ResolvedSignature &) const noexcept final;
+    NodeFunction state_destruction_function(const ResolvedSignature &) const noexcept final;
     std::vector<const TimeSeriesType *> dynamic_reference_input_types(const TypeMap &) const final;
     std::vector<const ScalarType *> resolve_state_types(const TypeMap &type_map) const final;
 

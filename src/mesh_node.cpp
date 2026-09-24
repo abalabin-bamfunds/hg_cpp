@@ -2,7 +2,6 @@
 
 #include <bg/allocator.hpp>
 #include <bg/details/evaluation_context.hpp>
-#include <bg/graph/details/runtime_graph_evaluation.hpp>
 #include <bg/graph/nested_graph.hpp>
 #include <bg/graph/runtime_graph.hpp>
 #include <bg/graph/wiring_context.hpp>
@@ -111,7 +110,7 @@ class MeshDependencyDefinition {
         invocation.context().schedule_now();
     }
 
-    static void evaluate(NodeInvocation<compiled_data_type, state_type> invocation);
+    static bool evaluate(NodeInvocation<compiled_data_type, state_type> invocation);
     static void on_invalidation(NodeInvocation<compiled_data_type, state_type> invocation);
     static void stop(NodeInvocation<compiled_data_type, state_type> invocation) noexcept;
     static void destroy_state(NodeInvocation<compiled_data_type, state_type> invocation) noexcept;
@@ -174,13 +173,12 @@ class MeshRuntimeState {
 
     struct DependencySelection {
         Reference reference;
-        std::optional<PendingEvaluation> pending;
+        bool pending{};
     };
 
     struct EvaluationFrame {
         std::uint32_t entry_index;
         std::uint32_t dependency_cursor{no_dependency};
-        RuntimeGraphEvaluation evaluation;
     };
 
     struct CycleSearchFrame {
@@ -205,23 +203,21 @@ class MeshRuntimeState {
         cycle_visited_.release(memory_.memory_resource());
     }
 
-    template <typename Invocation> void evaluate(const CompiledMeshGraph &compiled, Invocation invocation) {
+    template <typename Invocation> bool evaluate(const CompiledMeshGraph &compiled, Invocation invocation) {
         active_compiled_ = &compiled;
         auto clear_active = util::scope_exit{[&]() noexcept { active_compiled_ = nullptr; }};
 
         if (!evaluation_stack_.empty()) {
-            if (const auto pending = evaluate_branches(compiled, invocation)) {
-                invocation.context().set_pending(*pending);
-                return;
+            if (!evaluate_branches(compiled, invocation)) {
+                return false;
             }
 
             process_stops(compiled, invocation);
-            if (const auto pending = evaluate_ready(compiled, invocation)) {
-                invocation.context().set_pending(*pending);
-                return;
+            if (!evaluate_ready(compiled, invocation)) {
+                return false;
             }
             process_stops(compiled, invocation);
-            return;
+            return true;
         }
 
         branches_.update(compiled.map, invocation, [&](MapEntries::Entry &entry) {
@@ -238,11 +234,11 @@ class MeshRuntimeState {
         });
 
         process_stops(compiled, invocation);
-        if (const auto pending = evaluate_ready(compiled, invocation)) {
-            invocation.context().set_pending(*pending);
-            return;
+        if (!evaluate_ready(compiled, invocation)) {
+            return false;
         }
         process_stops(compiled, invocation);
+        return true;
     }
 
     template <typename Invocation> void stop(Invocation invocation) noexcept {
@@ -250,6 +246,7 @@ class MeshRuntimeState {
         evaluation_stack_.clear();
         active_evaluation_.clear();
         selections_to_release_.clear();
+        pending_dependency_ = no_dependency;
         selection_release_pending_ = false;
         first_pending_stop_ = no_dependency;
         for (const auto entry_index : branch_state_positions_) {
@@ -439,7 +436,7 @@ class MeshRuntimeState {
     }
 
     template <typename Invocation>
-    EvaluationResult evaluate_ready(const CompiledMeshGraph &compiled, Invocation invocation) {
+    bool evaluate_ready(const CompiledMeshGraph &compiled, Invocation invocation) {
         auto &ready = branches_.entries().ready();
         while (ready.begin() != ready.end()) {
             const auto entry_index = *ready.begin();
@@ -453,16 +450,16 @@ class MeshRuntimeState {
             evaluation_stack_.clear();
             active_evaluation_.clear();
             push_evaluation(entry_index);
-            if (const auto pending = evaluate_branches(compiled, invocation)) {
-                return pending;
+            if (!evaluate_branches(compiled, invocation)) {
+                return false;
             }
             process_stops(compiled, invocation);
         }
-        return {};
+        return true;
     }
 
     template <typename Invocation>
-    EvaluationResult evaluate_branches(const CompiledMeshGraph &compiled, Invocation invocation) {
+    bool evaluate_branches(const CompiledMeshGraph &compiled, Invocation invocation) {
         while (!evaluation_stack_.empty()) {
             auto &frame = evaluation_stack_.back();
             auto &state = branch_state(frame.entry_index);
@@ -491,12 +488,11 @@ class MeshRuntimeState {
             auto &entry = branches_.entries().table().value_at(frame.entry_index);
             auto section = MeshContextSection{*this, frame.entry_index};
             auto branch_context = invocation.context().child(section);
-            const auto pending = entry.inner_graph.evaluate(branch_context, frame.evaluation);
-            if (pending) {
-                if (pending->target != this) {
-                    return pending;
+            if (!entry.inner_graph.evaluate(branch_context)) {
+                if (pending_dependency_ == no_dependency) {
+                    return false;
                 }
-                const auto selected = static_cast<size_type>(pending->token);
+                const auto selected = std::exchange(pending_dependency_, no_dependency);
                 ensure_running(compiled, invocation, selected);
                 push_evaluation(selected);
                 continue;
@@ -507,7 +503,7 @@ class MeshRuntimeState {
             active_evaluation_.reset(frame.entry_index);
             evaluation_stack_.pop_back();
         }
-        return {};
+        return true;
     }
 
     template <typename Invocation>
@@ -525,7 +521,7 @@ class MeshRuntimeState {
 
         active_evaluation_.set(entry_index, memory_.memory_resource());
         branches_.entries().ready().reset(entry_index);
-        evaluation_stack_.push_back({entry_index, no_dependency, {}});
+        evaluation_stack_.push_back({entry_index, no_dependency});
     }
 
     DependencySelection select_dependency(size_type requester_index, std::uint32_t &edge_index, const Scalar<> &key) {
@@ -564,9 +560,10 @@ class MeshRuntimeState {
         const auto evaluation_required =
             !selected_entry.inner_graph.running() || branches_.entries().ready().contains(selected_entry.entry_index);
         if (evaluation_required) {
+            pending_dependency_ = selected_entry.entry_index;
             return {
                 .reference = {},
-                .pending = PendingEvaluation{this, selected_entry.entry_index},
+                .pending = true,
             };
         }
 
@@ -788,6 +785,7 @@ class MeshRuntimeState {
     util::index<> cycle_visited_;
     std::pmr::vector<size_type> selections_to_release_;
     const CompiledMeshGraph *active_compiled_{};
+    size_type pending_dependency_{no_dependency};
     bool selection_release_pending_{};
     bool destroying_{};
 };
@@ -797,7 +795,7 @@ const RuntimeGraphOwnerCallbacks MeshRuntimeState::owner_callbacks{
     .timed_schedule_changed = MeshRuntimeState::inner_graph_timed_schedule_changed,
 };
 
-void MeshDependencyDefinition::evaluate(NodeInvocation<compiled_data_type, state_type> invocation) {
+bool MeshDependencyDefinition::evaluate(NodeInvocation<compiled_data_type, state_type> invocation) {
     const auto &section = MeshContextSection::find(invocation.context(), invocation.compiled_data().mesh_depth);
     auto &state = invocation.state();
     if (state.mesh != nullptr && state.mesh != section.mesh) {
@@ -807,15 +805,15 @@ void MeshDependencyDefinition::evaluate(NodeInvocation<compiled_data_type, state
 
     const auto selected = section.mesh->select_dependency(section.branch, state.edge, dependency_key(invocation));
     if (selected.pending) {
-        invocation.context().set_pending(*selected.pending);
-        return;
+        return false;
     }
     if (!selected.reference) {
         invocation.output().visit([](Out<REF<TS_T>> *output) { output->invalidate(); }, ddv::noop);
-        return;
+        return true;
     }
 
     invocation.output().visit([&](Out<REF<TS_T>> *output) { output->set_value(selected.reference); }, ddv::noop);
+    return true;
 }
 
 void MeshDependencyDefinition::on_invalidation(NodeInvocation<compiled_data_type, state_type> invocation) {
@@ -861,13 +859,13 @@ class MeshNodeDefinition : public MapNodeDefinition {
         };
     }
 
-    static void evaluate(NodeInvocation<compiled_data_type, state_type> invocation) {
+    static bool evaluate(NodeInvocation<compiled_data_type, state_type> invocation) {
         auto &state = invocation.state();
         if (state.runtime == nullptr) {
             auto memory = invocation.context().runtime_graph().allocation();
             state.runtime = memory.new_object<MeshRuntimeState>(memory);
         }
-        state.runtime->evaluate(invocation.compiled_data(), invocation);
+        return state.runtime->evaluate(invocation.compiled_data(), invocation);
     }
 
     static void stop(NodeInvocation<compiled_data_type, state_type> invocation) noexcept {

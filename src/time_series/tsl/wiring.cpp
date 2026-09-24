@@ -33,7 +33,7 @@ class FreeFixedTimeSeriesListNodeTemplate final : public NodeTemplate {
     EvaluationFunction evaluation_function(const ResolvedSignature &) const noexcept override {
         return &evaluate;
     }
-    EvaluationFunction start_function(const ResolvedSignature &) const noexcept override { return &start; }
+    NodeFunction start_function(const ResolvedSignature &) const noexcept override { return &start; }
     bool uses_time_series_input_runtime_type(std::size_t) const noexcept override { return true; }
     InputNotification input_notification(std::size_t input_index) const noexcept override {
         return {&input_changed, input_index};
@@ -74,12 +74,13 @@ class FreeFixedTimeSeriesListNodeTemplate final : public NodeTemplate {
         }
     }
 
-    static void evaluate(const CompiledNode &node, void *runtime_storage,
+    static bool evaluate(const CompiledNode &node, void *runtime_storage,
                          EvaluationContext *context) noexcept {
         const auto runtime_node = Node{node, runtime_storage};
         const auto &value = *static_cast<const free_fixed_time_series_list_storage *>(
             runtime_node.output_value());
         runtime_node.output_last_updated() = free_list_valid(value) ? context->evaluation_time() : MIN_DT;
+        return true;
     }
 
     Signature signature_;

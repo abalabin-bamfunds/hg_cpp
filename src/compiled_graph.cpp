@@ -45,7 +45,7 @@ using ScheduleWord = details::ScheduleWord;
 using SchedulingInfo = details::SchedulingInfo;
 
 static_assert(std::is_trivially_copyable_v<EvaluationTime>);
-static_assert(alignof(EvaluationFunction) >= alignof(std::uint32_t));
+static_assert(alignof(NodeFunction) >= alignof(std::uint32_t));
 static_assert(alignof(const ScalarRuntimeType *) >= alignof(std::uint32_t));
 static_assert(alignof(const TimeSeriesRuntimeType *) >= alignof(std::uint32_t));
 
@@ -223,7 +223,7 @@ struct WiringPathLayout {
 };
 
 struct NodeFunctionLayout {
-    void add(EvaluationFunction function, std::uint32_t node) {
+    void add(NodeFunction function, std::uint32_t node) {
         if (function == nullptr) {
             return;
         }
@@ -232,7 +232,7 @@ struct NodeFunctionLayout {
         nodes.push_back(node);
     }
 
-    std::vector<EvaluationFunction> functions;
+    std::vector<NodeFunction> functions;
     std::vector<std::uint32_t> nodes;
 };
 
@@ -791,7 +791,7 @@ RuntimeTypeCounts runtime_type_counts(const WiredNode &node) {
     if (node_plan.state.node.size != 0) {
         result.state_offset = storage.add<std::uint32_t>();
         if (node_plan.state.requires_destruction) {
-            result.state_destruction_function = storage.add<EvaluationFunction>();
+            result.state_destruction_function = storage.add<NodeFunction>();
         }
         if (!node_plan.state.node.generic_runtime_types.empty()) {
             result.state_metadata_counts = storage.add<StateMetadataCounts>();
@@ -801,7 +801,7 @@ RuntimeTypeCounts runtime_type_counts(const WiredNode &node) {
         }
     }
     if (node_plan.invalidation.mode == InvalidationMode::invoke) {
-        result.invalidation_function = storage.add<EvaluationFunction>();
+        result.invalidation_function = storage.add<NodeFunction>();
     }
     if (node.node_template().uses_node_invocation()) {
         result.node_invocation_metadata = storage.add<NodeInvocationMetadata>();
@@ -848,9 +848,9 @@ void plan_fixed_storage(CompilationPlan &plan) {
         layout.constant_metadata = storage.add<details::ConstantMetadata>();
     }
     if (plan.has_lifecycle()) {
-        layout.start_functions = storage.add<EvaluationFunction>(plan.starts.nodes.size());
+        layout.start_functions = storage.add<NodeFunction>(plan.starts.nodes.size());
         layout.start_nodes = storage.add<std::uint32_t>(plan.starts.nodes.size());
-        layout.stop_functions = storage.add<EvaluationFunction>(plan.stops.nodes.size());
+        layout.stop_functions = storage.add<NodeFunction>(plan.stops.nodes.size());
         layout.stop_nodes = storage.add<std::uint32_t>(plan.stops.nodes.size());
     }
     layout.wiring_paths = storage.add<WiringPath>(plan.wiring_paths.paths.size());
@@ -1155,14 +1155,14 @@ class CompiledGraphBuilder {
 
     static void construct_starts(const CompilationPlan &plan, std::byte *storage) {
         std::uninitialized_copy(plan.starts.functions.begin(), plan.starts.functions.end(),
-                                plan.fixed.start_functions.objects<EvaluationFunction>(storage).data());
+                                plan.fixed.start_functions.objects<NodeFunction>(storage).data());
         std::uninitialized_copy(plan.starts.nodes.begin(), plan.starts.nodes.end(),
                                 plan.fixed.start_nodes.objects<std::uint32_t>(storage).data());
     }
 
     static void construct_stops(const CompilationPlan &plan, std::byte *storage) {
         std::uninitialized_copy(plan.stops.functions.begin(), plan.stops.functions.end(),
-                                plan.fixed.stop_functions.objects<EvaluationFunction>(storage).data());
+                                plan.fixed.stop_functions.objects<NodeFunction>(storage).data());
         std::uninitialized_copy(plan.stops.nodes.begin(), plan.stops.nodes.end(),
                                 plan.fixed.stop_nodes.objects<std::uint32_t>(storage).data());
     }
@@ -1564,7 +1564,7 @@ class CompiledGraphBuilder {
                                       (has_state_metadata ? CompiledNode::state_metadata_flag : std::uint32_t{}));
                 if (node_plan.state.requires_destruction) {
                     std::construct_at(
-                        layout.state_destruction_function.objects<EvaluationFunction>(node_storage).data(),
+                        layout.state_destruction_function.objects<NodeFunction>(node_storage).data(),
                         node.node_template().state_destruction_function(node.signature()));
                 }
                 if (has_state_metadata) {
@@ -1584,7 +1584,7 @@ class CompiledGraphBuilder {
                 }
             }
             if (node_plan.invalidation.mode == InvalidationMode::invoke) {
-                std::construct_at(layout.invalidation_function.objects<EvaluationFunction>(node_storage).data(),
+                std::construct_at(layout.invalidation_function.objects<NodeFunction>(node_storage).data(),
                                   node_plan.invalidation.function);
             }
             if (node.node_template().uses_node_invocation()) {
@@ -1665,8 +1665,8 @@ const std::byte *CompiledGraph::initial_runtime_storage() const noexcept {
 
 CompiledGraph::NodeFunctions CompiledGraph::node_functions(std::uint32_t functions_offset,
                                                            std::uint32_t count) const noexcept {
-    const auto functions = stored_objects<EvaluationFunction>(fixed_storage_, functions_offset, count);
-    const auto nodes_offset = static_cast<std::uint32_t>(functions_offset + count * sizeof(EvaluationFunction));
+    const auto functions = stored_objects<NodeFunction>(fixed_storage_, functions_offset, count);
+    const auto nodes_offset = static_cast<std::uint32_t>(functions_offset + count * sizeof(NodeFunction));
 
     return {functions, stored_objects<std::uint32_t>(fixed_storage_, nodes_offset, count)};
 }

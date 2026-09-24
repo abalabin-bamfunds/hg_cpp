@@ -917,8 +917,9 @@ void invoke_aggregate_node(const CompiledNode &node, void *runtime_storage, Eval
 }
 
 template <typename Definition>
-void evaluate_aggregate_node(const CompiledNode &node, void *runtime_storage, EvaluationContext *context) {
+bool evaluate_aggregate_node(const CompiledNode &node, void *runtime_storage, EvaluationContext *context) {
     invoke_aggregate_node<Definition, &Definition::evaluate>(node, runtime_storage, context);
+    return true;
 }
 
 template <typename Definition>

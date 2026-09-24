@@ -1,7 +1,6 @@
 #pragma once
 
 #include <bg/evaluation_time.hpp>
-#include <bg/graph/details/runtime_graph_evaluation.hpp>
 #include <bg/graph/runtime_graph_owner.hpp>
 #include <bg/scalar/scalar.hpp>
 #include <bg/time_series/ref/ref_storage.hpp>
@@ -47,12 +46,12 @@ class NestedGraph {
                RuntimeGraphOwner owner);
     void update_inputs(const CompiledNestedGraph &compiled, std::span<const NestedGraphInput> inputs);
     void update_input(const CompiledNestedGraph &compiled, std::size_t input_index, NestedGraphInput input);
-    details::EvaluationResult evaluate(EvaluationContext &context,
-                                       details::RuntimeGraphEvaluation &evaluation);
+    bool evaluate(EvaluationContext &context);
     void stop(EvaluationContext &context);
     void stop_and_destroy(EvaluationContext &context) noexcept;
 
     bool running() const noexcept { return active_ != nullptr; }
+    bool evaluation_pending() const noexcept;
     Reference output(const CompiledNestedGraph &compiled) const noexcept;
 
   private:

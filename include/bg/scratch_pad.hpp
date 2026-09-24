@@ -12,6 +12,7 @@ class EvaluationScratch;
 }
 
 class EvaluationContext;
+class RuntimeGraph;
 
 // Provides temporary storage for one node invocation.
 class ScratchPad {
@@ -51,6 +52,7 @@ class ScratchPad {
 
   private:
     friend EvaluationContext;
+    friend RuntimeGraph;
 
     explicit ScratchPad(details::EvaluationScratch *evaluation_scratch) noexcept
         : evaluation_scratch_{evaluation_scratch} {}

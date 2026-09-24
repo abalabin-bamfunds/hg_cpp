@@ -28,7 +28,7 @@ class ReferenceNodeTemplate final : public NodeTemplate {
 
     EvaluationFunction evaluation_function(const ResolvedSignature &) const noexcept override { return nullptr; }
 
-    EvaluationFunction start_function(const ResolvedSignature &) const noexcept override { return &start; }
+    NodeFunction start_function(const ResolvedSignature &) const noexcept override { return &start; }
 
     NodeStateLayout state_layout(const ResolvedSignature &, std::span<const ScalarRuntimeType *const>,
                                  std::span<const ScalarType *const>) const override {
@@ -44,7 +44,7 @@ class ReferenceNodeTemplate final : public NodeTemplate {
         std::construct_at(static_cast<RootReference *>(storage));
     }
 
-    EvaluationFunction state_destruction_function(const ResolvedSignature &) const noexcept override {
+    NodeFunction state_destruction_function(const ResolvedSignature &) const noexcept override {
         return &destroy_state;
     }
 

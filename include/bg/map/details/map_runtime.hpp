@@ -240,8 +240,8 @@ class MapRuntime {
 
             const auto &description = compiled.inputs[update.input_index];
             const auto outer = input(invocation, description.parameter_index);
-            entries_.update_input(entry, compiled.nested, description.inner_input_index,
-                                  mapped_reference(outer, entries_.key(entry)));
+            entry.inner_graph.update_input(compiled.nested, description.inner_input_index,
+                                           mapped_reference(outer, entries_.key(entry)));
             entries_.mark_ready(entry);
         }
     }
@@ -262,7 +262,7 @@ class MapRuntime {
                 if (!entry.inner_graph.running()) {
                     continue;
                 }
-                entries_.update_input(entry, compiled.nested, description.inner_input_index, reference);
+                entry.inner_graph.update_input(compiled.nested, description.inner_input_index, reference);
                 entries_.mark_ready(entry);
             }
         }

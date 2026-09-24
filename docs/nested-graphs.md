@@ -67,8 +67,8 @@ while it evaluates another inner graph selected by key, then resume the paused
 graph in the same outer cycle.
 
 When an inner graph reports [pending evaluation](evaluation.md#pending-evaluation),
-an owner that cannot satisfy the request propagates it through its own context.
-This applies to ordinary nested graphs, `map`, `switch_`, and nested meshes.
+an owner that cannot satisfy it returns pending unchanged. This applies to
+ordinary nested graphs, `map`, `switch_`, and nested meshes.
 
 ## Lifecycle
 

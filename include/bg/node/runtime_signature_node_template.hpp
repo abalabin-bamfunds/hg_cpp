@@ -157,14 +157,14 @@ template <details::runtime_signature_node Definition> class RuntimeSignatureNode
         return nullptr;
     }
 
-    EvaluationFunction start_function(const ResolvedSignature &) const noexcept override {
+    NodeFunction start_function(const ResolvedSignature &) const noexcept override {
         if constexpr (requires(Invocation invocation) { Definition::start(invocation); }) {
             return &start;
         }
         return nullptr;
     }
 
-    EvaluationFunction stop_function(const ResolvedSignature &) const noexcept override {
+    NodeFunction stop_function(const ResolvedSignature &) const noexcept override {
         if constexpr (requires(Invocation invocation) { Definition::stop(invocation); }) {
             static_assert(noexcept(Definition::stop(std::declval<Invocation>())));
             return &stop;
@@ -224,7 +224,7 @@ template <details::runtime_signature_node Definition> class RuntimeSignatureNode
         }
     }
 
-    EvaluationFunction state_destruction_function(const ResolvedSignature &) const noexcept override {
+    NodeFunction state_destruction_function(const ResolvedSignature &) const noexcept override {
         if constexpr (requires(Invocation invocation) { Definition::destroy_state(invocation); }) {
             static_assert(noexcept(Definition::destroy_state(std::declval<Invocation>())));
             return &destroy_state;
@@ -264,8 +264,13 @@ template <details::runtime_signature_node Definition> class RuntimeSignatureNode
         return Invocation{node, runtime_storage, *context};
     }
 
-    static void evaluate(const CompiledNode &node, void *runtime_storage, EvaluationContext *context) {
-        Definition::evaluate(invocation(node, runtime_storage, context));
+    static bool evaluate(const CompiledNode &node, void *runtime_storage, EvaluationContext *context) {
+        if constexpr (std::same_as<decltype(Definition::evaluate(invocation(node, runtime_storage, context))), bool>) {
+            return Definition::evaluate(invocation(node, runtime_storage, context));
+        } else {
+            Definition::evaluate(invocation(node, runtime_storage, context));
+            return true;
+        }
     }
 
     static void start(const CompiledNode &node, void *runtime_storage, EvaluationContext *context) {

@@ -39,25 +39,27 @@ class EvaluationContext {
     const details::EvaluationContextSection *find_section(const void *type,
                                                           std::size_t depth = 0) const noexcept;
 
-    void set_pending(details::PendingEvaluation pending) noexcept { pending_ = pending; }
-
   private:
     friend RuntimeGraph;
 
     EvaluationContext(EvaluationTime evaluation_time, RuntimeGraph &runtime_graph, std::size_t node_index,
                       const details::EvaluationContextSection *sections = nullptr) noexcept;
     EvaluationContext(EvaluationTime evaluation_time, RuntimeGraph &runtime_graph,
-                      details::EvaluationScratch &evaluation_scratch) noexcept;
-    EvaluationContext(EvaluationContext &parent, RuntimeGraph &runtime_graph, std::size_t node_index) noexcept;
-    EvaluationContext(EvaluationContext &parent, const details::EvaluationContextSection &section) noexcept;
+                      details::EvaluationScratch &evaluation_scratch) noexcept
+        : evaluation_time_(evaluation_time), runtime_graph_(&runtime_graph), node_index_{},
+          scratch_{&evaluation_scratch} {}
+    EvaluationContext(EvaluationContext &parent, RuntimeGraph &runtime_graph, std::size_t node_index) noexcept
+        : evaluation_time_(parent.evaluation_time_), runtime_graph_(&runtime_graph), node_index_(node_index),
+          scratch_{parent.scratch_.evaluation_scratch_}, sections_(parent.sections_) {}
+    EvaluationContext(EvaluationContext &parent, const details::EvaluationContextSection &section) noexcept
+        : evaluation_time_(parent.evaluation_time_), runtime_graph_(parent.runtime_graph_),
+          node_index_(parent.node_index_), scratch_{parent.scratch_.evaluation_scratch_}, sections_(&section) {}
 
     EvaluationTime evaluation_time_;
     RuntimeGraph *runtime_graph_;
-    details::EvaluationScratch *evaluation_scratch_;
     std::size_t node_index_;
     ScratchPad scratch_;
     const details::EvaluationContextSection *sections_{};
-    details::PendingEvaluation pending_;
 };
 
 } // namespace bg

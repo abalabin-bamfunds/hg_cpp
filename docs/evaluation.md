@@ -29,17 +29,17 @@ order.
 
 ## Pending evaluation
 
-An internal node can mark its invocation as pending when another runtime graph
-must run before that node can finish. The runtime graph retains the current
-scheduler position and returns the request to its owner. Each intervening inner
-graph owner propagates the request through its own evaluation context. The
-owner that can satisfy the request runs the required graph, then resumes the
-paused graph at the same node.
+An internal node can return pending when another runtime graph must run before
+that node can finish. The runtime graph retains the current node and returns
+pending to its owner. Each intervening inner graph owner returns pending
+without interpreting it. The owner that can satisfy the dependency runs the
+required graph, then resumes the paused graph at the same node.
 
-Node evaluation functions remain `void`. A node output is published only after
-its function returns without a pending request. The complete pause and resume
-sequence runs in one outer cycle. A pending request that reaches the outer
-graph is an error.
+Public node evaluation functions remain `void`. Their runtime adapters return
+complete. Internal nodes that can pause evaluation return complete or pending.
+A node output is published only after its runtime function returns complete.
+The complete pause and resume sequence runs in one outer cycle. Pending
+evaluation that reaches the outer graph is an error.
 
 ## Output changes
 

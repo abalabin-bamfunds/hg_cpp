@@ -82,10 +82,6 @@ class MapEntries {
     void mark_ready(size_type entry_index) noexcept;
     util::index<> &ready() noexcept { return ready_; }
 
-    EvaluationResult evaluate(Entry &entry, EvaluationContext &context, RuntimeGraphEvaluation &evaluation);
-    void update_input(Entry &entry, const CompiledNestedGraph &compiled, std::size_t input_index,
-                      NestedGraphInput input);
-
     void activate_due(EvaluationContext &context);
     void clear_schedule_tracking(EvaluationContext &context) noexcept;
     void timed_schedule_changed(RuntimeGraphOwnerContext &context, size_type entry_index,

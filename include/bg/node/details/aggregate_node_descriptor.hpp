@@ -66,7 +66,7 @@ template <typename Definition> const AggregateNodeDescriptor &aggregate_node_des
                 if constexpr (aggregate_node_has_start<Definition>) {
                     return &start_aggregate_node<Definition>;
                 } else {
-                    return EvaluationFunction{};
+                    return NodeFunction{};
                 }
             }(),
         .stop_function =
@@ -74,7 +74,7 @@ template <typename Definition> const AggregateNodeDescriptor &aggregate_node_des
                 if constexpr (aggregate_node_has_stop<Definition> || HasDynamicReferenceInputs) {
                     return &stop_aggregate_node<Definition>;
                 } else {
-                    return EvaluationFunction{};
+                    return NodeFunction{};
                 }
             }(),
         .invalidation_behavior =
@@ -118,9 +118,9 @@ template <typename Definition> const AggregateNodeDescriptor &aggregate_node_des
                 if constexpr (aggregate_node_has_finalize<Definition> ||
                               aggregate_state_requires_destruction<Definition>(Index{}) ||
                               HasDynamicReferenceInputs) {
-                    return static_cast<EvaluationFunction>(&finalize_aggregate_node_state<Definition>);
+                    return static_cast<NodeFunction>(&finalize_aggregate_node_state<Definition>);
                 } else {
-                    return EvaluationFunction{};
+                    return NodeFunction{};
                 }
             }(),
         .resolve_state_types =

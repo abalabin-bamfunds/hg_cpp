@@ -1,7 +1,6 @@
 #include <bg/map/details/map_node.hpp>
 
 #include <bg/allocator.hpp>
-#include <bg/details/evaluation_context.hpp>
 #include <bg/graph/runtime_graph.hpp>
 #include <bg/map/details/map_node_definition.hpp>
 #include <bg/map/details/map_runtime.hpp>
@@ -10,26 +9,30 @@
 #include <bg/time_series/ref/ref_output.hpp>
 #include <bg/time_series/tsd/tsd_output.hpp>
 
+#include <optional>
 #include <utility>
 
 namespace bg::details {
 namespace {
 
 class MapRuntimeState {
+    using MapOutput = std::optional<Out<TSD<SCALAR, REF<TS_T>>>>;
+
   public:
     explicit MapRuntimeState(allocator memory) : branches_{memory} {}
 
     MapRuntimeState(const MapRuntimeState &) = delete;
     MapRuntimeState &operator=(const MapRuntimeState &) = delete;
 
-    template <typename Invocation> void evaluate(const CompiledMapGraph &compiled, Invocation invocation) {
+    template <typename Invocation> bool evaluate(const CompiledMapGraph &compiled, Invocation invocation) {
+        auto output = MapOutput{};
         if (paused_entry_) {
-            if (!resume_entry(compiled, invocation, *paused_entry_)) {
-                return;
+            if (!evaluate_entry(invocation, *paused_entry_)) {
+                return false;
             }
+            update_entry_output(compiled, invocation, *paused_entry_, output);
             paused_entry_.reset();
-            evaluate_ready(compiled, invocation);
-            return;
+            return evaluate_ready(compiled, invocation, output);
         }
 
         branches_.update(compiled, invocation, [&](MapEntries::Entry &entry) {
@@ -51,10 +54,11 @@ class MapRuntimeState {
             }
         });
 
-        evaluate_ready(compiled, invocation);
+        return evaluate_ready(compiled, invocation, output);
     }
 
-    template <typename Invocation> void evaluate_ready(const CompiledMapGraph &compiled, Invocation invocation) {
+    template <typename Invocation>
+    bool evaluate_ready(const CompiledMapGraph &compiled, Invocation invocation, MapOutput &output) {
         auto &entries = branches_.entries();
         auto &ready = entries.ready();
         for (auto ready_entry = ready.begin(); ready_entry != ready.end();) {
@@ -67,17 +71,17 @@ class MapRuntimeState {
                 continue;
             }
 
-            evaluation_.reset();
-            if (!resume_entry(compiled, invocation, entry_index)) {
+            if (!evaluate_entry(invocation, entry_index)) {
                 paused_entry_ = entry_index;
-                return;
+                return false;
             }
+            update_entry_output(compiled, invocation, entry_index, output);
         }
+        return true;
     }
 
     template <typename Invocation> void stop(Invocation invocation) noexcept {
         branches_.stop_all(invocation.context());
-        evaluation_.reset();
         paused_entry_.reset();
     }
 
@@ -90,33 +94,35 @@ class MapRuntimeState {
 
   private:
     template <typename Invocation>
-    bool resume_entry(const CompiledMapGraph &compiled, Invocation invocation, MapEntries::size_type entry_index) {
+    bool evaluate_entry(Invocation invocation, MapEntries::size_type entry_index) {
         auto &entries = branches_.entries();
         auto &entry = entries.table().value_at(entry_index);
-        if (const auto pending = entries.evaluate(entry, invocation.context(), evaluation_)) {
-            invocation.context().set_pending(*pending);
-            return false;
-        }
+        return entry.inner_graph.evaluate(invocation.context());
+    }
 
-        evaluation_.reset();
+    template <typename Invocation>
+    void update_entry_output(const CompiledMapGraph &compiled, Invocation invocation,
+                             MapEntries::size_type entry_index, MapOutput &output) {
         if (!compiled.nested.output_node) {
-            return true;
+            return;
+        }
+        if (!output) {
+            output.emplace(node_invocation_access::output<TSD<SCALAR, REF<TS_T>>>(invocation));
         }
 
-        auto output = node_invocation_access::output<TSD<SCALAR, REF<TS_T>>>(invocation);
+        auto &entries = branches_.entries();
+        auto &entry = entries.table().value_at(entry_index);
         const auto key = entries.key(entry);
-        auto item = output[Scalar<SCALAR>::from(key)];
+        auto item = (*output)[Scalar<SCALAR>::from(key)];
         const auto result = entry.inner_graph.output(compiled.nested);
         if (result) {
             item.set_value(result);
         } else {
             item.invalidate();
         }
-        return true;
     }
 
     MapRuntime branches_;
-    RuntimeGraphEvaluation evaluation_;
     std::optional<MapEntries::size_type> paused_entry_;
 };
 
@@ -133,13 +139,13 @@ class DefaultMapNodeDefinition : public MapNodeDefinition {
 
     using MapNodeDefinition::MapNodeDefinition;
 
-    static void evaluate(NodeInvocation<compiled_data_type, state_type> invocation) {
+    static bool evaluate(NodeInvocation<compiled_data_type, state_type> invocation) {
         auto &state = invocation.state();
         if (state.runtime == nullptr) {
             auto memory = invocation.context().runtime_graph().allocation();
             state.runtime = memory.new_object<MapRuntimeState>(memory);
         }
-        state.runtime->evaluate(invocation.compiled_data(), invocation);
+        return state.runtime->evaluate(invocation.compiled_data(), invocation);
     }
 
     static void stop(NodeInvocation<compiled_data_type, state_type> invocation) noexcept {

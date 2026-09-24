@@ -318,15 +318,15 @@ class CompiledNode {
         return *offset & state_offset_mask;
     }
 
-    EvaluationFunction state_destruction_function() const noexcept {
+    NodeFunction state_destruction_function() const noexcept {
         if (!state_requires_destruction()) {
             return nullptr;
         }
 
         auto address = state_address();
-        address = align(address + sizeof(std::uint32_t), alignof(EvaluationFunction));
+        address = align(address + sizeof(std::uint32_t), alignof(NodeFunction));
 
-        return *reinterpret_cast<const EvaluationFunction *>(address);
+        return *reinterpret_cast<const NodeFunction *>(address);
     }
 
     std::size_t state_field_offset(std::size_t index) const noexcept { return state_field_offsets_address()[index]; }
@@ -338,10 +338,10 @@ class CompiledNode {
         return **(reinterpret_cast<const ScalarRuntimeType *const *>(address) + index);
     }
 
-    EvaluationFunction invalidation_function() const noexcept {
-        const auto address = align(optional_metadata_address(), alignof(EvaluationFunction));
+    NodeFunction invalidation_function() const noexcept {
+        const auto address = align(optional_metadata_address(), alignof(NodeFunction));
 
-        return *reinterpret_cast<const EvaluationFunction *>(address);
+        return *reinterpret_cast<const NodeFunction *>(address);
     }
 
     const TimeSeriesRuntimeType &time_series_input_runtime_type(std::size_t index) const noexcept {
@@ -448,7 +448,7 @@ class CompiledNode {
         if (has_state()) {
             address += sizeof(std::uint32_t);
             if (state_requires_destruction()) {
-                address = align(address, alignof(EvaluationFunction)) + sizeof(EvaluationFunction);
+                address = align(address, alignof(NodeFunction)) + sizeof(NodeFunction);
             }
             if (has_state_metadata()) {
                 address += sizeof(StateMetadataCounts);
@@ -478,7 +478,7 @@ class CompiledNode {
         auto address = state_address();
         address += sizeof(std::uint32_t);
         if (state_requires_destruction()) {
-            address = align(address, alignof(EvaluationFunction)) + sizeof(EvaluationFunction);
+            address = align(address, alignof(NodeFunction)) + sizeof(NodeFunction);
         }
 
         return *reinterpret_cast<const StateMetadataCounts *>(address);
@@ -516,7 +516,7 @@ class CompiledNode {
     std::uintptr_t after_invalidation_metadata_address() const noexcept {
         auto address = optional_metadata_address();
         if (invalidation_mode() == InvalidationMode::invoke) {
-            address = align(address, alignof(EvaluationFunction)) + sizeof(EvaluationFunction);
+            address = align(address, alignof(NodeFunction)) + sizeof(NodeFunction);
         }
 
         return address;

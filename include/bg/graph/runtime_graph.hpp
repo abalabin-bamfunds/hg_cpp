@@ -4,11 +4,12 @@
 #include <bg/evaluation_context.hpp>
 #include <bg/global_state.hpp>
 #include <bg/graph/compiled_graph.hpp>
-#include <bg/graph/details/runtime_graph_evaluation.hpp>
 #include <bg/graph/node.hpp>
 #include <bg/graph/runtime_graph_owner.hpp>
 
 #include <cstddef>
+#include <cstdint>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <span>
@@ -19,7 +20,6 @@ namespace bg {
 namespace details {
 class EvaluationScratch;
 class ReferenceProvider;
-struct RuntimeGraphEvaluation;
 } // namespace details
 
 namespace testing {
@@ -114,8 +114,7 @@ class RuntimeGraph {
     void start(EvaluationTime evaluation_time, details::EvaluationScratch &scratch);
     void start(EvaluationContext &parent);
     void evaluate(EvaluationTime evaluation_time, details::EvaluationScratch &scratch);
-    details::EvaluationResult continue_evaluation(EvaluationContext &parent,
-                                                  details::RuntimeGraphEvaluation &evaluation);
+    bool continue_evaluation(EvaluationContext &parent);
     void stop(details::EvaluationScratch &scratch) noexcept;
     void stop(EvaluationContext &parent) noexcept;
 
@@ -147,6 +146,7 @@ class RuntimeGraph {
 
     RuntimeGraph *parent_{};
     PendingInputNotifications *pending_input_notifications_{};
+    std::uint32_t paused_node_index_{std::numeric_limits<std::uint32_t>::max()};
     bool suppress_parent_scheduling_ : 1 {};
     bool callback_owner_ : 1 {};
     bool started_ : 1 {};
