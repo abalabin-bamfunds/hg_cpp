@@ -1,6 +1,7 @@
 #pragma once
 
-#include <bg/graph/details/map_node.hpp>
+#include <bg/map/details/map_graph_argument.hpp>
+#include <bg/map/details/map_node.hpp>
 #include <bg/graph/graph_argument.hpp>
 #include <bg/map/details/map_call.hpp>
 

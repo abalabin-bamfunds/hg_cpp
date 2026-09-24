@@ -82,6 +82,7 @@ struct ResolvedMapCall {
 };
 
 ResolvedMapCall resolve_map_call(std::span<const MapArgument> arguments);
+ResolvedMapCall resolve_map_call(std::string_view operation, std::span<const MapArgument> arguments);
 
 template <typename T>
 inline constexpr bool is_map_option =
@@ -97,19 +98,16 @@ template <typename Argument> struct map_callable_argument {
 };
 
 template <typename Target, auto... Properties>
-struct map_callable_argument<wp<REF<Target, Properties...>>>
-    : map_callable_argument<wp<Target>> {};
+struct map_callable_argument<wp<REF<Target, Properties...>>> : map_callable_argument<wp<Target>> {};
 
-template <typename K, typename Item, auto... Properties>
-struct map_callable_argument<wp<TSD<K, Item, Properties...>>> {
+template <typename K, typename Item, auto... Properties> struct map_callable_argument<wp<TSD<K, Item, Properties...>>> {
     using key_type = K;
     using parameter_type = wp<dereferenced_time_series_t<Item>>;
 
     static constexpr bool key_set = false;
 };
 
-template <typename K, auto... Properties>
-struct map_callable_argument<wp<TSS<K, Properties...>>> {
+template <typename K, auto... Properties> struct map_callable_argument<wp<TSS<K, Properties...>>> {
     using key_type = K;
     using parameter_type = wp<TSS<K, Properties...>>;
 
@@ -126,36 +124,29 @@ template <typename T> struct map_callable_argument<pass_through_argument<T>> {
 template <util::compile_time_string Name, typename Value>
 struct map_callable_argument<named_argument<Name, Value>> : map_callable_argument<Value> {};
 
-template <typename Argument>
-using map_callable_argument_t = map_callable_argument<std::remove_cvref_t<Argument>>;
+template <typename Argument> using map_callable_argument_t = map_callable_argument<std::remove_cvref_t<Argument>>;
 
-template <typename Argument>
-inline constexpr bool map_callable_key_set = map_callable_argument_t<Argument>::key_set;
+template <typename Argument> inline constexpr bool map_callable_key_set = map_callable_argument_t<Argument>::key_set;
 
 template <typename... Arguments> struct first_map_callable_key {
     using type = void;
 };
 
-template <typename First, typename... Rest>
-struct first_map_callable_key<First, Rest...> {
+template <typename First, typename... Rest> struct first_map_callable_key<First, Rest...> {
     using Candidate = typename map_callable_argument_t<First>::key_type;
-    using type = std::conditional_t<std::same_as<Candidate, void>,
-                                    typename first_map_callable_key<Rest...>::type,
-                                    Candidate>;
+    using type =
+        std::conditional_t<std::same_as<Candidate, void>, typename first_map_callable_key<Rest...>::type, Candidate>;
 };
 
-template <typename K>
-using map_key_parameter_t = wp<TS<K, TimeSeriesGuarantee::const_>>;
+template <typename K> using map_key_parameter_t = wp<TS<K, TimeSeriesGuarantee::const_>>;
 
-template <typename PositionalTuple, typename NamedTuple, typename OptionsTuple>
-struct MapCallArguments {
+template <typename PositionalTuple, typename NamedTuple, typename OptionsTuple> struct MapCallArguments {
     PositionalTuple positional;
     NamedTuple named;
     OptionsTuple options;
 };
 
-template <typename Argument>
-auto positional_map_argument(Argument &&argument) {
+template <typename Argument> auto positional_map_argument(Argument &&argument) {
     if constexpr (!is_map_option<Argument> && !is_named_argument_v<Argument>) {
         return std::tuple<std::decay_t<Argument>>{std::forward<Argument>(argument)};
     } else {
@@ -163,8 +154,7 @@ auto positional_map_argument(Argument &&argument) {
     }
 }
 
-template <typename Argument>
-auto named_map_argument(Argument &&argument) {
+template <typename Argument> auto named_map_argument(Argument &&argument) {
     if constexpr (!is_map_option<Argument> && is_named_argument_v<Argument>) {
         return std::tuple<std::decay_t<Argument>>{std::forward<Argument>(argument)};
     } else {
@@ -190,8 +180,7 @@ auto map_option_argument(Argument &&) {
     return std::tuple<>{};
 }
 
-template <typename... Arguments>
-auto group_map_call_arguments(Arguments &&...arguments) {
+template <typename... Arguments> auto group_map_call_arguments(Arguments &&...arguments) {
     auto positional = std::tuple_cat(positional_map_argument(std::forward<Arguments>(arguments))...);
     auto named = std::tuple_cat(named_map_argument(std::forward<Arguments>(arguments))...);
     auto options = std::tuple_cat(map_option_argument(std::forward<Arguments>(arguments))...);

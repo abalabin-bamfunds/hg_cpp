@@ -4,6 +4,7 @@
 #include <bg/evaluation_context.hpp>
 #include <bg/global_state.hpp>
 #include <bg/graph/compiled_graph.hpp>
+#include <bg/graph/details/runtime_graph_evaluation.hpp>
 #include <bg/graph/node.hpp>
 #include <bg/graph/runtime_graph_owner.hpp>
 
@@ -18,6 +19,7 @@ namespace bg {
 namespace details {
 class EvaluationScratch;
 class ReferenceProvider;
+struct RuntimeGraphEvaluation;
 } // namespace details
 
 namespace testing {
@@ -110,8 +112,12 @@ class RuntimeGraph {
     void stop_nodes(std::size_t node_count) noexcept;
     bool inputs_are_valid(const CompiledNode &node) const noexcept;
     void start(EvaluationTime evaluation_time, details::EvaluationScratch &scratch);
+    void start(EvaluationContext &parent);
     void evaluate(EvaluationTime evaluation_time, details::EvaluationScratch &scratch);
+    details::EvaluationResult continue_evaluation(EvaluationContext &parent,
+                                                  details::RuntimeGraphEvaluation &evaluation);
     void stop(details::EvaluationScratch &scratch) noexcept;
+    void stop(EvaluationContext &parent) noexcept;
 
     const CompiledGraph *compiled_graph_;
     bg::allocator allocator_;
@@ -131,7 +137,7 @@ class RuntimeGraph {
         RuntimeGraphOwner owner{};
     };
 
-    // An inner graph uses either the compact direct nested() connection or a callback connection for a keyed owner.
+    // An inner graph uses either the compact direct nested() connection or callbacks to an owner of several graphs.
     union Owner {
         constexpr Owner() noexcept : direct{} {}
 

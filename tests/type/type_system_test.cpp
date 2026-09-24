@@ -206,6 +206,46 @@ TEST_CASE("signature resolution uses reference target types",
     CHECK(reference_input.resolve(arguments).parameters[0].type == &reference);
 }
 
+TEST_CASE("a resolved parameter constrains a generic argument",
+          "[type_system][feature:type-system][declaration:generic]") {
+    const auto signature = bg::Signature{
+        bg::util::symbol{"fixed"}, {{bg::util::symbol{"value"}, &bg::TS<float>::type()}}};
+    const auto arguments = std::array<const bg::Type *, 1>{&bg::TS_T::type()};
+
+    const auto resolution = signature.resolve_with_type_map(arguments);
+
+    CHECK(resolution.signature.parameters[0].type == &bg::TS<float>::type());
+    CHECK(&bg::TS_T::type().resolve(resolution.type_map) == &bg::TS<float>::type());
+}
+
+TEST_CASE("resolved arguments constrain a shared parameter before generic arguments",
+          "[type_system][feature:type-system][declaration:generic]") {
+    const auto signature = bg::Signature{
+        bg::util::symbol{"same"},
+        {{bg::util::symbol{"lhs"}, &bg::TS_T::type()}, {bg::util::symbol{"rhs"}, &bg::TS_T::type()}}};
+    const auto arguments = std::array<const bg::Type *, 2>{&bg::TS_T::type(), &bg::TS<float>::type()};
+
+    const auto resolution = signature.resolve_with_type_map(arguments);
+
+    CHECK(resolution.signature.parameters[0].type == &bg::TS<float>::type());
+    CHECK(resolution.signature.parameters[1].type == &bg::TS<float>::type());
+}
+
+TEST_CASE("signature resolution rejects mutually unconstrained argument and parameter variables",
+          "[type_system][feature:type-system][declaration:generic]") {
+    auto parameter_variable = bg::TypeVariableType<bg::TimeSeriesType>{bg::util::symbol{"PARAMETER"}};
+    auto argument_variable = bg::TypeVariableType<bg::TimeSeriesType>{bg::util::symbol{"ARGUMENT"}};
+    const auto parameter = bg::GenericTimeSeriesVariableType{
+        parameter_variable, bg::TimeSeriesGuarantee::ordinary};
+    const auto argument = bg::GenericTimeSeriesVariableType{
+        argument_variable, bg::TimeSeriesGuarantee::ordinary};
+    const auto signature = bg::Signature{
+        bg::util::symbol{"unconstrained"}, {{bg::util::symbol{"value"}, &parameter}}};
+    const auto arguments = std::array<const bg::Type *, 1>{&argument};
+
+    CHECK_THROWS_AS(signature.resolve(arguments), bg::TypeResolutionError);
+}
+
 TEST_CASE("a signature resolves scalar parameters", "[type_system][feature:type-system]") {
     const bg::ScalarType &float_type = bg::float_type();
 

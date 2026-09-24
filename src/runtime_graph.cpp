@@ -1,4 +1,6 @@
 #include <bg/graph/runtime_graph.hpp>
+#include <bg/details/evaluation_context.hpp>
+#include <bg/graph/details/runtime_graph_evaluation.hpp>
 
 #include <bg/allocator.hpp>
 #include <bg/details/evaluation_scratch.hpp>
@@ -187,16 +189,26 @@ class RuntimeGraph::ScheduledNodes {
 
     class Iterator {
       public:
-        explicit Iterator(ScheduledNodes &nodes) noexcept : nodes_(&nodes) { advance(); }
+        explicit Iterator(ScheduledNodes &nodes, std::size_t word_index = 0,
+                          ScheduleWord processed = {}) noexcept
+            : nodes_(&nodes), word_index_{word_index}, processed_{processed} {
+            advance();
+        }
 
         auto operator*() const noexcept -> ScheduledNode { return current_; }
 
         auto operator++() noexcept -> Iterator & {
+            // Every lower node has already had its opportunity to run in this outer cycle.
+            processed_ |= current_mask_ | (current_mask_ - 1);
             advance();
             return *this;
         }
 
         auto operator==(std::default_sentinel_t) const noexcept -> bool { return word_index_ == nodes_->word_count(); }
+
+        void save(details::RuntimeGraphEvaluation &evaluation) const noexcept {
+            evaluation.node_index = current_.node_index;
+        }
 
       private:
         void advance() noexcept {
@@ -220,7 +232,7 @@ class RuntimeGraph::ScheduledNodes {
                     .evaluation_requested = (evaluation & mask) != 0,
                     .validity_check_requested = (validity_check & mask) != 0,
                 };
-                processed_ |= mask;
+                current_mask_ = mask;
                 return;
             }
         }
@@ -228,12 +240,19 @@ class RuntimeGraph::ScheduledNodes {
         ScheduledNodes *nodes_;
         std::size_t word_index_{};
         ScheduleWord processed_{};
+        ScheduleWord current_mask_{};
         ScheduledNode current_{};
     };
 
     explicit ScheduledNodes(std::span<SchedulingInfo> scheduling) noexcept : scheduling_(scheduling) {}
 
     auto begin() noexcept -> Iterator { return Iterator{*this}; }
+    auto begin(const details::RuntimeGraphEvaluation &evaluation) noexcept -> Iterator {
+        const auto word_index = evaluation.node_index / CompiledGraph::schedule_word_bits;
+        const auto bit = evaluation.node_index % CompiledGraph::schedule_word_bits;
+        const auto current_mask = ScheduleWord{1} << bit;
+        return Iterator{*this, word_index, current_mask - 1};
+    }
     auto end() const noexcept -> std::default_sentinel_t { return {}; }
 
   private:
@@ -721,15 +740,20 @@ void RuntimeGraph::start(EvaluationTime evaluation_time) {
 }
 
 void RuntimeGraph::start(EvaluationTime evaluation_time, details::EvaluationScratch &scratch) {
+    auto context = EvaluationContext{evaluation_time, *this, scratch};
+    start(context);
+}
+
+void RuntimeGraph::start(EvaluationContext &parent) {
     if (started_ || stopped_) {
         throw std::logic_error{"a runtime graph can only be started once"};
     }
 
     started_ = true;
-    const auto scratch_use = ScratchUse{*this, scratch};
-    evaluation_time_ = evaluation_time;
+    const auto scratch_use = ScratchUse{*this, *parent.evaluation_scratch_};
+    evaluation_time_ = parent.evaluation_time();
     if (const auto offset = compiled_graph_->constant_start_time_offset()) {
-        *reinterpret_cast<EvaluationTime *>(storage_ + *offset) = evaluation_time;
+        *reinterpret_cast<EvaluationTime *>(storage_ + *offset) = evaluation_time_;
     }
     const auto starts = compiled_graph_->start_functions();
     auto started_node_count = std::size_t{};
@@ -744,7 +768,7 @@ void RuntimeGraph::start(EvaluationTime evaluation_time, details::EvaluationScra
         const auto &node = compiled_graph_->node(node_index);
         const auto output_was_valid = node.has_output() && Node{node, storage_}.output_last_updated() > MIN_DT;
 
-        EvaluationContext context{evaluation_time, *this, node_index};
+        EvaluationContext context{parent, *this, node_index};
         const auto allocation_context = details::ScalarAllocationContext{allocator_, this, node_index};
         (*function)(node, storage_, &context);
         ++function;
@@ -789,13 +813,31 @@ void RuntimeGraph::stop() noexcept {
 }
 
 void RuntimeGraph::stop(details::EvaluationScratch &scratch) noexcept {
+    auto context = EvaluationContext{evaluation_time_, *this, scratch};
+    stop(context);
+}
+
+void RuntimeGraph::stop(EvaluationContext &parent) noexcept {
     if (!started_ || stopped_) {
         return;
     }
 
     stopped_ = true;
-    const auto scratch_use = ScratchUse{*this, scratch};
-    stop_nodes(compiled_graph_->node_count());
+    const auto scratch_use = ScratchUse{*this, *parent.evaluation_scratch_};
+
+    const auto stops = compiled_graph_->stop_functions();
+    auto i = stops.nodes.size();
+    while (i != 0) {
+        --i;
+        const auto node_index = stops.nodes[i];
+        const auto &node = compiled_graph_->node(node_index);
+        EvaluationContext context{parent, *this, node_index};
+        const auto allocation_context = details::ScalarAllocationContext{allocator_, this, node_index};
+        stops.functions[i](node, storage_, &context);
+    }
+
+    clear_timed_schedule();
+    clear_cycle_callbacks();
 }
 
 bool RuntimeGraph::inputs_are_valid(const CompiledNode &node) const noexcept {
@@ -820,20 +862,34 @@ void RuntimeGraph::evaluate(EvaluationTime evaluation_time) {
 }
 
 void RuntimeGraph::evaluate(EvaluationTime evaluation_time, details::EvaluationScratch &scratch) {
+    auto context = EvaluationContext{evaluation_time, *this, scratch};
+    auto evaluation = details::RuntimeGraphEvaluation{};
+    if (continue_evaluation(context, evaluation)) {
+        throw std::logic_error{"a pending evaluation escaped the outer graph"};
+    }
+}
+
+details::EvaluationResult RuntimeGraph::continue_evaluation(
+    EvaluationContext &parent, details::RuntimeGraphEvaluation &evaluation) {
     if (!started_ || stopped_) {
         throw std::logic_error{"a runtime graph must be running to evaluate"};
     }
 
-    if (evaluation_time <= last_evaluation_time_) {
-        throw std::invalid_argument{"evaluation time must increase between outer cycles"};
-    }
+    const auto evaluation_time = parent.evaluation_time();
+    const auto scratch_use = ScratchUse{*this, *parent.evaluation_scratch_};
+    if (!evaluation.paused()) {
+        if (evaluation_time <= last_evaluation_time_) {
+            throw std::invalid_argument{"evaluation time must increase between outer cycles"};
+        }
 
-    const auto scratch_use = ScratchUse{*this, scratch};
-    run_cycle_callbacks();
-    last_evaluation_time_ = evaluation_time;
-    evaluation_time_ = evaluation_time;
-    run_input_notifications();
-    activate_scheduled(evaluation_time);
+        run_cycle_callbacks();
+        last_evaluation_time_ = evaluation_time;
+        evaluation_time_ = evaluation_time;
+        run_input_notifications();
+        activate_scheduled(evaluation_time);
+    } else if (evaluation_time != evaluation_time_) {
+        throw std::invalid_argument{"a paused runtime graph must resume in the same outer cycle"};
+    }
 
     auto scheduling = scheduling_info();
     auto scheduled = ScheduledNodes{scheduling};
@@ -842,7 +898,10 @@ void RuntimeGraph::evaluate(EvaluationTime evaluation_time, details::EvaluationS
         stop_nodes(compiled_graph_->node_count());
     }};
 
-    for (const auto [node_index, evaluation_requested, validity_check_requested] : scheduled) {
+    for (auto scheduled_node = evaluation.paused() ? scheduled.begin(evaluation) : scheduled.begin();
+         scheduled_node != std::default_sentinel;) {
+        const auto [node_index, evaluation_requested, validity_check_requested] = *scheduled_node;
+        auto advance = util::scope_exit{[&]() noexcept { ++scheduled_node; }};
         const auto word_index = node_index / CompiledGraph::schedule_word_bits;
         const auto mask = ScheduleWord{1} << (node_index % CompiledGraph::schedule_word_bits);
         const auto &node = compiled_graph_->node(node_index);
@@ -869,9 +928,15 @@ void RuntimeGraph::evaluate(EvaluationTime evaluation_time, details::EvaluationS
 
         const auto output_was_valid = has_output && Node{node, storage_}.output_last_updated() > MIN_DT;
         if (const auto evaluate = node.evaluation_function(); evaluate != nullptr) {
-            EvaluationContext context{evaluation_time, *this, node_index};
+            EvaluationContext context{parent, *this, node_index};
             const auto allocation_context = details::ScalarAllocationContext{allocator_, this, node_index};
             evaluate(node, storage_, &context);
+            if (context.pending_.target != nullptr) {
+                scheduled_node.save(evaluation);
+                advance.release();
+                stop_on_failure.release();
+                return context.pending_;
+            }
         }
 
         if (has_output) {
@@ -881,6 +946,8 @@ void RuntimeGraph::evaluate(EvaluationTime evaluation_time, details::EvaluationS
         }
     }
     stop_on_failure.release();
+    evaluation.reset();
+    return std::nullopt;
 }
 
 void EvaluationContext::schedule_now() const noexcept {
@@ -906,9 +973,48 @@ GlobalState &EvaluationContext::global_state() const noexcept {
 }
 
 EvaluationContext::EvaluationContext(EvaluationTime evaluation_time, RuntimeGraph &runtime_graph,
-                                     std::size_t node_index) noexcept
+                                     std::size_t node_index,
+                                     const details::EvaluationContextSection *sections) noexcept
     : evaluation_time_(evaluation_time), runtime_graph_(&runtime_graph), node_index_(node_index),
-      scratch_{runtime_graph.scratch_} {}
+      evaluation_scratch_{runtime_graph.scratch_}, scratch_{evaluation_scratch_}, sections_(sections) {}
+
+EvaluationContext::EvaluationContext(EvaluationTime evaluation_time, RuntimeGraph &runtime_graph,
+                                     details::EvaluationScratch &evaluation_scratch) noexcept
+    : evaluation_time_(evaluation_time), runtime_graph_(&runtime_graph),
+      evaluation_scratch_(&evaluation_scratch), node_index_{}, scratch_{evaluation_scratch_} {}
+
+EvaluationContext::EvaluationContext(EvaluationContext &parent, RuntimeGraph &runtime_graph,
+                                     std::size_t node_index) noexcept
+    : evaluation_time_(parent.evaluation_time_), runtime_graph_(&runtime_graph),
+      evaluation_scratch_(parent.evaluation_scratch_), node_index_(node_index),
+      scratch_{evaluation_scratch_}, sections_(parent.sections_) {}
+
+EvaluationContext::EvaluationContext(EvaluationContext &parent,
+                                     const details::EvaluationContextSection &section) noexcept
+    : evaluation_time_(parent.evaluation_time_), runtime_graph_(parent.runtime_graph_),
+      evaluation_scratch_(parent.evaluation_scratch_), node_index_(parent.node_index_),
+      scratch_{evaluation_scratch_}, sections_(&section) {}
+
+EvaluationContext EvaluationContext::child(
+    details::EvaluationContextSection &section) noexcept {
+    section.parent = sections_;
+    return EvaluationContext{*this, section};
+}
+
+const details::EvaluationContextSection *EvaluationContext::find_section(
+    const void *type, std::size_t depth) const noexcept {
+    auto *section = sections_;
+    while (section != nullptr) {
+        if (section->type == type) {
+            if (depth == 0) {
+                return section;
+            }
+            --depth;
+        }
+        section = section->parent;
+    }
+    return nullptr;
+}
 
 EvaluationContext::~EvaluationContext() = default;
 

@@ -1,8 +1,10 @@
 #include <bg/switch/details/switch_node.hpp>
 
 #include <bg/allocator.hpp>
+#include <bg/details/evaluation_context.hpp>
 #include <bg/graph/details/compiled_graph_builder.hpp>
 #include <bg/graph/details/graph_wiring_structure.hpp>
+#include <bg/graph/details/runtime_graph_evaluation.hpp>
 #include <bg/graph/graph_wiring.hpp>
 #include <bg/graph/runtime_graph.hpp>
 #include <bg/node/node_invocation.hpp>
@@ -123,12 +125,13 @@ struct SwitchSelection {
 
 struct SwitchNodeState {
     NestedGraph graph;
+    RuntimeGraphEvaluation evaluation;
     ScheduleHandle outer_schedule{};
     std::optional<EvaluationTime> scheduled_time;
     SwitchSelection active_selection;
 };
 
-static_assert(sizeof(SwitchNodeState) <= 64);
+static_assert(sizeof(SwitchNodeState) <= 96);
 
 class SwitchNodeDefinition {
   public:
@@ -192,6 +195,7 @@ class SwitchNodeDefinition {
         auto result = CompiledSwitch{
             .keys = std::pmr::vector<ScalarValue<>>{&memory.memory_resource()},
             .cases = std::pmr::vector<CompiledSwitchCase>{&memory.memory_resource()},
+            .default_case = std::nullopt,
             .produces_output = signature_->has_output(),
         };
         auto key_count = std::size_t{};
@@ -257,6 +261,11 @@ class SwitchNodeDefinition {
     static void evaluate(NodeInvocation<compiled_data_type, state_type> invocation) {
         auto &state = invocation.state();
         const auto &compiled = invocation.compiled_data();
+        if (state.evaluation.paused()) {
+            resume(compiled, invocation);
+            return;
+        }
+
         const auto selected = select_case(compiled, invocation);
 
         if (selected != state.active_selection) {
@@ -268,7 +277,18 @@ class SwitchNodeDefinition {
             update_inputs(compiled.cases[selected.case_index].branch, invocation);
         }
 
-        state.graph.evaluate(invocation.context());
+        resume(compiled, invocation);
+    }
+
+    template <typename Invocation>
+    static void resume(const CompiledSwitch &compiled, Invocation invocation) {
+        auto &state = invocation.state();
+        if (const auto pending = state.graph.evaluate(invocation.context(), state.evaluation)) {
+            invocation.context().set_pending(*pending);
+            return;
+        }
+        state.evaluation.reset();
+
         if (compiled.has_output()) {
             const auto &branch = compiled.cases[state.active_selection.case_index].branch;
             invocation.output().visit(
@@ -292,6 +312,7 @@ class SwitchNodeDefinition {
         auto &state = invocation.state();
         clear_timed_schedule(invocation.context(), state);
         state.graph.stop(invocation.context());
+        state.evaluation.reset();
         state.active_selection = {};
     }
 

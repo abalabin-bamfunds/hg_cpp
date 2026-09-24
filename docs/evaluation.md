@@ -27,6 +27,20 @@ A scheduled node without an evaluation function still processes input validity, 
 Inner graph execution and reference-bound inputs must preserve the same forward
 order.
 
+## Pending evaluation
+
+An internal node can mark its invocation as pending when another runtime graph
+must run before that node can finish. The runtime graph retains the current
+scheduler position and returns the request to its owner. Each intervening inner
+graph owner propagates the request through its own evaluation context. The
+owner that can satisfy the request runs the required graph, then resumes the
+paused graph at the same node.
+
+Node evaluation functions remain `void`. A node output is published only after
+its function returns without a pending request. The complete pause and resume
+sequence runs in one outer cycle. A pending request that reaches the outer
+graph is an error.
+
 ## Output changes
 
 After a node function returns, the output runtime type enumerates its
@@ -74,6 +88,10 @@ The context provides:
 - immediate and timed scheduling
 - cancellation of timed scheduling
 - registration of outer-cycle callbacks
+
+An inner runtime graph derives its contexts from the context of its owning
+node. This preserves evaluation services and internal context sections through
+any number of nested graph owners.
 
 ## Start
 

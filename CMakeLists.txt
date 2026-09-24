@@ -42,8 +42,13 @@ add_library(
     src/graph_wiring_structure.cpp
     src/nested_graph.cpp
     src/nested.cpp
+    src/map_graph_argument.cpp
+    src/map_node_definition.cpp
+    src/map_entries.cpp
     src/map_node.cpp
     src/map.cpp
+    src/mesh_node.cpp
+    src/mesh.cpp
     src/switch_node.cpp
     src/switch.cpp
     src/normalized_wiring_arguments.cpp

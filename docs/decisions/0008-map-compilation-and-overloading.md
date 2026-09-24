@@ -21,4 +21,4 @@ and supplied arguments. The default implementation shares compiled data while
 each key retains independent runtime state and scheduling.
 
 See [map](../map.md), [graph arguments](0007-structural-graph-arguments.md), and
-[keyed nested graph scheduling](0006-keyed-nested-graph-scheduling.md).
+[inner graph owner scheduling](0006-inner-graph-owner-scheduling.md).

@@ -1,4 +1,4 @@
-# Keyed nested graph scheduling
+# Inner graph owner scheduling
 
 Status: accepted
 

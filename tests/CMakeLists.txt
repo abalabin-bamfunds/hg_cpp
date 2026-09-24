@@ -8,6 +8,7 @@ add_executable(
     evaluation/lifecycle/runtime_lifecycle_test.cpp
     evaluation/map_runtime_node_test.cpp
     evaluation/map_test.cpp
+    evaluation/mesh_test.cpp
     evaluation/switch_test.cpp
     evaluation/nested_graph_test.cpp
     evaluation/nested_graph_owner_test.cpp
@@ -90,6 +91,7 @@ add_executable(
     wiring/graph_wiring_structure_test.cpp
     wiring/map_call_test.cpp
     wiring/map_test.cpp
+    wiring/mesh_test.cpp
     wiring/switch_test.cpp
     wiring/operator_test.cpp
     wiring/requirement_test.cpp

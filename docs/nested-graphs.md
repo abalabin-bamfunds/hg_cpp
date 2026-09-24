@@ -38,6 +38,11 @@ The owning node invokes the inner runtime graph as part of the
 cycle's evaluation time and global state. The once-per-cycle evaluation limit
 applies across all graph levels.
 
+The inner runtime graph receives a child of the owning node's evaluation
+context. The child changes the current runtime graph and node while preserving
+the outer-cycle services and inherited context sections. An owner adds a
+section by deriving another child context before it evaluates the inner graph.
+
 Scheduling produced while an inner graph is evaluating remains within that
 evaluation and is processed before the inner graph returns.
 
@@ -57,7 +62,13 @@ its earliest scheduled time. It does not inspect every inner graph.
 
 The [`map` operator](map.md) uses this interface to own one inner runtime graph
 per current key. The [`switch_` operator](switch.md) uses it to own the selected
-inner runtime graph.
+inner runtime graph. The [`mesh` operator](mesh.md) can pause one inner graph
+while it evaluates another inner graph selected by key, then resume the paused
+graph in the same outer cycle.
+
+When an inner graph reports [pending evaluation](evaluation.md#pending-evaluation),
+an owner that cannot satisfy the request propagates it through its own context.
+This applies to ordinary nested graphs, `map`, `switch_`, and nested meshes.
 
 ## Lifecycle
 

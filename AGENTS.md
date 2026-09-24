@@ -42,6 +42,9 @@ ownership, lifecycle, and scheduling.
 [docs/map.md](docs/map.md) defines map arguments, key selection, output,
 evaluation, and lifecycle.
 
+[docs/mesh.md](docs/mesh.md) defines mesh branch selection, dependency ordering,
+output, and lifecycle.
+
 [docs/switch.md](docs/switch.md) defines case selection, arguments, output,
 evaluation, and lifecycle.
 

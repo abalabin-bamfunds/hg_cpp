@@ -1,4 +1,6 @@
 #include <bg/graph/details/nested.hpp>
+#include <bg/details/evaluation_context.hpp>
+#include <bg/graph/details/runtime_graph_evaluation.hpp>
 
 #include <bg/graph/compiled_graph.hpp>
 #include <bg/graph/details/compiled_graph_builder.hpp>
@@ -55,6 +57,7 @@ const auto nested_output_node = node<NestedOutput>();
 
 struct NestedNodeState {
     NestedGraph graph;
+    RuntimeGraphEvaluation evaluation;
 };
 
 class NestedNodeDefinition {
@@ -109,6 +112,12 @@ class NestedNodeDefinition {
     }
 
     static void evaluate(NodeInvocation<compiled_data_type, state_type> invocation) {
+        auto &state = invocation.state();
+        if (state.evaluation.paused()) {
+            resume(invocation);
+            return;
+        }
+
         const auto inputs = invocation.inputs();
         auto input = inputs.begin();
         const auto run_input = (*input).value();
@@ -117,7 +126,8 @@ class NestedNodeDefinition {
         ++input;
 
         if (!run) {
-            invocation.state().graph.stop(invocation.context());
+            state.graph.stop(invocation.context());
+            state.evaluation.reset();
             invocation.output().invalidate();
             return;
         }
@@ -131,27 +141,42 @@ class NestedNodeDefinition {
             values.push_back({value.valid() ? reference : nullptr, value.valid() ? value.last_updated() : MIN_DT});
         }
 
-        auto &graph = invocation.state().graph;
+        auto &graph = state.graph;
         if (!graph.running()) {
             graph.start(invocation.compiled_data(), invocation.context(), values);
         } else {
             graph.update_inputs(invocation.compiled_data(), values);
         }
-        graph.evaluate(invocation.context());
+        resume(invocation);
+    }
+
+    static void resume(NodeInvocation<compiled_data_type, state_type> invocation) {
+        auto &state = invocation.state();
+        if (const auto pending = state.graph.evaluate(invocation.context(), state.evaluation)) {
+            invocation.context().set_pending(*pending);
+            return;
+        }
+        state.evaluation.reset();
 
         auto output = invocation.output();
         output.visit(
-            [&](Out<REF<TS_T>> *reference) { reference->set_value(graph.output(invocation.compiled_data())); },
+            [&](Out<REF<TS_T>> *reference) {
+                reference->set_value(state.graph.output(invocation.compiled_data()));
+            },
             ddv::noop);
     }
 
     static void on_invalidation(NodeInvocation<compiled_data_type, state_type> invocation) {
-        invocation.state().graph.stop(invocation.context());
+        auto &state = invocation.state();
+        state.graph.stop(invocation.context());
+        state.evaluation.reset();
         invocation.output().invalidate();
     }
 
     static void stop(NodeInvocation<compiled_data_type, state_type> invocation) noexcept {
-        invocation.state().graph.stop(invocation.context());
+        auto &state = invocation.state();
+        state.graph.stop(invocation.context());
+        state.evaluation.reset();
     }
 
     static void destroy_state(NodeInvocation<compiled_data_type, state_type> invocation) noexcept {

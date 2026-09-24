@@ -121,40 +121,45 @@ auto invoke_switch(SelectOverload &&select_overload, Key key, const Cases &case_
 
     std::apply(
         [&](const auto &...item) {
-            const auto append = [&](const auto &entry) {
-                using Function = std::remove_cvref_t<decltype(entry.function)>;
-                const WiringTemplate *function{};
-                if constexpr (std::derived_from<Function, WiringTemplate>) {
-                    function = &entry.function;
-                } else {
-                    auto graph = bound_switch_graph_for_arguments<Function,
-                                                                  decltype(supplied_tuple)>(
-                        entry.function);
-                    auto owned = std::make_shared<decltype(graph)>(std::move(graph));
-                    function = owned.get();
-                    owned_graphs.push_back(std::move(owned));
-                }
+            if constexpr (sizeof...(item) == 0) {
+                return;
+            } else {
+                const auto append = [&](const auto &entry) {
+                    using Function = std::remove_cvref_t<decltype(entry.function)>;
+                    const WiringTemplate *function{};
+                    if constexpr (std::derived_from<Function, WiringTemplate>) {
+                        function = &entry.function;
+                    } else {
+                        auto graph = bound_switch_graph_for_arguments<Function,
+                                                                      decltype(supplied_tuple)>(
+                            entry.function);
+                        auto owned = std::make_shared<decltype(graph)>(std::move(graph));
+                        function = owned.get();
+                        owned_graphs.push_back(std::move(owned));
+                    }
 
-                auto prepared = PreparedSwitchCase{
-                    .default_case = false,
-                    .function = function,
-                    .preserve_argument_names = std::derived_from<Function, WiringTemplate>,
+                    auto prepared = PreparedSwitchCase{
+                        .keys = {},
+                        .default_case = false,
+                        .function = function,
+                        .preserve_argument_names = std::derived_from<Function, WiringTemplate>,
+                    };
+                    if constexpr (std::same_as<std::remove_cvref_t<decltype(entry.key)>,
+                                               default_switch_case_t>) {
+                        prepared.default_case = true;
+                    } else if constexpr (is_switch_key_tuple_v<decltype(entry.key)>) {
+                        std::apply(
+                            [&](const auto &...key) {
+                                (prepared.keys.emplace_back(key), ...);
+                            },
+                            entry.key);
+                    } else {
+                        prepared.keys.emplace_back(entry.key);
+                    }
+                    prepared_cases.push_back(std::move(prepared));
                 };
-                if constexpr (std::same_as<std::remove_cvref_t<decltype(entry.key)>,
-                                           default_switch_case_t>) {
-                    prepared.default_case = true;
-                } else if constexpr (is_switch_key_tuple_v<decltype(entry.key)>) {
-                    std::apply(
-                        [&](const auto &...key) {
-                            (prepared.keys.emplace_back(key), ...);
-                        },
-                        entry.key);
-                } else {
-                    prepared.keys.emplace_back(entry.key);
-                }
-                prepared_cases.push_back(std::move(prepared));
-            };
-            (append(item), ...);
+                (append(item), ...);
+            }
         },
         case_values.values());
 

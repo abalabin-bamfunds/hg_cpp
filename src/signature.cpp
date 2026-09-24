@@ -160,11 +160,104 @@ TypeMap Signature::match_arguments(std::span<const Type *const> arguments, const
 
     auto type_map = seed == nullptr ? TypeMap{} : seed->copy();
 
+    const auto mismatch = [&](std::size_t index, std::string message) -> void {
+        const auto &parameter = parameters_[index];
+        throw TypeResolutionError{TypeResolutionErrorCode::mismatch, parameter.name, std::move(message),
+                                  parameter.type, arguments[index]};
+    };
+
+    auto unresolved = std::vector<std::size_t>{};
+    unresolved.reserve(arguments.size());
     for (std::size_t i = 0; i < arguments.size(); ++i) {
         const auto &parameter = parameters_[i];
+        if (!arguments[i]->is_resolved()) {
+            unresolved.push_back(i);
+            continue;
+        }
         if (!parameter.type->match(*arguments[i], type_map)) {
-            throw TypeResolutionError{TypeResolutionErrorCode::mismatch, parameter.name,
-                                      "argument does not satisfy its generic type", parameter.type, arguments[i]};
+            mismatch(i, "argument does not satisfy its generic type");
+        }
+    }
+
+    const auto resolve_if_constrained = [](const Type &type, const TypeMap &map) -> const Type * {
+        try {
+            return &type.resolve(map);
+        } catch (const TypeResolutionError &error) {
+            if (error.code() == TypeResolutionErrorCode::unmapped_variable) {
+                return nullptr;
+            }
+            throw;
+        }
+    };
+
+    while (!unresolved.empty()) {
+        auto progress = false;
+        for (auto position = unresolved.begin(); position != unresolved.end();) {
+            const auto index = *position;
+            const auto &parameter = *parameters_[index].type;
+            const auto &argument = *arguments[index];
+            auto trial = type_map.overlay();
+
+            if (const auto *resolved_argument = resolve_if_constrained(argument, trial)) {
+                if (!parameter.match(*resolved_argument, trial)) {
+                    mismatch(index, "argument does not satisfy its generic type");
+                }
+            } else if (const auto *resolved_parameter = resolve_if_constrained(parameter, trial)) {
+                if (!argument.match(*resolved_parameter, trial)) {
+                    mismatch(index, "generic argument cannot satisfy the resolved parameter type");
+                }
+            } else {
+                const auto *parameter_series = type_cast<TimeSeriesType>(&parameter);
+                const auto *argument_series = type_cast<TimeSeriesType>(&argument);
+                if (parameter_series == nullptr || argument_series == nullptr) {
+                    ++position;
+                    continue;
+                }
+
+                const auto *parameter_structure = static_cast<const TimeSeriesType *>(nullptr);
+                try {
+                    parameter_structure =
+                        &parameter_series->with_guarantee(TimeSeriesGuarantee::ordinary);
+                } catch (const TypeResolutionError &error) {
+                    if (error.code() != TypeResolutionErrorCode::invalid_type_map) {
+                        throw;
+                    }
+                }
+
+                if (parameter_structure != nullptr && parameter_structure->is_resolved()) {
+                    if (!argument.match(*parameter_structure, trial)) {
+                        mismatch(index, "generic argument cannot satisfy the parameter structure");
+                    }
+                } else if (const auto *argument_structure = resolve_if_constrained(argument, trial)) {
+                    if (!parameter.match(*argument_structure, trial)) {
+                        mismatch(index, "argument structure does not satisfy the generic parameter");
+                    }
+                } else {
+                    ++position;
+                    continue;
+                }
+            }
+
+            if (const auto *resolved_argument = resolve_if_constrained(argument, trial)) {
+                if (!parameter.match(*resolved_argument, trial)) {
+                    mismatch(index, "generic argument does not satisfy the parameter type");
+                }
+            }
+
+            const auto *resolved_parameter = resolve_if_constrained(parameter, trial);
+            const auto *resolved_argument = resolve_if_constrained(argument, trial);
+            if (resolved_parameter == nullptr || resolved_argument == nullptr ||
+                !resolved_parameter->match(*resolved_argument, trial)) {
+                mismatch(index, "generic argument does not resolve to the parameter type");
+            }
+
+            type_map.apply(std::move(trial));
+            position = unresolved.erase(position);
+            progress = true;
+        }
+
+        if (!progress) {
+            mismatch(unresolved.front(), "argument and parameter leave their type variables unconstrained");
         }
     }
 
