@@ -33,21 +33,21 @@ does not compare names.
 ## Dependencies
 
 The key can be a scalar or a scalar-value time series. An invalid time series
-key clears that selection. A changed key replaces the previous selection.
+key clears that dependency. A changed key replaces the previous dependency.
 
-Requesting a missing key creates its branch. A branch remains present while its
-key is in the selected key set or another live branch selects it. A branch
-stops after both conditions become false. Several selections of one branch
-share its runtime graph and output.
+Depending on a missing key creates its branch. A branch remains present while
+its key is in the selected key set or another live branch depends on it. A
+branch stops after both conditions become false. Several dependencies on one
+branch share its runtime graph and output.
 
-Selections persist across outer cycles. A clean selected branch is not
-evaluated again. When a selected branch has work in the current cycle, mesh
-evaluates it before resuming the requesting branch. This ordering is iterative
-and each branch evaluates at most once in the outer cycle.
+Dependencies persist across outer cycles. A clean dependency branch is not
+evaluated again. When a dependency branch has work in the current cycle, mesh
+evaluates it before resuming the branch that depends on it. This ordering is
+iterative and each branch evaluates at most once in the outer cycle.
 
-A selection can occur inside any number of ordinary nested graphs, maps,
-switches, and meshes. Each runtime selection-node instance owns one dependency
-edge. Instances of one compiled selection node therefore select independently.
+A dependency can occur inside any number of ordinary nested graphs, maps,
+switches, and meshes. Each runtime dependency-node instance owns one dependency
+edge. Instances of one compiled dependency node therefore depend independently.
 
 A branch cannot select itself, directly or indirectly. Mesh reports the cycle
 as a runtime error.
@@ -57,6 +57,6 @@ as a runtime error.
 Mesh compiles the graph once and creates one runtime instance per live key.
 Immediate and timed scheduling follow the [nested graph rules](nested-graphs.md#evaluation).
 
-Stopping dependent branches releases their selections before their selected
-branches. Destruction removes subscribers before destroying the selected time
-series. This preserves reference lifetime across the stopping cycle.
+Stopping branches release their dependencies before the dependency branches
+stop. Destruction removes subscribers before destroying dependency outputs.
+This preserves reference lifetime across the stopping cycle.

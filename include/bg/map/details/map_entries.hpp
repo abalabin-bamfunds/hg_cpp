@@ -8,6 +8,7 @@
 #include <bg/util/hash_dictionary.hpp>
 #include <bg/util/index.hpp>
 
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -22,6 +23,8 @@ class EvaluationContext;
 
 namespace details {
 
+using branch_id_t = std::uint32_t;
+
 // Owns the inner runtime graph, lifecycle state, and scheduling state for every map entry.
 class MapEntries {
   public:
@@ -31,14 +34,14 @@ class MapEntries {
         NestedGraph inner_graph;
         EvaluationTime next_scheduled_time{MIN_DT};
         std::size_t schedule_heap_index{not_in_schedule_heap};
-        std::uint32_t entry_index{};
+        branch_id_t branch_id{};
         std::uint32_t presence_count : 30 {};
         std::uint32_t presence_change_queued : 1 {};
         std::uint32_t removal_queued : 1 {};
     };
 
     using Table = util::hash_dictionary<ScalarValue<>, Entry, ScalarHash, ScalarEqual>;
-    using size_type = Table::size_type;
+    static_assert(std::same_as<Table::size_type, branch_id_t>);
 
     explicit MapEntries(allocator memory);
     ~MapEntries();
@@ -58,16 +61,16 @@ class MapEntries {
         auto stored_key = ScalarValue<>{Scalar<>::from(key), memory_};
         auto [entry, inserted] = table_.try_emplace(std::move(stored_key), memory_.memory_resource());
         (void)inserted;
-        entry->entry_index = table_.find_position(key);
+        entry->branch_id = table_.find_position(key);
         // Owner scheduling callbacks cannot allocate. Reserve the ready bit before the graph can invoke them.
-        ready_.grow(entry->entry_index + 1, memory_.memory_resource());
+        ready_.grow(entry->branch_id + 1, memory_.memory_resource());
         return *entry;
     }
 
     template <typename Key> Entry *find(const Key &key) { return table_.find(key); }
     template <typename Key> const Entry *find(const Key &key) const { return table_.find(key); }
 
-    Scalar<> key(const Entry &entry) const noexcept { return table_.key_at(entry.entry_index).view(); }
+    Scalar<> key(const Entry &entry) const noexcept { return table_.key_at(entry.branch_id).view(); }
 
     void start(Entry &entry, const CompiledNestedGraph &compiled, EvaluationContext &context,
                std::span<const NestedGraphInput> inputs, std::span<const NestedGraphConstantInput> constants = {});
@@ -79,12 +82,12 @@ class MapEntries {
     void destroy_all(EvaluationContext &context) noexcept;
 
     void mark_ready(Entry &entry) noexcept;
-    void mark_ready(size_type entry_index) noexcept;
+    void mark_ready(branch_id_t branch_id) noexcept;
     util::index<> &ready() noexcept { return ready_; }
 
     void activate_due(EvaluationContext &context);
     void clear_schedule_tracking(EvaluationContext &context) noexcept;
-    void timed_schedule_changed(RuntimeGraphOwnerContext &context, size_type entry_index,
+    void timed_schedule_changed(RuntimeGraphOwnerContext &context, branch_id_t branch_id,
                                 std::optional<EvaluationTime> time);
 
   private:
@@ -109,7 +112,7 @@ class MapEntries {
     Table table_;
     std::pmr::vector<Entry *> schedule_heap_;
     util::index<> ready_;
-    std::pmr::vector<size_type> entries_pending_removal_;
+    std::pmr::vector<branch_id_t> branches_pending_removal_;
     ScheduleHandle outer_schedule_{};
     std::optional<EvaluationTime> outer_scheduled_time_;
     bool removal_callback_pending_{};

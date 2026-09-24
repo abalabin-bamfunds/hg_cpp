@@ -111,12 +111,9 @@ class RuntimeGraph {
     void apply_invalidation(const CompiledNode &node, std::size_t node_index);
     void stop_nodes(std::size_t node_count) noexcept;
     bool inputs_are_valid(const CompiledNode &node) const noexcept;
-    void start(EvaluationTime evaluation_time, details::EvaluationScratch &scratch);
-    void start(EvaluationContext &parent);
-    void evaluate(EvaluationTime evaluation_time, details::EvaluationScratch &scratch);
-    bool continue_evaluation(EvaluationContext &parent);
-    void stop(details::EvaluationScratch &scratch) noexcept;
-    void stop(EvaluationContext &parent) noexcept;
+    void start(EvaluationContext &context);
+    bool evaluate(EvaluationContext &context);
+    void stop(EvaluationContext &context) noexcept;
 
     const CompiledGraph *compiled_graph_;
     bg::allocator allocator_;

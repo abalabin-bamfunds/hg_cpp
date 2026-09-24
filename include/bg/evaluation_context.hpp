@@ -11,6 +11,7 @@ namespace bg {
 
 class RuntimeGraph;
 class GlobalState;
+class SimulationEvaluationEngine;
 namespace details {
 class EvaluationScratch;
 } // namespace details
@@ -41,6 +42,7 @@ class EvaluationContext {
 
   private:
     friend RuntimeGraph;
+    friend SimulationEvaluationEngine;
 
     EvaluationContext(EvaluationTime evaluation_time, RuntimeGraph &runtime_graph, std::size_t node_index,
                       const details::EvaluationContextSection *sections = nullptr) noexcept;

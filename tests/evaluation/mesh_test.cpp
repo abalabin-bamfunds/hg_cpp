@@ -1,5 +1,5 @@
-#include <bg/mesh.hpp>
 #include <bg/map.hpp>
+#include <bg/mesh.hpp>
 #include <bg/node.hpp>
 #include <bg/operators.hpp>
 #include <bg/switch.hpp>
@@ -25,30 +25,23 @@ const auto mesh_values = node([](In<TS<int>> value, Out<TSD<std::int64_t, TS<int
     values[1].set(*value);
 });
 
-const auto mesh_dependencies = node([](In<TS<int>>, Out<TSD<std::int64_t, TS<std::int64_t>>> dependencies) {
-    dependencies[2].set(1);
-});
+const auto mesh_dependencies =
+    node([](In<TS<int>>, Out<TSD<std::int64_t, TS<std::int64_t>>> dependencies) { dependencies[2].set(1); });
 
-const auto add_mesh_dependency = node([](In<TS<int>> value,
-                                         In<TS<int>, optional> dependency,
-                                         Out<TS<int>> output) {
+const auto add_mesh_dependency = node([](In<TS<int>> value, In<TS<int>, optional> dependency, Out<TS<int>> output) {
     output.set(*value + (dependency.valid() ? *dependency : 0));
 });
 
-const auto observe_mesh_dependency = node(
-    [](In<TS<std::int64_t, TimeSeriesGuarantee::const_>, optional>) {});
+const auto observe_mesh_dependency = node([](In<TS<std::int64_t, TimeSeriesGuarantee::const_>, optional>) {});
 
+const auto selectable_mesh_values = node([](In<TS<int>> value, Out<TSD<std::int64_t, TS<int>>> output) {
+    output[1].set(*value);
+    output[2].set(*value * 10);
+    output[3].set(*value * 100);
+});
 
-const auto selectable_mesh_values = node(
-    [](In<TS<int>> value, Out<TSD<std::int64_t, TS<int>>> output) {
-        output[1].set(*value);
-        output[2].set(*value * 10);
-        output[3].set(*value * 100);
-    });
-
-const auto removable_selected_mesh_values = node(
-    [](In<TS<int>> value, In<TS<bool>> selected_present,
-       Out<TSD<std::int64_t, TS<int>>> output) {
+const auto removable_selected_mesh_values =
+    node([](In<TS<int>> value, In<TS<bool>> selected_present, Out<TSD<std::int64_t, TS<int>>> output) {
         if (*selected_present) {
             output[1].set(*value);
         } else {
@@ -58,20 +51,15 @@ const auto removable_selected_mesh_values = node(
     });
 
 const auto selectable_mesh_dependencies = node(
-    [](In<TS<std::int64_t>> selected,
-       Out<TSD<std::int64_t, TS<std::int64_t>>> output) {
-        output[2].set(*selected);
-    });
+    [](In<TS<std::int64_t>> selected, Out<TSD<std::int64_t, TS<std::int64_t>>> output) { output[2].set(*selected); });
 
-const auto ordered_mesh_values = node(
-    [](In<TS<std::int64_t>>, Out<TSD<std::int64_t, TS<int>>> output) {
-        output[2].set(20);
-        output[1].set(10);
-    });
+const auto ordered_mesh_values = node([](In<TS<std::int64_t>>, Out<TSD<std::int64_t, TS<int>>> output) {
+    output[2].set(20);
+    output[1].set(10);
+});
 
-const auto optional_mesh_values = node(
-    [](In<TS<int>> value, In<TS<bool>> present,
-       Out<TSD<std::int64_t, TS<int>>> output) {
+const auto optional_mesh_values =
+    node([](In<TS<int>> value, In<TS<bool>> present, Out<TSD<std::int64_t, TS<int>>> output) {
         if (*present) {
             output[2].set(*value);
         } else {
@@ -79,24 +67,22 @@ const auto optional_mesh_values = node(
         }
     });
 
-const auto optional_mesh_dependencies = node(
-    [](In<TS<bool>> present, Out<TSD<std::int64_t, TS<std::int64_t>>> output) {
-        if (*present) {
-            output[2].set(1);
-        } else {
-            output.erase(2);
-        }
-    });
+const auto optional_mesh_dependencies = node([](In<TS<bool>> present, Out<TSD<std::int64_t, TS<std::int64_t>>> output) {
+    if (*present) {
+        output[2].set(1);
+    } else {
+        output.erase(2);
+    }
+});
 
-const auto dependency_requesters = node(
-    [](In<TS<bool>>, Out<TSD<std::int64_t, TS<int>>> output) {
-        output[2].set(20);
-        output[3].set(30);
-    });
+const auto dependent_branches = node([](In<TS<bool>>, Out<TSD<std::int64_t, TS<int>>> output) {
+    output[2].set(20);
+    output[3].set(30);
+});
 
-const auto transferred_mesh_dependency = node(
-    [](In<TS<bool>> first_requester, Out<TSD<std::int64_t, TS<std::int64_t>>> output) {
-        if (*first_requester) {
+const auto transferred_mesh_dependency =
+    node([](In<TS<bool>> first_dependent, Out<TSD<std::int64_t, TS<std::int64_t>>> output) {
+        if (*first_dependent) {
             output[2].set(1);
             output.erase(3);
         } else {
@@ -105,34 +91,29 @@ const auto transferred_mesh_dependency = node(
         }
     });
 
-const auto cyclic_mesh_dependencies = node(
-    [](In<TS<bool>>, bool self_cycle,
-       Out<TSD<std::int64_t, TS<std::int64_t>>> output) {
+const auto cyclic_mesh_dependencies =
+    node([](In<TS<bool>>, bool self_cycle, Out<TSD<std::int64_t, TS<std::int64_t>>> output) {
         output[1].set(self_cycle ? 1 : 2);
         if (!self_cycle) {
             output[2].set(1);
         }
     });
 
-const auto diamond_first_dependencies = node(
-    [](In<TS<bool>>, Out<TSD<std::int64_t, TS<std::int64_t>>> output) {
-        output[1].set(2);
-        output[2].set(4);
-        output[3].set(4);
-    });
+const auto diamond_first_dependencies = node([](In<TS<bool>>, Out<TSD<std::int64_t, TS<std::int64_t>>> output) {
+    output[1].set(2);
+    output[2].set(4);
+    output[3].set(4);
+});
 
-const auto diamond_second_dependencies = node(
-    [](In<TS<bool>>, Out<TSD<std::int64_t, TS<std::int64_t>>> output) {
-        output[1].set(3);
-    });
+const auto diamond_second_dependencies =
+    node([](In<TS<bool>>, Out<TSD<std::int64_t, TS<std::int64_t>>> output) { output[1].set(3); });
 
-const auto diamond_values = node(
-    [](In<TS<bool>>, Out<TSD<std::int64_t, TS<int>>> output) {
-        output[1].set(0);
-        output[2].set(0);
-        output[3].set(0);
-        output[4].set(0);
-    });
+const auto diamond_values = node([](In<TS<bool>>, Out<TSD<std::int64_t, TS<int>>> output) {
+    output[1].set(0);
+    output[2].set(0);
+    output[3].set(0);
+    output[4].set(0);
+});
 
 struct CountMeshBranchEvaluation {
     In<TS<std::int64_t, TimeSeriesGuarantee::const_>> key;
@@ -145,8 +126,7 @@ struct CountMeshBranchEvaluation {
 
     void evaluate() const {
         ++counts.at(static_cast<std::size_t>(*key));
-        output.set(static_cast<int>(*key) + (first.valid() ? *first : 0) +
-                   (second.valid() ? *second : 0));
+        output.set(static_cast<int>(*key) + (first.valid() ? *first : 0) + (second.valid() ? *second : 0));
     }
 };
 
@@ -184,24 +164,20 @@ struct CountSingleMeshDependency {
 
 const auto count_single_mesh_dependency = node<CountSingleMeshDependency>();
 
-const auto values_at_key_five = node(
-    [](In<TS<int>> value, Out<TSD<std::int64_t, TS<int>>> output) {
-        output[5].set(*value);
-    });
+const auto values_at_key_five =
+    node([](In<TS<int>> value, Out<TSD<std::int64_t, TS<int>>> output) { output[5].set(*value); });
 
-const auto optional_inner_mesh_values = node(
-    [](In<TS<bool>> present, Out<TSD<std::int64_t, TS<int>>> output) {
-        if (*present) {
-            output[1].set(0);
-            output[2].set(0);
-        } else {
-            output.erase(1);
-            output.erase(2);
-        }
-    });
+const auto optional_inner_mesh_values = node([](In<TS<bool>> present, Out<TSD<std::int64_t, TS<int>>> output) {
+    if (*present) {
+        output[1].set(0);
+        output[2].set(0);
+    } else {
+        output.erase(1);
+        output.erase(2);
+    }
+});
 
-const auto increment_mesh_value = node(
-    [](In<TS<int>> value, Out<TS<int>> output) { output.set(*value + 1); });
+const auto increment_mesh_value = node([](In<TS<int>> value, Out<TS<int>> output) { output.set(*value + 1); });
 
 struct DelayedMeshValue {
     static constexpr bool uses_timed_scheduling = true;
@@ -265,15 +241,13 @@ struct MeshSink {
 
 const auto mesh_sink = node<MeshSink>();
 
-TEST_CASE("mesh evaluates a requested branch before its requester",
+TEST_CASE("mesh evaluates a dependency branch before the branch that depends on it",
           "[feature:mesh][feature:nested-graph][feature:operator][series:tsd][shape:nested]"
           "[binding:reference-to-value][transition:addition]") {
     const auto tested = [](wp<TS<int>> value) {
-        const auto result = mesh(
-            [](auto item, auto dependency_key) {
-                return add_mesh_dependency(item, mesh()[dependency_key]);
-            },
-            mesh_values(value), mesh_dependencies(value));
+        const auto result =
+            mesh([](auto item, auto dependency_key) { return add_mesh_dependency(item, mesh()[dependency_key]); },
+                 mesh_values(value), mesh_dependencies(value));
         return result[std::int64_t{2}].as<TS<int>>();
     };
 
@@ -282,7 +256,7 @@ TEST_CASE("mesh evaluates a requested branch before its requester",
     CHECK(actual.equals<int>({11, 33}));
 }
 
-TEST_CASE("mesh resumes the requesting node after its dependency completes",
+TEST_CASE("mesh resumes a dependency node after its dependency completes",
           "[feature:mesh][feature:nested-graph][feature:operator][series:tsd][shape:nested]"
           "[transition:addition]") {
     RecordMeshDependencyKey::events.clear();
@@ -293,13 +267,11 @@ TEST_CASE("mesh resumes the requesting node after its dependency completes",
                 const auto recorded_key = record_mesh_dependency_key(key, dependency_key);
                 return record_mesh_completion(key, value, mesh()[recorded_key]);
             },
-            ordered_mesh_values(selected), selectable_mesh_dependencies(selected),
-            "__key_arg__"_n = 0);
+            ordered_mesh_values(selected), selectable_mesh_dependencies(selected), "__key_arg__"_n = 0);
         return result[std::int64_t{2}].as<TS<std::int64_t>>();
     };
 
-    const auto actual = testing::test_graph(
-        tested, std::array<std::int64_t, 1>{1});
+    const auto actual = testing::test_graph(tested, std::array<std::int64_t, 1>{1});
 
     CHECK(actual.equals<std::int64_t>({3}));
     CHECK(RecordMeshDependencyKey::events == std::vector{21, 12, 22});
@@ -315,12 +287,10 @@ TEST_CASE("mesh creates a branch for a requested missing key",
                 return key;
             },
             selectable_mesh_dependencies(selected), "__key_arg__"_n = 0);
-        return result[std::int64_t{1}]
-            .as<TS<std::int64_t, TimeSeriesGuarantee::const_>>();
+        return result[std::int64_t{1}].as<TS<std::int64_t, TimeSeriesGuarantee::const_>>();
     };
 
-    const auto actual = testing::test_graph(
-        tested, std::array<std::int64_t, 1>{1});
+    const auto actual = testing::test_graph(tested, std::array<std::int64_t, 1>{1});
 
     CHECK(actual.equals<std::int64_t>({1}));
 }
@@ -329,39 +299,33 @@ TEST_CASE("mesh follows a time-series dependency key",
           "[feature:mesh][feature:nested-graph][feature:operator][series:tsd][series:value]"
           "[shape:nested][transition:update]") {
     const auto tested = [](wp<TS<int>> value, wp<TS<std::int64_t>> selected) {
-        const auto result = mesh(
-            [](auto item, auto dependency_key) {
-                return add_mesh_dependency(item, mesh()[dependency_key]);
-            },
-            selectable_mesh_values(value), selectable_mesh_dependencies(selected));
+        const auto result =
+            mesh([](auto item, auto dependency_key) { return add_mesh_dependency(item, mesh()[dependency_key]); },
+                 selectable_mesh_values(value), selectable_mesh_dependencies(selected));
         return result[std::int64_t{2}].as<TS<int>>();
     };
 
-    const auto actual = testing::test_graph(
-        tested, std::array{1, 2}, std::array<std::int64_t, 2>{1, 3});
+    const auto actual = testing::test_graph(tested, std::array{1, 2}, std::array<std::int64_t, 2>{1, 3});
 
     CHECK(actual.equals<int>({11, 220}));
 }
 
-TEST_CASE("mesh invalidates a selection when the selected branch output becomes invalid",
+TEST_CASE("mesh invalidates a dependency when the dependency branch output becomes invalid",
           "[feature:mesh][feature:nested-graph][feature:operator][series:tsd][shape:nested]"
           "[transition:invalidation]") {
     const auto tested = [](wp<TS<int>> value, wp<TS<bool>> selected_present) {
-        const auto result = mesh(
-            [](auto item, auto dependency_key) {
-                return add_mesh_dependency(item, mesh()[dependency_key]);
-            },
-            removable_selected_mesh_values(value, selected_present), mesh_dependencies(value));
+        const auto result =
+            mesh([](auto item, auto dependency_key) { return add_mesh_dependency(item, mesh()[dependency_key]); },
+                 removable_selected_mesh_values(value, selected_present), mesh_dependencies(value));
         return result[std::int64_t{2}].as<TS<int>>();
     };
 
-    const auto actual = testing::test_graph(
-        tested, std::array{1, 2}, std::array{true, false});
+    const auto actual = testing::test_graph(tested, std::array{1, 2}, std::array{true, false});
 
     CHECK(actual.equals<int>({11, 20}));
 }
 
-TEST_CASE("mesh retains a dependency-only branch until its last requester is removed",
+TEST_CASE("mesh retains a dependency-only branch until its last dependent is removed",
           "[feature:mesh][feature:nested-graph][feature:operator][series:tsd][shape:nested]"
           "[transition:addition][transition:removal]") {
     const auto tested = [](wp<TS<int>> value, wp<TS<bool>> present) {
@@ -370,19 +334,16 @@ TEST_CASE("mesh retains a dependency-only branch until its last requester is rem
                 observe_mesh_dependency(mesh()[dependency_key]);
                 return key;
             },
-            optional_mesh_values(value, present), optional_mesh_dependencies(present),
-            "__key_arg__"_n = 0);
-        return result[std::int64_t{1}]
-            .as<TS<std::int64_t, TimeSeriesGuarantee::const_>>();
+            optional_mesh_values(value, present), optional_mesh_dependencies(present), "__key_arg__"_n = 0);
+        return result[std::int64_t{1}].as<TS<std::int64_t, TimeSeriesGuarantee::const_>>();
     };
 
-    const auto actual = testing::test_graph(
-        tested, std::array{7, 8, 9}, std::array{true, false, true});
+    const auto actual = testing::test_graph(tested, std::array{7, 8, 9}, std::array{true, false, true});
 
     CHECK(actual.equals<std::int64_t>({1, std::nullopt, 1}));
 }
 
-TEST_CASE("mesh destroys removed requesters and their selected branches",
+TEST_CASE("mesh destroys removed dependent branches and their dependency branches",
           "[feature:mesh][feature:nested-graph][feature:operator][series:tsd][shape:nested]"
           "[transition:removal][transition:lifecycle]") {
     const auto tested = [](wp<TS<int>> value, wp<TS<bool>> present) {
@@ -391,19 +352,16 @@ TEST_CASE("mesh destroys removed requesters and their selected branches",
                 observe_mesh_dependency(mesh()[dependency_key]);
                 return key;
             },
-            optional_mesh_values(value, present), optional_mesh_dependencies(present),
-            "__key_arg__"_n = 0);
-        return result[std::int64_t{1}]
-            .as<TS<std::int64_t, TimeSeriesGuarantee::const_>>();
+            optional_mesh_values(value, present), optional_mesh_dependencies(present), "__key_arg__"_n = 0);
+        return result[std::int64_t{1}].as<TS<std::int64_t, TimeSeriesGuarantee::const_>>();
     };
 
-    const auto actual = testing::test_graph(
-        tested, std::array{7, 8, 9}, std::array{true, false, false});
+    const auto actual = testing::test_graph(tested, std::array{7, 8, 9}, std::array{true, false, false});
 
     CHECK(actual.equals<std::int64_t>({1, std::nullopt, std::nullopt}));
 }
 
-TEST_CASE("mesh destroys a removed selection while its requester remains",
+TEST_CASE("mesh destroys a removed dependency while its dependent remains",
           "[feature:mesh][feature:nested-graph][feature:operator][series:tsd][shape:nested]"
           "[transition:invalidation][transition:lifecycle]") {
     const auto tested = [](wp<TS<int>> value, wp<TS<bool>> selected) {
@@ -412,35 +370,30 @@ TEST_CASE("mesh destroys a removed selection while its requester remains",
                 observe_mesh_dependency(mesh()[dependency_key]);
                 return key;
             },
-            optional_mesh_values(value, operators::const_(true)),
-            optional_mesh_dependencies(selected), "__key_arg__"_n = 0);
-        return result[std::int64_t{2}]
-            .as<TS<std::int64_t, TimeSeriesGuarantee::const_>>();
+            optional_mesh_values(value, operators::const_(true)), optional_mesh_dependencies(selected),
+            "__key_arg__"_n = 0);
+        return result[std::int64_t{2}].as<TS<std::int64_t, TimeSeriesGuarantee::const_>>();
     };
 
-    const auto actual = testing::test_graph(
-        tested, std::array{7, 8, 9}, std::array{true, false, false});
+    const auto actual = testing::test_graph(tested, std::array{7, 8, 9}, std::array{true, false, false});
 
     CHECK(actual.equals<std::int64_t>({2, std::nullopt, std::nullopt}));
 }
 
-TEST_CASE("mesh transfers a dependency after its previous requester releases it",
+TEST_CASE("mesh transfers a dependency after its previous dependent releases it",
           "[feature:mesh][feature:nested-graph][feature:operator][series:tsd][shape:nested]"
           "[transition:invalidation][transition:revalidation][transition:lifecycle]") {
-    const auto tested = [](wp<TS<bool>> first_requester) {
+    const auto tested = [](wp<TS<bool>> first_dependent) {
         const auto result = mesh(
             [](auto key, auto, auto dependency_key) {
                 observe_mesh_dependency(mesh()[dependency_key]);
                 return key;
             },
-            dependency_requesters(first_requester),
-            transferred_mesh_dependency(first_requester), "__key_arg__"_n = 0);
-        return result[std::int64_t{3}]
-            .as<TS<std::int64_t, TimeSeriesGuarantee::const_>>();
+            dependent_branches(first_dependent), transferred_mesh_dependency(first_dependent), "__key_arg__"_n = 0);
+        return result[std::int64_t{3}].as<TS<std::int64_t, TimeSeriesGuarantee::const_>>();
     };
 
-    const auto actual = testing::test_graph(
-        tested, std::array{true, false, false});
+    const auto actual = testing::test_graph(tested, std::array{true, false, false});
 
     CHECK(actual.equals<std::int64_t>({3, std::nullopt, std::nullopt}));
 }
@@ -449,11 +402,9 @@ TEST_CASE("mesh rejects self and multi-branch dependency cycles",
           "[feature:mesh][feature:nested-graph][feature:operator][series:tsd][shape:nested]") {
     const auto tested = [](bool self_cycle) {
         return [=](wp<TS<bool>> trigger) {
-            const auto result = mesh(
-                [](auto item, auto dependency_key) {
-                    return add_mesh_dependency(item, mesh()[dependency_key]);
-                },
-                optional_mesh_values(1, trigger), cyclic_mesh_dependencies(trigger, self_cycle));
+            const auto result =
+                mesh([](auto item, auto dependency_key) { return add_mesh_dependency(item, mesh()[dependency_key]); },
+                     optional_mesh_values(1, trigger), cyclic_mesh_dependencies(trigger, self_cycle));
             return result[std::int64_t{1}].as<TS<int>>();
         };
     };
@@ -470,11 +421,9 @@ TEST_CASE("mesh evaluates a shared dependency once",
     const auto tested = [](wp<TS<bool>> trigger) {
         const auto result = mesh(
             [](auto key, auto value, auto first_key, auto second_key) {
-                return count_mesh_branch_evaluation(
-                    key, value, mesh()[first_key], mesh()[second_key]);
+                return count_mesh_branch_evaluation(key, value, mesh()[first_key], mesh()[second_key]);
             },
-            diamond_values(trigger), diamond_first_dependencies(trigger),
-            diamond_second_dependencies(trigger),
+            diamond_values(trigger), diamond_first_dependencies(trigger), diamond_second_dependencies(trigger),
             "__key_arg__"_n = 0);
         return result[std::int64_t{1}].as<TS<int>>();
     };
@@ -491,11 +440,10 @@ TEST_CASE("mesh does not reevaluate a clean dependency branch",
     CountSingleMeshDependency::counts.fill(0);
 
     const auto tested = [](wp<TS<int>> value) {
-        const auto result = mesh(
-            [](auto key, auto item, auto dependency_key) {
-                return count_single_mesh_dependency(key, item, mesh()[dependency_key]);
-            },
-            stable_mesh_values(value), mesh_dependencies(value), "__key_arg__"_n = 0);
+        const auto result =
+            mesh([](auto key, auto item,
+                    auto dependency_key) { return count_single_mesh_dependency(key, item, mesh()[dependency_key]); },
+                 stable_mesh_values(value), mesh_dependencies(value), "__key_arg__"_n = 0);
         return result[std::int64_t{2}].as<TS<int>>();
     };
 
@@ -506,16 +454,13 @@ TEST_CASE("mesh does not reevaluate a clean dependency branch",
     CHECK(CountSingleMeshDependency::counts[2] == 2);
 }
 
-TEST_CASE("mesh runs inside map",
-          "[feature:mesh][feature:map][feature:nested-graph][feature:operator][series:tsd]"
-          "[shape:doubly-nested]") {
+TEST_CASE("mesh runs inside map", "[feature:mesh][feature:map][feature:nested-graph][feature:operator][series:tsd]"
+                                  "[shape:doubly-nested]") {
     const auto tested = [](wp<TS<int>> value) {
         const auto outer = map(
             [](auto item) {
                 const auto result = mesh(
-                    [](auto inner, auto dependency_key) {
-                        return add_mesh_dependency(inner, mesh()[dependency_key]);
-                    },
+                    [](auto inner, auto dependency_key) { return add_mesh_dependency(inner, mesh()[dependency_key]); },
                     mesh_values(item), mesh_dependencies(item));
                 return result[std::int64_t{2}].template as<TS<int>>();
             },
@@ -528,15 +473,13 @@ TEST_CASE("mesh runs inside map",
     CHECK(actual.equals<int>({11, 33}));
 }
 
-TEST_CASE("map runs inside mesh",
-          "[feature:mesh][feature:map][feature:nested-graph][feature:operator][series:tsd]"
-          "[shape:doubly-nested]") {
+TEST_CASE("map runs inside mesh", "[feature:mesh][feature:map][feature:nested-graph][feature:operator][series:tsd]"
+                                  "[shape:doubly-nested]") {
     const auto tested = [](wp<TS<int>> value) {
         const auto outer = mesh(
             [](auto item) {
-                const auto result = map(
-                    [](auto inner) { return increment_mesh_value(inner); },
-                    values_at_key_five(item));
+                const auto result =
+                    map([](auto inner) { return increment_mesh_value(inner); }, values_at_key_five(item));
                 return result[std::int64_t{5}].template as<TS<int>>();
             },
             values_at_key_five(value));
@@ -555,22 +498,22 @@ TEST_CASE("a named outer mesh is selected through an inner mesh and switch",
         const auto outer = mesh(
             "name"_n = "outer",
             [](auto key, auto item) {
-                return switch_(
-                           key,
-                           cases{
-                               case_(std::int64_t{1}, [](auto leaf) { return leaf; }),
-                               case_(std::int64_t{2}, [](auto selected) {
-                                   const auto inner = mesh(
-                                       "name"_n = "inner",
-                                       [](auto inner_value) {
-                                           return add_mesh_dependency(
-                                               inner_value, mesh("outer")[std::int64_t{1}]);
-                                       },
-                                       values_at_key_five(selected));
-                                   return inner[std::int64_t{5}].template as<TS<int>>();
-                               }),
-                           },
-                           item)
+                return switch_(key,
+                               cases{
+                                   case_(std::int64_t{1}, [](auto leaf) { return leaf; }),
+                                   case_(std::int64_t{2},
+                                         [](auto selected) {
+                                             const auto inner = mesh(
+                                                 "name"_n = "inner",
+                                                 [](auto inner_value) {
+                                                     return add_mesh_dependency(inner_value,
+                                                                                mesh("outer")[std::int64_t{1}]);
+                                                 },
+                                                 values_at_key_five(selected));
+                                             return inner[std::int64_t{5}].template as<TS<int>>();
+                                         }),
+                               },
+                               item)
                     .template as<TS<int>>();
             },
             mesh_values(value), "__key_arg__"_n = 0);
@@ -589,37 +532,33 @@ TEST_CASE("a named outer mesh is selected through an inner mesh and switch",
 TEST_CASE("runtime map instances keep independent outer mesh dependencies",
           "[feature:mesh][feature:map][feature:nested-graph][feature:operator]"
           "[series:tsd][shape:deeply-nested][shape:multiple]") {
-    const auto inner_values = node(
-        [](In<TS<int>> value, Out<TSD<std::int64_t, TS<int>>> output) {
-            output[10].set(*value);
-            output[20].set(*value * 2);
-        });
-    const auto inner_dependencies = node(
-        [](In<TS<int>>, Out<TSD<std::int64_t, TS<std::int64_t>>> output) {
-            output[10].set(1);
-            output[20].set(2);
-        });
+    const auto inner_values = node([](In<TS<int>> value, Out<TSD<std::int64_t, TS<int>>> output) {
+        output[10].set(*value);
+        output[20].set(*value * 2);
+    });
+    const auto inner_dependencies = node([](In<TS<int>>, Out<TSD<std::int64_t, TS<std::int64_t>>> output) {
+        output[10].set(1);
+        output[20].set(2);
+    });
 
     const auto tested = [&](wp<TS<int>> value) {
         const auto outer = mesh(
             "name"_n = "outer",
             [&](auto key, auto item) {
-                return switch_(
-                           key,
-                           cases{
-                               case_(std::tuple{std::int64_t{1}, std::int64_t{2}},
-                                     [](auto leaf) { return leaf; }),
-                               case_(std::int64_t{3}, [&](auto selected) {
-                                   const auto mapped = map(
-                                       [](auto inner, auto dependency) {
-                                           return add_mesh_dependency(
-                                               inner, mesh("outer")[dependency]);
-                                       },
-                                       inner_values(selected), inner_dependencies(selected));
-                                   return mapped[std::int64_t{20}].template as<TS<int>>();
-                               }),
-                           },
-                           item)
+                return switch_(key,
+                               cases{
+                                   case_(std::tuple{std::int64_t{1}, std::int64_t{2}}, [](auto leaf) { return leaf; }),
+                                   case_(std::int64_t{3},
+                                         [&](auto selected) {
+                                             const auto mapped = map(
+                                                 [](auto inner, auto dependency) {
+                                                     return add_mesh_dependency(inner, mesh("outer")[dependency]);
+                                                 },
+                                                 inner_values(selected), inner_dependencies(selected));
+                                             return mapped[std::int64_t{20}].template as<TS<int>>();
+                                         }),
+                               },
+                               item)
                     .template as<TS<int>>();
             },
             selectable_mesh_values(value), "__key_arg__"_n = 0);
@@ -631,38 +570,36 @@ TEST_CASE("runtime map instances keep independent outer mesh dependencies",
     CHECK(actual.equals<int>({210, 420}));
 }
 
-TEST_CASE("a map removes and recreates branches after pending mesh selections",
+TEST_CASE("a map removes and recreates branches after pending mesh dependencies",
           "[feature:mesh][feature:map][feature:nested-graph][feature:operator]"
           "[series:tsd][shape:deeply-nested][transition:removal][transition:addition]") {
     const auto tested = [](wp<TS<int>> value, wp<TS<bool>> present) {
         const auto outer = mesh(
             "name"_n = "outer",
             [&](auto key, auto item, auto branch_present) {
-                return switch_(
-                           key,
-                           cases{
-                               case_(std::tuple{std::int64_t{1}, std::int64_t{2}},
-                                     [](auto leaf, auto) { return leaf; }),
-                               case_(std::int64_t{3}, [](auto, auto selected_present) {
-                                   const auto selected = map(
-                                       [](auto selected_key, auto inner_value) {
-                                           return add_mesh_dependency(
-                                               inner_value, mesh("outer")[selected_key]);
-                                       },
-                                       optional_inner_mesh_values(selected_present),
-                                       "__key_arg__"_n = 0);
-                                   return selected[std::int64_t{2}].template as<TS<int>>();
-                               }),
-                           },
-                           item, branch_present)
+                return switch_(key,
+                               cases{
+                                   case_(std::tuple{std::int64_t{1}, std::int64_t{2}},
+                                         [](auto leaf, auto) { return leaf; }),
+                                   case_(std::int64_t{3},
+                                         [](auto, auto selected_present) {
+                                             const auto selected = map(
+                                                 [](auto selected_key, auto inner_value) {
+                                                     return add_mesh_dependency(inner_value,
+                                                                                mesh("outer")[selected_key]);
+                                                 },
+                                                 optional_inner_mesh_values(selected_present), "__key_arg__"_n = 0);
+                                             return selected[std::int64_t{2}].template as<TS<int>>();
+                                         }),
+                               },
+                               item, branch_present)
                     .template as<TS<int>>();
             },
             selectable_mesh_values(value), pass_through(present), "__key_arg__"_n = 0);
         return outer[std::int64_t{3}].as<TS<int>>();
     };
 
-    const auto actual = testing::test_graph(
-        tested, std::array{1, 2, 3}, std::array{true, false, true});
+    const auto actual = testing::test_graph(tested, std::array{1, 2, 3}, std::array{true, false, true});
 
     CHECK(actual.equals<int>({10, std::nullopt, 30}));
 }
@@ -694,12 +631,10 @@ TEST_CASE("mesh supports source and sink graphs",
     MeshSink::values.clear();
 
     const auto source_test = [](wp<TS<bool>> present) {
-        return mesh([](auto key) { return key; }, mesh_keys(present))
-            [std::int64_t{7}]
-                .as<TS<std::int64_t, TimeSeriesGuarantee::const_>>();
+        return mesh([](auto key) { return key; }, mesh_keys(present))[std::int64_t{7}]
+            .as<TS<std::int64_t, TimeSeriesGuarantee::const_>>();
     };
-    const auto source_result = testing::test_graph(
-        source_test, std::array{true, false, true});
+    const auto source_result = testing::test_graph(source_test, std::array{true, false, true});
 
     CHECK(source_result.equals<std::int64_t>({7, std::nullopt, 7}));
 

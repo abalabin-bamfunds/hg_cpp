@@ -4,22 +4,20 @@ Status: accepted
 
 ## Context
 
-A mesh branch can select another branch whose output is not current in the
-outer cycle. The selected branch must complete before the selecting node can
-publish its output. Runtime keys can change the dependency graph between
-cycles.
+A mesh branch can depend on another branch whose output is not current in the
+outer cycle. The dependency branch must complete before the dependency node can
+publish its output. Runtime keys can change the dependency graph between cycles.
 
 ## Decision
 
-The internal mesh selection node records a pending request in its evaluation
-context. Its runtime graph retains the current scheduler position. Nested graph
-owners propagate the request through child evaluation contexts until the
-selected mesh receives it. The mesh evaluates selected branches iteratively,
-then resumes the requesting graph at the same selection node in the same outer
-cycle.
+The internal mesh dependency node records its dependency with the mesh and
+returns pending when that branch must run. Its runtime graph retains the current
+scheduler position. Nested graph owners propagate pending to the mesh. The mesh
+evaluates dependency branches iteratively, then resumes each paused graph at
+the same dependency node in the same outer cycle.
 
-Each runtime selection-node instance owns one dependency edge. Mesh retains
-these edges across cycles, rejects cycles, and does not evaluate a selected
+Each runtime dependency-node instance owns one dependency edge. Mesh retains
+these edges across cycles, rejects cycles, and does not evaluate a dependency
 branch when its output is already current.
 
 ## Consequences

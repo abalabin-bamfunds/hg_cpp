@@ -37,15 +37,15 @@ inline constexpr unsigned char mesh_context_section_type{};
 
 struct MeshContextSection : EvaluationContextSection {
     MeshRuntimeState *mesh;
-    std::uint32_t branch;
+    branch_id_t branch_id;
 
-    MeshContextSection(MeshRuntimeState &mesh, std::uint32_t branch) noexcept
-        : EvaluationContextSection{nullptr, &mesh_context_section_type}, mesh{&mesh}, branch{branch} {}
+    MeshContextSection(MeshRuntimeState &mesh, branch_id_t branch_id) noexcept
+        : EvaluationContextSection{nullptr, &mesh_context_section_type}, mesh{&mesh}, branch_id{branch_id} {}
 
     static const MeshContextSection &find(const EvaluationContext &context, std::size_t depth) {
         const auto *section = context.find_section(&mesh_context_section_type, depth);
         if (section == nullptr) {
-            throw std::logic_error{"a mesh selection has no matching evaluation context"};
+            throw std::logic_error{"a mesh dependency has no matching evaluation context"};
         }
         return *static_cast<const MeshContextSection *>(section);
     }
@@ -116,7 +116,7 @@ class MeshDependencyDefinition {
     static void destroy_state(NodeInvocation<compiled_data_type, state_type> invocation) noexcept;
 
   private:
-    template <typename State> static Scalar<> dependency_key(NodeInvocation<compiled_data_type, State> invocation) {
+    static Scalar<> dependency_key(NodeInvocation<compiled_data_type, state_type> invocation) {
         const auto inputs = invocation.inputs();
         if (inputs.begin() != inputs.end()) {
             const auto input = (*inputs.begin()).value();
@@ -139,7 +139,11 @@ struct CompiledMeshGraph {
     CompiledMapGraph map;
 };
 
-struct MeshNodeState;
+struct MeshNodeState {
+    MeshRuntimeState *runtime{};
+};
+
+using MeshInvocation = NodeInvocation<CompiledMeshGraph, MeshNodeState>;
 
 class MeshRuntimeState {
     static constexpr auto no_dependency = std::numeric_limits<std::uint32_t>::max() >> 1;
@@ -148,41 +152,44 @@ class MeshRuntimeState {
         std::uint32_t first_dependency{no_dependency};
         std::uint32_t next_queued{no_dependency};
         union {
-            std::uint32_t first_incoming_dependency;
-            std::uint32_t destruction_dependencies;
+            std::uint32_t first_dependent;
+            std::uint32_t destruction_dependent_count;
         };
-        std::uint32_t incoming_dependencies : 31 {};
+        std::uint32_t dependent_count : 31 {};
         std::uint32_t stop_queued : 1 {};
 
-        BranchState() noexcept : first_incoming_dependency{no_dependency} {}
+        BranchState() noexcept : first_dependent{no_dependency} {}
     };
 
     static_assert(sizeof(BranchState) == 4 * sizeof(std::uint32_t));
 
     struct DependencyEdge {
-        std::uint32_t requester;
-        std::uint32_t selected : 31 {no_dependency};
+        union {
+            std::uint32_t branch_id{};
+            std::uint32_t free_next;
+        };
+        std::uint32_t dependency_id : 31 {no_dependency};
         std::uint32_t active : 1 {};
-        std::uint32_t previous{no_dependency};
-        std::uint32_t next{no_dependency};
-        std::uint32_t previous_incoming{no_dependency};
-        std::uint32_t next_incoming{no_dependency};
+        std::uint32_t dependency_previous{no_dependency};
+        std::uint32_t dependency_next{no_dependency};
+        std::uint32_t dependent_previous{no_dependency};
+        std::uint32_t dependent_next{no_dependency};
     };
 
     static_assert(sizeof(DependencyEdge) == 6 * sizeof(std::uint32_t));
 
-    struct DependencySelection {
+    struct DependencyResult {
         Reference reference;
         bool pending{};
     };
 
     struct EvaluationFrame {
-        std::uint32_t entry_index;
+        branch_id_t branch_id;
         std::uint32_t dependency_cursor{no_dependency};
     };
 
     struct CycleSearchFrame {
-        std::uint32_t entry_index;
+        branch_id_t branch_id;
         std::uint32_t dependency_cursor;
     };
 
@@ -190,7 +197,7 @@ class MeshRuntimeState {
     explicit MeshRuntimeState(allocator memory)
         : memory_{memory}, branches_{memory}, edges_{&memory.memory_resource()},
           evaluation_stack_{&memory.memory_resource()}, cycle_stack_{&memory.memory_resource()},
-          selections_to_release_{&memory.memory_resource()} {}
+          dependencies_to_unlink_{&memory.memory_resource()} {}
 
     MeshRuntimeState(const MeshRuntimeState &) = delete;
     MeshRuntimeState &operator=(const MeshRuntimeState &) = delete;
@@ -203,7 +210,7 @@ class MeshRuntimeState {
         cycle_visited_.release(memory_.memory_resource());
     }
 
-    template <typename Invocation> bool evaluate(const CompiledMeshGraph &compiled, Invocation invocation) {
+    bool evaluate(const CompiledMeshGraph &compiled, MeshInvocation invocation) {
         active_compiled_ = &compiled;
         auto clear_active = util::scope_exit{[&]() noexcept { active_compiled_ = nullptr; }};
 
@@ -221,15 +228,15 @@ class MeshRuntimeState {
         }
 
         branches_.update(compiled.map, invocation, [&](MapEntries::Entry &entry) {
-            auto &state = branch_state(entry.entry_index);
-            const auto should_run = entry.presence_count != 0 || state.incoming_dependencies != 0;
+            auto &state = branch_state(entry.branch_id);
+            const auto should_run = entry.presence_count != 0 || state.dependent_count != 0;
             if (should_run == entry.inner_graph.running()) {
                 return;
             }
             if (should_run) {
                 start(entry, compiled, invocation);
             } else {
-                queue_stop(entry.entry_index);
+                queue_stop(entry.branch_id);
             }
         });
 
@@ -241,64 +248,64 @@ class MeshRuntimeState {
         return true;
     }
 
-    template <typename Invocation> void stop(Invocation invocation) noexcept {
-        branches_.stop_all(invocation.context());
+    void stop(EvaluationContext &context) noexcept {
+        branches_.stop_all(context);
         evaluation_stack_.clear();
         active_evaluation_.clear();
-        selections_to_release_.clear();
+        dependencies_to_unlink_.clear();
         pending_dependency_ = no_dependency;
-        selection_release_pending_ = false;
+        dependency_unlink_pending_ = false;
         first_pending_stop_ = no_dependency;
-        for (const auto entry_index : branch_state_positions_) {
-            auto &state = branch_states_[entry_index];
+        for (const auto branch_id : branch_state_positions_) {
+            auto &state = branch_states_[branch_id];
             state.stop_queued = false;
             state.next_queued = no_dependency;
         }
     }
 
-    template <typename Invocation> void destroy(Invocation invocation) noexcept {
+    void destroy(EvaluationContext &context) noexcept {
         auto &entries = branches_.entries();
-        branches_.stop_all(invocation.context());
-        entries.clear_schedule_tracking(invocation.context());
+        branches_.stop_all(context);
+        entries.clear_schedule_tracking(context);
 
         for (const auto item : entries.table()) {
-            auto &state = existing_branch_state(item.value.entry_index);
-            state.destruction_dependencies = 0;
+            auto &state = existing_branch_state(item.value.branch_id);
+            state.destruction_dependent_count = 0;
             state.next_queued = no_dependency;
         }
         for (const auto &edge : edges_) {
-            if (edge.selected != no_dependency) {
-                ++existing_branch_state(edge.selected).destruction_dependencies;
+            if (edge.dependency_id != no_dependency) {
+                ++existing_branch_state(edge.dependency_id).destruction_dependent_count;
             }
         }
 
         auto first = no_dependency;
         for (const auto item : entries.table()) {
-            auto &state = existing_branch_state(item.value.entry_index);
-            if (state.destruction_dependencies == 0) {
+            auto &state = existing_branch_state(item.value.branch_id);
+            if (state.destruction_dependent_count == 0) {
                 state.next_queued = first;
-                first = item.value.entry_index;
+                first = item.value.branch_id;
             }
         }
 
         destroying_ = true;
         auto destroyed = std::size_t{};
         while (first != no_dependency) {
-            const auto entry_index = first;
-            auto &state = existing_branch_state(entry_index);
+            const auto branch_id = first;
+            auto &state = existing_branch_state(branch_id);
             first = state.next_queued;
-            entries.table().value_at(entry_index).inner_graph.stop_and_destroy(invocation.context());
+            entries.table().value_at(branch_id).inner_graph.stop_and_destroy(context);
 
             auto edge_index = state.first_dependency;
             while (edge_index != no_dependency) {
                 auto &edge = edges_[edge_index];
-                const auto next = edge.next;
-                if (edge.selected != no_dependency) {
-                    auto &selected = existing_branch_state(edge.selected);
-                    --selected.destruction_dependencies;
-                    if (selected.destruction_dependencies == 0) {
-                        selected.next_queued = first;
-                        first = edge.selected;
+                const auto next = edge.dependency_next;
+                if (edge.dependency_id != no_dependency) {
+                    auto &dependency = existing_branch_state(edge.dependency_id);
+                    --dependency.destruction_dependent_count;
+                    if (dependency.destruction_dependent_count == 0) {
+                        dependency.next_queued = first;
+                        first = edge.dependency_id;
                     }
                 }
                 discard_edge(edge_index);
@@ -310,146 +317,143 @@ class MeshRuntimeState {
         destroying_ = false;
         assert(destroyed == entries.table().size());
 
-        selections_to_release_.clear();
-        selection_release_pending_ = false;
+        dependencies_to_unlink_.clear();
+        dependency_unlink_pending_ = false;
 
-        auto memory = invocation.context().runtime_graph().allocation();
+        auto memory = context.runtime_graph().allocation();
         memory.delete_object(this);
     }
 
   private:
     using Entry = MapEntries::Entry;
-    using size_type = MapEntries::size_type;
-
-    BranchState &branch_state(size_type entry_index) {
-        if (auto *state = branch_states_.get(entry_index, branch_state_positions_)) {
+    BranchState &branch_state(branch_id_t branch_id) {
+        if (auto *state = branch_states_.get(branch_id, branch_state_positions_)) {
             return *state;
         }
 
-        branch_state_positions_.set(entry_index, memory_.memory_resource());
-        auto reset_position = util::scope_exit{[&]() noexcept { branch_state_positions_.reset(entry_index); }};
-        auto &result = branch_states_.emplace_at(entry_index, memory_.memory_resource());
+        branch_state_positions_.set(branch_id, memory_.memory_resource());
+        auto reset_position = util::scope_exit{[&]() noexcept { branch_state_positions_.reset(branch_id); }};
+        auto &result = branch_states_.emplace_at(branch_id, memory_.memory_resource());
         reset_position.release();
         return result;
     }
 
-    BranchState &existing_branch_state(size_type entry_index) noexcept {
-        auto *state = branch_states_.get(entry_index, branch_state_positions_);
+    BranchState &existing_branch_state(branch_id_t branch_id) noexcept {
+        auto *state = branch_states_.get(branch_id, branch_state_positions_);
         assert(state != nullptr);
         return *state;
     }
 
-    template <typename Invocation> void start(Entry &entry, const CompiledMeshGraph &compiled, Invocation invocation) {
+    void start(Entry &entry, const CompiledMeshGraph &compiled, MeshInvocation invocation) {
         const auto owner = RuntimeGraphOwner{
             .receiver = this,
-            .token = entry.entry_index,
+            .token = entry.branch_id,
             .callbacks = &owner_callbacks,
         };
-        auto section = MeshContextSection{*this, entry.entry_index};
+        auto section = MeshContextSection{*this, entry.branch_id};
         auto branch_context = invocation.context().child(section);
         branches_.start(entry, compiled.map, invocation, owner, branch_context);
     }
 
-    void queue_stop(size_type entry_index) {
-        auto &state = branch_state(entry_index);
+    void queue_stop(branch_id_t branch_id) {
+        auto &state = branch_state(branch_id);
         if (state.stop_queued) {
             return;
         }
         state.stop_queued = true;
         state.next_queued = first_pending_stop_;
-        first_pending_stop_ = entry_index;
+        first_pending_stop_ = branch_id;
     }
 
-    void release_dependency(size_type selected_index) {
-        auto &selected = branch_state(selected_index);
-        if (selected.incoming_dependencies == 0) {
+    void release_dependency(branch_id_t dependency_id) {
+        auto &dependency = branch_state(dependency_id);
+        if (dependency.dependent_count == 0) {
             throw std::logic_error{"mesh dependency count underflow"};
         }
 
-        --selected.incoming_dependencies;
-        const auto &entry = branches_.entries().table().value_at(selected_index);
-        if (selected.incoming_dependencies == 0 && entry.presence_count == 0) {
-            queue_stop(selected_index);
+        --dependency.dependent_count;
+        const auto &entry = branches_.entries().table().value_at(dependency_id);
+        if (dependency.dependent_count == 0 && entry.presence_count == 0) {
+            queue_stop(dependency_id);
         }
     }
 
-    void queue_selection_release(size_type entry_index, EvaluationContext &context) {
-        selections_to_release_.push_back(entry_index);
-        if (selection_release_pending_) {
+    void queue_dependency_unlink(branch_id_t branch_id, EvaluationContext &context) {
+        dependencies_to_unlink_.push_back(branch_id);
+        if (dependency_unlink_pending_) {
             return;
         }
 
-        context.add_cycle_callback(this, release_stopped_selections_callback);
-        selection_release_pending_ = true;
+        context.add_cycle_callback(this, unlink_stopped_dependencies_callback);
+        dependency_unlink_pending_ = true;
     }
 
-    static void release_stopped_selections_callback(void *receiver) noexcept {
-        static_cast<MeshRuntimeState *>(receiver)->release_stopped_selections();
+    static void unlink_stopped_dependencies_callback(void *receiver) noexcept {
+        static_cast<MeshRuntimeState *>(receiver)->unlink_stopped_dependencies();
     }
 
-    void release_stopped_selections() noexcept {
-        selection_release_pending_ = false;
-        for (const auto entry_index : selections_to_release_) {
-            auto edge_index = existing_branch_state(entry_index).first_incoming_dependency;
+    void unlink_stopped_dependencies() noexcept {
+        dependency_unlink_pending_ = false;
+        for (const auto branch_id : dependencies_to_unlink_) {
+            auto edge_index = existing_branch_state(branch_id).first_dependent;
             while (edge_index != no_dependency) {
-                const auto next = edges_[edge_index].next_incoming;
+                const auto next = edges_[edge_index].dependent_next;
                 if (!edges_[edge_index].active) {
-                    unlink_selection(edge_index);
+                    unlink_dependency(edge_index);
                 }
                 edge_index = next;
             }
         }
-        selections_to_release_.clear();
+        dependencies_to_unlink_.clear();
     }
 
-    template <typename Invocation> void process_stops(const CompiledMeshGraph &compiled, Invocation invocation) {
-        auto stops = std::pmr::vector<size_type>{&memory_.memory_resource()};
+    void process_stops(const CompiledMeshGraph &compiled, MeshInvocation invocation) {
+        auto stops = std::pmr::vector<branch_id_t>{&memory_.memory_resource()};
         while (first_pending_stop_ != no_dependency) {
-            const auto entry_index = first_pending_stop_;
-            auto &state = branch_state(entry_index);
+            const auto branch_id = first_pending_stop_;
+            auto &state = branch_state(branch_id);
             first_pending_stop_ = std::exchange(state.next_queued, no_dependency);
             state.stop_queued = false;
 
-            auto &entry = branches_.entries().table().value_at(entry_index);
-            if (entry.presence_count != 0 || state.incoming_dependencies != 0 || !entry.inner_graph.running()) {
+            auto &entry = branches_.entries().table().value_at(branch_id);
+            if (entry.presence_count != 0 || state.dependent_count != 0 || !entry.inner_graph.running()) {
                 continue;
             }
 
             for (auto edge_index = state.first_dependency; edge_index != no_dependency;) {
                 auto &edge = edges_[edge_index];
-                edge_index = edge.next;
+                edge_index = edge.dependency_next;
                 if (!edge.active) {
                     continue;
                 }
                 edge.active = false;
-                release_dependency(edge.selected);
+                release_dependency(edge.dependency_id);
             }
 
-            stops.push_back(entry_index);
+            stops.push_back(branch_id);
         }
         for (auto position = stops.size(); position != 0; --position) {
             auto &entry = branches_.entries().table().value_at(stops[position - 1]);
             branches_.stop(entry, invocation.context());
-            queue_selection_release(entry.entry_index, invocation.context());
+            queue_dependency_unlink(entry.branch_id, invocation.context());
             erase_output(compiled, invocation, entry);
         }
     }
 
-    template <typename Invocation>
-    bool evaluate_ready(const CompiledMeshGraph &compiled, Invocation invocation) {
+    bool evaluate_ready(const CompiledMeshGraph &compiled, MeshInvocation invocation) {
         auto &ready = branches_.entries().ready();
         while (ready.begin() != ready.end()) {
-            const auto entry_index = *ready.begin();
-            ready.reset(entry_index);
+            const auto branch_id = *ready.begin();
+            ready.reset(branch_id);
 
-            auto &entry = branches_.entries().table().value_at(entry_index);
+            auto &entry = branches_.entries().table().value_at(branch_id);
             if (!entry.inner_graph.running()) {
                 continue;
             }
 
             evaluation_stack_.clear();
             active_evaluation_.clear();
-            push_evaluation(entry_index);
+            push_evaluation(branch_id);
             if (!evaluate_branches(compiled, invocation)) {
                 return false;
             }
@@ -458,20 +462,20 @@ class MeshRuntimeState {
         return true;
     }
 
-    template <typename Invocation>
-    bool evaluate_branches(const CompiledMeshGraph &compiled, Invocation invocation) {
+    bool evaluate_branches(const CompiledMeshGraph &compiled, MeshInvocation invocation) {
         while (!evaluation_stack_.empty()) {
             auto &frame = evaluation_stack_.back();
-            auto &state = branch_state(frame.entry_index);
+            auto &state = branch_state(frame.branch_id);
 
             auto pushed_dependency = false;
             if (frame.dependency_cursor == no_dependency) {
                 frame.dependency_cursor = state.first_dependency;
             }
             while (frame.dependency_cursor != no_dependency) {
-                const auto edge_index = std::exchange(frame.dependency_cursor, edges_[frame.dependency_cursor].next);
+                const auto edge_index =
+                    std::exchange(frame.dependency_cursor, edges_[frame.dependency_cursor].dependency_next);
                 const auto &edge = edges_[edge_index];
-                const auto dependency = edge.selected;
+                const auto dependency = edge.dependency_id;
                 if (!edge.active || dependency == no_dependency || !branches_.entries().ready().contains(dependency)) {
                     continue;
                 }
@@ -485,89 +489,88 @@ class MeshRuntimeState {
                 continue;
             }
 
-            auto &entry = branches_.entries().table().value_at(frame.entry_index);
-            auto section = MeshContextSection{*this, frame.entry_index};
+            auto &entry = branches_.entries().table().value_at(frame.branch_id);
+            auto section = MeshContextSection{*this, frame.branch_id};
             auto branch_context = invocation.context().child(section);
             if (!entry.inner_graph.evaluate(branch_context)) {
                 if (pending_dependency_ == no_dependency) {
                     return false;
                 }
-                const auto selected = std::exchange(pending_dependency_, no_dependency);
-                ensure_running(compiled, invocation, selected);
-                push_evaluation(selected);
+                const auto dependency_id = std::exchange(pending_dependency_, no_dependency);
+                ensure_running(compiled, invocation, dependency_id);
+                push_evaluation(dependency_id);
                 continue;
             }
 
             publish_output(compiled, invocation, entry);
-            branches_.entries().ready().reset(frame.entry_index);
-            active_evaluation_.reset(frame.entry_index);
+            branches_.entries().ready().reset(frame.branch_id);
+            active_evaluation_.reset(frame.branch_id);
             evaluation_stack_.pop_back();
         }
         return true;
     }
 
-    template <typename Invocation>
-    void ensure_running(const CompiledMeshGraph &compiled, Invocation invocation, size_type entry_index) {
-        auto &entry = branches_.entries().table().value_at(entry_index);
+    void ensure_running(const CompiledMeshGraph &compiled, MeshInvocation invocation, branch_id_t branch_id) {
+        auto &entry = branches_.entries().table().value_at(branch_id);
         if (!entry.inner_graph.running()) {
             start(entry, compiled, invocation);
         }
     }
 
-    void push_evaluation(size_type entry_index) {
-        if (active_evaluation_.contains(entry_index)) {
+    void push_evaluation(branch_id_t branch_id) {
+        if (active_evaluation_.contains(branch_id)) {
             throw std::runtime_error{"mesh branch dependency cycle"};
         }
 
-        active_evaluation_.set(entry_index, memory_.memory_resource());
-        branches_.entries().ready().reset(entry_index);
-        evaluation_stack_.push_back({entry_index, no_dependency});
+        active_evaluation_.set(branch_id, memory_.memory_resource());
+        branches_.entries().ready().reset(branch_id);
+        evaluation_stack_.push_back({branch_id, no_dependency});
     }
 
-    DependencySelection select_dependency(size_type requester_index, std::uint32_t &edge_index, const Scalar<> &key) {
+    DependencyResult resolve_dependency(branch_id_t branch_id, std::uint32_t &edge_index, const Scalar<> &key) {
         if (active_compiled_ == nullptr) {
             throw std::logic_error{"a mesh dependency request is outside mesh evaluation"};
         }
 
         if (edge_index == MeshDependencyState::no_edge) {
-            edge_index = add_edge(requester_index);
-        } else if (edges_[edge_index].requester != requester_index) {
-            throw std::logic_error{"a mesh dependency moved between requesting branches"};
+            edge_index = add_edge(branch_id);
+        } else if (edges_[edge_index].branch_id != branch_id) {
+            throw std::logic_error{"a mesh dependency moved between branches"};
         }
 
-        auto &selected_entry = branches_.entries().require(key);
-        if (selected_entry.entry_index >= no_dependency) {
+        auto &dependency_entry = branches_.entries().require(key);
+        if (dependency_entry.branch_id >= no_dependency) {
             throw std::length_error{"a mesh has too many branches for runtime dependencies"};
         }
-        auto &selected_branch = branch_state(selected_entry.entry_index);
+        auto &dependency = branch_state(dependency_entry.branch_id);
         auto &edge = edges_[edge_index];
-        if (edge.selected != selected_entry.entry_index || !edge.active) {
-            require_acyclic(requester_index, selected_entry.entry_index);
+        if (edge.dependency_id != dependency_entry.branch_id || !edge.active) {
+            require_acyclic(branch_id, dependency_entry.branch_id);
 
-            if (edge.selected != selected_entry.entry_index) {
+            if (edge.dependency_id != dependency_entry.branch_id) {
                 if (edge.active) {
                     edge.active = false;
-                    release_dependency(edge.selected);
+                    release_dependency(edge.dependency_id);
                 }
-                unlink_selection(edge_index);
-                link_selection(edge_index, selected_entry.entry_index);
+                unlink_dependency(edge_index);
+                link_dependency(edge_index, dependency_entry.branch_id);
             }
 
-            ++selected_branch.incoming_dependencies;
+            ++dependency.dependent_count;
             edge.active = true;
         }
 
         const auto evaluation_required =
-            !selected_entry.inner_graph.running() || branches_.entries().ready().contains(selected_entry.entry_index);
+            !dependency_entry.inner_graph.running() || branches_.entries().ready().contains(dependency_entry.branch_id);
         if (evaluation_required) {
-            pending_dependency_ = selected_entry.entry_index;
+            pending_dependency_ = dependency_entry.branch_id;
             return {
                 .reference = {},
                 .pending = true,
             };
         }
 
-        const auto reference = selected_entry.inner_graph.output(active_compiled_->map.nested);
+        const auto reference = dependency_entry.inner_graph.output(active_compiled_->map.nested);
         return {.reference = reference};
     }
 
@@ -578,9 +581,9 @@ class MeshRuntimeState {
         auto &edge = edges_[edge_index];
         if (edge.active) {
             edge.active = false;
-            release_dependency(edge.selected);
+            release_dependency(edge.dependency_id);
         }
-        unlink_selection(edge_index);
+        unlink_dependency(edge_index);
     }
 
     void deactivate_dependency(std::uint32_t edge_index) {
@@ -589,7 +592,7 @@ class MeshRuntimeState {
         }
         auto &edge = edges_[edge_index];
         edge.active = false;
-        release_dependency(edge.selected);
+        release_dependency(edge.dependency_id);
     }
 
     void remove_dependency(std::uint32_t edge_index) noexcept {
@@ -604,66 +607,66 @@ class MeshRuntimeState {
         auto &edge = edges_[edge_index];
         if (edge.active) {
             edge.active = false;
-            release_dependency(edge.selected);
+            release_dependency(edge.dependency_id);
         }
         discard_edge(edge_index);
     }
 
-    void link_selection(std::uint32_t edge_index, size_type selected_index) {
-        auto &selected = branch_state(selected_index);
+    void link_dependency(std::uint32_t edge_index, branch_id_t dependency_id) {
+        auto &dependency = branch_state(dependency_id);
         auto &edge = edges_[edge_index];
-        edge.selected = selected_index;
-        edge.previous_incoming = no_dependency;
-        edge.next_incoming = selected.first_incoming_dependency;
-        if (edge.next_incoming != no_dependency) {
-            edges_[edge.next_incoming].previous_incoming = edge_index;
+        edge.dependency_id = dependency_id;
+        edge.dependent_previous = no_dependency;
+        edge.dependent_next = dependency.first_dependent;
+        if (edge.dependent_next != no_dependency) {
+            edges_[edge.dependent_next].dependent_previous = edge_index;
         }
-        selected.first_incoming_dependency = edge_index;
+        dependency.first_dependent = edge_index;
     }
 
-    void unlink_selection(std::uint32_t edge_index) noexcept {
+    void unlink_dependency(std::uint32_t edge_index) noexcept {
         auto &edge = edges_[edge_index];
-        if (edge.selected == no_dependency) {
+        if (edge.dependency_id == no_dependency) {
             return;
         }
 
-        auto &selected = existing_branch_state(edge.selected);
-        if (edge.previous_incoming == no_dependency) {
-            selected.first_incoming_dependency = edge.next_incoming;
+        auto &dependency = existing_branch_state(edge.dependency_id);
+        if (edge.dependent_previous == no_dependency) {
+            dependency.first_dependent = edge.dependent_next;
         } else {
-            edges_[edge.previous_incoming].next_incoming = edge.next_incoming;
+            edges_[edge.dependent_previous].dependent_next = edge.dependent_next;
         }
-        if (edge.next_incoming != no_dependency) {
-            edges_[edge.next_incoming].previous_incoming = edge.previous_incoming;
+        if (edge.dependent_next != no_dependency) {
+            edges_[edge.dependent_next].dependent_previous = edge.dependent_previous;
         }
 
-        edge.selected = no_dependency;
-        edge.previous_incoming = no_dependency;
-        edge.next_incoming = no_dependency;
+        edge.dependency_id = no_dependency;
+        edge.dependent_previous = no_dependency;
+        edge.dependent_next = no_dependency;
     }
 
     void discard_edge(std::uint32_t edge_index) noexcept {
         auto &edge = edges_[edge_index];
         if (!destroying_) {
-            unlink_selection(edge_index);
+            unlink_dependency(edge_index);
         }
-        auto &branch = existing_branch_state(edge.requester);
-        if (edge.previous == no_dependency) {
-            branch.first_dependency = edge.next;
+        auto &branch = existing_branch_state(edge.branch_id);
+        if (edge.dependency_previous == no_dependency) {
+            branch.first_dependency = edge.dependency_next;
         } else {
-            edges_[edge.previous].next = edge.next;
+            edges_[edge.dependency_previous].dependency_next = edge.dependency_next;
         }
-        if (edge.next != no_dependency) {
-            edges_[edge.next].previous = edge.previous;
+        if (edge.dependency_next != no_dependency) {
+            edges_[edge.dependency_next].dependency_previous = edge.dependency_previous;
         }
 
-        edge.requester = free_edge_;
-        edge.selected = no_dependency;
+        edge.free_next = free_edge_;
+        edge.dependency_id = no_dependency;
         edge.active = false;
         free_edge_ = edge_index;
     }
 
-    std::uint32_t add_edge(size_type requester) {
+    std::uint32_t add_edge(branch_id_t branch_id) {
         const auto index = [&] {
             if (free_edge_ == no_dependency) {
                 if (edges_.size() >= no_dependency) {
@@ -674,37 +677,37 @@ class MeshRuntimeState {
                 return result;
             }
             const auto result = free_edge_;
-            free_edge_ = edges_[result].requester;
+            free_edge_ = edges_[result].free_next;
             return result;
         }();
 
-        auto &branch = branch_state(requester);
+        auto &branch = branch_state(branch_id);
         auto &edge = edges_[index];
         edge = {
-            .requester = requester,
-            .selected = no_dependency,
+            .branch_id = branch_id,
+            .dependency_id = no_dependency,
             .active = false,
-            .previous = no_dependency,
-            .next = branch.first_dependency,
-            .previous_incoming = no_dependency,
-            .next_incoming = no_dependency,
+            .dependency_previous = no_dependency,
+            .dependency_next = branch.first_dependency,
+            .dependent_previous = no_dependency,
+            .dependent_next = no_dependency,
         };
         if (branch.first_dependency != no_dependency) {
-            edges_[branch.first_dependency].previous = index;
+            edges_[branch.first_dependency].dependency_previous = index;
         }
         branch.first_dependency = index;
         return index;
     }
 
-    void require_acyclic(size_type requester, size_type selected) {
-        if (requester == selected) {
+    void require_acyclic(branch_id_t branch_id, branch_id_t dependency_id) {
+        if (branch_id == dependency_id) {
             throw std::runtime_error{"mesh branch dependency cycle"};
         }
 
         cycle_stack_.clear();
         cycle_visited_.clear();
-        cycle_visited_.set(selected, memory_.memory_resource());
-        cycle_stack_.push_back({selected, branch_state(selected).first_dependency});
+        cycle_visited_.set(dependency_id, memory_.memory_resource());
+        cycle_stack_.push_back({dependency_id, branch_state(dependency_id).first_dependency});
 
         while (!cycle_stack_.empty()) {
             auto &frame = cycle_stack_.back();
@@ -714,12 +717,12 @@ class MeshRuntimeState {
             }
 
             const auto &edge = edges_[frame.dependency_cursor];
-            frame.dependency_cursor = edge.next;
-            const auto dependency = edge.selected;
+            frame.dependency_cursor = edge.dependency_next;
+            const auto dependency = edge.dependency_id;
             if (!edge.active || cycle_visited_.contains(dependency)) {
                 continue;
             }
-            if (dependency == requester) {
+            if (dependency == branch_id) {
                 throw std::runtime_error{"mesh branch dependency cycle"};
             }
 
@@ -728,8 +731,7 @@ class MeshRuntimeState {
         }
     }
 
-    template <typename Invocation>
-    void publish_output(const CompiledMeshGraph &compiled, Invocation invocation, Entry &entry) {
+    void publish_output(const CompiledMeshGraph &compiled, MeshInvocation invocation, Entry &entry) {
         if (!compiled.map.nested.output_node) {
             return;
         }
@@ -745,8 +747,7 @@ class MeshRuntimeState {
         }
     }
 
-    template <typename Invocation>
-    void erase_output(const CompiledMeshGraph &compiled, Invocation invocation, Entry &entry) {
+    void erase_output(const CompiledMeshGraph &compiled, MeshInvocation invocation, Entry &entry) {
         if (!compiled.map.nested.output_node) {
             return;
         }
@@ -758,14 +759,14 @@ class MeshRuntimeState {
 
     static void inner_graph_scheduled(void *receiver, RuntimeGraphOwnerCallbacks::token_type token) noexcept {
         auto &runtime = *static_cast<MeshRuntimeState *>(receiver);
-        runtime.branches_.entries().mark_ready(static_cast<size_type>(token));
+        runtime.branches_.entries().mark_ready(static_cast<branch_id_t>(token));
     }
 
     static void inner_graph_timed_schedule_changed(RuntimeGraphOwnerContext &context, void *receiver,
                                                    RuntimeGraphOwnerCallbacks::token_type token,
                                                    std::optional<EvaluationTime> time) {
         auto &runtime = *static_cast<MeshRuntimeState *>(receiver);
-        runtime.branches_.entries().timed_schedule_changed(context, static_cast<size_type>(token), time);
+        runtime.branches_.entries().timed_schedule_changed(context, static_cast<branch_id_t>(token), time);
     }
 
     static const RuntimeGraphOwnerCallbacks owner_callbacks;
@@ -783,10 +784,10 @@ class MeshRuntimeState {
     util::index<> active_evaluation_;
     std::pmr::vector<CycleSearchFrame> cycle_stack_;
     util::index<> cycle_visited_;
-    std::pmr::vector<size_type> selections_to_release_;
+    std::pmr::vector<branch_id_t> dependencies_to_unlink_;
     const CompiledMeshGraph *active_compiled_{};
-    size_type pending_dependency_{no_dependency};
-    bool selection_release_pending_{};
+    branch_id_t pending_dependency_{no_dependency};
+    bool dependency_unlink_pending_{};
     bool destroying_{};
 };
 
@@ -803,16 +804,16 @@ bool MeshDependencyDefinition::evaluate(NodeInvocation<compiled_data_type, state
     }
     state.mesh = section.mesh;
 
-    const auto selected = section.mesh->select_dependency(section.branch, state.edge, dependency_key(invocation));
-    if (selected.pending) {
+    const auto dependency = section.mesh->resolve_dependency(section.branch_id, state.edge, dependency_key(invocation));
+    if (dependency.pending) {
         return false;
     }
-    if (!selected.reference) {
+    if (!dependency.reference) {
         invocation.output().visit([](Out<REF<TS_T>> *output) { output->invalidate(); }, ddv::noop);
         return true;
     }
 
-    invocation.output().visit([&](Out<REF<TS_T>> *output) { output->set_value(selected.reference); }, ddv::noop);
+    invocation.output().visit([&](Out<REF<TS_T>> *output) { output->set_value(dependency.reference); }, ddv::noop);
     return true;
 }
 
@@ -838,10 +839,6 @@ void MeshDependencyDefinition::destroy_state(NodeInvocation<compiled_data_type, 
         state = {};
     }
 }
-
-struct MeshNodeState {
-    MeshRuntimeState *runtime{};
-};
 
 class MeshNodeDefinition : public MapNodeDefinition {
   public:
@@ -870,13 +867,13 @@ class MeshNodeDefinition : public MapNodeDefinition {
 
     static void stop(NodeInvocation<compiled_data_type, state_type> invocation) noexcept {
         if (invocation.state().runtime != nullptr) {
-            invocation.state().runtime->stop(invocation);
+            invocation.state().runtime->stop(invocation.context());
         }
     }
 
     static void destroy_state(NodeInvocation<compiled_data_type, state_type> invocation) noexcept {
         if (invocation.state().runtime != nullptr) {
-            invocation.state().runtime->destroy(invocation);
+            invocation.state().runtime->destroy(invocation.context());
             invocation.state().runtime = nullptr;
         }
     }

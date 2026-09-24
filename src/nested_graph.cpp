@@ -136,7 +136,7 @@ void NestedGraph::initialize_constant(std::size_t node_index, const NestedGraphC
 bool NestedGraph::evaluate(EvaluationContext &context) {
     active_->suppress_parent_scheduling_ = true;
     auto restore = util::scope_exit{[&]() noexcept { active_->suppress_parent_scheduling_ = false; }};
-    const auto complete = active_->continue_evaluation(context);
+    const auto complete = active_->evaluate(context);
     if (!complete) {
         restore.release();
     }

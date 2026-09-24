@@ -731,22 +731,18 @@ void RuntimeGraph::apply_invalidation(const CompiledNode &node, std::size_t node
 
 void RuntimeGraph::start(EvaluationTime evaluation_time) {
     auto scratch = details::EvaluationScratch{allocator_.memory_resource()};
-    start(evaluation_time, scratch);
-}
-
-void RuntimeGraph::start(EvaluationTime evaluation_time, details::EvaluationScratch &scratch) {
     auto context = EvaluationContext{evaluation_time, *this, scratch};
     start(context);
 }
 
-void RuntimeGraph::start(EvaluationContext &parent) {
+void RuntimeGraph::start(EvaluationContext &context) {
     if (started_ || stopped_) {
         throw std::logic_error{"a runtime graph can only be started once"};
     }
 
     started_ = true;
-    const auto scratch_use = ScratchUse{*this, *parent.scratch_.evaluation_scratch_};
-    evaluation_time_ = parent.evaluation_time();
+    const auto scratch_use = ScratchUse{*this, *context.scratch_.evaluation_scratch_};
+    evaluation_time_ = context.evaluation_time();
     if (const auto offset = compiled_graph_->constant_start_time_offset()) {
         *reinterpret_cast<EvaluationTime *>(storage_ + *offset) = evaluation_time_;
     }
@@ -763,9 +759,9 @@ void RuntimeGraph::start(EvaluationContext &parent) {
         const auto &node = compiled_graph_->node(node_index);
         const auto output_was_valid = node.has_output() && Node{node, storage_}.output_last_updated() > MIN_DT;
 
-        EvaluationContext context{parent, *this, node_index};
+        EvaluationContext node_context{context, *this, node_index};
         const auto allocation_context = details::ScalarAllocationContext{allocator_, this, node_index};
-        (*function)(node, storage_, &context);
+        (*function)(node, storage_, &node_context);
         ++function;
         started_node_count = node_index + 1;
 
@@ -804,21 +800,17 @@ void RuntimeGraph::stop_nodes(std::size_t node_count) noexcept {
 
 void RuntimeGraph::stop() noexcept {
     auto scratch = details::EvaluationScratch{allocator_.memory_resource()};
-    stop(scratch);
-}
-
-void RuntimeGraph::stop(details::EvaluationScratch &scratch) noexcept {
     auto context = EvaluationContext{evaluation_time_, *this, scratch};
     stop(context);
 }
 
-void RuntimeGraph::stop(EvaluationContext &parent) noexcept {
+void RuntimeGraph::stop(EvaluationContext &context) noexcept {
     if (!started_ || stopped_) {
         return;
     }
 
     stopped_ = true;
-    const auto scratch_use = ScratchUse{*this, *parent.scratch_.evaluation_scratch_};
+    const auto scratch_use = ScratchUse{*this, *context.scratch_.evaluation_scratch_};
 
     const auto stops = compiled_graph_->stop_functions();
     auto i = stops.nodes.size();
@@ -826,9 +818,9 @@ void RuntimeGraph::stop(EvaluationContext &parent) noexcept {
         --i;
         const auto node_index = stops.nodes[i];
         const auto &node = compiled_graph_->node(node_index);
-        EvaluationContext context{parent, *this, node_index};
+        EvaluationContext node_context{context, *this, node_index};
         const auto allocation_context = details::ScalarAllocationContext{allocator_, this, node_index};
-        stops.functions[i](node, storage_, &context);
+        stops.functions[i](node, storage_, &node_context);
     }
 
     clear_timed_schedule();
@@ -853,23 +845,19 @@ bool RuntimeGraph::inputs_are_valid(const CompiledNode &node) const noexcept {
 
 void RuntimeGraph::evaluate(EvaluationTime evaluation_time) {
     auto scratch = details::EvaluationScratch{allocator_.memory_resource()};
-    evaluate(evaluation_time, scratch);
-}
-
-void RuntimeGraph::evaluate(EvaluationTime evaluation_time, details::EvaluationScratch &scratch) {
     auto context = EvaluationContext{evaluation_time, *this, scratch};
-    if (!continue_evaluation(context)) {
+    if (!evaluate(context)) {
         throw std::logic_error{"a pending evaluation escaped the outer graph"};
     }
 }
 
-bool RuntimeGraph::continue_evaluation(EvaluationContext &parent) {
+bool RuntimeGraph::evaluate(EvaluationContext &context) {
     if (!started_ || stopped_) {
         throw std::logic_error{"a runtime graph must be running to evaluate"};
     }
 
-    const auto evaluation_time = parent.evaluation_time();
-    const auto scratch_use = ScratchUse{*this, *parent.scratch_.evaluation_scratch_};
+    const auto evaluation_time = context.evaluation_time();
+    const auto scratch_use = ScratchUse{*this, *context.scratch_.evaluation_scratch_};
     const auto resuming = paused_node_index_ != std::numeric_limits<std::uint32_t>::max();
     if (!resuming) {
         if (evaluation_time <= last_evaluation_time_) {
@@ -922,9 +910,9 @@ bool RuntimeGraph::continue_evaluation(EvaluationContext &parent) {
 
         const auto output_was_valid = has_output && Node{node, storage_}.output_last_updated() > MIN_DT;
         if (const auto evaluate = node.evaluation_function(); evaluate != nullptr) {
-            EvaluationContext context{parent, *this, node_index};
+            EvaluationContext node_context{context, *this, node_index};
             const auto allocation_context = details::ScalarAllocationContext{allocator_, this, node_index};
-            if (!evaluate(node, storage_, &context)) {
+            if (!evaluate(node, storage_, &node_context)) {
                 paused_node_index_ = static_cast<std::uint32_t>(node_index);
                 advance.release();
                 stop_on_failure.release();

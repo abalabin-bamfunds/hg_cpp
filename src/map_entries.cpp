@@ -8,7 +8,8 @@
 namespace bg::details {
 
 MapEntries::MapEntries(allocator memory)
-    : memory_{memory}, schedule_heap_{&memory.memory_resource()}, entries_pending_removal_{&memory.memory_resource()} {}
+    : memory_{memory}, schedule_heap_{&memory.memory_resource()}, branches_pending_removal_{&memory.memory_resource()} {
+}
 
 MapEntries::~MapEntries() {
     ready_.release(memory_.memory_resource());
@@ -19,7 +20,7 @@ void MapEntries::start(Entry &entry, const CompiledNestedGraph &compiled, Evalua
                        std::span<const NestedGraphInput> inputs, std::span<const NestedGraphConstantInput> constants) {
     const auto owner = RuntimeGraphOwner{
         .receiver = this,
-        .token = entry.entry_index,
+        .token = entry.branch_id,
         .callbacks = &owner_callbacks,
     };
     start(entry, compiled, context, inputs, constants, owner);
@@ -39,7 +40,7 @@ void MapEntries::stop(Entry &entry, EvaluationContext &context) {
 
     queue_removal(entry, context);
     entry.inner_graph.stop(context);
-    ready_.reset(entry.entry_index);
+    ready_.reset(entry.branch_id);
 }
 
 void MapEntries::stop_all(EvaluationContext &context) noexcept {
@@ -50,7 +51,7 @@ void MapEntries::stop_all(EvaluationContext &context) noexcept {
             continue;
         }
         entry.inner_graph.stop(context);
-        ready_.reset(entry.entry_index);
+        ready_.reset(entry.branch_id);
     }
 }
 
@@ -63,28 +64,28 @@ void MapEntries::destroy_all(EvaluationContext &context) noexcept {
 
 void MapEntries::mark_ready(Entry &entry) noexcept {
     if (entry.inner_graph.running()) {
-        ready_.set(entry.entry_index, memory_.memory_resource());
+        ready_.set(entry.branch_id, memory_.memory_resource());
     }
 }
 
-void MapEntries::mark_ready(size_type entry_index) noexcept {
-    mark_ready(table_.value_at(entry_index));
+void MapEntries::mark_ready(branch_id_t branch_id) noexcept {
+    mark_ready(table_.value_at(branch_id));
 }
 
 void MapEntries::inner_graph_scheduled(void *receiver, RuntimeGraphOwnerCallbacks::token_type token) noexcept {
-    static_cast<MapEntries *>(receiver)->mark_ready(static_cast<size_type>(token));
+    static_cast<MapEntries *>(receiver)->mark_ready(static_cast<branch_id_t>(token));
 }
 
 void MapEntries::inner_graph_timed_schedule_changed(RuntimeGraphOwnerContext &context, void *receiver,
                                                     RuntimeGraphOwnerCallbacks::token_type token,
                                                     std::optional<EvaluationTime> time) {
     auto &entries = *static_cast<MapEntries *>(receiver);
-    entries.set_next_scheduled_time(context, entries.table_.value_at(static_cast<size_type>(token)), time);
+    entries.set_next_scheduled_time(context, entries.table_.value_at(static_cast<branch_id_t>(token)), time);
 }
 
-void MapEntries::timed_schedule_changed(RuntimeGraphOwnerContext &context, size_type entry_index,
+void MapEntries::timed_schedule_changed(RuntimeGraphOwnerContext &context, branch_id_t branch_id,
                                         std::optional<EvaluationTime> time) {
-    set_next_scheduled_time(context, table_.value_at(entry_index), time);
+    set_next_scheduled_time(context, table_.value_at(branch_id), time);
 }
 
 const RuntimeGraphOwnerCallbacks MapEntries::owner_callbacks{
@@ -102,7 +103,7 @@ void MapEntries::queue_removal(Entry &entry, EvaluationContext &context) {
     }
 
     entry.removal_queued = true;
-    entries_pending_removal_.push_back(entry.entry_index);
+    branches_pending_removal_.push_back(entry.branch_id);
 }
 
 void MapEntries::remove_stopped_entries_callback(void *receiver) noexcept {
@@ -111,15 +112,15 @@ void MapEntries::remove_stopped_entries_callback(void *receiver) noexcept {
 
 void MapEntries::remove_stopped_entries() noexcept {
     removal_callback_pending_ = false;
-    for (const auto entry_index : entries_pending_removal_) {
-        auto &entry = table_.value_at(entry_index);
+    for (const auto branch_id : branches_pending_removal_) {
+        auto &entry = table_.value_at(branch_id);
         entry.removal_queued = false;
         if (entry.inner_graph.running() || entry.presence_count != 0) {
             continue;
         }
-        table_.erase(table_.key_at(entry_index).view(), memory_.memory_resource());
+        table_.erase(table_.key_at(branch_id).view(), memory_.memory_resource());
     }
-    entries_pending_removal_.clear();
+    branches_pending_removal_.clear();
 }
 
 void MapEntries::clear_schedule_tracking(EvaluationContext &context) noexcept {
