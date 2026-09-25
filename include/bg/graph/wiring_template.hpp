@@ -14,6 +14,9 @@
 namespace bg {
 
 class WiringArguments;
+namespace details {
+template <typename ScopeFactory> class ScopedWiringTemplate;
+}
 
 class WiringTemplate {
   public:
@@ -90,6 +93,7 @@ class WiringTemplate {
 
   private:
     friend class GraphWiring;
+    template <typename ScopeFactory> friend class details::ScopedWiringTemplate;
 
     [[nodiscard]] virtual std::optional<WiringPoint>
     invoke(GraphWiring &wiring, std::span<const WiringArgument> arguments, const TypeMap *seed_type_map) const;

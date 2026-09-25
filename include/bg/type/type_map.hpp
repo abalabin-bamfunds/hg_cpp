@@ -56,6 +56,16 @@ class TypeMap {
         }
     }
 
+    bool has_same_mappings(const TypeMap &other) const {
+        if (parent_ == nullptr && other.parent_ == nullptr) {
+            return values_ == other.values_;
+        }
+
+        const auto left = copy();
+        const auto right = other.copy();
+        return left.values_ == right.values_;
+    }
+
   private:
     friend class Signature;
     template <typename Category> friend class TypeVariableType;

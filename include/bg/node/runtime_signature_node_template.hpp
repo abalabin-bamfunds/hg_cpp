@@ -2,6 +2,7 @@
 
 #include <bg/node/node_invocation.hpp>
 #include <bg/node/node_template.hpp>
+#include <bg/graph/type_mapping.hpp>
 #include <bg/util/byte_copy.hpp>
 
 #include <concepts>
@@ -34,16 +35,22 @@ template <typename Definition>
 concept runtime_signature_node = requires(const Definition &definition) {
     { definition.signature() } -> std::same_as<const Signature &>;
 } && (requires(NodeInvocation<node_compiled_data_t<Definition>, node_state_t<Definition>> invocation) {
-    Definition::evaluate(invocation);
+    { Definition::evaluate(invocation) } -> std::same_as<void>;
 } || requires(NodeInvocation<node_compiled_data_t<Definition>, node_state_t<Definition>> invocation) {
-    Definition::start(invocation);
+    { Definition::evaluate(invocation) } -> std::same_as<bool>;
+} || requires(NodeInvocation<node_compiled_data_t<Definition>, node_state_t<Definition>> invocation) {
+    { Definition::start(invocation) } -> std::same_as<void>;
 });
 
 } // namespace bg::details
 
 namespace bg {
 
-template <details::runtime_signature_node Definition> class RuntimeSignatureNodeTemplate final : public NodeTemplate {
+template <details::runtime_signature_node Definition, typename... TypeParameters>
+class RuntimeSignatureNodeTemplate final
+    : public NodeTemplate,
+      public details::TypeParameterizedWiring<RuntimeSignatureNodeTemplate<Definition, TypeParameters...>,
+                                              TypeParameters...> {
     using CompiledData = details::node_compiled_data_t<Definition>;
     using State = details::node_state_t<Definition>;
     using Invocation = NodeInvocation<CompiledData, State>;
@@ -121,6 +128,14 @@ template <details::runtime_signature_node Definition> class RuntimeSignatureNode
         auto node_template = std::make_unique<RuntimeSignatureNodeTemplate>(std::move(*this));
         const auto &owned = WiringContext::current().wiring().own_node_template(std::move(node_template));
         return owned(std::forward<Arguments>(arguments)...);
+    }
+
+    template <typename... Arguments>
+        requires(details::graph_code_argument<Arguments> && ...)
+    [[nodiscard]] std::optional<WiringPoint> operator()(const TypeMap &type_map, Arguments &&...arguments) && {
+        auto node_template = std::make_unique<RuntimeSignatureNodeTemplate>(std::move(*this));
+        const auto &owned = WiringContext::current().wiring().own_node_template(std::move(node_template));
+        return owned(type_map, std::forward<Arguments>(arguments)...);
     }
 
     const Signature &signature() const override { return definition_.signature(); }

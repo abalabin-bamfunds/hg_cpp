@@ -128,6 +128,7 @@ graph compilation or evaluation.
 - scalar and time series argument resolution
 - optional scalar arguments and scalar ownership
 - node-template and graph-template interchangeability
+- explicit positional type arguments, named type mappings, and mapping conflicts
 - graph-template boundaries and inner graph isolation
 - wiring paths, labels, and diagnostics
 - node-call deduplication, opt-out, and identity inputs
@@ -169,7 +170,7 @@ graph compilation or evaluation.
 - global state shared by outer and inner graphs
 - mapped TSD unions, selected key sets, per-key inner graph evaluation, scheduling, and lifecycle
 - mesh dependency creation, key changes, shared dependencies, cycle rejection, evaluation order, and lifecycle
-- switch selection, default selection, inner graph evaluation, scheduling, lifecycle, and composition with map
+- switch selection, default selection, inner graph evaluation, scheduling, lifecycle, and composition with map and mesh
 
 ### Time series references
 

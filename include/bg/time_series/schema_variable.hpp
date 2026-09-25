@@ -6,13 +6,18 @@
 
 namespace bg {
 
+class BundleSchemaType;
+
 template <util::compile_time_string Name, template <typename> typename Field> struct BundleSchemaVariableDeclaration {
     static constexpr auto name = Name;
 };
 
 template <template <typename> typename Field> using SCHEMA = BundleSchemaVariableDeclaration<"SCHEMA", Field>;
 
-template <template <template <typename> typename> typename Schema> struct schema_type {};
+template <template <template <typename> typename> typename Schema>
+struct schema_type {
+    static const BundleSchemaType &type();
+};
 
 namespace details {
 

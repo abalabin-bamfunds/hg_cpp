@@ -21,6 +21,7 @@ using namespace bg::literals;
 
 using MAP_LEFT = ScalarVariable<"MAP_LEFT">;
 using MAP_RIGHT = ScalarVariable<"MAP_RIGHT">;
+using RESULT = TimeSeriesVariable<"RESULT">;
 
 inline constexpr auto first_argument_pattern = graph_pattern(
     [](auto first, auto) {
@@ -225,6 +226,20 @@ TEST_CASE("map accepts fully runtime graph and argument values",
 
         CHECK(&result.type() == &expected);
         CHECK_FALSE(map(runtime_sink, std::span<const MapArgument>{arguments}).has_output());
+    });
+}
+
+TEST_CASE("an explicit type mapping resolves a raw map lambda output",
+          "[feature:map][feature:operator][feature:type-system][feature:wiring]"
+          "[declaration:generic][series:tsd]") {
+    const auto values = node([](Out<TSD<std::int64_t, TS<int>>>) {});
+
+    testing::test_wiring([&] {
+        const auto result = map[type<RESULT> = type<TS<int>>](
+            [](auto value) -> wp<RESULT> { return wp<RESULT>{value}; }, values());
+
+        CHECK(&result.type() ==
+              &TSD<std::int64_t, REF<TS<int>, TimeSeriesGuarantee::deduplicated>>::type());
     });
 }
 

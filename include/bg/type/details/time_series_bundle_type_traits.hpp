@@ -123,3 +123,12 @@ struct declaration_variable_traits<TSB<Schema, Properties...>> {
 };
 
 } // namespace bg::details
+
+namespace bg {
+
+template <template <template <typename> typename> typename Schema>
+const BundleSchemaType &schema_type<Schema>::type() {
+    return TSB<Schema>::type().schema_type();
+}
+
+} // namespace bg

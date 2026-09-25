@@ -1,6 +1,7 @@
 #pragma once
 
 #include <bg/graph/details/wiring_callable.hpp>
+#include <bg/graph/type_mapping.hpp>
 #include <bg/graph/wiring_error.hpp>
 #include <bg/graph/wiring_template.hpp>
 
@@ -9,8 +10,10 @@
 
 namespace bg {
 
-template <typename Function, typename Label = details::default_wiring_label>
-class GraphTemplate final : public WiringTemplate {
+template <typename Function, typename Label = details::default_wiring_label, typename... TypeParameters>
+class GraphTemplate final : public WiringTemplate,
+                            public details::TypeParameterizedWiring<
+                                GraphTemplate<Function, Label, TypeParameters...>, TypeParameters...> {
     using FunctionInfo = details::callable<Function>;
     using Result = typename FunctionInfo::result_type;
 

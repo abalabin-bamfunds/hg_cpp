@@ -254,6 +254,7 @@ struct Operator::Cache {
 
     struct Entry {
         std::vector<ArgumentKey> arguments;
+        std::optional<TypeMap> seed_type_map;
         std::vector<ScalarRead> scalar_reads;
         const WiringTemplate *implementation;
         SignatureResolution resolution;
@@ -276,10 +277,17 @@ void Operator::add_overload(std::unique_ptr<WiringTemplate> implementation) {
 
 std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const WiringArgument> arguments,
                                             const TypeMap *seed_type_map) const {
-    auto cache_key = seed_type_map == nullptr ? argument_key(arguments) : std::nullopt;
+    auto cache_key = argument_key(arguments);
+    auto seed_key = std::optional<TypeMap>{};
+    if (seed_type_map != nullptr) {
+        seed_key.emplace(seed_type_map->copy());
+    }
+
     if (cache_key) {
         for (const auto &entry : cache_->entries) {
-            if (!std::ranges::equal(entry.arguments, *cache_key)) {
+            const auto seed_matches = entry.seed_type_map.has_value() == seed_key.has_value() &&
+                                      (!seed_key || entry.seed_type_map->has_same_mappings(*seed_key));
+            if (!seed_matches || !std::ranges::equal(entry.arguments, *cache_key)) {
                 continue;
             }
 
@@ -432,6 +440,7 @@ std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const
             cache_->entries.pop_front();
         }
         cache_->entries.push_back({std::move(*cache_key),
+                                   std::move(seed_key),
                                    std::move(scalar_reads.values),
                                    selected->implementation,
                                    {selected->resolution.signature, selected->resolution.type_map.copy()}});

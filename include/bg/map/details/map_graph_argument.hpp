@@ -12,6 +12,7 @@
 namespace bg {
 
 class WiringTemplate;
+class TypeMap;
 
 namespace details {
 
@@ -24,7 +25,8 @@ struct MapGraphArgumentWiring {
 };
 
 MapGraphArgumentWiring build_map_graph_argument_wiring(util::symbol name, const WiringTemplate &function,
-                                                       ResolvedMapCall call, bool preserve_named_arguments = true);
+                                                       ResolvedMapCall call, bool preserve_named_arguments,
+                                                       const TypeMap &type_map);
 
 } // namespace details
 } // namespace bg

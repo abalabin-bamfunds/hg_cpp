@@ -76,16 +76,16 @@ decltype(auto) make_callable_node_argument(Invocation invocation) {
     if constexpr (input_field<Field>::value) {
         constexpr auto Parameter = callable_parameter_index<Function, Index>(Indices);
         constexpr auto Input = callable_input_index<Function, Index>(Indices);
-        return node_invocation_access::input<Field>(invocation, Parameter, Input);
+        return invocation.template input<Field>(Parameter, Input);
     } else if constexpr (output_field<Field>::value) {
         using TimeSeries = typename output_field<Field>::time_series_type;
-        return node_invocation_access::output<TimeSeries>(invocation);
+        return invocation.template output<TimeSeries>();
     } else {
         using Value = typename scalar_field<Field>::value_type;
         using ParameterScalar = typename scalar_field<Field>::parameter_type;
         constexpr auto ParameterIndex = callable_parameter_index<Function, Index>(Indices);
         constexpr auto ScalarIndex = callable_scalar_index<Function, Index>(Indices);
-        const auto scalar = node_invocation_access::scalar(invocation, ParameterIndex, ScalarIndex);
+        const auto scalar = invocation.scalar(ParameterIndex, ScalarIndex);
 
         if constexpr (scalar_field<Field>::optional) {
             return scalar.has_value()
@@ -157,7 +157,7 @@ template <typename Function, typename... Options> class CallableNodeDefinition {
                  (time_series_variable<output_time_series_type> || is_time_series_reference<output_time_series_type> ||
                   is_time_series_list<output_time_series_type>))
     {
-        node_invocation_access::output<output_time_series_type>(invocation).invalidate();
+        invocation.template output<output_time_series_type>().invalidate();
     }
 
   private:

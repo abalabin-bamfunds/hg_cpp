@@ -1,6 +1,7 @@
 #pragma once
 
 #include <bg/graph/details/wiring_callable.hpp>
+#include <bg/graph/type_mapping.hpp>
 #include <bg/graph/wiring_error.hpp>
 #include <bg/node/details/aggregate_node_descriptor.hpp>
 
@@ -11,10 +12,18 @@ namespace bg {
 template <typename Definition>
 concept AggregateNodeClass = details::aggregate_node_class<Definition>::value;
 
-template <AggregateNodeClass Definition, typename Label = details::default_wiring_label>
-class AggregateNodeTemplate final : public details::AggregateNodeTemplateBase {
+template <AggregateNodeClass Definition, typename Label = details::default_wiring_label, typename... TypeParameters>
+class AggregateNodeTemplate final
+    : public details::AggregateNodeTemplateBase,
+      public details::TypeParameterizedWiring<AggregateNodeTemplate<Definition, Label, TypeParameters...>,
+                                              TypeParameters...> {
+    using TypeMapping = details::TypeParameterizedWiring<
+        AggregateNodeTemplate<Definition, Label, TypeParameters...>, TypeParameters...>;
+
   public:
     using definition_type = Definition;
+    using TypeMapping::operator[];
+
     explicit AggregateNodeTemplate(Label label = {})
         : AggregateNodeTemplateBase{details::aggregate_node_descriptor<Definition>()}, label_(std::move(label)) {
         if constexpr (!std::same_as<Label, details::default_wiring_label>) {
@@ -51,6 +60,7 @@ class AggregateNodeTemplate final : public details::AggregateNodeTemplateBase {
     }
 
     template <typename... Arguments> void operator()(Arguments &&...) const && = delete;
+    template <typename... Mappings> auto operator[](Mappings...) && = delete;
 
   private:
     util::symbol label(const ResolvedSignature &signature, std::span<const WiringArgument> arguments,

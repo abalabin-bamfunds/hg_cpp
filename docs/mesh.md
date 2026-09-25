@@ -15,8 +15,10 @@ auto result = mesh(
 ```
 
 `mesh()[key]` is available only while the mesh graph is being wired. The
-receiving input determines its time series type. The type must accept the mesh
-graph output.
+mesh graph output type determines its type: a graph output `B` makes
+`mesh()[key]` a `REF<B>`. Wiring must therefore know `B` before it wires the
+selection. A graph signature, an annotated lambda result, or an explicit type
+argument can provide it.
 
 A mesh can have a name:
 
@@ -45,6 +47,9 @@ evaluated again. When a dependency branch has work in the current cycle, mesh
 evaluates it before resuming the branch that depends on it. This ordering is
 iterative and each branch evaluates at most once in the outer cycle.
 
+When a branch replaces its output reference, its output item notifies each live
+dependency node before that node's branch continues in the same outer cycle.
+
 A dependency can occur inside any number of ordinary nested graphs, maps,
 switches, and meshes. Each runtime dependency-node instance owns one dependency
 edge. Instances of one compiled dependency node therefore depend independently.
@@ -58,5 +63,8 @@ Mesh compiles the graph once and creates one runtime instance per live key.
 Immediate and timed scheduling follow the [nested graph rules](nested-graphs.md#evaluation).
 
 Stopping branches release their dependencies before the dependency branches
-stop. Destruction removes subscribers before destroying dependency outputs.
-This preserves reference lifetime across the stopping cycle.
+stop. Invalidating a dependency key and stopping its dependency node both
+deactivate the dependency. The node retains ownership of its dependency edge
+until its runtime storage is destroyed. Destruction removes subscribers before
+destroying dependency outputs. This preserves reference lifetime across the
+stopping cycle.

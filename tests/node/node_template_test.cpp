@@ -410,6 +410,12 @@ struct returned_output {
     float evaluate() { return 0.0F; }
 };
 
+struct pending_output {
+    bg::Out<bg::TS<float>> output;
+
+    bool evaluate() const { return false; }
+};
+
 struct repeated_input_name {
     bg::In<bg::TS<float>, "input"_n> input;
     bg::Out<bg::TS<float>> output;
@@ -432,4 +438,12 @@ TEST_CASE("aggregate node validation rejects ambiguous output definitions",
     STATIC_CHECK_FALSE(bg::AggregateNodeClass<returned_output>);
     STATIC_CHECK_FALSE(bg::AggregateNodeClass<repeated_input_name>);
     STATIC_CHECK(bg::AggregateNodeClass<int_identity>);
+}
+
+TEST_CASE("an aggregate node evaluation can report pending",
+          "[node_template][feature:node-api][definition:aggregate]") {
+    const auto pending = bg::node<pending_output>();
+    const auto signature = pending.signature().resolve(std::array<const bg::Type *, 0>{});
+
+    CHECK(pending.evaluation_function(signature) != nullptr);
 }

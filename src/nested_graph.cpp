@@ -131,6 +131,7 @@ void NestedGraph::initialize_constant(std::size_t node_index, const NestedGraphC
         static_cast<const TimeSeriesValueRuntimeType &>(node.node_invocation_output_runtime_type());
     runtime_type.scalar_runtime_type().assign_from_input(runtime_node.output_value(), input.value);
     runtime_node.output_last_updated() = start_time;
+    active_->publish_output(node, OutputChange::revalidation);
 }
 
 bool NestedGraph::evaluate(EvaluationContext &context) {

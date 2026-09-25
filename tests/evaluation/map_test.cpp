@@ -236,6 +236,29 @@ TEST_CASE("map infers a leading key for a source graph function",
     CHECK(actual.equals<std::int64_t>({3, std::nullopt, 3}));
 }
 
+TEST_CASE("a map key schedules its consumer when a branch starts",
+          "[feature:map][feature:nested-graph][feature:operator][series:tss][series:tsd]"
+          "[shape:nested][guarantee:const][transition:addition][transition:removal][definition:function]") {
+    const auto keys = node([](In<TS<bool>> present, Out<TSS<std::int64_t>> output) {
+        if (*present) {
+            output.insert(5);
+        } else {
+            output.erase(5);
+        }
+    });
+    const auto copy_key = node([](In<TS<std::int64_t, TimeSeriesGuarantee::const_>> key,
+                                  Out<TS<std::int64_t>> output) {
+        output.set(*key);
+    });
+    const auto tested = [&](wp<TS<bool>> present) {
+        return map([&](auto key) { return copy_key(key); }, keys(present))[std::int64_t{5}].as<TS<std::int64_t>>();
+    };
+
+    const auto actual = testing::test_graph(tested, std::array{true, false, true});
+
+    CHECK(actual.equals<std::int64_t>({5, std::nullopt, 5}));
+}
+
 struct RecordingSink {
     In<TS<int>> value;
 

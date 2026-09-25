@@ -155,10 +155,28 @@ struct RepresentationReference {
 };
 
 struct RootReference {
+    void set_input_node(const CompiledNode &node) noexcept { set_node(node, false); }
+    void set_output_node(const CompiledNode &node) noexcept { set_node(node, true); }
+
+    const CompiledNode &node() const noexcept {
+        return *reinterpret_cast<const CompiledNode *>(node_and_output_flag_ & ~output_flag);
+    }
+
+    bool references_output() const noexcept { return (node_and_output_flag_ & output_flag) != 0; }
+
     RuntimeGraph *owner_graph{};
-    const CompiledNode *reference_node{};
     const TimeSeriesRuntimeType *referenced_runtime_type{};
     RootReferenceNotificationStorage subscribers_or_provider;
+
+  private:
+    void set_node(const CompiledNode &node, bool output) noexcept {
+        const auto address = reinterpret_cast<std::uintptr_t>(&node);
+        assert((address & output_flag) == 0);
+        node_and_output_flag_ = address | static_cast<std::uintptr_t>(output);
+    }
+
+    static constexpr auto output_flag = std::uintptr_t{1};
+    std::uintptr_t node_and_output_flag_{};
 };
 
 static_assert(sizeof(ResolvedTimeSeries) == 3 * sizeof(void *));

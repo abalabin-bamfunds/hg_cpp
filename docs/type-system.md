@@ -226,6 +226,26 @@ before graph compilation:
 A wiring template call can seed the `TypeMap`. Argument matching must agree
 with each seeded map entry. This resolves variables that appear only in outputs.
 
+An explicit type argument seeds this map before signature resolution. A wiring
+construct can declare the order of its positional type parameters. Named type
+mappings do not require that declaration:
+
+```cpp
+using RESULT = bg::TimeSeriesVariable<"RESULT">;
+
+auto source = bg::node<RESULT>([](bg::Out<RESULT>) {});
+
+source[bg::type<bg::TS<int>>]();
+source[bg::type<RESULT> = bg::type<bg::TS<int>>]();
+```
+
+Positional arguments follow only the declared order. Wiring rejects an
+unresolved explicit value, an incompatible value, or a value that conflicts
+with another mapping or a supplied argument. Indexing a wiring construct
+does not change the construct. A proxy over an lvalue wiring construct is
+reusable. A proxy that owns a temporary wiring construct is consumed by its
+wiring call.
+
 Reference matching is transparent at every level of a type. A non-reference
 parameter matches a reference target. A reference parameter matches the same
 target and also matches its own guarantee. A direct source contributes a

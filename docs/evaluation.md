@@ -29,14 +29,14 @@ order.
 
 ## Pending evaluation
 
-An internal node can return pending when another runtime graph must run before
-that node can finish. The runtime graph retains the current node and returns
-pending to its owner. Each intervening inner graph owner returns pending
-without interpreting it. The owner that can satisfy the dependency runs the
-required graph, then resumes the paused graph at the same node.
+A node evaluation function can return pending when another runtime graph must
+run before that node can finish. A `bool evaluate()` returns `true` for complete
+and `false` for pending. A `void evaluate()` always completes. The runtime graph
+retains a pending node and returns pending to its owner. Each intervening inner
+graph owner returns pending without interpreting it. The owner that can satisfy
+the dependency runs the required graph, then resumes the paused graph at the
+same node.
 
-Public node evaluation functions remain `void`. Their runtime adapters return
-complete. Internal nodes that can pause evaluation return complete or pending.
 A node output is published only after its runtime function returns complete.
 The complete pause and resume sequence runs in one outer cycle. Pending
 evaluation that reaches the outer graph is an error.

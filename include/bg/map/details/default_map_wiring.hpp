@@ -26,7 +26,7 @@ struct DefaultMapWiring {
 };
 
 GraphArgument build_map_graph_argument(const WiringTemplate &function, ResolvedMapCall call,
-                                       bool preserve_named_arguments = true);
+                                       bool preserve_named_arguments, const TypeMap &type_map);
 
 } // namespace details
 } // namespace bg

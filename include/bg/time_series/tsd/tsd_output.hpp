@@ -56,6 +56,15 @@ template <typename K, typename Item, auto... Properties> class Out<TSD<K, Item, 
         return item(details::make_scalar_source<K>(value));
     }
 
+    item_id_t item_id(const Scalar<K> &key) const { return item_id(details::scalar_data(key)); }
+
+    template <typename Source>
+        requires(!details::scalar_variable<K> && scalar_source_for<K, Source>)
+    item_id_t item_id(Source &&key) const {
+        const auto value = scalar_source_value<K>(std::forward<Source>(key));
+        return item_id(details::make_scalar_source<K>(value));
+    }
+
     bool erase(const Scalar<K> &key) const { return erase(details::scalar_data(key)); }
 
     template <typename Source>
@@ -101,6 +110,14 @@ template <typename K, typename Item, auto... Properties> class Out<TSD<K, Item, 
     const TimeSeriesRuntimeType &item_runtime_type() const noexcept {
         return static_cast<const details::TimeSeriesDictionaryRuntimeType &>(state_->runtime_type())
             .item_runtime_type();
+    }
+
+    const details::TimeSeriesDictionaryRuntimeType &dictionary_runtime_type() const noexcept {
+        return static_cast<const details::TimeSeriesDictionaryRuntimeType &>(state_->runtime_type());
+    }
+
+    item_id_t item_id(const details::ScalarData &key) const {
+        return dictionary_runtime_type().find_key(state_->data(), key);
     }
 
     util::runtime_item_layout key_layout() const noexcept {

@@ -3,18 +3,11 @@
 #include <bg/time_series/details/time_series_properties.hpp>
 #include <bg/time_series/details/type_access.hpp>
 #include <bg/time_series/schema_variable.hpp>
+#include <bg/time_series/tsb/schema_field.hpp>
 
 namespace bg {
 
 namespace details {
-
-template <typename TimeSeries> struct bundle_schema_field {
-    using time_series_type = TimeSeries;
-};
-
-template <template <typename> typename Field> inline constexpr bool is_bundle_schema_field = false;
-
-template <> inline constexpr bool is_bundle_schema_field<bundle_schema_field> = true;
 
 template <template <template <typename> typename> typename Base> struct bundle_base_marker {};
 

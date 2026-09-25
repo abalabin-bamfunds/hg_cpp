@@ -529,6 +529,63 @@ TEST_CASE("a named outer mesh is selected through an inner mesh and switch",
     CHECK(actual[1]->value() == 33);
 }
 
+TEST_CASE("a mesh dependency follows switch output replacement",
+          "[feature:mesh][feature:switch][feature:nested-graph][feature:operator][feature:reference]"
+          "[series:tsd][shape:deeply-nested][binding:reference-to-value][transition:update]"
+          "[transition:lifecycle]") {
+    const auto add_amount = node([](In<TS<int>> value, int amount, Out<TS<int>> output) {
+        output.set(*value + amount);
+    });
+
+    const auto tested = [&](wp<TS<std::int64_t>> selected_case, wp<TS<int>> value) {
+        const auto result = mesh(
+            [&](auto key, auto item, auto selected) {
+                return switch_(
+                           key,
+                           cases{
+                               case_(std::int64_t{1},
+                                     [&](auto branch_value, auto branch_selected) {
+                                         return switch_(
+                                                    branch_selected,
+                                                    cases{
+                                                        case_(std::int64_t{1},
+                                                              [&](auto selected_value) {
+                                                                  return add_amount(selected_value, 100);
+                                                              }),
+                                                        case_(std::int64_t{2},
+                                                              [&](auto selected_value) {
+                                                                  return add_amount(selected_value, 200);
+                                                              }),
+                                                    },
+                                                    branch_value)
+                                             .template as<TS<int>>();
+                                     }),
+                               case_(std::int64_t{2},
+                                     [](auto branch_value, auto) {
+                                         return add_mesh_dependency(branch_value, mesh()[std::int64_t{1}]);
+                                     }),
+                           },
+                           item, selected)
+                    .template as<TS<int>>();
+            },
+            mesh_values(value), pass_through(selected_case), "__key_arg__"_n = 0);
+        return result[std::int64_t{2}].as<TS<int>>();
+    };
+
+    const auto actual = testing::test_graph(tested, std::array<std::int64_t, 4>{1, 2, 2, 1},
+                                            std::array{1, 2, 3, 4});
+
+    REQUIRE(actual.size() == 4);
+    REQUIRE(actual[0]);
+    REQUIRE(actual[1]);
+    REQUIRE(actual[2]);
+    REQUIRE(actual[3]);
+    CHECK(actual[0]->value() == 111);
+    CHECK(actual[1]->value() == 222);
+    CHECK(actual[2]->value() == 233);
+    CHECK(actual[3]->value() == 144);
+}
+
 TEST_CASE("runtime map instances keep independent outer mesh dependencies",
           "[feature:mesh][feature:map][feature:nested-graph][feature:operator]"
           "[series:tsd][shape:deeply-nested][shape:multiple]") {

@@ -3,6 +3,7 @@
 #include "ref_item_notifications.hpp"
 
 #include <bg/allocator.hpp>
+#include <bg/evaluation_context.hpp>
 #include <bg/graph/dynamic_subscribers.hpp>
 #include <bg/graph/node.hpp>
 #include <bg/graph/runtime_graph.hpp>
@@ -359,7 +360,10 @@ Reference ReferenceProvider::make_representation(Reference base_reference,
 
 ResolvedTimeSeries ResolvedTimeSeries::resolve(Reference reference) {
     if (auto *root = reference.get<RootReference>()) {
-        const auto node = root->owner_graph->node(*root->reference_node);
+        const auto node = root->owner_graph->node(root->node());
+        if (root->references_output()) {
+            return {&node.output_last_updated(), node.output_value(), root->referenced_runtime_type};
+        }
         return {&node.input_last_updated(0), node.input_value(0), root->referenced_runtime_type};
     }
     if (const auto *representation = reference.get<RepresentationReference>()) {
@@ -459,6 +463,19 @@ void ReferenceProvider::notify(Reference reference, OutputChangeContext &context
     get(reference)->notify_subscriptions(subscriptions(reference), context, change);
 }
 
+void ReferenceProvider::notify_item_bindings(Reference collection, item_id_t id,
+                                             EvaluationContext &evaluation_context) {
+    auto *provider = get(collection);
+    if (provider == nullptr) {
+        return;
+    }
+
+    auto context = OutputChangeContext{evaluation_context.runtime_graph(), evaluation_context.evaluation_time()};
+    for (auto *component = provider->components_; component != nullptr; component = component->next_) {
+        component->notify_item_bindings(collection, id, context);
+    }
+}
+
 void ReferenceProvider::add_item_notification(Reference reference, RuntimeGraph &graph,
                                                void *destination_representation, item_id_t destination_item_id,
                                                ItemChangeNotificationFunction notify_item_change,
@@ -482,12 +499,17 @@ void ReferenceProvider::remove_item_notification(Reference reference, RuntimeGra
 }
 
 void ReferenceProvider::destroy_root(RootReference &root, allocator &memory) noexcept {
+    finalize_root(root, memory);
+    std::destroy_at(&root);
+}
+
+void ReferenceProvider::finalize_root(RootReference &root, allocator &memory) noexcept {
     if (auto *provider = root.subscribers_or_provider.get<ReferenceProvider>()) {
         allocator{memory}.delete_object(provider);
     } else {
         DynamicSubscribers::release(root.subscribers_or_provider.get<DynamicSubscribers>());
     }
-    std::destroy_at(&root);
+    root.subscribers_or_provider = nullptr;
 }
 
 } // namespace bg::details

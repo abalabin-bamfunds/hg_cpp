@@ -13,6 +13,7 @@
 namespace bg {
 
 class RuntimeGraph;
+class EvaluationContext;
 class TimeSeriesRuntimeType;
 
 namespace details {
@@ -31,6 +32,7 @@ class ReferenceProviderComponent {
     ReferenceProviderComponent &operator=(const ReferenceProviderComponent &) = delete;
 
     virtual void detach() noexcept = 0;
+    virtual void notify_item_bindings(Reference collection, item_id_t id, OutputChangeContext &context) = 0;
     virtual void destroy(allocator &memory) noexcept = 0;
 
   protected:
@@ -124,6 +126,7 @@ class ReferenceProvider {
                                InputNotificationFunction notification = nullptr);
     static void remove_subscriber(Reference reference, RuntimeGraph &graph, std::size_t input_offset) noexcept;
     static void notify(Reference reference, OutputChangeContext &context, OutputChange change);
+    static void notify_item_bindings(Reference collection, item_id_t id, EvaluationContext &context);
 
     static void add_item_notification(Reference reference, RuntimeGraph &graph, void *destination_representation,
                                       item_id_t destination_item_id, ItemChangeNotificationFunction notify_item_change,
@@ -133,6 +136,7 @@ class ReferenceProvider {
                                          ItemChangeNotificationFunction notify_item_change) noexcept;
 
     static void destroy_root(RootReference &root, allocator &memory) noexcept;
+    static void finalize_root(RootReference &root, allocator &memory) noexcept;
 
     RuntimeGraph &owner() const noexcept { return *root_->owner_graph; }
     allocator &allocation() noexcept { return memory_; }

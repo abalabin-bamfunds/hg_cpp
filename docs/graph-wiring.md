@@ -116,6 +116,23 @@ An [operator](operators.md) selects a node template or graph template before
 invoking its ordinary wiring behavior. Overload resolution remains internal to
 the operator.
 
+Callable nodes and graphs can declare ordered type parameters before their
+function. Aggregate forms declare them before the definition:
+
+```cpp
+using RESULT = bg::TimeSeriesVariable<"RESULT">;
+
+auto callable_node = bg::node<RESULT>(function);
+auto callable_graph = bg::graph<RESULT>("name"_n = "source", function);
+
+auto aggregate_node = bg::node<RESULT, NodeDefinition>();
+auto aggregate_graph = bg::graph<RESULT, GraphDefinition>();
+```
+
+Declarations without ordered type parameters keep their existing form. The
+[type system](type-system.md#signature-resolution) defines explicit type
+arguments and named mappings on calls.
+
 `GraphWiring` retains a reference to each supplied node template. A
 node-template call therefore requires an lvalue whose lifetime includes graph
 compilation. A runtime-signature node template can be called as a temporary;

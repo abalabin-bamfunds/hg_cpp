@@ -11,6 +11,7 @@ namespace bg {
 class RuntimeGraph;
 class TimeSeriesRuntimeType;
 namespace details {
+class ReferenceProvider;
 struct DynamicSubscribers;
 }
 
@@ -33,6 +34,7 @@ class OutputChangeContext {
     void notify_subscribers(details::DynamicSubscribers *subscribers, OutputChange change) const;
 
   private:
+    friend class details::ReferenceProvider;
     friend class RuntimeGraph;
 
     explicit OutputChangeContext(RuntimeGraph &runtime_graph) noexcept;

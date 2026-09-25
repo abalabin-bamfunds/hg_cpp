@@ -66,4 +66,21 @@ TEST_CASE("compatible overlapping union alternatives combine their mappings",
     CHECK(&NUMBER::type().resolve(type_map) == &bg::int64_type());
 }
 
+TEST_CASE("type map comparison includes effective overlay mappings",
+          "[feature:type-system][declaration:generic]") {
+    using VALUE = bg::ScalarVariable<"VALUE">;
+
+    auto base = bg::TypeMap{};
+    base.set(KEY::type(), &bg::int64_type());
+
+    auto overlay = base.overlay();
+    overlay.set(VALUE::type(), &bg::float_type());
+    auto equivalent = overlay.copy();
+
+    CHECK(overlay.has_same_mappings(equivalent));
+
+    equivalent.set(KEY::type(), &bg::double_type());
+    CHECK_FALSE(overlay.has_same_mappings(equivalent));
+}
+
 } // namespace

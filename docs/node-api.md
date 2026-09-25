@@ -38,14 +38,19 @@ An aggregate node class:
 - uses `In<>` fields for time series inputs
 - uses plain C++ fields or Scalar<T> for scalar parameters
 - can contain `State<T>` fields and at most one `Out<>` field
-- defines `evaluate()` or `start()` as a `const` function with a `void` return type
+- defines a `const evaluate()` that returns `void` or `bool`, or a `const start()` that returns `void`
 - contains at most 32 fields
 
 The aggregate is a read-only view created for one invocation. `State<T>` and
 `Out<>` modify the runtime objects that they reference. Activity and validity
 are properties of each `In<>` type.
 
-`evaluate()` can be omitted when a node performs no evaluation. The compiled node then has a null evaluation function.
+`evaluate()` returns `void` when evaluation always completes. It can return
+`bool` when evaluation can pause: `true` means complete and `false` means
+pending. The [evaluation design](evaluation.md#pending-evaluation) defines
+pending evaluation. `evaluate()` can be omitted when a node performs no
+evaluation. The compiled node then has a null evaluation function. `start()`
+and the other lifecycle functions return `void`.
 
 Calling a node template inside a `WiringContext` creates a wired node and
 returns its output as a `WiringPoint`. A call returns `void` when the node has
@@ -90,10 +95,12 @@ The definition constructs its compiled data during graph compilation. Initial
 state follows the byte-copy requirement in [Private state](#private-state).
 Either type can be omitted.
 
-The definition declares `evaluate()` or `start()`. Each function receives a
-`NodeInvocation<CompiledData, State>` by value. The same value is available to declared stop and invalidation
-functions. It provides `context()`, `output()`, and the resolved parameters. `output()` is
-available when the signature has an output. The invocation also provides
+The definition declares `evaluate()` or `start()`. `evaluate()` returns `void`
+or the same completion `bool` as an aggregate evaluation function. Each
+function receives a `NodeInvocation<CompiledData, State>` by value. The same
+value is available to declared stop and invalidation functions. It provides
+`context()`, `output()`, and the resolved parameters. `output()` is available
+when the signature has an output. The invocation also provides
 `compiled_data()` and `state()` when the definition declares those types.
 
 `inputs()` enumerates time series inputs in signature order. `scalars()`

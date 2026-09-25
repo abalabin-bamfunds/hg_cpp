@@ -92,7 +92,8 @@ cache entries as defined by [operators](operators.md#graph-arguments).
 An added key starts a new inner runtime graph. Removing the key stops that
 runtime graph and removes its output item. The stopped runtime graph remains
 allocated through the current outer cycle and is destroyed at the start of the
-next outer cycle.
+next outer cycle. Starting an inner graph publishes its key input and schedules
+active consumers of that key.
 
 A mapped item update evaluates only the inner runtime graph for that key. A
 pass-through input update evaluates every current inner runtime graph. Immediate

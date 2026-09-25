@@ -187,6 +187,17 @@ template <typename Derived, typename RuntimeType> class ItemSelectionSubscriptio
         }
     }
 
+    void notify_item_bindings(Reference reference, item_id_t id, OutputChangeContext &context) final {
+        for (auto *collection : collections_) {
+            if (collection->reference != reference) {
+                continue;
+            }
+            if (auto *entry = collection->items.find(id)) {
+                refresh_selection(context, *entry);
+            }
+        }
+    }
+
     void destroy(allocator &memory) noexcept final { memory.delete_object(static_cast<Derived *>(this)); }
 
     void add_binding_subscriber(Selection &entry, RuntimeGraph &graph, std::uint32_t input_offset,
@@ -354,7 +365,7 @@ template <typename Derived, typename RuntimeType> class ItemSelectionSubscriptio
         }
 
         for (const auto item : collection.items) {
-            notify_item(context, item.value);
+            refresh_selection(context, item.value);
         }
     }
 
@@ -387,12 +398,13 @@ template <typename Derived, typename RuntimeType> class ItemSelectionSubscriptio
                                                        [](void *value, item_id_t id) {
                                                            auto &callback = *static_cast<Callback *>(value);
                                                            if (auto *entry = callback.collection->items.find(id)) {
-                                                               callback.owner->notify_item(*callback.context, *entry);
+                                                               callback.owner->refresh_selection(*callback.context,
+                                                                                                 *entry);
                                                            }
                                                        });
     }
 
-    void notify_item(OutputChangeContext &context, Selection &entry) {
+    void refresh_selection(OutputChangeContext &context, Selection &entry) {
         const auto was_valid = static_cast<bool>(entry.selected_reference);
         const auto value_changed = refresh(entry, context.evaluation_time());
         const auto is_valid = static_cast<bool>(entry.selected_reference);

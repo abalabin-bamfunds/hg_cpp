@@ -284,12 +284,28 @@ template <> class aggregate_output_view_storage<true> {
     ScratchPad::LocalStorageScope local_storage_;
 };
 
+template <typename Result>
+concept aggregate_evaluation_result = std::same_as<Result, void> || std::same_as<Result, bool>;
+
 template <typename Definition>
 inline constexpr bool aggregate_node_has_evaluate = requires(const Definition &definition) {
-    { definition.evaluate() } -> std::same_as<void>;
+    { definition.evaluate() } -> aggregate_evaluation_result;
 } || requires(const Definition &definition, EvaluationContext *context) {
-    { definition.evaluate(context) } -> std::same_as<void>;
+    { definition.evaluate(context) } -> aggregate_evaluation_result;
 };
+
+template <typename Definition>
+inline constexpr bool aggregate_node_evaluate_returns_bool = [] {
+    if constexpr (requires(const Definition &definition) {
+                      { definition.evaluate() } -> std::same_as<bool>;
+                  }) {
+        return true;
+    } else {
+        return requires(const Definition &definition, EvaluationContext *context) {
+            { definition.evaluate(context) } -> std::same_as<bool>;
+        };
+    }
+}();
 
 template <typename Definition>
 inline constexpr bool aggregate_node_has_start = requires(const Definition &definition) {
@@ -896,30 +912,34 @@ void unbind_dynamic_reference_inputs(const CompiledNode &node, void *runtime_sto
 }
 
 template <typename Definition, auto Function, std::size_t... Index>
-void invoke_aggregate_node(const CompiledNode &node, void *runtime_storage, EvaluationContext *context,
-                           std::index_sequence<Index...>) {
+decltype(auto) invoke_aggregate_node(const CompiledNode &node, void *runtime_storage, EvaluationContext *context,
+                                     std::index_sequence<Index...>) {
     [[maybe_unused]] auto *storage = static_cast<std::byte *>(runtime_storage);
     [[maybe_unused]] auto output_view_storage =
         aggregate_output_view_storage<aggregate_node_has_output<Definition>()>{context};
     auto definition = Definition{make_runtime_field<Definition, Index>(node, storage, context)...};
 
     if constexpr (std::invocable<decltype(Function), const Definition &, EvaluationContext *>) {
-        std::invoke(Function, std::as_const(definition), context);
+        return std::invoke(Function, std::as_const(definition), context);
     } else {
-        std::invoke(Function, std::as_const(definition));
+        return std::invoke(Function, std::as_const(definition));
     }
 }
 
 template <typename Definition, auto Function>
-void invoke_aggregate_node(const CompiledNode &node, void *runtime_storage, EvaluationContext *context) {
-    invoke_aggregate_node<Definition, Function>(node, runtime_storage, context,
-                                                std::make_index_sequence<util::aggregate_member_count<Definition>>{});
+decltype(auto) invoke_aggregate_node(const CompiledNode &node, void *runtime_storage, EvaluationContext *context) {
+    return invoke_aggregate_node<Definition, Function>(
+        node, runtime_storage, context, std::make_index_sequence<util::aggregate_member_count<Definition>>{});
 }
 
 template <typename Definition>
 bool evaluate_aggregate_node(const CompiledNode &node, void *runtime_storage, EvaluationContext *context) {
-    invoke_aggregate_node<Definition, &Definition::evaluate>(node, runtime_storage, context);
-    return true;
+    if constexpr (aggregate_node_evaluate_returns_bool<Definition>) {
+        return invoke_aggregate_node<Definition, &Definition::evaluate>(node, runtime_storage, context);
+    } else {
+        invoke_aggregate_node<Definition, &Definition::evaluate>(node, runtime_storage, context);
+        return true;
+    }
 }
 
 template <typename Definition>

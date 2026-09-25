@@ -1,7 +1,7 @@
 #pragma once
 
 #include <bg/time_series/schema_variable.hpp>
-#include <bg/time_series/tsb/tsb_type.hpp>
+#include <bg/time_series/tsb/schema_field.hpp>
 #include <bg/type/time_series_bundle_type.hpp>
 #include <bg/type/type_variable.hpp>
 

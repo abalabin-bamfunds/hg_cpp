@@ -176,7 +176,7 @@ auto invoke_switch(SelectOverload &&select_overload, Key key, const Cases &case_
 
 struct switch_operator_implementation {
     template <typename SelectOverload>
-    static auto invoke(SelectOverload &&select_overload, WiringPoint key,
+    static auto invoke(const TypeMap &, SelectOverload &&select_overload, WiringPoint key,
                        std::span<const SwitchCaseArgument> cases,
                        std::span<const WiringArgument> arguments) {
         auto prepared_cases = std::vector<PreparedSwitchCase>{};
@@ -201,7 +201,7 @@ struct switch_operator_implementation {
     }
 
     template <typename SelectOverload, typename Key, typename Cases, typename... Arguments>
-    static auto invoke(SelectOverload &&select_overload, Key key, const Cases &case_values,
+    static auto invoke(const TypeMap &, SelectOverload &&select_overload, Key key, const Cases &case_values,
                        Arguments &&...arguments) {
         return invoke_switch(std::forward<SelectOverload>(select_overload), key, case_values,
                              std::forward<Arguments>(arguments)...);

@@ -74,7 +74,7 @@ class MapRuntime {
     };
 
     template <typename Invocation> static In<TS_T> input(Invocation invocation, std::size_t parameter_index) {
-        return node_invocation_access::input<In<TS_T>>(invocation, parameter_index, parameter_index);
+        return invocation.template input<In<TS_T>>(parameter_index, parameter_index);
     }
 
     void queue_presence_change(MapEntries::Entry &entry) {

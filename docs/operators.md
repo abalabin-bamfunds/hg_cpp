@@ -35,11 +35,24 @@ add.overload(bg::node<add_integers>());
 add.overload(add_numbers_graph);
 ```
 
-The optional second `operator_` template argument defines C++ call preparation.
-Its `invoke` function receives the original arguments and a continuation that
-runs normal overload resolution. This supports arguments, such as generic C++
-lambdas, that must be converted while their concrete C++ types are available.
-The preparation code does not select or invoke an overload itself.
+An operator can declare ordered type parameters before its prototype. Calls can
+then supply positional type arguments or named mappings:
+
+```cpp
+using RESULT = bg::TimeSeriesVariable<"RESULT">;
+
+auto convert = bg::operator_<RESULT, auto(bg::TS_T) -> RESULT>{"convert", {"value"}};
+
+convert[bg::type<bg::TS<int>>](value);
+convert[bg::type<RESULT> = bg::type<bg::TS<int>>](value);
+```
+
+The optional template argument after the prototype defines C++ call preparation.
+Its `invoke` function receives the explicit type map, the original arguments,
+and a continuation that runs normal overload resolution. This supports
+arguments, such as generic C++ lambdas, that must be converted while their
+concrete C++ types are available. The preparation code does not select or
+invoke an overload itself.
 
 The prototype determines the C++ return type. An output operator returns `wp<>`
 because overloads can produce different output types. A sink overload returns
@@ -262,10 +275,11 @@ before normal overload resolution.
 ## Resolution cache
 
 Each operator has a bounded resolution cache. Its keys include supplied
-argument types and presence, plus only the wiring-time scalar values read by a
-resolver or requirement function. Reads made by rejected candidates are part
-of the key when they can affect the selected result. Cache validation rebuilds
-the flat argument sequence for the candidate that made each read.
+argument types and presence, explicit type mappings, plus only the wiring-time
+scalar values read by a resolver or requirement function. Reads made by
+rejected candidates are part of the key when they can affect the selected
+result. Cache validation rebuilds the flat argument sequence for the candidate
+that made each read.
 
 Graph arguments use graph structure in the key. Graph arguments with equal
 structures share a cache entry. A graph structure that contains a value without

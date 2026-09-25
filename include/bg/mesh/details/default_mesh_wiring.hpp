@@ -23,8 +23,8 @@ struct DefaultMeshWiring {
 };
 
 GraphArgument build_mesh_graph_argument(const WiringTemplate &function, ResolvedMapCall call,
-                                        bool preserve_named_arguments = true,
-                                        std::string name = {});
+                                        bool preserve_named_arguments, std::string name,
+                                        const TypeMap &type_map);
 
 WiringPoint mesh_dependency_selection(WiringArgument key, std::string_view name = {});
 

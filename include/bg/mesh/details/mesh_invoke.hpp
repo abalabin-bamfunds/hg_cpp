@@ -31,28 +31,30 @@ struct mesh_graph_argument_builder {
     std::string mesh_name;
 
     GraphArgument operator()(const WiringTemplate &function, ResolvedMapCall call,
-                             bool preserve_named_arguments) const {
-        return build_mesh_graph_argument(function, std::move(call), preserve_named_arguments, mesh_name);
+                             bool preserve_named_arguments, const TypeMap &type_map) const {
+        return build_mesh_graph_argument(function, std::move(call), preserve_named_arguments, mesh_name, type_map);
     }
 };
 
 struct mesh_operator_implementation {
-    template <typename SelectOverload> static MeshDependencySelector invoke(SelectOverload &&) {
+    template <typename SelectOverload>
+    static MeshDependencySelector invoke(const TypeMap &, SelectOverload &&) {
         return MeshDependencySelector{};
     }
 
     template <typename SelectOverload, typename Name>
         requires std::convertible_to<Name, std::string_view>
-    static MeshDependencySelector invoke(SelectOverload &&, Name &&name) {
+    static MeshDependencySelector invoke(const TypeMap &, SelectOverload &&, Name &&name) {
         return MeshDependencySelector{std::string{std::string_view{std::forward<Name>(name)}}};
     }
 
     template <typename SelectOverload, typename Name, typename Graph>
         requires std::convertible_to<Name, std::string_view> &&
                  std::derived_from<std::remove_cvref_t<Graph>, WiringTemplate>
-    static auto invoke(SelectOverload &&select_overload, named_argument<"name", Name> metadata, const Graph &function,
+    static auto invoke(const TypeMap &type_map, SelectOverload &&select_overload,
+                       named_argument<"name", Name> metadata, const Graph &function,
                        std::span<const MapArgument> arguments) {
-        return invoke_runtime_map(std::forward<SelectOverload>(select_overload), function, arguments,
+        return invoke_runtime_map(type_map, std::forward<SelectOverload>(select_overload), function, arguments,
                                   mesh_graph_argument_builder{std::string{std::string_view{metadata.value}}});
     }
 
@@ -60,9 +62,9 @@ struct mesh_operator_implementation {
         requires std::convertible_to<Name, std::string_view> &&
                  std::derived_from<std::remove_cvref_t<Graph>, WiringTemplate> &&
                  requires { typename std::remove_cvref_t<Graph>::result_type; }
-    static auto invoke(SelectOverload &&select_overload, named_argument<"name", Name> metadata, const Graph &function,
-                       Arguments &&...arguments) {
-        return invoke_map(std::forward<SelectOverload>(select_overload), function,
+    static auto invoke(const TypeMap &type_map, SelectOverload &&select_overload,
+                       named_argument<"name", Name> metadata, const Graph &function, Arguments &&...arguments) {
+        return invoke_map(type_map, std::forward<SelectOverload>(select_overload), function,
                           mesh_graph_argument_builder{std::string{std::string_view{metadata.value}}},
                           std::forward<Arguments>(arguments)...);
     }
@@ -70,34 +72,38 @@ struct mesh_operator_implementation {
     template <typename SelectOverload, typename Name, typename Function, typename... Arguments>
         requires std::convertible_to<Name, std::string_view> &&
                  (!std::derived_from<std::remove_cvref_t<Function>, WiringTemplate>)
-    static auto invoke(SelectOverload &&select_overload, named_argument<"name", Name> metadata, Function &&function,
-                       Arguments &&...arguments) {
-        return invoke_map_function(std::forward<SelectOverload>(select_overload), std::forward<Function>(function),
+    static auto invoke(const TypeMap &type_map, SelectOverload &&select_overload,
+                       named_argument<"name", Name> metadata, Function &&function, Arguments &&...arguments) {
+        return invoke_map_function(type_map, std::forward<SelectOverload>(select_overload),
+                                   std::forward<Function>(function),
                                    mesh_graph_argument_builder{std::string{std::string_view{metadata.value}}},
                                    std::forward<Arguments>(arguments)...);
     }
 
     template <typename SelectOverload, typename Graph>
         requires std::derived_from<std::remove_cvref_t<Graph>, WiringTemplate>
-    static auto invoke(SelectOverload &&select_overload, const Graph &function,
+    static auto invoke(const TypeMap &type_map, SelectOverload &&select_overload, const Graph &function,
                        std::span<const MapArgument> arguments) {
-        return invoke_runtime_map(std::forward<SelectOverload>(select_overload), function, arguments,
+        return invoke_runtime_map(type_map, std::forward<SelectOverload>(select_overload), function, arguments,
                                   mesh_graph_argument_builder{});
     }
 
     template <typename SelectOverload, typename Graph, typename... Arguments>
         requires std::derived_from<std::remove_cvref_t<Graph>, WiringTemplate> &&
                  requires { typename std::remove_cvref_t<Graph>::result_type; }
-    static auto invoke(SelectOverload &&select_overload, const Graph &function, Arguments &&...arguments) {
-        return invoke_map(std::forward<SelectOverload>(select_overload), function, mesh_graph_argument_builder{},
-                          std::forward<Arguments>(arguments)...);
+    static auto invoke(const TypeMap &type_map, SelectOverload &&select_overload, const Graph &function,
+                       Arguments &&...arguments) {
+        return invoke_map(type_map, std::forward<SelectOverload>(select_overload), function,
+                          mesh_graph_argument_builder{}, std::forward<Arguments>(arguments)...);
     }
 
     template <typename SelectOverload, typename Function, typename... Arguments>
         requires(!std::derived_from<std::remove_cvref_t<Function>, WiringTemplate> &&
                  !std::convertible_to<Function, std::string_view>)
-    static auto invoke(SelectOverload &&select_overload, Function &&function, Arguments &&...arguments) {
-        return invoke_map_function(std::forward<SelectOverload>(select_overload), std::forward<Function>(function),
+    static auto invoke(const TypeMap &type_map, SelectOverload &&select_overload, Function &&function,
+                       Arguments &&...arguments) {
+        return invoke_map_function(type_map, std::forward<SelectOverload>(select_overload),
+                                   std::forward<Function>(function),
                                    mesh_graph_argument_builder{}, std::forward<Arguments>(arguments)...);
     }
 };

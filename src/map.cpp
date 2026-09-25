@@ -227,9 +227,9 @@ ResolvedMapCall resolve_map_call(std::string_view operation, std::span<const Map
 }
 
 GraphArgument build_map_graph_argument(const WiringTemplate &function, ResolvedMapCall call,
-                                       bool preserve_named_arguments) {
-    auto built =
-        build_map_graph_argument_wiring(util::symbol{"map"}, function, std::move(call), preserve_named_arguments);
+                                       bool preserve_named_arguments, const TypeMap &type_map) {
+    auto built = build_map_graph_argument_wiring(util::symbol{"map"}, function, std::move(call),
+                                                 preserve_named_arguments, type_map);
     auto structure = built.structure;
     auto default_wiring = std::make_shared<DefaultMapWiring>(DefaultMapWiring{
         .graph = std::move(built.graph),

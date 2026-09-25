@@ -56,7 +56,7 @@ class MapRuntimeState {
 
             branches_.stop(entry, invocation.context());
             if (compiled.nested.output_node) {
-                auto output = node_invocation_access::output<TSD<SCALAR, REF<TS_T>>>(invocation);
+                auto output = invocation.template output<TSD<SCALAR, REF<TS_T>>>();
                 const auto key = branches_.entries().key(entry);
                 output.erase(Scalar<SCALAR>::from(key));
             }
@@ -112,7 +112,7 @@ class MapRuntimeState {
             return;
         }
         if (!output) {
-            output.emplace(node_invocation_access::output<TSD<SCALAR, REF<TS_T>>>(invocation));
+            output.emplace(invocation.template output<TSD<SCALAR, REF<TS_T>>>());
         }
 
         auto &entries = branches_.entries();

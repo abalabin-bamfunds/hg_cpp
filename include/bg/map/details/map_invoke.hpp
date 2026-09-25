@@ -213,32 +213,34 @@ struct map_graph_argument_builder {
     static constexpr auto name = "map";
 
     GraphArgument operator()(const WiringTemplate &function, ResolvedMapCall call,
-                             bool preserve_named_arguments) const {
-        return build_map_graph_argument(function, std::move(call), preserve_named_arguments);
+                             bool preserve_named_arguments, const TypeMap &type_map) const {
+        return build_map_graph_argument(function, std::move(call), preserve_named_arguments, type_map);
     }
 };
 
 template <typename SelectOverload, typename Graph, typename Call, typename Builder>
 wp<> invoke_preprocessed_map(SelectOverload &&select_overload, const Graph &function, Call &call,
-                             ResolvedMapCall resolved_call, bool preserve_named_arguments, Builder builder) {
-    auto graph_argument = builder(function, std::move(resolved_call), preserve_named_arguments);
+                             ResolvedMapCall resolved_call, bool preserve_named_arguments, Builder builder,
+                             const TypeMap &type_map) {
+    auto graph_argument = builder(function, std::move(resolved_call), preserve_named_arguments, type_map);
     return select_map_overload(std::forward<SelectOverload>(select_overload), graph_argument, call.positional,
                                call.named, call.options);
 }
 
 template <typename SelectOverload, typename Graph, typename Builder, typename... Arguments>
-auto invoke_map(SelectOverload &&select_overload, const Graph &function, Builder builder, Arguments &&...arguments) {
+auto invoke_map(const TypeMap &type_map, SelectOverload &&select_overload, const Graph &function, Builder builder,
+                Arguments &&...arguments) {
     auto call = group_map_call_arguments(std::forward<Arguments>(arguments)...);
     auto resolved_call = resolve_map_call(Builder::name, call);
     return invoke_preprocessed_map(std::forward<SelectOverload>(select_overload), function, call,
-                                   std::move(resolved_call), true, builder);
+                                   std::move(resolved_call), true, builder, type_map);
 }
 
 template <typename SelectOverload, typename Builder>
-auto invoke_runtime_map(SelectOverload &&select_overload, const WiringTemplate &function,
+auto invoke_runtime_map(const TypeMap &type_map, SelectOverload &&select_overload, const WiringTemplate &function,
                         std::span<const MapArgument> arguments, Builder builder) {
     auto call = resolve_map_call(Builder::name, arguments);
-    auto graph_argument = builder(function, call, true);
+    auto graph_argument = builder(function, call, true, type_map);
 
     auto overload_arguments = std::vector<WiringArgument>{};
     overload_arguments.reserve(1 + call.positional.size() + call.named.size() + call.options.size());
@@ -258,7 +260,8 @@ auto invoke_runtime_map(SelectOverload &&select_overload, const WiringTemplate &
 }
 
 template <typename SelectOverload, typename Function, typename Builder, typename... Arguments>
-auto invoke_map_function(SelectOverload &&select_overload, Function &&function, Builder builder,
+auto invoke_map_function(const TypeMap &type_map, SelectOverload &&select_overload, Function &&function,
+                         Builder builder,
                          Arguments &&...arguments) {
     using KeyScalar = typename first_map_callable_key<Arguments...>::type;
     if constexpr (std::same_as<KeyScalar, void>) {
@@ -322,7 +325,8 @@ auto invoke_map_function(SelectOverload &&select_overload, Function &&function, 
             auto result = wp<>{};
             auto materialize = [&](const auto &bound) {
                 result =
-                    invoke_preprocessed_map(select_overload, bound, call, std::move(resolved_call), false, builder);
+                    invoke_preprocessed_map(select_overload, bound, call, std::move(resolved_call), false, builder,
+                                            type_map);
             };
             dispatch_map_graph_function<0, false, Supplied, StoredFunction, decltype(materialize), Key>(
                 stored_function, materialize, selected_key_set, key_parameter);
@@ -334,25 +338,28 @@ auto invoke_map_function(SelectOverload &&select_overload, Function &&function, 
 struct map_operator_implementation {
     template <typename SelectOverload, typename Graph>
         requires std::derived_from<std::remove_cvref_t<Graph>, WiringTemplate>
-    static auto invoke(SelectOverload &&select_overload, const Graph &function,
+    static auto invoke(const TypeMap &type_map, SelectOverload &&select_overload, const Graph &function,
                        std::span<const MapArgument> arguments) {
-        return invoke_runtime_map(std::forward<SelectOverload>(select_overload), function, arguments,
+        return invoke_runtime_map(type_map, std::forward<SelectOverload>(select_overload), function, arguments,
                                   map_graph_argument_builder{});
     }
 
     template <typename SelectOverload, typename Graph, typename... Arguments>
         requires std::derived_from<std::remove_cvref_t<Graph>, WiringTemplate> &&
                  requires { typename std::remove_cvref_t<Graph>::result_type; }
-    static auto invoke(SelectOverload &&select_overload, const Graph &function, Arguments &&...arguments) {
-        return invoke_map(std::forward<SelectOverload>(select_overload), function, map_graph_argument_builder{},
-                          std::forward<Arguments>(arguments)...);
+    static auto invoke(const TypeMap &type_map, SelectOverload &&select_overload, const Graph &function,
+                       Arguments &&...arguments) {
+        return invoke_map(type_map, std::forward<SelectOverload>(select_overload), function,
+                          map_graph_argument_builder{}, std::forward<Arguments>(arguments)...);
     }
 
     template <typename SelectOverload, typename Function, typename... Arguments>
         requires(!std::derived_from<std::remove_cvref_t<Function>, WiringTemplate>)
-    static auto invoke(SelectOverload &&select_overload, Function &&function, Arguments &&...arguments) {
-        return invoke_map_function(std::forward<SelectOverload>(select_overload), std::forward<Function>(function),
-                                   map_graph_argument_builder{}, std::forward<Arguments>(arguments)...);
+    static auto invoke(const TypeMap &type_map, SelectOverload &&select_overload, Function &&function,
+                       Arguments &&...arguments) {
+        return invoke_map_function(type_map, std::forward<SelectOverload>(select_overload),
+                                   std::forward<Function>(function), map_graph_argument_builder{},
+                                   std::forward<Arguments>(arguments)...);
     }
 };
 

@@ -1,18 +1,19 @@
 #include <bg/graph/details/mesh_node.hpp>
 
 #include <bg/allocator.hpp>
-#include <bg/details/evaluation_context.hpp>
 #include <bg/graph/nested_graph.hpp>
 #include <bg/graph/runtime_graph.hpp>
-#include <bg/graph/wiring_context.hpp>
 #include <bg/map/details/map_node_definition.hpp>
 #include <bg/map/details/map_runtime.hpp>
+#include <bg/node.hpp>
 #include <bg/node/node_invocation.hpp>
 #include <bg/node/runtime_signature_node_template.hpp>
 #include <bg/scalar/value.hpp>
+#include <bg/time_series/ref/ref_input.hpp>
 #include <bg/time_series/ref/ref_output.hpp>
+#include <bg/time_series/ref/ref_provider.hpp>
+#include <bg/time_series/tsd/tsd_key_subscription.hpp>
 #include <bg/time_series/tsd/tsd_output.hpp>
-#include <bg/type/time_series_reference_type.hpp>
 #include <bg/type/time_series_value_type.hpp>
 #include <bg/util/index.hpp>
 #include <bg/util/scope_exit.hpp>
@@ -51,89 +52,61 @@ struct MeshContextSection : EvaluationContextSection {
     }
 };
 
-struct MeshDependencyData {
-    std::uint32_t mesh_depth;
-};
+using KEY = ScalarVariable<"KEY", Hashable>;
+using ITEM = TimeSeriesVariable<"ITEM">;
 
 struct MeshDependencyState {
     static constexpr auto no_edge = std::numeric_limits<std::uint32_t>::max();
 
     MeshRuntimeState *mesh{};
     std::uint32_t edge{no_edge};
+
+    bool evaluate(const Scalar<> &key,
+                  const In<REF<ITEM, TimeSeriesGuarantee::deduplicated>, dynamic_binding> &item,
+                  const Out<REF<ITEM, TimeSeriesGuarantee::deduplicated>> &output, EvaluationContext &context,
+                  std::uint32_t mesh_depth);
+    void invalidate(const In<REF<ITEM, TimeSeriesGuarantee::deduplicated>, dynamic_binding> &item,
+                    const Out<REF<ITEM, TimeSeriesGuarantee::deduplicated>> &output);
+    void deactivate() noexcept;
+    void finalize() noexcept;
 };
 
-struct MeshDependencyIdentity {
-    const Type *key_type;
-    const TimeSeriesType *target_type;
-    std::size_t mesh_depth;
+struct mesh_dependency_scalar {
+    Scalar<KEY> key;
+    std::uint32_t mesh_depth;
+    State<MeshDependencyState> state;
+    In<REF<ITEM, TimeSeriesGuarantee::deduplicated>, dynamic_binding> item;
+    Out<REF<ITEM, TimeSeriesGuarantee::deduplicated>> output;
 
-    std::size_t hash() const noexcept {
-        auto result = reinterpret_cast<std::size_t>(key_type);
-        result ^= reinterpret_cast<std::size_t>(target_type) + 0x9e3779b97f4a7c15ULL + (result << 6) + (result >> 2);
-        result ^= mesh_depth + 0x9e3779b97f4a7c15ULL + (result << 6) + (result >> 2);
-        return result;
+    void start(EvaluationContext *context) const noexcept { context->schedule_now(); }
+
+    bool evaluate(EvaluationContext *context) const {
+        return state->evaluate(Scalar<>::from(key), item, output, *context, mesh_depth);
     }
 
-    bool operator==(const MeshDependencyIdentity &) const = default;
+    void stop() const noexcept { state->deactivate(); }
+    void finalize() const noexcept { state->finalize(); }
 };
 
-class MeshDependencyDefinition {
-  public:
-    using compiled_data_type = MeshDependencyData;
-    using state_type = MeshDependencyState;
+struct mesh_dependency_time_series {
+    In<TS<KEY>> key;
+    std::uint32_t mesh_depth;
+    State<MeshDependencyState> state;
+    In<REF<ITEM, TimeSeriesGuarantee::deduplicated>, dynamic_binding> item;
+    Out<REF<ITEM, TimeSeriesGuarantee::deduplicated>> output;
 
-    MeshDependencyDefinition(const Type &key_type, const TimeSeriesType &target_type, std::size_t mesh_depth)
-        : target_type_{&target_type}, mesh_depth_{mesh_depth},
-          signature_{util::symbol{"mesh_dependency"},
-                     {{util::symbol{"key"}, &key_type, active, required}},
-                     time_series_reference_type(target_type, TimeSeriesGuarantee::deduplicated)} {
-        if (mesh_depth > std::numeric_limits<std::uint32_t>::max()) {
-            throw WiringError{"mesh nesting exceeds the supported depth"};
-        }
+    bool evaluate(EvaluationContext *context) const {
+        const auto value = key.value_view();
+        return state->evaluate(Scalar<>::from(value), item, output, *context, mesh_depth);
     }
 
-    const Signature &signature() const noexcept { return signature_; }
-
-    NodeTemplateIdentity definition_identity() const {
-        return NodeTemplateIdentity::from_value(MeshDependencyIdentity{
-            .key_type = signature_.parameter(0).type,
-            .target_type = target_type_,
-            .mesh_depth = mesh_depth_,
-        });
-    }
-
-    compiled_data_type compile(const ResolvedSignature &, allocator &) const noexcept {
-        return {static_cast<std::uint32_t>(mesh_depth_)};
-    }
-
-    static void start(NodeInvocation<compiled_data_type, state_type> invocation) noexcept {
-        invocation.context().schedule_now();
-    }
-
-    static bool evaluate(NodeInvocation<compiled_data_type, state_type> invocation);
-    static void on_invalidation(NodeInvocation<compiled_data_type, state_type> invocation);
-    static void stop(NodeInvocation<compiled_data_type, state_type> invocation) noexcept;
-    static void destroy_state(NodeInvocation<compiled_data_type, state_type> invocation) noexcept;
-
-  private:
-    static Scalar<> dependency_key(NodeInvocation<compiled_data_type, state_type> invocation) {
-        const auto inputs = invocation.inputs();
-        if (inputs.begin() != inputs.end()) {
-            const auto input = (*inputs.begin()).value();
-            return *input.visit(
-                [](const In<TS<SCALAR>> *value) {
-                    const auto key = value->value_view();
-                    return Scalar<>::from(key);
-                },
-                ddv::noop);
-        }
-        return (*invocation.scalars().begin()).value();
-    }
-
-    const TimeSeriesType *target_type_;
-    std::size_t mesh_depth_;
-    Signature signature_;
+    void on_invalidation() const { state->invalidate(item, output); }
+    void stop() const noexcept { state->deactivate(); }
+    void finalize() const noexcept { state->finalize(); }
 };
+
+const auto mesh_dependency_scalar_node = node<mesh_dependency_scalar>();
+const auto mesh_dependency_time_series_node = node<mesh_dependency_time_series>();
 
 struct CompiledMeshGraph {
     CompiledMapGraph map;
@@ -179,7 +152,7 @@ class MeshRuntimeState {
     static_assert(sizeof(DependencyEdge) == 6 * sizeof(std::uint32_t));
 
     struct DependencyResult {
-        Reference reference;
+        TsdItemReferenceInput item;
         bool pending{};
     };
 
@@ -211,8 +184,9 @@ class MeshRuntimeState {
     }
 
     bool evaluate(const CompiledMeshGraph &compiled, MeshInvocation invocation) {
-        active_compiled_ = &compiled;
-        auto clear_active = util::scope_exit{[&]() noexcept { active_compiled_ = nullptr; }};
+        evaluation_active_ = true;
+        auto clear_active = util::scope_exit{[&]() noexcept { evaluation_active_ = false; }};
+        initialize_output_reference(compiled, invocation);
 
         if (!evaluation_stack_.empty()) {
             if (!evaluate_branches(compiled, invocation)) {
@@ -321,11 +295,21 @@ class MeshRuntimeState {
         dependency_unlink_pending_ = false;
 
         auto memory = context.runtime_graph().allocation();
+        ReferenceProvider::finalize_root(output_reference_, memory);
         memory.delete_object(this);
     }
 
   private:
     using Entry = MapEntries::Entry;
+
+    void initialize_output_reference(const CompiledMeshGraph &compiled, MeshInvocation invocation) {
+        if (!compiled.map.nested.output_node || output_reference_.owner_graph != nullptr) {
+            return;
+        }
+
+        invocation.initialize_output_reference(output_reference_);
+    }
+
     BranchState &branch_state(branch_id_t branch_id) {
         if (auto *state = branch_states_.get(branch_id, branch_state_positions_)) {
             return *state;
@@ -528,7 +512,7 @@ class MeshRuntimeState {
     }
 
     DependencyResult resolve_dependency(branch_id_t branch_id, std::uint32_t &edge_index, const Scalar<> &key) {
-        if (active_compiled_ == nullptr) {
+        if (!evaluation_active_) {
             throw std::logic_error{"a mesh dependency request is outside mesh evaluation"};
         }
 
@@ -560,30 +544,19 @@ class MeshRuntimeState {
             edge.active = true;
         }
 
+        auto item = tsd_item_reference_input(Reference{&output_reference_}, key);
+
         const auto evaluation_required =
             !dependency_entry.inner_graph.running() || branches_.entries().ready().contains(dependency_entry.branch_id);
         if (evaluation_required) {
             pending_dependency_ = dependency_entry.branch_id;
             return {
-                .reference = {},
+                .item = item,
                 .pending = true,
             };
         }
 
-        const auto reference = dependency_entry.inner_graph.output(active_compiled_->map.nested);
-        return {.reference = reference};
-    }
-
-    void clear_dependency(std::uint32_t edge_index) {
-        if (edge_index == MeshDependencyState::no_edge) {
-            return;
-        }
-        auto &edge = edges_[edge_index];
-        if (edge.active) {
-            edge.active = false;
-            release_dependency(edge.dependency_id);
-        }
-        unlink_dependency(edge_index);
+        return {.item = item};
     }
 
     void deactivate_dependency(std::uint32_t edge_index) {
@@ -736,14 +709,22 @@ class MeshRuntimeState {
             return;
         }
 
-        auto output = node_invocation_access::output<TSD<SCALAR, REF<TS_T>>>(invocation);
+        auto output = invocation.template output<TSD<SCALAR, REF<TS_T>>>();
         const auto key = branches_.entries().key(entry);
         auto item = output[Scalar<SCALAR>::from(key)];
         const auto result = entry.inner_graph.output(compiled.map.nested);
+        const auto had_reference = item.valid();
+        const auto reference_changed = had_reference != static_cast<bool>(result) ||
+                                       (had_reference && item.value() != result);
         if (result) {
             item.set_value(result);
         } else {
             item.invalidate();
+        }
+        if (reference_changed) {
+            ReferenceProvider::notify_item_bindings(Reference{&output_reference_},
+                                                    output.item_id(Scalar<SCALAR>::from(key)),
+                                                    invocation.context());
         }
     }
 
@@ -752,9 +733,12 @@ class MeshRuntimeState {
             return;
         }
 
-        auto output = node_invocation_access::output<TSD<SCALAR, REF<TS_T>>>(invocation);
+        auto output = invocation.template output<TSD<SCALAR, REF<TS_T>>>();
         const auto key = branches_.entries().key(entry);
-        output.erase(Scalar<SCALAR>::from(key));
+        const auto id = output.item_id(Scalar<SCALAR>::from(key));
+        if (output.erase(Scalar<SCALAR>::from(key))) {
+            ReferenceProvider::notify_item_bindings(Reference{&output_reference_}, id, invocation.context());
+        }
     }
 
     static void inner_graph_scheduled(void *receiver, RuntimeGraphOwnerCallbacks::token_type token) noexcept {
@@ -771,7 +755,7 @@ class MeshRuntimeState {
 
     static const RuntimeGraphOwnerCallbacks owner_callbacks;
 
-    friend class MeshDependencyDefinition;
+    friend struct MeshDependencyState;
 
     allocator memory_;
     MapRuntime branches_;
@@ -785,9 +769,10 @@ class MeshRuntimeState {
     std::pmr::vector<CycleSearchFrame> cycle_stack_;
     util::index<> cycle_visited_;
     std::pmr::vector<branch_id_t> dependencies_to_unlink_;
-    const CompiledMeshGraph *active_compiled_{};
+    RootReference output_reference_;
     branch_id_t pending_dependency_{no_dependency};
     bool dependency_unlink_pending_{};
+    bool evaluation_active_{};
     bool destroying_{};
 };
 
@@ -796,47 +781,47 @@ const RuntimeGraphOwnerCallbacks MeshRuntimeState::owner_callbacks{
     .timed_schedule_changed = MeshRuntimeState::inner_graph_timed_schedule_changed,
 };
 
-bool MeshDependencyDefinition::evaluate(NodeInvocation<compiled_data_type, state_type> invocation) {
-    const auto &section = MeshContextSection::find(invocation.context(), invocation.compiled_data().mesh_depth);
-    auto &state = invocation.state();
-    if (state.mesh != nullptr && state.mesh != section.mesh) {
+bool MeshDependencyState::evaluate(const Scalar<> &key,
+                                   const In<REF<ITEM, TimeSeriesGuarantee::deduplicated>, dynamic_binding> &item,
+                                   const Out<REF<ITEM, TimeSeriesGuarantee::deduplicated>> &output,
+                                   EvaluationContext &context, std::uint32_t mesh_depth) {
+    const auto &section = MeshContextSection::find(context, mesh_depth);
+    if (mesh != nullptr && mesh != section.mesh) {
         throw std::logic_error{"a mesh dependency changed its target mesh"};
     }
-    state.mesh = section.mesh;
+    mesh = section.mesh;
 
-    const auto dependency = section.mesh->resolve_dependency(section.branch_id, state.edge, dependency_key(invocation));
+    const auto dependency = section.mesh->resolve_dependency(section.branch_id, edge, key);
+    const auto selected = In<REF<ITEM, TimeSeriesGuarantee::deduplicated>>{
+        *dependency.item.last_updated, dependency.item.binding, *dependency.item.runtime_type,
+        dependency.item.modified};
+    item.bind(selected);
     if (dependency.pending) {
         return false;
     }
-    if (!dependency.reference) {
-        invocation.output().visit([](Out<REF<TS_T>> *output) { output->invalidate(); }, ddv::noop);
-        return true;
-    }
 
-    invocation.output().visit([&](Out<REF<TS_T>> *output) { output->set_value(dependency.reference); }, ddv::noop);
+    output.copy(item);
     return true;
 }
 
-void MeshDependencyDefinition::on_invalidation(NodeInvocation<compiled_data_type, state_type> invocation) {
-    auto &state = invocation.state();
-    if (state.mesh != nullptr) {
-        state.mesh->clear_dependency(state.edge);
-    }
-    invocation.output().visit([](Out<REF<TS_T>> *output) { output->invalidate(); }, ddv::noop);
+void MeshDependencyState::invalidate(
+    const In<REF<ITEM, TimeSeriesGuarantee::deduplicated>, dynamic_binding> &item,
+    const Out<REF<ITEM, TimeSeriesGuarantee::deduplicated>> &output) {
+    deactivate();
+    item.unbind();
+    output.invalidate();
 }
 
-void MeshDependencyDefinition::stop(NodeInvocation<compiled_data_type, state_type> invocation) noexcept {
-    auto &state = invocation.state();
-    if (state.mesh != nullptr) {
-        state.mesh->deactivate_dependency(state.edge);
+void MeshDependencyState::deactivate() noexcept {
+    if (mesh != nullptr) {
+        mesh->deactivate_dependency(edge);
     }
 }
 
-void MeshDependencyDefinition::destroy_state(NodeInvocation<compiled_data_type, state_type> invocation) noexcept {
-    auto &state = invocation.state();
-    if (state.mesh != nullptr) {
-        state.mesh->remove_dependency(state.edge);
-        state = {};
+void MeshDependencyState::finalize() noexcept {
+    if (mesh != nullptr) {
+        mesh->remove_dependency(edge);
+        *this = {};
     }
 }
 
@@ -882,29 +867,28 @@ class MeshNodeDefinition : public MapNodeDefinition {
 } // namespace
 
 WiringPoint wire_mesh_dependency(const WiringArgument &key, std::size_t mesh_depth, const TimeSeriesType &target_type) {
-    const Type *key_type{};
+    if (mesh_depth > std::numeric_limits<std::uint32_t>::max()) {
+        throw WiringError{"mesh nesting exceeds the supported depth"};
+    }
+
+    auto type_map = TypeMap{};
+    type_map.set(TimeSeriesVariableInstance<ITEM>::get(), &target_type);
+    const auto depth = static_cast<std::uint32_t>(mesh_depth);
+
     if (key.is_time_series()) {
         const auto &time_series = static_cast<const TimeSeriesType &>(key.type());
         const auto *value = type_cast<TimeSeriesValueType>(&time_series.target_type());
         if (value == nullptr) {
             throw WiringError{"mesh()[key] requires a scalar or scalar-value time series key"};
         }
-        key_type = &time_series_value_type(value->value_type(), *value->guarantee().value());
-    } else if (key.is_scalar()) {
-        key_type = &key.type();
-    } else {
-        throw WiringError{"mesh()[key] requires a scalar or scalar-value time series key"};
+
+        return static_cast<WiringPoint>(mesh_dependency_time_series_node(type_map, key, depth));
+    }
+    if (key.is_scalar()) {
+        return static_cast<WiringPoint>(mesh_dependency_scalar_node(type_map, key, depth));
     }
 
-    auto node_template = std::make_unique<RuntimeSignatureNodeTemplate<MeshDependencyDefinition>>(
-        MeshDependencyDefinition{*key_type, target_type, mesh_depth});
-    auto &wiring = WiringContext::current().wiring();
-    const auto &owned = wiring.own_node_template(std::move(node_template));
-    const auto result = owned(std::span<const WiringArgument>{&key, 1});
-    if (!result) {
-        throw WiringError{"a mesh dependency node produced no output"};
-    }
-    return *result;
+    throw WiringError{"mesh()[key] requires a scalar or scalar-value time series key"};
 }
 
 std::unique_ptr<NodeTemplate> make_mesh_node(MapGraphWiring wiring, const ResolvedSignature &outer_signature) {

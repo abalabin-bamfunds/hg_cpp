@@ -102,6 +102,7 @@ add_executable(
     wiring/time_series_dict_wiring_test.cpp
     wiring/time_series_list_wiring_test.cpp
     wiring/time_series_reference_wiring_test.cpp
+    wiring/type_mapping_test.cpp
 )
 target_link_libraries(bg_tests PRIVATE bg::bg Catch2::Catch2WithMain)
 target_compile_options(bg_tests PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/bigobj>)

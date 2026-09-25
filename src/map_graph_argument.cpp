@@ -34,9 +34,9 @@ const TimeSeriesType &mapped_dictionary_type(const TimeSeriesDictionaryType &dic
 class MapGraphArgumentBuilder {
   public:
     MapGraphArgumentBuilder(util::symbol name, const WiringTemplate &function, ResolvedMapCall call,
-                            bool preserve_named_arguments)
+                            bool preserve_named_arguments, const TypeMap &type_map)
         : name_{name}, function_{function}, call_{std::move(call)}, preserve_named_arguments_{preserve_named_arguments},
-          wiring_{std::make_shared<GraphWiring>()} {}
+          type_map_{type_map}, wiring_{std::make_shared<GraphWiring>()} {}
 
     MapGraphArgumentWiring build() {
         resolve_key_argument();
@@ -82,7 +82,7 @@ class MapGraphArgumentBuilder {
             throw WiringError{"__key_arg__ selects a graph parameter that is out of range"};
         }
 
-        const auto result = function_(std::span<const WiringArgument>{graph_arguments});
+        const auto result = function_(type_map_, std::span<const WiringArgument>{graph_arguments});
         const auto structure = graph_wiring_structure(*wiring_, boundaries, result);
         if (result) {
             const auto boundary = wire_nested_output(*result, result->type());
@@ -210,6 +210,7 @@ class MapGraphArgumentBuilder {
     const WiringTemplate &function_;
     ResolvedMapCall call_;
     bool preserve_named_arguments_;
+    const TypeMap &type_map_;
     std::shared_ptr<GraphWiring> wiring_;
     std::vector<ResolvedParameter> parameters_;
     std::vector<WiringArgument> outer_arguments_;
@@ -225,8 +226,9 @@ class MapGraphArgumentBuilder {
 } // namespace
 
 MapGraphArgumentWiring build_map_graph_argument_wiring(util::symbol name, const WiringTemplate &function,
-                                                       ResolvedMapCall call, bool preserve_named_arguments) {
-    return MapGraphArgumentBuilder{name, function, std::move(call), preserve_named_arguments}.build();
+                                                       ResolvedMapCall call, bool preserve_named_arguments,
+                                                       const TypeMap &type_map) {
+    return MapGraphArgumentBuilder{name, function, std::move(call), preserve_named_arguments, type_map}.build();
 }
 
 } // namespace bg::details
