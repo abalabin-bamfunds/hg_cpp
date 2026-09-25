@@ -15,11 +15,12 @@ Graph compilation recursively compiles the inner wiring. The outer compiled
 graph owns the resulting inner compiled graph. Each runtime instance of the
 owning node creates its own inner runtime graph from that compiled graph.
 
-The complete dependency graph remains a directed acyclic graph. Inputs enter an
-inner graph through references from upstream time series. When an inner graph
-has an output, it crosses the boundary as a reference and can identify a time
-series owned by the inner graph or an outer graph. Reference routing follows the
-[time series reference design](time-series-references.md#nested-graph-boundaries).
+The [evaluation model](evaluation.md#evaluation-model) includes dependencies
+that cross the boundary. Inputs enter an inner graph through references from
+upstream time series. When an inner graph has an output, it crosses the boundary
+as a reference and can identify a time series owned by the inner graph or an
+outer graph. Reference routing follows the [time series reference
+design](time-series-references.md#nested-graph-boundaries).
 
 ## Wiring
 

@@ -83,6 +83,9 @@ current reference used by the receiving input.
 
 ## Subscriptions
 
+Reference subscriptions implement the dependency and publication rules of the
+[evaluation model](evaluation.md#evaluation-model).
+
 Direct wired subscriptions are stored in compiled arrays and shared by runtime
 graphs with the same wiring.
 

@@ -1,5 +1,23 @@
 # Evaluation
 
+## Evaluation model
+
+The outer graph, inner graphs, reference bindings, and runtime-selected
+dependencies form one logical dependency graph. The graph remains directed and
+acyclic. Nesting and ownership do not change evaluation semantics.
+
+Every logical time series has one authoritative state and change record.
+References, boundaries, and representations expose that state. They do not
+reproduce or independently propagate it.
+
+An outer cycle evaluates the logical dependency graph at one evaluation time.
+Each node observes the completed current-cycle state of its predecessors and
+completes at most one evaluation. The cycle ends only after all work for its
+evaluation time is complete.
+
+Storage lifetime does not change semantics. Invalidation and removal take
+effect in the current outer cycle. Retention can delay only storage reclamation.
+
 ## Outer cycle
 
 An outer cycle is one quantum of evaluation and time. Its evaluation time is
@@ -19,8 +37,8 @@ Graph compilation puts nodes in topological order. Every input source is before
 the node that receives it. A runtime graph processes scheduled node indices once
 in increasing order.
 
-A node evaluates at most once in an outer cycle. Multiple input updates schedule
-one evaluation.
+Multiple input updates coalesce into one completed node evaluation in an outer
+cycle.
 
 A scheduled node without an evaluation function still processes input validity, invalidation, and output publication.
 
