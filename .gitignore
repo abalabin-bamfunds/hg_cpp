@@ -1,5 +1,6 @@
 # local/private agentic setup
 /LOCAL_AGENTS.md
+/.lanes/
 
 # CMake build trees
 /build/
