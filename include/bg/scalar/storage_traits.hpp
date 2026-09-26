@@ -1,7 +1,7 @@
 #pragma once
 
-#include <bg/evaluation_time.hpp>
 #include <bg/allocator.hpp>
+#include <bg/evaluation_time.hpp>
 #include <bg/scalar/details/value_type.hpp>
 #include <bg/scalar/opaque.hpp>
 #include <bg/scalar/string.hpp>
@@ -16,12 +16,13 @@
 #include <type_traits>
 #include <utility>
 
-namespace bg::details {
+namespace bg {
 
-// Defines the C++ value, stored object, capabilities, and lifecycle operations for a scalar type.
+// Defines the canonical C++ storage, read view, intrinsic operations, and lifecycle for a scalar declaration.
+// Scalar providers specialize this trait in their public interface.
 template <typename T> struct scalar_storage_traits {
     using stored_type = T;
-    using value_type = scalar_value_t<T>;
+    using value_type = details::scalar_value_t<T>;
 
     static constexpr bool supports_equality = std::equality_comparable<value_type>;
     static constexpr bool supports_hash =
@@ -71,9 +72,7 @@ template <> struct scalar_storage_traits<string> {
         std::construct_at(destination, value, &memory.memory_resource());
     }
 
-    static void assign(stored_type &destination, value_type value, allocator &) {
-        destination.assign(value);
-    }
+    static void assign(stored_type &destination, value_type value, allocator &) { destination.assign(value); }
 
     static void destroy(stored_type *value, allocator &) noexcept { std::destroy_at(value); }
 };
@@ -88,7 +87,7 @@ template <typename T> struct scalar_storage_traits<Opaque<T>> {
     static constexpr bool requires_finalization = !std::is_trivially_destructible_v<stored_type>;
     static constexpr bool assign_uses_memory_resource = false;
 
-    static scalar_value_t<Opaque<T>> read(const stored_type &value) noexcept { return value; }
+    static details::scalar_value_t<Opaque<T>> read(const stored_type &value) noexcept { return value; }
 
     template <typename Source>
     static void construct(stored_type *destination, Source &&value, allocator &) {
@@ -104,6 +103,10 @@ template <typename T> struct scalar_storage_traits<Opaque<T>> {
     static void destroy(stored_type *value, allocator &) noexcept { std::destroy_at(value); }
 };
 
+namespace details {
+
 template <typename T> using scalar_stored_t = typename scalar_storage_traits<T>::stored_type;
 
-} // namespace bg::details
+} // namespace details
+
+} // namespace bg

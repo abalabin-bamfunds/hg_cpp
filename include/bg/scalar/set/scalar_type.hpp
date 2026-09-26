@@ -35,29 +35,27 @@ class GenericSetScalarType final : public SetScalarType {
 
 const SetScalarType &set_scalar_type(const ScalarType &item_type);
 
-template <typename T>
-    requires is_set_v<T> && (!details::generic_scalar<T>)
-const ScalarType &cpp_scalar_type() {
-    return set_scalar_type(details::scalar_type_for<typename T::item_type>());
-}
+template <typename T> struct scalar_type_traits<Set<T>> {
+    static const ScalarType &type() {
+        if constexpr (details::generic_scalar<T>) {
+            static const auto type = GenericSetScalarType{details::scalar_type_for<T>()};
+
+            return type;
+        } else {
+            return set_scalar_type(details::scalar_type_for<T>());
+        }
+    }
+};
+
+template <typename T> struct scalar_declaration_traits<Set<T>> {
+    static constexpr bool is_collection = true;
+    static constexpr bool supports_implicit_argument = true;
+    static constexpr bool supports_time_series = true;
+};
 
 } // namespace bg
 
 namespace bg::details {
-
-template <typename T> struct scalar_type_traits<Set<T>> : scalar_type_properties {
-    static constexpr bool is_collection = true;
-
-    static const ScalarType &get() {
-        if constexpr (generic_scalar<T>) {
-            static const auto type = GenericSetScalarType{scalar_type_for<T>()};
-
-            return type;
-        } else {
-            return cpp_scalar_type<Set<T>>();
-        }
-    }
-};
 
 template <typename T> struct declaration_variable_traits<Set<T>> {
     template <typename Visitor> static void for_each(Visitor &&visitor) {

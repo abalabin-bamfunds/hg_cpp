@@ -13,7 +13,7 @@ namespace bg {
 template <typename T> class MutableList : public List<T> {
     using Base = List<T>;
     using Storage = details::scalar_list_storage<T>;
-    using Traits = details::scalar_storage_traits<T>;
+    using Traits = scalar_storage_traits<T>;
 
   public:
     explicit MutableList(Storage &storage) noexcept : Base{storage} {}

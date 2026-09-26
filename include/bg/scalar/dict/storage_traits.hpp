@@ -1,6 +1,6 @@
 #pragma once
 
-#include <bg/scalar/details/capability_traits.hpp>
+#include <bg/scalar/details/handle_traits.hpp>
 #include <bg/scalar/details/collection_storage.hpp>
 #include <bg/scalar/dict/type.hpp>
 #include <bg/scalar/runtime_type.hpp>
@@ -9,18 +9,18 @@
 #include <memory>
 #include <utility>
 
-namespace bg::details {
+namespace bg {
 
 template <typename K, typename V> struct scalar_storage_traits<Dict<K, V>> {
     using KeyTraits = scalar_storage_traits<K>;
     using ValueTraits = scalar_storage_traits<V>;
-    using stored_type = scalar_dict_storage<K, V>;
+    using stored_type = details::scalar_dict_storage<K, V>;
     using value_type = Dict<K, V>;
 
     static constexpr bool supports_equality =
-        scalar_capability_traits<K>::supports_equality && scalar_capability_traits<V>::supports_equality;
+        details::scalar_handle_traits<K>::supports_equality && details::scalar_handle_traits<V>::supports_equality;
     static constexpr bool supports_hash =
-        scalar_capability_traits<K>::supports_hash && scalar_capability_traits<V>::supports_hash;
+        details::scalar_handle_traits<K>::supports_hash && details::scalar_handle_traits<V>::supports_hash;
     static constexpr bool uses_variable_memory = true;
     static constexpr bool requires_finalization =
         KeyTraits::requires_finalization || ValueTraits::requires_finalization;
@@ -54,7 +54,8 @@ template <typename K, typename V> struct scalar_storage_traits<Dict<K, V>> {
             { entry.first } -> std::convertible_to<typename KeyTraits::value_type>;
         } && (std::convertible_to<decltype(std::declval<std::ranges::range_reference_t<const Range>>().second),
                                   typename ValueTraits::value_type> ||
-              scalar_view_source_for<decltype(std::declval<std::ranges::range_reference_t<const Range>>().second), V>)
+              details::scalar_view_source_for<
+                  decltype(std::declval<std::ranges::range_reference_t<const Range>>().second), V>)
     static void construct(stored_type *destination, const Range &value, allocator &memory) {
         std::construct_at(destination);
         auto rollback = util::scope_exit{[&]() noexcept { destroy(destination, memory); }};
@@ -63,8 +64,8 @@ template <typename K, typename V> struct scalar_storage_traits<Dict<K, V>> {
                 key, memory.memory_resource(), [&](auto *stored) { KeyTraits::construct(stored, key, memory); },
                 [&](auto *stored) noexcept { KeyTraits::destroy(stored, memory); },
                 [&](auto *stored) {
-                    if constexpr (scalar_view_source_for<decltype(item), V>) {
-                        scalar_data(item).copy_construct(stored, cpp_scalar_runtime_type<V>(), memory);
+                    if constexpr (details::scalar_view_source_for<decltype(item), V>) {
+                        details::scalar_data(item).copy_construct(stored, cpp_scalar_runtime_type<V>(), memory);
                     } else {
                         ValueTraits::construct(stored, item, memory);
                     }
@@ -78,7 +79,7 @@ template <typename K, typename V> struct scalar_storage_traits<Dict<K, V>> {
     }
 
     static void assign(stored_type &destination, value_type value, allocator &memory) {
-        replace_collection_storage<Dict<K, V>>(destination, value, memory);
+        details::replace_collection_storage<Dict<K, V>>(destination, value, memory);
     }
 
     static void destroy(stored_type *value, allocator &memory) noexcept {
@@ -89,11 +90,15 @@ template <typename K, typename V> struct scalar_storage_traits<Dict<K, V>> {
     }
 };
 
-template <typename K, typename V> struct scalar_capability_traits<Dict<K, V>> {
+} // namespace bg
+
+namespace bg::details {
+
+template <typename K, typename V> struct scalar_handle_traits<Dict<K, V>> {
     static constexpr bool supports_equality =
-        scalar_capability_traits<K>::supports_equality && scalar_capability_traits<V>::supports_equality;
+        scalar_handle_traits<K>::supports_equality && scalar_handle_traits<V>::supports_equality;
     static constexpr bool supports_hash =
-        scalar_capability_traits<K>::supports_hash && scalar_capability_traits<V>::supports_hash;
+        scalar_handle_traits<K>::supports_hash && scalar_handle_traits<V>::supports_hash;
 };
 
 } // namespace bg::details

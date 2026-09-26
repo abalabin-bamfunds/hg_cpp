@@ -70,7 +70,7 @@ template <details::scalar_variable Variable, auto... Properties> class Out<TS<Va
 };
 
 template <typename T, auto... Properties> class Out<TS<T, Properties...>> {
-    using Traits = details::scalar_storage_traits<T>;
+    using Traits = scalar_storage_traits<T>;
 
   public:
     using storage_type = typename Traits::stored_type;
@@ -103,13 +103,13 @@ template <typename T, auto... Properties> class Out<TS<T, Properties...>> {
     bool valid() const noexcept { return state_->valid(); }
     EvaluationTime last_updated() const noexcept { return state_->last_updated(); }
     value_type value() const noexcept
-        requires(!details::scalar_type_traits<T>::is_collection)
+        requires(!scalar_declaration_traits<T>::is_collection)
     {
         return Traits::read(*static_cast<const storage_type *>(state_->data()));
     }
 
     template <typename Value>
-        requires(!details::scalar_type_traits<T>::is_collection) &&
+        requires(!scalar_declaration_traits<T>::is_collection) &&
                 std::constructible_from<std::remove_cvref_t<value_type>, Value &&> &&
                 requires(storage_type &target, std::remove_cvref_t<value_type> source) { target = std::move(source); }
     void set(Value &&value) const {

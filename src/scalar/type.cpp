@@ -13,11 +13,11 @@ template <typename T> class CppScalarType final : public ScalarType {
     [[nodiscard]] const Type &resolve(const TypeMap &) const override { return *this; }
 
     bool supports_equality() const noexcept override {
-        return details::scalar_storage_traits<T>::supports_equality;
+        return scalar_storage_traits<T>::supports_equality;
     }
 
     bool supports_hash() const noexcept override {
-        return details::scalar_storage_traits<T>::supports_hash;
+        return scalar_storage_traits<T>::supports_hash;
     }
 };
 
@@ -71,35 +71,35 @@ const ScalarType &symbol_type() noexcept {
     return type;
 }
 
-template <> const ScalarType &cpp_scalar_type<int>() noexcept {
+const ScalarType &scalar_type_traits<int>::type() noexcept {
     return int_type();
 }
 
-template <> const ScalarType &cpp_scalar_type<bool>() noexcept {
+const ScalarType &scalar_type_traits<bool>::type() noexcept {
     return bool_type();
 }
 
-template <> const ScalarType &cpp_scalar_type<std::int64_t>() noexcept {
+const ScalarType &scalar_type_traits<std::int64_t>::type() noexcept {
     return int64_type();
 }
 
-template <> const ScalarType &cpp_scalar_type<float>() noexcept {
+const ScalarType &scalar_type_traits<float>::type() noexcept {
     return float_type();
 }
 
-template <> const ScalarType &cpp_scalar_type<double>() noexcept {
+const ScalarType &scalar_type_traits<double>::type() noexcept {
     return double_type();
 }
 
-template <> const ScalarType &cpp_scalar_type<EvaluationTime>() noexcept {
+const ScalarType &scalar_type_traits<EvaluationTime>::type() noexcept {
     return evaluation_time_type();
 }
 
-template <> const ScalarType &cpp_scalar_type<string>() noexcept {
+const ScalarType &scalar_type_traits<string>::type() noexcept {
     return string_type();
 }
 
-template <> const ScalarType &cpp_scalar_type<util::symbol>() noexcept {
+const ScalarType &scalar_type_traits<util::symbol>::type() noexcept {
     return symbol_type();
 }
 

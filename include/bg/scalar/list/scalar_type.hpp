@@ -35,29 +35,27 @@ class GenericListScalarType final : public ListScalarType {
 
 const ListScalarType &list_scalar_type(const ScalarType &item_type);
 
-template <typename T>
-    requires is_list_v<T> && (!details::generic_scalar<T>)
-const ScalarType &cpp_scalar_type() {
-    return list_scalar_type(details::scalar_type_for<typename T::item_type>());
-}
+template <typename T> struct scalar_type_traits<List<T>> {
+    static const ScalarType &type() {
+        if constexpr (details::generic_scalar<T>) {
+            static const auto type = GenericListScalarType{details::scalar_type_for<T>()};
+
+            return type;
+        } else {
+            return list_scalar_type(details::scalar_type_for<T>());
+        }
+    }
+};
+
+template <typename T> struct scalar_declaration_traits<List<T>> {
+    static constexpr bool is_collection = true;
+    static constexpr bool supports_implicit_argument = true;
+    static constexpr bool supports_time_series = true;
+};
 
 } // namespace bg
 
 namespace bg::details {
-
-template <typename T> struct scalar_type_traits<List<T>> : scalar_type_properties {
-    static constexpr bool is_collection = true;
-
-    static const ScalarType &get() {
-        if constexpr (generic_scalar<T>) {
-            static const auto type = GenericListScalarType{scalar_type_for<T>()};
-
-            return type;
-        } else {
-            return cpp_scalar_type<List<T>>();
-        }
-    }
-};
 
 template <typename T> struct declaration_variable_traits<List<T>> {
     template <typename Visitor> static void for_each(Visitor &&visitor) {

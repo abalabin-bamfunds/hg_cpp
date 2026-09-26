@@ -4,6 +4,7 @@
 #include <bg/scalar/string.hpp>
 #include <bg/type/type.hpp>
 
+#include <concepts>
 #include <cstdint>
 
 namespace bg {
@@ -43,39 +44,63 @@ const ScalarType &evaluation_time_type() noexcept;
 const ScalarType &string_type() noexcept;
 const ScalarType &symbol_type() noexcept;
 
-template <typename T> const ScalarType &cpp_scalar_type() noexcept = delete;
+// Maps a C++ scalar declaration to its stable semantic type object. Scalar providers specialize this trait and
+// define type() in their library so every consumer observes the same object identity.
+template <typename T> struct scalar_type_traits;
 
-template <> [[nodiscard]] const ScalarType &cpp_scalar_type<bool>() noexcept;
+template <> struct scalar_type_traits<bool> {
+    static const ScalarType &type() noexcept;
+};
 
-template <> [[nodiscard]] const ScalarType &cpp_scalar_type<int>() noexcept;
+template <> struct scalar_type_traits<int> {
+    static const ScalarType &type() noexcept;
+};
 
-template <> [[nodiscard]] const ScalarType &cpp_scalar_type<std::int64_t>() noexcept;
+template <> struct scalar_type_traits<std::int64_t> {
+    static const ScalarType &type() noexcept;
+};
 
-template <> [[nodiscard]] const ScalarType &cpp_scalar_type<float>() noexcept;
+template <> struct scalar_type_traits<float> {
+    static const ScalarType &type() noexcept;
+};
 
-template <> [[nodiscard]] const ScalarType &cpp_scalar_type<double>() noexcept;
+template <> struct scalar_type_traits<double> {
+    static const ScalarType &type() noexcept;
+};
 
-template <> [[nodiscard]] const ScalarType &cpp_scalar_type<EvaluationTime>() noexcept;
+template <> struct scalar_type_traits<EvaluationTime> {
+    static const ScalarType &type() noexcept;
+};
 
-template <> [[nodiscard]] const ScalarType &cpp_scalar_type<string>() noexcept;
+template <> struct scalar_type_traits<string> {
+    static const ScalarType &type() noexcept;
+};
 
-template <> [[nodiscard]] const ScalarType &cpp_scalar_type<util::symbol>() noexcept;
+template <> struct scalar_type_traits<util::symbol> {
+    static const ScalarType &type() noexcept;
+};
 
-namespace details {
+template <typename T>
+concept scalar_type_mapped = requires {
+    { scalar_type_traits<T>::type() } -> std::same_as<const ScalarType &>;
+};
 
-// Defines where a C++ scalar declaration can be used and how it produces a semantic type.
-struct scalar_type_properties {
+template <scalar_type_mapped T>
+const ScalarType &cpp_scalar_type() noexcept(noexcept(scalar_type_traits<T>::type())) {
+    return scalar_type_traits<T>::type();
+}
+
+// Defines where a scalar declaration can be used. This is separate from semantic type identity and storage.
+template <typename T> struct scalar_declaration_traits {
     static constexpr bool is_collection = false;
     static constexpr bool supports_implicit_argument = true;
     static constexpr bool supports_time_series = true;
 };
 
-template <typename T> struct scalar_type_traits : scalar_type_properties {
-    static const ScalarType &get() noexcept { return cpp_scalar_type<T>(); }
-};
+namespace details {
 
 template <typename T> const ScalarType &scalar_type_for() {
-    return scalar_type_traits<T>::get();
+    return cpp_scalar_type<T>();
 }
 
 } // namespace details

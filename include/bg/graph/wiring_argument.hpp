@@ -23,7 +23,7 @@ struct wiring_argument_access;
 
 template <typename T>
 inline constexpr bool supported_scalar_argument =
-    scalar_type_traits<std::remove_cvref_t<T>>::supports_implicit_argument &&
+    scalar_declaration_traits<std::remove_cvref_t<T>>::supports_implicit_argument &&
     requires { cpp_scalar_type<canonical_scalar_type_t<T>>(); };
 
 template <typename T> struct optional_scalar_argument : std::false_type {};

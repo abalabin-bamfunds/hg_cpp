@@ -11,7 +11,7 @@ template <typename T, auto... Properties> struct time_series_type_traits<TS<T, P
 
     static constexpr bool generic = generic_scalar<T>;
     static constexpr bool supported =
-        generic_scalar<T> || (scalar_type_traits<T>::supports_time_series && has_cpp_scalar_type<T>);
+        generic_scalar<T> || (scalar_declaration_traits<T>::supports_time_series && has_cpp_scalar_type<T>);
 
     template <typename Scope, std::size_t Index, bool Input>
     static const TimeSeriesType &get(GuaranteeParameter guarantee) {

@@ -96,3 +96,42 @@ returns its mutable view.
 
 Generic collection views use the resolved item types. This applies to scalar
 parameters and `State` declarations such as `State<Dict<K, SCALAR>>`.
+
+## Scalar providers
+
+A scalar provider defines three independent parts:
+
+- `scalar_type_traits<T>` maps its C++ declaration to one semantic
+  `ScalarType` object.
+- `scalar_storage_traits<T>` defines its canonical C++ stored object, read
+  value, intrinsic equality and hashing, and storage lifecycle.
+- `cpp_scalar_runtime_type<T>()` returns the canonical `ScalarRuntimeType`
+  generated from those traits.
+
+The provider defines `scalar_type_traits<T>::type()` out of line. It also
+explicitly instantiates `cpp_scalar_runtime_type<T>()` in the provider library
+and declares that instantiation with `extern template` in its public header.
+This gives the semantic type and canonical runtime type one stable identity
+across shared-library boundaries.
+
+`scalar_declaration_traits<T>` controls whether graph signatures accept the
+declaration as a collection, an implicit scalar argument, or a time series
+value. Its defaults describe an ordinary leaf scalar.
+
+## Optional operations
+
+An optional integration stores its handlers in `ScalarDispatch<Handler>`.
+The registry accepts exact `ScalarRuntimeType` and exact `ScalarType`
+registrations. Lookup by runtime type first checks its exact runtime-type
+handler and then its semantic-type handler. Registration does not add fields or
+virtual functions to scalar types, runtime types, or values.
+Resolved handler pointers remain stable for the registry lifetime and can be
+cached while processing values of one runtime type.
+
+Use `Scalar::visit()` for structural list, set, and dictionary handling. An
+operation that also accepts extension scalar types performs
+`ScalarDispatch` lookup in the `Scalar<>` catch-all callback. Pass the operation
+object to a registered handler when the handler must recurse.
+
+Complete registration before concurrent lookup. `ScalarDispatch::add()`
+rejects a duplicate exact registration.

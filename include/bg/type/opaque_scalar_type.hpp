@@ -21,21 +21,14 @@ template <typename T> const ScalarType &opaque_scalar_type() noexcept {
 
 namespace bg {
 
-template <typename T>
-    requires is_opaque_v<T>
-const ScalarType &cpp_scalar_type() noexcept {
-    return details::opaque_scalar_type<typename T::value_type>();
-}
-
-} // namespace bg
-
-namespace bg::details {
-
-template <typename T> struct scalar_type_traits<Opaque<T>> : scalar_type_properties {
-    static constexpr bool supports_implicit_argument = false;
-    static constexpr bool supports_time_series = false;
-
-    static const ScalarType &get() noexcept { return opaque_scalar_type<T>(); }
+template <typename T> struct scalar_type_traits<Opaque<T>> {
+    static const ScalarType &type() noexcept { return details::opaque_scalar_type<T>(); }
 };
 
-} // namespace bg::details
+template <typename T> struct scalar_declaration_traits<Opaque<T>> {
+    static constexpr bool is_collection = false;
+    static constexpr bool supports_implicit_argument = false;
+    static constexpr bool supports_time_series = false;
+};
+
+} // namespace bg

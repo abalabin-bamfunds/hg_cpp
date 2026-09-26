@@ -80,7 +80,7 @@ template <typename T> class ScalarValue {
 
     template <typename Other>
         requires requires(const Other &other) { details::scalar_data(other); } &&
-                 details::scalar_capability_traits<T>::supports_equality
+                 details::scalar_handle_traits<T>::supports_equality
     bool equals(const Other &other) const noexcept {
         return value_.equals(details::scalar_data(other));
     }
@@ -221,7 +221,7 @@ inline constexpr bool scalar_handle_supports_equality = [] {
     if constexpr (std::same_as<ScalarType, void>) {
         return false;
     } else {
-        return scalar_capability_traits<ScalarType>::supports_equality;
+        return scalar_handle_traits<ScalarType>::supports_equality;
     }
 }();
 

@@ -68,6 +68,7 @@ add_executable(
     value/scalar/dict/mutable_test.cpp
     value/scalar/dict/storage_test.cpp
     value/scalar/dict/value_test.cpp
+    value/scalar/dispatch_test.cpp
     value/scalar/erased_value_test.cpp
     value/scalar/list/mutable_test.cpp
     value/scalar/list/storage_test.cpp
@@ -77,6 +78,7 @@ add_executable(
     value/scalar/set/storage_test.cpp
     value/scalar/set/value_test.cpp
     value/scalar/storage_test.cpp
+    value/scalar/test_scalar_provider.cpp
     value/scalar/value_test.cpp
     value/scalar/visitor_test.cpp
     value/scalar/view_test.cpp

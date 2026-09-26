@@ -28,14 +28,14 @@ template <typename T> class Scalar<List<T>> {
     }
 
     std::size_t hash() const noexcept
-        requires details::scalar_capability_traits<List<T>>::supports_hash
+        requires details::scalar_handle_traits<List<T>>::supports_hash
     {
         return value_.hash();
     }
 
     template <typename Other>
         requires requires(const Other &other) { details::scalar_data(other); } &&
-                 details::scalar_capability_traits<List<T>>::supports_equality
+                 details::scalar_handle_traits<List<T>>::supports_equality
     bool equals(const Other &other) const noexcept {
         return value_.equals(details::scalar_data(other));
     }

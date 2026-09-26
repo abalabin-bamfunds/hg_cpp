@@ -1,7 +1,7 @@
 #pragma once
 
 #include <bg/scalar/details/data.hpp>
-#include <bg/scalar/details/storage_traits_base.hpp>
+#include <bg/scalar/storage_traits.hpp>
 #include <bg/scalar/runtime_type.hpp>
 
 #include <array>

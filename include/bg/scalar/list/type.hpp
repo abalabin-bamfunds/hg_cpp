@@ -1,6 +1,6 @@
 #pragma once
 
-#include <bg/scalar/details/storage_traits_base.hpp>
+#include <bg/scalar/storage_traits.hpp>
 #include <bg/scalar/type.hpp>
 #include <bg/util/contiguous_bunch.hpp>
 
@@ -26,7 +26,7 @@ template <typename T> struct scalar_list_storage {
 } // namespace details
 
 template <typename T> class List {
-    using ItemTraits = details::scalar_storage_traits<T>;
+    using ItemTraits = scalar_storage_traits<T>;
     using Storage = details::scalar_list_storage<T>;
 
   public:
@@ -36,7 +36,7 @@ template <typename T> class List {
     List() = delete;
 
   private:
-    template <typename> friend struct details::scalar_storage_traits;
+    template <typename> friend struct scalar_storage_traits;
     template <typename> friend class Scalar;
     friend class MutableList<T>;
 
@@ -92,7 +92,7 @@ template <typename T> inline constexpr bool generic_scalar<List<T>> = generic_sc
 
 template <typename T> struct std::hash<bg::List<T>> {
     std::size_t operator()(const bg::List<T> &value) const noexcept {
-        return bg::details::scalar_storage_traits<bg::List<T>>::hash(value);
+        return bg::scalar_storage_traits<bg::List<T>>::hash(value);
     }
 };
 

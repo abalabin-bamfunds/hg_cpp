@@ -105,7 +105,7 @@ using aggregate_output_time_series_t = decltype(aggregate_output_time_series_typ
 template <typename T> inline constexpr bool generic_scalar_state = generic_scalar<T>;
 
 template <typename T> struct scalar_field {
-    static constexpr bool value = scalar_type_traits<T>::supports_implicit_argument && requires {
+    static constexpr bool value = scalar_declaration_traits<T>::supports_implicit_argument && requires {
         cpp_scalar_type<canonical_scalar_type_t<T>>();
     };
     static constexpr bool optional = false;
@@ -137,7 +137,7 @@ template <typename T> struct state_field {
 
 template <typename T> struct state_field<State<T>> {
     static constexpr bool value = true;
-    static constexpr bool scalar_collection = scalar_type_traits<T>::is_collection;
+    static constexpr bool scalar_collection = scalar_declaration_traits<T>::is_collection;
 
     using value_type = T;
     using storage_type = std::conditional_t<scalar_collection, scalar_stored_t<T>, T>;
@@ -203,7 +203,7 @@ template <typename T> struct time_series_value_has_runtime_layout : std::false_t
 
 template <typename T, auto... Properties>
 struct time_series_value_has_runtime_layout<TS<T, Properties...>>
-    : std::bool_constant<scalar_type_traits<T>::is_collection> {};
+    : std::bool_constant<scalar_declaration_traits<T>::is_collection> {};
 
 template <typename TimeSeries, auto... Properties>
 struct input_view_field<In<TimeSeries, Properties...>>

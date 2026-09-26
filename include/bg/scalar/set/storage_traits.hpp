@@ -1,21 +1,21 @@
 #pragma once
 
-#include <bg/scalar/details/capability_traits.hpp>
+#include <bg/scalar/details/handle_traits.hpp>
 #include <bg/scalar/details/collection_storage.hpp>
 #include <bg/scalar/set/type.hpp>
 #include <bg/util/scope_exit.hpp>
 
 #include <memory>
 
-namespace bg::details {
+namespace bg {
 
 template <typename T> struct scalar_storage_traits<Set<T>> {
     using ItemTraits = scalar_storage_traits<T>;
-    using stored_type = scalar_set_storage<T>;
+    using stored_type = details::scalar_set_storage<T>;
     using value_type = Set<T>;
 
-    static constexpr bool supports_equality = scalar_capability_traits<T>::supports_equality;
-    static constexpr bool supports_hash = scalar_capability_traits<T>::supports_hash;
+    static constexpr bool supports_equality = details::scalar_handle_traits<T>::supports_equality;
+    static constexpr bool supports_hash = details::scalar_handle_traits<T>::supports_hash;
     static constexpr bool uses_variable_memory = true;
     static constexpr bool requires_finalization = ItemTraits::requires_finalization;
     static constexpr bool assign_uses_memory_resource = true;
@@ -60,7 +60,7 @@ template <typename T> struct scalar_storage_traits<Set<T>> {
     }
 
     static void assign(stored_type &destination, value_type value, allocator &memory) {
-        replace_collection_storage<Set<T>>(destination, value, memory);
+        details::replace_collection_storage<Set<T>>(destination, value, memory);
     }
 
     static void destroy(stored_type *value, allocator &memory) noexcept {
@@ -69,9 +69,13 @@ template <typename T> struct scalar_storage_traits<Set<T>> {
     }
 };
 
-template <typename T> struct scalar_capability_traits<Set<T>> {
-    static constexpr bool supports_equality = scalar_capability_traits<T>::supports_equality;
-    static constexpr bool supports_hash = scalar_capability_traits<T>::supports_hash;
+} // namespace bg
+
+namespace bg::details {
+
+template <typename T> struct scalar_handle_traits<Set<T>> {
+    static constexpr bool supports_equality = scalar_handle_traits<T>::supports_equality;
+    static constexpr bool supports_hash = scalar_handle_traits<T>::supports_hash;
 };
 
 } // namespace bg::details

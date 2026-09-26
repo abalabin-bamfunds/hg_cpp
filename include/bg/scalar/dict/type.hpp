@@ -1,7 +1,7 @@
 #pragma once
 
 #include <bg/scalar/details/hash.hpp>
-#include <bg/scalar/details/storage_traits_base.hpp>
+#include <bg/scalar/storage_traits.hpp>
 #include <bg/scalar/type.hpp>
 #include <bg/util/hash_dictionary.hpp>
 
@@ -32,8 +32,8 @@ template <typename K, typename V> struct scalar_dict_storage {
 
 template <typename K, typename V> class Dict {
     using Storage = details::scalar_dict_storage<K, V>;
-    using KeyTraits = details::scalar_storage_traits<K>;
-    using ValueTraits = details::scalar_storage_traits<V>;
+    using KeyTraits = scalar_storage_traits<K>;
+    using ValueTraits = scalar_storage_traits<V>;
 
   public:
     using key_type = K;
@@ -44,7 +44,7 @@ template <typename K, typename V> class Dict {
     Dict() = delete;
 
   private:
-    template <typename> friend struct details::scalar_storage_traits;
+    template <typename> friend struct scalar_storage_traits;
     friend class MutableDict<K, V>;
 
     std::size_t size() const noexcept { return storage_->items.size(); }

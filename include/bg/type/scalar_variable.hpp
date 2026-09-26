@@ -55,10 +55,18 @@ struct declaration_variable_traits<ScalarVariable<Name, Constraints...>> {
     }
 };
 
-template <scalar_variable Declaration> struct scalar_type_traits<Declaration> : scalar_type_properties {
-    static constexpr bool supports_implicit_argument = false;
+} // namespace bg::details
 
-    static const ScalarType &get() { return scalar_variable_instance<Declaration>(); }
+namespace bg {
+
+template <details::scalar_variable Declaration> struct scalar_type_traits<Declaration> {
+    static const ScalarType &type() { return details::scalar_variable_instance<Declaration>(); }
 };
 
-} // namespace bg::details
+template <details::scalar_variable Declaration> struct scalar_declaration_traits<Declaration> {
+    static constexpr bool is_collection = false;
+    static constexpr bool supports_implicit_argument = false;
+    static constexpr bool supports_time_series = true;
+};
+
+} // namespace bg

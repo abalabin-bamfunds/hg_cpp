@@ -42,30 +42,28 @@ class GenericDictScalarType final : public DictScalarType {
 
 const DictScalarType &dict_scalar_type(const ScalarType &key_type, const ScalarType &mapped_type);
 
-template <typename T>
-    requires is_dict_v<T> && (!details::generic_scalar<T>)
-const ScalarType &cpp_scalar_type() {
-    return dict_scalar_type(details::scalar_type_for<typename T::key_type>(),
-                            details::scalar_type_for<typename T::mapped_type>());
-}
+template <typename K, typename V> struct scalar_type_traits<Dict<K, V>> {
+    static const ScalarType &type() {
+        if constexpr (details::generic_scalar<K> || details::generic_scalar<V>) {
+            static const auto type =
+                GenericDictScalarType{details::scalar_type_for<K>(), details::scalar_type_for<V>()};
+
+            return type;
+        } else {
+            return dict_scalar_type(details::scalar_type_for<K>(), details::scalar_type_for<V>());
+        }
+    }
+};
+
+template <typename K, typename V> struct scalar_declaration_traits<Dict<K, V>> {
+    static constexpr bool is_collection = true;
+    static constexpr bool supports_implicit_argument = true;
+    static constexpr bool supports_time_series = true;
+};
 
 } // namespace bg
 
 namespace bg::details {
-
-template <typename K, typename V> struct scalar_type_traits<Dict<K, V>> : scalar_type_properties {
-    static constexpr bool is_collection = true;
-
-    static const ScalarType &get() {
-        if constexpr (generic_scalar<K> || generic_scalar<V>) {
-            static const auto type = GenericDictScalarType{scalar_type_for<K>(), scalar_type_for<V>()};
-
-            return type;
-        } else {
-            return cpp_scalar_type<Dict<K, V>>();
-        }
-    }
-};
 
 template <typename K, typename V> struct declaration_variable_traits<Dict<K, V>> {
     template <typename Visitor> static void for_each(Visitor &&visitor) {

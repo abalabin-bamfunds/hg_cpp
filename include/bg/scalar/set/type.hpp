@@ -1,7 +1,7 @@
 #pragma once
 
 #include <bg/scalar/details/hash.hpp>
-#include <bg/scalar/details/storage_traits_base.hpp>
+#include <bg/scalar/storage_traits.hpp>
 #include <bg/scalar/type.hpp>
 #include <bg/util/hash_set.hpp>
 
@@ -29,7 +29,7 @@ template <typename T> struct scalar_set_storage {
 
 template <typename T> class Set {
     using Storage = details::scalar_set_storage<T>;
-    using ItemTraits = details::scalar_storage_traits<T>;
+    using ItemTraits = scalar_storage_traits<T>;
 
   public:
     using item_type = T;
@@ -38,7 +38,7 @@ template <typename T> class Set {
     Set() = delete;
 
   private:
-    template <typename> friend struct details::scalar_storage_traits;
+    template <typename> friend struct scalar_storage_traits;
     friend class MutableSet<T>;
 
     std::size_t size() const noexcept { return storage_->items.size(); }

@@ -61,14 +61,14 @@ template <typename K, typename V> class Scalar<Dict<K, V>> {
     }
 
     std::size_t hash() const noexcept
-        requires details::scalar_capability_traits<Dict<K, V>>::supports_hash
+        requires details::scalar_handle_traits<Dict<K, V>>::supports_hash
     {
         return value_.hash();
     }
 
     template <typename Other>
         requires requires(const Other &other) { details::scalar_data(other); } &&
-                 details::scalar_capability_traits<Dict<K, V>>::supports_equality
+                 details::scalar_handle_traits<Dict<K, V>>::supports_equality
     bool equals(const Other &other) const noexcept {
         return value_.equals(details::scalar_data(other));
     }

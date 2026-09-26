@@ -59,7 +59,7 @@ class In<TS<T, TimeSeriesProperties...>, Properties...> {
     static_assert(ParsedProperties::valid);
 
   public:
-    using Traits = details::scalar_storage_traits<T>;
+    using Traits = scalar_storage_traits<T>;
     using Stored = typename Traits::stored_type;
 
     In() noexcept : data_{cpp_time_series_runtime_type<TS<T, TimeSeriesProperties...>>(), MIN_DT, nullptr} {}
@@ -76,19 +76,19 @@ class In<TS<T, TimeSeriesProperties...>, Properties...> {
     EvaluationTime last_updated() const noexcept { return data_.last_updated(); }
 
     details::scalar_value_t<T> value() const noexcept
-        requires(!details::scalar_type_traits<T>::is_collection)
+        requires(!scalar_declaration_traits<T>::is_collection)
     {
         return Traits::read(*static_cast<const Stored *>(data_.data()));
     }
 
     details::scalar_value_t<T> operator*() const noexcept
-        requires(!details::scalar_type_traits<T>::is_collection)
+        requires(!scalar_declaration_traits<T>::is_collection)
     {
         return value();
     }
 
     auto operator->() const noexcept
-        requires(!details::scalar_type_traits<T>::is_collection && details::scalar_value_supports_arrow<T>)
+        requires(!scalar_declaration_traits<T>::is_collection && details::scalar_value_supports_arrow<T>)
     {
         return details::scalar_value_arrow<T>(value());
     }

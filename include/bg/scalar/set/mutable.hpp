@@ -10,7 +10,7 @@ namespace bg {
 template <typename T> class MutableSet : public Set<T> {
     using Base = Set<T>;
     using Storage = details::scalar_set_storage<T>;
-    using Traits = details::scalar_storage_traits<T>;
+    using Traits = scalar_storage_traits<T>;
 
   public:
     explicit MutableSet(Storage &storage) noexcept : Base{storage} {}

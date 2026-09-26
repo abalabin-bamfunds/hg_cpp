@@ -12,8 +12,8 @@ namespace bg {
 template <typename K, typename V> class MutableDict : public Dict<K, V> {
     using Base = Dict<K, V>;
     using Storage = details::scalar_dict_storage<K, V>;
-    using KeyTraits = details::scalar_storage_traits<K>;
-    using ValueTraits = details::scalar_storage_traits<V>;
+    using KeyTraits = scalar_storage_traits<K>;
+    using ValueTraits = scalar_storage_traits<V>;
 
   public:
     explicit MutableDict(Storage &storage) noexcept : Base{storage} {}

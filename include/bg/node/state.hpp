@@ -60,7 +60,7 @@ class State<List<T>> {
     auto operator[](std::size_t index) const {
         auto *data = runtime_type_->item(value_, index);
         const auto &item = runtime_type_->item_runtime_type();
-        if constexpr (details::scalar_type_traits<T>::is_collection) {
+        if constexpr (scalar_declaration_traits<T>::is_collection) {
             return State<T>{item, data};
         } else {
             return Scalar<T>::from(item, data);
@@ -135,7 +135,7 @@ class State<Dict<K, V>> {
 
     auto at(const Scalar<K> &key) const {
         const auto item = runtime_type_->at(value_, key);
-        if constexpr (details::scalar_type_traits<V>::is_collection) {
+        if constexpr (scalar_declaration_traits<V>::is_collection) {
             if constexpr (details::generic_scalar<V>) {
                 return State<V>{item.runtime_type, item.data};
             } else {

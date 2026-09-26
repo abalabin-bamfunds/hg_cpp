@@ -1,7 +1,7 @@
 #pragma once
 
 #include <bg/scalar/cpp_runtime_type.hpp>
-#include <bg/scalar/details/capability_traits.hpp>
+#include <bg/scalar/details/handle_traits.hpp>
 #include <bg/scalar/details/data.hpp>
 #include <bg/scalar/details/storage_traits.hpp>
 #include <bg/scalar/details/value_access.hpp>
@@ -39,7 +39,7 @@ template <typename T> class Scalar {
         if constexpr (std::same_as<U, void>) {
             return true;
         } else {
-            return details::scalar_capability_traits<U>::supports_hash;
+            return details::scalar_handle_traits<U>::supports_hash;
         }
     }
 
@@ -47,7 +47,7 @@ template <typename T> class Scalar {
         if constexpr (std::same_as<U, void>) {
             return true;
         } else {
-            return details::scalar_capability_traits<U>::supports_equality;
+            return details::scalar_handle_traits<U>::supports_equality;
         }
     }
 
