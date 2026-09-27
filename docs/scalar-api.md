@@ -33,9 +33,27 @@ and keyed lookup operate through both runtime types. Native and composed
 collection layouts therefore interoperate without converting a view to a C++
 collection object.
 
-The view visitor selects value, list, set, or dictionary access. Generic node
-code can use this interface without inspecting the semantic type. The selected
-view is valid for the visitor callback.
+The view visitor selects typed built-in atomic access, structural list, set, or
+dictionary access, or erased extension access. Generic node code can use this
+interface without inspecting the semantic type. The selected view is valid for
+the visitor callback.
+
+## Built-in declarations
+
+The built-in atomic declarations are `byte`, `bool`, `i64`, `double`,
+`date_time_t`, `timedelta_t`, `string`, and `symbol`. They have these C++
+representations:
+
+- `byte` is `std::byte`.
+- `i64` is `std::int64_t`.
+- `date_time_t` is the existing `EvaluationTime` representation.
+- `timedelta_t` is `std::chrono::microseconds`.
+- `symbol` is the existing `util::symbol` representation.
+
+`std::byte` is the only source type that canonicalizes to `byte`. Character and
+eight-bit integer types do not canonicalize to it. The supported `int` and
+`float` declarations remain outside the built-in visitor list and use the
+erased visitor fallback.
 
 ## Ownership
 
@@ -129,9 +147,9 @@ Resolved handler pointers remain stable for the registry lifetime and can be
 cached while processing values of one runtime type.
 
 Use `Scalar::visit()` for structural list, set, and dictionary handling. An
-operation that also accepts extension scalar types performs
-`ScalarDispatch` lookup in the `Scalar<>` catch-all callback. Pass the operation
-object to a registered handler when the handler must recurse.
+operation handles built-in atomic types through typed `Scalar<T>` callbacks. It
+performs `ScalarDispatch` lookup in the `Scalar<>` extension catch-all callback.
+Pass the operation object to a registered handler when the handler must recurse.
 
 Complete registration before concurrent lookup. `ScalarDispatch::add()`
 rejects a duplicate exact registration.

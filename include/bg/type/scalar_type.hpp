@@ -1,19 +1,13 @@
 #pragma once
 
-#include <bg/evaluation_time.hpp>
-#include <bg/scalar/string.hpp>
+#include <bg/scalar/builtins.hpp>
 #include <bg/type/type.hpp>
 
 #include <concepts>
-#include <cstdint>
 
 namespace bg {
 
 template <typename T = void> class Scalar;
-
-namespace util {
-class symbol;
-}
 
 class ScalarType : public Type {
   public:
@@ -36,11 +30,13 @@ inline bool supports_scalar_hash(const ScalarType &type) noexcept {
 }
 
 const ScalarType &int_type() noexcept;
+const ScalarType &byte_type() noexcept;
 const ScalarType &bool_type() noexcept;
 const ScalarType &int64_type() noexcept;
 const ScalarType &float_type() noexcept;
 const ScalarType &double_type() noexcept;
 const ScalarType &evaluation_time_type() noexcept;
+const ScalarType &timedelta_type() noexcept;
 const ScalarType &string_type() noexcept;
 const ScalarType &symbol_type() noexcept;
 
@@ -56,7 +52,11 @@ template <> struct scalar_type_traits<int> {
     static const ScalarType &type() noexcept;
 };
 
-template <> struct scalar_type_traits<std::int64_t> {
+template <> struct scalar_type_traits<byte> {
+    static const ScalarType &type() noexcept;
+};
+
+template <> struct scalar_type_traits<i64> {
     static const ScalarType &type() noexcept;
 };
 
@@ -68,7 +68,11 @@ template <> struct scalar_type_traits<double> {
     static const ScalarType &type() noexcept;
 };
 
-template <> struct scalar_type_traits<EvaluationTime> {
+template <> struct scalar_type_traits<date_time_t> {
+    static const ScalarType &type() noexcept;
+};
+
+template <> struct scalar_type_traits<timedelta_t> {
     static const ScalarType &type() noexcept;
 };
 
@@ -76,7 +80,7 @@ template <> struct scalar_type_traits<string> {
     static const ScalarType &type() noexcept;
 };
 
-template <> struct scalar_type_traits<util::symbol> {
+template <> struct scalar_type_traits<symbol> {
     static const ScalarType &type() noexcept;
 };
 

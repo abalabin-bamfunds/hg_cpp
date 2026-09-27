@@ -35,6 +35,7 @@
 #include <bg/node/output.hpp>
 #include <bg/node/state.hpp>
 #include <bg/run_graph.hpp>
+#include <bg/scalar/builtins.hpp>
 #include <bg/scalar/canonical.hpp>
 #include <bg/scalar/cpp_runtime_type.hpp>
 #include <bg/scalar/dict/runtime_type.hpp>

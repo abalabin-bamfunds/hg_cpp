@@ -1,7 +1,6 @@
 #pragma once
 
-#include <bg/evaluation_time.hpp>
-#include <bg/scalar/string.hpp>
+#include <bg/scalar/builtins.hpp>
 
 #include <concepts>
 #include <cstdint>
@@ -24,6 +23,11 @@ concept canonical_integer_source =
 template <typename T>
 concept canonical_boolean_source = std::same_as<std::remove_cvref_t<T>, bool>;
 
+template <typename T>
+concept canonical_exact_source =
+    std::same_as<std::remove_cvref_t<T>, byte> || std::same_as<std::remove_cvref_t<T>, timedelta_t> ||
+    std::same_as<std::remove_cvref_t<T>, symbol>;
+
 template <typename T> struct is_character_string : std::false_type {};
 
 template <typename Traits, typename Allocator>
@@ -45,14 +49,18 @@ template <canonical_boolean_source T> struct canonical_scalar<T> {
     using type = bool;
 };
 
+template <canonical_exact_source T> struct canonical_scalar<T> {
+    using type = std::remove_cvref_t<T>;
+};
+
 template <canonical_string_source T> struct canonical_scalar<T> {
     using type = string;
 };
 
 template <typename T>
-    requires std::same_as<std::remove_cvref_t<T>, EvaluationTime>
+    requires std::same_as<std::remove_cvref_t<T>, date_time_t>
 struct canonical_scalar<T> {
-    using type = EvaluationTime;
+    using type = date_time_t;
 };
 
 template <typename T>
@@ -101,12 +109,17 @@ template <details::canonical_boolean_source T> [[nodiscard]] constexpr bool cano
     return value;
 }
 
+template <details::canonical_exact_source T>
+[[nodiscard]] constexpr std::remove_cvref_t<T> canonical_scalar(T value) noexcept {
+    return value;
+}
+
 template <details::canonical_string_source T>
 [[nodiscard]] constexpr std::string_view canonical_scalar(const T &value) noexcept {
     return std::string_view{value};
 }
 
-[[nodiscard]] constexpr EvaluationTime canonical_scalar(EvaluationTime value) noexcept {
+[[nodiscard]] constexpr date_time_t canonical_scalar(date_time_t value) noexcept {
     return value;
 }
 

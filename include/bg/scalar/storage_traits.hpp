@@ -1,7 +1,7 @@
 #pragma once
 
 #include <bg/allocator.hpp>
-#include <bg/evaluation_time.hpp>
+#include <bg/scalar/builtins.hpp>
 #include <bg/scalar/details/value_type.hpp>
 #include <bg/scalar/opaque.hpp>
 #include <bg/scalar/string.hpp>
@@ -25,8 +25,9 @@ template <typename T> struct scalar_storage_traits {
     using value_type = details::scalar_value_t<T>;
 
     static constexpr bool supports_equality = std::equality_comparable<value_type>;
-    static constexpr bool supports_hash =
-        std::same_as<T, EvaluationTime> || requires(value_type value) { std::hash<value_type>{}(value); };
+    static constexpr bool supports_hash = std::same_as<T, byte> || std::same_as<T, date_time_t> ||
+                                          std::same_as<T, timedelta_t> ||
+                                          requires(value_type value) { std::hash<value_type>{}(value); };
     static constexpr bool uses_variable_memory = false;
     static constexpr bool requires_finalization = !std::is_trivially_destructible_v<stored_type>;
     static constexpr bool assign_uses_memory_resource = false;
@@ -34,8 +35,12 @@ template <typename T> struct scalar_storage_traits {
     static value_type read(const stored_type &value) noexcept { return value; }
 
     static std::size_t hash(value_type value) noexcept {
-        if constexpr (std::same_as<T, EvaluationTime>) {
-            return std::hash<EvaluationTime::rep>{}(value.time_since_epoch().count());
+        if constexpr (std::same_as<T, byte>) {
+            return std::to_integer<std::size_t>(value);
+        } else if constexpr (std::same_as<T, date_time_t>) {
+            return std::hash<date_time_t::rep>{}(value.time_since_epoch().count());
+        } else if constexpr (std::same_as<T, timedelta_t>) {
+            return std::hash<timedelta_t::rep>{}(value.count());
         } else {
             return std::hash<value_type>{}(value);
         }

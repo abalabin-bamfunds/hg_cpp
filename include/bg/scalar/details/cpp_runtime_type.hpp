@@ -174,12 +174,14 @@ template <typename T> const ScalarRuntimeType &cpp_scalar_runtime_type() {
 }
 
 extern template const ScalarRuntimeType &cpp_scalar_runtime_type<bool>();
+extern template const ScalarRuntimeType &cpp_scalar_runtime_type<byte>();
 extern template const ScalarRuntimeType &cpp_scalar_runtime_type<int>();
-extern template const ScalarRuntimeType &cpp_scalar_runtime_type<std::int64_t>();
+extern template const ScalarRuntimeType &cpp_scalar_runtime_type<i64>();
 extern template const ScalarRuntimeType &cpp_scalar_runtime_type<float>();
 extern template const ScalarRuntimeType &cpp_scalar_runtime_type<double>();
-extern template const ScalarRuntimeType &cpp_scalar_runtime_type<EvaluationTime>();
+extern template const ScalarRuntimeType &cpp_scalar_runtime_type<date_time_t>();
+extern template const ScalarRuntimeType &cpp_scalar_runtime_type<timedelta_t>();
 extern template const ScalarRuntimeType &cpp_scalar_runtime_type<string>();
-extern template const ScalarRuntimeType &cpp_scalar_runtime_type<util::symbol>();
+extern template const ScalarRuntimeType &cpp_scalar_runtime_type<symbol>();
 
 } // namespace bg

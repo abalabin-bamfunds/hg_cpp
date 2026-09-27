@@ -35,11 +35,17 @@ void append_guarantee(std::string &result, const GuaranteeParameter &guarantee) 
 }
 
 void append_scalar(std::string &result, const ScalarType &type) {
-    constexpr auto primitive_names = std::array<std::pair<const ScalarType &(*)() noexcept, std::string_view>, 8>{
-        std::pair{&int_type, "int"},       std::pair{&bool_type, "bool"},
-        std::pair{&int64_type, "int64"},   std::pair{&float_type, "float"},
-        std::pair{&double_type, "double"}, std::pair{&evaluation_time_type, "EvaluationTime"},
-        std::pair{&string_type, "string"}, std::pair{&symbol_type, "symbol"},
+    constexpr auto primitive_names = std::array<std::pair<const ScalarType &(*)() noexcept, std::string_view>, 10>{
+        std::pair{&int_type, "int"},
+        std::pair{&byte_type, "byte"},
+        std::pair{&bool_type, "bool"},
+        std::pair{&int64_type, "i64"},
+        std::pair{&float_type, "float"},
+        std::pair{&double_type, "double"},
+        std::pair{&evaluation_time_type, "date_time_t"},
+        std::pair{&timedelta_type, "timedelta_t"},
+        std::pair{&string_type, "string"},
+        std::pair{&symbol_type, "symbol"},
     };
     for (const auto &[get, name] : primitive_names) {
         if (&type == &get()) {

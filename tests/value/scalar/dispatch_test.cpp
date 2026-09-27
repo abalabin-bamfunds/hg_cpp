@@ -44,6 +44,7 @@ class RecordingVisitor {
             },
             [&](const bg::Scalar<bg::Set<bg::SCALAR>> *) { ++structural_collections_; },
             [&](const bg::Scalar<bg::Dict<bg::SCALAR, bg::SCALAR>> *) { ++structural_collections_; },
+            [&](const bg::Scalar<bg::i64> *scalar) { record(scalar->value()); },
             [&](const bg::Scalar<> *scalar) {
                 ++extension_lookups_;
                 const auto *handler = handlers_.find(scalar->runtime_type());
@@ -51,7 +52,8 @@ class RecordingVisitor {
                     throw std::logic_error{"test scalar has no handler"};
                 }
                 handler->visit(*this, *scalar);
-            });
+            },
+            ddv::noop);
     }
 
     void record(int value) { values_.push_back(value); }
@@ -66,10 +68,6 @@ class RecordingVisitor {
     std::size_t structural_collections_{};
     std::size_t extension_lookups_{};
 };
-
-void visit_integer(RecordingVisitor &visitor, bg::Scalar<> value) {
-    visitor.record(*bg::unchecked_scalar_cast<std::int64_t>(value));
-}
 
 void visit_external_type(RecordingVisitor &visitor, bg::Scalar<> value) {
     visitor.record(-1);
@@ -115,7 +113,6 @@ TEST_CASE("scalar dispatch prefers an exact runtime type handler",
 TEST_CASE("a recursive scalar visitor dispatches extension values from a structural list",
           "[feature:visitor][feature:scalar-collection][scalar:list][declaration:runtime]") {
     auto visitor = RecordingVisitor{};
-    visitor.add_type_handler<std::int64_t>(visit_integer);
     visitor.add_type_handler<test_scalar_provider::value>(visit_external_type);
     visitor.add_type_handler<bg::List<test_scalar_provider::value>>(reject_structural_collection);
     const auto value = bg::ScalarValue<bg::List<test_scalar_provider::value>>{
@@ -126,5 +123,5 @@ TEST_CASE("a recursive scalar visitor dispatches extension values from a structu
 
     CHECK(visitor.values() == std::vector<int>{-1, 1, -1, 2});
     CHECK(visitor.structural_collections() == 1);
-    CHECK(visitor.extension_lookups() == 4);
+    CHECK(visitor.extension_lookups() == 2);
 }

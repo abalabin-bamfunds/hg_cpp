@@ -29,6 +29,12 @@ const ScalarType &int_type() noexcept {
     return type;
 }
 
+const ScalarType &byte_type() noexcept {
+    static const CppScalarType<byte> type;
+
+    return type;
+}
+
 const ScalarType &bool_type() noexcept {
     static const CppScalarType<bool> type;
 
@@ -36,7 +42,7 @@ const ScalarType &bool_type() noexcept {
 }
 
 const ScalarType &int64_type() noexcept {
-    static const CppScalarType<std::int64_t> type;
+    static const CppScalarType<i64> type;
 
     return type;
 }
@@ -54,7 +60,13 @@ const ScalarType &double_type() noexcept {
 }
 
 const ScalarType &evaluation_time_type() noexcept {
-    static const CppScalarType<EvaluationTime> type;
+    static const CppScalarType<date_time_t> type;
+
+    return type;
+}
+
+const ScalarType &timedelta_type() noexcept {
+    static const CppScalarType<timedelta_t> type;
 
     return type;
 }
@@ -66,7 +78,7 @@ const ScalarType &string_type() noexcept {
 }
 
 const ScalarType &symbol_type() noexcept {
-    static const CppScalarType<util::symbol> type;
+    static const CppScalarType<symbol> type;
 
     return type;
 }
@@ -79,7 +91,11 @@ const ScalarType &scalar_type_traits<bool>::type() noexcept {
     return bool_type();
 }
 
-const ScalarType &scalar_type_traits<std::int64_t>::type() noexcept {
+const ScalarType &scalar_type_traits<byte>::type() noexcept {
+    return byte_type();
+}
+
+const ScalarType &scalar_type_traits<i64>::type() noexcept {
     return int64_type();
 }
 
@@ -91,15 +107,19 @@ const ScalarType &scalar_type_traits<double>::type() noexcept {
     return double_type();
 }
 
-const ScalarType &scalar_type_traits<EvaluationTime>::type() noexcept {
+const ScalarType &scalar_type_traits<date_time_t>::type() noexcept {
     return evaluation_time_type();
+}
+
+const ScalarType &scalar_type_traits<timedelta_t>::type() noexcept {
+    return timedelta_type();
 }
 
 const ScalarType &scalar_type_traits<string>::type() noexcept {
     return string_type();
 }
 
-const ScalarType &scalar_type_traits<util::symbol>::type() noexcept {
+const ScalarType &scalar_type_traits<symbol>::type() noexcept {
     return symbol_type();
 }
 

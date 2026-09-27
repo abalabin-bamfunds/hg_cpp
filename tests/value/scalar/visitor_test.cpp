@@ -6,12 +6,12 @@
 #include <utility>
 #include <vector>
 
-TEST_CASE("a scalar visitor identifies a scalar value", "[value][scalar][visitor][feature:visitor][scalar:integer]") {
+TEST_CASE("a scalar visitor identifies a scalar value", "[value][scalar][visitor][feature:visitor][scalar:i64]") {
     const auto value = bg::ScalarValue{42};
     auto called = false;
 
     value.view().visit(
-        [&](const bg::Scalar<> *view) {
+        [&](const bg::Scalar<bg::i64> *view) {
             called = true;
             CHECK(&view->type() == &bg::int64_type());
         },
@@ -54,19 +54,22 @@ TEST_CASE("a scalar visitor identifies each collection type",
     CHECK(dict_called);
 }
 
-TEST_CASE("a scalar visitor supports a base-view fallback",
-          "[value][scalar][visitor][feature:visitor][scalar:integer]") {
+TEST_CASE("a scalar visitor reserves the erased view for extension types",
+          "[value][scalar][visitor][feature:visitor][scalar:i64]") {
     const auto value = bg::ScalarValue{42};
-    auto called = false;
+    auto typed_called = false;
+    auto erased_called = false;
 
     value.view().visit(
-        [&](const bg::Scalar<> *view) {
-            called = true;
+        [&](const bg::Scalar<bg::i64> *view) {
+            typed_called = true;
             CHECK(&view->type() == &bg::int64_type());
         },
+        [&](const bg::Scalar<> *) { erased_called = true; },
         ddv::noop);
 
-    CHECK(called);
+    CHECK(typed_called);
+    CHECK_FALSE(erased_called);
 }
 
 TEST_CASE("an opaque scalar visitor uses the base-view interface",

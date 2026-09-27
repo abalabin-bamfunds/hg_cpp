@@ -1,5 +1,6 @@
 #pragma once
 
+#include <bg/scalar/builtins.hpp>
 #include <bg/scalar/cpp_runtime_type.hpp>
 #include <bg/scalar/details/handle_traits.hpp>
 #include <bg/scalar/details/data.hpp>
@@ -161,7 +162,15 @@ template <typename T> class Scalar {
 
 namespace bg {
 
-using ScalarVisitTypes = ddv::mux<Scalar<List<SCALAR>>, Scalar<Set<SCALAR>>, Scalar<Dict<SCALAR, SCALAR>>, Scalar<>>;
+namespace details {
+
+template <typename... Builtins>
+auto scalar_visit_types(tp::tpack<Builtins...>)
+    -> ddv::mux<Scalar<List<SCALAR>>, Scalar<Set<SCALAR>>, Scalar<Dict<SCALAR, SCALAR>>, Scalar<Builtins>..., Scalar<>>;
+
+} // namespace details
+
+using ScalarVisitTypes = decltype(details::scalar_visit_types(details::builtin_scalar_declarations));
 
 template <typename T>
 template <typename Visitor, typename... Arguments>
@@ -170,9 +179,26 @@ auto Scalar<T>::visit(Visitor &&visitor, Arguments &&...arguments) const {
     auto dispatch = ddv::make_visitable_visitor<ScalarVisitTypes>(
         std::forward_as_tuple(std::forward<Arguments>(arguments)...), std::forward<Visitor>(visitor));
     auto &types = static_cast<ScalarVisitTypes &>(dispatch);
-    type().visit(
+    const auto &semantic_type = type();
+    semantic_type.visit(
         [&]<typename RuntimeType>(const RuntimeType *) {
-            if constexpr (requires { typename RuntimeType::generic_scalar_view; }) {
+            if constexpr (std::same_as<RuntimeType, ScalarType>) {
+                auto matched = false;
+                // Keep the semantic identity scan in the scalar catch-all. Measure it before adding an index or
+                // registry to scalar type objects.
+                tp::for_each(details::builtin_scalar_declarations, [&]<typename Builtin>(tp::unit<Builtin>) {
+                    if (!matched && &semantic_type == &cpp_scalar_type<Builtin>()) {
+                        auto typed = Scalar<Builtin>::from(value_.runtime_type(), value_.data());
+                        types.visit(&typed);
+                        matched = true;
+                    }
+                });
+
+                if (!matched) {
+                    auto typed = Scalar<>::from(value_.runtime_type(), value_.data());
+                    types.visit(&typed);
+                }
+            } else if constexpr (requires { typename RuntimeType::generic_scalar_view; }) {
                 using View = typename RuntimeType::generic_scalar_view;
                 auto typed = View::from(value_.runtime_type(), value_.data());
                 types.visit(&typed);
