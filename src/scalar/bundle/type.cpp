@@ -114,6 +114,37 @@ struct HierarchicalTypeEntry {
     HierarchicalTypeStatus status;
 };
 
+enum class RequiredFieldVisit : std::uint8_t {
+    active,
+    complete,
+};
+
+bool has_required_field_cycle(
+    const HierarchicalScalarType &type,
+    std::unordered_map<const HierarchicalScalarType *, RequiredFieldVisit> &visits) {
+    const auto [entry, inserted] = visits.try_emplace(&type, RequiredFieldVisit::active);
+    if (!inserted) {
+        return entry->second == RequiredFieldVisit::active;
+    }
+
+    for (const auto &field : type.fields()) {
+        const auto *nested = field.optional ? nullptr : type_cast<HierarchicalScalarType>(field.type);
+        if (nested != nullptr && has_required_field_cycle(*nested, visits)) {
+            return true;
+        }
+    }
+
+    visits.at(&type) = RequiredFieldVisit::complete;
+    return false;
+}
+
+void validate_required_field_cycles(const HierarchicalScalarType &type) {
+    auto visits = std::unordered_map<const HierarchicalScalarType *, RequiredFieldVisit>{};
+    if (has_required_field_cycle(type, visits)) {
+        throw std::invalid_argument{"required hierarchical scalar fields cannot form a recursive cycle"};
+    }
+}
+
 } // namespace
 
 const HierarchicalScalarType &canonical_hierarchical_scalar_type(
@@ -156,6 +187,7 @@ const HierarchicalScalarType &canonical_hierarchical_scalar_type(
             auto &registration = *SemanticTypeRegistration::current();
             registration.on_rollback([key] { types.erase(key); });
             registration.on_finalize([result] { return result->finalize_capabilities(); });
+            registration.on_validate([result] { validate_required_field_cycles(*result); });
             registration.on_commit([key] { types.at(key).status = HierarchicalTypeStatus::finalized; });
         } catch (...) {
             types.erase(key);

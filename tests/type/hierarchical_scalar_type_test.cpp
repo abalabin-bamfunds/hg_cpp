@@ -188,10 +188,6 @@ template <template <typename, auto...> typename Field> struct DirectNode {
     Field<bg::Bundle<DirectNode>, bg::optional> next;
 };
 
-template <template <typename, auto...> typename Field> struct RequiredDirectNode {
-    Field<bg::Bundle<RequiredDirectNode>> next;
-};
-
 template <template <typename, auto...> typename Field> struct MutualRight;
 
 template <template <typename, auto...> typename Field> struct MutualLeft {
@@ -204,6 +200,10 @@ template <template <typename, auto...> typename Field> struct MutualRight {
 
 template <template <typename, auto...> typename Field> struct ListNode {
     Field<bg::List<bg::Bundle<ListNode>>> children;
+};
+
+template <template <typename, auto...> typename Field> struct SetNode {
+    Field<bg::Set<bg::Bundle<SetNode>>> children;
 };
 
 template <template <typename, auto...> typename Field> struct DictNode {
@@ -222,12 +222,6 @@ TEST_CASE("hierarchical scalar schemas can refer to themselves directly",
     CHECK(type.field(1).optional);
     CHECK(type.supports_equality());
     CHECK(type.supports_hash());
-
-    const auto &required = bg::type_cast<bg::HierarchicalScalarType>(
-        bg::cpp_scalar_type<bg::Bundle<RequiredDirectNode>>());
-    REQUIRE(required.field_count() == 1);
-    CHECK(required.field(0).type == &required);
-    CHECK_FALSE(required.field(0).optional);
 }
 
 TEST_CASE("hierarchical scalar schemas can refer to each other",
@@ -245,17 +239,21 @@ TEST_CASE("hierarchical scalar schemas can refer to each other",
     CHECK(right.supports_hash());
 }
 
-TEST_CASE("hierarchical scalar recursion composes through lists and dictionary values",
-          "[feature:type-system][scalar:hierarchical][scalar:list][scalar:dict]"
+TEST_CASE("hierarchical scalar recursion composes through scalar collections",
+          "[feature:type-system][scalar:hierarchical][scalar:list][scalar:set][scalar:dict]"
           "[schema:named][declaration:concrete]") {
     const auto &list_node = bg::type_cast<bg::HierarchicalScalarType>(
         bg::cpp_scalar_type<bg::Bundle<ListNode>>());
     const auto &list = bg::type_cast<bg::ListScalarType>(*list_node.field(0).type);
+    const auto &set_node = bg::type_cast<bg::HierarchicalScalarType>(
+        bg::cpp_scalar_type<bg::Bundle<SetNode>>());
+    const auto &set = bg::type_cast<bg::SetScalarType>(*set_node.field(0).type);
     const auto &dict_node = bg::type_cast<bg::HierarchicalScalarType>(
         bg::cpp_scalar_type<bg::Bundle<DictNode>>());
     const auto &dict = bg::type_cast<bg::DictScalarType>(*dict_node.field(0).type);
 
     CHECK(&list.item_type() == &list_node);
+    CHECK(&set.item_type() == &set_node);
     CHECK(&dict.key_type() == &bg::cpp_scalar_type<bg::symbol>());
     CHECK(&dict.mapped_type() == &dict_node);
     CHECK(list_node.supports_hash());
@@ -288,6 +286,20 @@ template <template <typename, auto...> typename Field> struct ConcurrentNode {
     Field<bg::List<bg::Bundle<ConcurrentNode>>> children;
 };
 
+template <template <typename, auto...> typename Field> struct RequiredSelfCycle {
+    Field<bg::Bundle<RequiredSelfCycle>> next;
+};
+
+template <template <typename, auto...> typename Field> struct RequiredMutualRight;
+
+template <template <typename, auto...> typename Field> struct RequiredMutualLeft {
+    Field<bg::Bundle<RequiredMutualRight>> right;
+};
+
+template <template <typename, auto...> typename Field> struct RequiredMutualRight {
+    Field<bg::Bundle<RequiredMutualLeft>> left;
+};
+
 template <template <typename, auto...> typename Field> struct UnhashableRecursiveKey {
     Field<bg::Opaque<int>> payload;
     Field<bg::Dict<bg::Bundle<UnhashableRecursiveKey>, bg::i64>> index;
@@ -304,6 +316,24 @@ TEST_CASE("failed recursive registration can be retried",
                       "a redefined hierarchical scalar field must have a compatible narrower type");
     CHECK_THROWS_WITH(register_type(),
                       "a redefined hierarchical scalar field must have a compatible narrower type");
+}
+
+TEST_CASE("a required direct self-cycle is rejected",
+          "[feature:type-system][scalar:hierarchical][schema:named][declaration:concrete]") {
+    const auto register_type = [] {
+        return &bg::cpp_scalar_type<bg::Bundle<RequiredSelfCycle>>();
+    };
+
+    CHECK_THROWS_WITH(register_type(),
+                      "required hierarchical scalar fields cannot form a recursive cycle");
+    CHECK_THROWS_WITH(register_type(),
+                      "required hierarchical scalar fields cannot form a recursive cycle");
+}
+
+TEST_CASE("a required direct mutual cycle is rejected",
+          "[feature:type-system][scalar:hierarchical][schema:named][declaration:concrete]") {
+    CHECK_THROWS_WITH(bg::cpp_scalar_type<bg::Bundle<RequiredMutualLeft>>(),
+                      "required hierarchical scalar fields cannot form a recursive cycle");
 }
 
 TEST_CASE("recursive dictionary keys are validated after capability finalization",

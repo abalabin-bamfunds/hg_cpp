@@ -17,6 +17,9 @@ Compatibility is covariant for `List` items and `Dict` values. `Set` items and
 `Dict` keys are invariant because their runtime operations require one hash and
 equality domain.
 
+Required direct hierarchical fields cannot form a recursive cycle. Optional
+fields and scalar collections provide finite termination points.
+
 ## Consequences
 
 The semantic type can be registered and used in type matching before a runtime

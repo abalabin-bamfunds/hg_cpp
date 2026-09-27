@@ -115,6 +115,10 @@ through scalar collections. Semantic registration publishes every type created
 for one recursive schema group atomically. Readers cannot observe incomplete
 field metadata.
 
+Required direct hierarchical fields must not form a recursive cycle. Every
+direct cycle must contain an optional field. A scalar collection also terminates
+the direct cycle because an empty collection has a finite value.
+
 The [scalar API](scalar-api.md) defines C++ access and ownership.
 
 ## Time series types
