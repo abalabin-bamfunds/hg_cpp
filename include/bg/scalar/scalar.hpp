@@ -141,7 +141,7 @@ template <typename T> class Scalar {
     template <typename Source> static Scalar from(const ScalarValue<Source> &&) = delete;
 
     [[nodiscard]] static Scalar from(const ScalarRuntimeType &runtime_type, const void *data) noexcept {
-        return Scalar{details::ScalarData{runtime_type, data}};
+        return Scalar{runtime_type.borrow(data)};
     }
 
   private:
@@ -157,6 +157,7 @@ template <typename T> class Scalar {
 } // namespace bg
 
 #include <bg/scalar/dict/scalar.hpp>
+#include <bg/scalar/bundle/scalar.hpp>
 #include <bg/scalar/list/scalar.hpp>
 #include <bg/scalar/set/scalar.hpp>
 #include <bg/scalar/struct/scalar.hpp>

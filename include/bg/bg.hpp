@@ -38,6 +38,8 @@
 #include <bg/run_graph.hpp>
 #include <bg/scalar/builtins.hpp>
 #include <bg/scalar/bundle/scalar_type.hpp>
+#include <bg/scalar/bundle/runtime_type.hpp>
+#include <bg/scalar/bundle/scalar.hpp>
 #include <bg/scalar/bundle/type.hpp>
 #include <bg/scalar/canonical.hpp>
 #include <bg/scalar/cpp_runtime_type.hpp>

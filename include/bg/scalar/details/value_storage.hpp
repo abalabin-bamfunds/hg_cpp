@@ -35,6 +35,8 @@ concept scalar_storage_constructible_from =
         scalar_storage_traits<T>::construct(destination, std::forward<Source>(source), memory);
     };
 
+[[nodiscard]] OwnedScalarData copy_scalar_value(const ScalarData &source, allocator *memory);
+
 inline std::size_t allocation_header_size(ScalarDataMode mode) noexcept {
     return mode == ScalarDataMode::owned_explicit_allocator ? sizeof(ScalarValueAllocator) : 0;
 }
@@ -108,18 +110,28 @@ template <typename T, typename Source>
 
 template <typename T>
 [[nodiscard]] OwnedScalarData copy_scalar_value(const details::ScalarData &source, allocator *memory) {
-    if constexpr (inline_scalar_value<T>) {
-        return make_scalar_value<T>(scalar_data_value<T>(source), memory);
-    }
+    if constexpr (hierarchical_scalar_declaration<T>) {
+        return copy_scalar_value(source, memory);
+    } else {
+        if constexpr (inline_scalar_value<T>) {
+            return make_scalar_value<T>(scalar_data_value<T>(source), memory);
+        }
 
-    const auto &runtime_type = cpp_scalar_runtime_type<T>();
-    return allocate_scalar_value(runtime_type, memory, [&](void *destination, allocator &resource) {
-        source.copy_construct(destination, runtime_type, resource);
-    });
+        const auto &runtime_type = cpp_scalar_runtime_type<T>();
+        return allocate_scalar_value(runtime_type, memory, [&](void *destination, allocator &resource) {
+            source.copy_construct(destination, runtime_type, resource);
+        });
+    }
 }
 
 [[nodiscard]] inline OwnedScalarData copy_scalar_value(const details::ScalarData &source,
                                                        allocator *memory) {
+    if (source.mode() == ScalarDataMode::shared_view || source.mode() == ScalarDataMode::shared_value) {
+        auto shared_data = std::uintptr_t{};
+        const auto *shared_type = source.runtime_type().retain_shared(source, shared_data);
+        return {shared_type, shared_data, ScalarDataMode::shared_value};
+    }
+
     auto inline_data = std::uintptr_t{};
     if (source.runtime_type().copy_inline(source.mode(), source.data_word(), inline_data)) {
         return {&source.runtime_type(), inline_data, ScalarDataMode::inline_value};

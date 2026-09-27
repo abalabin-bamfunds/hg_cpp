@@ -107,8 +107,12 @@ Compatibility is covariant through `List` items and `Dict` values. `Set` items
 and `Dict` keys remain invariant because lookup requires one hash and equality
 domain.
 
-This stage provides semantic types and schema metadata. `Bundle` does not yet
-provide scalar storage, values, or time series values.
+Each resolved hierarchical scalar has a `HierarchicalScalarRuntimeType`.
+The composed runtime type records field layout, optional-field presence, and
+the value's actual hierarchical type. A base view of a derived value therefore
+retains the derived type while exposing the fields declared by the base.
+
+`Bundle` supports scalar values. It does not yet support time series values.
 
 Hierarchical scalar schemas can refer to themselves or each other directly and
 through scalar collections. Semantic registration publishes every type created

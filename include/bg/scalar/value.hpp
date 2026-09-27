@@ -17,6 +17,8 @@ namespace bg {
 
 namespace details {
 
+class HierarchicalScalarValueFactory;
+
 template <typename T, typename Source>
 concept direct_scalar_source = scalar_storage_constructible_from<T, Source> && [] {
     if constexpr (scalar_source<Source>) {
@@ -91,6 +93,10 @@ template <typename T> class ScalarValue {
     using scalar_type = T;
 
   private:
+    friend class details::HierarchicalScalarValueFactory;
+
+    explicit ScalarValue(details::OwnedScalarData value) noexcept : value_{make(value)} {}
+
     [[nodiscard]] static details::ScalarData make(details::OwnedScalarData value) noexcept {
         return {*value.runtime_type, value.data, value.mode};
     }

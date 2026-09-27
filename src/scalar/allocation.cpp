@@ -1,4 +1,5 @@
 #include <bg/scalar/details/allocation_context.hpp>
+#include <bg/scalar/bundle/details/allocation_owner.hpp>
 
 #include "../thread_local_pointer.hpp"
 
@@ -23,8 +24,10 @@ std::unordered_map<const void *, ScalarAllocationOwner> allocations;
 
 } // namespace
 
-ScalarAllocationContext::ScalarAllocationContext(allocator memory, const void *graph, std::size_t node_index) noexcept
-    : owner_{memory, graph, node_index}, previous_{static_cast<ScalarAllocationOwner *>(current_owner().get())} {
+ScalarAllocationContext::ScalarAllocationContext(allocator memory, BundleAllocationOwner &bundle_owner,
+                                                 const void *graph, std::size_t node_index) noexcept
+    : owner_{memory, &bundle_owner, graph, node_index},
+      previous_{static_cast<ScalarAllocationOwner *>(current_owner().get())} {
     current_owner().set(&owner_);
 }
 
@@ -44,6 +47,11 @@ allocator &current_scalar_allocator() {
     }
 
     return const_cast<allocator &>(owner->memory);
+}
+
+BundleAllocationOwner *current_bundle_allocation_owner() noexcept {
+    const auto *owner = current_scalar_allocation_owner();
+    return owner == nullptr ? nullptr : owner->bundle_owner;
 }
 
 void record_context_scalar_allocation(const void *value) {

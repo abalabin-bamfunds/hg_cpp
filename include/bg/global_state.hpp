@@ -1,6 +1,7 @@
 #pragma once
 
 #include <bg/allocator.hpp>
+#include <bg/scalar/bundle/details/allocation_owner.hpp>
 #include <bg/scalar/details/allocation_context.hpp>
 #include <bg/scalar/mutable_collection.hpp>
 #include <bg/scalar/value.hpp>
@@ -110,7 +111,8 @@ class GlobalState {
         friend GlobalState;
 
         explicit WriteAccess(GlobalState &state)
-            : state_{&state}, lock_{state.mutex_}, allocation_context_{state.allocator_, &state, 0} {}
+            : state_{&state}, lock_{state.mutex_},
+              allocation_context_{state.allocator_, *state.bundle_owner_, &state, 0} {}
 
         GlobalState *state_;
         std::unique_lock<std::shared_mutex> lock_;
@@ -119,14 +121,19 @@ class GlobalState {
 
     GlobalState() : GlobalState(allocator{}) {}
 
-    explicit GlobalState(allocator upstream) : memory_{&upstream.memory_resource()}, allocator_{memory_} {}
+    explicit GlobalState(allocator upstream)
+        : memory_{&upstream.memory_resource()}, allocator_{memory_},
+          bundle_owner_{details::BundleAllocationOwner::create(upstream)} {}
 
     GlobalState(const GlobalState &) = delete;
     GlobalState &operator=(const GlobalState &) = delete;
     GlobalState(GlobalState &&) = delete;
     GlobalState &operator=(GlobalState &&) = delete;
 
-    ~GlobalState() { values_.release(allocator_.memory_resource()); }
+    ~GlobalState() {
+        values_.release(allocator_.memory_resource());
+        bundle_owner_->release();
+    }
 
     template <typename Function>
         requires std::invocable<Function, const ReadAccess &> &&
@@ -145,6 +152,10 @@ class GlobalState {
     }
 
   private:
+    friend class RuntimeGraph;
+
+    details::BundleAllocationOwner &bundle_allocation_owner() noexcept { return *bundle_owner_; }
+
     bool contains(util::symbol key) const noexcept { return values_.contains(key); }
     bool contains(std::string_view key) const noexcept { return values_.contains(key); }
 
@@ -201,6 +212,7 @@ class GlobalState {
     allocator allocator_;
     Values values_;
     mutable std::shared_mutex mutex_;
+    details::BundleAllocationOwner *bundle_owner_;
 };
 
 } // namespace bg

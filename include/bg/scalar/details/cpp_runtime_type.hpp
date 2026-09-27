@@ -1,6 +1,7 @@
 #pragma once
 
 #include <bg/scalar/details/allocation_context.hpp>
+#include <bg/scalar/bundle/type.hpp>
 #include <bg/scalar/details/data.hpp>
 #include <bg/scalar/storage_traits.hpp>
 #include <bg/scalar/details/value_access.hpp>
@@ -227,11 +228,15 @@ class CppScalarRuntimeType<Opaque<T>> final : public CppScalarRuntimeTypeBase<Op
 namespace bg {
 
 template <typename T> const ScalarRuntimeType &cpp_scalar_runtime_type() {
-    static const details::CppScalarRuntimeType<T> runtime_type;
-    static const auto registered = (register_scalar_runtime_type(runtime_type), true);
-    (void)registered;
+    if constexpr (details::hierarchical_scalar_declaration<T>) {
+        return resolve_scalar_runtime_type(cpp_scalar_type<T>(), {});
+    } else {
+        static const details::CppScalarRuntimeType<T> runtime_type;
+        static const auto registered = (register_scalar_runtime_type(runtime_type), true);
+        (void)registered;
 
-    return runtime_type;
+        return runtime_type;
+    }
 }
 
 extern template const ScalarRuntimeType &cpp_scalar_runtime_type<bool>();

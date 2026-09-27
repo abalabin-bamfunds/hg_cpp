@@ -43,7 +43,7 @@ template <> class Scalar<STRUCT> {
     }
 
     [[nodiscard]] static Scalar from(const ScalarRuntimeType &runtime_type, const void *data) noexcept {
-        return Scalar{details::ScalarData{runtime_type, data}};
+        return Scalar{runtime_type.borrow(data)};
     }
     template <typename Source> [[nodiscard]] static Scalar from(const Scalar<Source> &value) noexcept {
         return Scalar{details::scalar_data(value)};

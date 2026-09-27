@@ -133,6 +133,24 @@ reference. `Scalar<STRUCT>` exposes ordered field names, types, and scalar
 views. Generic field access is allocation-free and does not derive field
 addresses from offsets. Equality and hashing process fields and ignore padding.
 
+## Hierarchical scalars
+
+`Scalar<Bundle<Schema>>` exposes the fields declared by `Schema`. `present()`
+distinguishes an absent optional field from a present default value. Indexing
+returns a borrowed erased scalar view and throws `std::bad_optional_access` for
+an absent field.
+
+A hierarchical scalar value stores one shared handle in its data word. Its
+control block stores the actual runtime type, optional-field presence, and
+field data. Copying a hierarchical value from a view retains that control block
+instead of copying its fields. A view through a base schema preserves the
+actual derived runtime type.
+
+Hierarchical control blocks use a thread-safe allocation owner associated with
+the outer global state. A control block retains that owner, so an owning value
+can outlive the runtime graph or global state that created it. Releasing the
+final value destroys its present fields and releases the owner.
+
 ## Scalar providers
 
 A scalar provider defines three independent parts:

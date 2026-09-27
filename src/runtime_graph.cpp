@@ -419,7 +419,8 @@ RuntimeGraph::~RuntimeGraph() {
             }
 
             EvaluationContext context{evaluation_time_, *this, node_index};
-            const auto allocation_context = details::ScalarAllocationContext{allocator_, this, node_index};
+            const auto allocation_context = details::ScalarAllocationContext{
+                allocator_, global_state_->bundle_allocation_owner(), this, node_index};
             node.state_destruction_function()(node, storage_, &context);
         }
 
@@ -745,7 +746,8 @@ void RuntimeGraph::apply_invalidation(const CompiledNode &node, std::size_t node
 
     const auto output_was_valid = node.has_output() && Node{node, storage_}.output_last_updated() > MIN_DT;
     EvaluationContext context{evaluation_time_, *this, node_index};
-    const auto allocation_context = details::ScalarAllocationContext{allocator_, this, node_index};
+    const auto allocation_context = details::ScalarAllocationContext{
+        allocator_, global_state_->bundle_allocation_owner(), this, node_index};
     node.invalidation_function()(node, storage_, &context);
 
     if (node.has_output()) {
@@ -801,7 +803,8 @@ void RuntimeGraph::start(EvaluationContext &context) {
         const auto output_was_valid = node.has_output() && Node{node, storage_}.output_last_updated() > MIN_DT;
 
         EvaluationContext node_context{context, *this, node_index};
-        const auto allocation_context = details::ScalarAllocationContext{allocator_, this, node_index};
+        const auto allocation_context = details::ScalarAllocationContext{
+            allocator_, global_state_->bundle_allocation_owner(), this, node_index};
         (*function)(node, storage_, &node_context);
         ++function;
         started_node_count = node_index + 1;
@@ -831,7 +834,8 @@ void RuntimeGraph::stop_nodes(std::size_t node_count) noexcept {
 
         const auto &node = compiled_graph_->node(node_index);
         EvaluationContext context{evaluation_time_, *this, node_index};
-        const auto allocation_context = details::ScalarAllocationContext{allocator_, this, node_index};
+        const auto allocation_context = details::ScalarAllocationContext{
+            allocator_, global_state_->bundle_allocation_owner(), this, node_index};
         stops.functions[i](node, storage_, &context);
     }
 
@@ -860,7 +864,8 @@ void RuntimeGraph::stop(EvaluationContext &context) noexcept {
         const auto node_index = stops.nodes[i];
         const auto &node = compiled_graph_->node(node_index);
         EvaluationContext node_context{context, *this, node_index};
-        const auto allocation_context = details::ScalarAllocationContext{allocator_, this, node_index};
+        const auto allocation_context = details::ScalarAllocationContext{
+            allocator_, global_state_->bundle_allocation_owner(), this, node_index};
         stops.functions[i](node, storage_, &node_context);
     }
 
@@ -952,7 +957,8 @@ bool RuntimeGraph::evaluate(EvaluationContext &context) {
         const auto output_was_valid = has_output && Node{node, storage_}.output_last_updated() > MIN_DT;
         if (const auto evaluate = node.evaluation_function(); evaluate != nullptr) {
             EvaluationContext node_context{context, *this, node_index};
-            const auto allocation_context = details::ScalarAllocationContext{allocator_, this, node_index};
+            const auto allocation_context = details::ScalarAllocationContext{
+                allocator_, global_state_->bundle_allocation_owner(), this, node_index};
             if (!evaluate(node, storage_, &node_context)) {
                 paused_node_index_ = static_cast<std::uint32_t>(node_index);
                 advance.release();

@@ -1,4 +1,5 @@
 #include <bg/scalar/details/allocation_context.hpp>
+#include <bg/scalar/bundle/details/allocation_owner.hpp>
 #include <bg/scalar/value.hpp>
 
 #include <catch2/catch_test_macros.hpp>
@@ -136,12 +137,15 @@ TEST_CASE("a scalar value uses the supplied memory resource", "[value][scalar][f
 TEST_CASE("a scalar value uses the current node memory resource", "[value][scalar][feature:scalar-api]") {
     auto memory = counting_memory_resource{};
     const auto graph = 1;
+    auto *bundle_owner = bg::details::BundleAllocationOwner::create(bg::allocator{memory});
     {
-        const auto context = bg::details::ScalarAllocationContext{bg::allocator{memory}, &graph, 2};
+        const auto context =
+            bg::details::ScalarAllocationContext{bg::allocator{memory}, *bundle_owner, &graph, 2};
         const auto value = bg::ScalarValue{"long enough to require separate character storage"};
 
         CHECK(value.view().value() == "long enough to require separate character storage");
     }
+    bundle_owner->release();
 
     CHECK(memory.allocations == memory.deallocations);
 }

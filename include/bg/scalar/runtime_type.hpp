@@ -38,6 +38,13 @@ class ScalarRuntimeType : public RuntimeType {
         return equals(reinterpret_cast<const void *>(data), other);
     }
 
+    details::ScalarData borrow(const void *storage) const noexcept;
+    [[nodiscard]] virtual const ScalarRuntimeType *
+    retain_shared(const details::ScalarData &, std::uintptr_t &) const noexcept {
+        return nullptr;
+    }
+    virtual void release_shared(std::uintptr_t) const noexcept { std::terminate(); }
+
     std::size_t size() const noexcept { return storage_size(); }
     std::size_t alignment() const noexcept { return storage_alignment(); }
     bool uses_variable_memory() const noexcept { return storage_uses_variable_memory(); }
@@ -65,7 +72,7 @@ class ScalarRuntimeType : public RuntimeType {
         assign_from_input(destination, details::scalar_data(value));
     }
     virtual std::size_t hash(const void *value) const noexcept = 0;
-    bool equals(const void *value, const details::ScalarData &other) const noexcept;
+    virtual bool equals(const void *value, const details::ScalarData &other) const noexcept;
     template <typename Value>
         requires requires(const Value &value) { details::scalar_data(value); }
     bool equals(const void *value, const Value &other) const noexcept {
@@ -75,9 +82,14 @@ class ScalarRuntimeType : public RuntimeType {
 
   protected:
     ScalarRuntimeType(const ScalarType &type, std::size_t size, std::size_t alignment, bool uses_variable_memory,
-                      bool requires_finalization, bool supports_byte_copy_initialization) noexcept
+                      bool requires_finalization, bool supports_byte_copy_initialization,
+                      std::uint8_t additional_flags = 0) noexcept
         : RuntimeType{
-              type, size, alignment, uses_variable_memory, requires_finalization, supports_byte_copy_initialization} {}
+              type, size, alignment, uses_variable_memory, requires_finalization,
+              supports_byte_copy_initialization, additional_flags} {}
+
+    virtual details::ScalarData borrow_shared(const void *storage) const noexcept;
+    static constexpr auto shared_handle_flag = first_additional_flag;
 
   private:
     virtual bool equals_same_type(const void *value, const details::ScalarData &other) const noexcept = 0;

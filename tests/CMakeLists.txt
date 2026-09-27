@@ -69,6 +69,7 @@ add_executable(
     utils/version_test.cpp
     value/global_state_test.cpp
     value/scalar/builtins_test.cpp
+    value/scalar/bundle_test.cpp
     value/scalar/capability_test.cpp
     value/scalar/dict/mutable_test.cpp
     value/scalar/dict/storage_test.cpp

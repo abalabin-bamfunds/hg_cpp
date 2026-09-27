@@ -20,10 +20,12 @@ enum class ScalarDataMode : std::uintptr_t {
     owned_explicit_allocator,
     owned_context_allocator,
     owned_default_allocator,
+    shared_view,
+    shared_value,
 };
 
 inline constexpr auto scalar_data_mode_mask = std::uintptr_t{7};
-static_assert(std::to_underlying(ScalarDataMode::owned_default_allocator) <= scalar_data_mode_mask);
+static_assert(std::to_underlying(ScalarDataMode::shared_value) <= scalar_data_mode_mask);
 
 class ScalarData {
   public:
@@ -41,19 +43,18 @@ class ScalarData {
 
     ScalarDataMode mode() const noexcept { return runtime_type_.tag(); }
     const void *data() const noexcept {
-        return mode() == ScalarDataMode::inline_value ? std::addressof(data_) : reinterpret_cast<const void *>(data_);
+        const auto direct = mode() == ScalarDataMode::inline_value || mode() == ScalarDataMode::shared_view ||
+                            mode() == ScalarDataMode::shared_value;
+        return direct ? std::addressof(data_) : reinterpret_cast<const void *>(data_);
     }
     const ScalarType &type() const noexcept { return runtime_type().type(); }
     bool empty() const noexcept { return !runtime_type_; }
     std::uintptr_t data_word() const noexcept { return data_; }
 
     std::size_t hash() const noexcept { return runtime_type().hash(mode(), data_); }
-    bool equals(const ScalarData &other) const noexcept {
-        return runtime_type().equals(mode(), data_, other);
-    }
+    bool equals(const ScalarData &other) const noexcept { return runtime_type().equals(mode(), data_, other); }
 
-    void copy_construct(void *destination, const ScalarRuntimeType &destination_runtime_type,
-                        allocator &memory) const {
+    void copy_construct(void *destination, const ScalarRuntimeType &destination_runtime_type, allocator &memory) const {
         if (&type() != &destination_runtime_type.type()) {
             throw std::invalid_argument{"incompatible scalar types"};
         }
