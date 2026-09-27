@@ -10,6 +10,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <array>
+#include <concepts>
 #include <memory_resource>
 #include <optional>
 #include <stdexcept>
@@ -84,6 +85,11 @@ concept HashableScalar = requires(const bg::Scalar<T> &value) { value.hash(); };
 static_assert(sizeof(bg::Scalar<bg::Bundle<Instrument>>) == 2 * sizeof(void *));
 static_assert(sizeof(bg::ScalarValue<bg::Bundle<Instrument>>) == 2 * sizeof(void *));
 static_assert(sizeof(bg::Bundle<Instrument>) == sizeof(void *));
+static_assert(std::constructible_from<bg::ScalarValue<bg::Bundle<Instrument>>, bg::Scalar<bg::Bundle<Equity>>>);
+static_assert(
+    std::constructible_from<bg::ScalarValue<bg::Bundle<Instrument>>, const bg::ScalarValue<bg::Bundle<Equity>> &>);
+static_assert(
+    !std::constructible_from<bg::ScalarValue<bg::Bundle<Instrument>>, const bg::ScalarValue<bg::Bundle<Instrument>> &>);
 static_assert(HashableScalar<bg::Bundle<HashableRecord>>);
 static_assert(!HashableScalar<bg::Bundle<UnhashableRecord>>);
 
@@ -181,6 +187,45 @@ TEST_CASE("a scalar collection rejects an incompatible hierarchical item",
     const auto items = std::array<bg::Scalar<bg::Bundle<UnrelatedRecord>>, 1>{value.view()};
 
     CHECK_THROWS_AS((bg::ScalarValue<bg::List<bg::Bundle<Instrument>>>{items}), std::invalid_argument);
+}
+
+TEST_CASE("an owning base hierarchical scalar retains a derived value",
+          "[value][feature:scalar-storage][scalar:hierarchical][binding:covariant]") {
+    auto from_view = std::optional<bg::ScalarValue<bg::Bundle<Instrument>>>{};
+    auto from_value = std::optional<bg::ScalarValue<bg::Bundle<Instrument>>>{};
+    const auto *derived_type = static_cast<const bg::ScalarType *>(nullptr);
+    {
+        auto state = bg::GlobalState{};
+        state.write([&](auto &) {
+            const auto symbol = bg::ScalarValue{bg::util::symbol{"ABC"}};
+            const auto price = bg::ScalarValue{12.5};
+            const auto lot_size = bg::ScalarValue{bg::i64{100}};
+            const auto fields = std::array<std::optional<bg::Scalar<>>, 3>{
+                bg::Scalar<>::from(symbol), bg::Scalar<>::from(price), bg::Scalar<>::from(lot_size)};
+            const auto equity = bg::details::HierarchicalScalarValueFactory::make<Equity>(fields);
+
+            derived_type = &equity.type();
+            from_view.emplace(equity.view());
+            from_value.emplace(equity);
+        });
+    }
+
+    REQUIRE(from_view.has_value());
+    REQUIRE(from_value.has_value());
+    CHECK(&from_view->type() == derived_type);
+    CHECK(&from_value->type() == derived_type);
+    CHECK(bg::scalar_cast<bg::i64>(bg::scalar_cast<bg::Bundle<Equity>>(*from_view)[2]).value() == 100);
+    CHECK(bg::scalar_cast<bg::i64>(bg::scalar_cast<bg::Bundle<Equity>>(*from_value)[2]).value() == 100);
+}
+
+TEST_CASE("an owning hierarchical scalar rejects an unrelated schema",
+          "[value][feature:scalar-storage][scalar:hierarchical][declaration:concrete]") {
+    const auto field = bg::ScalarValue{bg::i64{42}};
+    const auto fields = std::array<std::optional<bg::Scalar<>>, 1>{bg::Scalar<>::from(field)};
+    const auto value = bg::details::HierarchicalScalarValueFactory::make<UnrelatedRecord>(fields);
+
+    CHECK_THROWS_AS((bg::ScalarValue<bg::Bundle<Instrument>>{value.view()}), std::invalid_argument);
+    CHECK_THROWS_AS((bg::ScalarValue<bg::Bundle<Instrument>>{value}), std::invalid_argument);
 }
 
 TEST_CASE("a scalar dictionary stores hierarchical mapped values",

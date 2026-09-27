@@ -13,6 +13,7 @@
 #include <functional>
 #include <memory>
 #include <memory_resource>
+#include <stdexcept>
 #include <type_traits>
 #include <utility>
 
@@ -111,6 +112,10 @@ template <typename T, typename Source>
 template <typename T>
 [[nodiscard]] OwnedScalarData copy_scalar_value(const details::ScalarData &source, allocator *memory) {
     if constexpr (hierarchical_scalar_declaration<T>) {
+        if (!cpp_scalar_runtime_type<T>().type().accepts(source.type())) {
+            throw std::invalid_argument{"incompatible hierarchical scalar type"};
+        }
+
         return copy_scalar_value(source, memory);
     } else {
         if constexpr (inline_scalar_value<T>) {

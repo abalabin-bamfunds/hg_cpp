@@ -11,6 +11,16 @@
 #include <string_view>
 #include <utility>
 
+namespace {
+
+struct value_from_scalar {
+    explicit value_from_scalar(const bg::Scalar<bg::i64> &source) : number{source.value()} {}
+
+    bg::i64 number;
+};
+
+} // namespace
+
 TEST_CASE("a scalar value maps signed integers to int64", "[value][scalar][feature:scalar-api][scalar:integer]") {
     const auto value = bg::ScalarValue{42};
 
@@ -43,6 +53,14 @@ TEST_CASE("a pointer-sized scalar value copies a borrowed value inline",
     const auto value = bg::ScalarValue<std::int64_t>{source, allocator};
 
     CHECK(value.view().value() == source_value);
+}
+
+TEST_CASE("a scalar value uses its provider's cross-declaration construction",
+          "[value][scalar][feature:scalar-api][declaration:concrete]") {
+    const auto source = bg::ScalarValue{42};
+    const auto value = bg::ScalarValue<bg::Opaque<value_from_scalar>>{source.view()};
+
+    CHECK(value.view()->number == 42);
 }
 
 TEST_CASE("pointer-sized scalar values compare and hash from inline storage",

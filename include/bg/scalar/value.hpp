@@ -19,16 +19,9 @@ namespace details {
 
 class HierarchicalScalarValueFactory;
 
-template <typename T> struct scalar_handle : std::false_type {};
-template <typename T> struct scalar_handle<Scalar<T>> : std::true_type {};
-template <typename T> struct scalar_handle<ScalarValue<T>> : std::true_type {};
-
-template <typename T>
-concept ScalarHandle = scalar_handle<std::remove_cvref_t<T>>::value;
-
 template <typename T, typename Source>
 concept direct_scalar_source = scalar_storage_constructible_from<T, Source> && [] {
-    if constexpr (ScalarHandle<Source>) {
+    if constexpr (hierarchical_scalar_handle<Source>) {
         return false;
     } else if constexpr (scalar_source<Source>) {
         return !std::same_as<canonical_scalar_t<Source>, T>;
@@ -64,6 +57,18 @@ template <typename T> class ScalarValue {
     explicit ScalarValue(const Scalar<T> &source)
         : value_{make(details::copy_scalar_value<T>(details::scalar_data(source), nullptr))} {}
     ScalarValue(const Scalar<T> &source, allocator &memory)
+        : value_{make(details::copy_scalar_value<T>(details::scalar_data(source), &memory))} {}
+
+    template <details::hierarchical_scalar_handle Source>
+        requires details::hierarchical_scalar_declaration<T> &&
+                 (!std::same_as<typename std::remove_cvref_t<Source>::scalar_type, T>)
+    explicit ScalarValue(const Source &source)
+        : value_{make(details::copy_scalar_value<T>(details::scalar_data(source), nullptr))} {}
+
+    template <details::hierarchical_scalar_handle Source>
+        requires details::hierarchical_scalar_declaration<T> &&
+                 (!std::same_as<typename std::remove_cvref_t<Source>::scalar_type, T>)
+    ScalarValue(const Source &source, allocator &memory)
         : value_{make(details::copy_scalar_value<T>(details::scalar_data(source), &memory))} {}
 
     ~ScalarValue() { release(); }
@@ -222,6 +227,13 @@ template <scalar_source Source>
 ScalarValue(Source &&, allocator &) -> ScalarValue<canonical_scalar_t<Source>>;
 
 namespace details {
+
+template <typename T> struct scalar_handle : std::false_type {};
+template <typename T> struct scalar_handle<Scalar<T>> : std::true_type {};
+template <typename T> struct scalar_handle<ScalarValue<T>> : std::true_type {};
+
+template <typename T>
+concept ScalarHandle = scalar_handle<std::remove_cvref_t<T>>::value;
 
 template <typename T>
 inline constexpr bool scalar_handle_supports_equality = [] {
