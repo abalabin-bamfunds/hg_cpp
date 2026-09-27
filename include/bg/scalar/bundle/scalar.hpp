@@ -1,75 +1,13 @@
 #pragma once
 
 #include <bg/scalar/bundle/runtime_type.hpp>
+#include <bg/scalar/bundle/storage_traits.hpp>
 #include <bg/scalar/scalar.hpp>
 
 #include <cstddef>
 #include <stdexcept>
 #include <string_view>
 #include <utility>
-
-namespace bg::details {
-
-template <typename... T> struct hierarchical_capability_stack {};
-
-template <typename T, typename Stack, bool Hash> struct hierarchical_capability {
-    static constexpr bool value =
-        Hash ? scalar_handle_traits<T>::supports_hash : scalar_handle_traits<T>::supports_equality;
-};
-
-template <typename T, typename... Seen, bool Hash>
-struct hierarchical_capability<List<T>, hierarchical_capability_stack<Seen...>, Hash>
-    : hierarchical_capability<T, hierarchical_capability_stack<Seen...>, Hash> {};
-
-template <typename T, typename... Seen, bool Hash>
-struct hierarchical_capability<Set<T>, hierarchical_capability_stack<Seen...>, Hash>
-    : hierarchical_capability<T, hierarchical_capability_stack<Seen...>, Hash> {};
-
-template <typename K, typename V, typename... Seen, bool Hash>
-struct hierarchical_capability<Dict<K, V>, hierarchical_capability_stack<Seen...>, Hash> {
-    static constexpr bool value = hierarchical_capability<K, hierarchical_capability_stack<Seen...>, Hash>::value &&
-                                  hierarchical_capability<V, hierarchical_capability_stack<Seen...>, Hash>::value;
-};
-
-template <template <template <typename, auto...> typename> typename Schema, typename... Seen, bool Hash>
-struct hierarchical_capability<Bundle<Schema>, hierarchical_capability_stack<Seen...>, Hash> {
-  private:
-    using Declaration = Bundle<Schema>;
-    using Reflection = hierarchical_scalar_schema_reflection<Schema>;
-    using Next = hierarchical_capability_stack<Seen..., Declaration>;
-
-    template <std::size_t... Index> static consteval bool direct_fields(std::index_sequence<Index...>) {
-        return (hierarchical_capability<typename Reflection::template direct_field<Index>::scalar_type, Next,
-                                        Hash>::value &&
-                ...);
-    }
-
-    static consteval bool calculate() {
-        if constexpr ((std::same_as<Declaration, Seen> || ...)) {
-            return true;
-        } else {
-            auto result = direct_fields(std::make_index_sequence<Reflection::direct_field_count>{});
-            if constexpr (Reflection::has_base) {
-                using Base = typename Reflection::base_schema;
-                result = result && hierarchical_capability<Bundle<Base::template apply>, Next, Hash>::value;
-            }
-            return result;
-        }
-    }
-
-  public:
-    static constexpr bool value = calculate();
-};
-
-template <template <template <typename, auto...> typename> typename Schema>
-struct scalar_handle_traits<Bundle<Schema>> {
-    static constexpr bool supports_equality =
-        hierarchical_capability<Bundle<Schema>, hierarchical_capability_stack<>, false>::value;
-    static constexpr bool supports_hash =
-        hierarchical_capability<Bundle<Schema>, hierarchical_capability_stack<>, true>::value;
-};
-
-} // namespace bg::details
 
 namespace bg {
 

@@ -54,10 +54,11 @@ template <typename K, typename V> struct scalar_storage_traits<Dict<K, V>> {
     template <std::ranges::input_range Range>
         requires requires(std::ranges::range_reference_t<const Range> entry) {
             { entry.first } -> std::convertible_to<typename KeyTraits::value_type>;
-        } && (std::convertible_to<decltype(std::declval<std::ranges::range_reference_t<const Range>>().second),
-                                  typename ValueTraits::value_type> ||
-              details::scalar_view_source_for<
-                  decltype(std::declval<std::ranges::range_reference_t<const Range>>().second), V>)
+        } && (details::scalar_view_source_for<
+                  decltype(std::declval<std::ranges::range_reference_t<const Range>>().second), V> ||
+              requires(typename ValueTraits::stored_type *destination,
+                       decltype(std::declval<std::ranges::range_reference_t<const Range>>().second) item,
+                       allocator &memory) { ValueTraits::construct(destination, item, memory); })
     static void construct(stored_type *destination, const Range &value, allocator &memory) {
         std::construct_at(destination);
         auto rollback = util::scope_exit{[&]() noexcept { destroy(destination, memory); }};
@@ -66,10 +67,10 @@ template <typename K, typename V> struct scalar_storage_traits<Dict<K, V>> {
                 key, memory.memory_resource(), [&](auto *stored) { KeyTraits::construct(stored, key, memory); },
                 [&](auto *stored) noexcept { KeyTraits::destroy(stored, memory); },
                 [&](auto *stored) {
-                    if constexpr (details::scalar_view_source_for<decltype(item), V>) {
-                        details::scalar_data(item).copy_construct(stored, cpp_scalar_runtime_type<V>(), memory);
-                    } else {
+                    if constexpr (requires { ValueTraits::construct(stored, item, memory); }) {
                         ValueTraits::construct(stored, item, memory);
+                    } else {
+                        details::scalar_data(item).copy_construct(stored, cpp_scalar_runtime_type<V>(), memory);
                     }
                 });
         }

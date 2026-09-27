@@ -47,17 +47,19 @@ template <typename T> struct scalar_storage_traits<List<T>> {
     }
 
     template <std::ranges::contiguous_range Range>
-        requires(std::convertible_to<std::ranges::range_reference_t<const Range>, typename ItemTraits::value_type> ||
-                 details::scalar_view_source_for<std::ranges::range_reference_t<const Range>, T>)
+        requires(details::scalar_view_source_for<std::ranges::range_reference_t<const Range>, T> ||
+                 requires(typename ItemTraits::stored_type *destination,
+                          std::ranges::range_reference_t<const Range> item,
+                          allocator &memory) { ItemTraits::construct(destination, item, memory); })
     static void construct(stored_type *destination, const Range &value, allocator &memory) {
         std::construct_at(destination);
         auto rollback = util::scope_exit{[&]() noexcept { destroy(destination, memory); }};
         for (const auto &item : value) {
             destination->items.emplace_back_with(memory.memory_resource(), [&](auto *stored) {
-                if constexpr (details::scalar_view_source_for<decltype(item), T>) {
-                    details::scalar_data(item).copy_construct(stored, cpp_scalar_runtime_type<T>(), memory);
-                } else {
+                if constexpr (requires { ItemTraits::construct(stored, item, memory); }) {
                     ItemTraits::construct(stored, item, memory);
+                } else {
+                    details::scalar_data(item).copy_construct(stored, cpp_scalar_runtime_type<T>(), memory);
                 }
             });
         }
@@ -73,7 +75,8 @@ template <typename T> struct scalar_storage_traits<List<T>> {
     }
 
     static void destroy(stored_type *value, allocator &memory) noexcept {
-        value->items.release_with(memory.memory_resource(), [&](auto *item) noexcept { ItemTraits::destroy(item, memory); });
+        value->items.release_with(memory.memory_resource(),
+                                  [&](auto *item) noexcept { ItemTraits::destroy(item, memory); });
         std::destroy_at(value);
     }
 };

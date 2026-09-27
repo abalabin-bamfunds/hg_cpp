@@ -9,6 +9,7 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <limits>
 #include <memory>
 #include <optional>
@@ -329,11 +330,14 @@ ComposedHierarchicalScalarRuntimeType::storage(const details::ScalarData &value)
 
 ComposedHierarchicalScalarRuntimeType::Storage *
 ComposedHierarchicalScalarRuntimeType::stored_handle(const void *value) noexcept {
-    return *static_cast<Storage *const *>(value);
+    auto handle = std::uintptr_t{};
+    std::memcpy(&handle, value, sizeof(handle));
+    return reinterpret_cast<Storage *>(handle);
 }
 
 void ComposedHierarchicalScalarRuntimeType::store_handle(void *destination, Storage *storage) noexcept {
-    *static_cast<Storage **>(destination) = storage;
+    const auto handle = reinterpret_cast<std::uintptr_t>(storage);
+    std::memcpy(destination, &handle, sizeof(handle));
 }
 
 const void *ComposedHierarchicalScalarRuntimeType::field_storage(const Storage &storage,

@@ -146,6 +146,10 @@ field data. Copying a hierarchical value from a view retains that control block
 instead of copying its fields. A view through a base schema preserves the
 actual derived runtime type.
 
+Scalar lists and dictionary mapped values store the same one-word handle.
+Collection copies retain the control block and preserve its actual runtime
+type.
+
 Hierarchical control blocks use a thread-safe allocation owner associated with
 the outer global state. A control block retains that owner, so an owning value
 can outlive the runtime graph or global state that created it. Releasing the

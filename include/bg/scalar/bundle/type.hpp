@@ -1,8 +1,19 @@
 #pragma once
 
+#include <cstdint>
 #include <type_traits>
 
 namespace bg {
+
+template <typename T> struct scalar_storage_traits;
+
+namespace details {
+
+struct scalar_bundle_storage {
+    std::uintptr_t handle{};
+};
+
+} // namespace details
 
 template <template <template <typename, auto...> typename> typename Schema>
 class Bundle {
@@ -11,6 +22,13 @@ class Bundle {
 
     template <template <typename, auto...> typename Field>
     using schema_type = Schema<Field>;
+
+  private:
+    template <typename T> friend struct scalar_storage_traits;
+
+    explicit Bundle(const details::scalar_bundle_storage &storage) noexcept : storage_{&storage} {}
+
+    const details::scalar_bundle_storage *storage_;
 };
 
 namespace details {
@@ -27,3 +45,6 @@ concept hierarchical_scalar_declaration =
 } // namespace details
 
 } // namespace bg
+
+static_assert(sizeof(bg::details::scalar_bundle_storage) == sizeof(void *));
+static_assert(alignof(bg::details::scalar_bundle_storage) == alignof(void *));
