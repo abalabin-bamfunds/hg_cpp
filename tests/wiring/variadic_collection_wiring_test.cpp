@@ -24,13 +24,13 @@ using namespace bg::literals;
 
 using DIRECT_RESULT = ScalarVariable<"DIRECT_RESULT">;
 
-template <template <typename> typename Field>
+template <template <typename, auto...> typename Field>
 using ARGS = BundleSchemaVariableDeclaration<"ARGS", Field>;
 
-template <template <typename> typename Field>
+template <template <typename, auto...> typename Field>
 using KWARGS = BundleSchemaVariableDeclaration<"KWARGS", Field>;
 
-template <template <typename> typename Field> struct TestBundle {
+template <template <typename, auto...> typename Field> struct TestBundle {
     Field<TS<std::int64_t>> count;
     Field<TS<float>> value;
 };

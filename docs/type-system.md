@@ -124,10 +124,10 @@ names and time series types. A C++ schema supplies the same information and
 produces typed input and output access:
 
 ```cpp
-template<template<typename> class Field>
+template<template<typename, auto...> class Field>
 struct Quote {
     Field<TS<symbol>> name;
-    Field<TS<float>> value;
+    Field<TS<float>, optional> value;
 };
 
 In<TSB<Quote>> quote;
@@ -135,6 +135,9 @@ In<TSB<Quote>> quote;
 
 A derived schema uses `bundle_extends<Base, Field>`. Schema discovery reads the
 base and direct fields separately.
+
+Field properties configure the typed input view. Wiring and output field views
+retain the field type and ignore input-only properties.
 
 ## Variables
 

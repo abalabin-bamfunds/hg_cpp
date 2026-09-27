@@ -12,10 +12,10 @@ namespace bg {
 
 namespace details {
 
-template <template <typename> typename Field>
+template <template <typename, auto...> typename Field>
 using MAP_POSITIONAL = BundleSchemaVariableDeclaration<"MAP_POSITIONAL", Field>;
 
-template <template <typename> typename Field>
+template <template <typename, auto...> typename Field>
 using MAP_NAMED = BundleSchemaVariableDeclaration<"MAP_NAMED", Field>;
 
 } // namespace details

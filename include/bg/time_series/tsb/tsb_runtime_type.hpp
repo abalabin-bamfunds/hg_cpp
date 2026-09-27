@@ -190,7 +190,7 @@ const TimeSeriesRuntimeType &
 time_series_bundle_runtime_type(const TimeSeriesBundleType &type,
                                 std::span<const TimeSeriesRuntimeType *const> items);
 
-template <template <template <typename> typename> typename Schema, std::size_t... Index>
+template <template <template <typename, auto...> typename> typename Schema, std::size_t... Index>
 void append_bundle_item_runtime_types(const TimeSeriesBundleType &type,
                                       std::vector<const TimeSeriesRuntimeType *> &items,
                                       std::index_sequence<Index...>) {
@@ -212,7 +212,7 @@ void append_bundle_item_runtime_types(const TimeSeriesBundleType &type,
     (append.template operator()<Index>(), ...);
 }
 
-template <template <template <typename> typename> typename Schema, auto... Properties>
+template <template <template <typename, auto...> typename> typename Schema, auto... Properties>
 struct CppTimeSeriesRuntimeType<TSB<Schema, Properties...>> {
     static const TimeSeriesRuntimeType &get(const TimeSeriesType &type) {
         const auto &bundle = static_cast<const TimeSeriesBundleType &>(type);

@@ -16,11 +16,11 @@
 
 namespace {
 
-template <template <typename> typename Field> struct BaseBundle {
+template <template <typename, auto...> typename Field> struct BaseBundle {
     Field<bg::TS<int>> count;
 };
 
-template <template <typename> typename Field> struct DerivedBundle : bg::bundle_extends<BaseBundle, Field> {
+template <template <typename, auto...> typename Field> struct DerivedBundle : bg::bundle_extends<BaseBundle, Field> {
     Field<bg::TS<float>> value;
 };
 
@@ -81,7 +81,7 @@ TEST_CASE("a time series bundle type requires concrete fields",
 
 namespace {
 
-template <template <typename> typename Field> struct OrdinaryBundle {
+template <template <typename, auto...> typename Field> struct OrdinaryBundle {
     Field<bg::TS<int, bg::TimeSeriesGuarantee::ordinary>> value;
 };
 
@@ -121,7 +121,7 @@ TEST_CASE("bundle field policies preserve inherited member access",
 
 namespace {
 
-template <template <typename> typename Field> struct RedefinedBundle : bg::bundle_extends<BaseBundle, Field> {
+template <template <typename, auto...> typename Field> struct RedefinedBundle : bg::bundle_extends<BaseBundle, Field> {
     Field<bg::TS<int>> count;
     Field<bg::TS<float>> value;
 };
@@ -141,7 +141,7 @@ TEST_CASE("a redefined bundle field keeps its inherited position",
 
 namespace {
 
-template <template <typename> typename Field> struct GenericBundle {
+template <template <typename, auto...> typename Field> struct GenericBundle {
     Field<bg::TS<bg::SCALAR>> value;
 };
 
@@ -198,7 +198,7 @@ TEST_CASE("repeated bundle schema variables require the same schema",
 
 namespace {
 
-template <template <typename> typename Field> struct UnrelatedBundle {
+template <template <typename, auto...> typename Field> struct UnrelatedBundle {
     Field<bg::TS<int>> count;
 };
 
@@ -217,7 +217,7 @@ TEST_CASE("named bundles with the same fields remain nominally distinct",
 
 namespace {
 
-template <template <typename> typename Field>
+template <template <typename, auto...> typename Field>
 struct IncompatibleRedefinedBundle : bg::bundle_extends<BaseBundle, Field> {
     Field<bg::TS<float>> count;
 };

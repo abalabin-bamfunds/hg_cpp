@@ -31,7 +31,7 @@ TEST_CASE("a time-series input reads validity and update time",
 
 namespace {
 
-template <template <typename> typename Field> struct VisitorBundle {
+template <template <typename, auto...> typename Field> struct VisitorBundle {
     Field<bg::TS<int>> value;
 };
 

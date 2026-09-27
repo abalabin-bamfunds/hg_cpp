@@ -11,10 +11,10 @@ namespace bg {
 
 namespace details {
 
-template <template <typename> typename Field>
+template <template <typename, auto...> typename Field>
 using MESH_POSITIONAL = BundleSchemaVariableDeclaration<"MESH_POSITIONAL", Field>;
 
-template <template <typename> typename Field>
+template <template <typename, auto...> typename Field>
 using MESH_NAMED = BundleSchemaVariableDeclaration<"MESH_NAMED", Field>;
 
 } // namespace details

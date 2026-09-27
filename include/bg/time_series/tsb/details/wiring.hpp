@@ -28,7 +28,7 @@ struct NamedBundleWiringPoint {
 [[nodiscard]] WiringPoint time_series_bundle_field(WiringPoint bundle, util::symbol name);
 const VariadicWiringOperations &time_series_bundle_variadic_wiring_operations() noexcept;
 
-template <template <template <typename> typename> typename Schema, auto... Properties>
+template <template <template <typename, auto...> typename> typename Schema, auto... Properties>
 struct variadic_wiring_operations_traits<TSB<Schema, Properties...>> {
     static const VariadicWiringOperations *get() noexcept {
         return &time_series_bundle_variadic_wiring_operations();

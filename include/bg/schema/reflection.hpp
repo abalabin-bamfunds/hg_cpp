@@ -14,22 +14,23 @@
 
 namespace bg::details {
 
-template <template <template <typename> typename> typename Schema> struct schema_template {
-    template <template <typename> typename Field> using apply = Schema<Field>;
+template <template <template <typename, auto...> typename> typename Schema> struct schema_template {
+    template <template <typename, auto...> typename Field> using apply = Schema<Field>;
 };
 
 struct no_schema_base {};
 
-template <template <template <typename> typename> typename Base> struct schema_base_marker {};
+template <template <template <typename, auto...> typename> typename Base> struct schema_base_marker {};
 
-template <template <template <typename> typename> typename Base>
+template <template <template <typename, auto...> typename> typename Base>
 schema_template<Base> schema_base(const schema_base_marker<Base> *);
 
 no_schema_base schema_base(...);
 
 inline constexpr auto missing_schema_field = static_cast<std::size_t>(-1);
 
-template <template <template <typename> typename> typename Schema, template <typename> typename ReflectionField>
+template <template <template <typename, auto...> typename> typename Schema,
+          template <typename, auto...> typename ReflectionField>
 class schema_reflection {
     using Reflected = Schema<ReflectionField>;
 
@@ -70,8 +71,9 @@ class schema_reflection {
         }
     }
 
-    template <template <template <typename> typename> typename Root,
-              template <template <typename> typename> typename Current, template <typename> typename Field,
+    template <template <template <typename, auto...> typename> typename Root,
+              template <template <typename, auto...> typename> typename Current,
+              template <typename, auto...> typename Field,
               typename Construction, typename Factory, std::size_t... Index>
     static Current<Field> construct(Factory &factory, std::index_sequence<Index...>) {
         using CurrentReflection = schema_reflection<Current, ReflectionField>;
@@ -155,7 +157,7 @@ class schema_reflection {
     template <util::compile_time_string Name>
     using field_type = typename decltype(field_type_identity<Name>())::type;
 
-    template <template <typename> typename Field, typename Construction, typename Factory>
+    template <template <typename, auto...> typename Field, typename Construction, typename Factory>
     [[nodiscard]] static Schema<Field> make(Factory &factory) {
         return construct<Schema, Schema, Field, Construction>(
             factory, std::make_index_sequence<direct_field_count>{});

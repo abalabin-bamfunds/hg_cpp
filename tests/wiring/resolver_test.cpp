@@ -38,7 +38,7 @@ using RESOLVED_TIME_SERIES = bg::TimeSeriesVariable<"RESOLVED_TIME_SERIES">;
 using NESTED_RESULT = bg::ScalarVariable<"NESTED_RESULT">;
 using VARIADIC_RESULT = bg::ScalarVariable<"VARIADIC_RESULT">;
 
-template <template <typename> typename Field> struct ResolvedBundle {
+template <template <typename, auto...> typename Field> struct ResolvedBundle {
     Field<bg::TS<int>> value;
 };
 

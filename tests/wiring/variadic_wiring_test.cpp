@@ -25,10 +25,10 @@ using namespace bg::literals;
 
 using VARIADIC_RESULT = ScalarVariable<"VARIADIC_RESULT">;
 
-template <template <typename> typename Field>
+template <template <typename, auto...> typename Field>
 using ARGS = BundleSchemaVariableDeclaration<"ARGS", Field>;
 
-template <template <typename> typename Field>
+template <template <typename, auto...> typename Field>
 using KWARGS = BundleSchemaVariableDeclaration<"KWARGS", Field>;
 
 struct AggregateVariadicGraph {

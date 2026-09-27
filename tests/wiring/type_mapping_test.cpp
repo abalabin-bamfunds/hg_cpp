@@ -41,7 +41,7 @@ struct generic_source_graph_definition {
     }
 };
 
-template <template <typename> typename Field> struct concrete_bundle_schema {
+template <template <typename, auto...> typename Field> struct concrete_bundle_schema {
     Field<TS<int>> value;
 };
 

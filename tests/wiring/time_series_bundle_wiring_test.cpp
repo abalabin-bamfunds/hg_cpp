@@ -8,17 +8,22 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <type_traits>
+#include <utility>
 
 namespace {
 
-template <template <typename> typename Field> struct TestBundle {
+template <template <typename, auto...> typename Field> struct TestBundle {
     Field<bg::TS<int>> count;
     Field<bg::TS<float>> value;
 };
 
-template <template <typename> typename Field> struct ReferenceFieldBundle {
+template <template <typename, auto...> typename Field> struct ReferenceFieldBundle {
     Field<bg::TS<int, bg::TimeSeriesGuarantee::final>> value;
     Field<bg::REF<bg::TS<float, bg::TimeSeriesGuarantee::final>, bg::TimeSeriesGuarantee::final>> selected;
+};
+
+template <template <typename, auto...> typename Field> struct OptionalFieldBundle {
+    Field<bg::TS<int>, bg::optional> value;
 };
 
 } // namespace
@@ -43,6 +48,22 @@ TEST_CASE("a typed TSB wiring point exposes typed fields",
     REQUIRE(wiring.outputs().size() == 2);
     CHECK(wiring.outputs()[1].parent == 0);
     CHECK(wiring.outputs()[1].item == 0);
+}
+
+TEST_CASE("a TSB field projects its properties to its input view",
+          "[tsb][feature:getattr][feature:wiring][series:tsb][schema:named][validity]") {
+    using InputFields = typename bg::In<bg::TSB<OptionalFieldBundle>>::fields_type;
+    using InputField = std::remove_cvref_t<decltype(std::declval<InputFields>().value)>;
+
+    STATIC_CHECK(InputField::validity == bg::optional);
+
+    const auto source = bg::node([](bg::Out<bg::TSB<OptionalFieldBundle>>) {});
+    auto wiring = bg::GraphWiring{};
+
+    const auto context = bg::WiringContext{wiring};
+    const auto value = source()->value;
+
+    STATIC_CHECK(std::same_as<decltype(value), const bg::wp<bg::TS<int>>>);
 }
 
 TEST_CASE("unused typed TSB fields remain unmaterialized",

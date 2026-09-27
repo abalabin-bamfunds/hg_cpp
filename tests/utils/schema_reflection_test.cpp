@@ -8,41 +8,50 @@
 
 namespace {
 
-template <typename T> struct reflected_field {
+enum class field_property { optional };
+
+template <typename T, auto... Properties> struct reflected_field {
     using value_type = T;
+
+    template <template <typename, auto...> typename Field>
+    using rebind = Field<T, Properties...>;
 };
 
-template <template <typename> typename Field> inline constexpr bool is_reflected_field = false;
+template <template <typename, auto...> typename Field> inline constexpr bool is_reflected_field = false;
 template <> inline constexpr bool is_reflected_field<reflected_field> = true;
 
-template <template <template <typename> typename> typename Base, template <typename> typename Field,
+template <template <template <typename, auto...> typename> typename Base,
+          template <typename, auto...> typename Field,
           bool Reflection = is_reflected_field<Field>>
 struct extends;
 
-template <template <template <typename> typename> typename Base, template <typename> typename Field>
+template <template <template <typename, auto...> typename> typename Base,
+          template <typename, auto...> typename Field>
 struct extends<Base, Field, false> : Base<Field> {};
 
-template <template <template <typename> typename> typename Base, template <typename> typename Field>
+template <template <template <typename, auto...> typename> typename Base,
+          template <typename, auto...> typename Field>
 struct extends<Base, Field, true> : bg::details::schema_base_marker<Base> {};
 
-template <template <typename> typename Field> struct base_schema {
-    Field<int> first;
+template <template <typename, auto...> typename Field> struct base_schema {
+    Field<int, field_property::optional> first;
     Field<double> replaced;
 };
 
-template <template <typename> typename Field> struct derived_schema : extends<base_schema, Field> {
+template <template <typename, auto...> typename Field> struct derived_schema : extends<base_schema, Field> {
     Field<float> replaced;
     Field<bool> last;
 };
 
 using reflection = bg::details::schema_reflection<derived_schema, reflected_field>;
 
-template <typename T> struct constructed_field {
+template <typename T, auto... Properties> struct constructed_field {
     std::size_t index;
 };
 
 struct construction {
-    template <template <template <typename> typename> typename Base, template <typename> typename Field>
+    template <template <template <typename, auto...> typename> typename Base,
+              template <typename, auto...> typename Field>
     static extends<Base, Field> make_base(Base<Field> base) {
         return extends<Base, Field>{std::move(base)};
     }
@@ -50,7 +59,7 @@ struct construction {
 
 struct factory {
     template <typename ReflectedField>
-    constructed_field<typename ReflectedField::value_type> make(std::size_t index) const {
+    typename ReflectedField::template rebind<constructed_field> make(std::size_t index) const {
         return {index};
     }
 };
@@ -72,7 +81,8 @@ TEST_CASE("schema reflection discovers base, replacement, and new fields", "[ref
 }
 
 TEST_CASE("schema reflection resolves inherited and replaced field types", "[reflection][coverage-exempt]") {
-    STATIC_CHECK(std::same_as<typename reflection::field_type<"first">::value_type, int>);
+    STATIC_CHECK(std::same_as<typename reflection::field_type<"first">,
+                              reflected_field<int, field_property::optional>>);
     STATIC_CHECK(std::same_as<typename reflection::field_type<"replaced">::value_type, float>);
     STATIC_CHECK(std::same_as<typename reflection::field_type<"last">::value_type, bool>);
 }
@@ -84,6 +94,8 @@ TEST_CASE("schema construction uses logical field indices throughout the hierarc
     const auto &base = static_cast<const base_schema<constructed_field> &>(result);
 
     CHECK(base.first.index == 0);
+    STATIC_CHECK(std::same_as<std::remove_cvref_t<decltype(base.first)>,
+                              constructed_field<int, field_property::optional>>);
     CHECK(base.replaced.index == 1);
     CHECK(result.replaced.index == 1);
     CHECK(result.last.index == 2);

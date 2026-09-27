@@ -12,7 +12,7 @@
 namespace bg {
 namespace details {
 
-template <typename TimeSeries> using bundle_output_field = Out<TimeSeries>;
+template <typename TimeSeries, auto...> using bundle_output_field = Out<TimeSeries>;
 
 class bundle_output_factory {
   public:
@@ -30,7 +30,7 @@ class bundle_output_factory {
     const OutputState *state_;
 };
 
-template <template <template <typename> typename> typename Schema>
+template <template <template <typename, auto...> typename> typename Schema>
 [[nodiscard]] auto make_bundle_outputs(const OutputState &state) {
     auto factory = bundle_output_factory{state};
     return make_bundle_fields<Schema, bundle_output_field>(factory);
@@ -38,7 +38,7 @@ template <template <template <typename> typename> typename Schema>
 
 } // namespace details
 
-template <template <template <typename> typename> typename Schema, auto... Properties>
+template <template <template <typename, auto...> typename> typename Schema, auto... Properties>
     requires(!details::bundle_schema_variable_declaration<Schema<details::bundle_schema_field>>)
 class Out<TSB<Schema, Properties...>> {
   public:
@@ -87,7 +87,7 @@ class Out<TSB<Schema, Properties...>> {
     fields_type fields_;
 };
 
-template <template <template <typename> typename> typename Schema, auto... Properties>
+template <template <template <typename, auto...> typename> typename Schema, auto... Properties>
     requires details::bundle_schema_variable_declaration<Schema<details::bundle_schema_field>>
 class Out<TSB<Schema, Properties...>> {
   private:

@@ -12,10 +12,10 @@ namespace bg {
 
 namespace details {
 
-template <template <typename> typename Field>
+template <template <typename, auto...> typename Field>
 using SWITCH_POSITIONAL = BundleSchemaVariableDeclaration<"SWITCH_POSITIONAL", Field>;
 
-template <template <typename> typename Field>
+template <template <typename, auto...> typename Field>
 using SWITCH_NAMED = BundleSchemaVariableDeclaration<"SWITCH_NAMED", Field>;
 
 } // namespace details

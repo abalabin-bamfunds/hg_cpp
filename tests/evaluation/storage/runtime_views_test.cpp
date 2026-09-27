@@ -212,7 +212,7 @@ TEST_CASE("generic time-series list views expose their resolved size and items",
 
 namespace {
 
-template <template <typename> typename Field> struct RuntimeViewBundle {
+template <template <typename, auto...> typename Field> struct RuntimeViewBundle {
     Field<bg::TS<int>> count;
     Field<bg::TS<float>> value;
 };

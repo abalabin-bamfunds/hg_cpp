@@ -11,7 +11,8 @@ namespace bg::details {
 
 template <typename Schema> inline constexpr int bundle_schema_identity = 0;
 
-template <typename Scope, bool Input, template <template <typename> typename> typename Schema, std::size_t... Index>
+template <typename Scope, bool Input, template <template <typename, auto...> typename> typename Schema,
+          std::size_t... Index>
 std::vector<BundleField> direct_bundle_fields(GuaranteeParameter guarantee, std::index_sequence<Index...>) {
     auto fields = std::vector<BundleField>{};
     fields.reserve(sizeof...(Index));
@@ -22,7 +23,7 @@ std::vector<BundleField> direct_bundle_fields(GuaranteeParameter guarantee, std:
     return fields;
 }
 
-template <typename Scope, bool Input, template <template <typename> typename> typename Schema>
+template <typename Scope, bool Input, template <template <typename, auto...> typename> typename Schema>
 const BundleSchema &cpp_bundle_schema(GuaranteeParameter guarantee) {
     const BundleSchema *base = nullptr;
     if constexpr (bundle_has_base<Schema>) {
@@ -36,12 +37,14 @@ const BundleSchema &cpp_bundle_schema(GuaranteeParameter guarantee) {
                          &bundle_schema_identity<Schema<bundle_schema_field>>, base, fields);
 }
 
-template <template <template <typename> typename> typename Schema, bool HasBase> struct bundle_base_type_traits {
+template <template <template <typename, auto...> typename> typename Schema, bool HasBase>
+struct bundle_base_type_traits {
     static constexpr bool generic = false;
     static constexpr bool supported = true;
 };
 
-template <template <template <typename> typename> typename Schema> struct bundle_base_type_traits<Schema, true> {
+template <template <template <typename, auto...> typename> typename Schema>
+struct bundle_base_type_traits<Schema, true> {
     using Base = bundle_base_t<Schema>;
     using Traits = time_series_type_traits<TSB<Base::template apply>>;
 
@@ -49,7 +52,7 @@ template <template <template <typename> typename> typename Schema> struct bundle
     static constexpr bool supported = Traits::supported;
 };
 
-template <template <template <typename> typename> typename Schema, auto... Properties>
+template <template <template <typename, auto...> typename> typename Schema, auto... Properties>
 struct time_series_type_traits<TSB<Schema, Properties...>> {
     using semantic_type = TimeSeriesBundleType;
 
@@ -99,12 +102,13 @@ struct time_series_type_traits<TSB<Schema, Properties...>> {
     }
 };
 
-template <template <template <typename> typename> typename Schema, std::size_t... Index, typename Visitor>
+template <template <template <typename, auto...> typename> typename Schema, std::size_t... Index,
+          typename Visitor>
 void for_each_bundle_field_variable(std::index_sequence<Index...>, Visitor &&visitor) {
     (for_each_declaration_variable<direct_bundle_field_time_series<Index, Schema>>(visitor), ...);
 }
 
-template <template <template <typename> typename> typename Schema, auto... Properties>
+template <template <template <typename, auto...> typename> typename Schema, auto... Properties>
 struct declaration_variable_traits<TSB<Schema, Properties...>> {
     template <typename Visitor> static void for_each(Visitor &&visitor) {
         if constexpr (bundle_schema_variable_declaration<Schema<bundle_schema_field>>) {
@@ -126,7 +130,7 @@ struct declaration_variable_traits<TSB<Schema, Properties...>> {
 
 namespace bg {
 
-template <template <template <typename> typename> typename Schema>
+template <template <template <typename, auto...> typename> typename Schema>
 const BundleSchemaType &schema_type<Schema>::type() {
     return TSB<Schema>::type().schema_type();
 }

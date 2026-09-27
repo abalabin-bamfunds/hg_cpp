@@ -8,24 +8,27 @@
 
 namespace bg {
 
-template <template <template <typename> typename> typename Base, template <typename> typename Field,
+template <template <template <typename, auto...> typename> typename Base,
+          template <typename, auto...> typename Field,
           bool Schema = details::is_bundle_schema_field<Field>>
 struct bundle_extends;
 
-template <template <template <typename> typename> typename Base, template <typename> typename Field>
+template <template <template <typename, auto...> typename> typename Base,
+          template <typename, auto...> typename Field>
 struct bundle_extends<Base, Field, false> : Base<Field> {};
 
-template <template <template <typename> typename> typename Base, template <typename> typename Field>
+template <template <template <typename, auto...> typename> typename Base,
+          template <typename, auto...> typename Field>
 struct bundle_extends<Base, Field, true> : details::schema_base_marker<Base> {};
 
-template <template <template <typename> typename> typename Schema, auto... Properties>
+template <template <template <typename, auto...> typename> typename Schema, auto... Properties>
 struct TSB : details::time_series_type_access<TSB<Schema, Properties...>> {
   private:
     using ParsedProperties = details::time_series_properties<Properties...>;
     static_assert(ParsedProperties::valid);
 
   public:
-    template <template <typename> typename Field> using schema_type = Schema<Field>;
+    template <template <typename, auto...> typename Field> using schema_type = Schema<Field>;
 
     static constexpr bool has_explicit_guarantee = ParsedProperties::has_guarantee;
     static constexpr auto guarantee = ParsedProperties::guarantee;

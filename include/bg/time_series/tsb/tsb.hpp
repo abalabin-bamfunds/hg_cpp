@@ -28,7 +28,9 @@ struct named_bundle_wiring_field<named_argument<Name, Value>>
 template <typename T>
 inline constexpr bool is_named_bundle_wiring_field = named_bundle_wiring_field<std::remove_cvref_t<T>>::value;
 
-template <template <template <typename> typename> typename Schema> class BundleWiringFields {
+template <typename TimeSeries, auto...> using bundle_wiring_field = wp<TimeSeries>;
+
+template <template <template <typename, auto...> typename> typename Schema> class BundleWiringFields {
     class Factory {
       public:
         explicit Factory(WiringPoint bundle) noexcept : bundle_{bundle} {}
@@ -46,22 +48,22 @@ template <template <template <typename> typename> typename Schema> class BundleW
   public:
     explicit BundleWiringFields(WiringPoint bundle) : fields_{make(bundle)} {}
 
-    const Schema<wp> *operator->() const noexcept { return &fields_; }
+    const Schema<bundle_wiring_field> *operator->() const noexcept { return &fields_; }
 
   private:
-    static Schema<wp> make(WiringPoint bundle) {
+    static Schema<bundle_wiring_field> make(WiringPoint bundle) {
         auto factory = Factory{bundle};
-        return make_bundle_fields<Schema, wp>(factory);
+        return make_bundle_fields<Schema, bundle_wiring_field>(factory);
     }
 
-    Schema<wp> fields_;
+    Schema<bundle_wiring_field> fields_;
 };
 
 } // namespace bg::details
 
 namespace bg {
 
-template <template <template <typename> typename> typename Schema, auto... TimeSeriesProperties,
+template <template <template <typename, auto...> typename> typename Schema, auto... TimeSeriesProperties,
           auto... WiringProperties>
     requires(details::variadic_mode<WiringProperties...>() == details::VariadicMode::none)
 class wp<TSB<Schema, TimeSeriesProperties...>, WiringProperties...> {
@@ -103,7 +105,7 @@ class wp<TSB<Schema, TimeSeriesProperties...>, WiringProperties...> {
     WiringPoint point_;
 };
 
-template <template <template <typename> typename> typename Schema, auto... TimeSeriesProperties,
+template <template <template <typename, auto...> typename> typename Schema, auto... TimeSeriesProperties,
           auto... WiringProperties>
     requires(details::variadic_mode<WiringProperties...>() != details::VariadicMode::none)
 class wp<TSB<Schema, TimeSeriesProperties...>, WiringProperties...> {

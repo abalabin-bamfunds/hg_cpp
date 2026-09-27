@@ -15,25 +15,26 @@
 namespace bg {
 namespace details {
 
-template <typename TimeSeries> using bundle_input_field = In<TimeSeries>;
+template <typename TimeSeries, auto... Properties> using bundle_input_field = In<TimeSeries, Properties...>;
 
 class bundle_input_factory {
   public:
     explicit bundle_input_factory(const TimeSeriesInputData &data) noexcept : data_{&data} {}
 
     template <typename SchemaField>
-    [[nodiscard]] In<typename SchemaField::time_series_type> make(std::size_t index) const {
+    [[nodiscard]] auto make(std::size_t index) const {
         using Item = typename SchemaField::time_series_type;
         const auto item = data_->runtime_type().item(data_->data(), static_cast<item_id_t>(index));
-        return {item.last_updated, item.value, item.runtime_type,
-                data_->modified() && item.last_updated == data_->last_updated()};
+        using Input = typename SchemaField::template rebind<bundle_input_field>;
+        return Input{item.last_updated, item.value, item.runtime_type,
+                     data_->modified() && item.last_updated == data_->last_updated()};
     }
 
   private:
     const TimeSeriesInputData *data_;
 };
 
-template <template <template <typename> typename> typename Schema>
+template <template <template <typename, auto...> typename> typename Schema>
 [[nodiscard]] auto make_bundle_inputs(const TimeSeriesInputData &data) {
     auto factory = bundle_input_factory{data};
     return make_bundle_fields<Schema, bundle_input_field>(factory);
@@ -41,7 +42,8 @@ template <template <template <typename> typename> typename Schema>
 
 } // namespace details
 
-template <template <template <typename> typename> typename Schema, auto... TimeSeriesProperties, auto... Properties>
+template <template <template <typename, auto...> typename> typename Schema, auto... TimeSeriesProperties,
+          auto... Properties>
     requires(!details::bundle_schema_variable_declaration<Schema<details::bundle_schema_field>>)
 class In<TSB<Schema, TimeSeriesProperties...>, Properties...> {
     using ParsedProperties = details::input_properties<Properties...>;
@@ -87,7 +89,8 @@ class In<TSB<Schema, TimeSeriesProperties...>, Properties...> {
     fields_type fields_;
 };
 
-template <template <template <typename> typename> typename Schema, auto... TimeSeriesProperties, auto... Properties>
+template <template <template <typename, auto...> typename> typename Schema, auto... TimeSeriesProperties,
+          auto... Properties>
     requires(details::bundle_schema_variable_declaration<Schema<details::bundle_schema_field>>)
 class In<TSB<Schema, TimeSeriesProperties...>, Properties...> {
     using ParsedProperties = details::basic_input_properties<true, Properties...>;

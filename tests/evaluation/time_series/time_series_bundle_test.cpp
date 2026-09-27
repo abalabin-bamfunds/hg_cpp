@@ -18,11 +18,11 @@
 
 namespace {
 
-template <template <typename> typename Field> struct BaseBundle {
+template <template <typename, auto...> typename Field> struct BaseBundle {
     Field<bg::TS<int>> count;
 };
 
-template <template <typename> typename Field> struct DerivedBundle : bg::bundle_extends<BaseBundle, Field> {
+template <template <typename, auto...> typename Field> struct DerivedBundle : bg::bundle_extends<BaseBundle, Field> {
     Field<bg::TS<float>> value;
 };
 
@@ -134,7 +134,7 @@ TEST_CASE("a typed TSB wiring point selects an inherited field",
     CHECK(actual.equals({2}));
 }
 
-template <template <typename> typename Field> struct ReferenceBundle {
+template <template <typename, auto...> typename Field> struct ReferenceBundle {
     Field<bg::TS<int>> value;
     Field<bg::REF<bg::TS<int>>> selected;
 };
@@ -288,7 +288,7 @@ TEST_CASE("a named bundle input accepts extra free bundle fields",
 
 namespace {
 
-template <template <typename> typename Field> struct RedefinedBundle : bg::bundle_extends<BaseBundle, Field> {
+template <template <typename, auto...> typename Field> struct RedefinedBundle : bg::bundle_extends<BaseBundle, Field> {
     Field<bg::TS<int>> count;
     Field<bg::TS<float>> value;
 };
@@ -319,7 +319,7 @@ TEST_CASE("a redefined bundle field shares its inherited storage",
 
 namespace {
 
-template <template <typename> typename Field> struct NestedBundle {
+template <template <typename, auto...> typename Field> struct NestedBundle {
     Field<bg::TSB<BaseBundle>> nested;
     Field<bg::TS<float>> value;
 };

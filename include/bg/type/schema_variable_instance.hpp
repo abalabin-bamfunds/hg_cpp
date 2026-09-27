@@ -16,7 +16,7 @@ const TypeVariableType<BundleSchemaType> &schema_variable_instance() {
     return variable;
 }
 
-template <template <template <typename> typename> typename Declaration>
+template <template <template <typename, auto...> typename> typename Declaration>
     requires bundle_schema_variable_declaration<Declaration<bundle_schema_field>>
 const TypeVariableType<BundleSchemaType> &schema_variable_instance() {
     return schema_variable_instance<Declaration<bundle_schema_field>>();

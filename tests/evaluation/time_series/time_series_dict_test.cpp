@@ -498,7 +498,7 @@ TEST_CASE("time series dictionaries can contain time series dictionaries",
 
 namespace {
 
-template <template <typename> typename Field> struct DictionaryBundle {
+template <template <typename, auto...> typename Field> struct DictionaryBundle {
     Field<bg::TS<int>> value;
 };
 

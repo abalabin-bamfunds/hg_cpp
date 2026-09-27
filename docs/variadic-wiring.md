@@ -10,10 +10,10 @@ parameter. Both follow all fixed parameters. Either parameter may be omitted.
 written with `"name"_n = value`. Duplicate names are rejected.
 
 ```cpp
-template <template <typename> typename Field>
+template <template <typename, auto...> typename Field>
 using ARGS = BundleSchemaVariableDeclaration<"ARGS", Field>;
 
-template <template <typename> typename Field>
+template <template <typename, auto...> typename Field>
 using KWARGS = BundleSchemaVariableDeclaration<"KWARGS", Field>;
 
 graph("name"_n = "configure",

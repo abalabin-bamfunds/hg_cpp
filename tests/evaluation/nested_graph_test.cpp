@@ -427,7 +427,7 @@ TEST_CASE("a free list reference item survives two boundaries and repeated lifec
     CHECK(actual.equals({11, 202, std::nullopt, std::nullopt, std::nullopt, 44, std::nullopt, 54}));
 }
 
-template <template <typename> typename Field> struct NestedIntBundle {
+template <template <typename, auto...> typename Field> struct NestedIntBundle {
     Field<bg::TS<std::int64_t>> first;
     Field<bg::TS<std::int64_t>> second;
 };
@@ -502,7 +502,7 @@ TEST_CASE("a free bundle reference passes through a nested graph",
     CHECK(actual.equals({11, 22, std::nullopt, 44}));
 }
 
-template <template <typename> typename Field> struct NestedReferenceBundle {
+template <template <typename, auto...> typename Field> struct NestedReferenceBundle {
     Field<bg::TS<std::int64_t>> value;
     Field<bg::REF<bg::TS<std::int64_t>, bg::TimeSeriesGuarantee::ordinary>> selected;
 };
