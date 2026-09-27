@@ -13,10 +13,10 @@ using FloatOutput = bg::Out<bg::TS<float>>;
 static_assert(sizeof(FloatOutput) == sizeof(void *));
 static_assert(sizeof(bg::Out<bg::TS_T>) == sizeof(void *));
 static_assert(sizeof(bg::Out<bg::TS<bg::SCALAR>>) == sizeof(void *));
-static_assert(sizeof(bg::Out<bg::REF<bg::TS<int>>>) == sizeof(void *));
-static_assert(sizeof(bg::Out<bg::TSL<bg::TS<int>, 2>>) == sizeof(void *));
-static_assert(sizeof(bg::Out<bg::TSS<int>>) == sizeof(void *));
-static_assert(sizeof(bg::Out<bg::TSD<int, bg::TS<int>>>) == sizeof(void *));
+static_assert(sizeof(bg::Out<bg::REF<bg::TS<bg::i64>>>) == sizeof(void *));
+static_assert(sizeof(bg::Out<bg::TSL<bg::TS<bg::i64>, 2>>) == sizeof(void *));
+static_assert(sizeof(bg::Out<bg::TSS<bg::i64>>) == sizeof(void *));
+static_assert(sizeof(bg::Out<bg::TSD<bg::i64, bg::TS<bg::i64>>>) == sizeof(void *));
 static_assert(!std::is_constructible_v<FloatOutput, bg::details::OutputState &>);
 static_assert(!std::is_copy_constructible_v<FloatOutput>);
 static_assert(std::is_move_constructible_v<FloatOutput>);
@@ -180,9 +180,9 @@ TEST_CASE("a default reference output suppresses an equal address",
     const auto previous_update = bg::MIN_DT + std::chrono::microseconds{1};
     auto last_updated = previous_update;
     const auto evaluation_time = previous_update + std::chrono::microseconds{1};
-    auto state = bg::details::OutputState{bg::cpp_time_series_runtime_type<bg::REF<bg::TS<int>>>()};
+    auto state = bg::details::OutputState{bg::cpp_time_series_runtime_type<bg::REF<bg::TS<bg::i64>>>()};
     state.bind(last_updated, &address, evaluation_time);
-    const auto output = bg::details::output_factory::make<bg::REF<bg::TS<int>>>(state);
+    const auto output = bg::details::output_factory::make<bg::REF<bg::TS<bg::i64>>>(state);
 
     output.set_value(address);
 
@@ -191,7 +191,7 @@ TEST_CASE("a default reference output suppresses an equal address",
 
 TEST_CASE("an ordinary reference output publishes an equal address",
           "[node_api][reference][feature:node-api][transition:update][series:value][guarantee:ordinary]") {
-    using OrdinaryReference = bg::REF<bg::TS<int>, bg::TimeSeriesGuarantee::ordinary>;
+    using OrdinaryReference = bg::REF<bg::TS<bg::i64>, bg::TimeSeriesGuarantee::ordinary>;
 
     auto root = bg::details::RootReference{};
     auto address = bg::Reference{&root};

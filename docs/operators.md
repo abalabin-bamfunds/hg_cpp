@@ -43,8 +43,8 @@ using RESULT = bg::TimeSeriesVariable<"RESULT">;
 
 auto convert = bg::operator_<RESULT, auto(bg::TS_T) -> RESULT>{"convert", {"value"}};
 
-convert[bg::type<bg::TS<int>>](value);
-convert[bg::type<RESULT> = bg::type<bg::TS<int>>](value);
+convert[bg::type<bg::TS<bg::i64>>](value);
+convert[bg::type<RESULT> = bg::type<bg::TS<bg::i64>>](value);
 ```
 
 The optional template argument after the prototype defines C++ call preparation.
@@ -314,7 +314,7 @@ and callback stage.
 
 ```text
 Cannot resolve operator add at portfolio/pricing/spread
-Arguments: (lhs: TS<int>, rhs: string)
+Arguments: (lhs: TS<i64>, rhs: string)
 
 add_numbers(lhs: TS<Number>, rhs: TS<Number>)
   rhs: expected TS<Number>, received string

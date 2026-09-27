@@ -82,6 +82,13 @@ TEST_CASE("evaluation time has a scalar graph type", "[type_system][feature:type
     CHECK(&bg::cpp_scalar_type<bg::List<bg::EvaluationTime>>() == &bg::list_scalar_type(bg::evaluation_time_type()));
 }
 
+TEST_CASE("time series value declarations require canonical integer types",
+          "[feature:type-system][series:value][scalar:integer][declaration:concrete]") {
+    STATIC_CHECK_FALSE(bg::details::supported_time_series<bg::TS<int>>);
+    STATIC_CHECK_FALSE(bg::details::supported_time_series<bg::TS<bg::List<int>>>);
+    STATIC_CHECK(bg::details::supported_time_series<bg::TS<bg::i64>>);
+}
+
 TEST_CASE("scalar graph types report equality and hashing", "[type_system][feature:type-system]") {
     CHECK(bg::int64_type().supports_equality());
     CHECK(bg::int64_type().supports_hash());
@@ -121,24 +128,24 @@ TEST_CASE("generic C++ declarations expose their semantic types",
     CHECK_FALSE(time_series.is_resolved());
     CHECK(&value.value_type() == &static_cast<const bg::TimeSeriesValueType &>(parameter).value_type());
 
-    REQUIRE(value.match(bg::TS<int>::type(), integer_bindings));
+    REQUIRE(value.match(bg::TS<bg::i64>::type(), integer_bindings));
     REQUIRE(value.match(bg::TS<float>::type(), float_bindings));
-    CHECK(&value.resolve(integer_bindings) == &bg::TS<int>::type());
+    CHECK(&value.resolve(integer_bindings) == &bg::TS<bg::i64>::type());
     CHECK(&value.resolve(float_bindings) == &bg::TS<float>::type());
 }
 
 TEST_CASE("type compatibility can be checked without retaining a type map",
           "[type_system][feature:type-system][declaration:generic]") {
-    CHECK(bg::TS<bg::SCALAR>::type().accepts(bg::TS<int>::type()));
-    CHECK_FALSE(bg::TS<int>::type().accepts(bg::TS<float>::type()));
+    CHECK(bg::TS<bg::SCALAR>::type().accepts(bg::TS<bg::i64>::type()));
+    CHECK_FALSE(bg::TS<bg::i64>::type().accepts(bg::TS<float>::type()));
 }
 
 TEST_CASE("compatible time-series types have a common weakest guarantee",
           "[type_system][feature:type-system][guarantee:ordinary][guarantee:final]"
           "[guarantee:const]") {
-    const auto &ordinary = bg::TS<int>::type();
-    const auto &final = bg::TS<int, bg::TimeSeriesGuarantee::final>::type();
-    const auto &constant = bg::TS<int, bg::TimeSeriesGuarantee::const_>::type();
+    const auto &ordinary = bg::TS<bg::i64>::type();
+    const auto &final = bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>::type();
+    const auto &constant = bg::TS<bg::i64, bg::TimeSeriesGuarantee::const_>::type();
 
     CHECK(final.common_type(ordinary) == &ordinary);
     CHECK(final.common_type(constant) == &final);
@@ -154,7 +161,7 @@ TEST_CASE("a time series variable and its guarantee resolve independently",
     const auto generic_right = bg::GenericTimeSeriesVariableType{right, guarantee};
     const auto &list =
         bg::TSL<bg::TS<float, bg::TimeSeriesGuarantee::ordinary>, 2, bg::TimeSeriesGuarantee::final>::type();
-    const auto &value = bg::TS<int>::type();
+    const auto &value = bg::TS<bg::i64>::type();
     auto type_map = bg::TypeMap{};
 
     REQUIRE(generic_left.match(list, type_map));

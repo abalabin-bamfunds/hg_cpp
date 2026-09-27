@@ -10,7 +10,8 @@ template <typename Item, auto... Properties> struct time_series_type_traits<TSS<
     using semantic_type = TimeSeriesSetType;
 
     static constexpr bool generic = generic_scalar<Item>;
-    static constexpr bool supported = generic_scalar<Item> || has_cpp_scalar_type<Item>;
+    static constexpr bool supported =
+        generic_scalar<Item> || (scalar_declaration_traits<Item>::supports_time_series && has_cpp_scalar_type<Item>);
 
     template <typename Scope, std::size_t Index, bool Input>
     static const TimeSeriesType &get(GuaranteeParameter guarantee) {

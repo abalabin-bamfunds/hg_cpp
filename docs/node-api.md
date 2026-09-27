@@ -69,8 +69,8 @@ node definition local to its use:
 
 ```cpp
 const auto add = bg::node(
-    [](bg::In<bg::TS<int>, "value"_n> value, int amount,
-       bg::Out<bg::TS<int>> output) {
+    [](bg::In<bg::TS<bg::i64>, "value"_n> value, int amount,
+       bg::Out<bg::TS<bg::i64>> output) {
         output.set(*value + amount);
     });
 ```

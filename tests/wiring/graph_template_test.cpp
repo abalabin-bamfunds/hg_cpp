@@ -100,7 +100,7 @@ TEST_CASE("a graph reference output defaults to deduplicated",
           "[graph_template][reference][feature:wiring][definition:function][guarantee:deduplicated]") {
     const auto pass =
         bg::graph("name"_n = "reference_pass",
-                  [](bg::wp<bg::REF<bg::TS<int>>> input) -> bg::wp<bg::REF<bg::TS<int>>> { return input; });
+                  [](bg::wp<bg::REF<bg::TS<bg::i64>>> input) -> bg::wp<bg::REF<bg::TS<bg::i64>>> { return input; });
 
     CHECK(pass.signature().output()->guarantee().value() == bg::TimeSeriesGuarantee::deduplicated);
     CHECK_FALSE(static_cast<const bg::TimeSeriesType &>(*pass.signature().parameter(0).type).guarantee().is_resolved());

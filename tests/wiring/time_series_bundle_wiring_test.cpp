@@ -15,17 +15,17 @@ namespace {
 template <template <typename, auto...> typename> struct EmptyBundle {};
 
 template <template <typename, auto...> typename Field> struct TestBundle {
-    Field<bg::TS<int>> count;
+    Field<bg::TS<bg::i64>> count;
     Field<bg::TS<float>> value;
 };
 
 template <template <typename, auto...> typename Field> struct ReferenceFieldBundle {
-    Field<bg::TS<int, bg::TimeSeriesGuarantee::final>> value;
+    Field<bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>> value;
     Field<bg::REF<bg::TS<float, bg::TimeSeriesGuarantee::final>, bg::TimeSeriesGuarantee::final>> selected;
 };
 
 template <template <typename, auto...> typename Field> struct OptionalFieldBundle {
-    Field<bg::TS<int>, bg::optional> value;
+    Field<bg::TS<bg::i64>, bg::optional> value;
 };
 
 template <template <typename, auto...> typename Field> struct SharedBundle {
@@ -47,14 +47,14 @@ TEST_CASE("typed TSB construction supports an empty schema",
 TEST_CASE("a typed TSB wiring point exposes typed fields",
           "[feature:getattr][feature:wiring][series:tsb][schema:named][representation:native]") {
     const auto source = bg::node([](bg::Out<bg::TSB<TestBundle>>) {});
-    const auto sink = bg::node([](bg::In<bg::TS<int>>) {});
+    const auto sink = bg::node([](bg::In<bg::TS<bg::i64>>) {});
     auto wiring = bg::GraphWiring{};
 
     const auto context = bg::WiringContext{wiring};
     const auto bundle = source();
     const auto count = bundle->count;
 
-    STATIC_CHECK(std::same_as<decltype(count), const bg::wp<bg::TS<int>>>);
+    STATIC_CHECK(std::same_as<decltype(count), const bg::wp<bg::TS<bg::i64>>>);
     STATIC_CHECK(sizeof(decltype(bundle)) == sizeof(void *));
     STATIC_CHECK(std::is_trivially_copyable_v<decltype(bundle)>);
     CHECK(wiring.outputs().size() == 1);
@@ -79,7 +79,7 @@ TEST_CASE("a TSB field projects its properties to its input view",
     const auto context = bg::WiringContext{wiring};
     const auto value = source()->value;
 
-    STATIC_CHECK(std::same_as<decltype(value), const bg::wp<bg::TS<int>>>);
+    STATIC_CHECK(std::same_as<decltype(value), const bg::wp<bg::TS<bg::i64>>>);
 }
 
 TEST_CASE("unused typed TSB fields remain unmaterialized",
@@ -90,7 +90,7 @@ TEST_CASE("unused typed TSB fields remain unmaterialized",
     const auto context = bg::WiringContext{wiring};
     const auto count = source()->count;
 
-    CHECK(&count.type() == &bg::TS<int>::type());
+    CHECK(&count.type() == &bg::TS<bg::i64>::type());
     CHECK(wiring.outputs().size() == 1);
 }
 
@@ -113,9 +113,9 @@ TEST_CASE("typed field access preserves free TSB sources",
           "[feature:getattr][feature:wiring][series:tsb][schema:named][representation:free]") {
     using namespace bg::literals;
 
-    const auto count_source = bg::node([](bg::Out<bg::TS<int>>) {});
+    const auto count_source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
     const auto value_source = bg::node([](bg::Out<bg::TS<float>>) {});
-    const auto sink = bg::node([](bg::In<bg::TS<int>>) {});
+    const auto sink = bg::node([](bg::In<bg::TS<bg::i64>>) {});
     auto wiring = bg::GraphWiring{};
 
     const auto context = bg::WiringContext{wiring};
@@ -159,7 +159,7 @@ TEST_CASE("getattr selects a field from an unnamed free TSB",
     using namespace bg::literals;
     using namespace bg::util::literals;
 
-    const auto count_source = bg::node([](bg::Out<bg::TS<int>>) {});
+    const auto count_source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
     const auto value_source = bg::node([](bg::Out<bg::TS<float>>) {});
     auto wiring = bg::GraphWiring{};
 
@@ -167,7 +167,7 @@ TEST_CASE("getattr selects a field from an unnamed free TSB",
     const auto bundle = bg::bundle("count"_n = count_source(), "value"_n = value_source());
     const auto count = bg::operators::getattr(bundle, "count"_sym);
 
-    CHECK(&count.type() == &bg::TS<int>::type());
+    CHECK(&count.type() == &bg::TS<bg::i64>::type());
     CHECK(wiring.nodes().size() == 2);
     CHECK(wiring.outputs().size() == 2);
 }
@@ -187,7 +187,7 @@ TEST_CASE("getattr on a TSB reference returns a reference to a value field",
         const auto selected = bg::operators::getattr(reference(source()), "value"_sym);
 
         CHECK(&selected.type() ==
-              &bg::REF<bg::TS<int, bg::TimeSeriesGuarantee::final>, bg::TimeSeriesGuarantee::ordinary>::type());
+              &bg::REF<bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>, bg::TimeSeriesGuarantee::ordinary>::type());
     });
 }
 

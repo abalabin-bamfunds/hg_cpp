@@ -186,6 +186,6 @@ template <typename T, auto... Properties> class Out<TS<T, Properties...>> {
     Proxy state_;
 };
 
-static_assert(sizeof(Out<TS<int>>) == sizeof(void *));
+static_assert(sizeof(Out<TS<i64>>) == sizeof(void *));
 
 } // namespace bg

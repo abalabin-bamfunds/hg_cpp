@@ -18,7 +18,7 @@ using namespace bg;
 struct boundary_node {
     static constexpr bool deduplicate_wiring = false;
 
-    Out<TS<int>> output;
+    Out<TS<i64>> output;
 
     void evaluate() const {}
 };
@@ -47,17 +47,17 @@ struct context_copy_node {
 };
 
 struct add_node {
-    In<TS<int>> left;
-    In<TS<int>> right;
-    Out<TS<int>> output;
+    In<TS<i64>> left;
+    In<TS<i64>> right;
+    Out<TS<i64>> output;
 
     void evaluate() const {}
 };
 
 struct multiply_node {
-    In<TS<int>> left;
-    In<TS<int>> right;
-    Out<TS<int>> output;
+    In<TS<i64>> left;
+    In<TS<i64>> right;
+    Out<TS<i64>> output;
 
     void evaluate() const {}
 };
@@ -73,8 +73,8 @@ struct second_sink_node {
 struct branch_node {
     static constexpr bool deduplicate_wiring = false;
 
-    In<TS<int>> input;
-    Out<TS<int>> output;
+    In<TS<i64>> input;
+    Out<TS<i64>> output;
 
     void evaluate() const {}
 };
@@ -85,7 +85,7 @@ struct opaque_value {
 
 struct opaque_source_node {
     Scalar<Opaque<opaque_value>> value;
-    Out<TS<int>> output;
+    Out<TS<i64>> output;
 
     void evaluate() const {}
 };
@@ -156,7 +156,7 @@ details::GraphWiringStructure nested_structure() {
     using namespace bg::literals;
 
     const auto add = node<add_node>();
-    const auto inner = graph("name"_n = "inner", [&](wp<TS<int>> value) { return add(value, value); });
+    const auto inner = graph("name"_n = "inner", [&](wp<TS<i64>> value) { return add(value, value); });
     auto wiring = GraphWiring{};
     const auto context = WiringContext{wiring};
     const auto value_boundary = node<boundary_node>();

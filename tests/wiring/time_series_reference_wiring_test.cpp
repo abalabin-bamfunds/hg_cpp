@@ -8,13 +8,13 @@
 namespace {
 
 struct reference_wiring_source {
-    bg::Out<bg::TS<int>> output;
+    bg::Out<bg::TS<bg::i64>> output;
     void evaluate() const {}
 };
 
 struct reference_wiring_pass {
-    bg::In<bg::REF<bg::TS<int>>> input;
-    bg::Out<bg::REF<bg::TS<int>>> output;
+    bg::In<bg::REF<bg::TS<bg::i64>>> input;
+    bg::Out<bg::REF<bg::TS<bg::i64>>> output;
     void evaluate() const { output.copy(input); }
 };
 

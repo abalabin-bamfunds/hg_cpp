@@ -215,7 +215,7 @@ struct stateful_scalar_definition {
     std::optional<int> increment;
     bg::State<counter_state> state;
     bg::State<accumulated_state> accumulated;
-    bg::Out<bg::TS<int>> output;
+    bg::Out<bg::TS<bg::i64>> output;
 
     void evaluate() const {
         state->value += increment.value_or(1);
@@ -225,7 +225,7 @@ struct stateful_scalar_definition {
 };
 
 struct int_sink_definition {
-    bg::In<bg::TS<int>> input;
+    bg::In<bg::TS<bg::i64>> input;
 
     void evaluate() const { last_value = *input; }
 

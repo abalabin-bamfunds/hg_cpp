@@ -14,10 +14,10 @@ namespace {
 using namespace bg;
 using namespace bg::literals;
 
-const auto integer_source = node([](Out<TS<int>>) {});
+const auto integer_source = node([](Out<TS<i64>>) {});
 const auto float_source = node([](Out<TS<float>>) {});
-const auto final_integer_source = node([](Out<TS<int, TimeSeriesGuarantee::final>>) {});
-const auto integer_transform = node([](In<TS<int>>, Out<TS<int>>) {});
+const auto final_integer_source = node([](Out<TS<i64, TimeSeriesGuarantee::final>>) {});
+const auto integer_transform = node([](In<TS<i64>>, Out<TS<i64>>) {});
 
 class SwitchCacheOverload final : public WiringTemplate {
   public:
@@ -25,7 +25,7 @@ class SwitchCacheOverload final : public WiringTemplate {
         : signature_{util::symbol{"cached_switch"},
                      {{util::symbol{"key"}, &TS<std::int64_t>::type()},
                       {util::symbol{"cases"}, &GraphArgument::type()}},
-                     TS<int>::type()},
+                     TS<i64>::type()},
           requirement_calls_{&requirement_calls} {}
 
     const Signature &signature() const final { return signature_; }
@@ -49,9 +49,9 @@ TEST_CASE("switch validates its case set",
           "[feature:switch][feature:wiring][feature:operator][series:value]"
           "[definition:function]") {
     const auto key = node([](Out<TS<std::int64_t>>) {});
-    const auto value = node([](Out<TS<int>>) {});
+    const auto value = node([](Out<TS<i64>>) {});
     const auto identity = graph("name"_n = "switch_identity",
-                                [](wp<TS<int>> input) { return input; });
+                                [](wp<TS<i64>> input) { return input; });
 
     testing::test_wiring([&] {
         CHECK_THROWS_WITH((void)switch_(key(), cases{}, value()),
@@ -95,7 +95,7 @@ TEST_CASE("switch rejects incompatible case output shapes",
     const auto key = node([](Out<TS<std::int64_t>>) {});
     const auto integers = graph(
         "name"_n = "integer_switch_source",
-        []() -> wp<TS<int>> { return integer_source(); });
+        []() -> wp<TS<i64>> { return integer_source(); });
     const auto floats = graph(
         "name"_n = "float_switch_source",
         []() -> wp<TS<float>> { return float_source(); });
@@ -125,15 +125,15 @@ TEST_CASE("switch output is a deduplicated reference to the common case output",
           "[series:value][binding:value-to-reference][guarantee:deduplicated]"
           "[definition:function]") {
     const auto key = node([](Out<TS<std::int64_t>>) {});
-    const auto value = node([](Out<TS<int>>) {});
+    const auto value = node([](Out<TS<i64>>) {});
     const auto identity = graph("name"_n = "typed_switch_identity",
-                                [](wp<TS<int>> input) { return input; });
+                                [](wp<TS<i64>> input) { return input; });
 
     testing::test_wiring([&] {
         const auto result = switch_(key(), cases{case_(std::int64_t{1}, identity)}, value());
 
         CHECK(&result.type() ==
-              &REF<TS<int>, TimeSeriesGuarantee::deduplicated>::type());
+              &REF<TS<i64>, TimeSeriesGuarantee::deduplicated>::type());
     });
 }
 
@@ -143,17 +143,17 @@ TEST_CASE("switch uses the weakest compatible case output guarantee",
     const auto key = node([](Out<TS<std::int64_t>>) {});
     const auto final_source = graph(
         "name"_n = "final_integer_switch_source",
-        []() -> wp<TS<int, TimeSeriesGuarantee::final>> { return final_integer_source(); });
+        []() -> wp<TS<i64, TimeSeriesGuarantee::final>> { return final_integer_source(); });
     const auto ordinary_source = graph(
         "name"_n = "ordinary_integer_switch_source",
-        []() -> wp<TS<int>> { return integer_source(); });
+        []() -> wp<TS<i64>> { return integer_source(); });
 
     testing::test_wiring([&] {
         const auto output = switch_(
             key(), cases{case_(1, final_source), case_(2, ordinary_source)});
 
         CHECK(&output.type() ==
-              &REF<TS<int>, TimeSeriesGuarantee::deduplicated>::type());
+              &REF<TS<i64>, TimeSeriesGuarantee::deduplicated>::type());
     });
 }
 

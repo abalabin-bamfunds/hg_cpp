@@ -20,7 +20,7 @@ namespace {
 using clock_type = std::chrono::steady_clock;
 constexpr auto ListSize = std::size_t{16};
 constexpr auto SampleCount = std::size_t{7};
-using IntList = bg::TSL<bg::TS<int>, ListSize>;
+using IntList = bg::TSL<bg::TS<bg::i64>, ListSize>;
 
 #if defined(_MSC_VER)
 #define BG_BENCHMARK_NOINLINE __declspec(noinline)
@@ -39,7 +39,7 @@ BG_BENCHMARK_NOINLINE void consume(std::size_t value) noexcept {
 struct value_source_definition {
     static constexpr bool uses_timed_scheduling = true;
 
-    bg::Out<bg::TS<int>> output;
+    bg::Out<bg::TS<bg::i64>> output;
 
     void start(bg::EvaluationContext *context) const { context->schedule_now(); }
 
@@ -55,29 +55,29 @@ template <typename... Inputs> void consume_values(const Inputs &...inputs) noexc
 
 // Each input is a separate aggregate member so the benchmark follows normal aggregate node invocation.
 struct value_sink_1 {
-    bg::In<bg::TS<int>> input_0;
+    bg::In<bg::TS<bg::i64>> input_0;
 
     void evaluate() const { consume_values(input_0); }
 };
 
 struct value_sink_4 {
-    bg::In<bg::TS<int>> input_0;
-    bg::In<bg::TS<int>, bg::passive, bg::optional> input_1;
-    bg::In<bg::TS<int>, bg::passive, bg::optional> input_2;
-    bg::In<bg::TS<int>, bg::passive, bg::optional> input_3;
+    bg::In<bg::TS<bg::i64>> input_0;
+    bg::In<bg::TS<bg::i64>, bg::passive, bg::optional> input_1;
+    bg::In<bg::TS<bg::i64>, bg::passive, bg::optional> input_2;
+    bg::In<bg::TS<bg::i64>, bg::passive, bg::optional> input_3;
 
     void evaluate() const { consume_values(input_0, input_1, input_2, input_3); }
 };
 
 struct value_sink_8 {
-    bg::In<bg::TS<int>> input_0;
-    bg::In<bg::TS<int>, bg::passive, bg::optional> input_1;
-    bg::In<bg::TS<int>, bg::passive, bg::optional> input_2;
-    bg::In<bg::TS<int>, bg::passive, bg::optional> input_3;
-    bg::In<bg::TS<int>, bg::passive, bg::optional> input_4;
-    bg::In<bg::TS<int>, bg::passive, bg::optional> input_5;
-    bg::In<bg::TS<int>, bg::passive, bg::optional> input_6;
-    bg::In<bg::TS<int>, bg::passive, bg::optional> input_7;
+    bg::In<bg::TS<bg::i64>> input_0;
+    bg::In<bg::TS<bg::i64>, bg::passive, bg::optional> input_1;
+    bg::In<bg::TS<bg::i64>, bg::passive, bg::optional> input_2;
+    bg::In<bg::TS<bg::i64>, bg::passive, bg::optional> input_3;
+    bg::In<bg::TS<bg::i64>, bg::passive, bg::optional> input_4;
+    bg::In<bg::TS<bg::i64>, bg::passive, bg::optional> input_5;
+    bg::In<bg::TS<bg::i64>, bg::passive, bg::optional> input_6;
+    bg::In<bg::TS<bg::i64>, bg::passive, bg::optional> input_7;
 
     void evaluate() const {
         consume_values(input_0, input_1, input_2, input_3, input_4, input_5, input_6, input_7);
@@ -85,22 +85,22 @@ struct value_sink_8 {
 };
 
 struct value_sink_16 {
-    bg::In<bg::TS<int>> input_0;
-    bg::In<bg::TS<int>, bg::passive, bg::optional> input_1;
-    bg::In<bg::TS<int>, bg::passive, bg::optional> input_2;
-    bg::In<bg::TS<int>, bg::passive, bg::optional> input_3;
-    bg::In<bg::TS<int>, bg::passive, bg::optional> input_4;
-    bg::In<bg::TS<int>, bg::passive, bg::optional> input_5;
-    bg::In<bg::TS<int>, bg::passive, bg::optional> input_6;
-    bg::In<bg::TS<int>, bg::passive, bg::optional> input_7;
-    bg::In<bg::TS<int>, bg::passive, bg::optional> input_8;
-    bg::In<bg::TS<int>, bg::passive, bg::optional> input_9;
-    bg::In<bg::TS<int>, bg::passive, bg::optional> input_10;
-    bg::In<bg::TS<int>, bg::passive, bg::optional> input_11;
-    bg::In<bg::TS<int>, bg::passive, bg::optional> input_12;
-    bg::In<bg::TS<int>, bg::passive, bg::optional> input_13;
-    bg::In<bg::TS<int>, bg::passive, bg::optional> input_14;
-    bg::In<bg::TS<int>, bg::passive, bg::optional> input_15;
+    bg::In<bg::TS<bg::i64>> input_0;
+    bg::In<bg::TS<bg::i64>, bg::passive, bg::optional> input_1;
+    bg::In<bg::TS<bg::i64>, bg::passive, bg::optional> input_2;
+    bg::In<bg::TS<bg::i64>, bg::passive, bg::optional> input_3;
+    bg::In<bg::TS<bg::i64>, bg::passive, bg::optional> input_4;
+    bg::In<bg::TS<bg::i64>, bg::passive, bg::optional> input_5;
+    bg::In<bg::TS<bg::i64>, bg::passive, bg::optional> input_6;
+    bg::In<bg::TS<bg::i64>, bg::passive, bg::optional> input_7;
+    bg::In<bg::TS<bg::i64>, bg::passive, bg::optional> input_8;
+    bg::In<bg::TS<bg::i64>, bg::passive, bg::optional> input_9;
+    bg::In<bg::TS<bg::i64>, bg::passive, bg::optional> input_10;
+    bg::In<bg::TS<bg::i64>, bg::passive, bg::optional> input_11;
+    bg::In<bg::TS<bg::i64>, bg::passive, bg::optional> input_12;
+    bg::In<bg::TS<bg::i64>, bg::passive, bg::optional> input_13;
+    bg::In<bg::TS<bg::i64>, bg::passive, bg::optional> input_14;
+    bg::In<bg::TS<bg::i64>, bg::passive, bg::optional> input_15;
 
     void evaluate() const {
         consume_values(input_0, input_1, input_2, input_3, input_4, input_5, input_6, input_7, input_8, input_9,
@@ -109,38 +109,38 @@ struct value_sink_16 {
 };
 
 struct value_sink_32 {
-    bg::In<bg::TS<int>> input_0;
-    bg::In<bg::TS<int>, bg::passive, bg::optional> input_1;
-    bg::In<bg::TS<int>, bg::passive, bg::optional> input_2;
-    bg::In<bg::TS<int>, bg::passive, bg::optional> input_3;
-    bg::In<bg::TS<int>, bg::passive, bg::optional> input_4;
-    bg::In<bg::TS<int>, bg::passive, bg::optional> input_5;
-    bg::In<bg::TS<int>, bg::passive, bg::optional> input_6;
-    bg::In<bg::TS<int>, bg::passive, bg::optional> input_7;
-    bg::In<bg::TS<int>, bg::passive, bg::optional> input_8;
-    bg::In<bg::TS<int>, bg::passive, bg::optional> input_9;
-    bg::In<bg::TS<int>, bg::passive, bg::optional> input_10;
-    bg::In<bg::TS<int>, bg::passive, bg::optional> input_11;
-    bg::In<bg::TS<int>, bg::passive, bg::optional> input_12;
-    bg::In<bg::TS<int>, bg::passive, bg::optional> input_13;
-    bg::In<bg::TS<int>, bg::passive, bg::optional> input_14;
-    bg::In<bg::TS<int>, bg::passive, bg::optional> input_15;
-    bg::In<bg::TS<int>, bg::passive, bg::optional> input_16;
-    bg::In<bg::TS<int>, bg::passive, bg::optional> input_17;
-    bg::In<bg::TS<int>, bg::passive, bg::optional> input_18;
-    bg::In<bg::TS<int>, bg::passive, bg::optional> input_19;
-    bg::In<bg::TS<int>, bg::passive, bg::optional> input_20;
-    bg::In<bg::TS<int>, bg::passive, bg::optional> input_21;
-    bg::In<bg::TS<int>, bg::passive, bg::optional> input_22;
-    bg::In<bg::TS<int>, bg::passive, bg::optional> input_23;
-    bg::In<bg::TS<int>, bg::passive, bg::optional> input_24;
-    bg::In<bg::TS<int>, bg::passive, bg::optional> input_25;
-    bg::In<bg::TS<int>, bg::passive, bg::optional> input_26;
-    bg::In<bg::TS<int>, bg::passive, bg::optional> input_27;
-    bg::In<bg::TS<int>, bg::passive, bg::optional> input_28;
-    bg::In<bg::TS<int>, bg::passive, bg::optional> input_29;
-    bg::In<bg::TS<int>, bg::passive, bg::optional> input_30;
-    bg::In<bg::TS<int>, bg::passive, bg::optional> input_31;
+    bg::In<bg::TS<bg::i64>> input_0;
+    bg::In<bg::TS<bg::i64>, bg::passive, bg::optional> input_1;
+    bg::In<bg::TS<bg::i64>, bg::passive, bg::optional> input_2;
+    bg::In<bg::TS<bg::i64>, bg::passive, bg::optional> input_3;
+    bg::In<bg::TS<bg::i64>, bg::passive, bg::optional> input_4;
+    bg::In<bg::TS<bg::i64>, bg::passive, bg::optional> input_5;
+    bg::In<bg::TS<bg::i64>, bg::passive, bg::optional> input_6;
+    bg::In<bg::TS<bg::i64>, bg::passive, bg::optional> input_7;
+    bg::In<bg::TS<bg::i64>, bg::passive, bg::optional> input_8;
+    bg::In<bg::TS<bg::i64>, bg::passive, bg::optional> input_9;
+    bg::In<bg::TS<bg::i64>, bg::passive, bg::optional> input_10;
+    bg::In<bg::TS<bg::i64>, bg::passive, bg::optional> input_11;
+    bg::In<bg::TS<bg::i64>, bg::passive, bg::optional> input_12;
+    bg::In<bg::TS<bg::i64>, bg::passive, bg::optional> input_13;
+    bg::In<bg::TS<bg::i64>, bg::passive, bg::optional> input_14;
+    bg::In<bg::TS<bg::i64>, bg::passive, bg::optional> input_15;
+    bg::In<bg::TS<bg::i64>, bg::passive, bg::optional> input_16;
+    bg::In<bg::TS<bg::i64>, bg::passive, bg::optional> input_17;
+    bg::In<bg::TS<bg::i64>, bg::passive, bg::optional> input_18;
+    bg::In<bg::TS<bg::i64>, bg::passive, bg::optional> input_19;
+    bg::In<bg::TS<bg::i64>, bg::passive, bg::optional> input_20;
+    bg::In<bg::TS<bg::i64>, bg::passive, bg::optional> input_21;
+    bg::In<bg::TS<bg::i64>, bg::passive, bg::optional> input_22;
+    bg::In<bg::TS<bg::i64>, bg::passive, bg::optional> input_23;
+    bg::In<bg::TS<bg::i64>, bg::passive, bg::optional> input_24;
+    bg::In<bg::TS<bg::i64>, bg::passive, bg::optional> input_25;
+    bg::In<bg::TS<bg::i64>, bg::passive, bg::optional> input_26;
+    bg::In<bg::TS<bg::i64>, bg::passive, bg::optional> input_27;
+    bg::In<bg::TS<bg::i64>, bg::passive, bg::optional> input_28;
+    bg::In<bg::TS<bg::i64>, bg::passive, bg::optional> input_29;
+    bg::In<bg::TS<bg::i64>, bg::passive, bg::optional> input_30;
+    bg::In<bg::TS<bg::i64>, bg::passive, bg::optional> input_31;
 
     void evaluate() const {
         consume_values(input_0, input_1, input_2, input_3, input_4, input_5, input_6, input_7, input_8, input_9,
@@ -155,7 +155,7 @@ struct list_source_definition {
 
     void start() const {
         for (auto index = std::size_t{}; index < ListSize; ++index) {
-            output[index].set(static_cast<int>(index));
+            output[index].set(static_cast<bg::i64>(index));
         }
     }
 
@@ -163,7 +163,7 @@ struct list_source_definition {
 };
 
 struct list_sink_definition {
-    bg::In<bg::TS<int>> trigger;
+    bg::In<bg::TS<bg::i64>> trigger;
     bg::In<IntList, bg::passive> input;
 
     void evaluate() const {
@@ -176,14 +176,14 @@ struct list_sink_definition {
 };
 
 struct list_baseline_sink_definition {
-    bg::In<bg::TS<int>> trigger;
+    bg::In<bg::TS<bg::i64>> trigger;
     bg::In<IntList, bg::passive> input;
 
     void evaluate() const { consume(static_cast<std::size_t>(trigger.value())); }
 };
 
 struct constant_value_source_definition {
-    bg::Out<bg::TS<int>> output;
+    bg::Out<bg::TS<bg::i64>> output;
 
     void start() const { output.set(1); }
 
@@ -280,8 +280,8 @@ int main() {
     constexpr auto WarmupCycles = std::size_t{10'000};
     constexpr auto MeasuredCycles = std::size_t{100'000};
 
-    std::cout << "input view: " << sizeof(bg::TimeSeriesInputView) << " bytes, output view: "
-              << sizeof(bg::TimeSeriesOutputView) << " bytes\n";
+    std::cout << "input view: " << sizeof(bg::In<bg::TS<bg::i64>>) << " bytes, output view: "
+              << sizeof(bg::Out<bg::TS<bg::i64>>) << " bytes\n";
     report("value invocation", "1 input", benchmark_value_invocation<value_sink_1, 1>(WarmupCycles, MeasuredCycles));
     report("value invocation", "4 inputs", benchmark_value_invocation<value_sink_4, 4>(WarmupCycles, MeasuredCycles));
     report("value invocation", "8 inputs", benchmark_value_invocation<value_sink_8, 8>(WarmupCycles, MeasuredCycles));

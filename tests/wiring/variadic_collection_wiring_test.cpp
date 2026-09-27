@@ -284,7 +284,7 @@ TEST_CASE("direct collection items are flat resolver and requirement arguments",
             REQUIRE(arguments.size() == 2);
             CHECK(&arguments.resolved_type(0) == &TS<std::int64_t>::type());
             CHECK(&arguments.resolved_type(1) == &TS<std::int64_t>::type());
-            return int_type();
+            return int64_type();
         },
         require =
             [&](const WiringArguments &arguments) {

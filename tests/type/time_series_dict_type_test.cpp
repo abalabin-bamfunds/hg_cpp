@@ -15,29 +15,35 @@
 
 TEST_CASE("time series dictionary annotations expose their key and item types",
           "[type_system][tsd][series:tsd][feature:type-system]") {
-    using IntDictionary = bg::TSD<int, bg::TS<float>>;
+    using IntDictionary = bg::TSD<bg::i64, bg::TS<float>>;
 
-    STATIC_CHECK(std::same_as<IntDictionary::key_type, int>);
+    STATIC_CHECK(std::same_as<IntDictionary::key_type, bg::i64>);
     STATIC_CHECK(std::same_as<IntDictionary::item_type, bg::TS<float>>);
     STATIC_CHECK(bg::details::is_time_series_dict<IntDictionary>);
+}
+
+TEST_CASE("time series dictionary declarations require canonical integer keys",
+          "[feature:type-system][series:tsd][scalar:integer][declaration:concrete]") {
+    STATIC_CHECK_FALSE(bg::details::supported_time_series<bg::TSD<int, bg::TS<bg::i64>>>);
+    STATIC_CHECK(bg::details::supported_time_series<bg::TSD<bg::i64, bg::TS<bg::i64>>>);
 }
 
 TEST_CASE("resolved time series dictionary types are canonical",
           "[type_system][tsd][series:tsd][feature:type-system]") {
     const auto &value = bg::TS<float>::type();
-    const auto &dictionary = bg::TSD<int, bg::TS<float>>::type();
+    const auto &dictionary = bg::TSD<bg::i64, bg::TS<float>>::type();
 
-    CHECK(&dictionary == &bg::TSD<int, bg::TS<float>>::type());
-    CHECK(&dictionary.key_type() == &bg::int_type());
+    CHECK(&dictionary == &bg::TSD<bg::i64, bg::TS<float>>::type());
+    CHECK(&dictionary.key_type() == &bg::int64_type());
     CHECK(&dictionary.value_type() == &value);
-    CHECK(&dictionary.key_set_type() == &bg::TSS<int>::type());
+    CHECK(&dictionary.key_set_type() == &bg::TSS<bg::i64>::type());
     CHECK(&dictionary.item_type(0) == &dictionary.key_set_type());
     CHECK_THROWS_AS(dictionary.item_type(1), std::out_of_range);
 }
 
 TEST_CASE("dictionary reference items default to deduplicated",
           "[type_system][tsd][reference][series:tsd][feature:type-system][guarantee:deduplicated]") {
-    const auto &dictionary = bg::TSD<int, bg::REF<bg::TS<float>>>::type();
+    const auto &dictionary = bg::TSD<bg::i64, bg::REF<bg::TS<float>>>::type();
 
     CHECK(dictionary.value_type().guarantee().value() == bg::TimeSeriesGuarantee::deduplicated);
 }
@@ -45,7 +51,7 @@ TEST_CASE("dictionary reference items default to deduplicated",
 TEST_CASE("a dictionary guarantee strengthens an explicit item guarantee",
           "[type_system][tsd][series:tsd][feature:type-system][guarantee:ordinary][guarantee:final]") {
     const auto &dictionary =
-        bg::TSD<int, bg::TS<float, bg::TimeSeriesGuarantee::ordinary>, bg::TimeSeriesGuarantee::final>::type();
+        bg::TSD<bg::i64, bg::TS<float, bg::TimeSeriesGuarantee::ordinary>, bg::TimeSeriesGuarantee::final>::type();
 
     CHECK(dictionary.value_type().guarantee().value() == bg::TimeSeriesGuarantee::final);
 }
@@ -53,7 +59,7 @@ TEST_CASE("a dictionary guarantee strengthens an explicit item guarantee",
 TEST_CASE("generic time series dictionary types resolve their components",
           "[type_system][tsd][series:tsd][feature:type-system][declaration:generic][guarantee:final]") {
     const auto &resolved =
-        bg::TSD<int, bg::TS<float, bg::TimeSeriesGuarantee::final>, bg::TimeSeriesGuarantee::final>::type();
+        bg::TSD<bg::i64, bg::TS<float, bg::TimeSeriesGuarantee::final>, bg::TimeSeriesGuarantee::final>::type();
     bg::TypeVariableType<bg::ScalarType> key{bg::util::symbol{"K"}, {}, {&bg::supports_scalar_hash}};
     bg::TypeVariableType<bg::TimeSeriesType> value{bg::util::symbol{"V"}};
     const bg::GenericTimeSeriesSetType key_set{key, bg::TimeSeriesGuarantee::final};
@@ -68,13 +74,13 @@ TEST_CASE("dictionary item matching is reference transparent",
           "[type_system][tsd][series:tsd][reference][feature:type-system][binding:reference-to-value]") {
     const auto &item = bg::TS<float>::type();
     const auto &reference = bg::REF<bg::TS<float>>::type();
-    const auto &key_set = bg::TSS<int>::type();
+    const auto &key_set = bg::TSS<bg::i64>::type();
     const auto direct_dictionary =
-        bg::GenericTimeSeriesDictionaryType{bg::int_type(), item, key_set, bg::TimeSeriesGuarantee::ordinary};
+        bg::GenericTimeSeriesDictionaryType{bg::int64_type(), item, key_set, bg::TimeSeriesGuarantee::ordinary};
     const auto reference_dictionary =
-        bg::GenericTimeSeriesDictionaryType{bg::int_type(), reference, key_set, bg::TimeSeriesGuarantee::ordinary};
-    const auto &direct = bg::TSD<int, bg::TS<float>>::type();
-    const auto &references = bg::TSD<int, bg::REF<bg::TS<float>>>::type();
+        bg::GenericTimeSeriesDictionaryType{bg::int64_type(), reference, key_set, bg::TimeSeriesGuarantee::ordinary};
+    const auto &direct = bg::TSD<bg::i64, bg::TS<float>>::type();
+    const auto &references = bg::TSD<bg::i64, bg::REF<bg::TS<float>>>::type();
     auto type_map = bg::TypeMap{};
 
     CHECK(direct_dictionary.match(references, type_map));

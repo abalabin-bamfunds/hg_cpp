@@ -124,7 +124,7 @@ namespace {
 struct invalidating_value_source_definition {
     static constexpr bool uses_timed_scheduling = true;
 
-    bg::Out<bg::TS<int>> output;
+    bg::Out<bg::TS<bg::i64>> output;
 
     void start(bg::EvaluationContext *context) const {
         output.set(1);
@@ -135,7 +135,7 @@ struct invalidating_value_source_definition {
 };
 
 struct set_from_value_definition {
-    bg::In<bg::TS<int>> input;
+    bg::In<bg::TS<bg::i64>> input;
     bg::Out<bg::TSS<std::int64_t>> output;
 
     void evaluate() const { output.insert(*input); }
@@ -143,7 +143,7 @@ struct set_from_value_definition {
 
 struct set_size_definition {
     bg::In<bg::TSS<std::int64_t>> input;
-    bg::Out<bg::TS<int>> output;
+    bg::Out<bg::TS<bg::i64>> output;
 
     void evaluate() const { output.set(static_cast<int>(input.size())); }
 };
@@ -168,7 +168,7 @@ namespace {
 struct exact_int_set_source_definition {
     static constexpr bool uses_timed_scheduling = true;
 
-    bg::Out<bg::TSS<int>> output;
+    bg::Out<bg::TSS<bg::i64>> output;
 
     void start(bg::EvaluationContext *context) const {
         output.insert(7);
@@ -179,7 +179,7 @@ struct exact_int_set_source_definition {
 };
 
 struct exact_int_set_contains_definition {
-    bg::In<bg::TSS<int>> input;
+    bg::In<bg::TSS<bg::i64>> input;
     bg::Out<bg::TS<bool>> output;
 
     void evaluate() const { output.set(input.contains(7)); }

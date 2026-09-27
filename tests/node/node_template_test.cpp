@@ -94,18 +94,18 @@ TEST_CASE("a dynamic reference input is internal to an aggregate node",
 TEST_CASE("a callable node receives typed inputs, scalars, and output",
           "[node_template][feature:node-api][definition:function]") {
     const auto factor = 2;
-    const auto add = bg::node([factor](bg::In<bg::TS<int>, "input"_n> input, int offset, bg::Out<bg::TS<int>> output) {
+    const auto add = bg::node([factor](bg::In<bg::TS<bg::i64>, "input"_n> input, int offset, bg::Out<bg::TS<bg::i64>> output) {
         output.set(*input * factor + offset);
     });
-    const auto graph = [&](bg::wp<bg::TS<int>> input) { return add(input, 1); };
+    const auto graph = [&](bg::wp<bg::TS<bg::i64>> input) { return add(input, 1); };
 
     CHECK(bg::testing::test_graph(graph, {1, 2, 3}).equals({3, 5, 7}));
 }
 
 TEST_CASE("a callable node can omit its output", "[node_template][feature:node-api][definition:function]") {
     auto sum = 0;
-    const auto sink = bg::node([&](bg::In<bg::TS<int>> input) { sum += *input; });
-    const auto graph = [&](bg::wp<bg::TS<int>> input) {
+    const auto sink = bg::node([&](bg::In<bg::TS<bg::i64>> input) { sum += *input; });
+    const auto graph = [&](bg::wp<bg::TS<bg::i64>> input) {
         sink(input);
         return input;
     };
@@ -118,7 +118,7 @@ TEST_CASE("a callable node can omit its output", "[node_template][feature:node-a
 namespace {
 
 struct reference_source {
-    bg::Out<bg::REF<bg::TS<int>>> output;
+    bg::Out<bg::REF<bg::TS<bg::i64>>> output;
 
     void evaluate() const {}
 };
@@ -129,7 +129,7 @@ TEST_CASE("aggregate and callable reference outputs default to deduplicated",
           "[node_template][reference][feature:node-api][definition:aggregate][definition:function]"
           "[guarantee:deduplicated]") {
     const auto aggregate = bg::node<reference_source>();
-    const auto callable = bg::node([](bg::Out<bg::REF<bg::TS<int>>>) {});
+    const auto callable = bg::node([](bg::Out<bg::REF<bg::TS<bg::i64>>>) {});
 
     CHECK(aggregate.signature().output()->guarantee().value() == bg::TimeSeriesGuarantee::deduplicated);
     CHECK(callable.signature().output()->guarantee().value() == bg::TimeSeriesGuarantee::deduplicated);
@@ -307,7 +307,7 @@ using CAPTURED_TIME_SERIES = bg::TimeSeriesVariable<"T">;
 
 struct time_series_variable_guarantee {
     bg::In<CAPTURED_TIME_SERIES::with<G>> input;
-    bg::Out<bg::TS<int, G>> output;
+    bg::Out<bg::TS<bg::i64, G>> output;
 
     void evaluate() const {}
 };
@@ -326,7 +326,7 @@ TEST_CASE("a time series variable can expose its guarantee as another variable",
     const auto signature = node.signature().resolve(arguments);
 
     CHECK(signature.parameters[0].type == &list);
-    CHECK(signature.output == &bg::TS<int, bg::TimeSeriesGuarantee::final>::type());
+    CHECK(signature.output == &bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>::type());
 }
 
 namespace {
@@ -355,8 +355,8 @@ TEST_CASE("a scalar variable can declare a scalar view field", "[node_template][
 namespace {
 
 struct runtime_layout_collection_sink {
-    bg::In<bg::TSS<int>> set;
-    bg::In<bg::TSD<int, bg::TS<int>>> dictionary;
+    bg::In<bg::TSS<bg::i64>> set;
+    bg::In<bg::TSD<bg::i64, bg::TS<bg::i64>>> dictionary;
 
     void evaluate() const {}
 };
@@ -387,7 +387,7 @@ static_assert(bg::AggregateNodeClass<numeric_sink>);
 TEST_CASE("a scalar variable declaration constrains its resolved type", "[node_template][feature:node-api]") {
     const auto numeric_sink_node = bg::node<numeric_sink>();
     const auto &ts_double = bg::TS<double>::type();
-    const auto &ts_int = bg::TS<int>::type();
+    const auto &ts_int = bg::TS<bg::i64>::type();
     const std::array<const bg::Type *, 1> accepted{&ts_double};
     const std::array<const bg::Type *, 1> rejected{&ts_int};
 
@@ -424,8 +424,8 @@ struct repeated_input_name {
 };
 
 struct int_identity {
-    bg::In<bg::TS<int>> input;
-    bg::Out<bg::TS<int>> output;
+    bg::In<bg::TS<bg::i64>> input;
+    bg::Out<bg::TS<bg::i64>> output;
 
     void evaluate() const { output.set(*input); }
 };

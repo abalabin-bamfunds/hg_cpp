@@ -32,7 +32,7 @@ TEST_CASE("a time-series input reads validity and update time",
 namespace {
 
 template <template <typename, auto...> typename Field> struct VisitorBundle {
-    Field<bg::TS<int>> value;
+    Field<bg::TS<bg::i64>> value;
 };
 
 } // namespace
@@ -47,7 +47,7 @@ TEST_CASE("time series input visitors select every resolved interface",
         bg::In<bg::TS_T>{bg::MIN_DT, nullptr, bg::cpp_time_series_runtime_type<bg::TSL<bg::TS<std::int64_t>, 2>>()};
     const auto set = bg::In<bg::TS_T>{bg::MIN_DT, nullptr, bg::cpp_time_series_runtime_type<bg::TSS<std::int64_t>>()};
     const auto dict =
-        bg::In<bg::TS_T>{bg::MIN_DT, nullptr, bg::cpp_time_series_runtime_type<bg::TSD<std::int64_t, bg::TS<int>>>()};
+        bg::In<bg::TS_T>{bg::MIN_DT, nullptr, bg::cpp_time_series_runtime_type<bg::TSD<std::int64_t, bg::TS<bg::i64>>>()};
     const auto bundle =
         bg::In<bg::TS_T>{bg::MIN_DT, nullptr, bg::cpp_time_series_runtime_type<bg::TSB<VisitorBundle>>()};
     auto value_visited = false;
@@ -92,7 +92,7 @@ TEST_CASE("time series output visitors select every resolved interface",
     auto reference_state = bg::details::OutputState{bg::cpp_time_series_runtime_type<bg::REF<bg::TS<std::int64_t>>>()};
     auto list_state = bg::details::OutputState{bg::cpp_time_series_runtime_type<bg::TSL<bg::TS<std::int64_t>, 2>>()};
     auto set_state = bg::details::OutputState{bg::cpp_time_series_runtime_type<bg::TSS<std::int64_t>>()};
-    auto dict_state = bg::details::OutputState{bg::cpp_time_series_runtime_type<bg::TSD<std::int64_t, bg::TS<int>>>()};
+    auto dict_state = bg::details::OutputState{bg::cpp_time_series_runtime_type<bg::TSD<std::int64_t, bg::TS<bg::i64>>>()};
     auto bundle_state = bg::details::OutputState{bg::cpp_time_series_runtime_type<bg::TSB<VisitorBundle>>()};
     auto value = bg::details::output_factory::make<bg::TS_T>(value_state);
     auto reference = bg::details::output_factory::make<bg::TS_T>(reference_state);

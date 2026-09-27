@@ -18,7 +18,7 @@
 namespace {
 
 template <template <typename, auto...> typename Field> struct BaseBundle {
-    Field<bg::TS<int>> count;
+    Field<bg::TS<bg::i64>> count;
 };
 
 template <template <typename, auto...> typename Field> struct DerivedBundle : bg::bundle_extends<BaseBundle, Field> {
@@ -49,7 +49,7 @@ TEST_CASE("bundle schemas include inherited fields",
     REQUIRE(type.item_count() == 2);
     CHECK(type.item_name(0).text() == "count");
     CHECK(type.item_name(1).text() == "value");
-    CHECK(&type.item_type(0) == &bg::TS<int>::type());
+    CHECK(&type.item_type(0) == &bg::TS<bg::i64>::type());
     CHECK(&type.item_type(1) == &bg::TS<float>::type());
     CHECK(type.schema().base() != nullptr);
 }
@@ -71,7 +71,7 @@ TEST_CASE("explicit time series fields remain time series fields",
           "[feature:type-system][series:tsb][schema:named][declaration:concrete]") {
     STATIC_CHECK_FALSE(bg::details::hierarchical_scalar_schema_supported<BaseBundle>);
     STATIC_CHECK(bg::details::supported_time_series<bg::TSB<BaseBundle>>);
-    CHECK(&bg::TSB<BaseBundle>::type().item_type(0) == &bg::TS<int>::type());
+    CHECK(&bg::TSB<BaseBundle>::type().item_type(0) == &bg::TS<bg::i64>::type());
 }
 
 TEST_CASE("invalid shared-schema fields are rejected without instantiating a projection",
@@ -83,7 +83,7 @@ TEST_CASE("invalid shared-schema fields are rejected without instantiating a pro
 TEST_CASE("a time series bundle type derives an unnamed schema from resolved fields",
           "[type_system][tsb][series:tsb][feature:type-system][schema:unnamed][guarantee:final]") {
     const auto fields = std::array{
-        bg::BundleField{bg::util::symbol{"count"}, &bg::TS<int>::type()},
+        bg::BundleField{bg::util::symbol{"count"}, &bg::TS<bg::i64>::type()},
         bg::BundleField{bg::util::symbol{"value"}, &bg::TS<float>::type()},
         bg::BundleField{bg::util::symbol{"reference"}, &bg::REF<bg::TS<float>>::type()},
     };
@@ -103,7 +103,7 @@ TEST_CASE("a time series bundle type requires concrete fields",
     const auto unresolved_field =
         std::array{bg::BundleField{bg::util::symbol{"value"}, &bg::TS<bg::SCALAR>::type()}};
     const auto duplicate_fields = std::array{
-        bg::BundleField{bg::util::symbol{"value"}, &bg::TS<int>::type()},
+        bg::BundleField{bg::util::symbol{"value"}, &bg::TS<bg::i64>::type()},
         bg::BundleField{bg::util::symbol{"value"}, &bg::TS<float>::type()},
     };
 
@@ -118,7 +118,7 @@ TEST_CASE("a time series bundle type requires concrete fields",
 namespace {
 
 template <template <typename, auto...> typename Field> struct OrdinaryBundle {
-    Field<bg::TS<int, bg::TimeSeriesGuarantee::ordinary>> value;
+    Field<bg::TS<bg::i64, bg::TimeSeriesGuarantee::ordinary>> value;
 };
 
 } // namespace
@@ -136,7 +136,7 @@ TEST_CASE("an unnamed bundle matches a compatible named schema",
     const auto &parameter = static_cast<const bg::TimeSeriesBundleType &>(
         bg::details::time_series_type_for<BundleTypeScope, 0, true, bg::TSB<BaseBundle>>(
             bg::TimeSeriesGuarantee::ordinary));
-    const auto &count = bg::TS<int>::type();
+    const auto &count = bg::TS<bg::i64>::type();
     const auto fields = std::array{bg::BundleField{bg::util::symbol{"count"}, &count}};
     const auto &argument =
         bg::time_series_bundle_type(bg::unnamed_bundle_schema(fields), bg::TimeSeriesGuarantee::ordinary);
@@ -158,7 +158,7 @@ TEST_CASE("bundle field policies preserve inherited member access",
 namespace {
 
 template <template <typename, auto...> typename Field> struct RedefinedBundle : bg::bundle_extends<BaseBundle, Field> {
-    Field<bg::TS<int>> count;
+    Field<bg::TS<bg::i64>> count;
     Field<bg::TS<float>> value;
 };
 
@@ -188,7 +188,7 @@ TEST_CASE("bundle matching resolves generic field types",
     const auto &parameter = static_cast<const bg::TimeSeriesBundleType &>(
         bg::details::time_series_type_for<BundleTypeScope, 0, true, bg::TSB<GenericBundle>>(
             bg::TimeSeriesGuarantee::ordinary));
-    const auto &value = bg::TS<int>::type();
+    const auto &value = bg::TS<bg::i64>::type();
     const auto fields = std::array{bg::BundleField{bg::util::symbol{"value"}, &value}};
     const auto &argument =
         bg::time_series_bundle_type(bg::unnamed_bundle_schema(fields), bg::TimeSeriesGuarantee::ordinary);
@@ -235,7 +235,7 @@ TEST_CASE("repeated bundle schema variables require the same schema",
 namespace {
 
 template <template <typename, auto...> typename Field> struct UnrelatedBundle {
-    Field<bg::TS<int>> count;
+    Field<bg::TS<bg::i64>> count;
 };
 
 } // namespace

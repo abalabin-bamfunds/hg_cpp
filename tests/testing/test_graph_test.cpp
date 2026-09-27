@@ -46,53 +46,53 @@ TEST_CASE("test_graph supports skipped input ticks",
 }
 
 struct Increment {
-    bg::In<bg::TS<int>> input;
+    bg::In<bg::TS<bg::i64>> input;
     int amount;
-    bg::Out<bg::TS<int>> output;
+    bg::Out<bg::TS<bg::i64>> output;
 
     void evaluate() const { output.set(*input + amount); }
 };
 
 const auto increment = bg::node<Increment>();
 
-[[nodiscard]] bg::wp<bg::TS<int>> operator+(bg::wp<bg::TS<int>> input, int amount) {
+[[nodiscard]] bg::wp<bg::TS<bg::i64>> operator+(bg::wp<bg::TS<bg::i64>> input, int amount) {
     return increment(input, amount);
 }
 
 TEST_CASE("test_graph accepts a graph function and reports skipped cycles",
           "[testing][evaluation][feature:test-graph][definition:function][series:value][scalar:integer]") {
-    const auto graph = [](bg::wp<bg::TS<int>> input) { return input + 1; };
+    const auto graph = [](bg::wp<bg::TS<bg::i64>> input) { return input + 1; };
 
     CHECK(bg::testing::test_graph(graph, {1, 2, std::nullopt, 4}).equals({2, 3, std::nullopt, 5}));
 }
 
 TEST_CASE("test_graph captures a runtime-typed output",
           "[testing][evaluation][feature:test-graph][declaration:generic][series:value]") {
-    const auto graph = [](bg::wp<bg::TS<int>> input) { return bg::wp<>{input}; };
+    const auto graph = [](bg::wp<bg::TS<bg::i64>> input) { return bg::wp<>{input}; };
 
-    CHECK(bg::testing::test_graph(graph, {1, 2, std::nullopt, 4}).equals<int>({1, 2, std::nullopt, 4}));
+    CHECK(bg::testing::test_graph(graph, {1, 2, std::nullopt, 4}).equals<bg::i64>({1, 2, std::nullopt, 4}));
 }
 
 TEST_CASE("wiring converts C++ string arguments to the canonical graph type",
           "[testing][evaluation][feature:test-graph][definition:function][series:value][scalar:string]") {
     const auto publish = bg::node(
-        [](bg::In<bg::TS<int>>, std::string value, bg::Out<bg::TS<int>> output) {
+        [](bg::In<bg::TS<bg::i64>>, std::string value, bg::Out<bg::TS<bg::i64>> output) {
             output.set(static_cast<int>(value.size()));
         });
-    const auto graph = [&](bg::wp<bg::TS<int>> input) { return publish(input, std::string{"text"}); };
+    const auto graph = [&](bg::wp<bg::TS<bg::i64>> input) { return publish(input, std::string{"text"}); };
 
-    CHECK(bg::testing::test_graph(graph, {1}).equals<int>({4}));
+    CHECK(bg::testing::test_graph(graph, {1}).equals<bg::i64>({4}));
 }
 
 TEST_CASE("wiring converts optional C++ scalar arguments to the canonical graph type",
           "[testing][evaluation][feature:test-graph][definition:function][series:value][scalar:integer]") {
     const auto add = bg::node(
-        [](bg::In<bg::TS<int>> input, std::optional<int> amount, bg::Out<bg::TS<int>> output) {
+        [](bg::In<bg::TS<bg::i64>> input, std::optional<int> amount, bg::Out<bg::TS<bg::i64>> output) {
             output.set(*input + amount.value_or(0));
         });
-    const auto graph = [&](bg::wp<bg::TS<int>> input) { return add(input, std::optional<int>{2}); };
+    const auto graph = [&](bg::wp<bg::TS<bg::i64>> input) { return add(input, std::optional<int>{2}); };
 
-    CHECK(bg::testing::test_graph(graph, {1, 2}).equals<int>({3, 4}));
+    CHECK(bg::testing::test_graph(graph, {1, 2}).equals<bg::i64>({3, 4}));
 }
 
 } // namespace

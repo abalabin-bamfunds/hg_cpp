@@ -11,7 +11,7 @@
 namespace {
 
 struct global_state_source_definition {
-    bg::Out<bg::TS<int>> output;
+    bg::Out<bg::TS<bg::i64>> output;
 
     void start(bg::EvaluationContext *context) const {
         const auto value = bg::ScalarValue{42};

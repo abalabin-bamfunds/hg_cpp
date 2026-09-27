@@ -28,8 +28,8 @@ class MeshOverload final : public WiringTemplate {
         : graph_type_{std::make_shared<GraphArgumentType>(std::make_shared<const Pattern>(pattern))},
           signature_{util::symbol{"mesh_overload"},
                      {{util::symbol{"function"}, graph_type_.get()},
-                      {util::symbol{"values"}, &TSD<std::int64_t, TS<int>>::type()}},
-                     TSD<std::int64_t, TS<int>>::type()},
+                      {util::symbol{"values"}, &TSD<std::int64_t, TS<i64>>::type()}},
+                     TSD<std::int64_t, TS<i64>>::type()},
           selected_{&selected} {}
 
     const Signature &signature() const final { return signature_; }
@@ -53,8 +53,8 @@ TEST_CASE("mesh dependencies require mesh branch wiring",
 
 TEST_CASE("mesh dependencies accept a scalar key",
           "[feature:mesh][feature:wiring][feature:operator][shape:nested][scalar:integer]") {
-    const auto values = node([](Out<TSD<std::int64_t, TS<int>>>) {});
-    const auto consume = node([](In<TS<int>, optional>) {});
+    const auto values = node([](Out<TSD<std::int64_t, TS<i64>>>) {});
+    const auto consume = node([](In<TS<i64>, optional>) {});
 
     testing::test_wiring([&] {
         (void)mesh(
@@ -74,8 +74,8 @@ class CountingMeshBranch final : public WiringTemplate {
     const Signature &signature() const final {
         static const auto value = Signature{
             util::symbol{"counting_mesh_branch"},
-            {{util::symbol{"value"}, &TS<int>::type()}},
-            TS<int>::type(),
+            {{util::symbol{"value"}, &TS<i64>::type()}},
+            TS<i64>::type(),
         };
         return value;
     }
@@ -89,7 +89,7 @@ class CountingMeshBranch final : public WiringTemplate {
     std::optional<WiringPoint> wire(GraphWiring &, ResolvedSignature, const TypeMap &,
                                     std::span<const WiringArgument> arguments) const final {
         const auto selected = mesh()[std::int64_t{1}];
-        CHECK(&selected.type() == &REF<TS<int>, TimeSeriesGuarantee::deduplicated>::type());
+        CHECK(&selected.type() == &REF<TS<i64>, TimeSeriesGuarantee::deduplicated>::type());
         return arguments.front().time_series();
     }
 
@@ -98,7 +98,7 @@ class CountingMeshBranch final : public WiringTemplate {
 
 TEST_CASE("mesh resolves and checks its branch graph once",
           "[feature:mesh][feature:wiring][feature:operator][shape:nested]") {
-    const auto values = node([](Out<TSD<std::int64_t, TS<int>>>) {});
+    const auto values = node([](Out<TSD<std::int64_t, TS<i64>>>) {});
     auto requirement_calls = std::size_t{};
     const auto branch = CountingMeshBranch{requirement_calls};
 
@@ -112,8 +112,8 @@ TEST_CASE("mesh resolves and checks its branch graph once",
 
 TEST_CASE("mesh selects named enclosing scopes",
           "[feature:mesh][feature:wiring][feature:operator][shape:deeply-nested]") {
-    const auto values = node([](Out<TSD<std::int64_t, TS<int>>>) {});
-    const auto consume = node([](In<TS<int>, optional>) {});
+    const auto values = node([](Out<TSD<std::int64_t, TS<i64>>>) {});
+    const auto consume = node([](In<TS<i64>, optional>) {});
 
     testing::test_wiring([&] {
         (void)mesh(
@@ -126,7 +126,7 @@ TEST_CASE("mesh selects named enclosing scopes",
                         return inner;
                     },
                     values());
-                return inner[std::int64_t{1}].template as<TS<int>>();
+                return inner[std::int64_t{1}].template as<TS<i64>>();
             },
             values());
     });
@@ -134,7 +134,7 @@ TEST_CASE("mesh selects named enclosing scopes",
 
 TEST_CASE("mesh reports invalid enclosing names",
           "[feature:mesh][feature:wiring][feature:operator][shape:deeply-nested]") {
-    const auto values = node([](Out<TSD<std::int64_t, TS<int>>>) {});
+    const auto values = node([](Out<TSD<std::int64_t, TS<i64>>>) {});
 
     CHECK_THROWS_WITH(testing::test_wiring([&] {
                           (void)mesh(
@@ -152,7 +152,7 @@ TEST_CASE("mesh reports invalid enclosing names",
                               "name"_n = "same",
                               [&](auto) {
                                   const auto inner = mesh("name"_n = "same", [](auto item) { return item; }, values());
-                                  return inner[std::int64_t{1}].template as<TS<int>>();
+                                  return inner[std::int64_t{1}].template as<TS<i64>>();
                               },
                               values());
                       }),
@@ -162,9 +162,9 @@ TEST_CASE("mesh reports invalid enclosing names",
 TEST_CASE("mesh accepts fully runtime graph and argument values",
           "[feature:mesh][feature:operator][feature:graph-argument][feature:wiring]"
           "[series:tsd][definition:runtime]") {
-    const auto values = node([](Out<TSD<std::int64_t, TS<int>>>) {});
-    const auto identity = graph("name"_n = "runtime_mesh_identity", [](wp<TS<int>> value) { return value; });
-    const auto sink = graph("name"_n = "runtime_mesh_sink", [](wp<TS<int>>) {});
+    const auto values = node([](Out<TSD<std::int64_t, TS<i64>>>) {});
+    const auto identity = graph("name"_n = "runtime_mesh_identity", [](wp<TS<i64>> value) { return value; });
+    const auto sink = graph("name"_n = "runtime_mesh_sink", [](wp<TS<i64>>) {});
 
     testing::test_wiring([&] {
         const auto arguments = std::vector<MapArgument>{{WiringArgument{values()}}};
@@ -172,7 +172,7 @@ TEST_CASE("mesh accepts fully runtime graph and argument values",
         const WiringTemplate &runtime_sink = sink;
 
         const auto result = mesh(runtime_identity, std::span<const MapArgument>{arguments});
-        const auto &expected = TSD<std::int64_t, REF<TS<int>, TimeSeriesGuarantee::deduplicated>>::type();
+        const auto &expected = TSD<std::int64_t, REF<TS<i64>, TimeSeriesGuarantee::deduplicated>>::type();
 
         CHECK(&result.type() == &expected);
         CHECK_FALSE(mesh(runtime_sink, std::span<const MapArgument>{arguments}).has_output());
@@ -182,8 +182,8 @@ TEST_CASE("mesh accepts fully runtime graph and argument values",
 TEST_CASE("mesh selects a custom operator overload",
           "[feature:mesh][feature:operator][feature:graph-argument][feature:wiring]"
           "[series:tsd]") {
-    const auto values = node([](Out<TSD<std::int64_t, TS<int>>>) {});
-    const auto identity = graph("name"_n = "custom_mesh_identity", [](wp<TS<int>> value) { return value; });
+    const auto values = node([](Out<TSD<std::int64_t, TS<i64>>>) {});
+    const auto identity = graph("name"_n = "custom_mesh_identity", [](wp<TS<i64>> value) { return value; });
 
     auto selected = false;
     auto operation = std::remove_cvref_t<decltype(mesh)>{"mesh", {"graph", "args", "kwargs"}};
@@ -201,16 +201,16 @@ TEST_CASE("mesh selects a custom operator overload",
 TEST_CASE("mesh resolves untyped arguments and selected outputs",
           "[feature:mesh][feature:operator][feature:wiring][series:tsd]"
           "[declaration:runtime]") {
-    const auto values = node([](Out<TSD<std::int64_t, TS<int>>>) {});
-    const auto consume = node([](In<TS<int>>) {});
-    const auto identity = graph("name"_n = "untyped_mesh_identity", [consume](wp<TS<int>> value) {
+    const auto values = node([](Out<TSD<std::int64_t, TS<i64>>>) {});
+    const auto consume = node([](In<TS<i64>>) {});
+    const auto identity = graph("name"_n = "untyped_mesh_identity", [consume](wp<TS<i64>> value) {
         consume(mesh()[std::int64_t{1}]);
         return value;
     });
 
     testing::test_wiring([&] {
         const auto result = mesh(identity, wp<>{values()});
-        const auto &expected = TSD<std::int64_t, REF<TS<int>, TimeSeriesGuarantee::deduplicated>>::type();
+        const auto &expected = TSD<std::int64_t, REF<TS<i64>, TimeSeriesGuarantee::deduplicated>>::type();
 
         CHECK(&result.type() == &expected);
     });
@@ -219,29 +219,29 @@ TEST_CASE("mesh resolves untyped arguments and selected outputs",
 TEST_CASE("an explicit mesh output type resolves a raw branch lambda before selection wiring",
           "[feature:mesh][feature:operator][feature:wiring][feature:type-system]"
           "[declaration:generic][series:tsd]") {
-    const auto values = node([](Out<TSD<std::int64_t, TS<int>>>) {});
+    const auto values = node([](Out<TSD<std::int64_t, TS<i64>>>) {});
 
     testing::test_wiring([&] {
-        const auto result = mesh[type<RESULT> = type<TS<int>>](
+        const auto result = mesh[type<RESULT> = type<TS<i64>>](
             [](auto value) -> wp<RESULT> {
                 const auto selected = mesh()[std::int64_t{1}];
-                CHECK(&selected.type() == &REF<TS<int>, TimeSeriesGuarantee::deduplicated>::type());
+                CHECK(&selected.type() == &REF<TS<i64>, TimeSeriesGuarantee::deduplicated>::type());
                 return wp<RESULT>{value};
             },
             values());
 
         CHECK(&result.type() ==
-              &TSD<std::int64_t, REF<TS<int>, TimeSeriesGuarantee::deduplicated>>::type());
+              &TSD<std::int64_t, REF<TS<i64>, TimeSeriesGuarantee::deduplicated>>::type());
     });
 }
 
 TEST_CASE("mesh selection has the branch output item type before it is consumed",
           "[feature:mesh][feature:operator][feature:wiring][series:tsd]") {
-    const auto values = node([](Out<TSD<std::int64_t, TS<int>>>) {});
-    const auto consume = node([](In<TS<int>>) {});
-    const auto branch = graph("name"_n = "exact_mesh_selection", [consume](wp<TS<int>> value) {
+    const auto values = node([](Out<TSD<std::int64_t, TS<i64>>>) {});
+    const auto consume = node([](In<TS<i64>>) {});
+    const auto branch = graph("name"_n = "exact_mesh_selection", [consume](wp<TS<i64>> value) {
         const auto selected = mesh()[std::int64_t{1}];
-        CHECK(&selected.type() == &REF<TS<int>, TimeSeriesGuarantee::deduplicated>::type());
+        CHECK(&selected.type() == &REF<TS<i64>, TimeSeriesGuarantee::deduplicated>::type());
 
         consume(selected);
         return value;
@@ -251,8 +251,8 @@ TEST_CASE("mesh selection has the branch output item type before it is consumed"
 }
 
 TEST_CASE("mesh diagnostics identify mesh arguments", "[feature:mesh][feature:operator][feature:wiring][series:tsd]") {
-    const auto integers = node([](Out<TSD<std::int64_t, TS<int>>>) {});
-    const auto floating_point_keys = node([](Out<TSD<float, TS<int>>>) {});
+    const auto integers = node([](Out<TSD<std::int64_t, TS<i64>>>) {});
+    const auto floating_point_keys = node([](Out<TSD<float, TS<i64>>>) {});
 
     CHECK_THROWS_WITH(testing::test_wiring(
                           [&] { (void)mesh([](auto left, auto) { return left; }, integers(), floating_point_keys()); }),

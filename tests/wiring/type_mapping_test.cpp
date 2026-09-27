@@ -36,13 +36,13 @@ struct generic_dictionary_source_definition {
 
 struct generic_source_graph_definition {
     wp<RESULT> wire() const {
-        const auto source = node([](Out<TS<int>>) {});
+        const auto source = node([](Out<TS<i64>>) {});
         return wp<RESULT>{source()};
     }
 };
 
 template <template <typename, auto...> typename Field> struct concrete_bundle_schema {
-    Field<TS<int>> value;
+    Field<TS<i64>> value;
 };
 
 struct generic_bundle_source_definition {
@@ -90,8 +90,8 @@ TEST_CASE("a positional type argument resolves a callable node output",
     const auto source = node<RESULT>([](Out<RESULT>) {});
 
     testing::test_wiring([&] {
-        const auto output = source[type<TS<int>>]();
-        CHECK(&output.type() == &TS<int>::type());
+        const auto output = source[type<TS<i64>>]();
+        CHECK(&output.type() == &TS<i64>::type());
     });
 }
 
@@ -100,8 +100,8 @@ TEST_CASE("ordered type arguments resolve an aggregate node output",
     const auto source = node<KEY, VALUE, generic_dictionary_source_definition>();
 
     testing::test_wiring([&] {
-        const auto output = source[type<int>, type<float>]();
-        CHECK(&output.type() == &TSD<int, TS<float>>::type());
+        const auto output = source[type<i64>, type<float>]();
+        CHECK(&output.type() == &TSD<i64, TS<float>>::type());
     });
 }
 
@@ -110,18 +110,18 @@ TEST_CASE("a named type mapping does not require positional type parameters",
     const auto source = node([](Out<RESULT>) {});
 
     testing::test_wiring([&] {
-        const auto output = source[type<RESULT> = type<TS<int>>]();
-        CHECK(&output.type() == &TS<int>::type());
+        const auto output = source[type<RESULT> = type<TS<i64>>]();
+        CHECK(&output.type() == &TS<i64>::type());
     });
 }
 
 TEST_CASE("an explicit type argument must agree with a supplied argument",
           "[feature:wiring][feature:type-system][definition:function][declaration:generic]") {
     const auto identity = node<RESULT>([](In<RESULT>, Out<RESULT>) {});
-    const auto source = node([](Out<TS<int>>) {});
+    const auto source = node([](Out<TS<i64>>) {});
 
     testing::test_wiring([&] {
-        CHECK_NOTHROW(identity[type<TS<int>>](source()));
+        CHECK_NOTHROW(identity[type<TS<i64>>](source()));
         CHECK_THROWS_AS(identity[type<TS<float>>](source()), TypeResolutionError);
     });
 }
@@ -130,7 +130,7 @@ TEST_CASE("conflicting explicit type arguments are rejected",
           "[feature:wiring][feature:type-system][definition:function][declaration:generic]") {
     const auto source = node<RESULT>([](Out<RESULT>) {});
 
-    CHECK_THROWS_AS((source[type<TS<int>>, type<RESULT> = type<TS<float>>]), TypeResolutionError);
+    CHECK_THROWS_AS((source[type<TS<i64>>, type<RESULT> = type<TS<float>>]), TypeResolutionError);
 }
 
 TEST_CASE("an explicit schema argument resolves a bundle schema variable",
@@ -146,13 +146,13 @@ TEST_CASE("an explicit schema argument resolves a bundle schema variable",
 
 TEST_CASE("a positional type argument resolves a callable graph output",
           "[feature:wiring][feature:type-system][definition:function][declaration:generic]") {
-    const auto source = node([](Out<TS<int>>) {});
+    const auto source = node([](Out<TS<i64>>) {});
     const auto function = graph<RESULT>(
         "name"_n = "generic_source", [&]() -> wp<RESULT> { return wp<RESULT>{source()}; });
 
     testing::test_wiring([&] {
-        const auto output = function[type<TS<int>>]();
-        CHECK(&output.type() == &TS<int>::type());
+        const auto output = function[type<TS<i64>>]();
+        CHECK(&output.type() == &TS<i64>::type());
     });
 }
 
@@ -161,36 +161,36 @@ TEST_CASE("a positional type argument resolves an aggregate graph output",
     const auto function = graph<RESULT, generic_source_graph_definition>();
 
     testing::test_wiring([&] {
-        const auto output = function[type<TS<int>>]();
-        CHECK(&output.type() == &TS<int>::type());
+        const auto output = function[type<TS<i64>>]();
+        CHECK(&output.type() == &TS<i64>::type());
     });
 }
 
 TEST_CASE("a positional type argument participates in operator overload resolution",
           "[feature:wiring][feature:type-system][feature:operator][definition:function]"
           "[declaration:generic]") {
-    auto operation = operator_<RESULT, auto(TS<int>) -> RESULT>{"convert", {"value"}};
+    auto operation = operator_<RESULT, auto(TS<i64>) -> RESULT>{"convert", {"value"}};
     operation.overload(graph<RESULT>(
-        "name"_n = "convert_int", [](wp<TS<int>> value) -> wp<RESULT> { return wp<RESULT>{value}; }));
-    const auto source = node([](Out<TS<int>>) {});
+        "name"_n = "convert_int", [](wp<TS<i64>> value) -> wp<RESULT> { return wp<RESULT>{value}; }));
+    const auto source = node([](Out<TS<i64>>) {});
 
     testing::test_wiring([&] {
-        const auto output = operation[type<TS<int>>](source());
-        CHECK(&output.type() == &TS<int>::type());
+        const auto output = operation[type<TS<i64>>](source());
+        CHECK(&output.type() == &TS<i64>::type());
     });
 }
 
 TEST_CASE("a mapped operator call retains its call preparation",
           "[feature:wiring][feature:type-system][feature:operator][definition:function]"
           "[declaration:generic]") {
-    auto operation = operator_<RESULT, auto(TS<int>) -> RESULT, recording_operator_invocation>{
+    auto operation = operator_<RESULT, auto(TS<i64>) -> RESULT, recording_operator_invocation>{
         "convert", {"value"}};
     operation.overload(graph<RESULT>(
-        "name"_n = "convert_int", [](wp<TS<int>> value) -> wp<RESULT> { return wp<RESULT>{value}; }));
-    const auto source = node([](Out<TS<int>>) {});
+        "name"_n = "convert_int", [](wp<TS<i64>> value) -> wp<RESULT> { return wp<RESULT>{value}; }));
+    const auto source = node([](Out<TS<i64>>) {});
     recording_operator_invocation::called = false;
 
-    testing::test_wiring([&] { (void)operation[type<TS<int>>](source()); });
+    testing::test_wiring([&] { (void)operation[type<TS<i64>>](source()); });
 
     CHECK(recording_operator_invocation::called);
 }
@@ -203,8 +203,8 @@ TEST_CASE("operator preparation receives explicit type mappings before validatin
     callable_operator_invocation::received_type_map = false;
 
     testing::test_wiring([&] {
-        const auto output = operation[type<TS<int>>]([] {});
-        CHECK(&output.type() == &TS<int>::type());
+        const auto output = operation[type<TS<i64>>]([] {});
+        CHECK(&output.type() == &TS<i64>::type());
     });
 
     CHECK(callable_operator_invocation::received_type_map);
@@ -214,11 +214,11 @@ TEST_CASE("a named type mapping resolves an outputless operator overload",
           "[feature:wiring][feature:type-system][feature:operator][definition:function]"
           "[declaration:generic][shape:sink]") {
     auto operation = operator_<auto(RESULT) -> void>{"consume", {"value"}};
-    operation.overload(node([](In<TS<int>>) {}));
-    const auto source = node([](Out<TS<int>>) {});
+    operation.overload(node([](In<TS<i64>>) {}));
+    const auto source = node([](Out<TS<i64>>) {});
 
     testing::test_wiring([&] {
-        operation[type<RESULT> = type<TS<int>>](source());
+        operation[type<RESULT> = type<TS<i64>>](source());
     });
 }
 
@@ -228,11 +228,11 @@ TEST_CASE("operator resolution caches explicit type mappings",
     cached_generic_sink_definition::requirement_calls = 0;
     auto operation = operator_<RESULT, auto(RESULT) -> void>{"consume", {"value"}};
     operation.overload(node<cached_generic_sink_definition>());
-    const auto source = node([](Out<TS<int>>) {});
+    const auto source = node([](Out<TS<i64>>) {});
 
     testing::test_wiring([&] {
-        operation[type<TS<int>>](source());
-        operation[type<TS<int>>](source());
+        operation[type<TS<i64>>](source());
+        operation[type<TS<i64>>](source());
     });
 
     CHECK(cached_generic_sink_definition::requirement_calls == 1);
@@ -242,24 +242,24 @@ TEST_CASE("a mapped wiring proxy can be reused",
           "[feature:wiring][feature:type-system][definition:function][declaration:generic]"
           "[shape:multiple]") {
     const auto source = node<RESULT>([](Out<RESULT>) {});
-    const auto integer_source = source[type<TS<int>>];
+    const auto integer_source = source[type<TS<i64>>];
     auto wiring = GraphWiring{};
     const auto context = WiringContext{wiring};
 
     const auto first = integer_source();
     const auto second = integer_source();
 
-    CHECK(&first.type() == &TS<int>::type());
-    CHECK(&second.type() == &TS<int>::type());
+    CHECK(&first.type() == &TS<i64>::type());
+    CHECK(&second.type() == &TS<i64>::type());
 }
 
 TEST_CASE("a mapped temporary callable node transfers ownership to graph wiring",
           "[feature:wiring][feature:type-system][definition:function][declaration:generic][lifetime]") {
     testing::test_wiring([] {
         const auto output =
-            node<RESULT>([](Out<RESULT>) {})[type<TS<int>>][type<RESULT> = type<TS<int>>]();
+            node<RESULT>([](Out<RESULT>) {})[type<TS<i64>>][type<RESULT> = type<TS<i64>>]();
         REQUIRE(output);
-        CHECK(&output->type() == &TS<int>::type());
+        CHECK(&output->type() == &TS<i64>::type());
     });
 }
 
@@ -267,9 +267,9 @@ TEST_CASE("a mapped temporary callable graph is valid for its wiring call",
           "[feature:wiring][feature:type-system][definition:function][declaration:generic][lifetime]") {
     testing::test_wiring([] {
         const auto output = graph<RESULT>("name"_n = "temporary", []() -> wp<RESULT> {
-                                return wp<RESULT>{*node([](Out<TS<int>>) {})()};
-                            })[type<TS<int>>]();
-        CHECK(&output.type() == &TS<int>::type());
+                                return wp<RESULT>{*node([](Out<TS<i64>>) {})()};
+                            })[type<TS<i64>>]();
+        CHECK(&output.type() == &TS<i64>::type());
     });
 }
 

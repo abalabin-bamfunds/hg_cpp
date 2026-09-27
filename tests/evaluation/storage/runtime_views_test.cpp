@@ -154,7 +154,7 @@ TEST_CASE("a generic time-series view preserves its resolved time-series type",
 namespace {
 
 struct generic_list_view_source_definition {
-    bg::Out<bg::TSL<bg::TS<int>, 2>> output;
+    bg::Out<bg::TSL<bg::TS<bg::i64>, 2>> output;
 
     void start() const {
         output[0].set(3);
@@ -186,8 +186,8 @@ struct generic_list_view_copy_definition {
 };
 
 struct generic_list_view_value_definition {
-    bg::In<bg::TSL<bg::TS<int>, 2>> input;
-    bg::Out<bg::TS<int>> output;
+    bg::In<bg::TSL<bg::TS<bg::i64>, 2>> input;
+    bg::Out<bg::TS<bg::i64>> output;
 
     void evaluate() const { output.set(*input[0]); }
 };
@@ -207,13 +207,13 @@ TEST_CASE("generic time-series list views expose their resolved size and items",
 
     CHECK(generic_list_view_copy_definition::input_size == 2);
     CHECK(generic_list_view_copy_definition::output_size == 2);
-    CHECK(actual.equals<int>({7}));
+    CHECK(actual.equals<bg::i64>({7}));
 }
 
 namespace {
 
 template <template <typename, auto...> typename Field> struct RuntimeViewBundle {
-    Field<bg::TS<int>> count;
+    Field<bg::TS<bg::i64>> count;
     Field<bg::TS<float>> value;
 };
 
@@ -255,7 +255,7 @@ struct generic_bundle_view_copy_definition {
 
 struct generic_bundle_view_value_definition {
     bg::In<bg::TSB<RuntimeViewBundle>> input;
-    bg::Out<bg::TS<int>> output;
+    bg::Out<bg::TS<bg::i64>> output;
 
     void evaluate() const { output.set(*input->count); }
 };
@@ -280,5 +280,5 @@ TEST_CASE("generic bundle views expose their resolved schema and items",
     CHECK(generic_bundle_view_copy_definition::output_size == 2);
     CHECK(generic_bundle_view_copy_definition::first_name.text() == "count");
     CHECK(generic_bundle_view_copy_definition::second_name.text() == "value");
-    CHECK(actual.equals<int>({4}));
+    CHECK(actual.equals<bg::i64>({4}));
 }

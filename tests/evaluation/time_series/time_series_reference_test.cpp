@@ -17,7 +17,7 @@ struct changing_reference_target {
     static constexpr bool uses_timed_scheduling = true;
 
     bg::State<int> step;
-    bg::Out<bg::TS<int>> output;
+    bg::Out<bg::TS<bg::i64>> output;
 
     void start(bg::EvaluationContext *context) const {
         output.set(10);
@@ -41,8 +41,8 @@ struct changing_reference_target {
 };
 
 struct reference_pass {
-    bg::In<bg::REF<bg::TS<int>>> input;
-    bg::Out<bg::REF<bg::TS<int>>> output;
+    bg::In<bg::REF<bg::TS<bg::i64>>> input;
+    bg::Out<bg::REF<bg::TS<bg::i64>>> output;
 
     void evaluate() const {
         output.copy(input);
@@ -53,7 +53,7 @@ struct reference_pass {
 };
 
 struct optional_reference_consumer {
-    bg::In<bg::TS<int>, bg::optional> input;
+    bg::In<bg::TS<bg::i64>, bg::optional> input;
 
     void evaluate() const {}
 };
@@ -77,11 +77,11 @@ TEST_CASE("a dereferenced input subscribes directly to a fixed target",
 TEST_CASE("a default reference output does not schedule subscribers for the same reference",
           "[evaluation][reference][feature:reference][transition:update][series:value][scalar:integer]"
           "[guarantee:deduplicated][binding:value-to-reference][binding:reference-to-reference]") {
-    const auto forward = bg::node([](bg::In<bg::TS<int>>, bg::In<bg::REF<bg::TS<int>>, bg::passive> input,
-                                     bg::Out<bg::REF<bg::TS<int>>> output) { output.copy(input); });
+    const auto forward = bg::node([](bg::In<bg::TS<bg::i64>>, bg::In<bg::REF<bg::TS<bg::i64>>, bg::passive> input,
+                                     bg::Out<bg::REF<bg::TS<bg::i64>>> output) { output.copy(input); });
     auto evaluations = 0;
-    const auto sink = bg::node([&](bg::In<bg::REF<bg::TS<int>>>) { ++evaluations; });
-    const auto graph = [&](bg::wp<bg::TS<int>> input) {
+    const auto sink = bg::node([&](bg::In<bg::REF<bg::TS<bg::i64>>>) { ++evaluations; });
+    const auto graph = [&](bg::wp<bg::TS<bg::i64>> input) {
         sink(forward(input, input));
         return input;
     };
@@ -127,13 +127,13 @@ TEST_CASE("reference provider access preserves lazy allocation",
 namespace {
 
 struct sampled_left_source {
-    bg::Out<bg::TS<int>> output;
+    bg::Out<bg::TS<bg::i64>> output;
     void start() const { output.set(10); }
     void evaluate() const {}
 };
 
 struct sampled_right_source {
-    bg::Out<bg::TS<int>> output;
+    bg::Out<bg::TS<bg::i64>> output;
     void start() const { output.set(20); }
     void evaluate() const {}
 };
@@ -141,7 +141,7 @@ struct sampled_right_source {
 struct sampled_condition_source {
     static constexpr bool uses_timed_scheduling = true;
 
-    bg::Out<bg::TS<int>> output;
+    bg::Out<bg::TS<bg::i64>> output;
 
     void start(bg::EvaluationContext *context) const {
         output.set(0);
@@ -152,16 +152,16 @@ struct sampled_condition_source {
 };
 
 struct reference_selector {
-    bg::In<bg::TS<int>> condition;
-    bg::In<bg::REF<bg::TS<int>>, bg::passive, bg::optional> left;
-    bg::In<bg::REF<bg::TS<int>>, bg::passive, bg::optional> right;
-    bg::Out<bg::REF<bg::TS<int>>> output;
+    bg::In<bg::TS<bg::i64>> condition;
+    bg::In<bg::REF<bg::TS<bg::i64>>, bg::passive, bg::optional> left;
+    bg::In<bg::REF<bg::TS<bg::i64>>, bg::passive, bg::optional> right;
+    bg::Out<bg::REF<bg::TS<bg::i64>>> output;
 
     void evaluate() const { *condition ? output.copy(right) : output.copy(left); }
 };
 
 struct sampled_reference_sink {
-    bg::In<bg::TS<int>> input;
+    bg::In<bg::TS<bg::i64>> input;
 
     void evaluate(bg::EvaluationContext *context) const {
         values.push_back(*input);
@@ -175,9 +175,9 @@ struct sampled_reference_sink {
 };
 
 struct passive_reference_value {
-    bg::In<bg::TS<int>, bg::passive, bg::optional> input;
-    bg::In<bg::TS<int>> trigger;
-    bg::Out<bg::TS<int>> output;
+    bg::In<bg::TS<bg::i64>, bg::passive, bg::optional> input;
+    bg::In<bg::TS<bg::i64>> trigger;
+    bg::Out<bg::TS<bg::i64>> output;
 
     void evaluate() const { output.set(*input); }
 };
@@ -223,13 +223,13 @@ TEST_CASE("a passive dereferenced input observes its current target",
 namespace {
 
 struct invalid_reference_target {
-    bg::Out<bg::TS<int>> output;
+    bg::Out<bg::TS<bg::i64>> output;
     void evaluate() const {}
 };
 
 struct required_reference_forward {
-    bg::In<bg::TS<int>> input;
-    bg::Out<bg::TS<int>> output;
+    bg::In<bg::TS<bg::i64>> input;
+    bg::Out<bg::TS<bg::i64>> output;
 
     void evaluate() const { output.set(*input); }
 };
@@ -257,7 +257,7 @@ namespace {
 struct referenced_list_source {
     static constexpr bool uses_timed_scheduling = true;
 
-    bg::Out<bg::TSL<bg::TS<int>, 2>> output;
+    bg::Out<bg::TSL<bg::TS<bg::i64>, 2>> output;
 
     void start(bg::EvaluationContext *context) const {
         output[0].set(10);
@@ -268,15 +268,15 @@ struct referenced_list_source {
 };
 
 struct list_reference_pass {
-    bg::In<bg::REF<bg::TSL<bg::TS<int>, 2>>> input;
-    bg::Out<bg::REF<bg::TSL<bg::TS<int>, 2>>> output;
+    bg::In<bg::REF<bg::TSL<bg::TS<bg::i64>, 2>>> input;
+    bg::Out<bg::REF<bg::TSL<bg::TS<bg::i64>, 2>>> output;
 
     void evaluate() const { output.copy(input); }
 };
 
 struct referenced_list_value {
-    bg::In<bg::TSL<bg::TS<int>, 2>> input;
-    bg::Out<bg::TS<int>> output;
+    bg::In<bg::TSL<bg::TS<bg::i64>, 2>> input;
+    bg::Out<bg::TS<bg::i64>> output;
 
     void evaluate() const { output.set(*input[0]); }
 };
@@ -290,14 +290,14 @@ struct generic_list_reference_pass {
 
 struct generic_referenced_list_value {
     bg::In<bg::TSL<bg::TS<bg::SCALAR>, 2>> input;
-    bg::Out<bg::TS<int>> output;
+    bg::Out<bg::TS<bg::i64>> output;
 
-    void evaluate() const { output.set(*bg::scalar_cast<int>(input[0].value_view())); }
+    void evaluate() const { output.set(*bg::scalar_cast<bg::i64>(input[0].value_view())); }
 };
 
 struct reference_list {
-    bg::In<bg::REF<bg::TS<int>>> input;
-    bg::Out<bg::TSL<bg::REF<bg::TS<int>>, 1>> output;
+    bg::In<bg::REF<bg::TS<bg::i64>>> input;
+    bg::Out<bg::TSL<bg::REF<bg::TS<bg::i64>>, 1>> output;
 
     void evaluate() const { output[0].copy(input); }
 };
@@ -310,7 +310,7 @@ TEST_CASE("a dereferenced input subscribes directly to a fixed collection item",
     const auto source = bg::node<referenced_list_source>();
     const auto pass = bg::node<reference_pass>();
     const auto first =
-        bg::node([](bg::In<bg::TSL<bg::TS<int>, 2>> input, bg::Out<bg::TS<int>> output) { output.set(*input[0]); });
+        bg::node([](bg::In<bg::TSL<bg::TS<bg::i64>, 2>> input, bg::Out<bg::TS<bg::i64>> output) { output.set(*input[0]); });
     const auto graph = [&] { return pass(first(source())); };
     reference_pass::evaluation_count = 0;
 
@@ -349,9 +349,9 @@ TEST_CASE("a generic fixed collection input uses the referenced target runtime_t
 namespace {
 
 struct owned_pair_definition {
-    bg::In<bg::TS<int>> first;
-    bg::In<bg::TS<int>> second;
-    bg::Out<bg::TSL<bg::TS<int>, 2>> output;
+    bg::In<bg::TS<bg::i64>> first;
+    bg::In<bg::TS<bg::i64>> second;
+    bg::Out<bg::TSL<bg::TS<bg::i64>, 2>> output;
 
     void evaluate() const {
         output[0].set(*first);
@@ -360,17 +360,17 @@ struct owned_pair_definition {
 };
 
 struct pair_reference_selector_definition {
-    bg::In<bg::TS<int>> condition;
-    bg::In<bg::REF<bg::TSL<bg::TS<int>, 2>>, bg::passive, bg::optional> owned;
-    bg::In<bg::REF<bg::TSL<bg::TS<int>, 2>>, bg::passive, bg::optional> free;
-    bg::Out<bg::REF<bg::TSL<bg::TS<int>, 2>>> output;
+    bg::In<bg::TS<bg::i64>> condition;
+    bg::In<bg::REF<bg::TSL<bg::TS<bg::i64>, 2>>, bg::passive, bg::optional> owned;
+    bg::In<bg::REF<bg::TSL<bg::TS<bg::i64>, 2>>, bg::passive, bg::optional> free;
+    bg::Out<bg::REF<bg::TSL<bg::TS<bg::i64>, 2>>> output;
 
     void evaluate() const { *condition == 0 ? output.copy(owned) : output.copy(free); }
 };
 
 struct pair_sum_definition {
-    bg::In<bg::TSL<bg::TS<int>, 2>> input;
-    bg::Out<bg::TS<int>> output;
+    bg::In<bg::TSL<bg::TS<bg::i64>, 2>> input;
+    bg::Out<bg::TS<bg::i64>> output;
 
     void evaluate() const { output.set(*input[0] + *input[1]); }
 };
@@ -383,9 +383,9 @@ TEST_CASE("a dereferenced list reference selects the current target runtime_type
     const auto owned_pair = bg::node<owned_pair_definition>();
     const auto select = bg::node<pair_reference_selector_definition>();
     const auto sum = bg::node<pair_sum_definition>();
-    const auto graph = [&](bg::wp<bg::TS<int>> condition, bg::wp<bg::TS<int>> first_owned,
-                           bg::wp<bg::TS<int>> second_owned, bg::wp<bg::TS<int>> first_free_item,
-                           bg::wp<bg::TS<int>> second_free_item) {
+    const auto graph = [&](bg::wp<bg::TS<bg::i64>> condition, bg::wp<bg::TS<bg::i64>> first_owned,
+                           bg::wp<bg::TS<bg::i64>> second_owned, bg::wp<bg::TS<bg::i64>> first_free_item,
+                           bg::wp<bg::TS<bg::i64>> second_free_item) {
         const auto owned = owned_pair(first_owned, second_owned);
         const auto free = bg::tsl(first_free_item, second_free_item);
         return sum(select(condition, owned, free));
@@ -407,8 +407,8 @@ TEST_CASE("a reference stored in a fixed collection item updates its consumer",
           "[scalar:integer][binding:value-to-reference][binding:reference-to-value]") {
     const auto source = bg::node<changing_reference_target>();
     const auto list = bg::node<reference_list>();
-    const auto first = bg::node([](bg::In<bg::TSL<bg::REF<bg::TS<int>>, 1>> input,
-                                   bg::Out<bg::REF<bg::TS<int>>> output) { output.copy(input[0]); });
+    const auto first = bg::node([](bg::In<bg::TSL<bg::REF<bg::TS<bg::i64>>, 1>> input,
+                                   bg::Out<bg::REF<bg::TS<bg::i64>>> output) { output.copy(input[0]); });
     const auto graph = [&] { return first(list(source())); };
 
     const auto actual = bg::testing::test_graph(graph);
@@ -421,9 +421,9 @@ namespace {
 struct invalidating_reference {
     static constexpr bool uses_timed_scheduling = true;
 
-    bg::In<bg::REF<bg::TS<int>>, bg::passive, bg::optional> target;
+    bg::In<bg::REF<bg::TS<bg::i64>>, bg::passive, bg::optional> target;
     bg::State<int> step;
-    bg::Out<bg::REF<bg::TS<int>>> output;
+    bg::Out<bg::REF<bg::TS<bg::i64>>> output;
 
     void start(bg::EvaluationContext *context) const {
         output.copy(target);

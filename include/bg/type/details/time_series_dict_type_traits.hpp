@@ -12,7 +12,10 @@ struct time_series_type_traits<TSD<Key, Item, Properties...>> {
     using semantic_type = TimeSeriesDictionaryType;
 
     static constexpr bool generic = generic_scalar<Key> || generic_time_series<Item>;
-    static constexpr bool supported = (generic_scalar<Key> || has_cpp_scalar_type<Key>) && supported_time_series<Item>;
+    static constexpr bool supported =
+        (generic_scalar<Key> ||
+         (scalar_declaration_traits<Key>::supports_time_series && has_cpp_scalar_type<Key>)) &&
+        supported_time_series<Item>;
 
     template <typename Scope, std::size_t Index, bool Input>
     static const TimeSeriesType &get(GuaranteeParameter guarantee) {

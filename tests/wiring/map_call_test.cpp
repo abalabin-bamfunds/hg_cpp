@@ -71,8 +71,8 @@ TEST_CASE("map passes reference items and pass-through collections consistently"
           "[definition:function][definition:runtime][guarantee:final]") {
     const auto values =
         node([](Out<TSD<std::int64_t, REF<TS<float>, TimeSeriesGuarantee::final>>>) {});
-    const auto factors = node([](Out<TSD<bool, TS<int>>>) {});
-    const auto function = [](wp<TS<float>> value, wp<TSD<bool, TS<int>>>) { return value; };
+    const auto factors = node([](Out<TSD<bool, TS<i64>>>) {});
+    const auto function = [](wp<TS<float>> value, wp<TSD<bool, TS<i64>>>) { return value; };
     const auto graph_template = graph("name"_n = "map_reference_items", function);
     const auto &expected = TSD<
         std::int64_t,

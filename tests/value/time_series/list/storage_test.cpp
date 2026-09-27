@@ -29,7 +29,7 @@ TEST_CASE("fixed list changes cross bitset word boundaries",
 
 TEST_CASE("fixed list validity is derived from its items",
           "[value][time_series][tsl][series:fixed-tsl][feature:time-series-storage]") {
-    const auto &runtime_type = bg::cpp_time_series_runtime_type<bg::TSL<bg::TS<int>, 3>>();
+    const auto &runtime_type = bg::cpp_time_series_runtime_type<bg::TSL<bg::TS<bg::i64>, 3>>();
     auto memory = std::pmr::monotonic_buffer_resource{};
     auto allocator = bg::allocator{memory};
     auto *storage = allocator.allocate_bytes(runtime_type.value_size(), runtime_type.value_alignment());
@@ -51,7 +51,7 @@ TEST_CASE("fixed list validity is derived from its items",
 
 TEST_CASE("fixed list runtime items use positional IDs",
           "[value][time_series][tsl][series:fixed-tsl][runtime_type][feature:time-series-storage]") {
-    const auto &runtime_type = bg::cpp_time_series_runtime_type<bg::TSL<bg::TS<int>, 3>>();
+    const auto &runtime_type = bg::cpp_time_series_runtime_type<bg::TSL<bg::TS<bg::i64>, 3>>();
     auto memory = std::pmr::monotonic_buffer_resource{};
     auto allocator = bg::allocator{memory};
     auto *storage = allocator.allocate_bytes(runtime_type.value_size(), runtime_type.value_alignment());
@@ -70,7 +70,7 @@ TEST_CASE("fixed list runtime items use positional IDs",
     *static_cast<int *>(item.value) = 42;
 
     const auto const_item = runtime_type.item(static_cast<const void *>(storage), 1);
-    CHECK(&const_item.runtime_type == &bg::cpp_time_series_runtime_type<bg::TS<int>>());
+    CHECK(&const_item.runtime_type == &bg::cpp_time_series_runtime_type<bg::TS<bg::i64>>());
     CHECK(const_item.last_updated == update_time);
     CHECK(*static_cast<const int *>(const_item.value) == 42);
 
@@ -79,7 +79,7 @@ TEST_CASE("fixed list runtime items use positional IDs",
 
 TEST_CASE("fixed list storage reports item cleanup requirements",
           "[value][time_series][tsl][series:fixed-tsl][storage][feature:time-series-storage]") {
-    const auto &storage = bg::cpp_time_series_runtime_type<bg::TSL<bg::TS<int>, 2>>();
+    const auto &storage = bg::cpp_time_series_runtime_type<bg::TSL<bg::TS<bg::i64>, 2>>();
 
     CHECK_FALSE(storage.uses_variable_memory());
     CHECK_FALSE(storage.requires_finalization());
@@ -88,7 +88,7 @@ TEST_CASE("fixed list storage reports item cleanup requirements",
 TEST_CASE("variable-size list storage is not implemented",
           "[value][time_series][tsl][series:fixed-tsl][storage][feature:time-series-storage]"
           "[storage:variable]") {
-    const auto &item = bg::TS<int>::type();
+    const auto &item = bg::TS<bg::i64>::type();
     const auto &list = bg::time_series_list_type(item, std::dynamic_extent, bg::TimeSeriesGuarantee::ordinary);
 
     CHECK_THROWS_AS(bg::resolve_time_series_runtime_type(list), std::invalid_argument);

@@ -14,7 +14,7 @@
 #include <utility>
 
 TEST_CASE("getitem leaves unsupported collection results generic", "[wiring][coverage-exempt]") {
-    STATIC_CHECK(std::same_as<decltype(std::declval<bg::wp<bg::TSS<int>>>()[std::int64_t{}]), bg::wp<>>);
+    STATIC_CHECK(std::same_as<decltype(std::declval<bg::wp<bg::TSS<bg::i64>>>()[std::int64_t{}]), bg::wp<>>);
 }
 
 TEST_CASE("getitem selects a dictionary item through a reference",

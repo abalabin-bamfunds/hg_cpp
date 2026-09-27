@@ -63,8 +63,8 @@ TEST_CASE("constraints on different parameters are unordered",
 
 TEST_CASE("a stronger literal guarantee is less generic",
           "[feature:operator][feature:type-system][series:value][guarantee:final]") {
-    const auto &final = bg::TS<int, bg::TimeSeriesGuarantee::final>::type();
-    const auto &ordinary = bg::TS<int>::type();
+    const auto &final = bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>::type();
+    const auto &ordinary = bg::TS<bg::i64>::type();
     const auto final_signature = bg::Signature{bg::util::symbol{"final"}, {{bg::util::symbol{"value"}, &final}}};
     const auto ordinary_signature =
         bg::Signature{bg::util::symbol{"ordinary"}, {{bg::util::symbol{"value"}, &ordinary}}};
@@ -74,8 +74,8 @@ TEST_CASE("a stronger literal guarantee is less generic",
 
 TEST_CASE("reference shape does not affect specificity",
           "[feature:operator][feature:type-system][feature:reference][binding:reference-to-value]") {
-    const auto &value = bg::TS<int>::type();
-    const auto &reference = bg::REF<bg::TS<int>>::type();
+    const auto &value = bg::TS<bg::i64>::type();
+    const auto &reference = bg::REF<bg::TS<bg::i64>>::type();
     const auto value_signature = bg::Signature{bg::util::symbol{"value"}, {{bg::util::symbol{"value"}, &value}}};
     const auto reference_signature =
         bg::Signature{bg::util::symbol{"reference"}, {{bg::util::symbol{"value"}, &reference}}};
@@ -86,7 +86,7 @@ TEST_CASE("reference shape does not affect specificity",
 TEST_CASE("a concrete time series is less generic than a time-series variable",
           "[feature:operator][feature:type-system][declaration:generic][series:value]") {
     const auto concrete =
-        bg::Signature{bg::util::symbol{"concrete"}, {{bg::util::symbol{"value"}, &bg::TS<int>::type()}}};
+        bg::Signature{bg::util::symbol{"concrete"}, {{bg::util::symbol{"value"}, &bg::TS<bg::i64>::type()}}};
     const auto generic = bg::Signature{bg::util::symbol{"generic"}, {{bg::util::symbol{"value"}, &bg::TS_T::type()}}};
 
     CHECK(bg::compare_specificity(concrete, generic) == std::partial_ordering::less);
@@ -96,9 +96,9 @@ TEST_CASE("a concrete time series is less generic than a time-series variable",
 TEST_CASE("a literal list size is less generic than a size variable",
           "[feature:operator][feature:type-system][declaration:generic][series:fixed-tsl]") {
     const auto fixed =
-        bg::Signature{bg::util::symbol{"fixed"}, {{bg::util::symbol{"value"}, &bg::TSL<bg::TS<int>, 3>::type()}}};
+        bg::Signature{bg::util::symbol{"fixed"}, {{bg::util::symbol{"value"}, &bg::TSL<bg::TS<bg::i64>, 3>::type()}}};
     const auto generic = bg::Signature{bg::util::symbol{"generic"},
-                                       {{bg::util::symbol{"value"}, &bg::TSL<bg::TS<int>, bg::SIZE>::type()}}};
+                                       {{bg::util::symbol{"value"}, &bg::TSL<bg::TS<bg::i64>, bg::SIZE>::type()}}};
 
     CHECK(bg::compare_specificity(fixed, generic) == std::partial_ordering::less);
     CHECK(bg::compare_specificity(generic, fixed) == std::partial_ordering::greater);
@@ -118,8 +118,8 @@ TEST_CASE("unrelated scalar capability constraints are unordered",
 }
 
 TEST_CASE("identical signatures have equivalent specificity", "[feature:operator][feature:type-system]") {
-    const auto left = bg::Signature{bg::util::symbol{"left"}, {{bg::util::symbol{"value"}, &bg::TS<int>::type()}}};
-    const auto right = bg::Signature{bg::util::symbol{"right"}, {{bg::util::symbol{"other"}, &bg::TS<int>::type()}}};
+    const auto left = bg::Signature{bg::util::symbol{"left"}, {{bg::util::symbol{"value"}, &bg::TS<bg::i64>::type()}}};
+    const auto right = bg::Signature{bg::util::symbol{"right"}, {{bg::util::symbol{"other"}, &bg::TS<bg::i64>::type()}}};
 
     CHECK(bg::compare_specificity(left, right) == std::partial_ordering::equivalent);
 }

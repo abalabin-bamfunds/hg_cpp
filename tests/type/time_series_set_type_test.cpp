@@ -9,22 +9,28 @@
 #include <concepts>
 
 TEST_CASE("time series set annotations expose their item type", "[type_system][tss][series:tss][feature:type-system]") {
-    using IntTimeSeriesSet = bg::TSS<int>;
+    using IntTimeSeriesSet = bg::TSS<bg::i64>;
 
-    STATIC_CHECK(std::same_as<IntTimeSeriesSet::item_type, int>);
+    STATIC_CHECK(std::same_as<IntTimeSeriesSet::item_type, bg::i64>);
     STATIC_CHECK(bg::details::is_time_series_set<IntTimeSeriesSet>);
 }
 
-TEST_CASE("resolved time series set types are canonical", "[type_system][tss][series:tss][feature:type-system]") {
-    const auto &set = bg::TSS<int>::type();
+TEST_CASE("time series set declarations require canonical integer types",
+          "[feature:type-system][series:tss][scalar:integer][declaration:concrete]") {
+    STATIC_CHECK_FALSE(bg::details::supported_time_series<bg::TSS<int>>);
+    STATIC_CHECK(bg::details::supported_time_series<bg::TSS<bg::i64>>);
+}
 
-    CHECK(&set == &bg::TSS<int>::type());
-    CHECK(&set.item_type() == &bg::int_type());
+TEST_CASE("resolved time series set types are canonical", "[type_system][tss][series:tss][feature:type-system]") {
+    const auto &set = bg::TSS<bg::i64>::type();
+
+    CHECK(&set == &bg::TSS<bg::i64>::type());
+    CHECK(&set.item_type() == &bg::int64_type());
 }
 
 TEST_CASE("generic time series set types resolve their item and guarantee",
           "[type_system][tss][series:tss][feature:type-system][declaration:generic][guarantee:final]") {
-    const auto &resolved = bg::TSS<int, bg::TimeSeriesGuarantee::final>::type();
+    const auto &resolved = bg::TSS<bg::i64, bg::TimeSeriesGuarantee::final>::type();
     bg::TypeVariableType<bg::ScalarType> item{bg::util::symbol{"K"}, {}, {&bg::supports_scalar_hash}};
     const bg::GenericTimeSeriesSetType generic{item, bg::TimeSeriesGuarantee::final};
     auto type_map = bg::TypeMap{};

@@ -101,6 +101,12 @@ template <typename T> struct scalar_declaration_traits {
     static constexpr bool supports_time_series = true;
 };
 
+template <> struct scalar_declaration_traits<int> {
+    static constexpr bool is_collection = false;
+    static constexpr bool supports_implicit_argument = true;
+    static constexpr bool supports_time_series = false;
+};
+
 namespace details {
 
 template <typename T> const ScalarType &scalar_type_for() {

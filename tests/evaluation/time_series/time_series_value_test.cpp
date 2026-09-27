@@ -10,10 +10,10 @@ TEST_CASE("a deduplicated value output schedules subscribers only for changed va
           "[evaluation][feature:scheduling][transition:update][series:value][scalar:integer]"
           "[guarantee:deduplicated]") {
     const auto deduplicate =
-        bg::node([](bg::In<bg::TS<int>> input, bg::Out<bg::TS<int, bg::TimeSeriesGuarantee::deduplicated>> output) {
+        bg::node([](bg::In<bg::TS<bg::i64>> input, bg::Out<bg::TS<bg::i64, bg::TimeSeriesGuarantee::deduplicated>> output) {
             output.set(*input);
         });
-    const auto graph = [&](bg::wp<bg::TS<int>> input) { return deduplicate(input); };
+    const auto graph = [&](bg::wp<bg::TS<bg::i64>> input) { return deduplicate(input); };
 
     const auto actual = bg::testing::test_graph(graph, std::array{1, 1, 2, 2, 1});
 
@@ -25,14 +25,14 @@ TEST_CASE("a collection guarantee deduplicates contained value outputs",
           "[scalar:integer][guarantee:ordinary][guarantee:deduplicated]") {
 
     const auto collect = bg::node(
-        [](bg::In<bg::TS<int>> input,
-           bg::Out<bg::TSL<bg::TS<int, bg::TimeSeriesGuarantee::ordinary>, 1, bg::TimeSeriesGuarantee::deduplicated>>
+        [](bg::In<bg::TS<bg::i64>> input,
+           bg::Out<bg::TSL<bg::TS<bg::i64, bg::TimeSeriesGuarantee::ordinary>, 1, bg::TimeSeriesGuarantee::deduplicated>>
                output) { output[0].set(*input); });
     const auto first = bg::node(
-        [](bg::In<bg::TSL<bg::TS<int, bg::TimeSeriesGuarantee::ordinary>, 1, bg::TimeSeriesGuarantee::deduplicated>>
+        [](bg::In<bg::TSL<bg::TS<bg::i64, bg::TimeSeriesGuarantee::ordinary>, 1, bg::TimeSeriesGuarantee::deduplicated>>
                input,
-           bg::Out<bg::TS<int>> output) { output.set(*input[0]); });
-    const auto graph = [&](bg::wp<bg::TS<int>> input) { return first(collect(input)); };
+           bg::Out<bg::TS<bg::i64>> output) { output.set(*input[0]); });
+    const auto graph = [&](bg::wp<bg::TS<bg::i64>> input) { return first(collect(input)); };
 
     const auto actual = bg::testing::test_graph(graph, std::array{1, 1, 2});
 

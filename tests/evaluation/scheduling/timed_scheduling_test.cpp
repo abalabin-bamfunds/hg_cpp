@@ -56,7 +56,7 @@ TEST_CASE("timed scheduling adds storage only to graphs that declare it",
 struct cancelling_source_definition {
     static constexpr bool uses_timed_scheduling = true;
 
-    bg::Out<bg::TS<int>> output;
+    bg::Out<bg::TS<bg::i64>> output;
 
     void start(bg::EvaluationContext *context) const {
         const auto cancelled = context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
@@ -73,7 +73,7 @@ struct cancelling_source_definition {
 };
 
 struct int_sink_definition {
-    bg::In<bg::TS<int>> input;
+    bg::In<bg::TS<bg::i64>> input;
 
     void evaluate() const {}
 };

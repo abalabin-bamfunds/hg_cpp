@@ -52,7 +52,7 @@ class PatternMapOverload final : public WiringTemplate {
         return {
             name,
             {{util::symbol{"function"}, &graph_type},
-             {util::symbol{"integers"}, &TSD<std::int64_t, TS<int>>::type()},
+             {util::symbol{"integers"}, &TSD<std::int64_t, TS<i64>>::type()},
              {util::symbol{"floats"}, &TSD<std::int64_t, TS<float>>::type()}},
             output_type,
         };
@@ -78,11 +78,11 @@ class MapOptionOverload final : public WiringTemplate {
           signature_{
               util::symbol{"map_option"},
               {{util::symbol{"graph"}, graph_type_.get()},
-               {util::symbol{"values"}, &TSD<std::int64_t, TS<int>>::type()},
+               {util::symbol{"values"}, &TSD<std::int64_t, TS<i64>>::type()},
                {util::symbol{"options"}, &TSB<details::MAP_NAMED>::type(), active, required, false,
                 details::VariadicMode::named,
                 details::variadic_wiring_operations<TSB<details::MAP_NAMED>>()}},
-              TSD<std::int64_t, TS<int>>::type()},
+              TSD<std::int64_t, TS<i64>>::type()},
           selected_{&selected} {}
 
     const Signature &signature() const final { return signature_; }
@@ -111,24 +111,24 @@ class MapOptionOverload final : public WiringTemplate {
 TEST_CASE("map overloads distinguish graph structure and reuse alpha-equivalent structure",
           "[feature:map][feature:operator][feature:graph-argument][feature:nested-graph]"
           "[feature:wiring][series:tsd]") {
-    const auto integers = node([](Out<TSD<std::int64_t, TS<int>>>) {});
+    const auto integers = node([](Out<TSD<std::int64_t, TS<i64>>>) {});
     const auto floats = node([](Out<TSD<std::int64_t, TS<float>>>) {});
-    const auto add_values = node([](In<TS<int>>, In<TS<float>>, Out<TS<int>>) {});
-    const auto multiply_values = node([](In<TS<int>>, In<TS<float>>, Out<TS<int>>) {});
+    const auto add_values = node([](In<TS<i64>>, In<TS<float>>, Out<TS<i64>>) {});
+    const auto multiply_values = node([](In<TS<i64>>, In<TS<float>>, Out<TS<i64>>) {});
 
     const auto add = graph(
         "name"_n = "add",
-        [add_values](wp<TS<int>> left, wp<TS<float>> right) {
+        [add_values](wp<TS<i64>> left, wp<TS<float>> right) {
             return add_values(left, right);
         });
     const auto renamed_add = graph(
         "name"_n = "renamed_add",
-        [add_values](wp<TS<int>> x, wp<TS<float>> y) {
+        [add_values](wp<TS<i64>> x, wp<TS<float>> y) {
             return add_values(x, y);
         });
     const auto multiply = graph(
         "name"_n = "multiply",
-        [multiply_values](wp<TS<int>> left, wp<TS<float>> right) {
+        [multiply_values](wp<TS<i64>> left, wp<TS<float>> right) {
             return multiply_values(left, right);
         });
 
@@ -136,7 +136,7 @@ TEST_CASE("map overloads distinguish graph structure and reuse alpha-equivalent 
     auto multiply_requirements = 0;
     auto operation = std::remove_cvref_t<decltype(map)>{"map", {"graph", "args", "kwargs"}};
     operation.overload(PatternMapOverload{
-        util::symbol{"add_map"}, add, TSD<std::int64_t, TS<int>>::type(), 1,
+        util::symbol{"add_map"}, add, TSD<std::int64_t, TS<i64>>::type(), 1,
         add_requirements});
     operation.overload(PatternMapOverload{
         util::symbol{"multiply_map"}, multiply, TSD<std::int64_t, TS<float>>::type(), 2,
@@ -147,9 +147,9 @@ TEST_CASE("map overloads distinguish graph structure and reuse alpha-equivalent 
         const auto float_values = floats();
 
         CHECK(&operation(add, integer_values, float_values).type() ==
-              &TSD<std::int64_t, TS<int>>::type());
+              &TSD<std::int64_t, TS<i64>>::type());
         CHECK(&operation(renamed_add, integer_values, float_values).type() ==
-              &TSD<std::int64_t, TS<int>>::type());
+              &TSD<std::int64_t, TS<i64>>::type());
         CHECK(&operation(multiply, integer_values, float_values).type() ==
               &TSD<std::int64_t, TS<float>>::type());
 
@@ -159,7 +159,7 @@ TEST_CASE("map overloads distinguish graph structure and reuse alpha-equivalent 
         };
         const WiringTemplate &runtime_add = add;
         CHECK(&operation(runtime_add, std::span<const MapArgument>{runtime_arguments}).type() ==
-              &TSD<std::int64_t, TS<int>>::type());
+              &TSD<std::int64_t, TS<i64>>::type());
     });
 
     CHECK(add_requirements == 1);
@@ -169,10 +169,10 @@ TEST_CASE("map overloads distinguish graph structure and reuse alpha-equivalent 
 TEST_CASE("map overloads receive map options",
           "[feature:map][feature:operator][feature:graph-argument][feature:variadic-wiring]"
           "[feature:wiring][series:tsd]") {
-    const auto values = node([](Out<TSD<std::int64_t, TS<int>>>) {});
+    const auto values = node([](Out<TSD<std::int64_t, TS<i64>>>) {});
     const auto identity = graph(
         "name"_n = "identity_with_key_option",
-        [](wp<TS<int>> value) { return value; });
+        [](wp<TS<i64>> value) { return value; });
 
     auto selected = false;
     auto operation = std::remove_cvref_t<decltype(map)>{"map", {"graph", "args", "kwargs"}};
@@ -202,14 +202,14 @@ TEST_CASE("map overloads receive map options",
 TEST_CASE("map accepts fully runtime graph and argument values",
           "[feature:map][feature:operator][feature:graph-argument][feature:wiring]"
           "[series:tsd][definition:runtime]") {
-    const auto values = node([](Out<TSD<std::int64_t, TS<int>>>) {});
+    const auto values = node([](Out<TSD<std::int64_t, TS<i64>>>) {});
     const auto other_keys = node([](Out<TSD<bool, TS<float>>>) {});
     const auto identity = graph(
         "name"_n = "runtime_identity",
-        [](wp<TS<int>> value, wp<TSD<bool, TS<float>>>) { return value; });
+        [](wp<TS<i64>> value, wp<TSD<bool, TS<float>>>) { return value; });
     const auto sink = graph(
         "name"_n = "runtime_sink",
-        [](wp<TS<int>>, wp<TSD<bool, TS<float>>>) {});
+        [](wp<TS<i64>>, wp<TSD<bool, TS<float>>>) {});
 
     testing::test_wiring([&] {
         const auto arguments = std::vector<MapArgument>{
@@ -222,7 +222,7 @@ TEST_CASE("map accepts fully runtime graph and argument values",
         const auto result = map(runtime_identity, std::span<const MapArgument>{arguments});
         const auto &expected = TSD<
             std::int64_t,
-            REF<TS<int>, TimeSeriesGuarantee::deduplicated>>::type();
+            REF<TS<i64>, TimeSeriesGuarantee::deduplicated>>::type();
 
         CHECK(&result.type() == &expected);
         CHECK_FALSE(map(runtime_sink, std::span<const MapArgument>{arguments}).has_output());
@@ -232,25 +232,25 @@ TEST_CASE("map accepts fully runtime graph and argument values",
 TEST_CASE("an explicit type mapping resolves a raw map lambda output",
           "[feature:map][feature:operator][feature:type-system][feature:wiring]"
           "[declaration:generic][series:tsd]") {
-    const auto values = node([](Out<TSD<std::int64_t, TS<int>>>) {});
+    const auto values = node([](Out<TSD<std::int64_t, TS<i64>>>) {});
 
     testing::test_wiring([&] {
-        const auto result = map[type<RESULT> = type<TS<int>>](
+        const auto result = map[type<RESULT> = type<TS<i64>>](
             [](auto value) -> wp<RESULT> { return wp<RESULT>{value}; }, values());
 
         CHECK(&result.type() ==
-              &TSD<std::int64_t, REF<TS<int>, TimeSeriesGuarantee::deduplicated>>::type());
+              &TSD<std::int64_t, REF<TS<i64>, TimeSeriesGuarantee::deduplicated>>::type());
     });
 }
 
 TEST_CASE("map overloads declare graph signatures and patterns in their parameters",
           "[feature:map][feature:operator][feature:type-system][feature:graph-argument]"
           "[feature:wiring][series:tsd][definition:function]") {
-    const auto integers = node([](Out<TSD<std::int64_t, TS<int>>>) {});
+    const auto integers = node([](Out<TSD<std::int64_t, TS<i64>>>) {});
     const auto floats = node([](Out<TSD<std::int64_t, TS<float>>>) {});
     const auto first = graph(
         "name"_n = "first",
-        [](wp<TS<int>> left, wp<TS<float>>) {
+        [](wp<TS<i64>> left, wp<TS<float>>) {
             return left;
         });
 
@@ -258,7 +258,7 @@ TEST_CASE("map overloads declare graph signatures and patterns in their paramete
     const auto implementation = graph(
         "name"_n = "first_map",
         [&selected](GRAPH<auto(TS<MAP_LEFT>, TS<MAP_RIGHT>) -> TS<MAP_LEFT>, first_argument_pattern>,
-                    wp<TSD<std::int64_t, TS<int>>> integer_values,
+                    wp<TSD<std::int64_t, TS<i64>>> integer_values,
                     wp<TSD<std::int64_t, TS<float>>>) {
             selected = true;
             return integer_values;
@@ -270,15 +270,15 @@ TEST_CASE("map overloads declare graph signatures and patterns in their paramete
         const auto result = operation(first, integers(), floats());
 
         CHECK(selected);
-        CHECK(&result.type() == &TSD<std::int64_t, TS<int>>::type());
+        CHECK(&result.type() == &TSD<std::int64_t, TS<i64>>::type());
     });
 }
 
 TEST_CASE("map accepts a cacheable capturing graph function",
           "[feature:map][feature:operator][feature:graph-argument][feature:nested-graph]"
           "[feature:wiring][series:tsd][definition:function]") {
-    const auto values = node([](Out<TSD<std::int64_t, TS<int>>>) {});
-    const auto scale_value = node([](In<TS<int>>, int, Out<TS<int>>) {});
+    const auto values = node([](Out<TSD<std::int64_t, TS<i64>>>) {});
+    const auto scale_value = node([](In<TS<i64>>, int, Out<TS<i64>>) {});
     const auto scale = 3;
     const auto function = [scale_value, scale](auto value) {
         return scale_value(value, scale);
@@ -289,7 +289,7 @@ TEST_CASE("map accepts a cacheable capturing graph function",
         const auto second = map(function, values());
         const auto &expected = TSD<
             std::int64_t,
-            REF<TS<int>, TimeSeriesGuarantee::deduplicated>>::type();
+            REF<TS<i64>, TimeSeriesGuarantee::deduplicated>>::type();
 
         CHECK(&first.type() == &expected);
         CHECK(&second.type() == &expected);
@@ -299,13 +299,13 @@ TEST_CASE("map accepts a cacheable capturing graph function",
 TEST_CASE("map preserves the mapped item guarantee",
           "[feature:map][feature:operator][feature:type-system][feature:wiring][series:tsd]"
           "[guarantee:final]") {
-    const auto values = node([](Out<TSD<std::int64_t, TS<int, TimeSeriesGuarantee::final>>>) {});
+    const auto values = node([](Out<TSD<std::int64_t, TS<i64, TimeSeriesGuarantee::final>>>) {});
 
     testing::test_wiring([&] {
         const auto result = map([](auto value) { return value; }, values());
         const auto &expected = TSD<
             std::int64_t,
-            REF<TS<int, TimeSeriesGuarantee::final>,
+            REF<TS<i64, TimeSeriesGuarantee::final>,
                 TimeSeriesGuarantee::deduplicated>>::type();
 
         CHECK(&result.type() == &expected);
@@ -314,10 +314,10 @@ TEST_CASE("map preserves the mapped item guarantee",
 
 TEST_CASE("a sink map returns a wiring point without an output",
           "[feature:map][feature:operator][feature:wiring][series:tsd]") {
-    const auto values = node([](Out<TSD<std::int64_t, TS<int>>>) {});
+    const auto values = node([](Out<TSD<std::int64_t, TS<i64>>>) {});
     const auto sink = graph(
         "name"_n = "sink",
-        [](wp<TS<int>>) {});
+        [](wp<TS<i64>>) {});
 
     testing::test_wiring([&] {
         const auto result = map(sink, values());
@@ -326,18 +326,18 @@ TEST_CASE("a sink map returns a wiring point without an output",
         CHECK_FALSE(static_cast<bool>(result));
         CHECK_THROWS_WITH(result.type(), "a wiring point has no output");
         CHECK_THROWS_WITH(result.graph(), "a wiring point has no output");
-        CHECK_THROWS_WITH(result.as<TS<int>>(), "a wiring point has no output");
+        CHECK_THROWS_WITH(result.as<TS<i64>>(), "a wiring point has no output");
     });
 }
 
 TEST_CASE("map resolves an untyped wiring point from its semantic type",
           "[feature:map][feature:operator][feature:wiring][series:tsd][series:tss]"
           "[declaration:runtime][guarantee:const]") {
-    const auto values = node([](Out<TSD<std::int64_t, TS<int>>>) {});
+    const auto values = node([](Out<TSD<std::int64_t, TS<i64>>>) {});
     const auto keys = node([](Out<TSS<std::int64_t>>) {});
     const auto identity = graph(
         "name"_n = "identity",
-        [](wp<TS<int>> value) { return value; });
+        [](wp<TS<i64>> value) { return value; });
     const auto key_source = graph(
         "name"_n = "key_source",
         [](wp<TS<std::int64_t, TimeSeriesGuarantee::const_>> key) { return key; });
@@ -346,7 +346,7 @@ TEST_CASE("map resolves an untyped wiring point from its semantic type",
         const auto values_result = map(identity, wp<>{values()});
         const auto &expected_values = TSD<
             std::int64_t,
-            REF<TS<int>, TimeSeriesGuarantee::deduplicated>>::type();
+            REF<TS<i64>, TimeSeriesGuarantee::deduplicated>>::type();
         CHECK(&values_result.type() == &expected_values);
 
         const auto keys_result = map(key_source, wp<>{keys()}, "__key_arg__"_n = 0);
@@ -360,7 +360,7 @@ TEST_CASE("map resolves an untyped wiring point from its semantic type",
 
 TEST_CASE("a map graph function requires typed collection arguments",
           "[feature:map][feature:wiring][series:tsd][declaration:runtime][definition:function]") {
-    const auto values = node([](Out<TSD<std::int64_t, TS<int>>>) {});
+    const auto values = node([](Out<TSD<std::int64_t, TS<i64>>>) {});
 
     testing::test_wiring([&] {
         CHECK_THROWS_WITH(
@@ -371,11 +371,11 @@ TEST_CASE("a map graph function requires typed collection arguments",
 
 TEST_CASE("map reports invalid selectors and incompatible key types",
           "[feature:map][feature:operator][feature:wiring][series:tsd]") {
-    const auto integers = node([](Out<TSD<std::int64_t, TS<int>>>) {});
-    const auto floating_point_keys = node([](Out<TSD<float, TS<int>>>) {});
+    const auto integers = node([](Out<TSD<std::int64_t, TS<i64>>>) {});
+    const auto floating_point_keys = node([](Out<TSD<float, TS<i64>>>) {});
     const auto identity = graph(
         "name"_n = "identity",
-        [](wp<TS<int>> value) { return value; });
+        [](wp<TS<i64>> value) { return value; });
 
     CHECK_THROWS_WITH(
         testing::test_wiring([&] {
@@ -398,7 +398,7 @@ TEST_CASE("map reports invalid selectors and incompatible key types",
 
 TEST_CASE("a map graph function requires an explicit selector when leading key use is ambiguous",
           "[feature:map][feature:operator][feature:wiring][series:tsd][guarantee:const]") {
-    const auto values = node([](Out<TSD<std::int64_t, TS<int>>>) {});
+    const auto values = node([](Out<TSD<std::int64_t, TS<i64>>>) {});
     const auto function = [](auto first, auto...) { return first; };
 
     testing::test_wiring([&] {

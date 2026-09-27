@@ -58,7 +58,7 @@ TEST_CASE("a time series list type requires concrete homogeneous items",
     const auto empty = std::array<const bg::TimeSeriesType *, 0>{};
     const auto null_item = std::array<const bg::TimeSeriesType *, 1>{nullptr};
     const auto unresolved = std::array<const bg::TimeSeriesType *, 1>{&bg::TS<bg::SCALAR>::type()};
-    const auto mixed = std::array<const bg::TimeSeriesType *, 2>{&bg::TS<int>::type(), &bg::TS<float>::type()};
+    const auto mixed = std::array<const bg::TimeSeriesType *, 2>{&bg::TS<bg::i64>::type(), &bg::TS<float>::type()};
 
     CHECK_THROWS_WITH(bg::TimeSeriesListType::from_items(empty),
                       "a time series list type requires at least one item");

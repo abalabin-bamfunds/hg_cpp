@@ -89,19 +89,19 @@ TEST_CASE("compiled nodes keep hot data in node-local sections", "[compiled_grap
 namespace {
 
 struct reference_subscription_source {
-    bg::Out<bg::TS<int>> output;
+    bg::Out<bg::TS<bg::i64>> output;
     void evaluate() const {}
 };
 
 struct reference_subscription_pass {
-    bg::In<bg::REF<bg::TS<int>>> input;
-    bg::Out<bg::REF<bg::TS<int>>> output;
+    bg::In<bg::REF<bg::TS<bg::i64>>> input;
+    bg::Out<bg::REF<bg::TS<bg::i64>>> output;
     void evaluate() const { output.copy(input); }
 };
 
 struct two_reference_input_sink {
-    bg::In<bg::TS<int>> left;
-    bg::In<bg::TS<int>> right;
+    bg::In<bg::TS<bg::i64>> left;
+    bg::In<bg::TS<bg::i64>> right;
     void evaluate() const {}
 };
 

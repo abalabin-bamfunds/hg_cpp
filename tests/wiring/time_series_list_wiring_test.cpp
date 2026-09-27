@@ -29,7 +29,7 @@ TEST_CASE("a free fixed time series list is materialized when consumed",
 
 TEST_CASE("a free fixed time series list reports incompatible item types as a wiring error",
           "[wiring][tsl][series:fixed-tsl][representation:free][feature:wiring]") {
-    const auto integer = bg::node([](bg::Out<bg::TS<int>>) {});
+    const auto integer = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
     const auto floating = bg::node([](bg::Out<bg::TS<float>>) {});
     auto wiring = bg::GraphWiring{};
 

@@ -37,7 +37,7 @@ declared variables:
 ```cpp
 TS<float>::type()
 REF<TS<float>>::type()
-TSD<int, TS<float>>::type()
+TSD<i64, TS<float>>::type()
 TS<SCALAR>::type()
 ```
 
@@ -71,6 +71,10 @@ reuses them across graphs.
 Scalar types separate graph identity and compatibility from C++ storage. Each
 registered scalar type has a fully qualified `Symbol`. A C++ type has one
 default graph type, while several graph types can share the same storage type.
+
+A concrete time series declaration uses a supported scalar declaration. Raw
+C++ integer values canonicalize to `i64` at construction and wiring boundaries,
+so time series signatures use `i64` rather than `int`.
 
 `EvaluationTime` is a scalar type. Graph code can use it directly and as a
 component of another scalar type, such as `List<EvaluationTime>`.
@@ -289,8 +293,8 @@ using RESULT = bg::TimeSeriesVariable<"RESULT">;
 
 auto source = bg::node<RESULT>([](bg::Out<RESULT>) {});
 
-source[bg::type<bg::TS<int>>]();
-source[bg::type<RESULT> = bg::type<bg::TS<int>>]();
+source[bg::type<bg::TS<bg::i64>>]();
+source[bg::type<RESULT> = bg::type<bg::TS<bg::i64>>]();
 ```
 
 Positional arguments follow only the declared order. Wiring rejects an

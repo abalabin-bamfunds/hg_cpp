@@ -16,7 +16,7 @@ TEST_CASE("a time series reference value is one pointer",
     STATIC_CHECK(sizeof(bg::Reference) == sizeof(void *));
     STATIC_CHECK(sizeof(bg::details::RootReference) == 4 * sizeof(void *));
 
-    const auto &reference_type = bg::REF<bg::TS<int>>::type();
+    const auto &reference_type = bg::REF<bg::TS<bg::i64>>::type();
     const auto &runtime_type = bg::time_series_reference_runtime_type(reference_type);
 
     CHECK(runtime_type.value_size() == sizeof(bg::Reference));
@@ -25,8 +25,8 @@ TEST_CASE("a time series reference value is one pointer",
 
 TEST_CASE("runtime types identify reference storage without a runtime downcast",
           "[value][time-series][reference][feature:time-series-storage]") {
-    CHECK(bg::cpp_time_series_runtime_type<bg::REF<bg::TS<int>>>().is_reference());
-    CHECK_FALSE(bg::cpp_time_series_runtime_type<bg::TS<int>>().is_reference());
+    CHECK(bg::cpp_time_series_runtime_type<bg::REF<bg::TS<bg::i64>>>().is_reference());
+    CHECK_FALSE(bg::cpp_time_series_runtime_type<bg::TS<bg::i64>>().is_reference());
 }
 
 TEST_CASE("a time series reference propagates its value",
@@ -37,12 +37,12 @@ TEST_CASE("a time series reference propagates its value",
     auto input_time = bg::EvaluationTime{bg::EvaluationTime::duration{1}};
     auto output_time = bg::MIN_DT;
     const auto evaluation_time = bg::EvaluationTime{bg::EvaluationTime::duration{2}};
-    const auto &runtime_type = bg::cpp_time_series_runtime_type<bg::REF<bg::TS<int>>>();
+    const auto &runtime_type = bg::cpp_time_series_runtime_type<bg::REF<bg::TS<bg::i64>>>();
 
-    const auto input = bg::In<bg::REF<bg::TS<int>>>{input_time, &input_reference};
+    const auto input = bg::In<bg::REF<bg::TS<bg::i64>>>{input_time, &input_reference};
     auto state = bg::details::OutputState{runtime_type};
     state.bind(output_time, &output_value, evaluation_time);
-    const auto output = bg::details::output_factory::make<bg::REF<bg::TS<int>>>(state);
+    const auto output = bg::details::output_factory::make<bg::REF<bg::TS<bg::i64>>>(state);
     output.copy(input);
 
     CHECK(output_value == input_reference);
