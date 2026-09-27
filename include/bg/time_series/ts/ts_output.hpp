@@ -4,6 +4,7 @@
 #include <bg/node/details/output_factory.hpp>
 #include <bg/node/details/output_proxy.hpp>
 #include <bg/scalar/cpp_runtime_type.hpp>
+#include <bg/scalar/details/allocation_context.hpp>
 #include <bg/scalar/scalar.hpp>
 #include <bg/time_series/cpp_runtime_type.hpp>
 #include <bg/time_series/details/output_state.hpp>
@@ -111,17 +112,23 @@ template <typename T, auto... Properties> class Out<TS<T, Properties...>> {
     template <typename Value>
         requires(!scalar_declaration_traits<T>::is_collection) &&
                 std::constructible_from<std::remove_cvref_t<value_type>, Value &&> &&
-                requires(storage_type &target, std::remove_cvref_t<value_type> source) { target = std::move(source); }
+                requires(storage_type &target, const std::remove_cvref_t<value_type> &source, allocator &memory) {
+                    Traits::assign(target, source, memory);
+                }
     void set(Value &&value) const {
         auto requested = std::remove_cvref_t<value_type>{std::forward<Value>(value)};
         if constexpr (Traits::supports_equality) {
             if (state_->suppresses_equal_updates() && valid() &&
-                Traits::read(*static_cast<const storage_type *>(state_->data())) == requested) {
+                Traits::equals(Traits::read(*static_cast<const storage_type *>(state_->data())), requested)) {
                 return;
             }
         }
 
-        *static_cast<storage_type *>(state_->mutable_data()) = std::move(requested);
+        auto memory = allocator{};
+        if constexpr (Traits::assign_uses_memory_resource) {
+            memory = details::current_scalar_allocator();
+        }
+        Traits::assign(*static_cast<storage_type *>(state_->mutable_data()), requested, memory);
         state_->publish();
     }
 

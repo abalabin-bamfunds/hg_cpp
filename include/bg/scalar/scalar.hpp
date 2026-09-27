@@ -129,14 +129,13 @@ template <typename T> class Scalar {
     static Scalar from(details::scalar_stored_t<Value> &&) = delete;
 
     template <typename Source> [[nodiscard]] static Scalar from(const Scalar<Source> &value) noexcept {
-        return from(value.runtime_type(), value.data());
+        return Scalar{details::scalar_data(value)};
     }
 
     template <typename Source> static Scalar from(const Scalar<Source> &&) = delete;
 
     template <typename Source> [[nodiscard]] static Scalar from(const ScalarValue<Source> &value) noexcept {
-        const auto view = value.view();
-        return from(view.runtime_type(), view.data());
+        return Scalar{details::scalar_data(value)};
     }
 
     template <typename Source> static Scalar from(const ScalarValue<Source> &&) = delete;
@@ -146,6 +145,7 @@ template <typename T> class Scalar {
     }
 
   private:
+    template <typename> friend class Scalar;
     template <typename> friend class ScalarValue;
     template <typename U> friend const details::ScalarData &details::scalar_data(const Scalar<U> &) noexcept;
 
@@ -159,6 +159,7 @@ template <typename T> class Scalar {
 #include <bg/scalar/dict/scalar.hpp>
 #include <bg/scalar/list/scalar.hpp>
 #include <bg/scalar/set/scalar.hpp>
+#include <bg/scalar/struct/scalar.hpp>
 
 namespace bg {
 
@@ -166,7 +167,8 @@ namespace details {
 
 template <typename... Builtins>
 auto scalar_visit_types(tp::tpack<Builtins...>)
-    -> ddv::mux<Scalar<List<SCALAR>>, Scalar<Set<SCALAR>>, Scalar<Dict<SCALAR, SCALAR>>, Scalar<Builtins>..., Scalar<>>;
+    -> ddv::mux<Scalar<List<SCALAR>>, Scalar<Set<SCALAR>>, Scalar<Dict<SCALAR, SCALAR>>, Scalar<STRUCT>,
+                Scalar<Builtins>..., Scalar<>>;
 
 } // namespace details
 
@@ -188,19 +190,19 @@ auto Scalar<T>::visit(Visitor &&visitor, Arguments &&...arguments) const {
                 // registry to scalar type objects.
                 tp::for_each(details::builtin_scalar_declarations, [&]<typename Builtin>(tp::unit<Builtin>) {
                     if (!matched && &semantic_type == &cpp_scalar_type<Builtin>()) {
-                        auto typed = Scalar<Builtin>::from(value_.runtime_type(), value_.data());
+                        auto typed = Scalar<Builtin>::from(*this);
                         types.visit(&typed);
                         matched = true;
                     }
                 });
 
                 if (!matched) {
-                    auto typed = Scalar<>::from(value_.runtime_type(), value_.data());
+                    auto typed = Scalar<>::from(*this);
                     types.visit(&typed);
                 }
             } else if constexpr (requires { typename RuntimeType::generic_scalar_view; }) {
                 using View = typename RuntimeType::generic_scalar_view;
-                auto typed = View::from(value_.runtime_type(), value_.data());
+                auto typed = View::from(*this);
                 types.visit(&typed);
             }
         },

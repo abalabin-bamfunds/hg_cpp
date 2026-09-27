@@ -16,8 +16,14 @@ struct storage {
     int number;
 };
 
+struct compound_value {
+    bg::i64 quantity;
+    double price;
+};
+
 const bg::ScalarType &semantic_type_from_provider() noexcept;
 const bg::ScalarRuntimeType &runtime_type_from_provider();
+const bg::ScalarType &compound_semantic_type_from_provider();
 
 } // namespace test_scalar_provider
 
@@ -38,6 +44,8 @@ template <> struct scalar_storage_traits<test_scalar_provider::value> {
     static constexpr bool assign_uses_memory_resource = false;
 
     static value_type read(const stored_type &stored) noexcept { return {stored.number}; }
+
+    static bool equals(value_type left, value_type right) noexcept { return left == right; }
 
     static void construct(stored_type *destination, value_type source, allocator &) {
         std::construct_at(destination, source.number);

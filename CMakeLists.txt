@@ -65,6 +65,7 @@ add_library(
     src/scalar/cpp_runtime_type.cpp
     src/scalar/list/type.cpp
     src/scalar/set/type.cpp
+    src/scalar/struct/type.cpp
     src/scalar/runtime_type.cpp
     src/scalar/type.cpp
     src/signature.cpp

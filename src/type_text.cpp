@@ -4,6 +4,7 @@
 #include <bg/scalar/dict/scalar_type.hpp>
 #include <bg/scalar/list/scalar_type.hpp>
 #include <bg/scalar/set/scalar_type.hpp>
+#include <bg/scalar/struct/scalar_type.hpp>
 #include <bg/type/signature.hpp>
 #include <bg/type/time_series_bundle_type.hpp>
 #include <bg/type/time_series_dict_type.hpp>
@@ -70,6 +71,8 @@ void append_scalar(std::string &result, const ScalarType &type) {
         result += ", ";
         append_type_text(result, dict->mapped_type());
         result += '>';
+    } else if (const auto *structure = type_cast<StructScalarType>(&type)) {
+        result += structure->name().text();
     } else if (const auto *type_value = dynamic_cast<const TypeScalarType *>(&type)) {
         result += "Type<";
         append_type_text(result, type_value->type());

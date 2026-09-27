@@ -58,7 +58,10 @@ struct CapturedValues {
     EvaluationTime start_time;
     std::vector<std::optional<ScalarValue<>>> values;
 
-    void set(EvaluationTime time, Scalar<SCALAR> value) { at(time).emplace(value); }
+    void set(EvaluationTime time, Scalar<SCALAR> value) {
+        auto memory = allocator{};
+        at(time).emplace(value, memory);
+    }
     void reset(EvaluationTime time) { at(time).reset(); }
 
   private:
@@ -114,7 +117,8 @@ template <typename Scalar, std::ranges::input_range Range>
 [[nodiscard]] WiringPoint wire_source(const Range &ticks, EvaluationTime start_time) {
     using Tick = std::remove_cvref_t<std::ranges::range_value_t<Range>>;
     using Value = bg::details::scalar_value_t<Scalar>;
-    using StoredValue = std::conditional_t<std::same_as<Value, bool>, std::uint8_t, Value>;
+    using StoredValue =
+        std::conditional_t<std::same_as<std::remove_cvref_t<Value>, bool>, std::uint8_t, std::remove_cvref_t<Value>>;
 
     auto values = std::vector<StoredValue>{};
     auto times = std::vector<EvaluationTime>{};

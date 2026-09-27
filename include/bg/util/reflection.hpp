@@ -243,6 +243,10 @@ template <std::size_t Index, typename T>
 using aggregate_member_type = std::remove_reference_t<std::tuple_element_t<
     Index, decltype(detail::aggregate_tie<aggregate_member_count<T>>::apply(std::declval<T &>()))>>;
 
+template <typename T> constexpr auto aggregate_members(T &value) noexcept {
+    return detail::aggregate_tie<aggregate_member_count<std::remove_cv_t<T>>>::apply(value);
+}
+
 template <typename T>
 inline constexpr auto aggregate_member_names =
     detail::aggregate_member_names_impl<T>(std::make_index_sequence<aggregate_member_count<T>>{});

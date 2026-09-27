@@ -24,7 +24,7 @@ Use `[dimension:value]` for each applicable dimension:
 - `schema`: `named`, `unnamed`, or `generic`
 - `representation`: `native`, `free`, or `covariant`
 - `scalar`: `byte`, `i64`, `integer`, `floating-point`, `boolean`, `string`, `symbol`, `evaluation-time`, `timedelta`,
-  `opaque`, `list`, `set`, `dict`, or `generic`
+  `opaque`, `compound`, `list`, `set`, `dict`, or `generic`
 - `storage`: `inline`, `fixed`, or `variable`
 - `declaration`: `concrete`, `partially-generic`, `generic`, or `runtime`
 - `binding`: `direct`, `value-to-reference`, `reference-to-value`, `reference-to-reference`, `covariant`, or
@@ -107,6 +107,7 @@ graph compilation or evaluation.
 - fixed, variable, inline, and graph-accounted storage
 - construction, assignment, copy, and destruction
 - opaque values and scalar collections, including generic and nested types
+- compound scalar metadata, native access, generic field access, nesting, equality, hashing, and invalid declarations
 - time series validity, update time, mutation, and invalidation
 - global state ownership, replacement, lookup, and allocation
 

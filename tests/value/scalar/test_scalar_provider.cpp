@@ -24,6 +24,10 @@ const bg::ScalarRuntimeType &runtime_type_from_provider() {
     return bg::cpp_scalar_runtime_type<value>();
 }
 
+const bg::ScalarType &compound_semantic_type_from_provider() {
+    return bg::cpp_scalar_type<compound_value>();
+}
+
 } // namespace test_scalar_provider
 
 namespace bg {

@@ -106,7 +106,7 @@ template <typename K, typename V> class Dict {
         }
 
         for (const auto [key, value] : left) {
-            if (!right.contains(key) || right.at(key) != value) {
+            if (!right.contains(key) || !ValueTraits::equals(right.at(key), value)) {
                 return false;
             }
         }

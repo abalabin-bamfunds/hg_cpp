@@ -33,10 +33,10 @@ and keyed lookup operate through both runtime types. Native and composed
 collection layouts therefore interoperate without converting a view to a C++
 collection object.
 
-The view visitor selects typed built-in atomic access, structural list, set, or
-dictionary access, or erased extension access. Generic node code can use this
-interface without inspecting the semantic type. The selected view is valid for
-the visitor callback.
+The view visitor selects typed built-in atomic access, structural compound,
+list, set, or dictionary access, or erased extension access. Generic node code
+can use this interface without inspecting the semantic type. The selected view
+is valid for the visitor callback.
 
 ## Built-in declarations
 
@@ -114,6 +114,24 @@ returns its mutable view.
 
 Generic collection views use the resolved item types. This applies to scalar
 parameters and `State` declarations such as `State<Dict<K, SCALAR>>`.
+
+## Compound scalars
+
+A native C++ aggregate is a compound scalar when it is non-empty,
+standard-layout, trivially copyable, has at most 32 fields, and each field is
+`byte`, `bool`, `i64`, `double`, `date_time_t`, `timedelta_t`, `symbol`, or
+another compound scalar.
+
+The C++ type gives a compound scalar its nominal identity. The engine
+automatically canonicalizes that identity across libraries and verifies its
+native layout and ordered field schema. Each library can instantiate its native
+runtime type for the canonical semantic type. Unlike an explicit scalar
+provider, a compound scalar does not require an extern template declaration.
+
+`Scalar<T>` exposes the native `T`. Values larger than one word are read by
+reference. `Scalar<STRUCT>` exposes ordered field names, types, and scalar
+views. Generic field access is allocation-free and does not derive field
+addresses from offsets. Equality and hashing process fields and ignore padding.
 
 ## Scalar providers
 

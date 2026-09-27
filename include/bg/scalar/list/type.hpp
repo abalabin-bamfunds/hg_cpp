@@ -53,7 +53,7 @@ template <typename T> class List {
         }
 
         for (auto i = std::size_t{}; i < left.size(); ++i) {
-            if (left[i] != right[i]) {
+            if (!ItemTraits::equals(left[i], right[i])) {
                 return false;
             }
         }

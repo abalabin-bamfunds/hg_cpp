@@ -2,6 +2,7 @@
 
 #include <bg/scalar/opaque.hpp>
 #include <bg/scalar/string.hpp>
+#include <bg/scalar/struct/declaration.hpp>
 
 #include <cstdint>
 #include <string_view>
@@ -11,6 +12,10 @@ namespace bg::details {
 
 template <typename T> struct scalar_value_type {
     using type = T;
+};
+
+template <native_struct T> struct scalar_value_type<T> {
+    using type = std::conditional_t<(sizeof(T) <= sizeof(std::uintptr_t)), T, const T &>;
 };
 
 template <> struct scalar_value_type<string> {

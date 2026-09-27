@@ -31,6 +31,8 @@ template <typename T> struct scalar_storage_traits<Set<T>> {
         return result;
     }
 
+    static bool equals(value_type left, value_type right) { return left == right; }
+
     static void construct(stored_type *destination, value_type value, allocator &memory) {
         std::construct_at(destination);
         auto rollback = util::scope_exit{[&]() noexcept { destroy(destination, memory); }};

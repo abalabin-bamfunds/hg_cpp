@@ -5,11 +5,14 @@
 #include <bg/scalar/storage_traits.hpp>
 #include <bg/scalar/details/value_access.hpp>
 #include <bg/scalar/runtime_type.hpp>
+#include <bg/scalar/struct/runtime_type.hpp>
 #include <bg/type/scalar_type.hpp>
 #include <bg/util/byte_copy.hpp>
 
+#include <array>
 #include <exception>
 #include <memory>
+#include <stdexcept>
 #include <type_traits>
 
 namespace bg::details {
@@ -18,13 +21,14 @@ template <typename T, typename Base> class CppScalarRuntimeTypeBase : public Bas
     using Traits = scalar_storage_traits<T>;
     using Stored = typename Traits::stored_type;
     using Value = typename Traits::value_type;
+    using ReadValue = std::remove_cvref_t<Value>;
 
     static_assert(std::is_nothrow_destructible_v<Stored>);
 
   public:
-    template <typename... Components>
-    explicit CppScalarRuntimeTypeBase(Components &&...components)
-        : Base{cpp_scalar_type<T>(),
+    template <typename SemanticType, typename... Components>
+    explicit CppScalarRuntimeTypeBase(const SemanticType &type, Components &&...components)
+        : Base{type,
                sizeof(Stored),
                alignof(Stored),
                Traits::uses_variable_memory,
@@ -48,7 +52,7 @@ template <typename T, typename Base> class CppScalarRuntimeTypeBase : public Bas
     }
 
     void read_value(ScalarDataMode mode, std::uintptr_t data, void *destination) const override {
-        std::construct_at(static_cast<std::remove_cvref_t<Value> *>(destination),
+        std::construct_at(static_cast<ReadValue *>(destination),
                           scalar_data_value<T>(ScalarData{*this, data, mode}));
     }
 
@@ -64,7 +68,8 @@ template <typename T, typename Base> class CppScalarRuntimeTypeBase : public Bas
                               const details::ScalarData &other) const noexcept override {
         if constexpr (Traits::supports_equality) {
             return &this->type() == &other.type() &&
-                   scalar_data_value<T>(ScalarData{*this, data, mode}) == scalar_data_value<T>(other);
+                   Traits::equals(scalar_data_value<T>(ScalarData{*this, data, mode}),
+                                  scalar_data_value<T>(other));
         } else {
             std::terminate();
         }
@@ -87,7 +92,7 @@ template <typename T, typename Base> class CppScalarRuntimeTypeBase : public Bas
     }
 
     void construct_from_value(void *destination, const void *value, allocator &memory) const override {
-        Traits::construct(static_cast<Stored *>(destination), *static_cast<const Value *>(value), memory);
+        Traits::construct(static_cast<Stored *>(destination), *static_cast<const ReadValue *>(value), memory);
     }
 
     void construct_from_input(void *destination, const details::ScalarData &value,
@@ -110,14 +115,14 @@ template <typename T, typename Base> class CppScalarRuntimeTypeBase : public Bas
     }
 
     void assign_from_value(void *destination, const void *value) const override {
-        if constexpr (requires(Stored &target, const Value &source, allocator &memory) {
+        if constexpr (requires(Stored &target, const ReadValue &source, allocator &memory) {
                           Traits::assign(target, source, memory);
                       }) {
             auto memory = allocator{};
             if constexpr (Traits::assign_uses_memory_resource) {
                 memory = current_scalar_allocator();
             }
-            Traits::assign(*static_cast<Stored *>(destination), *static_cast<const Value *>(value), memory);
+            Traits::assign(*static_cast<Stored *>(destination), *static_cast<const ReadValue *>(value), memory);
         } else {
             std::terminate();
         }
@@ -138,7 +143,7 @@ template <typename T, typename Base> class CppScalarRuntimeTypeBase : public Bas
 
     bool equals_same_type(const void *value, const details::ScalarData &other) const noexcept override {
         if constexpr (Traits::supports_equality) {
-            return Traits::read(*static_cast<const Stored *>(value)) == scalar_data_value<T>(other);
+            return Traits::equals(Traits::read(*static_cast<const Stored *>(value)), scalar_data_value<T>(other));
         } else {
             std::terminate();
         }
@@ -149,11 +154,67 @@ template <typename T, typename Base> class CppScalarRuntimeTypeBase : public Bas
     }
 };
 
-template <typename T> class CppScalarRuntimeType final : public CppScalarRuntimeTypeBase<T, ScalarRuntimeType> {};
+template <typename T> class CppScalarRuntimeType final : public CppScalarRuntimeTypeBase<T, ScalarRuntimeType> {
+    using Base = CppScalarRuntimeTypeBase<T, ScalarRuntimeType>;
+
+  public:
+    CppScalarRuntimeType() : Base{cpp_scalar_type<T>()} {}
+};
+
+template <native_struct T>
+class CppScalarRuntimeType<T> final : public CppScalarRuntimeTypeBase<T, StructScalarRuntimeType> {
+    using Base = CppScalarRuntimeTypeBase<T, StructScalarRuntimeType>;
+    using FieldFunction = ScalarData (*)(const ScalarData &);
+
+    template <std::size_t Index> static ScalarData field_value(const ScalarData &source) {
+        using Field = std::remove_cv_t<util::aggregate_member_type<Index, T>>;
+
+        if constexpr (inline_scalar_value<T>) {
+            if (source.mode() == ScalarDataMode::inline_value) {
+                const auto value = scalar_data_value<T>(source);
+                const auto members = util::aggregate_members(value);
+                const auto &field = std::get<Index>(members);
+                static_assert(inline_scalar_value<Field>);
+
+                auto data = std::uintptr_t{};
+                std::memcpy(std::addressof(data), std::addressof(field), sizeof(Field));
+                return {cpp_scalar_runtime_type<Field>(), data, ScalarDataMode::inline_value};
+            }
+        }
+
+        const auto &value = *static_cast<const T *>(source.data());
+        const auto members = util::aggregate_members(value);
+        return {cpp_scalar_runtime_type<Field>(), std::addressof(std::get<Index>(members))};
+    }
+
+    template <std::size_t... Index>
+    static constexpr auto field_functions(std::index_sequence<Index...>) {
+        return std::array<FieldFunction, sizeof...(Index)>{&field_value<Index>...};
+    }
+
+  private:
+    ScalarData field(const ScalarData &value, std::size_t index) const override {
+        static constexpr auto functions =
+            field_functions(std::make_index_sequence<util::aggregate_member_count<T>>{});
+        if (index >= functions.size()) {
+            throw std::out_of_range{"compound scalar field index"};
+        }
+        return functions[index](value);
+    }
+
+  public:
+    CppScalarRuntimeType() : Base{static_cast<const StructScalarType &>(cpp_scalar_type<T>())} {
+        static_assert(sizeof(CppScalarRuntimeType) == sizeof(StructScalarRuntimeType));
+    }
+};
 
 template <typename T>
 class CppScalarRuntimeType<Opaque<T>> final : public CppScalarRuntimeTypeBase<Opaque<T>, ScalarRuntimeType> {
+    using Base = CppScalarRuntimeTypeBase<Opaque<T>, ScalarRuntimeType>;
+
   public:
+    CppScalarRuntimeType() : Base{cpp_scalar_type<Opaque<T>>()} {}
+
     void construct_initial_value(void *) const noexcept override { std::terminate(); }
 
     void copy_construct(void *destination, const void *source, allocator &) const override {

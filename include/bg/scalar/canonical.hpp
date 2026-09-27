@@ -1,6 +1,7 @@
 #pragma once
 
 #include <bg/scalar/builtins.hpp>
+#include <bg/scalar/struct/declaration.hpp>
 
 #include <concepts>
 #include <cstdint>
@@ -69,6 +70,12 @@ struct canonical_scalar<T> {
     using type = std::remove_cvref_t<T>;
 };
 
+template <typename T>
+    requires native_struct<std::remove_cvref_t<T>>
+struct canonical_scalar<T> {
+    using type = std::remove_cvref_t<T>;
+};
+
 } // namespace details
 
 template <typename T> using canonical_scalar_t = typename details::canonical_scalar<T>::type;
@@ -129,6 +136,12 @@ template <std::same_as<float> T> [[nodiscard]] constexpr float canonical_scalar(
 
 template <std::same_as<double> T> [[nodiscard]] constexpr double canonical_scalar(T value) noexcept {
     return value;
+}
+
+template <typename T>
+    requires native_struct<std::remove_cvref_t<T>>
+[[nodiscard]] constexpr decltype(auto) canonical_scalar(T &&value) noexcept {
+    return std::forward<T>(value);
 }
 
 template <typename Target, typename Source>

@@ -13,6 +13,7 @@ class GraphArgumentType;
 class ListScalarType;
 class ScalarType;
 class SetScalarType;
+class StructScalarType;
 class TimeSeriesBundleType;
 class TimeSeriesDictionaryType;
 class TimeSeriesListType;
@@ -23,8 +24,8 @@ class TimeSeriesValueType;
 class Type;
 class TypeMap;
 
-using TypeVisitor = ddv::mux<Type, ScalarType, ListScalarType, SetScalarType, DictScalarType, GraphArgumentType,
-                             TimeSeriesType,
+using TypeVisitor = ddv::mux<Type, ScalarType, ListScalarType, SetScalarType, DictScalarType, StructScalarType,
+                             GraphArgumentType, TimeSeriesType,
                              TimeSeriesValueType, TimeSeriesReferenceType, TimeSeriesListType, TimeSeriesBundleType,
                              TimeSeriesSetType, TimeSeriesDictionaryType>;
 

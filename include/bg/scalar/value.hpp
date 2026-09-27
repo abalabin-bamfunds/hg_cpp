@@ -85,7 +85,7 @@ template <typename T> class ScalarValue {
         return value_.equals(details::scalar_data(other));
     }
 
-    Scalar<T> view() const & noexcept { return Scalar<T>::from(value_.runtime_type(), value_.data()); }
+    Scalar<T> view() const & noexcept { return Scalar<T>::from(*this); }
     Scalar<T> view() const && = delete;
 
     using scalar_type = T;
@@ -171,7 +171,7 @@ template <> class ScalarValue<> {
         return value_.equals(details::scalar_data(other));
     }
 
-    Scalar<> view() const & noexcept { return Scalar<>::from(value_.runtime_type(), value_.data()); }
+    Scalar<> view() const & noexcept { return Scalar<>::from(*this); }
     Scalar<> view() const && = delete;
 
     using scalar_type = void;
@@ -266,7 +266,7 @@ struct ScalarEqual {
 template <typename Target, typename Source>
     requires(!details::scalar_variable<Target>)
 [[nodiscard]] Scalar<Target> unchecked_scalar_cast(const Scalar<Source> &source) noexcept {
-    return Scalar<Target>::from(source.runtime_type(), source.data());
+    return Scalar<Target>::from(source);
 }
 
 template <typename Target, typename Source>
@@ -286,12 +286,21 @@ template <typename Target, typename Source>
 
 template <typename Target, typename Source>
     requires(!details::scalar_variable<Target>)
+Scalar<Target> scalar_cast(const ScalarValue<Source> &&) = delete;
+
+template <typename Target, typename Source>
+    requires(!details::scalar_variable<Target>)
 [[nodiscard]] Scalar<Target> unchecked_scalar_cast(const ScalarValue<Source> &source) noexcept {
     return unchecked_scalar_cast<Target>(source.view());
 }
 
+template <typename Target, typename Source>
+    requires(!details::scalar_variable<Target>)
+Scalar<Target> unchecked_scalar_cast(const ScalarValue<Source> &&) = delete;
+
 static_assert(sizeof(Scalar<>) == 2 * sizeof(void *));
 static_assert(sizeof(Scalar<SCALAR>) == 2 * sizeof(void *));
+static_assert(sizeof(Scalar<STRUCT>) == 2 * sizeof(void *));
 static_assert(sizeof(Scalar<List<SCALAR>>) == 2 * sizeof(void *));
 static_assert(sizeof(Scalar<Set<SCALAR>>) == 2 * sizeof(void *));
 static_assert(sizeof(Scalar<Dict<SCALAR, SCALAR>>) == 2 * sizeof(void *));

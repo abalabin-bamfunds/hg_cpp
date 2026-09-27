@@ -24,7 +24,7 @@ template <typename T> class Scalar<List<T>> {
     const ScalarType &type() const noexcept { return value_.runtime_type().type(); }
 
     template <typename... Functions> decltype(auto) visit(Functions &&...functions) const {
-        return Scalar<>::from(value_.runtime_type(), value_.data()).visit(std::forward<Functions>(functions)...);
+        return Scalar<>::from(*this).visit(std::forward<Functions>(functions)...);
     }
 
     std::size_t hash() const noexcept
@@ -43,12 +43,11 @@ template <typename T> class Scalar<List<T>> {
         return Scalar{details::ScalarData{runtime_type, data}};
     }
     template <typename Source> [[nodiscard]] static Scalar from(const Scalar<Source> &value) noexcept {
-        return from(value.runtime_type(), value.data());
+        return Scalar{details::scalar_data(value)};
     }
     template <typename Source> static Scalar from(const Scalar<Source> &&) = delete;
     template <typename Source> [[nodiscard]] static Scalar from(const ScalarValue<Source> &value) noexcept {
-        const auto view = value.view();
-        return from(view.runtime_type(), view.data());
+        return Scalar{details::scalar_data(value)};
     }
     template <typename Source> static Scalar from(const ScalarValue<Source> &&) = delete;
     [[nodiscard]] static Scalar from(const details::scalar_stored_t<List<T>> &value) noexcept {

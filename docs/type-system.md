@@ -84,6 +84,10 @@ scalar item type. Each list is homogeneous.
 A scalar set has one hashable scalar item type, written `Set<T>`. A scalar
 dictionary maps hashable scalar keys to scalar values, written `Dict<K, V>`.
 
+`STRUCT` accepts any registered compound scalar. Compound scalar compatibility
+is nominal. Its fields provide structural access after type resolution; they do
+not make two distinct C++ aggregate types compatible.
+
 The [scalar API](scalar-api.md) defines C++ access and ownership.
 
 ## Time series types

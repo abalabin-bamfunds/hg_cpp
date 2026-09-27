@@ -15,7 +15,7 @@ class CppScalarRuntimeType<List<T>> final : public CppScalarRuntimeTypeBase<List
     static_assert(util::byte_copy_initializable<details::scalar_list_storage<T>>);
 
   public:
-    CppScalarRuntimeType() : Base{cpp_scalar_runtime_type<T>()} {}
+    CppScalarRuntimeType() : Base{cpp_scalar_type<List<T>>(), cpp_scalar_runtime_type<T>()} {}
 
     void construct_initial_value(void *destination) const noexcept override {
         std::construct_at(static_cast<details::scalar_list_storage<T> *>(destination));
