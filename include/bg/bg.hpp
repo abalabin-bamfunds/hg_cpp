@@ -41,6 +41,7 @@
 #include <bg/scalar/bundle/runtime_type.hpp>
 #include <bg/scalar/bundle/scalar.hpp>
 #include <bg/scalar/bundle/type.hpp>
+#include <bg/scalar/bundle/value.hpp>
 #include <bg/scalar/canonical.hpp>
 #include <bg/scalar/cpp_runtime_type.hpp>
 #include <bg/scalar/dispatch.hpp>

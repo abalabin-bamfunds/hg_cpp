@@ -114,7 +114,7 @@ TEST_CASE("hierarchical scalar covariance composes through scalar containers",
 
     STATIC_CHECK_FALSE(bg::scalar_declaration_traits<Base>::supports_implicit_argument);
     STATIC_CHECK_FALSE(bg::scalar_declaration_traits<bg::List<Base>>::supports_implicit_argument);
-    STATIC_CHECK_FALSE(bg::scalar_declaration_traits<bg::List<Base>>::supports_time_series);
+    STATIC_CHECK(bg::scalar_declaration_traits<bg::List<Base>>::supports_time_series);
 }
 
 TEST_CASE("hash container keys remain invariant",

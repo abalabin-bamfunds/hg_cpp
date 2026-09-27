@@ -140,6 +140,16 @@ distinguishes an absent optional field from a present default value. Indexing
 returns a borrowed erased scalar view and throws `std::bad_optional_access` for
 an absent field.
 
+`bundle<Schema>(arguments...)` constructs a `ScalarValue<Bundle<Schema>>` when
+all arguments are scalars. Positional arguments follow inherited logical field
+order. Named arguments use `_n`; a positional argument cannot follow a named
+argument. Optional fields may be omitted. An overload taking `bg::allocator&`
+as its first argument places owned storage under that allocator.
+
+`In<TS<Bundle<Schema>>>::value()` and `operator*` return the borrowed
+`Scalar<Bundle<Schema>>` view. `Out<TS<Bundle<Schema>>>` accepts a compatible
+scalar view or owning scalar value through `set()`.
+
 A hierarchical scalar value stores one shared handle in its data word. Its
 control block stores the actual runtime type, optional-field presence, and
 field data. Copying a hierarchical value from a view retains that control block

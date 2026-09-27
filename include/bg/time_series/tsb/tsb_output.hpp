@@ -12,7 +12,8 @@
 namespace bg {
 namespace details {
 
-template <typename TimeSeries, auto...> using bundle_output_field = Out<TimeSeries>;
+template <typename Declaration, auto...>
+using bundle_output_field = Out<typename bundle_field_projection<Declaration>::time_series_type>;
 
 class bundle_output_factory {
   public:

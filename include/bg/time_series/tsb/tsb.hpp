@@ -2,9 +2,12 @@
 
 #include <bg/graph/details/variadic_wiring_operations.hpp>
 #include <bg/graph/details/variadic_wiring_record.hpp>
+#include <bg/graph/wiring_argument.hpp>
 #include <bg/graph/wiring_error.hpp>
 #include <bg/operators.hpp>
+#include <bg/schema/arguments.hpp>
 #include <bg/time_series/tsb/details/wiring.hpp>
+#include <bg/type/details/time_series_type.hpp>
 #include <bg/type/time_series_bundle_type.hpp>
 #include <bg/util/named_argument.hpp>
 
@@ -16,6 +19,7 @@
 #include <stdexcept>
 #include <string_view>
 #include <type_traits>
+#include <utility>
 
 namespace bg::details {
 
@@ -28,7 +32,23 @@ struct named_bundle_wiring_field<named_argument<Name, Value>>
 template <typename T>
 inline constexpr bool is_named_bundle_wiring_field = named_bundle_wiring_field<std::remove_cvref_t<T>>::value;
 
-template <typename TimeSeries, auto...> using bundle_wiring_field = wp<TimeSeries>;
+template <typename Argument>
+inline constexpr bool typed_bundle_argument = requires(Argument &&argument) {
+    WiringArgument{std::forward<Argument>(argument)};
+};
+
+template <typename Argument>
+inline constexpr bool typed_bundle_wiring_argument =
+    typed_bundle_argument<schema_argument_value_t<Argument>>;
+
+template <typename Argument>
+inline constexpr bool forces_bundle_wiring = [] {
+    using Value = schema_argument_value_t<Argument>;
+    return std::same_as<Value, WiringArgument> || wiring_point_argument<Value>;
+}();
+
+template <typename Declaration, auto...>
+using bundle_wiring_field = wp<typename bundle_field_projection<Declaration>::time_series_type>;
 
 template <template <template <typename, auto...> typename> typename Schema> class BundleWiringFields {
     class Factory {
@@ -58,6 +78,78 @@ template <template <template <typename, auto...> typename> typename Schema> clas
 
     Schema<bundle_wiring_field> fields_;
 };
+
+template <typename TimeSeries> class TypedBundleConstruction;
+
+template <template <template <typename, auto...> typename> typename Schema, auto... Properties>
+class TypedBundleConstruction<TSB<Schema, Properties...>> {
+    using TimeSeries = TSB<Schema, Properties...>;
+    using Reflection = bundle_schema_reflection<Schema>;
+
+  public:
+    template <typename Argument, typename Source>
+    void add(Source &&source) {
+        const auto index = assignment_.add(schema_argument_name<Argument>(), [&](util::symbol name) {
+            const auto &semantic_type = type();
+            for (auto field = std::size_t{}; field < semantic_type.item_count(); ++field) {
+                if (semantic_type.item_name(field) == name) {
+                    return std::optional<std::size_t>{field};
+                }
+            }
+            return std::optional<std::size_t>{};
+        });
+
+        auto argument = WiringArgument{std::forward<Source>(source)};
+        if (argument.is_time_series()) {
+            fields_[index] = argument.time_series();
+        } else if (argument.is_scalar() && argument.present()) {
+            fields_[index] = static_cast<WiringPoint>(operators::const_(argument));
+        } else {
+            throw WiringError{"a TSB field requires a time series or a present scalar value"};
+        }
+
+        if (!input_type().item_type(index).accepts(fields_[index].type())) {
+            throw WiringError{"a TSB field has an incompatible type"};
+        }
+    }
+
+    wp<TimeSeries> finish() {
+        for (auto index = std::size_t{}; index < Reflection::field_count; ++index) {
+            if (!assignment_.assigned(index)) {
+                throw WiringError{"a required TSB field was not supplied"};
+            }
+        }
+
+        return finish(std::make_index_sequence<Reflection::field_count>{});
+    }
+
+  private:
+    static const TimeSeriesBundleType &input_type() {
+        static const auto guarantee = GuaranteeVariable{util::symbol{"G"}};
+        return static_cast<const TimeSeriesBundleType &>(
+            time_series_type_for<TypedBundleConstruction, 0, true, TimeSeries>(guarantee));
+    }
+
+    template <std::size_t... Index> wp<TimeSeries> finish(std::index_sequence<Index...>) {
+        const auto fields = std::array<NamedBundleWiringPoint, sizeof...(Index)>{
+            NamedBundleWiringPoint{type().item_name(Index), fields_[Index]}...};
+        return wiring_point_annotation::make<TimeSeries>(make_free_time_series_bundle(fields));
+    }
+
+    static const TimeSeriesBundleType &type() {
+        return static_cast<const TimeSeriesBundleType &>(TimeSeries::type());
+    }
+
+    SchemaArgumentAssignment<Reflection::field_count, WiringError> assignment_;
+    std::array<WiringPoint, Reflection::field_count> fields_{};
+};
+
+template <typename TimeSeries, typename... Arguments>
+wp<TimeSeries> make_typed_bundle(Arguments &&...arguments) {
+    auto construction = TypedBundleConstruction<TimeSeries>{};
+    (construction.template add<Arguments>(schema_argument_value(std::forward<Arguments>(arguments))), ...);
+    return construction.finish();
+}
 
 } // namespace bg::details
 
@@ -170,6 +262,22 @@ class wp<TSB<Schema, TimeSeriesProperties...>, WiringProperties...> {
 
     WiringPoint point_;
 };
+
+template <template <template <typename, auto...> typename> typename Schema, typename... Arguments>
+    requires details::supported_time_series<TSB<Schema>> &&
+             (details::typed_bundle_wiring_argument<Arguments> && ...) &&
+             ((details::forces_bundle_wiring<Arguments> || ...) ||
+              !details::hierarchical_scalar_schema_supported<Schema>)
+[[nodiscard]] wp<TSB<Schema>> bundle(Arguments &&...arguments) {
+    return details::make_typed_bundle<TSB<Schema>>(std::forward<Arguments>(arguments)...);
+}
+
+template <typename TimeSeries, typename... Arguments>
+    requires details::is_time_series_bundle<TimeSeries> && details::supported_time_series<TimeSeries> &&
+             (details::typed_bundle_wiring_argument<Arguments> && ...)
+[[nodiscard]] wp<TimeSeries> bundle(Arguments &&...arguments) {
+    return details::make_typed_bundle<TimeSeries>(std::forward<Arguments>(arguments)...);
+}
 
 template <typename... Fields>
     requires(sizeof...(Fields) != 0 && (details::is_named_bundle_wiring_field<Fields> && ...))

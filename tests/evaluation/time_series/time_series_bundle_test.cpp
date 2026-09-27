@@ -2,6 +2,7 @@
 #include <bg/graph/wiring_context.hpp>
 #include <bg/node.hpp>
 #include <bg/run_graph.hpp>
+#include <bg/scalar/bundle/value.hpp>
 #include <bg/testing/test_graph.hpp>
 #include <bg/time_series/tsb/tsb.hpp>
 #include <bg/time_series/tsb/tsb_input.hpp>
@@ -24,6 +25,15 @@ template <template <typename, auto...> typename Field> struct BaseBundle {
 
 template <template <typename, auto...> typename Field> struct DerivedBundle : bg::bundle_extends<BaseBundle, Field> {
     Field<bg::TS<float>> value;
+};
+
+template <template <typename, auto...> typename Field> struct SharedBundle {
+    Field<bg::i64> count;
+    Field<double> value;
+};
+
+template <template <typename, auto...> typename Field> struct NestedSharedBundle {
+    Field<bg::Bundle<SharedBundle>> value;
 };
 
 struct bundle_source_definition {
@@ -80,6 +90,88 @@ TEST_CASE("a typed bundle publishes inherited and direct fields",
 
     CHECK(bundle_sink_definition::values == std::array{2.0F, 3.5F});
     CHECK(bundle_sink_definition::updated == std::array{true, true});
+}
+
+TEST_CASE("a scalar schema lifts mixed scalar and time series fields into a TSB",
+          "[feature:wiring][feature:constant][series:tsb][schema:named][scalar:hierarchical]") {
+    const auto graph = [](bg::wp<bg::TS<bg::i64>> count) {
+        return bg::bundle<SharedBundle>(count, 2.5)->count;
+    };
+
+    const auto actual = bg::testing::test_graph(graph, std::array<bg::i64, 2>{1, 2});
+
+    CHECK(actual.equals({1, 2}));
+}
+
+TEST_CASE("an explicit TSB construction lifts every scalar field",
+          "[feature:wiring][feature:constant][series:tsb][schema:named][scalar:hierarchical]") {
+    const auto graph = [] { return bg::bundle<bg::TSB<SharedBundle>>(bg::i64{1}, 2.5)->count; };
+
+    const auto actual = bg::testing::test_graph(graph);
+
+    CHECK(actual.equals({1}));
+}
+
+TEST_CASE("typed TSB construction uses inherited logical field order",
+          "[feature:wiring][feature:constant][series:tsb][schema:named][binding:covariant]") {
+    const auto graph = [] {
+        return bg::bundle<bg::TSB<DerivedBundle>>(bg::ScalarValue<int>{1}, bg::ScalarValue<float>{2.5F})->value;
+    };
+
+    const auto actual = bg::testing::test_graph(graph);
+
+    CHECK(actual.equals({2.5F}));
+}
+
+TEST_CASE("an explicit time series schema selects TSB construction for scalar arguments",
+          "[feature:wiring][feature:constant][series:tsb][schema:named][declaration:concrete]") {
+    const auto graph = [] { return bg::bundle<BaseBundle>(bg::ScalarValue<int>{1})->count; };
+
+    const auto actual = bg::testing::test_graph(graph);
+
+    CHECK(actual.equals({1}));
+}
+
+TEST_CASE("a hierarchical scalar is lifted through a shared TSB schema",
+          "[feature:wiring][feature:constant][series:value][series:tsb][scalar:hierarchical][shape:nested]") {
+    const auto read = bg::node(
+        [](bg::In<bg::TS<bg::Bundle<SharedBundle>>> input, bg::Out<bg::TS<bg::i64>> output) {
+            output.set(bg::scalar_cast<bg::i64>(input.value()[0]).value());
+        });
+    const auto graph = [&] {
+        const auto value = bg::bundle<SharedBundle>(bg::i64{3}, 2.5);
+        return read(bg::bundle<bg::TSB<NestedSharedBundle>>(value)->value);
+    };
+
+    const auto actual = bg::testing::test_graph(graph);
+
+    CHECK(actual.equals({3}));
+}
+
+TEST_CASE("a hierarchical time series output accepts input views and suppresses equal updates",
+          "[feature:scalar-api][series:value][scalar:hierarchical][guarantee:deduplicated]"
+          "[transition:update]") {
+    const auto publish = bg::node(
+        [](bg::In<bg::TS<int>> trigger, bg::Scalar<bg::Bundle<SharedBundle>> value,
+           bg::Out<bg::TS<bg::Bundle<SharedBundle>, bg::TimeSeriesGuarantee::deduplicated>> output) {
+            (void)trigger;
+            output.set(value);
+        });
+    const auto copy = bg::node(
+        [](bg::In<bg::TS<bg::Bundle<SharedBundle>>> input,
+           bg::Out<bg::TS<bg::Bundle<SharedBundle>>> output) { output.set(input.value()); });
+    const auto read = bg::node(
+        [](bg::In<bg::TS<bg::Bundle<SharedBundle>>> input, bg::Out<bg::TS<bg::i64>> output) {
+            output.set(bg::scalar_cast<bg::i64>((*input)[0]).value());
+        });
+    const auto graph = [&](bg::wp<bg::TS<int>> trigger) {
+        const auto value = bg::bundle<SharedBundle>(bg::i64{3}, 2.5);
+        return read(copy(publish(trigger, value)));
+    };
+
+    const auto actual = bg::testing::test_graph(graph, std::array{1, 2, 3});
+
+    CHECK(actual.equals({3, std::nullopt, std::nullopt}));
 }
 
 TEST_CASE("fixed time series lists can contain runtime-sized time series",

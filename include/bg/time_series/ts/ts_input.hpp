@@ -76,19 +76,32 @@ class In<TS<T, TimeSeriesProperties...>, Properties...> {
     EvaluationTime last_updated() const noexcept { return data_.last_updated(); }
 
     details::scalar_value_t<T> value() const noexcept
-        requires(!scalar_declaration_traits<T>::is_collection)
+        requires(!scalar_declaration_traits<T>::is_collection && !details::hierarchical_scalar_declaration<T>)
     {
         return Traits::read(*static_cast<const Stored *>(data_.data()));
     }
 
+    Scalar<T> value() const
+        requires details::hierarchical_scalar_declaration<T>
+    {
+        return value_view();
+    }
+
     details::scalar_value_t<T> operator*() const noexcept
-        requires(!scalar_declaration_traits<T>::is_collection)
+        requires(!scalar_declaration_traits<T>::is_collection && !details::hierarchical_scalar_declaration<T>)
+    {
+        return value();
+    }
+
+    Scalar<T> operator*() const
+        requires details::hierarchical_scalar_declaration<T>
     {
         return value();
     }
 
     auto operator->() const noexcept
-        requires(!scalar_declaration_traits<T>::is_collection && details::scalar_value_supports_arrow<T>)
+        requires(!scalar_declaration_traits<T>::is_collection && !details::hierarchical_scalar_declaration<T> &&
+                 details::scalar_value_supports_arrow<T>)
     {
         return details::scalar_value_arrow<T>(value());
     }

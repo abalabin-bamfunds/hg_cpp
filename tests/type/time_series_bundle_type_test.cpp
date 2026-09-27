@@ -1,4 +1,5 @@
 #include <bg/scalar/cpp_runtime_type.hpp>
+#include <bg/scalar/bundle/scalar_type.hpp>
 #include <bg/time_series/time_series_type.hpp>
 #include <bg/time_series/ts/ts_output.hpp>
 #include <bg/time_series/tsb/tsb_type.hpp>
@@ -24,6 +25,15 @@ template <template <typename, auto...> typename Field> struct DerivedBundle : bg
     Field<bg::TS<float>> value;
 };
 
+template <template <typename, auto...> typename Field> struct SharedBundle {
+    Field<bg::i64> count;
+    Field<double, bg::optional> value;
+};
+
+template <template <typename, auto...> typename Field> struct InvalidBundle {
+    Field<int *> value;
+};
+
 struct BundleTypeScope {};
 
 template <typename> struct TestField {
@@ -42,6 +52,32 @@ TEST_CASE("bundle schemas include inherited fields",
     CHECK(&type.item_type(0) == &bg::TS<int>::type());
     CHECK(&type.item_type(1) == &bg::TS<float>::type());
     CHECK(type.schema().base() != nullptr);
+}
+
+TEST_CASE("one schema can describe a hierarchical scalar and a time series bundle",
+          "[feature:type-system][scalar:hierarchical][series:tsb][schema:named][declaration:concrete]") {
+    const auto &scalar = bg::cpp_scalar_type<bg::Bundle<SharedBundle>>();
+    const auto &time_series = bg::TSB<SharedBundle>::type();
+
+    STATIC_CHECK(bg::details::hierarchical_scalar_schema_supported<SharedBundle>);
+    STATIC_CHECK(bg::details::supported_time_series<bg::TSB<SharedBundle>>);
+    CHECK(scalar.is_scalar());
+    REQUIRE(time_series.item_count() == 2);
+    CHECK(&time_series.item_type(0) == &bg::TS<bg::i64>::type());
+    CHECK(&time_series.item_type(1) == &bg::TS<double>::type());
+}
+
+TEST_CASE("explicit time series fields remain time series fields",
+          "[feature:type-system][series:tsb][schema:named][declaration:concrete]") {
+    STATIC_CHECK_FALSE(bg::details::hierarchical_scalar_schema_supported<BaseBundle>);
+    STATIC_CHECK(bg::details::supported_time_series<bg::TSB<BaseBundle>>);
+    CHECK(&bg::TSB<BaseBundle>::type().item_type(0) == &bg::TS<int>::type());
+}
+
+TEST_CASE("invalid shared-schema fields are rejected without instantiating a projection",
+          "[feature:type-system][series:tsb][schema:named][declaration:concrete]") {
+    STATIC_CHECK_FALSE(bg::details::hierarchical_scalar_schema_supported<InvalidBundle>);
+    STATIC_CHECK_FALSE(bg::details::supported_time_series<bg::TSB<InvalidBundle>>);
 }
 
 TEST_CASE("a time series bundle type derives an unnamed schema from resolved fields",

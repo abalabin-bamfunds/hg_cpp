@@ -12,7 +12,6 @@
 
 namespace bg::details {
 
-// Internal construction seam until the public hierarchical scalar construction API is defined.
 class HierarchicalScalarValueFactory {
   public:
     template <template <template <typename, auto...> typename> typename Schema>

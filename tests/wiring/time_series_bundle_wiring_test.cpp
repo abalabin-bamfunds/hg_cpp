@@ -12,6 +12,8 @@
 
 namespace {
 
+template <template <typename, auto...> typename> struct EmptyBundle {};
+
 template <template <typename, auto...> typename Field> struct TestBundle {
     Field<bg::TS<int>> count;
     Field<bg::TS<float>> value;
@@ -26,7 +28,21 @@ template <template <typename, auto...> typename Field> struct OptionalFieldBundl
     Field<bg::TS<int>, bg::optional> value;
 };
 
+template <template <typename, auto...> typename Field> struct SharedBundle {
+    Field<bg::i64> count;
+    Field<double> value;
+};
+
 } // namespace
+
+TEST_CASE("typed TSB construction supports an empty schema",
+          "[feature:wiring][series:tsb][schema:named][declaration:concrete]") {
+    bg::testing::test_wiring([] {
+        const auto value = bg::bundle<bg::TSB<EmptyBundle>>();
+
+        STATIC_CHECK(std::same_as<std::remove_cvref_t<decltype(value)>, bg::wp<bg::TSB<EmptyBundle>>>);
+    });
+}
 
 TEST_CASE("a typed TSB wiring point exposes typed fields",
           "[feature:getattr][feature:wiring][series:tsb][schema:named][representation:native]") {
@@ -111,6 +127,31 @@ TEST_CASE("typed field access preserves free TSB sources",
     REQUIRE(wiring.nodes().size() == 3);
     CHECK(wiring.nodes().back().inputs().front().index() == 0);
     CHECK(wiring.outputs().size() == 2);
+}
+
+TEST_CASE("typed TSB construction reports invalid schema arguments as wiring errors",
+          "[feature:wiring][series:tsb][schema:named][declaration:concrete]") {
+    using namespace bg::literals;
+
+    CHECK_THROWS_AS(
+        bg::testing::test_wiring([] { (void)bg::bundle<bg::TSB<SharedBundle>>(1); }), bg::WiringError);
+    CHECK_THROWS_AS(
+        bg::testing::test_wiring(
+            [] { (void)bg::bundle<bg::TSB<SharedBundle>>("missing"_n = 1, "value"_n = 2.5); }),
+        bg::WiringError);
+    CHECK_THROWS_AS(
+        bg::testing::test_wiring([] {
+            (void)bg::bundle<bg::TSB<SharedBundle>>(
+                "count"_n = 1, "count"_n = 2, "value"_n = 2.5);
+        }),
+        bg::WiringError);
+    CHECK_THROWS_AS(
+        bg::testing::test_wiring(
+            [] { (void)bg::bundle<bg::TSB<SharedBundle>>("value"_n = 2.5, 1); }),
+        bg::WiringError);
+    CHECK_THROWS_AS(
+        bg::testing::test_wiring([] { (void)bg::bundle<bg::TSB<SharedBundle>>(1.0, 2.5); }),
+        bg::WiringError);
 }
 
 TEST_CASE("getattr selects a field from an unnamed free TSB",

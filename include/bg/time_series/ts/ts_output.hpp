@@ -12,6 +12,7 @@
 #include <bg/time_series/time_series_type.hpp>
 
 #include <concepts>
+#include <stdexcept>
 #include <type_traits>
 #include <utility>
 
@@ -45,11 +46,14 @@ template <details::scalar_variable Variable, auto... Properties> class Out<TS<Va
         const auto &source = details::scalar_data(value);
         const auto &runtime_type =
             static_cast<const TimeSeriesValueRuntimeType &>(state_->runtime_type()).scalar_runtime_type();
+        if (!runtime_type.type().accepts(source.type())) {
+            throw std::invalid_argument{"incompatible scalar types"};
+        }
         if (state_->suppresses_equal_updates() && valid() && runtime_type.equals(state_->data(), source)) {
             return;
         }
 
-        source.assign(state_->mutable_data(), runtime_type);
+        runtime_type.assign_from_input(state_->mutable_data(), source);
         state_->publish();
     }
 
@@ -104,13 +108,21 @@ template <typename T, auto... Properties> class Out<TS<T, Properties...>> {
     bool valid() const noexcept { return state_->valid(); }
     EvaluationTime last_updated() const noexcept { return state_->last_updated(); }
     value_type value() const noexcept
-        requires(!scalar_declaration_traits<T>::is_collection)
+        requires(!scalar_declaration_traits<T>::is_collection && !details::hierarchical_scalar_declaration<T>)
     {
         return Traits::read(*static_cast<const storage_type *>(state_->data()));
     }
 
+    Scalar<T> value() const
+        requires details::hierarchical_scalar_declaration<T>
+    {
+        const auto &runtime_type =
+            static_cast<const TimeSeriesValueRuntimeType &>(state_->runtime_type()).scalar_runtime_type();
+        return Scalar<T>::from(runtime_type, state_->data());
+    }
+
     template <typename Value>
-        requires(!scalar_declaration_traits<T>::is_collection) &&
+        requires(!scalar_declaration_traits<T>::is_collection && !details::hierarchical_scalar_declaration<T>) &&
                 std::constructible_from<std::remove_cvref_t<value_type>, Value &&> &&
                 requires(storage_type &target, const std::remove_cvref_t<value_type> &source, allocator &memory) {
                     Traits::assign(target, source, memory);
@@ -132,15 +144,24 @@ template <typename T, auto... Properties> class Out<TS<T, Properties...>> {
         state_->publish();
     }
 
+    template <details::hierarchical_scalar_handle Value>
+        requires details::hierarchical_scalar_declaration<T>
+    void set(const Value &value) const {
+        set_value(Scalar<typename Value::scalar_type>::from(value));
+    }
+
     template <typename Value> void set_value(const Scalar<Value> &value) const {
         const auto &source = details::scalar_data(value);
         const auto &runtime_type =
             static_cast<const TimeSeriesValueRuntimeType &>(state_->runtime_type()).scalar_runtime_type();
+        if (!runtime_type.type().accepts(source.type())) {
+            throw std::invalid_argument{"incompatible scalar types"};
+        }
         if (state_->suppresses_equal_updates() && valid() && runtime_type.equals(state_->data(), source)) {
             return;
         }
 
-        source.assign(state_->mutable_data(), runtime_type);
+        runtime_type.assign_from_input(state_->mutable_data(), source);
         state_->publish();
     }
 

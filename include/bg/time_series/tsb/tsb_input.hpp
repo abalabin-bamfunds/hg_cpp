@@ -15,7 +15,8 @@
 namespace bg {
 namespace details {
 
-template <typename TimeSeries, auto... Properties> using bundle_input_field = In<TimeSeries, Properties...>;
+template <typename Declaration, auto... Properties>
+using bundle_input_field = In<typename bundle_field_projection<Declaration>::time_series_type, Properties...>;
 
 class bundle_input_factory {
   public:

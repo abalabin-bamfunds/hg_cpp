@@ -50,6 +50,17 @@ unnamed TSB. A named TSB parameter accepts a compatible field set. Wiring
 creates one TSB output over the selected fields and reports their field
 changes.
 
+`bg::bundle<Schema>(arguments...)` uses the declared schema. When every
+argument is a scalar and `Schema` is a valid hierarchical scalar schema, it
+constructs `ScalarValue<Bundle<Schema>>`. A wiring point or type-erased wiring
+argument selects `wp<TSB<Schema>>`; scalar fields are lifted to const time
+series. If only the TSB interpretation is valid, scalar arguments also select
+it.
+
+`bg::bundle<TSB<Schema>>(arguments...)` explicitly constructs a TSB and lifts
+all scalar fields. This form is required to construct an all-constant TSB from
+a schema that is also valid for `Bundle<Schema>`.
+
 `wp<TSB<Schema>>` exposes the schema fields through `operator->`. Each field is
 a typed wiring point. A field becomes a wired output only when a node consumes
 it. `operators::getattr` selects a field by name from named and unnamed TSBs and

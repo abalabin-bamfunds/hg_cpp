@@ -5,6 +5,7 @@
 #include <bg/type/schema_variable_instance.hpp>
 #include <bg/type/time_series_bundle_type.hpp>
 
+#include <type_traits>
 #include <vector>
 
 namespace bg::details {
@@ -52,6 +53,19 @@ struct bundle_base_type_traits<Schema, true> {
     static constexpr bool supported = Traits::supported;
 };
 
+template <typename Field, typename = void> struct bundle_field_type_traits {
+    static constexpr bool generic = false;
+    static constexpr bool supported = false;
+};
+
+template <typename Field>
+struct bundle_field_type_traits<Field, std::void_t<typename Field::time_series_type>> {
+    using TimeSeries = typename Field::time_series_type;
+
+    static constexpr bool generic = generic_time_series<TimeSeries>;
+    static constexpr bool supported = supported_time_series<TimeSeries>;
+};
+
 template <template <template <typename, auto...> typename> typename Schema, auto... Properties>
 struct time_series_type_traits<TSB<Schema, Properties...>> {
     using semantic_type = TimeSeriesBundleType;
@@ -60,11 +74,11 @@ struct time_series_type_traits<TSB<Schema, Properties...>> {
     using BaseTraits = bundle_base_type_traits<Schema, !schema_variable && bundle_has_base<Schema>>;
 
     template <std::size_t... Index> static consteval bool fields_generic(std::index_sequence<Index...>) {
-        return (false || ... || generic_time_series<direct_bundle_field_time_series<Index, Schema>>);
+        return (false || ... || bundle_field_type_traits<direct_bundle_field<Index, Schema>>::generic);
     }
 
     template <std::size_t... Index> static consteval bool fields_supported(std::index_sequence<Index...>) {
-        return (true && ... && supported_time_series<direct_bundle_field_time_series<Index, Schema>>);
+        return (true && ... && bundle_field_type_traits<direct_bundle_field<Index, Schema>>::supported);
     }
 
     static constexpr bool generic = [] {

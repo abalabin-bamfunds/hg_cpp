@@ -112,7 +112,13 @@ The composed runtime type records field layout, optional-field presence, and
 the value's actual hierarchical type. A base view of a derived value therefore
 retains the derived type while exposing the fields declared by the base.
 
-`Bundle` supports scalar values. It does not yet support time series values.
+The same schema can describe a hierarchical scalar and a time series bundle.
+`Bundle<Schema>` requires every field to be a supported scalar declaration.
+`TSB<Schema>` preserves an explicitly declared time series field and projects a
+supported scalar field `T` to `TS<T>`. `TS<Bundle<Schema>>` is a time series
+value whose value is the complete hierarchical scalar. An `optional` property
+permits an absent `Bundle` field. In a TSB, it configures the typed input field;
+the structural TSB field remains present.
 
 Hierarchical scalar schemas can refer to themselves or each other directly and
 through scalar collections. Semantic registration publishes every type created
@@ -154,7 +160,8 @@ compatible item schema. Graph compilation maps the item offsets directly.
 
 `BundleSchema` is the runtime description of a TSB. It records the ordered field
 names and time series types. A C++ schema supplies the same information and
-produces typed input and output access:
+produces typed input and output access. A schema can declare time series fields
+explicitly:
 
 ```cpp
 template<template<typename, auto...> class Field>
@@ -164,6 +171,16 @@ struct Quote {
 };
 
 In<TSB<Quote>> quote;
+```
+
+It can instead declare scalar fields for use by both `Bundle` and `TSB`:
+
+```cpp
+template<template<typename, auto...> class Field>
+struct Quote {
+    Field<symbol> name;
+    Field<double, optional> value;
+};
 ```
 
 Field properties configure the typed input view. Wiring and output field views
