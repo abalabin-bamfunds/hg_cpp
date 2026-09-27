@@ -10,6 +10,7 @@ namespace bg {
 
 class DictScalarType;
 class GraphArgumentType;
+class HierarchicalScalarType;
 class ListScalarType;
 class ScalarType;
 class SetScalarType;
@@ -25,7 +26,7 @@ class Type;
 class TypeMap;
 
 using TypeVisitor = ddv::mux<Type, ScalarType, ListScalarType, SetScalarType, DictScalarType, StructScalarType,
-                             GraphArgumentType, TimeSeriesType,
+                             HierarchicalScalarType, GraphArgumentType, TimeSeriesType,
                              TimeSeriesValueType, TimeSeriesReferenceType, TimeSeriesListType, TimeSeriesBundleType,
                              TimeSeriesSetType, TimeSeriesDictionaryType>;
 

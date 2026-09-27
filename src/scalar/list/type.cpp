@@ -27,10 +27,10 @@ class ResolvedListScalarType final : public ListScalarType {
 
 } // namespace
 
-bool GenericListScalarType::do_match(const Type &supplied, TypeMap &type_map) const {
+bool ListScalarType::do_match(const Type &supplied, TypeMap &type_map) const {
     const auto *list = type_cast<ListScalarType>(&supplied);
 
-    return list != nullptr && list->is_resolved() && item_type_->match(list->item_type(), type_map);
+    return list != nullptr && list->is_resolved() && item_type().match(list->item_type(), type_map);
 }
 
 const Type &GenericListScalarType::resolve(const TypeMap &type_map) const {

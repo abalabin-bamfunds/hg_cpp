@@ -25,7 +25,7 @@ Use `[dimension:value]` for each applicable dimension:
 - `schema`: `named`, `unnamed`, or `generic`
 - `representation`: `native`, `free`, or `covariant`
 - `scalar`: `byte`, `i64`, `integer`, `floating-point`, `boolean`, `string`, `symbol`, `evaluation-time`, `timedelta`,
-  `opaque`, `compound`, `list`, `set`, `dict`, or `generic`
+  `opaque`, `compound`, `hierarchical`, `list`, `set`, `dict`, or `generic`
 - `storage`: `inline`, `fixed`, or `variable`
 - `declaration`: `concrete`, `partially-generic`, `generic`, or `runtime`
 - `binding`: `direct`, `value-to-reference`, `reference-to-value`, `reference-to-reference`, `covariant`, or
@@ -109,6 +109,7 @@ graph compilation or evaluation.
 - construction, assignment, copy, and destruction
 - opaque values and scalar collections, including generic and nested types
 - compound scalar metadata, native access, generic field access, nesting, equality, hashing, and invalid declarations
+- hierarchical scalar identity, schema metadata, inheritance, field narrowing, and container variance
 - time series validity, update time, mutation, and invalidation
 - global state ownership, replacement, lookup, and allocation
 
@@ -118,6 +119,7 @@ graph compilation or evaluation.
 - type variables, constraints, repeated variables, and lower bounds
 - type-map overlays and functional variable resolution
 - signature matching, resolution, and parameter category inference
+- hierarchical scalar inheritance and directional compatibility through scalar containers
 - operator signature specificity and ambiguity
 - types passed as scalars
 - guarantee compatibility, propagation, and enforcement

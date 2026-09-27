@@ -16,6 +16,9 @@ class ListScalarType : public ScalarType {
 
     bool supports_equality() const noexcept final { return item_type().supports_equality(); }
     bool supports_hash() const noexcept final { return item_type().supports_hash(); }
+
+  protected:
+    [[nodiscard]] bool do_match(const Type &supplied, TypeMap &type_map) const override;
 };
 
 class GenericListScalarType final : public ListScalarType {
@@ -25,9 +28,6 @@ class GenericListScalarType final : public ListScalarType {
     bool is_resolved() const noexcept override { return false; }
     [[nodiscard]] const Type &resolve(const TypeMap &type_map) const override;
     const ScalarType &item_type() const noexcept override { return *item_type_; }
-
-  protected:
-    [[nodiscard]] bool do_match(const Type &supplied, TypeMap &type_map) const override;
 
   private:
     const ScalarType *item_type_;
@@ -49,8 +49,8 @@ template <typename T> struct scalar_type_traits<List<T>> {
 
 template <typename T> struct scalar_declaration_traits<List<T>> {
     static constexpr bool is_collection = true;
-    static constexpr bool supports_implicit_argument = true;
-    static constexpr bool supports_time_series = true;
+    static constexpr bool supports_implicit_argument = scalar_declaration_traits<T>::supports_implicit_argument;
+    static constexpr bool supports_time_series = scalar_declaration_traits<T>::supports_time_series;
 };
 
 } // namespace bg

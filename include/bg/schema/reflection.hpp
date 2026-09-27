@@ -22,10 +22,38 @@ struct no_schema_base {};
 
 template <template <template <typename, auto...> typename> typename Base> struct schema_base_marker {};
 
+template <template <typename, auto...> typename Field>
+inline constexpr bool is_schema_reflection_field = false;
+
 template <template <template <typename, auto...> typename> typename Base>
 schema_template<Base> schema_base(const schema_base_marker<Base> *);
 
 no_schema_base schema_base(...);
+
+} // namespace bg::details
+
+namespace bg {
+
+template <template <template <typename, auto...> typename> typename Base,
+          template <typename, auto...> typename Field,
+          bool Reflection = details::is_schema_reflection_field<Field>>
+struct schema_extends;
+
+template <template <template <typename, auto...> typename> typename Base,
+          template <typename, auto...> typename Field>
+struct schema_extends<Base, Field, false> : Base<Field> {};
+
+template <template <template <typename, auto...> typename> typename Base,
+          template <typename, auto...> typename Field>
+struct schema_extends<Base, Field, true> : details::schema_base_marker<Base> {};
+
+template <template <template <typename, auto...> typename> typename Base,
+          template <typename, auto...> typename Field>
+using bundle_extends = schema_extends<Base, Field>;
+
+} // namespace bg
+
+namespace bg::details {
 
 inline constexpr auto missing_schema_field = static_cast<std::size_t>(-1);
 

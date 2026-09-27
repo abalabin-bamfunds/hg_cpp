@@ -42,6 +42,8 @@ add_executable(
     node/scalar_state_test.cpp
     testing/test_graph_test.cpp
     type/type_system_test.cpp
+    type/hierarchical_scalar_type_test.cpp
+    type/test_hierarchical_scalar_provider.cpp
     type/type_variable_test.cpp
     type/time_series_dict_type_test.cpp
     type/time_series_bundle_type_test.cpp

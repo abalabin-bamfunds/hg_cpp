@@ -1,5 +1,6 @@
 #pragma once
 
+#include <bg/optionality.hpp>
 #include <bg/util/named_argument.hpp>
 
 #include <cstdint>
@@ -14,13 +15,7 @@ enum class InputActivity : std::uint8_t {
 inline constexpr InputActivity active = InputActivity::active;
 inline constexpr InputActivity passive = InputActivity::passive;
 
-enum class InputValidity : std::uint8_t {
-    required,
-    optional,
-};
-
-inline constexpr InputValidity required = InputValidity::required;
-inline constexpr InputValidity optional = InputValidity::optional;
+using InputValidity = Optionality;
 
 struct DynamicBinding {};
 

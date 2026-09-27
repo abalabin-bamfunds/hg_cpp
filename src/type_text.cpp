@@ -1,6 +1,7 @@
 #include <bg/type/type_text.hpp>
 
 #include <bg/graph/graph_argument.hpp>
+#include <bg/scalar/bundle/scalar_type.hpp>
 #include <bg/scalar/dict/scalar_type.hpp>
 #include <bg/scalar/list/scalar_type.hpp>
 #include <bg/scalar/set/scalar_type.hpp>
@@ -73,6 +74,8 @@ void append_scalar(std::string &result, const ScalarType &type) {
         result += '>';
     } else if (const auto *structure = type_cast<StructScalarType>(&type)) {
         result += structure->name().text();
+    } else if (const auto *hierarchical = type_cast<HierarchicalScalarType>(&type)) {
+        result += hierarchical->name().text();
     } else if (const auto *type_value = dynamic_cast<const TypeScalarType *>(&type)) {
         result += "Type<";
         append_type_text(result, type_value->type());

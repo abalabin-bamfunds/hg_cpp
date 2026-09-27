@@ -20,6 +20,9 @@ class DictScalarType : public ScalarType {
     }
 
     bool supports_hash() const noexcept final { return key_type().supports_hash() && mapped_type().supports_hash(); }
+
+  protected:
+    [[nodiscard]] bool do_match(const Type &supplied, TypeMap &type_map) const override;
 };
 
 class GenericDictScalarType final : public DictScalarType {
@@ -31,9 +34,6 @@ class GenericDictScalarType final : public DictScalarType {
     [[nodiscard]] const Type &resolve(const TypeMap &type_map) const override;
     const ScalarType &key_type() const noexcept override { return *key_type_; }
     const ScalarType &mapped_type() const noexcept override { return *mapped_type_; }
-
-  protected:
-    [[nodiscard]] bool do_match(const Type &supplied, TypeMap &type_map) const override;
 
   private:
     const ScalarType *key_type_;
@@ -57,8 +57,10 @@ template <typename K, typename V> struct scalar_type_traits<Dict<K, V>> {
 
 template <typename K, typename V> struct scalar_declaration_traits<Dict<K, V>> {
     static constexpr bool is_collection = true;
-    static constexpr bool supports_implicit_argument = true;
-    static constexpr bool supports_time_series = true;
+    static constexpr bool supports_implicit_argument = scalar_declaration_traits<K>::supports_implicit_argument &&
+                                                       scalar_declaration_traits<V>::supports_implicit_argument;
+    static constexpr bool supports_time_series = scalar_declaration_traits<K>::supports_time_series &&
+                                                 scalar_declaration_traits<V>::supports_time_series;
 };
 
 } // namespace bg

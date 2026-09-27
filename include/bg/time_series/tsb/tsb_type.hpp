@@ -8,19 +8,6 @@
 
 namespace bg {
 
-template <template <template <typename, auto...> typename> typename Base,
-          template <typename, auto...> typename Field,
-          bool Schema = details::is_bundle_schema_field<Field>>
-struct bundle_extends;
-
-template <template <template <typename, auto...> typename> typename Base,
-          template <typename, auto...> typename Field>
-struct bundle_extends<Base, Field, false> : Base<Field> {};
-
-template <template <template <typename, auto...> typename> typename Base,
-          template <typename, auto...> typename Field>
-struct bundle_extends<Base, Field, true> : details::schema_base_marker<Base> {};
-
 template <template <template <typename, auto...> typename> typename Schema, auto... Properties>
 struct TSB : details::time_series_type_access<TSB<Schema, Properties...>> {
   private:

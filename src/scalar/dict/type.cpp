@@ -31,14 +31,17 @@ class ResolvedDictScalarType final : public DictScalarType {
 
 } // namespace
 
-bool GenericDictScalarType::do_match(const Type &supplied, TypeMap &type_map) const {
+bool DictScalarType::do_match(const Type &supplied, TypeMap &type_map) const {
     const auto *dict = type_cast<DictScalarType>(&supplied);
     if (dict == nullptr || !dict->is_resolved()) {
         return false;
     }
 
     auto trial = type_map.overlay();
-    if (!key_type_->match(dict->key_type(), trial) || !mapped_type_->match(dict->mapped_type(), trial)) {
+    const auto key_matches = key_type().is_resolved()
+                                 ? &key_type() == &dict->key_type()
+                                 : key_type().match(dict->key_type(), trial);
+    if (!key_matches || !mapped_type().match(dict->mapped_type(), trial)) {
         return false;
     }
 

@@ -64,6 +64,7 @@ add_library(
     src/scalar/allocation.cpp
     src/scalar/dict/type.cpp
     src/scalar/cpp_runtime_type.cpp
+    src/scalar/bundle/type.cpp
     src/scalar/list/type.cpp
     src/scalar/set/type.cpp
     src/scalar/struct/type.cpp

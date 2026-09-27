@@ -88,6 +88,31 @@ dictionary maps hashable scalar keys to scalar values, written `Dict<K, V>`.
 is nominal. Its fields provide structural access after type resolution; they do
 not make two distinct C++ aggregate types compatible.
 
+### Shared C++ schemas
+
+A C++ schema declares fields through a supplied field template. A schema can
+declare one base with `schema_extends<Base, Field>`. A derived schema can add
+fields or redefine an inherited field with a compatible narrower type. A
+redefined field keeps its inherited position. `bundle_extends` is a
+compatibility alias for `schema_extends`.
+
+### Hierarchical scalars
+
+`Bundle<Schema>` declares a hierarchical scalar. Its fields are scalar
+declarations. `Field<T, optional>` marks an optional field; fields are required
+by default. Each schema has nominal identity, and a base type accepts its
+declared derived types.
+
+Compatibility is covariant through `List` items and `Dict` values. `Set` items
+and `Dict` keys remain invariant because lookup requires one hash and equality
+domain.
+
+This stage provides semantic types and schema metadata. `Bundle` does not yet
+provide scalar storage, values, or time series values.
+
+Hierarchical scalar schemas must not contain themselves directly or through
+another hierarchical scalar schema.
+
 The [scalar API](scalar-api.md) defines C++ access and ownership.
 
 ## Time series types
@@ -111,10 +136,8 @@ not required.
 
 ### Time series bundles
 
-A named `TSB` uses nominal compatibility through declared bundle inheritance.
-A schema can declare one base. A derived schema can add fields or redefine an
-inherited field with a compatible narrower type. A redefined field keeps its
-inherited position.
+A named `TSB` uses the shared C++ schema model and nominal compatibility through
+declared schema inheritance.
 
 A named `TSB` input also accepts an unnamed, automatically bound `TSB` with a
 compatible item schema. Graph compilation maps the item offsets directly.
@@ -132,9 +155,6 @@ struct Quote {
 
 In<TSB<Quote>> quote;
 ```
-
-A derived schema uses `bundle_extends<Base, Field>`. Schema discovery reads the
-base and direct fields separately.
 
 Field properties configure the typed input view. Wiring and output field views
 retain the field type and ignore input-only properties.

@@ -28,6 +28,7 @@
 #include <bg/node.hpp>
 #include <bg/operator.hpp>
 #include <bg/operators.hpp>
+#include <bg/optionality.hpp>
 #include <bg/node/input.hpp>
 #include <bg/node/input_properties.hpp>
 #include <bg/node/node_invocation.hpp>
@@ -36,6 +37,8 @@
 #include <bg/node/state.hpp>
 #include <bg/run_graph.hpp>
 #include <bg/scalar/builtins.hpp>
+#include <bg/scalar/bundle/scalar_type.hpp>
+#include <bg/scalar/bundle/type.hpp>
 #include <bg/scalar/canonical.hpp>
 #include <bg/scalar/cpp_runtime_type.hpp>
 #include <bg/scalar/dispatch.hpp>

@@ -27,9 +27,15 @@ class ResolvedSetScalarType final : public SetScalarType {
 
 } // namespace
 
-bool GenericSetScalarType::do_match(const Type &supplied, TypeMap &type_map) const {
+bool SetScalarType::do_match(const Type &supplied, TypeMap &type_map) const {
     const auto *set = type_cast<SetScalarType>(&supplied);
-    return set != nullptr && set->is_resolved() && item_type_->match(set->item_type(), type_map);
+    if (set == nullptr || !set->is_resolved()) {
+        return false;
+    }
+    if (item_type().is_resolved()) {
+        return &item_type() == &set->item_type();
+    }
+    return item_type().match(set->item_type(), type_map);
 }
 
 const Type &GenericSetScalarType::resolve(const TypeMap &type_map) const {
