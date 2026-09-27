@@ -96,8 +96,8 @@ template <typename T, typename Base> class CppScalarRuntimeTypeBase : public Bas
         Traits::construct(static_cast<Stored *>(destination), *static_cast<const ReadValue *>(value), memory);
     }
 
-    void construct_from_input(void *destination, const details::ScalarData &value,
-                              allocator &memory) const override {
+    void do_construct_from_input(void *destination, const details::ScalarData &value,
+                                 allocator &memory) const override {
         Traits::construct(static_cast<Stored *>(destination), scalar_data_value<T>(value), memory);
     }
 
@@ -129,7 +129,7 @@ template <typename T, typename Base> class CppScalarRuntimeTypeBase : public Bas
         }
     }
 
-    void assign_from_input(void *destination, const details::ScalarData &value) const override {
+    void do_assign_from_input(void *destination, const details::ScalarData &value) const override {
         decltype(auto) current = scalar_data_value<T>(value);
         assign_from_value(destination, std::addressof(current));
     }

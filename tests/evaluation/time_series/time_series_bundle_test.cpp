@@ -3,6 +3,8 @@
 #include <bg/node.hpp>
 #include <bg/run_graph.hpp>
 #include <bg/scalar/bundle/value.hpp>
+#include <bg/scalar/dict/scalar.hpp>
+#include <bg/scalar/list/scalar.hpp>
 #include <bg/testing/test_graph.hpp>
 #include <bg/time_series/tsb/tsb.hpp>
 #include <bg/time_series/tsb/tsb_input.hpp>
@@ -15,6 +17,8 @@
 #include <array>
 #include <chrono>
 #include <optional>
+#include <stdexcept>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -34,6 +38,14 @@ template <template <typename, auto...> typename Field> struct SharedBundle {
 
 template <template <typename, auto...> typename Field> struct NestedSharedBundle {
     Field<bg::Bundle<SharedBundle>> value;
+};
+
+template <template <typename, auto...> typename Field> struct Instrument {
+    Field<bg::symbol> symbol;
+};
+
+template <template <typename, auto...> typename Field> struct Equity : bg::schema_extends<Instrument, Field> {
+    Field<bg::i64> lot_size;
 };
 
 struct bundle_source_definition {
@@ -172,6 +184,56 @@ TEST_CASE("a hierarchical time series output accepts input views and suppresses 
     const auto actual = bg::testing::test_graph(graph, std::array{1, 2, 3});
 
     CHECK(actual.equals({3, std::nullopt, std::nullopt}));
+}
+
+TEST_CASE("a hierarchical time series output accepts a derived scalar representation",
+          "[feature:scalar-api][series:value][scalar:hierarchical][binding:covariant]"
+          "[representation:covariant][transition:update]") {
+    const auto publish = bg::node(
+        [](bg::In<bg::TS<int>> trigger, bg::Scalar<bg::Bundle<Equity>> value,
+           bg::Out<bg::TS<bg::Bundle<Instrument>>> output) {
+            (void)trigger;
+            output.set(value);
+        });
+    const auto equity = bg::bundle<Equity>(bg::symbol{"ABC"}, bg::i64{100});
+    const auto graph = [&](bg::wp<bg::TS<int>> trigger) { return publish(trigger, equity); };
+
+    const auto actual = bg::testing::test_graph(graph, std::array{1});
+    const auto result = actual[0];
+
+    REQUIRE(result.has_value());
+    CHECK(&result->type() == &equity.type());
+    CHECK(bg::scalar_cast<bg::symbol>((*result)[0]).value().text() == "ABC");
+}
+
+TEST_CASE("a time series output rejects a covariant scalar collection representation",
+          "[feature:scalar-api][series:value][scalar:hierarchical][scalar:list][scalar:dict]"
+          "[binding:covariant][transition:update]") {
+    const auto publish_list = bg::node(
+        [](bg::In<bg::TS<int>> trigger, bg::Scalar<bg::List<bg::Bundle<Equity>>> value,
+           bg::Out<bg::TS<bg::List<bg::Bundle<Instrument>>>> output) {
+            (void)trigger;
+            output.set_value(value);
+        });
+    const auto publish_dictionary = bg::node(
+        [](bg::In<bg::TS<int>> trigger,
+           bg::Scalar<bg::Dict<bg::i64, bg::Bundle<Equity>>> value,
+           bg::Out<bg::TS<bg::Dict<bg::i64, bg::Bundle<Instrument>>>> output) {
+            (void)trigger;
+            output.set_value(value);
+        });
+    const auto equity = bg::bundle<Equity>(bg::symbol{"ABC"}, bg::i64{100});
+    const auto list = bg::ScalarValue<bg::List<bg::Bundle<Equity>>>{
+        std::array<bg::Scalar<bg::Bundle<Equity>>, 1>{equity.view()}};
+    const auto dictionary = bg::ScalarValue<bg::Dict<bg::i64, bg::Bundle<Equity>>>{
+        std::array{std::pair{bg::i64{1}, equity.view()}}};
+    const auto list_graph = [&](bg::wp<bg::TS<int>> trigger) { return publish_list(trigger, list); };
+    const auto dictionary_graph = [&](bg::wp<bg::TS<int>> trigger) {
+        return publish_dictionary(trigger, dictionary);
+    };
+
+    CHECK_THROWS_AS(bg::testing::test_graph(list_graph, std::array{1}), std::invalid_argument);
+    CHECK_THROWS_AS(bg::testing::test_graph(dictionary_graph, std::array{1}), std::invalid_argument);
 }
 
 TEST_CASE("fixed time series lists can contain runtime-sized time series",

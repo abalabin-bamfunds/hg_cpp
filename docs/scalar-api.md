@@ -160,6 +160,11 @@ Scalar lists and dictionary mapped values store the same one-word handle.
 Collection copies retain the control block and preserve its actual runtime
 type.
 
+Semantic covariance through lists and dictionary values applies to type
+resolution and borrowed views. Copying or assigning between collection values
+with different declarations requires explicit item-wise construction. Runtime
+storage does not reinterpret one collection declaration as another.
+
 Hierarchical control blocks use a thread-safe allocation owner associated with
 the outer global state. A control block retains that owner, so an owning value
 can outlive the runtime graph or global state that created it. Releasing the

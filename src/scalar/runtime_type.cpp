@@ -28,6 +28,25 @@ namespace bg {
 
 ScalarRuntimeType::~ScalarRuntimeType() = default;
 
+bool ScalarRuntimeType::accepts_input(const ScalarRuntimeType &source) const noexcept {
+    return &type() == &source.type();
+}
+
+void ScalarRuntimeType::construct_from_input(void *destination, const details::ScalarData &value,
+                                             allocator &memory) const {
+    if (!accepts_input(value.runtime_type())) {
+        throw std::invalid_argument{"incompatible scalar runtime representations"};
+    }
+    do_construct_from_input(destination, value, memory);
+}
+
+void ScalarRuntimeType::assign_from_input(void *destination, const details::ScalarData &value) const {
+    if (!accepts_input(value.runtime_type())) {
+        throw std::invalid_argument{"incompatible scalar runtime representations"};
+    }
+    do_assign_from_input(destination, value);
+}
+
 details::ScalarData ScalarRuntimeType::borrow(const void *storage) const noexcept {
     if (has_runtime_type_flag(shared_handle_flag)) {
         return borrow_shared(storage);
@@ -65,7 +84,8 @@ class ComposedListRuntimeType final : public ScalarListRuntimeType {
 
     void construct_from_value(void *, const void *, allocator &) const override { std::terminate(); }
 
-    void construct_from_input(void *destination, const details::ScalarData &value, allocator &memory) const override {
+    void do_construct_from_input(void *destination, const details::ScalarData &value,
+                                 allocator &memory) const override {
         construct_initial_value(destination);
         const auto source = Scalar<List<SCALAR>>::from(value.runtime_type(), value.data());
         auto rollback = util::scope_exit{[&]() noexcept { destroy(destination, memory); }};
@@ -90,7 +110,7 @@ class ComposedListRuntimeType final : public ScalarListRuntimeType {
 
     void assign_from_value(void *, const void *) const override { std::terminate(); }
 
-    void assign_from_input(void *destination, const details::ScalarData &value) const override {
+    void do_assign_from_input(void *destination, const details::ScalarData &value) const override {
         auto memory = details::current_scalar_allocator();
         auto replacement = RuntimeListStorage{};
         const auto release_replacement = util::scope_exit{[&]() noexcept { clear(&replacement, memory); }};
@@ -222,7 +242,8 @@ class ComposedSetRuntimeType final : public ScalarSetRuntimeType {
 
     void construct_from_value(void *, const void *, allocator &) const override { std::terminate(); }
 
-    void construct_from_input(void *destination, const details::ScalarData &value, allocator &memory) const override {
+    void do_construct_from_input(void *destination, const details::ScalarData &value,
+                                 allocator &memory) const override {
         construct_initial_value(destination);
         const auto source = Scalar<Set<SCALAR>>::from(value.runtime_type(), value.data());
         auto copy = RuntimeSetCopy{this, destination, &memory};
@@ -244,7 +265,7 @@ class ComposedSetRuntimeType final : public ScalarSetRuntimeType {
 
     void assign_from_value(void *, const void *) const override { std::terminate(); }
 
-    void assign_from_input(void *destination, const details::ScalarData &value) const override {
+    void do_assign_from_input(void *destination, const details::ScalarData &value) const override {
         auto memory = details::current_scalar_allocator();
         auto replacement = RuntimeSetStorage{};
         const auto release_replacement = util::scope_exit{[&]() noexcept { clear(&replacement, memory); }};
@@ -432,7 +453,8 @@ class ComposedDictRuntimeType final : public ScalarDictRuntimeType {
 
     void construct_from_value(void *, const void *, allocator &) const override { std::terminate(); }
 
-    void construct_from_input(void *destination, const details::ScalarData &value, allocator &memory) const override {
+    void do_construct_from_input(void *destination, const details::ScalarData &value,
+                                 allocator &memory) const override {
         construct_initial_value(destination);
         auto copy = RuntimeDictCopy{this, destination, &memory};
         auto rollback = util::scope_exit{[&]() noexcept { destroy(destination, memory); }};
@@ -456,7 +478,7 @@ class ComposedDictRuntimeType final : public ScalarDictRuntimeType {
 
     void assign_from_value(void *, const void *) const override { std::terminate(); }
 
-    void assign_from_input(void *destination, const details::ScalarData &value) const override {
+    void do_assign_from_input(void *destination, const details::ScalarData &value) const override {
         auto memory = details::current_scalar_allocator();
         auto replacement = RuntimeDictStorage{};
         const auto release_replacement = util::scope_exit{[&]() noexcept { clear(&replacement, memory); }};

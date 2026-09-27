@@ -21,8 +21,8 @@ class CppScalarRuntimeType<List<T>> final : public CppScalarRuntimeTypeBase<List
         std::construct_at(static_cast<details::scalar_list_storage<T> *>(destination));
     }
 
-    void construct_from_input(void *destination, const details::ScalarData &value,
-                              allocator &memory) const override {
+    void do_construct_from_input(void *destination, const details::ScalarData &value,
+                                 allocator &memory) const override {
         construct_initial_value(destination);
         auto rollback = util::scope_exit{[&]() noexcept { clear(destination, memory); }};
         const auto &source_type = static_cast<const ScalarListRuntimeType &>(value.runtime_type());
@@ -32,7 +32,7 @@ class CppScalarRuntimeType<List<T>> final : public CppScalarRuntimeTypeBase<List
         rollback.release();
     }
 
-    void assign_from_input(void *destination, const details::ScalarData &value) const override {
+    void do_assign_from_input(void *destination, const details::ScalarData &value) const override {
         auto memory = current_scalar_allocator();
         auto replacement = details::scalar_list_storage<T>{};
         auto release_replacement = util::scope_exit{[&]() noexcept { clear(&replacement, memory); }};

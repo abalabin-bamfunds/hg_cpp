@@ -56,8 +56,9 @@ class ScalarRuntimeType : public RuntimeType {
         construct_initial_value(destination);
     }
     virtual void construct_from_value(void *, const void *, allocator &) const { std::terminate(); }
-    virtual void construct_from_input(void *destination, const details::ScalarData &value,
-                                      allocator &memory) const = 0;
+    // Reports whether this runtime type can copy the source into its storage representation.
+    virtual bool accepts_input(const ScalarRuntimeType &source) const noexcept;
+    void construct_from_input(void *destination, const details::ScalarData &value, allocator &memory) const;
     template <typename Value>
         requires requires(const Value &value) { details::scalar_data(value); }
     void construct_from_input(void *destination, const Value &value, allocator &memory) const {
@@ -65,7 +66,7 @@ class ScalarRuntimeType : public RuntimeType {
     }
     virtual void copy_construct(void *destination, const void *source, allocator &memory) const = 0;
     virtual void assign_from_value(void *, const void *) const { std::terminate(); }
-    virtual void assign_from_input(void *destination, const details::ScalarData &value) const = 0;
+    void assign_from_input(void *destination, const details::ScalarData &value) const;
     template <typename Value>
         requires requires(const Value &value) { details::scalar_data(value); }
     void assign_from_input(void *destination, const Value &value) const {
@@ -89,6 +90,9 @@ class ScalarRuntimeType : public RuntimeType {
               supports_byte_copy_initialization, additional_flags} {}
 
     virtual details::ScalarData borrow_shared(const void *storage) const noexcept;
+    virtual void do_construct_from_input(void *destination, const details::ScalarData &value,
+                                         allocator &memory) const = 0;
+    virtual void do_assign_from_input(void *destination, const details::ScalarData &value) const = 0;
     static constexpr auto shared_handle_flag = first_additional_flag;
 
   private:

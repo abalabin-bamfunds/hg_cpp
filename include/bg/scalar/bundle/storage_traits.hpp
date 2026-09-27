@@ -9,7 +9,6 @@
 #include <bg/scalar/storage_traits.hpp>
 
 #include <concepts>
-#include <stdexcept>
 #include <type_traits>
 #include <utility>
 
@@ -116,10 +115,6 @@ struct scalar_storage_traits<Bundle<Schema>> {
     static void construct(stored_type *destination, const Source &source, allocator &memory) {
         const auto &value = details::scalar_data(source);
         const auto &runtime_type = cpp_scalar_runtime_type<Declaration>();
-        if (!runtime_type.type().accepts(value.type())) {
-            throw std::invalid_argument{"incompatible hierarchical scalar type"};
-        }
-
         runtime_type.construct_from_input(destination, value, memory);
     }
 
@@ -136,10 +131,6 @@ struct scalar_storage_traits<Bundle<Schema>> {
     static void assign(stored_type &destination, const Source &source, allocator &) {
         const auto &value = details::scalar_data(source);
         const auto &runtime_type = cpp_scalar_runtime_type<Declaration>();
-        if (!runtime_type.type().accepts(value.type())) {
-            throw std::invalid_argument{"incompatible hierarchical scalar type"};
-        }
-
         runtime_type.assign_from_input(&destination, value);
     }
 

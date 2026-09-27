@@ -46,11 +46,13 @@ template <details::scalar_variable Variable, auto... Properties> class Out<TS<Va
         const auto &source = details::scalar_data(value);
         const auto &runtime_type =
             static_cast<const TimeSeriesValueRuntimeType &>(state_->runtime_type()).scalar_runtime_type();
-        if (!runtime_type.type().accepts(source.type())) {
-            throw std::invalid_argument{"incompatible scalar types"};
-        }
-        if (state_->suppresses_equal_updates() && valid() && runtime_type.equals(state_->data(), source)) {
-            return;
+        if (state_->suppresses_equal_updates()) {
+            if (!runtime_type.accepts_input(source.runtime_type())) {
+                throw std::invalid_argument{"incompatible scalar runtime representations"};
+            }
+            if (valid() && runtime_type.equals(state_->data(), source)) {
+                return;
+            }
         }
 
         runtime_type.assign_from_input(state_->mutable_data(), source);
@@ -154,11 +156,13 @@ template <typename T, auto... Properties> class Out<TS<T, Properties...>> {
         const auto &source = details::scalar_data(value);
         const auto &runtime_type =
             static_cast<const TimeSeriesValueRuntimeType &>(state_->runtime_type()).scalar_runtime_type();
-        if (!runtime_type.type().accepts(source.type())) {
-            throw std::invalid_argument{"incompatible scalar types"};
-        }
-        if (state_->suppresses_equal_updates() && valid() && runtime_type.equals(state_->data(), source)) {
-            return;
+        if (state_->suppresses_equal_updates()) {
+            if (!runtime_type.accepts_input(source.runtime_type())) {
+                throw std::invalid_argument{"incompatible scalar runtime representations"};
+            }
+            if (valid() && runtime_type.equals(state_->data(), source)) {
+                return;
+            }
         }
 
         runtime_type.assign_from_input(state_->mutable_data(), source);

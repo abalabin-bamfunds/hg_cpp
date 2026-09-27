@@ -18,6 +18,11 @@
 
 namespace bg {
 
+bool HierarchicalScalarRuntimeType::accepts_input(const ScalarRuntimeType &source) const noexcept {
+    const auto *supplied = type_cast<HierarchicalScalarType>(&source.type());
+    return supplied != nullptr && supplied->derives_from(type());
+}
+
 namespace {
 
 class ComposedHierarchicalScalarRuntimeType final : public HierarchicalScalarRuntimeType {
@@ -46,9 +51,10 @@ class ComposedHierarchicalScalarRuntimeType final : public HierarchicalScalarRun
                                            std::uintptr_t &data) const noexcept override;
     void release_shared(std::uintptr_t data) const noexcept override;
     void construct_initial_value(void *destination) const noexcept override;
-    void construct_from_input(void *destination, const details::ScalarData &value, allocator &memory) const override;
+    void do_construct_from_input(void *destination, const details::ScalarData &value,
+                                 allocator &memory) const override;
     void copy_construct(void *destination, const void *source, allocator &memory) const override;
-    void assign_from_input(void *destination, const details::ScalarData &value) const override;
+    void do_assign_from_input(void *destination, const details::ScalarData &value) const override;
     std::size_t hash(details::ScalarDataMode mode, std::uintptr_t data) const noexcept override;
     bool equals(details::ScalarDataMode mode, std::uintptr_t data,
                 const details::ScalarData &other) const noexcept override;
@@ -171,8 +177,8 @@ ComposedHierarchicalScalarRuntimeType::construct_shared(std::span<const details:
             }
             continue;
         }
-        if (!semantic_field.type->accepts(source->type())) {
-            throw std::invalid_argument{"hierarchical scalar field has an incompatible type"};
+        if (!fields_[constructed].runtime_type->accepts_input(source->runtime_type())) {
+            throw std::invalid_argument{"hierarchical scalar field has an incompatible runtime representation"};
         }
 
         fields_[constructed].runtime_type->construct_from_input(field_storage(*stored, constructed), *source, memory);
@@ -217,8 +223,8 @@ void ComposedHierarchicalScalarRuntimeType::construct_initial_value(void *destin
     store_handle(destination, nullptr);
 }
 
-void ComposedHierarchicalScalarRuntimeType::construct_from_input(void *destination, const details::ScalarData &value,
-                                                                 allocator &) const {
+void ComposedHierarchicalScalarRuntimeType::do_construct_from_input(
+    void *destination, const details::ScalarData &value, allocator &) const {
     auto *stored = storage(value);
     if (stored == nullptr) {
         throw std::invalid_argument{"cannot copy an empty hierarchical scalar"};
@@ -235,8 +241,8 @@ void ComposedHierarchicalScalarRuntimeType::copy_construct(void *destination, co
     store_handle(destination, stored);
 }
 
-void ComposedHierarchicalScalarRuntimeType::assign_from_input(void *destination,
-                                                              const details::ScalarData &value) const {
+void ComposedHierarchicalScalarRuntimeType::do_assign_from_input(
+    void *destination, const details::ScalarData &value) const {
     auto *replacement = storage(value);
     if (replacement != nullptr) {
         replacement->references.fetch_add(1, std::memory_order_relaxed);

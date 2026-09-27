@@ -23,8 +23,8 @@ class CppScalarRuntimeType<Set<T>> final : public CppScalarRuntimeTypeBase<Set<T
         std::construct_at(static_cast<details::scalar_set_storage<T> *>(destination));
     }
 
-    void construct_from_input(void *destination, const details::ScalarData &value,
-                              allocator &memory) const override {
+    void do_construct_from_input(void *destination, const details::ScalarData &value,
+                                 allocator &memory) const override {
         construct_initial_value(destination);
         auto rollback = util::scope_exit{[&]() noexcept { clear(destination, memory); }};
         auto copy = SetCopy{this, destination, &memory};
@@ -33,7 +33,7 @@ class CppScalarRuntimeType<Set<T>> final : public CppScalarRuntimeTypeBase<Set<T
         rollback.release();
     }
 
-    void assign_from_input(void *destination, const details::ScalarData &value) const override {
+    void do_assign_from_input(void *destination, const details::ScalarData &value) const override {
         auto memory = current_scalar_allocator();
         auto replacement = details::scalar_set_storage<T>{};
         auto release_replacement = util::scope_exit{[&]() noexcept { clear(&replacement, memory); }};

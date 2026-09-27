@@ -8,7 +8,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
-#include <stdexcept>
 #include <utility>
 
 namespace bg::details {
@@ -55,16 +54,10 @@ class ScalarData {
     bool equals(const ScalarData &other) const noexcept { return runtime_type().equals(mode(), data_, other); }
 
     void copy_construct(void *destination, const ScalarRuntimeType &destination_runtime_type, allocator &memory) const {
-        if (&type() != &destination_runtime_type.type()) {
-            throw std::invalid_argument{"incompatible scalar types"};
-        }
         destination_runtime_type.construct_from_input(destination, *this, memory);
     }
 
     void assign(void *destination, const ScalarRuntimeType &destination_runtime_type) const {
-        if (&type() != &destination_runtime_type.type()) {
-            throw std::invalid_argument{"incompatible scalar types"};
-        }
         destination_runtime_type.assign_from_input(destination, *this);
     }
 

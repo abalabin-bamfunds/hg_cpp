@@ -24,8 +24,8 @@ class CppScalarRuntimeType<Dict<K, V>> final : public CppScalarRuntimeTypeBase<D
         std::construct_at(static_cast<details::scalar_dict_storage<K, V> *>(destination));
     }
 
-    void construct_from_input(void *destination, const details::ScalarData &value,
-                              allocator &memory) const override {
+    void do_construct_from_input(void *destination, const details::ScalarData &value,
+                                 allocator &memory) const override {
         construct_initial_value(destination);
         auto rollback = util::scope_exit{[&]() noexcept { clear(destination, memory); }};
         auto copy = DictCopy{this, destination, &memory};
@@ -34,7 +34,7 @@ class CppScalarRuntimeType<Dict<K, V>> final : public CppScalarRuntimeTypeBase<D
         rollback.release();
     }
 
-    void assign_from_input(void *destination, const details::ScalarData &value) const override {
+    void do_assign_from_input(void *destination, const details::ScalarData &value) const override {
         auto memory = current_scalar_allocator();
         auto replacement = details::scalar_dict_storage<K, V>{};
         auto release_replacement = util::scope_exit{[&]() noexcept { clear(&replacement, memory); }};

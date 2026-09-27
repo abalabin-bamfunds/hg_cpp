@@ -112,7 +112,7 @@ template <typename T, typename Source>
 template <typename T>
 [[nodiscard]] OwnedScalarData copy_scalar_value(const details::ScalarData &source, allocator *memory) {
     if constexpr (hierarchical_scalar_declaration<T>) {
-        if (!cpp_scalar_runtime_type<T>().type().accepts(source.type())) {
+        if (!cpp_scalar_runtime_type<T>().accepts_input(source.runtime_type())) {
             throw std::invalid_argument{"incompatible hierarchical scalar type"};
         }
 
