@@ -29,8 +29,9 @@ class HierarchicalScalarType;
 namespace details {
 
 const HierarchicalScalarType &canonical_hierarchical_scalar_type(
-    const std::type_info &identity, std::string_view name, const HierarchicalScalarType *base,
-    std::span<const HierarchicalScalarField> fields);
+    const std::type_info &identity, std::string_view name, void (*initialize)(HierarchicalScalarType &));
+template <template <template <typename, auto...> typename> typename Schema>
+const HierarchicalScalarType &hierarchical_scalar_type();
 
 } // namespace details
 
@@ -58,17 +59,21 @@ class HierarchicalScalarType final : public ScalarType {
     bool do_match(const Type &supplied, TypeMap &type_map) const override;
 
   private:
-    HierarchicalScalarType(util::symbol name, const HierarchicalScalarType *base,
-                           std::span<const HierarchicalScalarField> direct_fields);
+    explicit HierarchicalScalarType(util::symbol name) noexcept;
+    void initialize(const HierarchicalScalarType *base, std::span<const HierarchicalScalarField> direct_fields);
+    bool finalize_capabilities() noexcept;
 
     friend const HierarchicalScalarType &details::canonical_hierarchical_scalar_type(
-        const std::type_info &, std::string_view, const HierarchicalScalarType *,
-        std::span<const HierarchicalScalarField>);
+        const std::type_info &, std::string_view, void (*)(HierarchicalScalarType &));
+    template <template <template <typename, auto...> typename> typename Schema>
+    friend const HierarchicalScalarType &details::hierarchical_scalar_type();
 
     util::symbol name_;
     const HierarchicalScalarType *base_;
     std::vector<HierarchicalScalarField> direct_fields_;
     std::vector<HierarchicalScalarField> fields_;
+    bool supports_equality_{true};
+    bool supports_hash_{true};
 };
 
 namespace details {
@@ -107,21 +112,23 @@ auto hierarchical_scalar_fields(std::index_sequence<Index...>) {
 
 template <template <template <typename, auto...> typename> typename Schema>
 const HierarchicalScalarType &hierarchical_scalar_type() {
-    using Reflection = hierarchical_scalar_schema_reflection<Schema>;
-    const auto *base = [] {
-        if constexpr (Reflection::has_base) {
-            using Base = typename Reflection::base_schema;
-            return &hierarchical_scalar_type<Base::template apply>();
-        } else {
-            return static_cast<const HierarchicalScalarType *>(nullptr);
-        }
-    }();
-    static const auto fields = hierarchical_scalar_fields<Schema>(
-        std::make_index_sequence<Reflection::direct_field_count>{});
+    return canonical_hierarchical_scalar_type(
+        typeid(Bundle<Schema>), util::unqualified_type_name<Schema<hierarchical_scalar_schema_field>>(),
+        [](HierarchicalScalarType &type) {
+            using Reflection = hierarchical_scalar_schema_reflection<Schema>;
+            const auto *base = [] {
+                if constexpr (Reflection::has_base) {
+                    using Base = typename Reflection::base_schema;
+                    return &hierarchical_scalar_type<Base::template apply>();
+                } else {
+                    return static_cast<const HierarchicalScalarType *>(nullptr);
+                }
+            }();
+            const auto fields = hierarchical_scalar_fields<Schema>(
+                std::make_index_sequence<Reflection::direct_field_count>{});
 
-    return canonical_hierarchical_scalar_type(typeid(Bundle<Schema>),
-                                              util::unqualified_type_name<Schema<hierarchical_scalar_schema_field>>(),
-                                              base, fields);
+            type.initialize(base, fields);
+        });
 }
 
 } // namespace details

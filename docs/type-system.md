@@ -110,8 +110,10 @@ domain.
 This stage provides semantic types and schema metadata. `Bundle` does not yet
 provide scalar storage, values, or time series values.
 
-Hierarchical scalar schemas must not contain themselves directly or through
-another hierarchical scalar schema.
+Hierarchical scalar schemas can refer to themselves or each other directly and
+through scalar collections. Semantic registration publishes every type created
+for one recursive schema group atomically. Readers cannot observe incomplete
+field metadata.
 
 The [scalar API](scalar-api.md) defines C++ access and ownership.
 

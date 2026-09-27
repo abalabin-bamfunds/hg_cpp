@@ -4,16 +4,21 @@
 #include <bg/scalar/bundle/scalar_type.hpp>
 #include <bg/scalar/dict/scalar_type.hpp>
 #include <bg/scalar/list/scalar_type.hpp>
+#include <bg/scalar/opaque.hpp>
 #include <bg/scalar/set/scalar_type.hpp>
 #include <bg/schema/reflection.hpp>
+#include <bg/type/opaque_scalar_type.hpp>
 #include <bg/type/type_text.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers.hpp>
 
+#include <array>
+#include <barrier>
 #include <concepts>
 #include <stdexcept>
 #include <string>
+#include <thread>
 
 namespace {
 
@@ -166,4 +171,170 @@ TEST_CASE("hierarchical scalar field redefinitions preserve base compatibility",
                       "a redefined hierarchical scalar field must have a compatible narrower type");
     CHECK_THROWS_WITH(bg::cpp_scalar_type<bg::Bundle<OptionalSymbol>>(),
                       "a required hierarchical scalar field cannot become optional");
+}
+
+namespace {
+
+template <template <typename, auto...> typename Field> struct DirectNode {
+    Field<bg::i64> value;
+    Field<bg::Bundle<DirectNode>, bg::optional> next;
+};
+
+template <template <typename, auto...> typename Field> struct RequiredDirectNode {
+    Field<bg::Bundle<RequiredDirectNode>> next;
+};
+
+template <template <typename, auto...> typename Field> struct MutualRight;
+
+template <template <typename, auto...> typename Field> struct MutualLeft {
+    Field<bg::Bundle<MutualRight>, bg::optional> right;
+};
+
+template <template <typename, auto...> typename Field> struct MutualRight {
+    Field<bg::Bundle<MutualLeft>, bg::optional> left;
+};
+
+template <template <typename, auto...> typename Field> struct ListNode {
+    Field<bg::List<bg::Bundle<ListNode>>> children;
+};
+
+template <template <typename, auto...> typename Field> struct DictNode {
+    Field<bg::Dict<bg::symbol, bg::Bundle<DictNode>>> children;
+};
+
+} // namespace
+
+TEST_CASE("hierarchical scalar schemas can refer to themselves directly",
+          "[feature:type-system][scalar:hierarchical][schema:named][declaration:concrete]") {
+    const auto &type = bg::type_cast<bg::HierarchicalScalarType>(
+        bg::cpp_scalar_type<bg::Bundle<DirectNode>>());
+
+    REQUIRE(type.field_count() == 2);
+    CHECK(type.field(1).type == &type);
+    CHECK(type.field(1).optional);
+    CHECK(type.supports_equality());
+    CHECK(type.supports_hash());
+
+    const auto &required = bg::type_cast<bg::HierarchicalScalarType>(
+        bg::cpp_scalar_type<bg::Bundle<RequiredDirectNode>>());
+    REQUIRE(required.field_count() == 1);
+    CHECK(required.field(0).type == &required);
+    CHECK_FALSE(required.field(0).optional);
+}
+
+TEST_CASE("hierarchical scalar schemas can refer to each other",
+          "[feature:type-system][scalar:hierarchical][schema:named][declaration:concrete]") {
+    const auto &left = bg::type_cast<bg::HierarchicalScalarType>(
+        bg::cpp_scalar_type<bg::Bundle<MutualLeft>>());
+    const auto &right = bg::type_cast<bg::HierarchicalScalarType>(
+        bg::cpp_scalar_type<bg::Bundle<MutualRight>>());
+
+    REQUIRE(left.field_count() == 1);
+    REQUIRE(right.field_count() == 1);
+    CHECK(left.field(0).type == &right);
+    CHECK(right.field(0).type == &left);
+    CHECK(left.supports_hash());
+    CHECK(right.supports_hash());
+}
+
+TEST_CASE("hierarchical scalar recursion composes through lists and dictionary values",
+          "[feature:type-system][scalar:hierarchical][scalar:list][scalar:dict]"
+          "[schema:named][declaration:concrete]") {
+    const auto &list_node = bg::type_cast<bg::HierarchicalScalarType>(
+        bg::cpp_scalar_type<bg::Bundle<ListNode>>());
+    const auto &list = bg::type_cast<bg::ListScalarType>(*list_node.field(0).type);
+    const auto &dict_node = bg::type_cast<bg::HierarchicalScalarType>(
+        bg::cpp_scalar_type<bg::Bundle<DictNode>>());
+    const auto &dict = bg::type_cast<bg::DictScalarType>(*dict_node.field(0).type);
+
+    CHECK(&list.item_type() == &list_node);
+    CHECK(&dict.key_type() == &bg::cpp_scalar_type<bg::symbol>());
+    CHECK(&dict.mapped_type() == &dict_node);
+    CHECK(list_node.supports_hash());
+    CHECK(dict_node.supports_hash());
+}
+
+TEST_CASE("a recursive hierarchical scalar has one identity across translation units",
+          "[feature:type-system][scalar:hierarchical][schema:named][declaration:concrete]") {
+    const auto &type = bg::type_cast<bg::HierarchicalScalarType>(
+        bg::cpp_scalar_type<bg::Bundle<test_hierarchical_scalar_provider::RecursiveInstrument>>());
+
+    CHECK(&type == &test_hierarchical_scalar_provider::recursive_instrument_type());
+    REQUIRE(type.field_count() == 2);
+    CHECK(type.field(1).type == &type);
+}
+
+namespace {
+
+template <template <typename, auto...> typename Field> struct RecursiveBase {
+    Field<bg::i64> value;
+};
+
+template <template <typename, auto...> typename Field>
+struct InvalidRecursive : bg::schema_extends<RecursiveBase, Field> {
+    Field<bg::List<bg::Bundle<InvalidRecursive>>> children;
+    Field<double> value;
+};
+
+template <template <typename, auto...> typename Field> struct ConcurrentNode {
+    Field<bg::List<bg::Bundle<ConcurrentNode>>> children;
+};
+
+template <template <typename, auto...> typename Field> struct UnhashableRecursiveKey {
+    Field<bg::Opaque<int>> payload;
+    Field<bg::Dict<bg::Bundle<UnhashableRecursiveKey>, bg::i64>> index;
+};
+
+} // namespace
+
+TEST_CASE("failed recursive registration can be retried",
+          "[feature:type-system][scalar:hierarchical][scalar:list]"
+          "[schema:named][declaration:concrete]") {
+    const auto register_type = [] { return &bg::cpp_scalar_type<bg::Bundle<InvalidRecursive>>(); };
+
+    CHECK_THROWS_WITH(register_type(),
+                      "a redefined hierarchical scalar field must have a compatible narrower type");
+    CHECK_THROWS_WITH(register_type(),
+                      "a redefined hierarchical scalar field must have a compatible narrower type");
+}
+
+TEST_CASE("recursive dictionary keys are validated after capability finalization",
+          "[feature:type-system][scalar:hierarchical][scalar:dict]"
+          "[schema:named][declaration:concrete]") {
+    const auto register_type = [] {
+        return &bg::cpp_scalar_type<bg::Bundle<UnhashableRecursiveKey>>();
+    };
+
+    CHECK_THROWS_WITH(register_type(), "dictionary key type does not support hashing");
+    CHECK_THROWS_WITH(register_type(), "dictionary key type does not support hashing");
+}
+
+TEST_CASE("concurrent first access publishes one complete recursive type",
+          "[feature:type-system][scalar:hierarchical][scalar:list]"
+          "[schema:named][declaration:concrete]") {
+    constexpr auto thread_count = std::size_t{8};
+    auto start = std::barrier{thread_count};
+    auto results = std::array<const bg::HierarchicalScalarType *, thread_count>{};
+    auto threads = std::array<std::jthread, thread_count>{};
+
+    for (auto index = std::size_t{}; index < thread_count; ++index) {
+        threads[index] = std::jthread{[&, index] {
+            start.arrive_and_wait();
+            results[index] = &bg::type_cast<bg::HierarchicalScalarType>(
+                bg::cpp_scalar_type<bg::Bundle<ConcurrentNode>>());
+        }};
+    }
+    for (auto &thread : threads) {
+        thread.join();
+    }
+
+    const auto *type = results.front();
+    REQUIRE(type != nullptr);
+    REQUIRE(type->field_count() == 1);
+    const auto &list = bg::type_cast<bg::ListScalarType>(*type->field(0).type);
+    CHECK(&list.item_type() == type);
+    for (const auto *result : results) {
+        CHECK(result == type);
+        CHECK(result->field_count() == 1);
+    }
 }

@@ -4,9 +4,10 @@
 #include <bg/type/type_resolution_error.hpp>
 #include <bg/util/symbol.hpp>
 
+#include "../type_registration.hpp"
+
 #include <algorithm>
 #include <memory>
-#include <mutex>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -67,10 +68,9 @@ const Type &GenericDictScalarType::resolve(const TypeMap &type_map) const {
 }
 
 const DictScalarType &dict_scalar_type(const ScalarType &key_type, const ScalarType &mapped_type) {
-    static auto mutex = std::mutex{};
     static auto types = std::vector<std::unique_ptr<ResolvedDictScalarType>>{};
 
-    const auto lock = std::lock_guard{mutex};
+    const auto lock = std::lock_guard{details::semantic_type_registration_mutex()};
     const auto found = std::ranges::find_if(types, [&](const auto &type) {
         return &type->key_type() == &key_type && &type->mapped_type() == &mapped_type;
     });
@@ -82,8 +82,24 @@ const DictScalarType &dict_scalar_type(const ScalarType &key_type, const ScalarT
     }
 
     types.push_back(std::make_unique<ResolvedDictScalarType>(key_type, mapped_type));
+    const auto *result = types.back().get();
+    if (auto *registration = details::SemanticTypeRegistration::current()) {
+        try {
+            registration->on_rollback([result] {
+                std::erase_if(types, [result](const auto &type) { return type.get() == result; });
+            });
+            registration->on_validate([&key_type] {
+                if (!key_type.supports_hash()) {
+                    throw std::invalid_argument{"dictionary key type does not support hashing"};
+                }
+            });
+        } catch (...) {
+            types.pop_back();
+            throw;
+        }
+    }
 
-    return *types.back();
+    return *result;
 }
 
 } // namespace bg
