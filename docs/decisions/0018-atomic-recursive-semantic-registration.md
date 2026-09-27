@@ -1,5 +1,7 @@
 # Atomic recursive semantic registration
 
+Status: accepted
+
 ## Decision
 
 Recursive hierarchical schemas reserve their canonical identities before they

@@ -19,5 +19,6 @@ template <template <typename, auto...> typename Field> struct RecursiveInstrumen
 
 const bg::ScalarType &instrument_type();
 const bg::ScalarType &recursive_instrument_type();
+const bg::ScalarType &conflicting_instrument_type();
 
 } // namespace test_hierarchical_scalar_provider

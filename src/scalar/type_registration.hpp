@@ -21,12 +21,14 @@ class SemanticTypeRegistration {
     void on_rollback(std::function<void()> rollback);
     void on_finalize(std::function<bool()> finalize);
     void on_validate(std::function<void()> validate);
+    void on_commit(std::function<void()> commit);
     void commit();
 
   private:
     std::vector<std::function<void()>> rollbacks_;
     std::vector<std::function<bool()>> finalizers_;
     std::vector<std::function<void()>> validators_;
+    std::vector<std::function<void()>> commits_;
     bool committed_{false};
 };
 

@@ -79,6 +79,14 @@ TEST_CASE("a hierarchical scalar has one semantic identity across translation un
           &test_hierarchical_scalar_provider::instrument_type());
 }
 
+TEST_CASE("a conflicting hierarchical scalar declaration in another translation unit is rejected",
+          "[feature:type-system][scalar:hierarchical][schema:named][declaration:concrete]") {
+    CHECK_THROWS_WITH(test_hierarchical_scalar_provider::conflicting_instrument_type(),
+                      "conflicting hierarchical scalar declaration: Instrument");
+    CHECK(&test_hierarchical_scalar_provider::instrument_type() ==
+          &bg::cpp_scalar_type<bg::Bundle<Instrument>>());
+}
+
 TEST_CASE("hierarchical scalar compatibility follows declared inheritance",
           "[feature:type-system][scalar:hierarchical][schema:named][declaration:concrete]"
           "[binding:covariant]") {

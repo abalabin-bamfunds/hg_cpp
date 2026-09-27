@@ -1,10 +1,14 @@
 # Hierarchical scalar semantic types
 
+Status: accepted
+
 ## Decision
 
 `Bundle<Schema>` declares a hierarchical scalar independently of its future
 storage. `HierarchicalScalarType` owns its canonical nominal identity, ordered
 field metadata, optional-field metadata, and declared base relationship.
+Repeated declarations of one identity must have the same name, base, ordered
+direct fields, field types, and optionality.
 
 Hierarchical scalars and time series bundles use the shared `schema_reflection`
 and `schema_extends` mechanism. `bundle_extends` remains a compatibility alias.

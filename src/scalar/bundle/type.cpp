@@ -1,13 +1,16 @@
 #include <bg/scalar/bundle/scalar_type.hpp>
 
 #include <bg/type/type_map.hpp>
+#include <bg/util/scope_exit.hpp>
 
 #include "../type_registration.hpp"
 
 #include <algorithm>
+#include <cstdint>
 #include <memory>
 #include <ranges>
 #include <stdexcept>
+#include <string>
 #include <typeindex>
 #include <unordered_map>
 #include <utility>
@@ -99,30 +102,67 @@ bool HierarchicalScalarType::do_match(const Type &supplied, TypeMap &) const {
 
 namespace details {
 
+namespace {
+
+enum class HierarchicalTypeStatus : std::uint8_t {
+    reserved,
+    finalized,
+};
+
+struct HierarchicalTypeEntry {
+    std::unique_ptr<HierarchicalScalarType> type;
+    HierarchicalTypeStatus status;
+};
+
+} // namespace
+
 const HierarchicalScalarType &canonical_hierarchical_scalar_type(
     const std::type_info &identity, std::string_view name, void (*initialize)(HierarchicalScalarType &)) {
-    static auto types = std::unordered_map<std::type_index, std::unique_ptr<HierarchicalScalarType>>{};
+    static auto types = std::unordered_map<std::type_index, HierarchicalTypeEntry>{};
 
     const auto lock = std::lock_guard{semantic_type_registration_mutex()};
     const auto find_or_construct = [&]() -> const HierarchicalScalarType & {
         const auto key = std::type_index{identity};
         if (const auto entry = types.find(key); entry != types.end()) {
-            return *entry->second;
+            if (entry->second.status == HierarchicalTypeStatus::reserved) {
+                return *entry->second.type;
+            }
+
+            const auto &existing = *entry->second.type;
+            if (existing.name().text() != name) {
+                throw std::logic_error{"conflicting hierarchical scalar declaration: " + std::string{name}};
+            }
+
+            entry->second.status = HierarchicalTypeStatus::reserved;
+            const auto restore_status = util::scope_exit{[key]() noexcept {
+                types.find(key)->second.status = HierarchicalTypeStatus::finalized;
+            }};
+            auto candidate = HierarchicalScalarType{util::symbol{name}};
+            initialize(candidate);
+            const auto same_fields = std::ranges::equal(
+                existing.direct_fields(), candidate.direct_fields(), [](const auto &left, const auto &right) {
+                    return left.name == right.name && left.type == right.type && left.optional == right.optional;
+                });
+            if (existing.base() != candidate.base() || !same_fields) {
+                throw std::logic_error{"conflicting hierarchical scalar declaration: " + std::string{name}};
+            }
+            return existing;
         }
 
         auto type = std::unique_ptr<HierarchicalScalarType>{new HierarchicalScalarType{util::symbol{name}}};
         auto *result = type.get();
-        types.emplace(key, std::move(type));
+        types.emplace(key, HierarchicalTypeEntry{std::move(type), HierarchicalTypeStatus::reserved});
         try {
             auto &registration = *SemanticTypeRegistration::current();
             registration.on_rollback([key] { types.erase(key); });
             registration.on_finalize([result] { return result->finalize_capabilities(); });
+            registration.on_commit([key] { types.at(key).status = HierarchicalTypeStatus::finalized; });
         } catch (...) {
             types.erase(key);
             throw;
         }
 
-        initialize(*types.at(key));
+        initialize(*types.at(key).type);
         return *result;
     };
 

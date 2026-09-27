@@ -43,6 +43,10 @@ void SemanticTypeRegistration::on_validate(std::function<void()> validate) {
     validators_.push_back(std::move(validate));
 }
 
+void SemanticTypeRegistration::on_commit(std::function<void()> commit) {
+    commits_.push_back(std::move(commit));
+}
+
 void SemanticTypeRegistration::commit() {
     auto changed = true;
     while (changed) {
@@ -53,6 +57,9 @@ void SemanticTypeRegistration::commit() {
     }
     for (const auto &validate : validators_) {
         validate();
+    }
+    for (const auto &commit : commits_) {
+        commit();
     }
     committed_ = true;
 }
