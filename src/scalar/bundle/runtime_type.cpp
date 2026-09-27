@@ -14,14 +14,10 @@
 #include <memory>
 #include <optional>
 #include <stdexcept>
+#include <typeinfo>
 #include <vector>
 
 namespace bg {
-
-bool HierarchicalScalarRuntimeType::accepts_input(const ScalarRuntimeType &source) const noexcept {
-    const auto *supplied = type_cast<HierarchicalScalarType>(&source.type());
-    return supplied != nullptr && supplied->derives_from(type());
-}
 
 namespace {
 
@@ -32,6 +28,7 @@ class ComposedHierarchicalScalarRuntimeType final : public HierarchicalScalarRun
     void initialize(std::span<const ScalarRuntimeType *const> fields);
     details::ScalarData field(const details::ScalarData &value, std::size_t index) const override;
     bool field_present(const details::ScalarData &value, std::size_t index) const override;
+    bool accepts_input(const ScalarRuntimeType &source) const noexcept override;
 
   private:
     struct Storage;
@@ -141,6 +138,14 @@ details::ScalarData ComposedHierarchicalScalarRuntimeType::field(const details::
 bool ComposedHierarchicalScalarRuntimeType::field_present(const details::ScalarData &value, std::size_t index) const {
     auto *stored = storage(value);
     return stored->runtime_type->field_present(*stored, index);
+}
+
+bool ComposedHierarchicalScalarRuntimeType::accepts_input(const ScalarRuntimeType &source) const noexcept {
+    if (typeid(source) != typeid(ComposedHierarchicalScalarRuntimeType)) {
+        return false;
+    }
+
+    return static_cast<const HierarchicalScalarRuntimeType &>(source).type().derives_from(type());
 }
 
 std::uintptr_t

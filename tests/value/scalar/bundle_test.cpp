@@ -11,8 +11,11 @@
 
 #include <array>
 #include <concepts>
+#include <cstdint>
+#include <exception>
 #include <memory_resource>
 #include <optional>
+#include <span>
 #include <stdexcept>
 #include <string_view>
 
@@ -89,6 +92,42 @@ template <template <typename, auto...> typename Field> struct UnhashableRecord {
 
 template <typename T>
 concept HashableScalar = requires(const bg::Scalar<T> &value) { value.hash(); };
+
+class AlternateHierarchicalRuntimeType final : public bg::HierarchicalScalarRuntimeType {
+  public:
+    explicit AlternateHierarchicalRuntimeType(const bg::HierarchicalScalarType &type) noexcept
+        : HierarchicalScalarRuntimeType{type, sizeof(void *), alignof(void *), false, false, true} {}
+
+    bg::details::ScalarData field(const bg::details::ScalarData &, std::size_t) const override {
+        std::terminate();
+    }
+
+    bool field_present(const bg::details::ScalarData &, std::size_t) const override { return false; }
+
+  private:
+    std::uintptr_t construct_shared(std::span<const bg::details::ScalarData *const>,
+                                    bg::details::BundleAllocationOwner &) const override {
+        std::terminate();
+    }
+
+    void construct_initial_value(void *destination) const noexcept override {
+        *static_cast<void **>(destination) = nullptr;
+    }
+
+    void do_construct_from_input(void *, const bg::details::ScalarData &, bg::allocator &) const override {
+        std::terminate();
+    }
+
+    void copy_construct(void *, const void *, bg::allocator &) const override { std::terminate(); }
+
+    void do_assign_from_input(void *, const bg::details::ScalarData &) const override { std::terminate(); }
+
+    std::size_t hash(const void *) const noexcept override { return 0; }
+
+    bool equals_same_type(const void *, const bg::details::ScalarData &) const noexcept override { return false; }
+
+    void destroy(void *, bg::allocator &) const noexcept override {}
+};
 
 } // namespace
 
@@ -405,6 +444,15 @@ TEST_CASE("a base hierarchical view preserves the derived runtime type",
     CHECK(base.field_count() == 2);
     CHECK(bg::scalar_cast<bg::symbol>(base[0]).value().text() == "ABC");
     CHECK(bg::scalar_cast<double>(base[1]).value() == 12.5);
+}
+
+TEST_CASE("composed hierarchical storage rejects another runtime layout",
+          "[feature:scalar-storage][scalar:hierarchical][representation:covariant]") {
+    const auto &runtime_type = static_cast<const bg::HierarchicalScalarRuntimeType &>(
+        bg::cpp_scalar_runtime_type<bg::Bundle<Instrument>>());
+    const auto alternate = AlternateHierarchicalRuntimeType{runtime_type.type()};
+
+    CHECK_FALSE(runtime_type.accepts_input(alternate));
 }
 
 TEST_CASE("a hierarchical field preserves a derived value stored through its base type",

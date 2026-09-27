@@ -20,10 +20,12 @@ same semantic type can provide another physical layout through the same field
 access interface.
 
 A destination scalar runtime type validates representation compatibility before
-construction or assignment. The shared hierarchical representation accepts a
-compatible derived hierarchical value because both use the same handle. Scalar
-collection covariance remains semantic; it does not make differently declared
-collection storage interchangeable. See the [scalar API](../scalar-api.md#hierarchical-scalars).
+construction or assignment. The composed hierarchical runtime accepts a
+compatible derived hierarchical value only when both use its shared handle
+layout. Another hierarchical runtime layout must provide its own conversion.
+Scalar collection covariance remains semantic; it does not make differently
+declared collection storage interchangeable. See the
+[scalar API](../scalar-api.md#hierarchical-scalars).
 
 ## Context
 

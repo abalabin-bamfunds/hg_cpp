@@ -35,7 +35,6 @@ class HierarchicalScalarRuntimeType : public ScalarRuntimeType {
 
     virtual details::ScalarData field(const details::ScalarData &value, std::size_t index) const = 0;
     virtual bool field_present(const details::ScalarData &value, std::size_t index) const = 0;
-    bool accepts_input(const ScalarRuntimeType &source) const noexcept override;
 
   private:
     virtual std::uintptr_t construct_shared(std::span<const details::ScalarData *const> fields,
