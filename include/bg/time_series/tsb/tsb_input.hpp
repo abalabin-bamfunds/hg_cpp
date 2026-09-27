@@ -21,7 +21,9 @@ class bundle_input_factory {
   public:
     explicit bundle_input_factory(const TimeSeriesInputData &data) noexcept : data_{&data} {}
 
-    template <typename Item> [[nodiscard]] In<Item> make(std::size_t index) const {
+    template <typename SchemaField>
+    [[nodiscard]] In<typename SchemaField::time_series_type> make(std::size_t index) const {
+        using Item = typename SchemaField::time_series_type;
         const auto item = data_->runtime_type().item(data_->data(), static_cast<item_id_t>(index));
         return {item.last_updated, item.value, item.runtime_type,
                 data_->modified() && item.last_updated == data_->last_updated()};

@@ -18,7 +18,8 @@ class bundle_output_factory {
   public:
     explicit bundle_output_factory(const OutputState &state) noexcept : state_{&state} {}
 
-    template <typename Item> [[nodiscard]] Out<Item> make(std::size_t index) const {
+    template <typename SchemaField> [[nodiscard]] auto make(std::size_t index) const {
+        using Item = typename SchemaField::time_series_type;
         const auto id = static_cast<item_id_t>(index);
         const auto item = state_->runtime_type().item(state_->mutable_data(), id);
         auto *path = state_->add_path(state_->runtime_type(), id);

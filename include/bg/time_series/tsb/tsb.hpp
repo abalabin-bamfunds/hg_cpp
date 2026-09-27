@@ -33,7 +33,8 @@ template <template <template <typename> typename> typename Schema> class BundleW
       public:
         explicit Factory(WiringPoint bundle) noexcept : bundle_{bundle} {}
 
-        template <typename Field> wp<Field> make(std::size_t index) const {
+        template <typename SchemaField> auto make(std::size_t index) const {
+            using Field = typename SchemaField::time_series_type;
             const auto &type = TSB<Schema>::type();
             return wiring_point_annotation::make<Field>(operators::getattr(bundle_, type.item_name(index)));
         }

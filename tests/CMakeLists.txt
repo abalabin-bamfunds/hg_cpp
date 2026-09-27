@@ -58,6 +58,7 @@ add_executable(
     utils/occupancy_index_test.cpp
     utils/reflection_test.cpp
     utils/runtime_bunch_test.cpp
+    utils/schema_reflection_test.cpp
     utils/scope_exit_test.cpp
     utils/sparse_bunch_test.cpp
     utils/symbol_test.cpp

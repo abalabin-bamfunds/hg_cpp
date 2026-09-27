@@ -192,8 +192,8 @@ consteval bool identifier_character(char value) {
            (value >= 'a' && value <= 'z');
 }
 
-template <std::size_t Index, typename T> consteval std::string_view aggregate_member_name() {
-    constexpr auto signature = value_signature<aggregate_member_pointer<Index, T>()>();
+template <auto Pointer> consteval std::string_view reflected_member_name() {
+    constexpr auto signature = value_signature<Pointer>();
     constexpr auto marker = std::string_view{"reflected_aggregate"};
 
     constexpr auto marker_position = signature.find(marker);
@@ -221,6 +221,10 @@ template <std::size_t Index, typename T> consteval std::string_view aggregate_me
     }
 
     return signature.substr(begin, end - begin);
+}
+
+template <std::size_t Index, typename T> consteval std::string_view aggregate_member_name() {
+    return reflected_member_name<aggregate_member_pointer<Index, T>()>();
 }
 
 template <typename T, std::size_t... Index> consteval auto aggregate_member_names_impl(std::index_sequence<Index...>) {

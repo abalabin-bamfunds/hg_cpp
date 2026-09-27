@@ -1,17 +1,12 @@
 #pragma once
 
+#include <bg/schema/reflection.hpp>
 #include <bg/time_series/details/time_series_properties.hpp>
 #include <bg/time_series/details/type_access.hpp>
 #include <bg/time_series/schema_variable.hpp>
 #include <bg/time_series/tsb/schema_field.hpp>
 
 namespace bg {
-
-namespace details {
-
-template <template <template <typename> typename> typename Base> struct bundle_base_marker {};
-
-} // namespace details
 
 template <template <template <typename> typename> typename Base, template <typename> typename Field,
           bool Schema = details::is_bundle_schema_field<Field>>
@@ -21,7 +16,7 @@ template <template <template <typename> typename> typename Base, template <typen
 struct bundle_extends<Base, Field, false> : Base<Field> {};
 
 template <template <template <typename> typename> typename Base, template <typename> typename Field>
-struct bundle_extends<Base, Field, true> : details::bundle_base_marker<Base> {};
+struct bundle_extends<Base, Field, true> : details::schema_base_marker<Base> {};
 
 template <template <template <typename> typename> typename Schema, auto... Properties>
 struct TSB : details::time_series_type_access<TSB<Schema, Properties...>> {

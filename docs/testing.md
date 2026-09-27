@@ -90,7 +90,7 @@ graph compilation or evaluation.
 
 ### Utilities
 
-- compile-time strings, symbols, named arguments, and reflection
+- compile-time strings, symbols, named arguments, aggregate reflection, and C++ schema reflection and construction
 - constant-size scalar value handles
 - visitor dispatch for concrete and generic scalar and time series views, including base-interface fallback, no
   matching overload, external scalar dispatch, runtime-type precedence, and recursion through scalar collections
