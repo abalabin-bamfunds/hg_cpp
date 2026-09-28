@@ -45,14 +45,29 @@ template <typename T> struct scalar_storage_traits<Set<T>> {
     }
 
     template <std::ranges::input_range Range>
-        requires std::convertible_to<std::ranges::range_reference_t<const Range>, typename ItemTraits::value_type>
+        requires(details::scalar_view_source_for<std::ranges::range_reference_t<const Range>, T> ||
+                 (!details::scalar_data_source<std::ranges::range_reference_t<const Range>> &&
+                  requires(typename ItemTraits::stored_type *destination,
+                           std::ranges::range_reference_t<const Range> item,
+                           allocator &memory) { ItemTraits::construct(destination, item, memory); }))
     static void construct(stored_type *destination, const Range &value, allocator &memory) {
         std::construct_at(destination);
         auto rollback = util::scope_exit{[&]() noexcept { destroy(destination, memory); }};
         for (const auto &item : value) {
-            (void)destination->items.insert_with(
-                item, memory.memory_resource(), [&](auto *stored) { ItemTraits::construct(stored, item, memory); },
-                [&](auto *stored) noexcept { ItemTraits::destroy(stored, memory); });
+            if constexpr (details::scalar_view_source_for<decltype(item), T>) {
+                const auto &source = details::scalar_data(item);
+                const auto &runtime_type = cpp_scalar_runtime_type<T>();
+                (void)destination->items.insert_with(
+                    source.hash(),
+                    [&](const auto &stored) { return runtime_type.equals(std::addressof(stored), source); },
+                    memory.memory_resource(),
+                    [&](auto *stored) { source.copy_construct(stored, runtime_type, memory); },
+                    [&](auto *stored) noexcept { ItemTraits::destroy(stored, memory); });
+            } else {
+                (void)destination->items.insert_with(
+                    item, memory.memory_resource(), [&](auto *stored) { ItemTraits::construct(stored, item, memory); },
+                    [&](auto *stored) noexcept { ItemTraits::destroy(stored, memory); });
+            }
         }
         rollback.release();
     }

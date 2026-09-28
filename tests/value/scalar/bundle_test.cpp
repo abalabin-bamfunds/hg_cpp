@@ -139,6 +139,9 @@ static_assert(
     std::constructible_from<bg::ScalarValue<bg::Bundle<Instrument>>, const bg::ScalarValue<bg::Bundle<Equity>> &>);
 static_assert(
     !std::constructible_from<bg::ScalarValue<bg::Bundle<Instrument>>, const bg::ScalarValue<bg::Bundle<Instrument>> &>);
+static_assert(!std::constructible_from<
+              bg::ScalarValue<bg::Set<bg::Bundle<Instrument>>>,
+              const std::array<bg::Scalar<bg::Bundle<Equity>>, 1> &>);
 static_assert(HashableScalar<bg::Bundle<HashableRecord>>);
 static_assert(!HashableScalar<bg::Bundle<UnhashableRecord>>);
 
@@ -466,7 +469,7 @@ TEST_CASE("a hierarchical field preserves a derived value stored through its bas
     CHECK(bg::scalar_cast<bg::symbol>(instrument[0]).value().text() == "ABC");
 }
 
-TEST_CASE("hierarchical construction rejects unsupported covariant collection representations",
+TEST_CASE("hierarchical construction converts covariant collection representations",
           "[feature:scalar-storage][scalar:hierarchical][scalar:list][scalar:dict][binding:covariant]") {
     const auto equity = bg::bundle<Equity>(bg::symbol{"ABC"}, 12.5, bg::i64{100});
     const auto list_items = std::array<bg::Scalar<bg::Bundle<Equity>>, 1>{equity.view()};
@@ -475,11 +478,44 @@ TEST_CASE("hierarchical construction rejects unsupported covariant collection re
         std::array{std::pair{bg::i64{1}, bg::Scalar<bg::Bundle<Equity>>::from(equity)}};
     const auto dictionary =
         bg::ScalarValue<bg::Dict<bg::i64, bg::Bundle<Equity>>>{dictionary_items};
+    const auto &list_runtime = bg::cpp_scalar_runtime_type<bg::List<bg::Bundle<Instrument>>>();
+    const auto &dictionary_runtime =
+        bg::cpp_scalar_runtime_type<bg::Dict<bg::i64, bg::Bundle<Instrument>>>();
 
     CHECK(bg::cpp_scalar_type<bg::List<bg::Bundle<Instrument>>>().accepts(list.type()));
     CHECK(bg::cpp_scalar_type<bg::Dict<bg::i64, bg::Bundle<Instrument>>>().accepts(dictionary.type()));
-    CHECK_THROWS_AS(bg::bundle<InstrumentList>(list.view()), std::invalid_argument);
-    CHECK_THROWS_AS(bg::bundle<InstrumentDictionary>(dictionary.view()), std::invalid_argument);
+    CHECK(list_runtime.accepts_input(list.runtime_type()));
+    CHECK(dictionary_runtime.accepts_input(dictionary.runtime_type()));
+    CHECK(list_runtime.accepts_input(list_runtime));
+    CHECK(dictionary_runtime.accepts_input(dictionary_runtime));
+    CHECK_FALSE(list_runtime.accepts_input(
+        bg::cpp_scalar_runtime_type<bg::List<bg::Bundle<UnrelatedRecord>>>()));
+    CHECK_FALSE(dictionary_runtime.accepts_input(
+        bg::cpp_scalar_runtime_type<bg::Dict<bg::symbol, bg::Bundle<Equity>>>()));
+    CHECK_FALSE(dictionary_runtime.accepts_input(
+        bg::cpp_scalar_runtime_type<bg::Dict<bg::i64, bg::Bundle<UnrelatedRecord>>>()));
+
+    const auto list_container = bg::bundle<InstrumentList>(list.view());
+    const auto stored_list = bg::scalar_cast<bg::List<bg::Bundle<Instrument>>>(list_container.view()[0]);
+    REQUIRE(stored_list.size() == 1);
+    CHECK(&stored_list[0].type() == &equity.type());
+    CHECK(bg::scalar_cast<bg::symbol>(stored_list[0][0]).value().text() == "ABC");
+
+    const auto dictionary_container = bg::bundle<InstrumentDictionary>(dictionary.view());
+    const auto stored_dictionary =
+        bg::scalar_cast<bg::Dict<bg::i64, bg::Bundle<Instrument>>>(dictionary_container.view()[0]);
+    REQUIRE(stored_dictionary.size() == 1);
+    CHECK(&stored_dictionary.at(1).type() == &equity.type());
+    const auto stored_equity = bg::scalar_cast<bg::Bundle<Equity>>(stored_dictionary.at(1));
+    CHECK(bg::scalar_cast<bg::i64>(stored_equity[2]).value() == 100);
+}
+
+TEST_CASE("set runtimes reject covariant hierarchical items",
+          "[feature:scalar-storage][scalar:set][scalar:hierarchical][binding:covariant]") {
+    const auto &destination = bg::cpp_scalar_runtime_type<bg::Set<bg::Bundle<Instrument>>>();
+    const auto &source = bg::cpp_scalar_runtime_type<bg::Set<bg::Bundle<Equity>>>();
+
+    CHECK_FALSE(destination.accepts_input(source));
 }
 
 TEST_CASE("a recursive hierarchical scalar runtime type supports an absent recursive field",

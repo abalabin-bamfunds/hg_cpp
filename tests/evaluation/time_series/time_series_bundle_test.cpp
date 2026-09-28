@@ -206,34 +206,55 @@ TEST_CASE("a hierarchical time series output accepts a derived scalar representa
     CHECK(bg::scalar_cast<bg::symbol>((*result)[0]).value().text() == "ABC");
 }
 
-TEST_CASE("a time series output rejects a covariant scalar collection representation",
+TEST_CASE("a time series output copies a covariant scalar collection representation",
           "[feature:scalar-api][series:value][scalar:hierarchical][scalar:list][scalar:dict]"
           "[binding:covariant][transition:update]") {
-    const auto publish_list = bg::node(
+    const auto list_source = bg::node(
         [](bg::In<bg::TS<bg::i64>> trigger, bg::Scalar<bg::List<bg::Bundle<Equity>>> value,
-           bg::Out<bg::TS<bg::List<bg::Bundle<Instrument>>>> output) {
+           bg::Out<bg::TS<bg::List<bg::Bundle<Equity>>>> output) {
             (void)trigger;
             output.set_value(value);
         });
-    const auto publish_dictionary = bg::node(
+    const auto copy_list = bg::node(
+        [](bg::In<bg::TS<bg::List<bg::Bundle<Equity>>>> input,
+           bg::Out<bg::TS<bg::List<bg::Bundle<Instrument>>>> output) { output.set_value(input.value_view()); });
+
+    const auto dictionary_source = bg::node(
         [](bg::In<bg::TS<bg::i64>> trigger,
            bg::Scalar<bg::Dict<bg::i64, bg::Bundle<Equity>>> value,
-           bg::Out<bg::TS<bg::Dict<bg::i64, bg::Bundle<Instrument>>>> output) {
+           bg::Out<bg::TS<bg::Dict<bg::i64, bg::Bundle<Equity>>>> output) {
             (void)trigger;
             output.set_value(value);
         });
+    const auto copy_dictionary = bg::node(
+        [](bg::In<bg::TS<bg::Dict<bg::i64, bg::Bundle<Equity>>>> input,
+           bg::Out<bg::TS<bg::Dict<bg::i64, bg::Bundle<Instrument>>>> output) {
+            output.set_value(input.value_view());
+        });
+
     const auto equity = bg::bundle<Equity>(bg::symbol{"ABC"}, bg::i64{100});
     const auto list = bg::ScalarValue<bg::List<bg::Bundle<Equity>>>{
         std::array<bg::Scalar<bg::Bundle<Equity>>, 1>{equity.view()}};
     const auto dictionary = bg::ScalarValue<bg::Dict<bg::i64, bg::Bundle<Equity>>>{
         std::array{std::pair{bg::i64{1}, equity.view()}}};
-    const auto list_graph = [&](bg::wp<bg::TS<bg::i64>> trigger) { return publish_list(trigger, list); };
+    const auto list_graph = [&](bg::wp<bg::TS<bg::i64>> trigger) { return copy_list(list_source(trigger, list)); };
     const auto dictionary_graph = [&](bg::wp<bg::TS<bg::i64>> trigger) {
-        return publish_dictionary(trigger, dictionary);
+        return copy_dictionary(dictionary_source(trigger, dictionary));
     };
 
-    CHECK_THROWS_AS(bg::testing::test_graph(list_graph, std::array{1}), std::invalid_argument);
-    CHECK_THROWS_AS(bg::testing::test_graph(dictionary_graph, std::array{1}), std::invalid_argument);
+    const auto actual_list = bg::testing::test_graph(list_graph, std::array{1});
+    const auto actual_dictionary = bg::testing::test_graph(dictionary_graph, std::array{1});
+
+    REQUIRE(actual_list[0].has_value());
+    REQUIRE(actual_list[0]->size() == 1);
+    CHECK(&(*actual_list[0])[0].type() == &equity.type());
+    CHECK(bg::scalar_cast<bg::symbol>((*actual_list[0])[0][0]).value().text() == "ABC");
+
+    REQUIRE(actual_dictionary[0].has_value());
+    REQUIRE(actual_dictionary[0]->size() == 1);
+    CHECK(&actual_dictionary[0]->at(1).type() == &equity.type());
+    const auto stored_equity = bg::scalar_cast<bg::Bundle<Equity>>(actual_dictionary[0]->at(1));
+    CHECK(bg::scalar_cast<bg::i64>(stored_equity[1]).value() == 100);
 }
 
 TEST_CASE("fixed time series lists can contain runtime-sized time series",

@@ -32,6 +32,27 @@ bool ScalarRuntimeType::accepts_input(const ScalarRuntimeType &source) const noe
     return &type() == &source.type();
 }
 
+bool ScalarListRuntimeType::accepts_input(const ScalarRuntimeType &source) const noexcept {
+    if (type_cast<ListScalarType>(&source.type()) == nullptr) {
+        return false;
+    }
+
+    const auto &source_list = static_cast<const ScalarListRuntimeType &>(source);
+    return item_runtime_type().accepts_input(source_list.item_runtime_type());
+}
+
+bool ScalarDictRuntimeType::accepts_input(const ScalarRuntimeType &source) const noexcept {
+    const auto *source_type = type_cast<DictScalarType>(&source.type());
+    const auto &destination_type = static_cast<const DictScalarType &>(type());
+    if (source_type == nullptr || &destination_type.key_type() != &source_type->key_type()) {
+        return false;
+    }
+
+    const auto &source_dict = static_cast<const ScalarDictRuntimeType &>(source);
+    return key_runtime_type().accepts_input(source_dict.key_runtime_type()) &&
+           mapped_runtime_type().accepts_input(source_dict.mapped_runtime_type());
+}
+
 void ScalarRuntimeType::construct_from_input(void *destination, const details::ScalarData &value,
                                              allocator &memory) const {
     if (!accepts_input(value.runtime_type())) {

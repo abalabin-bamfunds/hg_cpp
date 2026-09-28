@@ -23,8 +23,9 @@ A destination scalar runtime type validates representation compatibility before
 construction or assignment. The composed hierarchical runtime accepts a
 compatible derived hierarchical value only when both use its shared handle
 layout. Another hierarchical runtime layout must provide its own conversion.
-Scalar collection covariance remains semantic; it does not make differently
-declared collection storage interchangeable. See the
+List and dictionary runtime types implement compatible covariance by rebuilding
+destination storage item by item. Differently declared collection storage is
+not interchangeable. See the
 [scalar API](../scalar-api.md#hierarchical-scalars).
 
 ## Context

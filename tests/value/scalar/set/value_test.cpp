@@ -1,12 +1,22 @@
+#include <bg/scalar/bundle/value.hpp>
 #include <bg/scalar/set/type.hpp>
 #include <bg/scalar/value.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <array>
 #include <cstdint>
 #include <string>
 #include <string_view>
 #include <vector>
+
+namespace {
+
+template <template <typename, auto...> typename Field> struct SetItem {
+    Field<bg::i64> value;
+};
+
+} // namespace
 
 TEST_CASE("a scalar set owns its unique items", "[value][scalar][set][scalar:set][feature:scalar-collection]") {
     const auto items = std::vector<std::int64_t>{3, 1, 3, 2};
@@ -55,6 +65,22 @@ TEST_CASE("a scalar set owns variable-size items",
     CHECK(set.contains("first"));
     CHECK(set.contains("second"));
     CHECK_FALSE(set.contains("changed"));
+}
+
+TEST_CASE("a scalar set owns and compares hierarchical items",
+          "[value][scalar][set][scalar:set][scalar:hierarchical][feature:scalar-collection]") {
+    const auto one = bg::bundle<SetItem>(bg::i64{1});
+    const auto another_one = bg::bundle<SetItem>(bg::i64{1});
+    const auto two = bg::bundle<SetItem>(bg::i64{2});
+    const auto first_items = std::array<bg::Scalar<bg::Bundle<SetItem>>, 3>{one.view(), another_one.view(), two.view()};
+    const auto second_items = std::array<bg::Scalar<bg::Bundle<SetItem>>, 2>{two.view(), one.view()};
+    const auto first = bg::ScalarValue<bg::Set<bg::Bundle<SetItem>>>{first_items};
+    const auto second = bg::ScalarValue<bg::Set<bg::Bundle<SetItem>>>{second_items};
+
+    CHECK(first.view().size() == 2);
+    CHECK(first.view().contains(one.view()));
+    CHECK(first.view().contains(two.view()));
+    CHECK(first == second);
 }
 
 TEST_CASE("a generic scalar set exposes its declared comparison operations",

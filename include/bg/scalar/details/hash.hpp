@@ -31,13 +31,13 @@ template <typename T> struct scalar_equal {
     using Value = typename Traits::value_type;
 
     bool operator()(const Stored &left, const Stored &right) const noexcept {
-        return Traits::read(left) == Traits::read(right);
+        return Traits::equals(Traits::read(left), Traits::read(right));
     }
 
     bool operator()(const Stored &left, Value right) const noexcept
         requires(!std::same_as<Stored, Value>)
     {
-        return Traits::read(left) == right;
+        return Traits::equals(Traits::read(left), right);
     }
 };
 

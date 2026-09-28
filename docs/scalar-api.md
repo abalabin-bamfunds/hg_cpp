@@ -160,10 +160,14 @@ Scalar lists and dictionary mapped values store the same one-word handle.
 Collection copies retain the control block and preserve its actual runtime
 type.
 
-Semantic covariance through lists and dictionary values applies to type
-resolution and borrowed views. Copying or assigning between collection values
-with different declarations requires explicit item-wise construction. Runtime
-storage does not reinterpret one collection declaration as another.
+List and dictionary runtime types copy and assign compatible collection values
+by constructing each destination item. This supports covariance through list
+items and dictionary mapped values. Dictionary keys remain invariant. Runtime
+storage never reinterprets one collection declaration as another.
+
+Set runtime input remains exact. A set indexes its items by their hash, and
+runtime input compatibility does not guarantee that conversion preserves the
+destination equality and hash behavior.
 
 Hierarchical control blocks use a thread-safe allocation owner associated with
 the outer global state. A control block retains that owner, so an owning value
@@ -190,6 +194,11 @@ across shared-library boundaries.
 `scalar_declaration_traits<T>` controls whether graph signatures accept the
 declaration as a collection, an implicit scalar argument, or a time series
 value. Its defaults describe an ordinary leaf scalar.
+
+A runtime type for a list, set, or dictionary semantic type derives from the
+matching collection runtime interface. Its component runtime types correspond
+to the semantic type components. Generic collection access and runtime input
+compatibility rely on this registration invariant.
 
 ## Optional operations
 

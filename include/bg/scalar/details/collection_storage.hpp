@@ -10,11 +10,13 @@
 
 namespace bg::details {
 
+template <typename Source>
+concept scalar_data_source = requires(const Source &source) { scalar_data(source); };
+
 template <typename Source, typename T>
-concept scalar_view_source_for = requires(const Source &source) {
+concept scalar_view_source_for = scalar_data_source<Source> && requires {
     typename std::remove_cvref_t<Source>::scalar_type;
     requires std::same_as<typename std::remove_cvref_t<Source>::scalar_type, T>;
-    scalar_data(source);
 };
 
 template <typename Collection>

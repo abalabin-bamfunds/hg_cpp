@@ -33,6 +33,8 @@ class ScalarDictRuntimeType : public ScalarRuntimeType {
 
     using EntryFunction = void (*)(void *, Entry);
 
+    bool accepts_input(const ScalarRuntimeType &source) const noexcept override;
+
     const ScalarRuntimeType &key_runtime_type() const noexcept { return *key_; }
     const ScalarRuntimeType &mapped_runtime_type() const noexcept { return *mapped_; }
     virtual std::size_t item_count(const void *storage) const noexcept = 0;

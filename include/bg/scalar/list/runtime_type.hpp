@@ -16,6 +16,8 @@ class ScalarListRuntimeType : public ScalarRuntimeType {
           item_{&item} {}
 
   public:
+    bool accepts_input(const ScalarRuntimeType &source) const noexcept override;
+
     const ScalarRuntimeType &item_runtime_type() const noexcept { return *item_; }
     virtual std::size_t item_count(const void *storage) const noexcept = 0;
     virtual const void *item(const void *storage, std::size_t index) const noexcept = 0;
