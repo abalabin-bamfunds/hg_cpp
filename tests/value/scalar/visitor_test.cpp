@@ -20,6 +20,25 @@ TEST_CASE("a scalar visitor identifies a scalar value", "[value][scalar][visitor
     CHECK(called);
 }
 
+TEST_CASE("one scalar visitor handles multiple built-in scalar types",
+          "[value][scalar][visitor][feature:visitor][scalar:i64][scalar:symbol]") {
+    const auto integer = bg::ScalarValue{42};
+    const auto name = bg::ScalarValue{bg::symbol{"name"}};
+    auto integer_called = false;
+    auto symbol_called = false;
+    auto visitor = ddv::serial{
+        [&](const bg::Scalar<bg::i64> *) { integer_called = true; },
+        [&](const bg::Scalar<bg::symbol> *) { symbol_called = true; },
+        ddv::noop,
+    };
+
+    integer.view().visit(visitor);
+    name.view().visit(visitor);
+
+    CHECK(integer_called);
+    CHECK(symbol_called);
+}
+
 TEST_CASE("a scalar visitor identifies each collection type",
           "[value][scalar][visitor][feature:visitor][scalar:list][scalar:set][scalar:dict]") {
     const auto list = bg::ScalarValue<bg::List<std::int64_t>>{std::vector<std::int64_t>{1}};

@@ -1,5 +1,7 @@
+#include <bg/graph.hpp>
 #include <bg/graph/graph_wiring.hpp>
 #include <bg/graph/wiring_context.hpp>
+#include <bg/nested.hpp>
 #include <bg/node.hpp>
 #include <bg/run_graph.hpp>
 #include <bg/scalar/bundle/value.hpp>
@@ -146,12 +148,13 @@ TEST_CASE("an explicit time series schema selects TSB construction for scalar ar
 
 TEST_CASE("a hierarchical scalar is lifted through a shared TSB schema",
           "[feature:wiring][feature:constant][series:value][series:tsb][scalar:hierarchical][shape:nested]") {
+    auto allocator = bg::allocator{};
     const auto read = bg::node(
         [](bg::In<bg::TS<bg::Bundle<SharedBundle>>> input, bg::Out<bg::TS<bg::i64>> output) {
             output.set(bg::scalar_cast<bg::i64>(input.value()[0]).value());
         });
     const auto graph = [&] {
-        const auto value = bg::bundle<SharedBundle>(bg::i64{3}, 2.5);
+        const auto value = bg::bundle<SharedBundle>(allocator, bg::i64{3}, 2.5);
         return read(bg::bundle<bg::TSB<NestedSharedBundle>>(value)->value);
     };
 
@@ -163,6 +166,7 @@ TEST_CASE("a hierarchical scalar is lifted through a shared TSB schema",
 TEST_CASE("a hierarchical time series output accepts input views and suppresses equal updates",
           "[feature:scalar-api][series:value][scalar:hierarchical][guarantee:deduplicated]"
           "[transition:update]") {
+    auto allocator = bg::allocator{};
     const auto publish = bg::node(
         [](bg::In<bg::TS<bg::i64>> trigger, bg::Scalar<bg::Bundle<SharedBundle>> value,
            bg::Out<bg::TS<bg::Bundle<SharedBundle>, bg::TimeSeriesGuarantee::deduplicated>> output) {
@@ -177,7 +181,7 @@ TEST_CASE("a hierarchical time series output accepts input views and suppresses 
             output.set(bg::scalar_cast<bg::i64>((*input)[0]).value());
         });
     const auto graph = [&](bg::wp<bg::TS<bg::i64>> trigger) {
-        const auto value = bg::bundle<SharedBundle>(bg::i64{3}, 2.5);
+        const auto value = bg::bundle<SharedBundle>(allocator, bg::i64{3}, 2.5);
         return read(copy(publish(trigger, value)));
     };
 
@@ -189,13 +193,14 @@ TEST_CASE("a hierarchical time series output accepts input views and suppresses 
 TEST_CASE("a hierarchical time series output accepts a derived scalar representation",
           "[feature:scalar-api][series:value][scalar:hierarchical][binding:covariant]"
           "[representation:covariant][transition:update]") {
+    auto allocator = bg::allocator{};
     const auto publish = bg::node(
         [](bg::In<bg::TS<bg::i64>> trigger, bg::Scalar<bg::Bundle<Equity>> value,
            bg::Out<bg::TS<bg::Bundle<Instrument>>> output) {
             (void)trigger;
             output.set(value);
         });
-    const auto equity = bg::bundle<Equity>(bg::symbol{"ABC"}, bg::i64{100});
+    const auto equity = bg::bundle<Equity>(allocator, bg::symbol{"ABC"}, bg::i64{100});
     const auto graph = [&](bg::wp<bg::TS<bg::i64>> trigger) { return publish(trigger, equity); };
 
     const auto actual = bg::testing::test_graph(graph, std::array{1});
@@ -206,9 +211,38 @@ TEST_CASE("a hierarchical time series output accepts a derived scalar representa
     CHECK(bg::scalar_cast<bg::symbol>((*result)[0]).value().text() == "ABC");
 }
 
+TEST_CASE("a derived hierarchical value crosses a nested graph boundary",
+          "[feature:nested-graph][series:value][scalar:hierarchical]"
+          "[binding:value-to-reference][binding:reference-to-value][shape:nested]") {
+    using namespace bg::literals;
+
+    const auto make = bg::node([](bg::In<bg::TS<bg::i64>> lot_size, bg::Out<bg::TS<bg::Bundle<Equity>>> output) {
+        output.set(bg::bundle<Equity>(bg::symbol{"ABC"}, lot_size.value()));
+    });
+    const auto read = bg::node([](bg::In<bg::TS<bg::Bundle<Equity>>> input, bg::Out<bg::TS<bg::i64>> output) {
+        const auto equity = bg::scalar_cast<bg::Bundle<Equity>>(input.value());
+        output.set(bg::scalar_cast<bg::i64>(equity[1]).value());
+    });
+    const auto copy = bg::node([](bg::In<bg::TS<bg::Bundle<Equity>>> input,
+                                  bg::Out<bg::TS<bg::Bundle<Equity>>> output) { output.set(input.value()); });
+    const auto pass_through = bg::graph(
+        "name"_n = "pass_hierarchical_scalar",
+        [&](bg::wp<bg::TS<bg::Bundle<Equity>>> input) -> bg::wp<bg::TS<bg::Bundle<Equity>>> {
+            return copy(input);
+        });
+    const auto graph = [&](bg::wp<bg::TS<bg::i64>> lot_size, bg::wp<bg::TS<bool>> run) {
+        return read(bg::nested(pass_through, run, make(lot_size)));
+    };
+
+    const auto actual = bg::testing::test_graph(graph, std::array<bg::i64, 2>{100, 200}, std::array{true, true});
+
+    CHECK(actual.equals({100, 200}));
+}
+
 TEST_CASE("a time series output copies a covariant scalar collection representation",
           "[feature:scalar-api][series:value][scalar:hierarchical][scalar:list][scalar:dict]"
           "[binding:covariant][transition:update]") {
+    auto allocator = bg::allocator{};
     const auto list_source = bg::node(
         [](bg::In<bg::TS<bg::i64>> trigger, bg::Scalar<bg::List<bg::Bundle<Equity>>> value,
            bg::Out<bg::TS<bg::List<bg::Bundle<Equity>>>> output) {
@@ -232,7 +266,7 @@ TEST_CASE("a time series output copies a covariant scalar collection representat
             output.set_value(input.value_view());
         });
 
-    const auto equity = bg::bundle<Equity>(bg::symbol{"ABC"}, bg::i64{100});
+    const auto equity = bg::bundle<Equity>(allocator, bg::symbol{"ABC"}, bg::i64{100});
     const auto list = bg::ScalarValue<bg::List<bg::Bundle<Equity>>>{
         std::array<bg::Scalar<bg::Bundle<Equity>>, 1>{equity.view()}};
     const auto dictionary = bg::ScalarValue<bg::Dict<bg::i64, bg::Bundle<Equity>>>{

@@ -8,11 +8,6 @@
 #include <memory>
 #include <span>
 
-namespace bg::details {
-class BundleAllocationOwner;
-class HierarchicalScalarValueFactory;
-} // namespace bg::details
-
 namespace bg {
 
 class HierarchicalScalarRuntimeType : public ScalarRuntimeType {
@@ -35,18 +30,14 @@ class HierarchicalScalarRuntimeType : public ScalarRuntimeType {
 
     virtual details::ScalarData field(const details::ScalarData &value, std::size_t index) const = 0;
     virtual bool field_present(const details::ScalarData &value, std::size_t index) const = 0;
-
-  private:
-    virtual std::uintptr_t construct_shared(std::span<const details::ScalarData *const> fields,
-                                            details::BundleAllocationOwner &owner) const = 0;
-
-    friend class details::HierarchicalScalarValueFactory;
 };
 
 namespace details {
 
 std::unique_ptr<HierarchicalScalarRuntimeType>
 make_composed_hierarchical_scalar_runtime_type(const HierarchicalScalarType &type);
+const HierarchicalScalarRuntimeType &
+resolve_composed_hierarchical_scalar_runtime_type(const HierarchicalScalarType &type);
 void initialize_composed_hierarchical_scalar_runtime_type(HierarchicalScalarRuntimeType &runtime_type,
                                                           std::span<const ScalarRuntimeType *const> fields);
 

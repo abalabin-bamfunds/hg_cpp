@@ -1,7 +1,6 @@
 #pragma once
 
 #include <bg/allocator.hpp>
-#include <bg/scalar/bundle/details/allocation_owner.hpp>
 #include <bg/scalar/details/allocation_context.hpp>
 #include <bg/scalar/mutable_collection.hpp>
 #include <bg/scalar/value.hpp>
@@ -119,21 +118,15 @@ class GlobalState {
         details::ScalarAllocationContext allocation_context_;
     };
 
-    GlobalState() : GlobalState(allocator{}) {}
-
-    explicit GlobalState(allocator upstream)
-        : memory_{&upstream.memory_resource()}, allocator_{memory_},
-          bundle_owner_{details::BundleAllocationOwner::create(upstream)} {}
+    GlobalState();
+    explicit GlobalState(allocator upstream);
 
     GlobalState(const GlobalState &) = delete;
     GlobalState &operator=(const GlobalState &) = delete;
     GlobalState(GlobalState &&) = delete;
     GlobalState &operator=(GlobalState &&) = delete;
 
-    ~GlobalState() {
-        values_.release(allocator_.memory_resource());
-        bundle_owner_->release();
-    }
+    ~GlobalState();
 
     template <typename Function>
         requires std::invocable<Function, const ReadAccess &> &&

@@ -168,8 +168,8 @@ namespace details {
 
 template <typename... Builtins>
 auto scalar_visit_types(tp::tpack<Builtins...>)
-    -> ddv::mux<Scalar<List<SCALAR>>, Scalar<Set<SCALAR>>, Scalar<Dict<SCALAR, SCALAR>>, Scalar<STRUCT>,
-                Scalar<Builtins>..., Scalar<>>;
+    -> ddv::mux<Scalar<List<SCALAR>>, Scalar<Set<SCALAR>>, Scalar<Dict<SCALAR, SCALAR>>, Scalar<HIERARCHICAL>,
+                Scalar<STRUCT>, Scalar<Builtins>..., Scalar<>>;
 
 } // namespace details
 

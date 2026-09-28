@@ -135,16 +135,19 @@ addresses from offsets. Equality and hashing process fields and ignore padding.
 
 ## Hierarchical scalars
 
-`Scalar<Bundle<Schema>>` exposes the fields declared by `Schema`. `present()`
-distinguishes an absent optional field from a present default value. Indexing
-returns a borrowed erased scalar view and throws `std::bad_optional_access` for
-an absent field.
+`Scalar<Bundle<Schema>>` exposes the fields declared by `Schema`.
+`Scalar<HIERARCHICAL>` provides the same structural access for any hierarchical
+scalar. `present()` distinguishes an absent optional field from a present
+default value. Indexing returns a borrowed erased scalar view and throws
+`std::bad_optional_access` for an absent field.
 
 `bundle<Schema>(arguments...)` constructs a `ScalarValue<Bundle<Schema>>` when
 all arguments are scalars. Positional arguments follow inherited logical field
 order. Named arguments use `_n`; a positional argument cannot follow a named
 argument. Optional fields may be omitted. An overload taking `bg::allocator&`
-as its first argument places owned storage under that allocator.
+as its first argument places owned storage under that allocator. Construction
+uses the engine's composed hierarchical runtime type. Extension runtime types
+provide their own construction APIs.
 
 `In<TS<Bundle<Schema>>>::value()` and `operator*` return the borrowed
 `Scalar<Bundle<Schema>>` view. `Out<TS<Bundle<Schema>>>` accepts a compatible
@@ -171,8 +174,12 @@ destination equality and hash behavior.
 
 Hierarchical control blocks use a thread-safe allocation owner associated with
 the outer global state. A control block retains that owner, so an owning value
-can outlive the runtime graph or global state that created it. Releasing the
-final value destroys its present fields and releases the owner.
+can outlive the runtime graph or global state that created it when their
+upstream memory resource remains alive. Releasing the final value destroys its
+present fields and releases the owner.
+
+Construction outside an allocation context requires an explicit allocator.
+The allocator's memory resource must outlive every value constructed from it.
 
 ## Scalar providers
 
@@ -210,10 +217,11 @@ virtual functions to scalar types, runtime types, or values.
 Resolved handler pointers remain stable for the registry lifetime and can be
 cached while processing values of one runtime type.
 
-Use `Scalar::visit()` for structural list, set, and dictionary handling. An
-operation handles built-in atomic types through typed `Scalar<T>` callbacks. It
-performs `ScalarDispatch` lookup in the `Scalar<>` extension catch-all callback.
-Pass the operation object to a registered handler when the handler must recurse.
+Use `Scalar::visit()` for structural list, set, dictionary, compound, and
+hierarchical handling. An operation handles built-in atomic types through typed
+`Scalar<T>` callbacks. It performs `ScalarDispatch` lookup in the `Scalar<>`
+extension catch-all callback. Pass the operation object to a registered handler
+when the handler must recurse.
 
 Complete registration before concurrent lookup. `ScalarDispatch::add()`
 rejects a duplicate exact registration.

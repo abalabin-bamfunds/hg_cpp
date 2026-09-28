@@ -97,7 +97,7 @@ template <typename T> using canonical_scalar_type_t = typename canonical_scalar_
 
 template <typename Target, typename Source>
     requires std::constructible_from<std::remove_cvref_t<Target>, Source>
-[[nodiscard]] constexpr auto scalar_api_value(Source &&source)
+constexpr auto scalar_api_value(Source &&source)
     noexcept(std::is_nothrow_constructible_v<std::remove_cvref_t<Target>, Source>) {
     return std::remove_cvref_t<Target>(std::forward<Source>(source));
 }
@@ -108,45 +108,45 @@ template <typename Target, typename Source>
 concept scalar_source_for = std::same_as<std::remove_cvref_t<Source>, Target> ||
                             (scalar_source<Source> && std::same_as<canonical_scalar_t<Source>, Target>);
 
-template <details::canonical_integer_source T> [[nodiscard]] constexpr std::int64_t canonical_scalar(T value) noexcept {
+template <details::canonical_integer_source T> constexpr std::int64_t canonical_scalar(T value) noexcept {
     return static_cast<std::int64_t>(value);
 }
 
-template <details::canonical_boolean_source T> [[nodiscard]] constexpr bool canonical_scalar(T value) noexcept {
+template <details::canonical_boolean_source T> constexpr bool canonical_scalar(T value) noexcept {
     return value;
 }
 
 template <details::canonical_exact_source T>
-[[nodiscard]] constexpr std::remove_cvref_t<T> canonical_scalar(T value) noexcept {
+constexpr std::remove_cvref_t<T> canonical_scalar(T value) noexcept {
     return value;
 }
 
 template <details::canonical_string_source T>
-[[nodiscard]] constexpr std::string_view canonical_scalar(const T &value) noexcept {
+constexpr std::string_view canonical_scalar(const T &value) noexcept {
     return std::string_view{value};
 }
 
-[[nodiscard]] constexpr date_time_t canonical_scalar(date_time_t value) noexcept {
+constexpr date_time_t canonical_scalar(date_time_t value) noexcept {
     return value;
 }
 
-template <std::same_as<float> T> [[nodiscard]] constexpr float canonical_scalar(T value) noexcept {
+template <std::same_as<float> T> constexpr float canonical_scalar(T value) noexcept {
     return value;
 }
 
-template <std::same_as<double> T> [[nodiscard]] constexpr double canonical_scalar(T value) noexcept {
+template <std::same_as<double> T> constexpr double canonical_scalar(T value) noexcept {
     return value;
 }
 
 template <typename T>
     requires native_struct<std::remove_cvref_t<T>>
-[[nodiscard]] constexpr decltype(auto) canonical_scalar(T &&value) noexcept {
+constexpr decltype(auto) canonical_scalar(T &&value) noexcept {
     return std::forward<T>(value);
 }
 
 template <typename Target, typename Source>
     requires scalar_source_for<Target, Source>
-[[nodiscard]] constexpr decltype(auto) scalar_source_value(Source &&source) noexcept {
+constexpr decltype(auto) scalar_source_value(Source &&source) noexcept {
     if constexpr (std::same_as<std::remove_cvref_t<Source>, Target>) {
         return std::forward<Source>(source);
     } else {

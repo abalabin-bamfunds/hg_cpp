@@ -12,6 +12,7 @@ struct EqualityComparable {};
 struct Hashable {};
 
 namespace details {
+struct hierarchical_scalar_constraint {};
 struct struct_scalar_constraint {};
 }
 
@@ -21,6 +22,7 @@ struct ScalarVariable : details::scalar_type_access<ScalarVariable<Name, Constra
 };
 
 using SCALAR = ScalarVariable<"SCALAR">;
+using HIERARCHICAL = ScalarVariable<"HIERARCHICAL", details::hierarchical_scalar_constraint>;
 using STRUCT = ScalarVariable<"STRUCT", details::struct_scalar_constraint, EqualityComparable, Hashable>;
 
 namespace details {

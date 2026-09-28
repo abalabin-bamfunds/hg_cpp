@@ -36,6 +36,14 @@ template <template <typename, auto...> typename Field> struct UnrelatedRecord {
     Field<bg::i64> value;
 };
 
+template <template <typename, auto...> typename Field> struct AnotherRecord {
+    Field<bg::i64> value;
+};
+
+template <template <typename, auto...> typename Field> struct ExtensionBackedRecord {
+    Field<bg::i64> value;
+};
+
 template <template <typename, auto...> typename Field> struct Position {
     Field<bg::Bundle<Instrument>> instrument;
 };
@@ -90,6 +98,8 @@ template <template <typename, auto...> typename Field> struct UnhashableRecord {
     Field<bg::Opaque<Finalizable>> value;
 };
 
+auto bundle_allocator = bg::allocator{};
+
 template <typename T>
 concept HashableScalar = requires(const bg::Scalar<T> &value) { value.hash(); };
 
@@ -105,11 +115,6 @@ class AlternateHierarchicalRuntimeType final : public bg::HierarchicalScalarRunt
     bool field_present(const bg::details::ScalarData &, std::size_t) const override { return false; }
 
   private:
-    std::uintptr_t construct_shared(std::span<const bg::details::ScalarData *const>,
-                                    bg::details::BundleAllocationOwner &) const override {
-        std::terminate();
-    }
-
     void construct_initial_value(void *destination) const noexcept override {
         *static_cast<void **>(destination) = nullptr;
     }
@@ -145,9 +150,14 @@ static_assert(!std::constructible_from<
 static_assert(HashableScalar<bg::Bundle<HashableRecord>>);
 static_assert(!HashableScalar<bg::Bundle<UnhashableRecord>>);
 
+TEST_CASE("bundle construction outside an allocation context requires an allocator",
+          "[feature:scalar-api][scalar:hierarchical][storage:variable]") {
+    CHECK_THROWS_AS(bg::bundle<EmptyRecord>(), std::logic_error);
+}
+
 TEST_CASE("bundle constructs an empty hierarchical scalar",
           "[feature:scalar-api][scalar:hierarchical][schema:named]") {
-    const auto value = bg::bundle<EmptyRecord>();
+    const auto value = bg::bundle<EmptyRecord>(bundle_allocator);
 
     CHECK(value.view().field_count() == 0);
 }
@@ -156,7 +166,7 @@ TEST_CASE("bundle constructs a hierarchical scalar from positional and named arg
           "[feature:scalar-api][scalar:hierarchical][schema:named][validity:optional]") {
     using namespace bg::literals;
 
-    const auto value = bg::bundle<Instrument>("price"_n = 12.5, "symbol"_n = bg::symbol{"ABC"});
+    const auto value = bg::bundle<Instrument>(bundle_allocator, "price"_n = 12.5, "symbol"_n = bg::symbol{"ABC"});
     const auto view = value.view();
 
     STATIC_CHECK(std::same_as<std::remove_cvref_t<decltype(value)>, bg::ScalarValue<bg::Bundle<Instrument>>>);
@@ -168,7 +178,7 @@ TEST_CASE("bundle uses inherited logical field order and permits omitted optiona
           "[feature:scalar-api][scalar:hierarchical][schema:named][binding:covariant][validity:optional]") {
     using namespace bg::literals;
 
-    const auto value = bg::bundle<Equity>("symbol"_n = bg::symbol{"ABC"}, "lot_size"_n = 100);
+    const auto value = bg::bundle<Equity>(bundle_allocator, "symbol"_n = bg::symbol{"ABC"}, "lot_size"_n = 100);
     const auto view = value.view();
 
     REQUIRE(view.field_count() == 3);
@@ -181,10 +191,10 @@ TEST_CASE("bundle constructs nested and recursive hierarchical scalars",
           "[feature:scalar-api][scalar:hierarchical][schema:named][shape:nested][validity:optional]") {
     using namespace bg::literals;
 
-    const auto instrument = bg::bundle<Instrument>(bg::symbol{"ABC"});
-    const auto position = bg::bundle<Position>(instrument.view());
-    const auto leaf = bg::bundle<RecursiveValue>(1);
-    const auto parent = bg::bundle<RecursiveValue>(2, "next"_n = leaf.view());
+    const auto instrument = bg::bundle<Instrument>(bundle_allocator, bg::symbol{"ABC"});
+    const auto position = bg::bundle<Position>(bundle_allocator, instrument.view());
+    const auto leaf = bg::bundle<RecursiveValue>(bundle_allocator, 1);
+    const auto parent = bg::bundle<RecursiveValue>(bundle_allocator, 2, "next"_n = leaf.view());
 
     const auto stored_instrument = bg::scalar_cast<bg::Bundle<Instrument>>(position.view()[0]);
     const auto stored_leaf = bg::scalar_cast<bg::Bundle<RecursiveValue>>(parent.view()[1]);
@@ -199,13 +209,15 @@ TEST_CASE("bundle rejects invalid field assignments",
 
     const auto integer = bg::ScalarValue{bg::i64{1}};
 
-    CHECK_THROWS_AS(bg::bundle<Instrument>(), std::invalid_argument);
-    CHECK_THROWS_AS(bg::bundle<Instrument>("missing"_n = bg::symbol{"ABC"}), std::invalid_argument);
+    CHECK_THROWS_AS(bg::bundle<Instrument>(bundle_allocator), std::invalid_argument);
+    CHECK_THROWS_AS(bg::bundle<Instrument>(bundle_allocator, "missing"_n = bg::symbol{"ABC"}), std::invalid_argument);
     CHECK_THROWS_AS(
-        bg::bundle<Instrument>("symbol"_n = bg::symbol{"ABC"}, "symbol"_n = bg::symbol{"DEF"}),
+        bg::bundle<Instrument>(bundle_allocator, "symbol"_n = bg::symbol{"ABC"}, "symbol"_n = bg::symbol{"DEF"}),
         std::invalid_argument);
-    CHECK_THROWS_AS(bg::bundle<Instrument>("price"_n = 12.5, bg::symbol{"ABC"}), std::invalid_argument);
-    CHECK_THROWS_AS(bg::bundle<Instrument>(integer), std::invalid_argument);
+    CHECK_THROWS_AS(
+        bg::bundle<Instrument>(bundle_allocator, "price"_n = 12.5, bg::symbol{"ABC"}),
+        std::invalid_argument);
+    CHECK_THROWS_AS(bg::bundle<Instrument>(bundle_allocator, integer), std::invalid_argument);
 }
 
 TEST_CASE("bundle releases explicit allocator storage after failed construction",
@@ -221,7 +233,7 @@ TEST_CASE("bundle releases explicit allocator storage after failed construction"
 
 TEST_CASE("hierarchical scalar values expose required and optional fields",
           "[value][feature:scalar-api][scalar:hierarchical][schema:named][declaration:concrete]") {
-    const auto value = bg::bundle<Instrument>(bg::symbol{"ABC"});
+    const auto value = bg::bundle<Instrument>(bundle_allocator, bg::symbol{"ABC"});
     const auto view = value.view();
 
     CHECK(view.field_count() == 2);
@@ -234,7 +246,7 @@ TEST_CASE("hierarchical scalar values expose required and optional fields",
 
 TEST_CASE("copying a hierarchical scalar retains its shared value",
           "[value][feature:scalar-storage][scalar:hierarchical][storage:variable]") {
-    const auto value = bg::bundle<Instrument>(bg::symbol{"ABC"}, 12.5);
+    const auto value = bg::bundle<Instrument>(bundle_allocator, bg::symbol{"ABC"}, 12.5);
     const auto copy = bg::ScalarValue<bg::Bundle<Instrument>>{value.view()};
 
     CHECK(copy == value);
@@ -242,33 +254,41 @@ TEST_CASE("copying a hierarchical scalar retains its shared value",
 
 TEST_CASE("hierarchical scalar equality and hashing include optional-field presence",
           "[value][feature:scalar-api][scalar:hierarchical][validity:optional]") {
-    const auto left = bg::bundle<Instrument>(bg::symbol{"ABC"});
-    const auto right = bg::bundle<Instrument>(bg::symbol{"ABC"});
-    const auto present = bg::bundle<Instrument>(bg::symbol{"ABC"}, 0.0);
+    const auto left = bg::bundle<Instrument>(bundle_allocator, bg::symbol{"ABC"});
+    const auto right = bg::bundle<Instrument>(bundle_allocator, bg::symbol{"ABC"});
+    const auto present = bg::bundle<Instrument>(bundle_allocator, bg::symbol{"ABC"}, 0.0);
 
     CHECK(left.equals(right));
     CHECK(left.hash() == right.hash());
     CHECK_FALSE(left.equals(present));
 }
 
-TEST_CASE("a hierarchical scalar visitor reaches the extension catch-all",
+TEST_CASE("a hierarchical scalar visitor exposes its structural view",
           "[value][feature:visitor][scalar:hierarchical][declaration:runtime]") {
-    const auto value = bg::bundle<Instrument>(bg::symbol{"ABC"});
+    const auto value = bg::bundle<Instrument>(bundle_allocator, bg::symbol{"ABC"});
     auto called = false;
+    auto erased_called = false;
 
     value.view().visit(
-        [&](const bg::Scalar<> *view) {
+        [&](const bg::Scalar<bg::HIERARCHICAL> *view) {
             called = true;
             CHECK(&view->type() == &value.type());
+            CHECK(view->field_count() == 2);
+            CHECK(view->field_name(0) == "symbol");
+            CHECK(view->present(0));
+            CHECK_FALSE(view->present(1));
+            CHECK(bg::scalar_cast<bg::symbol>((*view)[0]).value().text() == "ABC");
         },
+        [&](const bg::Scalar<> *) { erased_called = true; },
         ddv::noop);
 
     CHECK(called);
+    CHECK_FALSE(erased_called);
 }
 
 TEST_CASE("a scalar list stores hierarchical values and preserves their actual type",
           "[value][feature:scalar-storage][scalar:list][scalar:hierarchical][binding:covariant]") {
-    const auto equity = bg::bundle<Equity>(bg::symbol{"ABC"}, 12.5, bg::i64{100});
+    const auto equity = bg::bundle<Equity>(bundle_allocator, bg::symbol{"ABC"}, 12.5, bg::i64{100});
     const auto instrument = bg::scalar_cast<bg::Bundle<Instrument>>(equity);
     const auto items = std::array<bg::Scalar<bg::Bundle<Instrument>>, 1>{instrument};
 
@@ -288,7 +308,7 @@ TEST_CASE("a scalar list stores hierarchical values and preserves their actual t
 
 TEST_CASE("a scalar collection rejects an incompatible hierarchical item",
           "[value][feature:scalar-storage][scalar:list][scalar:hierarchical][declaration:concrete]") {
-    const auto value = bg::bundle<UnrelatedRecord>(bg::i64{42});
+    const auto value = bg::bundle<UnrelatedRecord>(bundle_allocator, bg::i64{42});
     const auto items = std::array<bg::Scalar<bg::Bundle<UnrelatedRecord>>, 1>{value.view()};
 
     CHECK_THROWS_AS((bg::ScalarValue<bg::List<bg::Bundle<Instrument>>>{items}), std::invalid_argument);
@@ -320,7 +340,7 @@ TEST_CASE("an owning base hierarchical scalar retains a derived value",
 
 TEST_CASE("an owning hierarchical scalar rejects an unrelated schema",
           "[value][feature:scalar-storage][scalar:hierarchical][declaration:concrete]") {
-    const auto value = bg::bundle<UnrelatedRecord>(bg::i64{42});
+    const auto value = bg::bundle<UnrelatedRecord>(bundle_allocator, bg::i64{42});
 
     CHECK_THROWS_AS((bg::ScalarValue<bg::Bundle<Instrument>>{value.view()}), std::invalid_argument);
     CHECK_THROWS_AS((bg::ScalarValue<bg::Bundle<Instrument>>{value}), std::invalid_argument);
@@ -328,7 +348,7 @@ TEST_CASE("an owning hierarchical scalar rejects an unrelated schema",
 
 TEST_CASE("a scalar dictionary stores hierarchical mapped values",
           "[value][feature:scalar-storage][scalar:dict][scalar:hierarchical][declaration:concrete]") {
-    const auto instrument = bg::bundle<Instrument>(bg::symbol{"ABC"});
+    const auto instrument = bg::bundle<Instrument>(bundle_allocator, bg::symbol{"ABC"});
     const auto items =
         std::array<std::pair<bg::i64, bg::Scalar<bg::Bundle<Instrument>>>, 1>{std::pair{bg::i64{1}, instrument.view()}};
 
@@ -425,7 +445,7 @@ TEST_CASE("a hierarchical scalar destroys its fields after its final release",
     const auto source = Finalizable{destruction_count};
     const auto field = bg::ScalarValue<bg::Opaque<Finalizable>>{source};
     {
-        const auto value = bg::bundle<FinalizableRecord>(field);
+        const auto value = bg::bundle<FinalizableRecord>(bundle_allocator, field);
         {
             const auto copy = bg::ScalarValue<bg::Bundle<FinalizableRecord>>{value.view()};
             CHECK(copy.view().present(0));
@@ -440,13 +460,30 @@ TEST_CASE("a hierarchical scalar destroys its fields after its final release",
 TEST_CASE("a base hierarchical view preserves the derived runtime type",
           "[value][feature:scalar-api][scalar:hierarchical][schema:named][binding:covariant]"
           "[representation:covariant]") {
-    const auto derived = bg::bundle<Equity>(bg::symbol{"ABC"}, 12.5, bg::i64{100});
+    const auto derived = bg::bundle<Equity>(bundle_allocator, bg::symbol{"ABC"}, 12.5, bg::i64{100});
     const auto base = bg::scalar_cast<bg::Bundle<Instrument>>(derived);
 
     CHECK(&base.type() == &derived.type());
     CHECK(base.field_count() == 2);
     CHECK(bg::scalar_cast<bg::symbol>(base[0]).value().text() == "ABC");
     CHECK(bg::scalar_cast<double>(base[1]).value() == 12.5);
+}
+
+TEST_CASE("hierarchical equality compares compatible facades using the actual value type",
+          "[value][feature:scalar-api][scalar:hierarchical][binding:covariant]") {
+    const auto derived = bg::bundle<Equity>(bundle_allocator, bg::symbol{"ABC"}, 12.5, bg::i64{100});
+    const auto base = bg::scalar_cast<bg::Bundle<Instrument>>(derived);
+
+    CHECK(base == derived);
+    CHECK(derived == base);
+}
+
+TEST_CASE("hierarchical hashing includes the actual value type",
+          "[value][feature:scalar-api][scalar:hierarchical][declaration:runtime]") {
+    const auto first = bg::bundle<UnrelatedRecord>(bundle_allocator, bg::i64{42});
+    const auto second = bg::bundle<AnotherRecord>(bundle_allocator, bg::i64{42});
+
+    CHECK(first.hash() != second.hash());
 }
 
 TEST_CASE("composed hierarchical storage rejects another runtime layout",
@@ -458,11 +495,24 @@ TEST_CASE("composed hierarchical storage rejects another runtime layout",
     CHECK_FALSE(runtime_type.accepts_input(alternate));
 }
 
+TEST_CASE("bundle construction uses composed storage when an extension runtime type is registered",
+          "[feature:scalar-storage][scalar:hierarchical]") {
+    const auto &type = static_cast<const bg::HierarchicalScalarType &>(
+        bg::cpp_scalar_type<bg::Bundle<ExtensionBackedRecord>>());
+    static const auto alternate = AlternateHierarchicalRuntimeType{type};
+    bg::register_scalar_runtime_type(alternate);
+
+    const auto value = bg::bundle<ExtensionBackedRecord>(bundle_allocator, bg::i64{42});
+
+    CHECK(&value.runtime_type() != &alternate);
+    CHECK(bg::scalar_cast<bg::i64>(value.view()[0]).value() == 42);
+}
+
 TEST_CASE("a hierarchical field preserves a derived value stored through its base type",
           "[value][feature:scalar-storage][scalar:hierarchical][schema:named][binding:covariant]"
           "[representation:covariant]") {
-    const auto equity = bg::bundle<Equity>(bg::symbol{"ABC"}, 12.5, bg::i64{100});
-    const auto position = bg::bundle<Position>(equity.view());
+    const auto equity = bg::bundle<Equity>(bundle_allocator, bg::symbol{"ABC"}, 12.5, bg::i64{100});
+    const auto position = bg::bundle<Position>(bundle_allocator, equity.view());
 
     const auto instrument = bg::scalar_cast<bg::Bundle<Instrument>>(position.view()[0]);
     CHECK(&instrument.type() == &equity.type());
@@ -471,7 +521,7 @@ TEST_CASE("a hierarchical field preserves a derived value stored through its bas
 
 TEST_CASE("hierarchical construction converts covariant collection representations",
           "[feature:scalar-storage][scalar:hierarchical][scalar:list][scalar:dict][binding:covariant]") {
-    const auto equity = bg::bundle<Equity>(bg::symbol{"ABC"}, 12.5, bg::i64{100});
+    const auto equity = bg::bundle<Equity>(bundle_allocator, bg::symbol{"ABC"}, 12.5, bg::i64{100});
     const auto list_items = std::array<bg::Scalar<bg::Bundle<Equity>>, 1>{equity.view()};
     const auto list = bg::ScalarValue<bg::List<bg::Bundle<Equity>>>{list_items};
     const auto dictionary_items =
@@ -495,13 +545,13 @@ TEST_CASE("hierarchical construction converts covariant collection representatio
     CHECK_FALSE(dictionary_runtime.accepts_input(
         bg::cpp_scalar_runtime_type<bg::Dict<bg::i64, bg::Bundle<UnrelatedRecord>>>()));
 
-    const auto list_container = bg::bundle<InstrumentList>(list.view());
+    const auto list_container = bg::bundle<InstrumentList>(bundle_allocator, list.view());
     const auto stored_list = bg::scalar_cast<bg::List<bg::Bundle<Instrument>>>(list_container.view()[0]);
     REQUIRE(stored_list.size() == 1);
     CHECK(&stored_list[0].type() == &equity.type());
     CHECK(bg::scalar_cast<bg::symbol>(stored_list[0][0]).value().text() == "ABC");
 
-    const auto dictionary_container = bg::bundle<InstrumentDictionary>(dictionary.view());
+    const auto dictionary_container = bg::bundle<InstrumentDictionary>(bundle_allocator, dictionary.view());
     const auto stored_dictionary =
         bg::scalar_cast<bg::Dict<bg::i64, bg::Bundle<Instrument>>>(dictionary_container.view()[0]);
     REQUIRE(stored_dictionary.size() == 1);
@@ -520,7 +570,7 @@ TEST_CASE("set runtimes reject covariant hierarchical items",
 
 TEST_CASE("a recursive hierarchical scalar runtime type supports an absent recursive field",
           "[value][feature:scalar-storage][scalar:hierarchical][schema:named][validity:optional]") {
-    const auto value = bg::bundle<RecursiveValue>(bg::i64{42});
+    const auto value = bg::bundle<RecursiveValue>(bundle_allocator, bg::i64{42});
 
     CHECK(bg::scalar_cast<bg::i64>(value.view()[0]).value() == 42);
     CHECK_FALSE(value.view().present(1));
@@ -529,10 +579,10 @@ TEST_CASE("a recursive hierarchical scalar runtime type supports an absent recur
 TEST_CASE("a recursive hierarchical scalar stores descendants in a scalar list",
           "[value][feature:scalar-storage][scalar:hierarchical][scalar:list][schema:named]"
           "[validity:optional]") {
-    const auto leaf = bg::bundle<RecursiveCollectionValue>(bg::i64{1});
+    const auto leaf = bg::bundle<RecursiveCollectionValue>(bundle_allocator, bg::i64{1});
     const auto children_source = std::array<bg::Scalar<bg::Bundle<RecursiveCollectionValue>>, 1>{leaf.view()};
     const auto children = bg::ScalarValue<bg::List<bg::Bundle<RecursiveCollectionValue>>>{children_source};
-    const auto parent = bg::bundle<RecursiveCollectionValue>(bg::i64{2}, children);
+    const auto parent = bg::bundle<RecursiveCollectionValue>(bundle_allocator, bg::i64{2}, children);
 
     const auto stored_children = bg::scalar_cast<bg::List<bg::Bundle<RecursiveCollectionValue>>>(parent.view()[1]);
 

@@ -92,6 +92,10 @@ dictionary maps hashable scalar keys to scalar values, written `Dict<K, V>`.
 is nominal. Its fields provide structural access after type resolution; they do
 not make two distinct C++ aggregate types compatible.
 
+`HIERARCHICAL` accepts any registered hierarchical scalar. Its fields provide
+structural access after type resolution. Declared base relationships determine
+compatibility between concrete hierarchical scalar types.
+
 ### Shared C++ schemas
 
 A C++ schema declares fields through a supplied field template. A schema can

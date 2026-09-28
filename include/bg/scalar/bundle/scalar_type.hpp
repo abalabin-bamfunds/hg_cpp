@@ -44,7 +44,7 @@ void initialize_hierarchical_scalar_type(HierarchicalScalarType &type);
 
 class HierarchicalScalarType final : public ScalarType {
   public:
-    using generic_scalar_view = Scalar<>;
+    using generic_scalar_view = Scalar<HIERARCHICAL>;
 
     VISITOR_SUPPORT()
 
@@ -86,6 +86,10 @@ class HierarchicalScalarType final : public ScalarType {
 };
 
 namespace details {
+
+inline bool is_hierarchical_scalar(const ScalarType &type) noexcept {
+    return type_cast<HierarchicalScalarType>(&type) != nullptr;
+}
 
 template <typename Scalar, auto... Properties> struct hierarchical_scalar_schema_field {
     using scalar_type = Scalar;

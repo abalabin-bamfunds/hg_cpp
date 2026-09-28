@@ -1,5 +1,7 @@
 # Canonical integer time series declarations
 
+Status: accepted
+
 ## Decision
 
 Concrete time series declarations use `i64` for canonical integer values.

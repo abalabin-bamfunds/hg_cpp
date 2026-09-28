@@ -6,6 +6,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <array>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -24,6 +25,22 @@ struct finalizable_value {
     }
 
     int *count{};
+};
+
+class InvalidListRuntimeType final : public bg::ScalarRuntimeType {
+  public:
+    explicit InvalidListRuntimeType(const bg::ScalarType &type) noexcept
+        : ScalarRuntimeType{type, sizeof(bg::i64), alignof(bg::i64), false, false, true} {}
+
+    void construct_initial_value(void *) const noexcept override {}
+    void copy_construct(void *, const void *, bg::allocator &) const override {}
+    std::size_t hash(const void *) const noexcept override { return 0; }
+    void destroy(void *, bg::allocator &) const noexcept override {}
+
+  private:
+    void do_construct_from_input(void *, const bg::details::ScalarData &, bg::allocator &) const override {}
+    void do_assign_from_input(void *, const bg::details::ScalarData &) const override {}
+    bool equals_same_type(const void *, const bg::details::ScalarData &) const noexcept override { return false; }
 };
 
 } // namespace
@@ -110,4 +127,14 @@ TEST_CASE("resolved collection storage prefers a registered concrete runtime_typ
     const auto &resolved = bg::resolve_scalar_runtime_type(concrete.type(), {});
 
     CHECK(&resolved == &concrete);
+}
+
+TEST_CASE("scalar runtime type boundaries reject an incompatible collection interface",
+          "[scalar][storage][collection][feature:scalar-storage][declaration:runtime]") {
+    const auto &type = bg::cpp_scalar_type<bg::List<bg::i64>>();
+    const auto invalid = InvalidListRuntimeType{type};
+    const auto available = std::array<const bg::ScalarRuntimeType *, 1>{&invalid};
+
+    CHECK_THROWS_AS(bg::register_scalar_runtime_type(invalid), std::invalid_argument);
+    CHECK_THROWS_AS(bg::resolve_scalar_runtime_type(type, available), std::invalid_argument);
 }

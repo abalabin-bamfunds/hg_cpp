@@ -69,9 +69,10 @@ TEST_CASE("a scalar set owns variable-size items",
 
 TEST_CASE("a scalar set owns and compares hierarchical items",
           "[value][scalar][set][scalar:set][scalar:hierarchical][feature:scalar-collection]") {
-    const auto one = bg::bundle<SetItem>(bg::i64{1});
-    const auto another_one = bg::bundle<SetItem>(bg::i64{1});
-    const auto two = bg::bundle<SetItem>(bg::i64{2});
+    auto allocator = bg::allocator{};
+    const auto one = bg::bundle<SetItem>(allocator, bg::i64{1});
+    const auto another_one = bg::bundle<SetItem>(allocator, bg::i64{1});
+    const auto two = bg::bundle<SetItem>(allocator, bg::i64{2});
     const auto first_items = std::array<bg::Scalar<bg::Bundle<SetItem>>, 3>{one.view(), another_one.view(), two.view()};
     const auto second_items = std::array<bg::Scalar<bg::Bundle<SetItem>>, 2>{two.view(), one.view()};
     const auto first = bg::ScalarValue<bg::Set<bg::Bundle<SetItem>>>{first_items};

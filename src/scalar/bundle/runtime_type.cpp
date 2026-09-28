@@ -2,6 +2,7 @@
 
 #include <bg/scalar/bundle/details/allocation_owner.hpp>
 #include <bg/scalar/details/data.hpp>
+#include <bg/scalar/details/value_storage.hpp>
 #include <bg/scalar/storage_traits.hpp>
 #include <bg/util/scope_exit.hpp>
 
@@ -10,6 +11,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <functional>
 #include <limits>
 #include <memory>
 #include <optional>
@@ -29,6 +31,8 @@ class ComposedHierarchicalScalarRuntimeType final : public HierarchicalScalarRun
     details::ScalarData field(const details::ScalarData &value, std::size_t index) const override;
     bool field_present(const details::ScalarData &value, std::size_t index) const override;
     bool accepts_input(const ScalarRuntimeType &source) const noexcept override;
+    std::uintptr_t construct_shared(std::span<const details::ScalarData *const> fields,
+                                    details::BundleAllocationOwner &owner) const;
 
   private:
     struct Storage;
@@ -41,8 +45,6 @@ class ComposedHierarchicalScalarRuntimeType final : public HierarchicalScalarRun
 
     static constexpr auto required_field = std::numeric_limits<std::uint32_t>::max();
 
-    std::uintptr_t construct_shared(std::span<const details::ScalarData *const> fields,
-                                    details::BundleAllocationOwner &owner) const override;
     details::ScalarData borrow_shared(const void *storage) const noexcept override;
     const ScalarRuntimeType *retain_shared(const details::ScalarData &value,
                                            std::uintptr_t &data) const noexcept override;
@@ -295,7 +297,7 @@ std::size_t ComposedHierarchicalScalarRuntimeType::hash(const void *value) const
 }
 
 std::size_t ComposedHierarchicalScalarRuntimeType::hash_storage(const Storage &storage) const noexcept {
-    auto result = std::size_t{};
+    auto result = std::hash<const HierarchicalScalarType *>{}(&storage.runtime_type->type());
     for (auto index = std::size_t{}; index < fields_.size(); ++index) {
         const auto present = field_present(storage, index);
         if (fields_[index].optional_bit != required_field) {
@@ -398,6 +400,16 @@ void ComposedHierarchicalScalarRuntimeType::destroy_storage(Storage &storage) co
 } // namespace
 
 namespace details {
+
+OwnedScalarData construct_composed_hierarchical_scalar_value(
+    const HierarchicalScalarType &type, std::span<const ScalarData *const> fields,
+    BundleAllocationOwner &owner) {
+    const auto &runtime_type = static_cast<const ComposedHierarchicalScalarRuntimeType &>(
+        resolve_composed_hierarchical_scalar_runtime_type(type));
+    const auto data = runtime_type.construct_shared(fields, owner);
+
+    return {&runtime_type, data, ScalarDataMode::shared_value};
+}
 
 std::unique_ptr<HierarchicalScalarRuntimeType>
 make_composed_hierarchical_scalar_runtime_type(const HierarchicalScalarType &type) {

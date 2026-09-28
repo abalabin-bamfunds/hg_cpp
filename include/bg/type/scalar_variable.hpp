@@ -1,5 +1,6 @@
 #pragma once
 
+#include <bg/scalar/bundle/scalar_type.hpp>
 #include <bg/scalar/type.hpp>
 #include <bg/scalar/struct/scalar_type.hpp>
 #include <bg/type/details/declaration_variables.hpp>
@@ -24,6 +25,8 @@ struct ScalarVariableInstance<ScalarVariable<Name, Constraints...>> {
                         property_constraints.push_back(&supports_scalar_equality);
                     } else if constexpr (std::same_as<Constraints, Hashable>) {
                         property_constraints.push_back(&supports_scalar_hash);
+                    } else if constexpr (std::same_as<Constraints, hierarchical_scalar_constraint>) {
+                        property_constraints.push_back(&is_hierarchical_scalar);
                     } else if constexpr (std::same_as<Constraints, struct_scalar_constraint>) {
                         property_constraints.push_back(&is_struct_scalar);
                     } else {

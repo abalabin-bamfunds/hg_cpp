@@ -100,6 +100,19 @@ TEST_CASE("hierarchical scalar compatibility follows declared inheritance",
     CHECK_FALSE(base.accepts(unrelated));
 }
 
+TEST_CASE("HIERARCHICAL resolves to a concrete hierarchical scalar",
+          "[feature:type-system][scalar:hierarchical][declaration:generic]") {
+    const auto &concrete = bg::cpp_scalar_type<bg::Bundle<Equity>>();
+    const auto &variable = bg::cpp_scalar_type<bg::HIERARCHICAL>();
+    auto type_map = bg::TypeMap{};
+
+    REQUIRE(variable.match(concrete, type_map));
+    CHECK(&variable.resolve(type_map) == &concrete);
+
+    auto rejected_type_map = bg::TypeMap{};
+    CHECK_FALSE(variable.match(bg::int64_type(), rejected_type_map));
+}
+
 TEST_CASE("hierarchical scalar covariance composes through scalar containers",
           "[feature:type-system][scalar:hierarchical][scalar:list][scalar:dict]"
           "[schema:named][declaration:concrete][binding:covariant]") {

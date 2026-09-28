@@ -38,6 +38,7 @@ add_library(
     bg SHARED
     src/compiled_graph.cpp
     src/context.cpp
+    src/global_state.cpp
     src/graph_argument.cpp
     src/graph_wiring.cpp
     src/graph_wiring_structure.cpp

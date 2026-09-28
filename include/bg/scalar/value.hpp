@@ -259,6 +259,9 @@ bool operator==(const Left &left, const Right &right) noexcept {
         return left.equals(right);
     } else if constexpr (details::generic_scalar<RightScalar>) {
         return right.equals(left);
+    } else if constexpr (details::hierarchical_scalar_declaration<LeftScalar> &&
+                         details::hierarchical_scalar_declaration<RightScalar>) {
+        return left.equals(right);
     } else if constexpr (std::same_as<LeftScalar, RightScalar>) {
         return left.equals(right);
     } else {
@@ -320,6 +323,7 @@ Scalar<Target> unchecked_scalar_cast(const ScalarValue<Source> &&) = delete;
 
 static_assert(sizeof(Scalar<>) == 2 * sizeof(void *));
 static_assert(sizeof(Scalar<SCALAR>) == 2 * sizeof(void *));
+static_assert(sizeof(Scalar<HIERARCHICAL>) == 2 * sizeof(void *));
 static_assert(sizeof(Scalar<STRUCT>) == 2 * sizeof(void *));
 static_assert(sizeof(Scalar<List<SCALAR>>) == 2 * sizeof(void *));
 static_assert(sizeof(Scalar<Set<SCALAR>>) == 2 * sizeof(void *));

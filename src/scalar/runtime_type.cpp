@@ -6,6 +6,7 @@
 #include <bg/scalar/list/scalar_type.hpp>
 #include <bg/scalar/set/runtime_type.hpp>
 #include <bg/scalar/set/scalar_type.hpp>
+#include <bg/scalar/struct/runtime_type.hpp>
 #include <bg/scalar/value.hpp>
 #include <bg/util/byte_copy.hpp>
 #include <bg/util/linear_hash_table.hpp>
@@ -707,6 +708,24 @@ ScalarRuntimeTypes &scalar_runtime_types() {
     return value;
 }
 
+void validate_runtime_interface(const ScalarRuntimeType &runtime_type) {
+    auto valid = true;
+    runtime_type.type().visit(
+        [&](const HierarchicalScalarType *) {
+            valid = dynamic_cast<const HierarchicalScalarRuntimeType *>(&runtime_type) != nullptr;
+        },
+        [&](const StructScalarType *) {
+            valid = dynamic_cast<const StructScalarRuntimeType *>(&runtime_type) != nullptr;
+        },
+        [&](const ListScalarType *) { valid = dynamic_cast<const ScalarListRuntimeType *>(&runtime_type) != nullptr; },
+        [&](const SetScalarType *) { valid = dynamic_cast<const ScalarSetRuntimeType *>(&runtime_type) != nullptr; },
+        [&](const DictScalarType *) { valid = dynamic_cast<const ScalarDictRuntimeType *>(&runtime_type) != nullptr; },
+        ddv::noop);
+    if (!valid) {
+        throw std::invalid_argument{"scalar runtime type does not implement its semantic type interface"};
+    }
+}
+
 const ScalarRuntimeType *registered_runtime_type(ScalarRuntimeTypes &runtime_types, const ScalarType &type,
                                                  bool native) {
     if (native) {
@@ -747,6 +766,7 @@ class ScalarRuntimeTypeResolver {
         const auto supplied = std::ranges::find_if(
             available_, [&](const auto *item) { return item != nullptr && &item->type() == &type; });
         if (supplied != available_.end()) {
+            validate_runtime_interface(**supplied);
             return **supplied;
         }
         if (const auto *native = registered_runtime_type(runtime_types_, type, true)) {
@@ -762,17 +782,7 @@ class ScalarRuntimeTypeResolver {
         const ScalarRuntimeType *result = nullptr;
         type.visit(
             [&](const HierarchicalScalarType *hierarchical) {
-                auto runtime_type = make_composed_hierarchical_scalar_runtime_type(*hierarchical);
-                auto *hierarchical_runtime_type = runtime_type.get();
-                publish(std::move(runtime_type));
-
-                auto fields = std::vector<const ScalarRuntimeType *>{};
-                fields.reserve(hierarchical->field_count());
-                for (const auto &field : hierarchical->fields()) {
-                    fields.push_back(&resolve(*field.type));
-                }
-                initialize_composed_hierarchical_scalar_runtime_type(*hierarchical_runtime_type, fields);
-                result = hierarchical_runtime_type;
+                result = &resolve_composed(*hierarchical);
             },
             [&](const ListScalarType *list) {
                 auto runtime_type = std::make_unique<ComposedListRuntimeType>(*list, resolve(list->item_type()));
@@ -792,6 +802,24 @@ class ScalarRuntimeTypeResolver {
         if (result == nullptr) {
             throw std::logic_error{"resolved scalar type has no runtime type"};
         }
+        return *result;
+    }
+
+    const HierarchicalScalarRuntimeType &resolve_composed(const HierarchicalScalarType &type) {
+        if (const auto *existing = registered_runtime_type(runtime_types_, type, false)) {
+            return static_cast<const HierarchicalScalarRuntimeType &>(*existing);
+        }
+
+        auto runtime_type = make_composed_hierarchical_scalar_runtime_type(type);
+        auto *result = runtime_type.get();
+        publish(std::move(runtime_type));
+
+        auto fields = std::vector<const ScalarRuntimeType *>{};
+        fields.reserve(type.field_count());
+        for (const auto &field : type.fields()) {
+            fields.push_back(&resolve(*field.type));
+        }
+        initialize_composed_hierarchical_scalar_runtime_type(*result, fields);
         return *result;
     }
 
@@ -868,9 +896,21 @@ void release_scalar_value(const ScalarData &value) noexcept {
     memory.deallocate_bytes(allocation, value_offset + runtime_type.size(), allocation_alignment(runtime_type, mode));
 }
 
+const HierarchicalScalarRuntimeType &
+resolve_composed_hierarchical_scalar_runtime_type(const HierarchicalScalarType &type) {
+    auto &runtime_types = scalar_runtime_types();
+    const auto lock = std::lock_guard{runtime_types.mutex};
+    auto resolver = ScalarRuntimeTypeResolver{runtime_types, {}};
+    const auto &result = resolver.resolve_composed(type);
+    resolver.commit();
+    return result;
+}
+
 } // namespace details
 
 void register_scalar_runtime_type(const ScalarRuntimeType &runtime_type) {
+    validate_runtime_interface(runtime_type);
+
     auto &runtime_types = scalar_runtime_types();
     const auto lock = std::lock_guard{runtime_types.mutex};
     if (std::ranges::find(runtime_types.native, &runtime_type) == runtime_types.native.end()) {

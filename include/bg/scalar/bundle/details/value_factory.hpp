@@ -6,11 +6,16 @@
 #include <bg/scalar/value.hpp>
 #include <bg/util/scope_exit.hpp>
 
+#include <array>
 #include <optional>
 #include <span>
-#include <vector>
+#include <stdexcept>
 
 namespace bg::details {
+
+OwnedScalarData construct_composed_hierarchical_scalar_value(
+    const HierarchicalScalarType &type, std::span<const ScalarData *const> fields,
+    BundleAllocationOwner &owner);
 
 class HierarchicalScalarValueFactory {
   public:
@@ -20,7 +25,11 @@ class HierarchicalScalarValueFactory {
         auto *owner = upstream == nullptr ? current_bundle_allocation_owner() : nullptr;
         auto owns_owner = false;
         if (owner == nullptr) {
-            owner = BundleAllocationOwner::create(upstream == nullptr ? allocator{} : *upstream);
+            if (upstream == nullptr) {
+                throw std::logic_error{"hierarchical scalar construction requires an allocator or allocation context"};
+            }
+
+            owner = BundleAllocationOwner::create(*upstream);
             owns_owner = true;
         }
         auto release_owner = util::scope_exit{[&]() noexcept {
@@ -29,16 +38,13 @@ class HierarchicalScalarValueFactory {
             }
         }};
 
-        auto sources = std::vector<const ScalarData *>{};
-        sources.reserve(fields.size());
-        for (const auto &field : fields) {
-            sources.push_back(field ? &scalar_data(*field) : nullptr);
+        auto sources = std::array<const ScalarData *, hierarchical_scalar_schema_reflection<Schema>::field_count>{};
+        for (auto index = std::size_t{}; index < fields.size(); ++index) {
+            sources[index] = fields[index] ? &scalar_data(*fields[index]) : nullptr;
         }
 
-        const auto &runtime_type =
-            static_cast<const HierarchicalScalarRuntimeType &>(cpp_scalar_runtime_type<Bundle<Schema>>());
-        const auto data = runtime_type.construct_shared(sources, *owner);
-        return ScalarValue<Bundle<Schema>>{OwnedScalarData{&runtime_type, data, ScalarDataMode::shared_value}};
+        return ScalarValue<Bundle<Schema>>{construct_composed_hierarchical_scalar_value(
+            static_cast<const HierarchicalScalarType &>(cpp_scalar_type<Bundle<Schema>>()), sources, *owner)};
     }
 };
 

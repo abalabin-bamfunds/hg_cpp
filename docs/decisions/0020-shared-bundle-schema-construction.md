@@ -1,5 +1,7 @@
 # Shared bundle schema construction
 
+Status: accepted
+
 ## Decision
 
 One C++ schema can describe both `Bundle<Schema>` and `TSB<Schema>`. The scalar

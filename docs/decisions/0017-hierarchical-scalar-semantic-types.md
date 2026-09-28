@@ -22,6 +22,5 @@ fields and scalar collections provide finite termination points.
 
 ## Consequences
 
-The semantic type can be registered and used in type matching before a runtime
-type exists. `Bundle` declarations are not scalar values or time series values
-until storage and runtime access are implemented.
+The semantic type can be registered and used in type matching independently of
+the runtime type that stores its values.
