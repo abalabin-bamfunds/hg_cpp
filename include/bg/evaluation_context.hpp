@@ -4,6 +4,7 @@
 #include <bg/evaluation_time.hpp>
 #include <bg/schedule_handle.hpp>
 #include <bg/scratch_pad.hpp>
+#include <bg/wall_clock.hpp>
 
 #include <cstddef>
 
@@ -21,6 +22,8 @@ class EvaluationContext {
     ~EvaluationContext();
 
     const EvaluationTime &evaluation_time() const noexcept { return evaluation_time_; }
+
+    const WallClock &wall_clock() const noexcept { return *wall_clock_; }
 
     RuntimeGraph &runtime_graph() const noexcept { return *runtime_graph_; }
 
@@ -44,20 +47,23 @@ class EvaluationContext {
     friend RuntimeGraph;
     friend SimulationEvaluationEngine;
 
-    EvaluationContext(EvaluationTime evaluation_time, RuntimeGraph &runtime_graph, std::size_t node_index,
-                      const details::EvaluationContextSection *sections = nullptr) noexcept;
     EvaluationContext(EvaluationTime evaluation_time, RuntimeGraph &runtime_graph,
-                      details::EvaluationScratch &evaluation_scratch) noexcept
-        : evaluation_time_(evaluation_time), runtime_graph_(&runtime_graph), node_index_{},
+                      details::EvaluationScratch &evaluation_scratch, const WallClock &wall_clock) noexcept
+        : evaluation_time_(evaluation_time), wall_clock_(&wall_clock), runtime_graph_(&runtime_graph), node_index_{},
           scratch_{&evaluation_scratch} {}
+    EvaluationContext(EvaluationTime evaluation_time, RuntimeGraph &runtime_graph, std::size_t node_index,
+                      const WallClock &wall_clock,
+                      const details::EvaluationContextSection *sections = nullptr) noexcept;
     EvaluationContext(EvaluationContext &parent, RuntimeGraph &runtime_graph, std::size_t node_index) noexcept
-        : evaluation_time_(parent.evaluation_time_), runtime_graph_(&runtime_graph), node_index_(node_index),
-          scratch_{parent.scratch_.evaluation_scratch_}, sections_(parent.sections_) {}
+        : evaluation_time_(parent.evaluation_time_), wall_clock_(parent.wall_clock_), runtime_graph_(&runtime_graph),
+          node_index_(node_index), scratch_{parent.scratch_.evaluation_scratch_}, sections_(parent.sections_) {}
     EvaluationContext(EvaluationContext &parent, const details::EvaluationContextSection &section) noexcept
-        : evaluation_time_(parent.evaluation_time_), runtime_graph_(parent.runtime_graph_),
-          node_index_(parent.node_index_), scratch_{parent.scratch_.evaluation_scratch_}, sections_(&section) {}
+        : evaluation_time_(parent.evaluation_time_), wall_clock_(parent.wall_clock_),
+          runtime_graph_(parent.runtime_graph_), node_index_(parent.node_index_),
+          scratch_{parent.scratch_.evaluation_scratch_}, sections_(&section) {}
 
     EvaluationTime evaluation_time_;
+    const WallClock *wall_clock_;
     RuntimeGraph *runtime_graph_;
     std::size_t node_index_;
     ScratchPad scratch_;

@@ -5,6 +5,7 @@ add_executable(
     evaluation/context/evaluation_context_test.cpp
     evaluation/context/evaluation_scratch_test.cpp
     evaluation/context/context_time_series_test.cpp
+    evaluation/context/wall_clock_test.cpp
     evaluation/engine/simulation_evaluation_engine_test.cpp
     evaluation/lifecycle/runtime_lifecycle_test.cpp
     evaluation/map_runtime_node_test.cpp

@@ -109,8 +109,8 @@ class RuntimeGraph {
                                   OutputChange change);
     void run_input_notifications();
     void initialize_context_time_series(std::size_t index, Reference reference);
-    void apply_invalidation(const CompiledNode &node, std::size_t node_index);
-    void stop_nodes(std::size_t node_count) noexcept;
+    void apply_invalidation(const CompiledNode &node, std::size_t node_index, EvaluationContext &context);
+    void stop_nodes(std::size_t node_count, EvaluationContext &context) noexcept;
     bool inputs_are_valid(const CompiledNode &node) const noexcept;
     void start(EvaluationContext &context);
     bool evaluate(EvaluationContext &context);

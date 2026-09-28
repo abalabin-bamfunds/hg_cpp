@@ -17,7 +17,7 @@ Use `[dimension:value]` for each applicable dimension:
 - `feature`: `scalar-api`, `scalar-storage`, `scalar-collection`, `global-state`, `visitor`, `type-system`,
   `node-api`, `state`, `wiring`, `context-time-series`, `graph-compilation`, `test-graph`, `evaluation-context`,
   `evaluation-scratch`,
-  `lifecycle`, `finalization`, `scheduling`, `timed-scheduling`, `simulation`, `input-activity`, `validity`,
+  `lifecycle`, `finalization`, `scheduling`, `timed-scheduling`, `simulation`, `wall-clock`, `input-activity`, `validity`,
   `invalidation`, `operator`, `constant`, `graph-argument`, `map`, `switch`,
   `time-series-storage`, `time-series-view`, `collection-change`, `reference`, `sampling`, `getitem`, `getattr`,
   `nested-graph`, `mesh`, or `variadic-wiring`
@@ -170,6 +170,7 @@ graph compilation or evaluation.
 - invalidation behavior selected by a node
 - timed scheduling, cancellation, ordering, and coalescing
 - simulation time progression and termination
+- system and injected wall-clock access during lifecycle, nested evaluation, invalidation, and failure cleanup
 - outer and inner graph failure behavior
 - cycle callbacks and deferred storage reclamation
 - global state shared by outer and inner graphs

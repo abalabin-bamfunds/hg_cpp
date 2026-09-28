@@ -418,7 +418,7 @@ RuntimeGraph::~RuntimeGraph() {
                 continue;
             }
 
-            EvaluationContext context{evaluation_time_, *this, node_index};
+            EvaluationContext context{evaluation_time_, *this, node_index, SystemWallClock::instance()};
             const auto allocation_context = details::ScalarAllocationContext{
                 allocator_, global_state_->bundle_allocation_owner(), this, node_index};
             node.state_destruction_function()(node, storage_, &context);
@@ -725,7 +725,8 @@ void RuntimeGraph::run_input_notifications() {
     }
 }
 
-void RuntimeGraph::apply_invalidation(const CompiledNode &node, std::size_t node_index) {
+void RuntimeGraph::apply_invalidation(const CompiledNode &node, std::size_t node_index,
+                                      EvaluationContext &parent_context) {
     switch (node.invalidation_mode()) {
     case InvalidationMode::invalidate_output:
         if (node.has_output()) {
@@ -745,7 +746,7 @@ void RuntimeGraph::apply_invalidation(const CompiledNode &node, std::size_t node
     }
 
     const auto output_was_valid = node.has_output() && Node{node, storage_}.output_last_updated() > MIN_DT;
-    EvaluationContext context{evaluation_time_, *this, node_index};
+    EvaluationContext context{parent_context, *this, node_index};
     const auto allocation_context = details::ScalarAllocationContext{
         allocator_, global_state_->bundle_allocation_owner(), this, node_index};
     node.invalidation_function()(node, storage_, &context);
@@ -759,7 +760,7 @@ void RuntimeGraph::apply_invalidation(const CompiledNode &node, std::size_t node
 
 void RuntimeGraph::start(EvaluationTime evaluation_time) {
     auto scratch = details::EvaluationScratch{allocator_.memory_resource()};
-    auto context = EvaluationContext{evaluation_time, *this, scratch};
+    auto context = EvaluationContext{evaluation_time, *this, scratch, SystemWallClock::instance()};
     start(context);
 }
 
@@ -786,7 +787,7 @@ void RuntimeGraph::start(EvaluationContext &context) {
     auto started_node_count = std::size_t{};
     auto stop_on_failure = util::scope_exit{[&]() noexcept {
         stopped_ = true;
-        stop_nodes(started_node_count);
+        stop_nodes(started_node_count, context);
     }};
 
     for (auto index = std::size_t{}; index < context_references.size(); ++index) {
@@ -824,7 +825,7 @@ void RuntimeGraph::start(EvaluationContext &context) {
     stop_on_failure.release();
 }
 
-void RuntimeGraph::stop_nodes(std::size_t node_count) noexcept {
+void RuntimeGraph::stop_nodes(std::size_t node_count, EvaluationContext &parent_context) noexcept {
     const auto stops = compiled_graph_->stop_functions();
     auto i = static_cast<std::size_t>(std::ranges::lower_bound(stops.nodes, node_count) - stops.nodes.begin());
 
@@ -833,7 +834,7 @@ void RuntimeGraph::stop_nodes(std::size_t node_count) noexcept {
         const auto node_index = stops.nodes[i];
 
         const auto &node = compiled_graph_->node(node_index);
-        EvaluationContext context{evaluation_time_, *this, node_index};
+        EvaluationContext context{parent_context, *this, node_index};
         const auto allocation_context = details::ScalarAllocationContext{
             allocator_, global_state_->bundle_allocation_owner(), this, node_index};
         stops.functions[i](node, storage_, &context);
@@ -845,7 +846,7 @@ void RuntimeGraph::stop_nodes(std::size_t node_count) noexcept {
 
 void RuntimeGraph::stop() noexcept {
     auto scratch = details::EvaluationScratch{allocator_.memory_resource()};
-    auto context = EvaluationContext{evaluation_time_, *this, scratch};
+    auto context = EvaluationContext{evaluation_time_, *this, scratch, SystemWallClock::instance()};
     stop(context);
 }
 
@@ -891,7 +892,7 @@ bool RuntimeGraph::inputs_are_valid(const CompiledNode &node) const noexcept {
 
 void RuntimeGraph::evaluate(EvaluationTime evaluation_time) {
     auto scratch = details::EvaluationScratch{allocator_.memory_resource()};
-    auto context = EvaluationContext{evaluation_time, *this, scratch};
+    auto context = EvaluationContext{evaluation_time, *this, scratch, SystemWallClock::instance()};
     if (!evaluate(context)) {
         throw std::logic_error{"a pending evaluation escaped the outer graph"};
     }
@@ -923,7 +924,7 @@ bool RuntimeGraph::evaluate(EvaluationContext &context) {
     auto scheduled = ScheduledNodes{scheduling};
     auto stop_on_failure = util::scope_exit{[&]() noexcept {
         stopped_ = true;
-        stop_nodes(compiled_graph_->node_count());
+        stop_nodes(compiled_graph_->node_count(), context);
     }};
 
     for (auto scheduled_node = resuming ? scheduled.begin(paused_node_index_) : scheduled.begin();
@@ -943,7 +944,7 @@ bool RuntimeGraph::evaluate(EvaluationContext &context) {
         }
 
         if (inputs_were_valid && !inputs_valid) {
-            apply_invalidation(node, node_index);
+            apply_invalidation(node, node_index, context);
         }
 
         if (!inputs_valid) {
@@ -1001,9 +1002,10 @@ GlobalState &EvaluationContext::global_state() const noexcept {
 }
 
 EvaluationContext::EvaluationContext(EvaluationTime evaluation_time, RuntimeGraph &runtime_graph,
-                                     std::size_t node_index, const details::EvaluationContextSection *sections) noexcept
-    : evaluation_time_(evaluation_time), runtime_graph_(&runtime_graph), node_index_(node_index),
-      scratch_{runtime_graph.scratch_}, sections_(sections) {}
+                                     std::size_t node_index, const WallClock &wall_clock,
+                                     const details::EvaluationContextSection *sections) noexcept
+    : evaluation_time_(evaluation_time), wall_clock_(&wall_clock), runtime_graph_(&runtime_graph),
+      node_index_(node_index), scratch_{runtime_graph.scratch_}, sections_(sections) {}
 
 EvaluationContext EvaluationContext::child(details::EvaluationContextSection &section) noexcept {
     section.parent = sections_;

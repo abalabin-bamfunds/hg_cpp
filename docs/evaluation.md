@@ -99,6 +99,7 @@ The engine injects the context independently of wiring.
 The context provides:
 
 - the evaluation time
+- a wall-clock observation through `WallClock::now()`
 - the current runtime graph and node index
 - access to the runtime graph's `bg::allocator`
 - temporary scratch storage for the current node invocation
@@ -110,6 +111,15 @@ The context provides:
 An inner runtime graph receives a child `EvaluationContext` derived from the
 context used to evaluate its owning node. This preserves evaluation services
 and internal sections through any number of nested graph owners.
+
+`SimulationEvaluationEngine::run()` owns one simulated wall clock for the run.
+The engine sets it to the start time before graph startup, then updates it once
+at the start of each later outer evaluation cycle. All contexts and nested
+graphs in a cycle share it, so `WallClock::now()` returns that cycle's
+evaluation time. Start and stop functions observe the start and final evaluation
+times. Direct `RuntimeGraph::start`, `evaluate`, and `stop` calls use
+`SystemWallClock`. A real-time engine can provide another `WallClock`
+implementation. Timed scheduling uses evaluation time.
 
 ## Start
 
@@ -182,6 +192,10 @@ work. Stop code must be `noexcept`.
 
 The engine invokes stop once for each node whose start completed, including
 after graph failure.
+
+State-destruction functions run when runtime graph storage is destroyed. Their
+context uses `SystemWallClock` because graph destruction runs outside an outer
+engine invocation.
 
 ## Exceptions
 
