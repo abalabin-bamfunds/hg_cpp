@@ -34,14 +34,14 @@ struct bool_boundary_node {
 struct alternate_boundary_node {
     static constexpr bool deduplicate_wiring = false;
 
-    Out<TS<int>> output;
+    Out<TS<i64>> output;
 
     void evaluate() const {}
 };
 
 struct context_copy_node {
-    In<TS<int>, context> value;
-    Out<TS<int>> output;
+    In<TS<i64>, context> value;
+    Out<TS<i64>> output;
 
     void evaluate() const {}
 };
