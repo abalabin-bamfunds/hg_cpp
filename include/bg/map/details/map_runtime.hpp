@@ -1,5 +1,6 @@
 #pragma once
 
+#include <bg/graph/details/nested_graph_context.hpp>
 #include <bg/graph/runtime_graph.hpp>
 #include <bg/map/details/map_entries.hpp>
 #include <bg/map/details/map_node_definition.hpp>
@@ -184,6 +185,10 @@ class MapRuntime {
                                          ? mapped_reference(outer, entries_.key(entry))
                                          : pass_through_reference(outer));
         }
+        const auto inputs = std::span<const NestedGraphInput>{nested_inputs_};
+        const auto context_count = compiled.nested.graph->context_requirement_count();
+        auto startup_context =
+            NestedGraphStartupContext{invocation, context, invocation.parameter_count() - context_count, context_count};
 
         auto rollback = util::scope_exit{[&]() noexcept { entry.inner_graph.stop_and_destroy(invocation.context()); }};
         const auto constants = [&] {
@@ -195,9 +200,9 @@ class MapRuntime {
         }();
 
         if (owner) {
-            entries_.start(entry, compiled.nested, context, nested_inputs_, constants, *owner);
+            entries_.start(entry, compiled.nested, startup_context.context(), inputs, constants, *owner);
         } else {
-            entries_.start(entry, compiled.nested, context, nested_inputs_, constants);
+            entries_.start(entry, compiled.nested, startup_context.context(), inputs, constants);
         }
         rollback.release();
         nested_constant_.reset();

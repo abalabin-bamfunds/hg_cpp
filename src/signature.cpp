@@ -1,8 +1,8 @@
 #include <bg/type/signature.hpp>
 
-#include <bg/graph/wiring_arguments.hpp>
-#include <bg/graph/details/wiring_argument_descriptor.hpp>
 #include <bg/graph/details/variadic_wiring_operations.hpp>
+#include <bg/graph/details/wiring_argument_descriptor.hpp>
+#include <bg/graph/wiring_arguments.hpp>
 #include <bg/type/guarantee_variable.hpp>
 #include <bg/type/size_variable.hpp>
 #include <bg/type/time_series_bundle_type.hpp>
@@ -162,8 +162,8 @@ TypeMap Signature::match_arguments(std::span<const Type *const> arguments, const
 
     const auto mismatch = [&](std::size_t index, std::string message) -> void {
         const auto &parameter = parameters_[index];
-        throw TypeResolutionError{TypeResolutionErrorCode::mismatch, parameter.name, std::move(message),
-                                  parameter.type, arguments[index]};
+        throw TypeResolutionError{TypeResolutionErrorCode::mismatch, parameter.name, std::move(message), parameter.type,
+                                  arguments[index]};
     };
 
     auto unresolved = std::vector<std::size_t>{};
@@ -216,8 +216,7 @@ TypeMap Signature::match_arguments(std::span<const Type *const> arguments, const
 
                 const auto *parameter_structure = static_cast<const TimeSeriesType *>(nullptr);
                 try {
-                    parameter_structure =
-                        &parameter_series->with_guarantee(TimeSeriesGuarantee::ordinary);
+                    parameter_structure = &parameter_series->with_guarantee(TimeSeriesGuarantee::ordinary);
                 } catch (const TypeResolutionError &error) {
                     if (error.code() != TypeResolutionErrorCode::invalid_type_map) {
                         throw;
@@ -273,10 +272,9 @@ SignatureResolution Signature::resolve_with_type_map(std::span<const Type *const
     return resolve_seeded(arguments, type_map.copy());
 }
 
-SignatureResolution Signature::resolve_wiring_arguments(
-    std::span<const WiringArgument> arguments,
-    std::span<const details::WiringArgumentDescriptor> descriptors,
-    const TypeMap *seed) const {
+SignatureResolution Signature::resolve_wiring_arguments(std::span<const WiringArgument> arguments,
+                                                        std::span<const details::WiringArgumentDescriptor> descriptors,
+                                                        const TypeMap *seed) const {
     auto argument_types = std::vector<const Type *>{};
     argument_types.reserve(arguments.size());
     for (const auto &argument : arguments) {
@@ -309,9 +307,8 @@ ResolvedSignature Signature::complete_resolution(TypeMap &type_map, const Wiring
                                       "parameter resolved outside its supported categories"};
         }
 
-        parameters.push_back(
-            {parameter.name, &type, parameter.activity, parameter.validity, parameter.accepts_absent_scalar,
-             parameter.variadic_mode});
+        parameters.push_back({parameter.name, &type, parameter.activity, parameter.validity,
+                              parameter.accepts_absent_scalar, parameter.variadic_mode, parameter.context});
     }
 
     const TimeSeriesType *output = nullptr;

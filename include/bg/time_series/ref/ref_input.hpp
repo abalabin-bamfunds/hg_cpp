@@ -12,9 +12,9 @@
 #include <bg/time_series/time_series_input.hpp>
 #include <bg/time_series/time_series_runtime_type.hpp>
 #include <bg/time_series/time_series_type.hpp>
+#include <bg/time_series/tsb/tsb_type.hpp>
 #include <bg/time_series/tsd/tsd_key_subscription.hpp>
 #include <bg/time_series/tsd/tsd_type.hpp>
-#include <bg/time_series/tsb/tsb_type.hpp>
 #include <bg/time_series/tsl/tsl_type.hpp>
 #include <bg/type/time_series_bundle_type.hpp>
 #include <bg/type/time_series_list_type.hpp>

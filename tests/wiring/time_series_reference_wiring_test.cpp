@@ -34,7 +34,7 @@ TEST_CASE("wiring inserts and reuses a reference-making node",
     }
 
     REQUIRE(wiring.nodes().size() == 3);
-    CHECK(wiring.nodes()[2].input_output_indices().front() == 1);
+    CHECK(wiring.nodes()[2].inputs().front().index() == 1);
     CHECK(wiring.nodes()[1].signature().name == bg::util::symbol{"reference"});
     const auto &reference = dynamic_cast<const bg::TimeSeriesReferenceType &>(*wiring.nodes()[1].signature().output);
     CHECK(reference.guarantee().value() == bg::TimeSeriesGuarantee::const_);
@@ -52,7 +52,7 @@ TEST_CASE("wiring preserves an existing reference",
         (void)pass(reference);
 
         REQUIRE(wiring.nodes().size() == 4);
-        const auto input = wiring.nodes().back().input_output_indices().front();
+        const auto input = wiring.nodes().back().inputs().front().index();
         CHECK(wiring.outputs()[input].node_index == 2);
     }
 }

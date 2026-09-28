@@ -30,8 +30,7 @@ std::optional<Scalar<>> scalar_value(const WiringArgument &argument) {
 }
 
 std::optional<std::size_t> node_hash(const NodeTemplate &node_template, const ResolvedSignature &signature,
-                                     std::span<const std::size_t> input_output_indices,
-                                     std::span<const ScalarType *const> state_types,
+                                     std::span<const WiredInput> inputs, std::span<const ScalarType *const> state_types,
                                      std::span<const WiringArgument> arguments) {
     auto result = std::size_t{};
     combine_pointer(result, &node_template);
@@ -39,8 +38,9 @@ std::optional<std::size_t> node_hash(const NodeTemplate &node_template, const Re
     for (const auto &parameter : signature.parameters) {
         combine_pointer(result, parameter.type);
     }
-    for (const auto output : input_output_indices) {
-        combine_hash(result, output);
+    for (const auto input : inputs) {
+        combine_hash(result, input.index());
+        combine_hash(result, input.is_context());
     }
     for (const auto *state_type : state_types) {
         combine_pointer(result, state_type);
@@ -81,21 +81,12 @@ std::optional<WiringPoint> NodeTemplate::wire(GraphWiring &wiring, ResolvedSigna
         materialized_arguments.push_back(details::wiring_argument_access::borrow(argument));
     }
 
+    auto inputs = std::vector<WiredInput>{};
     for (auto index = std::size_t{}; index < materialized_arguments.size(); ++index) {
-        auto &argument = materialized_arguments[index];
-        if (!argument.is_time_series()) {
-            continue;
-        }
-
-        const auto &parameter = static_cast<const TimeSeriesType &>(*signature.parameters[index].type);
-        const auto source = details::materialize_wiring_point(argument.time_series(), parameter);
-        details::wiring_argument_access::replace_time_series(argument, source);
-    }
-
-    auto input_output_indices = std::vector<std::size_t>{};
-    for (const auto &argument : materialized_arguments) {
+        const auto &argument = materialized_arguments[index];
         if (argument.is_time_series()) {
-            input_output_indices.push_back(wiring.output_index(argument.time_series()));
+            const auto &parameter = static_cast<const TimeSeriesType &>(*signature.parameters[index].type);
+            inputs.push_back(wiring.wire_input(argument.time_series(), parameter));
         }
     }
 
@@ -103,18 +94,17 @@ std::optional<WiringPoint> NodeTemplate::wire(GraphWiring &wiring, ResolvedSigna
     auto dynamic_reference_inputs = dynamic_reference_input_types(type_map);
     const auto has_output = signature.output != nullptr;
     const auto hash = deduplicate_wiring() && has_output
-                          ? node_hash(*this, signature, input_output_indices, state_types, materialized_arguments)
+                          ? node_hash(*this, signature, inputs, state_types, materialized_arguments)
                           : std::nullopt;
     if (hash) {
         if (const auto existing =
-                wiring.find_wired_node(*hash, *this, signature, input_output_indices, state_types,
-                                       materialized_arguments)) {
+                wiring.find_wired_node(*hash, *this, signature, inputs, state_types, materialized_arguments)) {
             return existing;
         }
     }
 
     auto scalar_values = std::vector<WiredScalar>{};
-    scalar_values.reserve(materialized_arguments.size() - input_output_indices.size());
+    scalar_values.reserve(materialized_arguments.size() - inputs.size());
     auto release_scalars = util::scope_exit{[&]() noexcept { wiring.destroy_scalars(scalar_values); }};
 
     for (auto index = std::size_t{}; index < materialized_arguments.size(); ++index) {
@@ -150,7 +140,7 @@ std::optional<WiringPoint> NodeTemplate::wire(GraphWiring &wiring, ResolvedSigna
 
     auto node = WiredNode{*this,
                           std::move(signature),
-                          std::move(input_output_indices),
+                          std::move(inputs),
                           std::move(scalar_values),
                           std::move(state_types),
                           std::move(dynamic_reference_inputs),

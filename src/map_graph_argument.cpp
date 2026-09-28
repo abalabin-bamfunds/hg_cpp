@@ -36,7 +36,7 @@ class MapGraphArgumentBuilder {
     MapGraphArgumentBuilder(util::symbol name, const WiringTemplate &function, ResolvedMapCall call,
                             bool preserve_named_arguments, const TypeMap &type_map)
         : name_{name}, function_{function}, call_{std::move(call)}, preserve_named_arguments_{preserve_named_arguments},
-          type_map_{type_map}, wiring_{std::make_shared<GraphWiring>()} {}
+          type_map_{type_map}, wiring_{std::make_shared<GraphWiring>(WiringContext::current().wiring())} {}
 
     MapGraphArgumentWiring build() {
         resolve_key_argument();
@@ -91,6 +91,7 @@ class MapGraphArgumentBuilder {
         }
 
         append_key_set_parameter();
+        append_context_parameters();
         const auto output =
             output_target_ == nullptr
                 ? nullptr
@@ -204,6 +205,13 @@ class MapGraphArgumentBuilder {
         key_set_parameter_ = parameters_.size();
         parameters_.push_back({util::symbol{"__key_set__"}, key_set_type, active, required, false, VariadicMode::none});
         outer_arguments_.emplace_back(key_set_argument);
+    }
+
+    void append_context_parameters() {
+        for (const auto &requirement : wiring_->context_requirements()) {
+            parameters_.push_back({requirement.name, &requirement.boundary_input_type(), passive, optional});
+            outer_arguments_.emplace_back(requirement.provider);
+        }
     }
 
     util::symbol name_;

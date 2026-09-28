@@ -24,6 +24,7 @@ struct SwitchInputBoundary {
 struct SwitchBranchWiring {
     std::shared_ptr<const GraphWiring> wiring;
     std::vector<SwitchInputBoundary> inputs;
+    std::optional<std::size_t> context_parameter_start;
     std::optional<std::size_t> output_node;
 };
 
@@ -37,8 +38,7 @@ struct SwitchNodeWiring {
     std::vector<SwitchCaseWiring> cases;
 };
 
-std::unique_ptr<NodeTemplate> make_switch_node(SwitchNodeWiring wiring,
-                                               const ResolvedSignature &outer_signature);
+std::unique_ptr<NodeTemplate> make_switch_node(SwitchNodeWiring wiring, const ResolvedSignature &outer_signature);
 
 } // namespace details
 } // namespace bg

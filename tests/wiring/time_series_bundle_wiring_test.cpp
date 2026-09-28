@@ -109,7 +109,7 @@ TEST_CASE("typed field access preserves free TSB sources",
     sink(bundle->count);
 
     REQUIRE(wiring.nodes().size() == 3);
-    CHECK(wiring.nodes().back().input_output_indices().front() == 0);
+    CHECK(wiring.nodes().back().inputs().front().index() == 0);
     CHECK(wiring.outputs().size() == 2);
 }
 
@@ -136,9 +136,9 @@ TEST_CASE("getattr on a TSB reference returns a reference to a value field",
     using namespace bg::util::literals;
 
     const auto source = bg::node([](bg::Out<bg::TSB<ReferenceFieldBundle>>) {});
-    const auto reference = bg::node(
-        [](bg::In<bg::REF<bg::TSB<ReferenceFieldBundle>, bg::TimeSeriesGuarantee::ordinary>> input,
-           bg::Out<bg::REF<bg::TSB<ReferenceFieldBundle>, bg::TimeSeriesGuarantee::ordinary>> output) {
+    const auto reference =
+        bg::node([](bg::In<bg::REF<bg::TSB<ReferenceFieldBundle>, bg::TimeSeriesGuarantee::ordinary>> input,
+                    bg::Out<bg::REF<bg::TSB<ReferenceFieldBundle>, bg::TimeSeriesGuarantee::ordinary>> output) {
             output.copy(input);
         });
 
@@ -156,10 +156,12 @@ TEST_CASE("getattr on a TSB reference preserves a reference field guarantee",
 
     const auto source = bg::node([](bg::Out<bg::TSB<ReferenceFieldBundle, bg::TimeSeriesGuarantee::final>>) {});
     const auto reference = bg::node(
-        [](bg::In<bg::REF<bg::TSB<ReferenceFieldBundle, bg::TimeSeriesGuarantee::final>,
-                         bg::TimeSeriesGuarantee::const_>> input,
-           bg::Out<bg::REF<bg::TSB<ReferenceFieldBundle, bg::TimeSeriesGuarantee::final>,
-                          bg::TimeSeriesGuarantee::const_>> output) { output.copy(input); });
+        [](bg::In<
+               bg::REF<bg::TSB<ReferenceFieldBundle, bg::TimeSeriesGuarantee::final>, bg::TimeSeriesGuarantee::const_>>
+               input,
+           bg::Out<
+               bg::REF<bg::TSB<ReferenceFieldBundle, bg::TimeSeriesGuarantee::final>, bg::TimeSeriesGuarantee::const_>>
+               output) { output.copy(input); });
 
     bg::testing::test_wiring([&] {
         const auto selected = bg::operators::getattr(reference(source()), "selected"_sym);

@@ -26,4 +26,8 @@ struct DynamicBinding {};
 
 inline constexpr DynamicBinding dynamic_binding{};
 
+struct ContextParameter {};
+
+inline constexpr ContextParameter context{};
+
 } // namespace bg

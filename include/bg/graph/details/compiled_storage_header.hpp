@@ -16,7 +16,26 @@ struct ConstantMetadata {
 static_assert(sizeof(ConstantMetadata) == 12);
 static_assert(std::is_trivially_copyable_v<ConstantMetadata>);
 
-// Describes the variable sections of compiled graph storage. Node offsets, paths, and optional constant metadata follow.
+struct ContextRequirementBinding {
+    std::uint32_t last_updated_offset;
+    std::uint32_t value_offset;
+    std::uint32_t subscribers_offset;
+    std::uint32_t subscriber_count;
+    std::uint32_t notification_offset;
+};
+
+static_assert(sizeof(ContextRequirementBinding) == 20);
+static_assert(std::is_trivially_copyable_v<ContextRequirementBinding>);
+
+struct ContextMetadata {
+    std::uint32_t requirements_offset;
+    std::uint32_t requirement_count;
+};
+
+static_assert(sizeof(ContextMetadata) == 8);
+static_assert(std::is_trivially_copyable_v<ContextMetadata>);
+
+// Describes the variable sections of compiled graph storage. Node offsets, paths, and optional metadata follow.
 struct CompiledStorageHeader {
     std::span<const std::uint32_t> node_offsets(std::size_t node_count) const noexcept {
         return {reinterpret_cast<const std::uint32_t *>(this + 1), node_count};
@@ -28,6 +47,14 @@ struct CompiledStorageHeader {
 
     const ConstantMetadata *constant_metadata(std::size_t node_count) const noexcept {
         return reinterpret_cast<const ConstantMetadata *>(node_paths(node_count).data() + node_count);
+    }
+
+    const ContextMetadata *context_metadata(std::size_t node_count, bool has_constants) const noexcept {
+        const auto *metadata = reinterpret_cast<const std::byte *>(node_paths(node_count).data() + node_count);
+        if (has_constants) {
+            metadata += sizeof(ConstantMetadata);
+        }
+        return reinterpret_cast<const ContextMetadata *>(metadata);
     }
 
     std::uint32_t wiring_paths_offset;

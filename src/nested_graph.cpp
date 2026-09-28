@@ -31,8 +31,8 @@ void NestedGraph::start(const CompiledNestedGraph &compiled, EvaluationContext &
 }
 
 void NestedGraph::start(const CompiledNestedGraph &compiled, EvaluationContext &context,
-                        std::span<const NestedGraphInput> inputs,
-                        std::span<const NestedGraphConstantInput> constants, RuntimeGraphOwner owner) {
+                        std::span<const NestedGraphInput> inputs, std::span<const NestedGraphConstantInput> constants,
+                        RuntimeGraphOwner owner) {
     if (owner.callbacks == nullptr || owner.callbacks->inner_scheduled == nullptr ||
         owner.callbacks->timed_schedule_changed == nullptr) {
         throw std::invalid_argument{"a runtime graph owner requires scheduling callbacks"};
@@ -42,8 +42,8 @@ void NestedGraph::start(const CompiledNestedGraph &compiled, EvaluationContext &
 }
 
 void NestedGraph::start(const CompiledNestedGraph &compiled, EvaluationContext &context,
-                        std::span<const NestedGraphInput> inputs,
-                        std::span<const NestedGraphConstantInput> constants, const RuntimeGraphOwner *owner) {
+                        std::span<const NestedGraphInput> inputs, std::span<const NestedGraphConstantInput> constants,
+                        const RuntimeGraphOwner *owner) {
     if (active_ != nullptr) {
         throw std::logic_error{"the nested graph is already running"};
     }
@@ -78,8 +78,7 @@ void NestedGraph::start(const CompiledNestedGraph &compiled, EvaluationContext &
     rollback.release();
 }
 
-void NestedGraph::update_input(const CompiledNestedGraph &compiled, std::size_t input_index,
-                               NestedGraphInput input) {
+void NestedGraph::update_input(const CompiledNestedGraph &compiled, std::size_t input_index, NestedGraphInput input) {
     if (input_index >= compiled.input_nodes.size()) {
         throw std::out_of_range{"the nested graph input index is out of range"};
     }

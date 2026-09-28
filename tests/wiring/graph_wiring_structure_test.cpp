@@ -1,7 +1,7 @@
+#include <bg/graph.hpp>
 #include <bg/graph/details/graph_wiring_structure.hpp>
 #include <bg/graph/graph_wiring.hpp>
 #include <bg/graph/wiring_context.hpp>
-#include <bg/graph.hpp>
 #include <bg/nested.hpp>
 #include <bg/node.hpp>
 #include <bg/scalar/opaque.hpp>
@@ -27,6 +27,21 @@ struct bool_boundary_node {
     static constexpr bool deduplicate_wiring = false;
 
     Out<TS<bool>> output;
+
+    void evaluate() const {}
+};
+
+struct alternate_boundary_node {
+    static constexpr bool deduplicate_wiring = false;
+
+    Out<TS<int>> output;
+
+    void evaluate() const {}
+};
+
+struct context_copy_node {
+    In<TS<int>, context> value;
+    Out<TS<int>> output;
 
     void evaluate() const {}
 };
@@ -154,6 +169,27 @@ details::GraphWiringStructure nested_structure() {
     return details::graph_wiring_structure(wiring, inputs, static_cast<WiringPoint>(result));
 }
 
+details::GraphWiringStructure context_structure(bool alternate_provider) {
+    using namespace bg::literals;
+
+    const auto first_provider = node<boundary_node>();
+    const auto second_provider = node<alternate_boundary_node>();
+    const auto copy = node<context_copy_node>();
+    auto outer = GraphWiring{};
+    const auto outer_context = WiringContext{outer};
+    const auto provider =
+        alternate_provider ? static_cast<WiringPoint>(second_provider()) : static_cast<WiringPoint>(first_provider());
+    const auto scope = with_context("value"_n = provider);
+    auto inner = GraphWiring{outer};
+    auto result = WiringPoint{};
+    {
+        const auto inner_context = WiringContext{inner};
+        result = copy();
+    }
+
+    return details::graph_wiring_structure(inner, std::span<const WiringPoint>{}, result);
+}
+
 } // namespace
 
 TEST_CASE("graph wiring structure ignores local names and template object lifetimes",
@@ -188,9 +224,8 @@ TEST_CASE("an unhashable wired scalar disables graph structure caching", "[graph
     const auto value = bg::ScalarValue<bg::Opaque<opaque_value>>{opaque_value{1}};
     const auto result = source(value);
 
-    const auto structure =
-        bg::details::graph_wiring_structure(wiring, std::span<const bg::WiringPoint>{},
-                                            static_cast<bg::WiringPoint>(result));
+    const auto structure = bg::details::graph_wiring_structure(wiring, std::span<const bg::WiringPoint>{},
+                                                               static_cast<bg::WiringPoint>(result));
 
     CHECK_FALSE(structure.cacheable());
     CHECK(structure.hash() == 0);
@@ -202,5 +237,16 @@ TEST_CASE("generated nested nodes use their inner graph as definition identity",
     const auto second = nested_structure();
 
     REQUIRE(first.cacheable());
+    CHECK(first == second);
+}
+
+TEST_CASE("graph wiring structure excludes the provider identity of inherited context",
+          "[feature:context-time-series][feature:wiring]") {
+    const auto first = context_structure(false);
+    const auto second = context_structure(true);
+
+    REQUIRE(first.cacheable());
+    REQUIRE(second.cacheable());
+    CHECK(first.hash() == second.hash());
     CHECK(first == second);
 }

@@ -1,9 +1,10 @@
-#include <bg/graph/runtime_graph.hpp>
 #include <bg/details/evaluation_context.hpp>
+#include <bg/graph/runtime_graph.hpp>
 
 #include <bg/allocator.hpp>
 #include <bg/details/evaluation_scratch.hpp>
 #include <bg/graph/compiled_node.hpp>
+#include <bg/graph/details/context_time_series_section.hpp>
 #include <bg/graph/dynamic_subscribers.hpp>
 #include <bg/scalar/details/allocation_context.hpp>
 #include <bg/scalar/runtime_type.hpp>
@@ -28,9 +29,13 @@ ScheduleHandle RuntimeGraphOwnerContext::schedule_at(EvaluationTime time) const 
     return graph_->schedule_at(node_index_, time);
 }
 
-void RuntimeGraphOwnerContext::cancel(ScheduleHandle handle) const noexcept { graph_->cancel(node_index_, handle); }
+void RuntimeGraphOwnerContext::cancel(ScheduleHandle handle) const noexcept {
+    graph_->cancel(node_index_, handle);
+}
 
-EvaluationTime OutputChangeContext::evaluation_time() const noexcept { return evaluation_time_; }
+EvaluationTime OutputChangeContext::evaluation_time() const noexcept {
+    return evaluation_time_;
+}
 
 void OutputChangeContext::schedule_validity_check(RuntimeGraph &graph, std::size_t node_index) const noexcept {
     graph.schedule_validity_check(node_index);
@@ -188,8 +193,7 @@ class RuntimeGraph::ScheduledNodes {
 
     class Iterator {
       public:
-        explicit Iterator(ScheduledNodes &nodes, std::size_t word_index = 0,
-                          ScheduleWord processed = {}) noexcept
+        explicit Iterator(ScheduledNodes &nodes, std::size_t word_index = 0, ScheduleWord processed = {}) noexcept
             : nodes_(&nodes), word_index_{word_index}, processed_{processed} {
             advance();
         }
@@ -360,6 +364,28 @@ void RuntimeGraph::initialize_storage() {
                                                                   compiled_graph_->runtime_storage_alignment()));
     // The image contains only default states whose runtime types support byte-copy initialization.
     std::memcpy(storage_, compiled_graph_->initial_runtime_storage(), compiled_graph_->runtime_storage_size());
+}
+
+void RuntimeGraph::initialize_context_time_series(std::size_t index, Reference reference) {
+    const auto requirements = compiled_graph_->context_requirements();
+    if (index >= requirements.size()) {
+        throw std::out_of_range{"the context requirement index is out of range"};
+    }
+
+    const auto &binding = requirements[index];
+    auto &stored_last_updated = *reinterpret_cast<EvaluationTime *>(storage_ + binding.last_updated_offset);
+    auto &stored_reference = *reinterpret_cast<Reference *>(storage_ + binding.value_offset);
+    stored_reference = reference;
+    if (!reference) {
+        return;
+    }
+    stored_last_updated = evaluation_time_;
+
+    if (const auto *notification = compiled_graph_->context_notification(binding)) {
+        auto context = OutputChangeContext{*this};
+        notification->notify(context, nullptr, &stored_reference, OutputChange::revalidation);
+    }
+    notify_subscribers(compiled_graph_->context_subscribers(binding), OutputChange::revalidation);
 }
 
 RuntimeGraph::~RuntimeGraph() {
@@ -740,19 +766,34 @@ void RuntimeGraph::start(EvaluationContext &context) {
         throw std::logic_error{"a runtime graph can only be started once"};
     }
 
+    const auto context_requirements = compiled_graph_->context_requirements();
+    const auto *context_section = context_requirements.empty()
+                                      ? nullptr
+                                      : static_cast<const details::ContextTimeSeriesSection *>(
+                                            context.find_section(&details::context_time_series_section_type));
+    const auto context_references =
+        context_section == nullptr ? std::span<const Reference>{} : context_section->references;
+    if (context_references.size() != context_requirements.size()) {
+        throw std::invalid_argument{"the runtime graph received the wrong number of context inputs"};
+    }
+
     started_ = true;
     const auto scratch_use = ScratchUse{*this, *context.scratch_.evaluation_scratch_};
     evaluation_time_ = context.evaluation_time();
-    if (const auto offset = compiled_graph_->constant_start_time_offset()) {
-        *reinterpret_cast<EvaluationTime *>(storage_ + *offset) = evaluation_time_;
-    }
     const auto starts = compiled_graph_->start_functions();
     auto started_node_count = std::size_t{};
-    auto function = starts.functions.begin();
     auto stop_on_failure = util::scope_exit{[&]() noexcept {
         stopped_ = true;
         stop_nodes(started_node_count);
     }};
+
+    for (auto index = std::size_t{}; index < context_references.size(); ++index) {
+        initialize_context_time_series(index, context_references[index]);
+    }
+    if (const auto offset = compiled_graph_->constant_start_time_offset()) {
+        *reinterpret_cast<EvaluationTime *>(storage_ + *offset) = evaluation_time_;
+    }
+    auto function = starts.functions.begin();
 
     for (const auto node_index : starts.nodes) {
         started_node_count = node_index;
@@ -954,19 +995,17 @@ GlobalState &EvaluationContext::global_state() const noexcept {
 }
 
 EvaluationContext::EvaluationContext(EvaluationTime evaluation_time, RuntimeGraph &runtime_graph,
-                                     std::size_t node_index,
-                                     const details::EvaluationContextSection *sections) noexcept
+                                     std::size_t node_index, const details::EvaluationContextSection *sections) noexcept
     : evaluation_time_(evaluation_time), runtime_graph_(&runtime_graph), node_index_(node_index),
       scratch_{runtime_graph.scratch_}, sections_(sections) {}
 
-EvaluationContext EvaluationContext::child(
-    details::EvaluationContextSection &section) noexcept {
+EvaluationContext EvaluationContext::child(details::EvaluationContextSection &section) noexcept {
     section.parent = sections_;
     return EvaluationContext{*this, section};
 }
 
-const details::EvaluationContextSection *EvaluationContext::find_section(
-    const void *type, std::size_t depth) const noexcept {
+const details::EvaluationContextSection *EvaluationContext::find_section(const void *type,
+                                                                         std::size_t depth) const noexcept {
     auto *section = sections_;
     while (section != nullptr) {
         if (section->type == type) {

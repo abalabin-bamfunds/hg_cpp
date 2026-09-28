@@ -49,17 +49,14 @@ class SwitchGraphArgumentBuilder {
         const auto *output_target = resolved_output_target();
         const auto output = output_target == nullptr
                                 ? nullptr
-                                : &time_series_reference_type(
-                                      *output_target, TimeSeriesGuarantee::deduplicated);
+                                : &time_series_reference_type(*output_target, TimeSeriesGuarantee::deduplicated);
         auto resolved_parameters = std::vector<ResolvedParameter>{};
         resolved_parameters.reserve(parameters_.size());
         for (const auto &parameter : parameters_) {
-            resolved_parameters.push_back({parameter.name, parameter.type, parameter.activity,
-                                           parameter.validity, parameter.accepts_absent_scalar,
-                                           parameter.variadic_mode});
+            resolved_parameters.push_back({parameter.name, parameter.type, parameter.activity, parameter.validity,
+                                           parameter.accepts_absent_scalar, parameter.variadic_mode});
         }
-        auto outer_signature = ResolvedSignature{util::symbol{"switch"},
-                                                 std::move(resolved_parameters), output};
+        auto outer_signature = ResolvedSignature{util::symbol{"switch"}, std::move(resolved_parameters), output};
 
         auto payload = std::make_shared<DefaultSwitchWiring>(DefaultSwitchWiring{
             .node = std::move(node_),
@@ -74,14 +71,12 @@ class SwitchGraphArgumentBuilder {
     void validate_key() {
         const auto &target = key_.type().target_type();
         const auto *value = type_cast<TimeSeriesValueType>(&target);
-        if (value == nullptr || !value->value_type().supports_equality() ||
-            !value->value_type().supports_hash()) {
+        if (value == nullptr || !value->value_type().supports_equality() || !value->value_type().supports_hash()) {
             throw WiringError{"switch_ key must be a hashable time-series value"};
         }
         key_type_ = &value->value_type();
 
-        parameters_.push_back({util::symbol{"key"}, &target, active, optional, false,
-                               VariadicMode::none});
+        parameters_.push_back({util::symbol{"key"}, &target, active, optional, false, VariadicMode::none});
         outer_arguments_.emplace_back(key_);
     }
 
@@ -96,8 +91,8 @@ class SwitchGraphArgumentBuilder {
             const auto &reference = time_series_reference_type(target, TimeSeriesGuarantee::ordinary);
             const auto parameter_index = parameters_.size();
             outer_parameter_indices_.push_back({index, parameter_index});
-            parameters_.push_back({argument.name().value_or(util::symbol{std::to_string(index)}),
-                                   &reference, active, optional, false, VariadicMode::none});
+            parameters_.push_back({argument.name().value_or(util::symbol{std::to_string(index)}), &reference, active,
+                                   optional, false, VariadicMode::none});
             auto stored = wiring_argument_access::borrow(argument);
             wiring_argument_access::clear_name(stored);
             outer_arguments_.push_back(std::move(stored));
@@ -105,8 +100,8 @@ class SwitchGraphArgumentBuilder {
     }
 
     std::size_t outer_parameter_index(std::size_t supplied_index) const {
-        const auto found = std::ranges::find(outer_parameter_indices_, supplied_index,
-                                             &std::pair<std::size_t, std::size_t>::first);
+        const auto found =
+            std::ranges::find(outer_parameter_indices_, supplied_index, &std::pair<std::size_t, std::size_t>::first);
         if (found == outer_parameter_indices_.end()) {
             throw std::logic_error{"a switch boundary does not have an outer parameter"};
         }
@@ -126,15 +121,13 @@ class SwitchGraphArgumentBuilder {
         }
 
         const auto &signature = item.function->signature();
-        const auto first_variadic = signature.first_variadic_parameter().value_or(
-            signature.parameter_count());
+        const auto first_variadic = signature.first_variadic_parameter().value_or(signature.parameter_count());
         auto used = std::vector<bool>(arguments_.size());
         auto selected = std::vector<SelectedArgument>{};
         selected.reserve(arguments_.size());
         auto next_positional = std::size_t{};
 
-        for (auto parameter_index = std::size_t{}; parameter_index < first_variadic;
-             ++parameter_index) {
+        for (auto parameter_index = std::size_t{}; parameter_index < first_variadic; ++parameter_index) {
             const auto name = signature.parameter(parameter_index).name;
             auto supplied_index = arguments_.size();
             for (auto index = std::size_t{}; index < arguments_.size(); ++index) {
@@ -149,8 +142,7 @@ class SwitchGraphArgumentBuilder {
                     ++next_positional;
                 }
                 if (next_positional == arguments_.size()) {
-                    throw WiringError{"switch case graph is missing argument '" +
-                                      std::string{name.text()} + "'"};
+                    throw WiringError{"switch case graph is missing argument '" + std::string{name.text()} + "'"};
                 }
                 supplied_index = next_positional++;
             }
@@ -228,8 +220,7 @@ class SwitchGraphArgumentBuilder {
         return common;
     }
 
-    void append_case(const PreparedSwitchCase &item,
-                     std::vector<GraphWiringStructure> &structures) {
+    void append_case(const PreparedSwitchCase &item, std::vector<GraphWiringStructure> &structures) {
         auto stored_keys = std::vector<std::shared_ptr<const ScalarValue<>>>{};
         stored_keys.reserve(item.keys.size());
         if (item.default_case) {
@@ -265,7 +256,7 @@ class SwitchGraphArgumentBuilder {
             }
         }
 
-        auto wiring = std::make_shared<GraphWiring>();
+        auto wiring = std::make_shared<GraphWiring>(WiringContext::current().wiring());
         auto boundaries = std::vector<WiringPoint>{};
         auto boundary_inputs = std::vector<SwitchInputBoundary>{};
         auto selected = select_arguments(item);
@@ -283,13 +274,11 @@ class SwitchGraphArgumentBuilder {
             const auto boundary = wire_nested_input(target);
             boundaries.push_back(boundary);
             boundary_inputs.push_back(
-                {outer_parameter_index(argument.supplied_index),
-                 wired_output_node_index(*wiring, boundary)});
+                {outer_parameter_index(argument.supplied_index), wired_output_node_index(*wiring, boundary)});
             auto inner = WiringArgument{boundary};
             if (const auto name = argument.value.name()) {
-                wiring_argument_access::set_variadic_name(inner, *name,
-                                                           wiring_argument_access::variadic_capture_mode(
-                                                               argument.value));
+                wiring_argument_access::set_variadic_name(
+                    inner, *name, wiring_argument_access::variadic_capture_mode(argument.value));
             }
             graph_arguments.push_back(std::move(inner));
         }
@@ -307,12 +296,22 @@ class SwitchGraphArgumentBuilder {
 
         record_output_type(item.default_case, target);
 
+        auto context_parameter_start = std::optional<std::size_t>{};
+        if (!wiring->context_requirements().empty()) {
+            context_parameter_start = parameters_.size();
+        }
+        for (const auto &requirement : wiring->context_requirements()) {
+            parameters_.push_back({requirement.name, &requirement.boundary_input_type(), passive, optional});
+            outer_arguments_.emplace_back(requirement.provider);
+        }
+
         structures.push_back(graph_wiring_structure(*wiring, boundaries, structure_result));
         node_.cases.push_back({
             .keys = std::move(stored_keys),
             .default_case = item.default_case,
             .branch = {.wiring = std::move(wiring),
                        .inputs = std::move(boundary_inputs),
+                       .context_parameter_start = context_parameter_start,
                        .output_node = output_node},
         });
     }
@@ -335,25 +334,24 @@ Signature default_switch_signature(bool output) {
     auto parameters = std::vector<Parameter>{
         {util::symbol{"key"}, &TS<SCALAR>::type()},
         {util::symbol{"cases"}, &GraphArgument::type()},
-        {util::symbol{"args"}, &TSB<SWITCH_POSITIONAL>::type(), active, required, false,
-         VariadicMode::positional, variadic_wiring_operations<TSB<SWITCH_POSITIONAL>>()},
-        {util::symbol{"kwargs"}, &TSB<SWITCH_NAMED>::type(), active, required, false,
-         VariadicMode::named, variadic_wiring_operations<TSB<SWITCH_NAMED>>()},
+        {util::symbol{"args"}, &TSB<SWITCH_POSITIONAL>::type(), active, required, false, VariadicMode::positional,
+         variadic_wiring_operations<TSB<SWITCH_POSITIONAL>>()},
+        {util::symbol{"kwargs"}, &TSB<SWITCH_NAMED>::type(), active, required, false, VariadicMode::named,
+         variadic_wiring_operations<TSB<SWITCH_NAMED>>()},
     };
     if (!output) {
         return {util::symbol{"default_switch"}, std::move(parameters)};
     }
 
     const auto &result = TimeSeriesVariableInstance<TS_T>::get();
-    auto resolvers = std::vector<VariableResolver>{VariableResolver{
-        &result,
-        [](const TypeMap &, const WiringArguments &arguments) -> TypeMapValue {
-            const auto *cases = arguments.graph(1);
-            if (cases == nullptr) {
-                return static_cast<const Type *>(nullptr);
-            }
-            return static_cast<const Type *>(DefaultSwitchWiring::from(*cases).outer_signature.output);
-        }}};
+    auto resolvers = std::vector<VariableResolver>{
+        VariableResolver{&result, [](const TypeMap &, const WiringArguments &arguments) -> TypeMapValue {
+                             const auto *cases = arguments.graph(1);
+                             if (cases == nullptr) {
+                                 return static_cast<const Type *>(nullptr);
+                             }
+                             return static_cast<const Type *>(DefaultSwitchWiring::from(*cases).outer_signature.output);
+                         }}};
     return {util::symbol{"default_switch"}, std::move(parameters), result, std::move(resolvers)};
 }
 
@@ -396,8 +394,7 @@ class DefaultSinkSwitchTemplate final : public WiringTemplate {
 
 } // namespace
 
-GraphArgument build_switch_graph_argument(WiringPoint key,
-                                          std::span<const WiringArgument> arguments,
+GraphArgument build_switch_graph_argument(WiringPoint key, std::span<const WiringArgument> arguments,
                                           std::span<const PreparedSwitchCase> cases) {
     return SwitchGraphArgumentBuilder{key, arguments, cases}.build();
 }
@@ -421,8 +418,7 @@ std::optional<WiringPoint> DefaultSwitchWiring::wire() const {
 
 namespace bg {
 
-operator_<auto(TS<SCALAR>, GRAPH_T, TSB<details::SWITCH_POSITIONAL>,
-               TSB<details::SWITCH_NAMED>) -> TS_T,
+operator_<auto(TS<SCALAR>, GRAPH_T, TSB<details::SWITCH_POSITIONAL>, TSB<details::SWITCH_NAMED>)->TS_T,
           details::switch_operator_implementation>
     switch_{"switch", {"key", "cases", "args", "kwargs"}};
 

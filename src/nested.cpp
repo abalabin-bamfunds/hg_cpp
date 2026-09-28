@@ -1,10 +1,11 @@
-#include <bg/graph/details/nested.hpp>
 #include <bg/details/evaluation_context.hpp>
+#include <bg/graph/details/nested.hpp>
 
 #include <bg/graph/compiled_graph.hpp>
+#include <bg/graph/compiled_node.hpp>
 #include <bg/graph/details/compiled_graph_builder.hpp>
 #include <bg/graph/details/graph_wiring_structure.hpp>
-#include <bg/graph/compiled_node.hpp>
+#include <bg/graph/details/nested_graph_context.hpp>
 #include <bg/graph/graph_wiring.hpp>
 #include <bg/node.hpp>
 #include <bg/node/input.hpp>
@@ -14,9 +15,9 @@
 #include <bg/time_series/ref/ref_runtime_type.hpp>
 #include <bg/time_series/time_series_runtime_type.hpp>
 #include <bg/time_series/time_series_variable.hpp>
+#include <bg/type/scalar_variable.hpp>
 #include <bg/type/time_series_reference_type.hpp>
 #include <bg/type/time_series_value_type.hpp>
-#include <bg/type/scalar_variable.hpp>
 #include <bg/type/type.hpp>
 
 #include <memory>
@@ -68,12 +69,24 @@ class NestedNodeDefinition {
 
     NestedNodeDefinition(NestedGraphWiring wiring, const ResolvedSignature &graph_signature)
         : wiring_{std::move(wiring)}, output_type_{&static_cast<const TimeSeriesType &>(*graph_signature.output)} {
+        const auto context_count = wiring_.wiring->context_requirements().size();
+        if (context_count > graph_signature.parameters.size()) {
+            throw std::invalid_argument{"a nested graph has too many context requirements"};
+        }
+        const auto context_parameter_start = graph_signature.parameters.size() - context_count;
+
         auto parameters = std::vector<Parameter>{};
         parameters.reserve(graph_signature.parameters.size() + 1);
         parameters.push_back({util::symbol{"run"}, &TS<bool>::type(), active, required});
 
-        for (const auto &parameter : graph_signature.parameters) {
+        for (auto parameter_index = std::size_t{}; parameter_index < graph_signature.parameters.size();
+             ++parameter_index) {
+            const auto &parameter = graph_signature.parameters[parameter_index];
             if (parameter.type->is_time_series()) {
+                if (parameter_index >= context_parameter_start) {
+                    parameters.push_back({parameter.name, parameter.type, passive, optional});
+                    continue;
+                }
                 auto type = std::make_unique<GenericTimeSeriesReferenceType>(
                     static_cast<const TimeSeriesType &>(*parameter.type), TimeSeriesGuarantee::ordinary);
                 parameters.push_back({parameter.name, type.get(), active, optional});
@@ -120,8 +133,6 @@ class NestedNodeDefinition {
         const auto run_input = (*input).value();
         const auto run = *run_input.visit(
             [](const In<TS<SCALAR>> *value) { return scalar_cast<bool>(value->value_view()).value(); }, ddv::noop);
-        ++input;
-
         if (!run) {
             state.graph.stop(invocation.context());
             invocation.output().invalidate();
@@ -130,18 +141,23 @@ class NestedNodeDefinition {
 
         auto values = std::vector<NestedGraphInput>{};
         values.reserve(invocation.compiled_data().input_nodes.size());
-        for (; input != inputs.end(); ++input) {
+        for (auto index = std::size_t{}; index < invocation.compiled_data().input_nodes.size(); ++index) {
+            ++input;
             const auto value = (*input).value();
-            const auto reference =
-                *value.visit([](const In<REF<TS_T>> *input) { return input->value(); }, ddv::noop);
+            const auto reference = *value.visit([](const In<REF<TS_T>> *item) { return item->value(); }, ddv::noop);
             values.push_back({value.valid() ? reference : nullptr, value.valid() ? value.last_updated() : MIN_DT});
         }
 
+        const auto graph_inputs = std::span<const NestedGraphInput>{values};
+
         auto &graph = state.graph;
         if (!graph.running()) {
-            graph.start(invocation.compiled_data(), invocation.context(), values);
+            const auto context_count = invocation.compiled_data().graph->context_requirement_count();
+            auto startup_context =
+                NestedGraphStartupContext{invocation, invocation.parameter_count() - context_count, context_count};
+            graph.start(invocation.compiled_data(), startup_context.context(), graph_inputs);
         } else {
-            graph.update_inputs(invocation.compiled_data(), values);
+            graph.update_inputs(invocation.compiled_data(), graph_inputs);
         }
         return resume(invocation);
     }
@@ -154,9 +170,7 @@ class NestedNodeDefinition {
 
         auto output = invocation.output();
         output.visit(
-            [&](Out<REF<TS_T>> *reference) {
-                reference->set_value(state.graph.output(invocation.compiled_data()));
-            },
+            [&](Out<REF<TS_T>> *reference) { reference->set_value(state.graph.output(invocation.compiled_data())); },
             ddv::noop);
         return true;
     }
@@ -200,7 +214,14 @@ WiringPoint wire_nested_constant_input(const TimeSeriesType &type) {
 }
 
 WiringPoint wire_nested_output(WiringPoint output, const TimeSeriesType &type) {
-    return static_cast<WiringPoint>(nested_output_node(materialize_wiring_point(output, type)));
+    auto *resolution_type = &type;
+    if (const auto *reference = type_cast<TimeSeriesReferenceType>(&output.type())) {
+        resolution_type = &time_series_reference_type(type.target_type(), *reference->guarantee().value());
+    }
+
+    auto argument = WiringArgument{output};
+    wiring_argument_access::set_resolution_type(argument, *resolution_type);
+    return static_cast<WiringPoint>(nested_output_node(std::move(argument)));
 }
 
 std::unique_ptr<NodeTemplate> make_nested_node(NestedGraphWiring wiring, const ResolvedSignature &graph_signature) {

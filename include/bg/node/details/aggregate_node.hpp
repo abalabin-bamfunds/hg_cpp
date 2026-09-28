@@ -1,8 +1,8 @@
 #pragma once
 
 #include <bg/evaluation_context.hpp>
-#include <bg/graph/node.hpp>
 #include <bg/graph/details/variadic_wiring_operations.hpp>
+#include <bg/graph/node.hpp>
 #include <bg/node/details/aggregate_resolver.hpp>
 #include <bg/node/input.hpp>
 #include <bg/node/output.hpp>
@@ -49,6 +49,7 @@ template <typename T> struct input_field {
     static constexpr bool value = false;
     static constexpr bool reflected_name = true;
     static constexpr bool dynamic_binding = false;
+    static constexpr bool context = false;
 };
 
 template <typename TimeSeries, auto... Properties> struct input_field<In<TimeSeries, Properties...>> {
@@ -59,6 +60,7 @@ template <typename TimeSeries, auto... Properties> struct input_field<In<TimeSer
     static constexpr InputActivity activity = Input::activity;
     static constexpr InputValidity validity = Input::validity;
     static constexpr bool dynamic_binding = Input::dynamic_binding;
+    static constexpr bool context = (false || ... || is_context<decltype(Properties)>);
     static constexpr auto variadic_mode = [] {
         if constexpr (requires { Input::variadic_mode; }) {
             return Input::variadic_mode;
@@ -105,9 +107,8 @@ using aggregate_output_time_series_t = decltype(aggregate_output_time_series_typ
 template <typename T> inline constexpr bool generic_scalar_state = generic_scalar<T>;
 
 template <typename T> struct scalar_field {
-    static constexpr bool value = scalar_declaration_traits<T>::supports_implicit_argument && requires {
-        cpp_scalar_type<canonical_scalar_type_t<T>>();
-    };
+    static constexpr bool value = scalar_declaration_traits<T>::supports_implicit_argument &&
+                                  requires { cpp_scalar_type<canonical_scalar_type_t<T>>(); };
     static constexpr bool optional = false;
 
     using value_type = T;
@@ -462,7 +463,7 @@ void add_signature_field(std::vector<Parameter> &parameters, const TimeSeriesTyp
         if constexpr (mode == VariadicMode::none) {
             parameters.push_back({util::symbol{util::aggregate_member_names<Definition>[Index]},
                                   &input_type<Definition, Index>(), input_field<Field>::activity,
-                                  input_field<Field>::validity});
+                                  input_field<Field>::validity, false, mode, nullptr, input_field<Field>::context});
         } else {
             parameters.push_back({util::symbol{util::aggregate_member_names<Definition>[Index]},
                                   &input_type<Definition, Index>(), input_field<Field>::activity,
@@ -549,9 +550,9 @@ consteval std::size_t state_index(std::index_sequence<Index...>) {
 
 template <typename Definition, std::size_t... Index>
 consteval std::size_t state_field_count(std::index_sequence<Index...>) {
-    return (std::size_t{} + ... +
-            static_cast<std::size_t>(
-                state_field<std::remove_cv_t<util::aggregate_member_type<Index, Definition>>>::value));
+    return (
+        std::size_t{} + ... +
+        static_cast<std::size_t>(state_field<std::remove_cv_t<util::aggregate_member_type<Index, Definition>>>::value));
 }
 
 template <typename Definition, std::size_t Target, std::size_t... Index>
@@ -622,8 +623,7 @@ consteval std::size_t aggregate_static_state_size(std::index_sequence<Index...>)
     return offset;
 }
 
-template <typename Definition, std::size_t Index>
-consteval std::size_t aggregate_dynamic_reference_input_offset() {
+template <typename Definition, std::size_t Index> consteval std::size_t aggregate_dynamic_reference_input_offset() {
     constexpr auto MemberCount = util::aggregate_member_count<Definition>;
     constexpr auto DynamicIndex =
         dynamic_reference_input_index<Definition, Index>(std::make_index_sequence<MemberCount>{});
@@ -709,8 +709,7 @@ template <typename Definition, std::size_t Index>
                                        : Field{scalar_api_value<Value>(
                                              Traits::read(*static_cast<const typename Traits::stored_type *>(data)))};
             } else {
-                return scalar_api_value<Value>(
-                    Traits::read(*static_cast<const typename Traits::stored_type *>(data)));
+                return scalar_api_value<Value>(Traits::read(*static_cast<const typename Traits::stored_type *>(data)));
             }
         }
     } else if constexpr (state_field<Field>::value) {
@@ -907,8 +906,8 @@ void unbind_dynamic_reference_inputs(const CompiledNode &node, void *runtime_sto
 template <typename Definition>
 void unbind_dynamic_reference_inputs(const CompiledNode &node, void *runtime_storage,
                                      EvaluationContext &context) noexcept {
-    unbind_dynamic_reference_inputs<Definition>(
-        node, runtime_storage, context, std::make_index_sequence<util::aggregate_member_count<Definition>>{});
+    unbind_dynamic_reference_inputs<Definition>(node, runtime_storage, context,
+                                                std::make_index_sequence<util::aggregate_member_count<Definition>>{});
 }
 
 template <typename Definition, auto Function, std::size_t... Index>

@@ -18,9 +18,7 @@
 namespace bg {
 
 template <typename Graph, details::graph_code_argument Run, details::graph_code_argument... Arguments>
-    requires std::derived_from<Graph, WiringTemplate> && requires {
-        typename Graph::result_type;
-    }
+    requires std::derived_from<Graph, WiringTemplate> && requires { typename Graph::result_type; }
 [[nodiscard]] auto nested(const Graph &graph, Run &&run, Arguments &&...arguments) {
     using Result = typename Graph::result_type;
     static_assert(details::is_typed_wiring_point<Result>, "a nested graph must have an output");
@@ -34,14 +32,19 @@ template <typename Graph, details::graph_code_argument Run, details::graph_code_
     auto resolution = graph.signature().resolve_wiring_arguments(normalized, normalized_result.descriptors);
     const auto &resolved = resolution.signature;
 
-    auto inner_wiring = std::make_shared<GraphWiring>();
+    auto inner_wiring = std::make_shared<GraphWiring>(outer_wiring);
     auto input_nodes = std::vector<std::size_t>{};
     auto output_node = std::size_t{};
     {
         auto context = WiringContext{*inner_wiring};
+        // Make resolved graph context parameters available as inner contexts while wiring the graph body.
+        auto context_scopes = details::ContextScopes::activate_context_parameters(resolved, normalized);
         auto inner_arguments = std::vector<WiringArgument>{};
         inner_arguments.reserve(normalized.size());
         for (auto i = std::size_t{}; i < resolved.parameters.size(); ++i) {
+            if (resolved.parameters[i].context) {
+                continue;
+            }
             if (resolved.parameters[i].variadic_mode != details::VariadicMode::none) {
                 const auto &record = *details::variadic_wiring_record(normalized[i].time_series());
                 if (record.direct_collection()) {
@@ -49,8 +52,8 @@ template <typename Graph, details::graph_code_argument Run, details::graph_code_
                     const auto input = details::wire_nested_input(type);
                     input_nodes.push_back(details::wired_output_node_index(*inner_wiring, input));
                     auto argument = WiringArgument{input};
-                    details::wiring_argument_access::set_variadic_name(
-                        argument, resolved.parameters[i].name, resolved.parameters[i].variadic_mode);
+                    details::wiring_argument_access::set_variadic_name(argument, resolved.parameters[i].name,
+                                                                       resolved.parameters[i].variadic_mode);
                     inner_arguments.push_back(std::move(argument));
                     continue;
                 }
@@ -88,6 +91,9 @@ template <typename Graph, details::graph_code_argument Run, details::graph_code_
     flattened.parameters.reserve(resolved.parameters.size());
     for (auto index = std::size_t{}; index < resolved.parameters.size(); ++index) {
         const auto &parameter = resolved.parameters[index];
+        if (parameter.context) {
+            continue;
+        }
         if (parameter.variadic_mode == details::VariadicMode::none) {
             flattened.parameters.push_back(parameter);
             continue;
@@ -110,6 +116,15 @@ template <typename Graph, details::graph_code_argument Run, details::graph_code_
         }
     }
 
+    for (const auto &requirement : inner_wiring->context_requirements()) {
+        flattened.parameters.push_back({requirement.name, &requirement.boundary_input_type(), passive, optional});
+    }
+    auto context_providers = std::vector<WiringPoint>{};
+    context_providers.reserve(inner_wiring->context_requirements().size());
+    for (const auto &requirement : inner_wiring->context_requirements()) {
+        context_providers.push_back(requirement.provider);
+    }
+
     auto nested_wiring = details::NestedGraphWiring{
         .wiring = std::move(inner_wiring),
         .input_nodes = std::move(input_nodes),
@@ -121,6 +136,9 @@ template <typename Graph, details::graph_code_argument Run, details::graph_code_
     outer_arguments.reserve(flattened.parameters.size() + 1);
     outer_arguments.emplace_back(std::forward<Run>(run));
     for (auto index = std::size_t{}; index < normalized.size(); ++index) {
+        if (resolved.parameters[index].context) {
+            continue;
+        }
         if (resolved.parameters[index].variadic_mode != details::VariadicMode::none) {
             const auto &record = *details::variadic_wiring_record(normalized[index].time_series());
             if (const auto collection = record.direct_collection()) {
@@ -139,6 +157,9 @@ template <typename Graph, details::graph_code_argument Run, details::graph_code_
             continue;
         }
         outer_arguments.push_back(details::wiring_argument_access::borrow(normalized[index]));
+    }
+    for (const auto provider : context_providers) {
+        outer_arguments.emplace_back(provider);
     }
     auto output_point = *owned_nested(std::span<const WiringArgument>{outer_arguments});
     return wp<REF<Target>>{output_point};

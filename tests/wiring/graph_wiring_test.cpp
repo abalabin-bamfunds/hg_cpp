@@ -54,8 +54,8 @@ TEST_CASE("node calls add wired nodes to the active graph", "[graph_wiring][feat
     REQUIRE(nodes.size() == 2);
     CHECK(&nodes[0].node_template() == &source);
     CHECK(&nodes[1].node_template() == &copy);
-    REQUIRE(nodes[1].input_output_indices().size() == 1);
-    CHECK(nodes[1].input_output_indices()[0] == 0);
+    REQUIRE(nodes[1].inputs().size() == 1);
+    CHECK(nodes[1].inputs()[0].index() == 0);
 }
 
 TEST_CASE("wiring point re-annotation checks type compatibility", "[graph_wiring][feature:wiring]") {
@@ -262,8 +262,8 @@ TEST_CASE("wired nodes retain scalar arguments", "[graph_wiring][feature:wiring]
 
     const auto nodes = wiring.nodes();
     REQUIRE(nodes.size() == 2);
-    REQUIRE(nodes[1].input_output_indices().size() == 1);
-    CHECK(nodes[1].input_output_indices()[0] == 0);
+    REQUIRE(nodes[1].inputs().size() == 1);
+    CHECK(nodes[1].inputs()[0].index() == 0);
     REQUIRE(nodes[1].scalar_values().size() == 1);
     const bg::WiredScalar &factor = nodes[1].scalar_values()[0];
     CHECK(*static_cast<const float *>(factor.data()) == 2.0F);

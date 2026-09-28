@@ -24,11 +24,13 @@ template <typename T> inline constexpr bool is_name = is_compile_time_name<std::
 
 template <typename T> inline constexpr bool is_dynamic_binding = std::same_as<std::remove_cv_t<T>, DynamicBinding>;
 
+template <typename T> inline constexpr bool is_context = std::same_as<std::remove_cv_t<T>, ContextParameter>;
+
 template <typename T> inline constexpr bool is_variadic_mode = std::same_as<std::remove_cv_t<T>, VariadicMode>;
 
 template <auto Property>
 consteval void apply_input_property(InputActivity &activity, InputValidity &validity, bool &dynamic_binding,
-                                    std::string_view &name) {
+                                    bool &context, std::string_view &name) {
     using PropertyType = decltype(Property);
 
     if constexpr (is_activity<PropertyType>) {
@@ -37,15 +39,18 @@ consteval void apply_input_property(InputActivity &activity, InputValidity &vali
         validity = Property;
     } else if constexpr (is_dynamic_binding<PropertyType>) {
         dynamic_binding = true;
+    } else if constexpr (is_context<PropertyType>) {
+        context = true;
     } else if constexpr (is_name<PropertyType>) {
         name = is_compile_time_name<std::remove_cv_t<PropertyType>>::text;
     }
 }
 
 template <bool AllowVariadic, auto... Properties> struct basic_input_properties {
-    static_assert((... && (is_activity<decltype(Properties)> || is_validity<decltype(Properties)> ||
-                           is_dynamic_binding<decltype(Properties)> || is_name<decltype(Properties)> ||
-                           (AllowVariadic && is_variadic_mode<decltype(Properties)>))),
+    static_assert((... &&
+                   (is_activity<decltype(Properties)> || is_validity<decltype(Properties)> ||
+                    is_dynamic_binding<decltype(Properties)> || is_name<decltype(Properties)> ||
+                    is_context<decltype(Properties)> || (AllowVariadic && is_variadic_mode<decltype(Properties)>))),
                   "unsupported input property");
     static_assert((std::size_t{} + ... + static_cast<std::size_t>(is_activity<decltype(Properties)>)) <= 1,
                   "an input can have only one activity property");
@@ -55,8 +60,16 @@ template <bool AllowVariadic, auto... Properties> struct basic_input_properties 
                   "an input can have only one name property");
     static_assert((std::size_t{} + ... + static_cast<std::size_t>(is_dynamic_binding<decltype(Properties)>)) <= 1,
                   "an input can have only one dynamic_binding property");
+    static_assert((std::size_t{} + ... + static_cast<std::size_t>(is_context<decltype(Properties)>)) <= 1,
+                  "an input can have only one context property");
     static_assert((std::size_t{} + ... + static_cast<std::size_t>(is_variadic_mode<decltype(Properties)>)) <= 1,
                   "an input can have only one variadic property");
+    static_assert(!(false || ... || is_context<decltype(Properties)>) ||
+                      !(false || ... || is_dynamic_binding<decltype(Properties)>),
+                  "a context input cannot use dynamic_binding");
+    static_assert(!(false || ... || is_context<decltype(Properties)>) ||
+                      !(false || ... || is_variadic_mode<decltype(Properties)>),
+                  "a context input cannot be variadic");
 
     static constexpr bool valid = true;
 
@@ -65,12 +78,14 @@ template <bool AllowVariadic, auto... Properties> struct basic_input_properties 
         InputActivity activity{active};
         InputValidity validity{required};
         bool dynamic_binding{};
+        bool context{};
         std::string_view name;
     };
 
     static consteval values parse() {
         values result;
-        (apply_input_property<Properties>(result.activity, result.validity, result.dynamic_binding, result.name),
+        (apply_input_property<Properties>(result.activity, result.validity, result.dynamic_binding, result.context,
+                                          result.name),
          ...);
 
         return result;
@@ -82,9 +97,38 @@ template <bool AllowVariadic, auto... Properties> struct basic_input_properties 
     static constexpr InputActivity activity = parsed.activity;
     static constexpr InputValidity validity = parsed.validity;
     static constexpr bool dynamic_binding = parsed.dynamic_binding;
+    static constexpr bool context = parsed.context;
     static constexpr std::string_view name = parsed.name;
 };
 
 template <auto... Properties> using input_properties = basic_input_properties<false, Properties...>;
+
+template <auto... Properties> struct wiring_point_properties {
+    static_assert((... && (is_name<decltype(Properties)> || is_context<decltype(Properties)> ||
+                           is_variadic_mode<decltype(Properties)>)),
+                  "unsupported wiring point property");
+    static_assert((std::size_t{} + ... + static_cast<std::size_t>(is_name<decltype(Properties)>)) <= 1,
+                  "a wiring point can have only one name property");
+    static_assert((std::size_t{} + ... + static_cast<std::size_t>(is_context<decltype(Properties)>)) <= 1,
+                  "a wiring point can have only one context property");
+    static_assert((std::size_t{} + ... + static_cast<std::size_t>(is_variadic_mode<decltype(Properties)>)) <= 1,
+                  "a wiring point can have only one variadic property");
+    static_assert(!(false || ... || is_context<decltype(Properties)>) ||
+                      !(false || ... || is_variadic_mode<decltype(Properties)>),
+                  "a context wiring point cannot be variadic");
+
+    static constexpr std::string_view name = [] {
+        auto result = std::string_view{};
+        (([&] {
+             if constexpr (is_name<decltype(Properties)>) {
+                 result = is_compile_time_name<std::remove_cv_t<decltype(Properties)>>::text;
+             }
+         }()),
+         ...);
+        return result;
+    }();
+    static constexpr bool context = (false || ... || is_context<decltype(Properties)>);
+    static constexpr auto variadic_mode = bg::details::variadic_mode<Properties...>();
+};
 
 } // namespace bg::details

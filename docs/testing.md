@@ -15,7 +15,8 @@ combinations.
 Use `[dimension:value]` for each applicable dimension:
 
 - `feature`: `scalar-api`, `scalar-storage`, `scalar-collection`, `global-state`, `visitor`, `type-system`,
-  `node-api`, `state`, `wiring`, `graph-compilation`, `test-graph`, `evaluation-context`, `evaluation-scratch`,
+  `node-api`, `state`, `wiring`, `context-time-series`, `graph-compilation`, `test-graph`, `evaluation-context`,
+  `evaluation-scratch`,
   `lifecycle`, `finalization`, `scheduling`, `timed-scheduling`, `simulation`, `input-activity`, `validity`,
   `invalidation`, `operator`, `constant`, `graph-argument`, `map`, `switch`,
   `time-series-storage`, `time-series-view`, `collection-change`, `reference`, `sampling`, `getitem`, `getattr`,
@@ -134,6 +135,7 @@ graph compilation or evaluation.
 - wiring paths, labels, and diagnostics
 - node-call deduplication, opt-out, and identity inputs
 - operator overload applicability, selection, requirements, resolvers, and caching
+- context time series declaration, lexical binding, explicit arguments, type resolution, diagnostics, and caching
 - graph arguments, including signature type resolution, repeated variables, exact and pattern matching,
   structure-based caching, and callable and aggregate graphs
 - incompatible types, graph ownership errors, and invalid results
@@ -169,6 +171,7 @@ graph compilation or evaluation.
 - outer and inner graph failure behavior
 - cycle callbacks and deferred storage reclamation
 - global state shared by outer and inner graphs
+- context time series startup sampling, changes, validity, and use across nested graph boundaries
 - mapped TSD unions, selected key sets, per-key inner graph evaluation, scheduling, and lifecycle
 - mesh dependency creation, key changes, shared dependencies, cycle rejection, evaluation order, and lifecycle
 - switch selection, default selection, inner graph evaluation, scheduling, lifecycle, and composition with map and mesh

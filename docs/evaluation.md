@@ -107,9 +107,9 @@ The context provides:
 - cancellation of timed scheduling
 - registration of outer-cycle callbacks
 
-An inner runtime graph derives its contexts from the context of its owning
-node. This preserves evaluation services and internal context sections through
-any number of nested graph owners.
+An inner runtime graph receives a child `EvaluationContext` derived from the
+context used to evaluate its owning node. This preserves evaluation services
+and internal sections through any number of nested graph owners.
 
 ## Start
 

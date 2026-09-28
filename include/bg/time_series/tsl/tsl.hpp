@@ -8,6 +8,7 @@
 
 #include <array>
 #include <cstddef>
+#include <string_view>
 #include <type_traits>
 
 namespace bg {
@@ -16,6 +17,7 @@ template <typename Item, auto Size, auto... TimeSeriesProperties, auto... Wiring
     requires(details::variadic_mode<WiringProperties...>() != details::VariadicMode::none)
 class wp<TSL<Item, Size, TimeSeriesProperties...>, WiringProperties...> {
     using TimeSeries = TSL<Item, Size, TimeSeriesProperties...>;
+    using ParsedProperties = details::wiring_point_properties<WiringProperties...>;
     static_assert(sizeof...(WiringProperties) == 1,
                   "a variadic TSL wiring point requires exactly one variadic property");
     static_assert(details::variadic_mode<WiringProperties...>() == details::VariadicMode::positional,
@@ -39,12 +41,12 @@ class wp<TSL<Item, Size, TimeSeriesProperties...>, WiringProperties...> {
     template <typename Target> wp<Target> as() const { return point_.template as<Target>(); }
 
     using time_series_type = TimeSeries;
-    static constexpr auto variadic_mode = details::variadic_mode<WiringProperties...>();
+    static constexpr std::string_view name = ParsedProperties::name;
+    static constexpr bool context = ParsedProperties::context;
+    static constexpr auto variadic_mode = ParsedProperties::variadic_mode;
 
   private:
-    const details::VariadicWiringRecord &record() const noexcept {
-        return *details::variadic_wiring_record(point_);
-    }
+    const details::VariadicWiringRecord &record() const noexcept { return *details::variadic_wiring_record(point_); }
 
     struct unchecked_t {};
 

@@ -21,9 +21,7 @@ class bundle_input_factory {
   public:
     explicit bundle_input_factory(const TimeSeriesInputData &data) noexcept : data_{&data} {}
 
-    template <typename SchemaField>
-    [[nodiscard]] auto make(std::size_t index) const {
-        using Item = typename SchemaField::time_series_type;
+    template <typename SchemaField> [[nodiscard]] auto make(std::size_t index) const {
         const auto item = data_->runtime_type().item(data_->data(), static_cast<item_id_t>(index));
         using Input = typename SchemaField::template rebind<bundle_input_field>;
         return Input{item.last_updated, item.value, item.runtime_type,
@@ -63,15 +61,13 @@ class In<TSB<Schema, TimeSeriesProperties...>, Properties...> {
     const fields_type *operator->() const noexcept { return &fields_; }
     const fields_type &fields() const noexcept { return fields_; }
     bool item_updated(std::size_t index) const noexcept {
-        return data_.runtime_type().item_updated(data_.last_updated_ref(), data_.data(),
-                                                 static_cast<item_id_t>(index));
+        return data_.runtime_type().item_updated(data_.last_updated_ref(), data_.data(), static_cast<item_id_t>(index));
     }
 
     template <typename Function> void for_each_updated(Function &&function) const {
         data_.runtime_type().for_each_updated_item(
-            data_.last_updated_ref(), data_.data(), std::addressof(function), [](void *context, item_id_t id) {
-                (*static_cast<std::remove_reference_t<Function> *>(context))(id);
-            });
+            data_.last_updated_ref(), data_.data(), std::addressof(function),
+            [](void *context, item_id_t id) { (*static_cast<std::remove_reference_t<Function> *>(context))(id); });
     }
 
     template <typename... Functions> decltype(auto) visit(Functions &&...functions) const {
@@ -114,15 +110,13 @@ class In<TSB<Schema, TimeSeriesProperties...>, Properties...> {
                 data_.modified() && item.last_updated == data_.last_updated()};
     }
     bool item_updated(std::size_t index) const noexcept {
-        return data_.runtime_type().item_updated(data_.last_updated_ref(), data_.data(),
-                                                 static_cast<item_id_t>(index));
+        return data_.runtime_type().item_updated(data_.last_updated_ref(), data_.data(), static_cast<item_id_t>(index));
     }
 
     template <typename Function> void for_each_updated(Function &&function) const {
         data_.runtime_type().for_each_updated_item(
-            data_.last_updated_ref(), data_.data(), std::addressof(function), [](void *context, item_id_t id) {
-                (*static_cast<std::remove_reference_t<Function> *>(context))(id);
-            });
+            data_.last_updated_ref(), data_.data(), std::addressof(function),
+            [](void *context, item_id_t id) { (*static_cast<std::remove_reference_t<Function> *>(context))(id); });
     }
 
     const TimeSeriesRuntimeType &runtime_type() const noexcept { return data_.runtime_type(); }

@@ -1,7 +1,7 @@
 #pragma once
 
-#include <bg/graph/details/variadic_wiring_record.hpp>
 #include <bg/graph/details/variadic_wiring_operations.hpp>
+#include <bg/graph/details/variadic_wiring_record.hpp>
 #include <bg/graph/wiring_error.hpp>
 #include <bg/operators.hpp>
 #include <bg/time_series/tsb/details/wiring.hpp>
@@ -68,7 +68,8 @@ template <template <template <typename, auto...> typename> typename Schema, auto
     requires(details::variadic_mode<WiringProperties...>() == details::VariadicMode::none)
 class wp<TSB<Schema, TimeSeriesProperties...>, WiringProperties...> {
     using TimeSeries = TSB<Schema, TimeSeriesProperties...>;
-    static_assert(sizeof...(WiringProperties) == 0, "a non-variadic TSB wiring point does not accept properties");
+    using ParsedProperties = details::wiring_point_properties<WiringProperties...>;
+    static_assert(ParsedProperties::variadic_mode == details::VariadicMode::none);
 
   public:
     wp(WiringPoint point) : point_{point} {
@@ -93,6 +94,8 @@ class wp<TSB<Schema, TimeSeriesProperties...>, WiringProperties...> {
     }
 
     using time_series_type = TimeSeries;
+    static constexpr std::string_view name = ParsedProperties::name;
+    static constexpr bool context = ParsedProperties::context;
     static constexpr auto variadic_mode = details::VariadicMode::none;
 
   private:
@@ -152,6 +155,8 @@ class wp<TSB<Schema, TimeSeriesProperties...>, WiringProperties...> {
     template <typename Target> wp<Target> as() const { return point_.template as<Target>(); }
 
     using time_series_type = TimeSeries;
+    static constexpr std::string_view name{};
+    static constexpr bool context = false;
     static constexpr auto variadic_mode = details::variadic_mode<WiringProperties...>();
 
   private:

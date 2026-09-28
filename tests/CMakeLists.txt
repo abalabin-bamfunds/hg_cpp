@@ -4,6 +4,7 @@ add_executable(
     bg_tests
     evaluation/context/evaluation_context_test.cpp
     evaluation/context/evaluation_scratch_test.cpp
+    evaluation/context/context_time_series_test.cpp
     evaluation/engine/simulation_evaluation_engine_test.cpp
     evaluation/lifecycle/runtime_lifecycle_test.cpp
     evaluation/map_runtime_node_test.cpp
@@ -91,6 +92,7 @@ add_executable(
     value/time_series/reference/storage_test.cpp
     value/time_series/set/storage_test.cpp
     wiring/graph_template_test.cpp
+    wiring/context_time_series_test.cpp
     wiring/graph_argument_test.cpp
     wiring/graph_wiring_test.cpp
     wiring/graph_wiring_structure_test.cpp

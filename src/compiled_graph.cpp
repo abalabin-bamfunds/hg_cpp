@@ -185,10 +185,18 @@ struct StateLayout {
 
 struct TimeSeriesInputPlan {
     std::uint32_t parameter;
-    std::size_t output;
+    WiredInput wired_input;
     bool dereferences_reference;
     std::uint32_t offset;
     std::uint32_t output_last_updated_offset;
+};
+
+struct ContextRequirementPlan {
+    SubscriptionPlan subscriptions;
+    std::uint32_t last_updated_offset{};
+    std::uint32_t value_offset{};
+    StorageSection subscribers;
+    StorageSection output_notification;
 };
 
 struct RuntimeStorageLayout {
@@ -253,6 +261,8 @@ struct FixedStorageLayout {
     StorageSection variable_memory;
     StorageSection initial_runtime_storage;
     StorageSection constant_notifications;
+    StorageSection context_metadata;
+    StorageSection context_requirements;
     std::size_t size{};
     std::size_t alignment{};
 };
@@ -269,6 +279,7 @@ struct CompilationPlan {
     NodeFunctionLayout starts;
     NodeFunctionLayout stops;
     std::vector<InputNotificationSubscriberPlan> constant_notifications;
+    std::vector<ContextRequirementPlan> context_requirements;
     RuntimeStorageLayout runtime;
     FixedStorageLayout fixed;
     std::size_t scalar_destruction_count{};
@@ -300,7 +311,7 @@ struct ConstructedNodeData {
 };
 
 [[nodiscard]] WiringPathLayout make_wiring_path_layout(std::span<const WiredNode> nodes,
-                                                        std::span<const std::size_t> wired_node_indices) {
+                                                       std::span<const std::size_t> wired_node_indices) {
     auto result = WiringPathLayout{};
     result.node_paths.reserve(wired_node_indices.size());
 
@@ -431,13 +442,13 @@ void plan_time_series_inputs(CompilationPlan &plan) {
                 continue;
             }
 
-            const auto output = node.input_output_indices()[input_index++];
+            const auto input = node.inputs()[input_index++];
             const auto output_is_reference =
-                type_cast<TimeSeriesReferenceType>(plan.outputs[output].type) != nullptr;
+                input.is_context() || type_cast<TimeSeriesReferenceType>(plan.outputs[input.index()].type) != nullptr;
             const auto input_is_reference = type_cast<TimeSeriesReferenceType>(parameter.type) != nullptr;
             plan.node_plans[node_index].time_series_inputs.push_back({
                 .parameter = static_cast<std::uint32_t>(parameter_index),
-                .output = output,
+                .wired_input = input,
                 .dereferences_reference = output_is_reference && !input_is_reference,
                 .offset = 0,
                 .output_last_updated_offset = 0,
@@ -474,13 +485,15 @@ void plan_subscribers(std::span<const WiredNode> nodes, std::span<const WiredOut
             const auto is_required = parameter.validity == required;
             const auto subscriber_index = static_cast<std::uint32_t>(plan.compiled_node_index(target_index));
             const auto notification = target.node_template().input_notification(input_index);
-            if (plan.constant_for_output(input.output) != nullptr) {
+            if (!input.wired_input.is_context() && plan.constant_for_output(input.wired_input.index()) != nullptr) {
                 if (notification.function != nullptr) {
                     plan.constant_notifications.push_back({subscriber_index, notification.data, notification.function});
                 }
                 continue;
             }
-            auto &subscriptions = subscriber_list(input.output, outputs, node_plans);
+            auto &subscriptions = input.wired_input.is_context()
+                                      ? plan.context_requirements[input.wired_input.index()].subscriptions
+                                      : subscriber_list(input.wired_input.index(), outputs, node_plans);
             if (input.dereferences_reference) {
                 subscriptions.reference_inputs.push_back({
                     .node_index = subscriber_index,
@@ -529,14 +542,20 @@ std::vector<const ScalarRuntimeType *> parameter_runtime_types(const WiredNode &
     for (const auto &parameter : node.signature().parameters) {
         if (parameter.type->is_time_series()) {
             const auto &input = node_plan.time_series_inputs[input_index++];
-            if (const auto *constant = plan.constant_for_output(input.output)) {
-                const auto &scalar = plan.nodes[constant->node].scalar_values()[constant->scalar];
-                result.push_back(&scalar.runtime_type());
-                continue;
+            if (!input.wired_input.is_context()) {
+                if (const auto *constant = plan.constant_for_output(input.wired_input.index())) {
+                    const auto &scalar = plan.nodes[constant->node].scalar_values()[constant->scalar];
+                    result.push_back(&scalar.runtime_type());
+                    continue;
+                }
             }
-            const auto layout = wired_output_layout(input.output, outputs, node_plans);
             const auto &requested_type = static_cast<const TimeSeriesType &>(*parameter.type);
-            const auto *runtime_type = input_runtime_type(input, layout.runtime_type, requested_type);
+            const auto *runtime_type =
+                input.wired_input.is_context()
+                    ? &resolve_time_series_runtime_type(requested_type)
+                    : input_runtime_type(
+                          input, wired_output_layout(input.wired_input.index(), outputs, node_plans).runtime_type,
+                          requested_type);
             const ScalarRuntimeType *scalar_runtime_type{};
             runtime_type->type().visit(
                 [&](const TimeSeriesValueType *) {
@@ -564,17 +583,21 @@ const TimeSeriesRuntimeType *find_output_runtime_type(const WiredNode &node, con
 
     const auto parameter_types = parameter_runtime_types(node, node_plan, outputs, node_plans, plan);
     auto input_runtime_types = std::vector<const TimeSeriesRuntimeType *>{};
-    input_runtime_types.reserve(node.input_output_indices().size());
+    input_runtime_types.reserve(node.inputs().size());
     for (const auto &input : node_plan.time_series_inputs) {
-        if (plan.constant_for_output(input.output) != nullptr) {
+        if (!input.wired_input.is_context() && plan.constant_for_output(input.wired_input.index()) != nullptr) {
             const auto &parameter =
                 static_cast<const TimeSeriesType &>(*node.signature().parameters[input.parameter].type);
             input_runtime_types.push_back(&resolve_time_series_runtime_type(parameter));
             continue;
         }
-        const auto output = wired_output_layout(input.output, outputs, node_plans);
         const auto &parameter = static_cast<const TimeSeriesType &>(*node.signature().parameters[input.parameter].type);
-        const auto *runtime_type = input_runtime_type(input, output.runtime_type, parameter);
+        const auto *runtime_type =
+            input.wired_input.is_context()
+                ? &resolve_time_series_runtime_type(parameter)
+                : input_runtime_type(input,
+                                     wired_output_layout(input.wired_input.index(), outputs, node_plans).runtime_type,
+                                     parameter);
         input_runtime_types.push_back(runtime_type);
     }
 
@@ -582,8 +605,8 @@ const TimeSeriesRuntimeType *find_output_runtime_type(const WiredNode &node, con
 }
 
 [[nodiscard]] OutputLayout add_output_layout(StorageLayout &storage, const WiredNode &node, const NodePlan &node_plan,
-                                             std::span<const WiredOutput> outputs,
-                                             std::span<const NodePlan> node_plans, const CompilationPlan &plan) {
+                                             std::span<const WiredOutput> outputs, std::span<const NodePlan> node_plans,
+                                             const CompilationPlan &plan) {
     if (node.signature().output == nullptr) {
         return {};
     }
@@ -626,9 +649,8 @@ const TimeSeriesRuntimeType *find_output_runtime_type(const WiredNode &node, con
 
 void plan_runtime_storage(CompilationPlan &plan) {
     auto storage = StorageLayout{};
-    const auto schedule_word_count =
-        (plan.wired_node_indices.size() + std::numeric_limits<ScheduleWord>::digits - 1) /
-        std::numeric_limits<ScheduleWord>::digits;
+    const auto schedule_word_count = (plan.wired_node_indices.size() + std::numeric_limits<ScheduleWord>::digits - 1) /
+                                     std::numeric_limits<ScheduleWord>::digits;
     (void)storage.add<SchedulingInfo>(schedule_word_count);
     if (plan.uses_timed_scheduling) {
         (void)storage.add<void *>();
@@ -639,6 +661,12 @@ void plan_runtime_storage(CompilationPlan &plan) {
     if (!plan.constants.empty()) {
         plan.runtime.constant_start_time_offset =
             packed_offset(storage.add<EvaluationTime>().offset, "runtime storage reaches 1 GiB");
+    }
+
+    for (auto &requirement : plan.context_requirements) {
+        requirement.last_updated_offset =
+            packed_offset(storage.add<EvaluationTime>().offset, "runtime storage reaches 1 GiB");
+        requirement.value_offset = packed_offset(storage.add<Reference>().offset, "runtime storage reaches 1 GiB");
     }
 
     const auto add_item_samples = [&](this const auto &self, std::span<ItemSubscriptionPlan> items) -> void {
@@ -662,10 +690,12 @@ void plan_runtime_storage(CompilationPlan &plan) {
                 continue;
             }
 
-            const auto output_layout = wired_output_layout(input.output, plan.outputs, plan.node_plans);
             const auto slot = storage.add<ReferenceInputStorage>();
             input.offset = packed_offset(slot.offset, "runtime storage reaches 1 GiB");
-            input.output_last_updated_offset = output_layout.last_updated_offset;
+            input.output_last_updated_offset =
+                input.wired_input.is_context()
+                    ? plan.context_requirements[input.wired_input.index()].last_updated_offset
+                    : wired_output_layout(input.wired_input.index(), plan.outputs, plan.node_plans).last_updated_offset;
         }
 
         node_plan.state = add_state_layout(storage, plan.nodes[i], node_plan, plan.outputs, plan.node_plans, plan);
@@ -847,6 +877,10 @@ void plan_fixed_storage(CompilationPlan &plan) {
     if (!plan.constants.empty()) {
         layout.constant_metadata = storage.add<details::ConstantMetadata>();
     }
+    if (!plan.context_requirements.empty()) {
+        layout.context_metadata = storage.add<details::ContextMetadata>();
+        layout.context_requirements = storage.add<details::ContextRequirementBinding>(plan.context_requirements.size());
+    }
     if (plan.has_lifecycle()) {
         layout.start_functions = storage.add<NodeFunction>(plan.starts.nodes.size());
         layout.start_nodes = storage.add<std::uint32_t>(plan.starts.nodes.size());
@@ -863,6 +897,16 @@ void plan_fixed_storage(CompilationPlan &plan) {
     }
     layout.initial_runtime_storage = storage.add_bytes(plan.runtime.size, plan.runtime.alignment, plan.runtime.size);
     layout.constant_notifications = storage.add<InputNotificationSubscriber>(plan.constant_notifications.size());
+
+    for (auto &requirement : plan.context_requirements) {
+        requirement.subscribers = storage.add<Subscriber>(requirement.subscriptions.nodes.size());
+        if (!requirement.subscriptions.reference_inputs.empty() ||
+            !requirement.subscriptions.input_subscribers.empty()) {
+            requirement.output_notification =
+                storage.add_bytes(output_notification_size(requirement.subscriptions), alignof(OutputNotification),
+                                  output_notification_size(requirement.subscriptions));
+        }
+    }
 
     for (auto node : plan.wired_node_indices) {
         auto &fixed = plan.node_plans[node].fixed;
@@ -885,6 +929,7 @@ void plan_fixed_storage(CompilationPlan &plan) {
     result.node_plans.resize(result.nodes.size());
     result.compiled_node_indices.assign(result.nodes.size(), WiredOutput::npos);
     result.constant_outputs.assign(result.outputs.size(), WiredOutput::npos);
+    result.context_requirements.resize(wiring.context_requirements().size());
 
     for (auto node_index = std::size_t{}; node_index < result.nodes.size(); ++node_index) {
         const auto &node = result.nodes[node_index];
@@ -929,7 +974,9 @@ void plan_fixed_storage(CompilationPlan &plan) {
     std::erase_if(result.constants, [&](const auto &constant) {
         return !std::ranges::any_of(result.nodes, [&](const auto &node) {
             return !result.is_const_node(&node - result.nodes.data()) &&
-                   std::ranges::find(node.input_output_indices(), constant.output) != node.input_output_indices().end();
+                   std::ranges::find_if(node.inputs(), [&](const auto &input) {
+                       return !input.is_context() && input.index() == constant.output;
+                   }) != node.inputs().end();
         });
     });
     std::fill(result.constant_outputs.begin(), result.constant_outputs.end(), WiredOutput::npos);
@@ -977,8 +1024,8 @@ void plan_fixed_storage(CompilationPlan &plan) {
             invalidation.mode = InvalidationMode::preserve_output;
         }
     }
-    result.output_destruction_count = static_cast<std::size_t>(std::ranges::count_if(
-        result.wired_node_indices, [&](const auto node_index) {
+    result.output_destruction_count =
+        static_cast<std::size_t>(std::ranges::count_if(result.wired_node_indices, [&](const auto node_index) {
             const auto &output = result.node_plans[node_index].output;
             return output.runtime_type != nullptr && output.runtime_type->requires_destruction();
         }));
@@ -1096,6 +1143,7 @@ class CompiledGraphBuilder {
         construct_constants(plan, storage, variable_memory, constructed_scalars, scalar_destruction_index);
         construct_nodes(plan, storage, upstream_memory, variable_memory, constructed_scalars, scalar_destruction_index,
                         constructed_node_data);
+        construct_context_requirements(plan, storage);
         rollback.release();
     }
 
@@ -1119,17 +1167,25 @@ class CompiledGraphBuilder {
                     offset(plan.fixed.variable_memory) |
                     (plan.uses_cycle_callbacks ? CompiledGraph::cycle_callbacks_flag : std::uint32_t{}) |
                     (!plan.constants.empty() ? CompiledGraph::constants_flag : std::uint32_t{}),
-                .initial_runtime_storage_offset = offset(plan.fixed.initial_runtime_storage),
+                .initial_runtime_storage_offset =
+                    offset(plan.fixed.initial_runtime_storage) |
+                    (!plan.context_requirements.empty() ? CompiledGraph::contexts_flag : std::uint32_t{}),
             });
 
         if (!plan.constants.empty()) {
-            std::construct_at(
-                plan.fixed.constant_metadata.objects<details::ConstantMetadata>(storage).data(),
-                details::ConstantMetadata{
-                    .start_time_offset = *plan.runtime.constant_start_time_offset,
-                    .notification_offset = offset(plan.fixed.constant_notifications),
-                    .notification_count = static_cast<std::uint32_t>(plan.constant_notifications.size()),
-                });
+            std::construct_at(plan.fixed.constant_metadata.objects<details::ConstantMetadata>(storage).data(),
+                              details::ConstantMetadata{
+                                  .start_time_offset = *plan.runtime.constant_start_time_offset,
+                                  .notification_offset = offset(plan.fixed.constant_notifications),
+                                  .notification_count = static_cast<std::uint32_t>(plan.constant_notifications.size()),
+                              });
+        }
+        if (!plan.context_requirements.empty()) {
+            std::construct_at(plan.fixed.context_metadata.objects<details::ContextMetadata>(storage).data(),
+                              details::ContextMetadata{
+                                  .requirements_offset = offset(plan.fixed.context_requirements),
+                                  .requirement_count = static_cast<std::uint32_t>(plan.context_requirements.size()),
+                              });
         }
 
         auto notifications = plan.fixed.constant_notifications.objects<InputNotificationSubscriber>(storage);
@@ -1185,7 +1241,8 @@ class CompiledGraphBuilder {
             const auto &inputs = plan.node_plans[node_index].time_series_inputs;
             const auto required_inputs_are_constants = std::ranges::all_of(inputs, [&](const auto &input) {
                 return node.signature().parameters[input.parameter].validity != required ||
-                       plan.constant_for_output(input.output) != nullptr;
+                       (!input.wired_input.is_context() &&
+                        plan.constant_for_output(input.wired_input.index()) != nullptr);
             });
             const auto compiled_node = plan.compiled_node_index(node_index);
             auto &info = scheduling[compiled_node / CompiledGraph::schedule_word_bits];
@@ -1193,7 +1250,8 @@ class CompiledGraphBuilder {
             info.inputs_valid(mask, required_inputs_are_constants);
             if (std::ranges::any_of(inputs, [&](const auto &input) {
                     return node.signature().parameters[input.parameter].activity == active &&
-                           plan.constant_for_output(input.output) != nullptr;
+                           !input.wired_input.is_context() &&
+                           plan.constant_for_output(input.wired_input.index()) != nullptr;
                 })) {
                 info.evaluation |= mask;
             }
@@ -1229,6 +1287,12 @@ class CompiledGraphBuilder {
                 }
                 std::construct_at(reinterpret_cast<ReferenceInputStorage *>(runtime_storage.data() + reference.offset));
             }
+        }
+
+        for (const auto &requirement : plan.context_requirements) {
+            std::construct_at(
+                reinterpret_cast<EvaluationTime *>(runtime_storage.data() + requirement.last_updated_offset), MIN_DT);
+            std::construct_at(reinterpret_cast<Reference *>(runtime_storage.data() + requirement.value_offset));
         }
 
         for (const auto i : plan.wired_node_indices) {
@@ -1299,23 +1363,29 @@ class CompiledGraphBuilder {
 
             if (parameter.type->is_time_series()) {
                 const auto &input = plan.node_plans[node_index].time_series_inputs[input_index++];
-                if (const auto *constant = plan.constant_for_output(input.output)) {
-                    const auto parameter_offset =
-                        layout.offset + layout.parameters.offset + parameter_index * sizeof(ParameterBinding);
-                    std::construct_at(parameters.data() + parameter_index,
-                                      ParameterBinding::constant(
-                                          *plan.runtime.constant_start_time_offset,
-                                          packed_offset(constant->storage.offset - parameter_offset,
-                                                        "a constant is more than 1 GiB from its parameter"),
-                                          parameter.validity));
-                    continue;
+                if (!input.wired_input.is_context()) {
+                    if (const auto *constant = plan.constant_for_output(input.wired_input.index())) {
+                        const auto parameter_offset =
+                            layout.offset + layout.parameters.offset + parameter_index * sizeof(ParameterBinding);
+                        std::construct_at(parameters.data() + parameter_index,
+                                          ParameterBinding::constant(
+                                              *plan.runtime.constant_start_time_offset,
+                                              packed_offset(constant->storage.offset - parameter_offset,
+                                                            "a constant is more than 1 GiB from its parameter"),
+                                              parameter.validity));
+                        continue;
+                    }
                 }
-                const auto resolved_output = wired_output_layout(input.output, plan.outputs, plan.node_plans);
                 if (input.dereferences_reference) {
                     std::construct_at(parameters.data() + parameter_index,
                                       ParameterBinding{input.output_last_updated_offset, input.offset,
                                                        parameter.activity, parameter.validity});
                 } else {
+                    const auto resolved_output =
+                        input.wired_input.is_context()
+                            ? OutputLayout{plan.context_requirements[input.wired_input.index()].last_updated_offset,
+                                           plan.context_requirements[input.wired_input.index()].value_offset, nullptr}
+                            : wired_output_layout(input.wired_input.index(), plan.outputs, plan.node_plans);
                     std::construct_at(parameters.data() + parameter_index,
                                       ParameterBinding{resolved_output.last_updated_offset,
                                                        resolved_output.value_offset, parameter.validity});
@@ -1392,10 +1462,13 @@ class CompiledGraphBuilder {
             const auto &parameter =
                 static_cast<const TimeSeriesType &>(*node.signature().parameters[parameter_index].type);
             const auto *runtime_type = [&] {
-                if (plan.constant_for_output(input.output) != nullptr) {
+                if (!input.wired_input.is_context() && plan.constant_for_output(input.wired_input.index()) != nullptr) {
                     return &resolve_time_series_runtime_type(parameter);
                 }
-                const auto output = wired_output_layout(input.output, plan.outputs, plan.node_plans);
+                if (input.wired_input.is_context()) {
+                    return &resolve_time_series_runtime_type(parameter);
+                }
+                const auto output = wired_output_layout(input.wired_input.index(), plan.outputs, plan.node_plans);
                 return input_runtime_type(input, output.runtime_type, parameter);
             }();
             runtime_types[time_series_runtime_type_index] = runtime_type;
@@ -1500,6 +1573,33 @@ class CompiledGraphBuilder {
         return destination + total_bytes;
     }
 
+    static void construct_context_requirements(const CompilationPlan &plan, std::byte *storage) {
+        auto bindings = plan.fixed.context_requirements.objects<details::ContextRequirementBinding>(storage);
+        for (auto index = std::size_t{}; index < plan.context_requirements.size(); ++index) {
+            const auto &requirement = plan.context_requirements[index];
+            std::uninitialized_copy(requirement.subscriptions.nodes.begin(), requirement.subscriptions.nodes.end(),
+                                    requirement.subscribers.objects<Subscriber>(storage).data());
+            if (requirement.output_notification.count != 0) {
+                construct_output_notifications(plan, requirement.subscriptions,
+                                               storage + requirement.output_notification.offset);
+            }
+
+            std::construct_at(
+                bindings.data() + index,
+                details::ContextRequirementBinding{
+                    .last_updated_offset = requirement.last_updated_offset,
+                    .value_offset = requirement.value_offset,
+                    .subscribers_offset =
+                        packed_offset(requirement.subscribers.offset, "compiled fixed storage reaches 1 GiB"),
+                    .subscriber_count = static_cast<std::uint32_t>(requirement.subscriptions.nodes.size()),
+                    .notification_offset = requirement.output_notification.count == 0
+                                               ? std::numeric_limits<std::uint32_t>::max()
+                                               : packed_offset(requirement.output_notification.offset,
+                                                               "compiled fixed storage reaches 1 GiB"),
+                });
+        }
+    }
+
     static std::byte *construct_item_subscribers(const CompilationPlan &plan,
                                                  std::span<const ItemSubscriptionPlan> items, std::byte *destination) {
         for (const auto &item : items) {
@@ -1563,9 +1663,8 @@ class CompiledGraphBuilder {
                                                                             : std::uint32_t{}) |
                                       (has_state_metadata ? CompiledNode::state_metadata_flag : std::uint32_t{}));
                 if (node_plan.state.requires_destruction) {
-                    std::construct_at(
-                        layout.state_destruction_function.objects<NodeFunction>(node_storage).data(),
-                        node.node_template().state_destruction_function(node.signature()));
+                    std::construct_at(layout.state_destruction_function.objects<NodeFunction>(node_storage).data(),
+                                      node.node_template().state_destruction_function(node.signature()));
                 }
                 if (has_state_metadata) {
                     std::construct_at(
@@ -1659,8 +1758,34 @@ const WiringPath &CompiledGraph::wiring_path(std::size_t node_index) const noexc
     return stored_objects<WiringPath>(fixed_storage_, header.wiring_paths_offset, header.wiring_path_count)[path_index];
 }
 
+std::span<const details::ContextRequirementBinding> CompiledGraph::context_requirements() const noexcept {
+    if (!has_contexts()) {
+        return {};
+    }
+    const auto *metadata = storage_header().context_metadata(node_count(), has_constants());
+    return stored_objects<details::ContextRequirementBinding>(fixed_storage_, metadata->requirements_offset,
+                                                              metadata->requirement_count);
+}
+
+std::size_t CompiledGraph::context_requirement_count() const noexcept {
+    return context_requirements().size();
+}
+
+std::span<const Subscriber>
+CompiledGraph::context_subscribers(const details::ContextRequirementBinding &requirement) const noexcept {
+    return stored_objects<Subscriber>(fixed_storage_, requirement.subscribers_offset, requirement.subscriber_count);
+}
+
+const OutputNotification *
+CompiledGraph::context_notification(const details::ContextRequirementBinding &requirement) const noexcept {
+    if (requirement.notification_offset == std::numeric_limits<std::uint32_t>::max()) {
+        return nullptr;
+    }
+    return reinterpret_cast<const OutputNotification *>(fixed_storage_ + requirement.notification_offset);
+}
+
 const std::byte *CompiledGraph::initial_runtime_storage() const noexcept {
-    return fixed_storage_ + storage_header().initial_runtime_storage_offset;
+    return fixed_storage_ + (storage_header().initial_runtime_storage_offset & initial_runtime_storage_offset_mask);
 }
 
 CompiledGraph::NodeFunctions CompiledGraph::node_functions(std::uint32_t functions_offset,

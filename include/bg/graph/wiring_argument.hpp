@@ -78,8 +78,7 @@ class WiringArgument {
 
   public:
     WiringArgument(const WiringArgument &other)
-        : value_{copy_value(other)}, name_{other.name_},
-          variadic_capture_mode_{other.variadic_capture_mode_} {
+        : value_{copy_value(other)}, name_{other.name_}, variadic_capture_mode_{other.variadic_capture_mode_} {
         if (auto *scalar = std::get_if<ScalarArgument>(&value_); scalar != nullptr && other.scalar_has_value()) {
             scalar->owned.emplace(other.scalar());
             scalar->data = nullptr;
@@ -190,6 +189,12 @@ class WiringArgument {
 
     void clear_name() noexcept { name_.reset(); }
     void replace_time_series(WiringPoint point) { std::get<TimeSeriesArgument>(value_).point = point; }
+    void set_resolution_type(const TimeSeriesType &type) {
+        if (!type.accepts(time_series().type())) {
+            throw WiringError{"a wiring argument is incompatible with its resolution type"};
+        }
+        std::get<TimeSeriesArgument>(value_).resolution_type = &type;
+    }
     const ScalarType &scalar_type() const noexcept {
         const auto &scalar = std::get<ScalarArgument>(value_);
         return scalar.owned ? scalar.owned->type() : *scalar.type;
@@ -269,6 +274,9 @@ struct wiring_argument_access {
     static void clear_name(WiringArgument &argument) noexcept { argument.clear_name(); }
     static void replace_time_series(WiringArgument &argument, WiringPoint point) {
         argument.replace_time_series(point);
+    }
+    static void set_resolution_type(WiringArgument &argument, const TimeSeriesType &type) {
+        argument.set_resolution_type(type);
     }
     static VariadicMode variadic_capture_mode(const WiringArgument &argument) noexcept {
         return argument.variadic_capture_mode_;

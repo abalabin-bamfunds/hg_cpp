@@ -138,6 +138,8 @@ template <typename CompiledData = void, typename State = void> class NodeInvocat
 
     EvaluationContext &context() const noexcept { return *context_; }
 
+    std::size_t parameter_count() const noexcept { return node_->parameters().size(); }
+
     auto inputs() const noexcept -> NodeInvocationParameterRange<true> { return {*node_, runtime_storage_, 0}; }
 
     auto scalars() const noexcept -> NodeInvocationParameterRange<false> {

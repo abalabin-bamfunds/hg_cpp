@@ -39,9 +39,7 @@ class CompiledGraph {
                                                        storage_header().node_offsets(node_count())[index]);
     }
 
-    std::size_t fixed_storage_size() const noexcept {
-        return fixed_storage_size_and_flags_ & fixed_storage_size_mask;
-    }
+    std::size_t fixed_storage_size() const noexcept { return fixed_storage_size_and_flags_ & fixed_storage_size_mask; }
 
     std::size_t runtime_storage_size() const noexcept { return runtime_storage_size_; }
 
@@ -52,6 +50,8 @@ class CompiledGraph {
     std::size_t schedule_word_count() const noexcept { return schedule_word_count(node_count()); }
 
     const WiringPath &wiring_path(std::size_t node_index) const noexcept;
+
+    std::size_t context_requirement_count() const noexcept;
 
   private:
     struct CompilationTag {
@@ -67,8 +67,7 @@ class CompiledGraph {
                                                                        std::span<std::size_t>);
 
   public:
-    CompiledGraph(CompilationTag, const GraphWiring &wiring, allocator memory,
-                  std::span<std::size_t> node_indices);
+    CompiledGraph(CompilationTag, const GraphWiring &wiring, allocator memory, std::span<std::size_t> node_indices);
 
   private:
     struct NodeFunctions {
@@ -94,25 +93,25 @@ class CompiledGraph {
     static constexpr std::uint32_t timed_scheduling_flag = std::uint32_t{1} << 30;
     static constexpr std::uint32_t cycle_callbacks_flag = std::uint32_t{1} << 31;
     static constexpr std::uint32_t constants_flag = std::uint32_t{1} << 30;
+    static constexpr std::uint32_t contexts_flag = std::uint32_t{1} << 31;
     static constexpr std::uint32_t fixed_storage_size_mask = timed_scheduling_flag - 1;
     static constexpr std::uint32_t variable_memory_offset_mask = constants_flag - 1;
+    static constexpr std::uint32_t initial_runtime_storage_offset_mask = contexts_flag - 1;
     static constexpr std::uint32_t alignment_shift = 26;
     static constexpr std::uint32_t count_mask = (std::uint32_t{1} << alignment_shift) - 1;
 
-    bool has_variable_memory() const noexcept {
-        return (fixed_storage_size_and_flags_ & variable_memory_flag) != 0;
-    }
+    bool has_variable_memory() const noexcept { return (fixed_storage_size_and_flags_ & variable_memory_flag) != 0; }
 
-    bool has_timed_scheduling() const noexcept {
-        return (fixed_storage_size_and_flags_ & timed_scheduling_flag) != 0;
-    }
+    bool has_timed_scheduling() const noexcept { return (fixed_storage_size_and_flags_ & timed_scheduling_flag) != 0; }
 
     bool has_cycle_callbacks() const noexcept {
         return (storage_header().variable_memory_offset & cycle_callbacks_flag) != 0;
     }
 
-    bool has_constants() const noexcept {
-        return (storage_header().variable_memory_offset & constants_flag) != 0;
+    bool has_constants() const noexcept { return (storage_header().variable_memory_offset & constants_flag) != 0; }
+
+    bool has_contexts() const noexcept {
+        return (storage_header().initial_runtime_storage_offset & contexts_flag) != 0;
     }
 
     std::size_t variable_memory_offset() const noexcept {
@@ -147,9 +146,7 @@ class CompiledGraph {
         return std::size_t{1} << (node_count_and_fixed_alignment_ >> alignment_shift);
     }
 
-    std::size_t scalar_destruction_count() const noexcept {
-        return scalar_count_and_runtime_alignment_ & count_mask;
-    }
+    std::size_t scalar_destruction_count() const noexcept { return scalar_count_and_runtime_alignment_ & count_mask; }
 
     const std::byte *initial_runtime_storage() const noexcept;
     NodeFunctions node_functions(std::uint32_t functions_offset, std::uint32_t count) const noexcept;
@@ -158,6 +155,11 @@ class CompiledGraph {
     OutputDestruction output_destruction() const noexcept;
     std::optional<std::size_t> constant_start_time_offset() const noexcept;
     std::span<const InputNotificationSubscriber> constant_notifications() const noexcept;
+    std::span<const details::ContextRequirementBinding> context_requirements() const noexcept;
+    std::span<const Subscriber>
+    context_subscribers(const details::ContextRequirementBinding &requirement) const noexcept;
+    const OutputNotification *
+    context_notification(const details::ContextRequirementBinding &requirement) const noexcept;
 
     const details::CompiledStorageHeader &storage_header() const noexcept {
         return *reinterpret_cast<const details::CompiledStorageHeader *>(fixed_storage_);

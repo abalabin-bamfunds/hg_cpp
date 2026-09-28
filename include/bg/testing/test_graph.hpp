@@ -50,7 +50,8 @@ template <typename T = void> class TestGraphResult {
                 return false;
             }
             if (value) {
-                decltype(auto) actual_value = scalar_cast<Value>(**actual).value();
+                const auto actual_scalar = scalar_cast<Value>(**actual);
+                decltype(auto) actual_value = actual_scalar.value();
                 if (!scalar_storage_traits<Value>::equals(actual_value, *value)) {
                     return false;
                 }

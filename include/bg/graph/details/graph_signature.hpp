@@ -1,7 +1,7 @@
 #pragma once
 
-#include <bg/graph/details/wiring_callable.hpp>
 #include <bg/graph/details/variadic_wiring_operations.hpp>
+#include <bg/graph/details/wiring_callable.hpp>
 #include <bg/type/details/time_series_type.hpp>
 #include <bg/type/guarantee_variable.hpp>
 #include <bg/type/scalar_variable.hpp>
@@ -69,13 +69,29 @@ template <typename Function, std::size_t Index>
 void add_graph_parameter(std::vector<Parameter> &parameters, std::span<const std::string_view> parameter_names) {
     using Value = std::remove_cvref_t<typename callable<Function>::template argument_type<Index>>;
 
-    const util::symbol name{parameter_names.empty() ? std::to_string(Index) : std::string{parameter_names[Index]}};
+    if constexpr (is_typed_wiring_point<Value>) {
+        if constexpr (Value::context && Value::name.empty()) {
+            if (parameter_names.empty()) {
+                throw std::invalid_argument{"a callable graph context parameter requires a compile-time name"};
+            }
+        }
+    }
+
+    const auto parameter_name = [&] {
+        if constexpr (is_typed_wiring_point<Value>) {
+            if (!Value::name.empty()) {
+                return std::string{Value::name};
+            }
+        }
+        return parameter_names.empty() ? std::to_string(Index) : std::string{parameter_names[Index]};
+    }();
+    const util::symbol name{parameter_name};
     if constexpr (is_typed_wiring_point<Value>) {
         using TimeSeries = typename typed_wiring_point<Value>::time_series_type;
         constexpr auto mode = graph_parameter_variadic_mode<Value>;
         if constexpr (mode == VariadicMode::none) {
             parameters.push_back({name, &graph_parameter_type<Function, Index>(name), active, required,
-                                  supported_optional_scalar_argument<Value>, mode});
+                                  supported_optional_scalar_argument<Value>, mode, nullptr, Value::context});
         } else {
             parameters.push_back({name, &graph_parameter_type<Function, Index>(name), active, required,
                                   supported_optional_scalar_argument<Value>, mode,
@@ -103,8 +119,7 @@ template <typename Function> const TimeSeriesType &graph_output_type() {
 
 template <typename Function, std::size_t... Index>
 [[nodiscard]] Signature make_graph_signature(util::symbol name, std::span<const std::string_view> parameter_names,
-                                             std::vector<VariableResolver> resolvers,
-                                             std::index_sequence<Index...>) {
+                                             std::vector<VariableResolver> resolvers, std::index_sequence<Index...>) {
     if (!parameter_names.empty() && parameter_names.size() != sizeof...(Index)) {
         throw std::invalid_argument{"a graph definition has the wrong number of parameter names"};
     }
@@ -122,8 +137,7 @@ template <typename Function, std::size_t... Index>
 }
 
 template <typename Function>
-[[nodiscard]] Signature make_graph_signature(util::symbol name,
-                                             std::span<const std::string_view> parameter_names,
+[[nodiscard]] Signature make_graph_signature(util::symbol name, std::span<const std::string_view> parameter_names,
                                              std::vector<VariableResolver> resolvers) {
     return make_graph_signature<Function>(name, parameter_names, std::move(resolvers),
                                           std::make_index_sequence<callable<Function>::argument_count>{});

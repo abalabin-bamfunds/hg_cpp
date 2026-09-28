@@ -1,5 +1,6 @@
 #pragma once
 
+#include <bg/graph/context.hpp>
 #include <bg/graph/details/graph_factory.hpp>
 #include <bg/graph/graph_type.hpp>
 #include <bg/type/type_parameter.hpp>
@@ -30,8 +31,7 @@ template <typename... Declaration> struct aggregate_graph_declaration_parts {
 template <typename... Declaration, typename... Arguments, std::size_t... Index>
 [[nodiscard]] auto make_declared_aggregate_graph(std::index_sequence<Index...>, Arguments &&...arguments) {
     using Parts = aggregate_graph_declaration_parts<Declaration...>;
-    return make_aggregate_graph<typename Parts::Definition,
-                                std::tuple_element_t<Index, typename Parts::Types>...>(
+    return make_aggregate_graph<typename Parts::Definition, std::tuple_element_t<Index, typename Parts::Types>...>(
         std::forward<Arguments>(arguments)...);
 }
 
@@ -44,17 +44,15 @@ template <typename... TypeParameters, typename... Arguments>
 [[nodiscard]] auto graph(Arguments &&...arguments) {
     auto &&function = details::unnamed_argument(std::forward<Arguments>(arguments)...);
 
-    return details::make_callable_graph<TypeParameters...>(
-        std::forward<decltype(function)>(function), std::forward<Arguments>(arguments)...);
+    return details::make_callable_graph<TypeParameters...>(std::forward<decltype(function)>(function),
+                                                           std::forward<Arguments>(arguments)...);
 }
 
 template <typename... Declaration, typename... Arguments>
-    requires(sizeof...(Declaration) != 0 &&
-             details::aggregate_graph_declaration_parts<Declaration...>::valid)
+    requires(sizeof...(Declaration) != 0 && details::aggregate_graph_declaration_parts<Declaration...>::valid)
 [[nodiscard]] auto graph(Arguments &&...arguments) {
     return details::make_declared_aggregate_graph<Declaration...>(
-        std::make_index_sequence<sizeof...(Declaration) - 1>{},
-        std::forward<Arguments>(arguments)...);
+        std::make_index_sequence<sizeof...(Declaration) - 1>{}, std::forward<Arguments>(arguments)...);
 }
 
 } // namespace bg

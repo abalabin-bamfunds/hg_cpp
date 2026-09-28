@@ -1,5 +1,6 @@
 #pragma once
 
+#include <bg/graph/context.hpp>
 #include <bg/graph/details/wiring_callable.hpp>
 #include <bg/graph/type_mapping.hpp>
 #include <bg/graph/wiring_error.hpp>
@@ -11,9 +12,9 @@
 namespace bg {
 
 template <typename Function, typename Label = details::default_wiring_label, typename... TypeParameters>
-class GraphTemplate final : public WiringTemplate,
-                            public details::TypeParameterizedWiring<
-                                GraphTemplate<Function, Label, TypeParameters...>, TypeParameters...> {
+class GraphTemplate final
+    : public WiringTemplate,
+      public details::TypeParameterizedWiring<GraphTemplate<Function, Label, TypeParameters...>, TypeParameters...> {
     using FunctionInfo = details::callable<Function>;
     using Result = typename FunctionInfo::result_type;
 
@@ -76,6 +77,9 @@ class GraphTemplate final : public WiringTemplate,
         if (!details::wiring_parameters_match<Function>(signature)) {
             throw WiringError{"a graph function does not match its resolved signature"};
         }
+
+        // Make resolved graph context parameters available as inner contexts while wiring the graph body.
+        auto context_scopes = details::ContextScopes::activate_context_parameters(signature, arguments);
 
         if constexpr (std::same_as<Result, void>) {
             details::invoke_graph_function(function_, arguments);

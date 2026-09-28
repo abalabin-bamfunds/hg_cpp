@@ -1,7 +1,7 @@
 #pragma once
 
-#include <bg/graph/details/wiring_callable.hpp>
 #include <bg/graph/details/variadic_wiring_operations.hpp>
+#include <bg/graph/details/wiring_callable.hpp>
 #include <bg/node/details/aggregate_node.hpp>
 #include <bg/type/details/time_series_type.hpp>
 
@@ -70,14 +70,15 @@ void add_callable_parameter(std::vector<Parameter> &parameters) {
                       "dynamic_binding is supported only by aggregate node fields");
         const auto text = Field::name.empty() ? std::to_string(parameters.size()) : std::string{Field::name};
         const auto name = util::symbol{text};
+        static_assert(!input_field<Field>::context || !Field::name.empty(),
+                      "a callable context input requires a compile-time name");
         constexpr auto mode = input_field<Field>::variadic_mode;
         if constexpr (mode == VariadicMode::none) {
-            parameters.push_back(
-                {name, &callable_input_type<Scope, Function, Index>(name), Field::activity, Field::validity});
+            parameters.push_back({name, &callable_input_type<Scope, Function, Index>(name), Field::activity,
+                                  Field::validity, false, mode, nullptr, input_field<Field>::context});
         } else {
-            parameters.push_back(
-                {name, &callable_input_type<Scope, Function, Index>(name), Field::activity, Field::validity, false,
-                 mode, variadic_wiring_operations<TimeSeries>()});
+            parameters.push_back({name, &callable_input_type<Scope, Function, Index>(name), Field::activity,
+                                  Field::validity, false, mode, variadic_wiring_operations<TimeSeries>()});
         }
     } else {
         static_assert(scalar_field<Field>::value,

@@ -1,7 +1,8 @@
 #pragma once
 
-#include <bg/graph/wiring_error.hpp>
 #include <bg/graph/variadic_parameter.hpp>
+#include <bg/graph/wiring_error.hpp>
+#include <bg/node/details/input_properties.hpp>
 #include <bg/time_series/time_series_variable.hpp>
 #include <bg/type/time_series_type.hpp>
 
@@ -44,7 +45,9 @@ class WiringPoint {
 };
 
 template <typename TimeSeries, auto... Properties> class wp {
-    static_assert(sizeof...(Properties) == 0, "this wiring point type does not accept properties");
+    using ParsedProperties = details::wiring_point_properties<Properties...>;
+    static_assert(ParsedProperties::variadic_mode == details::VariadicMode::none,
+                  "this wiring point type does not accept variadic properties");
 
   public:
     wp() noexcept
@@ -73,7 +76,9 @@ template <typename TimeSeries, auto... Properties> class wp {
     template <typename Key> auto operator[](Key &&key) const;
 
     using time_series_type = TimeSeries;
-    static constexpr auto variadic_mode = details::variadic_mode<Properties...>();
+    static constexpr std::string_view name = ParsedProperties::name;
+    static constexpr bool context = ParsedProperties::context;
+    static constexpr auto variadic_mode = ParsedProperties::variadic_mode;
 
   private:
     struct unchecked_t {};

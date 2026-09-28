@@ -32,6 +32,31 @@ Time series arguments cross the boundary as references. Scalar arguments become
 immutable data in the inner compiled graph. The node output is a reference to
 the graph output.
 
+An inner graph records each [context time series](graph-wiring.md#context-time-series)
+that its graph code requests from an enclosing lexical binding. The request
+crosses graph boundaries as follows:
+
+1. The first boundary creates or reuses a stable reference in the provider
+   graph.
+2. Intermediate graph requirements carry that reference through passive owner
+   inputs.
+3. Before an inner graph starts, its owner places the references in a child
+   evaluation-context section.
+4. `RuntimeGraph::start()` initializes each compiled context slot with its
+   reference.
+5. Consumers subscribe to those slots through ordinary reference inputs.
+
+The owning `nested`, `map`, `mesh`, or `switch_` node does not observe or
+forward context changes. Graph structure identity includes each context name
+and type but excludes the provider node identity. Equal inner graphs can
+therefore share compiled structure across providers.
+
+Context lookup and boundary discovery happen during wiring. A compiled graph
+stores one runtime slot for each context requirement and initializes it once at
+startup. A graph without context requirements allocates no context slots and
+performs no context initialization. Later changes use ordinary reference
+notifications.
+
 ## Evaluation
 
 The owning node invokes the inner runtime graph as part of the

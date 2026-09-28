@@ -1,7 +1,7 @@
 #pragma once
 
-#include <bg/node/input_properties.hpp>
 #include <bg/graph/variadic_parameter.hpp>
+#include <bg/node/input_properties.hpp>
 #include <bg/type/time_series_type.hpp>
 #include <bg/type/type_map.hpp>
 #include <bg/type/type_resolution_error.hpp>
@@ -22,7 +22,7 @@ class WiringArgument;
 namespace details {
 class WiringArgumentDescriptor;
 class VariadicWiringOperations;
-}
+} // namespace details
 
 struct Parameter {
     util::symbol name;
@@ -32,6 +32,7 @@ struct Parameter {
     bool accepts_absent_scalar{};
     details::VariadicMode variadic_mode{details::VariadicMode::none};
     const details::VariadicWiringOperations *variadic_operations{};
+    bool context{};
 };
 
 struct VariableResolver {
@@ -61,6 +62,7 @@ struct ResolvedParameter {
     InputValidity validity{required};
     bool accepts_absent_scalar{};
     details::VariadicMode variadic_mode{details::VariadicMode::none};
+    bool context{};
 };
 
 struct ResolvedSignature {
@@ -91,10 +93,10 @@ class Signature {
     [[nodiscard]] SignatureResolution resolve_with_type_map(std::span<const Type *const> arguments) const;
     [[nodiscard]] SignatureResolution resolve_with_type_map(std::span<const Type *const> arguments,
                                                             const TypeMap &type_map) const;
-    [[nodiscard]] SignatureResolution resolve_wiring_arguments(
-        std::span<const WiringArgument> arguments,
-        std::span<const details::WiringArgumentDescriptor> descriptors,
-        const TypeMap *type_map = nullptr) const;
+    [[nodiscard]] SignatureResolution
+    resolve_wiring_arguments(std::span<const WiringArgument> arguments,
+                             std::span<const details::WiringArgumentDescriptor> descriptors,
+                             const TypeMap *type_map = nullptr) const;
     [[nodiscard]] TypeMap match_arguments(std::span<const Type *const> arguments,
                                           const TypeMap *type_map = nullptr) const;
     [[nodiscard]] ResolvedSignature complete_resolution(TypeMap &type_map,

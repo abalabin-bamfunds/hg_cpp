@@ -24,11 +24,9 @@ using namespace bg::literals;
 
 using DIRECT_RESULT = ScalarVariable<"DIRECT_RESULT">;
 
-template <template <typename, auto...> typename Field>
-using ARGS = BundleSchemaVariableDeclaration<"ARGS", Field>;
+template <template <typename, auto...> typename Field> using ARGS = BundleSchemaVariableDeclaration<"ARGS", Field>;
 
-template <template <typename, auto...> typename Field>
-using KWARGS = BundleSchemaVariableDeclaration<"KWARGS", Field>;
+template <template <typename, auto...> typename Field> using KWARGS = BundleSchemaVariableDeclaration<"KWARGS", Field>;
 
 template <template <typename, auto...> typename Field> struct TestBundle {
     Field<TS<std::int64_t>> count;
@@ -63,17 +61,16 @@ TEST_CASE("each variadic pack uses its declared collection operations",
           "[feature:wiring][feature:variadic-wiring][series:fixed-tsl][series:tsb]"
           "[schema:generic][declaration:generic][definition:function]") {
     const auto source = node([](Out<TS<std::int64_t>>) {});
-    const auto tested = graph(
-        "name"_n = "mixed_collections",
-        [](wp<TSL<TS_T, SIZE>, var_args> positional, wp<TSB<KWARGS>, var_kwargs> named) {
-            CHECK(positional.size() == 2);
-            CHECK(named.size() == 1);
+    const auto tested = graph("name"_n = "mixed_collections",
+                              [](wp<TSL<TS_T, SIZE>, var_args> positional, wp<TSB<KWARGS>, var_kwargs> named) {
+                                  CHECK(positional.size() == 2);
+                                  CHECK(named.size() == 1);
 
-            const auto &list = static_cast<const TimeSeriesListType &>(positional.type());
-            CHECK(list.item_count() == 2);
-            CHECK(&list.item_type() == &TS<std::int64_t>::type());
-            CHECK(named["limit"].is_scalar());
-        });
+                                  const auto &list = static_cast<const TimeSeriesListType &>(positional.type());
+                                  CHECK(list.item_count() == 2);
+                                  CHECK(&list.item_type() == &TS<std::int64_t>::type());
+                                  CHECK(named["limit"].is_scalar());
+                              });
 
     testing::test_wiring([&] { tested(source(), source(), "limit"_n = 3); });
 }
@@ -86,8 +83,8 @@ TEST_CASE("an aggregate variadic TSL materializes as one runtime-sized list",
         return first(left, right).as<TS<std::int64_t>>();
     };
 
-    const auto actual = testing::test_graph(tested, std::array<std::int64_t, 3>{1, 2, 3},
-                                            std::array<std::int64_t, 3>{4, 5, 6});
+    const auto actual =
+        testing::test_graph(tested, std::array<std::int64_t, 3>{1, 2, 3}, std::array<std::int64_t, 3>{4, 5, 6});
 
     CHECK(actual.equals({1, 2, 3}));
 }
@@ -111,24 +108,19 @@ TEST_CASE("a variadic TSL rejects scalars and incompatible item types",
 
     testing::test_wiring([&] {
         CHECK_THROWS_AS(sink(1), WiringError);
-        CHECK_THROWS_WITH(sink(integer(), floating()),
-                          "a time series list requires compatible item types");
+        CHECK_THROWS_WITH(sink(integer(), floating()), "a time series list requires compatible item types");
     });
 }
 
 namespace {
 
 struct EmptyConcreteListGraph {
-    wp<TSL<TS<std::int64_t, TimeSeriesGuarantee::final>, SIZE,
-           TimeSeriesGuarantee::ordinary>,
-       var_args>
-        values;
+    wp<TSL<TS<std::int64_t, TimeSeriesGuarantee::final>, SIZE, TimeSeriesGuarantee::ordinary>, var_args> values;
 
     void wire() const {
         CHECK(values.size() == 0);
         CHECK(&values.type() ==
-              &TSL<TS<std::int64_t, TimeSeriesGuarantee::final>, 0,
-                   TimeSeriesGuarantee::ordinary>::type());
+              &TSL<TS<std::int64_t, TimeSeriesGuarantee::final>, 0, TimeSeriesGuarantee::ordinary>::type());
     }
 };
 
@@ -154,9 +146,7 @@ TEST_CASE("an empty variadic TSL requires a concrete item type and collection gu
 namespace {
 
 struct EmptyListValidity {
-    In<TSL<TS<std::int64_t, TimeSeriesGuarantee::ordinary>, SIZE,
-           TimeSeriesGuarantee::ordinary>,
-       var_args, optional>
+    In<TSL<TS<std::int64_t, TimeSeriesGuarantee::ordinary>, SIZE, TimeSeriesGuarantee::ordinary>, var_args, optional>
         values;
     Out<TS<bool>> output;
 
@@ -296,16 +286,17 @@ TEST_CASE("direct collection items are flat resolver and requirement arguments",
             CHECK(&arguments.resolved_type(1) == &TS<std::int64_t>::type());
             return int_type();
         },
-        require = [&](const WiringArguments &arguments) {
-            ++requirement_calls;
-            REQUIRE(arguments.size() == 2);
-            CHECK(arguments.argument_name(0).text() == "0");
-            CHECK(arguments.argument_name(1).text() == "1");
-            CHECK(&arguments.resolved_type(0) == &TS<std::int64_t>::type());
-            CHECK(&arguments.resolved_type(1) == &TS<std::int64_t>::type());
-            return accept;
-        });
-    auto operation = operator_<auto(TS_T) -> TS<std::int64_t>>{"first", {"values"}};
+        require =
+            [&](const WiringArguments &arguments) {
+                ++requirement_calls;
+                REQUIRE(arguments.size() == 2);
+                CHECK(arguments.argument_name(0).text() == "0");
+                CHECK(arguments.argument_name(1).text() == "1");
+                CHECK(&arguments.resolved_type(0) == &TS<std::int64_t>::type());
+                CHECK(&arguments.resolved_type(1) == &TS<std::int64_t>::type());
+                return accept;
+            });
+    auto operation = operator_<auto(TS_T)->TS<std::int64_t>>{"first", {"values"}};
     operation.overload(receiver);
 
     testing::test_wiring([&] {
@@ -354,7 +345,7 @@ TEST_CASE("a direct variadic TSL crosses a nested boundary as one reference",
 
     const auto &nested_node = wiring.nodes().back();
     REQUIRE(nested_node.signature().parameters.size() == 2);
-    CHECK(nested_node.input_output_indices().size() == 2);
+    CHECK(nested_node.inputs().size() == 2);
 }
 
 namespace {
@@ -397,8 +388,8 @@ TEST_CASE("a direct variadic TSB crosses a nested boundary as one reference",
         return nested(inner, run, "values"_n = make_bundle(count, value));
     };
 
-    const auto actual = testing::test_graph(tested, std::array<std::int64_t, 2>{1, 2},
-                                            std::array<float, 2>{3.0F, 4.0F}, std::array{true, true});
+    const auto actual = testing::test_graph(tested, std::array<std::int64_t, 2>{1, 2}, std::array<float, 2>{3.0F, 4.0F},
+                                            std::array{true, true});
     CHECK(actual.equals({1, 2}));
 
     auto wiring = GraphWiring{};
@@ -412,5 +403,5 @@ TEST_CASE("a direct variadic TSB crosses a nested boundary as one reference",
 
     const auto &nested_node = wiring.nodes().back();
     REQUIRE(nested_node.signature().parameters.size() == 2);
-    CHECK(nested_node.input_output_indices().size() == 2);
+    CHECK(nested_node.inputs().size() == 2);
 }

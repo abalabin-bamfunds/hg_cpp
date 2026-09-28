@@ -1,9 +1,10 @@
 #pragma once
 
 #include <bg/allocator.hpp>
-#include <bg/graph/wiring_argument.hpp>
+#include <bg/graph/wired_input.hpp>
 #include <bg/graph/wired_node.hpp>
 #include <bg/graph/wired_output.hpp>
+#include <bg/graph/wiring_argument.hpp>
 #include <bg/graph/wiring_path.hpp>
 #include <bg/graph/wiring_point.hpp>
 #include <bg/util/linear_hash_table.hpp>
@@ -27,9 +28,9 @@ class WiringTemplate;
 namespace details {
 class WiringRecord;
 class GraphWiringStructure;
+class ContextScope;
 WiringPoint add_wiring_record(std::unique_ptr<WiringRecord> record);
-WiringPoint add_item_wiring_record(WiringPoint parent, item_id_t item,
-                                   std::unique_ptr<WiringRecord> record);
+WiringPoint add_item_wiring_record(WiringPoint parent, item_id_t item, std::unique_ptr<WiringRecord> record);
 WiringPoint materialize_wiring_point(WiringPoint point, const TimeSeriesType &type);
 WiringPoint add_wired_output(GraphWiring &wiring, WiredOutput output);
 void set_wired_output_runtime_type(WiringPoint output, const TimeSeriesRuntimeType &runtime_type);
@@ -43,8 +44,18 @@ GraphWiringStructure graph_wiring_structure(const GraphWiring &, std::span<const
 
 class GraphWiring {
   public:
+    struct ContextRequirement {
+        util::symbol name;
+        const TimeSeriesType *context_type;
+        WiringPoint provider;
+
+        const TimeSeriesType &boundary_input_type() const;
+    };
+
     GraphWiring();
     explicit GraphWiring(allocator memory);
+    explicit GraphWiring(GraphWiring &parent);
+    GraphWiring(GraphWiring &parent, allocator memory);
     ~GraphWiring();
 
     GraphWiring(const GraphWiring &) = delete;
@@ -55,6 +66,8 @@ class GraphWiring {
     std::span<const WiredNode> nodes() const noexcept { return nodes_; }
 
     std::span<const WiredOutput> outputs() const noexcept { return outputs_; }
+
+    std::span<const ContextRequirement> context_requirements() const noexcept { return context_requirements_; }
 
     [[nodiscard]] const NodeTemplate &own_node_template(std::unique_ptr<NodeTemplate> node_template);
 
@@ -68,15 +81,14 @@ class GraphWiring {
                                                        std::unique_ptr<details::WiringRecord> record);
     friend WiringPoint details::materialize_wiring_point(WiringPoint point, const TimeSeriesType &type);
     friend WiringPoint details::add_wired_output(GraphWiring &wiring, WiredOutput output);
-    friend void details::set_wired_output_runtime_type(WiringPoint output,
-                                                       const TimeSeriesRuntimeType &runtime_type);
-    friend WiringPoint details::wiring_point_for_item(WiringPoint parent, item_id_t item,
-                                                      const TimeSeriesType &type);
+    friend void details::set_wired_output_runtime_type(WiringPoint output, const TimeSeriesRuntimeType &runtime_type);
+    friend WiringPoint details::wiring_point_for_item(WiringPoint parent, item_id_t item, const TimeSeriesType &type);
     friend std::size_t details::wired_output_node_index(const GraphWiring &wiring, WiringPoint point);
-    friend details::GraphWiringStructure details::graph_wiring_structure(
-        const GraphWiring &, std::span<const WiringPoint>, std::optional<WiringPoint>);
-    friend details::GraphWiringStructure details::graph_wiring_structure(
-        const GraphWiring &, std::span<const std::size_t>, std::optional<std::size_t>);
+    friend details::GraphWiringStructure
+    details::graph_wiring_structure(const GraphWiring &, std::span<const WiringPoint>, std::optional<WiringPoint>);
+    friend details::GraphWiringStructure
+    details::graph_wiring_structure(const GraphWiring &, std::span<const std::size_t>, std::optional<std::size_t>);
+    friend class details::ContextScope;
     [[nodiscard]] std::optional<WiringPoint> invoke(const WiringTemplate &wiring_template,
                                                     std::span<const WiringArgument> arguments,
                                                     const TypeMap *seed_type_map = nullptr);
@@ -89,16 +101,17 @@ class GraphWiring {
     [[nodiscard]] WiringPoint register_record(std::unique_ptr<details::WiringRecord> record);
     [[nodiscard]] WiringPoint register_item_record(WiringPoint parent, item_id_t item,
                                                    std::unique_ptr<details::WiringRecord> record);
-    [[nodiscard]] WiringPoint register_output(WiredOutput output,
-                                              std::unique_ptr<details::WiringRecord> record);
+    [[nodiscard]] WiringPoint register_output(WiredOutput output, std::unique_ptr<details::WiringRecord> record);
     [[nodiscard]] std::size_t output_index(WiringPoint point) const;
     [[nodiscard]] std::optional<WiringPoint> find_output_item(std::size_t parent, item_id_t item) const;
     [[nodiscard]] std::optional<WiringPoint> find_wired_node(std::size_t hash, const NodeTemplate &node_template,
                                                              const ResolvedSignature &signature,
-                                                             std::span<const std::size_t> input_output_indices,
+                                                             std::span<const WiredInput> inputs,
                                                              std::span<const ScalarType *const> state_types,
                                                              std::span<const WiringArgument> arguments);
     void cache_wired_node(std::size_t hash, std::size_t node_index);
+    [[nodiscard]] WiringPoint import_context(util::symbol name, WiringPoint provider);
+    [[nodiscard]] WiredInput wire_input(WiringPoint point, const TimeSeriesType &type);
 
     [[nodiscard]] const WiringPath &make_path(util::symbol name, util::symbol label);
     util::symbol default_label() const;
@@ -108,6 +121,7 @@ class GraphWiring {
     allocator &variable_allocator(const ScalarRuntimeType &runtime_type);
 
     allocator allocator_;
+    GraphWiring *parent_{};
     std::pmr::unsynchronized_pool_resource fixed_memory_;
     std::optional<std::pmr::unsynchronized_pool_resource> variable_memory_;
     allocator variable_allocator_;
@@ -131,6 +145,12 @@ class GraphWiring {
         const details::WiringRecord *result;
     };
     std::vector<MaterializedWiring> materialized_wiring_points_;
+    struct ContextRecord {
+        const details::WiringRecord *record;
+        std::size_t requirement;
+    };
+    std::vector<ContextRequirement> context_requirements_;
+    std::vector<ContextRecord> context_records_;
     std::pmr::deque<WiringPath> paths_;
 };
 

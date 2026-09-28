@@ -24,7 +24,7 @@ TEST_CASE("a free fixed time series list is materialized when consumed",
     (void)sink(list);
 
     REQUIRE(wiring.nodes().size() == 4);
-    CHECK(wiring.nodes()[2].input_output_indices().size() == 2);
+    CHECK(wiring.nodes()[2].inputs().size() == 2);
 }
 
 TEST_CASE("a free fixed time series list reports incompatible item types as a wiring error",
@@ -53,7 +53,7 @@ TEST_CASE("a free fixed time series list reuses materialization for the same inp
     (void)sink(list);
 
     REQUIRE(wiring.nodes().size() == 5);
-    CHECK(wiring.nodes()[3].input_output_indices()[0] == wiring.nodes()[4].input_output_indices()[0]);
+    CHECK(wiring.nodes()[3].inputs()[0] == wiring.nodes()[4].inputs()[0]);
 }
 
 TEST_CASE("a free fixed time series list can satisfy a reference input",
@@ -150,7 +150,6 @@ TEST_CASE("getitem selects an item through a reference-backed fixed list",
     const auto context = bg::WiringContext{wiring};
     const auto selected = source()[std::int64_t{1}];
 
-    CHECK(&selected.type() ==
-          &bg::REF<bg::TS<float>, bg::TimeSeriesGuarantee::ordinary>::type());
+    CHECK(&selected.type() == &bg::REF<bg::TS<float>, bg::TimeSeriesGuarantee::ordinary>::type());
     sink(selected);
 }

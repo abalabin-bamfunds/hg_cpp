@@ -1,10 +1,14 @@
 #include <bg/graph/graph_wiring.hpp>
 
 #include <bg/graph/details/wiring_record.hpp>
+#include <bg/graph/wiring_context.hpp>
 #include <bg/graph/wiring_error.hpp>
 #include <bg/graph/wiring_template.hpp>
 #include <bg/node/node_template.hpp>
 #include <bg/scalar/scalar.hpp>
+#include <bg/type/time_series_reference_type.hpp>
+
+#include "time_series/ref/ref_node.hpp"
 
 #include <algorithm>
 #include <array>
@@ -13,6 +17,27 @@
 #include <string_view>
 
 namespace bg {
+
+const TimeSeriesType &GraphWiring::ContextRequirement::boundary_input_type() const {
+    if (type_cast<TimeSeriesReferenceType>(context_type) != nullptr) {
+        return *context_type;
+    }
+    return time_series_reference_type(*context_type, TimeSeriesGuarantee::const_);
+}
+
+namespace details {
+
+class ContextWiringRecord final : public WiringRecord {
+  public:
+    explicit ContextWiringRecord(const TimeSeriesType &type) : WiringRecord{type} {}
+
+  private:
+    WiringPoint materialize(const TimeSeriesType &) const override {
+        return materialize_context_reference(point(*this));
+    }
+};
+
+} // namespace details
 
 namespace {
 
@@ -86,8 +111,13 @@ GraphWiring::GraphWiring() : GraphWiring(allocator{}) {}
 
 GraphWiring::GraphWiring(allocator memory)
     : allocator_{memory}, fixed_memory_{&allocator_.memory_resource()},
-      variable_allocator_{*std::pmr::null_memory_resource()},
-      paths_{&fixed_memory_} {}
+      variable_allocator_{*std::pmr::null_memory_resource()}, paths_{&fixed_memory_} {}
+
+GraphWiring::GraphWiring(GraphWiring &parent) : GraphWiring(parent, allocator{}) {}
+
+GraphWiring::GraphWiring(GraphWiring &parent, allocator memory)
+    : allocator_{memory}, parent_{&parent}, fixed_memory_{&allocator_.memory_resource()},
+      variable_allocator_{*std::pmr::null_memory_resource()}, paths_{&fixed_memory_} {}
 
 allocator &GraphWiring::variable_allocator() noexcept {
     return variable_allocator_;
@@ -197,14 +227,13 @@ std::optional<WiringPoint> GraphWiring::invoke_resolved(const WiringTemplate &wi
 
 std::optional<WiringPoint> GraphWiring::find_wired_node(std::size_t hash, const NodeTemplate &node_template,
                                                         const ResolvedSignature &signature,
-                                                        std::span<const std::size_t> input_output_indices,
+                                                        std::span<const WiredInput> inputs,
                                                         std::span<const ScalarType *const> state_types,
                                                         std::span<const WiringArgument> arguments) {
     const auto found = wired_nodes_.find(util::linear_hash_table::hash_code(hash), [&](auto position) {
         const auto &node = nodes_[position];
         return &node.node_template() == &node_template && same_signature(node.signature(), signature) &&
-               std::ranges::equal(node.input_output_indices(), input_output_indices) &&
-               std::ranges::equal(node.state_types(), state_types) &&
+               std::ranges::equal(node.inputs(), inputs) && std::ranges::equal(node.state_types(), state_types) &&
                same_scalar_arguments(node.scalar_values(), arguments);
     });
     if (!found) {
@@ -212,6 +241,58 @@ std::optional<WiringPoint> GraphWiring::find_wired_node(std::size_t hash, const 
     }
 
     return WiringPoint{*node_output_records_[*found]};
+}
+
+WiringPoint GraphWiring::import_context(util::symbol name, WiringPoint provider) {
+    if (&provider.graph() == this) {
+        return provider;
+    }
+    if (parent_ == nullptr) {
+        throw WiringError{"a context time series does not belong to an enclosing graph wiring"};
+    }
+
+    if (&provider.graph() != parent_) {
+        provider = parent_->import_context(name, provider);
+    }
+
+    const auto inherited = std::ranges::find(parent_->context_records_, provider.record_, &ContextRecord::record);
+    const auto *source_type = &provider.type();
+    if (inherited == parent_->context_records_.end()) {
+        auto context = WiringContext{*parent_};
+        provider = details::materialize_context_reference(provider);
+    } else {
+        source_type = parent_->context_requirements_[inherited->requirement].context_type;
+    }
+
+    const auto existing = std::ranges::find_if(context_requirements_, [&](const auto &requirement) {
+        return requirement.name == name && requirement.context_type == source_type &&
+               requirement.provider.record_ == provider.record_;
+    });
+    if (existing != context_requirements_.end()) {
+        const auto index = static_cast<std::size_t>(existing - context_requirements_.begin());
+        return WiringPoint{*context_records_[index].record};
+    }
+
+    const auto requirement_index = context_requirements_.size();
+    const auto requirement = ContextRequirement{name, source_type, provider};
+    auto point = register_record(std::make_unique<details::ContextWiringRecord>(requirement.boundary_input_type()));
+    context_requirements_.push_back(requirement);
+    context_records_.push_back({point.record_, requirement_index});
+    return point;
+}
+
+WiredInput GraphWiring::wire_input(WiringPoint point, const TimeSeriesType &type) {
+    if (&point.graph() != this) {
+        throw WiringError{"a WiringPoint belongs to another GraphWiring"};
+    }
+
+    const auto context = std::ranges::find(context_records_, point.record_, &ContextRecord::record);
+    if (context != context_records_.end()) {
+        return WiredInput::context(context->requirement);
+    }
+
+    const auto materialized = details::materialize_wiring_point(point, type);
+    return WiredInput::output(output_index(materialized));
 }
 
 void GraphWiring::cache_wired_node(std::size_t hash, std::size_t node_index) {

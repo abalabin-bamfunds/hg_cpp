@@ -83,20 +83,74 @@ A node call:
 
 1. checks that each wiring point belongs to the active `GraphWiring`
 2. resolves the signature from the argument types
-3. materializes wiring-point arguments for the resolved parameter types
+3. records each time series as a local wired output or inherited context
+   requirement, materializing local wiring points for the resolved type
 4. reuses an existing wired node with the same node template, resolved types,
-   physical inputs, state types, and scalar arguments when permitted
+   wired inputs, state types, and scalar arguments when permitted
 5. otherwise stores those values in a new wired node
 6. returns a `WiringPoint` when the wired node has an output
 
 Scalar arguments are immutable wired-node data and do not create input wired
-output indices. `GraphWiring` owns a copy of each supplied scalar. An optional
-scalar parameter can record absence.
+inputs. `GraphWiring` owns a copy of each supplied scalar. An optional scalar
+parameter can record absence.
 
 Node calls with no output are never reused. A scalar without equality and
 hashing also prevents reuse. The first call supplies the retained wiring path.
 Set `deduplicate_wiring` to `false` on a node definition when equal calls must
 create distinct wired nodes.
+
+## Context time series
+
+A context parameter requests a named time series without adding it to each
+intermediate graph call. Callable definitions put the name and `context` on the
+parameter:
+
+```cpp
+using namespace bg::literals;
+
+auto use_one = bg::node([](bg::In<bg::TS<int>, "one"_n, bg::context> one,
+                           bg::Out<bg::TS<int>> output) {
+    output.set(*one);
+});
+```
+
+An aggregate node uses its reflected field name:
+
+```cpp
+struct UseOne {
+    bg::In<bg::TS<int>, bg::context> one;
+    bg::Out<bg::TS<int>> output;
+};
+```
+
+`with_context` establishes a lexical binding for graph code. A scalar value is
+lifted to a const time series.
+
+```cpp
+bg::with_context("one"_n = value, [&] { return graph_x(); });
+auto scope = bg::with_context("one"_n = 1);
+```
+
+The nearest binding with the requested name is authoritative. An incompatible
+nearest binding is an error. Wiring also fails when no binding has that name. A
+named argument supplied directly to a context parameter overrides the lexical
+binding. Context parameters do not accept positional arguments and cannot be
+variadic or dynamically bound.
+
+A graph context parameter also establishes that binding while its graph
+function runs:
+
+```cpp
+auto graph_x = bg::graph(
+    "name"_n = "graph_x",
+    [](bg::wp<bg::TS<int>, "one"_n, bg::context>) { return use_one(); });
+
+graph_x("one"_n = value);
+```
+
+Type resolution treats the selected context value as an ordinary argument.
+Operator resolution cache keys include the presence and type of every implicit
+context value that can affect overload selection.
 
 ## Wiring template call
 

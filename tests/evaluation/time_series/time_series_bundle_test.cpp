@@ -143,21 +143,17 @@ TEST_CASE("getattr follows a reference field in a referenced native bundle",
           "[evaluation][series:tsb][series:reference][feature:getattr][schema:named]"
           "[representation:native][binding:reference-to-reference][transition:update]") {
     const auto select = bg::node(
-        [](bg::In<bg::TS<bool>> use_second, bg::In<bg::REF<bg::TS<int>>> first,
-           bg::In<bg::REF<bg::TS<int>>> second, bg::Out<bg::REF<bg::TS<int>>> output) {
-            output.copy(*use_second ? second : first);
-        });
+        [](bg::In<bg::TS<bool>> use_second, bg::In<bg::REF<bg::TS<int>>> first, bg::In<bg::REF<bg::TS<int>>> second,
+           bg::Out<bg::REF<bg::TS<int>>> output) { output.copy(*use_second ? second : first); });
     const auto make_bundle = bg::node(
-        [](bg::In<bg::TS<int>> value, bg::In<bg::REF<bg::TS<int>>> selected,
-           bg::Out<bg::TSB<ReferenceBundle>> output) {
+        [](bg::In<bg::TS<int>> value, bg::In<bg::REF<bg::TS<int>>> selected, bg::Out<bg::TSB<ReferenceBundle>> output) {
             output->value.set(*value);
             output->selected.copy(selected);
         });
-    const auto reference = bg::node(
-        [](bg::In<bg::REF<bg::TSB<ReferenceBundle>>> input,
-           bg::Out<bg::REF<bg::TSB<ReferenceBundle>>> output) { output.copy(input); });
-    const auto graph = [&](bg::wp<bg::TS<int>> first, bg::wp<bg::TS<int>> second,
-                           bg::wp<bg::TS<bool>> use_second, bg::wp<bg::TS<int>> value) {
+    const auto reference = bg::node([](bg::In<bg::REF<bg::TSB<ReferenceBundle>>> input,
+                                       bg::Out<bg::REF<bg::TSB<ReferenceBundle>>> output) { output.copy(input); });
+    const auto graph = [&](bg::wp<bg::TS<int>> first, bg::wp<bg::TS<int>> second, bg::wp<bg::TS<bool>> use_second,
+                           bg::wp<bg::TS<int>> value) {
         const auto selected = select(use_second, first, second);
         const auto bundle_reference = reference(make_bundle(value, selected));
         const auto bundle = bg::wp<bg::TSB<ReferenceBundle>>{bundle_reference};
@@ -165,9 +161,9 @@ TEST_CASE("getattr follows a reference field in a referenced native bundle",
         return bundle->selected;
     };
 
-    const auto actual = bg::testing::test_graph(
-        graph, std::array{10, 20, 30}, std::array{100, 200, 300},
-        std::array<std::optional<bool>, 3>{false, true, std::nullopt}, std::array{1, 2, 3});
+    const auto actual =
+        bg::testing::test_graph(graph, std::array{10, 20, 30}, std::array{100, 200, 300},
+                                std::array<std::optional<bool>, 3>{false, true, std::nullopt}, std::array{1, 2, 3});
 
     CHECK(actual.equals({10, 200, 300}));
 }
@@ -216,7 +212,7 @@ TEST_CASE("a free bundle reuses materialization for the same input type",
     (void)second_sum(bundle);
 
     REQUIRE(wiring.nodes().size() == 5);
-    CHECK(wiring.nodes()[3].input_output_indices()[0] == wiring.nodes()[4].input_output_indices()[0]);
+    CHECK(wiring.nodes()[3].inputs()[0] == wiring.nodes()[4].inputs()[0]);
 }
 
 TEST_CASE("a free bundle materializes independently for different input schemas",
@@ -235,7 +231,7 @@ TEST_CASE("a free bundle materializes independently for different input schemas"
     (void)count(bundle);
 
     REQUIRE(wiring.nodes().size() == 6);
-    CHECK(wiring.nodes()[3].input_output_indices()[0] != wiring.nodes()[5].input_output_indices()[0]);
+    CHECK(wiring.nodes()[3].inputs()[0] != wiring.nodes()[5].inputs()[0]);
 }
 
 TEST_CASE("a free bundle requires every field of the receiving schema",

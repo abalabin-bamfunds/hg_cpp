@@ -4,6 +4,7 @@
 #include <bg/details/evaluation_context.hpp>
 #include <bg/graph/details/compiled_graph_builder.hpp>
 #include <bg/graph/details/graph_wiring_structure.hpp>
+#include <bg/graph/details/nested_graph_context.hpp>
 #include <bg/graph/graph_wiring.hpp>
 #include <bg/graph/runtime_graph.hpp>
 #include <bg/node/node_invocation.hpp>
@@ -36,6 +37,7 @@ struct CompiledSwitchInput {
 struct CompiledSwitchBranch {
     CompiledNestedGraph nested;
     std::pmr::vector<CompiledSwitchInput> inputs;
+    std::optional<std::uint32_t> context_parameter_start;
 };
 
 struct CompiledSwitchCase {
@@ -98,8 +100,7 @@ struct SwitchNodeIdentity {
             const auto &left = cases[index];
             const auto &right = other.cases[index];
             if (!(left.graph == right.graph) || left.default_case != right.default_case ||
-                left.parameter_indices != right.parameter_indices ||
-                left.keys.size() != right.keys.size()) {
+                left.parameter_indices != right.parameter_indices || left.keys.size() != right.keys.size()) {
                 return false;
             }
             for (auto key_index = std::size_t{}; key_index < left.keys.size(); ++key_index) {
@@ -153,8 +154,8 @@ class SwitchNodeDefinition {
         if (outer_signature.output == nullptr) {
             signature_ = std::make_unique<Signature>(outer_signature.name, std::move(parameters));
         } else {
-            signature_ = std::make_unique<Signature>(outer_signature.name, std::move(parameters),
-                                                     *outer_signature.output);
+            signature_ =
+                std::make_unique<Signature>(outer_signature.name, std::move(parameters), *outer_signature.output);
         }
         validate();
     }
@@ -174,8 +175,7 @@ class SwitchNodeDefinition {
                 parameter_indices.push_back(input.parameter_index);
             }
             identity.cases.push_back({
-                .graph = graph_wiring_structure(*item.branch.wiring, boundaries,
-                                                item.branch.output_node),
+                .graph = graph_wiring_structure(*item.branch.wiring, boundaries, item.branch.output_node),
                 .keys = {},
                 .default_case = item.default_case,
                 .parameter_indices = std::move(parameter_indices),
@@ -220,25 +220,29 @@ class SwitchNodeDefinition {
             auto compiled_case = CompiledSwitchCase{
                 .first_key = static_cast<std::uint32_t>(result.keys.size()),
                 .key_count = static_cast<std::uint32_t>(item.keys.size()),
-                .branch = {
-                    .nested = {
-                        .graph = std::move(graph),
-                        .input_nodes = std::pmr::vector<std::size_t>{&memory.memory_resource()},
-                        .constant_input_nodes = std::pmr::vector<std::size_t>{&memory.memory_resource()},
-                        .output_node = item.branch.output_node
-                                           ? std::optional{node_indices[output_position]}
-                                           : std::nullopt,
+                .branch =
+                    {
+                        .nested =
+                            {
+                                .graph = std::move(graph),
+                                .input_nodes = std::pmr::vector<std::size_t>{&memory.memory_resource()},
+                                .constant_input_nodes = std::pmr::vector<std::size_t>{&memory.memory_resource()},
+                                .output_node = item.branch.output_node ? std::optional{node_indices[output_position]}
+                                                                       : std::nullopt,
+                            },
+                        .inputs = std::pmr::vector<CompiledSwitchInput>{&memory.memory_resource()},
+                        .context_parameter_start =
+                            item.branch.context_parameter_start
+                                ? std::optional{static_cast<std::uint32_t>(*item.branch.context_parameter_start)}
+                                : std::nullopt,
                     },
-                    .inputs = std::pmr::vector<CompiledSwitchInput>{&memory.memory_resource()},
-                },
             };
             for (const auto &key : item.keys) {
                 result.keys.emplace_back(key->view(), memory);
             }
             compiled_case.branch.nested.input_nodes.reserve(item.branch.inputs.size());
             compiled_case.branch.inputs.reserve(item.branch.inputs.size());
-            for (auto input_index = std::size_t{}; input_index < item.branch.inputs.size();
-                 ++input_index) {
+            for (auto input_index = std::size_t{}; input_index < item.branch.inputs.size(); ++input_index) {
                 compiled_case.branch.nested.input_nodes.push_back(node_indices[input_index]);
                 compiled_case.branch.inputs.push_back(
                     {static_cast<std::uint32_t>(item.branch.inputs[input_index].parameter_index),
@@ -277,8 +281,7 @@ class SwitchNodeDefinition {
         return resume(compiled, invocation);
     }
 
-    template <typename Invocation>
-    static bool resume(const CompiledSwitch &compiled, Invocation invocation) {
+    template <typename Invocation> static bool resume(const CompiledSwitch &compiled, Invocation invocation) {
         auto &state = invocation.state();
         if (!state.graph.evaluate(invocation.context())) {
             return false;
@@ -317,12 +320,9 @@ class SwitchNodeDefinition {
         state.graph.stop_and_destroy(invocation.context());
     }
 
-    static void inner_graph_scheduled(void *,
-                                      RuntimeGraphOwnerCallbacks::token_type) noexcept {
-    }
+    static void inner_graph_scheduled(void *, RuntimeGraphOwnerCallbacks::token_type) noexcept {}
 
-    static void inner_graph_timed_schedule_changed(RuntimeGraphOwnerContext &context,
-                                                   void *receiver,
+    static void inner_graph_timed_schedule_changed(RuntimeGraphOwnerContext &context, void *receiver,
                                                    RuntimeGraphOwnerCallbacks::token_type,
                                                    std::optional<EvaluationTime> time) {
         auto &state = *static_cast<SwitchNodeState *>(receiver);
@@ -359,44 +359,42 @@ class SwitchNodeDefinition {
         if (compiled.default_case) {
             return {.case_index = *compiled.default_case};
         }
-        throw std::out_of_range{
-            "switch_ key does not match a case and no DEFAULT case is defined"};
+        throw std::out_of_range{"switch_ key does not match a case and no DEFAULT case is defined"};
     }
 
     template <typename Invocation>
     static NestedGraphInput input_reference(Invocation invocation, std::size_t parameter_index) {
         const auto input = invocation.template input<In<REF<TS_T>>>(parameter_index, parameter_index);
-        return {input.valid() ? input.value() : Reference{},
-                input.valid() ? input.last_updated() : MIN_DT};
+        return {input.valid() ? input.value() : Reference{}, input.valid() ? input.last_updated() : MIN_DT};
     }
 
     template <typename Invocation>
-    static void start_case(const CompiledSwitchBranch &branch, Invocation invocation,
-                           SwitchSelection selection) {
-        const auto storage_size = sizeof(NestedGraphInput) * branch.inputs.size();
+    static void start_case(const CompiledSwitchBranch &branch, Invocation invocation, SwitchSelection selection) {
+        const auto context_count = branch.nested.graph->context_requirement_count();
+        const auto input_count = branch.inputs.size();
+        const auto storage_size = sizeof(NestedGraphInput) * input_count;
         auto &scratch = invocation.context().scratch();
-        auto *inputs = branch.inputs.empty()
+        auto *inputs = input_count == 0
                            ? nullptr
-                           : static_cast<NestedGraphInput *>(
-                                 scratch.allocate(storage_size, alignof(NestedGraphInput)));
+                           : static_cast<NestedGraphInput *>(scratch.allocate(storage_size, alignof(NestedGraphInput)));
         auto release_inputs = util::scope_exit{[&]() noexcept {
             if (inputs != nullptr) {
                 scratch.release_last(inputs, storage_size);
             }
         }};
         for (auto index = std::size_t{}; index < branch.inputs.size(); ++index) {
-            std::construct_at(inputs + index,
-                              input_reference(invocation, branch.inputs[index].parameter_index));
+            std::construct_at(inputs + index, input_reference(invocation, branch.inputs[index].parameter_index));
         }
-
         auto &state = invocation.state();
         const auto owner = RuntimeGraphOwner{
             .receiver = &state,
             .token = selection.case_index,
             .callbacks = &owner_callbacks,
         };
-        state.graph.start(branch.nested, invocation.context(),
-                          std::span<NestedGraphInput>{inputs, branch.inputs.size()}, owner);
+        const auto context_start = branch.context_parameter_start.value_or(invocation.parameter_count());
+        auto startup_context = NestedGraphStartupContext{invocation, context_start, context_count};
+        state.graph.start(branch.nested, startup_context.context(),
+                          std::span<NestedGraphInput>{inputs, branch.inputs.size()}, {}, owner);
         state.active_selection = selection;
     }
 
@@ -423,8 +421,7 @@ class SwitchNodeDefinition {
         state.active_selection = {};
     }
 
-    static void clear_timed_schedule(EvaluationContext &context,
-                                     SwitchNodeState &state) noexcept {
+    static void clear_timed_schedule(EvaluationContext &context, SwitchNodeState &state) noexcept {
         if (state.scheduled_time) {
             context.cancel(state.outer_schedule);
             state.outer_schedule = {};
@@ -451,15 +448,18 @@ class SwitchNodeDefinition {
             if (item.branch.wiring == nullptr) {
                 throw std::invalid_argument{"a switch case requires inner graph wiring"};
             }
-            const auto outputless_default = signature_->has_output() && item.default_case &&
-                                            !item.branch.output_node;
-            if (item.branch.output_node.has_value() != signature_->has_output() &&
-                !outputless_default) {
+            const auto context_count = item.branch.wiring->context_requirements().size();
+            if (item.branch.context_parameter_start.has_value() != (context_count != 0) ||
+                (context_count != 0 &&
+                 *item.branch.context_parameter_start + context_count > signature_->parameter_count())) {
+                throw std::invalid_argument{"a switch case has invalid context parameters"};
+            }
+            const auto outputless_default = signature_->has_output() && item.default_case && !item.branch.output_node;
+            if (item.branch.output_node.has_value() != signature_->has_output() && !outputless_default) {
                 throw std::invalid_argument{"a switch case output does not match the switch signature"};
             }
             for (const auto &input : item.branch.inputs) {
-                if (input.parameter_index == 0 ||
-                    input.parameter_index >= signature_->parameter_count()) {
+                if (input.parameter_index == 0 || input.parameter_index >= signature_->parameter_count()) {
                     throw std::invalid_argument{"a switch case input parameter index is out of range"};
                 }
             }
@@ -472,8 +472,7 @@ class SwitchNodeDefinition {
 
 } // namespace
 
-std::unique_ptr<NodeTemplate> make_switch_node(SwitchNodeWiring wiring,
-                                               const ResolvedSignature &outer_signature) {
+std::unique_ptr<NodeTemplate> make_switch_node(SwitchNodeWiring wiring, const ResolvedSignature &outer_signature) {
     return std::make_unique<RuntimeSignatureNodeTemplate<SwitchNodeDefinition>>(
         SwitchNodeDefinition{std::move(wiring), outer_signature});
 }

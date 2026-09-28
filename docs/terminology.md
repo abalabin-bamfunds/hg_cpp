@@ -260,9 +260,10 @@ overloads.
 ### wired node
 
 A node template whose signature is resolved, together with scalar values
-supplied while the graph is constructed and a record of the wired node that
-provides each input. The scalar values are immutable after graph construction. A
-wired node does not know how its output is used.
+supplied while the graph is constructed and an identifier for each time series
+input. Each identifier selects a local wired output or an inherited context
+requirement. The scalar values are immutable after graph construction. A wired
+node does not know how its output is used.
 
 ### wired output
 
@@ -285,6 +286,12 @@ graph-signature inference without adding runtime storage.
 A scope that makes one `GraphWiring` active for node calls on the current
 thread. Nested wiring contexts restore the previous active `GraphWiring` when
 they end. The C++ type is `WiringContext`.
+
+### context time series
+
+A named time series available during graph wiring. A lexical binding or an
+explicit named argument provides its value. A graph or node parameter requests
+it by using the same name and a compatible time series type.
 
 ### wiring path
 
