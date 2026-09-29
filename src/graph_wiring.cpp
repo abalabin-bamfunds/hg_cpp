@@ -300,7 +300,7 @@ WiredInput GraphWiring::wire_input(WiringPoint point, const TimeSeriesType &type
 
     const auto inherited = std::ranges::find(inherited_records_, point.record_, &InheritedRecord::record);
     if (inherited != inherited_records_.end()) {
-        return resolve_inherited_input(inherited->requirement);
+        return WiredInput::inherited(inherited->requirement);
     }
 
     const auto materialized = details::materialize_wiring_point(point, type);
@@ -314,6 +314,53 @@ WiredInput GraphWiring::resolve_inherited_input(std::size_t index) const {
     }
 
     return WiredInput::output(output_index(requirement.provider));
+}
+
+void GraphWiring::order_after_consumers(WiringPoint consumed, WiringPoint ordered_output) {
+    if (!consumed.has_output() || &consumed.graph() != this || !ordered_output.has_output() ||
+        &ordered_output.graph() != this) {
+        throw WiringError{"an ordering constraint requires wiring points from the same GraphWiring"};
+    }
+
+    const auto existing = std::ranges::find_if(ordering_constraints_, [&](const auto &constraint) {
+        return constraint.consumed.record_ == consumed.record_ &&
+               constraint.ordered_output.record_ == ordered_output.record_;
+    });
+    if (existing != ordering_constraints_.end()) {
+        return;
+    }
+
+    ordering_constraints_.push_back({consumed, ordered_output});
+}
+
+bool GraphWiring::input_consumes(WiredInput input, WiringPoint point) const noexcept {
+    if (!point.has_output() || point.record_->graph_ != this) {
+        return false;
+    }
+
+    if (input.is_inherited()) {
+        return input.index() < inherited_records_.size() && inherited_records_[input.index()].record == point.record_;
+    }
+
+    if (input.index() >= output_records_.size()) {
+        return false;
+    }
+
+    auto *input_record = output_records_[input.index()];
+    while (input_record != nullptr) {
+        if (input_record == point.record_) {
+            return true;
+        }
+
+        const auto materialization = std::ranges::find_if(
+            materialized_wiring_points_, [&](const auto &entry) { return entry.result == input_record; });
+        if (materialization == materialized_wiring_points_.end()) {
+            return false;
+        }
+        input_record = materialization->record;
+    }
+
+    return false;
 }
 
 void GraphWiring::cache_wired_node(std::size_t hash, std::size_t node_index) {

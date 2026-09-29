@@ -125,7 +125,8 @@ TEST_CASE("a late inherited provider dependency cycle fails compilation",
     const auto provider = copy(requirement);
     wiring.provide_inherited_time_series(requirement_identity, TS<std::int64_t>::type(), provider);
 
-    CHECK_THROWS_WITH(CompiledGraph{wiring}, "graph wiring contains a dependency cycle");
+    CHECK_THROWS_WITH(CompiledGraph{wiring},
+                      Catch::Matchers::ContainsSubstring("graph wiring contains a dependency cycle"));
 }
 
 TEST_CASE("compilation keeps an inherited provider next to its consumer",

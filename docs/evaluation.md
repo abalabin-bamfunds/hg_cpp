@@ -35,7 +35,10 @@ The engine applies an external stop request between outer cycles.
 
 Graph compilation emits each node's input dependencies in signature order before
 that node while scanning nodes in wiring order. It rejects dependency cycles.
-A runtime graph processes scheduled node indices once in increasing order.
+`GraphWiring` may also add a no-payload ordering constraint that places a node
+after every direct consumer of a wiring point. These constraints participate in
+cycle detection but add no runtime input or storage. A runtime graph processes
+scheduled node indices once in increasing order.
 
 Multiple input updates coalesce into one completed node evaluation in an outer
 cycle.

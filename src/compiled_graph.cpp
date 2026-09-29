@@ -25,9 +25,11 @@
 #include <cstdint>
 #include <limits>
 #include <memory>
+#include <numeric>
 #include <ranges>
 #include <span>
 #include <stdexcept>
+#include <string>
 #include <type_traits>
 #include <unordered_map>
 #include <utility>
@@ -469,11 +471,32 @@ void plan_time_series_inputs(CompilationPlan &plan, const GraphWiring &wiring) {
     }
 }
 
-std::vector<std::size_t> dependency_order(const CompilationPlan &plan) {
+std::string wiring_path_text(const WiringPath &path) {
+    auto sections = std::vector<const WiringPath *>{};
+    for (auto *section = &path; section != nullptr; section = section->parent) {
+        sections.push_back(section);
+    }
+
+    auto result = std::string{};
+    for (auto section = sections.rbegin(); section != sections.rend(); ++section) {
+        if (!result.empty()) {
+            result += '/';
+        }
+        result += (*section)->name.text();
+        result += '[';
+        result += (*section)->label.text();
+        result += ']';
+    }
+
+    return result;
+}
+
+std::vector<std::size_t> dependency_order(const CompilationPlan &plan, const GraphWiring &wiring) {
     enum class VisitState : std::uint8_t { unseen, visiting, emitted };
     struct PendingNode {
         std::size_t index;
         std::size_t next_input;
+        std::size_t next_ordering_dependency;
     };
 
     auto states = std::vector<VisitState>(plan.nodes.size(), VisitState::unseen);
@@ -482,13 +505,66 @@ std::vector<std::size_t> dependency_order(const CompilationPlan &plan) {
     auto result = std::vector<std::size_t>{};
     result.reserve(plan.nodes.size());
 
+    auto ordering_edges = std::vector<std::pair<std::size_t, std::size_t>>{};
+    for (const auto &constraint : wiring.ordering_constraints()) {
+        const auto ordered_node = details::wired_output_node_index(wiring, constraint.ordered_output);
+        for (auto consumer = std::size_t{}; consumer < plan.nodes.size(); ++consumer) {
+            const auto &inputs = plan.nodes[consumer].inputs();
+            if (std::ranges::any_of(
+                    inputs, [&](const auto input) { return wiring.input_consumes(input, constraint.consumed); })) {
+                ordering_edges.emplace_back(ordered_node, consumer);
+            }
+        }
+    }
+    std::ranges::sort(ordering_edges);
+    ordering_edges.erase(std::unique(ordering_edges.begin(), ordering_edges.end()), ordering_edges.end());
+
+    auto ordering_offsets = std::vector<std::size_t>{};
+    if (!ordering_edges.empty()) {
+        ordering_offsets.resize(plan.nodes.size() + 1);
+        for (const auto &[producer, consumer] : ordering_edges) {
+            (void)consumer;
+            ++ordering_offsets[producer + 1];
+        }
+        std::partial_sum(ordering_offsets.begin(), ordering_offsets.end(), ordering_offsets.begin());
+    }
+
+    const auto throw_dependency_cycle = [&](std::size_t predecessor) -> void {
+        const auto cycle_start = std::ranges::find(pending, predecessor, &PendingNode::index);
+        auto message = std::string{"graph wiring contains a dependency cycle: "};
+        for (auto node = cycle_start; node != pending.end(); ++node) {
+            if (node != cycle_start) {
+                message += " -> ";
+            }
+            message += wiring_path_text(plan.nodes[node->index].path());
+        }
+        message += " -> ";
+        message += wiring_path_text(plan.nodes[predecessor].path());
+        throw std::invalid_argument{message};
+    };
+
+    const auto visit_predecessor = [&](std::size_t predecessor) {
+        if (states[predecessor] == VisitState::visiting) {
+            throw_dependency_cycle(predecessor);
+        }
+        if (states[predecessor] == VisitState::emitted) {
+            return false;
+        }
+
+        states[predecessor] = VisitState::visiting;
+        const auto first_ordering_dependency = ordering_offsets.empty() ? std::size_t{} : ordering_offsets[predecessor];
+        pending.push_back({predecessor, 0, first_ordering_dependency});
+        return true;
+    };
+
     for (auto root = std::size_t{}; root < plan.nodes.size(); ++root) {
         if (states[root] != VisitState::unseen) {
             continue;
         }
 
         states[root] = VisitState::visiting;
-        pending.push_back({root, 0});
+        const auto first_ordering_dependency = ordering_offsets.empty() ? std::size_t{} : ordering_offsets[root];
+        pending.push_back({root, 0, first_ordering_dependency});
         while (!pending.empty()) {
             auto &current = pending.back();
             const auto &inputs = plan.node_plans[current.index].time_series_inputs;
@@ -500,14 +576,20 @@ std::vector<std::size_t> dependency_order(const CompilationPlan &plan) {
                 }
 
                 const auto predecessor = plan.outputs[input.wired_input.index()].node_index;
-                if (states[predecessor] == VisitState::visiting) {
-                    throw std::invalid_argument{"graph wiring contains a dependency cycle"};
-                }
-                if (states[predecessor] == VisitState::unseen) {
-                    states[predecessor] = VisitState::visiting;
-                    pending.push_back({predecessor, 0});
+                if (visit_predecessor(predecessor)) {
                     predecessor_found = true;
                     break;
+                }
+            }
+
+            if (!predecessor_found && !ordering_offsets.empty()) {
+                const auto ordering_end = ordering_offsets[current.index + 1];
+                while (current.next_ordering_dependency < ordering_end) {
+                    const auto predecessor = ordering_edges[current.next_ordering_dependency++].second;
+                    if (visit_predecessor(predecessor)) {
+                        predecessor_found = true;
+                        break;
+                    }
                 }
             }
 
@@ -1051,7 +1133,7 @@ void plan_fixed_storage(CompilationPlan &plan) {
     }
 
     plan_time_series_inputs(result, wiring);
-    const auto node_order = dependency_order(result);
+    const auto node_order = dependency_order(result, wiring);
     result.wired_node_indices.clear();
     for (const auto node_index : node_order) {
         if (result.is_const_node(node_index)) {

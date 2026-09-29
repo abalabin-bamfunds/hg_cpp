@@ -54,6 +54,11 @@ class GraphWiring {
         const TimeSeriesType &boundary_input_type() const;
     };
 
+    struct OrderingConstraint {
+        WiringPoint consumed;
+        WiringPoint ordered_output;
+    };
+
     GraphWiring();
     explicit GraphWiring(allocator memory);
     explicit GraphWiring(GraphWiring &parent);
@@ -73,11 +78,15 @@ class GraphWiring {
         return inherited_requirements_;
     }
 
+    std::span<const OrderingConstraint> ordering_constraints() const noexcept { return ordering_constraints_; }
+
     [[nodiscard]] WiringPoint require_inherited_time_series(details::InheritedTimeSeriesIdentity identity,
                                                             util::symbol name, const TimeSeriesType &type);
     void provide_inherited_time_series(const details::InheritedTimeSeriesIdentity &identity, const TimeSeriesType &type,
                                        WiringPoint provider);
     [[nodiscard]] WiredInput resolve_inherited_input(std::size_t requirement) const;
+    void order_after_consumers(WiringPoint consumed, WiringPoint ordered_output);
+    bool input_consumes(WiredInput input, WiringPoint point) const noexcept;
 
     [[nodiscard]] const NodeTemplate &own_node_template(std::unique_ptr<NodeTemplate> node_template);
 
@@ -170,6 +179,7 @@ class GraphWiring {
         WiringPoint point;
     };
     std::vector<InheritedTimeSeriesRequirement> inherited_requirements_;
+    std::vector<OrderingConstraint> ordering_constraints_;
     std::vector<ContextBinding> context_bindings_;
     std::vector<InheritedRecord> inherited_records_;
     std::pmr::deque<WiringPath> paths_;
