@@ -35,6 +35,15 @@ struct InheritedTimeSeriesMetadata {
 static_assert(sizeof(InheritedTimeSeriesMetadata) == 8);
 static_assert(std::is_trivially_copyable_v<InheritedTimeSeriesMetadata>);
 
+struct ServiceBindingMetadata {
+    std::uint32_t runtime_bindings_offset;
+    std::uint32_t provider_nodes_offset;
+    std::uint32_t binding_count;
+};
+
+static_assert(sizeof(ServiceBindingMetadata) == 12);
+static_assert(std::is_trivially_copyable_v<ServiceBindingMetadata>);
+
 // Describes the variable sections of compiled graph storage. Node offsets, paths, and optional metadata follow.
 struct CompiledStorageHeader {
     std::span<const std::uint32_t> node_offsets(std::size_t node_count) const noexcept {
@@ -56,6 +65,18 @@ struct CompiledStorageHeader {
             metadata += sizeof(ConstantMetadata);
         }
         return reinterpret_cast<const InheritedTimeSeriesMetadata *>(metadata);
+    }
+
+    const ServiceBindingMetadata *service_binding_metadata(std::size_t node_count, bool has_constants,
+                                                            bool has_inherited_time_series) const noexcept {
+        const auto *metadata = reinterpret_cast<const std::byte *>(node_paths(node_count).data() + node_count);
+        if (has_constants) {
+            metadata += sizeof(ConstantMetadata);
+        }
+        if (has_inherited_time_series) {
+            metadata += sizeof(InheritedTimeSeriesMetadata);
+        }
+        return reinterpret_cast<const ServiceBindingMetadata *>(metadata);
     }
 
     std::uint32_t wiring_paths_offset;

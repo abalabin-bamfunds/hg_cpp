@@ -67,6 +67,7 @@ struct NodeShape {
     std::vector<const TimeSeriesType *> dynamic_reference_input_types{};
     std::vector<StoredScalar> scalars{};
     std::vector<Endpoint> inputs{};
+    std::vector<const void *> service_bindings{};
 };
 
 struct InheritedTimeSeriesShape {
@@ -98,7 +99,8 @@ bool same_node_label(const NodeShape &left, const NodeShape &right) {
            left.output_runtime_type == right.output_runtime_type && left.state_types == right.state_types &&
            left.dynamic_reference_input_types == right.dynamic_reference_input_types &&
            left.scalars.size() == right.scalars.size() &&
-           std::ranges::equal(left.scalars, right.scalars, same_scalar) && left.inputs.size() == right.inputs.size();
+           std::ranges::equal(left.scalars, right.scalars, same_scalar) && left.inputs.size() == right.inputs.size() &&
+           left.service_bindings == right.service_bindings;
 }
 
 std::size_t node_label_hash(const NodeShape &node) noexcept {
@@ -121,6 +123,9 @@ std::size_t node_label_hash(const NodeShape &node) noexcept {
     for (const auto &scalar : node.scalars) {
         combine_pointer(result, scalar.runtime_type);
         combine(result, scalar.value ? scalar.value->hash() : 0);
+    }
+    for (const auto *binding : node.service_bindings) {
+        combine_pointer(result, binding);
     }
     return result;
 }
@@ -357,6 +362,11 @@ std::shared_ptr<GraphWiringStructure::Data> snapshot(const GraphWiring &wiring,
                 stored.value.emplace(Scalar<>::from(scalar.runtime_type(), scalar.data()));
             }
             node.scalars.push_back(std::move(stored));
+        }
+        for (const auto &binding : wiring.service_binding_requirements()) {
+            if (std::ranges::contains(binding.consumers, original_index)) {
+                node.service_bindings.push_back(binding.identity);
+            }
         }
         data->nodes.push_back(std::move(node));
     }

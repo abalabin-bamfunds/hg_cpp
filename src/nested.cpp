@@ -116,9 +116,13 @@ class NestedNodeDefinition {
             .graph = graph,
             .input_nodes = std::pmr::vector<std::size_t>{&memory.memory_resource()},
             .constant_input_nodes = std::pmr::vector<std::size_t>{&memory.memory_resource()},
+            .service_binding_slots = std::pmr::vector<std::uint32_t>{&memory.memory_resource()},
             .output_node = node_indices.front(),
         };
         result.input_nodes.assign(node_indices.begin() + 1, node_indices.end());
+        for (const auto &requirement : wiring_.wiring->service_binding_requirements()) {
+            result.service_binding_slots.push_back(static_cast<std::uint32_t>(requirement.parent_slot));
+        }
         return result;
     }
 
@@ -154,7 +158,8 @@ class NestedNodeDefinition {
         if (!graph.running()) {
             const auto inherited_count = invocation.compiled_data().graph->inherited_time_series_count();
             auto startup_context =
-                NestedGraphStartupContext{invocation, invocation.parameter_count() - inherited_count, inherited_count};
+                NestedGraphStartupContext{invocation, invocation.compiled_data(),
+                                          invocation.parameter_count() - inherited_count, inherited_count};
             graph.start(invocation.compiled_data(), startup_context.context(), graph_inputs);
         } else {
             graph.update_inputs(invocation.compiled_data(), graph_inputs);

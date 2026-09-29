@@ -262,7 +262,11 @@ std::optional<WiringPoint> DefaultMapWiring::wire() const {
         key_set = WiringArgument{wiring_point_for_item(materialized, key_set_item_id, key_set_type)};
     }
 
-    return owned(std::span<const WiringArgument>{arguments});
+    const auto next_node_index = outer.nodes().size();
+    auto result = owned(std::span<const WiringArgument>{arguments});
+    const auto node_index = result ? wired_output_node_index(outer, *result) : next_node_index;
+    outer.register_nested_service_consumers(*graph.wiring, node_index);
+    return result;
 }
 
 } // namespace bg::details

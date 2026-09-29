@@ -52,6 +52,7 @@ class CompiledGraph {
     const WiringPath &wiring_path(std::size_t node_index) const noexcept;
 
     std::size_t inherited_time_series_count() const noexcept;
+    std::size_t service_binding_count() const noexcept;
 
   private:
     struct CompilationTag {
@@ -94,9 +95,10 @@ class CompiledGraph {
     static constexpr std::uint32_t cycle_callbacks_flag = std::uint32_t{1} << 31;
     static constexpr std::uint32_t constants_flag = std::uint32_t{1} << 30;
     static constexpr std::uint32_t inherited_time_series_flag = std::uint32_t{1} << 31;
+    static constexpr std::uint32_t service_bindings_flag = std::uint32_t{1} << 30;
     static constexpr std::uint32_t fixed_storage_size_mask = timed_scheduling_flag - 1;
     static constexpr std::uint32_t variable_memory_offset_mask = constants_flag - 1;
-    static constexpr std::uint32_t initial_runtime_storage_offset_mask = inherited_time_series_flag - 1;
+    static constexpr std::uint32_t initial_runtime_storage_offset_mask = service_bindings_flag - 1;
     static constexpr std::uint32_t alignment_shift = 26;
     static constexpr std::uint32_t count_mask = (std::uint32_t{1} << alignment_shift) - 1;
 
@@ -112,6 +114,10 @@ class CompiledGraph {
 
     bool has_inherited_time_series() const noexcept {
         return (storage_header().initial_runtime_storage_offset & inherited_time_series_flag) != 0;
+    }
+
+    bool has_service_bindings() const noexcept {
+        return (storage_header().initial_runtime_storage_offset & service_bindings_flag) != 0;
     }
 
     std::size_t variable_memory_offset() const noexcept {
@@ -156,6 +162,8 @@ class CompiledGraph {
     std::optional<std::size_t> constant_start_time_offset() const noexcept;
     std::span<const InputNotificationSubscriber> constant_notifications() const noexcept;
     std::span<const details::InheritedTimeSeriesBinding> inherited_time_series() const noexcept;
+    const details::ServiceBindingMetadata *service_binding_metadata() const noexcept;
+    std::span<const std::uint32_t> service_binding_provider_nodes() const noexcept;
     std::span<const Subscriber>
     inherited_time_series_subscribers(const details::InheritedTimeSeriesBinding &requirement) const noexcept;
     const OutputNotification *

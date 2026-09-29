@@ -204,6 +204,7 @@ struct InheritedTimeSeriesPlan {
 struct RuntimeStorageLayout {
     std::size_t schedule_word_count{};
     std::optional<std::uint32_t> constant_start_time_offset;
+    std::optional<std::uint32_t> service_bindings_offset;
     std::size_t size{};
     std::size_t alignment{};
 };
@@ -265,6 +266,8 @@ struct FixedStorageLayout {
     StorageSection constant_notifications;
     StorageSection inherited_time_series_metadata;
     StorageSection inherited_time_series_bindings;
+    StorageSection service_binding_metadata;
+    StorageSection service_binding_provider_nodes;
     std::size_t size{};
     std::size_t alignment{};
 };
@@ -283,6 +286,7 @@ struct CompilationPlan {
     std::vector<InputNotificationSubscriberPlan> constant_notifications;
     std::vector<InheritedTimeSeriesPlan> inherited_time_series;
     std::vector<std::size_t> inherited_time_series_slots;
+    std::span<const GraphWiring::ServiceBindingRequirement> service_bindings;
     RuntimeStorageLayout runtime;
     FixedStorageLayout fixed;
     std::size_t scalar_destruction_count{};
@@ -514,6 +518,16 @@ std::vector<std::size_t> dependency_order(const CompilationPlan &plan, const Gra
                     inputs, [&](const auto input) { return wiring.input_consumes(input, constraint.consumed); })) {
                 ordering_edges.emplace_back(ordered_node, consumer);
             }
+        }
+    }
+    for (const auto &binding : wiring.service_binding_requirements()) {
+        if (!binding.provider.has_output()) {
+            continue;
+        }
+
+        const auto provider = details::wired_output_node_index(wiring, binding.provider);
+        for (const auto consumer : binding.consumers) {
+            ordering_edges.emplace_back(provider, consumer);
         }
     }
     std::ranges::sort(ordering_edges);
@@ -811,6 +825,11 @@ void plan_runtime_storage(CompilationPlan &plan) {
         plan.runtime.constant_start_time_offset =
             packed_offset(storage.add<EvaluationTime>().offset, "runtime storage reaches 1 GiB");
     }
+    if (!plan.service_bindings.empty()) {
+        plan.runtime.service_bindings_offset =
+            packed_offset(storage.add<void *>(plan.service_bindings.size()).offset,
+                          "runtime storage reaches 1 GiB");
+    }
 
     for (auto &requirement : plan.inherited_time_series) {
         requirement.last_updated_offset =
@@ -1031,6 +1050,10 @@ void plan_fixed_storage(CompilationPlan &plan) {
         layout.inherited_time_series_bindings =
             storage.add<details::InheritedTimeSeriesBinding>(plan.inherited_time_series.size());
     }
+    if (!plan.service_bindings.empty()) {
+        layout.service_binding_metadata = storage.add<details::ServiceBindingMetadata>();
+        layout.service_binding_provider_nodes = storage.add<std::uint32_t>(plan.service_bindings.size());
+    }
     if (plan.has_lifecycle()) {
         layout.start_functions = storage.add<NodeFunction>(plan.starts.nodes.size());
         layout.start_nodes = storage.add<std::uint32_t>(plan.starts.nodes.size());
@@ -1076,6 +1099,7 @@ void plan_fixed_storage(CompilationPlan &plan) {
     auto result = CompilationPlan{};
     result.nodes = wiring.nodes();
     result.outputs = wiring.outputs();
+    result.service_bindings = wiring.service_binding_requirements();
     result.node_plans.resize(result.nodes.size());
     result.compiled_node_indices.assign(result.nodes.size(), WiredOutput::npos);
     result.constant_outputs.assign(result.outputs.size(), WiredOutput::npos);
@@ -1091,6 +1115,14 @@ void plan_fixed_storage(CompilationPlan &plan) {
 
         result.inherited_time_series_slots[index] = result.inherited_time_series.size();
         result.inherited_time_series.emplace_back();
+    }
+    for (const auto &binding : result.service_bindings) {
+        if (binding.parent_slot == WiredOutput::npos && !binding.provider.has_output()) {
+            throw std::invalid_argument{"a root service binding has no provider"};
+        }
+        if (binding.parent_slot != WiredOutput::npos && binding.provider.has_output()) {
+            throw std::invalid_argument{"an inner service binding cannot have a local provider"};
+        }
     }
 
     for (auto node_index = std::size_t{}; node_index < result.nodes.size(); ++node_index) {
@@ -1314,6 +1346,7 @@ class CompiledGraphBuilder {
         construct_nodes(plan, storage, upstream_memory, variable_memory, constructed_scalars, scalar_destruction_index,
                         constructed_node_data);
         construct_inherited_time_series(plan, storage);
+        construct_service_bindings(plan, storage);
         rollback.release();
     }
 
@@ -1339,7 +1372,8 @@ class CompiledGraphBuilder {
                     (!plan.constants.empty() ? CompiledGraph::constants_flag : std::uint32_t{}),
                 .initial_runtime_storage_offset =
                     offset(plan.fixed.initial_runtime_storage) |
-                    (!plan.inherited_time_series.empty() ? CompiledGraph::inherited_time_series_flag : std::uint32_t{}),
+                    (!plan.inherited_time_series.empty() ? CompiledGraph::inherited_time_series_flag : std::uint32_t{}) |
+                    (!plan.service_bindings.empty() ? CompiledGraph::service_bindings_flag : std::uint32_t{}),
             });
 
         if (!plan.constants.empty()) {
@@ -1356,6 +1390,15 @@ class CompiledGraphBuilder {
                 details::InheritedTimeSeriesMetadata{
                     .requirements_offset = offset(plan.fixed.inherited_time_series_bindings),
                     .requirement_count = static_cast<std::uint32_t>(plan.inherited_time_series.size()),
+                });
+        }
+        if (!plan.service_bindings.empty()) {
+            std::construct_at(
+                plan.fixed.service_binding_metadata.objects<details::ServiceBindingMetadata>(storage).data(),
+                details::ServiceBindingMetadata{
+                    .runtime_bindings_offset = *plan.runtime.service_bindings_offset,
+                    .provider_nodes_offset = offset(plan.fixed.service_binding_provider_nodes),
+                    .binding_count = static_cast<std::uint32_t>(plan.service_bindings.size()),
                 });
         }
 
@@ -1776,6 +1819,18 @@ class CompiledGraphBuilder {
         }
     }
 
+    static void construct_service_bindings(const CompilationPlan &plan, std::byte *storage) {
+        auto nodes = plan.fixed.service_binding_provider_nodes.objects<std::uint32_t>(storage);
+        for (auto index = std::size_t{}; index < plan.service_bindings.size(); ++index) {
+            const auto &binding = plan.service_bindings[index];
+            const auto node = binding.provider.has_output()
+                                  ? plan.compiled_node_index(details::wired_output_node_index(
+                                        binding.provider.graph(), binding.provider))
+                                  : WiredOutput::npos;
+            std::construct_at(nodes.data() + index, static_cast<std::uint32_t>(node));
+        }
+    }
+
     static std::byte *construct_item_subscribers(const CompilationPlan &plan,
                                                  std::span<const ItemSubscriptionPlan> items, std::byte *destination) {
         for (const auto &item : items) {
@@ -1945,6 +2000,26 @@ std::span<const details::InheritedTimeSeriesBinding> CompiledGraph::inherited_ti
 
 std::size_t CompiledGraph::inherited_time_series_count() const noexcept {
     return inherited_time_series().size();
+}
+
+const details::ServiceBindingMetadata *CompiledGraph::service_binding_metadata() const noexcept {
+    if (!has_service_bindings()) {
+        return nullptr;
+    }
+    return storage_header().service_binding_metadata(node_count(), has_constants(), has_inherited_time_series());
+}
+
+std::span<const std::uint32_t> CompiledGraph::service_binding_provider_nodes() const noexcept {
+    const auto *metadata = service_binding_metadata();
+    if (metadata == nullptr) {
+        return {};
+    }
+    return stored_objects<std::uint32_t>(fixed_storage_, metadata->provider_nodes_offset, metadata->binding_count);
+}
+
+std::size_t CompiledGraph::service_binding_count() const noexcept {
+    const auto *metadata = service_binding_metadata();
+    return metadata == nullptr ? 0 : metadata->binding_count;
 }
 
 std::span<const Subscriber> CompiledGraph::inherited_time_series_subscribers(

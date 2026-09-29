@@ -41,6 +41,8 @@ class ScratchPad {
 
     ScratchPad(const ScratchPad &) = delete;
     ScratchPad &operator=(const ScratchPad &) = delete;
+    ScratchPad(ScratchPad &&other) noexcept;
+    ScratchPad &operator=(ScratchPad &&) = delete;
 
     [[nodiscard]] void *allocate(std::size_t size, std::size_t alignment);
 

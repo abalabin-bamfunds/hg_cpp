@@ -411,7 +411,13 @@ std::optional<WiringPoint> DefaultSwitchWiring::wire() const {
     auto node_template = make_switch_node(node, outer_signature);
     auto &outer = WiringContext::current().wiring();
     const auto &owned = outer.own_node_template(std::move(node_template));
-    return owned(std::span<const WiringArgument>{outer_arguments});
+    const auto next_node_index = outer.nodes().size();
+    auto result = owned(std::span<const WiringArgument>{outer_arguments});
+    const auto node_index = result ? wired_output_node_index(outer, *result) : next_node_index;
+    for (const auto &branch : node.cases) {
+        outer.register_nested_service_consumers(*branch.branch.wiring, node_index);
+    }
+    return result;
 }
 
 } // namespace bg::details

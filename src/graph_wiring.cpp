@@ -499,6 +499,61 @@ void GraphWiring::provide_inherited_time_series(const details::InheritedTimeSeri
     found->provider = reference;
 }
 
+std::size_t GraphWiring::require_service_binding(const void *identity) {
+    const auto existing =
+        std::ranges::find(service_binding_requirements_, identity, &ServiceBindingRequirement::identity);
+    if (existing != service_binding_requirements_.end()) {
+        return static_cast<std::size_t>(existing - service_binding_requirements_.begin());
+    }
+
+    const auto parent_slot = parent_ == nullptr ? WiredOutput::npos : parent_->require_service_binding(identity);
+    service_binding_requirements_.push_back({identity, parent_slot, {}, {}});
+    return service_binding_requirements_.size() - 1;
+}
+
+void GraphWiring::provide_service_binding(const void *identity, WiringPoint provider) {
+    if (parent_ != nullptr) {
+        throw WiringError{"a service binding can only be provided on the root GraphWiring"};
+    }
+    if (!provider.has_output() || &provider.graph() != this) {
+        throw WiringError{"a service binding provider must belong to the root GraphWiring"};
+    }
+
+    const auto requirement =
+        std::ranges::find(service_binding_requirements_, identity, &ServiceBindingRequirement::identity);
+    if (requirement == service_binding_requirements_.end()) {
+        throw WiringError{"the service binding requirement was not found"};
+    }
+    if (requirement->provider.has_output()) {
+        throw WiringError{"the service binding requirement already has a provider"};
+    }
+
+    requirement->provider = provider;
+}
+
+void GraphWiring::register_nested_service_consumers(const GraphWiring &nested, std::size_t node_index) {
+    if (nested.parent_ != this) {
+        throw WiringError{"nested service consumers must belong to a child GraphWiring"};
+    }
+    if (node_index >= nodes_.size()) {
+        throw WiringError{"a nested service consumer is not a node in this GraphWiring"};
+    }
+
+    for (const auto &nested_requirement : nested.service_binding_requirements_) {
+        if (nested_requirement.parent_slot >= service_binding_requirements_.size()) {
+            throw WiringError{"a nested service requirement has an invalid parent slot"};
+        }
+
+        auto &requirement = service_binding_requirements_[nested_requirement.parent_slot];
+        if (requirement.identity != nested_requirement.identity) {
+            throw WiringError{"a nested service requirement does not match its parent slot"};
+        }
+        if (!std::ranges::contains(requirement.consumers, node_index)) {
+            requirement.consumers.push_back(node_index);
+        }
+    }
+}
+
 } // namespace bg
 
 namespace bg::details {

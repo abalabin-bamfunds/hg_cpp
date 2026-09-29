@@ -6,6 +6,7 @@
 #include <bg/time_series/ref/ref_storage.hpp>
 
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <memory_resource>
 #include <optional>
@@ -22,6 +23,7 @@ struct CompiledNestedGraph {
     std::shared_ptr<const CompiledGraph> graph;
     std::pmr::vector<std::size_t> input_nodes;
     std::pmr::vector<std::size_t> constant_input_nodes;
+    std::pmr::vector<std::uint32_t> service_binding_slots;
     std::optional<std::size_t> output_node;
 };
 

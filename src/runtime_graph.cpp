@@ -5,6 +5,7 @@
 #include <bg/details/evaluation_scratch.hpp>
 #include <bg/graph/compiled_node.hpp>
 #include <bg/graph/details/inherited_time_series_section.hpp>
+#include <bg/graph/details/service_binding_section.hpp>
 #include <bg/graph/dynamic_subscribers.hpp>
 #include <bg/scalar/details/allocation_context.hpp>
 #include <bg/scalar/runtime_type.hpp>
@@ -164,6 +165,24 @@ class RuntimeGraph::ScratchUse {
   private:
     RuntimeGraph *graph_;
     details::EvaluationScratch *previous_;
+};
+
+class ServiceBindingContext {
+  public:
+    ServiceBindingContext(EvaluationContext &parent, std::span<void *const> bindings)
+        : section_{bindings} {
+        if (!bindings.empty()) {
+            context_.emplace(parent.child(section_));
+        }
+        parent_ = &parent;
+    }
+
+    EvaluationContext &context() noexcept { return context_ ? *context_ : *parent_; }
+
+  private:
+    EvaluationContext *parent_{};
+    details::ServiceBindingSection section_;
+    std::optional<EvaluationContext> context_;
 };
 
 struct RuntimeGraph::PendingInputNotifications {
@@ -386,6 +405,14 @@ void RuntimeGraph::initialize_inherited_time_series(std::size_t index, Reference
         notification->notify(context, nullptr, &stored_reference, OutputChange::revalidation);
     }
     notify_subscribers(compiled_graph_->inherited_time_series_subscribers(binding), OutputChange::revalidation);
+}
+
+std::span<void *> RuntimeGraph::service_bindings() noexcept {
+    const auto *metadata = compiled_graph_->service_binding_metadata();
+    if (metadata == nullptr) {
+        return {};
+    }
+    return {reinterpret_cast<void **>(storage_ + metadata->runtime_bindings_offset), metadata->binding_count};
 }
 
 RuntimeGraph::~RuntimeGraph() {
@@ -764,7 +791,7 @@ void RuntimeGraph::start(EvaluationTime evaluation_time) {
     start(context);
 }
 
-void RuntimeGraph::start(EvaluationContext &context) {
+void RuntimeGraph::start(EvaluationContext &parent_context) {
     if (started_ || stopped_) {
         throw std::logic_error{"a runtime graph can only be started once"};
     }
@@ -773,13 +800,39 @@ void RuntimeGraph::start(EvaluationContext &context) {
     const auto *inherited_time_series_section =
         inherited_time_series.empty() ? nullptr
                                       : static_cast<const details::InheritedTimeSeriesSection *>(
-                                            context.find_section(&details::inherited_time_series_section_type));
+                                            parent_context.find_section(&details::inherited_time_series_section_type));
     const auto inherited_references = inherited_time_series_section == nullptr
                                           ? std::span<const Reference>{}
                                           : inherited_time_series_section->references;
     if (inherited_references.size() != inherited_time_series.size()) {
         throw std::invalid_argument{"the runtime graph received the wrong number of inherited time series"};
     }
+
+    auto bindings = service_bindings();
+    const auto provider_nodes = compiled_graph_->service_binding_provider_nodes();
+    const auto *binding_section = bindings.empty()
+                                      ? nullptr
+                                      : static_cast<const details::ServiceBindingSection *>(
+                                            parent_context.find_section(&details::service_binding_section_type));
+    const auto inherited_bindings = binding_section == nullptr ? std::span<void *const>{} : binding_section->bindings;
+    if (!bindings.empty() && provider_nodes.front() == WiredOutput::npos) {
+        if (inherited_bindings.size() != bindings.size()) {
+            throw std::invalid_argument{"the runtime graph received the wrong number of service bindings"};
+        }
+        std::ranges::copy(inherited_bindings, bindings.begin());
+    } else if (!inherited_bindings.empty()) {
+        throw std::invalid_argument{"a root runtime graph cannot receive service bindings"};
+    } else {
+        for (auto index = std::size_t{}; index < bindings.size(); ++index) {
+            if (provider_nodes[index] == WiredOutput::npos) {
+                throw std::invalid_argument{"a runtime graph mixes provided and inherited service bindings"};
+            }
+            bindings[index] = node(provider_nodes[index]).state();
+        }
+    }
+
+    auto binding_context = ServiceBindingContext{parent_context, bindings};
+    auto &context = binding_context.context();
 
     started_ = true;
     const auto scratch_use = ScratchUse{*this, *context.scratch_.evaluation_scratch_};
@@ -851,11 +904,13 @@ void RuntimeGraph::stop() noexcept {
     stop(context);
 }
 
-void RuntimeGraph::stop(EvaluationContext &context) noexcept {
+void RuntimeGraph::stop(EvaluationContext &parent_context) noexcept {
     if (!started_ || stopped_) {
         return;
     }
 
+    auto binding_context = ServiceBindingContext{parent_context, service_bindings()};
+    auto &context = binding_context.context();
     stopped_ = true;
     const auto scratch_use = ScratchUse{*this, *context.scratch_.evaluation_scratch_};
 
@@ -899,11 +954,13 @@ void RuntimeGraph::evaluate(EvaluationTime evaluation_time) {
     }
 }
 
-bool RuntimeGraph::evaluate(EvaluationContext &context) {
+bool RuntimeGraph::evaluate(EvaluationContext &parent_context) {
     if (!started_ || stopped_) {
         throw std::logic_error{"a runtime graph must be running to evaluate"};
     }
 
+    auto binding_context = ServiceBindingContext{parent_context, service_bindings()};
+    auto &context = binding_context.context();
     const auto evaluation_time = context.evaluation_time();
     const auto scratch_use = ScratchUse{*this, *context.scratch_.evaluation_scratch_};
     const auto resuming = paused_node_index_ != std::numeric_limits<std::uint32_t>::max();

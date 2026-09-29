@@ -62,6 +62,13 @@ class GraphWiring {
         WiringPoint ordered_output;
     };
 
+    struct ServiceBindingRequirement {
+        const void *identity;
+        std::size_t parent_slot;
+        WiringPoint provider;
+        std::vector<std::size_t> consumers;
+    };
+
     GraphWiring();
     explicit GraphWiring(allocator memory);
     explicit GraphWiring(GraphWiring &parent);
@@ -83,6 +90,10 @@ class GraphWiring {
 
     std::span<const OrderingConstraint> ordering_constraints() const noexcept { return ordering_constraints_; }
 
+    std::span<const ServiceBindingRequirement> service_binding_requirements() const noexcept {
+        return service_binding_requirements_;
+    }
+
     [[nodiscard]] WiringPoint require_inherited_time_series(details::InheritedTimeSeriesIdentity identity,
                                                             util::symbol name, const TimeSeriesType &type);
     void provide_inherited_time_series(const details::InheritedTimeSeriesIdentity &identity, const TimeSeriesType &type,
@@ -90,6 +101,7 @@ class GraphWiring {
     [[nodiscard]] WiredInput resolve_inherited_input(std::size_t requirement) const;
     void order_after_consumers(WiringPoint consumed, WiringPoint ordered_output);
     bool input_consumes(WiredInput input, WiringPoint point) const noexcept;
+    void register_nested_service_consumers(const GraphWiring &nested, std::size_t node_index);
 
     [[nodiscard]] const NodeTemplate &own_node_template(std::unique_ptr<NodeTemplate> node_template);
 
@@ -143,6 +155,8 @@ class GraphWiring {
     [[nodiscard]] std::optional<WiringPoint> require_service(const Service &service, ResolvedSignature signature,
                                                              const TypeMap &type_map,
                                                              std::span<const WiringArgument> arguments);
+    std::size_t require_service_binding(const void *identity);
+    void provide_service_binding(const void *identity, WiringPoint provider);
     details::ServicePlan &root_service_plan();
 
     [[nodiscard]] const WiringPath &make_path(util::symbol name, util::symbol label);
@@ -190,6 +204,7 @@ class GraphWiring {
     };
     std::vector<InheritedTimeSeriesRequirement> inherited_requirements_;
     std::vector<OrderingConstraint> ordering_constraints_;
+    std::vector<ServiceBindingRequirement> service_binding_requirements_;
     std::vector<ContextBinding> context_bindings_;
     std::vector<InheritedRecord> inherited_records_;
     std::pmr::deque<WiringPath> paths_;

@@ -227,6 +227,8 @@ class SwitchNodeDefinition {
                                 .graph = std::move(graph),
                                 .input_nodes = std::pmr::vector<std::size_t>{&memory.memory_resource()},
                                 .constant_input_nodes = std::pmr::vector<std::size_t>{&memory.memory_resource()},
+                                .service_binding_slots =
+                                    std::pmr::vector<std::uint32_t>{&memory.memory_resource()},
                                 .output_node = item.branch.output_node ? std::optional{node_indices[output_position]}
                                                                        : std::nullopt,
                             },
@@ -247,6 +249,10 @@ class SwitchNodeDefinition {
                 compiled_case.branch.inputs.push_back(
                     {static_cast<std::uint32_t>(item.branch.inputs[input_index].parameter_index),
                      static_cast<std::uint32_t>(input_index)});
+            }
+            for (const auto &requirement : item.branch.wiring->service_binding_requirements()) {
+                compiled_case.branch.nested.service_binding_slots.push_back(
+                    static_cast<std::uint32_t>(requirement.parent_slot));
             }
             if (item.default_case) {
                 result.default_case = static_cast<std::uint32_t>(case_index);
@@ -392,7 +398,8 @@ class SwitchNodeDefinition {
             .callbacks = &owner_callbacks,
         };
         const auto inherited_start = branch.inherited_parameter_start.value_or(invocation.parameter_count());
-        auto startup_context = NestedGraphStartupContext{invocation, inherited_start, inherited_count};
+        auto startup_context =
+            NestedGraphStartupContext{invocation, branch.nested, inherited_start, inherited_count};
         state.graph.start(branch.nested, startup_context.context(),
                           std::span<NestedGraphInput>{inputs, branch.inputs.size()}, {}, owner);
         state.active_selection = selection;

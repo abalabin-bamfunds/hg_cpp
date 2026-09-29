@@ -21,6 +21,11 @@ class EvaluationContext {
   public:
     ~EvaluationContext();
 
+    EvaluationContext(const EvaluationContext &) = delete;
+    EvaluationContext &operator=(const EvaluationContext &) = delete;
+    EvaluationContext(EvaluationContext &&) noexcept = default;
+    EvaluationContext &operator=(EvaluationContext &&) noexcept = default;
+
     const EvaluationTime &evaluation_time() const noexcept { return evaluation_time_; }
 
     const WallClock &wall_clock() const noexcept { return *wall_clock_; }

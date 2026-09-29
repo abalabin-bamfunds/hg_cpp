@@ -33,8 +33,8 @@ util::thread_local_pointer &active_mesh_selection_wiring() {
 class MeshSelectionWiringScope {
   public:
     MeshSelectionWiringScope(std::string_view name, const TimeSeriesType *item_type)
-        : previous_{static_cast<MeshSelectionWiringScope *>(active_mesh_selection_wiring().get())},
-          name_{name}, item_type_{item_type} {
+        : previous_{static_cast<MeshSelectionWiringScope *>(active_mesh_selection_wiring().get())}, name_{name},
+          item_type_{item_type} {
         if (!name_.empty()) {
             for (auto *scope = previous_; scope != nullptr; scope = scope->previous_) {
                 if (scope->name_ == name_) {
@@ -69,10 +69,10 @@ class MeshSelectionWiringScope {
 Signature default_mesh_signature(bool output) {
     auto parameters = std::vector<Parameter>{
         {util::symbol{"function"}, &GraphArgument::type()},
-        {util::symbol{"args"}, &TSB<MESH_POSITIONAL>::type(), active, required, false,
-         VariadicMode::positional, variadic_wiring_operations<TSB<MESH_POSITIONAL>>()},
-        {util::symbol{"kwargs"}, &TSB<MESH_NAMED>::type(), active, required, false,
-         VariadicMode::named, variadic_wiring_operations<TSB<MESH_NAMED>>()},
+        {util::symbol{"args"}, &TSB<MESH_POSITIONAL>::type(), active, required, false, VariadicMode::positional,
+         variadic_wiring_operations<TSB<MESH_POSITIONAL>>()},
+        {util::symbol{"kwargs"}, &TSB<MESH_NAMED>::type(), active, required, false, VariadicMode::named,
+         variadic_wiring_operations<TSB<MESH_NAMED>>()},
     };
     if (!output) {
         return {util::symbol{"default_mesh"}, std::move(parameters)};
@@ -80,8 +80,7 @@ Signature default_mesh_signature(bool output) {
 
     const auto &result = TimeSeriesVariableInstance<TS_T>::get();
     auto resolvers = std::vector<VariableResolver>{VariableResolver{
-        &result,
-        [](const TypeMap &, const WiringArguments &arguments) -> TypeMapValue {
+        &result, [](const TypeMap &, const WiringArguments &arguments) -> TypeMapValue {
             const auto *function = arguments.graph(0);
             if (function == nullptr) {
                 return static_cast<const Type *>(nullptr);
@@ -152,16 +151,15 @@ WiringPoint mesh_dependency_selection(WiringArgument key, std::string_view name)
 }
 
 GraphArgument build_mesh_graph_argument(const WiringTemplate &function, ResolvedMapCall call,
-                                        bool preserve_named_arguments, std::string name,
-                                        const TypeMap &type_map) {
+                                        bool preserve_named_arguments, std::string name, const TypeMap &type_map) {
     const auto branch = ScopedWiringTemplate{
         function,
         [name = std::move(name)](const ResolvedSignature &signature) {
             return MeshSelectionWiringScope{name, signature.output};
         },
     };
-    auto built = build_map_graph_argument_wiring(
-        util::symbol{"mesh"}, branch, std::move(call), preserve_named_arguments, type_map);
+    auto built = build_map_graph_argument_wiring(util::symbol{"mesh"}, branch, std::move(call),
+                                                 preserve_named_arguments, type_map);
 
     auto structure = built.structure;
     auto default_wiring = std::make_shared<DefaultMeshWiring>(DefaultMeshWiring{
@@ -190,19 +188,23 @@ std::optional<WiringPoint> DefaultMeshWiring::wire() const {
     if (dictionary_key_set_parameter) {
         auto &key_set = arguments[*dictionary_key_set_parameter];
         const auto materialized = materialize_wiring_point(key_set.time_series(), key_set.time_series().type());
-        const auto &key_set_type = static_cast<const TimeSeriesType &>(
-            *outer_signature.parameters[*dictionary_key_set_parameter].type);
+        const auto &key_set_type =
+            static_cast<const TimeSeriesType &>(*outer_signature.parameters[*dictionary_key_set_parameter].type);
         key_set = WiringArgument{wiring_point_for_item(materialized, key_set_item_id, key_set_type)};
     }
 
-    return owned(std::span<const WiringArgument>{arguments});
+    const auto next_node_index = outer.nodes().size();
+    auto result = owned(std::span<const WiringArgument>{arguments});
+    const auto node_index = result ? wired_output_node_index(outer, *result) : next_node_index;
+    outer.register_nested_service_consumers(*graph.wiring, node_index);
+    return result;
 }
 
 } // namespace bg::details
 
 namespace bg {
 
-operator_<auto(GRAPH_T, TSB<details::MESH_POSITIONAL>, TSB<details::MESH_NAMED>) -> TS_T,
+operator_<auto(GRAPH_T, TSB<details::MESH_POSITIONAL>, TSB<details::MESH_NAMED>)->TS_T,
           details::mesh_operator_implementation>
     mesh{"mesh", {"graph", "args", "kwargs"}};
 
