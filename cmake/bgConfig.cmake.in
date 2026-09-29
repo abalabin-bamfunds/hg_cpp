@@ -4,6 +4,36 @@ include(CMakeFindDependencyMacro)
 find_dependency(ddvisitor CONFIG REQUIRED)
 find_dependency(Threads REQUIRED)
 
+set(bg_python_FOUND FALSE)
+if("python" IN_LIST bg_FIND_COMPONENTS AND @BG_BUILD_PYTHON@)
+    find_dependency(Python 3.10 COMPONENTS Interpreter Development.Module)
+    execute_process(
+        COMMAND "${Python_EXECUTABLE}" -m nanobind --cmake_dir
+        OUTPUT_VARIABLE nanobind_cmake_dir
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        RESULT_VARIABLE nanobind_cmake_dir_result
+    )
+    if(NOT nanobind_cmake_dir_result EQUAL 0)
+        message(FATAL_ERROR "The bg::python target requires nanobind in the selected Python environment")
+    endif()
+    list(PREPEND CMAKE_PREFIX_PATH "${nanobind_cmake_dir}")
+    find_dependency(nanobind CONFIG)
+    execute_process(
+        COMMAND "${Python_EXECUTABLE}" -m nanobind --include_dir
+        OUTPUT_VARIABLE nanobind_include_dir
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        RESULT_VARIABLE nanobind_include_dir_result
+    )
+    if(NOT nanobind_include_dir_result EQUAL 0)
+        message(FATAL_ERROR "The bg::python target requires nanobind in the selected Python environment")
+    endif()
+    set(bg_python_FOUND TRUE)
+endif()
+
 include("${CMAKE_CURRENT_LIST_DIR}/bgTargets.cmake")
+
+if(bg_python_FOUND)
+    set_property(TARGET bg::python APPEND PROPERTY INTERFACE_INCLUDE_DIRECTORIES "${nanobind_include_dir}")
+endif()
 
 check_required_components(bg)

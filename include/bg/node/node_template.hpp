@@ -39,6 +39,7 @@ class NodeTemplate : public WiringTemplate {
     // The returned value remains valid after this template object is destroyed.
     virtual NodeTemplateIdentity definition_identity() const { return definition_identity_; }
     virtual bool deduplicate_wiring() const noexcept { return true; }
+    virtual bool schedule_on_start() const noexcept { return false; }
     virtual EvaluationFunction evaluation_function(const ResolvedSignature &signature) const noexcept = 0;
     virtual NodeFunction start_function(const ResolvedSignature &) const noexcept { return nullptr; }
     virtual NodeFunction stop_function(const ResolvedSignature &) const noexcept { return nullptr; }

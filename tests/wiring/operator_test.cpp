@@ -42,6 +42,32 @@ TEST_CASE("an operator selects the least generic applicable overload",
     CHECK(bg::testing::test_graph(double_graph, std::array{1.0, 2.0}, std::array{10.0, 20.0}).equals({10.0, 20.0}));
 }
 
+TEST_CASE("an operator prefers the overload requiring the stronger guarantee",
+          "[feature:operator][feature:wiring][series:value][guarantee:ordinary][guarantee:final]") {
+    auto selected = std::string{};
+    auto operation = bg::operator_<auto(bg::TS_T)->bg::TS_T>{"guarantee", {"value"}};
+    operation.overload(bg::graph("name"_n = "ordinary", [&](bg::wp<bg::TS<bg::i64>> value) {
+        selected = "ordinary";
+        return value;
+    }));
+    operation.overload(bg::graph("name"_n = "final", [&](bg::wp<bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>> value) {
+        selected = "final";
+        return value;
+    }));
+
+    const auto ordinary_source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
+    const auto final_source = bg::node([](bg::Out<bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>>) {});
+
+    bg::testing::test_wiring([&] {
+        operation(final_source());
+        CHECK(selected == "final");
+    });
+    bg::testing::test_wiring([&] {
+        operation(ordinary_source());
+        CHECK(selected == "ordinary");
+    });
+}
+
 TEST_CASE("registering an overload clears cached selections", "[feature:operator][feature:wiring]") {
     auto selected = std::string{};
     auto operation = bg::operator_<auto(bg::TS_T)->bg::TS_T>{"identity", {"value"}};

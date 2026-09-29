@@ -157,6 +157,15 @@ class RuntimeSignatureNodeTemplate final
         return true;
     }
 
+    bool schedule_on_start() const noexcept override {
+        if constexpr (requires { definition_.schedule_on_start(); }) {
+            return definition_.schedule_on_start();
+        } else if constexpr (requires { Definition::schedule_on_start; }) {
+            return static_cast<bool>(Definition::schedule_on_start);
+        }
+        return false;
+    }
+
     RequirementResult requirement(const WiringArguments &arguments) const override {
         if constexpr (requires { requirement_result(definition_.requirement(arguments)); }) {
             return requirement_result(definition_.requirement(arguments));

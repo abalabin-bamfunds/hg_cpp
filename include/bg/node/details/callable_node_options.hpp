@@ -24,6 +24,10 @@ struct CallableWiringDeduplication {
     bool enabled;
 };
 
+struct CallableStartScheduling {
+    bool enabled;
+};
+
 template <typename T> struct is_callable_requirement : std::false_type {};
 
 template <typename Function> struct is_callable_requirement<CallableRequirement<Function>> : std::true_type {};
@@ -43,13 +47,17 @@ template <typename T>
 inline constexpr bool is_callable_wiring_deduplication_v =
     std::same_as<std::remove_cvref_t<T>, CallableWiringDeduplication>;
 
+template <typename T>
+inline constexpr bool is_callable_start_scheduling_v = std::same_as<std::remove_cvref_t<T>, CallableStartScheduling>;
+
 template <typename... Options>
 concept callable_node_options =
     ((is_callable_requirement_v<Options> || is_callable_resolver_v<Options> ||
-      is_callable_wiring_deduplication_v<Options>) &&
+      is_callable_wiring_deduplication_v<Options> || is_callable_start_scheduling_v<Options>) &&
      ...) &&
     ((0U + ... + static_cast<unsigned>(is_callable_requirement_v<Options>)) <= 1U) &&
     ((0U + ... + static_cast<unsigned>(is_callable_wiring_deduplication_v<Options>)) <= 1U) &&
+    ((0U + ... + static_cast<unsigned>(is_callable_start_scheduling_v<Options>)) <= 1U) &&
     (std::copy_constructible<Options> && ...);
 
 struct CallableEvaluationName {
@@ -68,6 +76,10 @@ struct CallableWiringDeduplicationName {
     constexpr auto operator=(bool enabled) const noexcept { return CallableWiringDeduplication{enabled}; }
 };
 
+struct CallableStartSchedulingName {
+    constexpr auto operator=(bool enabled) const noexcept { return CallableStartScheduling{enabled}; }
+};
+
 template <typename Declaration> struct CallableResolverName {
     template <typename Function> constexpr auto operator=(Function &&function) const {
         return CallableResolver<Declaration, std::decay_t<Function>>{std::forward<Function>(function)};
@@ -81,6 +93,7 @@ namespace bg {
 inline constexpr auto eval = details::CallableEvaluationName{};
 inline constexpr auto require = details::CallableRequirementName{};
 inline constexpr auto deduplicate_wiring = details::CallableWiringDeduplicationName{};
+inline constexpr auto schedule_on_start = details::CallableStartSchedulingName{};
 
 template <typename Declaration> inline constexpr auto resolve = details::CallableResolverName<Declaration>{};
 

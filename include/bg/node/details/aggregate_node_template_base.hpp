@@ -25,6 +25,7 @@ struct AggregateNodeDescriptor {
     const Signature *signature;
     EvaluationFunction evaluation_function;
     NodeFunction start_function;
+    bool schedule_on_start;
     NodeFunction stop_function;
     InvalidationBehavior invalidation_behavior;
     std::span<const AggregateRuntimeTypeUse> parameter_runtime_type_uses;
@@ -46,6 +47,7 @@ class AggregateNodeTemplateBase : public NodeTemplate {
 
     const Signature &signature() const final;
     bool deduplicate_wiring() const noexcept final;
+    bool schedule_on_start() const noexcept final;
     RequirementResult requirement(const WiringArguments &arguments) const final;
     EvaluationFunction evaluation_function(const ResolvedSignature &) const noexcept final;
     NodeFunction start_function(const ResolvedSignature &) const noexcept final;

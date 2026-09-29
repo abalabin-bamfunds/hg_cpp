@@ -43,16 +43,23 @@ After installation, CMake consumers can use
 
 ## Python bindings
 
-To build the optional Python extension, provide `pybind11` as a CMake package
-and configure with:
+The optional Python package uses nanobind. Install nanobind and pytest in the
+Python environment selected by CMake, then configure and build with:
 
 ```sh
-cmake --preset dev -DBG_BUILD_PYTHON=ON
+python -m pip install nanobind pytest
+cmake --preset dev -DBG_BUILD_PYTHON=ON -DBUILD_TESTING=ON
 cmake --build --preset dev
+ctest --test-dir build/dev --output-on-failure -R '^python_tests$'
 ```
 
-The extension currently exposes the project version. Node and graph bindings
-are not implemented.
+This builds the `bg::python` CMake target and the Python package in
+`build/dev/bindings/python`. Installed CMake consumers can link `bg::python`;
+request it with `find_package(bg COMPONENTS python REQUIRED)`. Consumers that
+use only `bg::bg` do not require Python or nanobind. See [Python
+integration](docs/python.md) for the implemented API and package details. The
+`test` optional dependency in `pyproject.toml` installs pytest. To build a
+wheel, install `scikit-build-core` and run `python -m pip wheel .`.
 
 ## Layout
 

@@ -1,0 +1,17 @@
+[build-system]
+requires = ["scikit-build-core>=0.10", "nanobind>=3.1"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "bg-graph"
+version = "0.1.0"
+description = "Python bindings for the bg graph engine"
+requires-python = ">=3.10"
+
+[project.optional-dependencies]
+test = ["pytest>=8"]
+
+[tool.scikit-build]
+cmake.define.BG_BUILD_PYTHON = "ON"
+cmake.define.BUILD_TESTING = "OFF"
+wheel.packages = ["bindings/python/python/bg"]

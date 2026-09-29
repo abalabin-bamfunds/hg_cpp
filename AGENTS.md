@@ -63,6 +63,10 @@ series types and their change information.
 [docs/tsd-layout.md](docs/tsd-layout.md) defines dictionary storage, shared
 representations, and tabular buffers.
 
+[docs/python.md](docs/python.md) defines Python graph authoring, Python node
+definitions, scalar integration, runtime access, and the Python extension
+boundary.
+
 ## Language
 
 Use clear English and precise terminology.

@@ -348,6 +348,14 @@ template <typename Definition> [[nodiscard]] consteval bool aggregate_uses_timed
     return false;
 }
 
+template <typename Definition> [[nodiscard]] consteval bool aggregate_schedules_on_start() {
+    if constexpr (requires { Definition::schedule_on_start; }) {
+        return Definition::schedule_on_start;
+    }
+
+    return false;
+}
+
 template <typename Definition, std::size_t... Index>
 consteval bool input_fields_use_reflected_names(std::index_sequence<Index...>) {
     return ((!input_field<std::remove_cv_t<util::aggregate_member_type<Index, Definition>>>::value ||

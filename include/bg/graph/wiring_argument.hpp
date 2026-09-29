@@ -65,6 +65,8 @@ class WiringArgument {
         template <scalar_source Source>
         explicit ScalarArgument(Source &&source) : owned{std::in_place, std::forward<Source>(source)} {}
 
+        explicit ScalarArgument(ScalarValue<> source) : owned{std::move(source)} {}
+
         ScalarArgument(const ScalarType &scalar_type, const ScalarRuntimeType &scalar_runtime_type,
                        const void *scalar_data = nullptr, const details::ScalarData *scalar_view = nullptr)
             : type{&scalar_type}, runtime_type{&scalar_runtime_type}, data{scalar_data}, view{scalar_view} {}
@@ -91,6 +93,12 @@ class WiringArgument {
     WiringArgument &operator=(WiringArgument &&) noexcept = default;
 
     WiringArgument(WiringPoint point) : value_(TimeSeriesArgument{point}) {}
+
+    WiringArgument(ScalarValue<> value) : value_{ScalarArgument{std::move(value)}} {}
+
+    static WiringArgument absent_scalar(const ScalarType &type, const ScalarRuntimeType &runtime_type) {
+        return WiringArgument{ScalarArgument{type, runtime_type}};
+    }
 
     WiringArgument(GraphArgument graph) : value_(std::move(graph)) {}
 

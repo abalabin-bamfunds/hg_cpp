@@ -38,3 +38,16 @@ TEST_CASE("a collection guarantee deduplicates contained value outputs",
 
     CHECK(actual.equals({1, std::nullopt, 2}));
 }
+
+TEST_CASE("symbol time series can store default and interned values",
+          "[feature:test-graph][series:value][scalar:symbol][shape:single-node]") {
+    const auto pass_through = bg::node([](bg::In<bg::TS<bg::symbol>> input, bg::Out<bg::TS<bg::symbol>> output) {
+        output.set(*input);
+    });
+    const auto graph = [&](bg::wp<bg::TS<bg::symbol>> input) { return pass_through(input); };
+    const auto input = std::array{bg::symbol{}, bg::symbol{"price"}, bg::symbol{""}};
+
+    const auto actual = bg::testing::test_graph(graph, input);
+
+    CHECK(actual.equals({bg::symbol{}, bg::symbol{"price"}, bg::symbol{""}}));
+}

@@ -98,6 +98,49 @@ struct start_only_sink_definition {
     inline static float last_value{};
 };
 
+struct initially_scheduled_source_definition {
+    static constexpr bool schedule_on_start = true;
+
+    bg::Out<bg::TS<float>> output;
+
+    void evaluate() const {
+        ++evaluation_count;
+        output.set(7.0F);
+    }
+
+    inline static int evaluation_count{};
+};
+
+struct initially_scheduled_scalar_definition {
+    static constexpr bool schedule_on_start = true;
+
+    int value;
+    bg::Out<bg::TS<float>> output;
+
+    void evaluate() const {
+        ++evaluation_count;
+        output.set(static_cast<float>(value));
+    }
+
+    inline static int evaluation_count{};
+};
+
+struct inert_scalar_definition {
+    int value;
+
+    void evaluate() const { ++evaluation_count; }
+
+    inline static int evaluation_count{};
+};
+
+struct initial_value_sink_definition {
+    bg::In<bg::TS<float>> input;
+
+    void evaluate() const { last_value = *input; }
+
+    inline static float last_value{};
+};
+
 } // namespace
 
 TEST_CASE("a scheduled node can omit evaluation",
@@ -126,6 +169,64 @@ TEST_CASE("a scheduled node can omit evaluation",
     bg::testing::RuntimeGraphAccess::schedule(runtime, 0);
     runtime.evaluate(time(2));
     CHECK(start_only_sink_definition::evaluation_count == 1);
+}
+
+TEST_CASE("a node can request evaluation in the first cycle",
+          "[evaluation][scheduling][feature:scheduling][shape:source][series:value][scalar:floating-point]") {
+    const auto source = bg::node<initially_scheduled_source_definition>();
+    const auto scalar_source = bg::node<initially_scheduled_scalar_definition>();
+    auto callable_evaluation_count = 0;
+    const auto callable_source = bg::node(
+        bg::eval =
+            [&](bg::Out<bg::TS<float>> output) {
+                ++callable_evaluation_count;
+                output.set(13.0F);
+            },
+        bg::schedule_on_start = true);
+    const auto sink = bg::node<initial_value_sink_definition>();
+    auto wiring = bg::GraphWiring{};
+    {
+        auto context = bg::WiringContext{wiring};
+        sink(source());
+        sink(scalar_source(11));
+        sink(callable_source());
+    }
+
+    const auto compiled = bg::CompiledGraph{wiring};
+    auto runtime = bg::RuntimeGraph{compiled};
+    initially_scheduled_source_definition::evaluation_count = 0;
+    initially_scheduled_scalar_definition::evaluation_count = 0;
+    initial_value_sink_definition::last_value = 0.0F;
+
+    runtime.start(time(1));
+    runtime.evaluate(time(1));
+
+    CHECK(initially_scheduled_source_definition::evaluation_count == 1);
+    CHECK(initially_scheduled_scalar_definition::evaluation_count == 1);
+    CHECK(callable_evaluation_count == 1);
+    CHECK(initial_value_sink_definition::last_value == 13.0F);
+}
+
+TEST_CASE("a scalar-only node is inert unless it requests initial evaluation",
+          "[evaluation][scheduling][feature:scheduling][scalar:floating-point]") {
+    const auto inert = bg::node<inert_scalar_definition>();
+    auto wiring = bg::GraphWiring{};
+    {
+        auto context = bg::WiringContext{wiring};
+        inert(3);
+    }
+
+    const auto compiled = bg::CompiledGraph{wiring};
+    auto runtime = bg::RuntimeGraph{compiled};
+    inert_scalar_definition::evaluation_count = 0;
+
+    runtime.start(time(1));
+    runtime.evaluate(time(1));
+    CHECK(inert_scalar_definition::evaluation_count == 0);
+
+    bg::testing::RuntimeGraphAccess::schedule(runtime, 0);
+    runtime.evaluate(time(2));
+    CHECK(inert_scalar_definition::evaluation_count == 1);
 }
 
 namespace {

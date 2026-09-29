@@ -98,6 +98,21 @@ TEST_CASE("canonical scalar sources retain built-ins and normalize integers to i
     STATIC_CHECK_FALSE(bg::scalar_source<std::uint8_t>);
 }
 
+TEST_CASE("a default symbol is a safe null value distinct from the empty symbol",
+          "[feature:scalar-api][scalar:symbol][transition:default-value]") {
+    const auto null = bg::symbol{};
+    const auto empty = bg::symbol{""};
+    const auto null_value = bg::ScalarValue{null};
+
+    CHECK_FALSE(null.has_value());
+    CHECK(null.text().empty());
+    CHECK(null == bg::symbol{});
+    CHECK(null != empty);
+    CHECK(empty.has_value());
+    CHECK(null_value.hash() == bg::ScalarValue{bg::symbol{}}.hash());
+    CHECK_FALSE(null_value.equals(bg::ScalarValue{empty}));
+}
+
 TEST_CASE("a scalar visitor selects typed built-in leaf views",
           "[feature:visitor][declaration:concrete][scalar:i64][scalar:symbol]") {
     const auto integer = bg::ScalarValue{bg::i64{42}};

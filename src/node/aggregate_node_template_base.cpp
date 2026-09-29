@@ -12,6 +12,10 @@ bool AggregateNodeTemplateBase::deduplicate_wiring() const noexcept {
     return descriptor_->deduplicate_wiring;
 }
 
+bool AggregateNodeTemplateBase::schedule_on_start() const noexcept {
+    return descriptor_->schedule_on_start;
+}
+
 RequirementResult AggregateNodeTemplateBase::requirement(const WiringArguments &arguments) const {
     return descriptor_->requirement == nullptr ? accept : descriptor_->requirement(arguments);
 }

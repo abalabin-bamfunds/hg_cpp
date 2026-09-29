@@ -2,6 +2,7 @@
 #include <bg/graph/wiring_context.hpp>
 #include <bg/graph/wiring_error.hpp>
 #include <bg/node.hpp>
+#include <bg/operators.hpp>
 #include <bg/scalar/value.hpp>
 #include <bg/time_series/time_series_variable.hpp>
 #include <bg/type/scalar_type.hpp>
@@ -10,10 +11,14 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <array>
 #include <chrono>
 #include <optional>
+#include <span>
+#include <string>
 #include <thread>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -99,6 +104,50 @@ TEST_CASE("wiring keeps calls with different scalar arguments separate", "[graph
     (void)scale(input, 3.0F);
 
     CHECK(wiring.nodes().size() == 3);
+}
+
+TEST_CASE("wiring resolves a runtime-selected scalar argument", "[graph_wiring][feature:wiring][scalar:generic]") {
+    const auto sink = bg::node([](bg::Scalar<bg::SCALAR>) {});
+    auto value = bg::ScalarValue<>{std::string{"runtime scalar"}};
+    const auto arguments = std::array{bg::WiringArgument{std::move(value)}};
+    auto wiring = bg::GraphWiring{};
+
+    const auto context = bg::WiringContext{wiring};
+    (void)static_cast<const bg::WiringTemplate &>(sink)(std::span<const bg::WiringArgument>{arguments});
+
+    REQUIRE(wiring.nodes().size() == 1);
+    CHECK(wiring.nodes()[0].signature().parameters[0].type == &bg::string_type());
+    REQUIRE(wiring.nodes()[0].scalar_values().size() == 1);
+    CHECK(&wiring.nodes()[0].scalar_values()[0].runtime_type().type() == &bg::string_type());
+}
+
+TEST_CASE("const operator accepts a runtime-selected scalar argument",
+          "[graph_wiring][feature:constant][scalar:generic]") {
+    auto value = bg::ScalarValue<>{bg::i64{41}};
+    const auto arguments = std::array{bg::WiringArgument{std::move(value)}};
+    auto wiring = bg::GraphWiring{};
+    const auto context = bg::WiringContext{wiring};
+
+    const auto point =
+        static_cast<const bg::WiringTemplate &>(bg::operators::const_)(std::span<const bg::WiringArgument>{arguments});
+
+    REQUIRE(point);
+    CHECK(point->type().accepts(bg::TS<bg::i64, bg::TimeSeriesGuarantee::const_>::type()));
+}
+
+TEST_CASE("constant and scalar arguments wire through the erased template interface",
+          "[graph_wiring][feature:constant][scalar:generic]") {
+    auto value = bg::ScalarValue<>{bg::i64{41}};
+    const auto constant_arguments = std::array{bg::WiringArgument{std::move(value)}};
+    auto wiring = bg::GraphWiring{};
+    const auto context = bg::WiringContext{wiring};
+    const auto point = static_cast<const bg::WiringTemplate &>(bg::operators::const_)(
+        std::span<const bg::WiringArgument>{constant_arguments});
+    const auto sink = bg::node([](bg::In<bg::TS<bg::i64>>, bg::Scalar<bg::i64>, bg::Out<bg::TS<bg::i64>>) {});
+
+    REQUIRE(point);
+    const auto inputs = std::array{bg::WiringArgument{*point}, bg::WiringArgument{bg::i64{1}}};
+    CHECK_NOTHROW(static_cast<const bg::WiringTemplate &>(sink)(std::span<const bg::WiringArgument>{inputs}));
 }
 
 TEST_CASE("wiring keeps calls with different input sources separate", "[graph_wiring][feature:wiring]") {

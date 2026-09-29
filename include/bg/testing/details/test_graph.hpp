@@ -8,11 +8,14 @@
 #include <bg/graph/wiring_context.hpp>
 #include <bg/graph/wiring_template.hpp>
 #include <bg/node.hpp>
+#include <bg/node/runtime_signature_node_template.hpp>
 #include <bg/scalar/canonical.hpp>
 #include <bg/scalar/list/type.hpp>
 #include <bg/scalar/opaque.hpp>
+#include <bg/scalar/runtime_type.hpp>
 #include <bg/scalar/value.hpp>
 #include <bg/simulation_evaluation_engine.hpp>
+#include <bg/testing/test_graph_input.hpp>
 
 #include <algorithm>
 #include <array>
@@ -20,6 +23,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <ranges>
 #include <span>
@@ -88,6 +92,57 @@ struct Sink {
 
 inline const auto source = node<Source>();
 inline const auto sink = node<Sink>();
+
+class RuntimeSource {
+  public:
+    struct CompiledData {
+        std::span<const std::optional<ScalarValue<>>> ticks;
+        EvaluationTime start_time;
+    };
+
+    using compiled_data_type = CompiledData;
+    using state_type = std::size_t;
+    using Invocation = NodeInvocation<CompiledData, state_type>;
+
+    RuntimeSource(const TestGraphInput &input, EvaluationTime start_time)
+        : input_{input}, start_time_{start_time},
+          signature_{util::symbol{"test_source"},
+                     {{.name = util::symbol{"runtime_type"},
+                       .type = &input.runtime_type.type(),
+                       .accepts_absent_scalar = true}},
+                     time_series_value_type(input.runtime_type.type(), TimeSeriesGuarantee::ordinary)} {}
+
+    const Signature &signature() const noexcept { return signature_; }
+    CompiledData compile(const ResolvedSignature &, allocator &) const noexcept { return {input_.ticks, start_time_}; }
+
+    static void start(Invocation invocation) { publish(invocation); }
+    static void evaluate(Invocation invocation) { publish(invocation); }
+
+    static constexpr bool uses_timed_scheduling = true;
+
+  private:
+    static void publish(Invocation invocation) {
+        const auto &data = invocation.compiled_data();
+        auto &next = invocation.state();
+
+        if (next < data.ticks.size() && data.ticks[next]) {
+            invocation.output().visit(
+                [&](Out<TS<SCALAR>> *output) { output->set_value(data.ticks[next]->view()); }, ddv::noop);
+        }
+
+        ++next;
+        while (next < data.ticks.size() && !data.ticks[next]) {
+            ++next;
+        }
+        if (next < data.ticks.size()) {
+            invocation.context().schedule_at(data.start_time + EvaluationTime::duration{next});
+        }
+    }
+
+    TestGraphInput input_;
+    EvaluationTime start_time_;
+    Signature signature_;
+};
 
 template <typename T> struct optional_value : std::false_type {};
 template <typename T> struct optional_value<std::optional<T>> : std::true_type {};
@@ -198,6 +253,44 @@ template <std::ranges::contiguous_range... Inputs>
             sink(*output, ScalarValue<Opaque<CapturedValues *>>{&captured});
         }
     }
+
+    const auto compiled = CompiledGraph{wiring};
+    auto runtime = RuntimeGraph{compiled};
+    SimulationEvaluationEngine{}.run(runtime, start_time);
+
+    return std::move(captured.values);
+}
+
+[[nodiscard]] inline auto run_runtime_template(const WiringTemplate &tested, std::span<const TestGraphInput> inputs) {
+    const auto start_time = MIN_DT + EvaluationTime::duration{1};
+    auto captured = CapturedValues{.start_time = start_time, .values = {}};
+    auto cycle_count = std::size_t{1};
+    auto wiring = GraphWiring{};
+
+    {
+        auto context = WiringContext{wiring};
+        auto sources = std::vector<WiringPoint>{};
+        sources.reserve(std::ranges::size(inputs));
+
+        for (const auto &input : inputs) {
+            cycle_count = std::max(cycle_count, input.ticks.size());
+
+            auto definition = RuntimeSource{input, start_time};
+            const auto &source_template = wiring.own_node_template(
+                std::make_unique<RuntimeSignatureNodeTemplate<RuntimeSource>>(std::move(definition)));
+            const auto arguments = std::array{
+                WiringArgument::absent_scalar(input.runtime_type.type(), input.runtime_type),
+            };
+            sources.push_back(*static_cast<const WiringTemplate &>(source_template)(arguments));
+        }
+
+        const auto output = tested(std::span<const WiringPoint>{sources});
+        if (output) {
+            sink(*output, ScalarValue<Opaque<CapturedValues *>>{&captured});
+        }
+    }
+
+    captured.values.resize(cycle_count);
 
     const auto compiled = CompiledGraph{wiring};
     auto runtime = RuntimeGraph{compiled};

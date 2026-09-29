@@ -157,7 +157,15 @@ bg::parameters(
 
 Only resolved time series inputs create graph dependencies and subscriptions or
 participate in validity gating. Scalars remain immutable shared wired-node data.
-A node resolved with only scalars evaluates once when its runtime graph starts.
+A node with only scalar parameters does not run unless it is explicitly
+scheduled or declares `schedule_on_start`.
+
+`schedule_on_start` requests one initial evaluation in the first cycle. It does
+not call `start()` and does not make a node active in later cycles. An aggregate
+or runtime-signature definition declares `static constexpr bool
+schedule_on_start = true`. A callable definition uses
+`bg::schedule_on_start = true` as a `node()` option. The runtime-signature form
+can also provide a `schedule_on_start() const` member.
 
 `std::optional<T>` owns its value, so passing a valid time series input can copy
 `T`. Use `In<TS<T>, ...>` to access an expensive value by reference.

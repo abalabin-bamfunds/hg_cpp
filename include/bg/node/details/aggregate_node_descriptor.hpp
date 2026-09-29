@@ -69,6 +69,7 @@ template <typename Definition> const AggregateNodeDescriptor &aggregate_node_des
                     return NodeFunction{};
                 }
             }(),
+        .schedule_on_start = aggregate_schedules_on_start<Definition>(),
         .stop_function =
             [] {
                 if constexpr (aggregate_node_has_stop<Definition> || HasDynamicReferenceInputs) {

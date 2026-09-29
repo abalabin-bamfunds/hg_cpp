@@ -2,11 +2,13 @@
 
 #include <bg/scalar/value.hpp>
 #include <bg/testing/details/test_graph.hpp>
+#include <bg/testing/test_graph_input.hpp>
 
 #include <cstddef>
 #include <initializer_list>
 #include <optional>
 #include <ranges>
+#include <span>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -73,6 +75,13 @@ template <typename T = void> class TestGraphResult {
   private:
     std::vector<std::optional<ScalarValue<>>> values_;
 };
+
+// Runs a wiring template with runtime-typed scalar time-series inputs. This is the shared boundary for test
+// integrations that do not have C++ range element types, including the Python bindings.
+[[nodiscard]] inline TestGraphResult<> test_graph(const WiringTemplate &tested,
+                                                  std::span<const TestGraphInput> inputs) {
+    return TestGraphResult<>{details::run_runtime_template(tested, inputs)};
+}
 
 // Each input range defines updates by outer cycle. An empty optional skips its cycle.
 // Each result position owns the output update from the corresponding cycle, if any.

@@ -1255,6 +1255,9 @@ class CompiledGraphBuilder {
                 })) {
                 info.evaluation |= mask;
             }
+            if (node.node_template().schedule_on_start()) {
+                info.evaluation |= mask;
+            }
         }
 
         for (const auto node_index : plan.wired_node_indices) {

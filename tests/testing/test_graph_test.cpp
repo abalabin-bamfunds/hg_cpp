@@ -4,7 +4,9 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <array>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -71,6 +73,37 @@ TEST_CASE("test_graph captures a runtime-typed output",
     const auto graph = [](bg::wp<bg::TS<bg::i64>> input) { return bg::wp<>{input}; };
 
     CHECK(bg::testing::test_graph(graph, {1, 2, std::nullopt, 4}).equals<bg::i64>({1, 2, std::nullopt, 4}));
+}
+
+TEST_CASE("test_graph accepts runtime-typed inputs",
+          "[testing][evaluation][feature:test-graph][declaration:generic][series:value]") {
+    const auto identity =
+        bg::graph("name"_n = "identity", [](bg::wp<bg::TS<bg::i64>> input) { return input; });
+    auto ticks = std::vector<std::optional<bg::ScalarValue<>>>{};
+    ticks.emplace_back(std::in_place, bg::i64{1});
+    ticks.emplace_back(std::nullopt);
+    ticks.emplace_back(std::in_place, bg::i64{3});
+    const auto inputs = std::array{
+        bg::testing::TestGraphInput{bg::cpp_scalar_runtime_type<bg::i64>(), ticks},
+    };
+
+    const auto actual = bg::testing::test_graph(identity, std::span<const bg::testing::TestGraphInput>{inputs});
+
+    CHECK(actual.equals<bg::i64>({1, std::nullopt, 3}));
+}
+
+TEST_CASE("runtime-typed test_graph inputs can contain only skipped ticks",
+          "[testing][evaluation][feature:test-graph][declaration:generic][series:value]") {
+    const auto identity =
+        bg::graph("name"_n = "identity", [](bg::wp<bg::TS<bg::i64>> input) { return input; });
+    const auto ticks = std::vector<std::optional<bg::ScalarValue<>>>(3);
+    const auto inputs = std::array{
+        bg::testing::TestGraphInput{bg::cpp_scalar_runtime_type<bg::i64>(), ticks},
+    };
+
+    const auto actual = bg::testing::test_graph(identity, std::span<const bg::testing::TestGraphInput>{inputs});
+
+    CHECK(actual.equals<bg::i64>({std::nullopt, std::nullopt, std::nullopt}));
 }
 
 TEST_CASE("wiring converts C++ string arguments to the canonical graph type",

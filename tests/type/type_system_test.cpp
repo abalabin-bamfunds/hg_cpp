@@ -2,6 +2,7 @@
 #include <bg/scalar/list/scalar_type.hpp>
 #include <bg/scalar/opaque.hpp>
 #include <bg/scalar/set/scalar_type.hpp>
+#include <bg/node.hpp>
 #include <bg/time_series/time_series_type.hpp>
 #include <bg/time_series/tsl/tsl_type.hpp>
 #include <bg/type/scalar_type.hpp>
@@ -150,6 +151,31 @@ TEST_CASE("compatible time-series types have a common weakest guarantee",
     CHECK(final.common_type(ordinary) == &ordinary);
     CHECK(final.common_type(constant) == &final);
     CHECK(ordinary.common_type(bg::TS<float>::type()) == nullptr);
+}
+
+TEST_CASE("an ordinary time-series input accepts final and const values",
+          "[type_system][feature:type-system][series:value][guarantee:ordinary][guarantee:final]"
+          "[guarantee:const]") {
+    struct InputScope {};
+
+    const auto &ordinary_input = bg::details::time_series_type_for<InputScope, 0, true,
+                                                                   bg::TS<bg::i64, bg::TimeSeriesGuarantee::ordinary>>(
+        bg::TimeSeriesGuarantee::ordinary);
+
+    CHECK(ordinary_input.accepts(bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>::type()));
+    CHECK(ordinary_input.accepts(bg::TS<bg::i64, bg::TimeSeriesGuarantee::const_>::type()));
+}
+
+TEST_CASE("an omitted time-series variable guarantee preserves the supplied guarantee",
+          "[type_system][feature:type-system][declaration:generic][series:value][guarantee:final]") {
+    const auto identity = bg::node([](bg::In<bg::TS_T>, bg::Out<bg::TS_T>) {});
+    const auto arguments = std::array<const bg::Type *, 1>{
+        &bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>::type()};
+
+    const auto resolved = identity.signature().resolve(arguments);
+
+    CHECK(resolved.parameters[0].type == &bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>::type());
+    CHECK(resolved.output == &bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>::type());
 }
 
 TEST_CASE("a time series variable and its guarantee resolve independently",

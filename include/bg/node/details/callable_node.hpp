@@ -50,6 +50,13 @@ template <typename Option> bool callable_wiring_deduplication(const Option &opti
     return true;
 }
 
+template <typename Option> bool callable_schedule_on_start(const Option &option) noexcept {
+    if constexpr (is_callable_start_scheduling_v<Option>) {
+        return option.enabled;
+    }
+    return false;
+}
+
 template <typename Function, std::size_t Target, std::size_t... Index>
 consteval std::size_t callable_parameter_index(std::index_sequence<Index...>) {
     return (std::size_t{} + ... +
@@ -122,6 +129,10 @@ template <typename Function, typename... Options> class CallableNodeDefinition {
     bool deduplicate_wiring() const noexcept {
         return std::apply([](const auto &...option) { return (callable_wiring_deduplication(option) && ...); },
                           options_);
+    }
+
+    bool schedule_on_start() const noexcept {
+        return std::apply([](const auto &...option) { return (callable_schedule_on_start(option) || ...); }, options_);
     }
 
     RequirementResult requirement(const WiringArguments &arguments) const {
