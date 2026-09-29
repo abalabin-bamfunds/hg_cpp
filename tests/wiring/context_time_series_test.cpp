@@ -288,8 +288,8 @@ TEST_CASE("rejected operator overloads do not import context requirements",
 
         (void)choose(integer);
 
-        REQUIRE(inner.context_requirements().size() == 1);
-        CHECK(inner.context_requirements().front().name == util::symbol{"integer_context"});
+        REQUIRE(inner.inherited_requirements().size() == 1);
+        CHECK(inner.inherited_requirements().front().name == util::symbol{"integer_context"});
     });
 }
 

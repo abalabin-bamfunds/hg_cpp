@@ -1,6 +1,7 @@
 #pragma once
 
 #include <bg/allocator.hpp>
+#include <bg/graph/details/inherited_time_series_identity.hpp>
 #include <bg/graph/wired_input.hpp>
 #include <bg/graph/wired_node.hpp>
 #include <bg/graph/wired_output.hpp>
@@ -44,9 +45,10 @@ GraphWiringStructure graph_wiring_structure(const GraphWiring &, std::span<const
 
 class GraphWiring {
   public:
-    struct ContextRequirement {
+    struct InheritedTimeSeriesRequirement {
+        details::InheritedTimeSeriesIdentity identity;
         util::symbol name;
-        const TimeSeriesType *context_type;
+        const TimeSeriesType *type;
         WiringPoint provider;
 
         const TimeSeriesType &boundary_input_type() const;
@@ -67,7 +69,15 @@ class GraphWiring {
 
     std::span<const WiredOutput> outputs() const noexcept { return outputs_; }
 
-    std::span<const ContextRequirement> context_requirements() const noexcept { return context_requirements_; }
+    std::span<const InheritedTimeSeriesRequirement> inherited_requirements() const noexcept {
+        return inherited_requirements_;
+    }
+
+    [[nodiscard]] WiringPoint require_inherited_time_series(details::InheritedTimeSeriesIdentity identity,
+                                                            util::symbol name, const TimeSeriesType &type);
+    void provide_inherited_time_series(const details::InheritedTimeSeriesIdentity &identity, const TimeSeriesType &type,
+                                       WiringPoint provider);
+    [[nodiscard]] WiredInput resolve_inherited_input(std::size_t requirement) const;
 
     [[nodiscard]] const NodeTemplate &own_node_template(std::unique_ptr<NodeTemplate> node_template);
 
@@ -111,6 +121,10 @@ class GraphWiring {
                                                              std::span<const WiringArgument> arguments);
     void cache_wired_node(std::size_t hash, std::size_t node_index);
     [[nodiscard]] WiringPoint import_context(util::symbol name, WiringPoint provider);
+    [[nodiscard]] WiringPoint add_inherited_requirement(details::InheritedTimeSeriesIdentity identity,
+                                                        util::symbol name, const TimeSeriesType &type,
+                                                        WiringPoint provider);
+    [[nodiscard]] WiringPoint inherited_requirement_point(std::size_t index) const;
     [[nodiscard]] WiredInput wire_input(WiringPoint point, const TimeSeriesType &type);
 
     [[nodiscard]] const WiringPath &make_path(util::symbol name, util::symbol label);
@@ -145,12 +159,19 @@ class GraphWiring {
         const details::WiringRecord *result;
     };
     std::vector<MaterializedWiring> materialized_wiring_points_;
-    struct ContextRecord {
+    struct InheritedRecord {
         const details::WiringRecord *record;
         std::size_t requirement;
     };
-    std::vector<ContextRequirement> context_requirements_;
-    std::vector<ContextRecord> context_records_;
+    struct ContextBinding {
+        util::symbol name;
+        const TimeSeriesType *type;
+        WiringPoint provider;
+        WiringPoint point;
+    };
+    std::vector<InheritedTimeSeriesRequirement> inherited_requirements_;
+    std::vector<ContextBinding> context_bindings_;
+    std::vector<InheritedRecord> inherited_records_;
     std::pmr::deque<WiringPath> paths_;
 };
 

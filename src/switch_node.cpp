@@ -37,7 +37,7 @@ struct CompiledSwitchInput {
 struct CompiledSwitchBranch {
     CompiledNestedGraph nested;
     std::pmr::vector<CompiledSwitchInput> inputs;
-    std::optional<std::uint32_t> context_parameter_start;
+    std::optional<std::uint32_t> inherited_parameter_start;
 };
 
 struct CompiledSwitchCase {
@@ -231,9 +231,9 @@ class SwitchNodeDefinition {
                                                                        : std::nullopt,
                             },
                         .inputs = std::pmr::vector<CompiledSwitchInput>{&memory.memory_resource()},
-                        .context_parameter_start =
-                            item.branch.context_parameter_start
-                                ? std::optional{static_cast<std::uint32_t>(*item.branch.context_parameter_start)}
+                        .inherited_parameter_start =
+                            item.branch.inherited_parameter_start
+                                ? std::optional{static_cast<std::uint32_t>(*item.branch.inherited_parameter_start)}
                                 : std::nullopt,
                     },
             };
@@ -370,7 +370,7 @@ class SwitchNodeDefinition {
 
     template <typename Invocation>
     static void start_case(const CompiledSwitchBranch &branch, Invocation invocation, SwitchSelection selection) {
-        const auto context_count = branch.nested.graph->context_requirement_count();
+        const auto inherited_count = branch.nested.graph->inherited_time_series_count();
         const auto input_count = branch.inputs.size();
         const auto storage_size = sizeof(NestedGraphInput) * input_count;
         auto &scratch = invocation.context().scratch();
@@ -391,8 +391,8 @@ class SwitchNodeDefinition {
             .token = selection.case_index,
             .callbacks = &owner_callbacks,
         };
-        const auto context_start = branch.context_parameter_start.value_or(invocation.parameter_count());
-        auto startup_context = NestedGraphStartupContext{invocation, context_start, context_count};
+        const auto inherited_start = branch.inherited_parameter_start.value_or(invocation.parameter_count());
+        auto startup_context = NestedGraphStartupContext{invocation, inherited_start, inherited_count};
         state.graph.start(branch.nested, startup_context.context(),
                           std::span<NestedGraphInput>{inputs, branch.inputs.size()}, {}, owner);
         state.active_selection = selection;
@@ -448,11 +448,11 @@ class SwitchNodeDefinition {
             if (item.branch.wiring == nullptr) {
                 throw std::invalid_argument{"a switch case requires inner graph wiring"};
             }
-            const auto context_count = item.branch.wiring->context_requirements().size();
-            if (item.branch.context_parameter_start.has_value() != (context_count != 0) ||
-                (context_count != 0 &&
-                 *item.branch.context_parameter_start + context_count > signature_->parameter_count())) {
-                throw std::invalid_argument{"a switch case has invalid context parameters"};
+            const auto inherited_count = item.branch.wiring->inherited_requirements().size();
+            if (item.branch.inherited_parameter_start.has_value() != (inherited_count != 0) ||
+                (inherited_count != 0 &&
+                 *item.branch.inherited_parameter_start + inherited_count > signature_->parameter_count())) {
+                throw std::invalid_argument{"a switch case has invalid inherited time series parameters"};
             }
             const auto outputless_default = signature_->has_output() && item.default_case && !item.branch.output_node;
             if (item.branch.output_node.has_value() != signature_->has_output() && !outputless_default) {

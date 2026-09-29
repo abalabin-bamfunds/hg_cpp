@@ -33,18 +33,15 @@ immutable data in the inner compiled graph. The node output is a reference to
 the graph output.
 
 An inner graph records each [context time series](graph-wiring.md#context-time-series)
-that its graph code requests from an enclosing lexical binding. The request
-crosses graph boundaries as follows:
+that its graph code requests from an enclosing lexical binding. Wiring resolves
+the binding at once and imports its provider through nested boundaries as a
+passive input. Compilation orders each provider before the nodes that consume
+it.
 
-1. The first boundary creates or reuses a stable reference in the provider
-   graph.
-2. Intermediate graph requirements carry that reference through passive owner
-   inputs.
-3. Before an inner graph starts, its owner places the references in a child
-   evaluation-context section.
-4. `RuntimeGraph::start()` initializes each compiled context slot with its
-   reference.
-5. Consumers subscribe to those slots through ordinary reference inputs.
+Before an inner graph starts, its owner places the provider references in a
+child evaluation-context section. `RuntimeGraph::start()` initializes each
+compiled context slot with its reference. Consumers subscribe to those slots
+through ordinary reference inputs.
 
 The owning `nested`, `map`, `mesh`, or `switch_` node does not observe or
 forward context changes. Graph structure identity includes each context name

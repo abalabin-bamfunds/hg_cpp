@@ -51,7 +51,7 @@ class CompiledGraph {
 
     const WiringPath &wiring_path(std::size_t node_index) const noexcept;
 
-    std::size_t context_requirement_count() const noexcept;
+    std::size_t inherited_time_series_count() const noexcept;
 
   private:
     struct CompilationTag {
@@ -93,10 +93,10 @@ class CompiledGraph {
     static constexpr std::uint32_t timed_scheduling_flag = std::uint32_t{1} << 30;
     static constexpr std::uint32_t cycle_callbacks_flag = std::uint32_t{1} << 31;
     static constexpr std::uint32_t constants_flag = std::uint32_t{1} << 30;
-    static constexpr std::uint32_t contexts_flag = std::uint32_t{1} << 31;
+    static constexpr std::uint32_t inherited_time_series_flag = std::uint32_t{1} << 31;
     static constexpr std::uint32_t fixed_storage_size_mask = timed_scheduling_flag - 1;
     static constexpr std::uint32_t variable_memory_offset_mask = constants_flag - 1;
-    static constexpr std::uint32_t initial_runtime_storage_offset_mask = contexts_flag - 1;
+    static constexpr std::uint32_t initial_runtime_storage_offset_mask = inherited_time_series_flag - 1;
     static constexpr std::uint32_t alignment_shift = 26;
     static constexpr std::uint32_t count_mask = (std::uint32_t{1} << alignment_shift) - 1;
 
@@ -110,8 +110,8 @@ class CompiledGraph {
 
     bool has_constants() const noexcept { return (storage_header().variable_memory_offset & constants_flag) != 0; }
 
-    bool has_contexts() const noexcept {
-        return (storage_header().initial_runtime_storage_offset & contexts_flag) != 0;
+    bool has_inherited_time_series() const noexcept {
+        return (storage_header().initial_runtime_storage_offset & inherited_time_series_flag) != 0;
     }
 
     std::size_t variable_memory_offset() const noexcept {
@@ -155,11 +155,11 @@ class CompiledGraph {
     OutputDestruction output_destruction() const noexcept;
     std::optional<std::size_t> constant_start_time_offset() const noexcept;
     std::span<const InputNotificationSubscriber> constant_notifications() const noexcept;
-    std::span<const details::ContextRequirementBinding> context_requirements() const noexcept;
+    std::span<const details::InheritedTimeSeriesBinding> inherited_time_series() const noexcept;
     std::span<const Subscriber>
-    context_subscribers(const details::ContextRequirementBinding &requirement) const noexcept;
+    inherited_time_series_subscribers(const details::InheritedTimeSeriesBinding &requirement) const noexcept;
     const OutputNotification *
-    context_notification(const details::ContextRequirementBinding &requirement) const noexcept;
+    inherited_time_series_notification(const details::InheritedTimeSeriesBinding &requirement) const noexcept;
 
     const details::CompiledStorageHeader &storage_header() const noexcept {
         return *reinterpret_cast<const details::CompiledStorageHeader *>(fixed_storage_);

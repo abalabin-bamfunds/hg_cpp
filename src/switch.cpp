@@ -296,11 +296,11 @@ class SwitchGraphArgumentBuilder {
 
         record_output_type(item.default_case, target);
 
-        auto context_parameter_start = std::optional<std::size_t>{};
-        if (!wiring->context_requirements().empty()) {
-            context_parameter_start = parameters_.size();
+        auto inherited_parameter_start = std::optional<std::size_t>{};
+        if (!wiring->inherited_requirements().empty()) {
+            inherited_parameter_start = parameters_.size();
         }
-        for (const auto &requirement : wiring->context_requirements()) {
+        for (const auto &requirement : wiring->inherited_requirements()) {
             parameters_.push_back({requirement.name, &requirement.boundary_input_type(), passive, optional});
             outer_arguments_.emplace_back(requirement.provider);
         }
@@ -311,7 +311,7 @@ class SwitchGraphArgumentBuilder {
             .default_case = item.default_case,
             .branch = {.wiring = std::move(wiring),
                        .inputs = std::move(boundary_inputs),
-                       .context_parameter_start = context_parameter_start,
+                       .inherited_parameter_start = inherited_parameter_start,
                        .output_node = output_node},
         });
     }

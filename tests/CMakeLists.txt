@@ -97,6 +97,7 @@ add_executable(
     value/time_series/set/storage_test.cpp
     wiring/graph_template_test.cpp
     wiring/context_time_series_test.cpp
+    wiring/inherited_time_series_test.cpp
     wiring/graph_argument_test.cpp
     wiring/graph_wiring_test.cpp
     wiring/graph_wiring_structure_test.cpp

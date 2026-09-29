@@ -116,13 +116,13 @@ template <typename Graph, details::graph_code_argument Run, details::graph_code_
         }
     }
 
-    for (const auto &requirement : inner_wiring->context_requirements()) {
+    for (const auto &requirement : inner_wiring->inherited_requirements()) {
         flattened.parameters.push_back({requirement.name, &requirement.boundary_input_type(), passive, optional});
     }
-    auto context_providers = std::vector<WiringPoint>{};
-    context_providers.reserve(inner_wiring->context_requirements().size());
-    for (const auto &requirement : inner_wiring->context_requirements()) {
-        context_providers.push_back(requirement.provider);
+    auto inherited_providers = std::vector<WiringPoint>{};
+    inherited_providers.reserve(inner_wiring->inherited_requirements().size());
+    for (const auto &requirement : inner_wiring->inherited_requirements()) {
+        inherited_providers.push_back(requirement.provider);
     }
 
     auto nested_wiring = details::NestedGraphWiring{
@@ -158,7 +158,7 @@ template <typename Graph, details::graph_code_argument Run, details::graph_code_
         }
         outer_arguments.push_back(details::wiring_argument_access::borrow(normalized[index]));
     }
-    for (const auto provider : context_providers) {
+    for (const auto provider : inherited_providers) {
         outer_arguments.emplace_back(provider);
     }
     auto output_point = *owned_nested(std::span<const WiringArgument>{outer_arguments});

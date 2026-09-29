@@ -11,10 +11,10 @@ later changes manually.
 
 ## Decision
 
-Wiring records each inherited context by name and semantic type. The first
-graph boundary creates a stable reference in the provider graph. Each inner
-graph owner receives that reference through a passive input and places it in a
-child evaluation context when the inner runtime graph starts.
+Wiring resolves each context request against the active lexical bindings and
+imports its provider through each graph boundary as a passive input. Each inner
+graph owner places the provider reference in a child evaluation context when
+the inner runtime graph starts.
 
 The compiled inner graph stores a reference slot for each requirement.
 Consumers use the normal reference input and subscription machinery. Graph

@@ -186,9 +186,9 @@ class MapRuntime {
                                          : pass_through_reference(outer));
         }
         const auto inputs = std::span<const NestedGraphInput>{nested_inputs_};
-        const auto context_count = compiled.nested.graph->context_requirement_count();
-        auto startup_context =
-            NestedGraphStartupContext{invocation, context, invocation.parameter_count() - context_count, context_count};
+        const auto inherited_count = compiled.nested.graph->inherited_time_series_count();
+        auto startup_context = NestedGraphStartupContext{
+            invocation, context, invocation.parameter_count() - inherited_count, inherited_count};
 
         auto rollback = util::scope_exit{[&]() noexcept { entry.inner_graph.stop_and_destroy(invocation.context()); }};
         const auto constants = [&] {

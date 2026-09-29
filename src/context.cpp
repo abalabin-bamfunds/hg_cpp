@@ -1,13 +1,13 @@
 #include <bg/graph/context.hpp>
 
-#include <bg/graph/details/context_time_series_section.hpp>
+#include <bg/graph/details/inherited_time_series_section.hpp>
 #include <bg/type/signature.hpp>
 
 #include "thread_local_pointer.hpp"
 
 namespace bg::details {
 
-const char context_time_series_section_type{};
+const char inherited_time_series_section_type{};
 
 util::thread_local_pointer &ContextScope::active_scope() {
     static util::thread_local_pointer value;

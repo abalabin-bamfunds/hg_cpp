@@ -191,7 +191,7 @@ struct TimeSeriesInputPlan {
     std::uint32_t output_last_updated_offset;
 };
 
-struct ContextRequirementPlan {
+struct InheritedTimeSeriesPlan {
     SubscriptionPlan subscriptions;
     std::uint32_t last_updated_offset{};
     std::uint32_t value_offset{};
@@ -261,8 +261,8 @@ struct FixedStorageLayout {
     StorageSection variable_memory;
     StorageSection initial_runtime_storage;
     StorageSection constant_notifications;
-    StorageSection context_metadata;
-    StorageSection context_requirements;
+    StorageSection inherited_time_series_metadata;
+    StorageSection inherited_time_series_bindings;
     std::size_t size{};
     std::size_t alignment{};
 };
@@ -279,7 +279,8 @@ struct CompilationPlan {
     NodeFunctionLayout starts;
     NodeFunctionLayout stops;
     std::vector<InputNotificationSubscriberPlan> constant_notifications;
-    std::vector<ContextRequirementPlan> context_requirements;
+    std::vector<InheritedTimeSeriesPlan> inherited_time_series;
+    std::vector<std::size_t> inherited_time_series_slots;
     RuntimeStorageLayout runtime;
     FixedStorageLayout fixed;
     std::size_t scalar_destruction_count{};
@@ -297,6 +298,14 @@ struct CompilationPlan {
     const ConstantPlan *constant_for_output(std::size_t output) const noexcept {
         const auto index = constant_outputs[output];
         return index == WiredOutput::npos ? nullptr : &constants[index];
+    }
+
+    InheritedTimeSeriesPlan &inherited_time_series_at(std::size_t index) {
+        return inherited_time_series[inherited_time_series_slots[index]];
+    }
+
+    const InheritedTimeSeriesPlan &inherited_time_series_at(std::size_t index) const {
+        return inherited_time_series[inherited_time_series_slots[index]];
     }
 };
 
@@ -427,7 +436,7 @@ SubscriptionPlan &subscriber_list(std::size_t output, std::span<const WiredOutpu
     return leaf->subscriptions;
 }
 
-void plan_time_series_inputs(CompilationPlan &plan) {
+void plan_time_series_inputs(CompilationPlan &plan, const GraphWiring &wiring) {
     for (auto node_index = std::size_t{}; node_index < plan.nodes.size(); ++node_index) {
         if (plan.is_const_node(node_index)) {
             continue;
@@ -442,9 +451,12 @@ void plan_time_series_inputs(CompilationPlan &plan) {
                 continue;
             }
 
-            const auto input = node.inputs()[input_index++];
+            auto input = node.inputs()[input_index++];
+            if (input.is_inherited()) {
+                input = wiring.resolve_inherited_input(input.index());
+            }
             const auto output_is_reference =
-                input.is_context() || type_cast<TimeSeriesReferenceType>(plan.outputs[input.index()].type) != nullptr;
+                input.is_inherited() || type_cast<TimeSeriesReferenceType>(plan.outputs[input.index()].type) != nullptr;
             const auto input_is_reference = type_cast<TimeSeriesReferenceType>(parameter.type) != nullptr;
             plan.node_plans[node_index].time_series_inputs.push_back({
                 .parameter = static_cast<std::uint32_t>(parameter_index),
@@ -455,6 +467,61 @@ void plan_time_series_inputs(CompilationPlan &plan) {
             });
         }
     }
+}
+
+std::vector<std::size_t> dependency_order(const CompilationPlan &plan) {
+    enum class VisitState : std::uint8_t { unseen, visiting, emitted };
+    struct PendingNode {
+        std::size_t index;
+        std::size_t next_input;
+    };
+
+    auto states = std::vector<VisitState>(plan.nodes.size(), VisitState::unseen);
+    auto pending = std::vector<PendingNode>{};
+    pending.reserve(plan.nodes.size());
+    auto result = std::vector<std::size_t>{};
+    result.reserve(plan.nodes.size());
+
+    for (auto root = std::size_t{}; root < plan.nodes.size(); ++root) {
+        if (states[root] != VisitState::unseen) {
+            continue;
+        }
+
+        states[root] = VisitState::visiting;
+        pending.push_back({root, 0});
+        while (!pending.empty()) {
+            auto &current = pending.back();
+            const auto &inputs = plan.node_plans[current.index].time_series_inputs;
+            auto predecessor_found = false;
+            while (current.next_input < inputs.size()) {
+                const auto &input = inputs[current.next_input++];
+                if (input.wired_input.is_inherited()) {
+                    continue;
+                }
+
+                const auto predecessor = plan.outputs[input.wired_input.index()].node_index;
+                if (states[predecessor] == VisitState::visiting) {
+                    throw std::invalid_argument{"graph wiring contains a dependency cycle"};
+                }
+                if (states[predecessor] == VisitState::unseen) {
+                    states[predecessor] = VisitState::visiting;
+                    pending.push_back({predecessor, 0});
+                    predecessor_found = true;
+                    break;
+                }
+            }
+
+            if (predecessor_found) {
+                continue;
+            }
+
+            states[current.index] = VisitState::emitted;
+            result.push_back(current.index);
+            pending.pop_back();
+        }
+    }
+
+    return result;
 }
 
 void plan_subscribers(std::span<const WiredNode> nodes, std::span<const WiredOutput> outputs,
@@ -485,14 +552,14 @@ void plan_subscribers(std::span<const WiredNode> nodes, std::span<const WiredOut
             const auto is_required = parameter.validity == required;
             const auto subscriber_index = static_cast<std::uint32_t>(plan.compiled_node_index(target_index));
             const auto notification = target.node_template().input_notification(input_index);
-            if (!input.wired_input.is_context() && plan.constant_for_output(input.wired_input.index()) != nullptr) {
+            if (!input.wired_input.is_inherited() && plan.constant_for_output(input.wired_input.index()) != nullptr) {
                 if (notification.function != nullptr) {
                     plan.constant_notifications.push_back({subscriber_index, notification.data, notification.function});
                 }
                 continue;
             }
-            auto &subscriptions = input.wired_input.is_context()
-                                      ? plan.context_requirements[input.wired_input.index()].subscriptions
+            auto &subscriptions = input.wired_input.is_inherited()
+                                      ? plan.inherited_time_series_at(input.wired_input.index()).subscriptions
                                       : subscriber_list(input.wired_input.index(), outputs, node_plans);
             if (input.dereferences_reference) {
                 subscriptions.reference_inputs.push_back({
@@ -542,7 +609,7 @@ std::vector<const ScalarRuntimeType *> parameter_runtime_types(const WiredNode &
     for (const auto &parameter : node.signature().parameters) {
         if (parameter.type->is_time_series()) {
             const auto &input = node_plan.time_series_inputs[input_index++];
-            if (!input.wired_input.is_context()) {
+            if (!input.wired_input.is_inherited()) {
                 if (const auto *constant = plan.constant_for_output(input.wired_input.index())) {
                     const auto &scalar = plan.nodes[constant->node].scalar_values()[constant->scalar];
                     result.push_back(&scalar.runtime_type());
@@ -551,7 +618,7 @@ std::vector<const ScalarRuntimeType *> parameter_runtime_types(const WiredNode &
             }
             const auto &requested_type = static_cast<const TimeSeriesType &>(*parameter.type);
             const auto *runtime_type =
-                input.wired_input.is_context()
+                input.wired_input.is_inherited()
                     ? &resolve_time_series_runtime_type(requested_type)
                     : input_runtime_type(
                           input, wired_output_layout(input.wired_input.index(), outputs, node_plans).runtime_type,
@@ -585,7 +652,7 @@ const TimeSeriesRuntimeType *find_output_runtime_type(const WiredNode &node, con
     auto input_runtime_types = std::vector<const TimeSeriesRuntimeType *>{};
     input_runtime_types.reserve(node.inputs().size());
     for (const auto &input : node_plan.time_series_inputs) {
-        if (!input.wired_input.is_context() && plan.constant_for_output(input.wired_input.index()) != nullptr) {
+        if (!input.wired_input.is_inherited() && plan.constant_for_output(input.wired_input.index()) != nullptr) {
             const auto &parameter =
                 static_cast<const TimeSeriesType &>(*node.signature().parameters[input.parameter].type);
             input_runtime_types.push_back(&resolve_time_series_runtime_type(parameter));
@@ -593,7 +660,7 @@ const TimeSeriesRuntimeType *find_output_runtime_type(const WiredNode &node, con
         }
         const auto &parameter = static_cast<const TimeSeriesType &>(*node.signature().parameters[input.parameter].type);
         const auto *runtime_type =
-            input.wired_input.is_context()
+            input.wired_input.is_inherited()
                 ? &resolve_time_series_runtime_type(parameter)
                 : input_runtime_type(input,
                                      wired_output_layout(input.wired_input.index(), outputs, node_plans).runtime_type,
@@ -663,7 +730,7 @@ void plan_runtime_storage(CompilationPlan &plan) {
             packed_offset(storage.add<EvaluationTime>().offset, "runtime storage reaches 1 GiB");
     }
 
-    for (auto &requirement : plan.context_requirements) {
+    for (auto &requirement : plan.inherited_time_series) {
         requirement.last_updated_offset =
             packed_offset(storage.add<EvaluationTime>().offset, "runtime storage reaches 1 GiB");
         requirement.value_offset = packed_offset(storage.add<Reference>().offset, "runtime storage reaches 1 GiB");
@@ -677,7 +744,7 @@ void plan_runtime_storage(CompilationPlan &plan) {
         }
     };
 
-    for (auto i = std::size_t{}; i < plan.nodes.size(); ++i) {
+    for (const auto i : plan.wired_node_indices) {
         if (plan.is_const_node(i)) {
             continue;
         }
@@ -693,8 +760,8 @@ void plan_runtime_storage(CompilationPlan &plan) {
             const auto slot = storage.add<ReferenceInputStorage>();
             input.offset = packed_offset(slot.offset, "runtime storage reaches 1 GiB");
             input.output_last_updated_offset =
-                input.wired_input.is_context()
-                    ? plan.context_requirements[input.wired_input.index()].last_updated_offset
+                input.wired_input.is_inherited()
+                    ? plan.inherited_time_series_at(input.wired_input.index()).last_updated_offset
                     : wired_output_layout(input.wired_input.index(), plan.outputs, plan.node_plans).last_updated_offset;
         }
 
@@ -877,9 +944,10 @@ void plan_fixed_storage(CompilationPlan &plan) {
     if (!plan.constants.empty()) {
         layout.constant_metadata = storage.add<details::ConstantMetadata>();
     }
-    if (!plan.context_requirements.empty()) {
-        layout.context_metadata = storage.add<details::ContextMetadata>();
-        layout.context_requirements = storage.add<details::ContextRequirementBinding>(plan.context_requirements.size());
+    if (!plan.inherited_time_series.empty()) {
+        layout.inherited_time_series_metadata = storage.add<details::InheritedTimeSeriesMetadata>();
+        layout.inherited_time_series_bindings =
+            storage.add<details::InheritedTimeSeriesBinding>(plan.inherited_time_series.size());
     }
     if (plan.has_lifecycle()) {
         layout.start_functions = storage.add<NodeFunction>(plan.starts.nodes.size());
@@ -898,7 +966,7 @@ void plan_fixed_storage(CompilationPlan &plan) {
     layout.initial_runtime_storage = storage.add_bytes(plan.runtime.size, plan.runtime.alignment, plan.runtime.size);
     layout.constant_notifications = storage.add<InputNotificationSubscriber>(plan.constant_notifications.size());
 
-    for (auto &requirement : plan.context_requirements) {
+    for (auto &requirement : plan.inherited_time_series) {
         requirement.subscribers = storage.add<Subscriber>(requirement.subscriptions.nodes.size());
         if (!requirement.subscriptions.reference_inputs.empty() ||
             !requirement.subscriptions.input_subscribers.empty()) {
@@ -929,14 +997,25 @@ void plan_fixed_storage(CompilationPlan &plan) {
     result.node_plans.resize(result.nodes.size());
     result.compiled_node_indices.assign(result.nodes.size(), WiredOutput::npos);
     result.constant_outputs.assign(result.outputs.size(), WiredOutput::npos);
-    result.context_requirements.resize(wiring.context_requirements().size());
+    result.inherited_time_series_slots.assign(wiring.inherited_requirements().size(), WiredOutput::npos);
+    for (auto index = std::size_t{}; index < wiring.inherited_requirements().size(); ++index) {
+        const auto &requirement = wiring.inherited_requirements()[index];
+        if (!requirement.provider.has_output()) {
+            throw std::invalid_argument{"an inherited time series requirement has no provider"};
+        }
+        if (&requirement.provider.graph() == &wiring) {
+            continue;
+        }
+
+        result.inherited_time_series_slots[index] = result.inherited_time_series.size();
+        result.inherited_time_series.emplace_back();
+    }
 
     for (auto node_index = std::size_t{}; node_index < result.nodes.size(); ++node_index) {
         const auto &node = result.nodes[node_index];
         const auto constant = node.node_template().constant_output(node.signature());
         if (!constant) {
-            result.compiled_node_indices[node_index] = result.wired_node_indices.size();
-            result.wired_node_indices.push_back(node_index);
+            result.compiled_node_indices[node_index] = node_index;
             continue;
         }
 
@@ -971,12 +1050,25 @@ void plan_fixed_storage(CompilationPlan &plan) {
         result.constants.push_back({node_index, index, scalar, {}});
     }
 
+    plan_time_series_inputs(result, wiring);
+    const auto node_order = dependency_order(result);
+    result.wired_node_indices.clear();
+    for (const auto node_index : node_order) {
+        if (result.is_const_node(node_index)) {
+            continue;
+        }
+
+        result.compiled_node_indices[node_index] = result.wired_node_indices.size();
+        result.wired_node_indices.push_back(node_index);
+    }
+
     std::erase_if(result.constants, [&](const auto &constant) {
         return !std::ranges::any_of(result.nodes, [&](const auto &node) {
-            return !result.is_const_node(&node - result.nodes.data()) &&
-                   std::ranges::find_if(node.inputs(), [&](const auto &input) {
-                       return !input.is_context() && input.index() == constant.output;
-                   }) != node.inputs().end();
+            const auto node_index = static_cast<std::size_t>(&node - result.nodes.data());
+            return !result.is_const_node(node_index) &&
+                   std::ranges::any_of(result.node_plans[node_index].time_series_inputs, [&](const auto &input) {
+                       return !input.wired_input.is_inherited() && input.wired_input.index() == constant.output;
+                   });
         });
     });
     std::fill(result.constant_outputs.begin(), result.constant_outputs.end(), WiredOutput::npos);
@@ -989,14 +1081,10 @@ void plan_fixed_storage(CompilationPlan &plan) {
         }
     }
 
-    plan_time_series_inputs(result);
     plan_subscribers(result.nodes, result.outputs, result.node_plans, result);
     result.wiring_paths = make_wiring_path_layout(result.nodes, result.wired_node_indices);
 
-    for (auto i = std::size_t{}; i < result.nodes.size(); ++i) {
-        if (result.is_const_node(i)) {
-            continue;
-        }
+    for (const auto i : result.wired_node_indices) {
         const auto &node = result.nodes[i];
         result.node_plans[i].invalidation = node.node_template().invalidation_behavior(node.signature());
         const auto compiled_node = static_cast<std::uint32_t>(result.compiled_node_index(i));
@@ -1143,7 +1231,7 @@ class CompiledGraphBuilder {
         construct_constants(plan, storage, variable_memory, constructed_scalars, scalar_destruction_index);
         construct_nodes(plan, storage, upstream_memory, variable_memory, constructed_scalars, scalar_destruction_index,
                         constructed_node_data);
-        construct_context_requirements(plan, storage);
+        construct_inherited_time_series(plan, storage);
         rollback.release();
     }
 
@@ -1169,7 +1257,7 @@ class CompiledGraphBuilder {
                     (!plan.constants.empty() ? CompiledGraph::constants_flag : std::uint32_t{}),
                 .initial_runtime_storage_offset =
                     offset(plan.fixed.initial_runtime_storage) |
-                    (!plan.context_requirements.empty() ? CompiledGraph::contexts_flag : std::uint32_t{}),
+                    (!plan.inherited_time_series.empty() ? CompiledGraph::inherited_time_series_flag : std::uint32_t{}),
             });
 
         if (!plan.constants.empty()) {
@@ -1180,12 +1268,13 @@ class CompiledGraphBuilder {
                                   .notification_count = static_cast<std::uint32_t>(plan.constant_notifications.size()),
                               });
         }
-        if (!plan.context_requirements.empty()) {
-            std::construct_at(plan.fixed.context_metadata.objects<details::ContextMetadata>(storage).data(),
-                              details::ContextMetadata{
-                                  .requirements_offset = offset(plan.fixed.context_requirements),
-                                  .requirement_count = static_cast<std::uint32_t>(plan.context_requirements.size()),
-                              });
+        if (!plan.inherited_time_series.empty()) {
+            std::construct_at(
+                plan.fixed.inherited_time_series_metadata.objects<details::InheritedTimeSeriesMetadata>(storage).data(),
+                details::InheritedTimeSeriesMetadata{
+                    .requirements_offset = offset(plan.fixed.inherited_time_series_bindings),
+                    .requirement_count = static_cast<std::uint32_t>(plan.inherited_time_series.size()),
+                });
         }
 
         auto notifications = plan.fixed.constant_notifications.objects<InputNotificationSubscriber>(storage);
@@ -1241,7 +1330,7 @@ class CompiledGraphBuilder {
             const auto &inputs = plan.node_plans[node_index].time_series_inputs;
             const auto required_inputs_are_constants = std::ranges::all_of(inputs, [&](const auto &input) {
                 return node.signature().parameters[input.parameter].validity != required ||
-                       (!input.wired_input.is_context() &&
+                       (!input.wired_input.is_inherited() &&
                         plan.constant_for_output(input.wired_input.index()) != nullptr);
             });
             const auto compiled_node = plan.compiled_node_index(node_index);
@@ -1250,7 +1339,7 @@ class CompiledGraphBuilder {
             info.inputs_valid(mask, required_inputs_are_constants);
             if (std::ranges::any_of(inputs, [&](const auto &input) {
                     return node.signature().parameters[input.parameter].activity == active &&
-                           !input.wired_input.is_context() &&
+                           !input.wired_input.is_inherited() &&
                            plan.constant_for_output(input.wired_input.index()) != nullptr;
                 })) {
                 info.evaluation |= mask;
@@ -1292,7 +1381,7 @@ class CompiledGraphBuilder {
             }
         }
 
-        for (const auto &requirement : plan.context_requirements) {
+        for (const auto &requirement : plan.inherited_time_series) {
             std::construct_at(
                 reinterpret_cast<EvaluationTime *>(runtime_storage.data() + requirement.last_updated_offset), MIN_DT);
             std::construct_at(reinterpret_cast<Reference *>(runtime_storage.data() + requirement.value_offset));
@@ -1366,7 +1455,7 @@ class CompiledGraphBuilder {
 
             if (parameter.type->is_time_series()) {
                 const auto &input = plan.node_plans[node_index].time_series_inputs[input_index++];
-                if (!input.wired_input.is_context()) {
+                if (!input.wired_input.is_inherited()) {
                     if (const auto *constant = plan.constant_for_output(input.wired_input.index())) {
                         const auto parameter_offset =
                             layout.offset + layout.parameters.offset + parameter_index * sizeof(ParameterBinding);
@@ -1385,9 +1474,10 @@ class CompiledGraphBuilder {
                                                        parameter.activity, parameter.validity});
                 } else {
                     const auto resolved_output =
-                        input.wired_input.is_context()
-                            ? OutputLayout{plan.context_requirements[input.wired_input.index()].last_updated_offset,
-                                           plan.context_requirements[input.wired_input.index()].value_offset, nullptr}
+                        input.wired_input.is_inherited()
+                            ? OutputLayout{plan.inherited_time_series_at(input.wired_input.index()).last_updated_offset,
+                                           plan.inherited_time_series_at(input.wired_input.index()).value_offset,
+                                           nullptr}
                             : wired_output_layout(input.wired_input.index(), plan.outputs, plan.node_plans);
                     std::construct_at(parameters.data() + parameter_index,
                                       ParameterBinding{resolved_output.last_updated_offset,
@@ -1465,10 +1555,11 @@ class CompiledGraphBuilder {
             const auto &parameter =
                 static_cast<const TimeSeriesType &>(*node.signature().parameters[parameter_index].type);
             const auto *runtime_type = [&] {
-                if (!input.wired_input.is_context() && plan.constant_for_output(input.wired_input.index()) != nullptr) {
+                if (!input.wired_input.is_inherited() &&
+                    plan.constant_for_output(input.wired_input.index()) != nullptr) {
                     return &resolve_time_series_runtime_type(parameter);
                 }
-                if (input.wired_input.is_context()) {
+                if (input.wired_input.is_inherited()) {
                     return &resolve_time_series_runtime_type(parameter);
                 }
                 const auto output = wired_output_layout(input.wired_input.index(), plan.outputs, plan.node_plans);
@@ -1576,10 +1667,10 @@ class CompiledGraphBuilder {
         return destination + total_bytes;
     }
 
-    static void construct_context_requirements(const CompilationPlan &plan, std::byte *storage) {
-        auto bindings = plan.fixed.context_requirements.objects<details::ContextRequirementBinding>(storage);
-        for (auto index = std::size_t{}; index < plan.context_requirements.size(); ++index) {
-            const auto &requirement = plan.context_requirements[index];
+    static void construct_inherited_time_series(const CompilationPlan &plan, std::byte *storage) {
+        auto bindings = plan.fixed.inherited_time_series_bindings.objects<details::InheritedTimeSeriesBinding>(storage);
+        for (auto index = std::size_t{}; index < plan.inherited_time_series.size(); ++index) {
+            const auto &requirement = plan.inherited_time_series[index];
             std::uninitialized_copy(requirement.subscriptions.nodes.begin(), requirement.subscriptions.nodes.end(),
                                     requirement.subscribers.objects<Subscriber>(storage).data());
             if (requirement.output_notification.count != 0) {
@@ -1589,7 +1680,7 @@ class CompiledGraphBuilder {
 
             std::construct_at(
                 bindings.data() + index,
-                details::ContextRequirementBinding{
+                details::InheritedTimeSeriesBinding{
                     .last_updated_offset = requirement.last_updated_offset,
                     .value_offset = requirement.value_offset,
                     .subscribers_offset =
@@ -1761,26 +1852,26 @@ const WiringPath &CompiledGraph::wiring_path(std::size_t node_index) const noexc
     return stored_objects<WiringPath>(fixed_storage_, header.wiring_paths_offset, header.wiring_path_count)[path_index];
 }
 
-std::span<const details::ContextRequirementBinding> CompiledGraph::context_requirements() const noexcept {
-    if (!has_contexts()) {
+std::span<const details::InheritedTimeSeriesBinding> CompiledGraph::inherited_time_series() const noexcept {
+    if (!has_inherited_time_series()) {
         return {};
     }
-    const auto *metadata = storage_header().context_metadata(node_count(), has_constants());
-    return stored_objects<details::ContextRequirementBinding>(fixed_storage_, metadata->requirements_offset,
-                                                              metadata->requirement_count);
+    const auto *metadata = storage_header().inherited_time_series_metadata(node_count(), has_constants());
+    return stored_objects<details::InheritedTimeSeriesBinding>(fixed_storage_, metadata->requirements_offset,
+                                                               metadata->requirement_count);
 }
 
-std::size_t CompiledGraph::context_requirement_count() const noexcept {
-    return context_requirements().size();
+std::size_t CompiledGraph::inherited_time_series_count() const noexcept {
+    return inherited_time_series().size();
 }
 
-std::span<const Subscriber>
-CompiledGraph::context_subscribers(const details::ContextRequirementBinding &requirement) const noexcept {
+std::span<const Subscriber> CompiledGraph::inherited_time_series_subscribers(
+    const details::InheritedTimeSeriesBinding &requirement) const noexcept {
     return stored_objects<Subscriber>(fixed_storage_, requirement.subscribers_offset, requirement.subscriber_count);
 }
 
-const OutputNotification *
-CompiledGraph::context_notification(const details::ContextRequirementBinding &requirement) const noexcept {
+const OutputNotification *CompiledGraph::inherited_time_series_notification(
+    const details::InheritedTimeSeriesBinding &requirement) const noexcept {
     if (requirement.notification_offset == std::numeric_limits<std::uint32_t>::max()) {
         return nullptr;
     }

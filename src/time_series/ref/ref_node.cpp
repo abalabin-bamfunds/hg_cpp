@@ -138,13 +138,13 @@ WiringPoint materialize_reference(WiringPoint argument, const TimeSeriesType &re
     return argument;
 }
 
-WiringPoint materialize_context_reference(WiringPoint argument) {
+WiringPoint materialize_boundary_reference(WiringPoint argument) {
     const auto *argument_reference = type_cast<TimeSeriesReferenceType>(&argument.type());
     const auto &target_type = argument_reference == nullptr ? argument.type() : argument_reference->target_type();
     const auto &reference_type = time_series_reference_type(target_type, TimeSeriesGuarantee::const_);
     const auto result = reference_node_template(target_type, reference_type)(argument);
     if (!result) {
-        throw WiringError{"a context reference node produced no output"};
+        throw WiringError{"a boundary reference node produced no output"};
     }
     return *result;
 }

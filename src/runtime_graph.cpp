@@ -4,7 +4,7 @@
 #include <bg/allocator.hpp>
 #include <bg/details/evaluation_scratch.hpp>
 #include <bg/graph/compiled_node.hpp>
-#include <bg/graph/details/context_time_series_section.hpp>
+#include <bg/graph/details/inherited_time_series_section.hpp>
 #include <bg/graph/dynamic_subscribers.hpp>
 #include <bg/scalar/details/allocation_context.hpp>
 #include <bg/scalar/runtime_type.hpp>
@@ -366,10 +366,10 @@ void RuntimeGraph::initialize_storage() {
     std::memcpy(storage_, compiled_graph_->initial_runtime_storage(), compiled_graph_->runtime_storage_size());
 }
 
-void RuntimeGraph::initialize_context_time_series(std::size_t index, Reference reference) {
-    const auto requirements = compiled_graph_->context_requirements();
+void RuntimeGraph::initialize_inherited_time_series(std::size_t index, Reference reference) {
+    const auto requirements = compiled_graph_->inherited_time_series();
     if (index >= requirements.size()) {
-        throw std::out_of_range{"the context requirement index is out of range"};
+        throw std::out_of_range{"the inherited time series index is out of range"};
     }
 
     const auto &binding = requirements[index];
@@ -381,11 +381,11 @@ void RuntimeGraph::initialize_context_time_series(std::size_t index, Reference r
     }
     stored_last_updated = evaluation_time_;
 
-    if (const auto *notification = compiled_graph_->context_notification(binding)) {
+    if (const auto *notification = compiled_graph_->inherited_time_series_notification(binding)) {
         auto context = OutputChangeContext{*this};
         notification->notify(context, nullptr, &stored_reference, OutputChange::revalidation);
     }
-    notify_subscribers(compiled_graph_->context_subscribers(binding), OutputChange::revalidation);
+    notify_subscribers(compiled_graph_->inherited_time_series_subscribers(binding), OutputChange::revalidation);
 }
 
 RuntimeGraph::~RuntimeGraph() {
@@ -747,8 +747,8 @@ void RuntimeGraph::apply_invalidation(const CompiledNode &node, std::size_t node
 
     const auto output_was_valid = node.has_output() && Node{node, storage_}.output_last_updated() > MIN_DT;
     EvaluationContext context{parent_context, *this, node_index};
-    const auto allocation_context = details::ScalarAllocationContext{
-        allocator_, global_state_->bundle_allocation_owner(), this, node_index};
+    const auto allocation_context =
+        details::ScalarAllocationContext{allocator_, global_state_->bundle_allocation_owner(), this, node_index};
     node.invalidation_function()(node, storage_, &context);
 
     if (node.has_output()) {
@@ -769,15 +769,16 @@ void RuntimeGraph::start(EvaluationContext &context) {
         throw std::logic_error{"a runtime graph can only be started once"};
     }
 
-    const auto context_requirements = compiled_graph_->context_requirements();
-    const auto *context_section = context_requirements.empty()
-                                      ? nullptr
-                                      : static_cast<const details::ContextTimeSeriesSection *>(
-                                            context.find_section(&details::context_time_series_section_type));
-    const auto context_references =
-        context_section == nullptr ? std::span<const Reference>{} : context_section->references;
-    if (context_references.size() != context_requirements.size()) {
-        throw std::invalid_argument{"the runtime graph received the wrong number of context inputs"};
+    const auto inherited_time_series = compiled_graph_->inherited_time_series();
+    const auto *inherited_time_series_section =
+        inherited_time_series.empty() ? nullptr
+                                      : static_cast<const details::InheritedTimeSeriesSection *>(
+                                            context.find_section(&details::inherited_time_series_section_type));
+    const auto inherited_references = inherited_time_series_section == nullptr
+                                          ? std::span<const Reference>{}
+                                          : inherited_time_series_section->references;
+    if (inherited_references.size() != inherited_time_series.size()) {
+        throw std::invalid_argument{"the runtime graph received the wrong number of inherited time series"};
     }
 
     started_ = true;
@@ -790,8 +791,8 @@ void RuntimeGraph::start(EvaluationContext &context) {
         stop_nodes(started_node_count, context);
     }};
 
-    for (auto index = std::size_t{}; index < context_references.size(); ++index) {
-        initialize_context_time_series(index, context_references[index]);
+    for (auto index = std::size_t{}; index < inherited_references.size(); ++index) {
+        initialize_inherited_time_series(index, inherited_references[index]);
     }
     if (const auto offset = compiled_graph_->constant_start_time_offset()) {
         *reinterpret_cast<EvaluationTime *>(storage_ + *offset) = evaluation_time_;
@@ -804,8 +805,8 @@ void RuntimeGraph::start(EvaluationContext &context) {
         const auto output_was_valid = node.has_output() && Node{node, storage_}.output_last_updated() > MIN_DT;
 
         EvaluationContext node_context{context, *this, node_index};
-        const auto allocation_context = details::ScalarAllocationContext{
-            allocator_, global_state_->bundle_allocation_owner(), this, node_index};
+        const auto allocation_context =
+            details::ScalarAllocationContext{allocator_, global_state_->bundle_allocation_owner(), this, node_index};
         (*function)(node, storage_, &node_context);
         ++function;
         started_node_count = node_index + 1;
@@ -835,8 +836,8 @@ void RuntimeGraph::stop_nodes(std::size_t node_count, EvaluationContext &parent_
 
         const auto &node = compiled_graph_->node(node_index);
         EvaluationContext context{parent_context, *this, node_index};
-        const auto allocation_context = details::ScalarAllocationContext{
-            allocator_, global_state_->bundle_allocation_owner(), this, node_index};
+        const auto allocation_context =
+            details::ScalarAllocationContext{allocator_, global_state_->bundle_allocation_owner(), this, node_index};
         stops.functions[i](node, storage_, &context);
     }
 
@@ -865,8 +866,8 @@ void RuntimeGraph::stop(EvaluationContext &context) noexcept {
         const auto node_index = stops.nodes[i];
         const auto &node = compiled_graph_->node(node_index);
         EvaluationContext node_context{context, *this, node_index};
-        const auto allocation_context = details::ScalarAllocationContext{
-            allocator_, global_state_->bundle_allocation_owner(), this, node_index};
+        const auto allocation_context =
+            details::ScalarAllocationContext{allocator_, global_state_->bundle_allocation_owner(), this, node_index};
         stops.functions[i](node, storage_, &node_context);
     }
 

@@ -69,11 +69,11 @@ struct NodeShape {
     std::vector<Endpoint> inputs{};
 };
 
-struct ContextShape {
-    util::symbol name;
+struct InheritedTimeSeriesShape {
+    InheritedTimeSeriesIdentity identity;
     const TimeSeriesType *type;
 
-    bool operator==(const ContextShape &) const noexcept = default;
+    bool operator==(const InheritedTimeSeriesShape &) const noexcept = default;
 };
 
 std::size_t endpoint_path_hash(const Endpoint &endpoint) noexcept {
@@ -155,7 +155,7 @@ std::size_t root_output_for(const GraphWiring &wiring, std::size_t node) {
 struct GraphWiringStructure::Data {
     std::vector<NodeShape> nodes;
     std::vector<const TimeSeriesType *> boundaries;
-    std::vector<ContextShape> contexts;
+    std::vector<InheritedTimeSeriesShape> inherited_time_series;
     std::optional<Endpoint> result;
     const TimeSeriesType *result_type{};
     bool cacheable{true};
@@ -187,9 +187,9 @@ std::size_t structure_hash(const GraphWiringStructure::Data &data) {
     for (const auto *boundary : data.boundaries) {
         combine_pointer(result, boundary);
     }
-    for (const auto &context : data.contexts) {
-        combine(result, std::hash<std::string_view>{}(context.name.text()));
-        combine_pointer(result, context.type);
+    for (const auto &requirement : data.inherited_time_series) {
+        combine(result, requirement.identity.hash());
+        combine_pointer(result, requirement.type);
     }
     combine(result, data.result.has_value());
     if (data.result) {
@@ -263,8 +263,8 @@ bool complete_mapping(const GraphWiringStructure::Data &left, const GraphWiringS
 bool equivalent(const GraphWiringStructure::Data &left, const GraphWiringStructure::Data &right) {
     if (!left.cacheable || !right.cacheable || left.hash != right.hash || left.nodes.size() != right.nodes.size() ||
         left.boundaries.size() != right.boundaries.size() || left.boundaries != right.boundaries ||
-        left.contexts != right.contexts || left.result.has_value() != right.result.has_value() ||
-        left.result_type != right.result_type) {
+        left.inherited_time_series != right.inherited_time_series ||
+        left.result.has_value() != right.result.has_value() || left.result_type != right.result_type) {
         return false;
     }
 
@@ -294,9 +294,9 @@ std::shared_ptr<GraphWiringStructure::Data> snapshot(const GraphWiring &wiring,
                                                      std::optional<std::size_t> result_output) {
     auto data = std::make_shared<GraphWiringStructure::Data>();
     data->boundaries.reserve(boundary_outputs.size());
-    data->contexts.reserve(wiring.context_requirements().size());
-    for (const auto &requirement : wiring.context_requirements()) {
-        data->contexts.push_back({requirement.name, requirement.context_type});
+    data->inherited_time_series.reserve(wiring.inherited_requirements().size());
+    for (const auto &requirement : wiring.inherited_requirements()) {
+        data->inherited_time_series.push_back({requirement.identity, requirement.type});
     }
 
     auto external_boundaries = std::vector<Endpoint>{};
@@ -389,7 +389,7 @@ std::shared_ptr<GraphWiringStructure::Data> snapshot(const GraphWiring &wiring,
 
         auto &node = data->nodes[node_indices[original_index]];
         for (const auto input : wiring.nodes()[original_index].inputs()) {
-            if (input.is_context()) {
+            if (input.is_inherited()) {
                 node.inputs.push_back({
                     .boundary = true,
                     .node = boundary_outputs.size() + input.index(),

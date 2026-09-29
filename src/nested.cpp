@@ -69,11 +69,11 @@ class NestedNodeDefinition {
 
     NestedNodeDefinition(NestedGraphWiring wiring, const ResolvedSignature &graph_signature)
         : wiring_{std::move(wiring)}, output_type_{&static_cast<const TimeSeriesType &>(*graph_signature.output)} {
-        const auto context_count = wiring_.wiring->context_requirements().size();
-        if (context_count > graph_signature.parameters.size()) {
-            throw std::invalid_argument{"a nested graph has too many context requirements"};
+        const auto inherited_count = wiring_.wiring->inherited_requirements().size();
+        if (inherited_count > graph_signature.parameters.size()) {
+            throw std::invalid_argument{"a nested graph has too many inherited time series"};
         }
-        const auto context_parameter_start = graph_signature.parameters.size() - context_count;
+        const auto inherited_parameter_start = graph_signature.parameters.size() - inherited_count;
 
         auto parameters = std::vector<Parameter>{};
         parameters.reserve(graph_signature.parameters.size() + 1);
@@ -83,7 +83,7 @@ class NestedNodeDefinition {
              ++parameter_index) {
             const auto &parameter = graph_signature.parameters[parameter_index];
             if (parameter.type->is_time_series()) {
-                if (parameter_index >= context_parameter_start) {
+                if (parameter_index >= inherited_parameter_start) {
                     parameters.push_back({parameter.name, parameter.type, passive, optional});
                     continue;
                 }
@@ -152,9 +152,9 @@ class NestedNodeDefinition {
 
         auto &graph = state.graph;
         if (!graph.running()) {
-            const auto context_count = invocation.compiled_data().graph->context_requirement_count();
+            const auto inherited_count = invocation.compiled_data().graph->inherited_time_series_count();
             auto startup_context =
-                NestedGraphStartupContext{invocation, invocation.parameter_count() - context_count, context_count};
+                NestedGraphStartupContext{invocation, invocation.parameter_count() - inherited_count, inherited_count};
             graph.start(invocation.compiled_data(), startup_context.context(), graph_inputs);
         } else {
             graph.update_inputs(invocation.compiled_data(), graph_inputs);

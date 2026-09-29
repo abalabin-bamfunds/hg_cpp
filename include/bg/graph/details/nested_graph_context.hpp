@@ -1,7 +1,7 @@
 #pragma once
 
 #include <bg/evaluation_context.hpp>
-#include <bg/graph/details/context_time_series_section.hpp>
+#include <bg/graph/details/inherited_time_series_section.hpp>
 #include <bg/time_series/ref/ref_input.hpp>
 
 #include <cstddef>
@@ -10,7 +10,7 @@
 
 namespace bg::details {
 
-// Builds the evaluation context used to start an inner graph from its owning node's context parameters.
+// Builds the child evaluation context containing an inner graph's inherited time series references.
 class NestedGraphStartupContext {
   public:
     template <typename Invocation>
@@ -57,7 +57,7 @@ class NestedGraphStartupContext {
     EvaluationContext *parent_;
     std::size_t count_;
     Reference *references_;
-    ContextTimeSeriesSection section_;
+    InheritedTimeSeriesSection section_;
     EvaluationContext context_;
 };
 

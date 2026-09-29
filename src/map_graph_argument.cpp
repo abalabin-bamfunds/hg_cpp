@@ -71,7 +71,7 @@ class MapGraphArgumentBuilder {
         }
 
         append_key_set_parameter();
-        append_context_parameters();
+        append_inherited_time_series_parameters();
         const auto output =
             output_target_ == nullptr
                 ? nullptr
@@ -267,8 +267,8 @@ class MapGraphArgumentBuilder {
         outer_arguments_.emplace_back(key_set_argument);
     }
 
-    void append_context_parameters() {
-        for (const auto &requirement : wiring_->context_requirements()) {
+    void append_inherited_time_series_parameters() {
+        for (const auto &requirement : wiring_->inherited_requirements()) {
             parameters_.push_back({requirement.name, &requirement.boundary_input_type(), passive, optional});
             outer_arguments_.emplace_back(requirement.provider);
         }

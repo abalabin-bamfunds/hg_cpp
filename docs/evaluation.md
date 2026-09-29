@@ -33,9 +33,9 @@ The engine applies an external stop request between outer cycles.
 
 ## Evaluation order
 
-Graph compilation puts nodes in topological order. Every input source is before
-the node that receives it. A runtime graph processes scheduled node indices once
-in increasing order.
+Graph compilation emits each node's input dependencies in signature order before
+that node while scanning nodes in wiring order. It rejects dependency cycles.
+A runtime graph processes scheduled node indices once in increasing order.
 
 Multiple input updates coalesce into one completed node evaluation in an outer
 cycle.

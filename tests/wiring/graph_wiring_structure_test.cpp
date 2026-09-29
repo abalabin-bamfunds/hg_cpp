@@ -190,6 +190,24 @@ details::GraphWiringStructure context_structure(bool alternate_provider) {
     return details::graph_wiring_structure(inner, std::span<const WiringPoint>{}, result);
 }
 
+details::GraphWiringStructure inherited_requirement_structure(const void *identity, bool alternate_provider) {
+    const auto first_provider = node<boundary_node>();
+    const auto second_provider = node<alternate_boundary_node>();
+    const auto copy = node<add_node>();
+    auto wiring = GraphWiring{};
+    const auto context = WiringContext{wiring};
+    const auto provider =
+        alternate_provider ? static_cast<WiringPoint>(second_provider()) : static_cast<WiringPoint>(first_provider());
+    const auto requirement_identity = details::InheritedTimeSeriesIdentity::object(identity);
+    const auto requirement =
+        wiring.require_inherited_time_series(requirement_identity, util::symbol{"service_input"}, TS<i64>::type());
+    const auto result = copy(requirement, requirement);
+    wiring.provide_inherited_time_series(requirement_identity, TS<i64>::type(), provider);
+    const auto boundaries = std::array<WiringPoint, 1>{provider};
+
+    return details::graph_wiring_structure(wiring, boundaries, static_cast<WiringPoint>(result));
+}
+
 } // namespace
 
 TEST_CASE("graph wiring structure ignores local names and template object lifetimes",
@@ -215,6 +233,18 @@ TEST_CASE("graph wiring structure preserves shared nodes", "[graph_wiring][featu
     const auto duplicated = branch_structure(false);
 
     CHECK_FALSE(shared == duplicated);
+}
+
+TEST_CASE("graph structure compares inherited requirement identity and type, not provider",
+          "[graph_wiring][feature:wiring]") {
+    const auto first_identity = 0;
+    const auto second_identity = 0;
+    const auto first = inherited_requirement_structure(&first_identity, false);
+    const auto same_identity_other_provider = inherited_requirement_structure(&first_identity, true);
+    const auto different_identity = inherited_requirement_structure(&second_identity, false);
+
+    CHECK(first == same_identity_other_provider);
+    CHECK_FALSE(first == different_identity);
 }
 
 TEST_CASE("an unhashable wired scalar disables graph structure caching", "[graph_wiring][feature:wiring]") {

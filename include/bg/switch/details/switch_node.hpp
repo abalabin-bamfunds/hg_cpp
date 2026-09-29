@@ -24,7 +24,7 @@ struct SwitchInputBoundary {
 struct SwitchBranchWiring {
     std::shared_ptr<const GraphWiring> wiring;
     std::vector<SwitchInputBoundary> inputs;
-    std::optional<std::size_t> context_parameter_start;
+    std::optional<std::size_t> inherited_parameter_start;
     std::optional<std::size_t> output_node;
 };
 

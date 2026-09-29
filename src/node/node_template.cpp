@@ -40,7 +40,7 @@ std::optional<std::size_t> node_hash(const NodeTemplate &node_template, const Re
     }
     for (const auto input : inputs) {
         combine_hash(result, input.index());
-        combine_hash(result, input.is_context());
+        combine_hash(result, input.is_inherited());
     }
     for (const auto *state_type : state_types) {
         combine_pointer(result, state_type);
