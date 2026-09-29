@@ -108,6 +108,7 @@ add_executable(
     wiring/switch_test.cpp
     wiring/operator_test.cpp
     wiring/requirement_test.cpp
+    wiring/service_test.cpp
     wiring/resolver_test.cpp
     wiring/time_series_bundle_wiring_test.cpp
     wiring/variadic_collection_wiring_test.cpp

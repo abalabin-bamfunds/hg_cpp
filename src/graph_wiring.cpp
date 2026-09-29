@@ -1,5 +1,6 @@
 #include <bg/graph/graph_wiring.hpp>
 
+#include <bg/graph/details/service_plan.hpp>
 #include <bg/graph/details/wiring_record.hpp>
 #include <bg/graph/wiring_context.hpp>
 #include <bg/graph/wiring_error.hpp>
@@ -53,17 +54,6 @@ std::optional<Scalar<>> scalar_value(const WiringArgument &argument) {
         return std::nullopt;
     }
     return argument.scalar();
-}
-
-bool same_signature(const ResolvedSignature &left, const ResolvedSignature &right) noexcept {
-    if (left.output != right.output || left.parameters.size() != right.parameters.size()) {
-        return false;
-    }
-
-    return std::ranges::equal(left.parameters, right.parameters,
-                              [](const auto &left_parameter, const auto &right_parameter) {
-                                  return left_parameter.type == right_parameter.type;
-                              });
 }
 
 bool same_scalar_arguments(std::span<const WiredScalar> stored, std::span<const WiringArgument> arguments) {
@@ -232,7 +222,7 @@ std::optional<WiringPoint> GraphWiring::find_wired_node(std::size_t hash, const 
                                                         std::span<const WiringArgument> arguments) {
     const auto found = wired_nodes_.find(util::linear_hash_table::hash_code(hash), [&](auto position) {
         const auto &node = nodes_[position];
-        return &node.node_template() == &node_template && same_signature(node.signature(), signature) &&
+        return &node.node_template() == &node_template && same_resolved_signature(node.signature(), signature) &&
                std::ranges::equal(node.inputs(), inputs) && std::ranges::equal(node.state_types(), state_types) &&
                same_scalar_arguments(node.scalar_values(), arguments);
     });

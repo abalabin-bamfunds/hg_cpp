@@ -101,6 +101,17 @@ const TypeMapValue *resolve_missing_mapping(void *context, TypeMap &type_map, co
 
 } // namespace
 
+bool same_resolved_signature(const ResolvedSignature &left, const ResolvedSignature &right) noexcept {
+    if (left.output != right.output || left.parameters.size() != right.parameters.size()) {
+        return false;
+    }
+
+    return std::ranges::equal(left.parameters, right.parameters,
+                              [](const auto &left_parameter, const auto &right_parameter) {
+                                  return left_parameter.type == right_parameter.type;
+                              });
+}
+
 void Signature::validate_variadic_parameters() const {
     auto positional_seen = false;
     auto named_seen = false;

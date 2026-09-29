@@ -142,6 +142,8 @@ class Signature {
 };
 
 [[nodiscard]] std::partial_ordering compare_specificity(const Signature &left, const Signature &right);
+[[nodiscard]] bool same_resolved_signature(const ResolvedSignature &left,
+                                           const ResolvedSignature &right) noexcept;
 
 namespace details {
 [[nodiscard]] std::partial_ordering compare_parameter_specificity(const Signature &left, const Signature &right,

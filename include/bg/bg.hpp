@@ -66,6 +66,7 @@
 #include <bg/scalar/type.hpp>
 #include <bg/scalar/value.hpp>
 #include <bg/schedule_handle.hpp>
+#include <bg/service.hpp>
 #include <bg/simulation_evaluation_engine.hpp>
 #include <bg/time_series/cpp_runtime_type.hpp>
 #include <bg/time_series/guarantee_variable.hpp>

@@ -22,6 +22,7 @@ namespace bg {
 
 class NodeTemplate;
 class Operator;
+class Service;
 class TimeSeriesRuntimeType;
 class TimeSeriesType;
 class WiringTemplate;
@@ -30,6 +31,7 @@ namespace details {
 class WiringRecord;
 class GraphWiringStructure;
 class ContextScope;
+class ServicePlan;
 WiringPoint add_wiring_record(std::unique_ptr<WiringRecord> record);
 WiringPoint add_item_wiring_record(WiringPoint parent, item_id_t item, std::unique_ptr<WiringRecord> record);
 WiringPoint materialize_wiring_point(WiringPoint point, const TimeSeriesType &type);
@@ -93,6 +95,7 @@ class GraphWiring {
   private:
     friend class NodeTemplate;
     friend class Operator;
+    friend class Service;
     friend class WiringPoint;
     friend class WiringTemplate;
     friend WiringPoint details::add_wiring_record(std::unique_ptr<details::WiringRecord> record);
@@ -135,6 +138,10 @@ class GraphWiring {
                                                         WiringPoint provider);
     [[nodiscard]] WiringPoint inherited_requirement_point(std::size_t index) const;
     [[nodiscard]] WiredInput wire_input(WiringPoint point, const TimeSeriesType &type);
+    [[nodiscard]] std::optional<WiringPoint> require_service(const Service &service, ResolvedSignature signature,
+                                                             const TypeMap &type_map,
+                                                             std::span<const WiringArgument> arguments);
+    details::ServicePlan &root_service_plan();
 
     [[nodiscard]] const WiringPath &make_path(util::symbol name, util::symbol label);
     util::symbol default_label() const;
@@ -149,6 +156,7 @@ class GraphWiring {
     std::optional<std::pmr::unsynchronized_pool_resource> variable_memory_;
     allocator variable_allocator_;
     std::vector<std::unique_ptr<NodeTemplate>> node_templates_;
+    std::unique_ptr<details::ServicePlan> service_plan_;
     std::vector<std::unique_ptr<details::WiringRecord>> wiring_records_;
     struct ItemRecord {
         const details::WiringRecord *parent;
