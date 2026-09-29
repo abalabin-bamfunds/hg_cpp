@@ -2,6 +2,7 @@
 
 #include <bg/node/input.hpp>
 #include <bg/python/scalar_conversion.hpp>
+#include <bg/time_series/ref/ref_storage.hpp>
 #include <bg/time_series/time_series_input.hpp>
 #include <bg/time_series/time_series_type.hpp>
 
@@ -50,39 +51,37 @@ class CallbackScope {
 
 class NB_HIDDEN InputView {
   public:
-    InputView(In<TS<SCALAR>> input, const PythonScalarConversions &conversions,
-              std::shared_ptr<CallbackLifetime> lifetime,
+    InputView(In<TS_T> input, const PythonScalarConversions &conversions, std::shared_ptr<CallbackLifetime> lifetime,
               std::uint64_t generation) noexcept
         : input_{input}, conversions_{&conversions}, lifetime_{std::move(lifetime)}, generation_{generation} {}
 
-    bool valid() const {
-        check_lifetime();
-        return input_.valid();
-    }
-
-    bool modified() const {
-        check_lifetime();
-        return input_.modified();
-    }
-
-    nanobind::object value() const {
-        check_lifetime();
-        if (!input_.valid()) {
-            throw std::runtime_error{"an invalid Python time-series input has no value"};
-        }
-        const auto value = input_.value_view();
-        return conversions_->to_python(Scalar<>::from(value));
-    }
+    bool valid() const;
+    bool modified() const;
+    nanobind::object value() const;
+    nanobind::object delta_value() const;
+    nanobind::object getitem(nanobind::handle key) const;
 
   private:
-    void check_lifetime() const {
-        if (lifetime_ == nullptr || !lifetime_->active(generation_)) {
-            throw std::runtime_error{"a Python time-series input view was used outside its callback"};
-        }
-    }
+    void check_lifetime() const;
 
-    In<TS<SCALAR>> input_;
+    In<TS_T> input_;
     const PythonScalarConversions *conversions_;
+    std::shared_ptr<CallbackLifetime> lifetime_;
+    std::uint64_t generation_;
+};
+
+class NB_HIDDEN ReferenceValue {
+  public:
+    ReferenceValue(Reference value, std::shared_ptr<CallbackLifetime> lifetime, std::uint64_t generation) noexcept
+        : value_{value}, lifetime_{std::move(lifetime)}, generation_{generation} {}
+
+    Reference value() const;
+    bool valid() const;
+
+  private:
+    void check_lifetime() const;
+
+    Reference value_;
     std::shared_ptr<CallbackLifetime> lifetime_;
     std::uint64_t generation_;
 };

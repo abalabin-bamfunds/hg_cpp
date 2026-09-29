@@ -64,7 +64,6 @@ using namespace bg::literals;
 
 void register_time_series_list_operators(Operator &getitem) {
     getitem.overload(bg::node<tsl_getitem_scalar_reference<V>>());
-    getitem.overload(bg::node<tsl_getitem_scalar_reference<REF<V, G>>>());
     getitem.overload(
         bg::graph("name"_n = "tsl_getitem", [](wp<TSL<TS_T, SIZE>> collection, std::int64_t index) -> wp<TS_T> {
             if (index < 0) {
@@ -74,7 +73,6 @@ void register_time_series_list_operators(Operator &getitem) {
             return wp<TS_T>{time_series_list_item(collection, static_cast<std::size_t>(index))};
         }));
     getitem.overload(bg::node<tsl_getitem_time_series<V>>());
-    getitem.overload(bg::node<tsl_getitem_time_series<REF<V, G>>>());
 }
 
 } // namespace bg::details

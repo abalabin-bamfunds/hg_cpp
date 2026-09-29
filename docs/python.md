@@ -30,8 +30,8 @@ with `bg::python`.
 
 ## Graph authoring
 
-The package exports `TS[T]`, `@source_node`, `@compute_node`, `@graph`,
-`test_graph`, `operators`, `Symbol`, and `symbol`.
+The package exports time-series annotations, node and graph decorators,
+`test_graph`, engine operators, `Symbol`, and `symbol`.
 
 ```python
 import bg
@@ -72,20 +72,65 @@ passes `None` to the callback when absent.
 
 `test_graph` accepts one update sequence for every graph parameter, and every
 graph parameter must currently be `TS[T]`. Each sequence element is a value or
-`None`; `None` skips that input's update for the cycle. The result has one entry
-per cycle: an output value when the graph publishes one, otherwise `None`.
+`None`; `None` skips that input's update for the cycle. The graph must return a
+`TS[T]`. The result has one entry per cycle: an output value when the graph
+publishes one, otherwise `None`.
+
+## Time-series types
+
+Python definitions can use these annotations:
+
+```python
+bg.TS[int]
+bg.REF[bg.TS[int]]
+bg.TSS[int]
+bg.TSL[bg.TS[int], 4]
+bg.TSD[int, bg.TS[float]]
+bg.TSB[Quote]
+```
+
+`TSL` currently requires a fixed size. A TSB uses a Python schema:
+
+```python
+class BaseQuote(bg.TimeSeriesSchema):
+    bid: bg.TS[float]
+
+class Quote(BaseQuote):
+    ask: bg.TS[float]
+```
+
+Schemas support single inheritance. Each schema class receives a distinct
+native identity; its qualified name is descriptive.
 
 ## Python nodes
 
 `@source_node` declares a no-input node that runs in the first evaluation
-cycle. `@compute_node` declares a fixed-input node. Inputs can be `TS[T]`
-views or scalar arguments. A time-series input view exposes `valid`,
-`modified`, and `value`; it becomes invalid when the callback returns.
+cycle. `@compute_node` declares a fixed-input node. Inputs can be any supported
+time-series type or a scalar argument.
 
-A callback's return value is a scalar output delta. Returning `None` requests
-no output change. Sink nodes have no output annotation and must return `None`.
-An exception raised by a callback propagates from `test_graph`. Each test run
-constructs and destroys a new runtime graph.
+A callback returns an output delta. Returning `None` requests no output change.
+Sink nodes have no output annotation and must return `None`. An exception
+raised by a callback propagates from `test_graph`. Each test run constructs and
+destroys a new runtime graph.
+
+An input view exposes `valid`, `modified`, `value`, and `delta_value`.
+Collection inputs also support item access with `value[key]`. Item access
+returns another input view. All input views expire when the callback returns.
+
+Output deltas use these forms:
+
+| Output | Delta |
+| --- | --- |
+| `TS[T]` | a `T` value |
+| `REF[TS_T]` | `ReferenceValue` obtained from a reference input |
+| `TSS[T]` | `SetDelta(added=..., removed=...)` |
+| fixed `TSL[TS_T, N]` | `{index: item_delta}` |
+| `TSB[Schema]` | `{field_name: item_delta}` |
+| `TSD[K, TS_T]` | `{key: item_delta}`; use `REMOVE` as an item delta to remove a key |
+
+`TSDDelta(removed=..., modified=...)` is the structured TSD change value
+returned by `InputView.delta_value`. A node can also return it as an output
+delta. Collection item deltas recurse through the same table.
 
 The currently accepted scalar annotations are `bool`, `int`, `float`, `str`,
 and `bg.Symbol`. Python node outputs currently support `bool`, `int`, `float`,
@@ -116,8 +161,38 @@ corresponding Python-to-scalar conversion before values of a new scalar type
 are wired. Registrations retain their Python classes and last for the process.
 
 Python wiring points are temporary proxies used while a graph is being
-constructed. They expire when graph construction returns. Input views expire
-when their callback returns.
+constructed. They expire when graph construction returns.
+
+## Higher-order graphs
+
+`map`, `mesh`, and `switch_` accept decorated Python graph definitions and use
+the engine's normal C++ implementations.
+
+```python
+@bg.graph
+def branch(key: bg.TS[int], value: bg.TS[float]) -> bg.TS[float]:
+    return scale(value)
+
+mapped = bg.map(branch, values, __key_arg__="key")
+```
+
+Map and mesh accept positional and named arguments. `pass_through(value)`
+passes a complete time series to every branch. Their key and key-set selectors
+use `__key_arg__` and `__key_set_arg__`.
+
+`mesh()[key]` selects a branch from the current mesh.
+`mesh("name")[key]` selects a named enclosing mesh. A mesh definition accepts
+`name="name"`.
+
+Switch cases use a dictionary. A tuple groups keys that use the same graph, and
+`DEFAULT` supplies the fallback graph:
+
+```python
+selected = bg.switch_(key, {(1, 2): first, 3: second, bg.DEFAULT: fallback}, value)
+```
+
+Source and sink branch graphs are supported. A sink higher-order call returns
+`None`.
 
 ## Runtime boundary
 
@@ -127,10 +202,10 @@ releases the GIL while native graph evaluation runs. Each Python node callback
 acquires it for argument conversion, callback execution, and output
 conversion.
 
-The current package does not expose collection annotations and deltas,
-reference annotations, Python-object scalar storage, Python-declared schemas,
-injected runtime services, or Python graph adaptation for higher-order
-operators. These are not part of the implemented Python API.
+The current package does not expose Python-object scalar storage, scalar bundle
+schemas, injected runtime services, variadic Python definitions, or dynamic
+Python node inputs. Direct `TS[str]` output storage is also deferred; strings
+are supported as scalar wiring arguments.
 
 Python definition wrappers retain their callbacks. A wired runtime graph also
 retains each Python node callback that it uses. Destroy these graphs before

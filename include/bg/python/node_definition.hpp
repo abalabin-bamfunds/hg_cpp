@@ -8,6 +8,11 @@
 #include <bg/python/scalar_conversion.hpp>
 #include <bg/type/guarantee_variable.hpp>
 #include <bg/type/signature.hpp>
+#include <bg/type/time_series_bundle_type.hpp>
+#include <bg/type/time_series_dict_type.hpp>
+#include <bg/type/time_series_list_type.hpp>
+#include <bg/type/time_series_reference_type.hpp>
+#include <bg/type/time_series_set_type.hpp>
 #include <bg/type/time_series_value_type.hpp>
 
 #include <nanobind/nanobind.h>
@@ -15,6 +20,7 @@
 #include <memory>
 #include <optional>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace bg::python {
@@ -22,8 +28,12 @@ namespace bg::python {
 class BG_PYTHON_API PythonNodeDefinition {
   public:
     struct SignatureDefinition {
+        using GenericTimeSeriesType =
+            std::variant<GenericTimeSeriesValueType, GenericTimeSeriesReferenceType, GenericTimeSeriesSetType,
+                         GenericTimeSeriesListType, GenericTimeSeriesDictionaryType, GenericTimeSeriesBundleType>;
+
         SignatureDefinition(std::vector<GuaranteeVariable> guarantees,
-                            std::vector<GenericTimeSeriesValueType> time_series_types, Signature signature)
+                            std::vector<GenericTimeSeriesType> time_series_types, Signature signature)
             : guarantees{std::move(guarantees)}, time_series_types{std::move(time_series_types)},
               signature{std::move(signature)} {}
 
@@ -32,7 +42,7 @@ class BG_PYTHON_API PythonNodeDefinition {
 
         // Signature type pointers refer to these vectors, which are immutable after construction.
         std::vector<GuaranteeVariable> guarantees;
-        std::vector<GenericTimeSeriesValueType> time_series_types;
+        std::vector<GenericTimeSeriesType> time_series_types;
         Signature signature;
     };
 
@@ -47,8 +57,7 @@ class BG_PYTHON_API PythonNodeDefinition {
     struct CompiledData {
         Object function;
         std::vector<ParameterConversion> parameters;
-        const ScalarType *output_scalar_type{};
-        PythonToScalar output_conversion{};
+        bool has_output{};
         std::shared_ptr<CallbackLifetime> lifetime{std::make_shared<CallbackLifetime>()};
 
         nanobind::object argument(NodeInvocation<CompiledData> invocation, std::size_t index,

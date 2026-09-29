@@ -368,7 +368,7 @@ TEST_CASE("map selects a key parameter by name",
           "[feature:map][feature:nested-graph][feature:operator][series:tsd][shape:nested]"
           "[guarantee:const][definition:aggregate]") {
     const auto tested = [&](wp<TS<i64>> value) {
-        const auto result = map(graph<NamedMapKey>(), values_at_key_one(value),
+        const auto result = map(graph<NamedMapKey>(), "value"_n = values_at_key_one(value),
                                 "__key_arg__"_n = "selected_key");
         return result[std::int64_t{1}]
             .as<TS<std::int64_t, TimeSeriesGuarantee::const_>>();

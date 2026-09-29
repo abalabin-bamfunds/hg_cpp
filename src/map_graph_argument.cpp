@@ -41,34 +41,17 @@ class MapGraphArgumentBuilder {
     MapGraphArgumentWiring build() {
         resolve_key_argument();
 
-        auto graph_arguments = std::vector<WiringArgument>{};
+        auto supplied_graph_arguments = std::vector<WiringArgument>{};
         auto boundaries = std::vector<WiringPoint>{};
-        graph_arguments.reserve(call_.positional.size() + call_.named.size() +
-                                static_cast<std::size_t>(key_parameter_.has_value()));
+        supplied_graph_arguments.reserve(call_.positional.size() + call_.named.size());
 
         auto context = WiringContext{*wiring_};
-        auto graph_parameter = std::size_t{};
-        const auto append_key = [&] {
-            if (!key_parameter_ || graph_parameter != *key_parameter_) {
-                return;
-            }
-
-            const auto &key = time_series_value_type(*call_.key_type, TimeSeriesGuarantee::const_);
-            const auto boundary = wire_nested_constant_input(key);
-            key_input_node_ = wired_output_node_index(*wiring_, boundary);
-            boundaries.push_back(boundary);
-            graph_arguments.emplace_back(boundary);
-            ++graph_parameter;
-        };
-
         const auto append = [&](MapArgument &argument, std::size_t user_index) {
-            append_key();
             if (call_.selected_key_set == user_index && call_.omit_selected_key_set_argument) {
                 return;
             }
 
-            graph_arguments.push_back(graph_argument(argument, boundaries));
-            ++graph_parameter;
+            supplied_graph_arguments.push_back(graph_argument(argument, boundaries));
         };
 
         for (auto index = std::size_t{}; index < call_.positional.size(); ++index) {
@@ -77,11 +60,8 @@ class MapGraphArgumentBuilder {
         for (auto index = std::size_t{}; index < call_.named.size(); ++index) {
             append(call_.named[index], call_.positional.size() + index);
         }
-        append_key();
-        if (key_parameter_ && graph_parameter <= *key_parameter_) {
-            throw WiringError{"__key_arg__ selects a graph parameter that is out of range"};
-        }
 
+        auto graph_arguments = arrange_graph_arguments(std::move(supplied_graph_arguments), boundaries);
         const auto result = function_(type_map_, std::span<const WiringArgument>{graph_arguments});
         const auto structure = graph_wiring_structure(*wiring_, boundaries, result);
         if (result) {
@@ -143,6 +123,86 @@ class MapGraphArgumentBuilder {
         if (function_.signature().parameter_count() != 0 && function_.signature().parameter(0).name.text() == "key") {
             key_parameter_ = 0;
         }
+    }
+
+    std::vector<WiringArgument> arrange_graph_arguments(std::vector<WiringArgument> supplied_arguments,
+                                                        std::vector<WiringPoint> &boundaries) {
+        const auto &signature = function_.signature();
+        const auto fixed_count = signature.first_variadic_parameter().value_or(signature.parameter_count());
+        auto fixed = std::vector<std::optional<WiringArgument>>(fixed_count);
+
+        if (key_parameter_) {
+            if (*key_parameter_ >= signature.parameter_count()) {
+                throw WiringError{"__key_arg__ selects a graph parameter that is out of range"};
+            }
+            if (*key_parameter_ >= fixed_count || signature.parameter(*key_parameter_).context) {
+                throw WiringError{"__key_arg__ must select a fixed graph parameter"};
+            }
+
+            const auto &key = time_series_value_type(*call_.key_type, TimeSeriesGuarantee::const_);
+            const auto boundary = wire_nested_constant_input(key);
+            key_input_node_ = wired_output_node_index(*wiring_, boundary);
+            boundaries.push_back(boundary);
+            fixed[*key_parameter_].emplace(boundary);
+        }
+
+        auto variadic = std::vector<WiringArgument>{};
+        variadic.reserve(supplied_arguments.size());
+        auto next_positional = std::size_t{};
+        for (auto &argument : supplied_arguments) {
+            if (preserve_named_arguments_ && argument.name()) {
+                auto named_parameter = std::optional<std::size_t>{};
+                for (auto index = std::size_t{}; index < fixed_count; ++index) {
+                    const auto &candidate = signature.parameter(index);
+                    if (!candidate.context && candidate.name == *argument.name()) {
+                        named_parameter = index;
+                        break;
+                    }
+                }
+                if (named_parameter) {
+                    const auto index = *named_parameter;
+                    if (fixed[index]) {
+                        throw WiringError{"a graph parameter received more than one " + std::string{name_.text()} +
+                                          " argument"};
+                    }
+
+                    wiring_argument_access::clear_name(argument);
+                    fixed[index].emplace(std::move(argument));
+                    continue;
+                }
+
+                variadic.push_back(std::move(argument));
+                continue;
+            }
+
+            while (next_positional < fixed_count &&
+                   (fixed[next_positional] || signature.parameter(next_positional).context)) {
+                ++next_positional;
+            }
+            if (next_positional == fixed_count) {
+                variadic.push_back(std::move(argument));
+                continue;
+            }
+
+            fixed[next_positional++].emplace(std::move(argument));
+        }
+
+        auto result = std::vector<WiringArgument>{};
+        result.reserve(supplied_arguments.size() + static_cast<std::size_t>(key_parameter_.has_value()));
+        for (auto index = std::size_t{}; index < fixed_count; ++index) {
+            if (signature.parameter(index).context) {
+                continue;
+            }
+            if (!fixed[index]) {
+                throw WiringError{"a " + std::string{name_.text()} +
+                                  " call does not provide a fixed graph parameter"};
+            }
+            result.push_back(std::move(*fixed[index]));
+        }
+        for (auto &argument : variadic) {
+            result.push_back(std::move(argument));
+        }
+        return result;
     }
 
     MapArgument &supplied(std::size_t index) {

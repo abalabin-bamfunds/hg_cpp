@@ -8,11 +8,18 @@
 #include <bg/python/wiring_point.hpp>
 #include <bg/scalar/runtime_type.hpp>
 #include <bg/type/type_resolution_error.hpp>
+#include <bg/type/time_series_bundle_type.hpp>
+#include <bg/type/time_series_dict_type.hpp>
+#include <bg/type/time_series_list_type.hpp>
+#include <bg/type/time_series_reference_type.hpp>
+#include <bg/type/time_series_set_type.hpp>
 #include <bg/testing/test_graph.hpp>
 #include <bg/type/type_text.hpp>
 #include <bg/util/scope_exit.hpp>
 #include <bg/version.hpp>
 
+#include "delta.hpp"
+#include "higher_order.hpp"
 #include "operator_binding.hpp"
 #include "wiring_argument.hpp"
 
@@ -31,6 +38,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace nb = nanobind;
@@ -42,14 +50,79 @@ class TypeDescriptor {
   public:
     explicit TypeDescriptor(const Type &type, bool accepts_absent_scalar = false) noexcept
         : type_{&type}, accepts_absent_scalar_{accepts_absent_scalar} {}
+    explicit TypeDescriptor(const BundleSchema &schema) noexcept : type_{&schema}, bundle_schema_{&schema} {}
 
     const Type &type() const noexcept { return *type_; }
+    const BundleSchema *bundle_schema() const noexcept { return bundle_schema_; }
     bool accepts_absent_scalar() const noexcept { return accepts_absent_scalar_; }
 
   private:
     const Type *type_;
+    const BundleSchema *bundle_schema_{};
     bool accepts_absent_scalar_;
 };
+
+class PythonSchemaRegistry {
+  public:
+    TypeDescriptor make(std::string_view name, const std::optional<TypeDescriptor> &base,
+                        const std::vector<std::pair<std::string, TypeDescriptor>> &fields) {
+        const BundleSchema *base_schema = nullptr;
+        if (base) {
+            base_schema = base->bundle_schema();
+            if (base_schema == nullptr) {
+                throw std::invalid_argument{"a Python time-series schema base must be a bundle schema"};
+            }
+        }
+
+        auto bundle_fields = std::vector<BundleField>{};
+        bundle_fields.reserve(fields.size());
+        for (const auto &[field_name, field_type] : fields) {
+            const auto *time_series = type_cast<TimeSeriesType>(&field_type.type());
+            if (time_series == nullptr) {
+                throw std::invalid_argument{"a Python time-series schema field must have a time-series type"};
+            }
+            bundle_fields.push_back({util::symbol{field_name}, time_series});
+        }
+
+        auto identity = std::make_shared<const char>();
+        const auto *identity_address = identity.get();
+        identities_.push_back(std::move(identity));
+        return TypeDescriptor{bundle_schema(util::symbol{name}, identity_address, base_schema, bundle_fields)};
+    }
+
+  private:
+    std::vector<std::shared_ptr<const char>> identities_;
+};
+
+PythonSchemaRegistry &schema_registry() {
+    static auto registry = PythonSchemaRegistry{};
+    return registry;
+}
+
+PythonNodeDefinition::SignatureDefinition::GenericTimeSeriesType generic_time_series_type(
+    const TimeSeriesType &type, const GuaranteeVariable &guarantee) {
+    if (const auto *value = type_cast<TimeSeriesValueType>(&type)) {
+        return GenericTimeSeriesValueType{value->value_type(), guarantee};
+    }
+    if (const auto *reference = type_cast<TimeSeriesReferenceType>(&type)) {
+        return GenericTimeSeriesReferenceType{reference->target_type(), guarantee};
+    }
+    if (const auto *set = type_cast<TimeSeriesSetType>(&type)) {
+        return GenericTimeSeriesSetType{set->item_type(), guarantee};
+    }
+    if (const auto *list = type_cast<TimeSeriesListType>(&type)) {
+        return GenericTimeSeriesListType{list->item_type(), list->size(), guarantee};
+    }
+    if (const auto *dictionary = type_cast<TimeSeriesDictionaryType>(&type)) {
+        return GenericTimeSeriesDictionaryType{dictionary->key_type(), dictionary->value_type(),
+                                               dictionary->key_set_type(), guarantee};
+    }
+    if (const auto *bundle = type_cast<TimeSeriesBundleType>(&type)) {
+        return GenericTimeSeriesBundleType{bundle->schema_type(), guarantee};
+    }
+
+    throw std::invalid_argument{"a Python definition uses an unsupported time-series type"};
+}
 
 std::shared_ptr<const PythonNodeDefinition::SignatureDefinition>
 make_signature(std::string_view name, const std::vector<std::pair<std::string, TypeDescriptor>> &parameters,
@@ -58,16 +131,16 @@ make_signature(std::string_view name, const std::vector<std::pair<std::string, T
         parameters, [](const auto &parameter) { return parameter.second.type().is_time_series(); }));
     auto guarantees = std::vector<GuaranteeVariable>{};
     guarantees.reserve(time_series_parameter_count);
-    auto time_series_types = std::vector<GenericTimeSeriesValueType>{};
+    auto time_series_types = std::vector<PythonNodeDefinition::SignatureDefinition::GenericTimeSeriesType>{};
     time_series_types.reserve(time_series_parameter_count);
     auto resolved_parameters = std::vector<Parameter>{};
     resolved_parameters.reserve(parameters.size());
     for (const auto &[parameter_name, parameter_type] : parameters) {
         const auto *type = &parameter_type.type();
-        if (const auto *time_series = type_cast<TimeSeriesValueType>(type)) {
+        if (const auto *time_series = type_cast<TimeSeriesType>(type)) {
             guarantees.emplace_back(util::symbol{parameter_name});
-            time_series_types.emplace_back(time_series->value_type(), guarantees.back());
-            type = &time_series_types.back();
+            time_series_types.push_back(generic_time_series_type(*time_series, guarantees.back()));
+            type = std::visit([](const auto &value) -> const Type * { return &value; }, time_series_types.back());
         }
 
         auto parameter = Parameter{util::symbol{parameter_name}, type};
@@ -243,6 +316,48 @@ void bind_core(nb::module_ &module) {
         }
         return TypeDescriptor{time_series_value_type(*scalar, TimeSeriesGuarantee::ordinary)};
     });
+    module.def("_reference_type", [](const TypeDescriptor &value) {
+        const auto *target = type_cast<TimeSeriesType>(&value.type());
+        if (target == nullptr) {
+            throw std::invalid_argument{"REF[...] requires a time-series annotation"};
+        }
+        return TypeDescriptor{time_series_reference_type(*target, TimeSeriesGuarantee::ordinary)};
+    });
+    module.def("_time_series_set_type", [](const TypeDescriptor &value) {
+        const auto *item = type_cast<ScalarType>(&value.type());
+        if (item == nullptr) {
+            throw std::invalid_argument{"TSS[...] requires a scalar annotation"};
+        }
+        return TypeDescriptor{time_series_set_type(*item, TimeSeriesGuarantee::ordinary)};
+    });
+    module.def("_time_series_list_type", [](const TypeDescriptor &value, std::size_t size) {
+        const auto *item = type_cast<TimeSeriesType>(&value.type());
+        if (item == nullptr) {
+            throw std::invalid_argument{"TSL[...] requires a time-series item annotation"};
+        }
+        return TypeDescriptor{time_series_list_type(*item, size, TimeSeriesGuarantee::ordinary)};
+    });
+    module.def("_time_series_dict_type", [](const TypeDescriptor &key_value, const TypeDescriptor &item_value) {
+        const auto *key = type_cast<ScalarType>(&key_value.type());
+        const auto *item = type_cast<TimeSeriesType>(&item_value.type());
+        if (key == nullptr || item == nullptr) {
+            throw std::invalid_argument{"TSD[...] requires a scalar key and a time-series item annotation"};
+        }
+        return TypeDescriptor{time_series_dictionary_type(*key, *item, TimeSeriesGuarantee::ordinary)};
+    });
+    module.def("_make_time_series_schema", [](std::string name, nb::handle identity,
+                                               std::optional<TypeDescriptor> base,
+                                               const std::vector<std::pair<std::string, TypeDescriptor>> &fields) {
+        (void)identity;
+        return schema_registry().make(name, base, fields);
+    });
+    module.def("_time_series_bundle_type", [](const TypeDescriptor &value) {
+        const auto *schema = value.bundle_schema();
+        if (schema == nullptr) {
+            throw std::invalid_argument{"TSB[...] requires a TimeSeriesSchema"};
+        }
+        return TypeDescriptor{time_series_bundle_type(*schema, TimeSeriesGuarantee::ordinary)};
+    });
     module.def("_optional_type", [](const TypeDescriptor &value) {
         if (value.type().is_time_series() || !value.type().is_scalar()) {
             throw std::invalid_argument{"Optional[...] currently applies only to scalar node inputs"};
@@ -263,6 +378,7 @@ void bind_core(nb::module_ &module) {
     module.def("_wire_node", &wire_node);
     module.def("_wire_graph", &wire_graph);
     module.def("_test_graph", &test_graph);
+    module.def("_register_delta_types", &details::register_delta_types);
     module.def("_scalar_conversions_address",
                [] { return reinterpret_cast<std::uintptr_t>(&scalar_conversions()); });
 
@@ -280,7 +396,10 @@ void bind_core(nb::module_ &module) {
     nb::class_<InputView>(module, "InputView")
         .def_prop_ro("valid", &InputView::valid)
         .def_prop_ro("modified", &InputView::modified)
-        .def_prop_ro("value", &InputView::value);
+        .def_prop_ro("value", &InputView::value)
+        .def_prop_ro("delta_value", &InputView::delta_value)
+        .def("__getitem__", &InputView::getitem);
+    nb::class_<ReferenceValue>(module, "ReferenceValue").def_prop_ro("valid", &ReferenceValue::valid);
     nb::class_<PythonNodeDefinition>(module, "_PythonNodeDefinition");
     nb::class_<PythonGraphDefinition>(module, "_PythonGraphDefinition");
 
@@ -311,6 +430,7 @@ void bind_core(nb::module_ &module) {
     (void) scalar_conversions().add_python_type(nb::type<util::symbol>(), symbol_type());
 
     module.attr("symbol") = module.attr("Symbol");
+    details::bind_higher_order(module);
     details::bind_operators(module);
 }
 

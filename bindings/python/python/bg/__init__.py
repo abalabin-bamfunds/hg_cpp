@@ -12,10 +12,21 @@ from ._bg import (
     _Type,
     _make_graph,
     _make_node,
+    _make_time_series_schema,
+    _map,
+    _mesh,
+    _mesh_dependency,
     _optional_type,
+    _reference_type,
+    _register_delta_types,
     _scalar_type,
     _test_graph,
+    _time_series_dict_type,
+    _time_series_bundle_type,
+    _time_series_list_type,
+    _time_series_set_type,
     _time_series_type,
+    _switch,
     _wire_graph,
     _wire_node,
     symbol,
@@ -23,11 +34,212 @@ from ._bg import (
 )
 
 
+class _Remove:
+    def __repr__(self) -> str:
+        return "REMOVE"
+
+
+REMOVE = _Remove()
+
+
+class SetDelta:
+    __slots__ = ("added", "removed")
+
+    def __init__(self, added: Any = (), removed: Any = ()):
+        self.added = frozenset(added)
+        self.removed = frozenset(removed)
+        overlap = self.added & self.removed
+        if overlap:
+            raise ValueError(f"a set delta cannot add and remove the same values: {overlap!r}")
+
+    def __repr__(self) -> str:
+        return f"SetDelta(added={self.added!r}, removed={self.removed!r})"
+
+    def __eq__(self, other: Any) -> bool:
+        if not isinstance(other, SetDelta):
+            return NotImplemented
+        return self.added == other.added and self.removed == other.removed
+
+
+class TSDDelta:
+    __slots__ = ("removed", "modified")
+
+    def __init__(self, removed: Any = (), modified: Any = None):
+        self.removed = frozenset(removed)
+        self.modified = {} if modified is None else dict(modified)
+        overlap = self.removed.intersection(self.modified)
+        if overlap:
+            raise ValueError(f"a TSD delta cannot remove and modify the same keys: {overlap!r}")
+
+    def __repr__(self) -> str:
+        return f"TSDDelta(removed={self.removed!r}, modified={self.modified!r})"
+
+    def __eq__(self, other: Any) -> bool:
+        if not isinstance(other, TSDDelta):
+            return NotImplemented
+        return self.removed == other.removed and self.modified == other.modified
+
+
+_register_delta_types(SetDelta, TSDDelta, REMOVE)
+
+
 class TS:
     """A time-series type annotation."""
 
     def __class_getitem__(cls, scalar_type: type) -> Any:
         return _time_series_type(_scalar_type(scalar_type))
+
+
+class REF:
+    """A time-series reference type annotation."""
+
+    def __class_getitem__(cls, target_type: Any) -> Any:
+        return _reference_type(_native_type(target_type))
+
+
+class TSS:
+    """A time-series set type annotation."""
+
+    def __class_getitem__(cls, item_type: type) -> Any:
+        return _time_series_set_type(_scalar_type(item_type))
+
+
+class TSL:
+    """A fixed time-series list type annotation."""
+
+    def __class_getitem__(cls, arguments: Any) -> Any:
+        item_type, size = arguments
+        return _time_series_list_type(_native_type(item_type), size)
+
+
+class TSD:
+    """A time-series dictionary type annotation."""
+
+    def __class_getitem__(cls, arguments: Any) -> Any:
+        key_type, item_type = arguments
+        return _time_series_dict_type(_scalar_type(key_type), _native_type(item_type))
+
+
+class TimeSeriesSchema:
+    """A named schema for a time-series bundle."""
+
+    _native_schema: Any
+
+    def __init_subclass__(cls) -> None:
+        super().__init_subclass__()
+        direct_annotations = cls.__dict__.get("__annotations__", {})
+        resolved_annotations = get_type_hints(cls)
+        fields = [
+            (name, _native_type(resolved_annotations.get(name, annotation)))
+            for name, annotation in direct_annotations.items()
+            if name != "_native_schema"
+        ]
+        schema_bases = [
+            candidate
+            for candidate in cls.__bases__
+            if issubclass(candidate, TimeSeriesSchema) and hasattr(candidate, "_native_schema")
+        ]
+        if len(schema_bases) > 1:
+            raise TypeError("time-series schemas support one schema base")
+        base = schema_bases[0]._native_schema if schema_bases else None
+        qualified_name = f"{cls.__module__}.{cls.__qualname__}"
+        cls._native_schema = _make_time_series_schema(qualified_name, cls, base, fields)
+
+
+class TSB:
+    """A time-series bundle type annotation."""
+
+    def __class_getitem__(cls, schema: type[TimeSeriesSchema]) -> Any:
+        if not isinstance(schema, type) or not issubclass(schema, TimeSeriesSchema):
+            raise TypeError("TSB[...] requires a TimeSeriesSchema")
+        return _time_series_bundle_type(schema._native_schema)
+
+
+class _PassThrough:
+    __slots__ = ("value",)
+
+    def __init__(self, value: Any):
+        self.value = value
+
+
+def pass_through(value: Any) -> Any:
+    """Keep a time series as one shared input to every map or mesh branch."""
+    return _PassThrough(value)
+
+
+def _map_arguments(args: tuple[Any, ...], kwargs: dict[str, Any]) -> tuple[Any, Any]:
+    positional = tuple(
+        (argument.value, True) if isinstance(argument, _PassThrough) else (argument, False)
+        for argument in args
+    )
+    named = tuple(
+        (name, argument.value, True) if isinstance(argument, _PassThrough) else (name, argument, False)
+        for name, argument in kwargs.items()
+    )
+    return positional, named
+
+
+def map(function: GraphDefinition, *args: Any, **kwargs: Any) -> Any:
+    """Create one inner graph for every selected key."""
+    if not isinstance(function, GraphDefinition):
+        raise TypeError("map expects a decorated @graph definition")
+    positional, named = _map_arguments(args, kwargs)
+    return _map(function._native_definition, positional, named)
+
+
+class _MeshSelector:
+    __slots__ = ("name",)
+
+    def __init__(self, name: str = ""):
+        self.name = name
+
+    def __getitem__(self, key: Any) -> Any:
+        return _mesh_dependency(key, self.name)
+
+
+def mesh(function: GraphDefinition | str | None = None, *args: Any, name: str | None = None, **kwargs: Any) -> Any:
+    """Create dependent inner graphs or select a mesh branch by key."""
+    if function is None:
+        if args or kwargs or name is not None:
+            raise TypeError("mesh() does not accept arguments when selecting the current mesh")
+        return _MeshSelector()
+    if isinstance(function, str):
+        if args or kwargs or name is not None:
+            raise TypeError("mesh(name) does not accept other arguments")
+        return _MeshSelector(function)
+    if not isinstance(function, GraphDefinition):
+        raise TypeError("mesh expects a decorated @graph definition")
+
+    positional, named = _map_arguments(args, kwargs)
+    return _mesh(function._native_definition, positional, named, name)
+
+
+class _Default:
+    def __repr__(self) -> str:
+        return "DEFAULT"
+
+
+DEFAULT = _Default()
+
+
+def switch_(key: Any, cases: dict[Any, GraphDefinition], *args: Any, **kwargs: Any) -> Any:
+    """Run the graph selected by the current key value."""
+    if not isinstance(cases, dict):
+        raise TypeError("switch_ cases must be a dictionary")
+
+    native_cases = []
+    for case_key, function in cases.items():
+        if not isinstance(function, GraphDefinition):
+            raise TypeError("every switch_ case must contain a decorated @graph definition")
+        if case_key is DEFAULT:
+            native_cases.append((True, (), function._native_definition))
+        elif isinstance(case_key, tuple):
+            native_cases.append((False, case_key, function._native_definition))
+        else:
+            native_cases.append((False, (case_key,), function._native_definition))
+
+    named = tuple(kwargs.items())
+    return _switch(key, tuple(native_cases), args, named)
 
 
 class NodeDefinition:
@@ -104,7 +316,7 @@ def source_node(function: Any) -> NodeDefinition:
     annotations = get_type_hints(function)
     output = annotations.get("return", signature.return_annotation)
     if output is inspect.Signature.empty or not isinstance(output, _Type) or not output.is_time_series:
-        raise TypeError("Python source nodes must return a TS[...] value")
+        raise TypeError("Python source nodes must return a time-series value")
 
     return _define_node(function, schedule_on_start=True)
 
@@ -140,14 +352,28 @@ def test_graph(definition: GraphDefinition, *inputs: Any) -> Any:
 
 __all__ = [
     "GraphDefinition",
+    "DEFAULT",
     "NodeDefinition",
+    "REF",
+    "REMOVE",
+    "SetDelta",
     "Symbol",
     "TS",
+    "TSB",
+    "TSD",
+    "TSDDelta",
+    "TSL",
+    "TSS",
+    "TimeSeriesSchema",
     "compute_node",
     "graph",
+    "map",
+    "mesh",
     "operators",
+    "pass_through",
     "source_node",
     "symbol",
+    "switch_",
     "version",
     "test_graph",
 ]
