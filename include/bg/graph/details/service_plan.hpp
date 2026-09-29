@@ -20,12 +20,16 @@ struct ServiceInstance {
     ResolvedSignature signature;
     TypeMap type_map;
     std::vector<ScalarValue<>> scalar_arguments;
+    bool built{};
 };
 
 class ServicePlan {
   public:
     ServiceInstance &require(const Service &service, ResolvedSignature signature, const TypeMap &type_map,
                              std::span<const WiringArgument> arguments);
+
+    std::span<std::unique_ptr<ServiceInstance>> instances() noexcept { return instances_; }
+    std::span<const std::unique_ptr<ServiceInstance>> instances() const noexcept { return instances_; }
 
   private:
     std::vector<std::unique_ptr<ServiceInstance>> instances_;

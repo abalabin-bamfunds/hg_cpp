@@ -89,6 +89,10 @@ Service::~Service() = default;
 std::optional<WiringPoint> Service::wire(GraphWiring &wiring, ResolvedSignature signature,
                                          const TypeMap &type_map,
                                          std::span<const WiringArgument> arguments) const {
+    if (kind_ != ServiceKind::reference) {
+        throw WiringError{"subscription and compute service clients are not implemented"};
+    }
+
     for (const auto &parameter : signature.parameters) {
         if (const auto *time_series = type_cast<TimeSeriesType>(parameter.type);
             time_series != nullptr && contains_reference(*time_series)) {

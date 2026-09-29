@@ -23,6 +23,7 @@ namespace bg {
 class NodeTemplate;
 class Operator;
 class Service;
+class ServiceCatalogue;
 class TimeSeriesRuntimeType;
 class TimeSeriesType;
 class WiringTemplate;
@@ -96,6 +97,7 @@ class GraphWiring {
     friend class NodeTemplate;
     friend class Operator;
     friend class Service;
+    friend class ServiceCatalogue;
     friend class WiringPoint;
     friend class WiringTemplate;
     friend WiringPoint details::add_wiring_record(std::unique_ptr<details::WiringRecord> record);

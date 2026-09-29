@@ -16,6 +16,8 @@ template <typename Declaration> struct type_token;
 
 namespace details {
 
+struct mapped_wiring_access;
+
 template <typename Parameter, typename Value> struct type_mapping {};
 
 template <typename T> struct is_type_mapping : std::false_type {};
@@ -124,8 +126,22 @@ template <typename Target, typename... Parameters> class MappedWiring {
     template <typename... Mappings> auto operator[](Mappings...) const && = delete;
 
   private:
+    friend struct mapped_wiring_access;
+
     const Target *target_;
     TypeMap type_map_;
+};
+
+struct mapped_wiring_access {
+    template <typename Target, typename... Parameters>
+    static const Target &target(const MappedWiring<Target, Parameters...> &wiring) noexcept {
+        return *wiring.target_;
+    }
+
+    template <typename Target, typename... Parameters>
+    static const TypeMap &type_map(const MappedWiring<Target, Parameters...> &wiring) noexcept {
+        return wiring.type_map_;
+    }
 };
 
 template <typename Target, typename... Parameters> class OwningMappedWiring {

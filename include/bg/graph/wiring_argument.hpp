@@ -137,6 +137,9 @@ class WiringArgument {
               cpp_scalar_runtime_type<typename details::scalar_value_argument<std::remove_cvref_t<T>>::scalar_type>(),
               nullptr, &details::scalar_data(value)}) {}
 
+    WiringArgument(const ScalarValue<> &value)
+        : value_(ScalarArgument{value.type(), value.runtime_type(), nullptr, &details::scalar_data(value)}) {}
+
     template <util::compile_time_string Name, typename T>
         requires requires(T &&value) { WiringArgument{std::forward<T>(value)}; }
     WiringArgument(details::named_argument<Name, T> value) : WiringArgument{std::move(value.value)} {

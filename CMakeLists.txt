@@ -63,6 +63,7 @@ add_library(
     src/runtime_graph.cpp
     src/scratch_pad.cpp
     src/service.cpp
+    src/service_catalogue.cpp
     src/scalar/allocation.cpp
     src/scalar/bundle/allocation_owner.cpp
     src/scalar/bundle/runtime_type.cpp

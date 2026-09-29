@@ -66,6 +66,14 @@ class TypeMap {
         return left.values_ == right.values_;
     }
 
+    bool includes(const TypeMap &required) const {
+        const auto mappings = required.copy();
+        return std::ranges::all_of(mappings.values_, [&](const auto &entry) {
+            const auto *value = find(*entry.first);
+            return value != nullptr && *value == entry.second;
+        });
+    }
+
   private:
     friend class Signature;
     template <typename Category> friend class TypeVariableType;

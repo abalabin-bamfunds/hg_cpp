@@ -1,15 +1,22 @@
+#include <bg/graph/compiled_graph.hpp>
 #include <bg/graph/graph_wiring.hpp>
 #include <bg/graph/wiring_context.hpp>
+#include <bg/graph/wiring_error.hpp>
+#include <bg/graph.hpp>
+#include <bg/node.hpp>
 #include <bg/service.hpp>
+#include <bg/service_catalogue.hpp>
 #include <bg/time_series/time_series_type.hpp>
 #include <bg/time_series/tsd/tsd_type.hpp>
 #include <bg/type/time_series_reference_type.hpp>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
 
 namespace {
 
 using namespace bg;
+using namespace bg::literals;
 
 using RESULT = TimeSeriesVariable<"RESULT">;
 
@@ -77,6 +84,121 @@ TEST_CASE("one reference service instance crosses separate inner wiring boundari
 TEST_CASE("resolved service signatures reject contained references", "[feature:service][feature:wiring][series:tsd]") {
     CHECK_THROWS((reference_service<auto()->TSD<std::int64_t, REF<TS<std::int64_t>>>>{
         "reference_dictionary"}));
+}
+
+TEST_CASE("a catalogue builds the reference service implementation selected by scalar value",
+          "[feature:service][feature:wiring]") {
+    const auto service = reference_service<auto(std::int64_t)->TS<std::int64_t>>{"lookup", {"path"}};
+    const auto source = node([](Out<TS<std::int64_t>>) {});
+    auto selected = std::int64_t{};
+    const auto first = graph("name"_n = "first_service", [&](std::int64_t path) -> wp<TS<std::int64_t>> {
+        selected = -path;
+        return source();
+    });
+    const auto second = graph("name"_n = "second_service", [&](std::int64_t path) -> wp<TS<std::int64_t>> {
+        selected = path;
+        return source();
+    });
+    auto catalogue = ServiceCatalogue{};
+    catalogue.register_impl(service, first, "path"_n = 1);
+    catalogue.register_impl(service, second, "path"_n = 2);
+    auto wiring = GraphWiring{};
+
+    {
+        const auto context = WiringContext{wiring};
+        (void)service(2);
+    }
+    catalogue.build(wiring);
+
+    CHECK(selected == 2);
+    CHECK_NOTHROW(CompiledGraph{wiring});
+}
+
+TEST_CASE("catalogue type mappings select a generic reference service implementation",
+          "[feature:service][feature:wiring][declaration:generic]") {
+    const auto service = reference_service<RESULT, auto()->RESULT>{"generic_lookup"};
+    const auto integer_source = node([](Out<TS<std::int64_t>>) {});
+    const auto floating_source = node([](Out<TS<float>>) {});
+    const auto integer = graph("name"_n = "integer_service", [&] { return integer_source(); });
+    const auto floating = graph("name"_n = "floating_service", [&] { return floating_source(); });
+    auto catalogue = ServiceCatalogue{};
+    catalogue.register_impl(service[type<TS<std::int64_t>>], integer);
+    catalogue.register_impl(service[type<TS<float>>], floating);
+    auto wiring = GraphWiring{};
+
+    {
+        const auto context = WiringContext{wiring};
+        (void)service[type<TS<float>>]();
+    }
+    catalogue.build(wiring);
+
+    CHECK_NOTHROW(CompiledGraph{wiring});
+}
+
+TEST_CASE("service building includes requirements introduced by implementation graphs",
+          "[feature:service][feature:wiring]") {
+    const auto outer = reference_service<auto()->TS<std::int64_t>>{"outer"};
+    const auto inner = reference_service<auto()->TS<std::int64_t>>{"inner"};
+    const auto source = node([](Out<TS<std::int64_t>>) {});
+    const auto outer_impl = graph("name"_n = "outer_impl", [&]() -> wp<TS<std::int64_t>> {
+        return inner().as<TS<std::int64_t>>();
+    });
+    const auto inner_impl = graph("name"_n = "inner_impl", [&] { return source(); });
+    auto catalogue = ServiceCatalogue{};
+    catalogue.register_impl(outer, outer_impl);
+    catalogue.register_impl(inner, inner_impl);
+    auto wiring = GraphWiring{};
+
+    {
+        const auto context = WiringContext{wiring};
+        (void)outer();
+    }
+    catalogue.build(wiring);
+
+    CHECK(wiring.inherited_requirements().size() == 2);
+    CHECK_NOTHROW(CompiledGraph{wiring});
+}
+
+TEST_CASE("service building reports missing and ambiguous implementations", "[feature:service][feature:wiring]") {
+    const auto service = reference_service<auto()->TS<std::int64_t>>{"lookup"};
+    const auto source = node([](Out<TS<std::int64_t>>) {});
+    const auto implementation = graph("name"_n = "lookup_impl", [&] { return source(); });
+
+    SECTION("missing") {
+        auto wiring = GraphWiring{};
+        {
+            const auto context = WiringContext{wiring};
+            (void)service();
+        }
+
+        CHECK_THROWS_WITH(ServiceCatalogue{}.build(wiring), "service 'lookup' has no matching implementation");
+    }
+
+    SECTION("ambiguous") {
+        auto catalogue = ServiceCatalogue{};
+        catalogue.register_impl(service, implementation);
+        catalogue.register_impl(service, implementation);
+        auto wiring = GraphWiring{};
+        {
+            const auto context = WiringContext{wiring};
+            (void)service();
+        }
+
+        CHECK_THROWS_WITH(catalogue.build(wiring), "service 'lookup' has ambiguous implementations");
+    }
+}
+
+TEST_CASE("subscription and compute clients fail until their runtime bindings are implemented",
+          "[feature:service][feature:wiring]") {
+    const auto subscription =
+        subscription_service<auto(TS<std::int64_t>)->TS<float>>{"subscription", {"key"}};
+    const auto compute = compute_service<auto(TS<std::int64_t>)->TS<float>>{"compute", {"value"}};
+    const auto source = node([](Out<TS<std::int64_t>>) {});
+    auto wiring = GraphWiring{};
+    const auto context = WiringContext{wiring};
+
+    CHECK_THROWS_WITH(subscription(source()), "subscription and compute service clients are not implemented");
+    CHECK_THROWS_WITH(compute(source()), "subscription and compute service clients are not implemented");
 }
 
 } // namespace
