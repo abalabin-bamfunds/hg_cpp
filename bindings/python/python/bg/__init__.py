@@ -6,6 +6,7 @@ import inspect
 from functools import update_wrapper
 from typing import Any, get_args, get_type_hints
 
+from . import operators
 from ._bg import (
     Symbol,
     _Type,
@@ -144,6 +145,7 @@ __all__ = [
     "TS",
     "compute_node",
     "graph",
+    "operators",
     "source_node",
     "symbol",
     "version",

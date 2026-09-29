@@ -104,6 +104,22 @@ TEST_CASE("an overload can have a different parameter count from its prototype",
     CHECK(selected);
 }
 
+TEST_CASE("operator prototype names provide keyword aliases for overload parameters",
+          "[feature:operator][feature:wiring][feature:named-argument]") {
+    auto selected = std::string{};
+    auto operation = bg::operator_<auto(bg::TS_T, bg::TS_T)->bg::TS_T>{"choose", {"value", "fallback"}};
+    operation.overload(
+        bg::graph("name"_n = "implementation", [&](bg::wp<bg::TS<float>> first, bg::wp<bg::TS<float>>) {
+            selected = "first";
+            return first;
+        }));
+    const auto source = bg::node([](bg::Out<bg::TS<float>>) {});
+
+    bg::testing::test_wiring([&] { (void)operation("fallback"_n = source(), "value"_n = source()); });
+
+    CHECK(selected == "first");
+}
+
 TEST_CASE("an operator reports equally specific overloads as ambiguous", "[feature:operator][feature:wiring]") {
     auto operation = bg::operator_<auto(bg::TS<float>)->bg::TS<float>>{"identity", {"value"}};
     operation.overload(bg::graph("name"_n = "first", [](bg::wp<bg::TS<float>> value) { return value; }));

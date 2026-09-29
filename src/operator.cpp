@@ -165,7 +165,8 @@ WiringDiagnostic diagnostic(const Signature &prototype, std::vector<util::symbol
     arguments.reserve(supplied.size());
     for (auto index = std::size_t{}; index < supplied.size(); ++index) {
         const auto name =
-            index < prototype.parameter_count() ? prototype.parameter(index).name : util::symbol{std::to_string(index)};
+            supplied[index].name().value_or(index < prototype.parameter_count() ? prototype.parameter(index).name
+                                                                                : util::symbol{std::to_string(index)});
         auto type_owner =
             supplied[index].is_graph()
                 ? std::shared_ptr<const Type>{details::graph_argument_access::type_owner(supplied[index].graph())}
@@ -328,7 +329,8 @@ std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const
             for (const auto &read : entry.scalar_reads) {
                 if (read.implementation != read_implementation) {
                     try {
-                        probe = details::probe_wiring_arguments(read.implementation->signature(), arguments);
+                        probe =
+                            details::probe_wiring_arguments(read.implementation->signature(), arguments, &prototype_);
                     } catch (const std::exception &) {
                         scalar_values_match = false;
                         break;
@@ -349,7 +351,7 @@ std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const
             auto committed = details::NormalizedWiringArguments{};
             try {
                 committed = details::normalize_wiring_arguments(entry.implementation->signature(), arguments,
-                                                                wiring.allocator_);
+                                                                wiring.allocator_, &prototype_);
             } catch (const std::exception &) {
                 continue;
             }
@@ -384,7 +386,7 @@ std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const
             auto normalized = details::NormalizedWiringArguments{};
             auto candidate_types = std::vector<const Type *>{};
             try {
-                normalized = details::probe_wiring_arguments(implementation->signature(), arguments);
+                normalized = details::probe_wiring_arguments(implementation->signature(), arguments, &prototype_);
             } catch (const std::exception &error) {
                 failures.push_back(failure(*implementation, WiringFailureStage::argument_count, error.what()));
                 continue;
@@ -468,8 +470,8 @@ std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const
                                    {selected->resolution.signature, selected->resolution.type_map.copy()}});
     }
 
-    auto committed =
-        details::normalize_wiring_arguments(selected->implementation->signature(), arguments, wiring.allocator_);
+    auto committed = details::normalize_wiring_arguments(selected->implementation->signature(), arguments,
+                                                         wiring.allocator_, &prototype_);
     return invoke_resolved(wiring, *selected->implementation, std::move(selected->resolution), committed.arguments,
                            prototype_.name());
 }

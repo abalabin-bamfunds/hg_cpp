@@ -29,7 +29,10 @@ class BG_PYTHON_API PythonScalarConversions {
     [[nodiscard]] bool add(const ScalarType &type, PythonToScalar conversion);
     [[nodiscard]] bool add(const ScalarType &type, ScalarToPython conversion);
     [[nodiscard]] bool add(const ScalarRuntimeType &runtime_type, ScalarToPython conversion);
+    [[nodiscard]] bool add_python_type(nanobind::handle python_type, const ScalarType &type);
     nanobind::object to_python(Scalar<> value) const;
+    const ScalarType &type_from_python(nanobind::handle python_type) const;
+    [[nodiscard]] ScalarValue<> from_python(nanobind::handle value, allocator &memory) const;
     [[nodiscard]] ScalarValue<> from_python(const ScalarType &type, nanobind::handle value, allocator &memory) const;
     bool can_from_python(const ScalarType &type) const noexcept;
     PythonToScalar from_python_handler(const ScalarType &type) const noexcept;

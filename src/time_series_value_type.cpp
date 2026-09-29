@@ -79,7 +79,7 @@ const TimeSeriesType &TimeSeriesValueType::with_guarantee(TimeSeriesGuarantee gu
     return time_series_value_type(value_type(), guarantee);
 }
 
-bool GenericTimeSeriesValueType::do_match(const Type &supplied, TypeMap &type_map) const {
+bool TimeSeriesValueType::do_match(const Type &supplied, TypeMap &type_map) const {
     const auto *time_series = type_cast<TimeSeriesValueType>(&supplied);
     if (time_series == nullptr || !time_series->is_resolved()) {
         return false;

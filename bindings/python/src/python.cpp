@@ -13,6 +13,9 @@
 #include <bg/util/scope_exit.hpp>
 #include <bg/version.hpp>
 
+#include "operator_binding.hpp"
+#include "wiring_argument.hpp"
+
 #include <nanobind/stl/optional.h>
 #include <nanobind/stl/pair.h>
 #include <nanobind/stl/string.h>
@@ -20,7 +23,6 @@
 
 #include <Python.h>
 
-#include <array>
 #include <cstdint>
 #include <memory_resource>
 #include <ranges>
@@ -48,26 +50,6 @@ class TypeDescriptor {
     const Type *type_;
     bool accepts_absent_scalar_;
 };
-
-const ScalarType &scalar_type_from_python_type(nb::handle value) {
-    if (value.ptr() == reinterpret_cast<PyObject *>(&PyBool_Type)) {
-        return bool_type();
-    }
-    if (value.ptr() == reinterpret_cast<PyObject *>(&PyLong_Type)) {
-        return int64_type();
-    }
-    if (value.ptr() == reinterpret_cast<PyObject *>(&PyFloat_Type)) {
-        return double_type();
-    }
-    if (value.ptr() == reinterpret_cast<PyObject *>(&PyUnicode_Type)) {
-        return string_type();
-    }
-    if (value.ptr() == nb::type<util::symbol>().ptr()) {
-        return symbol_type();
-    }
-
-    throw std::invalid_argument{"Python annotations must use bool, int, float, str, or bg.Symbol"};
-}
 
 std::shared_ptr<const PythonNodeDefinition::SignatureDefinition>
 make_signature(std::string_view name, const std::vector<std::pair<std::string, TypeDescriptor>> &parameters,
@@ -108,57 +90,6 @@ make_signature(std::string_view name, const std::vector<std::pair<std::string, T
         std::move(guarantees), std::move(time_series_types), std::move(signature));
 }
 
-WiringArgument wiring_argument(const Type &expected, nb::handle value, allocator &memory, GraphWiring &wiring) {
-    if (nb::isinstance<PythonWiringPoint>(value)) {
-        const auto point = nb::cast<PythonWiringPoint>(value).get(wiring);
-        if (!point.has_output()) {
-            throw std::invalid_argument{"a Python wiring point must have an output"};
-        }
-        return WiringArgument{point};
-    }
-
-    const auto *scalar_type = type_cast<ScalarType>(&expected);
-    const auto *time_series_type = type_cast<TimeSeriesValueType>(&expected);
-    if (scalar_type == nullptr && time_series_type == nullptr) {
-        throw std::invalid_argument{"Python node and graph arguments require scalar or TS[T] types"};
-    }
-
-    const auto expects_scalar = scalar_type != nullptr;
-    if (time_series_type != nullptr) {
-        scalar_type = &time_series_type->value_type();
-    }
-
-    if (value.is_none() && expects_scalar) {
-        return WiringArgument::absent_scalar(*scalar_type, resolve_scalar_runtime_type(*scalar_type, {}));
-    }
-    if (value.is_none()) {
-        throw std::invalid_argument{"None cannot be wired to a time-series input"};
-    }
-
-    auto scalar = [&] {
-        try {
-            return scalar_conversions().from_python(*scalar_type, value, memory);
-        } catch (const std::exception &error) {
-            auto message = std::string{"cannot convert Python value to scalar type "};
-            append_type_text(message, *scalar_type);
-            message += ": ";
-            message += error.what();
-            throw std::invalid_argument{std::move(message)};
-        }
-    }();
-    if (expects_scalar) {
-        return WiringArgument{std::move(scalar)};
-    }
-
-    auto arguments = std::array{WiringArgument{std::move(scalar)}};
-    const auto point = static_cast<const WiringTemplate &>(operators::const_)(
-        std::span<const WiringArgument>{arguments});
-    if (!point) {
-        throw std::logic_error{"the const operator did not produce a time series"};
-    }
-    return WiringArgument{*point};
-}
-
 std::vector<WiringArgument> wiring_arguments(const Signature &signature, nb::sequence values, allocator &memory,
                                              GraphWiring &wiring) {
     if (nb::len(values) != signature.parameter_count()) {
@@ -168,7 +99,7 @@ std::vector<WiringArgument> wiring_arguments(const Signature &signature, nb::seq
     auto arguments = std::vector<WiringArgument>{};
     arguments.reserve(signature.parameter_count());
     for (auto index = std::size_t{}; index < signature.parameter_count(); ++index) {
-        arguments.push_back(wiring_argument(*signature.parameter(index).type, values[index], memory, wiring));
+        arguments.push_back(details::wiring_argument(*signature.parameter(index).type, values[index], memory, wiring));
     }
     return arguments;
 }
@@ -299,7 +230,9 @@ void bind_core(nb::module_ &module) {
     }
 
     module.def("version", [] { return std::string{bg::version()}; });
-    module.def("_scalar_type", [](nb::handle value) { return TypeDescriptor{scalar_type_from_python_type(value)}; });
+    module.def("_scalar_type", [](nb::handle value) {
+        return TypeDescriptor{scalar_conversions().type_from_python(value)};
+    });
     module.def("_time_series_type", [](const TypeDescriptor &value) {
         if (value.accepts_absent_scalar()) {
             throw std::invalid_argument{"Optional[...] cannot be used inside TS[...]"};
@@ -342,7 +275,8 @@ void bind_core(nb::module_ &module) {
             auto result = std::string{};
             append_type_text(result, point.type());
             return result;
-        });
+        })
+        .def("__getitem__", &details::getitem);
     nb::class_<InputView>(module, "InputView")
         .def_prop_ro("valid", &InputView::valid)
         .def_prop_ro("modified", &InputView::modified)
@@ -374,7 +308,10 @@ void bind_core(nb::module_ &module) {
             "__eq__", [](const util::symbol &left, const util::symbol &right) { return left == right; },
             nb::is_operator());
 
+    (void) scalar_conversions().add_python_type(nb::type<util::symbol>(), symbol_type());
+
     module.attr("symbol") = module.attr("Symbol");
+    details::bind_operators(module);
 }
 
 } // namespace bg::python

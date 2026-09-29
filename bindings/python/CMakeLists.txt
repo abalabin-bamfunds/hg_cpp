@@ -15,8 +15,16 @@ find_package(nanobind CONFIG REQUIRED)
 
 nanobind_add_module(_bg NB_SHARED src/module.cpp)
 
-add_library(bg_python SHARED src/object.cpp src/scalar_conversion.cpp src/node_definition.cpp src/graph_definition.cpp
-                             src/python.cpp)
+add_library(
+    bg_python SHARED
+    src/object.cpp
+    src/scalar_conversion.cpp
+    src/node_definition.cpp
+    src/graph_definition.cpp
+    src/operator.cpp
+    src/wiring_argument.cpp
+    src/python.cpp
+)
 add_library(bg::python ALIAS bg_python)
 set_target_properties(
     bg_python
@@ -49,6 +57,7 @@ target_compile_features(_bg PRIVATE cxx_std_23)
 set(python_package_dir "${PROJECT_BINARY_DIR}/bindings/python/bg")
 file(MAKE_DIRECTORY "${python_package_dir}")
 configure_file(python/bg/__init__.py "${python_package_dir}/__init__.py" COPYONLY)
+configure_file(python/bg/operators.py "${python_package_dir}/operators.py" COPYONLY)
 if(APPLE)
     set(python_build_rpath "@loader_path/..;@loader_path/../../..")
     set(python_install_rpath "@loader_path/../${CMAKE_INSTALL_LIBDIR}")
@@ -102,7 +111,7 @@ install(
     RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
 )
 install(TARGETS _bg LIBRARY DESTINATION bg RUNTIME DESTINATION bg)
-install(FILES python/bg/__init__.py DESTINATION bg)
+install(FILES python/bg/__init__.py python/bg/operators.py DESTINATION bg)
 
 if(BUILD_TESTING)
     nanobind_add_module(_bg_test_extension NB_SHARED tests/extension_module.cpp)

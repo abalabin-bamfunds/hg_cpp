@@ -15,7 +15,7 @@ struct VariadicCaptureArguments {
 };
 
 std::vector<WiringArgument> prepare_arguments(const Signature &signature, std::span<const WiringArgument> arguments,
-                                              bool import_contexts) {
+                                              bool import_contexts, const Signature *parameter_aliases) {
     const auto fixed_count = signature.first_variadic_parameter().value_or(signature.parameter_count());
     auto fixed = std::vector<const WiringArgument *>(fixed_count);
     auto variadic = std::vector<const WiringArgument *>{};
@@ -33,8 +33,17 @@ std::vector<WiringArgument> prepare_arguments(const Signature &signature, std::s
             const auto fixed_parameter = [&]() -> std::optional<std::size_t> {
                 for (auto index = std::size_t{}; index < fixed_count; ++index) {
                     const auto &parameter = signature.parameter(index);
-                    if (parameter.context && parameter.name == *name) {
+                    if ((parameter.context || parameter_aliases != nullptr) && parameter.name == *name) {
                         return index;
+                    }
+                }
+
+                if (parameter_aliases != nullptr) {
+                    const auto alias_count = std::min(fixed_count, parameter_aliases->parameter_count());
+                    for (auto index = std::size_t{}; index < alias_count; ++index) {
+                        if (parameter_aliases->parameter(index).name == *name) {
+                            return index;
+                        }
                     }
                 }
                 return std::nullopt;
@@ -310,20 +319,22 @@ NormalizedWiringArguments normalize_prepared(const Signature &signature, std::ve
 }
 
 NormalizedWiringArguments normalize(const Signature &signature, std::span<const WiringArgument> arguments,
-                                    allocator *memory) {
-    return normalize_prepared(signature, prepare_arguments(signature, arguments, memory != nullptr), memory);
+                                    allocator *memory, const Signature *parameter_aliases) {
+    return normalize_prepared(signature, prepare_arguments(signature, arguments, memory != nullptr, parameter_aliases),
+                              memory);
 }
 
 } // namespace
 
 NormalizedWiringArguments normalize_wiring_arguments(const Signature &signature,
-                                                     std::span<const WiringArgument> arguments, allocator &memory) {
-    return normalize(signature, arguments, &memory);
+                                                     std::span<const WiringArgument> arguments, allocator &memory,
+                                                     const Signature *parameter_aliases) {
+    return normalize(signature, arguments, &memory, parameter_aliases);
 }
 
-NormalizedWiringArguments probe_wiring_arguments(const Signature &signature,
-                                                 std::span<const WiringArgument> arguments) {
-    return normalize(signature, arguments, nullptr);
+NormalizedWiringArguments probe_wiring_arguments(const Signature &signature, std::span<const WiringArgument> arguments,
+                                                 const Signature *parameter_aliases) {
+    return normalize(signature, arguments, nullptr, parameter_aliases);
 }
 
 } // namespace bg::details

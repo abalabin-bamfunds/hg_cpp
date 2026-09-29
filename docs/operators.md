@@ -59,6 +59,10 @@ because overloads can produce different output types. A sink overload returns
 an empty `wp<>`. An outputless operator returns `void` and accepts only sink
 overloads.
 
+Prototype parameter names are public keyword aliases for the overload
+parameters at the same positions. An overload's own parameter name takes
+precedence when it conflicts with a prototype name.
+
 ```cpp
 auto result = add(lhs, rhs);
 ```

@@ -18,9 +18,12 @@ struct NormalizedWiringArguments {
     std::vector<std::unique_ptr<WiringRecord>> probe_records;
 };
 
-[[nodiscard]] NormalizedWiringArguments
-normalize_wiring_arguments(const Signature &signature, std::span<const WiringArgument> arguments, allocator &memory);
+[[nodiscard]] NormalizedWiringArguments normalize_wiring_arguments(const Signature &signature,
+                                                                   std::span<const WiringArgument> arguments,
+                                                                   allocator &memory,
+                                                                   const Signature *parameter_aliases = nullptr);
 [[nodiscard]] NormalizedWiringArguments probe_wiring_arguments(const Signature &signature,
-                                                               std::span<const WiringArgument> arguments);
+                                                               std::span<const WiringArgument> arguments,
+                                                               const Signature *parameter_aliases = nullptr);
 
 } // namespace bg::details

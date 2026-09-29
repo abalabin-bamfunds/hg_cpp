@@ -31,7 +31,7 @@ with `bg::python`.
 ## Graph authoring
 
 The package exports `TS[T]`, `@source_node`, `@compute_node`, `@graph`,
-`test_graph`, `Symbol`, and `symbol`.
+`test_graph`, `operators`, `Symbol`, and `symbol`.
 
 ```python
 import bg
@@ -49,6 +49,18 @@ def example() -> bg.TS[int]:
     return add(source())
 
 assert bg.test_graph(example) == [3]
+```
+
+`bg.operators` exposes engine operators through their normal C++ overload
+resolution. Positional and named arguments can contain wiring points or
+registered Python scalar values. A sink operator returns `None`.
+
+```python
+@bg.graph
+def constant() -> bg.TS[int]:
+    return bg.operators.const_(value=42)
+
+item = collection[key]  # bg.operators.getitem(collection, key)
 ```
 
 Node and graph functions accept positional and named arguments according to
@@ -82,6 +94,27 @@ the engine's signed 64-bit integer type. `str` is supported as a scalar node
 argument. `bg.Symbol` is distinct from `str`; `bg.symbol` constructs one. A
 null `bg.Symbol()` differs from `bg.Symbol("")`.
 
+## C++ extensions
+
+An extension can expose a process-lifetime operator without adding it to a
+central registry:
+
+```cpp
+#include <bg/operators.hpp>
+#include <bg/python/operator.hpp>
+
+bg::python::export_operator(module, "getitem", bg::operators::getitem);
+```
+
+The wrapper observes overloads registered on that operator later. It uses the
+same resolution cache, requirements, resolvers, adaptations, and diagnostics
+as a C++ call.
+
+`PythonScalarConversions::add_python_type` associates a Python class with a
+scalar type. Lookup follows the Python method resolution order. Register the
+corresponding Python-to-scalar conversion before values of a new scalar type
+are wired. Registrations retain their Python classes and last for the process.
+
 Python wiring points are temporary proxies used while a graph is being
 constructed. They expire when graph construction returns. Input views expire
 when their callback returns.
@@ -94,10 +127,10 @@ releases the GIL while native graph evaluation runs. Each Python node callback
 acquires it for argument conversion, callback execution, and output
 conversion.
 
-The current package does not expose Python operators on wiring points,
-collection annotations and deltas, reference annotations, Python-object scalar
-storage, Python-declared schemas, injected runtime services, or higher-order
-graph operators. These are not part of the implemented Python API.
+The current package does not expose collection annotations and deltas,
+reference annotations, Python-object scalar storage, Python-declared schemas,
+injected runtime services, or Python graph adaptation for higher-order
+operators. These are not part of the implemented Python API.
 
 Python definition wrappers retain their callbacks. A wired runtime graph also
 retains each Python node callback that it uses. Destroy these graphs before

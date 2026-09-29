@@ -166,6 +166,16 @@ TEST_CASE("an ordinary time-series input accepts final and const values",
     CHECK(ordinary_input.accepts(bg::TS<bg::i64, bg::TimeSeriesGuarantee::const_>::type()));
 }
 
+TEST_CASE("a resolved ordinary time-series value accepts stronger guarantees",
+          "[type_system][feature:type-system][series:value][guarantee:ordinary][guarantee:const]") {
+    const auto &ordinary = bg::TS<bg::i64>::type();
+    const auto &final = bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>::type();
+
+    CHECK(ordinary.accepts(final));
+    CHECK(ordinary.accepts(bg::TS<bg::i64, bg::TimeSeriesGuarantee::const_>::type()));
+    CHECK_FALSE(final.accepts(ordinary));
+}
+
 TEST_CASE("an omitted time-series variable guarantee preserves the supplied guarantee",
           "[type_system][feature:type-system][declaration:generic][series:value][guarantee:final]") {
     const auto identity = bg::node([](bg::In<bg::TS_T>, bg::Out<bg::TS_T>) {});

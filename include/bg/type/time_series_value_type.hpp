@@ -17,6 +17,8 @@ class TimeSeriesValueType : public TimeSeriesType {
     TimeSeriesValueType(const ScalarType &value_type, GuaranteeParameter guarantee)
         : TimeSeriesType(guarantee), value_type_(&value_type) {}
 
+    [[nodiscard]] bool do_match(const Type &supplied, TypeMap &type_map) const override;
+
   private:
     const ScalarType *value_type_;
 };
@@ -30,9 +32,6 @@ class GenericTimeSeriesValueType final : public TimeSeriesValueType {
 
     bool is_resolved() const noexcept override { return false; }
     [[nodiscard]] const Type &resolve(const TypeMap &type_map) const override;
-
-  protected:
-    [[nodiscard]] bool do_match(const Type &supplied, TypeMap &type_map) const override;
 };
 
 } // namespace bg
