@@ -28,6 +28,63 @@ def test_time_series_set_value_and_delta():
     ]
 
 
+def test_time_series_set_output_accepts_removed_markers():
+    observed = []
+
+    @bg.compute_node
+    def make_set(trigger: bg.TS[int]) -> bg.TSS[int]:
+        if trigger.value == 1:
+            return {1, 2}
+        if trigger.value == 2:
+            return {3, bg.Removed(1)}
+        return frozenset({4, bg.Removed(2)})
+
+    @bg.compute_node
+    def inspect(value: bg.TSS[int]) -> bg.TS[int]:
+        observed.append((value.value, value.delta_value))
+        return sum(value.value)
+
+    @bg.graph
+    def graph(trigger: bg.TS[int]) -> bg.TS[int]:
+        return inspect(make_set(trigger))
+
+    assert bg.test_graph(graph, [1, 2, 3]) == [3, 5, 7]
+    assert observed == [
+        (frozenset({1, 2}), bg.SetDelta(added={1, 2})),
+        (frozenset({2, 3}), bg.SetDelta(added={3}, removed={1})),
+        (frozenset({3, 4}), bg.SetDelta(added={4}, removed={2})),
+    ]
+
+
+def test_removed_marker_matches_hgraph_value_semantics():
+    removed = bg.Removed(2)
+
+    assert repr(removed) == "Removed(2)"
+    assert hash(removed) == hash(2)
+    assert removed == 2
+    assert 2 == removed
+    assert removed == bg.Removed(2)
+    assert removed != bg.Removed(3)
+
+
+def test_time_series_set_removed_markers_apply_recursively_in_dictionary():
+    @bg.compute_node
+    def make_dictionary(trigger: bg.TS[int]) -> bg.TSD[int, bg.TSS[int]]:
+        if trigger.value == 1:
+            return {1: {1, 2}}
+        return {1: {3, bg.Removed(1)}}
+
+    @bg.compute_node
+    def inspect(value: bg.TSD[int, bg.TSS[int]]) -> bg.TS[int]:
+        return sum(value[1].value)
+
+    @bg.graph
+    def graph(trigger: bg.TS[int]) -> bg.TS[int]:
+        return inspect(make_dictionary(trigger))
+
+    assert bg.test_graph(graph, [1, 2]) == [3, 5]
+
+
 def test_fixed_time_series_list_value_delta_and_item_access():
     observed = []
 
@@ -291,7 +348,7 @@ def test_collection_item_and_reference_views_expire_after_the_callback():
 def test_collection_delta_validation_reports_the_shape():
     @bg.source_node
     def invalid() -> bg.TSS[int]:
-        return {1, 2}
+        return [1, 2]
 
     @bg.compute_node
     def size(value: bg.TSS[int]) -> bg.TS[int]:
@@ -301,5 +358,22 @@ def test_collection_delta_validation_reports_the_shape():
     def graph() -> bg.TS[int]:
         return size(invalid())
 
-    with pytest.raises(ValueError, match="TSS output requires SetDelta"):
+    with pytest.raises(ValueError, match="TSS output requires"):
+        bg.test_graph(graph)
+
+
+def test_set_delta_fields_do_not_interpret_removed_markers():
+    @bg.source_node
+    def invalid() -> bg.TSS[int]:
+        return bg.SetDelta(added={bg.Removed(1)})
+
+    @bg.compute_node
+    def size(value: bg.TSS[int]) -> bg.TS[int]:
+        return len(value.value)
+
+    @bg.graph
+    def graph() -> bg.TS[int]:
+        return size(invalid())
+
+    with pytest.raises(TypeError, match="expected an integer"):
         bg.test_graph(graph)

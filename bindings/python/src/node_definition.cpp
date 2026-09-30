@@ -41,20 +41,39 @@ void apply_value_delta(Out<TS<SCALAR>> &output, const TimeSeriesRuntimeType &run
 
 void apply_set_delta(Out<TSS<SCALAR>> &output, const TimeSeriesRuntimeType &runtime_type, nanobind::handle delta,
                      allocator &memory) {
-    if (!details::is_set_delta(delta)) {
-        throw std::invalid_argument{"a TSS output requires SetDelta"};
+    const auto set_delta = details::is_set_delta(delta);
+    if (!set_delta && PySet_Check(delta.ptr()) == 0 && PyFrozenSet_Check(delta.ptr()) == 0) {
+        throw std::invalid_argument{"a TSS output requires a set, frozenset, or SetDelta"};
     }
 
     const auto &type = type_cast<TimeSeriesSetType>(runtime_type.type());
-    const auto apply = [&](nanobind::handle values, auto &&function) {
+    const auto apply_values = [&](nanobind::handle values, bool remove_values) {
         for (const auto value : nanobind::borrow<nanobind::iterable>(values)) {
             auto scalar = scalar_conversions().from_python(type.item_type(), value, memory);
-            function(Scalar<SCALAR>::from(scalar));
+            if (remove_values) {
+                output.erase(Scalar<SCALAR>::from(scalar));
+            } else {
+                output.insert(Scalar<SCALAR>::from(scalar));
+            }
         }
     };
 
-    apply(delta.attr("added"), [&](const Scalar<SCALAR> &value) { output.insert(value); });
-    apply(delta.attr("removed"), [&](const Scalar<SCALAR> &value) { output.erase(value); });
+    if (set_delta) {
+        apply_values(delta.attr("added"), false);
+        apply_values(delta.attr("removed"), true);
+        return;
+    }
+
+    for (const auto value : nanobind::borrow<nanobind::iterable>(delta)) {
+        const auto removed = details::is_removed(value);
+        const auto item = removed ? value.attr("item") : value;
+        auto scalar = scalar_conversions().from_python(type.item_type(), item, memory);
+        if (removed) {
+            output.erase(Scalar<SCALAR>::from(scalar));
+        } else {
+            output.insert(Scalar<SCALAR>::from(scalar));
+        }
+    }
 }
 
 void apply_list_delta(Out<TSL<TS_T, SIZE>> &output, nanobind::handle delta, allocator &memory) {

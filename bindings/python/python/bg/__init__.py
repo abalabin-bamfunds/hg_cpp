@@ -64,7 +64,25 @@ class SetDelta:
         return self.added == other.added and self.removed == other.removed
 
 
-_register_delta_types(SetDelta, REMOVE)
+class Removed:
+    """Mark a TSS item for removal in a set or frozenset output delta."""
+
+    __slots__ = ("item",)
+
+    def __init__(self, item: Any):
+        self.item = item
+
+    def __hash__(self) -> int:
+        return hash(self.item)
+
+    def __eq__(self, other: Any) -> bool:
+        return self.item == other.item if type(other) is Removed else self.item == other
+
+    def __repr__(self) -> str:
+        return f"Removed({self.item!r})"
+
+
+_register_delta_types(SetDelta, Removed, REMOVE)
 
 
 class TS:
@@ -457,6 +475,7 @@ __all__ = [
     "NodeDefinition",
     "REF",
     "REMOVE",
+    "Removed",
     "SetDelta",
     "SIZE",
     "Symbol",
