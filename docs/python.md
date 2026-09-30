@@ -64,11 +64,35 @@ item = collection[key]  # bg.operators.getitem(collection, key)
 ```
 
 Node and graph functions accept positional and named arguments according to
-their Python signatures. Parameters must be positional-only or
-positional-or-keyword. A graph function expands into the active graph while it
+their Python signatures, including positional-only, keyword-only, `*args`, and
+`**kwargs` parameters. A graph function expands into the active graph while it
 is being wired; it does not create a runtime nested-graph boundary. Scalar
 arguments are supported. `Optional[T]` is supported for scalar parameters and
 passes `None` to the callback when absent.
+
+Variadic parameters use a collection annotation. The function body receives
+one collection rather than expanded Python arguments:
+
+```python
+@bg.graph
+def homogeneous(*values: bg.TSL[bg.TS[int], bg.SIZE]) -> bg.TS[int]:
+    return values[0]
+
+@bg.graph
+def positional(*values: bg.TSB[bg.TS_SCHEMA]) -> bg.TS[int]:
+    return values[0]
+
+@bg.graph
+def named(**values: bg.TSB[bg.TS_SCHEMA]) -> bg.TS[int]:
+    return values["value"]
+```
+
+`TSL[..., SIZE]` accepts homogeneous time series. A TSB accepts time series and
+scalars; scalar arguments are lifted to const time series. Positional TSB fields
+use integer indices and named TSB fields use their argument names. A graph
+receives a wiring-time collection. A node receives a materialized input view.
+A prebuilt TSL or TSB supplied with the variadic parameter's name binds as the
+complete collection.
 
 `test_graph` accepts one update sequence for every graph parameter, and every
 graph parameter must currently be `TS[T]`. Each sequence element is a value or
@@ -89,7 +113,7 @@ bg.TSD[int, bg.TS[float]]
 bg.TSB[Quote]
 ```
 
-`TSL` currently requires a fixed size. A TSB uses a Python schema:
+A non-variadic TSL requires a fixed size. A TSB uses a Python schema:
 
 ```python
 class BaseQuote(bg.TimeSeriesSchema):
@@ -203,9 +227,9 @@ acquires it for argument conversion, callback execution, and output
 conversion.
 
 The current package does not expose Python-object scalar storage, scalar bundle
-schemas, injected runtime services, variadic Python definitions, or dynamic
-Python node inputs. Direct `TS[str]` output storage is also deferred; strings
-are supported as scalar wiring arguments.
+schemas, injected runtime services, or dynamic Python node inputs. Direct
+`TS[str]` output storage is also deferred; strings are supported as scalar
+wiring arguments.
 
 Python definition wrappers retain their callbacks. A wired runtime graph also
 retains each Python node callback that it uses. Destroy these graphs before

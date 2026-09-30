@@ -32,15 +32,17 @@ class BG_PYTHON_API PythonNodeDefinition {
             std::variant<GenericTimeSeriesValueType, GenericTimeSeriesReferenceType, GenericTimeSeriesSetType,
                          GenericTimeSeriesListType, GenericTimeSeriesDictionaryType, GenericTimeSeriesBundleType>;
 
-        SignatureDefinition(std::vector<GuaranteeVariable> guarantees,
+        SignatureDefinition(std::vector<std::shared_ptr<const void>> type_owners,
+                            std::vector<GuaranteeVariable> guarantees,
                             std::vector<GenericTimeSeriesType> time_series_types, Signature signature)
-            : guarantees{std::move(guarantees)}, time_series_types{std::move(time_series_types)},
-              signature{std::move(signature)} {}
+            : type_owners{std::move(type_owners)}, guarantees{std::move(guarantees)},
+              time_series_types{std::move(time_series_types)}, signature{std::move(signature)} {}
 
         SignatureDefinition(const SignatureDefinition &) = delete;
         SignatureDefinition &operator=(const SignatureDefinition &) = delete;
 
         // Signature type pointers refer to these vectors, which are immutable after construction.
+        std::vector<std::shared_ptr<const void>> type_owners;
         std::vector<GuaranteeVariable> guarantees;
         std::vector<GenericTimeSeriesType> time_series_types;
         Signature signature;

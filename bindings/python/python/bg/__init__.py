@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import inspect
+import types
 from functools import update_wrapper
 from typing import Any, get_args, get_type_hints
 
@@ -24,6 +25,8 @@ from ._bg import (
     _time_series_dict_type,
     _time_series_bundle_type,
     _time_series_list_type,
+    _variadic_time_series_bundle_type,
+    _variadic_time_series_list_type,
     _time_series_set_type,
     _time_series_type,
     _switch,
@@ -109,6 +112,8 @@ class TSL:
 
     def __class_getitem__(cls, arguments: Any) -> Any:
         item_type, size = arguments
+        if size is SIZE:
+            return _variadic_time_series_list_type(_native_type(item_type))
         return _time_series_list_type(_native_type(item_type), size)
 
 
@@ -150,9 +155,25 @@ class TSB:
     """A time-series bundle type annotation."""
 
     def __class_getitem__(cls, schema: type[TimeSeriesSchema]) -> Any:
+        if schema is TS_SCHEMA:
+            return _variadic_time_series_bundle_type()
         if not isinstance(schema, type) or not issubclass(schema, TimeSeriesSchema):
             raise TypeError("TSB[...] requires a TimeSeriesSchema")
         return _time_series_bundle_type(schema._native_schema)
+
+
+class _TypeVariable:
+    __slots__ = ("name",)
+
+    def __init__(self, name: str):
+        self.name = name
+
+    def __repr__(self) -> str:
+        return self.name
+
+
+SIZE = _TypeVariable("SIZE")
+TS_SCHEMA = _TypeVariable("TS_SCHEMA")
 
 
 class _PassThrough:
@@ -243,42 +264,147 @@ def switch_(key: Any, cases: dict[Any, GraphDefinition], *args: Any, **kwargs: A
 
 
 class NodeDefinition:
-    def __init__(self, function: Any, native_definition: Any):
+    def __init__(
+        self,
+        function: Any,
+        native_definition: Any,
+        fixed_parameters: tuple[str, ...],
+        callback: Any,
+    ):
         self.function = function
+        self._callback = callback
         self._native_definition = native_definition
+        self._fixed_parameters = fixed_parameters
         update_wrapper(self, function)
         self.signature = inspect.signature(function)
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
-        arguments = self.signature.bind(*args, **kwargs)
-        arguments.apply_defaults()
-        return _wire_node(self._native_definition, tuple(arguments.arguments.values()))
+        fixed, positional, named = _bind_definition_arguments(
+            self.signature, self._fixed_parameters, args, kwargs
+        )
+        return _wire_node(self._native_definition, fixed, positional, named)
 
 
 class GraphDefinition:
-    def __init__(self, function: Any, native_definition: Any):
+    def __init__(
+        self,
+        function: Any,
+        native_definition: Any,
+        fixed_parameters: tuple[str, ...],
+        callback: Any,
+    ):
         self.function = function
+        self._callback = callback
         self._native_definition = native_definition
+        self._fixed_parameters = fixed_parameters
         update_wrapper(self, function)
         self.signature = inspect.signature(function)
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
-        arguments = self.signature.bind(*args, **kwargs)
-        arguments.apply_defaults()
-        return _wire_graph(self._native_definition, tuple(arguments.arguments.values()))
+        fixed, positional, named = _bind_definition_arguments(
+            self.signature, self._fixed_parameters, args, kwargs
+        )
+        return _wire_graph(self._native_definition, fixed, positional, named)
+
+
+def _bind_definition_arguments(
+    signature: inspect.Signature,
+    fixed_parameters: tuple[str, ...],
+    args: tuple[Any, ...],
+    kwargs: dict[str, Any],
+) -> tuple[tuple[Any, ...], tuple[Any, ...], dict[str, Any]]:
+    positional_pack = next(
+        (
+            parameter
+            for parameter in signature.parameters.values()
+            if parameter.kind is parameter.VAR_POSITIONAL
+        ),
+        None,
+    )
+    direct_positional = {}
+    if positional_pack is not None and positional_pack.name in kwargs:
+        kwargs = dict(kwargs)
+        direct_positional[positional_pack.name] = kwargs.pop(positional_pack.name)
+
+    bound = signature.bind(*args, **kwargs)
+    bound.apply_defaults()
+
+    fixed = tuple(bound.arguments[name] for name in fixed_parameters)
+    positional = next(
+        (
+            tuple(bound.arguments[parameter.name])
+            for parameter in signature.parameters.values()
+            if parameter.kind is parameter.VAR_POSITIONAL
+        ),
+        (),
+    )
+    named = next(
+        (
+            dict(bound.arguments[parameter.name])
+            for parameter in signature.parameters.values()
+            if parameter.kind is parameter.VAR_KEYWORD
+        ),
+        {},
+    )
+    named.update(direct_positional)
+
+    return fixed, positional, named
+
+
+def _definition_signature(function: Any) -> tuple[list[tuple[str, Any, str]], tuple[str, ...], Any]:
+    signature = inspect.signature(function)
+    annotations = get_type_hints(function)
+    fixed = []
+    variadic = []
+
+    for parameter in signature.parameters.values():
+        annotation = annotations.get(parameter.name, parameter.annotation)
+        if annotation is inspect.Parameter.empty:
+            raise TypeError(f"Python definition parameter {parameter.name!r} requires a type annotation")
+
+        if parameter.kind in (
+            parameter.POSITIONAL_ONLY,
+            parameter.POSITIONAL_OR_KEYWORD,
+            parameter.KEYWORD_ONLY,
+        ):
+            fixed.append((parameter.name, _native_type(annotation), ""))
+        elif parameter.kind is parameter.VAR_POSITIONAL:
+            variadic.append((parameter.name, _native_type(annotation), "positional"))
+        elif parameter.kind is parameter.VAR_KEYWORD:
+            variadic.append((parameter.name, _native_type(annotation), "named"))
+        else:
+            raise TypeError(f"unsupported Python parameter kind for {parameter.name!r}")
+
+    parameters = fixed + variadic
+    fixed_names = tuple(name for name, _, _ in fixed)
+    needs_positional_callback = variadic or any(
+        parameter.kind is parameter.KEYWORD_ONLY for parameter in signature.parameters.values()
+    )
+    callback = _positional_callback(function) if needs_positional_callback else function
+    return parameters, fixed_names, callback
+
+
+def _positional_callback(function: Any) -> Any:
+    code = function.__code__
+    argument_count = (
+        code.co_argcount
+        + code.co_kwonlyargcount
+        + bool(code.co_flags & inspect.CO_VARARGS)
+        + bool(code.co_flags & inspect.CO_VARKEYWORDS)
+    )
+    code = code.replace(
+        co_flags=code.co_flags & ~(inspect.CO_VARARGS | inspect.CO_VARKEYWORDS),
+        co_argcount=argument_count,
+        co_posonlyargcount=0,
+        co_kwonlyargcount=0,
+    )
+    return types.FunctionType(code, function.__globals__, function.__name__, closure=function.__closure__)
 
 
 def _define_node(function: Any, *, schedule_on_start: bool = False) -> NodeDefinition:
-    parameters = []
     signature = inspect.signature(function)
     annotations = get_type_hints(function)
-    for parameter in signature.parameters.values():
-        if parameter.kind not in (parameter.POSITIONAL_ONLY, parameter.POSITIONAL_OR_KEYWORD):
-            raise TypeError("Python node parameters must be positional or positional-or-keyword")
-        annotation = annotations.get(parameter.name, parameter.annotation)
-        if annotation is inspect.Parameter.empty:
-            raise TypeError(f"Python node parameter {parameter.name!r} requires a type annotation")
-        parameters.append((parameter.name, _native_type(annotation)))
+    parameters, fixed_parameters, callback = _definition_signature(function)
 
     output = annotations.get("return", signature.return_annotation)
     if output is inspect.Signature.empty or output is None or output is type(None):
@@ -286,8 +412,8 @@ def _define_node(function: Any, *, schedule_on_start: bool = False) -> NodeDefin
     else:
         output = _native_type(output)
 
-    native_definition = _make_node(function.__name__, parameters, output, function, schedule_on_start)
-    return NodeDefinition(function, native_definition)
+    native_definition = _make_node(function.__name__, parameters, output, callback, schedule_on_start)
+    return NodeDefinition(function, native_definition, fixed_parameters, callback)
 
 
 def _native_type(annotation: Any) -> Any:
@@ -325,14 +451,7 @@ def graph(function: Any) -> GraphDefinition:
     """Declare a graph template composed from Python nodes and graph functions."""
     signature = inspect.signature(function)
     annotations = get_type_hints(function)
-    parameters = []
-    for parameter in signature.parameters.values():
-        if parameter.kind not in (parameter.POSITIONAL_ONLY, parameter.POSITIONAL_OR_KEYWORD):
-            raise TypeError("Python graph parameters must be positional or positional-or-keyword")
-        annotation = annotations.get(parameter.name, parameter.annotation)
-        if annotation is inspect.Parameter.empty:
-            raise TypeError(f"Python graph parameter {parameter.name!r} requires a type annotation")
-        parameters.append((parameter.name, _native_type(annotation)))
+    parameters, fixed_parameters, callback = _definition_signature(function)
 
     output = annotations.get("return", signature.return_annotation)
     if output is inspect.Signature.empty or output is None or output is type(None):
@@ -340,7 +459,8 @@ def graph(function: Any) -> GraphDefinition:
     else:
         output = _native_type(output)
 
-    return GraphDefinition(function, _make_graph(function.__name__, parameters, output, function))
+    native = _make_graph(function.__name__, parameters, output, callback)
+    return GraphDefinition(function, native, fixed_parameters, callback)
 
 
 def test_graph(definition: GraphDefinition, *inputs: Any) -> Any:
@@ -357,9 +477,11 @@ __all__ = [
     "REF",
     "REMOVE",
     "SetDelta",
+    "SIZE",
     "Symbol",
     "TS",
     "TSB",
+    "TS_SCHEMA",
     "TSD",
     "TSDDelta",
     "TSL",

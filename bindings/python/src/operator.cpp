@@ -3,9 +3,11 @@
 #include "operator_binding.hpp"
 #include "wiring_argument.hpp"
 
+#include <bg/graph/details/variadic_wiring_record.hpp>
 #include <bg/graph/operator.hpp>
 #include <bg/graph/wiring_context.hpp>
 #include <bg/operators.hpp>
+#include <bg/python/scalar_conversion.hpp>
 #include <bg/python/wiring_point.hpp>
 
 #include <nanobind/stl/string.h>
@@ -97,11 +99,41 @@ void bind_operators(nb::module_ &module) {
 
 nb::object getitem(const PythonWiringPoint &collection, nb::handle key) {
     auto &wiring = WiringContext::current().wiring();
+    const auto point = collection.get(wiring);
+    if (const auto *record = bg::details::variadic_wiring_record(point)) {
+        const auto index = [&]() -> std::size_t {
+            if (PyLong_Check(key.ptr())) {
+                return nb::cast<std::size_t>(key);
+            }
+
+            const auto name = nb::isinstance<util::symbol>(key) ? nb::cast<util::symbol>(key)
+                                                                : util::symbol{nb::cast<std::string>(key)};
+            for (auto candidate = std::size_t{}; candidate < record->size(); ++candidate) {
+                if (record->item_name(candidate) == name) {
+                    return candidate;
+                }
+            }
+            throw nb::key_error();
+        }();
+        if (index >= record->size()) {
+            throw nb::index_error();
+        }
+
+        const auto argument = record->argument(index);
+        if (argument.is_time_series()) {
+            return nb::cast(PythonWiringPoint{argument.time_series(), PythonWiringScope::current()});
+        }
+        if (!argument.present()) {
+            return nb::none();
+        }
+        return scalar_conversions().to_python(argument.scalar());
+    }
+
     auto temporary_memory = std::pmr::unsynchronized_pool_resource{};
     auto memory = allocator{temporary_memory};
     auto arguments = std::vector<WiringArgument>{};
     arguments.reserve(2);
-    arguments.emplace_back(collection.get(wiring));
+    arguments.emplace_back(point);
     arguments.push_back(wiring_argument(key, memory, wiring));
 
     return PythonOperator{operators::getitem}.invoke(arguments);
