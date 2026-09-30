@@ -12,7 +12,7 @@ bool AggregateNodeTemplateBase::deduplicate_wiring() const noexcept {
     return descriptor_->deduplicate_wiring;
 }
 
-bool AggregateNodeTemplateBase::schedule_on_start() const noexcept {
+bool AggregateNodeTemplateBase::schedule_on_start(const ResolvedSignature &) const noexcept {
     return descriptor_->schedule_on_start;
 }
 
@@ -36,11 +36,13 @@ InvalidationBehavior AggregateNodeTemplateBase::invalidation_behavior(const Reso
     return descriptor_->invalidation_behavior;
 }
 
-bool AggregateNodeTemplateBase::uses_time_series_input_runtime_type(std::size_t parameter_index) const noexcept {
+bool AggregateNodeTemplateBase::uses_time_series_input_runtime_type(const ResolvedSignature &,
+                                                                    std::size_t parameter_index) const noexcept {
     return descriptor_->parameter_runtime_type_uses[parameter_index] == AggregateRuntimeTypeUse::time_series;
 }
 
-bool AggregateNodeTemplateBase::uses_scalar_input_runtime_type(std::size_t parameter_index) const noexcept {
+bool AggregateNodeTemplateBase::uses_scalar_input_runtime_type(const ResolvedSignature &,
+                                                               std::size_t parameter_index) const noexcept {
     return descriptor_->parameter_runtime_type_uses[parameter_index] == AggregateRuntimeTypeUse::scalar;
 }
 

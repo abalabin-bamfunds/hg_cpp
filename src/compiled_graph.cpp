@@ -783,10 +783,10 @@ RuntimeTypeCounts runtime_type_counts(const WiredNode &node) {
     auto result = RuntimeTypeCounts{.dynamic_reference_inputs = node.dynamic_reference_input_types().size(),
                                     .output = node.node_template().uses_output_runtime_type()};
     for (auto parameter = std::size_t{}; parameter < node.signature().parameters.size(); ++parameter) {
-        result.time_series_inputs +=
-            static_cast<std::size_t>(node.node_template().uses_time_series_input_runtime_type(parameter));
+        result.time_series_inputs += static_cast<std::size_t>(
+            node.node_template().uses_time_series_input_runtime_type(node.signature(), parameter));
         result.scalar_inputs +=
-            static_cast<std::size_t>(node.node_template().uses_scalar_input_runtime_type(parameter));
+            static_cast<std::size_t>(node.node_template().uses_scalar_input_runtime_type(node.signature(), parameter));
     }
     return result;
 }
@@ -1255,7 +1255,7 @@ class CompiledGraphBuilder {
                 })) {
                 info.evaluation |= mask;
             }
-            if (node.node_template().schedule_on_start()) {
+            if (node.node_template().schedule_on_start(node.signature())) {
                 info.evaluation |= mask;
             }
         }
@@ -1441,7 +1441,7 @@ class CompiledGraphBuilder {
              ++parameter_index) {
             if (!node.signature().parameters[parameter_index].type->is_time_series()) {
                 const auto &scalar = node.scalar_values()[scalar_index++];
-                if (node.node_template().uses_scalar_input_runtime_type(parameter_index)) {
+                if (node.node_template().uses_scalar_input_runtime_type(node.signature(), parameter_index)) {
                     const auto *runtime_type = [&] {
                         if (scalar.has_value()) {
                             return &scalar.runtime_type();
@@ -1458,7 +1458,7 @@ class CompiledGraphBuilder {
             }
 
             const auto &input = plan.node_plans[node_index].time_series_inputs[input_index++];
-            if (!node.node_template().uses_time_series_input_runtime_type(parameter_index)) {
+            if (!node.node_template().uses_time_series_input_runtime_type(node.signature(), parameter_index)) {
                 continue;
             }
 

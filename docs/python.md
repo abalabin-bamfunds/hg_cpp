@@ -132,6 +132,28 @@ native identity; its qualified name is descriptive.
 cycle. `@compute_node` declares a fixed-input node. Inputs can be any supported
 time-series type or a scalar argument.
 
+`@node` declares scalar-valued inputs and output. Each parameter annotated with
+a scalar type accepts either a scalar wiring argument or a matching `TS[T]`
+wiring point. Scalar arguments are passed unchanged. Time-series arguments are
+passed as their current Python scalar value; an invalid optional time-series
+input is passed as `None`. A scalar return annotation declares a `TS[T]` output.
+Omitting the return annotation declares a sink. The node runs at graph start
+only when all resolved inputs are scalar arguments.
+
+```python
+@bg.node
+def add(value: int, offset: int) -> int:
+    return value + offset
+
+@bg.graph
+def example(value: bg.TS[int]) -> bg.TS[int]:
+    return add(value, 1)
+```
+
+`@node` parameters must use scalar annotations, not `TS[...]`. `Optional[T]`
+marks a scalar argument as optional and makes a time-series input optional if
+that parameter is wired to a time series.
+
 A callback returns an output delta. Returning `None` requests no output change.
 Sink nodes have no output annotation and must return `None`. An exception
 raised by a callback propagates from `test_graph`. Each test run constructs and

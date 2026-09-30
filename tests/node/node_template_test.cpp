@@ -13,6 +13,7 @@
 #include <optional>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 namespace {
 
@@ -361,13 +362,48 @@ struct runtime_layout_collection_sink {
     void evaluate() const {}
 };
 
+struct scalar_or_time_series_input_definition {
+    static const bg::TypeVariableType<bg::Type> &input_type() {
+        static const auto guarantee = bg::GuaranteeVariable{bg::util::symbol{"G"}};
+        static const auto time_series = bg::GenericTimeSeriesValueType{bg::int64_type(), guarantee};
+        static const auto type = bg::TypeVariableType<bg::Type>{
+            bg::util::symbol{"VALUE"}, std::vector<const bg::Type *>{&bg::int64_type(), &time_series}};
+        return type;
+    }
+
+    const bg::Signature &signature() const {
+        static const auto value = bg::Signature{bg::util::symbol{"scalar_or_time_series"},
+                                                std::vector<bg::Parameter>{{bg::util::symbol{"value"}, &input_type()}}};
+        return value;
+    }
+
+    static void evaluate(bg::NodeInvocation<>) {}
+};
+
 } // namespace
 
 TEST_CASE("collection inputs retain their resolved runtime layout", "[node_template][time_series][feature:node-api]") {
     const auto sink = bg::node<runtime_layout_collection_sink>();
+    const auto arguments =
+        std::array<const bg::Type *, 2>{&bg::TSS<bg::i64>::type(), &bg::TSD<bg::i64, bg::TS<bg::i64>>::type()};
+    const auto signature = sink.signature().resolve(arguments);
 
-    CHECK(sink.uses_time_series_input_runtime_type(0));
-    CHECK(sink.uses_time_series_input_runtime_type(1));
+    CHECK(sink.uses_time_series_input_runtime_type(signature, 0));
+    CHECK(sink.uses_time_series_input_runtime_type(signature, 1));
+}
+
+TEST_CASE("runtime type use follows resolved input types",
+          "[node_template][feature:type-resolution][feature:node-api]") {
+    const auto node = bg::node(scalar_or_time_series_input_definition{});
+    const auto scalar_arguments = std::array<const bg::Type *, 1>{&bg::int64_type()};
+    const auto time_series_arguments = std::array<const bg::Type *, 1>{&bg::TS<bg::i64>::type()};
+    const auto scalar_signature = node.signature().resolve(scalar_arguments);
+    const auto time_series_signature = node.signature().resolve(time_series_arguments);
+
+    CHECK(node.uses_scalar_input_runtime_type(scalar_signature, 0));
+    CHECK_FALSE(node.uses_time_series_input_runtime_type(scalar_signature, 0));
+    CHECK_FALSE(node.uses_scalar_input_runtime_type(time_series_signature, 0));
+    CHECK(node.uses_time_series_input_runtime_type(time_series_signature, 0));
 }
 
 namespace {

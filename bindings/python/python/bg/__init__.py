@@ -17,6 +17,7 @@ from ._bg import (
     _map,
     _mesh,
     _mesh_dependency,
+    _node_input_type,
     _optional_type,
     _reference_type,
     _register_delta_types,
@@ -350,7 +351,9 @@ def _bind_definition_arguments(
     return fixed, positional, named
 
 
-def _definition_signature(function: Any) -> tuple[list[tuple[str, Any, str]], tuple[str, ...], Any]:
+def _definition_signature(
+    function: Any, *, scalar_or_time_series_inputs: bool = False
+) -> tuple[list[tuple[str, Any, str]], tuple[str, ...], Any]:
     signature = inspect.signature(function)
     annotations = get_type_hints(function)
     fixed = []
@@ -366,10 +369,19 @@ def _definition_signature(function: Any) -> tuple[list[tuple[str, Any, str]], tu
             parameter.POSITIONAL_OR_KEYWORD,
             parameter.KEYWORD_ONLY,
         ):
-            fixed.append((parameter.name, _native_type(annotation), ""))
+            native_type = _native_type(annotation)
+            if scalar_or_time_series_inputs:
+                if native_type.is_time_series:
+                    raise TypeError("@node parameters must use scalar annotations, not TS[...] annotations")
+                native_type = _node_input_type(native_type)
+            fixed.append((parameter.name, native_type, ""))
         elif parameter.kind is parameter.VAR_POSITIONAL:
+            if scalar_or_time_series_inputs:
+                raise TypeError("@node does not currently support variadic parameters")
             variadic.append((parameter.name, _native_type(annotation), "positional"))
         elif parameter.kind is parameter.VAR_KEYWORD:
+            if scalar_or_time_series_inputs:
+                raise TypeError("@node does not currently support variadic parameters")
             variadic.append((parameter.name, _native_type(annotation), "named"))
         else:
             raise TypeError(f"unsupported Python parameter kind for {parameter.name!r}")
@@ -400,18 +412,29 @@ def _positional_callback(function: Any) -> Any:
     return types.FunctionType(code, function.__globals__, function.__name__, closure=function.__closure__)
 
 
-def _define_node(function: Any, *, schedule_on_start: bool = False) -> NodeDefinition:
+def _define_node(
+    function: Any, *, schedule_on_start: bool = False, scalar_or_time_series_inputs: bool = False
+) -> NodeDefinition:
     signature = inspect.signature(function)
     annotations = get_type_hints(function)
-    parameters, fixed_parameters, callback = _definition_signature(function)
+    parameters, fixed_parameters, callback = _definition_signature(
+        function, scalar_or_time_series_inputs=scalar_or_time_series_inputs
+    )
 
     output = annotations.get("return", signature.return_annotation)
     if output is inspect.Signature.empty or output is None or output is type(None):
         output = None
+    elif scalar_or_time_series_inputs:
+        output_type = _native_type(output)
+        if output_type.is_time_series:
+            raise TypeError("@node return annotations must be scalar annotations, not TS[...] annotations")
+        output = _time_series_type(output_type)
     else:
         output = _native_type(output)
 
-    native_definition = _make_node(function.__name__, parameters, output, callback, schedule_on_start)
+    native_definition = _make_node(
+        function.__name__, parameters, output, callback, schedule_on_start, scalar_or_time_series_inputs
+    )
     return NodeDefinition(function, native_definition, fixed_parameters, callback)
 
 
@@ -430,6 +453,11 @@ def _native_type(annotation: Any) -> Any:
 def compute_node(function: Any) -> NodeDefinition:
     """Declare a Python node that runs when one of its inputs changes."""
     return _define_node(function)
+
+
+def node(function: Any) -> NodeDefinition:
+    """Declare a Python node whose scalar annotations accept scalar or TS[T] inputs."""
+    return _define_node(function, schedule_on_start=True, scalar_or_time_series_inputs=True)
 
 
 def source_node(function: Any) -> NodeDefinition:
@@ -490,6 +518,7 @@ __all__ = [
     "graph",
     "map",
     "mesh",
+    "node",
     "operators",
     "pass_through",
     "source_node",

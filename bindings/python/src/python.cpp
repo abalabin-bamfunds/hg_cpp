@@ -61,10 +61,15 @@ class TypeDescriptor {
     explicit TypeDescriptor(const BundleSchema &schema) noexcept : type_{&schema}, bundle_schema_{&schema} {}
     TypeDescriptor(const Type &type, std::shared_ptr<const void> owner) noexcept
         : type_{&type}, owner_{std::move(owner)} {}
+    TypeDescriptor(const TypeDescriptor &value, bool accepts_time_series_value) noexcept
+        : type_{value.type_}, bundle_schema_{value.bundle_schema_},
+          accepts_absent_scalar_{value.accepts_absent_scalar_}, owner_{value.owner_},
+          accepts_time_series_value_{accepts_time_series_value} {}
 
     const Type &type() const noexcept { return *type_; }
     const BundleSchema *bundle_schema() const noexcept { return bundle_schema_; }
     bool accepts_absent_scalar() const noexcept { return accepts_absent_scalar_; }
+    bool accepts_time_series_value() const noexcept { return accepts_time_series_value_; }
     const std::shared_ptr<const void> &owner() const noexcept { return owner_; }
 
   private:
@@ -72,6 +77,7 @@ class TypeDescriptor {
     const BundleSchema *bundle_schema_{};
     bool accepts_absent_scalar_{};
     std::shared_ptr<const void> owner_;
+    bool accepts_time_series_value_{};
 };
 
 struct VariadicBundleAnnotation {
@@ -92,6 +98,16 @@ struct VariadicListAnnotation {
 };
 
 using PythonParameter = std::tuple<std::string, TypeDescriptor, std::string>;
+
+struct PythonValueInputType {
+    PythonValueInputType(std::string_view name, const ScalarType &scalar_type)
+        : guarantee{util::symbol{name}}, time_series{scalar_type, guarantee},
+          type{util::symbol{name}, std::vector<const Type *>{&scalar_type, &time_series}} {}
+
+    GuaranteeVariable guarantee;
+    GenericTimeSeriesValueType time_series;
+    TypeVariableType<Type> type;
+};
 
 class PythonSchemaRegistry {
   public:
@@ -168,12 +184,26 @@ make_signature(std::string_view name, const std::vector<PythonParameter> &parame
     time_series_types.reserve(time_series_parameter_count);
     auto resolved_parameters = std::vector<Parameter>{};
     resolved_parameters.reserve(parameters.size());
+    auto wiring_parameter_types = std::vector<const Type *>{};
+    wiring_parameter_types.reserve(parameters.size());
     for (const auto &[parameter_name, parameter_type, variadic] : parameters) {
         if (parameter_type.owner()) {
             type_owners.push_back(parameter_type.owner());
         }
 
-        const auto *type = &parameter_type.type();
+        const Type *type = &parameter_type.type();
+        const Type *wiring_type = type;
+        if (parameter_type.accepts_time_series_value()) {
+            const auto *scalar = type_cast<ScalarType>(type);
+            if (scalar == nullptr || !variadic.empty()) {
+                throw std::invalid_argument{"a Python @node input requires a scalar annotation"};
+            }
+
+            auto owner = std::make_shared<PythonValueInputType>(parameter_name, *scalar);
+            type = &owner->type;
+            wiring_type = scalar;
+            type_owners.push_back(std::move(owner));
+        }
         if (const auto *time_series = type_cast<TimeSeriesType>(type); time_series != nullptr && variadic.empty()) {
             guarantees.emplace_back(util::symbol{parameter_name});
             time_series_types.push_back(generic_time_series_type(*time_series, guarantees.back()));
@@ -182,6 +212,9 @@ make_signature(std::string_view name, const std::vector<PythonParameter> &parame
 
         auto parameter = Parameter{util::symbol{parameter_name}, type};
         parameter.accepts_absent_scalar = parameter_type.accepts_absent_scalar();
+        if (parameter_type.accepts_time_series_value() && parameter_type.accepts_absent_scalar()) {
+            parameter.validity = optional;
+        }
         if (!variadic.empty()) {
             auto mode = bg::details::VariadicMode::none;
             if (variadic == "positional") {
@@ -208,6 +241,7 @@ make_signature(std::string_view name, const std::vector<PythonParameter> &parame
             parameter.variadic_operations->validate_parameter(*time_series, mode);
         }
         resolved_parameters.push_back(parameter);
+        wiring_parameter_types.push_back(wiring_type);
     }
 
     if (output && output->owner()) {
@@ -226,12 +260,13 @@ make_signature(std::string_view name, const std::vector<PythonParameter> &parame
     }();
 
     return std::make_shared<const PythonNodeDefinition::SignatureDefinition>(
-        std::move(type_owners), std::move(guarantees), std::move(time_series_types), std::move(signature));
+        std::move(type_owners), std::move(guarantees), std::move(time_series_types), std::move(wiring_parameter_types),
+        std::move(signature));
 }
 
 std::vector<WiringArgument> wiring_arguments(const Signature &signature, nb::sequence fixed_values,
                                              nb::sequence positional_values, nb::dict named_values, allocator &memory,
-                                             GraphWiring &wiring) {
+                                             GraphWiring &wiring, std::span<const Type *const> parameter_types = {}) {
     const auto fixed_count = signature.first_variadic_parameter().value_or(signature.parameter_count());
     if (nb::len(fixed_values) != fixed_count) {
         throw std::invalid_argument{"the Python definition received the wrong number of fixed arguments"};
@@ -240,8 +275,8 @@ std::vector<WiringArgument> wiring_arguments(const Signature &signature, nb::seq
     auto arguments = std::vector<WiringArgument>{};
     arguments.reserve(fixed_count + nb::len(positional_values) + nb::len(named_values));
     for (auto index = std::size_t{}; index < fixed_count; ++index) {
-        arguments.push_back(
-            details::wiring_argument(*signature.parameter(index).type, fixed_values[index], memory, wiring));
+        const auto &expected = parameter_types.empty() ? *signature.parameter(index).type : *parameter_types[index];
+        arguments.push_back(details::wiring_argument(expected, fixed_values[index], memory, wiring));
     }
 
     for (auto index = std::size_t{}; index < nb::len(positional_values); ++index) {
@@ -335,8 +370,8 @@ nb::object wire_node(const PythonNodeDefinition &definition, nb::sequence fixed_
     auto &wiring = WiringContext::current().wiring();
     auto temporary_memory = std::pmr::unsynchronized_pool_resource{};
     auto memory = allocator{temporary_memory};
-    auto arguments =
-        wiring_arguments(definition.signature(), fixed_values, positional_values, named_values, memory, wiring);
+    auto arguments = wiring_arguments(definition.signature(), fixed_values, positional_values, named_values, memory,
+                                      wiring, definition.wiring_parameter_types());
 
     const auto scope = PythonWiringScope::current();
     auto *node_template = scope->node_template(definition.identity());
@@ -475,9 +510,17 @@ void bind_core(nb::module_ &module) {
         }
         return TypeDescriptor{value.type(), true};
     });
+    module.def("_node_input_type", [](const TypeDescriptor &value) {
+        if (type_cast<ScalarType>(&value.type()) == nullptr) {
+            throw std::invalid_argument{"Python @node inputs require scalar annotations"};
+        }
+        return TypeDescriptor{value, true};
+    });
     module.def("_make_node", [](std::string name, const std::vector<PythonParameter> &parameters,
-                                std::optional<TypeDescriptor> output, nb::handle function, bool schedule_on_start) {
-        return PythonNodeDefinition{make_signature(name, parameters, output), function, schedule_on_start};
+                                std::optional<TypeDescriptor> output, nb::handle function, bool schedule_on_start,
+                                bool pass_time_series_values) {
+        return PythonNodeDefinition{make_signature(name, parameters, output), function, schedule_on_start,
+                                    pass_time_series_values};
     });
     module.def("_make_graph", [](std::string name, const std::vector<PythonParameter> &parameters,
                                  std::optional<TypeDescriptor> output, nb::handle function) {

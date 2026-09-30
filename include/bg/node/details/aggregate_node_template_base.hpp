@@ -47,14 +47,15 @@ class AggregateNodeTemplateBase : public NodeTemplate {
 
     const Signature &signature() const final;
     bool deduplicate_wiring() const noexcept final;
-    bool schedule_on_start() const noexcept final;
+    bool schedule_on_start(const ResolvedSignature &) const noexcept final;
     RequirementResult requirement(const WiringArguments &arguments) const final;
     EvaluationFunction evaluation_function(const ResolvedSignature &) const noexcept final;
     NodeFunction start_function(const ResolvedSignature &) const noexcept final;
     NodeFunction stop_function(const ResolvedSignature &) const noexcept final;
     InvalidationBehavior invalidation_behavior(const ResolvedSignature &) const noexcept final;
-    bool uses_time_series_input_runtime_type(std::size_t parameter_index) const noexcept final;
-    bool uses_scalar_input_runtime_type(std::size_t parameter_index) const noexcept final;
+    bool uses_time_series_input_runtime_type(const ResolvedSignature &,
+                                             std::size_t parameter_index) const noexcept final;
+    bool uses_scalar_input_runtime_type(const ResolvedSignature &, std::size_t parameter_index) const noexcept final;
     bool uses_output_runtime_type() const noexcept final;
     bool uses_timed_scheduling() const noexcept final;
     NodeStateLayout state_layout(const ResolvedSignature &signature,

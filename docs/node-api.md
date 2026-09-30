@@ -165,7 +165,10 @@ not call `start()` and does not make a node active in later cycles. An aggregate
 or runtime-signature definition declares `static constexpr bool
 schedule_on_start = true`. A callable definition uses
 `bg::schedule_on_start = true` as a `node()` option. The runtime-signature form
-can also provide a `schedule_on_start() const` member.
+can provide `schedule_on_start() const` or
+`schedule_on_start(const ResolvedSignature &) const`. The resolved-signature
+form lets the definition request initial evaluation based on the concrete input
+types selected during wiring.
 
 `std::optional<T>` owns its value, so passing a valid time series input can copy
 `T`. Use `In<TS<T>, ...>` to access an expensive value by reference.

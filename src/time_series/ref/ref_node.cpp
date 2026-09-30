@@ -48,7 +48,9 @@ class ReferenceNodeTemplate final : public NodeTemplate {
         return &destroy_state;
     }
 
-    bool uses_time_series_input_runtime_type(std::size_t) const noexcept override { return true; }
+    bool uses_time_series_input_runtime_type(const ResolvedSignature &, std::size_t) const noexcept override {
+        return true;
+    }
 
     bool uses_cycle_callbacks() const noexcept override { return uses_cycle_callbacks_; }
 

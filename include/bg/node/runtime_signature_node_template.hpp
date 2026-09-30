@@ -157,8 +157,10 @@ class RuntimeSignatureNodeTemplate final
         return true;
     }
 
-    bool schedule_on_start() const noexcept override {
-        if constexpr (requires { definition_.schedule_on_start(); }) {
+    bool schedule_on_start(const ResolvedSignature &signature) const noexcept override {
+        if constexpr (requires { definition_.schedule_on_start(signature); }) {
+            return definition_.schedule_on_start(signature);
+        } else if constexpr (requires { definition_.schedule_on_start(); }) {
             return definition_.schedule_on_start();
         } else if constexpr (requires { Definition::schedule_on_start; }) {
             return static_cast<bool>(Definition::schedule_on_start);
@@ -203,12 +205,14 @@ class RuntimeSignatureNodeTemplate final
         return {};
     }
 
-    bool uses_time_series_input_runtime_type(std::size_t parameter_index) const noexcept override {
-        return signature_parameter(parameter_index).type->is_time_series();
+    bool uses_time_series_input_runtime_type(const ResolvedSignature &signature,
+                                             std::size_t parameter_index) const noexcept override {
+        return signature.parameters[parameter_index].type->is_time_series();
     }
 
-    bool uses_scalar_input_runtime_type(std::size_t parameter_index) const noexcept override {
-        return signature_parameter(parameter_index).type->is_scalar();
+    bool uses_scalar_input_runtime_type(const ResolvedSignature &signature,
+                                        std::size_t parameter_index) const noexcept override {
+        return signature.parameters[parameter_index].type->is_scalar();
     }
 
     bool uses_output_runtime_type() const noexcept override { return definition_.signature().has_output(); }
@@ -280,10 +284,6 @@ class RuntimeSignatureNodeTemplate final
     }
 
   private:
-    [[nodiscard]] const Parameter &signature_parameter(std::size_t index) const noexcept {
-        return definition_.signature().parameter(index);
-    }
-
     static Invocation invocation(const CompiledNode &node, void *runtime_storage, EvaluationContext *context) noexcept {
         return Invocation{node, runtime_storage, *context};
     }

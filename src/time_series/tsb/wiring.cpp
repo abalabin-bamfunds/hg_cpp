@@ -30,7 +30,9 @@ class FreeTimeSeriesBundleNodeTemplate final : public NodeTemplate {
     const Signature &signature() const override { return signature_; }
     EvaluationFunction evaluation_function(const ResolvedSignature &) const noexcept override { return &evaluate; }
     NodeFunction start_function(const ResolvedSignature &) const noexcept override { return &start; }
-    bool uses_time_series_input_runtime_type(std::size_t) const noexcept override { return true; }
+    bool uses_time_series_input_runtime_type(const ResolvedSignature &, std::size_t) const noexcept override {
+        return true;
+    }
     InputNotification input_notification(std::size_t input_index) const noexcept override {
         return {&input_changed, input_index};
     }

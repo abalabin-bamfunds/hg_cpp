@@ -18,6 +18,7 @@
 
 #include <nanobind/stl/string.h>
 
+#include <algorithm>
 #include <array>
 #include <memory_resource>
 #include <span>
@@ -198,6 +199,15 @@ nanobind::object PythonNodeDefinition::CompiledData::argument(Invocation invocat
                                                               CallbackScope &callback) const {
     const auto &parameter = parameters[index];
     if (parameter.time_series) {
+        if (parameter.pass_time_series_value) {
+            auto input = invocation.input<In<TS<SCALAR>>>(index, parameter.runtime_type_index);
+            if (!input.valid()) {
+                return nanobind::none();
+            }
+            const auto value = input.value_view();
+            return scalar_conversions().to_python(Scalar<>::from(value));
+        }
+
         auto input = invocation.input<In<TS_T>>(index, parameter.runtime_type_index);
         return nanobind::cast(InputView{input, scalar_conversions(), lifetime, callback.generation()});
     }
@@ -246,9 +256,10 @@ void PythonNodeDefinition::CompiledData::invoke(Invocation invocation) const {
 }
 
 PythonNodeDefinition::PythonNodeDefinition(std::shared_ptr<const SignatureDefinition> signature,
-                                           nanobind::handle function, bool schedule_on_start)
+                                           nanobind::handle function, bool schedule_on_start,
+                                           bool pass_time_series_values)
     : signature_{std::move(signature)}, weak_function_{function}, identity_{std::make_shared<const char>()},
-      schedule_on_start_{schedule_on_start} {
+      schedule_on_start_{schedule_on_start}, pass_time_series_values_{pass_time_series_values} {
     if (signature_ == nullptr) {
         throw std::invalid_argument{"a Python node requires a signature"};
     }
@@ -258,12 +269,20 @@ PythonNodeDefinition::PythonNodeDefinition(std::shared_ptr<const SignatureDefini
 }
 
 PythonNodeDefinition::PythonNodeDefinition(std::shared_ptr<const SignatureDefinition> signature, Object function,
-                                           std::shared_ptr<const char> identity, bool schedule_on_start) noexcept
+                                           std::shared_ptr<const char> identity, bool schedule_on_start,
+                                           bool pass_time_series_values) noexcept
     : signature_{std::move(signature)}, retained_function_{std::move(function)}, identity_{std::move(identity)},
-      schedule_on_start_{schedule_on_start} {}
+      schedule_on_start_{schedule_on_start}, pass_time_series_values_{pass_time_series_values} {}
 
 PythonNodeDefinition PythonNodeDefinition::retain_function() const {
-    return PythonNodeDefinition{signature_, weak_function_.lock(), identity_, schedule_on_start_};
+    return PythonNodeDefinition{signature_, weak_function_.lock(), identity_, schedule_on_start_,
+                                pass_time_series_values_};
+}
+
+bool PythonNodeDefinition::schedule_on_start(const ResolvedSignature &signature) const noexcept {
+    return schedule_on_start_ && std::ranges::none_of(signature.parameters, [](const auto &parameter) {
+               return parameter.type->is_time_series();
+           });
 }
 
 NodeTemplateIdentity PythonNodeDefinition::definition_identity() const {
@@ -281,7 +300,8 @@ PythonNodeDefinition::CompiledData PythonNodeDefinition::compile(const ResolvedS
     auto parameter_conversions = std::vector<ParameterConversion>{};
     parameter_conversions.reserve(signature.parameters.size());
 
-    for (const auto &parameter : signature.parameters) {
+    for (std::size_t index = 0; index < signature.parameters.size(); ++index) {
+        const auto &parameter = signature.parameters[index];
         const auto time_series = parameter.type->is_time_series();
 
         if (!time_series) {
@@ -291,7 +311,7 @@ PythonNodeDefinition::CompiledData PythonNodeDefinition::compile(const ResolvedS
         }
 
         auto &runtime_type_index = time_series ? time_series_runtime_type_index : scalar_runtime_type_index;
-        parameter_conversions.push_back({time_series, runtime_type_index++});
+        parameter_conversions.push_back({time_series, time_series && pass_time_series_values_, runtime_type_index++});
     }
 
     auto result = CompiledData{};
