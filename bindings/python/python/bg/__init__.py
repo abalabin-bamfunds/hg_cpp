@@ -64,26 +64,7 @@ class SetDelta:
         return self.added == other.added and self.removed == other.removed
 
 
-class TSDDelta:
-    __slots__ = ("removed", "modified")
-
-    def __init__(self, removed: Any = (), modified: Any = None):
-        self.removed = frozenset(removed)
-        self.modified = {} if modified is None else dict(modified)
-        overlap = self.removed.intersection(self.modified)
-        if overlap:
-            raise ValueError(f"a TSD delta cannot remove and modify the same keys: {overlap!r}")
-
-    def __repr__(self) -> str:
-        return f"TSDDelta(removed={self.removed!r}, modified={self.modified!r})"
-
-    def __eq__(self, other: Any) -> bool:
-        if not isinstance(other, TSDDelta):
-            return NotImplemented
-        return self.removed == other.removed and self.modified == other.modified
-
-
-_register_delta_types(SetDelta, TSDDelta, REMOVE)
+_register_delta_types(SetDelta, REMOVE)
 
 
 class TS:
@@ -483,7 +464,6 @@ __all__ = [
     "TSB",
     "TS_SCHEMA",
     "TSD",
-    "TSDDelta",
     "TSL",
     "TSS",
     "TimeSeriesSchema",

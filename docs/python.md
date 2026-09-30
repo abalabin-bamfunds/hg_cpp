@@ -152,9 +152,9 @@ Output deltas use these forms:
 | `TSB[Schema]` | `{field_name: item_delta}` |
 | `TSD[K, TS_T]` | `{key: item_delta}`; use `REMOVE` as an item delta to remove a key |
 
-`TSDDelta(removed=..., modified=...)` is the structured TSD change value
-returned by `InputView.delta_value`. A node can also return it as an output
-delta. Collection item deltas recurse through the same table.
+`InputView.delta_value` uses the same mapping form for TSD changes. A removed
+key maps to `REMOVE`; added and modified keys map to their item deltas.
+Collection item deltas recurse through the same table.
 
 The currently accepted scalar annotations are `bool`, `int`, `float`, `str`,
 and `bg.Symbol`. Python node outputs currently support `bool`, `int`, `float`,

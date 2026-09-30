@@ -104,7 +104,7 @@ def test_time_series_dictionary_value_delta_removal_resurrection_and_item_access
         if trigger.value == 1:
             return {1: 10, 2: 20}
         if trigger.value == 2:
-            return bg.TSDDelta(removed={1}, modified={2: 21})
+            return {1: bg.REMOVE, 2: 21}
         return {1: 30}
 
     @bg.compute_node
@@ -118,9 +118,9 @@ def test_time_series_dictionary_value_delta_removal_resurrection_and_item_access
 
     assert bg.test_graph(graph, [1, 2, 3]) == [30, 21, 51]
     assert observed == [
-        ({1: 10, 2: 20}, bg.TSDDelta(modified={1: 10, 2: 20}), 20),
-        ({2: 21}, bg.TSDDelta(removed={1}, modified={2: 21}), 21),
-        ({1: 30, 2: 21}, bg.TSDDelta(modified={1: 30}), 21),
+        ({1: 10, 2: 20}, {1: 10, 2: 20}, 20),
+        ({2: 21}, {1: bg.REMOVE, 2: 21}, 21),
+        ({1: 30, 2: 21}, {1: 30}, 21),
     ]
 
 
@@ -138,11 +138,6 @@ def test_string_tsd_keys_named_like_delta_fields_are_not_special():
         return inspect(make_dictionary(trigger))
 
     assert bg.test_graph(graph, [1, 3]) == [3, 7]
-
-
-def test_tsd_delta_rejects_keys_that_are_removed_and_modified():
-    with pytest.raises(ValueError, match="remove and modify"):
-        bg.TSDDelta(removed={1}, modified={1: 10})
 
 
 def test_nested_collection_deltas_are_applied_recursively():

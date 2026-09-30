@@ -11,7 +11,6 @@ namespace {
 
 struct DeltaTypes {
     Object set_delta_type;
-    Object tsd_delta_type;
     Object remove_sentinel;
 };
 
@@ -22,8 +21,8 @@ DeltaTypes &delta_types() {
 
 } // namespace
 
-void register_delta_types(nb::handle set_delta_type, nb::handle tsd_delta_type, nb::handle remove_sentinel) {
-    if (!PyType_Check(set_delta_type.ptr()) || !PyType_Check(tsd_delta_type.ptr())) {
+void register_delta_types(nb::handle set_delta_type, nb::handle remove_sentinel) {
+    if (!PyType_Check(set_delta_type.ptr())) {
         throw std::invalid_argument{"delta registration requires Python types"};
     }
     if (remove_sentinel.is_none()) {
@@ -32,7 +31,6 @@ void register_delta_types(nb::handle set_delta_type, nb::handle tsd_delta_type, 
 
     auto &types = delta_types();
     types.set_delta_type = Object{set_delta_type};
-    types.tsd_delta_type = Object{tsd_delta_type};
     types.remove_sentinel = Object{remove_sentinel};
 }
 
@@ -46,9 +44,12 @@ bool is_set_delta(nb::handle value) {
     return type && PyObject_IsInstance(value.ptr(), type.get().ptr()) == 1;
 }
 
-bool is_tsd_delta(nb::handle value) {
-    const auto &type = delta_types().tsd_delta_type;
-    return type && PyObject_IsInstance(value.ptr(), type.get().ptr()) == 1;
+nb::handle remove_sentinel() {
+    const auto &sentinel = delta_types().remove_sentinel;
+    if (!sentinel) {
+        throw std::logic_error{"Python delta types have not been registered"};
+    }
+    return sentinel.get();
 }
 
 nb::object make_set_delta(nb::handle added, nb::handle removed) {
@@ -57,14 +58,6 @@ nb::object make_set_delta(nb::handle added, nb::handle removed) {
         throw std::logic_error{"Python delta types have not been registered"};
     }
     return type.get()(added, removed);
-}
-
-nb::object make_tsd_delta(nb::handle removed, nb::handle modified) {
-    const auto &type = delta_types().tsd_delta_type;
-    if (!type) {
-        throw std::logic_error{"Python delta types have not been registered"};
-    }
-    return type.get()(removed, modified);
 }
 
 } // namespace bg::python::details

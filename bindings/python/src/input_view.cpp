@@ -132,18 +132,20 @@ nb::object input_delta(const In<TS_T> &input, const PythonScalarConversions &con
             return nb::object{std::move(delta)};
         },
         [&](const In<TSD<SCALAR, TS_T>> *value) {
-            auto removed = nb::set{};
-            auto modified = nb::dict{};
+            auto delta = nb::dict{};
             value->for_each_removed(
-                [&](const Scalar<SCALAR> &key) { removed.add(conversions.to_python(Scalar<>::from(key))); });
+                [&](const Scalar<SCALAR> &key) {
+                    auto python_key = conversions.to_python(Scalar<>::from(key));
+                    delta[python_key] = details::remove_sentinel();
+                });
             const auto add_modified = [&](const Scalar<SCALAR> &key) {
                 auto python_key = conversions.to_python(Scalar<>::from(key));
-                modified[python_key] = input_delta((*value)[key], conversions, lifetime, generation);
+                delta[python_key] = input_delta((*value)[key], conversions, lifetime, generation);
             };
             value->for_each_added(add_modified);
             value->for_each_modified(add_modified);
 
-            return details::make_tsd_delta(nb::frozenset{removed}, modified);
+            return nb::object{std::move(delta)};
         },
         [&](const In<REF<TS_T>> *value) {
             return nb::cast(ReferenceValue{value->value(), lifetime, generation});

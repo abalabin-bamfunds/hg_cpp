@@ -124,19 +124,8 @@ void apply_dictionary_items(Out<TSD<SCALAR, TS_T>> &output, nanobind::handle val
 void apply_dictionary_delta(Out<TSD<SCALAR, TS_T>> &output, const TimeSeriesRuntimeType &runtime_type,
                             nanobind::handle delta, allocator &memory) {
     const auto &type = type_cast<TimeSeriesDictionaryType>(runtime_type.type());
-    if (details::is_tsd_delta(delta)) {
-        const auto removed = delta.attr("removed");
-        for (const auto value : nanobind::borrow<nanobind::iterable>(removed)) {
-            auto key = scalar_conversions().from_python(type.key_type(), value, memory);
-            output.erase(Scalar<SCALAR>::from(key));
-        }
-        const auto modified = delta.attr("modified");
-        apply_dictionary_items(output, modified, type.key_type(), memory);
-        return;
-    }
-
     if (PyMapping_Check(delta.ptr()) == 0) {
-        throw std::invalid_argument{"a TSD output delta must be a mapping or TSDDelta"};
+        throw std::invalid_argument{"a TSD output delta must be a mapping"};
     }
     apply_dictionary_items(output, delta, type.key_type(), memory);
 }
