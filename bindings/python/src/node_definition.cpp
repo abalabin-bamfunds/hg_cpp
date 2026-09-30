@@ -47,20 +47,16 @@ void apply_set_delta(Out<TSS<SCALAR>> &output, const TimeSeriesRuntimeType &runt
     }
 
     const auto &type = type_cast<TimeSeriesSetType>(runtime_type.type());
-    const auto apply_values = [&](nanobind::handle values, bool remove_values) {
+    const auto apply_values = [&](nanobind::handle values, auto &&apply) {
         for (const auto value : nanobind::borrow<nanobind::iterable>(values)) {
             auto scalar = scalar_conversions().from_python(type.item_type(), value, memory);
-            if (remove_values) {
-                output.erase(Scalar<SCALAR>::from(scalar));
-            } else {
-                output.insert(Scalar<SCALAR>::from(scalar));
-            }
+            apply(Scalar<SCALAR>::from(scalar));
         }
     };
 
     if (set_delta) {
-        apply_values(delta.attr("added"), false);
-        apply_values(delta.attr("removed"), true);
+        apply_values(delta.attr("added"), [&](const Scalar<SCALAR> &value) { output.insert(value); });
+        apply_values(delta.attr("removed"), [&](const Scalar<SCALAR> &value) { output.erase(value); });
         return;
     }
 
