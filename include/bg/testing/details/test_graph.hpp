@@ -14,6 +14,7 @@
 #include <bg/scalar/opaque.hpp>
 #include <bg/scalar/runtime_type.hpp>
 #include <bg/scalar/value.hpp>
+#include <bg/service_catalogue.hpp>
 #include <bg/simulation_evaluation_engine.hpp>
 #include <bg/testing/test_graph_input.hpp>
 
@@ -213,7 +214,8 @@ template <typename Function> struct test_function {
 };
 
 template <typename Function, typename Inputs, std::size_t... Index>
-[[nodiscard]] auto run_function(const Function &function, const Inputs &inputs, std::index_sequence<Index...>) {
+[[nodiscard]] auto run_function(const Function &function, const ServiceCatalogue *service_catalogue,
+                                const Inputs &inputs, std::index_sequence<Index...>) {
     using FunctionInfo = test_function<Function>;
     const auto start_time = MIN_DT + EvaluationTime::duration{1};
     auto captured = CapturedValues{.start_time = start_time, .values = {}};
@@ -229,6 +231,10 @@ template <typename Function, typename Inputs, std::size_t... Index>
         sink(output, ScalarValue<Opaque<CapturedValues *>>{&captured});
     }
 
+    if (service_catalogue != nullptr) {
+        service_catalogue->build(wiring);
+    }
+
     const auto compiled = CompiledGraph{wiring};
     auto runtime = RuntimeGraph{compiled};
     SimulationEvaluationEngine{}.run(runtime, start_time);
@@ -237,7 +243,8 @@ template <typename Function, typename Inputs, std::size_t... Index>
 }
 
 template <std::ranges::contiguous_range... Inputs>
-[[nodiscard]] auto run_template(const WiringTemplate &tested, const Inputs &...inputs) {
+[[nodiscard]] auto run_template(const WiringTemplate &tested, const ServiceCatalogue *service_catalogue,
+                                const Inputs &...inputs) {
     const auto start_time = MIN_DT + EvaluationTime::duration{1};
     auto captured = CapturedValues{.start_time = start_time, .values = {}};
     captured.values.resize(std::max({std::size_t{1}, std::ranges::size(inputs)...}));
@@ -252,6 +259,10 @@ template <std::ranges::contiguous_range... Inputs>
         if (output) {
             sink(*output, ScalarValue<Opaque<CapturedValues *>>{&captured});
         }
+    }
+
+    if (service_catalogue != nullptr) {
+        service_catalogue->build(wiring);
     }
 
     const auto compiled = CompiledGraph{wiring};

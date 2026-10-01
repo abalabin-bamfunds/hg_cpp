@@ -5,6 +5,7 @@
 #include <bg/details/evaluation_scratch.hpp>
 #include <bg/graph/compiled_node.hpp>
 #include <bg/graph/details/inherited_time_series_section.hpp>
+#include <bg/graph/details/node_scheduler.hpp>
 #include <bg/graph/details/service_binding_section.hpp>
 #include <bg/graph/dynamic_subscribers.hpp>
 #include <bg/scalar/details/allocation_context.hpp>
@@ -22,6 +23,17 @@
 #include <vector>
 
 namespace bg {
+
+details::NodeScheduler::NodeScheduler(const EvaluationContext &context) noexcept
+    : graph_{context.runtime_graph_}, node_index_{context.node_index_} {}
+
+void details::NodeScheduler::schedule() const noexcept {
+    graph_->schedule(node_index_);
+}
+
+EvaluationContext details::NodeScheduler::node_context(EvaluationContext &parent) const noexcept {
+    return EvaluationContext{parent, *graph_, node_index_};
+}
 
 OutputChangeContext::OutputChangeContext(RuntimeGraph &runtime_graph) noexcept
     : runtime_graph_{&runtime_graph}, evaluation_time_{runtime_graph.evaluation_time()} {}
@@ -169,7 +181,7 @@ class RuntimeGraph::ScratchUse {
 
 class ServiceBindingContext {
   public:
-    ServiceBindingContext(EvaluationContext &parent, std::span<void *const> bindings)
+    ServiceBindingContext(EvaluationContext &parent, std::span<details::ServiceRequestBinding *const> bindings)
         : section_{bindings} {
         if (!bindings.empty()) {
             context_.emplace(parent.child(section_));
@@ -407,12 +419,13 @@ void RuntimeGraph::initialize_inherited_time_series(std::size_t index, Reference
     notify_subscribers(compiled_graph_->inherited_time_series_subscribers(binding), OutputChange::revalidation);
 }
 
-std::span<void *> RuntimeGraph::service_bindings() noexcept {
+std::span<details::ServiceRequestBinding *> RuntimeGraph::service_bindings() noexcept {
     const auto *metadata = compiled_graph_->service_binding_metadata();
     if (metadata == nullptr) {
         return {};
     }
-    return {reinterpret_cast<void **>(storage_ + metadata->runtime_bindings_offset), metadata->binding_count};
+    return {reinterpret_cast<details::ServiceRequestBinding **>(storage_ + metadata->runtime_bindings_offset),
+            metadata->binding_count};
 }
 
 RuntimeGraph::~RuntimeGraph() {
@@ -814,8 +827,9 @@ void RuntimeGraph::start(EvaluationContext &parent_context) {
                                       ? nullptr
                                       : static_cast<const details::ServiceBindingSection *>(
                                             parent_context.find_section(&details::service_binding_section_type));
-    const auto inherited_bindings = binding_section == nullptr ? std::span<void *const>{} : binding_section->bindings;
-    if (!bindings.empty() && provider_nodes.front() == WiredOutput::npos) {
+    const auto inherited_bindings =
+        binding_section == nullptr ? std::span<details::ServiceRequestBinding *const>{} : binding_section->bindings;
+    if (!bindings.empty() && provider_nodes.front() == details::no_service_binding_provider_node) {
         if (inherited_bindings.size() != bindings.size()) {
             throw std::invalid_argument{"the runtime graph received the wrong number of service bindings"};
         }
@@ -824,10 +838,10 @@ void RuntimeGraph::start(EvaluationContext &parent_context) {
         throw std::invalid_argument{"a root runtime graph cannot receive service bindings"};
     } else {
         for (auto index = std::size_t{}; index < bindings.size(); ++index) {
-            if (provider_nodes[index] == WiredOutput::npos) {
+            if (provider_nodes[index] == details::no_service_binding_provider_node) {
                 throw std::invalid_argument{"a runtime graph mixes provided and inherited service bindings"};
             }
-            bindings[index] = node(provider_nodes[index]).state();
+            bindings[index] = static_cast<details::ServiceRequestBinding *>(node(provider_nodes[index]).state());
         }
     }
 

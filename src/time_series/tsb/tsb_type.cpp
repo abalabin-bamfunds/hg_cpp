@@ -149,6 +149,18 @@ const BundleSchema &TimeSeriesBundleType::schema() const {
     return *schema;
 }
 
+bool TimeSeriesBundleType::contains_reference() const {
+    if (!is_resolved()) {
+        return false;
+    }
+    for (auto index = std::size_t{}; index < item_count(); ++index) {
+        if (item_type(index).contains_reference()) {
+            return true;
+        }
+    }
+    return false;
+}
+
 std::size_t TimeSeriesBundleType::item_count() const noexcept {
     const auto *schema = dynamic_cast<const BundleSchema *>(schema_);
     return schema == nullptr ? std::dynamic_extent : schema->field_count();

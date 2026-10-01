@@ -245,6 +245,45 @@ TEST_CASE("an exact named TSB binds as one collection and supports lazy field se
     CHECK(wiring.outputs().size() == 1);
 }
 
+TEST_CASE("args expands a TSB into positional wiring arguments",
+          "[feature:wiring][feature:variadic-wiring][series:tsb][schema:named]") {
+    const auto source = node([](Out<TSB<TestBundle>>) {});
+    const auto receive = graph("name"_n = "receive",
+                               [](wp<TS<std::int64_t>> count, wp<TS<float>> value) {
+                                   CHECK(&count.type() == &TS<std::int64_t>::type());
+                                   CHECK(&value.type() == &TS<float>::type());
+                               });
+
+    testing::test_wiring([&] { receive(args(source())); });
+}
+
+TEST_CASE("kwargs expands a TSB into named wiring arguments",
+          "[feature:wiring][feature:variadic-wiring][series:tsb][schema:named]") {
+    const auto source = node([](Out<TSB<TestBundle>>) {});
+    const auto receive = graph(
+        "name"_n = "receive", [](wp<TS<float>, "value"_n> value, wp<TS<std::int64_t>, "count"_n> count) {
+            CHECK(&value.type() == &TS<float>::type());
+            CHECK(&count.type() == &TS<std::int64_t>::type());
+        });
+
+    testing::test_wiring([&] { receive(kwargs(source())); });
+}
+
+TEST_CASE("kwargs binds fixed parameters before capturing remaining fields",
+          "[feature:wiring][feature:variadic-wiring][series:tsb][schema:named]") {
+    const auto source = node([](Out<TSB<TestBundle>>) {});
+    const auto receive = graph(
+        "name"_n = "receive",
+        [](wp<TS<std::int64_t>, "count"_n> count, wp<TSB<SCHEMA>, var_kwargs> remaining) {
+            CHECK(&count.type() == &TS<std::int64_t>::type());
+            REQUIRE(remaining.size() == 1);
+            CHECK(remaining[0].name()->text() == "value");
+            CHECK(&remaining[0].type() == &TS<float>::type());
+        });
+
+    testing::test_wiring([&] { receive(kwargs(source())); });
+}
+
 TEST_CASE("positional and named packs accept direct collections by their parameter names",
           "[feature:wiring][feature:variadic-wiring][feature:getattr][series:tsb][schema:named]"
           "[binding:direct][definition:aggregate][representation:native]") {

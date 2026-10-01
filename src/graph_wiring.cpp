@@ -1,6 +1,6 @@
 #include <bg/graph/graph_wiring.hpp>
 
-#include <bg/graph/details/service_plan.hpp>
+#include <bg/graph/details/service_requirements.hpp>
 #include <bg/graph/details/wiring_record.hpp>
 #include <bg/graph/wiring_context.hpp>
 #include <bg/graph/wiring_error.hpp>
@@ -233,7 +233,7 @@ std::optional<WiringPoint> GraphWiring::find_wired_node(std::size_t hash, const 
     return WiringPoint{*node_output_records_[*found]};
 }
 
-WiringPoint GraphWiring::add_inherited_requirement(details::InheritedTimeSeriesIdentity identity, util::symbol name,
+WiringPoint GraphWiring::add_inherited_requirement(details::NestedBindingIdentity identity, util::symbol name,
                                                    const TimeSeriesType &type, WiringPoint provider) {
     const auto requirement_index = inherited_requirements_.size();
     const auto requirement = InheritedTimeSeriesRequirement{std::move(identity), name, &type, provider};
@@ -277,8 +277,7 @@ WiringPoint GraphWiring::import_context(util::symbol name, WiringPoint provider)
         return existing->point;
     }
 
-    auto point =
-        add_inherited_requirement(details::InheritedTimeSeriesIdentity::named(name), name, *source_type, provider);
+    auto point = add_inherited_requirement(details::NestedBindingIdentity::named(name), name, *source_type, provider);
     context_bindings_.push_back({name, source_type, provider, point});
     return point;
 }
@@ -450,7 +449,7 @@ std::size_t GraphWiring::output_index(WiringPoint point) const {
 
 namespace bg {
 
-WiringPoint GraphWiring::require_inherited_time_series(details::InheritedTimeSeriesIdentity identity, util::symbol name,
+WiringPoint GraphWiring::require_inherited_time_series(details::NestedBindingIdentity identity, util::symbol name,
                                                        const TimeSeriesType &type) {
     const auto existing = std::ranges::find_if(inherited_requirements_, [&](const auto &requirement) {
         return requirement.identity == identity && requirement.type == &type;
@@ -468,7 +467,7 @@ WiringPoint GraphWiring::require_inherited_time_series(details::InheritedTimeSer
     return add_inherited_requirement(std::move(identity), name, type, provider);
 }
 
-void GraphWiring::provide_inherited_time_series(const details::InheritedTimeSeriesIdentity &identity,
+void GraphWiring::provide_inherited_time_series(const details::NestedBindingIdentity &identity,
                                                 const TimeSeriesType &type, WiringPoint provider) {
     if (parent_ != nullptr) {
         throw WiringError{"an inherited time series can only be provided on the root GraphWiring"};
@@ -499,19 +498,24 @@ void GraphWiring::provide_inherited_time_series(const details::InheritedTimeSeri
     found->provider = reference;
 }
 
-std::size_t GraphWiring::require_service_binding(const void *identity) {
+std::size_t GraphWiring::require_service_binding(details::NestedBindingIdentity identity,
+                                                 ServiceBindingOrdering ordering) {
     const auto existing =
         std::ranges::find(service_binding_requirements_, identity, &ServiceBindingRequirement::identity);
     if (existing != service_binding_requirements_.end()) {
+        if (existing->ordering != ordering) {
+            throw WiringError{"a service binding has conflicting ordering requirements"};
+        }
         return static_cast<std::size_t>(existing - service_binding_requirements_.begin());
     }
 
-    const auto parent_slot = parent_ == nullptr ? WiredOutput::npos : parent_->require_service_binding(identity);
-    service_binding_requirements_.push_back({identity, parent_slot, {}, {}});
+    const auto parent_requirement =
+        parent_ == nullptr ? std::optional<std::size_t>{} : parent_->require_service_binding(identity, ordering);
+    service_binding_requirements_.push_back({std::move(identity), parent_requirement, {}, {}, ordering});
     return service_binding_requirements_.size() - 1;
 }
 
-void GraphWiring::provide_service_binding(const void *identity, WiringPoint provider) {
+void GraphWiring::provide_service_binding(const details::NestedBindingIdentity &identity, WiringPoint provider) {
     if (parent_ != nullptr) {
         throw WiringError{"a service binding can only be provided on the root GraphWiring"};
     }
@@ -531,6 +535,22 @@ void GraphWiring::provide_service_binding(const void *identity, WiringPoint prov
     requirement->provider = provider;
 }
 
+void GraphWiring::register_service_binding_consumer(const details::NestedBindingIdentity &identity,
+                                                    std::size_t node_index) {
+    if (node_index >= nodes_.size()) {
+        throw WiringError{"a service binding consumer is not a node in this GraphWiring"};
+    }
+
+    const auto requirement =
+        std::ranges::find(service_binding_requirements_, identity, &ServiceBindingRequirement::identity);
+    if (requirement == service_binding_requirements_.end()) {
+        throw WiringError{"the service binding requirement was not found"};
+    }
+    if (!std::ranges::contains(requirement->consumers, node_index)) {
+        requirement->consumers.push_back(node_index);
+    }
+}
+
 void GraphWiring::register_nested_service_consumers(const GraphWiring &nested, std::size_t node_index) {
     if (nested.parent_ != this) {
         throw WiringError{"nested service consumers must belong to a child GraphWiring"};
@@ -540,13 +560,14 @@ void GraphWiring::register_nested_service_consumers(const GraphWiring &nested, s
     }
 
     for (const auto &nested_requirement : nested.service_binding_requirements_) {
-        if (nested_requirement.parent_slot >= service_binding_requirements_.size()) {
-            throw WiringError{"a nested service requirement has an invalid parent slot"};
+        if (!nested_requirement.parent_requirement ||
+            *nested_requirement.parent_requirement >= service_binding_requirements_.size()) {
+            throw WiringError{"a nested service requirement has an invalid parent requirement"};
         }
 
-        auto &requirement = service_binding_requirements_[nested_requirement.parent_slot];
+        auto &requirement = service_binding_requirements_[*nested_requirement.parent_requirement];
         if (requirement.identity != nested_requirement.identity) {
-            throw WiringError{"a nested service requirement does not match its parent slot"};
+            throw WiringError{"a nested service requirement does not match its parent requirement"};
         }
         if (!std::ranges::contains(requirement.consumers, node_index)) {
             requirement.consumers.push_back(node_index);

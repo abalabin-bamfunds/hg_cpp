@@ -19,8 +19,8 @@ namespace bg::details {
 class NestedGraphStartupContext {
   public:
     template <typename Invocation>
-    NestedGraphStartupContext(Invocation invocation, const CompiledNestedGraph &compiled,
-                              std::size_t first_parameter, std::size_t count)
+    NestedGraphStartupContext(Invocation invocation, const CompiledNestedGraph &compiled, std::size_t first_parameter,
+                              std::size_t count)
         : NestedGraphStartupContext{invocation, invocation.context(), compiled, first_parameter, count} {}
 
     template <typename Invocation>
@@ -47,32 +47,33 @@ class NestedGraphStartupContext {
             inherited_context_.emplace(parent.child(inherited_section_));
         }
 
-        const auto slots = std::span<const std::uint32_t>{compiled.service_binding_slots};
-        if (!slots.empty()) {
-            const auto *parent_section = static_cast<const ServiceBindingSection *>(
-                parent.find_section(&service_binding_section_type));
+        const auto parent_binding_indices = std::span<const std::uint32_t>{compiled.parent_service_binding_indices};
+        if (!parent_binding_indices.empty()) {
+            const auto *parent_section =
+                static_cast<const ServiceBindingSection *>(parent.find_section(&service_binding_section_type));
             if (parent_section == nullptr) {
                 throw std::invalid_argument{"an inner graph received no service bindings"};
             }
-            if (std::ranges::any_of(slots, [&](auto slot) { return slot >= parent_section->bindings.size(); })) {
-                throw std::invalid_argument{"an inner graph service binding slot is out of range"};
+            if (std::ranges::any_of(parent_binding_indices,
+                                    [&](auto index) { return index >= parent_section->bindings.size(); })) {
+                throw std::invalid_argument{"an inner graph parent service binding index is out of range"};
             }
 
-            binding_count_ = slots.size();
-            bindings_ = static_cast<void **>(
-                parent.scratch().allocate(slots.size() * sizeof(void *), alignof(void *)));
-            for (auto index = std::size_t{}; index < slots.size(); ++index) {
-                bindings_[index] = parent_section->bindings[slots[index]];
+            binding_count_ = parent_binding_indices.size();
+            bindings_ = static_cast<ServiceRequestBinding **>(parent.scratch().allocate(
+                binding_count_ * sizeof(ServiceRequestBinding *), alignof(ServiceRequestBinding *)));
+            for (auto index = std::size_t{}; index < binding_count_; ++index) {
+                bindings_[index] = parent_section->bindings[parent_binding_indices[index]];
             }
 
-            service_section_.emplace(std::span<void *const>{bindings_, slots.size()});
+            service_section_.emplace(std::span<ServiceRequestBinding *const>{bindings_, binding_count_});
             service_context_.emplace(current_context().child(*service_section_));
         }
     }
 
     ~NestedGraphStartupContext() {
         if (bindings_ != nullptr) {
-            parent_->scratch().release_last(bindings_, binding_count_ * sizeof(void *));
+            parent_->scratch().release_last(bindings_, binding_count_ * sizeof(ServiceRequestBinding *));
         }
         if (references_ != nullptr) {
             parent_->scratch().release_last(references_, count_ * sizeof(Reference));
@@ -100,7 +101,7 @@ class NestedGraphStartupContext {
     Reference *references_;
     InheritedTimeSeriesSection inherited_section_;
     std::optional<EvaluationContext> inherited_context_;
-    void **bindings_{};
+    ServiceRequestBinding **bindings_{};
     std::size_t binding_count_{};
     std::optional<ServiceBindingSection> service_section_;
     std::optional<EvaluationContext> service_context_;

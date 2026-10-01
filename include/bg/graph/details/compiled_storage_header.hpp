@@ -74,7 +74,9 @@ struct CompiledStorageHeader {
             metadata += sizeof(ConstantMetadata);
         }
         if (has_inherited_time_series) {
-            metadata += sizeof(InheritedTimeSeriesMetadata);
+            const auto *inherited_metadata = reinterpret_cast<const InheritedTimeSeriesMetadata *>(metadata);
+            metadata += sizeof(InheritedTimeSeriesMetadata) +
+                        inherited_metadata->requirement_count * sizeof(InheritedTimeSeriesBinding);
         }
         return reinterpret_cast<const ServiceBindingMetadata *>(metadata);
     }

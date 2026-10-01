@@ -1,7 +1,7 @@
 #pragma once
 
 #include <bg/allocator.hpp>
-#include <bg/graph/details/inherited_time_series_identity.hpp>
+#include <bg/graph/details/nested_binding_identity.hpp>
 #include <bg/graph/wired_input.hpp>
 #include <bg/graph/wired_node.hpp>
 #include <bg/graph/wired_output.hpp>
@@ -10,6 +10,7 @@
 #include <bg/graph/wiring_point.hpp>
 #include <bg/util/linear_hash_table.hpp>
 
+#include <cstdint>
 #include <deque>
 #include <memory>
 #include <memory_resource>
@@ -22,8 +23,11 @@ namespace bg {
 
 class NodeTemplate;
 class Operator;
+class ReferenceService;
 class Service;
+class ServiceDefinition;
 class ServiceCatalogue;
+class SubscriptionService;
 class TimeSeriesRuntimeType;
 class TimeSeriesType;
 class WiringTemplate;
@@ -32,7 +36,7 @@ namespace details {
 class WiringRecord;
 class GraphWiringStructure;
 class ContextScope;
-class ServicePlan;
+class ServiceRequirements;
 WiringPoint add_wiring_record(std::unique_ptr<WiringRecord> record);
 WiringPoint add_item_wiring_record(WiringPoint parent, item_id_t item, std::unique_ptr<WiringRecord> record);
 WiringPoint materialize_wiring_point(WiringPoint point, const TimeSeriesType &type);
@@ -48,8 +52,13 @@ GraphWiringStructure graph_wiring_structure(const GraphWiring &, std::span<const
 
 class GraphWiring {
   public:
+    enum class ServiceBindingOrdering : std::uint8_t {
+        provider_before_consumers,
+        provider_after_consumers,
+    };
+
     struct InheritedTimeSeriesRequirement {
-        details::InheritedTimeSeriesIdentity identity;
+        details::NestedBindingIdentity identity;
         util::symbol name;
         const TimeSeriesType *type;
         WiringPoint provider;
@@ -63,10 +72,11 @@ class GraphWiring {
     };
 
     struct ServiceBindingRequirement {
-        const void *identity;
-        std::size_t parent_slot;
+        details::NestedBindingIdentity identity;
+        std::optional<std::size_t> parent_requirement;
         WiringPoint provider;
         std::vector<std::size_t> consumers;
+        ServiceBindingOrdering ordering{ServiceBindingOrdering::provider_before_consumers};
     };
 
     GraphWiring();
@@ -94,13 +104,14 @@ class GraphWiring {
         return service_binding_requirements_;
     }
 
-    [[nodiscard]] WiringPoint require_inherited_time_series(details::InheritedTimeSeriesIdentity identity,
-                                                            util::symbol name, const TimeSeriesType &type);
-    void provide_inherited_time_series(const details::InheritedTimeSeriesIdentity &identity, const TimeSeriesType &type,
+    [[nodiscard]] WiringPoint require_inherited_time_series(details::NestedBindingIdentity identity, util::symbol name,
+                                                            const TimeSeriesType &type);
+    void provide_inherited_time_series(const details::NestedBindingIdentity &identity, const TimeSeriesType &type,
                                        WiringPoint provider);
     [[nodiscard]] WiredInput resolve_inherited_input(std::size_t requirement) const;
     void order_after_consumers(WiringPoint consumed, WiringPoint ordered_output);
     bool input_consumes(WiredInput input, WiringPoint point) const noexcept;
+    void register_service_binding_consumer(const details::NestedBindingIdentity &identity, std::size_t node_index);
     void register_nested_service_consumers(const GraphWiring &nested, std::size_t node_index);
 
     [[nodiscard]] const NodeTemplate &own_node_template(std::unique_ptr<NodeTemplate> node_template);
@@ -108,8 +119,11 @@ class GraphWiring {
   private:
     friend class NodeTemplate;
     friend class Operator;
+    friend class ReferenceService;
     friend class Service;
+    friend class ServiceDefinition;
     friend class ServiceCatalogue;
+    friend class SubscriptionService;
     friend class WiringPoint;
     friend class WiringTemplate;
     friend WiringPoint details::add_wiring_record(std::unique_ptr<details::WiringRecord> record);
@@ -147,17 +161,18 @@ class GraphWiring {
                                                              std::span<const WiringArgument> arguments);
     void cache_wired_node(std::size_t hash, std::size_t node_index);
     [[nodiscard]] WiringPoint import_context(util::symbol name, WiringPoint provider);
-    [[nodiscard]] WiringPoint add_inherited_requirement(details::InheritedTimeSeriesIdentity identity,
-                                                        util::symbol name, const TimeSeriesType &type,
-                                                        WiringPoint provider);
+    [[nodiscard]] WiringPoint add_inherited_requirement(details::NestedBindingIdentity identity, util::symbol name,
+                                                        const TimeSeriesType &type, WiringPoint provider);
     [[nodiscard]] WiringPoint inherited_requirement_point(std::size_t index) const;
     [[nodiscard]] WiredInput wire_input(WiringPoint point, const TimeSeriesType &type);
-    [[nodiscard]] std::optional<WiringPoint> require_service(const Service &service, ResolvedSignature signature,
+    [[nodiscard]] std::optional<WiringPoint> require_service(const ServiceDefinition &service, ResolvedSignature signature,
                                                              const TypeMap &type_map,
                                                              std::span<const WiringArgument> arguments);
-    std::size_t require_service_binding(const void *identity);
-    void provide_service_binding(const void *identity, WiringPoint provider);
-    details::ServicePlan &root_service_plan();
+    std::size_t
+    require_service_binding(details::NestedBindingIdentity identity,
+                            ServiceBindingOrdering ordering = ServiceBindingOrdering::provider_before_consumers);
+    void provide_service_binding(const details::NestedBindingIdentity &identity, WiringPoint provider);
+    details::ServiceRequirements &root_service_requirements();
 
     [[nodiscard]] const WiringPath &make_path(util::symbol name, util::symbol label);
     util::symbol default_label() const;
@@ -172,7 +187,7 @@ class GraphWiring {
     std::optional<std::pmr::unsynchronized_pool_resource> variable_memory_;
     allocator variable_allocator_;
     std::vector<std::unique_ptr<NodeTemplate>> node_templates_;
-    std::unique_ptr<details::ServicePlan> service_plan_;
+    std::unique_ptr<details::ServiceRequirements> service_requirements_;
     std::vector<std::unique_ptr<details::WiringRecord>> wiring_records_;
     struct ItemRecord {
         const details::WiringRecord *parent;

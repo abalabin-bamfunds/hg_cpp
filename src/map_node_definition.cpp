@@ -103,7 +103,7 @@ MapNodeDefinition::compiled_data_type MapNodeDefinition::compile(const ResolvedS
         .nested = {.graph = std::move(graph),
                    .input_nodes = std::pmr::vector<std::size_t>{&memory.memory_resource()},
                    .constant_input_nodes = std::pmr::vector<std::size_t>{&memory.memory_resource()},
-                   .service_binding_slots = std::pmr::vector<std::uint32_t>{&memory.memory_resource()},
+                   .parent_service_binding_indices = std::pmr::vector<std::uint32_t>{&memory.memory_resource()},
                    .output_node = wiring_.output_node ? std::optional{node_indices[output_position]} : std::nullopt},
         .inputs = std::pmr::vector<CompiledMapInput>{&memory.memory_resource()},
     };
@@ -120,7 +120,8 @@ MapNodeDefinition::compiled_data_type MapNodeDefinition::compile(const ResolvedS
         result.nested.constant_input_nodes.push_back(node_indices[key_position]);
     }
     for (const auto &requirement : wiring_.wiring->service_binding_requirements()) {
-        result.nested.service_binding_slots.push_back(static_cast<std::uint32_t>(requirement.parent_slot));
+        result.nested.parent_service_binding_indices.push_back(
+            static_cast<std::uint32_t>(*requirement.parent_requirement));
     }
     if (wiring_.key_set_parameter) {
         result.key_set_parameter = static_cast<std::uint32_t>(*wiring_.key_set_parameter);

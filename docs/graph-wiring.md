@@ -267,6 +267,10 @@ inline const auto scaled_graph = bg::graph<scaled>();
 until no scheduled evaluation remains. `run_graph(function, state)` uses the
 supplied [global state](global-state.md), which can outlive the run.
 
+`run_graph(function, catalogue)` finalizes [graph services](services.md) after
+root wiring and before compilation. Use `run_graph(function, state, catalogue)`
+when the run also needs global state.
+
 ## Wiring paths
 
 Each wiring-template call creates an immutable path entry:

@@ -21,6 +21,8 @@ bool item_requires_reference_representation(const TimeSeriesType &requested, con
 
 } // namespace
 
+bool TimeSeriesType::contains_reference() const { return false; }
+
 const TimeSeriesType &TimeSeriesType::with_guarantee(TimeSeriesGuarantee guarantee) const {
     if (this->guarantee().value() == guarantee) {
         return *this;

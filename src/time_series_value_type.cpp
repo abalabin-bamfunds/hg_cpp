@@ -92,7 +92,6 @@ bool TimeSeriesValueType::do_match(const Type &supplied, TypeMap &type_map) cons
     }
 
     type_map.apply(std::move(trial_type_map));
-
     return true;
 }
 

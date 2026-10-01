@@ -2,6 +2,7 @@
 
 #include <bg/evaluation_time.hpp>
 #include <bg/graph/details/compiled_graph_builder.hpp>
+#include <bg/graph/details/service_binding_section.hpp>
 #include <bg/graph/graph_wiring.hpp>
 #include <bg/node/node_template.hpp>
 #include <bg/scalar/runtime_type.hpp>
@@ -475,26 +476,6 @@ void plan_time_series_inputs(CompilationPlan &plan, const GraphWiring &wiring) {
     }
 }
 
-std::string wiring_path_text(const WiringPath &path) {
-    auto sections = std::vector<const WiringPath *>{};
-    for (auto *section = &path; section != nullptr; section = section->parent) {
-        sections.push_back(section);
-    }
-
-    auto result = std::string{};
-    for (auto section = sections.rbegin(); section != sections.rend(); ++section) {
-        if (!result.empty()) {
-            result += '/';
-        }
-        result += (*section)->name.text();
-        result += '[';
-        result += (*section)->label.text();
-        result += ']';
-    }
-
-    return result;
-}
-
 std::vector<std::size_t> dependency_order(const CompilationPlan &plan, const GraphWiring &wiring) {
     enum class VisitState : std::uint8_t { unseen, visiting, emitted };
     struct PendingNode {
@@ -527,7 +508,11 @@ std::vector<std::size_t> dependency_order(const CompilationPlan &plan, const Gra
 
         const auto provider = details::wired_output_node_index(wiring, binding.provider);
         for (const auto consumer : binding.consumers) {
-            ordering_edges.emplace_back(provider, consumer);
+            if (binding.ordering == GraphWiring::ServiceBindingOrdering::provider_after_consumers) {
+                ordering_edges.emplace_back(provider, consumer);
+            } else {
+                ordering_edges.emplace_back(consumer, provider);
+            }
         }
     }
     std::ranges::sort(ordering_edges);
@@ -550,10 +535,10 @@ std::vector<std::size_t> dependency_order(const CompilationPlan &plan, const Gra
             if (node != cycle_start) {
                 message += " -> ";
             }
-            message += wiring_path_text(plan.nodes[node->index].path());
+            message += plan.nodes[node->index].path().text();
         }
         message += " -> ";
-        message += wiring_path_text(plan.nodes[predecessor].path());
+        message += plan.nodes[predecessor].path().text();
         throw std::invalid_argument{message};
     };
 
@@ -827,7 +812,7 @@ void plan_runtime_storage(CompilationPlan &plan) {
     }
     if (!plan.service_bindings.empty()) {
         plan.runtime.service_bindings_offset =
-            packed_offset(storage.add<void *>(plan.service_bindings.size()).offset,
+            packed_offset(storage.add<details::ServiceRequestBinding *>(plan.service_bindings.size()).offset,
                           "runtime storage reaches 1 GiB");
     }
 
@@ -1117,10 +1102,10 @@ void plan_fixed_storage(CompilationPlan &plan) {
         result.inherited_time_series.emplace_back();
     }
     for (const auto &binding : result.service_bindings) {
-        if (binding.parent_slot == WiredOutput::npos && !binding.provider.has_output()) {
+        if (!binding.parent_requirement && !binding.provider.has_output()) {
             throw std::invalid_argument{"a root service binding has no provider"};
         }
-        if (binding.parent_slot != WiredOutput::npos && binding.provider.has_output()) {
+        if (binding.parent_requirement && binding.provider.has_output()) {
             throw std::invalid_argument{"an inner service binding cannot have a local provider"};
         }
     }
@@ -1372,7 +1357,8 @@ class CompiledGraphBuilder {
                     (!plan.constants.empty() ? CompiledGraph::constants_flag : std::uint32_t{}),
                 .initial_runtime_storage_offset =
                     offset(plan.fixed.initial_runtime_storage) |
-                    (!plan.inherited_time_series.empty() ? CompiledGraph::inherited_time_series_flag : std::uint32_t{}) |
+                    (!plan.inherited_time_series.empty() ? CompiledGraph::inherited_time_series_flag
+                                                         : std::uint32_t{}) |
                     (!plan.service_bindings.empty() ? CompiledGraph::service_bindings_flag : std::uint32_t{}),
             });
 
@@ -1823,10 +1809,9 @@ class CompiledGraphBuilder {
         auto nodes = plan.fixed.service_binding_provider_nodes.objects<std::uint32_t>(storage);
         for (auto index = std::size_t{}; index < plan.service_bindings.size(); ++index) {
             const auto &binding = plan.service_bindings[index];
-            const auto node = binding.provider.has_output()
-                                  ? plan.compiled_node_index(details::wired_output_node_index(
-                                        binding.provider.graph(), binding.provider))
-                                  : WiredOutput::npos;
+            const auto node = binding.provider.has_output() ? plan.compiled_node_index(details::wired_output_node_index(
+                                                                  binding.provider.graph(), binding.provider))
+                                                            : details::no_service_binding_provider_node;
             std::construct_at(nodes.data() + index, static_cast<std::uint32_t>(node));
         }
     }

@@ -53,6 +53,7 @@ class TimeSeriesBundleType : public FixedItemTimeSeriesType {
 
     const BundleSchemaType &schema_type() const noexcept { return *schema_; }
     const BundleSchema &schema() const;
+    bool contains_reference() const override;
     std::size_t item_count() const noexcept final;
     const TimeSeriesType &item_type(std::size_t index) const final;
     util::symbol item_name(std::size_t index) const;

@@ -116,12 +116,13 @@ class NestedNodeDefinition {
             .graph = graph,
             .input_nodes = std::pmr::vector<std::size_t>{&memory.memory_resource()},
             .constant_input_nodes = std::pmr::vector<std::size_t>{&memory.memory_resource()},
-            .service_binding_slots = std::pmr::vector<std::uint32_t>{&memory.memory_resource()},
+            .parent_service_binding_indices = std::pmr::vector<std::uint32_t>{&memory.memory_resource()},
             .output_node = node_indices.front(),
         };
         result.input_nodes.assign(node_indices.begin() + 1, node_indices.end());
         for (const auto &requirement : wiring_.wiring->service_binding_requirements()) {
-            result.service_binding_slots.push_back(static_cast<std::uint32_t>(requirement.parent_slot));
+            result.parent_service_binding_indices.push_back(
+                static_cast<std::uint32_t>(*requirement.parent_requirement));
         }
         return result;
     }

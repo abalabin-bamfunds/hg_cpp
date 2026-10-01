@@ -9,11 +9,11 @@
 
 namespace bg::details {
 
-// Identifies an inherited requirement by lexical name or owning service object.
-class InheritedTimeSeriesIdentity {
+// Identifies a binding inherited through nested graph boundaries by lexical name or owning object.
+class NestedBindingIdentity {
   public:
-    static InheritedTimeSeriesIdentity named(util::symbol name) { return InheritedTimeSeriesIdentity{name}; }
-    static InheritedTimeSeriesIdentity object(const void *value) { return InheritedTimeSeriesIdentity{value}; }
+    static NestedBindingIdentity named(util::symbol name) { return NestedBindingIdentity{name}; }
+    static NestedBindingIdentity object(const void *value) { return NestedBindingIdentity{value}; }
 
     bool is_object() const noexcept { return std::holds_alternative<const void *>(value_); }
 
@@ -24,11 +24,11 @@ class InheritedTimeSeriesIdentity {
         return std::hash<const void *>{}(std::get<const void *>(value_));
     }
 
-    bool operator==(const InheritedTimeSeriesIdentity &) const noexcept = default;
+    bool operator==(const NestedBindingIdentity &) const noexcept = default;
 
   private:
-    explicit InheritedTimeSeriesIdentity(util::symbol name) : value_{name} {}
-    explicit InheritedTimeSeriesIdentity(const void *value) : value_{value} {}
+    explicit NestedBindingIdentity(util::symbol name) : value_{name} {}
+    explicit NestedBindingIdentity(const void *value) : value_{value} {}
 
     std::variant<util::symbol, const void *> value_;
 };

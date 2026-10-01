@@ -5,6 +5,7 @@
 #include <bg/graph/type_mapping.hpp>
 #include <bg/type/type_parameter.hpp>
 
+#include <array>
 #include <initializer_list>
 #include <span>
 #include <stdexcept>
@@ -15,19 +16,19 @@
 
 namespace bg {
 
-template <ServiceKind Kind, typename Prototype, typename... TypeParameters>
+template <typename Definition, typename Prototype, typename... TypeParameters>
 class ServiceTemplate final
-    : public Service,
-      public details::TypeParameterizedWiring<ServiceTemplate<Kind, Prototype, TypeParameters...>,
+    : public Definition,
+      public details::TypeParameterizedWiring<ServiceTemplate<Definition, Prototype, TypeParameters...>,
                                               TypeParameters...> {
-    using TypeMapping = details::TypeParameterizedWiring<ServiceTemplate<Kind, Prototype, TypeParameters...>,
+    using TypeMapping = details::TypeParameterizedWiring<ServiceTemplate<Definition, Prototype, TypeParameters...>,
                                                          TypeParameters...>;
 
   public:
     using TypeMapping::operator[];
 
     explicit ServiceTemplate(std::string_view name, std::span<const std::string_view> parameter_names = {})
-        : Service{Kind, details::typed_prototype<Prototype>::signature(util::symbol{name}, parameter_names)} {}
+        : Definition{details::typed_prototype<Prototype>::signature(util::symbol{name}, parameter_names)} {}
 
     ServiceTemplate(std::string_view name, std::initializer_list<std::string_view> parameter_names)
         : ServiceTemplate{name, std::span<const std::string_view>{parameter_names}} {}
@@ -49,6 +50,40 @@ class ServiceTemplate final
         return public_result(WiringTemplate::operator()(type_map, arguments));
     }
 
+    template <typename... Arguments>
+        requires Definition::supports_implementation_requests && (details::graph_code_argument<Arguments> && ...)
+    auto implementation_requests(Arguments &&...arguments) const & {
+        auto values = std::array<WiringArgument, sizeof...(Arguments)>{
+            WiringArgument{std::forward<Arguments>(arguments)}...};
+        return wp<>{Definition::implementation_requests(TypeMap{}, values)};
+    }
+
+    template <typename... Arguments>
+        requires Definition::supports_implementation_requests && (details::graph_code_argument<Arguments> && ...)
+    auto implementation_requests(const TypeMap &type_map, Arguments &&...arguments) const & {
+        auto values = std::array<WiringArgument, sizeof...(Arguments)>{
+            WiringArgument{std::forward<Arguments>(arguments)}...};
+        return wp<>{Definition::implementation_requests(type_map, values)};
+    }
+
+    template <typename Reply, typename... Arguments>
+        requires(details::typed_prototype<Prototype>::has_output && details::wiring_point_argument<Reply> &&
+                 (details::graph_code_argument<Arguments> && ...))
+    void implementation_replies(Reply &&reply, Arguments &&...arguments) const & {
+        auto values = std::array<WiringArgument, sizeof...(Arguments)>{
+            WiringArgument{std::forward<Arguments>(arguments)}...};
+        Definition::implementation_replies(TypeMap{}, static_cast<WiringPoint>(reply), values);
+    }
+
+    template <typename Reply, typename... Arguments>
+        requires(details::typed_prototype<Prototype>::has_output && details::wiring_point_argument<Reply> &&
+                 (details::graph_code_argument<Arguments> && ...))
+    void implementation_replies(const TypeMap &type_map, Reply &&reply, Arguments &&...arguments) const & {
+        auto values = std::array<WiringArgument, sizeof...(Arguments)>{
+            WiringArgument{std::forward<Arguments>(arguments)}...};
+        Definition::implementation_replies(type_map, static_cast<WiringPoint>(reply), values);
+    }
+
     template <typename... Mappings> auto operator[](Mappings...) && = delete;
     template <typename... Arguments> auto operator()(Arguments &&...) const && = delete;
 
@@ -67,7 +102,7 @@ class ServiceTemplate final
 
 namespace details {
 
-template <ServiceKind Kind, typename... Declaration> struct service_declaration {
+template <typename Definition, typename... Declaration> struct service_declaration {
     using Parsed = type_parameterized_declaration<Declaration...>;
     using Types = typename Parsed::Types;
     using Prototype = typename Parsed::Definition;
@@ -78,7 +113,7 @@ template <ServiceKind Kind, typename... Declaration> struct service_declaration 
 
     template <std::size_t... Index>
     static auto make(std::index_sequence<Index...>)
-        -> ServiceTemplate<Kind, Prototype, std::tuple_element_t<Index, Types>...>;
+        -> ServiceTemplate<Definition, Prototype, std::tuple_element_t<Index, Types>...>;
 
     using type = decltype(make(std::make_index_sequence<sizeof...(Declaration) - 1>{}));
 };
@@ -86,12 +121,12 @@ template <ServiceKind Kind, typename... Declaration> struct service_declaration 
 } // namespace details
 
 template <typename... Declaration>
-using reference_service = typename details::service_declaration<ServiceKind::reference, Declaration...>::type;
+using reference_service = typename details::service_declaration<ReferenceService, Declaration...>::type;
 
 template <typename... Declaration>
-using subscription_service = typename details::service_declaration<ServiceKind::subscription, Declaration...>::type;
+using subscription_service = typename details::service_declaration<SubscriptionService, Declaration...>::type;
 
 template <typename... Declaration>
-using compute_service = typename details::service_declaration<ServiceKind::compute, Declaration...>::type;
+using service = typename details::service_declaration<Service, Declaration...>::type;
 
 } // namespace bg

@@ -26,12 +26,17 @@ add_executable(
     evaluation/time_series/time_series_dict_test.cpp
     evaluation/time_series/time_series_dict_getitem_test.cpp
     evaluation/time_series/time_series_reference_test.cpp
+    evaluation/service_test.cpp
+    evaluation/multiservice_test.cpp
+    evaluation/reference_service_test.cpp
+    evaluation/subscription_service_test.cpp
     evaluation/time_series/time_series_set_test.cpp
     evaluation/time_series/time_series_value_test.cpp
     evaluation/validity/input_activity_test.cpp
     evaluation/validity/invalidation_behavior_test.cpp
     evaluation/validity/runtime_validity_test.cpp
     graph/compiled_graph_test.cpp
+    graph/service_binding_test.cpp
     node/aggregate_node_test.cpp
     node/input_test.cpp
     node/node_template_test.cpp

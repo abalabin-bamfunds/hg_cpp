@@ -123,6 +123,26 @@ template <typename Target, typename... Parameters> class MappedWiring {
         return MappedWiring{*target_, extend_type_map<Parameters...>(type_map_, mappings...)};
     }
 
+    template <typename... Arguments>
+    decltype(auto) implementation_requests(Arguments &&...arguments) const
+        requires requires(const Target &target) {
+            target.implementation_requests(std::declval<const TypeMap &>(),
+                                          std::declval<Arguments>()...);
+        }
+    {
+        return target_->implementation_requests(type_map_, std::forward<Arguments>(arguments)...);
+    }
+
+    template <typename... Arguments>
+    decltype(auto) implementation_replies(Arguments &&...arguments) const
+        requires requires(const Target &target) {
+            target.implementation_replies(std::declval<const TypeMap &>(),
+                                         std::declval<Arguments>()...);
+        }
+    {
+        return target_->implementation_replies(type_map_, std::forward<Arguments>(arguments)...);
+    }
+
     template <typename... Mappings> auto operator[](Mappings...) const && = delete;
 
   private:

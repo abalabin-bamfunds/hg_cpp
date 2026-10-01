@@ -23,7 +23,7 @@ struct CompiledNestedGraph {
     std::shared_ptr<const CompiledGraph> graph;
     std::pmr::vector<std::size_t> input_nodes;
     std::pmr::vector<std::size_t> constant_input_nodes;
-    std::pmr::vector<std::uint32_t> service_binding_slots;
+    std::pmr::vector<std::uint32_t> parent_service_binding_indices;
     std::optional<std::size_t> output_node;
 };
 
@@ -64,8 +64,7 @@ class NestedGraph {
                const RuntimeGraphOwner *owner);
     void destroy_retired() noexcept;
     void bind_input(std::size_t node_index, const NestedGraphInput &input);
-    void initialize_constant(std::size_t node_index, const NestedGraphConstantInput &input,
-                             EvaluationTime start_time);
+    void initialize_constant(std::size_t node_index, const NestedGraphConstantInput &input, EvaluationTime start_time);
 
     RuntimeGraph *active_{};
     RuntimeGraph *retired_{};

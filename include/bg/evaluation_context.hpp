@@ -15,6 +15,7 @@ class GlobalState;
 class SimulationEvaluationEngine;
 namespace details {
 class EvaluationScratch;
+class NodeScheduler;
 } // namespace details
 
 class EvaluationContext {
@@ -51,6 +52,7 @@ class EvaluationContext {
   private:
     friend RuntimeGraph;
     friend SimulationEvaluationEngine;
+    friend details::NodeScheduler;
 
     EvaluationContext(EvaluationTime evaluation_time, RuntimeGraph &runtime_graph,
                       details::EvaluationScratch &evaluation_scratch, const WallClock &wall_clock) noexcept

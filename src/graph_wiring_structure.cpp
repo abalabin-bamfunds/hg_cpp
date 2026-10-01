@@ -67,14 +67,7 @@ struct NodeShape {
     std::vector<const TimeSeriesType *> dynamic_reference_input_types{};
     std::vector<StoredScalar> scalars{};
     std::vector<Endpoint> inputs{};
-    std::vector<const void *> service_bindings{};
-};
-
-struct InheritedTimeSeriesShape {
-    InheritedTimeSeriesIdentity identity;
-    const TimeSeriesType *type;
-
-    bool operator==(const InheritedTimeSeriesShape &) const noexcept = default;
+    std::vector<std::size_t> service_bindings{};
 };
 
 std::size_t endpoint_path_hash(const Endpoint &endpoint) noexcept {
@@ -124,8 +117,8 @@ std::size_t node_label_hash(const NodeShape &node) noexcept {
         combine_pointer(result, scalar.runtime_type);
         combine(result, scalar.value ? scalar.value->hash() : 0);
     }
-    for (const auto *binding : node.service_bindings) {
-        combine_pointer(result, binding);
+    for (const auto binding : node.service_bindings) {
+        combine(result, binding);
     }
     return result;
 }
@@ -160,7 +153,7 @@ std::size_t root_output_for(const GraphWiring &wiring, std::size_t node) {
 struct GraphWiringStructure::Data {
     std::vector<NodeShape> nodes;
     std::vector<const TimeSeriesType *> boundaries;
-    std::vector<InheritedTimeSeriesShape> inherited_time_series;
+    std::vector<const TimeSeriesType *> inherited_time_series;
     std::optional<Endpoint> result;
     const TimeSeriesType *result_type{};
     bool cacheable{true};
@@ -192,9 +185,8 @@ std::size_t structure_hash(const GraphWiringStructure::Data &data) {
     for (const auto *boundary : data.boundaries) {
         combine_pointer(result, boundary);
     }
-    for (const auto &requirement : data.inherited_time_series) {
-        combine(result, requirement.identity.hash());
-        combine_pointer(result, requirement.type);
+    for (const auto *type : data.inherited_time_series) {
+        combine_pointer(result, type);
     }
     combine(result, data.result.has_value());
     if (data.result) {
@@ -301,7 +293,7 @@ std::shared_ptr<GraphWiringStructure::Data> snapshot(const GraphWiring &wiring,
     data->boundaries.reserve(boundary_outputs.size());
     data->inherited_time_series.reserve(wiring.inherited_requirements().size());
     for (const auto &requirement : wiring.inherited_requirements()) {
-        data->inherited_time_series.push_back({requirement.identity, requirement.type});
+        data->inherited_time_series.push_back(requirement.type);
     }
 
     auto external_boundaries = std::vector<Endpoint>{};
@@ -363,9 +355,11 @@ std::shared_ptr<GraphWiringStructure::Data> snapshot(const GraphWiring &wiring,
             }
             node.scalars.push_back(std::move(stored));
         }
-        for (const auto &binding : wiring.service_binding_requirements()) {
+        for (auto binding_index = std::size_t{};
+             binding_index < wiring.service_binding_requirements().size(); ++binding_index) {
+            const auto &binding = wiring.service_binding_requirements()[binding_index];
             if (std::ranges::contains(binding.consumers, original_index)) {
-                node.service_bindings.push_back(binding.identity);
+                node.service_bindings.push_back(binding_index);
             }
         }
         data->nodes.push_back(std::move(node));

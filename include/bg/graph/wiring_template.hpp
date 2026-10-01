@@ -5,7 +5,6 @@
 #include <bg/graph/wiring_context.hpp>
 #include <bg/type/signature.hpp>
 
-#include <array>
 #include <optional>
 #include <span>
 #include <utility>
@@ -28,8 +27,7 @@ class WiringTemplate {
     template <typename... Arguments>
         requires(details::graph_code_argument<Arguments> && ...)
     std::optional<WiringPoint> operator()(Arguments &&...arguments) const & {
-        std::array<WiringArgument, sizeof...(Arguments)> values{
-            WiringArgument{std::forward<Arguments>(arguments)}...};
+        auto values = details::make_wiring_arguments(std::forward<Arguments>(arguments)...);
 
         return WiringContext::current().wiring().invoke(*this, std::span<const WiringArgument>{values});
     }
@@ -52,8 +50,7 @@ class WiringTemplate {
     template <typename... Arguments>
         requires(details::graph_code_argument<Arguments> && ...)
     std::optional<WiringPoint> operator()(const TypeMap &type_map, Arguments &&...arguments) const & {
-        std::array<WiringArgument, sizeof...(Arguments)> values{
-            WiringArgument{std::forward<Arguments>(arguments)}...};
+        auto values = details::make_wiring_arguments(std::forward<Arguments>(arguments)...);
 
         return WiringContext::current().wiring().invoke(*this, std::span<const WiringArgument>{values}, &type_map);
     }

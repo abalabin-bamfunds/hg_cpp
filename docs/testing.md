@@ -14,13 +14,14 @@ combinations.
 
 Use `[dimension:value]` for each applicable dimension:
 
-- `feature`: `scalar-api`, `scalar-storage`, `scalar-collection`, `global-state`, `visitor`, `type-system`,
+- `feature`: `compilation`, `compilation-order`, `inherited-time-series`, `scalar-api`, `scalar-storage`,
+  `scalar-collection`, `global-state`, `visitor`, `type-system`,
   `node-api`, `state`, `wiring`, `context-time-series`, `graph-compilation`, `test-graph`, `evaluation-context`,
   `evaluation-scratch`,
   `lifecycle`, `finalization`, `scheduling`, `timed-scheduling`, `simulation`, `wall-clock`, `input-activity`, `validity`,
   `invalidation`, `operator`, `constant`, `graph-argument`, `map`, `switch`,
-  `time-series-storage`, `time-series-view`, `collection-change`, `reference`, `sampling`, `getitem`, `getattr`,
-  `nested-graph`, `mesh`, or `variadic-wiring`
+  `time-series-storage`, `time-series-view`, `collection-change`, `reference`, `sampling`, `service`, `getitem`, `getattr`,
+  `nested-graph`, `mesh`, `multiservice`, or `variadic-wiring`
 - `series`: `value`, `fixed-tsl`, `tss`, `tsd`, `tsb`, `reference`, or `generic`
 - `schema`: `named`, `unnamed`, or `generic`
 - `representation`: `native`, `free`, or `covariant`
@@ -81,7 +82,8 @@ scope only when multiple test cases share them.
 `test_graph` accepts a wiring template or a graph function. Each input range
 defines updates by outer cycle. An empty `std::optional` skips its cycle. The
 result has one position per cycle and uses an empty position when the output did
-not update.
+not update. Pass a `ServiceCatalogue` after the tested wiring template or function
+to finalize [graph services](services.md) before compilation.
 
 `test_wiring` creates a `GraphWiring` and `WiringContext` for a `void` callable.
 Use it when the behavior under test ends during wiring and does not require
@@ -146,6 +148,8 @@ graph compilation or evaluation.
 - map argument selection, graph-function adaptation, overload selection, graph identity, and diagnostics
 - mesh argument selection, dependency selection, output inference, overload selection, and diagnostics
 - switch case preparation, argument selection, overload selection, compatibility, and diagnostics
+- service declarations, signature validation, type mapping, scalar multiplicity, installation arguments,
+  implementation selection, multiservice claims and request/reply ports, and path-aware diagnostics
 
 ### Graph compilation
 
@@ -158,6 +162,7 @@ graph compilation or evaluation.
 - repeated compilation and independent runtime graphs
 - scalar and state destruction
 - const nodes and their direct bindings
+- service binding metadata alongside inherited time series metadata
 
 ### Evaluation
 
@@ -178,6 +183,7 @@ graph compilation or evaluation.
 - mapped TSD unions, selected key sets, per-key inner graph evaluation, scheduling, and lifecycle
 - mesh dependency creation, key changes, shared dependencies, cycle rejection, evaluation order, and lifecycle
 - switch selection, default selection, inner graph evaluation, scheduling, lifecycle, and composition with map and mesh
+- service request deduplication, invalidation, nested graph binding propagation, provider ordering, and client removal
 
 ### Time series references
 

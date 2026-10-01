@@ -36,7 +36,7 @@ struct OrderConsumer {
 TEST_CASE("a late inherited provider resolves a root requirement during compilation",
           "[feature:inherited-time-series][feature:wiring]") {
     const auto identity = 0;
-    const auto requirement_identity = details::InheritedTimeSeriesIdentity::object(&identity);
+    const auto requirement_identity = details::NestedBindingIdentity::object(&identity);
     const auto copy = node([](In<TS<std::int64_t>> value, Out<TS<std::int64_t>> output) { output.set(*value); });
     const auto tested = [&](wp<TS<std::int64_t>> input) {
         auto &wiring = WiringContext::current().wiring();
@@ -53,7 +53,7 @@ TEST_CASE("a late inherited provider resolves a root requirement during compilat
 TEST_CASE("a late inherited provider crosses a nested graph boundary",
           "[feature:inherited-time-series][feature:nested-graph][feature:wiring]") {
     const auto identity = 0;
-    const auto requirement_identity = details::InheritedTimeSeriesIdentity::object(&identity);
+    const auto requirement_identity = details::NestedBindingIdentity::object(&identity);
     const auto copy = node([](In<TS<std::int64_t>> value, Out<TS<std::int64_t>> output) { output.set(*value); });
     const auto inner = graph("name"_n = "late_inherited_input", [&] {
         auto &wiring = WiringContext::current().wiring();
@@ -77,7 +77,7 @@ TEST_CASE("a named context requirement cannot be provided after wiring",
     auto wiring = GraphWiring{};
     const auto wiring_context = WiringContext{wiring};
     const auto provider = source();
-    const auto identity = details::InheritedTimeSeriesIdentity::named(util::symbol{"named_input"});
+    const auto identity = details::NestedBindingIdentity::named(util::symbol{"named_input"});
     (void)wiring.require_inherited_time_series(identity, util::symbol{"named_input"}, TS<std::int64_t>::type());
 
     CHECK_THROWS(wiring.provide_inherited_time_series(identity, TS<std::int64_t>::type(), provider));
@@ -86,7 +86,7 @@ TEST_CASE("a named context requirement cannot be provided after wiring",
 TEST_CASE("an incompatible inherited provider is rejected before reference materialization",
           "[feature:inherited-time-series][feature:wiring]") {
     const auto identity = 0;
-    const auto requirement_identity = details::InheritedTimeSeriesIdentity::object(&identity);
+    const auto requirement_identity = details::NestedBindingIdentity::object(&identity);
     const auto source = node([](Out<TS<bool>> output) { output.set(true); });
     auto wiring = GraphWiring{};
     const auto wiring_context = WiringContext{wiring};
@@ -102,7 +102,7 @@ TEST_CASE("an incompatible inherited provider is rejected before reference mater
 TEST_CASE("an unresolved inherited time series fails compilation with its requirement diagnostic",
           "[feature:inherited-time-series][feature:wiring]") {
     const auto identity = 0;
-    const auto requirement_identity = details::InheritedTimeSeriesIdentity::object(&identity);
+    const auto requirement_identity = details::NestedBindingIdentity::object(&identity);
     const auto consume = node<OrderConsumer>();
     auto wiring = GraphWiring{};
     const auto wiring_context = WiringContext{wiring};
@@ -116,7 +116,7 @@ TEST_CASE("an unresolved inherited time series fails compilation with its requir
 TEST_CASE("a late inherited provider dependency cycle fails compilation",
           "[feature:inherited-time-series][feature:wiring][feature:compilation]") {
     const auto identity = 0;
-    const auto requirement_identity = details::InheritedTimeSeriesIdentity::object(&identity);
+    const auto requirement_identity = details::NestedBindingIdentity::object(&identity);
     const auto copy = node([](In<TS<std::int64_t>> input, Out<TS<std::int64_t>> output) { output.set(*input); });
     auto wiring = GraphWiring{};
     const auto wiring_context = WiringContext{wiring};
@@ -132,7 +132,7 @@ TEST_CASE("a late inherited provider dependency cycle fails compilation",
 TEST_CASE("compilation keeps an inherited provider next to its consumer",
           "[feature:inherited-time-series][feature:wiring][feature:compilation]") {
     const auto identity = 0;
-    const auto requirement_identity = details::InheritedTimeSeriesIdentity::object(&identity);
+    const auto requirement_identity = details::NestedBindingIdentity::object(&identity);
     const auto source = node<OrderSource>([](std::int64_t value) { return value == 1 ? "unrelated" : "provider"; });
     const auto consume = node<OrderConsumer>([](wp<TS<std::int64_t>>) { return "consumer"; });
     auto wiring = GraphWiring{};

@@ -3,10 +3,31 @@
 #include <bg/graph/context.hpp>
 #include <bg/graph/details/variadic_wiring_record.hpp>
 #include <bg/graph/wiring_error.hpp>
+#include <bg/time_series/tsb/details/wiring.hpp>
+#include <bg/type/time_series_bundle_type.hpp>
 
 #include <algorithm>
 
 namespace bg::details {
+
+void append_wiring_arguments(std::vector<WiringArgument> &result, WiringArgumentExpansion expansion) {
+    const auto *type = type_cast<TimeSeriesBundleType>(&expansion.bundle.type().target_type());
+    if (type == nullptr) {
+        throw WiringError{"wiring argument expansion requires a TSB"};
+    }
+
+    result.reserve(result.size() + type->item_count());
+    for (auto index = std::size_t{}; index < type->item_count(); ++index) {
+        const auto field = time_series_bundle_field(expansion.bundle, index);
+        if (expansion.mode == VariadicMode::named) {
+            result.emplace_back(type->item_name(index), field);
+            wiring_argument_access::match_fixed_parameter_by_name(result.back());
+        } else {
+            result.emplace_back(field);
+        }
+    }
+}
+
 namespace {
 
 struct VariadicCaptureArguments {
@@ -33,7 +54,9 @@ std::vector<WiringArgument> prepare_arguments(const Signature &signature, std::s
             const auto fixed_parameter = [&]() -> std::optional<std::size_t> {
                 for (auto index = std::size_t{}; index < fixed_count; ++index) {
                     const auto &parameter = signature.parameter(index);
-                    if ((parameter.context || parameter_aliases != nullptr) && parameter.name == *name) {
+                    if (parameter.name == *name &&
+                        (parameter.context || parameter_aliases != nullptr ||
+                         wiring_argument_access::matches_fixed_parameter_by_name(argument))) {
                         return index;
                     }
                 }

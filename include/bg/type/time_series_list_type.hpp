@@ -18,6 +18,7 @@ class TimeSeriesListType : public FixedItemTimeSeriesType {
         TimeSeriesGuarantee guarantee = TimeSeriesGuarantee::ordinary);
 
     const TimeSeriesType &item_type() const noexcept { return *item_type_; }
+    bool contains_reference() const override { return item_type().contains_reference(); }
     const SizeParameter &size() const noexcept { return size_; }
     std::size_t item_count() const noexcept final { return size_.value().value_or(std::dynamic_extent); }
     const TimeSeriesType &item_type(std::size_t index) const final;

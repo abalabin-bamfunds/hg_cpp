@@ -148,6 +148,9 @@ TEST_CASE("compatible time-series types have a common weakest guarantee",
     const auto &final = bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>::type();
     const auto &constant = bg::TS<bg::i64, bg::TimeSeriesGuarantee::const_>::type();
 
+    CHECK(final.accepts(constant));
+    CHECK_FALSE(constant.accepts(final));
+
     CHECK(final.common_type(ordinary) == &ordinary);
     CHECK(final.common_type(constant) == &final);
     CHECK(ordinary.common_type(bg::TS<float>::type()) == nullptr);

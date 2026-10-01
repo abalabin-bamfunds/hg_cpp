@@ -5,6 +5,11 @@
 namespace bg {
 
 class GraphWiring;
+class ServiceDefinition;
+class ServiceCatalogue;
+namespace details {
+class ServiceImplementationAccess;
+} // namespace details
 
 class WiringContext {
   public:
@@ -24,12 +29,17 @@ class WiringContext {
 
   private:
     friend class GraphWiring;
+    friend class ServiceDefinition;
+    friend class ServiceCatalogue;
 
     WiringContext(GraphWiring &wiring, const WiringPath &path) noexcept;
+    WiringContext(GraphWiring &wiring, details::ServiceImplementationAccess &service_implementation) noexcept;
+    details::ServiceImplementationAccess &service_implementation() const;
 
     GraphWiring *wiring_;
     const WiringPath *path_{};
     WiringContext *previous_;
+    details::ServiceImplementationAccess *service_implementation_{};
 };
 
 } // namespace bg

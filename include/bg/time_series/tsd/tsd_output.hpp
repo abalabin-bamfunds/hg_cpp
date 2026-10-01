@@ -12,6 +12,8 @@
 #include <bg/time_series/tsd/tsd_storage.hpp>
 #include <bg/time_series/tsd/tsd_type.hpp>
 
+#include <stdexcept>
+
 namespace bg {
 
 template <typename K, typename Item, auto... Properties> class Out<TSD<K, Item, Properties...>> {
@@ -63,6 +65,13 @@ template <typename K, typename Item, auto... Properties> class Out<TSD<K, Item, 
     item_id_t item_id(Source &&key) const {
         const auto value = scalar_source_value<K>(std::forward<Source>(key));
         return item_id(details::make_scalar_source<K>(value));
+    }
+
+    Scalar<K> key(item_id_t id) const {
+        if (!dictionary_runtime_type().key_live(state_->data(), id)) {
+            throw std::out_of_range{"time series dictionary item id was not found"};
+        }
+        return Scalar<K>::from(key_runtime_type(), dictionary_runtime_type().key(state_->data(), id));
     }
 
     bool erase(const Scalar<K> &key) const { return erase(details::scalar_data(key)); }

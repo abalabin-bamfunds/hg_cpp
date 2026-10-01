@@ -1,6 +1,7 @@
 #pragma once
 
 #include <bg/allocator.hpp>
+#include <bg/export.hpp>
 #include <bg/graph/graph_argument.hpp>
 #include <bg/graph/wiring_point.hpp>
 #include <bg/scalar/cpp_runtime_type.hpp>
@@ -16,6 +17,7 @@
 #include <type_traits>
 #include <utility>
 #include <variant>
+#include <vector>
 
 namespace bg::details {
 
@@ -49,6 +51,11 @@ template <typename T>
 concept wiring_point_argument = std::same_as<std::remove_cvref_t<T>, WiringPoint> || is_typed_wiring_point<T> ||
                                 requires(const std::remove_cvref_t<T> &value) { static_cast<WiringPoint>(value); };
 
+struct WiringArgumentExpansion {
+    WiringPoint bundle;
+    VariadicMode mode;
+};
+
 } // namespace bg::details
 
 namespace bg {
@@ -80,7 +87,8 @@ class WiringArgument {
 
   public:
     WiringArgument(const WiringArgument &other)
-        : value_{copy_value(other)}, name_{other.name_}, variadic_capture_mode_{other.variadic_capture_mode_} {
+        : value_{copy_value(other)}, name_{other.name_}, variadic_capture_mode_{other.variadic_capture_mode_},
+          match_fixed_parameter_by_name_{other.match_fixed_parameter_by_name_} {
         if (auto *scalar = std::get_if<ScalarArgument>(&value_); scalar != nullptr && other.scalar_has_value()) {
             scalar->owned.emplace(other.scalar());
             scalar->data = nullptr;
@@ -137,9 +145,6 @@ class WiringArgument {
               cpp_scalar_runtime_type<typename details::scalar_value_argument<std::remove_cvref_t<T>>::scalar_type>(),
               nullptr, &details::scalar_data(value)}) {}
 
-    WiringArgument(const ScalarValue<> &value)
-        : value_(ScalarArgument{value.type(), value.runtime_type(), nullptr, &details::scalar_data(value)}) {}
-
     template <util::compile_time_string Name, typename T>
         requires requires(T &&value) { WiringArgument{std::forward<T>(value)}; }
     WiringArgument(details::named_argument<Name, T> value) : WiringArgument{std::move(value.value)} {
@@ -195,6 +200,7 @@ class WiringArgument {
         auto result = WiringArgument{copy_value(other)};
         result.name_ = other.name_;
         result.variadic_capture_mode_ = other.variadic_capture_mode_;
+        result.match_fixed_parameter_by_name_ = other.match_fixed_parameter_by_name_;
         return result;
     }
 
@@ -243,6 +249,7 @@ class WiringArgument {
         std::get<ScalarArgument>(result.value_).owned.emplace(scalar(), memory);
         result.name_ = name_;
         result.variadic_capture_mode_ = variadic_capture_mode_;
+        result.match_fixed_parameter_by_name_ = match_fixed_parameter_by_name_;
         return result;
     }
 
@@ -274,6 +281,7 @@ class WiringArgument {
     std::variant<TimeSeriesArgument, ScalarArgument, GraphArgument> value_;
     std::optional<util::symbol> name_;
     details::VariadicMode variadic_capture_mode_{details::VariadicMode::none};
+    bool match_fixed_parameter_by_name_{};
 };
 
 } // namespace bg
@@ -296,6 +304,12 @@ struct wiring_argument_access {
         argument.name_ = name;
         argument.variadic_capture_mode_ = mode;
     }
+    static void match_fixed_parameter_by_name(WiringArgument &argument) noexcept {
+        argument.match_fixed_parameter_by_name_ = true;
+    }
+    static bool matches_fixed_parameter_by_name(const WiringArgument &argument) noexcept {
+        return argument.match_fixed_parameter_by_name_;
+    }
     static const ScalarRuntimeType &scalar_runtime_type(const WiringArgument &argument) noexcept {
         return argument.scalar_runtime_type();
     }
@@ -306,10 +320,37 @@ template <typename T>
 concept graph_code_argument_value =
     wiring_point_argument<T> || supported_scalar_argument<T> || supported_optional_scalar_argument<T> ||
     supported_scalar_value_argument<T> || std::same_as<std::remove_cvref_t<T>, GraphArgument> ||
-    std::same_as<std::remove_cvref_t<T>, WiringArgument> || graph_argument_facade<T>;
+    std::same_as<std::remove_cvref_t<T>, WiringArgument> ||
+    std::same_as<std::remove_cvref_t<T>, WiringArgumentExpansion> || graph_argument_facade<T>;
 
 template <typename T>
 concept graph_code_argument = graph_code_argument_value<T> ||
                               (is_named_argument_v<T> && graph_code_argument_value<decltype(std::declval<T>().value)>);
 
+BG_EXPORT void append_wiring_arguments(std::vector<WiringArgument> &result, WiringArgumentExpansion expansion);
+
+template <typename Argument>
+void append_wiring_arguments(std::vector<WiringArgument> &result, Argument &&argument) {
+    result.emplace_back(std::forward<Argument>(argument));
+}
+
+template <typename... Arguments> std::vector<WiringArgument> make_wiring_arguments(Arguments &&...arguments) {
+    auto result = std::vector<WiringArgument>{};
+    result.reserve(sizeof...(Arguments));
+    (append_wiring_arguments(result, std::forward<Arguments>(arguments)), ...);
+    return result;
+}
+
 } // namespace bg::details
+
+namespace bg {
+
+template <details::wiring_point_argument Point> auto args(const Point &bundle) {
+    return details::WiringArgumentExpansion{static_cast<WiringPoint>(bundle), details::VariadicMode::positional};
+}
+
+template <details::wiring_point_argument Point> auto kwargs(const Point &bundle) {
+    return details::WiringArgumentExpansion{static_cast<WiringPoint>(bundle), details::VariadicMode::named};
+}
+
+} // namespace bg

@@ -6,6 +6,7 @@
 #include <bg/graph/graph_wiring.hpp>
 #include <bg/graph/runtime_graph.hpp>
 #include <bg/graph/wiring_context.hpp>
+#include <bg/service_catalogue.hpp>
 #include <bg/simulation_evaluation_engine.hpp>
 
 #include <concepts>
@@ -15,12 +16,17 @@
 namespace bg {
 namespace details {
 
-template <std::invocable Function> void run_graph(Function &&function, GlobalState *global_state) {
+template <std::invocable Function>
+void run_graph(Function &&function, GlobalState *global_state, const ServiceCatalogue *service_catalogue) {
     auto wiring = GraphWiring{};
 
     {
         auto context = WiringContext{wiring};
         (void)std::invoke(std::forward<Function>(function));
+    }
+
+    if (service_catalogue != nullptr) {
+        service_catalogue->build(wiring);
     }
 
     auto compiled = CompiledGraph{wiring};
@@ -39,11 +45,20 @@ template <std::invocable Function> void run_graph(Function &&function, GlobalSta
 } // namespace details
 
 template <std::invocable Function> void run_graph(Function &&function) {
-    details::run_graph(std::forward<Function>(function), nullptr);
+    details::run_graph(std::forward<Function>(function), nullptr, nullptr);
 }
 
 template <std::invocable Function> void run_graph(Function &&function, GlobalState &global_state) {
-    details::run_graph(std::forward<Function>(function), &global_state);
+    details::run_graph(std::forward<Function>(function), &global_state, nullptr);
+}
+
+template <std::invocable Function> void run_graph(Function &&function, const ServiceCatalogue &service_catalogue) {
+    details::run_graph(std::forward<Function>(function), nullptr, &service_catalogue);
+}
+
+template <std::invocable Function>
+void run_graph(Function &&function, GlobalState &global_state, const ServiceCatalogue &service_catalogue) {
+    details::run_graph(std::forward<Function>(function), &global_state, &service_catalogue);
 }
 
 } // namespace bg

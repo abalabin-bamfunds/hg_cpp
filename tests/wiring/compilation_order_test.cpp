@@ -50,7 +50,7 @@ struct RunSource {
 TEST_CASE("compilation orders a node after every direct consumer of a wiring point",
           "[feature:compilation-order][feature:wiring][feature:compilation]") {
     const auto identity = 0;
-    const auto requirement_identity = details::InheritedTimeSeriesIdentity::object(&identity);
+    const auto requirement_identity = details::NestedBindingIdentity::object(&identity);
     const auto source = node<OrderSource>([](std::int64_t value) { return value == 1 ? "collector" : "provider"; });
     const auto consume_before = node<OrderConsumer>([](wp<TS<std::int64_t>>) { return "client_before"; });
     const auto consume_after = node<OrderConsumer>([](wp<TS<std::int64_t>>) { return "client_after"; });
@@ -91,7 +91,7 @@ TEST_CASE("compilation orders a node after every direct consumer of a wiring poi
 TEST_CASE("ordering constraints include consumers wired after an inherited provider",
           "[feature:compilation-order][feature:wiring][feature:compilation]") {
     const auto identity = 0;
-    const auto requirement_identity = details::InheritedTimeSeriesIdentity::object(&identity);
+    const auto requirement_identity = details::NestedBindingIdentity::object(&identity);
     const auto source = node<OrderSource>([](std::int64_t value) { return value == 1 ? "collector" : "provider"; });
     const auto consume = node<OrderConsumer>([](wp<TS<std::int64_t>>) { return "client"; });
     auto wiring = GraphWiring{};
@@ -125,7 +125,7 @@ TEST_CASE("ordering constraints include consumers wired after an inherited provi
 TEST_CASE("ordering constraints include consumers across nested graph boundaries",
           "[feature:compilation-order][feature:nested-graph][feature:compilation]") {
     const auto identity = 0;
-    const auto requirement_identity = details::InheritedTimeSeriesIdentity::object(&identity);
+    const auto requirement_identity = details::NestedBindingIdentity::object(&identity);
     const auto copy = node([](In<TS<std::int64_t>> input, Out<TS<std::int64_t>> output) { output.set(*input); });
     const auto inner = graph("name"_n = "service_client", [&] {
         auto &wiring = WiringContext::current().wiring();
@@ -171,7 +171,7 @@ TEST_CASE("ordering constraints include consumers across nested graph boundaries
 TEST_CASE("mixed data and ordering dependencies report every wiring path in a cycle",
           "[feature:compilation-order][feature:wiring][feature:compilation]") {
     const auto identity = 0;
-    const auto requirement_identity = details::InheritedTimeSeriesIdentity::object(&identity);
+    const auto requirement_identity = details::NestedBindingIdentity::object(&identity);
     const auto producer = node<OrderSource>([](std::int64_t) { return "collector"; });
     const auto client = node<OrderJoin>([](wp<TS<std::int64_t>>, wp<TS<std::int64_t>>) { return "client"; });
     auto wiring = GraphWiring{};
