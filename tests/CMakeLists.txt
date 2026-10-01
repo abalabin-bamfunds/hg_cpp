@@ -59,6 +59,7 @@ add_executable(
     type/operator_specificity_test.cpp
     utils/adaptive_set_test.cpp
     utils/allocator_test.cpp
+    utils/buffer_test.cpp
     utils/contiguous_bunch_test.cpp
     utils/hash_dictionary_test.cpp
     utils/hash_set_test.cpp
