@@ -1,262 +1,82 @@
 #pragma once
 
 #include <bg/allocator.hpp>
-#include <bg/util/scope_exit.hpp>
+#include <bg/util/details/buffer_blocks.hpp>
 
 #include <algorithm>
 #include <atomic>
-#include <bit>
 #include <cstddef>
 #include <cstdint>
-#include <limits>
+#include <cstring>
 #include <memory>
-#include <memory_resource>
-#include <mutex>
-#include <optional>
 #include <span>
 #include <stdexcept>
+#include <type_traits>
 #include <utility>
-#include <vector>
 
 namespace bg::util {
 
 enum class buffer_type { contiguous, single_writer_chain, concurrent_writer_chain };
 
-namespace detail {
-
-struct alignas(std::max_align_t) buffer_block {
-    buffer_block(bg::allocator allocator, std::size_t capacity) : allocator{allocator}, capacity{capacity} {}
-
-    std::byte *bytes() noexcept { return reinterpret_cast<std::byte *>(this) + sizeof(buffer_block); }
-    const std::byte *bytes() const noexcept {
-        return reinterpret_cast<const std::byte *>(this) + sizeof(buffer_block);
-    }
-
-    void retain() noexcept { references.fetch_add(1, std::memory_order_relaxed); }
-
-    void release() noexcept {
-        if (references.fetch_sub(1, std::memory_order_acq_rel) == 1) {
-            auto memory = allocator;
-            const auto size = sizeof(buffer_block) + capacity;
-            std::destroy_at(this);
-            memory.deallocate_bytes(this, size, alignof(buffer_block));
-        }
-    }
-
-    bg::allocator allocator;
-    const std::size_t capacity;
-    std::atomic<std::size_t> committed{};
-    std::atomic<std::size_t> sealed_end{};
-    std::atomic<std::size_t> references{1};
-    std::atomic<buffer_block *> next{};
-    std::atomic<bool> writer_active{};
-    std::size_t write_end{};
-};
-
-struct commit_slot {
-    buffer_block *block{};
-    std::uint32_t end{};
-    std::atomic<bool> ready{};
-};
-
-inline constexpr std::uint64_t pack_mark(std::uint32_t position, std::uint32_t sequence) noexcept {
-    return (static_cast<std::uint64_t>(sequence) << 32) | position;
-}
-
-inline constexpr std::uint32_t mark_position(std::uint64_t mark) noexcept {
-    return static_cast<std::uint32_t>(mark);
-}
-
-inline constexpr std::uint32_t mark_sequence(std::uint64_t mark) noexcept {
-    return static_cast<std::uint32_t>(mark >> 32);
-}
-
-inline std::shared_ptr<buffer_block> own_block(buffer_block *block, bg::allocator allocator) {
-    block->retain();
-    return std::shared_ptr<buffer_block>{block, [](buffer_block *value) noexcept { value->release(); },
-                                         std::pmr::polymorphic_allocator<std::byte>{&allocator.memory_resource()}};
-}
-
-inline buffer_block *new_block(bg::allocator allocator, std::size_t capacity) {
-    if (capacity == 0) {
-        throw std::invalid_argument{"buffer capacity must be positive"};
-    }
-    if (capacity > std::numeric_limits<std::size_t>::max() - sizeof(buffer_block)) {
-        throw std::length_error{"buffer allocation size overflows"};
-    }
-    const auto allocation_size = sizeof(buffer_block) + capacity;
-    auto *storage = allocator.allocate_bytes(allocation_size, alignof(buffer_block));
-    return std::construct_at(static_cast<buffer_block *>(storage), allocator, capacity);
-}
-
-struct buffer_chain {
-    buffer_chain(bg::allocator allocator, std::size_t block_capacity, buffer_type type, std::size_t ring_capacity)
-        : allocator{allocator}, block_capacity{block_capacity}, type{type}, ring_capacity{ring_capacity},
-          slots{type == buffer_type::concurrent_writer_chain ? ring_capacity : 0,
-                &allocator.memory_resource()} {
-        auto *first = new_block(allocator, block_capacity);
-        head.store(first, std::memory_order_relaxed);
-        try {
-            tail.store(own_block(first, allocator), std::memory_order_relaxed);
-        } catch (...) {
-            head.store(nullptr, std::memory_order_relaxed);
-            first->release();
-            throw;
-        }
-    }
-
-    ~buffer_chain() {
-        auto *block = head.load(std::memory_order_relaxed);
-        while (block != nullptr) {
-            auto *next = block->next.load(std::memory_order_relaxed);
-            block->release();
-            block = next;
-        }
-    }
-
-    buffer_block *append_block(std::size_t capacity) {
-        auto *next = new_block(allocator, capacity);
-        std::shared_ptr<buffer_block> tail_owner;
-        try {
-            tail_owner = own_block(next, allocator);
-        } catch (...) {
-            next->release();
-            throw;
-        }
-        auto *previous = tail.load(std::memory_order_relaxed).get();
-        previous->sealed_end.store(previous->write_end, std::memory_order_relaxed);
-        previous->next.store(next, std::memory_order_release);
-        tail.store(std::move(tail_owner), std::memory_order_release);
-        return next;
-    }
-
-    void drain_commits() {
-        std::lock_guard lock{drain_mutex};
-        auto mark = committed_mark.load(std::memory_order_relaxed);
-        while (true) {
-            const auto sequence = mark_sequence(mark);
-            auto &slot = slots[sequence & (ring_capacity - 1)];
-            if (!slot.ready.load(std::memory_order_acquire)) {
-                return;
-            }
-
-            const auto end = slot.end;
-            slot.block->committed.store(end, std::memory_order_release);
-            slot.block = nullptr;
-            slot.end = 0;
-            slot.ready.store(false, std::memory_order_relaxed);
-            mark = pack_mark(static_cast<std::uint32_t>(end), sequence + 1);
-            committed_mark.store(mark, std::memory_order_release);
-            committed_mark.notify_all();
-        }
-    }
-
-    bg::allocator allocator;
-    const std::size_t block_capacity;
-    const buffer_type type;
-    const std::size_t ring_capacity;
-    std::atomic<buffer_block *> head{};
-    std::atomic<std::shared_ptr<buffer_block>> tail;
-    std::pmr::vector<commit_slot> slots;
-    std::mutex drain_mutex;
-    std::mutex rollover_mutex;
-    std::atomic<bool> rolling_over{};
-    std::atomic<std::uint64_t> write_mark{};
-    std::atomic<std::uint64_t> committed_mark{};
-    std::atomic<bool> reader_active{};
-    std::atomic<bool> writer_active{};
-    std::size_t head_position{};
-};
-
-inline std::shared_ptr<buffer_chain> new_chain(bg::allocator allocator, std::size_t block_capacity,
-                                               buffer_type type, std::size_t ring_capacity = 0) {
-    if (block_capacity == 0) {
-        throw std::invalid_argument{"buffer block capacity must be positive"};
-    }
-    if (type == buffer_type::concurrent_writer_chain && ring_capacity == 0) {
-        throw std::invalid_argument{"commit ring capacity must be positive"};
-    }
-    if (type == buffer_type::concurrent_writer_chain && block_capacity > UINT32_MAX) {
-        throw std::invalid_argument{"buffer chain blocks must fit a 32-bit position"};
-    }
-    if (type == buffer_type::concurrent_writer_chain && ring_capacity > UINT32_MAX) {
-        throw std::invalid_argument{"commit ring capacity must fit a 32-bit sequence"};
-    }
-    if (type == buffer_type::concurrent_writer_chain && !std::has_single_bit(ring_capacity)) {
-        throw std::invalid_argument{"commit ring capacity must be a power of two"};
-    }
-    return std::allocate_shared<buffer_chain>(std::pmr::polymorphic_allocator<buffer_chain>{&allocator.memory_resource()},
-                                              allocator, block_capacity, type, ring_capacity);
-}
-
-} // namespace detail
-
 class buffer {
   public:
-    // The resource must outlive the buffer and all handles derived from it. Chains may allocate and
-    // deallocate from writer and reader threads, so their resource must be thread-safe.
+    // The allocator must outlive all handles. Concurrent chains require thread-safe allocation and deallocation.
+    // A retained chain handle pins its block and successors; move the root into a cursor to release prefixes.
     static buffer contiguous(std::size_t capacity, bg::allocator allocator = {}) {
-        buffer result{buffer_type::contiguous};
-        result.block_ = detail::new_block(allocator, capacity);
-        return result;
+        return buffer{details::buffer_block::create(allocator, capacity)};
     }
 
     static buffer chain(std::size_t block_capacity, bg::allocator allocator = {}) {
-        return buffer{detail::new_chain(allocator, block_capacity, buffer_type::single_writer_chain)};
+        return buffer{details::single_writer_block::create(allocator, block_capacity, block_capacity)};
     }
 
     static buffer concurrent_chain(std::size_t block_capacity, std::size_t commit_capacity,
                                    bg::allocator allocator = {}) {
-        return buffer{detail::new_chain(allocator, block_capacity, buffer_type::concurrent_writer_chain,
-                                        commit_capacity)};
+        return buffer{details::new_concurrent_writer_block(allocator, block_capacity, commit_capacity)};
     }
 
-    buffer(const buffer &other)
-        : type_{other.type_}, block_{other.block_}, chain_{other.chain_}, view_{other.view_}, view_size_{other.view_size_} {
-        if (block_ != nullptr) {
-            block_->retain();
-        }
-    }
-
+    buffer(const buffer &other) : control_{other.control_}, begin_{other.begin_}, end_{other.end_} { retain(); }
     buffer(buffer &&other) noexcept
-        : type_{other.type_}, block_{std::exchange(other.block_, nullptr)}, chain_{std::move(other.chain_)},
-          view_{std::exchange(other.view_, nullptr)}, view_size_{std::exchange(other.view_size_, 0)} {}
-
+        : control_{std::exchange(other.control_, nullptr)}, begin_{std::exchange(other.begin_, 0)},
+          end_{std::exchange(other.end_, 0)} {}
     buffer &operator=(const buffer &other) {
-        if (this == &other) {
-            return *this;
+        if (this != &other) {
+            auto copy = other;
+            swap(copy);
         }
-        buffer copy{other};
-        swap(copy);
         return *this;
     }
-
     buffer &operator=(buffer &&other) noexcept {
-        if (this == &other) {
-            return *this;
+        if (this != &other) {
+            reset();
+            control_ = std::exchange(other.control_, nullptr);
+            begin_ = std::exchange(other.begin_, 0);
+            end_ = std::exchange(other.end_, 0);
         }
-        reset();
-        type_ = other.type_;
-        block_ = std::exchange(other.block_, nullptr);
-        chain_ = std::move(other.chain_);
-        view_ = std::exchange(other.view_, nullptr);
-        view_size_ = std::exchange(other.view_size_, 0);
         return *this;
     }
-
     ~buffer() { reset(); }
 
-    buffer_type type() const noexcept { return type_; }
+    buffer_type type() const noexcept {
+        if (end_ != 0 || control_.holds<details::buffer_block>()) {
+            return buffer_type::contiguous;
+        }
+        return control_.holds<details::single_writer_block>() ? buffer_type::single_writer_chain
+                                                             : buffer_type::concurrent_writer_chain;
+    }
 
     std::size_t size() const {
         require_contiguous();
-        return view_ == nullptr ? block_->committed.load(std::memory_order_acquire) : view_size_;
+        auto *block = base_block();
+        const auto begin = data_begin();
+        const auto end =
+            std::min(end_ == 0 ? block_end(block) : end_, block->committed.load(std::memory_order_acquire));
+        return end > begin ? end - begin : 0;
     }
 
     std::span<const std::byte> bytes() const {
         require_contiguous();
-        auto *start = view_ == nullptr ? block_->bytes() : view_;
-        return {start, size()};
+        return {base_block()->at(data_begin()), size()};
     }
 
     buffer chunk(std::size_t begin, std::size_t end) const {
@@ -264,105 +84,155 @@ class buffer {
         if (begin > end || end > size()) {
             throw std::out_of_range{"buffer chunk is outside committed bytes"};
         }
-        buffer result{buffer_type::contiguous};
-        result.block_ = block_;
-        result.block_->retain();
-        result.view_ = (view_ == nullptr ? block_->bytes() : view_) + begin;
-        result.view_size_ = end - begin;
-        return result;
+        const auto offset = data_begin() + begin;
+        return buffer{block_pointer(), offset, offset + end - begin};
     }
 
   private:
-    explicit buffer(buffer_type type) : type_{type} {}
-    explicit buffer(std::shared_ptr<detail::buffer_chain> chain)
-        : type_{chain->type}, chain_{std::move(chain)} {}
+    buffer() = default;
+    template <typename Block> explicit buffer(Block *block) : control_{block} {}
+    buffer(details::block_pointer block, std::size_t begin, std::size_t end) : begin_{begin}, end_{end} {
+        block.visit([&](auto *value) { control_ = value; });
+        retain();
+    }
 
     void require_contiguous() const {
-        if (type_ != buffer_type::contiguous) {
+        if (type() != buffer_type::contiguous) {
             throw std::logic_error{"a buffer chain is not one contiguous range"};
         }
     }
 
-    void reset() noexcept {
-        if (block_ != nullptr) {
-            block_->release();
-            block_ = nullptr;
+    details::buffer_block *base_block() const noexcept { return block_pointer().base_block(); }
+    details::block_pointer block_pointer() const noexcept {
+        return control_.visit([](auto *block) -> details::block_pointer { return block; });
+    }
+    details::block_pointer detach_block() noexcept {
+        const auto block = block_pointer();
+        control_.clear();
+        return block;
+    }
+    std::size_t data_begin() const noexcept { return begin_ == 0 ? block_pointer().data_offset() : begin_; }
+    static std::size_t block_end(const details::buffer_block *block) noexcept {
+        return sizeof(details::buffer_block) + block->capacity;
+    }
+    void retain() noexcept {
+        if (control_) {
+            control_.visit([](auto *block) { block->retain(); });
         }
-        chain_.reset();
     }
-
+    void reset() noexcept {
+        if (control_) {
+            auto block = block_pointer();
+            control_.clear();
+            details::block_reference::adopt(block).reset();
+        }
+    }
     void swap(buffer &other) noexcept {
-        std::swap(type_, other.type_);
-        std::swap(block_, other.block_);
-        chain_.swap(other.chain_);
-        std::swap(view_, other.view_);
-        std::swap(view_size_, other.view_size_);
+        std::swap(control_, other.control_);
+        std::swap(begin_, other.begin_);
+        std::swap(end_, other.end_);
     }
 
-    buffer_type type_;
-    detail::buffer_block *block_{};
-    std::shared_ptr<detail::buffer_chain> chain_;
-    std::byte *view_{};
-    std::size_t view_size_{};
+    details::buffer_control control_;
+    std::size_t begin_{};
+    std::size_t end_{};
 
     friend class buffer_writer;
     friend class concurrent_buffer_writer;
     friend class buffer_reader;
 };
 
+static_assert(sizeof(buffer) == sizeof(void *) + 2 * sizeof(std::size_t));
+
+// Typed writes construct objects in stream order. Readers must follow that type sequence and read or skip each
+// nontrivial object exactly once before releasing its storage; the buffer does not track object lifetimes.
 class buffer_reservation {
   public:
-    // Commit once before the writer is destroyed. Skipping a reservation hides later bytes.
-    // Callers that construct objects in the bytes must destroy them before releasing the bytes.
+    // A reservation must not outlive its writer. Abandoning one prevents that writer from reserving again.
     buffer_reservation(const buffer_reservation &) = delete;
     buffer_reservation &operator=(const buffer_reservation &) = delete;
     buffer_reservation(buffer_reservation &&other) noexcept
-        : block_{std::exchange(other.block_, nullptr)}, begin_{other.begin_}, end_{other.end_},
-          committed_{std::exchange(other.committed_, true)} {}
+        : block_{std::exchange(other.block_, nullptr)}, begin_{other.begin_}, cursor_{other.cursor_}, end_{other.end_},
+          reservation_active_{std::exchange(other.reservation_active_, nullptr)} {}
     buffer_reservation &operator=(buffer_reservation &&) = delete;
 
-    std::span<std::byte> bytes() const noexcept { return {block_->bytes() + begin_, end_ - begin_}; }
+    std::span<std::byte> bytes() const noexcept {
+        return block_ == nullptr ? std::span<std::byte>{} : std::span<std::byte>{block_->at(begin_), end_ - begin_};
+    }
+
+    void write_bytes(std::span<const std::byte> bytes) {
+        if (bytes.empty()) {
+            return;
+        }
+        require_space(bytes.size());
+        std::memcpy(block_->at(cursor_), bytes.data(), bytes.size());
+        cursor_ += bytes.size();
+    }
+
+    template <typename T, typename... Args> T &emplace(Args &&...args) {
+        details::require_supported_alignment(alignof(T));
+        const auto begin = cursor_ + details::alignment_padding(cursor_, alignof(T));
+        require_space(begin - cursor_ + sizeof(T));
+        auto *value = std::construct_at(reinterpret_cast<T *>(block_->at(begin)), std::forward<Args>(args)...);
+        cursor_ = begin + sizeof(T);
+        return *value;
+    }
+
+    template <typename T> auto &write(T &&value) {
+        return emplace<std::remove_cvref_t<T>>(std::forward<T>(value));
+    }
 
     void commit() {
-        if (committed_ || block_ == nullptr) {
+        if (block_ == nullptr) {
             throw std::logic_error{"buffer reservation already committed"};
         }
-        if (block_->committed.load(std::memory_order_relaxed) != begin_) {
-            throw std::logic_error{"single-writer reservations must commit in reservation order"};
-        }
         block_->committed.store(end_, std::memory_order_release);
-        committed_ = true;
+        block_ = nullptr;
+        *reservation_active_ = false;
+        reservation_active_ = nullptr;
     }
 
   private:
-    buffer_reservation(detail::buffer_block *block, std::size_t begin, std::size_t end)
-        : block_{block}, begin_{begin}, end_{end} {}
+    buffer_reservation(details::buffer_block *block, std::size_t begin, std::size_t end, bool *reservation_active)
+        : block_{block}, begin_{begin}, cursor_{begin}, end_{end}, reservation_active_{reservation_active} {}
 
-    detail::buffer_block *block_;
-    std::size_t begin_;
-    std::size_t end_;
-    bool committed_{};
+    void require_space(std::size_t size) const {
+        if (block_ == nullptr || size > end_ - cursor_) {
+            throw std::length_error{"buffer reservation has insufficient space"};
+        }
+    }
 
+    details::buffer_block *block_{};
+    std::size_t begin_{};
+    std::size_t cursor_{};
+    std::size_t end_{};
+    bool *reservation_active_{};
     friend class buffer_writer;
 };
 
 class buffer_writer {
   public:
-    explicit buffer_writer(buffer &buffer) : buffer_{buffer} {
-        if (buffer_.type_ == buffer_type::contiguous) {
-            if (buffer_.view_ != nullptr) {
+    // Use one writer per buffer and commit each reservation before making another.
+    explicit buffer_writer(buffer buffer) {
+        if (buffer.type() == buffer_type::contiguous) {
+            auto *block = buffer.control_.get<details::buffer_block>();
+            if (block == nullptr || buffer.begin_ != 0 || buffer.end_ != 0) {
                 throw std::invalid_argument{"a chunk is not writable"};
             }
-            block_ = buffer_.block_;
-            acquire(block_->writer_active);
-            position_ = block_->write_end;
-        } else if (buffer_.type_ == buffer_type::single_writer_chain) {
-            acquire(buffer_.chain_->writer_active);
-            block_ = buffer_.chain_->tail.load(std::memory_order_acquire).get();
-            position_ = block_->write_end;
-        } else {
+            block_ = details::block_reference::adopt(buffer.detach_block());
+            position_ = block->committed.load(std::memory_order_acquire);
+            return;
+        }
+        if (buffer.control_.get<details::single_writer_block>() == nullptr || buffer.end_ != 0) {
             throw std::invalid_argument{"use concurrent_buffer_writer for a concurrent buffer chain"};
         }
+        block_ = details::block_reference::adopt(buffer.detach_block());
+        auto *single = block_.get<details::single_writer_block>();
+        while (auto *next = single->next_block()) {
+            block_ = details::block_reference{next};
+            single = next;
+        }
+        position_ = single->committed.load(std::memory_order_acquire);
     }
 
     buffer_writer(const buffer_writer &) = delete;
@@ -370,222 +240,194 @@ class buffer_writer {
     buffer_writer(buffer_writer &&) = delete;
     buffer_writer &operator=(buffer_writer &&) = delete;
 
-    ~buffer_writer() {
-        if (buffer_.type_ == buffer_type::contiguous && block_ != nullptr) {
-            block_->writer_active.store(false, std::memory_order_release);
-        } else if (buffer_.chain_) {
-            buffer_.chain_->writer_active.store(false, std::memory_order_release);
-        }
-    }
-
-    buffer_reservation reserve(std::size_t size) {
+    buffer_reservation reserve(std::size_t size, std::size_t alignment = 1) {
         if (size == 0) {
             throw std::invalid_argument{"buffer reservation must be positive"};
         }
-        if (buffer_.type_ == buffer_type::contiguous && size > block_->capacity - position_) {
-            throw std::length_error{"contiguous buffer has insufficient capacity"};
-        }
-        if (buffer_.type_ == buffer_type::single_writer_chain && size > block_->capacity - position_) {
-            block_ = buffer_.chain_->append_block(std::max(buffer_.chain_->block_capacity, size));
-            position_ = 0;
+        details::require_supported_alignment(alignment);
+        if (reservation_active_) {
+            throw std::logic_error{"commit the current reservation before reserving again"};
         }
 
-        const auto begin = position_;
-        position_ += size;
-        block_->write_end = position_;
-        return {block_, begin, position_};
+        auto *single = block_.get<details::single_writer_block>();
+        auto *block = block_.pointer().base_block();
+        auto aligned_position = position_ + details::alignment_padding(position_, alignment);
+        if (aligned_position > buffer::block_end(block) || size > buffer::block_end(block) - aligned_position) {
+            if (single == nullptr) {
+                throw std::length_error{"contiguous buffer has insufficient capacity"};
+            }
+
+            const auto preferred = single->preferred_capacity;
+            const auto next_position = sizeof(details::single_writer_block);
+            const auto padding = details::alignment_padding(next_position, alignment);
+            auto *next = details::single_writer_block::create(single->allocator,
+                                                              std::max(preferred, padding + size), preferred);
+            single->sealed_end = position_;
+            single->next.store(next, std::memory_order_release);
+            block_ = details::block_reference{next};
+            block = next;
+            position_ = next->data_offset();
+            aligned_position = position_ + details::alignment_padding(position_, alignment);
+        }
+
+        const auto begin = aligned_position;
+        const auto end = begin + size;
+        position_ = end;
+        reservation_active_ = true;
+        return {block, begin, end, &reservation_active_};
     }
 
   private:
-    static void acquire(std::atomic<bool> &active) {
-        bool expected = false;
-        if (!active.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
-            throw std::logic_error{"a buffer supports only one active writer"};
-        }
-    }
-
-    buffer buffer_;
-    detail::buffer_block *block_{};
+    details::block_reference block_;
     std::size_t position_{};
+    bool reservation_active_{};
 };
 
 class concurrent_buffer_reservation {
   public:
-    // Commit every reservation exactly once so the ordered commit mark can advance. Callers
-    // that construct objects in the bytes must destroy them before releasing the bytes.
+    // A reservation must not outlive its writer. Abandoning one leaves a gap in the stream.
     concurrent_buffer_reservation(const concurrent_buffer_reservation &) = delete;
     concurrent_buffer_reservation &operator=(const concurrent_buffer_reservation &) = delete;
     concurrent_buffer_reservation(concurrent_buffer_reservation &&other) noexcept
-        : chain_{std::move(other.chain_)}, sequence_{other.sequence_},
-          block_{std::exchange(other.block_, nullptr)}, begin_{other.begin_}, end_{other.end_},
-          committed_{std::exchange(other.committed_, true)} {}
+        : block_{std::exchange(other.block_, nullptr)}, sequence_{other.sequence_}, begin_{other.begin_},
+          cursor_{other.cursor_}, end_{other.end_}, reservation_active_{std::exchange(other.reservation_active_, nullptr)} {}
     concurrent_buffer_reservation &operator=(concurrent_buffer_reservation &&) = delete;
 
-    std::span<std::byte> bytes() const noexcept { return {block_->bytes() + begin_, end_ - begin_}; }
+    std::span<std::byte> bytes() const noexcept {
+        if (block_ == nullptr) {
+            return {};
+        }
+        auto *block = block_;
+        return {block->at(block->data_offset() + begin_), end_ - begin_};
+    }
+
+    void write_bytes(std::span<const std::byte> bytes) {
+        if (bytes.empty()) {
+            return;
+        }
+        require_space(bytes.size());
+        std::memcpy(block_->at(block_->data_offset() + cursor_), bytes.data(), bytes.size());
+        cursor_ += static_cast<std::uint32_t>(bytes.size());
+    }
+
+    template <typename T, typename... Args> T &emplace(Args &&...args) {
+        details::require_supported_alignment(alignof(T));
+        const auto offset = block_->data_offset() + cursor_;
+        const auto begin = cursor_ + static_cast<std::uint32_t>(details::alignment_padding(offset, alignof(T)));
+        require_space(begin - cursor_ + sizeof(T));
+        auto *value = std::construct_at(reinterpret_cast<T *>(block_->at(block_->data_offset() + begin)),
+                                        std::forward<Args>(args)...);
+        cursor_ = begin + static_cast<std::uint32_t>(sizeof(T));
+        return *value;
+    }
+
+    template <typename T> auto &write(T &&value) {
+        return emplace<std::remove_cvref_t<T>>(std::forward<T>(value));
+    }
 
     void commit() {
-        if (committed_ || block_ == nullptr) {
+        if (block_ == nullptr) {
             throw std::logic_error{"buffer reservation already committed"};
         }
-
-        auto &slot = chain_->slots[sequence_ & (chain_->ring_capacity - 1)];
-        slot.ready.store(true, std::memory_order_release);
-        chain_->drain_commits();
-        committed_ = true;
+        block_->commit(sequence_, end_);
+        block_ = nullptr;
+        *reservation_active_ = false;
+        reservation_active_ = nullptr;
     }
 
   private:
-    concurrent_buffer_reservation(std::shared_ptr<detail::buffer_chain> chain, std::uint64_t sequence,
-                                  detail::buffer_block *block, std::size_t begin, std::size_t end)
-        : chain_{std::move(chain)}, sequence_{sequence}, block_{block}, begin_{begin}, end_{end} {}
+    concurrent_buffer_reservation(details::concurrent_writer_block *block, std::uint32_t sequence, std::uint32_t begin,
+                                  std::uint32_t end, bool *reservation_active)
+        : block_{block}, sequence_{sequence}, begin_{begin}, cursor_{begin}, end_{end},
+          reservation_active_{reservation_active} {}
 
-    std::shared_ptr<detail::buffer_chain> chain_;
-    std::uint64_t sequence_;
-    detail::buffer_block *block_;
-    std::size_t begin_;
-    std::size_t end_;
-    bool committed_{};
+    void require_space(std::size_t size) const {
+        if (block_ == nullptr || size > end_ - cursor_) {
+            throw std::length_error{"buffer reservation has insufficient space"};
+        }
+    }
 
+    details::concurrent_writer_block *block_{};
+    std::uint32_t sequence_{};
+    std::uint32_t begin_{};
+    std::uint32_t cursor_{};
+    std::uint32_t end_{};
+    bool *reservation_active_{};
     friend class concurrent_buffer_writer;
 };
 
 class concurrent_buffer_writer {
   public:
-    explicit concurrent_buffer_writer(buffer &buffer) : chain_{buffer.chain_} {
-        if (buffer.type_ != buffer_type::concurrent_writer_chain) {
+    // Use one thread per writer. For a late writer, pass reader.current_block() to release consumed prefixes.
+    explicit concurrent_buffer_writer(buffer buffer) {
+        if (buffer.control_.get<details::concurrent_writer_block>() == nullptr || buffer.end_ != 0) {
             throw std::invalid_argument{"concurrent_buffer_writer requires a concurrent buffer chain"};
         }
+        block_ = details::block_reference::adopt(buffer.detach_block());
     }
 
-    concurrent_buffer_reservation reserve(std::size_t size) {
+    concurrent_buffer_writer(const concurrent_buffer_writer &) = delete;
+    concurrent_buffer_writer &operator=(const concurrent_buffer_writer &) = delete;
+    concurrent_buffer_writer(concurrent_buffer_writer &&) = delete;
+    concurrent_buffer_writer &operator=(concurrent_buffer_writer &&) = delete;
+
+    concurrent_buffer_reservation reserve(std::size_t size, std::size_t alignment = 1) {
         if (size == 0) {
             throw std::invalid_argument{"buffer reservation must be positive"};
         }
+        details::require_supported_alignment(alignment);
         if (size > UINT32_MAX) {
             throw std::length_error{"a concurrent reservation must fit a 32-bit block position"};
         }
+        if (reservation_active_) {
+            throw std::logic_error{"commit the current reservation before reserving again"};
+        }
 
         while (true) {
-            if (chain_->rolling_over.load(std::memory_order_acquire)) {
-                chain_->rolling_over.wait(true, std::memory_order_acquire);
+            auto *block = block_.get<details::concurrent_writer_block>();
+            if (details::concurrent_writer_block::mark_is_sealed(
+                    block->control.reservation_mark.load(std::memory_order_acquire))) {
+                advance_to_next(size, alignment);
                 continue;
             }
 
-            auto mark = chain_->write_mark.load(std::memory_order_acquire);
-            const auto sequence = detail::mark_sequence(mark);
-            const auto committed = chain_->committed_mark.load(std::memory_order_acquire);
-            if (sequence - detail::mark_sequence(committed) >= chain_->ring_capacity) {
-                chain_->committed_mark.wait(committed, std::memory_order_acquire);
-                continue;
+            auto sequence = std::uint32_t{};
+            auto begin = std::uint32_t{};
+            auto end = std::uint32_t{};
+            if (block->try_reserve(size, alignment, sequence, begin, end)) {
+                reservation_active_ = true;
+                return {block, sequence, begin, end, &reservation_active_};
             }
-
-            auto block_owner = chain_->tail.load(std::memory_order_acquire);
-            auto *block = block_owner.get();
-            if (chain_->rolling_over.load(std::memory_order_acquire) ||
-                block != chain_->tail.load(std::memory_order_acquire).get()) {
-                continue;
-            }
-
-            const auto begin = detail::mark_position(mark);
-            if (size <= block->capacity - begin) {
-                const auto end = begin + static_cast<std::uint32_t>(size);
-                const auto next = detail::pack_mark(end, sequence + 1);
-                if (!chain_->write_mark.compare_exchange_weak(mark, next, std::memory_order_acq_rel,
-                                                              std::memory_order_acquire)) {
-                    continue;
-                }
-
-                auto &slot = chain_->slots[sequence & (chain_->ring_capacity - 1)];
-                slot.block = block;
-                slot.end = end;
-                return {chain_, sequence, block, begin, end};
-            }
-
-            auto reservation = reserve_after_rollover(size);
-            if (reservation) {
-                return std::move(*reservation);
-            }
+            advance_to_next(size, alignment);
         }
     }
 
   private:
-    std::optional<concurrent_buffer_reservation> reserve_after_rollover(std::size_t size) {
-        std::unique_lock lock{chain_->rollover_mutex};
-        chain_->rolling_over.store(true, std::memory_order_release);
-        auto release_rollover = bg::util::scope_exit{[&]() noexcept {
-            chain_->rolling_over.store(false, std::memory_order_release);
-            chain_->rolling_over.notify_all();
-        }};
-
-        while (true) {
-            const auto mark = chain_->write_mark.load(std::memory_order_acquire);
-            const auto sequence = detail::mark_sequence(mark);
-            const auto committed = chain_->committed_mark.load(std::memory_order_acquire);
-            if (sequence - detail::mark_sequence(committed) >= chain_->ring_capacity) {
-                chain_->rolling_over.store(false, std::memory_order_release);
-                chain_->rolling_over.notify_all();
-                lock.unlock();
-                chain_->committed_mark.wait(committed, std::memory_order_acquire);
-                return std::nullopt;
-            }
-
-            auto block_owner = chain_->tail.load(std::memory_order_acquire);
-            auto *block = block_owner.get();
-            const auto begin = detail::mark_position(mark);
-            if (size <= block->capacity - begin) {
-                chain_->rolling_over.store(false, std::memory_order_release);
-                chain_->rolling_over.notify_all();
-                return std::nullopt;
-            }
-
-            const auto capacity = std::max(chain_->block_capacity, size);
-            auto *next_block = detail::new_block(chain_->allocator, capacity);
-            std::shared_ptr<detail::buffer_block> next_owner;
-            try {
-                next_owner = detail::own_block(next_block, chain_->allocator);
-            } catch (...) {
-                next_block->release();
-                throw;
-            }
-            const auto next = detail::pack_mark(static_cast<std::uint32_t>(size), sequence + 1);
-            auto expected = mark;
-            if (!chain_->write_mark.compare_exchange_strong(expected, next, std::memory_order_acq_rel,
-                                                            std::memory_order_acquire)) {
-                next_owner.reset();
-                next_block->release();
-                continue;
-            }
-
-            block->sealed_end.store(begin, std::memory_order_relaxed);
-            block->next.store(next_block, std::memory_order_release);
-            chain_->tail.store(std::move(next_owner), std::memory_order_release);
-
-            auto &slot = chain_->slots[sequence & (chain_->ring_capacity - 1)];
-            slot.block = next_block;
-            slot.end = static_cast<std::uint32_t>(size);
-            chain_->rolling_over.store(false, std::memory_order_release);
-            chain_->rolling_over.notify_all();
-            return concurrent_buffer_reservation{chain_, sequence, next_block, 0, size};
+    void advance_to_next(std::size_t size, std::size_t alignment) {
+        auto *next = block_.get<details::concurrent_writer_block>()->next_for_reservation(size, alignment);
+        if (next != nullptr) {
+            block_ = details::block_reference{next};
         }
     }
-
-    std::shared_ptr<detail::buffer_chain> chain_;
+    details::block_reference block_;
+    bool reservation_active_{};
 };
 
 class buffer_reader {
   public:
-    explicit buffer_reader(buffer &buffer) : buffer_{buffer} {
-        if (buffer_.type_ == buffer_type::contiguous) {
-            block_ = buffer_.block_;
-            position_ = buffer_.view_ == nullptr ? 0 : static_cast<std::size_t>(buffer_.view_ - block_->bytes());
-            limit_ = buffer_.view_ == nullptr ? block_->capacity : position_ + buffer_.view_size_;
+    explicit buffer_reader(buffer buffer) {
+        const auto type = buffer.type();
+        const auto begin = buffer.data_begin();
+        const auto end = buffer.end_;
+        block_ = details::block_reference::adopt(buffer.detach_block());
+        if (type == buffer_type::contiguous) {
+            contiguous_ = true;
+            position_ = begin;
+            auto *block =
+                block_.pointer().visit([](auto *value) { return static_cast<details::buffer_block *>(value); });
+            limit_ = end == 0 ? sizeof(details::buffer_block) + block->capacity : end;
         } else {
-            bool expected = false;
-            if (!buffer_.chain_->reader_active.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
-                throw std::logic_error{"a buffer chain supports only one active reader"};
-            }
-            block_ = buffer_.chain_->head.load(std::memory_order_acquire);
-            position_ = buffer_.chain_->head_position;
+            position_ = begin;
         }
     }
 
@@ -594,35 +436,28 @@ class buffer_reader {
     buffer_reader(buffer_reader &&) = delete;
     buffer_reader &operator=(buffer_reader &&) = delete;
 
-    ~buffer_reader() {
-        if (buffer_.type_ != buffer_type::contiguous) {
-            buffer_.chain_->head_position = position_;
-            buffer_.chain_->reader_active.store(false, std::memory_order_release);
-        }
-    }
-
     std::span<const std::byte> readable() {
-        if (buffer_.type_ == buffer_type::contiguous) {
-            const auto end = std::min(limit_, block_->committed.load(std::memory_order_acquire));
-            return {block_->bytes() + position_, end > position_ ? end - position_ : 0};
+        auto *block = block_.pointer().base_block();
+        if (contiguous_) {
+            const auto end = std::min(limit_, block->committed.load(std::memory_order_acquire));
+            return {block->at(position_), end > position_ ? end - position_ : 0};
         }
 
-        while (block_ != nullptr) {
-            const auto end = block_->committed.load(std::memory_order_acquire);
+        while (block_) {
+            block = block_.pointer().base_block();
+            const auto end = block->committed.load(std::memory_order_acquire);
             if (position_ < end) {
-                return {block_->bytes() + position_, end - position_};
+                return {block->at(position_), end - position_};
             }
 
-            auto *next = block_->next.load(std::memory_order_acquire);
-            if (next == nullptr || end < block_->sealed_end.load(std::memory_order_acquire)) {
+            const auto next = block_.pointer().next_block();
+            if (!next || end < block_.pointer().sealed_end()) {
                 return {};
             }
 
-            buffer_.chain_->head.store(next, std::memory_order_release);
-            buffer_.chain_->head_position = 0;
-            block_->release();
-            block_ = next;
-            position_ = 0;
+            next.visit([](auto *value) { value->retain(); });
+            block_ = details::block_reference::adopt(next);
+            position_ = next.data_offset();
         }
         return {};
     }
@@ -632,14 +467,11 @@ class buffer_reader {
         if (available.empty()) {
             throw std::logic_error{"the reader has no committed bytes"};
         }
-
-        buffer result{buffer_type::contiguous};
-        result.block_ = block_;
-        result.block_->retain();
-        result.view_ = block_->bytes() + position_;
-        result.view_size_ = available.size();
-        return result;
+        return buffer{block_.pointer(), position_, position_ + available.size()};
     }
+
+    // The returned handle resumes a reader at this position; writers start at the block's write mark.
+    buffer current_block() { return buffer{block_.pointer(), position_, 0}; }
 
     void consume(std::size_t size) {
         const auto available = readable().size();
@@ -649,11 +481,45 @@ class buffer_reader {
         position_ += size;
     }
 
+    template <typename T> const T &peek() {
+        auto end = std::size_t{};
+        return *value_at_cursor<T>(end);
+    }
+
+    template <typename T> T read() {
+        auto end = std::size_t{};
+        auto *value = value_at_cursor<T>(end);
+        T result{std::move(*value)};
+        std::destroy_at(value);
+        position_ = end;
+        return result;
+    }
+
+    template <typename T> void skip() {
+        auto end = std::size_t{};
+        auto *value = value_at_cursor<T>(end);
+        std::destroy_at(value);
+        position_ = end;
+    }
+
   private:
-    buffer buffer_;
-    detail::buffer_block *block_{};
+    template <typename T> T *value_at_cursor(std::size_t &end) {
+        details::require_supported_alignment(alignof(T));
+        const auto available = readable();
+        const auto begin = position_ + details::alignment_padding(position_, alignof(T));
+        if (begin > position_ + available.size() || sizeof(T) > position_ + available.size() - begin) {
+            throw std::out_of_range{"buffer reader has no complete typed value"};
+        }
+
+        end = begin + sizeof(T);
+        auto *block = block_.pointer().base_block();
+        return std::launder(reinterpret_cast<T *>(block->at(begin)));
+    }
+
+    details::block_reference block_;
     std::size_t position_{};
     std::size_t limit_{};
+    bool contiguous_{};
 };
 
 using concurrent_buffer_reader = buffer_reader;

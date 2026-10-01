@@ -94,7 +94,8 @@ graph compilation or evaluation.
 ### Utilities
 
 - compile-time strings, symbols, named arguments, aggregate reflection, and C++ schema reflection and construction
-- buffer allocation, contiguous chunks, chain rollover, concurrent reservations, ordered commit visibility, and ring backpressure
+- buffer allocation, contiguous chunks, chain rollover, concurrent reservations, ordered commit visibility,
+  ring-full rollover, and allocation-failure rollback
 - constant-size scalar value handles
 - visitor dispatch for concrete and generic scalar and time series views, including base-interface fallback, no
   matching overload, external scalar dispatch, runtime-type precedence, and recursion through scalar collections
