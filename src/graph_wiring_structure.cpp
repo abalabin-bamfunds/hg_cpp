@@ -47,6 +47,7 @@ struct ParameterShape {
     const Type *type;
     InputActivity activity;
     InputValidity validity;
+    bool dynamic_activity;
     bool accepts_absent_scalar;
     VariadicMode variadic_mode;
 
@@ -102,6 +103,7 @@ std::size_t node_label_hash(const NodeShape &node) noexcept {
         combine_pointer(result, parameter.type);
         combine(result, static_cast<std::size_t>(parameter.activity));
         combine(result, static_cast<std::size_t>(parameter.validity));
+        combine(result, parameter.dynamic_activity);
         combine(result, parameter.accepts_absent_scalar);
         combine(result, static_cast<std::size_t>(parameter.variadic_mode));
     }
@@ -337,7 +339,8 @@ std::shared_ptr<GraphWiringStructure::Data> snapshot(const GraphWiring &wiring,
         node.parameters.reserve(wired.signature().parameters.size());
         for (const auto &parameter : wired.signature().parameters) {
             node.parameters.push_back({parameter.type, parameter.activity, parameter.validity,
-                                       parameter.accepts_absent_scalar, parameter.variadic_mode});
+                                       parameter.dynamic_activity, parameter.accepts_absent_scalar,
+                                       parameter.variadic_mode});
         }
         node_indices[original_index] = data->nodes.size();
         if (root_outputs[original_index] != nullptr) {
@@ -355,8 +358,8 @@ std::shared_ptr<GraphWiringStructure::Data> snapshot(const GraphWiring &wiring,
             }
             node.scalars.push_back(std::move(stored));
         }
-        for (auto binding_index = std::size_t{};
-             binding_index < wiring.service_binding_requirements().size(); ++binding_index) {
+        for (auto binding_index = std::size_t{}; binding_index < wiring.service_binding_requirements().size();
+             ++binding_index) {
             const auto &binding = wiring.service_binding_requirements()[binding_index];
             if (std::ranges::contains(binding.consumers, original_index)) {
                 node.service_bindings.push_back(binding_index);

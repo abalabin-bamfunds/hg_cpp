@@ -182,6 +182,21 @@ struct passive_reference_value {
     void evaluate() const { output.set(*input); }
 };
 
+struct dynamic_reference_value {
+    bg::In<bg::TS<bg::i64>, bg::optional, bg::dynamic_activity> input;
+    bg::In<bg::TS<bg::i64>> trigger;
+    bg::Out<bg::TS<bg::i64>> output;
+
+    void evaluate() const {
+        if (*trigger == 0) {
+            input.make_passive();
+        } else {
+            input.make_active();
+        }
+        output.set(*input);
+    }
+};
+
 } // namespace
 
 TEST_CASE("changing a reference samples its target",
@@ -218,6 +233,22 @@ TEST_CASE("a passive dereferenced input observes its current target",
     const auto actual = bg::testing::test_graph(graph);
 
     CHECK(actual.equals({10, 20}));
+}
+
+TEST_CASE("a dynamic dereferenced input rebinds while passive",
+          "[feature:input-activity][feature:reference][series:value][binding:reference-to-value]"
+          "[definition:aggregate][activity:passive][transition:update]") {
+    const auto left = bg::node<sampled_left_source>();
+    const auto right = bg::node<sampled_right_source>();
+    const auto condition = bg::node<sampled_condition_source>();
+    const auto select = bg::node<reference_selector>();
+    const auto value = bg::node<dynamic_reference_value>();
+    const auto graph = [&] {
+        const auto trigger = condition();
+        return value(select(trigger, left(), right()), trigger);
+    };
+
+    CHECK(bg::testing::test_graph(graph).equals({10, 20}));
 }
 
 namespace {
@@ -309,8 +340,8 @@ TEST_CASE("a dereferenced input subscribes directly to a fixed collection item",
           "[binding:value-to-reference][binding:reference-to-value]") {
     const auto source = bg::node<referenced_list_source>();
     const auto pass = bg::node<reference_pass>();
-    const auto first =
-        bg::node([](bg::In<bg::TSL<bg::TS<bg::i64>, 2>> input, bg::Out<bg::TS<bg::i64>> output) { output.set(*input[0]); });
+    const auto first = bg::node(
+        [](bg::In<bg::TSL<bg::TS<bg::i64>, 2>> input, bg::Out<bg::TS<bg::i64>> output) { output.set(*input[0]); });
     const auto graph = [&] { return pass(first(source())); };
     reference_pass::evaluation_count = 0;
 

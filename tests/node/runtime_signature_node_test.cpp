@@ -101,6 +101,35 @@ TEST_CASE("a runtime-signature node can omit its output",
     CHECK(bg::testing::test_graph(graph, {1, 2}).equals({1, 2}));
 }
 
+struct RuntimeDynamicActivityDefinition {
+    RuntimeDynamicActivityDefinition()
+        : signature_{bg::util::symbol{"runtime_dynamic_activity"},
+                     {{bg::util::symbol{"input"}, &bg::TS<std::int64_t>::type(), bg::active, bg::required, false,
+                       bg::details::VariadicMode::none, nullptr, false, true}},
+                     bg::TS<std::int64_t>::type()} {}
+
+    [[nodiscard]] const bg::Signature &signature() const { return signature_; }
+
+    static void evaluate(bg::NodeInvocation<> invocation) {
+        auto input = invocation.template input<bg::In<bg::TS<std::int64_t>, bg::dynamic_activity>>(0, 0);
+        input.make_passive();
+        invocation.output().visit([&](bg::Out<bg::TS<bg::SCALAR>> *output) { output->set_value(input.value_view()); },
+                                  ddv::noop);
+    }
+
+    bg::Signature signature_;
+};
+
+TEST_CASE("a runtime-signature input changes its activity",
+          "[feature:input-activity][series:value][definition:runtime][activity:active][transition:update]") {
+    const auto dynamic = bg::node(RuntimeDynamicActivityDefinition{});
+    const auto graph = [&](bg::wp<bg::TS<std::int64_t>> input) -> bg::wp<bg::TS<std::int64_t>> {
+        return bg::wp<bg::TS<std::int64_t>>{*dynamic(input)};
+    };
+
+    CHECK(bg::testing::test_graph(graph, {1, 2}).equals({1, std::nullopt}));
+}
+
 struct OptionalScalarDefinition {
     OptionalScalarDefinition()
         : signature_{

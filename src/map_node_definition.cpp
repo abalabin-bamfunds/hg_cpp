@@ -48,8 +48,8 @@ MapNodeDefinition::MapNodeDefinition(MapGraphWiring wiring, const ResolvedSignat
         if (!parameter.type->is_time_series()) {
             throw std::invalid_argument{"a map or mesh node accepts only time-series parameters"};
         }
-        parameters.push_back(
-            {parameter.name, parameter.type, parameter.activity, parameter.validity, parameter.accepts_absent_scalar});
+        parameters.push_back({parameter.name, parameter.type, parameter.activity, parameter.validity,
+                              parameter.accepts_absent_scalar, details::VariadicMode::none, nullptr, false});
     }
 
     if (outer_signature.output == nullptr) {

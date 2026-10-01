@@ -10,6 +10,7 @@
 #include <bg/graph/dynamic_subscribers.hpp>
 #include <bg/scalar/details/allocation_context.hpp>
 #include <bg/scalar/runtime_type.hpp>
+#include <bg/time_series/ref/ref_input_storage.hpp>
 #include <bg/time_series/ref/ref_provider.hpp>
 #include <bg/time_series/time_series_runtime_type.hpp>
 #include <bg/util/scope_exit.hpp>
@@ -72,6 +73,24 @@ void notify_input_subscribers(OutputChangeContext &context, const TimeSeriesRunt
     };
     for (const auto &record : records) {
         record.notify(context, change);
+    }
+}
+
+void notify_controlled_inputs(OutputChangeContext &context, const TimeSeriesRuntimeType *, const void *,
+                              OutputChange change, std::span<const std::byte> record_bytes) {
+    const auto records = std::span{
+        reinterpret_cast<const ControlledInputSubscriber *>(record_bytes.data()),
+        record_bytes.size() / sizeof(ControlledInputSubscriber),
+    };
+    for (const auto &record : records) {
+        const auto active = *static_cast<bool *>(context.runtime_graph().storage_at(record.activity_offset()));
+        if ((change != OutputChange::invalidation && active) ||
+            (change == OutputChange::invalidation && active && !record.required())) {
+            context.schedule(context.runtime_graph(), record.node_index());
+        }
+        if (change != OutputChange::update && record.required()) {
+            context.schedule_validity_check(context.runtime_graph(), record.node_index());
+        }
     }
 }
 
@@ -719,8 +738,14 @@ void RuntimeGraph::publish_output(const CompiledNode &node, OutputChange change)
 
 void RuntimeGraph::notify_dynamic_subscribers(details::DynamicSubscribers &subscribers, OutputChange change) {
     subscribers.for_each_node_subscriber([&](const auto &subscriber) {
-        subscriber.graph->notify_node_subscriber(subscriber.node_index(), subscriber.active(), subscriber.required(),
-                                                 subscriber.active_optional(), change);
+        auto active = subscriber.active();
+        if (subscriber.controlled_activity()) {
+            // Compilation places the dynamic activity byte directly after the reference input storage.
+            const auto activity_offset = subscriber.input_offset + sizeof(ReferenceInputStorage);
+            active = *static_cast<bool *>(subscriber.graph->storage_at(activity_offset));
+        }
+        subscriber.graph->notify_node_subscriber(subscriber.node_index(), active, subscriber.required(),
+                                                 active && !subscriber.required(), change);
     });
 
     subscribers.for_each_input_subscriber([&](const auto &subscriber) {

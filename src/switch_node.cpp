@@ -149,7 +149,7 @@ class SwitchNodeDefinition {
                 throw std::invalid_argument{"a switch runtime node accepts only time-series parameters"};
             }
             parameters.push_back({parameter.name, parameter.type, parameter.activity, parameter.validity,
-                                  parameter.accepts_absent_scalar});
+                                  parameter.accepts_absent_scalar, details::VariadicMode::none, nullptr, false});
         }
         if (outer_signature.output == nullptr) {
             signature_ = std::make_unique<Signature>(outer_signature.name, std::move(parameters));

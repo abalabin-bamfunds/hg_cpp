@@ -16,14 +16,16 @@
 namespace bg {
 
 template <details::scalar_variable Variable, auto... TimeSeriesProperties, auto... Properties>
-class In<TS<Variable, TimeSeriesProperties...>, Properties...> {
+class In<TS<Variable, TimeSeriesProperties...>, Properties...>
+    : public details::input_activity_control<details::input_properties<Properties...>::dynamic_activity> {
     using ParsedProperties = details::input_properties<Properties...>;
+    using activity_control = details::input_activity_control<ParsedProperties::dynamic_activity>;
     static_assert(ParsedProperties::valid);
 
   public:
     In(const EvaluationTime &last_updated, const void *value, const TimeSeriesRuntimeType &runtime_type,
-       bool modified = false) noexcept
-        : data_{runtime_type, last_updated, value, modified} {}
+       bool modified = false, bool *activity = nullptr) noexcept
+        : activity_control{activity}, data_{runtime_type, last_updated, value, modified} {}
 
     bool valid() const noexcept { return data_.valid(); }
     bool modified() const noexcept { return data_.modified(); }
@@ -48,28 +50,34 @@ class In<TS<Variable, TimeSeriesProperties...>, Properties...> {
     static constexpr InputActivity activity = ParsedProperties::activity;
     static constexpr InputValidity validity = ParsedProperties::validity;
     static constexpr bool dynamic_binding = ParsedProperties::dynamic_binding;
+    static constexpr bool dynamic_activity = ParsedProperties::dynamic_activity;
 
   private:
     details::TimeSeriesInputData data_;
 };
 
 template <typename T, auto... TimeSeriesProperties, auto... Properties>
-class In<TS<T, TimeSeriesProperties...>, Properties...> {
+class In<TS<T, TimeSeriesProperties...>, Properties...>
+    : public details::input_activity_control<details::input_properties<Properties...>::dynamic_activity> {
     using ParsedProperties = details::input_properties<Properties...>;
+    using activity_control = details::input_activity_control<ParsedProperties::dynamic_activity>;
     static_assert(ParsedProperties::valid);
 
   public:
     using Traits = scalar_storage_traits<T>;
     using Stored = typename Traits::stored_type;
 
-    In() noexcept : data_{cpp_time_series_runtime_type<TS<T, TimeSeriesProperties...>>(), MIN_DT, nullptr} {}
+    In() noexcept
+        : activity_control{}, data_{cpp_time_series_runtime_type<TS<T, TimeSeriesProperties...>>(), MIN_DT, nullptr} {}
 
-    In(const EvaluationTime &last_updated, const Stored *value, bool modified = false) noexcept
-        : data_{cpp_time_series_runtime_type<TS<T, TimeSeriesProperties...>>(), last_updated, value, modified} {}
+    In(const EvaluationTime &last_updated, const Stored *value, bool modified = false,
+       bool *activity = nullptr) noexcept
+        : activity_control{activity},
+          data_{cpp_time_series_runtime_type<TS<T, TimeSeriesProperties...>>(), last_updated, value, modified} {}
 
     In(const EvaluationTime &last_updated, const void *value, const TimeSeriesRuntimeType &runtime_type,
-       bool modified = false) noexcept
-        : data_{runtime_type, last_updated, value, modified} {}
+       bool modified = false, bool *activity = nullptr) noexcept
+        : activity_control{activity}, data_{runtime_type, last_updated, value, modified} {}
 
     bool valid() const noexcept { return data_.valid(); }
     bool modified() const noexcept { return data_.modified(); }
@@ -127,9 +135,13 @@ class In<TS<T, TimeSeriesProperties...>, Properties...> {
     static constexpr InputActivity activity = ParsedProperties::activity;
     static constexpr InputValidity validity = ParsedProperties::validity;
     static constexpr bool dynamic_binding = ParsedProperties::dynamic_binding;
+    static constexpr bool dynamic_activity = ParsedProperties::dynamic_activity;
 
   private:
     details::TimeSeriesInputData data_;
 };
+
+static_assert(sizeof(In<TS<int>>) == 3 * sizeof(void *));
+static_assert(sizeof(In<TS<int>, dynamic_activity>) == 4 * sizeof(void *));
 
 } // namespace bg

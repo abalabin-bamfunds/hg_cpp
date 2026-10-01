@@ -172,7 +172,7 @@ graph compilation or evaluation.
 - start, evaluation, and stop order
 - one node evaluation per outer cycle
 - scheduling during evaluation, including nodes in the current bit block
-- active and passive inputs
+- active and passive inputs, including per-input runtime activity changes
 - required-input validity caching, invalidation, and revalidation
 - output update and invalidation propagation
 - `default_` fallback selection, timestamps, modified state, and source validity transitions

@@ -10,6 +10,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <new>
 #include <span>
 #include <type_traits>
@@ -37,12 +38,25 @@ struct NodeInvocationMetadata {
     CompiledNodeDataDestructionFunction destruction_function;
 
     std::span<const NodeInvocationParameterMetadata> parameters(const CompiledNode &node) const noexcept;
+    std::span<const std::uint16_t> controlled_input_indices(const CompiledNode &node) const noexcept;
     const void *compiled_data(const CompiledNode &node) const noexcept;
 };
 
 struct StateMetadataCounts {
     std::uint16_t fields;
     std::uint16_t generic_fields;
+};
+
+class ControlledInput {
+  public:
+    explicit ControlledInput(std::uint32_t activity_offset) noexcept : activity_offset_{activity_offset} {}
+
+    std::size_t activity_offset() const noexcept { return activity_offset_; }
+
+    static constexpr std::uint32_t no_control = std::numeric_limits<std::uint32_t>::max();
+
+  private:
+    std::uint32_t activity_offset_;
 };
 
 enum class ParameterBindingMode : std::uint8_t {
@@ -277,6 +291,7 @@ class ParameterBinding {
 };
 
 static_assert(sizeof(ParameterBinding) == 8);
+static_assert(sizeof(ControlledInput) == 4);
 
 struct DefaultInputState {
     EvaluationTime last_updated;
@@ -317,9 +332,17 @@ class CompiledNode {
         return {first, parameter_count()};
     }
 
+    std::span<const ControlledInput> controlled_inputs() const noexcept {
+        const auto parameters = this->parameters();
+        return {reinterpret_cast<const ControlledInput *>(parameters.data() + parameters.size()),
+                controlled_input_count()};
+    }
+
     std::span<const Subscriber> subscribers() const noexcept {
         const auto parameter_span = parameters();
-        const auto *first = reinterpret_cast<const Subscriber *>(parameter_span.data() + parameter_span.size());
+        const auto *first = reinterpret_cast<const Subscriber *>(
+            reinterpret_cast<const ControlledInput *>(parameter_span.data() + parameter_span.size()) +
+            controlled_input_count());
 
         return {first, subscriber_count()};
     }
@@ -438,11 +461,13 @@ class CompiledNode {
     static constexpr std::uint32_t node_invocation_time_series_input_count_shift = 1;
     static constexpr std::uint32_t node_invocation_time_series_input_count_mask =
         parameter_count_mask << node_invocation_time_series_input_count_shift;
+    static constexpr std::uint32_t controlled_input_count_shift = 11;
+    static constexpr std::uint32_t controlled_input_count_mask = parameter_count_mask << controlled_input_count_shift;
 
     CompiledNode(EvaluationFunction evaluation_function, std::uint32_t output_last_updated_offset,
                  std::uint32_t output_value_offset, std::uint32_t parameter_count, std::uint32_t subscriber_count,
                  bool has_output, bool has_state, bool has_output_notification, bool has_item_subscriptions,
-                 bool uses_node_invocation, std::uint32_t time_series_input_count,
+                 bool uses_node_invocation, std::uint32_t time_series_input_count, std::uint32_t controlled_input_count,
                  InvalidationMode invalidation_mode) noexcept
         : evaluation_function_(evaluation_function),
           output_last_updated_offset_(output_last_updated_offset | (has_output ? std::uint32_t{} : no_output_flag) |
@@ -454,7 +479,12 @@ class CompiledNode {
                   (has_item_subscriptions ? item_subscriptions_flag : std::uint32_t{})),
           flags_((uses_node_invocation ? node_invocation_flag : std::uint32_t{}) |
                  (uses_node_invocation ? time_series_input_count << node_invocation_time_series_input_count_shift
-                                       : std::uint32_t{})) {}
+                                       : std::uint32_t{}) |
+                 (controlled_input_count << controlled_input_count_shift)) {}
+
+    std::size_t controlled_input_count() const noexcept {
+        return (flags_ & controlled_input_count_mask) >> controlled_input_count_shift;
+    }
 
     std::uint32_t parameter_count() const noexcept { return counts_ & parameter_count_mask; }
 
@@ -582,6 +612,12 @@ NodeInvocationMetadata::parameters(const CompiledNode &node) const noexcept {
     const auto *storage = reinterpret_cast<const std::byte *>(&node);
     return {reinterpret_cast<const NodeInvocationParameterMetadata *>(storage + parameters_offset),
             node.parameters().size()};
+}
+
+inline std::span<const std::uint16_t>
+NodeInvocationMetadata::controlled_input_indices(const CompiledNode &node) const noexcept {
+    const auto parameters = this->parameters(node);
+    return {reinterpret_cast<const std::uint16_t *>(parameters.data() + parameters.size()), parameters.size()};
 }
 
 inline const void *NodeInvocationMetadata::compiled_data(const CompiledNode &node) const noexcept {

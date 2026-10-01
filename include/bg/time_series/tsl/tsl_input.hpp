@@ -17,8 +17,10 @@
 namespace bg {
 
 template <typename Item, auto Size, auto... TimeSeriesProperties, auto... Properties>
-class In<TSL<Item, Size, TimeSeriesProperties...>, Properties...> {
+class In<TSL<Item, Size, TimeSeriesProperties...>, Properties...>
+    : public details::input_activity_control<details::basic_input_properties<true, Properties...>::dynamic_activity> {
     using ParsedProperties = details::basic_input_properties<true, Properties...>;
+    using activity_control = details::input_activity_control<ParsedProperties::dynamic_activity>;
     static_assert(ParsedProperties::valid);
 
   public:
@@ -26,16 +28,18 @@ class In<TSL<Item, Size, TimeSeriesProperties...>, Properties...> {
 
     In() noexcept
         requires(!details::size_variable_declaration<decltype(Size)>)
-        : data_{cpp_time_series_runtime_type<TSL<Item, Size, TimeSeriesProperties...>>(), MIN_DT, nullptr} {}
+        : activity_control{},
+          data_{cpp_time_series_runtime_type<TSL<Item, Size, TimeSeriesProperties...>>(), MIN_DT, nullptr} {}
 
-    In(const EvaluationTime &last_updated, const storage_type *value, bool modified = false) noexcept
+    In(const EvaluationTime &last_updated, const storage_type *value, bool modified = false,
+       bool *activity = nullptr) noexcept
         requires(!details::size_variable_declaration<decltype(Size)>)
-        : data_{cpp_time_series_runtime_type<TSL<Item, Size, TimeSeriesProperties...>>(), last_updated, value,
-                modified} {}
+        : activity_control{activity}, data_{cpp_time_series_runtime_type<TSL<Item, Size, TimeSeriesProperties...>>(),
+                                            last_updated, value, modified} {}
 
     In(const EvaluationTime &last_updated, const void *value, const TimeSeriesRuntimeType &runtime_type,
-       bool modified = false) noexcept
-        : data_{runtime_type, last_updated, value, modified} {}
+       bool modified = false, bool *activity = nullptr) noexcept
+        : activity_control{activity}, data_{runtime_type, last_updated, value, modified} {}
 
     bool valid() const noexcept { return data_.valid(); }
     bool modified() const noexcept { return data_.modified(); }
@@ -74,6 +78,7 @@ class In<TSL<Item, Size, TimeSeriesProperties...>, Properties...> {
     static constexpr InputActivity activity = ParsedProperties::activity;
     static constexpr InputValidity validity = ParsedProperties::validity;
     static constexpr bool dynamic_binding = ParsedProperties::dynamic_binding;
+    static constexpr bool dynamic_activity = ParsedProperties::dynamic_activity;
     static constexpr auto variadic_mode = details::variadic_mode<Properties...>();
 
   private:

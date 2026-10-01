@@ -53,30 +53,38 @@ struct tsl_item_reference_type<TSL<REF<Item, ItemProperties...>, Size, Propertie
 } // namespace details
 
 template <typename Target, auto... TimeSeriesProperties, auto... Properties>
-class In<REF<Target, TimeSeriesProperties...>, Properties...> {
+class In<REF<Target, TimeSeriesProperties...>, Properties...>
+    : public details::input_activity_control<details::input_properties<Properties...>::dynamic_activity> {
     using ParsedProperties = details::input_properties<Properties...>;
+    using activity_control = details::input_activity_control<ParsedProperties::dynamic_activity>;
     static_assert(ParsedProperties::valid);
 
   public:
     using storage_type = Reference;
 
-    In() noexcept : data_{cpp_time_series_runtime_type<REF<Target, TimeSeriesProperties...>>(), MIN_DT, nullptr} {}
+    In() noexcept
+        : activity_control{},
+          data_{cpp_time_series_runtime_type<REF<Target, TimeSeriesProperties...>>(), MIN_DT, nullptr} {}
 
-    In(const EvaluationTime &last_updated, const storage_type *value, bool modified = false) noexcept
-        : data_{cpp_time_series_runtime_type<REF<Target, TimeSeriesProperties...>>(), last_updated, value, modified} {}
+    In(const EvaluationTime &last_updated, const storage_type *value, bool modified = false,
+       bool *activity = nullptr) noexcept
+        : activity_control{activity},
+          data_{cpp_time_series_runtime_type<REF<Target, TimeSeriesProperties...>>(), last_updated, value, modified} {}
 
     In(const EvaluationTime &last_updated, const void *value, const TimeSeriesRuntimeType &runtime_type,
-       bool modified = false) noexcept
-        : data_{runtime_type, last_updated, value, modified} {}
+       bool modified = false, bool *activity = nullptr) noexcept
+        : activity_control{activity}, data_{runtime_type, last_updated, value, modified} {}
 
     In(const EvaluationTime &last_updated, details::ReferenceBinding binding, const TimeSeriesRuntimeType &runtime_type,
-       bool modified = false) noexcept
-        : data_{runtime_type, last_updated, &binding.value(), modified}, binding_{binding} {}
+       bool modified = false, bool *activity = nullptr) noexcept
+        : activity_control{activity}, data_{runtime_type, last_updated, &binding.value(), modified}, binding_{binding} {
+    }
 
     In(details::DynamicReferenceInputStorage &storage, const TimeSeriesRuntimeType &runtime_type,
        EvaluationContext &context, std::size_t storage_offset) noexcept
         requires ParsedProperties::dynamic_binding
-        : data_{runtime_type, storage.last_updated(), &storage.value(), storage.modified(context.evaluation_time())},
+        : activity_control{},
+          data_{runtime_type, storage.last_updated(), &storage.value(), storage.modified(context.evaluation_time())},
           dynamic_{&storage, &context, storage_offset} {}
 
     bool valid() const noexcept { return data_.valid(); }
@@ -216,6 +224,7 @@ class In<REF<Target, TimeSeriesProperties...>, Properties...> {
     static constexpr InputActivity activity = ParsedProperties::activity;
     static constexpr InputValidity validity = ParsedProperties::validity;
     static constexpr bool dynamic_binding = ParsedProperties::dynamic_binding;
+    static constexpr bool dynamic_activity = ParsedProperties::dynamic_activity;
 
   private:
     template <typename, auto...> friend class In;

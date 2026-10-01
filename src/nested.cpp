@@ -93,7 +93,7 @@ class NestedNodeDefinition {
                 parameter_types_.push_back(std::move(type));
             } else {
                 parameters.push_back({parameter.name, parameter.type, parameter.activity, parameter.validity,
-                                      parameter.accepts_absent_scalar});
+                                      parameter.accepts_absent_scalar, details::VariadicMode::none, nullptr, false});
             }
         }
 

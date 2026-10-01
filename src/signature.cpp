@@ -319,7 +319,8 @@ ResolvedSignature Signature::complete_resolution(TypeMap &type_map, const Wiring
         }
 
         parameters.push_back({parameter.name, &type, parameter.activity, parameter.validity,
-                              parameter.accepts_absent_scalar, parameter.variadic_mode, parameter.context});
+                              parameter.accepts_absent_scalar, parameter.variadic_mode, parameter.context,
+                              parameter.dynamic_activity});
     }
 
     const TimeSeriesType *output = nullptr;

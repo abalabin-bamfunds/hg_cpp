@@ -21,15 +21,17 @@ namespace details {
 
 struct DynamicNodeSubscriber {
     DynamicNodeSubscriber(RuntimeGraph &target_graph, std::uint32_t input_offset, std::uint32_t node_index, bool active,
-                          bool required) noexcept
+                          bool required, bool controlled_activity) noexcept
         : graph{&target_graph}, input_offset{input_offset},
           node_and_flags{node_index | (active ? active_flag : 0) | (required ? required_flag : 0) |
-                         (active && !required ? active_optional_flag : 0)} {}
+                         (active && !required ? active_optional_flag : 0) |
+                         (controlled_activity ? controlled_activity_flag : 0)} {}
 
     std::size_t node_index() const noexcept { return node_and_flags & node_index_mask; }
     bool active() const noexcept { return (node_and_flags & active_flag) != 0; }
     bool required() const noexcept { return (node_and_flags & required_flag) != 0; }
     bool active_optional() const noexcept { return (node_and_flags & active_optional_flag) != 0; }
+    bool controlled_activity() const noexcept { return (node_and_flags & controlled_activity_flag) != 0; }
 
     struct Identity {
         RuntimeGraph *graph;
@@ -46,7 +48,8 @@ struct DynamicNodeSubscriber {
     static constexpr std::uint32_t active_flag = std::uint32_t{1} << 31;
     static constexpr std::uint32_t required_flag = std::uint32_t{1} << 30;
     static constexpr std::uint32_t active_optional_flag = std::uint32_t{1} << 29;
-    static constexpr std::uint32_t node_index_mask = active_optional_flag - 1;
+    static constexpr std::uint32_t controlled_activity_flag = std::uint32_t{1} << 28;
+    static constexpr std::uint32_t node_index_mask = controlled_activity_flag - 1;
 };
 
 struct DynamicNodeSubscriberHash {
@@ -126,9 +129,10 @@ struct DynamicSubscribers {
     }
 
     void add(RuntimeGraph &graph, std::uint32_t input_offset, std::size_t data, std::uint32_t node_index, bool active,
-             bool required, InputNotificationFunction input_function = nullptr) {
-        if (active || required) {
-            node_subscribers_.insert(DynamicNodeSubscriber{graph, input_offset, node_index, active, required}, memory_);
+             bool required, InputNotificationFunction input_function = nullptr, bool controlled_activity = false) {
+        if (active || required || controlled_activity) {
+            node_subscribers_.insert(
+                DynamicNodeSubscriber{graph, input_offset, node_index, active, required, controlled_activity}, memory_);
         }
         if (input_function != nullptr) {
             input_subscribers().records.emplace_back(graph, input_offset, data, node_index, input_function);

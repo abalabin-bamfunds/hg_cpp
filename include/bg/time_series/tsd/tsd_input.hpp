@@ -19,21 +19,27 @@
 namespace bg {
 
 template <typename K, typename Item, auto... TimeSeriesProperties, auto... Properties>
-class In<TSD<K, Item, TimeSeriesProperties...>, Properties...> {
+class In<TSD<K, Item, TimeSeriesProperties...>, Properties...>
+    : public details::input_activity_control<details::input_properties<Properties...>::dynamic_activity> {
     using ParsedProperties = details::input_properties<Properties...>;
+    using activity_control = details::input_activity_control<ParsedProperties::dynamic_activity>;
     static_assert(ParsedProperties::valid);
 
   public:
     using storage_type = details::time_series_dict_storage;
 
-    In() noexcept : data_{cpp_time_series_runtime_type<TSD<K, Item, TimeSeriesProperties...>>(), MIN_DT, nullptr} {}
+    In() noexcept
+        : activity_control{},
+          data_{cpp_time_series_runtime_type<TSD<K, Item, TimeSeriesProperties...>>(), MIN_DT, nullptr} {}
 
-    In(const EvaluationTime &last_updated, const storage_type *value, bool modified = false) noexcept
-        : data_{cpp_time_series_runtime_type<TSD<K, Item, TimeSeriesProperties...>>(), last_updated, value, modified} {}
+    In(const EvaluationTime &last_updated, const storage_type *value, bool modified = false,
+       bool *activity = nullptr) noexcept
+        : activity_control{activity},
+          data_{cpp_time_series_runtime_type<TSD<K, Item, TimeSeriesProperties...>>(), last_updated, value, modified} {}
 
     In(const EvaluationTime &last_updated, const void *value, const TimeSeriesRuntimeType &runtime_type,
-       bool modified = false) noexcept
-        : data_{runtime_type, last_updated, value, modified} {}
+       bool modified = false, bool *activity = nullptr) noexcept
+        : activity_control{activity}, data_{runtime_type, last_updated, value, modified} {}
 
     bool valid() const noexcept { return data_.valid(); }
     bool modified() const noexcept { return data_.modified(); }
@@ -163,6 +169,7 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...> {
     static constexpr InputActivity activity = ParsedProperties::activity;
     static constexpr InputValidity validity = ParsedProperties::validity;
     static constexpr bool dynamic_binding = ParsedProperties::dynamic_binding;
+    static constexpr bool dynamic_activity = ParsedProperties::dynamic_activity;
 
   private:
     using ItemRange = details::TimeSeriesDictionaryRuntimeType::ItemRange;

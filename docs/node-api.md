@@ -242,6 +242,13 @@ bg::In<bg::TS<float>, "value"_n>
 Property order has no meaning. A property can be omitted without spelling the
 properties before it. Repeating a property category is a compile error.
 
+`dynamic_activity` permits an input to change its own scheduling activity.
+`make_passive()` stops updates from that input from scheduling the node.
+`make_active()` resumes them. The input starts with its declared `active` or
+`passive` activity. This does not change validity checks, callbacks, or
+scheduling from other inputs. A change that occurs while the input is passive
+does not schedule evaluation when the input becomes active later.
+
 All time series types provide `valid()`, `modified()`, and `last_updated()`.
 `modified()` reports whether the visible last-updated time is the current
 evaluation time. `TS<T>::value()` returns `const T&`. `value()` and

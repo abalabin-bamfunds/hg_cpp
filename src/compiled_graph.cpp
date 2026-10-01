@@ -156,6 +156,7 @@ class StorageLayout {
 struct FixedNodeLayout {
     std::size_t offset{};
     StorageSection parameters;
+    StorageSection controlled_inputs;
     StorageSection default_inputs;
     StorageSection subscribers;
     StorageSection output_notification;
@@ -170,6 +171,7 @@ struct FixedNodeLayout {
     StorageSection node_invocation_metadata;
     StorageSection runtime_types;
     StorageSection node_invocation_parameters;
+    StorageSection node_invocation_controlled_input_indices;
     StorageSection compiled_data;
     std::vector<std::size_t> scalar_offsets;
     std::size_t size{};
@@ -181,6 +183,7 @@ struct ReferenceInputSubscriberPlan {
     std::uint32_t input_index;
     bool active;
     bool required;
+    bool controlled_activity;
     InputNotification notification;
 };
 
@@ -190,8 +193,15 @@ struct InputNotificationSubscriberPlan {
     InputNotificationFunction function;
 };
 
+struct ControlledInputSubscriberPlan {
+    std::uint32_t node_index;
+    std::uint32_t input_index;
+    bool required;
+};
+
 struct SubscriptionPlan {
     std::vector<Subscriber> nodes;
+    std::vector<ControlledInputSubscriberPlan> controlled_inputs;
     std::vector<ReferenceInputSubscriberPlan> reference_inputs;
     std::vector<InputNotificationSubscriberPlan> input_subscribers;
 };
@@ -222,9 +232,11 @@ struct TimeSeriesInputPlan {
     WiredInput fallback;
     bool default_value;
     bool dereferences_reference;
+    bool dynamic_activity;
     std::uint32_t offset;
     std::uint32_t output_last_updated_offset;
     std::uint32_t default_input_offset;
+    std::uint32_t activity_offset;
 };
 
 struct InheritedTimeSeriesPlan {
@@ -528,9 +540,11 @@ void plan_time_series_inputs(CompilationPlan &plan, const GraphWiring &wiring) {
                 .fallback = fallback,
                 .default_value = default_value,
                 .dereferences_reference = output_is_reference && !input_is_reference,
+                .dynamic_activity = parameter.dynamic_activity,
                 .offset = 0,
                 .output_last_updated_offset = 0,
                 .default_input_offset = 0,
+                .activity_offset = 0,
             });
         }
     }
@@ -718,9 +732,13 @@ void plan_subscribers(std::span<const WiredNode> nodes, std::span<const WiredOut
                     .input_index = static_cast<std::uint32_t>(input_index),
                     .active = is_active,
                     .required = is_required,
+                    .controlled_activity = input.dynamic_activity,
                     .notification = notification,
                 });
-                if (is_active) {
+                if (input.dynamic_activity) {
+                    subscriptions.controlled_inputs.push_back(
+                        {subscriber_index, static_cast<std::uint32_t>(input_index), is_required});
+                } else if (is_active) {
                     add_subscriber(subscriptions.nodes, subscriber_index, true, false, !is_required);
                 }
             } else {
@@ -730,6 +748,11 @@ void plan_subscribers(std::span<const WiredNode> nodes, std::span<const WiredOut
                         .data = notification.data,
                         .function = notification.function,
                     });
+                }
+                if (input.dynamic_activity) {
+                    subscriptions.controlled_inputs.push_back(
+                        {subscriber_index, static_cast<std::uint32_t>(input_index), is_required});
+                    continue;
                 }
                 if (is_active || is_required) {
                     add_subscriber(subscriptions.nodes, subscriber_index, is_active, is_required,
@@ -915,15 +938,23 @@ void plan_runtime_storage(CompilationPlan &plan) {
                 input.default_input_offset = packed_offset(slot.offset, "runtime storage reaches 1 GiB");
             }
 
-            if (input.dereferences_reference) {
-                const auto slot = storage.add<ReferenceInputStorage>();
-                input.offset = packed_offset(slot.offset, "runtime storage reaches 1 GiB");
-                input.output_last_updated_offset =
-                    input.wired_input.is_inherited()
-                        ? plan.inherited_time_series_at(input.wired_input.index()).last_updated_offset
-                        : wired_output_layout(input.wired_input.index(), plan.outputs, plan.node_plans)
-                              .last_updated_offset;
+            if (!input.dereferences_reference) {
+                if (input.dynamic_activity) {
+                    input.activity_offset = packed_offset(storage.add<bool>().offset, "runtime storage reaches 1 GiB");
+                }
+                continue;
             }
+
+            const auto slot = storage.add<ReferenceInputStorage>();
+            input.offset = packed_offset(slot.offset, "runtime storage reaches 1 GiB");
+            if (input.dynamic_activity) {
+                // Dynamic reference subscribers recover this adjacent byte without growing their records.
+                input.activity_offset = packed_offset(storage.add<bool>().offset, "runtime storage reaches 1 GiB");
+            }
+            input.output_last_updated_offset =
+                input.wired_input.is_inherited()
+                    ? plan.inherited_time_series_at(input.wired_input.index()).last_updated_offset
+                    : wired_output_layout(input.wired_input.index(), plan.outputs, plan.node_plans).last_updated_offset;
         }
 
         node_plan.state = add_state_layout(storage, plan.nodes[i], node_plan, plan.outputs, plan.node_plans, plan);
@@ -943,6 +974,11 @@ std::size_t output_notification_size(const SubscriptionPlan &subscriptions) noex
     const auto reference_count = subscriptions.reference_inputs.size() - notifying_reference_count;
 
     auto result = std::size_t{};
+    if (!subscriptions.controlled_inputs.empty()) {
+        result += align_up(sizeof(OutputNotification) +
+                               subscriptions.controlled_inputs.size() * sizeof(ControlledInputSubscriber),
+                           alignof(OutputNotification));
+    }
     if (reference_count != 0) {
         result += align_up(sizeof(OutputNotification) + reference_count * sizeof(details::ReferenceInputSubscriber),
                            alignof(OutputNotification));
@@ -977,6 +1013,7 @@ std::size_t item_subscriber_size(std::span<const ItemSubscriptionPlan> items) {
     auto result = std::size_t{};
     for (const auto &item : items) {
         if (item.subscriptions.nodes.size() > max_subscriber_count ||
+            item.subscriptions.controlled_inputs.size() > std::numeric_limits<std::uint32_t>::max() ||
             item.subscriptions.reference_inputs.size() > std::numeric_limits<std::uint32_t>::max() ||
             item.subscriptions.input_subscribers.size() > std::numeric_limits<std::uint32_t>::max() ||
             item.items.size() > std::numeric_limits<std::uint32_t>::max()) {
@@ -1026,7 +1063,8 @@ RuntimeTypeCounts runtime_type_counts(const WiredNode &node) {
     if (node_plan.subscriptions.nodes.size() > max_subscriber_count) {
         throw std::length_error{"a node has too many subscribers"};
     }
-    if (node_plan.subscriptions.reference_inputs.size() > std::numeric_limits<std::uint32_t>::max() ||
+    if (node_plan.subscriptions.controlled_inputs.size() > std::numeric_limits<std::uint32_t>::max() ||
+        node_plan.subscriptions.reference_inputs.size() > std::numeric_limits<std::uint32_t>::max() ||
         node_plan.subscriptions.input_subscribers.size() > std::numeric_limits<std::uint32_t>::max()) {
         throw std::length_error{"a node has too many output notifications"};
     }
@@ -1036,10 +1074,16 @@ RuntimeTypeCounts runtime_type_counts(const WiredNode &node) {
 
     auto result = FixedNodeLayout{};
     result.parameters = storage.add<ParameterBinding>(node.signature().parameters.size());
+    const auto controlled_input_count =
+        std::ranges::count_if(node_plan.time_series_inputs, [](const auto &input) { return input.dynamic_activity; });
+    if (controlled_input_count != 0) {
+        result.controlled_inputs = storage.add<ControlledInput>(controlled_input_count);
+    }
     const auto default_input_count =
         std::ranges::count(node_plan.time_series_inputs, true, &TimeSeriesInputPlan::default_value);
     result.subscribers = storage.add<Subscriber>(node_plan.subscriptions.nodes.size());
-    if (!node_plan.subscriptions.reference_inputs.empty() || !node_plan.subscriptions.input_subscribers.empty()) {
+    if (!node_plan.subscriptions.controlled_inputs.empty() || !node_plan.subscriptions.reference_inputs.empty() ||
+        !node_plan.subscriptions.input_subscribers.empty()) {
         result.output_notification =
             storage.add_bytes(output_notification_size(node_plan.subscriptions), alignof(OutputNotification));
     }
@@ -1087,6 +1131,11 @@ RuntimeTypeCounts runtime_type_counts(const WiredNode &node) {
     if (node.node_template().uses_node_invocation()) {
         result.node_invocation_parameters =
             storage.add<NodeInvocationParameterMetadata>(node.signature().parameters.size());
+        if (std::ranges::any_of(node_plan.time_series_inputs,
+                                [](const auto &input) { return input.dynamic_activity; })) {
+            result.node_invocation_controlled_input_indices =
+                storage.add<std::uint16_t>(node.signature().parameters.size());
+        }
         if (node_plan.compiled_data.size != 0) {
             result.compiled_data = storage.add_bytes(node_plan.compiled_data.size, node_plan.compiled_data.alignment);
         }
@@ -1139,7 +1188,8 @@ void plan_fixed_storage(CompilationPlan &plan) {
 
     for (auto &requirement : plan.inherited_time_series) {
         requirement.subscribers = storage.add<Subscriber>(requirement.subscriptions.nodes.size());
-        if (!requirement.subscriptions.reference_inputs.empty() ||
+        if (!requirement.subscriptions.controlled_inputs.empty() ||
+            !requirement.subscriptions.reference_inputs.empty() ||
             !requirement.subscriptions.input_subscribers.empty()) {
             requirement.output_notification =
                 storage.add_bytes(output_notification_size(requirement.subscriptions), alignof(OutputNotification),
@@ -1564,6 +1614,12 @@ class CompiledGraphBuilder {
         for (const auto node_index : plan.wired_node_indices) {
             const auto &node = plan.nodes[node_index];
             const auto &inputs = plan.node_plans[node_index].time_series_inputs;
+            for (const auto &input : inputs) {
+                if (input.dynamic_activity) {
+                    runtime_storage[input.activity_offset] =
+                        std::byte{node.signature().parameters[input.parameter].activity == active};
+                }
+            }
             const auto required_inputs_are_constants = std::ranges::all_of(inputs, [&](const auto &input) {
                 return input.default_value || node.signature().parameters[input.parameter].validity != required ||
                        (!input.wired_input.is_inherited() &&
@@ -1679,12 +1735,14 @@ class CompiledGraphBuilder {
         const auto &layout = plan.node_plans[node_index].fixed;
         auto *node_storage = storage + layout.offset;
         auto parameters = layout.parameters.objects<ParameterBinding>(node_storage);
+        auto controlled_inputs = layout.controlled_inputs.objects<ControlledInput>(node_storage);
         auto default_inputs = layout.default_inputs.objects<DefaultInputDescriptor>(node_storage);
         auto destruction_runtime_types =
             plan.fixed.scalar_destruction_runtime_types.objects<const ScalarRuntimeType *>(storage);
         auto destruction_offsets = plan.fixed.scalar_destruction_offsets.objects<std::uint32_t>(storage);
 
         auto input_index = std::size_t{};
+        auto controlled_input_index = std::size_t{};
         auto scalar_index = std::size_t{};
         auto default_input_index = std::size_t{};
         for (auto parameter_index = std::size_t{}; parameter_index < node.signature().parameters.size();
@@ -1693,6 +1751,11 @@ class CompiledGraphBuilder {
 
             if (parameter.type->is_time_series()) {
                 const auto &input = plan.node_plans[node_index].time_series_inputs[input_index++];
+                if (input.dynamic_activity) {
+                    std::construct_at(controlled_inputs.data() + controlled_input_index,
+                                      ControlledInput{input.activity_offset});
+                    ++controlled_input_index;
+                }
                 if (input.default_value) {
                     auto *descriptor = default_inputs.data() + default_input_index++;
                     auto source = ParameterBinding{};
@@ -1888,6 +1951,7 @@ class CompiledGraphBuilder {
             std::ranges::count_if(subscribers.reference_inputs,
                                   [](const auto &subscriber) { return subscriber.notification.function != nullptr; });
         const auto reference_count = subscribers.reference_inputs.size() - notifying_reference_count;
+        const auto controlled_bytes = subscribers.controlled_inputs.size() * sizeof(ControlledInputSubscriber);
         const auto reference_bytes = reference_count * sizeof(details::ReferenceInputSubscriber);
         const auto notifying_reference_bytes =
             notifying_reference_count * sizeof(details::ReferenceInputNotificationSubscriber);
@@ -1895,6 +1959,10 @@ class CompiledGraphBuilder {
         const auto reference_block =
             reference_count == 0 ? std::size_t{}
                                  : align_up(sizeof(OutputNotification) + reference_bytes, alignof(OutputNotification));
+        const auto controlled_block =
+            subscribers.controlled_inputs.empty()
+                ? std::size_t{}
+                : align_up(sizeof(OutputNotification) + controlled_bytes, alignof(OutputNotification));
         const auto notifying_reference_block =
             notifying_reference_count == 0
                 ? std::size_t{}
@@ -1902,11 +1970,26 @@ class CompiledGraphBuilder {
         const auto input_block = subscribers.input_subscribers.empty()
                                      ? std::size_t{}
                                      : align_up(sizeof(OutputNotification) + input_bytes, alignof(OutputNotification));
-        const auto total_bytes = reference_block + notifying_reference_block + input_block;
+        const auto total_bytes = controlled_block + reference_block + notifying_reference_block + input_block;
         auto *block = destination;
 
+        if (!subscribers.controlled_inputs.empty()) {
+            const auto following = total_bytes - sizeof(OutputNotification) - controlled_bytes;
+            auto *notification =
+                std::construct_at(reinterpret_cast<OutputNotification *>(block), notify_controlled_inputs,
+                                  static_cast<std::uint32_t>(controlled_bytes), static_cast<std::uint32_t>(following));
+            auto *records = reinterpret_cast<ControlledInputSubscriber *>(notification + 1);
+            for (const auto &subscriber : subscribers.controlled_inputs) {
+                const auto node_index = plan.wired_node_indices[subscriber.node_index];
+                const auto &input = plan.node_plans[node_index].time_series_inputs[subscriber.input_index];
+                std::construct_at(records++, input.activity_offset, subscriber.node_index, subscriber.required);
+            }
+            block += controlled_block;
+        }
+
         if (reference_count != 0) {
-            const auto following = total_bytes - sizeof(OutputNotification) - reference_bytes;
+            const auto following = total_bytes - static_cast<std::size_t>(block - destination) -
+                                   sizeof(OutputNotification) - reference_bytes;
             auto *notification =
                 std::construct_at(reinterpret_cast<OutputNotification *>(block), details::notify_reference_inputs,
                                   static_cast<std::uint32_t>(reference_bytes), static_cast<std::uint32_t>(following));
@@ -1919,7 +2002,8 @@ class CompiledGraphBuilder {
                 const auto node_index = plan.wired_node_indices[subscriber.node_index];
                 const auto &input = plan.node_plans[node_index].time_series_inputs[subscriber.input_index];
                 std::construct_at(records++, input.offset, subscriber.node_index, subscriber.active,
-                                  subscriber.required, requested_reference_runtime_type(plan, subscriber));
+                                  subscriber.required, subscriber.controlled_activity,
+                                  requested_reference_runtime_type(plan, subscriber));
             }
             block += reference_block;
         }
@@ -1939,7 +2023,7 @@ class CompiledGraphBuilder {
                 const auto node_index = plan.wired_node_indices[subscriber.node_index];
                 const auto &input = plan.node_plans[node_index].time_series_inputs[subscriber.input_index];
                 std::construct_at(records++, input.offset, subscriber.notification.data, subscriber.node_index,
-                                  subscriber.active, subscriber.required,
+                                  subscriber.active, subscriber.required, subscriber.controlled_activity,
                                   requested_reference_runtime_type(plan, subscriber), subscriber.notification.function);
             }
             block += notifying_reference_block;
@@ -2004,11 +2088,13 @@ class CompiledGraphBuilder {
                 reinterpret_cast<ItemSubscription *>(destination), item.item,
                 static_cast<std::uint32_t>(item.subscriptions.nodes.size()),
                 static_cast<std::uint32_t>(item_subscriber_size(item)), item.sampled_last_updated_offset,
-                !item.subscriptions.reference_inputs.empty() || !item.subscriptions.input_subscribers.empty());
+                !item.subscriptions.controlled_inputs.empty() || !item.subscriptions.reference_inputs.empty() ||
+                    !item.subscriptions.input_subscribers.empty());
             auto *subscribers = reinterpret_cast<Subscriber *>(compiled + 1);
             std::uninitialized_copy(item.subscriptions.nodes.begin(), item.subscriptions.nodes.end(), subscribers);
             destination = reinterpret_cast<std::byte *>(subscribers + item.subscriptions.nodes.size());
-            if (!item.subscriptions.reference_inputs.empty() || !item.subscriptions.input_subscribers.empty()) {
+            if (!item.subscriptions.controlled_inputs.empty() || !item.subscriptions.reference_inputs.empty() ||
+                !item.subscriptions.input_subscribers.empty()) {
                 destination = construct_output_notifications(plan, item.subscriptions, destination);
             }
             destination = reinterpret_cast<std::byte *>(
@@ -2038,7 +2124,8 @@ class CompiledGraphBuilder {
             construct_parameters(plan, i, storage, variable_memory, constructed_scalars, scalar_destruction_index);
             std::uninitialized_copy(node_plan.subscriptions.nodes.begin(), node_plan.subscriptions.nodes.end(),
                                     layout.subscribers.objects<Subscriber>(node_storage).data());
-            if (!node_plan.subscriptions.reference_inputs.empty() ||
+            if (!node_plan.subscriptions.controlled_inputs.empty() ||
+                !node_plan.subscriptions.reference_inputs.empty() ||
                 !node_plan.subscriptions.input_subscribers.empty()) {
                 construct_output_notifications(plan, node_plan.subscriptions,
                                                node_storage + layout.output_notification.offset);
@@ -2094,10 +2181,28 @@ class CompiledGraphBuilder {
 
                 auto parameters =
                     layout.node_invocation_parameters.objects<NodeInvocationParameterMetadata>(node_storage);
+                auto controlled_input_indices =
+                    layout.node_invocation_controlled_input_indices.objects<std::uint16_t>(node_storage);
+                if (!controlled_input_indices.empty()) {
+                    std::uninitialized_value_construct(controlled_input_indices.begin(),
+                                                       controlled_input_indices.end());
+                }
+                auto input_index = std::size_t{};
+                auto controlled_input_index = std::uint16_t{};
                 for (auto parameter = std::size_t{}; parameter < parameters.size(); ++parameter) {
                     const auto &source = node.signature().parameters[parameter];
+                    auto controlled = ControlledInput::no_control;
+                    if (source.type->is_time_series()) {
+                        const auto &input = node_plan.time_series_inputs[input_index++];
+                        if (input.dynamic_activity) {
+                            controlled = controlled_input_index++;
+                        }
+                    }
                     std::construct_at(parameters.data() + parameter,
                                       NodeInvocationParameterMetadata{source.name, source.type});
+                    if (!controlled_input_indices.empty()) {
+                        controlled_input_indices[parameter] = static_cast<std::uint16_t>(controlled);
+                    }
                 }
 
                 if (node_plan.compiled_data.size != 0) {
@@ -2112,15 +2217,17 @@ class CompiledGraphBuilder {
 
             std::construct_at(
                 reinterpret_cast<CompiledNode *>(node_storage),
-                CompiledNode{
-                    node.node_template().evaluation_function(node.signature()), node_plan.output.last_updated_offset,
-                    node_plan.output.value_offset, static_cast<std::uint32_t>(node.signature().parameters.size()),
-                    static_cast<std::uint32_t>(node_plan.subscriptions.nodes.size()),
-                    node.signature().output != nullptr, node_plan.state.node.size != 0,
-                    !node_plan.subscriptions.reference_inputs.empty() ||
-                        !node_plan.subscriptions.input_subscribers.empty(),
-                    !node_plan.item_subscriptions.empty(), node.node_template().uses_node_invocation(),
-                    static_cast<std::uint32_t>(node_plan.time_series_inputs.size()), node_plan.invalidation.mode});
+                CompiledNode{node.node_template().evaluation_function(node.signature()),
+                             node_plan.output.last_updated_offset, node_plan.output.value_offset,
+                             static_cast<std::uint32_t>(node.signature().parameters.size()),
+                             static_cast<std::uint32_t>(node_plan.subscriptions.nodes.size()),
+                             node.signature().output != nullptr, node_plan.state.node.size != 0,
+                             !node_plan.subscriptions.controlled_inputs.empty() ||
+                                 !node_plan.subscriptions.reference_inputs.empty() ||
+                                 !node_plan.subscriptions.input_subscribers.empty(),
+                             !node_plan.item_subscriptions.empty(), node.node_template().uses_node_invocation(),
+                             static_cast<std::uint32_t>(node_plan.time_series_inputs.size()),
+                             static_cast<std::uint32_t>(layout.controlled_inputs.count), node_plan.invalidation.mode});
             std::construct_at(node_offsets.data() + compiled_node,
                               packed_offset(layout.offset, "compiled fixed storage reaches 1 GiB"));
         }

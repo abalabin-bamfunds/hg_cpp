@@ -75,6 +75,12 @@ consteval std::size_t callable_scalar_index(std::index_sequence<Index...>) {
             static_cast<std::size_t>(Index < Target && scalar_field<callable_field<Function, Index>>::value));
 }
 
+template <typename Function, std::size_t Target, std::size_t... Index>
+consteval std::size_t callable_dynamic_activity_input_index(std::index_sequence<Index...>) {
+    return (std::size_t{} + ... +
+            static_cast<std::size_t>(Index < Target && input_field<callable_field<Function, Index>>::dynamic_activity));
+}
+
 template <typename Function, std::size_t Index, typename Invocation>
 decltype(auto) make_callable_node_argument(Invocation invocation) {
     using Field = callable_field<Function, Index>;
@@ -83,7 +89,8 @@ decltype(auto) make_callable_node_argument(Invocation invocation) {
     if constexpr (input_field<Field>::value) {
         constexpr auto Parameter = callable_parameter_index<Function, Index>(Indices);
         constexpr auto Input = callable_input_index<Function, Index>(Indices);
-        return invocation.template input<Field>(Parameter, Input);
+        constexpr auto ControlledInput = callable_dynamic_activity_input_index<Function, Index>(Indices);
+        return invocation.template input<Field, ControlledInput>(Parameter, Input);
     } else if constexpr (output_field<Field>::value) {
         using TimeSeries = typename output_field<Field>::time_series_type;
         return invocation.template output<TimeSeries>();

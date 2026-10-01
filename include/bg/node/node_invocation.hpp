@@ -8,6 +8,7 @@
 
 #include <cstddef>
 #include <iterator>
+#include <stdexcept>
 #include <type_traits>
 
 namespace bg {
@@ -152,11 +153,31 @@ template <typename CompiledData = void, typename State = void> class NodeInvocat
                                                    node_->node_invocation_output_runtime_type(), *context_);
     }
 
-    template <typename Input> Input input(std::size_t parameter_index, std::size_t runtime_type_index) const {
+    template <typename Input, std::size_t ControlledInputIndex = ::bg::ControlledInput::no_control>
+    Input input(std::size_t parameter_index, std::size_t runtime_type_index) const {
         const auto runtime_node = Node{*node_, runtime_storage_};
+        auto *activity = static_cast<bool *>(nullptr);
+        if constexpr (Input::dynamic_activity) {
+            if constexpr (ControlledInputIndex == ::bg::ControlledInput::no_control) {
+                const auto controlled_inputs = node_->controlled_inputs();
+                if (controlled_inputs.empty()) {
+                    throw std::logic_error{
+                        "node invocation requests dynamic_activity for an input without dynamic_activity"};
+                }
+                const auto controlled_input_index =
+                    node_->node_invocation_metadata()->controlled_input_indices(*node_)[parameter_index];
+                if (controlled_input_index >= controlled_inputs.size()) {
+                    throw std::logic_error{
+                        "node invocation requests dynamic_activity for an input without dynamic_activity"};
+                }
+                activity = runtime_node.input_activity(controlled_input_index);
+            } else {
+                activity = runtime_node.input_activity(ControlledInputIndex);
+            }
+        }
         return Input{runtime_node.input_last_updated(parameter_index), runtime_node.input_value(parameter_index),
                      runtime_node.time_series_input_runtime_type(parameter_index, runtime_type_index),
-                     runtime_node.input_modified(parameter_index, context_->evaluation_time())};
+                     runtime_node.input_modified(parameter_index, context_->evaluation_time()), activity};
     }
 
     NodeInvocationScalar scalar(std::size_t parameter_index, std::size_t runtime_type_index) const noexcept {

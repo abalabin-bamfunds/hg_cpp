@@ -25,6 +25,11 @@ struct source_definition {
     void evaluate() const {}
 };
 
+struct controlled_sink_definition {
+    bg::In<bg::TS<float>, bg::dynamic_activity> input;
+    void evaluate() const { input.make_passive(); }
+};
+
 class scale_template final : public bg::NodeTemplate {
   public:
     [[nodiscard]] const bg::Signature &signature() const override {
@@ -84,6 +89,25 @@ TEST_CASE("compiled nodes keep hot data in node-local sections", "[compiled_grap
     CHECK(parameter_address == node_address + sizeof(bg::CompiledNode));
     CHECK(scalar_address == parameter_address + parameters.size() * sizeof(bg::ParameterBinding));
     CHECK(graph.fixed_storage_size() == 236);
+}
+
+TEST_CASE("compiled nodes store one activity record for each controlled input",
+          "[feature:input-activity][feature:graph-compilation][series:value][definition:aggregate]"
+          "[shape:chain][activity:active]") {
+    const auto source = bg::node<source_definition>();
+    const auto sink = bg::node<controlled_sink_definition>();
+    auto wiring = bg::GraphWiring{};
+    {
+        auto context = bg::WiringContext{wiring};
+        sink(source());
+    }
+
+    const auto compiled = bg::CompiledGraph{wiring};
+    CHECK(compiled.node(0).subscribers().empty());
+    CHECK(compiled.node(0).output_notification() != nullptr);
+    CHECK(compiled.node(1).controlled_inputs().size() == 1);
+    CHECK(sizeof(bg::Subscriber) == sizeof(std::uint32_t));
+    CHECK(sizeof(bg::ControlledInput) == sizeof(std::uint32_t));
 }
 
 namespace {

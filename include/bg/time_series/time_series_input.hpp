@@ -16,14 +16,17 @@
 
 namespace bg {
 
-template <details::time_series_variable Variable, auto... Properties> class In<Variable, Properties...> {
+template <details::time_series_variable Variable, auto... Properties>
+class In<Variable, Properties...>
+    : public details::input_activity_control<details::input_properties<Properties...>::dynamic_activity> {
     using ParsedProperties = details::input_properties<Properties...>;
+    using activity_control = details::input_activity_control<ParsedProperties::dynamic_activity>;
     static_assert(ParsedProperties::valid);
 
   public:
     In(const EvaluationTime &last_updated, const void *value, const TimeSeriesRuntimeType &runtime_type,
-       bool modified = false) noexcept
-        : data_{runtime_type, last_updated, value, modified} {}
+       bool modified = false, bool *activity = nullptr) noexcept
+        : activity_control{activity}, data_{runtime_type, last_updated, value, modified} {}
 
     bool valid() const noexcept { return data_.valid(); }
     bool modified() const noexcept { return data_.modified(); }
@@ -47,12 +50,14 @@ template <details::time_series_variable Variable, auto... Properties> class In<V
     static constexpr InputActivity activity = ParsedProperties::activity;
     static constexpr InputValidity validity = ParsedProperties::validity;
     static constexpr bool dynamic_binding = ParsedProperties::dynamic_binding;
+    static constexpr bool dynamic_activity = ParsedProperties::dynamic_activity;
 
   private:
     details::TimeSeriesInputData data_;
 };
 
 static_assert(sizeof(In<TS_T>) == 3 * sizeof(void *));
+static_assert(sizeof(In<TS_T, dynamic_activity>) == 4 * sizeof(void *));
 
 } // namespace bg
 

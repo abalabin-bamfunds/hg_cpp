@@ -54,7 +54,7 @@ class SwitchGraphArgumentBuilder {
         resolved_parameters.reserve(parameters_.size());
         for (const auto &parameter : parameters_) {
             resolved_parameters.push_back({parameter.name, parameter.type, parameter.activity, parameter.validity,
-                                           parameter.accepts_absent_scalar, parameter.variadic_mode});
+                                           parameter.accepts_absent_scalar, parameter.variadic_mode, false});
         }
         auto outer_signature = ResolvedSignature{util::symbol{"switch"}, std::move(resolved_parameters), output};
 

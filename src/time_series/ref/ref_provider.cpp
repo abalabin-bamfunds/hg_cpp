@@ -109,9 +109,11 @@ ResolvedTimeSeries ReferenceProvider::resolve_representation(std::uint32_t index
 
 void ReferenceProvider::add_root_subscriber(RuntimeGraph &graph, std::uint32_t input_offset,
                                             std::size_t notification_data, std::uint32_t node_index, bool active,
-                                            bool required, InputNotificationFunction notification) {
+                                            bool required, InputNotificationFunction notification,
+                                            bool controlled_activity) {
     auto &subscribers = DynamicSubscribers::ensure(subscriber_groups_.front(), memory_);
-    subscribers.add(graph, input_offset, notification_data, node_index, active, required, notification);
+    subscribers.add(graph, input_offset, notification_data, node_index, active, required, notification,
+                    controlled_activity);
 }
 
 void ReferenceProvider::add_root_observer(RuntimeGraph &graph, void *receiver, RuntimeObserverFunction function) {
@@ -141,14 +143,15 @@ void ReferenceProvider::notify_root(OutputChangeContext &context, OutputChange c
 void ReferenceProvider::add_subscriber(ReferenceSubscriptionDetail &subscriptions, RuntimeGraph &graph,
                                        std::uint32_t input_offset, std::size_t notification_data,
                                        std::uint32_t node_index, bool active, bool required,
-                                       InputNotificationFunction notification) {
+                                       InputNotificationFunction notification, bool controlled_activity) {
     if (!subscriptions.has_subscriber_group()) {
         subscriber_groups_.push_back(nullptr);
         subscriptions.set_subscriber_group(static_cast<std::uint32_t>(subscriber_groups_.size() - 1));
     }
 
     auto &subscribers = DynamicSubscribers::ensure(subscriber_groups_[subscriptions.subscriber_group_index()], memory_);
-    subscribers.add(graph, input_offset, notification_data, node_index, active, required, notification);
+    subscribers.add(graph, input_offset, notification_data, node_index, active, required, notification,
+                    controlled_activity);
 }
 
 void ReferenceProvider::add_observer(ReferenceSubscriptionDetail &subscriptions, RuntimeGraph &graph, void *receiver,
@@ -217,8 +220,8 @@ void ReferenceProvider::add_item_notification_record(Reference reference, Runtim
         return;
     }
 
-    item_notifications_->add(subscriptions(reference), graph, destination_representation,
-                             destination_item_id, notify_item_change, publish_item_changes);
+    item_notifications_->add(subscriptions(reference), graph, destination_representation, destination_item_id,
+                             notify_item_change, publish_item_changes);
 }
 
 void ReferenceProvider::remove_item_notification_record(Reference reference, RuntimeGraph &graph,
@@ -234,8 +237,8 @@ void ReferenceProvider::remove_item_notification_record(Reference reference, Run
         return;
     }
 
-    item_notifications_->remove(subscriptions(reference), graph, destination_representation,
-                                destination_item_id, notify_item_change);
+    item_notifications_->remove(subscriptions(reference), graph, destination_representation, destination_item_id,
+                                notify_item_change);
 }
 
 void ReferenceProvider::add_cycle_callback(void *receiver, void (*function)(void *) noexcept) {
@@ -319,7 +322,7 @@ void ReferenceProvider::add_component(ReferenceProviderComponent &component) noe
 }
 
 Reference ReferenceProvider::make_representation(Reference base_reference,
-                                                  const TimeSeriesRuntimeType &requested_runtime_type) {
+                                                 const TimeSeriesRuntimeType &requested_runtime_type) {
     const auto base_time_series = ResolvedTimeSeries::resolve(base_reference);
     if (&base_time_series.runtime_type->type() == &requested_runtime_type.type()) {
         return base_reference;
@@ -395,7 +398,7 @@ bool ReferenceProvider::representation_required(const TimeSeriesRuntimeType &pro
 }
 
 const TimeSeriesRuntimeType &ReferenceProvider::representation_runtime_type(const TimeSeriesRuntimeType &provided,
-                                                                             const TimeSeriesRuntimeType &requested) {
+                                                                            const TimeSeriesRuntimeType &requested) {
     const auto *factory = requested.reference_representation_factory();
     if (factory == nullptr) {
         throw std::invalid_argument{"the requested time series representation is not implemented"};
@@ -405,21 +408,23 @@ const TimeSeriesRuntimeType &ReferenceProvider::representation_runtime_type(cons
 
 void ReferenceProvider::add_subscriber(Reference reference, RuntimeGraph &graph, std::uint32_t input_offset,
                                        std::size_t notification_data, std::uint32_t node_index, bool active,
-                                       bool required, InputNotificationFunction notification) {
+                                       bool required, InputNotificationFunction notification,
+                                       bool controlled_activity) {
     if (auto *root = reference.get<RootReference>()) {
         if (auto *provider = root->subscribers_or_provider.get<ReferenceProvider>()) {
             provider->add_root_subscriber(graph, input_offset, notification_data, node_index, active, required,
-                                          notification);
+                                          notification, controlled_activity);
             return;
         }
         auto *subscribers = root->subscribers_or_provider.get<DynamicSubscribers>();
         auto &result = DynamicSubscribers::ensure(subscribers, root->owner_graph->allocation());
         root->subscribers_or_provider = subscribers;
-        result.add(graph, input_offset, notification_data, node_index, active, required, notification);
+        result.add(graph, input_offset, notification_data, node_index, active, required, notification,
+                   controlled_activity);
         return;
     }
-    get(reference)->add_subscriber(subscriptions(reference), graph, input_offset, notification_data, node_index,
-                                   active, required, notification);
+    get(reference)->add_subscriber(subscriptions(reference), graph, input_offset, notification_data, node_index, active,
+                                   required, notification, controlled_activity);
 }
 
 void ReferenceProvider::add_observer(Reference reference, RuntimeGraph &graph, void *receiver,
@@ -477,16 +482,16 @@ void ReferenceProvider::notify_item_bindings(Reference collection, item_id_t id,
 }
 
 void ReferenceProvider::add_item_notification(Reference reference, RuntimeGraph &graph,
-                                               void *destination_representation, item_id_t destination_item_id,
-                                               ItemChangeNotificationFunction notify_item_change,
-                                               ItemChangePublicationFunction publish_item_changes) {
+                                              void *destination_representation, item_id_t destination_item_id,
+                                              ItemChangeNotificationFunction notify_item_change,
+                                              ItemChangePublicationFunction publish_item_changes) {
     require(reference).add_item_notification_record(reference, graph, destination_representation, destination_item_id,
                                                     notify_item_change, publish_item_changes);
 }
 
 void ReferenceProvider::remove_item_notification(Reference reference, RuntimeGraph &graph,
-                                                  const void *destination_representation, item_id_t destination_item_id,
-                                                  ItemChangeNotificationFunction notify_item_change) noexcept {
+                                                 const void *destination_representation, item_id_t destination_item_id,
+                                                 ItemChangeNotificationFunction notify_item_change) noexcept {
     if (!reference) {
         return;
     }

@@ -86,6 +86,11 @@ Evaluation remains blocked while a required input is invalid. An update or
 revalidation of an active input schedules evaluation. The same changes on a
 passive input schedule nothing.
 
+An input with `dynamic_activity` can change this scheduling behavior during a
+node invocation. Its current activity applies only to scheduling caused by that
+input. Required-input validity checks and input callbacks continue regardless
+of its current activity.
+
 ## Evaluation context
 
 `EvaluationContext` provides services during one node invocation. A function

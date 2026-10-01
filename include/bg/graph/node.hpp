@@ -88,6 +88,11 @@ class Node {
                 input_modified(parameter_index, evaluation_time)};
     }
 
+    bool *input_activity(std::size_t controlled_input_index) const noexcept {
+        const auto inputs = compiled_node_->controlled_inputs();
+        return reinterpret_cast<bool *>(runtime_storage_ + inputs[controlled_input_index].activity_offset());
+    }
+
     ReferenceInputStorage *reference_input(std::size_t parameter_index) const noexcept {
         const auto &binding = compiled_node_->parameters()[parameter_index];
         const auto *source = &binding;

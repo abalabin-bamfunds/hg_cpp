@@ -33,6 +33,7 @@ struct Parameter {
     details::VariadicMode variadic_mode{details::VariadicMode::none};
     const details::VariadicWiringOperations *variadic_operations{};
     bool context{};
+    bool dynamic_activity{};
 };
 
 struct VariableResolver {
@@ -63,6 +64,7 @@ struct ResolvedParameter {
     bool accepts_absent_scalar{};
     details::VariadicMode variadic_mode{details::VariadicMode::none};
     bool context{};
+    bool dynamic_activity{};
 };
 
 struct ResolvedSignature {
@@ -142,8 +144,7 @@ class Signature {
 };
 
 [[nodiscard]] std::partial_ordering compare_specificity(const Signature &left, const Signature &right);
-[[nodiscard]] bool same_resolved_signature(const ResolvedSignature &left,
-                                           const ResolvedSignature &right) noexcept;
+[[nodiscard]] bool same_resolved_signature(const ResolvedSignature &left, const ResolvedSignature &right) noexcept;
 
 namespace details {
 [[nodiscard]] std::partial_ordering compare_parameter_specificity(const Signature &left, const Signature &right,

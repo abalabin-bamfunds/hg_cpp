@@ -48,6 +48,7 @@ namespace bg::details {
 template <typename T> struct input_field {
     static constexpr bool value = false;
     static constexpr bool reflected_name = true;
+    static constexpr bool dynamic_activity = false;
     static constexpr bool dynamic_binding = false;
     static constexpr bool context = false;
 };
@@ -59,6 +60,7 @@ template <typename TimeSeries, auto... Properties> struct input_field<In<TimeSer
     static constexpr bool reflected_name = Input::name.empty();
     static constexpr InputActivity activity = Input::activity;
     static constexpr InputValidity validity = Input::validity;
+    static constexpr bool dynamic_activity = Input::dynamic_activity;
     static constexpr bool dynamic_binding = Input::dynamic_binding;
     static constexpr bool context = (false || ... || is_context<decltype(Properties)>);
     static constexpr auto variadic_mode = [] {
@@ -443,6 +445,14 @@ consteval std::size_t aggregate_generic_scalar_input_index(std::index_sequence<I
                 generic_scalar_input_field<std::remove_cv_t<util::aggregate_member_type<Index, Definition>>>::value));
 }
 
+template <typename Definition, std::size_t Target, std::size_t... Index>
+consteval std::size_t aggregate_dynamic_activity_input_index(std::index_sequence<Index...>) {
+    return (std::size_t{} + ... +
+            static_cast<std::size_t>(
+                Index < Target &&
+                input_field<std::remove_cv_t<util::aggregate_member_type<Index, Definition>>>::dynamic_activity));
+}
+
 template <typename Definition, std::size_t... Index>
 consteval bool aggregate_uses_output_runtime_type(std::index_sequence<Index...>) {
     return (false || ... || output_view_field<std::remove_cv_t<util::aggregate_member_type<Index, Definition>>>::value);
@@ -471,12 +481,14 @@ void add_signature_field(std::vector<Parameter> &parameters, const TimeSeriesTyp
         if constexpr (mode == VariadicMode::none) {
             parameters.push_back({util::symbol{util::aggregate_member_names<Definition>[Index]},
                                   &input_type<Definition, Index>(), input_field<Field>::activity,
-                                  input_field<Field>::validity, false, mode, nullptr, input_field<Field>::context});
+                                  input_field<Field>::validity, false, mode, nullptr, input_field<Field>::context,
+                                  input_field<Field>::dynamic_activity});
         } else {
             parameters.push_back({util::symbol{util::aggregate_member_names<Definition>[Index]},
                                   &input_type<Definition, Index>(), input_field<Field>::activity,
                                   input_field<Field>::validity, false, mode,
-                                  variadic_wiring_operations<typename input_field<Field>::time_series_type>()});
+                                  variadic_wiring_operations<typename input_field<Field>::time_series_type>(), false,
+                                  input_field<Field>::dynamic_activity});
         }
     } else if constexpr (scalar_field<Field>::value) {
         parameters.push_back({util::symbol{util::aggregate_member_names<Definition>[Index]},
@@ -680,6 +692,8 @@ template <typename Definition, std::size_t Index>
         }
 
         constexpr auto ParameterIndex = parameter_index<Definition>(std::make_index_sequence<Index>{});
+        constexpr auto ControlledInputIndex =
+            aggregate_dynamic_activity_input_index<Definition, Index>(std::make_index_sequence<Index>{});
         const auto &last_updated = runtime_node.input_last_updated(ParameterIndex);
         const auto *value = runtime_node.input_value(ParameterIndex);
         const auto modified = runtime_node.input_modified(ParameterIndex, context->evaluation_time());
@@ -688,9 +702,19 @@ template <typename Definition, std::size_t Index>
             constexpr auto RuntimeTypeIndex = aggregate_time_series_runtime_type_index<Definition, Index>(
                 std::make_index_sequence<util::aggregate_member_count<Definition>>{});
             const auto &runtime_type = runtime_node.time_series_input_runtime_type(ParameterIndex, RuntimeTypeIndex);
-            return Field{last_updated, value, runtime_type, modified};
+            if constexpr (input_field<Field>::dynamic_activity) {
+                return Field{last_updated, value, runtime_type, modified,
+                             runtime_node.input_activity(ControlledInputIndex)};
+            } else {
+                return Field{last_updated, value, runtime_type, modified};
+            }
         } else {
-            return Field{last_updated, static_cast<const typename Field::storage_type *>(value), modified};
+            if constexpr (input_field<Field>::dynamic_activity) {
+                return Field{last_updated, static_cast<const typename Field::storage_type *>(value), modified,
+                             runtime_node.input_activity(ControlledInputIndex)};
+            } else {
+                return Field{last_updated, static_cast<const typename Field::storage_type *>(value), modified};
+            }
         }
     } else if constexpr (scalar_field<Field>::value) {
         constexpr auto ParameterIndex = parameter_index<Definition>(std::make_index_sequence<Index>{});

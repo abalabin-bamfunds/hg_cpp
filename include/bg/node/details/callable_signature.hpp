@@ -75,10 +75,12 @@ void add_callable_parameter(std::vector<Parameter> &parameters) {
         constexpr auto mode = input_field<Field>::variadic_mode;
         if constexpr (mode == VariadicMode::none) {
             parameters.push_back({name, &callable_input_type<Scope, Function, Index>(name), Field::activity,
-                                  Field::validity, false, mode, nullptr, input_field<Field>::context});
+                                  Field::validity, false, mode, nullptr, input_field<Field>::context,
+                                  input_field<Field>::dynamic_activity});
         } else {
             parameters.push_back({name, &callable_input_type<Scope, Function, Index>(name), Field::activity,
-                                  Field::validity, false, mode, variadic_wiring_operations<TimeSeries>()});
+                                  Field::validity, false, mode, variadic_wiring_operations<TimeSeries>(), false,
+                                  input_field<Field>::dynamic_activity});
         }
     } else {
         static_assert(scalar_field<Field>::value,
