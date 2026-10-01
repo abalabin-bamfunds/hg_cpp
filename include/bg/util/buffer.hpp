@@ -249,35 +249,42 @@ class buffer_writer {
             throw std::logic_error{"commit the current reservation before reserving again"};
         }
 
-        auto *single = block_.get<details::single_writer_block>();
         auto *block = block_.pointer().base_block();
-        auto aligned_position = position_ + details::alignment_padding(position_, alignment);
-        if (aligned_position > buffer::block_end(block) || size > buffer::block_end(block) - aligned_position) {
-            if (single == nullptr) {
-                throw std::length_error{"contiguous buffer has insufficient capacity"};
-            }
-
-            const auto preferred = single->preferred_capacity;
-            const auto next_position = sizeof(details::single_writer_block);
-            const auto padding = details::alignment_padding(next_position, alignment);
-            auto *next = details::single_writer_block::create(single->allocator,
-                                                              std::max(preferred, padding + size), preferred);
-            single->sealed_end = position_;
-            single->next.store(next, std::memory_order_release);
-            block_ = details::block_reference{next};
-            block = next;
-            position_ = next->data_offset();
-            aligned_position = position_ + details::alignment_padding(position_, alignment);
+        const auto begin = position_ + details::alignment_padding(position_, alignment);
+        const auto block_end = buffer::block_end(block);
+        if (begin > block_end || size > block_end - begin) {
+            return reserve_in_next_block(size, alignment);
         }
 
-        const auto begin = aligned_position;
-        const auto end = begin + size;
-        position_ = end;
+        const auto reservation_end = begin + size;
+        position_ = reservation_end;
         reservation_active_ = true;
-        return {block, begin, end, &reservation_active_};
+        return {block, begin, reservation_end, &reservation_active_};
     }
 
   private:
+    buffer_reservation reserve_in_next_block(std::size_t size, std::size_t alignment) {
+        auto *single = block_.get<details::single_writer_block>();
+        if (single == nullptr) {
+            throw std::length_error{"contiguous buffer has insufficient capacity"};
+        }
+
+        const auto preferred = single->preferred_capacity;
+        const auto next_position = sizeof(details::single_writer_block);
+        const auto padding = details::alignment_padding(next_position, alignment);
+        auto *next = details::single_writer_block::create(single->allocator, std::max(preferred, padding + size),
+                                                          preferred);
+        single->sealed_end = position_;
+        single->next.store(next, std::memory_order_release);
+        block_ = details::block_reference{next};
+
+        const auto begin = next->data_offset() + details::alignment_padding(next->data_offset(), alignment);
+        const auto reservation_end = begin + size;
+        position_ = reservation_end;
+        reservation_active_ = true;
+        return {next, begin, reservation_end, &reservation_active_};
+    }
+
     details::block_reference block_;
     std::size_t position_{};
     bool reservation_active_{};
