@@ -7,6 +7,7 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
 #include <type_traits>
 #include <utility>
 
@@ -25,11 +26,32 @@ template <typename K, typename V> class Scalar<Dict<K, V>> {
         return runtime_type().contains(value_.data(), details::scalar_data(key));
     }
 
+    [[nodiscard]] std::optional<Scalar<V>> find(const Scalar<K> &key) const {
+        const auto item = runtime_type().find(value_.data(), details::scalar_data(key));
+        if (!item) {
+            return std::nullopt;
+        }
+
+        return Scalar<V>::from(item->runtime_type, item->data);
+    }
+
     template <typename Source>
         requires(!details::scalar_variable<K> && scalar_source_for<K, Source>)
     bool contains(Source &&key) const {
         const auto value = scalar_source_value<K>(std::forward<Source>(key));
         return runtime_type().contains(value_.data(), details::make_scalar_source<K>(value));
+    }
+
+    template <typename Source>
+        requires(!details::scalar_variable<K> && scalar_source_for<K, Source>)
+    [[nodiscard]] std::optional<Scalar<V>> find(Source &&key) const {
+        const auto value = scalar_source_value<K>(std::forward<Source>(key));
+        const auto item = runtime_type().find(value_.data(), details::make_scalar_source<K>(value));
+        if (!item) {
+            return std::nullopt;
+        }
+
+        return Scalar<V>::from(item->runtime_type, item->data);
     }
 
     Scalar<V> at(const Scalar<K> &key) const {
@@ -52,6 +74,10 @@ template <typename K, typename V> class Scalar<Dict<K, V>> {
                                     std::invoke(callback, Scalar<K>::from(entry.key.runtime_type, entry.key.data),
                                                 Scalar<V>::from(entry.value.runtime_type, entry.value.data));
                                 });
+    }
+
+    [[nodiscard]] std::unique_ptr<ScalarDictRuntimeType::Cursor> make_cursor() const {
+        return runtime_type().make_cursor(value_.data());
     }
 
     const ScalarType &type() const noexcept { return value_.runtime_type().type(); }

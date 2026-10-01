@@ -198,25 +198,27 @@ class CallArguments {
 nanobind::object PythonNodeDefinition::CompiledData::argument(Invocation invocation, std::size_t index,
                                                               CallbackScope &callback) const {
     const auto &parameter = parameters[index];
-    if (parameter.time_series) {
-        if (parameter.pass_time_series_value) {
-            auto input = invocation.input<In<TS<SCALAR>>>(index, parameter.runtime_type_index);
-            if (!input.valid()) {
-                return nanobind::none();
-            }
-            const auto value = input.value_view();
-            return scalar_conversions().to_python(Scalar<>::from(value));
-        }
-
+    if (parameter.mode == ParameterMode::input_view) {
         auto input = invocation.input<In<TS_T>>(index, parameter.runtime_type_index);
         return nanobind::cast(InputView{input, scalar_conversions(), lifetime, callback.generation()});
+    }
+
+    if (parameter.mode != ParameterMode::scalar) {
+        auto input = invocation.input<In<TS<SCALAR>>>(index, parameter.runtime_type_index);
+        if (!input.valid()) {
+            return nanobind::none();
+        }
+
+        const auto value = input.value_view();
+        return scalar_conversions().to_python_view(Scalar<>::from(value), lifetime, callback.generation());
     }
 
     const auto scalar = invocation.scalar(index, parameter.runtime_type_index);
     if (!scalar.has_value()) {
         return nanobind::none();
     }
-    return scalar_conversions().to_python(scalar.value());
+
+    return scalar_conversions().to_python_view(scalar.value(), lifetime, callback.generation());
 }
 
 nanobind::object PythonNodeDefinition::CompiledData::call(Invocation invocation, CallbackScope &callback) const {
@@ -310,8 +312,13 @@ PythonNodeDefinition::CompiledData PythonNodeDefinition::compile(const ResolvedS
             }
         }
 
+        auto mode = time_series ? ParameterMode::input_view : ParameterMode::scalar;
+        if (time_series && pass_time_series_values_) {
+            mode = ParameterMode::time_series_value;
+        }
+
         auto &runtime_type_index = time_series ? time_series_runtime_type_index : scalar_runtime_type_index;
-        parameter_conversions.push_back({time_series, time_series && pass_time_series_values_, runtime_type_index++});
+        parameter_conversions.push_back({mode, runtime_type_index++});
     }
 
     auto result = CompiledData{};

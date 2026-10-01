@@ -4,6 +4,9 @@ target_link_libraries(bg_container_benchmark PRIVATE bg::bg)
 add_executable(bg_view_benchmark view_benchmark.cpp)
 target_link_libraries(bg_view_benchmark PRIVATE bg::bg)
 
+add_executable(bg_scalar_dict_benchmark scalar_dict_benchmark.cpp)
+target_link_libraries(bg_scalar_dict_benchmark PRIVATE bg::bg)
+
 add_executable(bg_high_count_map_benchmark high_count_map_benchmark.cpp)
 target_link_libraries(bg_high_count_map_benchmark PRIVATE bg::bg)
 

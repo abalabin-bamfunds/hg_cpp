@@ -531,7 +531,8 @@ class ComposedDictRuntimeType final : public ScalarDictRuntimeType {
 
         auto comparison = RuntimeDictComparison{this, value, true};
         source.for_each([&](const Scalar<SCALAR> &key, const Scalar<SCALAR> &mapped) {
-            const auto position = comparison.runtime_type->find(storage(comparison.storage), details::scalar_data(key));
+            const auto position =
+                comparison.runtime_type->find_position(storage(comparison.storage), details::scalar_data(key));
             comparison.equal &=
                 position != util::occupancy_index::npos &&
                 comparison.runtime_type->mapped_runtime_type().equals(
@@ -549,19 +550,30 @@ class ComposedDictRuntimeType final : public ScalarDictRuntimeType {
     std::size_t item_count(const void *value) const noexcept override { return storage(value).positions.size(); }
 
     bool contains(const void *value, const details::ScalarData &key) const override {
-        return find(storage(value), key) != util::occupancy_index::npos;
+        return find(value, key).has_value();
+    }
+
+    std::optional<ScalarDictRuntimeType::ConstItem> find(const void *value,
+                                                         const details::ScalarData &key) const override {
+        const auto position = find_position(storage(value), key);
+        if (position == util::occupancy_index::npos) {
+            return std::nullopt;
+        }
+
+        return ScalarDictRuntimeType::ConstItem{mapped_runtime_type(),
+                                                storage(value).values.get(position, mapped_layout_)};
     }
 
     ScalarDictRuntimeType::ConstItem at(const void *value, const details::ScalarData &key) const override {
-        const auto position = find(storage(value), key);
-        if (position == util::occupancy_index::npos) {
+        const auto item = find(value, key);
+        if (!item) {
             throw std::out_of_range{"dictionary key was not found"};
         }
-        return {mapped_runtime_type(), storage(value).values.get(position, mapped_layout_)};
+        return *item;
     }
 
     ScalarDictRuntimeType::Item at(void *value, const details::ScalarData &key) const override {
-        const auto position = find(storage(value), key);
+        const auto position = find_position(storage(value), key);
         if (position == util::occupancy_index::npos) {
             throw std::out_of_range{"dictionary key was not found"};
         }
@@ -573,6 +585,10 @@ class ComposedDictRuntimeType final : public ScalarDictRuntimeType {
             function(context, {{key_runtime_type(), storage(value).keys.get(position, key_layout_)},
                                {mapped_runtime_type(), storage(value).values.get(position, mapped_layout_)}});
         }
+    }
+
+    std::unique_ptr<ScalarDictRuntimeType::Cursor> make_cursor(const void *value) const override {
+        return std::make_unique<DictionaryCursor>(*this, storage(value));
     }
 
     void insert_or_assign(void *value, const details::ScalarData &key, const details::ScalarData &mapped,
@@ -641,6 +657,30 @@ class ComposedDictRuntimeType final : public ScalarDictRuntimeType {
     }
 
   private:
+    class DictionaryCursor final : public ScalarDictRuntimeType::Cursor {
+      public:
+        DictionaryCursor(const ComposedDictRuntimeType &runtime_type, const RuntimeDictStorage &storage)
+            : runtime_type_{&runtime_type}, storage_{&storage}, position_{storage.positions.begin()},
+              end_{storage.positions.end()} {}
+
+        std::size_t next_batch(std::span<ScalarDictRuntimeType::BatchEntry> buffer) override {
+            auto count = std::size_t{};
+            while (count < buffer.size() && position_ != end_) {
+                const auto position = *position_++;
+                buffer[count++] = {storage_->keys.get(position, runtime_type_->key_layout_),
+                                   storage_->values.get(position, runtime_type_->mapped_layout_)};
+            }
+
+            return count;
+        }
+
+      private:
+        const ComposedDictRuntimeType *runtime_type_;
+        const RuntimeDictStorage *storage_;
+        util::occupancy_index::iterator position_;
+        util::occupancy_index::iterator end_;
+    };
+
     struct RuntimeDictCopy {
         const ComposedDictRuntimeType *runtime_type;
         void *storage;
@@ -658,7 +698,7 @@ class ComposedDictRuntimeType final : public ScalarDictRuntimeType {
         return *static_cast<const RuntimeDictStorage *>(value);
     }
 
-    std::uint32_t find(const RuntimeDictStorage &source, const details::ScalarData &key) const noexcept {
+    std::uint32_t find_position(const RuntimeDictStorage &source, const details::ScalarData &key) const noexcept {
         const auto hash = util::linear_hash_table::hash_code(key.hash());
         const auto result = source.lookup.find(hash, [&](auto position) {
             return key_runtime_type().equals(source.keys.get(position, key_layout_), key);

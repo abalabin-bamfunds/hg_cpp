@@ -61,22 +61,28 @@ class CppScalarRuntimeType<Dict<K, V>> final : public CppScalarRuntimeTypeBase<D
     }
 
     bool contains(const void *storage, const details::ScalarData &key) const override {
-        const auto &items = static_cast<const details::scalar_dict_storage<K, V> *>(storage)->items;
-        return items.find_with(key.hash(), [&](const auto &stored) {
-            return this->key_runtime_type().equals(std::addressof(stored), key);
-        }) != nullptr;
+        return find(storage, key).has_value();
     }
 
-    ScalarDictRuntimeType::ConstItem at(const void *storage,
-                                                      const details::ScalarData &key) const override {
+    std::optional<ScalarDictRuntimeType::ConstItem> find(const void *storage,
+                                                         const details::ScalarData &key) const override {
         const auto &items = static_cast<const details::scalar_dict_storage<K, V> *>(storage)->items;
         const auto *value = items.find_with(key.hash(), [&](const auto &stored) {
             return this->key_runtime_type().equals(std::addressof(stored), key);
         });
         if (value == nullptr) {
+            return std::nullopt;
+        }
+
+        return ScalarDictRuntimeType::ConstItem{this->mapped_runtime_type(), value};
+    }
+
+    ScalarDictRuntimeType::ConstItem at(const void *storage, const details::ScalarData &key) const override {
+        const auto value = find(storage, key);
+        if (!value) {
             throw std::out_of_range{"dictionary key was not found"};
         }
-        return {this->mapped_runtime_type(), value};
+        return *value;
     }
 
     ScalarDictRuntimeType::Item at(void *storage, const details::ScalarData &key) const override {
@@ -95,6 +101,11 @@ class CppScalarRuntimeType<Dict<K, V>> final : public CppScalarRuntimeTypeBase<D
             function(context, {{this->key_runtime_type(), std::addressof(key)},
                                {this->mapped_runtime_type(), std::addressof(value)}});
         }
+    }
+
+    std::unique_ptr<ScalarDictRuntimeType::Cursor> make_cursor(const void *storage) const override {
+        const auto &items = static_cast<const details::scalar_dict_storage<K, V> *>(storage)->items;
+        return std::make_unique<DictionaryCursor>(items);
     }
 
     void insert_or_assign(void *storage, const details::ScalarData &key, const details::ScalarData &value,
@@ -129,6 +140,27 @@ class CppScalarRuntimeType<Dict<K, V>> final : public CppScalarRuntimeTypeBase<D
     }
 
   private:
+    class DictionaryCursor final : public ScalarDictRuntimeType::Cursor {
+        using Items = typename details::scalar_dict_storage<K, V>::Items;
+
+      public:
+        explicit DictionaryCursor(const Items &items) : position_{items.begin()}, end_{items.end()} {}
+
+        std::size_t next_batch(std::span<ScalarDictRuntimeType::BatchEntry> buffer) override {
+            auto count = std::size_t{};
+            while (count < buffer.size() && position_ != end_) {
+                const auto entry = *position_++;
+                buffer[count++] = {std::addressof(entry.key), std::addressof(entry.value)};
+            }
+
+            return count;
+        }
+
+      private:
+        typename Items::const_iterator position_;
+        typename Items::const_iterator end_;
+    };
+
     struct DictCopy {
         const CppScalarRuntimeType *runtime_type;
         void *storage;

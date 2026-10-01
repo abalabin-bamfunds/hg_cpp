@@ -10,10 +10,12 @@ from typing import Any, get_args, get_type_hints
 from . import operators
 from ._bg import (
     Symbol,
+    Dict,
     _Type,
     _make_graph,
     _make_node,
     _make_time_series_schema,
+    _dict_scalar_type,
     _map,
     _mesh,
     _mesh_dependency,
@@ -90,7 +92,7 @@ class TS:
     """A time-series type annotation."""
 
     def __class_getitem__(cls, scalar_type: type) -> Any:
-        return _time_series_type(_scalar_type(scalar_type))
+        return _time_series_type(_native_type(scalar_type))
 
 
 class REF:
@@ -104,7 +106,7 @@ class TSS:
     """A time-series set type annotation."""
 
     def __class_getitem__(cls, item_type: type) -> Any:
-        return _time_series_set_type(_scalar_type(item_type))
+        return _time_series_set_type(_native_type(item_type))
 
 
 class TSL:
@@ -122,7 +124,7 @@ class TSD:
 
     def __class_getitem__(cls, arguments: Any) -> Any:
         key_type, item_type = arguments
-        return _time_series_dict_type(_scalar_type(key_type), _native_type(item_type))
+        return _time_series_dict_type(_native_type(key_type), _native_type(item_type))
 
 
 class TimeSeriesSchema:
@@ -443,6 +445,9 @@ def _native_type(annotation: Any) -> Any:
         return annotation
     if isinstance(annotation, type):
         return _scalar_type(annotation)
+    if getattr(annotation, "__origin__", None) is dict:
+        key_type, value_type = get_args(annotation)
+        return _dict_scalar_type(_native_type(key_type), _native_type(value_type))
     union_arguments = get_args(annotation)
     if len(union_arguments) == 2 and type(None) in union_arguments:
         value_type = next(value for value in union_arguments if value is not type(None))

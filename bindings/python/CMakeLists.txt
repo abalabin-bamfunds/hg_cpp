@@ -23,6 +23,7 @@ add_library(
     src/graph_definition.cpp
     src/delta.cpp
     src/input_view.cpp
+    src/dict_view.cpp
     src/higher_order.cpp
     src/operator.cpp
     src/wiring_argument.cpp

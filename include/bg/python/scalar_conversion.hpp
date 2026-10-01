@@ -8,16 +8,20 @@
 
 #include <nanobind/nanobind.h>
 
+#include <cstdint>
 #include <memory>
 
 namespace bg::python {
 
+class CallbackLifetime;
 class PythonScalarConversions;
 
 using ScalarToPython = nanobind::object (*)(Scalar<>, const PythonScalarConversions &);
+using ScalarToPythonView = nanobind::object (*)(Scalar<>, const PythonScalarConversions &,
+                                                const std::shared_ptr<CallbackLifetime> &, std::uint64_t);
 using PythonToScalar = ScalarValue<> (*)(nanobind::handle, allocator &, const PythonScalarConversions &);
 
-// Extensions register Python-owned runtime representations here. Built-in and structural values use Scalar::visit().
+// Maps Python classes and scalar types to their Python conversion handlers.
 class BG_PYTHON_API PythonScalarConversions {
   public:
     PythonScalarConversions();
@@ -29,8 +33,15 @@ class BG_PYTHON_API PythonScalarConversions {
     [[nodiscard]] bool add(const ScalarType &type, PythonToScalar conversion);
     [[nodiscard]] bool add(const ScalarType &type, ScalarToPython conversion);
     [[nodiscard]] bool add(const ScalarRuntimeType &runtime_type, ScalarToPython conversion);
+    [[nodiscard]] bool add(const ScalarType &type, ScalarToPythonView conversion);
+    [[nodiscard]] bool add(const ScalarRuntimeType &runtime_type, ScalarToPythonView conversion);
     [[nodiscard]] bool add_python_type(nanobind::handle python_type, const ScalarType &type);
+    // Selects an exact runtime handler before a semantic-type handler. Other values use structural conversion.
+    ScalarToPython to_python_handler(const ScalarRuntimeType &runtime_type) const noexcept;
     nanobind::object to_python(Scalar<> value) const;
+    // Produces a direct node argument. A borrowed result must use the supplied callback lifetime.
+    nanobind::object to_python_view(Scalar<> value, const std::shared_ptr<CallbackLifetime> &lifetime,
+                                    std::uint64_t generation) const;
     const ScalarType &type_from_python(nanobind::handle python_type) const;
     [[nodiscard]] ScalarValue<> from_python(nanobind::handle value, allocator &memory) const;
     [[nodiscard]] ScalarValue<> from_python(const ScalarType &type, nanobind::handle value, allocator &memory) const;

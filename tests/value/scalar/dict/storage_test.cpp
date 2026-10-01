@@ -100,6 +100,17 @@ TEST_CASE("a scalar dictionary copies between composed and C++ storage",
     composed.construct_from_input(storage, source, allocator);
 
     const auto composed_view = bg::Scalar<Dict>::from(composed, storage);
+    const auto found = composed_view.find(1);
+    REQUIRE(found.has_value());
+    CHECK(found->value().second == 3);
+
+    auto cursor = composed_view.make_cursor();
+    auto batch = std::array<bg::ScalarDictRuntimeType::BatchEntry, 2>{};
+    REQUIRE(cursor->next_batch(batch) == 1);
+    CHECK(bg::Scalar<std::int64_t>::from(composed.key_runtime_type(), batch[0].key).value() == 1);
+    CHECK(bg::Scalar<Value>::from(composed.mapped_runtime_type(), batch[0].mapped).value().second == 3);
+    CHECK(cursor->next_batch(batch) == 0);
+
     const auto copy = bg::ScalarValue<Dict>{composed_view, allocator};
 
     REQUIRE(copy.view().size() == 1);

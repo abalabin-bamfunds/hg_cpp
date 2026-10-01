@@ -5,6 +5,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <cstdint>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -24,6 +25,52 @@ TEST_CASE("a scalar dictionary owns and exposes its entries",
     auto sum = std::int64_t{};
     dict.for_each([&](const auto, const auto item) { sum += item.value(); });
     CHECK(sum == 3);
+}
+
+TEST_CASE("a scalar dictionary finds mapped values with one lookup",
+          "[value][scalar][dict][scalar:dict][feature:scalar-collection]") {
+    const auto value = bg::ScalarValue<bg::Dict<std::int64_t, std::int64_t>>{
+        std::vector<std::pair<std::int64_t, std::int64_t>>{{1, 10}, {2, 20}}};
+    const auto dict = value.view();
+
+    const auto found = dict.find(2);
+    REQUIRE(found.has_value());
+    CHECK(found->value() == 20);
+    CHECK_FALSE(dict.find(3).has_value());
+
+    const auto key = bg::ScalarValue{1};
+    const auto found_by_scalar = dict.find(key.view());
+    REQUIRE(found_by_scalar.has_value());
+    CHECK(found_by_scalar->value() == 10);
+}
+
+TEST_CASE("a scalar dictionary cursor fills caller-owned batches",
+          "[value][scalar][dict][scalar:dict][feature:scalar-collection]") {
+    const auto value = bg::ScalarValue<bg::Dict<std::int64_t, std::int64_t>>{
+        std::vector<std::pair<std::int64_t, std::int64_t>>{{1, 1}, {2, 2}, {3, 3}, {4, 4}, {5, 5}}};
+    const auto dict = value.view();
+    auto cursor = dict.make_cursor();
+    auto buffer = std::array<bg::ScalarDictRuntimeType::BatchEntry, 2>{};
+    auto entry_count = std::size_t{};
+    auto batch_count = std::size_t{};
+    auto key_sum = std::int64_t{};
+    auto mapped_sum = std::int64_t{};
+
+    while (const auto count = cursor->next_batch(buffer)) {
+        ++batch_count;
+        entry_count += count;
+        for (const auto &entry : std::span{buffer}.first(count)) {
+            key_sum += bg::Scalar<std::int64_t>::from(dict.runtime_type().key_runtime_type(), entry.key).value();
+            mapped_sum +=
+                bg::Scalar<std::int64_t>::from(dict.runtime_type().mapped_runtime_type(), entry.mapped).value();
+        }
+    }
+
+    CHECK(entry_count == 5);
+    CHECK(batch_count == 3);
+    CHECK(key_sum == 15);
+    CHECK(mapped_sum == 15);
+    CHECK(cursor->next_batch(buffer) == 0);
 }
 
 TEST_CASE("a scalar dictionary accepts its exact non-canonical key type",

@@ -112,6 +112,14 @@ operation that can allocate or release memory uses the active `bg::allocator`.
 Looking up a nested collection through a mutable list or dictionary
 returns its mutable view.
 
+`Scalar<Dict<K, V>>::find(key)` returns an optional borrowed `Scalar<V>` and
+performs one key lookup. A dictionary cursor returns key and mapped-value
+storage pointers in caller-provided batches. The cursor borrows the dictionary;
+keep the dictionary alive and unchanged until the cursor is destroyed. The
+batch contains storage pointers, interpreted with the dictionary's key and
+mapped runtime types. Creating a cursor allocates one runtime-specific cursor
+object; advancing it uses the caller's batch buffer.
+
 Generic collection views use the resolved item types. This applies to scalar
 parameters and `State` declarations such as `State<Dict<K, SCALAR>>`.
 
@@ -205,7 +213,9 @@ value. Its defaults describe an ordinary leaf scalar.
 A runtime type for a list, set, or dictionary semantic type derives from the
 matching collection runtime interface. Its component runtime types correspond
 to the semantic type components. Generic collection access and runtime input
-compatibility rely on this registration invariant.
+compatibility rely on this registration invariant. A dictionary runtime type
+also implements one-lookup `find()` and creates a resumable cursor that fills
+caller-owned entry batches.
 
 ## Optional operations
 

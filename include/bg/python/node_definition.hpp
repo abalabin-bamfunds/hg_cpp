@@ -17,6 +17,7 @@
 
 #include <nanobind/nanobind.h>
 
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <span>
@@ -55,9 +56,10 @@ class BG_PYTHON_API PythonNodeDefinition {
     struct CompiledData;
     using compiled_data_type = CompiledData;
 
+    enum class ParameterMode : std::uint8_t { scalar, input_view, time_series_value };
+
     struct ParameterConversion {
-        bool time_series;
-        bool pass_time_series_value;
+        ParameterMode mode;
         std::size_t runtime_type_index;
     };
 

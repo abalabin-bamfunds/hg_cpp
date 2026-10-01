@@ -1,15 +1,19 @@
 #include <bg/node.hpp>
 #include <bg/operator.hpp>
 #include <bg/operators.hpp>
+#include <bg/python/input_view.hpp>
 #include <bg/python/operator.hpp>
 #include <bg/python/scalar_conversion.hpp>
 #include <bg/python/wiring_point.hpp>
 #include <bg/scalar/builtins.hpp>
+#include <bg/scalar/value.hpp>
 #include <bg/time_series/tsl/tsl.hpp>
+#include <bg/type/scalar_type.hpp>
 
 #include <nanobind/nanobind.h>
 
 #include <cstdint>
+#include <memory>
 
 namespace {
 
@@ -32,6 +36,20 @@ const bg::Operator &discard_operator() {
     return operation;
 }
 
+nanobind::object runtime_double_to_python(bg::Scalar<>, const bg::python::PythonScalarConversions &) {
+    return nanobind::str{"runtime double conversion"};
+}
+
+nanobind::object runtime_double_to_python_view(bg::Scalar<>, const bg::python::PythonScalarConversions &,
+                                               const std::shared_ptr<bg::python::CallbackLifetime> &,
+                                               std::uint64_t) {
+    return nanobind::str{"runtime double view conversion"};
+}
+
+nanobind::object extension_scalar_to_python(bg::Scalar<>, const bg::python::PythonScalarConversions &) {
+    return nanobind::str{"extension scalar conversion"};
+}
+
 } // namespace
 
 NB_MODULE(_bg_test_extension, module) {
@@ -45,6 +63,36 @@ NB_MODULE(_bg_test_extension, module) {
     });
     module.def("register_double_type", [](nanobind::handle python_type) {
         return bg::python::scalar_conversions().add_python_type(python_type, bg::double_type());
+    });
+    module.def("runtime_conversion_overrides_type_conversion", [] {
+        auto conversions = bg::python::PythonScalarConversions{};
+        const auto added = conversions.add(bg::cpp_scalar_runtime_type<double>(), &runtime_double_to_python);
+        const auto view_added =
+            conversions.add(bg::cpp_scalar_runtime_type<double>(), &runtime_double_to_python_view);
+        const auto value = 42.0;
+        const auto typed_scalar = bg::Scalar<double>::from(value);
+        const auto scalar = bg::Scalar<>::from(typed_scalar);
+        const auto lifetime = std::make_shared<bg::python::CallbackLifetime>();
+        const auto callback = bg::python::CallbackScope{*lifetime};
+        return nanobind::make_tuple(added, conversions.to_python(scalar), view_added,
+                                    conversions.to_python_view(scalar, lifetime, callback.generation()));
+    });
+    module.def("date_time_conversions_can_be_registered", [] {
+        auto conversions = bg::python::PythonScalarConversions{};
+        const auto date_time_added = conversions.add(bg::evaluation_time_type(), &extension_scalar_to_python);
+        const auto timedelta_added = conversions.add(bg::timedelta_type(), &extension_scalar_to_python);
+
+        const auto date_time = bg::date_time_t{};
+        const auto timedelta = bg::timedelta_t{};
+        const auto typed_date_time = bg::Scalar<bg::date_time_t>::from(date_time);
+        const auto typed_timedelta = bg::Scalar<bg::timedelta_t>::from(timedelta);
+        const auto date_time_scalar = bg::Scalar<>::from(typed_date_time);
+        const auto timedelta_scalar = bg::Scalar<>::from(typed_timedelta);
+        const auto lifetime = std::make_shared<bg::python::CallbackLifetime>();
+        const auto callback = bg::python::CallbackScope{*lifetime};
+        return nanobind::make_tuple(date_time_added, conversions.to_python(date_time_scalar), timedelta_added,
+                                    conversions.to_python(timedelta_scalar),
+                                    conversions.to_python_view(date_time_scalar, lifetime, callback.generation()));
     });
     module.def("scalar_conversions_address",
                [] { return reinterpret_cast<std::uintptr_t>(&bg::python::scalar_conversions()); });

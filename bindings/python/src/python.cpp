@@ -8,6 +8,7 @@
 #include <bg/python/object.hpp>
 #include <bg/python/scalar_conversion.hpp>
 #include <bg/python/wiring_point.hpp>
+#include <bg/scalar/dict/scalar_type.hpp>
 #include <bg/scalar/runtime_type.hpp>
 #include <bg/testing/test_graph.hpp>
 #include <bg/time_series/tsb/details/wiring.hpp>
@@ -25,6 +26,7 @@
 #include <bg/version.hpp>
 
 #include "delta.hpp"
+#include "dict_view.hpp"
 #include "higher_order.hpp"
 #include "operator_binding.hpp"
 #include "wiring_argument.hpp"
@@ -439,6 +441,14 @@ void bind_core(nb::module_ &module) {
     module.def("version", [] { return std::string{bg::version()}; });
     module.def("_scalar_type",
                [](nb::handle value) { return TypeDescriptor{scalar_conversions().type_from_python(value)}; });
+    module.def("_dict_scalar_type", [](const TypeDescriptor &key_value, const TypeDescriptor &mapped_value) {
+        const auto *key = type_cast<ScalarType>(&key_value.type());
+        const auto *mapped = type_cast<ScalarType>(&mapped_value.type());
+        if (key == nullptr || mapped == nullptr) {
+            throw std::invalid_argument{"dict[K, V] requires scalar key and value annotations"};
+        }
+        return TypeDescriptor{dict_scalar_type(*key, *mapped)};
+    });
     module.def("_time_series_type", [](const TypeDescriptor &value) {
         if (value.accepts_absent_scalar()) {
             throw std::invalid_argument{"Optional[...] cannot be used inside TS[...]"};
@@ -550,6 +560,7 @@ void bind_core(nb::module_ &module) {
         .def_prop_ro("value", &InputView::value)
         .def_prop_ro("delta_value", &InputView::delta_value)
         .def("__getitem__", &InputView::getitem);
+    bind_dict_view(module);
     nb::class_<ReferenceValue>(module, "ReferenceValue").def_prop_ro("valid", &ReferenceValue::valid);
     nb::class_<PythonNodeDefinition>(module, "_PythonNodeDefinition");
     nb::class_<PythonGraphDefinition>(module, "_PythonGraphDefinition");

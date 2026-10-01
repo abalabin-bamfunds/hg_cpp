@@ -30,6 +30,29 @@ def test_extension_modules_share_python_conversion_registry():
     assert _bg._scalar_conversions_address() == extension.scalar_conversions_address()
 
 
+def test_runtime_scalar_conversion_overrides_semantic_type_conversion():
+    extension = pytest.importorskip("bg._bg_test_extension")
+
+    added, value, view_added, view = extension.runtime_conversion_overrides_type_conversion()
+
+    assert added
+    assert value == "runtime double conversion"
+    assert view_added
+    assert view == "runtime double view conversion"
+
+
+def test_date_time_scalar_conversions_remain_available_to_extensions():
+    extension = pytest.importorskip("bg._bg_test_extension")
+
+    assert extension.date_time_conversions_can_be_registered() == (
+        True,
+        "extension scalar conversion",
+        True,
+        "extension scalar conversion",
+        "extension scalar conversion",
+    )
+
+
 def test_symbol_is_a_value_type():
     value = bg.symbol("price")
 

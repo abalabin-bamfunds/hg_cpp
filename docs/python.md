@@ -154,6 +154,20 @@ def example(value: bg.TS[int]) -> bg.TS[int]:
 marks a scalar argument as optional and makes a time-series input optional if
 that parameter is wired to a time series.
 
+`dict[K, V]` declares a scalar dictionary. A plain `@node` callback receives a
+read-only `bg.Dict` mapping view for a dictionary parameter, whether graph code
+supplies a scalar or a `TS[dict[K, V]]`. The view expires when the callback returns.
+Length and key lookup do not convert unrelated entries; `[]` and `get()` each
+perform one dictionary lookup. Iterators advance a native cursor and convert
+entries only as Python consumes them. Each iterator uses fixed-size storage
+instead of snapshotting pointers proportional to the dictionary size. Each
+iteration starts a new cursor, and the iterator remains callback-scoped.
+`view.copy()` materializes the dictionary with direct native traversal.
+`dict(view)` also works, but Python's mapping constructor iterates keys and
+looks up each value. A dictionary output still uses an ordinary Python `dict`.
+`@compute_node` continues to expose a dictionary through `InputView.value`,
+which materializes the full value.
+
 A callback returns an output delta. Returning `None` requests no output change.
 Sink nodes have no output annotation and must return `None`. An exception
 raised by a callback propagates from `test_graph`. Each test run constructs and
@@ -206,6 +220,13 @@ as a C++ call.
 scalar type. Lookup follows the Python method resolution order. Register the
 corresponding Python-to-scalar conversion before values of a new scalar type
 are wired. Registrations retain their Python classes and last for the process.
+Extensions can register Python-to-scalar and scalar-to-Python handlers with
+`scalar_conversions().add(...)`. Scalar-to-Python-view handlers provide
+callback-scoped representations for direct `@node` arguments. Without one,
+view conversion uses the ordinary scalar-to-Python conversion. Runtime-specific
+handlers take precedence over handlers for the scalar type. Register handlers
+when the extension module initializes, before affected values are exposed to
+Python.
 
 Python wiring points are temporary proxies used while a graph is being
 constructed. They expire when graph construction returns.

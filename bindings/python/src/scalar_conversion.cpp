@@ -1,13 +1,18 @@
 #include <bg/python/scalar_conversion.hpp>
 
+#include "dict_view.hpp"
+
 #include <bg/python/object.hpp>
 
 #include <bg/scalar/builtins.hpp>
+#include <bg/scalar/bundle/scalar_type.hpp>
 #include <bg/scalar/dict/scalar_type.hpp>
+#include <bg/scalar/dict/runtime_type.hpp>
 #include <bg/scalar/list/scalar_type.hpp>
 #include <bg/scalar/set/scalar_type.hpp>
 #include <bg/scalar/struct/scalar_type.hpp>
-#include <bg/scalar/bundle/scalar_type.hpp>
+#include <bg/scalar/value.hpp>
+#include <bg/util/scope_exit.hpp>
 
 #include <nanobind/stl/string.h>
 
@@ -15,6 +20,7 @@
 #include <string>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 
 namespace bg::python {
 namespace {
@@ -32,9 +38,6 @@ ScalarValue<> from_python_bool(nanobind::handle value, allocator &memory, const 
     return make_scalar<bool>(value.ptr() == Py_True, memory);
 }
 
-nanobind::object to_python_byte(Scalar<> value, const PythonScalarConversions &) {
-    return nanobind::int_{std::to_integer<unsigned int>(scalar_cast<byte>(value).value())};
-}
 ScalarValue<> from_python_byte(nanobind::handle value, allocator &memory, const PythonScalarConversions &) {
     const auto converted = nanobind::cast<int>(value);
     if (converted < 0 || converted > 255) {
@@ -68,11 +71,43 @@ ScalarValue<> from_python_symbol(nanobind::handle value, allocator &memory, cons
     return make_scalar<symbol>(nanobind::cast<symbol>(value), memory);
 }
 
+ScalarValue<> from_python_dict(const DictScalarType &type, nanobind::handle value, allocator &memory,
+                               const PythonScalarConversions &conversions) {
+    if (PyMapping_Check(value.ptr()) == 0) {
+        PyErr_SetString(PyExc_TypeError, "expected a mapping for a scalar dictionary");
+        nanobind::raise_python_error();
+    }
+
+    auto items = nanobind::steal<nanobind::object>(PyMapping_Items(value.ptr()));
+    if (!items) {
+        nanobind::raise_python_error();
+    }
+
+    const auto &runtime_type = static_cast<const ScalarDictRuntimeType &>(resolve_scalar_runtime_type(type, {}));
+    auto *storage = memory.allocate_bytes(runtime_type.size(), runtime_type.alignment());
+    auto release_storage = util::scope_exit{[&]() noexcept {
+        memory.deallocate_bytes(storage, runtime_type.size(), runtime_type.alignment());
+    }};
+    runtime_type.construct_runtime_value(storage, memory);
+    auto release_value = util::scope_exit{[&]() noexcept { runtime_type.destroy(storage, memory); }};
+
+    for (const auto item : nanobind::borrow<nanobind::iterable>(items)) {
+        const auto pair = nanobind::cast<nanobind::tuple>(item);
+        auto key = conversions.from_python(type.key_type(), pair[0], memory);
+        auto mapped = conversions.from_python(type.mapped_type(), pair[1], memory);
+        runtime_type.insert_or_assign(storage, details::scalar_data(key), details::scalar_data(mapped), memory);
+    }
+
+    auto value_view = Scalar<Dict<SCALAR, SCALAR>>::from(runtime_type, storage);
+    return ScalarValue<>{value_view, memory};
+}
+
 nanobind::object to_python_list(const Scalar<List<SCALAR>> &value, const PythonScalarConversions &conversions) {
     auto result = nanobind::list{};
+    const auto item_to_python = conversions.to_python_handler(value.runtime_type().item_runtime_type());
     for (auto index = std::size_t{}; index < value.size(); ++index) {
         const auto item = value[index];
-        result.append(conversions.to_python(Scalar<>::from(item)));
+        result.append(item_to_python(Scalar<>::from(item), conversions));
     }
     return result;
 }
@@ -83,8 +118,9 @@ nanobind::object to_python_set(const Scalar<Set<SCALAR>> &value, const PythonSca
         nanobind::raise_python_error();
     }
 
+    const auto item_to_python = conversions.to_python_handler(value.runtime_type().item_runtime_type());
     value.for_each([&](Scalar<SCALAR> item) {
-        const auto converted = conversions.to_python(Scalar<>::from(item));
+        const auto converted = item_to_python(Scalar<>::from(item), conversions);
         if (PySet_Add(result.ptr(), converted.ptr()) < 0) {
             nanobind::raise_python_error();
         }
@@ -95,9 +131,12 @@ nanobind::object to_python_set(const Scalar<Set<SCALAR>> &value, const PythonSca
 nanobind::object to_python_dict(const Scalar<Dict<SCALAR, SCALAR>> &value,
                                const PythonScalarConversions &conversions) {
     auto result = nanobind::dict{};
+    const auto &runtime_type = value.runtime_type();
+    const auto key_to_python = conversions.to_python_handler(runtime_type.key_runtime_type());
+    const auto mapped_to_python = conversions.to_python_handler(runtime_type.mapped_runtime_type());
     value.for_each([&](Scalar<SCALAR> key, Scalar<SCALAR> item) {
-        const auto converted_key = conversions.to_python(Scalar<>::from(key));
-        const auto converted_value = conversions.to_python(Scalar<>::from(item));
+        const auto converted_key = key_to_python(Scalar<>::from(key), conversions);
+        const auto converted_value = mapped_to_python(Scalar<>::from(item), conversions);
         if (PyDict_SetItem(result.ptr(), converted_key.ptr(), converted_value.ptr()) < 0) {
             nanobind::raise_python_error();
         }
@@ -137,6 +176,76 @@ nanobind::object to_python_hierarchical(const Scalar<HIERARCHICAL> &value,
     return result;
 }
 
+nanobind::object to_python_byte(Scalar<> value, const PythonScalarConversions &) {
+    return nanobind::int_{std::to_integer<unsigned int>(unchecked_scalar_cast<byte>(value).value())};
+}
+
+nanobind::object to_python_bool(Scalar<> value, const PythonScalarConversions &) {
+    return nanobind::bool_{unchecked_scalar_cast<bool>(value).value()};
+}
+
+nanobind::object to_python_i64(Scalar<> value, const PythonScalarConversions &) {
+    return nanobind::int_{unchecked_scalar_cast<i64>(value).value()};
+}
+
+nanobind::object to_python_double(Scalar<> value, const PythonScalarConversions &) {
+    return nanobind::float_{unchecked_scalar_cast<double>(value).value()};
+}
+
+nanobind::object to_python_string(Scalar<> value, const PythonScalarConversions &) {
+    const auto text = unchecked_scalar_cast<string>(value).value();
+    return nanobind::str{text.data(), text.size()};
+}
+
+nanobind::object to_python_symbol(Scalar<> value, const PythonScalarConversions &) {
+    return nanobind::cast(unchecked_scalar_cast<symbol>(value).value());
+}
+
+nanobind::object to_python_structural(Scalar<> value, const PythonScalarConversions &conversions) {
+    auto result = value.visit(
+        [&conversions](const Scalar<List<SCALAR>> *scalar) -> nanobind::object {
+            return to_python_list(*scalar, conversions);
+        },
+        [&conversions](const Scalar<Set<SCALAR>> *scalar) -> nanobind::object {
+            return to_python_set(*scalar, conversions);
+        },
+        [&conversions](const Scalar<Dict<SCALAR, SCALAR>> *scalar) -> nanobind::object {
+            return to_python_dict(*scalar, conversions);
+        },
+        [&conversions](const Scalar<STRUCT> *scalar) -> nanobind::object {
+            return to_python_struct(*scalar, conversions);
+        },
+        [&conversions](const Scalar<HIERARCHICAL> *scalar) -> nanobind::object {
+            return to_python_hierarchical(*scalar, conversions);
+        },
+        [](const Scalar<> *) -> nanobind::object {
+            throw std::invalid_argument{"no Python conversion is registered for this scalar runtime type"};
+        },
+        ddv::noop);
+    if (!result) {
+        throw std::invalid_argument{"no Python conversion is registered for this scalar value"};
+    }
+    return std::move(*result);
+}
+
+nanobind::object to_python_view_default(Scalar<> value, const PythonScalarConversions &conversions,
+                                        const std::shared_ptr<CallbackLifetime> &lifetime,
+                                        std::uint64_t generation) {
+    auto result = value.visit(
+        [&](const Scalar<Dict<SCALAR, SCALAR>> *dictionary) -> nanobind::object {
+            return nanobind::cast(PythonDictView{*dictionary, conversions, lifetime, generation});
+        },
+        [&]<typename T>(const Scalar<T> *scalar) -> nanobind::object {
+            return conversions.to_python(Scalar<>::from(*scalar));
+        },
+        ddv::noop);
+    if (!result) {
+        throw std::invalid_argument{"no Python view conversion is registered for this scalar value"};
+    }
+
+    return std::move(*result);
+}
+
 } // namespace
 
 struct NB_HIDDEN PythonScalarConversions::Impl {
@@ -147,22 +256,36 @@ struct NB_HIDDEN PythonScalarConversions::Impl {
 
     ScalarDispatch<PythonToScalar> from_python;
     ScalarDispatch<ScalarToPython> to_python;
+    ScalarDispatch<ScalarToPythonView> to_python_view;
     std::unordered_map<PyTypeObject *, PythonType> python_types;
 };
 
 PythonScalarConversions::PythonScalarConversions() : impl_{std::make_unique<Impl>()} {
-    const auto add_builtin = [this](const ScalarType &type, PythonToScalar conversion) {
+    const auto add_from_python = [this](const ScalarType &type, PythonToScalar conversion) {
         if (!impl_->from_python.add(type, conversion)) {
             throw std::logic_error{"a built-in Python scalar conversion was registered twice"};
         }
     };
 
-    add_builtin(byte_type(), &from_python_byte);
-    add_builtin(bool_type(), &from_python_bool);
-    add_builtin(int64_type(), &from_python_i64);
-    add_builtin(double_type(), &from_python_double);
-    add_builtin(string_type(), &from_python_string);
-    add_builtin(symbol_type(), &from_python_symbol);
+    add_from_python(byte_type(), &from_python_byte);
+    add_from_python(bool_type(), &from_python_bool);
+    add_from_python(int64_type(), &from_python_i64);
+    add_from_python(double_type(), &from_python_double);
+    add_from_python(string_type(), &from_python_string);
+    add_from_python(symbol_type(), &from_python_symbol);
+
+    const auto add_to_python = [this](const ScalarType &type, ScalarToPython conversion) {
+        if (!impl_->to_python.add(type, conversion)) {
+            throw std::logic_error{"a built-in scalar-to-Python conversion was registered twice"};
+        }
+    };
+
+    add_to_python(byte_type(), &to_python_byte);
+    add_to_python(bool_type(), &to_python_bool);
+    add_to_python(int64_type(), &to_python_i64);
+    add_to_python(double_type(), &to_python_double);
+    add_to_python(string_type(), &to_python_string);
+    add_to_python(symbol_type(), &to_python_symbol);
 
     const auto add_python_builtin = [this](PyTypeObject &python_type, const ScalarType &scalar_type) {
         auto type = nanobind::handle{reinterpret_cast<PyObject *>(&python_type)};
@@ -198,6 +321,20 @@ bool PythonScalarConversions::add(const ScalarRuntimeType &runtime_type, ScalarT
     return impl_->to_python.add(runtime_type, conversion);
 }
 
+bool PythonScalarConversions::add(const ScalarType &type, ScalarToPythonView conversion) {
+    if (conversion == nullptr) {
+        throw std::invalid_argument{"a scalar-to-Python-view conversion cannot be null"};
+    }
+    return impl_->to_python_view.add(type, conversion);
+}
+
+bool PythonScalarConversions::add(const ScalarRuntimeType &runtime_type, ScalarToPythonView conversion) {
+    if (conversion == nullptr) {
+        throw std::invalid_argument{"a scalar-to-Python-view conversion cannot be null"};
+    }
+    return impl_->to_python_view.add(runtime_type, conversion);
+}
+
 bool PythonScalarConversions::add_python_type(nanobind::handle python_type, const ScalarType &type) {
     if (!PyType_Check(python_type.ptr())) {
         throw std::invalid_argument{"a Python scalar type registration requires a Python type"};
@@ -207,46 +344,27 @@ bool PythonScalarConversions::add_python_type(nanobind::handle python_type, cons
     return impl_->python_types.emplace(type_key, Impl::PythonType{Object{python_type}, &type}).second;
 }
 
-nanobind::object PythonScalarConversions::to_python(Scalar<> value) const {
-    auto result = value.visit(
-        [this](const Scalar<byte> *scalar) -> nanobind::object {
-            return to_python_byte(Scalar<>::from(*scalar), *this);
-        },
-        [](const Scalar<bool> *scalar) -> nanobind::object { return nanobind::bool_{scalar->value()}; },
-        [](const Scalar<i64> *scalar) -> nanobind::object { return nanobind::int_{scalar->value()}; },
-        [](const Scalar<double> *scalar) -> nanobind::object { return nanobind::float_{scalar->value()}; },
-        [](const Scalar<date_time_t> *) -> nanobind::object {
-            throw std::invalid_argument{"Python conversion for bg.date_time_t is not registered"};
-        },
-        [](const Scalar<timedelta_t> *) -> nanobind::object {
-            throw std::invalid_argument{"Python conversion for bg.timedelta_t is not registered"};
-        },
-        [](const Scalar<string> *scalar) -> nanobind::object {
-            const auto text = scalar->value();
-            return nanobind::str{text.data(), text.size()};
-        },
-        [](const Scalar<symbol> *scalar) -> nanobind::object { return nanobind::cast(scalar->value()); },
-        [this](const Scalar<List<SCALAR>> *scalar) -> nanobind::object { return to_python_list(*scalar, *this); },
-        [this](const Scalar<Set<SCALAR>> *scalar) -> nanobind::object { return to_python_set(*scalar, *this); },
-        [this](const Scalar<Dict<SCALAR, SCALAR>> *scalar) -> nanobind::object {
-            return to_python_dict(*scalar, *this);
-        },
-        [this](const Scalar<STRUCT> *scalar) -> nanobind::object { return to_python_struct(*scalar, *this); },
-        [this](const Scalar<HIERARCHICAL> *scalar) -> nanobind::object {
-            return to_python_hierarchical(*scalar, *this);
-        },
-        [this](const Scalar<> *scalar) -> nanobind::object {
-            const auto *conversion = impl_->to_python.find(scalar->runtime_type());
-            if (conversion == nullptr) {
-                throw std::invalid_argument{"no Python conversion is registered for this scalar runtime type"};
-            }
-            return (*conversion)(*scalar, *this);
-        },
-        ddv::noop);
-    if (!result) {
-        throw std::invalid_argument{"no Python conversion is registered for this scalar value"};
+ScalarToPython PythonScalarConversions::to_python_handler(const ScalarRuntimeType &runtime_type) const noexcept {
+    if (const auto *conversion = impl_->to_python.find(runtime_type)) {
+        return *conversion;
     }
-    return std::move(*result);
+    return &to_python_structural;
+}
+
+nanobind::object PythonScalarConversions::to_python(Scalar<> value) const {
+    return to_python_handler(value.runtime_type())(value, *this);
+}
+
+nanobind::object PythonScalarConversions::to_python_view(
+    Scalar<> value, const std::shared_ptr<CallbackLifetime> &lifetime, std::uint64_t generation) const {
+    if (const auto *conversion = impl_->to_python_view.find(value.runtime_type())) {
+        return (*conversion)(value, *this, lifetime, generation);
+    }
+    if (const auto *conversion = impl_->to_python.find(value.runtime_type())) {
+        return (*conversion)(value, *this);
+    }
+
+    return to_python_view_default(value, *this, lifetime, generation);
 }
 
 const ScalarType &PythonScalarConversions::type_from_python(nanobind::handle python_type) const {
@@ -284,14 +402,25 @@ ScalarValue<> PythonScalarConversions::from_python(nanobind::handle value, alloc
 ScalarValue<> PythonScalarConversions::from_python(const ScalarType &type, nanobind::handle value,
                                                    allocator &memory) const {
     const auto *conversion = impl_->from_python.find(type);
-    if (conversion == nullptr) {
-        throw std::invalid_argument{"no Python-to-scalar conversion is registered for this scalar type"};
+    if (conversion != nullptr) {
+        return (*conversion)(value, memory, *this);
     }
-    return (*conversion)(value, memory, *this);
+
+    if (const auto *dictionary = type_cast<DictScalarType>(&type)) {
+        return from_python_dict(*dictionary, value, memory, *this);
+    }
+
+    throw std::invalid_argument{"no Python-to-scalar conversion is registered for this scalar type"};
 }
 
 bool PythonScalarConversions::can_from_python(const ScalarType &type) const noexcept {
-    return impl_->from_python.find(type) != nullptr;
+    if (impl_->from_python.find(type) != nullptr) {
+        return true;
+    }
+    if (const auto *dictionary = type_cast<DictScalarType>(&type)) {
+        return can_from_python(dictionary->key_type()) && can_from_python(dictionary->mapped_type());
+    }
+    return false;
 }
 
 PythonToScalar PythonScalarConversions::from_python_handler(const ScalarType &type) const noexcept {

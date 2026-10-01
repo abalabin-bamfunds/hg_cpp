@@ -3,6 +3,9 @@
 #include <bg/scalar/runtime_type.hpp>
 
 #include <cstddef>
+#include <memory>
+#include <optional>
+#include <span>
 
 namespace bg {
 
@@ -31,6 +34,19 @@ class ScalarDictRuntimeType : public ScalarRuntimeType {
         ConstItem value;
     };
 
+    struct BatchEntry {
+        // These pointers use key_runtime_type() and mapped_runtime_type(), respectively.
+        const void *key;
+        const void *mapped;
+    };
+
+    class Cursor {
+      public:
+        virtual ~Cursor() = default;
+        // Returns zero at the end. The caller must provide a non-empty buffer.
+        [[nodiscard]] virtual std::size_t next_batch(std::span<BatchEntry> buffer) = 0;
+    };
+
     using EntryFunction = void (*)(void *, Entry);
 
     bool accepts_input(const ScalarRuntimeType &source) const noexcept override;
@@ -57,6 +73,10 @@ class ScalarDictRuntimeType : public ScalarRuntimeType {
         return at(storage, details::scalar_data(key));
     }
     virtual void for_each(const void *storage, void *context, EntryFunction function) const = 0;
+    [[nodiscard]] virtual std::optional<ConstItem> find(const void *storage,
+                                                        const details::ScalarData &key) const = 0;
+    // The cursor borrows storage. Keep the dictionary alive and unchanged until the cursor is destroyed.
+    [[nodiscard]] virtual std::unique_ptr<Cursor> make_cursor(const void *storage) const = 0;
 
     virtual void insert_or_assign(void *storage, const details::ScalarData &key, const details::ScalarData &value,
                                   allocator &memory) const = 0;
