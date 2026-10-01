@@ -89,6 +89,70 @@ TEST_CASE("a time series dictionary publishes item and key changes",
 
 namespace {
 
+struct dictionary_cursor_definition {
+    bg::In<bg::TSD<std::int64_t, bg::TS<bg::i64>>> input;
+
+    void evaluate() const {
+        current.push_back(collect(&bg::In<bg::TSD<std::int64_t, bg::TS<bg::i64>>>::next_item_id));
+        added.push_back(collect(&bg::In<bg::TSD<std::int64_t, bg::TS<bg::i64>>>::next_added_id));
+        removed.push_back(collect(&bg::In<bg::TSD<std::int64_t, bg::TS<bg::i64>>>::next_removed_id));
+        modified.push_back(collect(&bg::In<bg::TSD<std::int64_t, bg::TS<bg::i64>>>::next_modified_id));
+    }
+
+    using Next = bg::item_id_t (bg::In<bg::TSD<std::int64_t, bg::TS<bg::i64>>>::*)(bg::item_id_t) const noexcept;
+
+    std::vector<bg::item_id_t> collect(Next next) const {
+        auto result = std::vector<bg::item_id_t>{};
+        for (auto start = bg::item_id_t{};;) {
+            const auto id = (input.*next)(start);
+            if (id == bg::util::occupancy_index::npos) {
+                return result;
+            }
+            result.push_back(id);
+            start = id + 1;
+        }
+    }
+
+    inline static std::vector<std::vector<bg::item_id_t>> current;
+    inline static std::vector<std::vector<bg::item_id_t>> added;
+    inline static std::vector<std::vector<bg::item_id_t>> removed;
+    inline static std::vector<std::vector<bg::item_id_t>> modified;
+};
+
+} // namespace
+
+TEST_CASE("a time series dictionary cursor enumerates current and changed items",
+          "[evaluation][tsd][feature:collection-change][series:tsd][scalar:integer]"
+          "[transition:addition][transition:removal][binding:direct]") {
+    const auto source = bg::node<dict_source_definition>();
+    const auto sink = bg::node<dictionary_cursor_definition>();
+    dictionary_cursor_definition::current.clear();
+    dictionary_cursor_definition::added.clear();
+    dictionary_cursor_definition::removed.clear();
+    dictionary_cursor_definition::modified.clear();
+
+    bg::run_graph([&] { sink(source()); });
+
+    CHECK(dictionary_cursor_definition::current ==
+          std::vector<std::vector<bg::item_id_t>>{{0, 1}, {0, 1}, {0}});
+    CHECK(dictionary_cursor_definition::added == std::vector<std::vector<bg::item_id_t>>{{0, 1}, {}, {}});
+    CHECK(dictionary_cursor_definition::removed == std::vector<std::vector<bg::item_id_t>>{{}, {}, {1}});
+    CHECK(dictionary_cursor_definition::modified == std::vector<std::vector<bg::item_id_t>>{{}, {0}, {}});
+}
+
+TEST_CASE("an invalid dictionary cursor has no item IDs",
+          "[feature:collection-change][series:tsd][coverage-exempt]") {
+    const auto input = bg::In<bg::TSD<std::int64_t, bg::TS<bg::i64>>>{};
+
+    CHECK_FALSE(input.key_set().valid());
+    CHECK(input.next_item_id(0) == bg::util::occupancy_index::npos);
+    CHECK(input.next_added_id(0) == bg::util::occupancy_index::npos);
+    CHECK(input.next_removed_id(0) == bg::util::occupancy_index::npos);
+    CHECK(input.next_modified_id(0) == bg::util::occupancy_index::npos);
+}
+
+namespace {
+
 struct item_modified_value_definition {
     bg::In<bg::TSD<std::int64_t, bg::TS<bg::i64>>> input;
     bg::Out<bg::TS<bool>> output;

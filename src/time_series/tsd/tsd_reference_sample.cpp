@@ -30,6 +30,7 @@ class SampledDictionaryRuntimeType final : public TimeSeriesDictionaryRuntimeTyp
     void for_each_added(const EvaluationTime &, const void *, void *, ItemIdFunction) const override;
     void for_each_removed(const EvaluationTime &, const void *, void *, ItemIdFunction) const override;
     void for_each_modified(const EvaluationTime &, const void *, void *, ItemIdFunction) const override;
+    item_id_t next_item_id(const EvaluationTime &, const void *, ItemRange, item_id_t) const noexcept override;
     bool item_modified(const EvaluationTime &, const void *, item_id_t id) const noexcept override;
     std::size_t item_count(const void *value) const override;
     ConstItem item(const void *value, item_id_t id) const override;
@@ -295,6 +296,35 @@ void SampledDictionaryRuntimeType::for_each_modified(const EvaluationTime &, con
     for (const auto id : sample.modified) {
         function(context, id);
     }
+}
+
+item_id_t SampledDictionaryRuntimeType::next_item_id(const EvaluationTime &, const void *value, ItemRange range,
+                                                      item_id_t start) const noexcept {
+    if (value == nullptr) {
+        return util::occupancy_index::npos;
+    }
+
+    const auto &sample = *static_cast<const SampledDictionary *>(value);
+    const auto unflagged_start = start & ~previous_item_flag;
+    const auto next = [&](const util::index<> &ids) {
+        const auto id = ids.first_set(unflagged_start);
+        return id == ids.size() ? util::occupancy_index::npos : id;
+    };
+    if (range == ItemRange::current) {
+        if (!sample.current.valid()) {
+            return util::occupancy_index::npos;
+        }
+        return dictionary_runtime_type(sample.current)->next_item_id(*sample.current.last_updated,
+                                                                      sample.current.storage, range, unflagged_start);
+    }
+    if (range == ItemRange::added) {
+        return next(sample.added);
+    }
+    if (range == ItemRange::removed) {
+        const auto id = next(sample.removed);
+        return id == util::occupancy_index::npos ? id : id | previous_item_flag;
+    }
+    return next(sample.modified);
 }
 
 bool SampledDictionaryRuntimeType::item_modified(const EvaluationTime &, const void *value,

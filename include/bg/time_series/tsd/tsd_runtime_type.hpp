@@ -7,6 +7,7 @@
 #include <bg/type/time_series_dict_type.hpp>
 #include <bg/util/occupancy_index.hpp>
 
+#include <cstdint>
 #include <memory>
 #include <stdexcept>
 
@@ -27,6 +28,8 @@ struct RetainedDictionaryKey {
 
 class TimeSeriesDictionaryRuntimeType : public TimeSeriesRuntimeType {
   public:
+    enum class ItemRange : std::uint8_t { current, added, removed, modified };
+
     TimeSeriesDictionaryRuntimeType(const TimeSeriesDictionaryType &type, const ScalarRuntimeType &key,
                                     const TimeSeriesRuntimeType &item)
         : TimeSeriesRuntimeType{type,
@@ -41,14 +44,12 @@ class TimeSeriesDictionaryRuntimeType : public TimeSeriesRuntimeType {
           item_value_offset_{contained_time_series_value_offset(item)} {}
 
     const ScalarRuntimeType &key_runtime_type() const noexcept { return *key_; }
+    const TimeSeriesRuntimeType &key_set_runtime_type() const noexcept { return *keys_; }
     const TimeSeriesRuntimeType &item_runtime_type() const noexcept { return *item_; }
 
-    virtual DictionaryKeyStorage retention_storage(void *value) const noexcept {
-        return {this, value};
-    }
+    virtual DictionaryKeyStorage retention_storage(void *value) const noexcept { return {this, value}; }
 
-    virtual RetainedDictionaryKey retain_key(void *value, const ScalarData &key,
-                                             allocator &memory) const {
+    virtual RetainedDictionaryKey retain_key(void *value, const ScalarData &key, allocator &memory) const {
         auto &keys = static_cast<time_series_dict_storage *>(value)->key_storage().value;
         return {this, value, keys.retain(key, *key_, key_layout_, memory)};
     }
@@ -113,8 +114,48 @@ class TimeSeriesDictionaryRuntimeType : public TimeSeriesRuntimeType {
         }
     }
 
-    virtual bool item_modified(const EvaluationTime &last_updated, const void *value,
-                               item_id_t id) const noexcept {
+    // Returns the first item ID at or after start. A sampled removed item retains
+    // its existing previous-item flag so that key() and item() select its source.
+    virtual item_id_t next_item_id(const EvaluationTime &last_updated, const void *value, ItemRange range,
+                                   item_id_t start) const noexcept {
+        if (value == nullptr) {
+            return util::occupancy_index::npos;
+        }
+
+        const auto &storage = *static_cast<const time_series_dict_storage *>(value);
+        const auto &keys = storage.key_storage().value;
+        const auto next = [&](const util::index<> &ids) {
+            const auto id = ids.first_set(start);
+            return id == ids.size() ? util::occupancy_index::npos : id;
+        };
+
+        if (range == ItemRange::current) {
+            return next(keys.live());
+        }
+        if (last_updated <= MIN_DT || storage.change_time() != last_updated) {
+            return util::occupancy_index::npos;
+        }
+        if (range == ItemRange::added) {
+            return next(keys.added());
+        }
+        if (range == ItemRange::removed) {
+            return next(keys.removed());
+        }
+
+        auto id = next(storage.modified());
+        while (id != util::occupancy_index::npos && keys.added().contains(id)) {
+            const auto next_id = storage.modified().first_set(id + 1);
+            id = next_id == storage.modified().size() ? util::occupancy_index::npos : next_id;
+        }
+        return id;
+    }
+
+    bool item_in_range(const EvaluationTime &last_updated, const void *value, ItemRange range,
+                       item_id_t id) const noexcept {
+        return next_item_id(last_updated, value, range, id) == id;
+    }
+
+    virtual bool item_modified(const EvaluationTime &last_updated, const void *value, item_id_t id) const noexcept {
         const auto &storage = *static_cast<const time_series_dict_storage *>(value);
         return last_updated > MIN_DT && storage.change_time() == last_updated && storage.modified().contains(id) &&
                !storage.key_storage().value.added().contains(id);
@@ -157,8 +198,7 @@ class TimeSeriesDictionaryRuntimeType : public TimeSeriesRuntimeType {
         }
     }
 
-    bool item_updated(const EvaluationTime &last_updated, const void *value,
-                      item_id_t id) const noexcept override {
+    bool item_updated(const EvaluationTime &last_updated, const void *value, item_id_t id) const noexcept override {
         const auto &storage = *static_cast<const time_series_dict_storage *>(value);
         if (last_updated <= MIN_DT || storage.change_time() != last_updated) {
             return false;
@@ -194,8 +234,8 @@ class TimeSeriesDictionaryRuntimeType : public TimeSeriesRuntimeType {
         }
     }
 
-    [[nodiscard]] bool mark_item_modified(void *value, item_id_t id, EvaluationTime evaluation_time,
-                                          EvaluationTime, allocator &memory) const noexcept override {
+    [[nodiscard]] bool mark_item_modified(void *value, item_id_t id, EvaluationTime evaluation_time, EvaluationTime,
+                                          allocator &memory) const noexcept override {
         if (id == key_set_item_id) {
             return true;
         }

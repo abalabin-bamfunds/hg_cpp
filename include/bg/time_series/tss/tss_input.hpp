@@ -37,6 +37,9 @@ class In<TSS<K, TimeSeriesProperties...>, Properties...> {
     std::size_t size() const noexcept { return valid() ? storage().size() : 0; }
     bool contains(const Scalar<K> &item) const { return contains(details::scalar_data(item)); }
 
+    bool was_added(const Scalar<K> &item) const { return valid() && changed(item, storage().added()); }
+    bool was_removed(const Scalar<K> &item) const { return data() != nullptr && changed(item, storage().removed()); }
+
     template <typename Source>
         requires(!details::scalar_variable<K> && scalar_source_for<K, Source>)
     bool contains(Source &&item) const {
@@ -60,6 +63,25 @@ class In<TSS<K, TimeSeriesProperties...>, Properties...> {
         if (!valid() || storage().change_time() == last_updated()) {
             apply(storage().removed(), function);
         }
+    }
+
+    Scalar<K> item_at(item_id_t position) const {
+        return Scalar<K>::from(key_runtime_type(), storage().key(position, key_layout()));
+    }
+
+    item_id_t next_item_id(item_id_t start) const noexcept {
+        return valid() ? next(storage().live(), start) : util::occupancy_index::npos;
+    }
+
+    item_id_t next_added_id(item_id_t start) const noexcept {
+        return valid() && storage().change_time() == last_updated() ? next(storage().added(), start)
+                                                                    : util::occupancy_index::npos;
+    }
+
+    item_id_t next_removed_id(item_id_t start) const noexcept {
+        return data() != nullptr && (!valid() || storage().change_time() == last_updated())
+                   ? next(storage().removed(), start)
+                   : util::occupancy_index::npos;
     }
 
     const TimeSeriesRuntimeType &runtime_type() const noexcept { return data_.runtime_type(); }
@@ -94,6 +116,23 @@ class In<TSS<K, TimeSeriesProperties...>, Properties...> {
 
     bool contains(const details::ScalarData &item) const {
         return valid() && storage().contains(item, key_runtime_type(), key_layout());
+    }
+
+    bool changed(const Scalar<K> &item, const util::index<> &positions) const {
+        return changed(details::scalar_data(item), positions);
+    }
+
+    bool changed(const details::ScalarData &item, const util::index<> &positions) const {
+        if (data() == nullptr || storage().change_time() != last_updated()) {
+            return false;
+        }
+        const auto position = storage().find_position(item, key_runtime_type(), key_layout());
+        return position != util::occupancy_index::npos && positions.contains(position);
+    }
+
+    static item_id_t next(const util::index<> &positions, item_id_t start) noexcept {
+        const auto position = positions.first_set(start);
+        return position == positions.size() ? util::occupancy_index::npos : position;
     }
 
     template <typename Function> void apply(const util::index<> &positions, Function &function) const {

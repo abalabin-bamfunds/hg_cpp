@@ -8,6 +8,7 @@
 #include <bg/time_series/tsd/tsd_runtime_type.hpp>
 #include <bg/time_series/tsd/tsd_storage.hpp>
 #include <bg/time_series/tsd/tsd_type.hpp>
+#include <bg/time_series/tss/tss_input.hpp>
 
 #include <functional>
 #include <memory>
@@ -24,6 +25,7 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...> {
 
   public:
     using storage_type = details::time_series_dict_storage;
+    using ItemRange = details::TimeSeriesDictionaryRuntimeType::ItemRange;
 
     In() noexcept : data_{cpp_time_series_runtime_type<TSD<K, Item, TimeSeriesProperties...>>(), MIN_DT, nullptr} {}
 
@@ -83,6 +85,47 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...> {
 
     template <typename Function> void for_each_id_value(Function &&function) const {
         for_each_live_id([&](item_id_t id) { std::invoke(function, id, make_item(id)); });
+    }
+
+    Scalar<K> key_at(item_id_t id) const { return make_key(id); }
+    In<Item> item_at(item_id_t id) const { return make_item(id); }
+
+    In<TSS<K>> key_set() const {
+        if (!valid()) {
+            return {MIN_DT, nullptr, dictionary_runtime_type().key_set_runtime_type()};
+        }
+        const auto item = data_.runtime_type().item(data_.data(), key_set_item_id);
+        return {item.last_updated, item.value, item.runtime_type,
+                data_.modified() && item.last_updated == data_.last_updated()};
+    }
+
+    item_id_t next_item_id(item_id_t start) const noexcept { return next(ItemRange::current, start); }
+    item_id_t next_added_id(item_id_t start) const noexcept { return next(ItemRange::added, start); }
+    item_id_t next_removed_id(item_id_t start) const noexcept { return next(ItemRange::removed, start); }
+    item_id_t next_modified_id(item_id_t start) const noexcept { return next(ItemRange::modified, start); }
+
+    item_id_t find_item_id(const Scalar<K> &key, ItemRange range = ItemRange::current) const noexcept {
+        if (data_.data() == nullptr) {
+            return util::occupancy_index::npos;
+        }
+
+        const auto id = dictionary_runtime_type().find_key(data_.data(), details::scalar_data(key));
+        if (id != util::occupancy_index::npos &&
+            dictionary_runtime_type().item_in_range(last_updated(), data_.data(), range, id)) {
+            return id;
+        }
+
+        // A sampled dictionary keeps removed keys in its previous target. Its
+        // current target cannot find those keys, so search only the requested
+        // changed range.
+        for (auto candidate = next(range, 0); candidate != util::occupancy_index::npos;
+             candidate = next(range, candidate + 1)) {
+            if (key_runtime_type().equals(dictionary_runtime_type().key(data_.data(), candidate),
+                                          details::scalar_data(key))) {
+                return candidate;
+            }
+        }
+        return util::occupancy_index::npos;
     }
 
     template <typename Function> void for_each(Function &&function) const {
@@ -181,6 +224,10 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...> {
 
     using ChangeFunction = void (details::TimeSeriesDictionaryRuntimeType::*)(
         const EvaluationTime &, const void *, void *, TimeSeriesRuntimeType::ItemIdFunction) const;
+
+    item_id_t next(ItemRange range, item_id_t start) const noexcept {
+        return dictionary_runtime_type().next_item_id(last_updated(), data_.data(), range, start);
+    }
 
     template <typename Function> void apply_changes(ChangeFunction changes, Function &function) const {
         auto callback = [&](item_id_t id) { std::invoke(function, make_key(id)); };

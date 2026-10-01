@@ -77,6 +77,28 @@ TEST_CASE("a runtime-sized index grows, resets, clears, and iterates set positio
     CHECK(memory.allocations() == 0);
 }
 
+TEST_CASE("an index finds the next set position", "[index][coverage-exempt]") {
+    auto memory = counting_memory_resource{};
+    auto dynamic = bg::util::index<>{};
+    CHECK(dynamic.set(3, memory));
+    CHECK(dynamic.set(64, memory));
+    CHECK(dynamic.set(130, memory));
+
+    CHECK(dynamic.first_set(0) == 3);
+    CHECK(dynamic.first_set(4) == 64);
+    CHECK(dynamic.first_set(65) == 130);
+    CHECK(dynamic.first_set(131) == dynamic.size());
+    dynamic.release(memory);
+
+    auto fixed = bg::util::index<129>{};
+    CHECK(fixed.set(3));
+    CHECK(fixed.set(64));
+    CHECK(fixed.set(128));
+    CHECK(fixed.first_set(4) == 64);
+    CHECK(fixed.first_set(65) == 128);
+    CHECK(fixed.first_set(129) == fixed.size());
+}
+
 TEST_CASE("a runtime-sized index retains its state when growth fails", "[index][coverage-exempt]") {
     auto memory = counting_memory_resource{};
     auto index = bg::util::index<>{};

@@ -598,6 +598,38 @@ TEST_CASE("dictionary getitem follows a sampled dictionary item",
     CHECK(actual.equals({20, 200, 200}));
 }
 
+TEST_CASE("a sampled dictionary cursor enumerates every removed key",
+          "[evaluation][series:tsd][series:value][reference][feature:sampling]"
+          "[binding:reference-to-value][shape:nested][transition:removal]") {
+    const auto make_first = node([](In<TS<bool>>, Out<TSD<std::int64_t, TS<i64>>> output) {
+        output[1].set(10);
+        output[2].set(20);
+        output[3].set(30);
+    });
+    const auto make_second = node([](In<TS<bool>>, Out<TSD<std::int64_t, TS<i64>>> output) { output[3].set(300); });
+    const auto select = node([](In<TS<bool>> use_second, In<REF<TSD<std::int64_t, TS<i64>>>> first,
+                                In<REF<TSD<std::int64_t, TS<i64>>>> second,
+                                Out<TSD<std::int64_t, REF<TSD<std::int64_t, TS<i64>>>>> output) {
+        output[0].copy(*use_second ? second : first);
+    });
+    const auto inspect = node([](In<TSD<std::int64_t, TSD<std::int64_t, TS<i64>>>> input, Out<TS<i64>> output) {
+        const auto sampled = input[0];
+        auto removed = i64{};
+        for (auto id = sampled.next_removed_id(0); id != util::occupancy_index::npos;
+             id = sampled.next_removed_id(id + 1)) {
+            removed = removed * 10 + *sampled.key_at(id);
+        }
+        output.set(removed);
+    });
+    const auto graph = [&](wp<TS<bool>> use_second) {
+        return inspect(select(use_second, make_first(use_second), make_second(use_second)));
+    };
+
+    const auto actual = testing::test_graph(graph, std::array{false, true});
+
+    CHECK(actual.equals({0, 12}));
+}
+
 TEST_CASE("all consumers see the same dictionary target sample",
           "[evaluation][series:tsd][series:value][reference][feature:reference]"
           "[binding:reference-to-value][shape:nested][transition:update]") {

@@ -1,3 +1,5 @@
+from datetime import datetime
+
 import pytest
 
 import bg
@@ -14,7 +16,8 @@ def test_time_series_set_value_and_delta():
 
     @bg.compute_node
     def inspect(value: bg.TSS[int]) -> bg.TS[int]:
-        observed.append((value.value, value.delta_value))
+        delta = value.delta_value
+        observed.append((frozenset(value.value), bg.SetDelta(delta.added, delta.removed)))
         return sum(value.value)
 
     @bg.graph
@@ -41,7 +44,8 @@ def test_time_series_set_output_accepts_removed_markers():
 
     @bg.compute_node
     def inspect(value: bg.TSS[int]) -> bg.TS[int]:
-        observed.append((value.value, value.delta_value))
+        delta = value.delta_value
+        observed.append((frozenset(value.value), bg.SetDelta(delta.added, delta.removed)))
         return sum(value.value)
 
     @bg.graph
@@ -65,6 +69,24 @@ def test_removed_marker_matches_hgraph_value_semantics():
     assert 2 == removed
     assert removed == bg.Removed(2)
     assert removed != bg.Removed(3)
+
+
+def test_input_views_expose_last_modified_time_as_datetime():
+    observed = []
+
+    @bg.compute_node
+    def inspect(value: bg.TS[int]) -> bg.TS[int]:
+        observed.append((value.valid, value.modified, value.last_modified_time))
+        return value.value
+
+    @bg.graph
+    def graph(value: bg.TS[int]) -> bg.TS[int]:
+        return inspect(value)
+
+    assert bg.test_graph(graph, [1, 2]) == [1, 2]
+    assert [valid for valid, _, _ in observed] == [True, True]
+    assert [modified for _, modified, _ in observed] == [True, True]
+    assert all(isinstance(timestamp, datetime) for _, _, timestamp in observed)
 
 
 def test_time_series_set_removed_markers_apply_recursively_in_dictionary():
@@ -96,7 +118,7 @@ def test_fixed_time_series_list_value_delta_and_item_access():
 
     @bg.compute_node
     def inspect(value: bg.TSL[bg.TS[int], 3]) -> bg.TS[int]:
-        observed.append((value.value, value.delta_value, value[1].valid))
+        observed.append((list(value.value), dict(value.delta_value), value[1].valid))
         return sum(item or 0 for item in value.value)
 
     @bg.graph
@@ -127,7 +149,7 @@ def test_time_series_bundle_value_delta_inheritance_and_item_access():
 
     @bg.compute_node
     def inspect(value: bg.TSB[Pair]) -> bg.TS[int]:
-        observed.append((value.value, value.delta_value, value["right"].valid))
+        observed.append((dict(value.value), dict(value.delta_value), value["right"].valid))
         return sum(item or 0 for item in value.value.values())
 
     @bg.graph
@@ -166,7 +188,7 @@ def test_time_series_dictionary_value_delta_removal_resurrection_and_item_access
 
     @bg.compute_node
     def inspect(value: bg.TSD[int, bg.TS[int]]) -> bg.TS[int]:
-        observed.append((value.value, value.delta_value, value[2].value))
+        observed.append((dict(value.value), dict(value.delta_value), value[2].value))
         return sum(value.value.values())
 
     @bg.graph
@@ -276,6 +298,43 @@ def test_tsd_of_references_notifies_a_dereferenced_python_input():
     assert bg.test_graph(graph, [1, 2, 3], [10, 20, 30], [1, 2, 3]) == [11, 22, 33]
 
 
+def test_sampled_tsd_delta_keeps_removed_keys_available_for_lookup():
+    observed = []
+
+    @bg.compute_node
+    def first(trigger: bg.TS[bool]) -> bg.TSD[int, bg.TS[int]]:
+        return {1: 10, 2: 20, 3: 30}
+
+    @bg.compute_node
+    def second(trigger: bg.TS[bool]) -> bg.TSD[int, bg.TS[int]]:
+        return {3: 300}
+
+    @bg.compute_node
+    def select(
+        use_second: bg.TS[bool],
+        left: bg.REF[bg.TSD[int, bg.TS[int]]],
+        right: bg.REF[bg.TSD[int, bg.TS[int]]],
+    ) -> bg.TSD[int, bg.REF[bg.TSD[int, bg.TS[int]]]]:
+        return {0: right.value if use_second.value else left.value}
+
+    @bg.compute_node
+    def inspect(values: bg.TSD[int, bg.TSD[int, bg.TS[int]]]) -> bg.TS[int]:
+        sampled = values[0]
+        delta = sampled.delta_value
+        observed.append((dict(sampled.value), dict(delta), delta[1], delta[2]))
+        return sum(sampled.value.values())
+
+    @bg.graph
+    def graph(use_second: bg.TS[bool]) -> bg.TS[int]:
+        return inspect(select(use_second, first(use_second), second(use_second)))
+
+    assert bg.test_graph(graph, [False, True]) == [60, 300]
+    assert observed == [
+        ({1: 10, 2: 20, 3: 30}, {1: 10, 2: 20, 3: 30}, 10, 20),
+        ({3: 300}, {1: bg.REMOVE, 2: bg.REMOVE, 3: 300}, bg.REMOVE, bg.REMOVE),
+    ]
+
+
 def test_fixed_list_of_references_can_be_dereferenced_as_one_collection():
     @bg.compute_node
     def make_references(
@@ -377,3 +436,147 @@ def test_set_delta_fields_do_not_interpret_removed_markers():
 
     with pytest.raises(TypeError, match="expected an integer"):
         bg.test_graph(graph)
+
+
+def test_lazy_tsd_views_cover_removal_key_set_and_expiration():
+    observed = []
+    captured = []
+
+    @bg.compute_node
+    def make_values(trigger: bg.TS[int]) -> bg.TSD[int, bg.TS[int]]:
+        if trigger.value == 1:
+            return {1: 10, 2: 20}
+        return {1: bg.REMOVE, 2: 21, 3: 30}
+
+    @bg.compute_node
+    def inspect(values: bg.TSD[int, bg.TS[int]]) -> bg.TS[int]:
+        captured.append(values.value)
+        delta = values.delta_value
+        observed.append(
+            (
+                dict(values.value),
+                values.value.copy(),
+                dict(delta),
+                list(values.added_keys()),
+                list(values.removed_keys()),
+                list(values.modified_keys()),
+                set(values.key_set.value),
+                1 in delta,
+                delta.get(1),
+            )
+        )
+        return sum(values.value.values())
+
+    @bg.graph
+    def graph(trigger: bg.TS[int]) -> bg.TS[int]:
+        return inspect(make_values(trigger))
+
+    assert bg.test_graph(graph, [1, 2]) == [30, 51]
+    assert observed == [
+        ({1: 10, 2: 20}, {1: 10, 2: 20}, {1: 10, 2: 20}, [1, 2], [], [], {1, 2}, True, 10),
+        (
+            {2: 21, 3: 30},
+            {2: 21, 3: 30},
+            {1: bg.REMOVE, 2: 21, 3: 30},
+            [3],
+            [1],
+            [2],
+            {2, 3},
+            True,
+            bg.REMOVE,
+        ),
+    ]
+    with pytest.raises(RuntimeError, match="outside its callback"):
+        list(captured[0])
+
+
+def test_tss_and_fixed_collection_views_are_lazy_and_shape_specific():
+    class Pair(bg.TimeSeriesSchema):
+        left: bg.TS[int]
+        right: bg.TS[int]
+
+    observed = []
+
+    @bg.compute_node
+    def make_set(trigger: bg.TS[int]) -> bg.TSS[int]:
+        return {1, 2} if trigger.value == 1 else {3, bg.Removed(1)}
+
+    @bg.compute_node
+    def make_list(trigger: bg.TS[int]) -> bg.TSL[bg.TS[int], 2]:
+        return {0: trigger.value}
+
+    @bg.compute_node
+    def make_bundle(trigger: bg.TS[int]) -> bg.TSB[Pair]:
+        return {"left": trigger.value}
+
+    @bg.compute_node
+    def inspect(values: bg.TSS[int], items: bg.TSL[bg.TS[int], 2], pair: bg.TSB[Pair]) -> bg.TS[int]:
+        delta = values.delta_value
+        observed.append(
+            (
+                set(values.value),
+                set(delta.added),
+                set(delta.removed),
+                values.was_added(3),
+                values.was_removed(1),
+                [item.valid for item in items],
+                list(items.keys()),
+                [item.value if item.valid else None for item in items.values()],
+                list(items.modified_keys()),
+                list(items.valid_keys()),
+                list(items.value),
+                dict(items.delta_value),
+                pair.left.value,
+                pair["left"].value,
+                dict(pair.value),
+                dict(pair.delta_value),
+                list(pair.keys()),
+            )
+        )
+        return pair.left.value
+
+    @bg.graph
+    def graph(trigger: bg.TS[int]) -> bg.TS[int]:
+        return inspect(make_set(trigger), make_list(trigger), make_bundle(trigger))
+
+    assert bg.test_graph(graph, [1, 2]) == [1, 2]
+    assert observed == [
+        (
+            {1, 2},
+            {1, 2},
+            set(),
+            False,
+            False,
+            [True, False],
+            [0, 1],
+            [1, None],
+            [0],
+            [0],
+            [1, None],
+            {0: 1},
+            1,
+            1,
+            {"left": 1, "right": None},
+            {"left": 1},
+            ["left", "right"],
+        ),
+        (
+            {2, 3},
+            {3},
+            {1},
+            True,
+            True,
+            [True, False],
+            [0, 1],
+            [2, None],
+            [0],
+            [0],
+            [2, None],
+            {0: 2},
+            2,
+            2,
+            {"left": 2, "right": None},
+            {"left": 2},
+            ["left", "right"],
+        ),
+    ]

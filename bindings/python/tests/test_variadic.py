@@ -207,7 +207,7 @@ def test_variadic_sink_node_receives_updates():
 
     @bg.compute_node
     def record(**values: bg.TSB[bg.TS_SCHEMA]) -> None:
-        observed.append(values.value)
+        observed.append(dict(values.value))
 
     @bg.graph
     def graph(value: bg.TS[int]) -> bg.TS[int]:

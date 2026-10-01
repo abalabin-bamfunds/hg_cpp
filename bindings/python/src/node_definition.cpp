@@ -200,7 +200,7 @@ nanobind::object PythonNodeDefinition::CompiledData::argument(Invocation invocat
     const auto &parameter = parameters[index];
     if (parameter.mode == ParameterMode::input_view) {
         auto input = invocation.input<In<TS_T>>(index, parameter.runtime_type_index);
-        return nanobind::cast(InputView{input, scalar_conversions(), lifetime, callback.generation()});
+        return make_input_view(input, scalar_conversions(), lifetime, callback.generation());
     }
 
     if (parameter.mode != ParameterMode::scalar) {

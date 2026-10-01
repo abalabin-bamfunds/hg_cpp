@@ -242,14 +242,27 @@ template <> class index<dynamic_index_extent> {
     bool all() const noexcept { return count() == size(); }
 
     size_type first_set() const noexcept {
-        for (auto word_index = size_type{}; word_index < word_count(); ++word_index) {
-            const auto bits = word(word_index);
+        return first_set(0);
+    }
+
+    size_type first_set(size_type start) const noexcept {
+        if (start >= size()) {
+            return size();
+        }
+
+        auto word_index = start / bits_per_word;
+        auto bits = word(word_index) & (std::numeric_limits<std::uint64_t>::max() << (start % bits_per_word));
+        while (true) {
             if (bits != 0) {
                 return word_index * bits_per_word + static_cast<size_type>(std::countr_zero(bits));
             }
-        }
 
-        return size();
+            ++word_index;
+            if (word_index == word_count()) {
+                return size();
+            }
+            bits = word(word_index);
+        }
     }
 
     size_type first_unset(size_type start = 0) const noexcept {
@@ -433,13 +446,27 @@ template <std::uint32_t Extent> class index {
     bool all() const noexcept { return count() == Extent; }
 
     size_type first_set() const noexcept {
-        for (auto word_index = size_type{}; word_index < word_count(); ++word_index) {
-            if (words_[word_index] != 0) {
-                return word_index * bits_per_word + static_cast<size_type>(std::countr_zero(words_[word_index]));
-            }
+        return first_set(0);
+    }
+
+    size_type first_set(size_type start) const noexcept {
+        if (start >= Extent) {
+            return Extent;
         }
 
-        return Extent;
+        auto word_index = start / bits_per_word;
+        auto bits = words_[word_index] & (std::numeric_limits<std::uint64_t>::max() << (start % bits_per_word));
+        while (true) {
+            if (bits != 0) {
+                return word_index * bits_per_word + static_cast<size_type>(std::countr_zero(bits));
+            }
+
+            ++word_index;
+            if (word_index == word_count()) {
+                return Extent;
+            }
+            bits = words_[word_index];
+        }
     }
 
     static constexpr size_type size() noexcept { return Extent; }

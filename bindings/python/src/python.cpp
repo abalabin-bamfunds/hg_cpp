@@ -52,6 +52,7 @@
 #include <vector>
 
 namespace nb = nanobind;
+using namespace nanobind::literals;
 
 namespace bg::python {
 namespace {
@@ -557,9 +558,79 @@ void bind_core(nb::module_ &module) {
     nb::class_<InputView>(module, "InputView")
         .def_prop_ro("valid", &InputView::valid)
         .def_prop_ro("modified", &InputView::modified)
-        .def_prop_ro("value", &InputView::value)
-        .def_prop_ro("delta_value", &InputView::delta_value)
-        .def("__getitem__", &InputView::getitem);
+        .def_prop_ro("last_modified_time", &InputView::last_modified_time);
+    nb::class_<TSInput, InputView>(module, "TSInput")
+        .def_prop_ro("value", &TSInput::value)
+        .def_prop_ro("delta_value", &TSInput::delta_value);
+    nb::class_<TSSInput, InputView>(module, "TSSInput")
+        .def_prop_ro("value", &TSSInput::value)
+        .def_prop_ro("delta_value", &TSSInput::delta_value)
+        .def("__len__", &TSSInput::size)
+        .def("__contains__", &TSSInput::contains)
+        .def("__iter__", &TSSInput::iter)
+        .def("added", &TSSInput::added)
+        .def("removed", &TSSInput::removed)
+        .def("was_added", &TSSInput::was_added)
+        .def("was_removed", &TSSInput::was_removed);
+    nb::class_<TSLInput, InputView>(module, "TSLInput")
+        .def_prop_ro("value", &TSLInput::value)
+        .def_prop_ro("delta_value", &TSLInput::delta_value)
+        .def("__len__", &TSLInput::size)
+        .def("__getitem__", &TSLInput::getitem)
+        .def("__iter__", &TSLInput::iter)
+        .def("keys", &TSLInput::keys)
+        .def("values", &TSLInput::values)
+        .def("items", &TSLInput::items)
+        .def("modified_keys", &TSLInput::modified_keys)
+        .def("modified_values", &TSLInput::modified_values)
+        .def("modified_items", &TSLInput::modified_items)
+        .def("valid_keys", &TSLInput::valid_keys)
+        .def("valid_values", &TSLInput::valid_values)
+        .def("valid_items", &TSLInput::valid_items);
+    nb::class_<TSBInput, InputView>(module, "TSBInput")
+        .def_prop_ro("value", &TSBInput::value)
+        .def_prop_ro("delta_value", &TSBInput::delta_value)
+        .def("__len__", &TSBInput::size)
+        .def("__getitem__", &TSBInput::getitem)
+        .def("__getattr__", &TSBInput::getattr)
+        .def("__iter__", &TSBInput::iter)
+        .def("keys", &TSBInput::keys)
+        .def("values", &TSBInput::values)
+        .def("items", &TSBInput::items)
+        .def("modified_keys", &TSBInput::modified_keys)
+        .def("modified_values", &TSBInput::modified_values)
+        .def("modified_items", &TSBInput::modified_items)
+        .def("valid_keys", &TSBInput::valid_keys)
+        .def("valid_values", &TSBInput::valid_values)
+        .def("valid_items", &TSBInput::valid_items);
+    nb::class_<TSDInput, InputView>(module, "TSDInput")
+        .def_prop_ro("value", &TSDInput::value)
+        .def_prop_ro("delta_value", &TSDInput::delta_value)
+        .def("__len__", &TSDInput::size)
+        .def("__getitem__", &TSDInput::getitem)
+        .def("__contains__", &TSDInput::contains)
+        .def("__iter__", &TSDInput::iter)
+        .def("get", &TSDInput::get, "key"_a, "default"_a = nb::none())
+        .def_prop_ro("key_set", &TSDInput::key_set)
+        .def("keys", &TSDInput::keys)
+        .def("values", &TSDInput::values)
+        .def("items", &TSDInput::items)
+        .def("added_keys", &TSDInput::added_keys)
+        .def("added_values", &TSDInput::added_values)
+        .def("added_items", &TSDInput::added_items)
+        .def("removed_keys", &TSDInput::removed_keys)
+        .def("removed_values", &TSDInput::removed_values)
+        .def("removed_items", &TSDInput::removed_items)
+        .def("modified_keys", &TSDInput::modified_keys)
+        .def("modified_values", &TSDInput::modified_values)
+        .def("modified_items", &TSDInput::modified_items)
+        .def("valid_keys", &TSDInput::valid_keys)
+        .def("valid_values", &TSDInput::valid_values)
+        .def("valid_items", &TSDInput::valid_items);
+    nb::class_<REFInput, InputView>(module, "REFInput")
+        .def_prop_ro("value", &REFInput::value)
+        .def_prop_ro("delta_value", &REFInput::delta_value);
+    bind_input_iterators(module);
     bind_dict_view(module);
     nb::class_<ReferenceValue>(module, "ReferenceValue").def_prop_ro("valid", &ReferenceValue::valid);
     nb::class_<PythonNodeDefinition>(module, "_PythonNodeDefinition");

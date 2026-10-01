@@ -165,17 +165,26 @@ iteration starts a new cursor, and the iterator remains callback-scoped.
 `view.copy()` materializes the dictionary with direct native traversal.
 `dict(view)` also works, but Python's mapping constructor iterates keys and
 looks up each value. A dictionary output still uses an ordinary Python `dict`.
-`@compute_node` continues to expose a dictionary through `InputView.value`,
-which materializes the full value.
+`@compute_node` exposes a dictionary through a lazy input value view.
 
 A callback returns an output delta. Returning `None` requests no output change.
 Sink nodes have no output annotation and must return `None`. An exception
 raised by a callback propagates from `test_graph`. Each test run constructs and
 destroys a new runtime graph.
 
-An input view exposes `valid`, `modified`, `value`, and `delta_value`.
-Collection inputs also support item access with `value[key]`. Item access
-returns another input view. All input views expire when the callback returns.
+An input view exposes `valid`, `modified`, `last_modified_time`, `value`, and
+`delta_value`. `last_modified_time` is a Python `datetime` mapped from the
+engine update time. Input views and their lazy values, change views, and
+iterators expire when the callback returns.
+
+`TSS` values are set-like. `added()` and `removed()` return lazy set-like
+views, and `was_added(value)` and `was_removed(value)` test the current
+change. Fixed `TSL` and `TSB` inputs provide child input access, iteration,
+`keys()`, `values()`, `items()`, `modified_*()`, and `valid_*()` methods.
+`TSB` fields also support attribute access. `TSD` inputs provide mapping access,
+`key_set`, and separate `added_*()`, `removed_*()`, `modified_*()`, and
+`valid_*()` methods. Collection `value` and `delta_value` are lazy views.
+Use `copy()`, `list(...)`, `set(...)`, or `dict(...)` to materialize one.
 
 Output deltas use these forms:
 
@@ -189,8 +198,8 @@ Output deltas use these forms:
 | `TSD[K, TS_T]` | `{key: item_delta}`; use `REMOVE` as an item delta to remove a key |
 
 `InputView.delta_value` uses the same mapping form for TSD changes. A removed
-key maps to `REMOVE`; added and modified keys map to their item deltas.
-TSS input `delta_value` remains a `SetDelta`. Collection item deltas recurse
+key maps to `REMOVE`; added and modified keys map to their item deltas. A TSS
+input delta has lazy `added` and `removed` views. Collection item deltas recur
 through the same table.
 
 The currently accepted scalar annotations are `bool`, `int`, `float`, `str`,
