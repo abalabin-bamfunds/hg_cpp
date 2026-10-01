@@ -94,12 +94,13 @@ struct dictionary_cursor_definition {
 
     void evaluate() const {
         current.push_back(collect(&bg::In<bg::TSD<std::int64_t, bg::TS<bg::i64>>>::next_item_id));
+        valid.push_back(collect(&bg::In<bg::TSD<std::int64_t, bg::TS<bg::i64>>>::next_valid_id));
         added.push_back(collect(&bg::In<bg::TSD<std::int64_t, bg::TS<bg::i64>>>::next_added_id));
         removed.push_back(collect(&bg::In<bg::TSD<std::int64_t, bg::TS<bg::i64>>>::next_removed_id));
         modified.push_back(collect(&bg::In<bg::TSD<std::int64_t, bg::TS<bg::i64>>>::next_modified_id));
     }
 
-    using Next = bg::item_id_t (bg::In<bg::TSD<std::int64_t, bg::TS<bg::i64>>>::*)(bg::item_id_t) const noexcept;
+    using Next = bg::item_id_t (bg::In<bg::TSD<std::int64_t, bg::TS<bg::i64>>>::*)(bg::item_id_t) const;
 
     std::vector<bg::item_id_t> collect(Next next) const {
         auto result = std::vector<bg::item_id_t>{};
@@ -114,6 +115,7 @@ struct dictionary_cursor_definition {
     }
 
     inline static std::vector<std::vector<bg::item_id_t>> current;
+    inline static std::vector<std::vector<bg::item_id_t>> valid;
     inline static std::vector<std::vector<bg::item_id_t>> added;
     inline static std::vector<std::vector<bg::item_id_t>> removed;
     inline static std::vector<std::vector<bg::item_id_t>> modified;
@@ -127,6 +129,7 @@ TEST_CASE("a time series dictionary cursor enumerates current and changed items"
     const auto source = bg::node<dict_source_definition>();
     const auto sink = bg::node<dictionary_cursor_definition>();
     dictionary_cursor_definition::current.clear();
+    dictionary_cursor_definition::valid.clear();
     dictionary_cursor_definition::added.clear();
     dictionary_cursor_definition::removed.clear();
     dictionary_cursor_definition::modified.clear();
@@ -135,6 +138,7 @@ TEST_CASE("a time series dictionary cursor enumerates current and changed items"
 
     CHECK(dictionary_cursor_definition::current ==
           std::vector<std::vector<bg::item_id_t>>{{0, 1}, {0, 1}, {0}});
+    CHECK(dictionary_cursor_definition::valid == std::vector<std::vector<bg::item_id_t>>{{0, 1}, {0, 1}, {0}});
     CHECK(dictionary_cursor_definition::added == std::vector<std::vector<bg::item_id_t>>{{0, 1}, {}, {}});
     CHECK(dictionary_cursor_definition::removed == std::vector<std::vector<bg::item_id_t>>{{}, {}, {1}});
     CHECK(dictionary_cursor_definition::modified == std::vector<std::vector<bg::item_id_t>>{{}, {0}, {}});
@@ -146,9 +150,54 @@ TEST_CASE("an invalid dictionary cursor has no item IDs",
 
     CHECK_FALSE(input.key_set().valid());
     CHECK(input.next_item_id(0) == bg::util::occupancy_index::npos);
+    CHECK(input.next_valid_id(0) == bg::util::occupancy_index::npos);
     CHECK(input.next_added_id(0) == bg::util::occupancy_index::npos);
     CHECK(input.next_removed_id(0) == bg::util::occupancy_index::npos);
     CHECK(input.next_modified_id(0) == bg::util::occupancy_index::npos);
+}
+
+namespace {
+
+struct partially_valid_dictionary_source_definition {
+    static constexpr bool uses_timed_scheduling = true;
+
+    bg::Out<bg::TSD<std::int64_t, bg::TS<bg::i64>>> output;
+
+    void start(bg::EvaluationContext *context) const {
+        output[1].set(10);
+        output[2].set(20);
+        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
+    }
+
+    void evaluate() const { output[1].invalidate(); }
+};
+
+struct valid_dictionary_cursor_definition {
+    bg::In<bg::TSD<std::int64_t, bg::TS<bg::i64>>> input;
+
+    void evaluate() const {
+        auto keys = std::vector<std::int64_t>{};
+        for (auto id = input.next_valid_id(0); id != bg::util::occupancy_index::npos;
+             id = input.next_valid_id(id + 1)) {
+            keys.push_back(*input.key_at(id));
+        }
+        snapshots.push_back(std::move(keys));
+    }
+
+    inline static std::vector<std::vector<std::int64_t>> snapshots;
+};
+
+} // namespace
+
+TEST_CASE("a time series dictionary valid cursor skips invalid items",
+          "[evaluation][tsd][series:tsd][validity][transition:invalidation]") {
+    const auto source = bg::node<partially_valid_dictionary_source_definition>();
+    const auto sink = bg::node<valid_dictionary_cursor_definition>();
+    valid_dictionary_cursor_definition::snapshots.clear();
+
+    bg::run_graph([&] { sink(source()); });
+
+    CHECK(valid_dictionary_cursor_definition::snapshots == std::vector<std::vector<std::int64_t>>{{1, 2}, {2}});
 }
 
 namespace {

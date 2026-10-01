@@ -31,14 +31,8 @@ nb::object scalar_value(const In<TS<SCALAR>> &input, const PythonScalarConversio
     return conversions.to_python(Scalar<>::from(value));
 }
 
-enum class SetSelection : std::uint8_t { current, added, removed };
-enum class FixedSelection : std::uint8_t { all, modified, valid };
-enum class DictionarySelection : std::uint8_t { current, added, removed, modified, valid, changes };
-enum class EntryProjection : std::uint8_t { key, value, item };
-enum class EntryValue : std::uint8_t { input, current, delta };
-
-nb::object make_current_value(In<TS_T> input, const PythonScalarConversions &conversions,
-                              const std::shared_ptr<CallbackLifetime> &lifetime, std::uint64_t generation);
+nb::object make_value(In<TS_T> input, const PythonScalarConversions &conversions,
+                      const std::shared_ptr<CallbackLifetime> &lifetime, std::uint64_t generation);
 nb::object make_delta_value(In<TS_T> input, const PythonScalarConversions &conversions,
                             const std::shared_ptr<CallbackLifetime> &lifetime, std::uint64_t generation);
 
@@ -67,17 +61,79 @@ class CollectionViewState {
     std::uint64_t generation_;
 };
 
-class SetIterator final : public CollectionViewState {
+struct SetEntry {
+    nb::object key;
+};
+
+struct TimeSeriesEntry {
+    nb::object key;
+    In<TS_T> value;
+    bool removed{};
+};
+
+struct LiveSetSelection {
+    template <typename Set> static item_id_t next(const Set &set, item_id_t start) noexcept {
+        return set.next_item_id(start);
+    }
+
+    template <typename Set> static std::size_t size(const Set &set) noexcept { return set.size(); }
+
+    template <typename Set, typename Item> static bool contains(const Set &set, const Item &item) {
+        return set.contains(item);
+    }
+};
+
+struct AddedSetSelection {
+    template <typename Set> static item_id_t next(const Set &set, item_id_t start) noexcept {
+        return set.next_added_id(start);
+    }
+
+    template <typename Set> static std::size_t size(const Set &set) noexcept {
+        auto count = std::size_t{};
+        for (auto id = next(set, 0); id != util::occupancy_index::npos; id = next(set, id + 1)) {
+            ++count;
+        }
+        return count;
+    }
+
+    template <typename Set, typename Item> static bool contains(const Set &set, const Item &item) {
+        return set.was_added(item);
+    }
+};
+
+struct RemovedSetSelection {
+    template <typename Set> static item_id_t next(const Set &set, item_id_t start) noexcept {
+        return set.next_removed_id(start);
+    }
+
+    template <typename Set> static std::size_t size(const Set &set) noexcept {
+        auto count = std::size_t{};
+        for (auto id = next(set, 0); id != util::occupancy_index::npos; id = next(set, id + 1)) {
+            ++count;
+        }
+        return count;
+    }
+
+    template <typename Set, typename Item> static bool contains(const Set &set, const Item &item) {
+        return set.was_removed(item);
+    }
+};
+
+template <typename Selection> class SetCursor {
   public:
-    SetIterator(In<TS_T> input, const PythonScalarConversions &conversions, std::shared_ptr<CallbackLifetime> lifetime,
-                std::uint64_t generation, SetSelection selection) noexcept
-        : CollectionViewState{input, conversions, std::move(lifetime), generation}, selection_{selection} {}
+    SetEntry next(In<TS_T> input, const PythonScalarConversions &conversions) {
+        const auto result = input.visit(
+            [&](const In<TSS<SCALAR>> *set) {
+                const auto id = Selection::next(*set, cursor_);
+                if (id == util::occupancy_index::npos) {
+                    throw nb::stop_iteration();
+                }
 
-    SetIterator &iter() noexcept { return *this; }
-
-    nb::object next() {
-        check_lifetime();
-        const auto result = input().visit([&](const In<TSS<SCALAR>> *set) { return next(*set); }, ddv::noop);
+                cursor_ = id + 1;
+                const auto item = set->item_at(id);
+                return SetEntry{.key = conversions.to_python(Scalar<>::from(item))};
+            },
+            ddv::noop);
         if (!result) {
             throw std::logic_error{"the Python input is not a time series set"};
         }
@@ -85,46 +141,46 @@ class SetIterator final : public CollectionViewState {
     }
 
   private:
-    nb::object next(const In<TSS<SCALAR>> &set) {
-        auto id = util::occupancy_index::npos;
-        switch (selection_) {
-        case SetSelection::current:
-            id = set.next_item_id(cursor_);
-            break;
-        case SetSelection::added:
-            id = set.next_added_id(cursor_);
-            break;
-        case SetSelection::removed:
-            id = set.next_removed_id(cursor_);
-            break;
-        }
-        if (id == util::occupancy_index::npos) {
-            throw nb::stop_iteration();
-        }
-
-        cursor_ = id + 1;
-        const auto item = set.item_at(id);
-        return conversions().to_python(Scalar<>::from(item));
-    }
-
-    SetSelection selection_;
     item_id_t cursor_{};
 };
 
-class FixedIterator final : public CollectionViewState {
+struct AllFixedSelection {
+    static bool includes(bool, bool) noexcept { return true; }
+
+    template <typename Collection> static std::size_t size(const Collection &collection) noexcept {
+        return collection.size();
+    }
+};
+
+struct ModifiedFixedSelection {
+    static bool includes(bool modified, bool) noexcept { return modified; }
+
+    template <typename Collection> static std::size_t size(const Collection &collection) {
+        auto count = std::size_t{};
+        for (auto index = item_id_t{}; index != collection.size(); ++index) {
+            count += collection.item_updated(index);
+        }
+        return count;
+    }
+};
+
+struct ValidFixedSelection {
+    static bool includes(bool, bool valid) noexcept { return valid; }
+
+    template <typename Collection> static std::size_t size(const Collection &collection) {
+        auto count = std::size_t{};
+        for (auto index = item_id_t{}; index != collection.size(); ++index) {
+            count += collection[index].valid();
+        }
+        return count;
+    }
+};
+
+template <typename Selection> class FixedCursor {
   public:
-    FixedIterator(In<TS_T> input, const PythonScalarConversions &conversions,
-                  std::shared_ptr<CallbackLifetime> lifetime, std::uint64_t generation, FixedSelection selection,
-                  EntryValue entry_value, EntryProjection projection) noexcept
-        : CollectionViewState{input, conversions, std::move(lifetime), generation}, selection_{selection},
-          entry_value_{entry_value}, projection_{projection} {}
-
-    FixedIterator &iter() noexcept { return *this; }
-
-    nb::object next() {
-        check_lifetime();
-        const auto result = input().visit([&](const In<TSL<TS_T, SIZE>> *list) { return next(*list); },
-                                          [&](const In<TSB<SCHEMA>> *bundle) { return next(*bundle); }, ddv::noop);
+    TimeSeriesEntry next(In<TS_T> input, const PythonScalarConversions &) {
+        const auto result = input.visit([&](const In<TSL<TS_T, SIZE>> *list) { return next(*list); },
+                                        [&](const In<TSB<SCHEMA>> *bundle) { return next(*bundle); }, ddv::noop);
         if (!result) {
             throw std::logic_error{"the Python input is not a fixed collection"};
         }
@@ -132,103 +188,235 @@ class FixedIterator final : public CollectionViewState {
     }
 
   private:
-    bool selected(bool modified, bool valid) const noexcept {
-        switch (selection_) {
-        case FixedSelection::all:
-            return true;
-        case FixedSelection::modified:
-            return modified;
-        case FixedSelection::valid:
-            return valid;
-        }
-        std::unreachable();
-    }
-
-    nb::object entry(In<TS_T> value) const {
-        switch (entry_value_) {
-        case EntryValue::input:
-            return make_input_view(value, conversions(), lifetime(), generation());
-        case EntryValue::current:
-            return make_current_value(value, conversions(), lifetime(), generation());
-        case EntryValue::delta:
-            return make_delta_value(value, conversions(), lifetime(), generation());
-        }
-        std::unreachable();
-    }
-
-    nb::object project(nb::object key, In<TS_T> value) const {
-        if (projection_ == EntryProjection::key) {
-            return key;
-        }
-
-        auto result = entry(value);
-        return projection_ == EntryProjection::item ? nb::make_tuple(std::move(key), result) : result;
-    }
-
     template <typename Item, auto Size, auto... Properties>
-    nb::object next(const In<TSL<Item, Size, Properties...>> &list) {
+    TimeSeriesEntry next(const In<TSL<Item, Size, Properties...>> &list) {
         while (cursor_ < list.size()) {
             const auto index = cursor_++;
             const auto value = list[index];
-            if (selected(list.item_updated(index), value.valid())) {
-                return project(nb::int_(index), value);
+            if (Selection::includes(list.item_updated(index), value.valid())) {
+                return {.key = nb::int_(index), .value = value};
             }
         }
         throw nb::stop_iteration();
     }
 
     template <template <template <typename, auto...> typename> typename Schema, auto... Properties>
-    nb::object next(const In<TSB<Schema, Properties...>> &bundle) {
+    TimeSeriesEntry next(const In<TSB<Schema, Properties...>> &bundle) {
         while (cursor_ < bundle.size()) {
             const auto index = cursor_++;
             const auto value = bundle[index];
-            if (selected(bundle.item_updated(index), value.valid())) {
-                return project(nb::cast(std::string{bundle.item_name(index).text()}), value);
+            if (Selection::includes(bundle.item_updated(index), value.valid())) {
+                return {.key = nb::cast(std::string{bundle.item_name(index).text()}), .value = value};
             }
         }
         throw nb::stop_iteration();
     }
 
-    FixedSelection selection_;
-    EntryValue entry_value_;
-    EntryProjection projection_;
     item_id_t cursor_{};
 };
 
-class FixedEntries final : public CollectionViewState {
-  public:
-    FixedEntries(In<TS_T> input, const PythonScalarConversions &conversions, std::shared_ptr<CallbackLifetime> lifetime,
-                 std::uint64_t generation, FixedSelection selection, EntryValue entry_value,
-                 EntryProjection projection) noexcept
-        : CollectionViewState{input, conversions, std::move(lifetime), generation}, selection_{selection},
-          entry_value_{entry_value}, projection_{projection} {}
+struct LiveDictionarySelection {
+    template <typename Dictionary> item_id_t next(const Dictionary &dictionary) {
+        const auto id = dictionary.next_item_id(cursor_);
+        if (id != util::occupancy_index::npos) {
+            cursor_ = id + 1;
+        }
+        return id;
+    }
 
-    nb::object iter() const {
-        check_lifetime();
-        return nb::cast(
-            FixedIterator{input(), conversions(), lifetime(), generation(), selection_, entry_value_, projection_});
+    bool removed() const noexcept { return false; }
+
+    template <typename Dictionary, typename Key>
+    static std::pair<item_id_t, bool> find(const Dictionary &dictionary, const Key &key) {
+        return {dictionary.find_item_id(key), false};
+    }
+
+    template <typename Dictionary> static std::size_t size(const Dictionary &dictionary) noexcept {
+        return dictionary.size();
     }
 
   private:
-    FixedSelection selection_;
-    EntryValue entry_value_;
-    EntryProjection projection_;
+    item_id_t cursor_{};
 };
 
-class DictionaryIterator final : public CollectionViewState {
+struct AddedDictionarySelection {
+    template <typename Dictionary> item_id_t next(const Dictionary &dictionary) {
+        const auto id = dictionary.next_added_id(cursor_);
+        if (id != util::occupancy_index::npos) {
+            cursor_ = id + 1;
+        }
+        return id;
+    }
+
+    bool removed() const noexcept { return false; }
+
+    template <typename Dictionary, typename Key>
+    static std::pair<item_id_t, bool> find(const Dictionary &dictionary, const Key &key) {
+        return {dictionary.find_added_id(key), false};
+    }
+
+    template <typename Dictionary> static std::size_t size(const Dictionary &dictionary) {
+        auto selection = AddedDictionarySelection{};
+        auto count = std::size_t{};
+        while (selection.next(dictionary) != util::occupancy_index::npos) {
+            ++count;
+        }
+        return count;
+    }
+
+  private:
+    item_id_t cursor_{};
+};
+
+struct RemovedDictionarySelection {
+    template <typename Dictionary> item_id_t next(const Dictionary &dictionary) {
+        const auto id = dictionary.next_removed_id(cursor_);
+        if (id != util::occupancy_index::npos) {
+            cursor_ = id + 1;
+        }
+        return id;
+    }
+
+    bool removed() const noexcept { return true; }
+
+    template <typename Dictionary, typename Key>
+    static std::pair<item_id_t, bool> find(const Dictionary &dictionary, const Key &key) {
+        return {dictionary.find_removed_id(key), true};
+    }
+
+    template <typename Dictionary> static std::size_t size(const Dictionary &dictionary) {
+        auto selection = RemovedDictionarySelection{};
+        auto count = std::size_t{};
+        while (selection.next(dictionary) != util::occupancy_index::npos) {
+            ++count;
+        }
+        return count;
+    }
+
+  private:
+    item_id_t cursor_{};
+};
+
+struct ModifiedDictionarySelection {
+    template <typename Dictionary> item_id_t next(const Dictionary &dictionary) {
+        const auto id = dictionary.next_modified_id(cursor_);
+        if (id != util::occupancy_index::npos) {
+            cursor_ = id + 1;
+        }
+        return id;
+    }
+
+    bool removed() const noexcept { return false; }
+
+    template <typename Dictionary, typename Key>
+    static std::pair<item_id_t, bool> find(const Dictionary &dictionary, const Key &key) {
+        return {dictionary.find_modified_id(key), false};
+    }
+
+    template <typename Dictionary> static std::size_t size(const Dictionary &dictionary) {
+        auto selection = ModifiedDictionarySelection{};
+        auto count = std::size_t{};
+        while (selection.next(dictionary) != util::occupancy_index::npos) {
+            ++count;
+        }
+        return count;
+    }
+
+  private:
+    item_id_t cursor_{};
+};
+
+struct ValidDictionarySelection {
+    template <typename Dictionary> item_id_t next(const Dictionary &dictionary) {
+        const auto id = dictionary.next_valid_id(cursor_);
+        if (id != util::occupancy_index::npos) {
+            cursor_ = id + 1;
+        }
+        return id;
+    }
+
+    bool removed() const noexcept { return false; }
+
+    template <typename Dictionary, typename Key>
+    static std::pair<item_id_t, bool> find(const Dictionary &dictionary, const Key &key) {
+        const auto id = dictionary.find_item_id(key);
+        if (id == util::occupancy_index::npos || !dictionary.item_at(id).valid()) {
+            return {util::occupancy_index::npos, false};
+        }
+        return {id, false};
+    }
+
+    template <typename Dictionary> static std::size_t size(const Dictionary &dictionary) {
+        auto selection = ValidDictionarySelection{};
+        auto count = std::size_t{};
+        while (selection.next(dictionary) != util::occupancy_index::npos) {
+            ++count;
+        }
+        return count;
+    }
+
+  private:
+    item_id_t cursor_{};
+};
+
+struct ChangedDictionarySelection {
+    template <typename Dictionary> item_id_t next(const Dictionary &dictionary) {
+        while (true) {
+            auto id = util::occupancy_index::npos;
+            if (phase_ == 0) {
+                id = dictionary.next_added_id(cursor_);
+            } else if (phase_ == 1) {
+                id = dictionary.next_modified_id(cursor_);
+            } else {
+                id = dictionary.next_removed_id(cursor_);
+            }
+            if (id != util::occupancy_index::npos) {
+                cursor_ = id + 1;
+                return id;
+            }
+            if (phase_ == 2) {
+                return id;
+            }
+
+            ++phase_;
+            cursor_ = 0;
+        }
+    }
+
+    bool removed() const noexcept { return phase_ == 2; }
+
+    template <typename Dictionary, typename Key>
+    static std::pair<item_id_t, bool> find(const Dictionary &dictionary, const Key &key) {
+        auto id = dictionary.find_added_id(key);
+        if (id != util::occupancy_index::npos) {
+            return {id, false};
+        }
+        id = dictionary.find_modified_id(key);
+        if (id != util::occupancy_index::npos) {
+            return {id, false};
+        }
+        return {dictionary.find_removed_id(key), true};
+    }
+
+    template <typename Dictionary> static std::size_t size(const Dictionary &dictionary) {
+        auto selection = ChangedDictionarySelection{};
+        auto count = std::size_t{};
+        while (selection.next(dictionary) != util::occupancy_index::npos) {
+            ++count;
+        }
+        return count;
+    }
+
+  private:
+    item_id_t cursor_{};
+    unsigned phase_{};
+};
+
+template <typename Selection> class DictionaryCursor {
   public:
-    DictionaryIterator(In<TS_T> input, const PythonScalarConversions &conversions,
-                       std::shared_ptr<CallbackLifetime> lifetime, std::uint64_t generation,
-                       DictionarySelection selection, EntryValue entry_value, EntryProjection projection) noexcept
-        : CollectionViewState{input, conversions, std::move(lifetime), generation}, selection_{selection},
-          entry_value_{entry_value}, projection_{projection} {}
-
-    DictionaryIterator &iter() noexcept { return *this; }
-
-    nb::object next() {
-        check_lifetime();
-        const auto result =
-            input().visit([&](const In<TSD<SCALAR, TS_T>> *dictionary) { return next(*dictionary); }, ddv::noop);
+    TimeSeriesEntry next(In<TS_T> input, const PythonScalarConversions &conversions) {
+        const auto result = input.visit(
+            [&](const In<TSD<SCALAR, TS_T>> *dictionary) { return next(*dictionary, conversions); }, ddv::noop);
         if (!result) {
             throw std::logic_error{"the Python input is not a time series dictionary"};
         }
@@ -236,135 +424,129 @@ class DictionaryIterator final : public CollectionViewState {
     }
 
   private:
-    DictionarySelection active_selection() const noexcept {
-        if (selection_ != DictionarySelection::changes) {
-            return selection_;
-        }
-        if (phase_ == 0) {
-            return DictionarySelection::added;
-        }
-        if (phase_ == 1) {
-            return DictionarySelection::modified;
-        }
-        return DictionarySelection::removed;
-    }
-
-    template <typename Dictionary> item_id_t next_id(const Dictionary &dictionary, DictionarySelection selection) {
-        switch (selection) {
-        case DictionarySelection::current:
-        case DictionarySelection::valid:
-            return dictionary.next_item_id(cursor_);
-        case DictionarySelection::added:
-            return dictionary.next_added_id(cursor_);
-        case DictionarySelection::removed:
-            return dictionary.next_removed_id(cursor_);
-        case DictionarySelection::modified:
-            return dictionary.next_modified_id(cursor_);
-        case DictionarySelection::changes:
-            break;
-        }
-        std::unreachable();
-    }
-
-    nb::object entry(In<TS_T> value, bool removed) const {
-        switch (entry_value_) {
-        case EntryValue::input:
-            return make_input_view(value, conversions(), lifetime(), generation());
-        case EntryValue::current:
-            return make_current_value(value, conversions(), lifetime(), generation());
-        case EntryValue::delta:
-            return removed ? nb::borrow<nb::object>(details::remove_sentinel())
-                           : make_delta_value(value, conversions(), lifetime(), generation());
-        }
-        std::unreachable();
-    }
-
-    nb::object project(nb::object key, In<TS_T> value, bool removed) const {
-        if (projection_ == EntryProjection::key) {
-            return key;
-        }
-
-        auto result = entry(value, removed);
-        return projection_ == EntryProjection::item ? nb::make_tuple(std::move(key), result) : result;
-    }
-
     template <typename Key, typename Item, auto... Properties>
-    nb::object next(const In<TSD<Key, Item, Properties...>> &dictionary) {
-        while (true) {
-            const auto selection = active_selection();
-            const auto id = next_id(dictionary, selection);
-            if (id == util::occupancy_index::npos) {
-                if (selection_ == DictionarySelection::changes && phase_ < 2) {
-                    ++phase_;
-                    cursor_ = 0;
-                    continue;
-                }
-                throw nb::stop_iteration();
-            }
-
-            cursor_ = id + 1;
-            const auto value = dictionary.item_at(id);
-            if (selection != DictionarySelection::valid || value.valid()) {
-                const auto native_key = dictionary.key_at(id);
-                const auto key = conversions().to_python(Scalar<>::from(native_key));
-                return project(key, value, selection == DictionarySelection::removed);
-            }
+    TimeSeriesEntry next(const In<TSD<Key, Item, Properties...>> &dictionary,
+                         const PythonScalarConversions &conversions) {
+        const auto id = selection_.next(dictionary);
+        if (id == util::occupancy_index::npos) {
+            throw nb::stop_iteration();
         }
+
+        const auto native_key = dictionary.key_at(id);
+        return {.key = conversions.to_python(Scalar<>::from(native_key)),
+                .value = dictionary.item_at(id),
+                .removed = selection_.removed()};
     }
 
-    DictionarySelection selection_;
-    EntryValue entry_value_;
-    EntryProjection projection_;
-    item_id_t cursor_{};
-    unsigned phase_{};
+    Selection selection_;
 };
 
-class DictionaryEntries final : public CollectionViewState {
-  public:
-    DictionaryEntries(In<TS_T> input, const PythonScalarConversions &conversions,
-                      std::shared_ptr<CallbackLifetime> lifetime, std::uint64_t generation,
-                      DictionarySelection selection, EntryValue entry_value, EntryProjection projection) noexcept
-        : CollectionViewState{input, conversions, std::move(lifetime), generation}, selection_{selection},
-          entry_value_{entry_value}, projection_{projection} {}
+struct SetEntryValue {
+    static nb::object get(SetEntry &entry, const PythonScalarConversions &, const std::shared_ptr<CallbackLifetime> &,
+                          std::uint64_t) {
+        return entry.key;
+    }
+};
 
-    nb::object iter() const {
+struct InputEntryValue {
+    static nb::object get(TimeSeriesEntry &entry, const PythonScalarConversions &conversions,
+                          const std::shared_ptr<CallbackLifetime> &lifetime, std::uint64_t generation) {
+        return make_input_view(entry.value, conversions, lifetime, generation);
+    }
+};
+
+struct ValueEntryValue {
+    static nb::object get(TimeSeriesEntry &entry, const PythonScalarConversions &conversions,
+                          const std::shared_ptr<CallbackLifetime> &lifetime, std::uint64_t generation) {
+        return make_value(entry.value, conversions, lifetime, generation);
+    }
+};
+
+struct DeltaEntryValue {
+    static nb::object get(TimeSeriesEntry &entry, const PythonScalarConversions &conversions,
+                          const std::shared_ptr<CallbackLifetime> &lifetime, std::uint64_t generation) {
+        return entry.removed ? nb::borrow<nb::object>(details::remove_sentinel())
+                             : make_delta_value(entry.value, conversions, lifetime, generation);
+    }
+};
+
+struct KeyProjection {
+    template <typename EntryValue, typename Entry>
+    static nb::object project(Entry &entry, const PythonScalarConversions &, const std::shared_ptr<CallbackLifetime> &,
+                              std::uint64_t) {
+        return std::move(entry.key);
+    }
+};
+
+struct ValueProjection {
+    template <typename EntryValue, typename Entry>
+    static nb::object project(Entry &entry, const PythonScalarConversions &conversions,
+                              const std::shared_ptr<CallbackLifetime> &lifetime, std::uint64_t generation) {
+        return EntryValue::get(entry, conversions, lifetime, generation);
+    }
+};
+
+struct ItemProjection {
+    template <typename EntryValue, typename Entry>
+    static nb::object project(Entry &entry, const PythonScalarConversions &conversions,
+                              const std::shared_ptr<CallbackLifetime> &lifetime, std::uint64_t generation) {
+        auto value = EntryValue::get(entry, conversions, lifetime, generation);
+        return nb::make_tuple(std::move(entry.key), value);
+    }
+};
+
+template <typename Cursor, typename EntryValue, typename Projection>
+class CollectionIterator final : public CollectionViewState {
+  public:
+    CollectionIterator(In<TS_T> input, const PythonScalarConversions &conversions,
+                       std::shared_ptr<CallbackLifetime> lifetime, std::uint64_t generation) noexcept
+        : CollectionViewState{input, conversions, std::move(lifetime), generation} {}
+
+    CollectionIterator &iter() noexcept { return *this; }
+
+    nb::object next() {
         check_lifetime();
-        return nb::cast(DictionaryIterator{input(), conversions(), lifetime(), generation(), selection_, entry_value_,
-                                           projection_});
+        auto entry = cursor_.next(input(), conversions());
+        return Projection::template project<EntryValue>(entry, conversions(), lifetime(), generation());
     }
 
   private:
-    DictionarySelection selection_;
-    EntryValue entry_value_;
-    EntryProjection projection_;
+    Cursor cursor_;
 };
 
-class SetValueView final : public CollectionViewState {
+template <typename Iterator> class CollectionEntries final : public CollectionViewState {
   public:
-    SetValueView(In<TS_T> input, const PythonScalarConversions &conversions, std::shared_ptr<CallbackLifetime> lifetime,
-                 std::uint64_t generation, SetSelection selection) noexcept
-        : CollectionViewState{input, conversions, std::move(lifetime), generation}, selection_{selection} {}
+    using CollectionViewState::CollectionViewState;
+
+    nb::object iter() const {
+        check_lifetime();
+        return nb::cast(Iterator{input(), conversions(), lifetime(), generation()});
+    }
+};
+
+template <typename Selection>
+using SetIterator = CollectionIterator<SetCursor<Selection>, SetEntryValue, ValueProjection>;
+
+template <typename Selection, typename EntryValue, typename Projection>
+using FixedIterator = CollectionIterator<FixedCursor<Selection>, EntryValue, Projection>;
+
+template <typename Selection, typename EntryValue, typename Projection>
+using DictionaryIterator = CollectionIterator<DictionaryCursor<Selection>, EntryValue, Projection>;
+
+template <typename Selection, typename EntryValue, typename Projection>
+using FixedEntries = CollectionEntries<FixedIterator<Selection, EntryValue, Projection>>;
+
+template <typename Selection, typename EntryValue, typename Projection>
+using DictionaryEntries = CollectionEntries<DictionaryIterator<Selection, EntryValue, Projection>>;
+
+template <typename Selection> class SetValueView final : public CollectionViewState {
+  public:
+    using CollectionViewState::CollectionViewState;
 
     std::size_t size() const {
         check_lifetime();
-        if (selection_ == SetSelection::current) {
-            const auto result = input().visit([](const In<TSS<SCALAR>> *set) { return set->size(); }, ddv::noop);
-            return result.value_or(0);
-        }
-
-        auto iterator = SetIterator{input(), conversions(), lifetime(), generation(), selection_};
-        auto count = std::size_t{};
-        try {
-            while (true) {
-                iterator.next();
-                ++count;
-            }
-        } catch (const nb::builtin_exception &error) {
-            if (error.type() == nb::exception_type::stop_iteration) {
-                return count;
-            }
-            throw;
-        }
+        const auto result = input().visit([](const In<TSS<SCALAR>> *set) { return Selection::size(*set); }, ddv::noop);
+        return result.value_or(0);
     }
 
     bool contains(nb::handle key) const {
@@ -376,15 +558,7 @@ class SetValueView final : public CollectionViewState {
                 auto allocation = allocator{memory};
                 const auto scalar = conversions().from_python(type.item_type(), key, allocation);
                 const auto item = Scalar<SCALAR>::from(scalar);
-                switch (selection_) {
-                case SetSelection::current:
-                    return set->contains(item);
-                case SetSelection::added:
-                    return set->was_added(item);
-                case SetSelection::removed:
-                    return set->was_removed(item);
-                }
-                std::unreachable();
+                return Selection::contains(*set, item);
             },
             ddv::noop);
         return result.value_or(false);
@@ -392,16 +566,13 @@ class SetValueView final : public CollectionViewState {
 
     nb::object iter() const {
         check_lifetime();
-        return nb::cast(SetIterator{input(), conversions(), lifetime(), generation(), selection_});
+        return nb::cast(SetIterator<Selection>{input(), conversions(), lifetime(), generation()});
     }
 
     nb::object copy() const {
         check_lifetime();
         return nb::module_::import_("builtins").attr("set")(iter());
     }
-
-  private:
-    SetSelection selection_;
 };
 
 class ListValueView final : public CollectionViewState {
@@ -422,7 +593,7 @@ class ListValueView final : public CollectionViewState {
                 if (index >= list->size()) {
                     throw nb::index_error();
                 }
-                return make_current_value((*list)[index], conversions(), lifetime(), generation());
+                return make_value((*list)[index], conversions(), lifetime(), generation());
             },
             ddv::noop);
         if (!result) {
@@ -433,8 +604,8 @@ class ListValueView final : public CollectionViewState {
 
     nb::object iter() const {
         check_lifetime();
-        return nb::cast(FixedIterator{input(), conversions(), lifetime(), generation(), FixedSelection::all,
-                                      EntryValue::current, EntryProjection::value});
+        return nb::cast(FixedIterator<AllFixedSelection, ValueEntryValue, ValueProjection>{input(), conversions(),
+                                                                                           lifetime(), generation()});
     }
 
     nb::object copy() const {
@@ -443,36 +614,16 @@ class ListValueView final : public CollectionViewState {
     }
 };
 
-class FixedMappingView : public CollectionViewState {
+template <typename Selection, typename EntryValue> class FixedMappingView final : public CollectionViewState {
   public:
-    FixedMappingView(In<TS_T> input, const PythonScalarConversions &conversions,
-                     std::shared_ptr<CallbackLifetime> lifetime, std::uint64_t generation, FixedSelection selection,
-                     EntryValue entry_value) noexcept
-        : CollectionViewState{input, conversions, std::move(lifetime), generation}, selection_{selection},
-          entry_value_{entry_value} {}
+    using CollectionViewState::CollectionViewState;
 
     std::size_t size() const {
         check_lifetime();
-        if (selection_ == FixedSelection::all) {
-            const auto result = input().visit([](const In<TSL<TS_T, SIZE>> *list) { return list->size(); },
-                                              [](const In<TSB<SCHEMA>> *bundle) { return bundle->size(); }, ddv::noop);
-            return result.value_or(0);
-        }
-
-        auto iterator = FixedIterator{input(),    conversions(), lifetime(),          generation(),
-                                      selection_, entry_value_,  EntryProjection::key};
-        auto count = std::size_t{};
-        try {
-            while (true) {
-                iterator.next();
-                ++count;
-            }
-        } catch (const nb::builtin_exception &error) {
-            if (error.type() == nb::exception_type::stop_iteration) {
-                return count;
-            }
-            throw;
-        }
+        const auto result =
+            input().visit([](const In<TSL<TS_T, SIZE>> *list) { return Selection::size(*list); },
+                          [](const In<TSB<SCHEMA>> *bundle) { return Selection::size(*bundle); }, ddv::noop);
+        return result.value_or(0);
     }
 
     nb::object getitem(nb::handle key) const {
@@ -522,13 +673,13 @@ class FixedMappingView : public CollectionViewState {
 
     nb::object iter() const {
         check_lifetime();
-        return nb::cast(FixedIterator{input(), conversions(), lifetime(), generation(), selection_, entry_value_,
-                                      EntryProjection::key});
+        return nb::cast(
+            FixedIterator<Selection, EntryValue, KeyProjection>{input(), conversions(), lifetime(), generation()});
     }
 
-    nb::object keys() const { return entries(EntryProjection::key); }
-    nb::object values() const { return entries(EntryProjection::value); }
-    nb::object items() const { return entries(EntryProjection::item); }
+    nb::object keys() const { return entries<KeyProjection>(); }
+    nb::object values() const { return entries<ValueProjection>(); }
+    nb::object items() const { return entries<ItemProjection>(); }
 
     nb::object getattr(nb::handle key) const {
         try {
@@ -543,79 +694,38 @@ class FixedMappingView : public CollectionViewState {
 
     nb::object copy() const {
         check_lifetime();
-        return nb::module_::import_("builtins").attr("dict")(entries(EntryProjection::item));
+        return nb::module_::import_("builtins").attr("dict")(entries<ItemProjection>());
     }
 
   private:
     nb::object selected_value(In<TS_T> value, bool modified) const {
-        if (selection_ == FixedSelection::modified && !modified) {
-            throw nb::key_error();
-        }
-        if (selection_ == FixedSelection::valid && !value.valid()) {
+        if (!Selection::includes(modified, value.valid())) {
             throw nb::key_error();
         }
 
-        switch (entry_value_) {
-        case EntryValue::input:
-            return make_input_view(value, conversions(), lifetime(), generation());
-        case EntryValue::current:
-            return make_current_value(value, conversions(), lifetime(), generation());
-        case EntryValue::delta:
-            return make_delta_value(value, conversions(), lifetime(), generation());
-        }
-        std::unreachable();
+        auto entry = TimeSeriesEntry{.value = value};
+        return EntryValue::get(entry, conversions(), lifetime(), generation());
     }
 
-    nb::object entries(EntryProjection projection) const {
+    template <typename Projection> nb::object entries() const {
         check_lifetime();
         return nb::cast(
-            FixedEntries{input(), conversions(), lifetime(), generation(), selection_, entry_value_, projection});
+            FixedEntries<Selection, EntryValue, Projection>{input(), conversions(), lifetime(), generation()});
     }
-
-    FixedSelection selection_;
-    EntryValue entry_value_;
 };
 
-class ListDeltaView final : public FixedMappingView {
-  public:
-    using FixedMappingView::FixedMappingView;
-};
+using FixedDeltaView = FixedMappingView<ModifiedFixedSelection, DeltaEntryValue>;
+using BundleValueView = FixedMappingView<AllFixedSelection, ValueEntryValue>;
 
-class BundleValueView final : public FixedMappingView {
+template <typename Selection, typename EntryValue> class DictionaryMappingView final : public CollectionViewState {
   public:
-    using FixedMappingView::FixedMappingView;
-};
-
-class DictionaryValueView final : public CollectionViewState {
-  public:
-    DictionaryValueView(In<TS_T> input, const PythonScalarConversions &conversions,
-                        std::shared_ptr<CallbackLifetime> lifetime, std::uint64_t generation,
-                        DictionarySelection selection, EntryValue entry_value) noexcept
-        : CollectionViewState{input, conversions, std::move(lifetime), generation}, selection_{selection},
-          entry_value_{entry_value} {}
+    using CollectionViewState::CollectionViewState;
 
     std::size_t size() const {
         check_lifetime();
-        if (selection_ == DictionarySelection::current) {
-            const auto result =
-                input().visit([](const In<TSD<SCALAR, TS_T>> *dictionary) { return dictionary->size(); }, ddv::noop);
-            return result.value_or(0);
-        }
-
-        auto iterator = DictionaryIterator{input(),    conversions(), lifetime(),          generation(),
-                                           selection_, entry_value_,  EntryProjection::key};
-        auto count = std::size_t{};
-        try {
-            while (true) {
-                iterator.next();
-                ++count;
-            }
-        } catch (const nb::builtin_exception &error) {
-            if (error.type() == nb::exception_type::stop_iteration) {
-                return count;
-            }
-            throw;
-        }
+        const auto result = input().visit(
+            [](const In<TSD<SCALAR, TS_T>> *dictionary) { return Selection::size(*dictionary); }, ddv::noop);
+        return result.value_or(0);
     }
 
     nb::object getitem(nb::handle key) const {
@@ -626,25 +736,14 @@ class DictionaryValueView final : public CollectionViewState {
                 auto memory = std::pmr::unsynchronized_pool_resource{};
                 auto allocation = allocator{memory};
                 const auto scalar = conversions().from_python(type.key_type(), key, allocation);
-                const auto [id, removed] = find(*dictionary, Scalar<SCALAR>::from(scalar));
+                const auto [id, removed] = Selection::find(*dictionary, Scalar<SCALAR>::from(scalar));
                 if (id == util::occupancy_index::npos) {
                     PyErr_SetObject(PyExc_KeyError, key.ptr());
                     return {};
                 }
-                if (entry_value_ == EntryValue::delta && removed) {
-                    return nb::borrow<nb::object>(details::remove_sentinel());
-                }
 
-                const auto value = dictionary->item_at(id);
-                switch (entry_value_) {
-                case EntryValue::input:
-                    return make_input_view(value, conversions(), lifetime(), generation());
-                case EntryValue::current:
-                    return make_current_value(value, conversions(), lifetime(), generation());
-                case EntryValue::delta:
-                    return make_delta_value(value, conversions(), lifetime(), generation());
-                }
-                std::unreachable();
+                auto entry = TimeSeriesEntry{.value = dictionary->item_at(id), .removed = removed};
+                return EntryValue::get(entry, conversions(), lifetime(), generation());
             },
             ddv::noop);
         if (!result) {
@@ -681,7 +780,7 @@ class DictionaryValueView final : public CollectionViewState {
                 auto memory = std::pmr::unsynchronized_pool_resource{};
                 auto allocation = allocator{memory};
                 const auto scalar = conversions().from_python(type.key_type(), key, allocation);
-                return find(*dictionary, Scalar<SCALAR>::from(scalar)).first != util::occupancy_index::npos;
+                return Selection::find(*dictionary, Scalar<SCALAR>::from(scalar)).first != util::occupancy_index::npos;
             },
             ddv::noop);
         return result.value_or(false);
@@ -689,55 +788,29 @@ class DictionaryValueView final : public CollectionViewState {
 
     nb::object iter() const {
         check_lifetime();
-        return nb::cast(DictionaryIterator{input(), conversions(), lifetime(), generation(), selection_, entry_value_,
-                                           EntryProjection::key});
+        return nb::cast(
+            DictionaryIterator<Selection, EntryValue, KeyProjection>{input(), conversions(), lifetime(), generation()});
     }
 
-    nb::object keys() const { return entries(EntryProjection::key); }
-    nb::object values() const { return entries(EntryProjection::value); }
-    nb::object items() const { return entries(EntryProjection::item); }
+    nb::object keys() const { return entries<KeyProjection>(); }
+    nb::object values() const { return entries<ValueProjection>(); }
+    nb::object items() const { return entries<ItemProjection>(); }
 
     nb::object copy() const {
         check_lifetime();
-        return nb::module_::import_("builtins").attr("dict")(entries(EntryProjection::item));
+        return nb::module_::import_("builtins").attr("dict")(entries<ItemProjection>());
     }
 
   private:
-    template <typename Dictionary, typename Key>
-    std::pair<item_id_t, bool> find(const Dictionary &dictionary, const Key &key) const {
-        switch (selection_) {
-        case DictionarySelection::current:
-        case DictionarySelection::valid:
-            return {dictionary.find_item_id(key), false};
-        case DictionarySelection::added:
-            return {dictionary.find_added_id(key), false};
-        case DictionarySelection::removed:
-            return {dictionary.find_removed_id(key), true};
-        case DictionarySelection::modified:
-            return {dictionary.find_modified_id(key), false};
-        case DictionarySelection::changes:
-            auto id = dictionary.find_added_id(key);
-            if (id != util::occupancy_index::npos) {
-                return {id, false};
-            }
-            id = dictionary.find_modified_id(key);
-            if (id != util::occupancy_index::npos) {
-                return {id, false};
-            }
-            return {dictionary.find_removed_id(key), true};
-        }
-        std::unreachable();
-    }
-
-    nb::object entries(EntryProjection projection) const {
+    template <typename Projection> nb::object entries() const {
         check_lifetime();
         return nb::cast(
-            DictionaryEntries{input(), conversions(), lifetime(), generation(), selection_, entry_value_, projection});
+            DictionaryEntries<Selection, EntryValue, Projection>{input(), conversions(), lifetime(), generation()});
     }
-
-    DictionarySelection selection_;
-    EntryValue entry_value_;
 };
+
+using DictionaryValueView = DictionaryMappingView<LiveDictionarySelection, ValueEntryValue>;
+using DictionaryDeltaView = DictionaryMappingView<ChangedDictionarySelection, DeltaEntryValue>;
 
 class SetDeltaView final : public CollectionViewState {
   public:
@@ -745,17 +818,17 @@ class SetDeltaView final : public CollectionViewState {
 
     nb::object added() const {
         check_lifetime();
-        return nb::cast(SetValueView{input(), conversions(), lifetime(), generation(), SetSelection::added});
+        return nb::cast(SetValueView<AddedSetSelection>{input(), conversions(), lifetime(), generation()});
     }
 
     nb::object removed() const {
         check_lifetime();
-        return nb::cast(SetValueView{input(), conversions(), lifetime(), generation(), SetSelection::removed});
+        return nb::cast(SetValueView<RemovedSetSelection>{input(), conversions(), lifetime(), generation()});
     }
 };
 
-nb::object make_current_value(In<TS_T> input, const PythonScalarConversions &conversions,
-                              const std::shared_ptr<CallbackLifetime> &lifetime, std::uint64_t generation) {
+nb::object make_value(In<TS_T> input, const PythonScalarConversions &conversions,
+                      const std::shared_ptr<CallbackLifetime> &lifetime, std::uint64_t generation) {
     if (!input.valid()) {
         return nb::none();
     }
@@ -763,16 +836,12 @@ nb::object make_current_value(In<TS_T> input, const PythonScalarConversions &con
     const auto result = input.visit(
         [&](const In<TS<SCALAR>> *value) { return scalar_value(*value, conversions); },
         [&](const In<TSS<SCALAR>> *) {
-            return nb::cast(SetValueView{input, conversions, lifetime, generation, SetSelection::current});
+            return nb::cast(SetValueView<LiveSetSelection>{input, conversions, lifetime, generation});
         },
         [&](const In<TSL<TS_T, SIZE>> *) { return nb::cast(ListValueView{input, conversions, lifetime, generation}); },
-        [&](const In<TSB<SCHEMA>> *) {
-            return nb::cast(
-                BundleValueView{input, conversions, lifetime, generation, FixedSelection::all, EntryValue::current});
-        },
+        [&](const In<TSB<SCHEMA>> *) { return nb::cast(BundleValueView{input, conversions, lifetime, generation}); },
         [&](const In<TSD<SCALAR, TS_T>> *) {
-            return nb::cast(DictionaryValueView{input, conversions, lifetime, generation, DictionarySelection::current,
-                                                EntryValue::current});
+            return nb::cast(DictionaryValueView{input, conversions, lifetime, generation});
         },
         [&](const In<REF<TS_T>> *value) { return nb::cast(ReferenceValue{value->value(), lifetime, generation}); },
         ddv::noop);
@@ -791,17 +860,10 @@ nb::object make_delta_value(In<TS_T> input, const PythonScalarConversions &conve
     const auto result = input.visit(
         [&](const In<TS<SCALAR>> *value) { return scalar_value(*value, conversions); },
         [&](const In<TSS<SCALAR>> *) { return nb::cast(SetDeltaView{input, conversions, lifetime, generation}); },
-        [&](const In<TSL<TS_T, SIZE>> *) {
-            return nb::cast(
-                ListDeltaView{input, conversions, lifetime, generation, FixedSelection::modified, EntryValue::delta});
-        },
-        [&](const In<TSB<SCHEMA>> *) {
-            return nb::cast(
-                BundleValueView{input, conversions, lifetime, generation, FixedSelection::modified, EntryValue::delta});
-        },
+        [&](const In<TSL<TS_T, SIZE>> *) { return nb::cast(FixedDeltaView{input, conversions, lifetime, generation}); },
+        [&](const In<TSB<SCHEMA>> *) { return nb::cast(FixedDeltaView{input, conversions, lifetime, generation}); },
         [&](const In<TSD<SCALAR, TS_T>> *) {
-            return nb::cast(DictionaryValueView{input, conversions, lifetime, generation, DictionarySelection::changes,
-                                                EntryValue::delta});
+            return nb::cast(DictionaryDeltaView{input, conversions, lifetime, generation});
         },
         [&](const In<REF<TS_T>> *value) { return nb::cast(ReferenceValue{value->value(), lifetime, generation}); },
         ddv::noop);
@@ -895,7 +957,7 @@ nb::object TSSInput::value() const {
     if (!valid()) {
         throw std::runtime_error{"an invalid Python time-series input has no value"};
     }
-    return nb::cast(SetValueView{input(), conversions(), lifetime(), generation(), SetSelection::current});
+    return nb::cast(SetValueView<LiveSetSelection>{input(), conversions(), lifetime(), generation()});
 }
 
 nb::object TSSInput::delta_value() const {
@@ -908,17 +970,17 @@ nb::object TSSInput::delta_value() const {
 
 nb::object TSSInput::iter() const {
     check_lifetime();
-    return nb::cast(SetIterator{input(), conversions(), lifetime(), generation(), SetSelection::current});
+    return nb::cast(SetIterator<LiveSetSelection>{input(), conversions(), lifetime(), generation()});
 }
 
 nb::object TSSInput::added() const {
     check_lifetime();
-    return nb::cast(SetValueView{input(), conversions(), lifetime(), generation(), SetSelection::added});
+    return nb::cast(SetValueView<AddedSetSelection>{input(), conversions(), lifetime(), generation()});
 }
 
 nb::object TSSInput::removed() const {
     check_lifetime();
-    return nb::cast(SetValueView{input(), conversions(), lifetime(), generation(), SetSelection::removed});
+    return nb::cast(SetValueView<RemovedSetSelection>{input(), conversions(), lifetime(), generation()});
 }
 
 bool TSSInput::was_added(nb::handle item) const {
@@ -966,69 +1028,67 @@ nb::object TSLInput::value() const {
 
 nb::object TSLInput::delta_value() const {
     check_lifetime();
-    return modified() ? nb::cast(ListDeltaView{input(), conversions(), lifetime(), generation(),
-                                               FixedSelection::modified, EntryValue::delta})
-                      : nb::none();
+    return modified() ? nb::cast(FixedDeltaView{input(), conversions(), lifetime(), generation()}) : nb::none();
 }
 
 nb::object TSLInput::iter() const {
     check_lifetime();
-    return nb::cast(FixedIterator{input(), conversions(), lifetime(), generation(), FixedSelection::all,
-                                  EntryValue::input, EntryProjection::value});
+    return nb::cast(FixedIterator<AllFixedSelection, InputEntryValue, ValueProjection>{input(), conversions(),
+                                                                                       lifetime(), generation()});
 }
 
 nb::object TSLInput::keys() const {
     check_lifetime();
-    return nb::cast(FixedEntries{input(), conversions(), lifetime(), generation(), FixedSelection::all,
-                                 EntryValue::input, EntryProjection::key});
+    return nb::cast(FixedEntries<AllFixedSelection, InputEntryValue, KeyProjection>{input(), conversions(), lifetime(),
+                                                                                    generation()});
 }
 
 nb::object TSLInput::values() const {
     check_lifetime();
-    return nb::cast(FixedEntries{input(), conversions(), lifetime(), generation(), FixedSelection::all,
-                                 EntryValue::input, EntryProjection::value});
+    return nb::cast(FixedEntries<AllFixedSelection, InputEntryValue, ValueProjection>{input(), conversions(),
+                                                                                      lifetime(), generation()});
 }
 
 nb::object TSLInput::items() const {
     check_lifetime();
-    return nb::cast(FixedEntries{input(), conversions(), lifetime(), generation(), FixedSelection::all,
-                                 EntryValue::input, EntryProjection::item});
+    return nb::cast(FixedEntries<AllFixedSelection, InputEntryValue, ItemProjection>{input(), conversions(), lifetime(),
+                                                                                     generation()});
 }
 
 nb::object TSLInput::modified_keys() const {
     check_lifetime();
-    return nb::cast(FixedEntries{input(), conversions(), lifetime(), generation(), FixedSelection::modified,
-                                 EntryValue::input, EntryProjection::key});
+    return nb::cast(FixedEntries<ModifiedFixedSelection, InputEntryValue, KeyProjection>{input(), conversions(),
+                                                                                         lifetime(), generation()});
 }
 
 nb::object TSLInput::modified_values() const {
     check_lifetime();
-    return nb::cast(FixedEntries{input(), conversions(), lifetime(), generation(), FixedSelection::modified,
-                                 EntryValue::input, EntryProjection::value});
+    return nb::cast(FixedEntries<ModifiedFixedSelection, InputEntryValue, ValueProjection>{input(), conversions(),
+                                                                                           lifetime(), generation()});
 }
 
 nb::object TSLInput::modified_items() const {
     check_lifetime();
-    return nb::cast(FixedEntries{input(), conversions(), lifetime(), generation(), FixedSelection::modified,
-                                 EntryValue::input, EntryProjection::item});
+    return nb::cast(FixedEntries<ModifiedFixedSelection, InputEntryValue, ItemProjection>{input(), conversions(),
+                                                                                          lifetime(), generation()});
 }
 
 nb::object TSLInput::valid_keys() const {
     check_lifetime();
-    return nb::cast(FixedEntries{input(), conversions(), lifetime(), generation(), FixedSelection::valid,
-                                 EntryValue::input, EntryProjection::key});
+    return nb::cast(FixedEntries<ValidFixedSelection, InputEntryValue, KeyProjection>{input(), conversions(),
+                                                                                      lifetime(), generation()});
 }
 
 nb::object TSLInput::valid_values() const {
     check_lifetime();
-    return nb::cast(FixedEntries{input(), conversions(), lifetime(), generation(), FixedSelection::valid,
-                                 EntryValue::input, EntryProjection::value});
+    return nb::cast(FixedEntries<ValidFixedSelection, InputEntryValue, ValueProjection>{input(), conversions(),
+                                                                                        lifetime(), generation()});
 }
 
 nb::object TSLInput::valid_items() const {
     check_lifetime();
-    return nb::cast(FixedEntries{input(), conversions(), lifetime(), generation(), FixedSelection::valid,
-                                 EntryValue::input, EntryProjection::item});
+    return nb::cast(FixedEntries<ValidFixedSelection, InputEntryValue, ItemProjection>{input(), conversions(),
+                                                                                       lifetime(), generation()});
 }
 
 std::size_t TSBInput::size() const {
@@ -1078,69 +1138,66 @@ nb::object TSBInput::value() const {
     if (!valid()) {
         throw std::runtime_error{"an invalid Python time-series input has no value"};
     }
-    return nb::cast(
-        BundleValueView{input(), conversions(), lifetime(), generation(), FixedSelection::all, EntryValue::current});
+    return nb::cast(BundleValueView{input(), conversions(), lifetime(), generation()});
 }
 
 nb::object TSBInput::delta_value() const {
     check_lifetime();
-    return modified() ? nb::cast(BundleValueView{input(), conversions(), lifetime(), generation(),
-                                                 FixedSelection::modified, EntryValue::delta})
-                      : nb::none();
+    return modified() ? nb::cast(FixedDeltaView{input(), conversions(), lifetime(), generation()}) : nb::none();
 }
 
 nb::object TSBInput::keys() const {
     check_lifetime();
-    return nb::cast(FixedEntries{input(), conversions(), lifetime(), generation(), FixedSelection::all,
-                                 EntryValue::input, EntryProjection::key});
+    return nb::cast(FixedEntries<AllFixedSelection, InputEntryValue, KeyProjection>{input(), conversions(), lifetime(),
+                                                                                    generation()});
 }
 
 nb::object TSBInput::values() const {
     check_lifetime();
-    return nb::cast(FixedEntries{input(), conversions(), lifetime(), generation(), FixedSelection::all,
-                                 EntryValue::input, EntryProjection::value});
+    return nb::cast(FixedEntries<AllFixedSelection, InputEntryValue, ValueProjection>{input(), conversions(),
+                                                                                      lifetime(), generation()});
 }
 
 nb::object TSBInput::items() const {
     check_lifetime();
-    return nb::cast(FixedEntries{input(), conversions(), lifetime(), generation(), FixedSelection::all,
-                                 EntryValue::input, EntryProjection::item});
+    return nb::cast(FixedEntries<AllFixedSelection, InputEntryValue, ItemProjection>{input(), conversions(), lifetime(),
+                                                                                     generation()});
 }
 
 nb::object TSBInput::modified_keys() const {
     check_lifetime();
-    return nb::cast(FixedEntries{input(), conversions(), lifetime(), generation(), FixedSelection::modified,
-                                 EntryValue::input, EntryProjection::key});
+    return nb::cast(FixedEntries<ModifiedFixedSelection, InputEntryValue, KeyProjection>{input(), conversions(),
+                                                                                         lifetime(), generation()});
 }
 
 nb::object TSBInput::modified_values() const {
     check_lifetime();
-    return nb::cast(FixedEntries{input(), conversions(), lifetime(), generation(), FixedSelection::modified,
-                                 EntryValue::input, EntryProjection::value});
+    return nb::cast(FixedEntries<ModifiedFixedSelection, InputEntryValue, ValueProjection>{input(), conversions(),
+                                                                                           lifetime(), generation()});
 }
 
 nb::object TSBInput::modified_items() const {
     check_lifetime();
-    return nb::cast(FixedEntries{input(), conversions(), lifetime(), generation(), FixedSelection::modified,
-                                 EntryValue::input, EntryProjection::item});
+    return nb::cast(FixedEntries<ModifiedFixedSelection, InputEntryValue, ItemProjection>{input(), conversions(),
+                                                                                          lifetime(), generation()});
 }
 
 nb::object TSBInput::valid_keys() const {
     check_lifetime();
-    return nb::cast(FixedEntries{input(), conversions(), lifetime(), generation(), FixedSelection::valid,
-                                 EntryValue::input, EntryProjection::key});
+    return nb::cast(FixedEntries<ValidFixedSelection, InputEntryValue, KeyProjection>{input(), conversions(),
+                                                                                      lifetime(), generation()});
 }
 
 nb::object TSBInput::valid_values() const {
     check_lifetime();
-    return nb::cast(FixedEntries{input(), conversions(), lifetime(), generation(), FixedSelection::valid,
-                                 EntryValue::input, EntryProjection::value});
+    return nb::cast(FixedEntries<ValidFixedSelection, InputEntryValue, ValueProjection>{input(), conversions(),
+                                                                                        lifetime(), generation()});
 }
 
 nb::object TSBInput::valid_items() const {
     check_lifetime();
-    return nb::cast(FixedEntries{input(), conversions(), lifetime(), generation(), FixedSelection::valid,
-                                 EntryValue::input, EntryProjection::item});
+    return nb::cast(FixedEntries<ValidFixedSelection, InputEntryValue, ItemProjection>{input(), conversions(),
+                                                                                       lifetime(), generation()});
 }
 
 std::size_t TSDInput::size() const {
@@ -1199,21 +1256,18 @@ nb::object TSDInput::value() const {
     if (!valid()) {
         throw std::runtime_error{"an invalid Python time-series input has no value"};
     }
-    return nb::cast(DictionaryValueView{input(), conversions(), lifetime(), generation(), DictionarySelection::current,
-                                        EntryValue::current});
+    return nb::cast(DictionaryValueView{input(), conversions(), lifetime(), generation()});
 }
 
 nb::object TSDInput::delta_value() const {
     check_lifetime();
-    return modified() ? nb::cast(DictionaryValueView{input(), conversions(), lifetime(), generation(),
-                                                     DictionarySelection::changes, EntryValue::delta})
-                      : nb::none();
+    return modified() ? nb::cast(DictionaryDeltaView{input(), conversions(), lifetime(), generation()}) : nb::none();
 }
 
 nb::object TSDInput::iter() const {
     check_lifetime();
-    return nb::cast(DictionaryIterator{input(), conversions(), lifetime(), generation(), DictionarySelection::current,
-                                       EntryValue::input, EntryProjection::key});
+    return nb::cast(DictionaryIterator<LiveDictionarySelection, InputEntryValue, KeyProjection>{
+        input(), conversions(), lifetime(), generation()});
 }
 
 nb::object TSDInput::key_set() const {
@@ -1225,142 +1279,201 @@ nb::object TSDInput::key_set() const {
 
 nb::object TSDInput::keys() const {
     check_lifetime();
-    return nb::cast(DictionaryEntries{input(), conversions(), lifetime(), generation(), DictionarySelection::current,
-                                      EntryValue::input, EntryProjection::key});
+    return nb::cast(DictionaryEntries<LiveDictionarySelection, InputEntryValue, KeyProjection>{
+        input(), conversions(), lifetime(), generation()});
 }
 
 nb::object TSDInput::values() const {
     check_lifetime();
-    return nb::cast(DictionaryEntries{input(), conversions(), lifetime(), generation(), DictionarySelection::current,
-                                      EntryValue::input, EntryProjection::value});
+    return nb::cast(DictionaryEntries<LiveDictionarySelection, InputEntryValue, ValueProjection>{
+        input(), conversions(), lifetime(), generation()});
 }
 
 nb::object TSDInput::items() const {
     check_lifetime();
-    return nb::cast(DictionaryEntries{input(), conversions(), lifetime(), generation(), DictionarySelection::current,
-                                      EntryValue::input, EntryProjection::item});
+    return nb::cast(DictionaryEntries<LiveDictionarySelection, InputEntryValue, ItemProjection>{
+        input(), conversions(), lifetime(), generation()});
 }
 
 nb::object TSDInput::added_keys() const {
     check_lifetime();
-    return nb::cast(DictionaryEntries{input(), conversions(), lifetime(), generation(), DictionarySelection::added,
-                                      EntryValue::input, EntryProjection::key});
+    return nb::cast(DictionaryEntries<AddedDictionarySelection, InputEntryValue, KeyProjection>{
+        input(), conversions(), lifetime(), generation()});
 }
 
 nb::object TSDInput::added_values() const {
     check_lifetime();
-    return nb::cast(DictionaryEntries{input(), conversions(), lifetime(), generation(), DictionarySelection::added,
-                                      EntryValue::input, EntryProjection::value});
+    return nb::cast(DictionaryEntries<AddedDictionarySelection, InputEntryValue, ValueProjection>{
+        input(), conversions(), lifetime(), generation()});
 }
 
 nb::object TSDInput::added_items() const {
     check_lifetime();
-    return nb::cast(DictionaryEntries{input(), conversions(), lifetime(), generation(), DictionarySelection::added,
-                                      EntryValue::input, EntryProjection::item});
+    return nb::cast(DictionaryEntries<AddedDictionarySelection, InputEntryValue, ItemProjection>{
+        input(), conversions(), lifetime(), generation()});
 }
 
 nb::object TSDInput::removed_keys() const {
     check_lifetime();
-    return nb::cast(DictionaryEntries{input(), conversions(), lifetime(), generation(), DictionarySelection::removed,
-                                      EntryValue::input, EntryProjection::key});
+    return nb::cast(DictionaryEntries<RemovedDictionarySelection, InputEntryValue, KeyProjection>{
+        input(), conversions(), lifetime(), generation()});
 }
 
 nb::object TSDInput::removed_values() const {
     check_lifetime();
-    return nb::cast(DictionaryEntries{input(), conversions(), lifetime(), generation(), DictionarySelection::removed,
-                                      EntryValue::input, EntryProjection::value});
+    return nb::cast(DictionaryEntries<RemovedDictionarySelection, InputEntryValue, ValueProjection>{
+        input(), conversions(), lifetime(), generation()});
 }
 
 nb::object TSDInput::removed_items() const {
     check_lifetime();
-    return nb::cast(DictionaryEntries{input(), conversions(), lifetime(), generation(), DictionarySelection::removed,
-                                      EntryValue::input, EntryProjection::item});
+    return nb::cast(DictionaryEntries<RemovedDictionarySelection, InputEntryValue, ItemProjection>{
+        input(), conversions(), lifetime(), generation()});
 }
 
 nb::object TSDInput::modified_keys() const {
     check_lifetime();
-    return nb::cast(DictionaryEntries{input(), conversions(), lifetime(), generation(), DictionarySelection::modified,
-                                      EntryValue::input, EntryProjection::key});
+    return nb::cast(DictionaryEntries<ModifiedDictionarySelection, InputEntryValue, KeyProjection>{
+        input(), conversions(), lifetime(), generation()});
 }
 
 nb::object TSDInput::modified_values() const {
     check_lifetime();
-    return nb::cast(DictionaryEntries{input(), conversions(), lifetime(), generation(), DictionarySelection::modified,
-                                      EntryValue::input, EntryProjection::value});
+    return nb::cast(DictionaryEntries<ModifiedDictionarySelection, InputEntryValue, ValueProjection>{
+        input(), conversions(), lifetime(), generation()});
 }
 
 nb::object TSDInput::modified_items() const {
     check_lifetime();
-    return nb::cast(DictionaryEntries{input(), conversions(), lifetime(), generation(), DictionarySelection::modified,
-                                      EntryValue::input, EntryProjection::item});
+    return nb::cast(DictionaryEntries<ModifiedDictionarySelection, InputEntryValue, ItemProjection>{
+        input(), conversions(), lifetime(), generation()});
 }
 
 nb::object TSDInput::valid_keys() const {
     check_lifetime();
-    return nb::cast(DictionaryEntries{input(), conversions(), lifetime(), generation(), DictionarySelection::valid,
-                                      EntryValue::input, EntryProjection::key});
+    return nb::cast(DictionaryEntries<ValidDictionarySelection, InputEntryValue, KeyProjection>{
+        input(), conversions(), lifetime(), generation()});
 }
 
 nb::object TSDInput::valid_values() const {
     check_lifetime();
-    return nb::cast(DictionaryEntries{input(), conversions(), lifetime(), generation(), DictionarySelection::valid,
-                                      EntryValue::input, EntryProjection::value});
+    return nb::cast(DictionaryEntries<ValidDictionarySelection, InputEntryValue, ValueProjection>{
+        input(), conversions(), lifetime(), generation()});
 }
 
 nb::object TSDInput::valid_items() const {
     check_lifetime();
-    return nb::cast(DictionaryEntries{input(), conversions(), lifetime(), generation(), DictionarySelection::valid,
-                                      EntryValue::input, EntryProjection::item});
+    return nb::cast(DictionaryEntries<ValidDictionarySelection, InputEntryValue, ItemProjection>{
+        input(), conversions(), lifetime(), generation()});
 }
 
+namespace {
+
+template <typename Iterator> void bind_iterator(nb::module_ &module, const char *name) {
+    nb::class_<Iterator>(module, name)
+        .def("__iter__", &Iterator::iter, nb::rv_policy::reference)
+        .def("__next__", &Iterator::next);
+}
+
+template <typename Entries> void bind_entries(nb::module_ &module, const char *name) {
+    nb::class_<Entries>(module, name).def("__iter__", &Entries::iter);
+}
+
+template <typename Selection, typename EntryValue> void bind_fixed_iteration(nb::module_ &module, const char *name) {
+    const auto prefix = std::string{"_"} + name;
+    bind_iterator<FixedIterator<Selection, EntryValue, KeyProjection>>(module, (prefix + "KeyIterator").c_str());
+    bind_iterator<FixedIterator<Selection, EntryValue, ValueProjection>>(module, (prefix + "ValueIterator").c_str());
+    bind_iterator<FixedIterator<Selection, EntryValue, ItemProjection>>(module, (prefix + "ItemIterator").c_str());
+
+    bind_entries<FixedEntries<Selection, EntryValue, KeyProjection>>(module, (prefix + "KeyEntries").c_str());
+    bind_entries<FixedEntries<Selection, EntryValue, ValueProjection>>(module, (prefix + "ValueEntries").c_str());
+    bind_entries<FixedEntries<Selection, EntryValue, ItemProjection>>(module, (prefix + "ItemEntries").c_str());
+}
+
+template <typename Selection, typename EntryValue>
+void bind_dictionary_iteration(nb::module_ &module, const char *name) {
+    const auto prefix = std::string{"_"} + name;
+    bind_iterator<DictionaryIterator<Selection, EntryValue, KeyProjection>>(module, (prefix + "KeyIterator").c_str());
+    bind_iterator<DictionaryIterator<Selection, EntryValue, ValueProjection>>(module,
+                                                                              (prefix + "ValueIterator").c_str());
+    bind_iterator<DictionaryIterator<Selection, EntryValue, ItemProjection>>(module, (prefix + "ItemIterator").c_str());
+
+    bind_entries<DictionaryEntries<Selection, EntryValue, KeyProjection>>(module, (prefix + "KeyEntries").c_str());
+    bind_entries<DictionaryEntries<Selection, EntryValue, ValueProjection>>(module, (prefix + "ValueEntries").c_str());
+    bind_entries<DictionaryEntries<Selection, EntryValue, ItemProjection>>(module, (prefix + "ItemEntries").c_str());
+}
+
+template <typename Selection> void bind_set_value(nb::module_ &module, const char *name) {
+    using View = SetValueView<Selection>;
+    nb::class_<View>(module, name)
+        .def("__len__", &View::size)
+        .def("__contains__", &View::contains)
+        .def("__iter__", &View::iter)
+        .def("copy", &View::copy);
+}
+
+template <typename View> nb::class_<View> bind_fixed_mapping(nb::module_ &module, const char *name) {
+    auto binding = nb::class_<View>(module, name);
+    binding.def("__len__", &View::size)
+        .def("__getitem__", &View::getitem)
+        .def("__iter__", &View::iter)
+        .def("get", &View::get, "key"_a, "default"_a = nb::none())
+        .def("keys", &View::keys)
+        .def("values", &View::values)
+        .def("items", &View::items)
+        .def("copy", &View::copy);
+    return binding;
+}
+
+template <typename View> void bind_dictionary_value(nb::module_ &module, const char *name) {
+    nb::class_<View>(module, name)
+        .def("__len__", &View::size)
+        .def("__getitem__", &View::getitem)
+        .def("__contains__", &View::contains)
+        .def("__iter__", &View::iter)
+        .def("get", &View::get, "key"_a, "default"_a = nb::none())
+        .def("keys", &View::keys)
+        .def("values", &View::values)
+        .def("items", &View::items)
+        .def("copy", &View::copy);
+}
+
+} // namespace
+
 void bind_input_iterators(nb::module_ &module) {
-    nb::class_<SetIterator>(module, "_SetIterator")
-        .def("__iter__", &SetIterator::iter, nb::rv_policy::reference)
-        .def("__next__", static_cast<nb::object (SetIterator::*)()>(&SetIterator::next));
-    nb::class_<FixedIterator>(module, "_FixedIterator")
-        .def("__iter__", &FixedIterator::iter, nb::rv_policy::reference)
-        .def("__next__", static_cast<nb::object (FixedIterator::*)()>(&FixedIterator::next));
-    nb::class_<DictionaryIterator>(module, "_DictionaryIterator")
-        .def("__iter__", &DictionaryIterator::iter, nb::rv_policy::reference)
-        .def("__next__", static_cast<nb::object (DictionaryIterator::*)()>(&DictionaryIterator::next));
+    bind_iterator<SetIterator<LiveSetSelection>>(module, "_LiveSetIterator");
+    bind_iterator<SetIterator<AddedSetSelection>>(module, "_AddedSetIterator");
+    bind_iterator<SetIterator<RemovedSetSelection>>(module, "_RemovedSetIterator");
 
-    nb::class_<FixedEntries>(module, "_FixedEntries").def("__iter__", &FixedEntries::iter);
-    nb::class_<DictionaryEntries>(module, "_DictionaryEntries").def("__iter__", &DictionaryEntries::iter);
+    bind_fixed_iteration<AllFixedSelection, ValueEntryValue>(module, "FixedValue");
+    bind_fixed_iteration<ModifiedFixedSelection, DeltaEntryValue>(module, "FixedDelta");
+    bind_fixed_iteration<AllFixedSelection, InputEntryValue>(module, "FixedInput");
+    bind_fixed_iteration<ModifiedFixedSelection, InputEntryValue>(module, "ModifiedFixedInput");
+    bind_fixed_iteration<ValidFixedSelection, InputEntryValue>(module, "ValidFixedInput");
 
-    nb::class_<SetValueView>(module, "_SetValueView")
-        .def("__len__", &SetValueView::size)
-        .def("__contains__", &SetValueView::contains)
-        .def("__iter__", &SetValueView::iter)
-        .def("copy", &SetValueView::copy);
+    bind_dictionary_iteration<LiveDictionarySelection, ValueEntryValue>(module, "DictionaryValue");
+    bind_dictionary_iteration<ChangedDictionarySelection, DeltaEntryValue>(module, "DictionaryDelta");
+    bind_dictionary_iteration<LiveDictionarySelection, InputEntryValue>(module, "DictionaryInput");
+    bind_dictionary_iteration<AddedDictionarySelection, InputEntryValue>(module, "AddedDictionaryInput");
+    bind_dictionary_iteration<RemovedDictionarySelection, InputEntryValue>(module, "RemovedDictionaryInput");
+    bind_dictionary_iteration<ModifiedDictionarySelection, InputEntryValue>(module, "ModifiedDictionaryInput");
+    bind_dictionary_iteration<ValidDictionarySelection, InputEntryValue>(module, "ValidDictionaryInput");
+
+    bind_set_value<LiveSetSelection>(module, "_SetValueView");
+    bind_set_value<AddedSetSelection>(module, "_AddedSetValueView");
+    bind_set_value<RemovedSetSelection>(module, "_RemovedSetValueView");
+
     nb::class_<ListValueView>(module, "_ListValueView")
         .def("__len__", &ListValueView::size)
         .def("__getitem__", &ListValueView::getitem)
         .def("__iter__", &ListValueView::iter)
         .def("copy", &ListValueView::copy);
 
-    nb::class_<FixedMappingView>(module, "_FixedMappingView")
-        .def("__len__", &FixedMappingView::size)
-        .def("__getitem__", &FixedMappingView::getitem)
-        .def("__iter__", &FixedMappingView::iter)
-        .def("get", &FixedMappingView::get, "key"_a, "default"_a = nb::none())
-        .def("keys", &FixedMappingView::keys)
-        .def("values", &FixedMappingView::values)
-        .def("items", &FixedMappingView::items)
-        .def("copy", &FixedMappingView::copy);
-    nb::class_<ListDeltaView, FixedMappingView>(module, "_ChangeValueView");
-    nb::class_<BundleValueView, FixedMappingView>(module, "_BundleValueView")
-        .def("__getattr__", &BundleValueView::getattr);
+    bind_fixed_mapping<FixedDeltaView>(module, "_FixedDeltaView");
+    bind_fixed_mapping<BundleValueView>(module, "_BundleValueView").def("__getattr__", &BundleValueView::getattr);
 
-    nb::class_<DictionaryValueView>(module, "_DictionaryValueView")
-        .def("__len__", &DictionaryValueView::size)
-        .def("__getitem__", &DictionaryValueView::getitem)
-        .def("__contains__", &DictionaryValueView::contains)
-        .def("__iter__", &DictionaryValueView::iter)
-        .def("get", &DictionaryValueView::get, "key"_a, "default"_a = nb::none())
-        .def("keys", &DictionaryValueView::keys)
-        .def("values", &DictionaryValueView::values)
-        .def("items", &DictionaryValueView::items)
-        .def("copy", &DictionaryValueView::copy);
+    bind_dictionary_value<DictionaryValueView>(module, "_DictionaryValueView");
+    bind_dictionary_value<DictionaryDeltaView>(module, "_DictionaryDeltaView");
 
     nb::class_<SetDeltaView>(module, "_SetDeltaView")
         .def_prop_ro("added", &SetDeltaView::added)

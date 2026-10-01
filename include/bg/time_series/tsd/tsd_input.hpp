@@ -99,6 +99,14 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...> {
     }
 
     item_id_t next_item_id(item_id_t start) const noexcept { return next(ItemRange::current, start); }
+    item_id_t next_valid_id(item_id_t start) const {
+        for (auto id = next_item_id(start); id != util::occupancy_index::npos; id = next_item_id(id + 1)) {
+            if (make_item(id).valid()) {
+                return id;
+            }
+        }
+        return util::occupancy_index::npos;
+    }
     item_id_t next_added_id(item_id_t start) const noexcept { return next(ItemRange::added, start); }
     item_id_t next_removed_id(item_id_t start) const noexcept { return next(ItemRange::removed, start); }
     item_id_t next_modified_id(item_id_t start) const noexcept { return next(ItemRange::modified, start); }
