@@ -593,7 +593,6 @@ void bind_core(nb::module_ &module) {
         .def("__len__", &TSBInput::size)
         .def("__getitem__", &TSBInput::getitem)
         .def("__getattr__", &TSBInput::getattr)
-        .def("__iter__", &TSBInput::iter)
         .def("keys", &TSBInput::keys)
         .def("values", &TSBInput::values)
         .def("items", &TSBInput::items)

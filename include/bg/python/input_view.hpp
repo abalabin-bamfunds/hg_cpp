@@ -130,7 +130,6 @@ class NB_HIDDEN TSBInput final : public InputView {
     std::size_t size() const;
     nanobind::object getitem(nanobind::handle key) const;
     nanobind::object getattr(nanobind::handle key) const;
-    nanobind::object iter() const;
     nanobind::object keys() const;
     nanobind::object values() const;
     nanobind::object items() const;

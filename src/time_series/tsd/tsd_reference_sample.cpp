@@ -26,6 +26,7 @@ class SampledDictionaryRuntimeType final : public TimeSeriesDictionaryRuntimeTyp
     item_id_t find_key(const void *value, const ScalarData &key) const override;
     bool key_live(const void *value, item_id_t id) const noexcept override;
     item_id_t find_item(const void *value, const ScalarData &key) const override;
+    item_id_t find_removed(const EvaluationTime &, const void *, const ScalarData &) const override;
     const void *key(const void *value, item_id_t id) const noexcept override;
     void for_each_added(const EvaluationTime &, const void *, void *, ItemIdFunction) const override;
     void for_each_removed(const EvaluationTime &, const void *, void *, ItemIdFunction) const override;
@@ -41,6 +42,9 @@ class SampledDictionaryRuntimeType final : public TimeSeriesDictionaryRuntimeTyp
     bool collection_valid(const void *value) const noexcept override;
     void for_each_modified_item(const EvaluationTime &, const void *, EvaluationTime, void *,
                                 ModifiedItemFunction) const override;
+
+  private:
+    bool item_in_range(const EvaluationTime &, const void *, ItemRange, item_id_t) const noexcept override;
 };
 
 const SampledDictionaryRuntimeType &sampled_runtime_type(const TimeSeriesDictionaryRuntimeType &shape);
@@ -224,6 +228,23 @@ item_id_t SampledDictionaryRuntimeType::find_item(const void *value, const Scala
     return dictionary_runtime_type(sample.current)->find_item(sample.current.storage, key);
 }
 
+item_id_t SampledDictionaryRuntimeType::find_removed(const EvaluationTime &, const void *value,
+                                                     const ScalarData &key) const {
+    if (value == nullptr) {
+        return util::occupancy_index::npos;
+    }
+
+    const auto &sample = *static_cast<const SampledDictionary *>(value);
+    const auto *runtime_type = dictionary_runtime_type(sample.previous);
+    if (runtime_type == nullptr || sample.previous.storage == nullptr) {
+        return util::occupancy_index::npos;
+    }
+
+    const auto id = runtime_type->find_key(sample.previous.storage, key);
+    return id != util::occupancy_index::npos && sample.removed.contains(id) ? id | previous_item_flag
+                                                                            : util::occupancy_index::npos;
+}
+
 RetainedDictionaryKey SampledDictionaryRuntimeType::retain_key(void *value, const ScalarData &key,
                                                                allocator &memory) const {
     auto &sample = *static_cast<SampledDictionary *>(value);
@@ -299,7 +320,7 @@ void SampledDictionaryRuntimeType::for_each_modified(const EvaluationTime &, con
 }
 
 item_id_t SampledDictionaryRuntimeType::next_item_id(const EvaluationTime &, const void *value, ItemRange range,
-                                                      item_id_t start) const noexcept {
+                                                     item_id_t start) const noexcept {
     if (value == nullptr) {
         return util::occupancy_index::npos;
     }
@@ -314,8 +335,8 @@ item_id_t SampledDictionaryRuntimeType::next_item_id(const EvaluationTime &, con
         if (!sample.current.valid()) {
             return util::occupancy_index::npos;
         }
-        return dictionary_runtime_type(sample.current)->next_item_id(*sample.current.last_updated,
-                                                                      sample.current.storage, range, unflagged_start);
+        return dictionary_runtime_type(sample.current)
+            ->next_item_id(*sample.current.last_updated, sample.current.storage, range, unflagged_start);
     }
     if (range == ItemRange::added) {
         return next(sample.added);
@@ -325,6 +346,18 @@ item_id_t SampledDictionaryRuntimeType::next_item_id(const EvaluationTime &, con
         return id == util::occupancy_index::npos ? id : id | previous_item_flag;
     }
     return next(sample.modified);
+}
+
+bool SampledDictionaryRuntimeType::item_in_range(const EvaluationTime &, const void *value, ItemRange range,
+                                                 item_id_t id) const noexcept {
+    const auto &sample = *static_cast<const SampledDictionary *>(value);
+    if (range == ItemRange::added) {
+        return sample.added.contains(id);
+    }
+    if (range == ItemRange::removed) {
+        return sample.removed.contains(id);
+    }
+    return sample.modified.contains(id);
 }
 
 bool SampledDictionaryRuntimeType::item_modified(const EvaluationTime &, const void *value,

@@ -89,6 +89,39 @@ def test_input_views_expose_last_modified_time_as_datetime():
     assert all(isinstance(timestamp, datetime) for _, _, timestamp in observed)
 
 
+def test_delta_value_is_none_when_an_input_did_not_change():
+    observed = []
+
+    @bg.compute_node
+    def make_dictionary(value: bg.TS[int]) -> bg.TSD[int, bg.TS[int]]:
+        return {1: value.value}
+
+    @bg.compute_node
+    def inspect(
+        trigger: bg.TS[int],
+        value: bg.TS[int],
+        dictionary: bg.TSD[int, bg.TS[int]],
+    ) -> bg.TS[int]:
+        dictionary_delta = dictionary.delta_value
+        observed.append(
+            (
+                value.modified,
+                value.delta_value,
+                dictionary.modified,
+                dict(dictionary_delta) if dictionary_delta is not None else None,
+            )
+        )
+        return trigger.value
+
+    @bg.graph
+    def graph(trigger: bg.TS[int], value: bg.TS[int]) -> bg.TS[int]:
+        return inspect(trigger, value, make_dictionary(value))
+
+    assert bg.test_graph(graph, [1, 2], [10, None]) == [1, 2]
+    assert observed[0] == (True, 10, True, {1: 10})
+    assert observed[1] == (False, None, False, None)
+
+
 def test_time_series_set_removed_markers_apply_recursively_in_dictionary():
     @bg.compute_node
     def make_dictionary(trigger: bg.TS[int]) -> bg.TSD[int, bg.TSS[int]]:
@@ -163,6 +196,34 @@ def test_time_series_bundle_value_delta_inheritance_and_item_access():
     ]
 
 
+def test_collection_lookup_defaults_and_missing_bundle_attributes():
+    class Pair(bg.TimeSeriesSchema):
+        left: bg.TS[int]
+
+    @bg.compute_node
+    def make_bundle(trigger: bg.TS[int]) -> bg.TSB[Pair]:
+        return {"left": trigger.value}
+
+    @bg.compute_node
+    def make_dictionary(trigger: bg.TS[int]) -> bg.TSD[int, bg.TS[int]]:
+        return {1: trigger.value}
+
+    @bg.compute_node
+    def inspect(bundle: bg.TSB[Pair], dictionary: bg.TSD[int, bg.TS[int]]) -> bg.TS[int]:
+        assert bundle.value.get("missing", 7) == 7
+        assert dictionary.get(2, 8) == 8
+        assert dictionary.value.get(2, 9) == 9
+        with pytest.raises(AttributeError):
+            _ = bundle.missing
+        return bundle.left.value + dictionary[1].value
+
+    @bg.graph
+    def graph(trigger: bg.TS[int]) -> bg.TS[int]:
+        return inspect(make_bundle(trigger), make_dictionary(trigger))
+
+    assert bg.test_graph(graph, [1]) == [2]
+
+
 def test_time_series_schema_rejects_multiple_schema_bases():
     class Left(bg.TimeSeriesSchema):
         left: bg.TS[int]
@@ -235,6 +296,28 @@ def test_nested_collection_deltas_are_applied_recursively():
         return read(make_nested(trigger))
 
     assert bg.test_graph(graph, [1, 2]) == [10, 30]
+
+
+def test_nested_collection_delta_views_expose_child_deltas():
+    observed = []
+
+    @bg.compute_node
+    def make_nested(trigger: bg.TS[int]) -> bg.TSD[int, bg.TSL[bg.TS[int], 2]]:
+        if trigger.value == 1:
+            return {1: {0: 10}}
+        return {1: {1: 20}}
+
+    @bg.compute_node
+    def inspect(value: bg.TSD[int, bg.TSL[bg.TS[int], 2]]) -> bg.TS[int]:
+        observed.append(dict(value.delta_value[1]))
+        return sum(item or 0 for item in value[1].value)
+
+    @bg.graph
+    def graph(trigger: bg.TS[int]) -> bg.TS[int]:
+        return inspect(make_nested(trigger))
+
+    assert bg.test_graph(graph, [1, 2]) == [10, 30]
+    assert observed == [{0: 10}, {1: 20}]
 
 
 def test_reference_delta_can_be_forwarded_and_dereferenced():
@@ -404,6 +487,71 @@ def test_collection_item_and_reference_views_expire_after_the_callback():
         _ = captured_references[0].valid
 
 
+def test_lazy_collection_views_and_iterators_expire_after_the_callback():
+    captured = {}
+
+    @bg.compute_node
+    def make_dictionary(trigger: bg.TS[int]) -> bg.TSD[int, bg.TSL[bg.TS[int], 1]]:
+        return {1: {0: trigger.value}}
+
+    @bg.compute_node
+    def inspect(value: bg.TSD[int, bg.TSL[bg.TS[int], 1]]) -> bg.TS[int]:
+        captured["input"] = value
+        captured["value"] = value.value
+        captured["delta"] = value.delta_value
+        captured["keys"] = value.keys()
+        captured["iterator"] = iter(value.items())
+        captured["nested"] = value.value[1]
+        next(captured["iterator"])
+        return value[1][0].value
+
+    @bg.graph
+    def graph(trigger: bg.TS[int]) -> bg.TS[int]:
+        return inspect(make_dictionary(trigger))
+
+    assert bg.test_graph(graph, [1]) == [1]
+
+    expired_accesses = [
+        lambda: captured["input"].valid,
+        lambda: list(captured["value"]),
+        lambda: dict(captured["delta"]),
+        lambda: list(captured["keys"]),
+        lambda: next(captured["iterator"]),
+        lambda: list(captured["nested"]),
+    ]
+    for access in expired_accesses:
+        with pytest.raises(RuntimeError, match="outside its callback"):
+            access()
+
+
+def test_set_delta_views_expire_after_the_callback():
+    captured = {}
+
+    @bg.compute_node
+    def make_set(trigger: bg.TS[int]) -> bg.TSS[int]:
+        return {trigger.value}
+
+    @bg.compute_node
+    def inspect(value: bg.TSS[int]) -> bg.TS[int]:
+        captured["delta"] = value.delta_value
+        captured["added"] = value.delta_value.added
+        captured["iterator"] = iter(value.delta_value.added)
+        return next(iter(value.value))
+
+    @bg.graph
+    def graph(trigger: bg.TS[int]) -> bg.TS[int]:
+        return inspect(make_set(trigger))
+
+    assert bg.test_graph(graph, [1]) == [1]
+
+    with pytest.raises(RuntimeError, match="outside its callback"):
+        _ = captured["delta"].added
+    with pytest.raises(RuntimeError, match="outside its callback"):
+        list(captured["added"])
+    with pytest.raises(RuntimeError, match="outside its callback"):
+        next(captured["iterator"])
+
+
 def test_collection_delta_validation_reports_the_shape():
     @bg.source_node
     def invalid() -> bg.TSS[int]:
@@ -490,11 +638,7 @@ def test_lazy_tsd_views_cover_removal_key_set_and_expiration():
         list(captured[0])
 
 
-def test_tss_and_fixed_collection_views_are_lazy_and_shape_specific():
-    class Pair(bg.TimeSeriesSchema):
-        left: bg.TS[int]
-        right: bg.TS[int]
-
+def test_tss_input_exposes_lazy_changes_and_membership_queries():
     observed = []
 
     @bg.compute_node
@@ -502,15 +646,7 @@ def test_tss_and_fixed_collection_views_are_lazy_and_shape_specific():
         return {1, 2} if trigger.value == 1 else {3, bg.Removed(1)}
 
     @bg.compute_node
-    def make_list(trigger: bg.TS[int]) -> bg.TSL[bg.TS[int], 2]:
-        return {0: trigger.value}
-
-    @bg.compute_node
-    def make_bundle(trigger: bg.TS[int]) -> bg.TSB[Pair]:
-        return {"left": trigger.value}
-
-    @bg.compute_node
-    def inspect(values: bg.TSS[int], items: bg.TSL[bg.TS[int], 2], pair: bg.TSB[Pair]) -> bg.TS[int]:
+    def inspect(values: bg.TSS[int]) -> bg.TS[int]:
         delta = values.delta_value
         observed.append(
             (
@@ -519,6 +655,35 @@ def test_tss_and_fixed_collection_views_are_lazy_and_shape_specific():
                 set(delta.removed),
                 values.was_added(3),
                 values.was_removed(1),
+            )
+        )
+        return len(values)
+
+    @bg.graph
+    def graph(trigger: bg.TS[int]) -> bg.TS[int]:
+        return inspect(make_set(trigger))
+
+    assert bg.test_graph(graph, [1, 2]) == [2, 2]
+    assert observed == [
+        ({1, 2}, {1, 2}, set(), False, False),
+        ({2, 3}, {3}, {1}, True, True),
+    ]
+
+
+def test_tsl_input_exposes_child_traversal_and_lazy_values():
+    observed = []
+
+    @bg.compute_node
+    def make_list(trigger: bg.TS[int]) -> bg.TSL[bg.TS[int], 2]:
+        return {0: trigger.value}
+
+    @bg.compute_node
+    def inspect(items: bg.TSL[bg.TS[int], 2]) -> bg.TS[int]:
+        with pytest.raises(RuntimeError, match="has no value"):
+            _ = items[1].value
+
+        observed.append(
+            (
                 [item.valid for item in items],
                 list(items.keys()),
                 [item.value if item.valid else None for item in items.values()],
@@ -526,6 +691,36 @@ def test_tss_and_fixed_collection_views_are_lazy_and_shape_specific():
                 list(items.valid_keys()),
                 list(items.value),
                 dict(items.delta_value),
+            )
+        )
+        return items[0].value
+
+    @bg.graph
+    def graph(trigger: bg.TS[int]) -> bg.TS[int]:
+        return inspect(make_list(trigger))
+
+    assert bg.test_graph(graph, [1, 2]) == [1, 2]
+    assert observed == [
+        ([True, False], [0, 1], [1, None], [0], [0], [1, None], {0: 1}),
+        ([True, False], [0, 1], [2, None], [0], [0], [2, None], {0: 2}),
+    ]
+
+
+def test_tsb_input_exposes_named_child_access_and_lazy_values():
+    class Pair(bg.TimeSeriesSchema):
+        left: bg.TS[int]
+        right: bg.TS[int]
+
+    observed = []
+
+    @bg.compute_node
+    def make_bundle(trigger: bg.TS[int]) -> bg.TSB[Pair]:
+        return {"left": trigger.value}
+
+    @bg.compute_node
+    def inspect(pair: bg.TSB[Pair]) -> bg.TS[int]:
+        observed.append(
+            (
                 pair.left.value,
                 pair["left"].value,
                 dict(pair.value),
@@ -537,46 +732,56 @@ def test_tss_and_fixed_collection_views_are_lazy_and_shape_specific():
 
     @bg.graph
     def graph(trigger: bg.TS[int]) -> bg.TS[int]:
-        return inspect(make_set(trigger), make_list(trigger), make_bundle(trigger))
+        return inspect(make_bundle(trigger))
 
     assert bg.test_graph(graph, [1, 2]) == [1, 2]
     assert observed == [
-        (
-            {1, 2},
-            {1, 2},
-            set(),
-            False,
-            False,
-            [True, False],
-            [0, 1],
-            [1, None],
-            [0],
-            [0],
-            [1, None],
-            {0: 1},
-            1,
-            1,
-            {"left": 1, "right": None},
-            {"left": 1},
-            ["left", "right"],
-        ),
-        (
-            {2, 3},
-            {3},
-            {1},
-            True,
-            True,
-            [True, False],
-            [0, 1],
-            [2, None],
-            [0],
-            [0],
-            [2, None],
-            {0: 2},
-            2,
-            2,
-            {"left": 2, "right": None},
-            {"left": 2},
-            ["left", "right"],
-        ),
+        (1, 1, {"left": 1, "right": None}, {"left": 1}, ["left", "right"]),
+        (2, 2, {"left": 2, "right": None}, {"left": 2}, ["left", "right"]),
     ]
+
+
+def test_lazy_values_expose_only_their_collection_protocol():
+    class Pair(bg.TimeSeriesSchema):
+        left: bg.TS[int]
+
+    @bg.compute_node
+    def make_set(trigger: bg.TS[int]) -> bg.TSS[int]:
+        return {trigger.value}
+
+    @bg.compute_node
+    def make_list(trigger: bg.TS[int]) -> bg.TSL[bg.TS[int], 1]:
+        return {0: trigger.value}
+
+    @bg.compute_node
+    def make_bundle(trigger: bg.TS[int]) -> bg.TSB[Pair]:
+        return {"left": trigger.value}
+
+    @bg.compute_node
+    def make_dictionary(trigger: bg.TS[int]) -> bg.TSD[int, bg.TS[int]]:
+        return {1: trigger.value}
+
+    @bg.compute_node
+    def inspect(
+        set_value: bg.TSS[int],
+        list_value: bg.TSL[bg.TS[int], 1],
+        bundle_value: bg.TSB[Pair],
+        dictionary_value: bg.TSD[int, bg.TS[int]],
+    ) -> bg.TS[int]:
+        assert not hasattr(set_value.value, "keys")
+        assert not hasattr(list_value.value, "keys")
+        assert hasattr(bundle_value.value, "keys")
+        assert hasattr(dictionary_value.value, "keys")
+        assert not hasattr(dictionary_value.value, "left")
+        return list_value.value[0]
+
+    @bg.graph
+    def graph(trigger: bg.TS[int]) -> bg.TS[int]:
+        return inspect(
+            make_set(trigger),
+            make_list(trigger),
+            make_bundle(trigger),
+            make_dictionary(trigger),
+        )
+
+    assert bg.test_graph(graph, [1]) == [1]

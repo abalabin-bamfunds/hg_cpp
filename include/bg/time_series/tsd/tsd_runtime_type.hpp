@@ -74,6 +74,19 @@ class TimeSeriesDictionaryRuntimeType : public TimeSeriesRuntimeType {
         return id != util::occupancy_index::npos && key_live(value, id) ? id : util::occupancy_index::npos;
     }
 
+    virtual item_id_t find_added(const EvaluationTime &last_updated, const void *value, const ScalarData &key) const {
+        return find_changed(last_updated, value, key, ItemRange::added);
+    }
+
+    virtual item_id_t find_removed(const EvaluationTime &last_updated, const void *value, const ScalarData &key) const {
+        return find_changed(last_updated, value, key, ItemRange::removed);
+    }
+
+    virtual item_id_t find_modified(const EvaluationTime &last_updated, const void *value,
+                                    const ScalarData &key) const {
+        return find_changed(last_updated, value, key, ItemRange::modified);
+    }
+
     virtual const void *key(const void *value, item_id_t id) const noexcept {
         return static_cast<const time_series_dict_storage *>(value)->key_storage().value.key(id, key_layout_);
     }
@@ -148,11 +161,6 @@ class TimeSeriesDictionaryRuntimeType : public TimeSeriesRuntimeType {
             id = next_id == storage.modified().size() ? util::occupancy_index::npos : next_id;
         }
         return id;
-    }
-
-    bool item_in_range(const EvaluationTime &last_updated, const void *value, ItemRange range,
-                       item_id_t id) const noexcept {
-        return next_item_id(last_updated, value, range, id) == id;
     }
 
     virtual bool item_modified(const EvaluationTime &last_updated, const void *value, item_id_t id) const noexcept {
@@ -298,6 +306,35 @@ class TimeSeriesDictionaryRuntimeType : public TimeSeriesRuntimeType {
     const ReferenceRepresentationFactory *reference_representation_factory() const noexcept override;
 
   private:
+    virtual bool item_in_range(const EvaluationTime &last_updated, const void *value, ItemRange range,
+                               item_id_t id) const noexcept {
+        const auto &storage = *static_cast<const time_series_dict_storage *>(value);
+        if (last_updated <= MIN_DT || storage.change_time() != last_updated) {
+            return false;
+        }
+
+        const auto &keys = storage.key_storage().value;
+        if (range == ItemRange::added) {
+            return keys.added().contains(id);
+        }
+        if (range == ItemRange::removed) {
+            return keys.removed().contains(id);
+        }
+        return storage.modified().contains(id) && !keys.added().contains(id);
+    }
+
+    item_id_t find_changed(const EvaluationTime &last_updated, const void *value, const ScalarData &key,
+                           ItemRange range) const {
+        if (value == nullptr) {
+            return util::occupancy_index::npos;
+        }
+
+        const auto id = find_key(value, key);
+        return id != util::occupancy_index::npos && item_in_range(last_updated, value, range, id)
+                   ? id
+                   : util::occupancy_index::npos;
+    }
+
     const ScalarRuntimeType *key_;
     const TimeSeriesRuntimeType *keys_;
     const TimeSeriesRuntimeType *item_;

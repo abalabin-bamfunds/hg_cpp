@@ -179,12 +179,14 @@ iterators expire when the callback returns.
 
 `TSS` values are set-like. `added()` and `removed()` return lazy set-like
 views, and `was_added(value)` and `was_removed(value)` test the current
-change. Fixed `TSL` and `TSB` inputs provide child input access, iteration,
-`keys()`, `values()`, `items()`, `modified_*()`, and `valid_*()` methods.
-`TSB` fields also support attribute access. `TSD` inputs provide mapping access,
-`key_set`, and separate `added_*()`, `removed_*()`, `modified_*()`, and
-`valid_*()` methods. Collection `value` and `delta_value` are lazy views.
-Use `copy()`, `list(...)`, `set(...)`, or `dict(...)` to materialize one.
+change. A fixed `TSL` provides child input iteration. Fixed `TSL` and `TSB`
+inputs provide child access through `keys()`, `values()`, `items()`,
+`modified_*()`, and `valid_*()` methods. `TSB` fields also support attribute
+access. `TSD` inputs provide mapping access, `key_set`, and separate
+`added_*()`, `removed_*()`, `modified_*()`, and `valid_*()` methods. Collection
+`value` and `delta_value` are lazy set, sequence, or mapping views according to
+their time-series shape. Use `copy()`, `list(...)`, `set(...)`, or `dict(...)`
+to materialize one.
 
 Output deltas use these forms:
 
