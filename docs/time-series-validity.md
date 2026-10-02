@@ -19,6 +19,10 @@ An input view can become invalid while its source time series remains valid.
 Source guarantees and input-view validity are therefore separate wiring
 properties.
 
+`default_(source, fallback)` makes its receiving input valid while `source` is
+invalid. Source validity changes publish updates to that input because its
+visible value can change in either direction.
+
 ## References
 
 When a reference becomes invalid, each receiving binding:

@@ -50,6 +50,7 @@ enum class ParameterBindingMode : std::uint8_t {
     reference,
     scalar,
     constant,
+    default_value,
 };
 
 class Subscriber {
@@ -186,8 +187,10 @@ class ParameterBinding {
   public:
     ParameterBindingMode mode() const noexcept {
         if ((location_and_flags_ & scalar_flag) != 0) {
-            return (value_offset_ & constant_flag) == 0 ? ParameterBindingMode::scalar
-                                                        : ParameterBindingMode::constant;
+            if ((value_offset_ & active_flag) != 0) {
+                return ParameterBindingMode::default_value;
+            }
+            return (value_offset_ & constant_flag) == 0 ? ParameterBindingMode::scalar : ParameterBindingMode::constant;
         }
         return (value_offset_ & reference_flag) == 0 ? ParameterBindingMode::time_series
                                                      : ParameterBindingMode::reference;
@@ -244,14 +247,28 @@ class ParameterBinding {
         return ParameterBinding{constant_binding, start_time_offset, scalar_offset, validity};
     }
 
+    static ParameterBinding default_value(std::uint32_t last_updated_offset, std::uint32_t input_offset,
+                                          InputValidity validity) noexcept {
+        return ParameterBinding{default_binding, last_updated_offset, input_offset, validity};
+    }
+
     struct constant_binding_t {};
     static constexpr constant_binding_t constant_binding{};
+
+    struct default_binding_t {};
+    static constexpr default_binding_t default_binding{};
 
     ParameterBinding(constant_binding_t, std::uint32_t start_time_offset, std::uint32_t scalar_offset,
                      InputValidity validity) noexcept
         : location_and_flags_{start_time_offset | scalar_flag |
                               (validity == optional ? optional_flag : std::uint32_t{})},
           value_offset_{scalar_offset | constant_flag} {}
+
+    ParameterBinding(default_binding_t, std::uint32_t last_updated_offset, std::uint32_t input_offset,
+                     InputValidity validity) noexcept
+        : location_and_flags_{last_updated_offset | scalar_flag |
+                              (validity == optional ? optional_flag : std::uint32_t{})},
+          value_offset_{input_offset | active_flag} {}
 
     ParameterBinding() noexcept : location_and_flags_{scalar_flag | optional_flag}, value_offset_{} {}
 
@@ -260,6 +277,22 @@ class ParameterBinding {
 };
 
 static_assert(sizeof(ParameterBinding) == 8);
+
+struct DefaultInputState {
+    EvaluationTime last_updated;
+};
+
+struct DefaultInputDescriptor {
+    ParameterBinding source;
+    const void *fallback;
+    InputNotification notification;
+    std::uint32_t start_time_offset;
+
+    static void notify_value(OutputChangeContext &context, std::size_t node_index, std::size_t parameter_index,
+                             OutputChange change);
+    static void notify_startup(OutputChangeContext &context, std::size_t node_index, std::size_t parameter_index,
+                               OutputChange change);
+};
 
 // Begins a packed node record. Parameters, subscribers, optional metadata, and scalar values follow the fixed header.
 class CompiledNode {

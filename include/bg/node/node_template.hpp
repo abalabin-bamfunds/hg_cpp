@@ -5,8 +5,8 @@
 #include <bg/graph/output_notification.hpp>
 #include <bg/graph/wiring_template.hpp>
 #include <bg/node/invalidation.hpp>
-#include <bg/node/state_layout.hpp>
 #include <bg/node/node_template_identity.hpp>
+#include <bg/node/state_layout.hpp>
 #include <bg/time_series/time_series_runtime_type.hpp>
 #include <bg/type/signature.hpp>
 
@@ -30,6 +30,12 @@ struct CompiledNodeDataLayout {
 // A TS value output whose value is one scalar parameter and never changes.
 struct ConstantOutput {
     std::size_t scalar_parameter;
+};
+
+// A TS value output that the compiler can lower to a source and constant fallback input binding.
+struct DefaultOutput {
+    std::size_t source_parameter;
+    std::size_t fallback_parameter;
 };
 
 class NodeTemplate : public WiringTemplate {
@@ -69,6 +75,9 @@ class NodeTemplate : public WiringTemplate {
     virtual CompiledNodeDataLayout compiled_data_layout(const ResolvedSignature &) const noexcept { return {}; }
     virtual void construct_compiled_data(const ResolvedSignature &, void *, allocator &) const {}
     virtual std::optional<ConstantOutput> constant_output(const ResolvedSignature &) const noexcept {
+        return std::nullopt;
+    }
+    virtual std::optional<DefaultOutput> default_output(const ResolvedSignature &) const noexcept {
         return std::nullopt;
     }
 

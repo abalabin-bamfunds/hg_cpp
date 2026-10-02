@@ -23,6 +23,7 @@ add_executable(
     evaluation/time_series/time_series_list_getitem_test.cpp
     evaluation/time_series/time_series_bundle_test.cpp
     evaluation/time_series/constant_test.cpp
+    evaluation/time_series/default_test.cpp
     evaluation/time_series/time_series_dict_test.cpp
     evaluation/time_series/time_series_dict_getitem_test.cpp
     evaluation/time_series/time_series_reference_test.cpp

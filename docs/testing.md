@@ -164,6 +164,7 @@ graph compilation or evaluation.
 - repeated compilation and independent runtime graphs
 - scalar and state destruction
 - const nodes and their direct bindings
+- `default_` adapter-node lowering, reference materialization, nested graph returns, and fallback identity
 - service binding metadata alongside inherited time series metadata
 
 ### Evaluation
@@ -174,6 +175,7 @@ graph compilation or evaluation.
 - active and passive inputs
 - required-input validity caching, invalidation, and revalidation
 - output update and invalidation propagation
+- `default_` fallback selection, timestamps, modified state, and source validity transitions
 - invalidation behavior selected by a node
 - timed scheduling, cancellation, ordering, and coalescing
 - simulation time progression and termination

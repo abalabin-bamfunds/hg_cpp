@@ -73,6 +73,16 @@ module registers the overloads it implements.
 `const_(scalar)` lifts a scalar to `TS<scalar, const>`. Graph compilation stores
 the scalar once and binds its consumers directly to that storage.
 
+`default_(source, fallback)` adapts a `TS<scalar>` input. A value consumer reads
+`fallback` while `source` is invalid and reads `source` otherwise. The adapter
+wires a node with the source and a const fallback. Its template identifies the
+two inputs to graph compilation. Compilation lowers each consumer input to a
+direct input binding and omits the adapter runtime node. It returns an ordinary
+time series because switching between `source` and `fallback` can add updates
+independently of the source guarantee. A reference consumer uses a normal
+reference node over the adapter output. Nested graph outputs therefore use the
+reference path.
+
 An operator owns its registered overloads. Registration is permanent and is
 not concurrent with graph wiring. Adding an overload clears that operator's
 resolution cache. Existing wired graphs remain valid because the operator

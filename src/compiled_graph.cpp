@@ -4,6 +4,7 @@
 #include <bg/graph/details/compiled_graph_builder.hpp>
 #include <bg/graph/details/service_binding_section.hpp>
 #include <bg/graph/graph_wiring.hpp>
+#include <bg/graph/runtime_graph.hpp>
 #include <bg/node/node_template.hpp>
 #include <bg/scalar/runtime_type.hpp>
 #include <bg/scalar/scalar.hpp>
@@ -37,6 +38,34 @@
 #include <vector>
 
 namespace bg {
+
+void DefaultInputDescriptor::notify_value(OutputChangeContext &context, std::size_t node_index,
+                                          std::size_t parameter_index, OutputChange change) {
+    auto runtime_node = context.runtime_graph().node(node_index);
+    auto &input = runtime_node.default_input(parameter_index);
+    const auto notification = runtime_node.default_descriptor(parameter_index).notification;
+    const auto initial_revalidation = change == OutputChange::revalidation && input.last_updated == MIN_DT &&
+                                      context.evaluation_time() == runtime_node.input_last_updated(parameter_index);
+    input.last_updated = context.evaluation_time();
+    if (notification.function != nullptr) {
+        notification.function(context, node_index, notification.data,
+                              initial_revalidation ? OutputChange::revalidation : OutputChange::update);
+    }
+}
+
+void DefaultInputDescriptor::notify_startup(OutputChangeContext &context, std::size_t node_index,
+                                            std::size_t parameter_index, OutputChange) {
+    auto runtime_node = context.runtime_graph().node(node_index);
+    if (runtime_node.default_input(parameter_index).last_updated > MIN_DT) {
+        return;
+    }
+
+    const auto notification = runtime_node.default_descriptor(parameter_index).notification;
+    if (notification.function != nullptr) {
+        notification.function(context, node_index, notification.data, OutputChange::revalidation);
+    }
+}
+
 namespace {
 
 constexpr std::size_t max_packed_offset = (std::size_t{1} << 30) - 1;
@@ -127,6 +156,7 @@ class StorageLayout {
 struct FixedNodeLayout {
     std::size_t offset{};
     StorageSection parameters;
+    StorageSection default_inputs;
     StorageSection subscribers;
     StorageSection output_notification;
     StorageSection item_subscription_root;
@@ -189,9 +219,12 @@ struct StateLayout {
 struct TimeSeriesInputPlan {
     std::uint32_t parameter;
     WiredInput wired_input;
+    WiredInput fallback;
+    bool default_value;
     bool dereferences_reference;
     std::uint32_t offset;
     std::uint32_t output_last_updated_offset;
+    std::uint32_t default_input_offset;
 };
 
 struct InheritedTimeSeriesPlan {
@@ -226,6 +259,11 @@ struct ConstantPlan {
     std::size_t output;
     std::size_t scalar;
     StorageSection storage;
+};
+
+struct DefaultInputPlan {
+    WiredInput source;
+    WiredInput fallback;
 };
 
 struct WiringPathLayout {
@@ -281,6 +319,8 @@ struct CompilationPlan {
     std::vector<std::size_t> wired_node_indices;
     std::vector<ConstantPlan> constants;
     std::vector<std::size_t> constant_outputs;
+    std::vector<DefaultInputPlan> defaults;
+    std::vector<std::size_t> default_outputs;
     WiringPathLayout wiring_paths;
     NodeFunctionLayout starts;
     NodeFunctionLayout stops;
@@ -298,13 +338,18 @@ struct CompilationPlan {
 
     bool has_lifecycle() const noexcept { return !starts.nodes.empty() || !stops.nodes.empty(); }
 
-    bool is_const_node(std::size_t node) const noexcept { return compiled_node_indices[node] == WiredOutput::npos; }
+    bool is_lowered_node(std::size_t node) const noexcept { return compiled_node_indices[node] == WiredOutput::npos; }
 
     std::size_t compiled_node_index(std::size_t node) const noexcept { return compiled_node_indices[node]; }
 
     const ConstantPlan *constant_for_output(std::size_t output) const noexcept {
         const auto index = constant_outputs[output];
         return index == WiredOutput::npos ? nullptr : &constants[index];
+    }
+
+    const DefaultInputPlan *default_for_output(std::size_t output) const noexcept {
+        const auto index = default_outputs[output];
+        return index == WiredOutput::npos ? nullptr : &defaults[index];
     }
 
     InheritedTimeSeriesPlan &inherited_time_series_at(std::size_t index) {
@@ -445,7 +490,7 @@ SubscriptionPlan &subscriber_list(std::size_t output, std::span<const WiredOutpu
 
 void plan_time_series_inputs(CompilationPlan &plan, const GraphWiring &wiring) {
     for (auto node_index = std::size_t{}; node_index < plan.nodes.size(); ++node_index) {
-        if (plan.is_const_node(node_index)) {
+        if (plan.is_lowered_node(node_index)) {
             continue;
         }
         const auto &node = plan.nodes[node_index];
@@ -459,6 +504,18 @@ void plan_time_series_inputs(CompilationPlan &plan, const GraphWiring &wiring) {
             }
 
             auto input = node.inputs()[input_index++];
+            auto fallback = WiredInput::output(0);
+            auto default_value = false;
+            while (!input.is_inherited()) {
+                const auto *default_input = plan.default_for_output(input.index());
+                if (default_input == nullptr) {
+                    break;
+                }
+
+                input = default_input->source;
+                fallback = default_input->fallback;
+                default_value = true;
+            }
             if (input.is_inherited()) {
                 input = wiring.resolve_inherited_input(input.index());
             }
@@ -468,9 +525,12 @@ void plan_time_series_inputs(CompilationPlan &plan, const GraphWiring &wiring) {
             plan.node_plans[node_index].time_series_inputs.push_back({
                 .parameter = static_cast<std::uint32_t>(parameter_index),
                 .wired_input = input,
+                .fallback = fallback,
+                .default_value = default_value,
                 .dereferences_reference = output_is_reference && !input_is_reference,
                 .offset = 0,
                 .output_last_updated_offset = 0,
+                .default_input_offset = 0,
             });
         }
     }
@@ -621,7 +681,7 @@ void plan_subscribers(std::span<const WiredNode> nodes, std::span<const WiredOut
     };
 
     for (auto target_index = std::size_t{}; target_index < nodes.size(); ++target_index) {
-        if (plan.is_const_node(target_index)) {
+        if (plan.is_lowered_node(target_index)) {
             continue;
         }
         const auto &target = nodes[target_index];
@@ -630,13 +690,23 @@ void plan_subscribers(std::span<const WiredNode> nodes, std::span<const WiredOut
             const auto &input = inputs[input_index];
             const auto &parameter = target.signature().parameters[input.parameter];
             const auto is_active = parameter.activity == active;
-            const auto is_required = parameter.validity == required;
+            const auto is_required = !input.default_value && parameter.validity == required;
             const auto subscriber_index = static_cast<std::uint32_t>(plan.compiled_node_index(target_index));
-            const auto notification = target.node_template().input_notification(input_index);
+            const auto original_notification = target.node_template().input_notification(input_index);
+            const auto notification = input.default_value
+                                          ? InputNotification{&DefaultInputDescriptor::notify_value, input.parameter}
+                                          : original_notification;
+            const auto add_default_startup_notification = [&] {
+                if (input.default_value && original_notification.function != nullptr) {
+                    plan.constant_notifications.push_back(
+                        {subscriber_index, input.parameter, &DefaultInputDescriptor::notify_startup});
+                }
+            };
             if (!input.wired_input.is_inherited() && plan.constant_for_output(input.wired_input.index()) != nullptr) {
                 if (notification.function != nullptr) {
                     plan.constant_notifications.push_back({subscriber_index, notification.data, notification.function});
                 }
+                add_default_startup_notification();
                 continue;
             }
             auto &subscriptions = input.wired_input.is_inherited()
@@ -666,6 +736,7 @@ void plan_subscribers(std::span<const WiredNode> nodes, std::span<const WiredOut
                                    is_active && !is_required);
                 }
             }
+            add_default_startup_notification();
         }
     }
 }
@@ -831,7 +902,7 @@ void plan_runtime_storage(CompilationPlan &plan) {
     };
 
     for (const auto i : plan.wired_node_indices) {
-        if (plan.is_const_node(i)) {
+        if (plan.is_lowered_node(i)) {
             continue;
         }
         auto &node_plan = plan.node_plans[i];
@@ -839,16 +910,20 @@ void plan_runtime_storage(CompilationPlan &plan) {
         add_item_samples(node_plan.item_subscriptions);
 
         for (auto &input : node_plan.time_series_inputs) {
-            if (!input.dereferences_reference) {
-                continue;
+            if (input.default_value) {
+                const auto slot = storage.add<DefaultInputState>();
+                input.default_input_offset = packed_offset(slot.offset, "runtime storage reaches 1 GiB");
             }
 
-            const auto slot = storage.add<ReferenceInputStorage>();
-            input.offset = packed_offset(slot.offset, "runtime storage reaches 1 GiB");
-            input.output_last_updated_offset =
-                input.wired_input.is_inherited()
-                    ? plan.inherited_time_series_at(input.wired_input.index()).last_updated_offset
-                    : wired_output_layout(input.wired_input.index(), plan.outputs, plan.node_plans).last_updated_offset;
+            if (input.dereferences_reference) {
+                const auto slot = storage.add<ReferenceInputStorage>();
+                input.offset = packed_offset(slot.offset, "runtime storage reaches 1 GiB");
+                input.output_last_updated_offset =
+                    input.wired_input.is_inherited()
+                        ? plan.inherited_time_series_at(input.wired_input.index()).last_updated_offset
+                        : wired_output_layout(input.wired_input.index(), plan.outputs, plan.node_plans)
+                              .last_updated_offset;
+            }
         }
 
         node_plan.state = add_state_layout(storage, plan.nodes[i], node_plan, plan.outputs, plan.node_plans, plan);
@@ -961,6 +1036,8 @@ RuntimeTypeCounts runtime_type_counts(const WiredNode &node) {
 
     auto result = FixedNodeLayout{};
     result.parameters = storage.add<ParameterBinding>(node.signature().parameters.size());
+    const auto default_input_count =
+        std::ranges::count(node_plan.time_series_inputs, true, &TimeSeriesInputPlan::default_value);
     result.subscribers = storage.add<Subscriber>(node_plan.subscriptions.nodes.size());
     if (!node_plan.subscriptions.reference_inputs.empty() || !node_plan.subscriptions.input_subscribers.empty()) {
         result.output_notification =
@@ -1013,6 +1090,10 @@ RuntimeTypeCounts runtime_type_counts(const WiredNode &node) {
         if (node_plan.compiled_data.size != 0) {
             result.compiled_data = storage.add_bytes(node_plan.compiled_data.size, node_plan.compiled_data.alignment);
         }
+    }
+
+    if (default_input_count != 0) {
+        result.default_inputs = storage.add<DefaultInputDescriptor>(default_input_count);
     }
 
     result.size = storage.size();
@@ -1088,6 +1169,7 @@ void plan_fixed_storage(CompilationPlan &plan) {
     result.node_plans.resize(result.nodes.size());
     result.compiled_node_indices.assign(result.nodes.size(), WiredOutput::npos);
     result.constant_outputs.assign(result.outputs.size(), WiredOutput::npos);
+    result.default_outputs.assign(result.outputs.size(), WiredOutput::npos);
     result.inherited_time_series_slots.assign(wiring.inherited_requirements().size(), WiredOutput::npos);
     for (auto index = std::size_t{}; index < wiring.inherited_requirements().size(); ++index) {
         const auto &requirement = wiring.inherited_requirements()[index];
@@ -1110,50 +1192,91 @@ void plan_fixed_storage(CompilationPlan &plan) {
         }
     }
 
+    const auto input_for_parameter = [](const WiredNode &node, std::size_t parameter) {
+        if (parameter >= node.signature().parameters.size() ||
+            !node.signature().parameters[parameter].type->is_time_series()) {
+            throw std::logic_error{"a default output parameter is not a time series"};
+        }
+
+        auto input = std::size_t{};
+        for (auto index = std::size_t{}; index < parameter; ++index) {
+            input += static_cast<std::size_t>(node.signature().parameters[index].type->is_time_series());
+        }
+        if (input >= node.inputs().size()) {
+            throw std::logic_error{"a default output has no input"};
+        }
+        return input;
+    };
+
     for (auto node_index = std::size_t{}; node_index < result.nodes.size(); ++node_index) {
         const auto &node = result.nodes[node_index];
         const auto constant = node.node_template().constant_output(node.signature());
-        if (!constant) {
-            result.compiled_node_indices[node_index] = node_index;
-            continue;
-        }
-
-        if (constant->scalar_parameter >= node.signature().parameters.size() ||
-            node.signature().parameters[constant->scalar_parameter].type->is_time_series() ||
-            node.signature().output == nullptr ||
-            node.signature().output->guarantee().value() != TimeSeriesGuarantee::const_) {
-            throw std::logic_error{"invalid constant output"};
-        }
-        const auto *output = type_cast<TimeSeriesValueType>(node.signature().output);
-        if (output == nullptr ||
-            &output->value_type() != node.signature().parameters[constant->scalar_parameter].type) {
-            throw std::logic_error{"constant output does not match its scalar parameter"};
-        }
-
-        auto scalar = std::size_t{};
-        for (auto parameter = std::size_t{}; parameter < constant->scalar_parameter; ++parameter) {
-            scalar += static_cast<std::size_t>(!node.signature().parameters[parameter].type->is_time_series());
-        }
-        if (scalar >= node.scalar_values().size() || !node.scalar_values()[scalar].has_value()) {
-            throw std::logic_error{"constant output requires one scalar value"};
-        }
-
         const auto output_index = std::ranges::find_if(result.outputs, [=](const auto &candidate) {
             return candidate.parent == WiredOutput::npos && candidate.node_index == node_index;
         });
-        if (output_index == result.outputs.end()) {
-            throw std::logic_error{"constant node has no root output"};
+        if (constant) {
+            if (constant->scalar_parameter >= node.signature().parameters.size() ||
+                node.signature().parameters[constant->scalar_parameter].type->is_time_series() ||
+                node.signature().output == nullptr ||
+                node.signature().output->guarantee().value() != TimeSeriesGuarantee::const_) {
+                throw std::logic_error{"invalid constant output"};
+            }
+            const auto *output = type_cast<TimeSeriesValueType>(node.signature().output);
+            if (output == nullptr ||
+                &output->value_type() != node.signature().parameters[constant->scalar_parameter].type) {
+                throw std::logic_error{"constant output does not match its scalar parameter"};
+            }
+
+            auto scalar = std::size_t{};
+            for (auto parameter = std::size_t{}; parameter < constant->scalar_parameter; ++parameter) {
+                scalar += static_cast<std::size_t>(!node.signature().parameters[parameter].type->is_time_series());
+            }
+            if (scalar >= node.scalar_values().size() || !node.scalar_values()[scalar].has_value()) {
+                throw std::logic_error{"constant output requires one scalar value"};
+            }
+            if (output_index == result.outputs.end()) {
+                throw std::logic_error{"constant node has no root output"};
+            }
+
+            const auto index = static_cast<std::size_t>(output_index - result.outputs.begin());
+            result.constant_outputs[index] = result.constants.size();
+            result.constants.push_back({node_index, index, scalar, {}});
+            continue;
+        }
+
+        const auto default_input = node.node_template().default_output(node.signature());
+        if (!default_input) {
+            result.compiled_node_indices[node_index] = node_index;
+            continue;
+        }
+        if (node.signature().output == nullptr || output_index == result.outputs.end()) {
+            throw std::logic_error{"a default adapter has no root output"};
+        }
+
+        const auto source = input_for_parameter(node, default_input->source_parameter);
+        const auto fallback = input_for_parameter(node, default_input->fallback_parameter);
+        const auto *source_type =
+            type_cast<TimeSeriesValueType>(node.signature().parameters[default_input->source_parameter].type);
+        const auto *fallback_type =
+            type_cast<TimeSeriesValueType>(node.signature().parameters[default_input->fallback_parameter].type);
+        const auto *output_type = type_cast<TimeSeriesValueType>(node.signature().output);
+        if (source_type == nullptr || fallback_type == nullptr || output_type == nullptr ||
+            &source_type->value_type() != &output_type->value_type() ||
+            &fallback_type->value_type() != &output_type->value_type() ||
+            fallback_type->guarantee().value() != TimeSeriesGuarantee::const_ ||
+            output_type->guarantee().value() != TimeSeriesGuarantee::ordinary) {
+            throw std::logic_error{"invalid default output"};
         }
         const auto index = static_cast<std::size_t>(output_index - result.outputs.begin());
-        result.constant_outputs[index] = result.constants.size();
-        result.constants.push_back({node_index, index, scalar, {}});
+        result.default_outputs[index] = result.defaults.size();
+        result.defaults.push_back({node.inputs()[source], node.inputs()[fallback]});
     }
 
     plan_time_series_inputs(result, wiring);
     const auto node_order = dependency_order(result, wiring);
     result.wired_node_indices.clear();
     for (const auto node_index : node_order) {
-        if (result.is_const_node(node_index)) {
+        if (result.is_lowered_node(node_index)) {
             continue;
         }
 
@@ -1164,9 +1287,11 @@ void plan_fixed_storage(CompilationPlan &plan) {
     std::erase_if(result.constants, [&](const auto &constant) {
         return !std::ranges::any_of(result.nodes, [&](const auto &node) {
             const auto node_index = static_cast<std::size_t>(&node - result.nodes.data());
-            return !result.is_const_node(node_index) &&
+            return !result.is_lowered_node(node_index) &&
                    std::ranges::any_of(result.node_plans[node_index].time_series_inputs, [&](const auto &input) {
-                       return !input.wired_input.is_inherited() && input.wired_input.index() == constant.output;
+                       return (!input.wired_input.is_inherited() && input.wired_input.index() == constant.output) ||
+                              (input.default_value && !input.fallback.is_inherited() &&
+                               input.fallback.index() == constant.output);
                    });
         });
     });
@@ -1201,7 +1326,7 @@ void plan_fixed_storage(CompilationPlan &plan) {
 
     plan_runtime_storage(result);
     for (auto i = std::size_t{}; i < result.nodes.size(); ++i) {
-        if (result.is_const_node(i)) {
+        if (result.is_lowered_node(i)) {
             continue;
         }
         auto &invalidation = result.node_plans[i].invalidation;
@@ -1218,7 +1343,7 @@ void plan_fixed_storage(CompilationPlan &plan) {
         }));
 
     for (auto i = std::size_t{}; i < result.nodes.size(); ++i) {
-        if (result.is_const_node(i)) {
+        if (result.is_lowered_node(i)) {
             continue;
         }
         const auto &node = result.nodes[i];
@@ -1255,8 +1380,8 @@ class CompiledGraphBuilder {
             throw std::length_error{"a compiled graph has too many scalars"};
         }
         for (auto &node_index : node_indices) {
-            if (node_index >= plan.compiled_node_indices.size() || plan.is_const_node(node_index)) {
-                throw std::logic_error{"an inner graph boundary cannot use a const node"};
+            if (node_index >= plan.compiled_node_indices.size() || plan.is_lowered_node(node_index)) {
+                throw std::logic_error{"an inner graph boundary cannot use a lowered node"};
             }
             node_index = plan.compiled_node_index(node_index);
         }
@@ -1440,7 +1565,7 @@ class CompiledGraphBuilder {
             const auto &node = plan.nodes[node_index];
             const auto &inputs = plan.node_plans[node_index].time_series_inputs;
             const auto required_inputs_are_constants = std::ranges::all_of(inputs, [&](const auto &input) {
-                return node.signature().parameters[input.parameter].validity != required ||
+                return input.default_value || node.signature().parameters[input.parameter].validity != required ||
                        (!input.wired_input.is_inherited() &&
                         plan.constant_for_output(input.wired_input.index()) != nullptr);
             });
@@ -1450,8 +1575,8 @@ class CompiledGraphBuilder {
             info.inputs_valid(mask, required_inputs_are_constants);
             if (std::ranges::any_of(inputs, [&](const auto &input) {
                     return node.signature().parameters[input.parameter].activity == active &&
-                           !input.wired_input.is_inherited() &&
-                           plan.constant_for_output(input.wired_input.index()) != nullptr;
+                           (input.default_value || (!input.wired_input.is_inherited() &&
+                                                    plan.constant_for_output(input.wired_input.index()) != nullptr));
                 })) {
                 info.evaluation |= mask;
             }
@@ -1554,18 +1679,72 @@ class CompiledGraphBuilder {
         const auto &layout = plan.node_plans[node_index].fixed;
         auto *node_storage = storage + layout.offset;
         auto parameters = layout.parameters.objects<ParameterBinding>(node_storage);
+        auto default_inputs = layout.default_inputs.objects<DefaultInputDescriptor>(node_storage);
         auto destruction_runtime_types =
             plan.fixed.scalar_destruction_runtime_types.objects<const ScalarRuntimeType *>(storage);
         auto destruction_offsets = plan.fixed.scalar_destruction_offsets.objects<std::uint32_t>(storage);
 
         auto input_index = std::size_t{};
         auto scalar_index = std::size_t{};
+        auto default_input_index = std::size_t{};
         for (auto parameter_index = std::size_t{}; parameter_index < node.signature().parameters.size();
              ++parameter_index) {
             const auto &parameter = node.signature().parameters[parameter_index];
 
             if (parameter.type->is_time_series()) {
                 const auto &input = plan.node_plans[node_index].time_series_inputs[input_index++];
+                if (input.default_value) {
+                    auto *descriptor = default_inputs.data() + default_input_index++;
+                    auto source = ParameterBinding{};
+                    if (!input.wired_input.is_inherited()) {
+                        if (const auto *constant = plan.constant_for_output(input.wired_input.index())) {
+                            const auto source_offset =
+                                static_cast<std::size_t>(reinterpret_cast<std::byte *>(&descriptor->source) - storage);
+                            source = ParameterBinding::constant(
+                                *plan.runtime.constant_start_time_offset,
+                                packed_offset(constant->storage.offset - source_offset,
+                                              "a constant is more than 1 GiB from its parameter"),
+                                optional);
+                        }
+                    }
+                    if (source.mode() == ParameterBindingMode::scalar) {
+                        if (input.dereferences_reference) {
+                            source = ParameterBinding{input.output_last_updated_offset, input.offset,
+                                                      parameter.activity, optional};
+                        } else {
+                            const auto resolved_output =
+                                input.wired_input.is_inherited()
+                                    ? OutputLayout{plan.inherited_time_series_at(input.wired_input.index())
+                                                       .last_updated_offset,
+                                                   plan.inherited_time_series_at(input.wired_input.index())
+                                                       .value_offset,
+                                                   nullptr}
+                                    : wired_output_layout(input.wired_input.index(), plan.outputs, plan.node_plans);
+                            source = ParameterBinding{resolved_output.last_updated_offset, resolved_output.value_offset,
+                                                      optional};
+                        }
+                    }
+
+                    const auto *fallback = plan.constant_for_output(input.fallback.index());
+                    if (fallback == nullptr) {
+                        throw std::logic_error{"a default value fallback is not constant"};
+                    }
+
+                    std::construct_at(descriptor,
+                                      DefaultInputDescriptor{source, storage + fallback->storage.offset,
+                                                             node.node_template().input_notification(input_index - 1),
+                                                             *plan.runtime.constant_start_time_offset});
+                    const auto descriptor_offset =
+                        static_cast<std::size_t>(reinterpret_cast<std::byte *>(descriptor) -
+                                                 reinterpret_cast<std::byte *>(parameters.data() + parameter_index));
+                    std::construct_at(
+                        parameters.data() + parameter_index,
+                        ParameterBinding::default_value(
+                            input.default_input_offset,
+                            packed_offset(descriptor_offset, "a default input descriptor is more than 1 GiB away"),
+                            parameter.validity));
+                    continue;
+                }
                 if (!input.wired_input.is_inherited()) {
                     if (const auto *constant = plan.constant_for_output(input.wired_input.index())) {
                         const auto parameter_offset =

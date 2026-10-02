@@ -439,15 +439,13 @@ RuntimeGraph::~RuntimeGraph() {
             const auto runtime_node = Node{node, storage_};
             for (auto parameter_index = std::size_t{}; parameter_index < runtime_node.input_count();
                  ++parameter_index) {
-                const auto &parameter = node.parameters()[parameter_index];
-                if (parameter.mode() != ParameterBindingMode::reference) {
+                auto *input = runtime_node.reference_input(parameter_index);
+                if (input == nullptr || !input->value) {
                     continue;
                 }
 
-                auto &input = runtime_node.reference_input(parameter_index);
-                if (input.value) {
-                    details::ReferenceProvider::remove_subscriber(input.value, *this, parameter.value_offset());
-                }
+                const auto offset = static_cast<std::size_t>(reinterpret_cast<std::byte *>(input) - storage_);
+                details::ReferenceProvider::remove_subscriber(input->value, *this, offset);
             }
         }
 
