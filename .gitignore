@@ -1,6 +1,9 @@
+
 # local/private agentic setup
+/TODO.md
 /LOCAL_AGENTS.md
 /.lanes/
+/.codex/
 
 # CMake build trees
 /build/
