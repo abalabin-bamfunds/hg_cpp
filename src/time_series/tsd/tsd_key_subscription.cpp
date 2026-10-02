@@ -24,7 +24,6 @@ const TimeSeriesReferenceType &resolved_tsd_item_reference_type(const TimeSeries
 class TsdKeySubscriptions final
     : public ItemSelectionSubscriptions<TsdKeySubscriptions, TimeSeriesDictionaryRuntimeType> {
     using Base = ItemSelectionSubscriptions<TsdKeySubscriptions, TimeSeriesDictionaryRuntimeType>;
-    friend Base;
 
   public:
     TsdKeySubscriptions(ReferenceProvider &provider, allocator memory) : Base{provider, memory} {}
@@ -63,6 +62,7 @@ class TsdKeySubscriptions final
         return runtime_type.retain_key(const_cast<void *>(resolved.storage), scalar_data(key), allocation());
     }
 
+  public:
     static bool contains_item(const Collection &tsd, item_id_t id) noexcept {
         return tsd.runtime_type->key_live(tsd.storage, id);
     }

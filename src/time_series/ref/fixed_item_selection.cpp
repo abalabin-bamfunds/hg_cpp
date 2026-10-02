@@ -21,7 +21,6 @@ const TimeSeriesRuntimeType &item_reference_runtime_type(const TimeSeriesRuntime
 class FixedItemSubscriptions final
     : public ItemSelectionSubscriptions<FixedItemSubscriptions, TimeSeriesRuntimeType> {
     using Base = ItemSelectionSubscriptions<FixedItemSubscriptions, TimeSeriesRuntimeType>;
-    friend Base;
 
   public:
     FixedItemSubscriptions(ReferenceProvider &provider, allocator memory) : Base{provider, memory} {}
@@ -36,7 +35,6 @@ class FixedItemSubscriptions final
             require_selection(collection, id, item_runtime_type.is_reference()), reference_runtime_type);
     }
 
-  private:
     static bool contains_item(const Collection &, item_id_t) noexcept { return true; }
 
     static void release_item_retention(Collection &, Selection &) noexcept {}

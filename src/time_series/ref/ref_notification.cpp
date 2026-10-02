@@ -8,40 +8,36 @@
 
 namespace bg::details {
 
-namespace {
-
-void update_reference_input(OutputChangeContext &context, Reference new_reference,
-                            const ReferenceInputSubscriber &subscriber, std::size_t notification_data,
-                            InputNotificationFunction notification, OutputChange change) {
+void ReferenceInputSubscriber::update_input(OutputChangeContext &context, Reference new_reference,
+                                            std::size_t notification_data, InputNotificationFunction notification,
+                                            OutputChange change) const {
     if (new_reference) {
-        new_reference = ReferenceProvider::representation(new_reference, subscriber.requested_runtime_type());
+        new_reference = ReferenceProvider::representation(new_reference, requested_runtime_type());
     }
 
-    auto &input = *static_cast<ReferenceInputStorage *>(context.runtime_graph().storage_at(subscriber.input_offset()));
+    auto &input = *static_cast<ReferenceInputStorage *>(context.runtime_graph().storage_at(input_offset()));
     if (input.value != new_reference) {
         const auto needs_subscription =
-            subscriber.active() || subscriber.required() || notification != nullptr || subscriber.controlled_activity();
+            active() || required() || notification != nullptr || controlled_activity();
         if (input.value && needs_subscription) {
-            ReferenceProvider::remove_subscriber(input.value, context.runtime_graph(), subscriber.input_offset());
+            ReferenceProvider::remove_subscriber(input.value, context.runtime_graph(), input_offset());
         }
         if (new_reference && needs_subscription) {
             ReferenceProvider::add_subscriber(new_reference, context.runtime_graph(),
-                                              static_cast<std::uint32_t>(subscriber.input_offset()), notification_data,
-                                              static_cast<std::uint32_t>(subscriber.node_index()), subscriber.active(),
-                                              subscriber.required(), notification, subscriber.controlled_activity());
+                                              static_cast<std::uint32_t>(input_offset()), notification_data,
+                                              static_cast<std::uint32_t>(node_index()), active(), required(),
+                                              notification, controlled_activity());
         }
         input.value = new_reference;
     }
 
-    if (subscriber.required()) {
-        context.schedule_validity_check(context.runtime_graph(), subscriber.node_index());
+    if (required()) {
+        context.schedule_validity_check(context.runtime_graph(), node_index());
     }
     if (notification != nullptr) {
-        notification(context, subscriber.node_index(), notification_data, change);
+        notification(context, node_index(), notification_data, change);
     }
 }
-
-} // namespace
 
 void notify_reference_inputs(OutputChangeContext &context, const TimeSeriesRuntimeType *runtime_type, const void *value,
                              OutputChange change, std::span<const std::byte> record_bytes) {
@@ -54,7 +50,7 @@ void notify_reference_inputs(OutputChangeContext &context, const TimeSeriesRunti
                                                                 : runtime_type->reference(value);
 
     for (const auto &subscriber : records) {
-        update_reference_input(context, reference, subscriber, 0, nullptr, change);
+        subscriber.update_input(context, reference, 0, nullptr, change);
     }
 }
 
@@ -70,8 +66,8 @@ void notify_reference_inputs_with_notifications(OutputChangeContext &context, co
                                                                 : runtime_type->reference(value);
 
     for (const auto &subscriber : records) {
-        update_reference_input(context, reference, subscriber.subscription(), subscriber.notification_data(),
-                               subscriber.notification(), change);
+        subscriber.subscription().update_input(context, reference, subscriber.notification_data(),
+                                               subscriber.notification(), change);
     }
 }
 

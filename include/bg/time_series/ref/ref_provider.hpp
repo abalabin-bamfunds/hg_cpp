@@ -35,13 +35,10 @@ class ReferenceProviderComponent {
     virtual void notify_item_bindings(Reference collection, item_id_t id, OutputChangeContext &context) = 0;
     virtual void destroy(allocator &memory) noexcept = 0;
 
+    ReferenceProviderComponent *next_component{};
+
   protected:
     ReferenceProviderComponent() = default;
-
-  private:
-    friend class ReferenceProvider;
-
-    ReferenceProviderComponent *next_{};
 };
 
 static_assert(sizeof(ReferenceProviderComponent) == 2 * sizeof(void *));
@@ -53,15 +50,14 @@ class ReferenceRepresentation {
 
     Reference base_reference() const noexcept { return base_reference_; }
     Reference reference() noexcept { return &reference_; }
+    void initialize_reference(std::uint32_t index) noexcept {
+        reference_ = RepresentationReference{base_reference_, index};
+    }
     virtual ResolvedTimeSeries resolve() const = 0;
     virtual void notify(OutputChangeContext &context, OutputChange change) = 0;
     virtual void destroy(allocator &memory) noexcept = 0;
 
   private:
-    friend class ReferenceProvider;
-
-    void bind(std::uint32_t index) noexcept { reference_ = RepresentationReference{base_reference_, index}; }
-
     Reference base_reference_;
     RepresentationReference reference_;
 };
@@ -163,7 +159,7 @@ class ReferenceProvider {
     template <typename Component> Component *component() noexcept {
         static_assert(std::is_base_of_v<ReferenceProviderComponent, Component>);
         static_assert(std::is_final_v<Component>);
-        for (auto *candidate = components_; candidate != nullptr; candidate = candidate->next_) {
+        for (auto *candidate = components_; candidate != nullptr; candidate = candidate->next_component) {
             if (typeid(*candidate) == typeid(Component)) {
                 return static_cast<Component *>(candidate);
             }

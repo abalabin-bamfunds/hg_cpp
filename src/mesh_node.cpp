@@ -151,11 +151,6 @@ class MeshRuntimeState {
 
     static_assert(sizeof(DependencyEdge) == 6 * sizeof(std::uint32_t));
 
-    struct DependencyResult {
-        TsdItemReferenceInput item;
-        bool pending{};
-    };
-
     struct EvaluationFrame {
         branch_id_t branch_id;
         std::uint32_t dependency_cursor{no_dependency};
@@ -167,6 +162,11 @@ class MeshRuntimeState {
     };
 
   public:
+    struct DependencyResult {
+        TsdItemReferenceInput item;
+        bool pending{};
+    };
+
     explicit MeshRuntimeState(allocator memory)
         : memory_{memory}, branches_{memory}, edges_{&memory.memory_resource()},
           evaluation_stack_{&memory.memory_resource()}, cycle_stack_{&memory.memory_resource()},
@@ -297,6 +297,76 @@ class MeshRuntimeState {
         auto memory = context.runtime_graph().allocation();
         ReferenceProvider::finalize_root(output_reference_, memory);
         memory.delete_object(this);
+    }
+
+    DependencyResult resolve_dependency(branch_id_t branch_id, std::uint32_t &edge_index, const Scalar<> &key) {
+        if (!evaluation_active_) {
+            throw std::logic_error{"a mesh dependency request is outside mesh evaluation"};
+        }
+
+        if (edge_index == MeshDependencyState::no_edge) {
+            edge_index = add_edge(branch_id);
+        } else if (edges_[edge_index].branch_id != branch_id) {
+            throw std::logic_error{"a mesh dependency moved between branches"};
+        }
+
+        auto &dependency_entry = branches_.entries().require(key);
+        if (dependency_entry.branch_id >= no_dependency) {
+            throw std::length_error{"a mesh has too many branches for runtime dependencies"};
+        }
+        auto &dependency = branch_state(dependency_entry.branch_id);
+        auto &edge = edges_[edge_index];
+        if (edge.dependency_id != dependency_entry.branch_id || !edge.active) {
+            require_acyclic(branch_id, dependency_entry.branch_id);
+
+            if (edge.dependency_id != dependency_entry.branch_id) {
+                if (edge.active) {
+                    edge.active = false;
+                    release_dependency(edge.dependency_id);
+                }
+                unlink_dependency(edge_index);
+                link_dependency(edge_index, dependency_entry.branch_id);
+            }
+
+            ++dependency.dependent_count;
+            edge.active = true;
+        }
+
+        auto item = tsd_item_reference_input(Reference{&output_reference_}, key);
+
+        const auto evaluation_required =
+            !dependency_entry.inner_graph.running() || branches_.entries().ready().contains(dependency_entry.branch_id);
+        if (evaluation_required) {
+            pending_dependency_ = dependency_entry.branch_id;
+            return {
+                .item = item,
+                .pending = true,
+            };
+        }
+
+        return {.item = item};
+    }
+
+    void deactivate_dependency(std::uint32_t edge_index) {
+        if (edge_index == MeshDependencyState::no_edge || !edges_[edge_index].active) {
+            return;
+        }
+        auto &edge = edges_[edge_index];
+        edge.active = false;
+        release_dependency(edge.dependency_id);
+    }
+
+    void remove_dependency(std::uint32_t edge_index) noexcept {
+        if (edge_index == MeshDependencyState::no_edge || destroying_) {
+            return;
+        }
+
+        auto &edge = edges_[edge_index];
+        if (edge.active) {
+            edge.active = false;
+            release_dependency(edge.dependency_id);
+        }
+        discard_edge(edge_index);
     }
 
   private:
@@ -511,80 +581,6 @@ class MeshRuntimeState {
         evaluation_stack_.push_back({branch_id, no_dependency});
     }
 
-    DependencyResult resolve_dependency(branch_id_t branch_id, std::uint32_t &edge_index, const Scalar<> &key) {
-        if (!evaluation_active_) {
-            throw std::logic_error{"a mesh dependency request is outside mesh evaluation"};
-        }
-
-        if (edge_index == MeshDependencyState::no_edge) {
-            edge_index = add_edge(branch_id);
-        } else if (edges_[edge_index].branch_id != branch_id) {
-            throw std::logic_error{"a mesh dependency moved between branches"};
-        }
-
-        auto &dependency_entry = branches_.entries().require(key);
-        if (dependency_entry.branch_id >= no_dependency) {
-            throw std::length_error{"a mesh has too many branches for runtime dependencies"};
-        }
-        auto &dependency = branch_state(dependency_entry.branch_id);
-        auto &edge = edges_[edge_index];
-        if (edge.dependency_id != dependency_entry.branch_id || !edge.active) {
-            require_acyclic(branch_id, dependency_entry.branch_id);
-
-            if (edge.dependency_id != dependency_entry.branch_id) {
-                if (edge.active) {
-                    edge.active = false;
-                    release_dependency(edge.dependency_id);
-                }
-                unlink_dependency(edge_index);
-                link_dependency(edge_index, dependency_entry.branch_id);
-            }
-
-            ++dependency.dependent_count;
-            edge.active = true;
-        }
-
-        auto item = tsd_item_reference_input(Reference{&output_reference_}, key);
-
-        const auto evaluation_required =
-            !dependency_entry.inner_graph.running() || branches_.entries().ready().contains(dependency_entry.branch_id);
-        if (evaluation_required) {
-            pending_dependency_ = dependency_entry.branch_id;
-            return {
-                .item = item,
-                .pending = true,
-            };
-        }
-
-        return {.item = item};
-    }
-
-    void deactivate_dependency(std::uint32_t edge_index) {
-        if (edge_index == MeshDependencyState::no_edge || !edges_[edge_index].active) {
-            return;
-        }
-        auto &edge = edges_[edge_index];
-        edge.active = false;
-        release_dependency(edge.dependency_id);
-    }
-
-    void remove_dependency(std::uint32_t edge_index) noexcept {
-        if (edge_index == MeshDependencyState::no_edge) {
-            return;
-        }
-
-        if (destroying_) {
-            return;
-        }
-
-        auto &edge = edges_[edge_index];
-        if (edge.active) {
-            edge.active = false;
-            release_dependency(edge.dependency_id);
-        }
-        discard_edge(edge_index);
-    }
-
     void link_dependency(std::uint32_t edge_index, branch_id_t dependency_id) {
         auto &dependency = branch_state(dependency_id);
         auto &edge = edges_[edge_index];
@@ -754,8 +750,6 @@ class MeshRuntimeState {
     }
 
     static const RuntimeGraphOwnerCallbacks owner_callbacks;
-
-    friend struct MeshDependencyState;
 
     allocator memory_;
     MapRuntime branches_;

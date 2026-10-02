@@ -1,6 +1,7 @@
 #pragma once
 
 #include <bg/graph/output_notification.hpp>
+#include <bg/time_series/ref/ref_storage.hpp>
 
 #include <cstddef>
 #include <cstdint>
@@ -26,6 +27,9 @@ class ReferenceInputSubscriber {
     bool active() const noexcept { return (node_index_and_flags_ & active_flag) != 0; }
     bool required() const noexcept { return (node_index_and_flags_ & required_flag) != 0; }
     bool controlled_activity() const noexcept { return (node_index_and_flags_ & controlled_activity_flag) != 0; }
+
+    void update_input(OutputChangeContext &context, Reference reference, std::size_t notification_data,
+                      InputNotificationFunction notification, OutputChange change) const;
 
   private:
     static constexpr std::uint32_t active_flag = std::uint32_t{1} << 31;

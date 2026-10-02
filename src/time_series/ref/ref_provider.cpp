@@ -76,7 +76,7 @@ ReferenceProvider::ReferenceProvider(allocator memory, RootReference &root, Dyna
 }
 
 ReferenceProvider::~ReferenceProvider() {
-    for (auto *component = components_; component != nullptr; component = component->next_) {
+    for (auto *component = components_; component != nullptr; component = component->next_component) {
         component->detach();
     }
     for (auto *representation : representations_ | std::views::reverse) {
@@ -93,7 +93,7 @@ ReferenceProvider::~ReferenceProvider() {
     }
     while (components_ != nullptr) {
         auto *component = components_;
-        components_ = component->next_;
+        components_ = component->next_component;
         component->destroy(memory_);
     }
     for (auto *subscribers : subscriber_groups_) {
@@ -317,7 +317,7 @@ bool ReferenceProvider::release_item_reference(ItemReference &reference) noexcep
 }
 
 void ReferenceProvider::add_component(ReferenceProviderComponent &component) noexcept {
-    component.next_ = components_;
+    component.next_component = components_;
     components_ = &component;
 }
 
@@ -349,7 +349,7 @@ Reference ReferenceProvider::make_representation(Reference base_reference,
     auto *result =
         factory->create(*this, base_reference, *base_time_series.runtime_type, requested_runtime_type, memory_);
     auto release = util::scope_exit{[&]() noexcept { result->destroy(memory_); }};
-    result->bind(static_cast<std::uint32_t>(representations_.size()));
+    result->initialize_reference(static_cast<std::uint32_t>(representations_.size()));
     representations_.push_back(result);
     auto remove_entry = util::scope_exit{[&]() noexcept { representations_.pop_back(); }};
     add_observer(base_reference, owner(), result,
@@ -477,7 +477,7 @@ void ReferenceProvider::notify_item_bindings(Reference collection, item_id_t id,
     }
 
     auto context = OutputChangeContext{evaluation_context};
-    for (auto *component = provider->components_; component != nullptr; component = component->next_) {
+    for (auto *component = provider->components_; component != nullptr; component = component->next_component) {
         component->notify_item_bindings(collection, id, context);
     }
 }
