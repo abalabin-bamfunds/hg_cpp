@@ -236,14 +236,17 @@ struct concurrent_writer_block : buffer_block {
             }
 
             const auto sequence = state & sequence_mask;
-            auto &slot = slots[sequence & (control.ring_capacity - 1)];
-            const auto value = slot.value.load(std::memory_order_acquire);
-            if (commit_sequence(value) != sequence) {
-                return;
-            }
             if (!control.published.compare_exchange_weak(state, state | publishing_bit, std::memory_order_acq_rel,
                                                          std::memory_order_acquire)) {
                 continue;
+            }
+
+            // Every committer acquires this bit before checking its slot, so a later commit cannot miss the next scan.
+            const auto value = slots[sequence & (control.ring_capacity - 1)].value.load(std::memory_order_acquire);
+            if (commit_sequence(value) != sequence) {
+                control.published.store(sequence, std::memory_order_release);
+                control.published.notify_all();
+                return;
             }
 
             committed.store(data_offset() + commit_end(value), std::memory_order_release);

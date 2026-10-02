@@ -4,6 +4,7 @@
 
 #include "counting_memory_resource.hpp"
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <barrier>
@@ -13,6 +14,7 @@
 #include <memory>
 #include <new>
 #include <optional>
+#include <span>
 #include <stdexcept>
 #include <string_view>
 #include <thread>
@@ -34,36 +36,225 @@ TEST_CASE("a contiguous buffer exposes committed bytes", "[coverage-exempt]") {
     CHECK(std::memcmp(data.bytes().data(), "abc", 3) == 0);
 }
 
-TEST_CASE("a writer rejects overlapping reservations", "[coverage-exempt]") {
-    auto data = bg::util::buffer::concurrent_chain(8, 4);
-    bg::util::concurrent_buffer_writer writer{data};
-    auto reservation = writer.reserve(1);
-    CHECK_THROWS_AS(writer.reserve(1), std::logic_error);
-    reservation.commit();
-    CHECK(reservation.bytes().empty());
-    auto next = writer.reserve(1);
-    next.commit();
-}
-
-TEST_CASE("a single writer requires commit before the next reservation", "[coverage-exempt]") {
+TEST_CASE("an unsized write commits a contiguous buffer", "[coverage-exempt]") {
     auto data = bg::util::buffer::contiguous(4);
     bg::util::buffer_writer writer{data};
-    auto reservation = writer.reserve(1);
-    CHECK_THROWS_AS(writer.reserve(1), std::logic_error);
-    reservation.commit();
-    CHECK(reservation.bytes().empty());
-    auto next = writer.reserve(1);
-    next.commit();
+    constexpr auto value = std::string_view{"abc"};
+    writer.write_bytes(std::as_bytes(std::span{value.data(), value.size()}));
+
+    CHECK(data.bytes().empty());
+    writer.commit();
+    CHECK(std::memcmp(data.bytes().data(), "abc", 3) == 0);
+
+    constexpr auto too_large = std::string_view{"de"};
+    CHECK_THROWS_AS(writer.write_bytes(std::as_bytes(std::span{too_large.data(), too_large.size()})),
+                    std::length_error);
+    CHECK(data.size() == 3);
 }
 
-TEST_CASE("an abandoned reservation leaves its writer unavailable", "[coverage-exempt]") {
-    auto data = bg::util::buffer::concurrent_chain(8, 4);
-    bg::util::concurrent_buffer_writer writer{data};
-    {
-        auto abandoned = writer.reserve(1);
-        CHECK(abandoned.bytes().size() == 1);
+TEST_CASE("an unsized write spanning blocks becomes readable on commit", "[coverage-exempt]") {
+    auto data = bg::util::buffer::chain(3);
+    bg::util::buffer_writer writer{data};
+    bg::util::buffer_reader reader{data};
+    constexpr auto value = std::string_view{"abcdefgh"};
+    writer.write_bytes(std::as_bytes(std::span{value.data(), value.size()}));
+
+    CHECK(reader.readable().empty());
+    writer.commit();
+
+    for (const auto part : {std::string_view{"abc"}, std::string_view{"def"}, std::string_view{"gh"}}) {
+        const auto available = reader.readable();
+        REQUIRE(available.size() == part.size());
+        CHECK(std::memcmp(available.data(), part.data(), part.size()) == 0);
+        reader.consume(part.size());
     }
-    CHECK_THROWS_AS(writer.reserve(1), std::logic_error);
+    CHECK(reader.readable().empty());
+}
+
+TEST_CASE("an abandoned unsized write releases private blocks", "[coverage-exempt]") {
+    auto memory = counting_memory_resource{};
+    {
+        auto data = bg::util::buffer::chain(2, bg::allocator{memory});
+        {
+            bg::util::buffer_writer writer{data};
+            constexpr auto value = std::string_view{"abcde"};
+            writer.write_bytes(std::as_bytes(std::span{value.data(), value.size()}));
+            CHECK(memory.allocations() == 3);
+        }
+
+        CHECK(memory.allocations() == 1);
+        bg::util::buffer_reader reader{data};
+        CHECK(reader.readable().empty());
+    }
+    CHECK(memory.allocations() == 0);
+}
+
+TEST_CASE("an unsized rollover waits for its starting block to commit", "[coverage-exempt]") {
+    auto data = bg::util::buffer::chain(3);
+    bg::util::buffer_writer writer{data};
+    bg::util::buffer_reader reader{data};
+    constexpr auto first = std::string_view{"x"};
+    writer.write_bytes(std::as_bytes(std::span{first.data(), first.size()}));
+    writer.commit();
+    reader.consume(1);
+
+    constexpr auto second = std::string_view{"abcd"};
+    writer.write_bytes(std::as_bytes(std::span{second.data(), second.size()}));
+    CHECK(reader.readable().empty());
+    writer.commit();
+
+    const auto current = reader.readable();
+    REQUIRE(current.size() == 2);
+    CHECK(std::memcmp(current.data(), "ab", 2) == 0);
+    reader.consume(2);
+    const auto next = reader.readable();
+    REQUIRE(next.size() == 2);
+    CHECK(std::memcmp(next.data(), "cd", 2) == 0);
+}
+
+TEST_CASE("an unsized rollover from a full block publishes its link on commit", "[coverage-exempt]") {
+    auto data = bg::util::buffer::chain(3);
+    bg::util::buffer_writer writer{data};
+    bg::util::buffer_reader reader{data};
+    constexpr auto first = std::string_view{"abc"};
+    writer.write_bytes(std::as_bytes(std::span{first.data(), first.size()}));
+    writer.commit();
+    reader.consume(3);
+
+    constexpr auto second = std::string_view{"de"};
+    writer.write_bytes(std::as_bytes(std::span{second.data(), second.size()}));
+    CHECK(reader.readable().empty());
+    writer.commit();
+    const auto available = reader.readable();
+    REQUIRE(available.size() == 2);
+    CHECK(std::memcmp(available.data(), "de", 2) == 0);
+}
+
+TEST_CASE("a concurrent reader sees no unsized write before commit", "[coverage-exempt]") {
+    auto data = bg::util::buffer::chain(3);
+    bg::util::buffer_reader reader{data};
+    auto sync = std::barrier{2};
+    constexpr auto write_count = 100;
+    constexpr auto write_size = 7;
+
+    auto producer = std::thread{[&] {
+        bg::util::buffer_writer writer{data};
+        for (auto index = 0; index < write_count; ++index) {
+            auto bytes = std::array<std::byte, write_size>{};
+            bytes.fill(static_cast<std::byte>(index));
+            writer.write_bytes(bytes);
+            sync.arrive_and_wait();
+            sync.arrive_and_wait();
+            writer.commit();
+            sync.arrive_and_wait();
+        }
+    }};
+
+    auto valid = true;
+    for (auto index = 0; index < write_count; ++index) {
+        sync.arrive_and_wait();
+        valid &= reader.readable().empty();
+        sync.arrive_and_wait();
+        sync.arrive_and_wait();
+
+        auto remaining = std::size_t{write_size};
+        while (remaining != 0) {
+            const auto available = reader.readable();
+            if (available.empty()) {
+                valid = false;
+                break;
+            }
+            const auto count = std::min(remaining, available.size());
+            for (const auto byte : available.first(count)) {
+                valid &= byte == static_cast<std::byte>(index);
+            }
+            reader.consume(count);
+            remaining -= count;
+        }
+    }
+    producer.join();
+    CHECK(valid);
+}
+
+TEST_CASE("an unsized typed write moves whole objects to the next block", "[coverage-exempt]") {
+    struct value {
+        explicit value(std::uint64_t data) : data{data} {}
+        std::uint64_t data;
+    };
+
+    auto data = bg::util::buffer::chain(1);
+    bg::util::buffer_writer writer{data};
+    writer.write(std::byte{'x'});
+    writer.emplace<value>(42);
+    writer.commit();
+
+    bg::util::buffer_reader reader{data};
+    CHECK(reader.read<std::byte>() == std::byte{'x'});
+    CHECK(reader.read<value>().data == 42);
+}
+
+TEST_CASE("a single writer alternates unsized writes and sized reservations", "[coverage-exempt]") {
+    auto data = bg::util::buffer::chain(2);
+    bg::util::buffer_writer writer{data};
+    constexpr auto first = std::string_view{"abc"};
+    writer.write_bytes(std::as_bytes(std::span{first.data(), first.size()}));
+    writer.commit();
+
+    auto reservation = writer.reserve(1);
+    reservation.write_bytes(std::as_bytes(std::span{"d", 1}));
+    reservation.commit();
+
+    constexpr auto last = std::string_view{"e"};
+    writer.write_bytes(std::as_bytes(std::span{last.data(), last.size()}));
+    writer.commit();
+
+    bg::util::buffer_reader reader{data};
+    for (const auto part : {std::string_view{"ab"}, std::string_view{"cd"}, std::string_view{"e"}}) {
+        const auto available = reader.readable();
+        REQUIRE(available.size() == part.size());
+        CHECK(std::memcmp(available.data(), part.data(), part.size()) == 0);
+        reader.consume(part.size());
+    }
+}
+
+TEST_CASE("a failed unsized typed construction can be retried", "[coverage-exempt]") {
+    struct value {
+        explicit value(bool fail) {
+            if (fail) {
+                throw std::runtime_error{"requested construction failure"};
+            }
+        }
+        std::uint32_t data{42};
+    };
+
+    auto data = bg::util::buffer::chain(1);
+    bg::util::buffer_writer writer{data};
+    writer.write(std::byte{'x'});
+    CHECK_THROWS_AS(writer.emplace<value>(true), std::runtime_error);
+    writer.emplace<value>(false);
+    writer.commit();
+
+    bg::util::buffer_reader reader{data};
+    CHECK(reader.read<std::byte>() == std::byte{'x'});
+    CHECK(reader.read<value>().data == 42);
+}
+
+TEST_CASE("reservations reject a second commit", "[coverage-exempt]") {
+    {
+        auto data = bg::util::buffer::contiguous(4);
+        bg::util::buffer_writer writer{data};
+        auto reservation = writer.reserve(1);
+        reservation.commit();
+        CHECK_THROWS_AS(reservation.commit(), std::logic_error);
+    }
+
+    {
+        auto data = bg::util::buffer::concurrent_chain(8, 4);
+        bg::util::concurrent_buffer_writer writer{data};
+        auto reservation = writer.reserve(1);
+        reservation.commit();
+        CHECK_THROWS_AS(reservation.commit(), std::logic_error);
+    }
 }
 
 TEST_CASE("a reader reads a contiguous buffer", "[coverage-exempt]") {
