@@ -62,14 +62,18 @@ class RuntimeGraph {
     void set_owner(RuntimeGraph &graph, std::size_t node_index) noexcept;
     void set_owner(RuntimeGraph &graph, std::size_t node_index, RuntimeGraphOwner owner) noexcept;
     void clear_owner() noexcept;
+    // Suppresses propagation to the owning node and returns the previous state.
+    bool set_owner_scheduling_suppressed(bool suppressed) noexcept;
+    bool evaluation_pending() const noexcept;
+
+    void update_reference_output(std::size_t node_index, Reference reference, EvaluationTime last_updated);
+    void initialize_constant_output(std::size_t node_index, Scalar<> value, EvaluationTime last_updated);
 
     void add_cycle_callback(void *receiver, void (*function)(void *) noexcept);
     void remove_cycle_callback(const void *receiver) noexcept;
     void notify_dynamic_subscribers(details::DynamicSubscribers &subscribers, OutputChange change);
 
   private:
-    friend NestedGraph;
-
     using ScheduleWord = CompiledGraph::ScheduleWord;
     using SchedulingInfo = CompiledGraph::SchedulingInfo;
 

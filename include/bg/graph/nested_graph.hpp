@@ -63,8 +63,6 @@ class NestedGraph {
                std::span<const NestedGraphInput> inputs, std::span<const NestedGraphConstantInput> constants,
                const RuntimeGraphOwner *owner);
     void destroy_retired() noexcept;
-    void bind_input(std::size_t node_index, const NestedGraphInput &input);
-    void initialize_constant(std::size_t node_index, const NestedGraphConstantInput &input, EvaluationTime start_time);
 
     RuntimeGraph *active_{};
     RuntimeGraph *retired_{};

@@ -1,16 +1,9 @@
 #include <bg/graph/nested_graph.hpp>
 
-#include <bg/allocator.hpp>
 #include <bg/evaluation_context.hpp>
-#include <bg/graph/compiled_graph.hpp>
-#include <bg/graph/node.hpp>
 #include <bg/graph/runtime_graph.hpp>
-#include <bg/time_series/ref/ref_storage.hpp>
-#include <bg/time_series/time_series_runtime_type.hpp>
 #include <bg/util/scope_exit.hpp>
 
-#include <limits>
-#include <memory>
 #include <stdexcept>
 
 namespace bg {
@@ -55,7 +48,7 @@ void NestedGraph::start(const CompiledNestedGraph &compiled, EvaluationContext &
     }
 
     auto &parent = context.runtime_graph();
-    active_ = parent.allocator_.new_object<RuntimeGraph>(*compiled.graph, parent.allocator_, parent.global_state());
+    active_ = parent.allocation().new_object<RuntimeGraph>(*compiled.graph, parent.allocation(), parent.global_state());
     auto rollback = util::scope_exit{[&]() noexcept {
         active_->clear_owner();
         destroy(active_);
@@ -66,15 +59,15 @@ void NestedGraph::start(const CompiledNestedGraph &compiled, EvaluationContext &
     } else {
         active_->set_owner(parent, context.node_index(), *owner);
     }
-    active_->suppress_parent_scheduling_ = true;
-    active_->evaluation_time_ = context.evaluation_time();
+    active_->set_owner_scheduling_suppressed(true);
 
     update_inputs(compiled, inputs);
     for (auto i = std::size_t{}; i < constants.size(); ++i) {
-        initialize_constant(compiled.constant_input_nodes[i], constants[i], context.evaluation_time());
+        active_->initialize_constant_output(compiled.constant_input_nodes[i], constants[i].value,
+                                            context.evaluation_time());
     }
     active_->start(context);
-    active_->suppress_parent_scheduling_ = false;
+    active_->set_owner_scheduling_suppressed(false);
     rollback.release();
 }
 
@@ -83,10 +76,10 @@ void NestedGraph::update_input(const CompiledNestedGraph &compiled, std::size_t 
         throw std::out_of_range{"the nested graph input index is out of range"};
     }
 
-    const auto previous_suppression = active_->suppress_parent_scheduling_;
-    active_->suppress_parent_scheduling_ = true;
-    auto restore = util::scope_exit{[&]() noexcept { active_->suppress_parent_scheduling_ = previous_suppression; }};
-    bind_input(compiled.input_nodes[input_index], input);
+    const auto previous_suppression = active_->set_owner_scheduling_suppressed(true);
+    auto restore = util::scope_exit{
+        [&]() noexcept { active_->set_owner_scheduling_suppressed(previous_suppression); }};
+    active_->update_reference_output(compiled.input_nodes[input_index], input.reference, input.last_updated);
 }
 
 void NestedGraph::update_inputs(const CompiledNestedGraph &compiled, std::span<const NestedGraphInput> inputs) {
@@ -94,48 +87,18 @@ void NestedGraph::update_inputs(const CompiledNestedGraph &compiled, std::span<c
         throw std::invalid_argument{"the nested graph received the wrong number of inputs"};
     }
 
-    const auto previous_suppression = active_->suppress_parent_scheduling_;
-    active_->suppress_parent_scheduling_ = true;
-    auto restore = util::scope_exit{[&]() noexcept { active_->suppress_parent_scheduling_ = previous_suppression; }};
+    const auto previous_suppression = active_->set_owner_scheduling_suppressed(true);
+    auto restore = util::scope_exit{
+        [&]() noexcept { active_->set_owner_scheduling_suppressed(previous_suppression); }};
 
     for (auto i = std::size_t{}; i < inputs.size(); ++i) {
-        bind_input(compiled.input_nodes[i], inputs[i]);
+        active_->update_reference_output(compiled.input_nodes[i], inputs[i].reference, inputs[i].last_updated);
     }
-}
-
-void NestedGraph::bind_input(std::size_t node_index, const NestedGraphInput &input) {
-    const auto &node = active_->compiled_graph_->node(node_index);
-    const auto runtime_node = active_->node(node_index);
-    auto &last_updated = runtime_node.output_last_updated();
-    auto &bound_reference = *static_cast<Reference *>(runtime_node.output_value());
-
-    if (bound_reference == input.reference) {
-        return;
-    }
-
-    const auto was_valid = last_updated > MIN_DT;
-    bound_reference = input.reference;
-    last_updated = input.reference ? input.last_updated : MIN_DT;
-    const auto now_valid = last_updated > MIN_DT;
-    const auto change =
-        now_valid ? (was_valid ? OutputChange::update : OutputChange::revalidation) : OutputChange::invalidation;
-    active_->publish_output(node, change);
-}
-
-void NestedGraph::initialize_constant(std::size_t node_index, const NestedGraphConstantInput &input,
-                                      EvaluationTime start_time) {
-    const auto &node = active_->compiled_graph_->node(node_index);
-    const auto runtime_node = active_->node(node_index);
-    const auto &runtime_type =
-        static_cast<const TimeSeriesValueRuntimeType &>(node.node_invocation_output_runtime_type());
-    runtime_type.scalar_runtime_type().assign_from_input(runtime_node.output_value(), input.value);
-    runtime_node.output_last_updated() = start_time;
-    active_->publish_output(node, OutputChange::revalidation);
 }
 
 bool NestedGraph::evaluate(EvaluationContext &context) {
-    active_->suppress_parent_scheduling_ = true;
-    auto restore = util::scope_exit{[&]() noexcept { active_->suppress_parent_scheduling_ = false; }};
+    active_->set_owner_scheduling_suppressed(true);
+    auto restore = util::scope_exit{[&]() noexcept { active_->set_owner_scheduling_suppressed(false); }};
     const auto complete = active_->evaluate(context);
     if (!complete) {
         restore.release();
@@ -144,7 +107,7 @@ bool NestedGraph::evaluate(EvaluationContext &context) {
 }
 
 bool NestedGraph::evaluation_pending() const noexcept {
-    return active_ != nullptr && active_->paused_node_index_ != std::numeric_limits<std::uint32_t>::max();
+    return active_ != nullptr && active_->evaluation_pending();
 }
 
 void NestedGraph::stop(EvaluationContext &context) {
@@ -154,9 +117,9 @@ void NestedGraph::stop(EvaluationContext &context) {
 
     context.add_cycle_callback(this, destroy_retired_callback);
 
-    active_->suppress_parent_scheduling_ = true;
+    active_->set_owner_scheduling_suppressed(true);
     active_->stop(context);
-    active_->suppress_parent_scheduling_ = false;
+    active_->set_owner_scheduling_suppressed(false);
     active_->clear_owner();
     retired_ = active_;
     active_ = nullptr;
@@ -184,7 +147,7 @@ void NestedGraph::destroy(RuntimeGraph *graph) noexcept {
         return;
     }
 
-    graph->allocator_.delete_object(graph);
+    graph->allocation().delete_object(graph);
 }
 
 void NestedGraph::destroy_retired() noexcept {
@@ -194,7 +157,7 @@ void NestedGraph::destroy_retired() noexcept {
 
 void NestedGraph::stop_and_destroy(EvaluationContext &context) noexcept {
     if (active_ != nullptr) {
-        active_->suppress_parent_scheduling_ = true;
+        active_->set_owner_scheduling_suppressed(true);
         active_->stop(context);
         active_->clear_owner();
         destroy(active_);

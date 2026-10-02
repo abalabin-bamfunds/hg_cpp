@@ -635,6 +635,47 @@ void RuntimeGraph::clear_owner() noexcept {
     callback_owner_ = false;
 }
 
+bool RuntimeGraph::set_owner_scheduling_suppressed(bool suppressed) noexcept {
+    const auto previous = suppress_parent_scheduling_;
+    suppress_parent_scheduling_ = suppressed;
+    return previous;
+}
+
+bool RuntimeGraph::evaluation_pending() const noexcept {
+    return paused_node_index_ != std::numeric_limits<std::uint32_t>::max();
+}
+
+void RuntimeGraph::update_reference_output(std::size_t node_index, Reference reference,
+                                           EvaluationTime last_updated) {
+    const auto &compiled_node = compiled_graph_->node(node_index);
+    const auto runtime_node = node(compiled_node);
+    auto &stored_last_updated = runtime_node.output_last_updated();
+    auto &stored_reference = *static_cast<Reference *>(runtime_node.output_value());
+
+    if (stored_reference == reference) {
+        return;
+    }
+
+    const auto was_valid = stored_last_updated > MIN_DT;
+    stored_reference = reference;
+    stored_last_updated = reference ? last_updated : MIN_DT;
+    const auto now_valid = stored_last_updated > MIN_DT;
+    const auto change =
+        now_valid ? (was_valid ? OutputChange::update : OutputChange::revalidation) : OutputChange::invalidation;
+    publish_output(compiled_node, change);
+}
+
+void RuntimeGraph::initialize_constant_output(std::size_t node_index, Scalar<> value,
+                                              EvaluationTime last_updated) {
+    const auto &compiled_node = compiled_graph_->node(node_index);
+    const auto runtime_node = node(compiled_node);
+    const auto &runtime_type =
+        static_cast<const TimeSeriesValueRuntimeType &>(compiled_node.node_invocation_output_runtime_type());
+    runtime_type.scalar_runtime_type().assign_from_input(runtime_node.output_value(), value);
+    runtime_node.output_last_updated() = last_updated;
+    publish_output(compiled_node, OutputChange::revalidation);
+}
+
 RuntimeGraph::CycleCallbacks *&RuntimeGraph::cycle_callbacks() noexcept {
     return *reinterpret_cast<CycleCallbacks **>(storage_ + compiled_graph_->cycle_callbacks_offset());
 }
