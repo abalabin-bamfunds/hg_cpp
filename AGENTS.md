@@ -145,6 +145,31 @@ Prefer the smallest clear implementation, the code should be elegant.
 - Do not use repeated empty lines for decoration.
 - Keep code within 120 columns unless a longer line is clearer.
 
+### API and encapsulation
+
+- Classify an API's audience through documentation, namespace, and header
+  placement. Do not use C++ access control to distinguish graph-author APIs
+  from engine APIs.
+- Use private state to protect a concrete invariant or lifetime constraint. An
+  engine-only type may expose its complete engine API publicly.
+- Design an interface around valid operations and states. Do not grant access
+  according to a list of trusted caller types.
+- Give each state transition one owner. Put the complete operation on the
+  object that owns the affected state and invariant. Other objects provide
+  values or behavior through their normal APIs.
+- Use a transparent data type when the data has no invariant that its interface
+  must enforce.
+- When a type develops a separate hidden interface, decide whether its normal
+  interface is artificially restricted or whether the type represents states
+  with different invariants. Expose the required operations in the first case.
+  Use separate representations with explicit transitions in the second case.
+- Extract a helper only when it establishes a coherent boundary and reduces
+  what its caller must understand. Keep direct access and simple forwarding at
+  the point of use.
+- Tests use the same engine API as production code or a test driver that owns
+  the tested operation. Do not introduce test-only access to production state
+  unless the test must verify an otherwise unobservable invariant.
+
 ## Comments
 
 - Comment code when its purpose or contract is not clear from its interface.
@@ -182,8 +207,18 @@ Before completing a change, check:
 
 - Is every new part required now?
 - Can any helper, wrapper, or layer be removed?
+- Is each API's intended audience expressed independently of C++ access
+  control?
+- What invariant or lifetime constraint requires each private operation or
+  field? If there is none, is the interface artificially restricted?
+- Does each state transition live on the object that owns its state and
+  invariant?
+- Does any new friend, access helper, or forwarding function reveal an unclear
+  API audience, missing owner, or type that represents multiple states?
 - Does each new runtime downcast or namespace-scope helper indicate a missing
   abstraction or owner?
+- Does each extracted helper create a coherent boundary, or does it only hide
+  direct access or forwarding?
 - Does any special-case logic indicate a missing abstraction or inconsistent
   representation? Prefer a solution that follows the normal design. Keep a
   special case only when a concrete constraint requires it. Raise it with the
