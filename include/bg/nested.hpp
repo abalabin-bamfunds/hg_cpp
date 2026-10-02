@@ -4,6 +4,7 @@
 #include <bg/graph/details/nested.hpp>
 #include <bg/graph/details/normalized_wiring_arguments.hpp>
 #include <bg/graph/details/variadic_wiring_record.hpp>
+#include <bg/graph/details/wiring_record_overlay.hpp>
 #include <bg/graph/graph_template.hpp>
 #include <bg/graph/wiring_context.hpp>
 #include <bg/node/node_template.hpp>
@@ -27,7 +28,8 @@ template <typename Graph, details::graph_code_argument Run, details::graph_code_
     auto supplied =
         std::array<WiringArgument, sizeof...(Arguments)>{WiringArgument{std::forward<Arguments>(arguments)}...};
     auto &outer_wiring = WiringContext::current().wiring();
-    auto normalized_result = details::probe_wiring_arguments(graph.signature(), supplied);
+    auto temporary_records = details::WiringRecordOverlay{outer_wiring};
+    auto normalized_result = details::probe_wiring_arguments(graph.signature(), supplied, temporary_records);
     auto &normalized = normalized_result.arguments;
     auto resolution = graph.signature().resolve_wiring_arguments(normalized, normalized_result.descriptors);
     const auto &resolved = resolution.signature;

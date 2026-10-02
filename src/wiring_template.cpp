@@ -1,6 +1,7 @@
 #include <bg/graph/wiring_template.hpp>
 
 #include <bg/graph/details/normalized_wiring_arguments.hpp>
+#include <bg/graph/details/wiring_record_overlay.hpp>
 #include <bg/graph/wiring_arguments.hpp>
 #include <bg/graph/wiring_error.hpp>
 
@@ -26,7 +27,8 @@ std::optional<WiringPoint> WiringTemplate::invoke_resolved(GraphWiring &wiring, 
 std::optional<WiringPoint> WiringTemplate::invoke(GraphWiring &wiring,
                                                   std::span<const WiringArgument> arguments,
                                                   const TypeMap *seed_type_map) const {
-    auto probe = details::probe_wiring_arguments(signature(), arguments);
+    auto temporary_records = details::WiringRecordOverlay{wiring};
+    auto probe = details::probe_wiring_arguments(signature(), arguments, temporary_records);
     auto resolution =
         signature().resolve_wiring_arguments(probe.arguments, probe.descriptors, seed_type_map);
     const auto requirement_result =

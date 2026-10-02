@@ -8,9 +8,15 @@ Wiring records materialize values. Node templates construct wired nodes.
 
 ## Wiring points
 
-A `WiringPoint` identifies a wiring record in its owning `GraphWiring`. A node
-call with an output returns a record for that output. Free collections use
-records that retain their item wiring points until a node consumes the
+A `WiringPoint` identifies a wiring record associated with one `GraphWiring`.
+The `GraphWiring` owns records that can contribute to the graph. Signature
+resolution can use records owned by a disposable overlay associated with the
+same `GraphWiring`. These records provide ordinary wiring points for type
+resolution and requirements, but cannot materialize or escape the operation
+that owns the overlay.
+
+A node call with an output returns a record for that output. Free collections
+use records that retain their item wiring points until a node consumes the
 collection. A call without an output returns `void`.
 
 A wiring record owns behavior required to materialize its value. Materialized

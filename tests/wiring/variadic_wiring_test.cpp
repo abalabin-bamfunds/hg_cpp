@@ -1,4 +1,6 @@
 #include <bg/graph.hpp>
+#include <bg/graph/details/normalized_wiring_arguments.hpp>
+#include <bg/graph/details/wiring_record_overlay.hpp>
 #include <bg/nested.hpp>
 #include <bg/node.hpp>
 #include <bg/operator.hpp>
@@ -210,6 +212,24 @@ TEST_CASE("a positional variadic graph preserves its arguments",
     });
 
     testing::test_wiring([&] { tested(1, 2); });
+}
+
+TEST_CASE("a resolution overlay owns temporary variadic wiring records",
+          "[feature:wiring][feature:variadic-wiring][series:tsb][schema:generic]") {
+    const auto source = node([](Out<TS<std::int64_t>>) {});
+    const auto candidate = graph("name"_n = "candidate", [](wp<TSB<SCHEMA>, var_args>) {});
+    auto wiring = GraphWiring{};
+    const auto context = WiringContext{wiring};
+    const auto supplied = std::array{WiringArgument{source()}, WiringArgument{source()}};
+    auto records = details::WiringRecordOverlay{wiring};
+
+    const auto normalized = details::probe_wiring_arguments(candidate.signature(), supplied, records);
+
+    REQUIRE(normalized.arguments.size() == 1);
+    const auto point = normalized.arguments.front().time_series();
+    CHECK(&point.graph() == &wiring);
+    CHECK_THROWS_WITH(details::materialize_wiring_point(point, point.type()),
+                      "a resolution-time wiring point cannot be materialized");
 }
 
 TEST_CASE("a named variadic graph finds its arguments",

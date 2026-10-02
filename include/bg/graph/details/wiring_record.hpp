@@ -14,6 +14,8 @@ class WiringPoint;
 
 namespace details {
 
+class WiringRecordOverlay;
+
 // Retains wiring-time behavior that is not represented by the semantic time series type.
 class WiringRecord {
   public:
@@ -32,6 +34,7 @@ class WiringRecord {
 
   private:
     friend class ::bg::GraphWiring;
+    friend class WiringRecordOverlay;
     friend WiringPoint materialize_wiring_point(WiringPoint point, const TimeSeriesType &type);
     friend void set_wired_output_runtime_type(WiringPoint output, const TimeSeriesRuntimeType &runtime_type);
     friend WiringPoint wiring_point_for_item(WiringPoint parent, item_id_t item,
@@ -39,8 +42,12 @@ class WiringRecord {
 
     virtual WiringPoint materialize(const TimeSeriesType &requested_type) const = 0;
 
+    static constexpr auto resolution_only = no_output - 1;
+    bool has_wired_output() const noexcept { return output_ != no_output && output_ != resolution_only; }
+
     GraphWiring *graph_{};
     const TimeSeriesType *type_;
+    // A wired output index, no_output, or resolution_only.
     std::size_t output_;
 };
 

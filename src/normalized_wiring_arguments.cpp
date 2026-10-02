@@ -2,6 +2,7 @@
 
 #include <bg/graph/context.hpp>
 #include <bg/graph/details/variadic_wiring_record.hpp>
+#include <bg/graph/details/wiring_record_overlay.hpp>
 #include <bg/graph/wiring_error.hpp>
 #include <bg/time_series/tsb/details/wiring.hpp>
 #include <bg/type/time_series_bundle_type.hpp>
@@ -128,7 +129,7 @@ std::vector<WiringArgument> prepare_arguments(const Signature &signature, std::s
 }
 
 NormalizedWiringArguments normalize_prepared(const Signature &signature, std::vector<WiringArgument> prepared_arguments,
-                                             allocator *memory) {
+                                             allocator *memory, WiringRecordOverlay *temporary_records) {
     const auto arguments = std::span<const WiringArgument>{prepared_arguments};
     const auto first_variadic = signature.first_variadic_parameter();
     if (!first_variadic) {
@@ -146,7 +147,7 @@ NormalizedWiringArguments normalize_prepared(const Signature &signature, std::ve
             normalized.push_back(std::move(value));
             descriptors.emplace_back(normalized.back());
         }
-        return {std::move(normalized), std::move(descriptors), {}};
+        return {std::move(normalized), std::move(descriptors)};
     }
 
     if (arguments.size() < *first_variadic) {
@@ -155,10 +156,13 @@ NormalizedWiringArguments normalize_prepared(const Signature &signature, std::ve
 
     auto normalized = std::vector<WiringArgument>{};
     auto descriptors = std::vector<WiringArgumentDescriptor>{};
-    auto probe_records = std::vector<std::unique_ptr<WiringRecord>>{};
     normalized.reserve(signature.parameter_count());
     descriptors.reserve(arguments.size());
-    probe_records.reserve(signature.parameter_count() - *first_variadic);
+
+    const auto add_record = [&](std::unique_ptr<WiringRecord> record) {
+        return temporary_records != nullptr ? temporary_records->add(std::move(record))
+                                            : add_wiring_record(std::move(record));
+    };
 
     for (const auto &argument : arguments.first(*first_variadic)) {
         normalized.push_back(wiring_argument_access::borrow(argument));
@@ -270,19 +274,9 @@ NormalizedWiringArguments normalize_prepared(const Signature &signature, std::ve
                                 operations.accepts_direct(static_cast<const TimeSeriesType &>(argument.type()));
             if (direct) {
                 const auto collection = argument.time_series();
-                if (memory != nullptr) {
-                    const auto point =
-                        add_wiring_record(std::make_unique<VariadicWiringRecord>(collection, mode, operations));
-                    const auto &record = *variadic_wiring_record(point);
-                    append_record_descriptors(record);
-                    normalized.emplace_back(point);
-                    return;
-                }
-
                 auto record = std::make_unique<VariadicWiringRecord>(collection, mode, operations);
                 append_record_descriptors(*record);
-                normalized.emplace_back(record->probe_point());
-                probe_records.push_back(std::move(record));
+                normalized.emplace_back(add_record(std::move(record)));
                 return;
             }
         }
@@ -315,20 +309,10 @@ NormalizedWiringArguments normalize_prepared(const Signature &signature, std::ve
             captured.push_back(wiring_argument_access::borrow(*argument));
         }
 
-        if (memory != nullptr) {
-            const auto point = add_wiring_record(std::make_unique<VariadicWiringRecord>(
-                static_cast<const TimeSeriesType &>(*parameter.type), mode, operations, std::move(captured), memory));
-            const auto &record = *variadic_wiring_record(point);
-            append_record_descriptors(record);
-            normalized.emplace_back(point);
-            return;
-        }
-
         auto record = std::make_unique<VariadicWiringRecord>(static_cast<const TimeSeriesType &>(*parameter.type), mode,
-                                                             operations, std::move(captured), nullptr);
+                                                             operations, std::move(captured), memory);
         append_record_descriptors(*record);
-        normalized.emplace_back(record->probe_point());
-        probe_records.push_back(std::move(record));
+        normalized.emplace_back(add_record(std::move(record)));
     };
 
     if (positional) {
@@ -338,13 +322,14 @@ NormalizedWiringArguments normalize_prepared(const Signature &signature, std::ve
         append_capture(*named);
     }
 
-    return {std::move(normalized), std::move(descriptors), std::move(probe_records)};
+    return {std::move(normalized), std::move(descriptors)};
 }
 
 NormalizedWiringArguments normalize(const Signature &signature, std::span<const WiringArgument> arguments,
-                                    allocator *memory, const Signature *parameter_aliases) {
+                                    allocator *memory, WiringRecordOverlay *temporary_records,
+                                    const Signature *parameter_aliases) {
     return normalize_prepared(signature, prepare_arguments(signature, arguments, memory != nullptr, parameter_aliases),
-                              memory);
+                              memory, temporary_records);
 }
 
 } // namespace
@@ -352,12 +337,13 @@ NormalizedWiringArguments normalize(const Signature &signature, std::span<const 
 NormalizedWiringArguments normalize_wiring_arguments(const Signature &signature,
                                                      std::span<const WiringArgument> arguments, allocator &memory,
                                                      const Signature *parameter_aliases) {
-    return normalize(signature, arguments, &memory, parameter_aliases);
+    return normalize(signature, arguments, &memory, nullptr, parameter_aliases);
 }
 
 NormalizedWiringArguments probe_wiring_arguments(const Signature &signature, std::span<const WiringArgument> arguments,
+                                                 WiringRecordOverlay &records,
                                                  const Signature *parameter_aliases) {
-    return normalize(signature, arguments, nullptr, parameter_aliases);
+    return normalize(signature, arguments, nullptr, &records, parameter_aliases);
 }
 
 } // namespace bg::details

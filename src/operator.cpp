@@ -2,6 +2,7 @@
 
 #include <bg/graph/context.hpp>
 #include <bg/graph/details/normalized_wiring_arguments.hpp>
+#include <bg/graph/details/wiring_record_overlay.hpp>
 #include <bg/graph/wiring_arguments.hpp>
 #include <bg/graph/wiring_context.hpp>
 #include <bg/graph/wiring_error.hpp>
@@ -316,6 +317,7 @@ std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const
     }
 
     if (cache_key) {
+        auto temporary_records = details::WiringRecordOverlay{wiring};
         for (const auto &entry : cache_->entries) {
             const auto seed_matches = entry.seed_type_map.has_value() == seed_key.has_value() &&
                                       (!seed_key || entry.seed_type_map->has_same_mappings(*seed_key));
@@ -329,8 +331,10 @@ std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const
             for (const auto &read : entry.scalar_reads) {
                 if (read.implementation != read_implementation) {
                     try {
-                        probe =
-                            details::probe_wiring_arguments(read.implementation->signature(), arguments, &prototype_);
+                        probe = {};
+                        temporary_records.clear();
+                        probe = details::probe_wiring_arguments(read.implementation->signature(), arguments,
+                                                                temporary_records, &prototype_);
                     } catch (const std::exception &) {
                         scalar_values_match = false;
                         break;
@@ -365,9 +369,7 @@ std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const
     struct Candidate {
         const WiringTemplate *implementation;
         SignatureResolution resolution;
-        std::vector<WiringArgument> arguments;
         std::vector<const Type *> argument_types;
-        std::vector<std::unique_ptr<details::WiringRecord>> probe_records;
     };
 
     auto applicable = std::vector<Candidate>{};
@@ -375,6 +377,7 @@ std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const
     auto scalar_reads = ScalarReads{};
     applicable.reserve(overloads_.size());
     failures.reserve(overloads_.size());
+    auto temporary_records = details::WiringRecordOverlay{wiring};
 
     for (auto variadic = false;; variadic = true) {
         for (const auto &implementation : overloads_) {
@@ -386,7 +389,9 @@ std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const
             auto normalized = details::NormalizedWiringArguments{};
             auto candidate_types = std::vector<const Type *>{};
             try {
-                normalized = details::probe_wiring_arguments(implementation->signature(), arguments, &prototype_);
+                temporary_records.clear();
+                normalized = details::probe_wiring_arguments(implementation->signature(), arguments,
+                                                             temporary_records, &prototype_);
             } catch (const std::exception &error) {
                 failures.push_back(failure(*implementation, WiringFailureStage::argument_count, error.what()));
                 continue;
@@ -426,8 +431,8 @@ std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const
                                                                          : std::string{requirement.message()}));
                 continue;
             }
-            applicable.push_back({implementation.get(), std::move(*resolution), std::move(normalized.arguments),
-                                  std::move(candidate_types), std::move(normalized.probe_records)});
+            applicable.push_back(
+                {implementation.get(), std::move(*resolution), std::move(candidate_types)});
         }
 
         if (!applicable.empty() || variadic) {

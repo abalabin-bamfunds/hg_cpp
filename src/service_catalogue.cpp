@@ -609,7 +609,6 @@ void ServiceCatalogue::BuildOperation::run() {
 
         if (!multiservice_candidates.empty()) {
             const auto index = multiservice_candidates.front();
-            const auto &registration = catalogue_.multiservice_registrations[index];
             if (multiservice_state_[index].wired) {
                 if (instance.service->implementation_requests_required() &&
                     !instance.implementation_requests_wired) {

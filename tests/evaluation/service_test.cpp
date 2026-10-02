@@ -241,7 +241,7 @@ TEST_CASE("service clients in map branches withdraw requests when branches stop"
         requests.for_each_added([&](const auto &) { ++added; });
         added_counts.push_back(added);
         auto removed = std::size_t{};
-        requests.for_each_removed([&](const auto &client_id) { ++removed; });
+        requests.for_each_removed([&](const auto &) { ++removed; });
         removed_counts.push_back(removed);
     });
     const auto implementation = graph(

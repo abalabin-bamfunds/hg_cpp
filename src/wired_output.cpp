@@ -42,7 +42,7 @@ void set_wired_output_runtime_type(WiringPoint output, const TimeSeriesRuntimeTy
 WiringPoint wiring_point_for_item(WiringPoint parent, item_id_t item, const TimeSeriesType &type) {
     const auto &parent_record = wiring_record(parent);
     auto &wiring = *parent_record.graph_;
-    if (parent_record.output_ == WiringRecord::no_output) {
+    if (!parent_record.has_wired_output()) {
         throw WiringError{"a wiring point must be materialized before selecting an item"};
     }
 

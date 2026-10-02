@@ -438,7 +438,7 @@ std::size_t GraphWiring::output_index(WiringPoint point) const {
     }
 
     const auto output = point.record_->output_;
-    if (output == details::WiringRecord::no_output) {
+    if (!point.record_->has_wired_output()) {
         throw WiringError{"a WiringPoint has no wired output until it is consumed"};
     }
 

@@ -4,6 +4,10 @@ Variadic parameters collect wiring-time arguments into a wiring record. The
 record preserves argument order, names, and whether each argument was supplied
 as a scalar or time series.
 
+Candidate resolution constructs each required record in a disposable wiring
+overlay. The selected call constructs its records in the active `GraphWiring`.
+Rejected candidates therefore do not add records to the graph.
+
 A signature can have one `var_args` parameter followed by one `var_kwargs`
 parameter. Both follow all fixed parameters. Either parameter may be omitted.
 `var_args` captures positional arguments. `var_kwargs` captures named arguments

@@ -932,7 +932,13 @@ void unbind_dynamic_reference_input(const CompiledNode &node, void *runtime_stor
 template <typename Definition, std::size_t... Index>
 void unbind_dynamic_reference_inputs(const CompiledNode &node, void *runtime_storage, EvaluationContext &context,
                                      std::index_sequence<Index...>) noexcept {
-    (unbind_dynamic_reference_input<Definition, Index>(node, runtime_storage, context), ...);
+    if constexpr (sizeof...(Index) == 0) {
+        (void)node;
+        (void)runtime_storage;
+        (void)context;
+    } else {
+        (unbind_dynamic_reference_input<Definition, Index>(node, runtime_storage, context), ...);
+    }
 }
 
 template <typename Definition>
