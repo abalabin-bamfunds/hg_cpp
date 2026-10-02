@@ -14,8 +14,6 @@ class WiringPoint;
 
 namespace details {
 
-class WiringRecordOverlay;
-
 // Retains wiring-time behavior that is not represented by the semantic time series type.
 class WiringRecord {
   public:
@@ -26,24 +24,26 @@ class WiringRecord {
     GraphWiring &wiring() const noexcept { return *graph_; }
     const TimeSeriesType &type() const noexcept { return *type_; }
 
-  protected:
-    explicit WiringRecord(const TimeSeriesType &type, std::size_t output = no_output) noexcept
-        : type_{&type}, output_{output} {}
+    // Associates a new record with its graph before exposing its wiring point.
+    void initialize(GraphWiring &wiring, std::size_t output = no_output) noexcept {
+        graph_ = &wiring;
+        output_ = output;
+    }
 
-    static WiringPoint point(const WiringRecord &record) noexcept;
-
-  private:
-    friend class ::bg::GraphWiring;
-    friend class WiringRecordOverlay;
+    bool has_wired_output() const noexcept { return output_ != no_output; }
+    std::size_t wired_output_index() const noexcept { return output_; }
 
     virtual WiringPoint materialize(const TimeSeriesType &requested_type) const = 0;
 
-    static constexpr auto resolution_only = no_output - 1;
-    bool has_wired_output() const noexcept { return output_ != no_output && output_ != resolution_only; }
+    static WiringPoint point(const WiringRecord &record) noexcept;
 
+  protected:
+    explicit WiringRecord(const TimeSeriesType &type) noexcept : type_{&type} {}
+
+  private:
     GraphWiring *graph_{};
     const TimeSeriesType *type_;
-    // A wired output index, no_output, or resolution_only.
+    // A wired output index or no_output.
     std::size_t output_;
 };
 

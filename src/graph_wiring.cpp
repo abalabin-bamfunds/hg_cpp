@@ -323,7 +323,7 @@ void GraphWiring::order_after_consumers(WiringPoint consumed, WiringPoint ordere
 }
 
 bool GraphWiring::input_consumes(WiredInput input, WiringPoint point) const noexcept {
-    if (!point.has_output() || point.record()->graph_ != this) {
+    if (!point.has_output() || &point.record()->wiring() != this) {
         return false;
     }
 
@@ -376,7 +376,7 @@ void GraphWiring::register_node_output(std::size_t node_index, WiringPoint outpu
 
 WiringPoint GraphWiring::register_record(std::unique_ptr<details::WiringRecord> record) {
     auto &result = *record;
-    result.graph_ = this;
+    result.initialize(*this);
     wiring_records_.push_back(std::move(record));
     return details::WiringRecord::point(result);
 }
@@ -411,8 +411,7 @@ WiringPoint GraphWiring::register_output(WiredOutput output, std::unique_ptr<det
                              fixed_memory_);
     }
 
-    result.graph_ = this;
-    result.output_ = output_index;
+    result.initialize(*this, output_index);
 
     outputs_.push_back(output);
     output_records_.push_back(&result);
@@ -437,12 +436,11 @@ std::size_t GraphWiring::output_index(WiringPoint point) const {
         throw WiringError{"a WiringPoint belongs to another GraphWiring"};
     }
 
-    const auto output = point.record()->output_;
     if (!point.record()->has_wired_output()) {
         throw WiringError{"a WiringPoint has no wired output until it is consumed"};
     }
 
-    return output;
+    return point.record()->wired_output_index();
 }
 
 } // namespace bg

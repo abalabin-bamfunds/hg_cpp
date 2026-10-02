@@ -214,7 +214,7 @@ TEST_CASE("a positional variadic graph preserves its arguments",
     testing::test_wiring([&] { tested(1, 2); });
 }
 
-TEST_CASE("a resolution overlay owns temporary variadic wiring records",
+TEST_CASE("a resolution overlay owns variadic wiring records used by probing",
           "[feature:wiring][feature:variadic-wiring][series:tsb][schema:generic]") {
     const auto source = node([](Out<TS<std::int64_t>>) {});
     const auto candidate = graph("name"_n = "candidate", [](wp<TSB<SCHEMA>, var_args>) {});
@@ -228,8 +228,7 @@ TEST_CASE("a resolution overlay owns temporary variadic wiring records",
     REQUIRE(normalized.arguments.size() == 1);
     const auto point = normalized.arguments.front().time_series();
     CHECK(&point.graph() == &wiring);
-    CHECK_THROWS_WITH(wiring.materialize(point, point.type()),
-                      "a resolution-time wiring point cannot be materialized");
+    CHECK(candidate.signature().parameter(0).type->accepts(point.type()));
 }
 
 TEST_CASE("a named variadic graph finds its arguments",

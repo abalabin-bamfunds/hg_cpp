@@ -22,8 +22,7 @@ WiringRecordOverlay::~WiringRecordOverlay() = default;
 
 WiringPoint WiringRecordOverlay::add(std::unique_ptr<WiringRecord> record) {
     auto &result = *record;
-    result.graph_ = wiring_;
-    result.output_ = WiringRecord::resolution_only;
+    result.initialize(*wiring_);
     records_.push_back(std::move(record));
     return WiringRecord::point(result);
 }
@@ -49,10 +48,7 @@ WiringPoint GraphWiring::materialize(WiringPoint point, const TimeSeriesType &ty
     using details::WiringRecord;
 
     const auto &record = *point.record();
-    if (record.output_ == WiringRecord::resolution_only) {
-        throw WiringError{"a resolution-time wiring point cannot be materialized"};
-    }
-    if (record.graph_ != this) {
+    if (&record.wiring() != this) {
         throw WiringError{"a WiringPoint belongs to another GraphWiring"};
     }
 
@@ -65,7 +61,7 @@ WiringPoint GraphWiring::materialize(WiringPoint point, const TimeSeriesType &ty
 
     const auto result = record.materialize(type);
     const auto &result_record = *result.record();
-    if (result_record.graph_ != this) {
+    if (&result_record.wiring() != this) {
         throw WiringError{"wiring-point materialization returned a wiring point from another graph wiring"};
     }
     if (!result_record.has_wired_output()) {
