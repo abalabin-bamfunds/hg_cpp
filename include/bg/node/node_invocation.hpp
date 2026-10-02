@@ -175,9 +175,11 @@ template <typename CompiledData = void, typename State = void> class NodeInvocat
                 activity = runtime_node.input_activity(ControlledInputIndex);
             }
         }
-        return Input{runtime_node.input_last_updated(parameter_index), runtime_node.input_value(parameter_index),
+        const auto input = runtime_node.input_data(parameter_index);
+        return Input{*input.last_updated, input.value,
                      runtime_node.time_series_input_runtime_type(parameter_index, runtime_type_index),
-                     runtime_node.input_modified(parameter_index, context_->evaluation_time()), activity};
+                     context_->evaluation_time() > MIN_DT && *input.last_updated == context_->evaluation_time(),
+                     activity};
     }
 
     NodeInvocationScalar scalar(std::size_t parameter_index, std::size_t runtime_type_index) const noexcept {

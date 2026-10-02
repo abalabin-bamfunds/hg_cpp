@@ -367,7 +367,8 @@ ResolvedTimeSeries ResolvedTimeSeries::resolve(Reference reference) {
         if (root->references_output()) {
             return {&node.output_last_updated(), node.output_value(), root->referenced_runtime_type};
         }
-        return {&node.input_last_updated(0), node.input_value(0), root->referenced_runtime_type};
+        const auto input = node.input_data(0);
+        return {input.last_updated, input.value, root->referenced_runtime_type};
     }
     if (const auto *representation = reference.get<RepresentationReference>()) {
         return ReferenceProvider::get(reference)->resolve_representation(representation->representation_index());
