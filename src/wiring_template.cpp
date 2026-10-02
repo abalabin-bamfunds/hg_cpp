@@ -43,7 +43,7 @@ std::optional<WiringPoint> WiringTemplate::invoke(GraphWiring &wiring,
     }
 
     const auto path_name = resolution.signature.name;
-    auto committed = details::normalize_wiring_arguments(signature(), arguments, wiring.allocator_);
+    auto committed = details::normalize_wiring_arguments(signature(), arguments, wiring.allocation());
     return invoke_resolved(wiring, std::move(resolution), committed.arguments, path_name);
 }
 

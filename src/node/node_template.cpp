@@ -1,6 +1,5 @@
 #include <bg/node/node_template.hpp>
 
-#include <bg/graph/details/wired_output.hpp>
 #include <bg/graph/details/wiring_record.hpp>
 #include <bg/graph/graph_wiring.hpp>
 #include <bg/graph/wiring_context.hpp>
@@ -78,7 +77,7 @@ std::optional<WiringPoint> NodeTemplate::wire(GraphWiring &wiring, ResolvedSigna
     auto materialized_arguments = std::vector<WiringArgument>{};
     materialized_arguments.reserve(arguments.size());
     for (const auto &argument : arguments) {
-        materialized_arguments.push_back(details::wiring_argument_access::borrow(argument));
+        materialized_arguments.push_back(WiringArgument::borrow(argument));
     }
 
     auto inputs = std::vector<WiredInput>{};
@@ -119,16 +118,16 @@ std::optional<WiringPoint> NodeTemplate::wire(GraphWiring &wiring, ResolvedSigna
             }
 
             scalar_values.push_back(
-                WiredScalar{details::wiring_argument_access::scalar_runtime_type(argument), nullptr});
+                WiredScalar{argument.scalar_runtime_type(), nullptr});
             continue;
         }
 
         const auto scalar = argument.scalar();
         const auto &runtime_type = scalar.runtime_type();
         auto scalar_memory = wiring.variable_allocator(runtime_type);
-        auto *data = wiring.fixed_memory_.allocate(runtime_type.size(), runtime_type.alignment());
+        auto *data = wiring.allocate_fixed(runtime_type.size(), runtime_type.alignment());
         auto release_data = util::scope_exit{
-            [&]() noexcept { wiring.fixed_memory_.deallocate(data, runtime_type.size(), runtime_type.alignment()); }};
+            [&]() noexcept { wiring.deallocate_fixed(data, runtime_type.size(), runtime_type.alignment()); }};
 
         runtime_type.construct_from_input(data, scalar, scalar_memory);
 
@@ -156,7 +155,7 @@ std::optional<WiringPoint> NodeTemplate::wire(GraphWiring &wiring, ResolvedSigna
     }
 
     const auto output =
-        details::add_wired_output(wiring, {node_index, WiredOutput::npos, 0, wiring.nodes_.back().signature().output});
+        wiring.register_output({node_index, WiredOutput::npos, 0, wiring.nodes().back().signature().output});
     wiring.register_node_output(node_index, output, hash);
     return output;
 }

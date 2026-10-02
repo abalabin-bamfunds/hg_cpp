@@ -52,33 +52,32 @@ template <typename Graph, details::graph_code_argument Run, details::graph_code_
                 if (record.direct_collection()) {
                     const auto &type = static_cast<const TimeSeriesType &>(*resolved.parameters[i].type);
                     const auto input = details::wire_nested_input(type);
-                    input_nodes.push_back(details::wired_output_node_index(*inner_wiring, input));
+                    input_nodes.push_back(inner_wiring->output_node_index(input));
                     auto argument = WiringArgument{input};
-                    details::wiring_argument_access::set_variadic_name(argument, resolved.parameters[i].name,
-                                                                       resolved.parameters[i].variadic_mode);
+                    argument.set_variadic_name(resolved.parameters[i].name, resolved.parameters[i].variadic_mode);
                     inner_arguments.push_back(std::move(argument));
                     continue;
                 }
 
                 for (auto item = std::size_t{}; item < record.size(); ++item) {
                     auto argument = record.argument(item);
-                    inner_arguments.push_back(details::wiring_argument_access::borrow(argument));
+                    inner_arguments.push_back(WiringArgument::borrow(argument));
                     if (argument.is_time_series()) {
                         const auto &type = static_cast<const TimeSeriesType &>(argument.type());
                         const auto input = details::wire_nested_input(type);
-                        input_nodes.push_back(details::wired_output_node_index(*inner_wiring, input));
-                        details::wiring_argument_access::replace_time_series(inner_arguments.back(), input);
+                        input_nodes.push_back(inner_wiring->output_node_index(input));
+                        inner_arguments.back().replace_time_series(input);
                     }
                 }
                 continue;
             }
 
-            inner_arguments.push_back(details::wiring_argument_access::borrow(normalized[i]));
+            inner_arguments.push_back(WiringArgument::borrow(normalized[i]));
             if (resolved.parameters[i].type->is_time_series()) {
                 const auto &type = static_cast<const TimeSeriesType &>(*resolved.parameters[i].type);
                 const auto input = details::wire_nested_input(type);
-                input_nodes.push_back(details::wired_output_node_index(*inner_wiring, input));
-                details::wiring_argument_access::replace_time_series(inner_arguments.back(), input);
+                input_nodes.push_back(inner_wiring->output_node_index(input));
+                inner_arguments.back().replace_time_series(input);
             }
         }
 
@@ -86,7 +85,7 @@ template <typename Graph, details::graph_code_argument Run, details::graph_code_
             resolution.type_map, std::span<const WiringArgument>{inner_arguments});
         const auto boundary_output =
             details::wire_nested_output(output, static_cast<const TimeSeriesType &>(*resolved.output));
-        output_node = details::wired_output_node_index(*inner_wiring, boundary_output);
+        output_node = inner_wiring->output_node_index(boundary_output);
     }
 
     auto flattened = ResolvedSignature{resolved.name, {}, resolved.output};
@@ -154,18 +153,18 @@ template <typename Graph, details::graph_code_argument Run, details::graph_code_
                 if (argument.is_scalar()) {
                     continue;
                 }
-                outer_arguments.push_back(details::wiring_argument_access::borrow(argument));
-                details::wiring_argument_access::clear_name(outer_arguments.back());
+                outer_arguments.push_back(WiringArgument::borrow(argument));
+                outer_arguments.back().clear_name();
             }
             continue;
         }
-        outer_arguments.push_back(details::wiring_argument_access::borrow(normalized[index]));
+        outer_arguments.push_back(WiringArgument::borrow(normalized[index]));
     }
     for (const auto provider : inherited_providers) {
         outer_arguments.emplace_back(provider);
     }
     auto output_point = *owned_nested(std::span<const WiringArgument>{outer_arguments});
-    const auto node_index = details::wired_output_node_index(outer_wiring, output_point);
+    const auto node_index = outer_wiring.output_node_index(output_point);
     outer_wiring.register_nested_service_consumers(*inner_graph_wiring, node_index);
     return wp<REF<Target>>{output_point};
 }

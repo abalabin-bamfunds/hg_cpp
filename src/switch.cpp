@@ -93,8 +93,8 @@ class SwitchGraphArgumentBuilder {
             outer_parameter_indices_.push_back({index, parameter_index});
             parameters_.push_back({argument.name().value_or(util::symbol{std::to_string(index)}), &reference, active,
                                    optional, false, VariadicMode::none});
-            auto stored = wiring_argument_access::borrow(argument);
-            wiring_argument_access::clear_name(stored);
+            auto stored = WiringArgument::borrow(argument);
+            stored.clear_name();
             outer_arguments_.push_back(std::move(stored));
         }
     }
@@ -113,8 +113,8 @@ class SwitchGraphArgumentBuilder {
             auto selected = std::vector<SelectedArgument>{};
             selected.reserve(arguments_.size());
             for (auto index = std::size_t{}; index < arguments_.size(); ++index) {
-                auto value = wiring_argument_access::borrow(arguments_[index]);
-                wiring_argument_access::clear_name(value);
+                auto value = WiringArgument::borrow(arguments_[index]);
+                value.clear_name();
                 selected.push_back({index, std::move(value)});
             }
             return selected;
@@ -148,8 +148,8 @@ class SwitchGraphArgumentBuilder {
             }
 
             used[supplied_index] = true;
-            auto value = wiring_argument_access::borrow(arguments_[supplied_index]);
-            wiring_argument_access::clear_name(value);
+            auto value = WiringArgument::borrow(arguments_[supplied_index]);
+            value.clear_name();
             selected.push_back({supplied_index, std::move(value)});
         }
 
@@ -162,7 +162,7 @@ class SwitchGraphArgumentBuilder {
                     continue;
                 }
                 used[index] = true;
-                selected.push_back({index, wiring_argument_access::borrow(arguments_[index])});
+                selected.push_back({index, WiringArgument::borrow(arguments_[index])});
             }
         };
         append_remaining(VariadicMode::positional);
@@ -274,11 +274,10 @@ class SwitchGraphArgumentBuilder {
             const auto boundary = wire_nested_input(target);
             boundaries.push_back(boundary);
             boundary_inputs.push_back(
-                {outer_parameter_index(argument.supplied_index), wired_output_node_index(*wiring, boundary)});
+                {outer_parameter_index(argument.supplied_index), wiring->output_node_index(boundary)});
             auto inner = WiringArgument{boundary};
             if (const auto name = argument.value.name()) {
-                wiring_argument_access::set_variadic_name(
-                    inner, *name, wiring_argument_access::variadic_capture_mode(argument.value));
+                inner.set_variadic_name(*name, argument.value.variadic_capture_mode());
             }
             graph_arguments.push_back(std::move(inner));
         }
@@ -289,7 +288,7 @@ class SwitchGraphArgumentBuilder {
         const TimeSeriesType *target{};
         if (result) {
             const auto output = wire_nested_output(*result, result->type());
-            output_node = wired_output_node_index(*wiring, output);
+            output_node = wiring->output_node_index(output);
             structure_result = output;
             target = &type_cast<TimeSeriesReferenceType>(output.type()).target_type();
         }
@@ -400,7 +399,7 @@ GraphArgument build_switch_graph_argument(WiringPoint key, std::span<const Wirin
 }
 
 const DefaultSwitchWiring &DefaultSwitchWiring::from(const GraphArgument &argument) {
-    const auto wiring = graph_argument_access::payload<DefaultSwitchWiring>(argument);
+    const auto wiring = argument.payload<DefaultSwitchWiring>();
     if (!wiring) {
         throw WiringError{"the default switch overload requires prepared switch cases"};
     }
@@ -413,7 +412,7 @@ std::optional<WiringPoint> DefaultSwitchWiring::wire() const {
     const auto &owned = outer.own_node_template(std::move(node_template));
     const auto next_node_index = outer.nodes().size();
     auto result = owned(std::span<const WiringArgument>{outer_arguments});
-    const auto node_index = result ? wired_output_node_index(outer, *result) : next_node_index;
+    const auto node_index = result ? outer.output_node_index(*result) : next_node_index;
     for (const auto &branch : node.cases) {
         outer.register_nested_service_consumers(*branch.branch.wiring, node_index);
     }

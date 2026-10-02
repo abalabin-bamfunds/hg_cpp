@@ -170,7 +170,7 @@ WiringDiagnostic diagnostic(const Signature &prototype, std::vector<util::symbol
                                                                                 : util::symbol{std::to_string(index)});
         auto type_owner =
             supplied[index].is_graph()
-                ? std::shared_ptr<const Type>{details::graph_argument_access::type_owner(supplied[index].graph())}
+                ? std::shared_ptr<const Type>{supplied[index].graph().exact_type_ptr()}
                 : std::shared_ptr<const Type>{};
         arguments.push_back({name, &supplied[index].type(), std::move(type_owner)});
     }
@@ -210,7 +210,7 @@ std::optional<std::vector<ArgumentKey>> argument_key(std::span<const WiringArgum
         if (!graph.exact_type().cacheable_constraint()) {
             return std::nullopt;
         }
-        result.push_back({nullptr, details::graph_argument_access::type_owner(graph), true, argument.name()});
+        result.push_back({nullptr, graph.exact_type_ptr(), true, argument.name()});
     }
 
     return result;
@@ -301,8 +301,7 @@ std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const
 
                 const auto explicit_argument = std::ranges::any_of(arguments, [&](const auto &argument) {
                     return argument.name() == std::optional{parameter.name} &&
-                           details::wiring_argument_access::variadic_capture_mode(argument) ==
-                               details::VariadicMode::none;
+                           argument.variadic_capture_mode() == details::VariadicMode::none;
                 });
                 const auto implicit =
                     explicit_argument ? std::optional<WiringArgument>{} : details::ContextScope::find(parameter.name);
@@ -355,7 +354,7 @@ std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const
             auto committed = details::NormalizedWiringArguments{};
             try {
                 committed = details::normalize_wiring_arguments(entry.implementation->signature(), arguments,
-                                                                wiring.allocator_, &prototype_);
+                                                                wiring.allocation(), &prototype_);
             } catch (const std::exception &) {
                 continue;
             }
@@ -476,7 +475,7 @@ std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const
     }
 
     auto committed = details::normalize_wiring_arguments(selected->implementation->signature(), arguments,
-                                                         wiring.allocator_, &prototype_);
+                                                         wiring.allocation(), &prototype_);
     return invoke_resolved(wiring, *selected->implementation, std::move(selected->resolution), committed.arguments,
                            prototype_.name());
 }

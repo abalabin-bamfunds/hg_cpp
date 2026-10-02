@@ -3,8 +3,8 @@
 #include <bg/evaluation_context.hpp>
 #include <bg/graph/compiled_node.hpp>
 #include <bg/graph/details/variadic_wiring_operations.hpp>
-#include <bg/graph/details/wired_output.hpp>
 #include <bg/graph/details/wiring_record.hpp>
+#include <bg/graph/graph_wiring.hpp>
 #include <bg/graph/runtime_graph.hpp>
 #include <bg/graph/wiring_error.hpp>
 #include <bg/node/node_template.hpp>
@@ -107,7 +107,7 @@ WiringPoint materialize_fixed_time_series_list(std::span<const WiringPoint> item
                                                const TimeSeriesListType &type) {
     const auto &runtime_type = free_fixed_time_series_list_runtime_type(type);
     const auto result = *free_fixed_time_series_list_node_template(type)(items);
-    set_wired_output_runtime_type(result, runtime_type);
+    wiring_record(result).wiring().set_output_runtime_type(result, runtime_type);
     return result;
 }
 
@@ -129,7 +129,7 @@ class FreeFixedTimeSeriesListWiringRecord final : public WiringRecord {
         }
 
         const auto result = materialize_fixed_time_series_list(items_, *list);
-        return materialize_wiring_point(result, target_type);
+        return wiring().materialize(result, target_type);
     }
 
     std::vector<WiringPoint> items_;
@@ -143,9 +143,10 @@ class TimeSeriesListItemWiringRecord final : public WiringRecord {
   private:
     WiringPoint materialize(const TimeSeriesType &requested_type) const override {
         const auto &type = type_cast<TimeSeriesListType>(list_.type().target_type());
-        const auto list = materialize_wiring_point(list_, type);
-        const auto item = wiring_point_for_item(list, item_, this->type());
-        return materialize_wiring_point(item, requested_type);
+        auto &graph_wiring = wiring();
+        const auto list = graph_wiring.materialize(list_, type);
+        const auto item = graph_wiring.output_item(list, item_, this->type());
+        return graph_wiring.materialize(item, requested_type);
     }
 
     WiringPoint list_;
@@ -180,10 +181,9 @@ class TimeSeriesListVariadicWiringOperations final : public VariadicWiringOperat
             }
 
             const auto name = util::symbol{std::to_string(item_types.size())};
-            wiring_argument_access::set_variadic_name(argument, name, VariadicMode::positional);
+            argument.set_variadic_name(name, VariadicMode::positional);
             item_types.push_back(&argument.time_series().type());
-            captured.push_back(memory == nullptr ? wiring_argument_access::borrow(argument)
-                                                 : wiring_argument_access::clone(argument, *memory));
+            captured.push_back(memory == nullptr ? WiringArgument::borrow(argument) : argument.clone(*memory));
         }
 
         if (!item_types.empty()) {
@@ -250,7 +250,7 @@ class TimeSeriesListVariadicWiringOperations final : public VariadicWiringOperat
         }
 
         const auto result = materialize_fixed_time_series_list(items, *list);
-        return materialize_wiring_point(result, target_type);
+        return wiring_record(result).wiring().materialize(result, target_type);
     }
 };
 

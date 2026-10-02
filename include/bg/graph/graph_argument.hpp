@@ -13,10 +13,6 @@
 #include <variant>
 #include <vector>
 
-namespace bg::details {
-struct graph_argument_access;
-}
-
 namespace bg {
 
 class WiringTemplate;
@@ -112,9 +108,16 @@ class GraphArgument {
         return *structure;
     }
 
-  private:
-    friend struct details::graph_argument_access;
+    const std::shared_ptr<const GraphArgumentType> &exact_type_ptr() const noexcept { return type_; }
 
+    template <typename Payload> std::shared_ptr<const Payload> payload() const {
+        if (*payload_type_ != typeid(Payload)) {
+            return {};
+        }
+        return std::static_pointer_cast<const Payload>(payload_);
+    }
+
+  private:
     std::shared_ptr<const GraphArgumentType> type_;
     std::shared_ptr<const void> payload_;
     const std::type_info *payload_type_;
@@ -123,19 +126,6 @@ class GraphArgument {
 } // namespace bg
 
 namespace bg::details {
-
-struct graph_argument_access {
-    static const std::shared_ptr<const GraphArgumentType> &type_owner(const GraphArgument &argument) noexcept {
-        return argument.type_;
-    }
-
-    template <typename Payload> static std::shared_ptr<const Payload> payload(const GraphArgument &argument) {
-        if (*argument.payload_type_ != typeid(Payload)) {
-            return {};
-        }
-        return std::static_pointer_cast<const Payload>(argument.payload_);
-    }
-};
 
 template <typename T>
 concept graph_argument_facade = requires(const std::remove_cvref_t<T> &value) {

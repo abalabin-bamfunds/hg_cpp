@@ -676,14 +676,15 @@ void ServiceCatalogue::BuildOperation::run() {
 }
 
 void ServiceCatalogue::build(GraphWiring &wiring) const {
-    if (wiring.parent_ != nullptr) {
+    if (!wiring.is_root()) {
         throw std::invalid_argument{"services can only be built on the root GraphWiring"};
     }
-    if (!wiring.service_requirements_) {
+    auto *requirements = wiring.service_requirements();
+    if (requirements == nullptr) {
         return;
     }
 
-    BuildOperation{*state_, wiring, *wiring.service_requirements_}.run();
+    BuildOperation{*state_, wiring, *requirements}.run();
 }
 
 } // namespace bg

@@ -27,7 +27,7 @@ ContextScope::~ContextScope() {
 std::optional<WiringArgument> ContextScope::find(util::symbol name) {
     for (auto *scope = static_cast<ContextScope *>(active_scope().get()); scope != nullptr; scope = scope->previous_) {
         if (scope->name() == name) {
-            return wiring_argument_access::borrow(scope->argument());
+            return WiringArgument::borrow(scope->argument());
         }
     }
     return std::nullopt;
@@ -42,7 +42,7 @@ std::optional<WiringArgument> ContextScope::import(util::symbol name) {
     auto &wiring = WiringContext::current().wiring();
     const auto point = result->time_series();
     if (&point.graph() != &wiring) {
-        wiring_argument_access::replace_time_series(*result, wiring.import_context(name, point));
+        result->replace_time_series(wiring.import_context(name, point));
     }
     return result;
 }
@@ -54,7 +54,7 @@ ContextScopes::ContextScopes(const ResolvedSignature &signature, std::span<const
             const auto &parameter = signature.parameters[index];
             if (parameter.context) {
                 scopes_.push_back(
-                    std::make_unique<ContextScope>(parameter.name, wiring_argument_access::borrow(arguments[index])));
+                    std::make_unique<ContextScope>(parameter.name, WiringArgument::borrow(arguments[index])));
             }
         }
     } catch (...) {

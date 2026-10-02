@@ -21,8 +21,6 @@
 
 namespace bg::details {
 
-struct wiring_argument_access;
-
 template <typename T>
 inline constexpr bool supported_scalar_argument =
     scalar_declaration_traits<std::remove_cvref_t<T>>::supports_implicit_argument &&
@@ -195,7 +193,6 @@ class WiringArgument {
         return std::get<GraphArgument>(value_);
     }
 
-  private:
     static WiringArgument borrow(const WiringArgument &other) {
         auto result = WiringArgument{copy_value(other)};
         result.name_ = other.name_;
@@ -212,13 +209,37 @@ class WiringArgument {
         }
         std::get<TimeSeriesArgument>(value_).resolution_type = &type;
     }
-    const ScalarType &scalar_type() const noexcept {
-        const auto &scalar = std::get<ScalarArgument>(value_);
-        return scalar.owned ? scalar.owned->type() : *scalar.type;
+
+    details::VariadicMode variadic_capture_mode() const noexcept { return variadic_capture_mode_; }
+    void set_variadic_name(util::symbol name, details::VariadicMode mode) noexcept {
+        name_ = name;
+        variadic_capture_mode_ = mode;
     }
+    void match_fixed_parameter_by_name() noexcept { match_fixed_parameter_by_name_ = true; }
+    bool matches_fixed_parameter_by_name() const noexcept { return match_fixed_parameter_by_name_; }
+
     const ScalarRuntimeType &scalar_runtime_type() const noexcept {
         const auto &scalar = std::get<ScalarArgument>(value_);
         return scalar.owned ? scalar.owned->runtime_type() : *scalar.runtime_type;
+    }
+
+    WiringArgument clone(allocator &memory) const {
+        if (!is_scalar() || !scalar_has_value()) {
+            return *this;
+        }
+
+        auto result = WiringArgument{ScalarArgument{scalar_type(), scalar_runtime_type()}};
+        std::get<ScalarArgument>(result.value_).owned.emplace(scalar(), memory);
+        result.name_ = name_;
+        result.variadic_capture_mode_ = variadic_capture_mode_;
+        result.match_fixed_parameter_by_name_ = match_fixed_parameter_by_name_;
+        return result;
+    }
+
+  private:
+    const ScalarType &scalar_type() const noexcept {
+        const auto &scalar = std::get<ScalarArgument>(value_);
+        return scalar.owned ? scalar.owned->type() : *scalar.type;
     }
     const void *scalar_data() const noexcept { return std::get<ScalarArgument>(value_).data; }
     const details::ScalarData *scalar_view() const noexcept {
@@ -236,21 +257,6 @@ class WiringArgument {
         }
         return ScalarArgument{other.scalar_type(), other.scalar_runtime_type(), other.scalar_data(),
                               other.scalar_view()};
-    }
-
-    friend struct details::wiring_argument_access;
-
-    WiringArgument clone(allocator &memory) const {
-        if (!is_scalar() || !scalar_has_value()) {
-            return *this;
-        }
-
-        auto result = WiringArgument{ScalarArgument{scalar_type(), scalar_runtime_type()}};
-        std::get<ScalarArgument>(result.value_).owned.emplace(scalar(), memory);
-        result.name_ = name_;
-        result.variadic_capture_mode_ = variadic_capture_mode_;
-        result.match_fixed_parameter_by_name_ = match_fixed_parameter_by_name_;
-        return result;
     }
 
     explicit WiringArgument(ScalarArgument scalar) : value_(std::move(scalar)) {}
@@ -287,34 +293,6 @@ class WiringArgument {
 } // namespace bg
 
 namespace bg::details {
-
-struct wiring_argument_access {
-    static WiringArgument borrow(const WiringArgument &argument) { return WiringArgument::borrow(argument); }
-    static void clear_name(WiringArgument &argument) noexcept { argument.clear_name(); }
-    static void replace_time_series(WiringArgument &argument, WiringPoint point) {
-        argument.replace_time_series(point);
-    }
-    static void set_resolution_type(WiringArgument &argument, const TimeSeriesType &type) {
-        argument.set_resolution_type(type);
-    }
-    static VariadicMode variadic_capture_mode(const WiringArgument &argument) noexcept {
-        return argument.variadic_capture_mode_;
-    }
-    static void set_variadic_name(WiringArgument &argument, util::symbol name, VariadicMode mode) noexcept {
-        argument.name_ = name;
-        argument.variadic_capture_mode_ = mode;
-    }
-    static void match_fixed_parameter_by_name(WiringArgument &argument) noexcept {
-        argument.match_fixed_parameter_by_name_ = true;
-    }
-    static bool matches_fixed_parameter_by_name(const WiringArgument &argument) noexcept {
-        return argument.match_fixed_parameter_by_name_;
-    }
-    static const ScalarRuntimeType &scalar_runtime_type(const WiringArgument &argument) noexcept {
-        return argument.scalar_runtime_type();
-    }
-    static WiringArgument clone(const WiringArgument &argument, allocator &memory) { return argument.clone(memory); }
-};
 
 template <typename T>
 concept graph_code_argument_value =

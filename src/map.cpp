@@ -241,7 +241,7 @@ GraphArgument build_map_graph_argument(const WiringTemplate &function, ResolvedM
 }
 
 const DefaultMapWiring &DefaultMapWiring::from(const GraphArgument &argument) {
-    const auto wiring = graph_argument_access::payload<DefaultMapWiring>(argument);
+    const auto wiring = argument.payload<DefaultMapWiring>();
     if (!wiring) {
         throw WiringError{"the default map overload requires a map graph argument"};
     }
@@ -256,15 +256,15 @@ std::optional<WiringPoint> DefaultMapWiring::wire() const {
     auto arguments = outer_arguments;
     if (dictionary_key_set_parameter) {
         auto &key_set = arguments[*dictionary_key_set_parameter];
-        const auto materialized = materialize_wiring_point(key_set.time_series(), key_set.time_series().type());
+        const auto materialized = outer.materialize(key_set.time_series(), key_set.time_series().type());
         const auto &key_set_type =
             static_cast<const TimeSeriesType &>(*outer_signature.parameters[*dictionary_key_set_parameter].type);
-        key_set = WiringArgument{wiring_point_for_item(materialized, key_set_item_id, key_set_type)};
+        key_set = WiringArgument{outer.output_item(materialized, key_set_item_id, key_set_type)};
     }
 
     const auto next_node_index = outer.nodes().size();
     auto result = owned(std::span<const WiringArgument>{arguments});
-    const auto node_index = result ? wired_output_node_index(outer, *result) : next_node_index;
+    const auto node_index = result ? outer.output_node_index(*result) : next_node_index;
     outer.register_nested_service_consumers(*graph.wiring, node_index);
     return result;
 }

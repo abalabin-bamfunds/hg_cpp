@@ -122,14 +122,14 @@ wp<TSD<std::int64_t, REF<TS<i64>>>> wire_map(wp<TSD<std::int64_t, REF<TS<i64>>>>
     {
         auto context = WiringContext{*inner};
         const auto value = details::wire_nested_input(TS<i64>::type());
-        value_node = details::wired_output_node_index(*inner, value);
+        value_node = inner->output_node_index(value);
 
         const auto key = details::wire_nested_constant_input(TS<std::int64_t, TimeSeriesGuarantee::const_>::type());
-        key_node = details::wired_output_node_index(*inner, key);
+        key_node = inner->output_node_index(key);
 
         const auto result = add_key(wp<REF<TS<i64>>>{value}, wp<TS<std::int64_t, TimeSeriesGuarantee::const_>>{key});
         const auto output = details::wire_nested_output(result, TS<i64>::type());
-        output_node = details::wired_output_node_index(*inner, output);
+        output_node = inner->output_node_index(output);
     }
 
     auto signature = ResolvedSignature{
@@ -160,13 +160,13 @@ wp<TSD<std::int64_t, REF<TS<i64>>>> wire_union_map(wp<TSD<std::int64_t, REF<TS<i
     {
         auto context = WiringContext{*inner};
         const auto left_input = details::wire_nested_input(TS<i64>::type());
-        left_node = details::wired_output_node_index(*inner, left_input);
+        left_node = inner->output_node_index(left_input);
         const auto right_input = details::wire_nested_input(TS<i64>::type());
-        right_node = details::wired_output_node_index(*inner, right_input);
+        right_node = inner->output_node_index(right_input);
 
         const auto result = add_available(wp<REF<TS<i64>>>{left_input}, wp<REF<TS<i64>>>{right_input});
         const auto output = details::wire_nested_output(result, TS<i64>::type());
-        output_node = details::wired_output_node_index(*inner, output);
+        output_node = inner->output_node_index(output);
     }
 
     auto signature = ResolvedSignature{
@@ -200,9 +200,9 @@ wp<TSD<std::int64_t, REF<TS<std::int64_t, TimeSeriesGuarantee::const_>>>> wire_s
     {
         auto context = WiringContext{*inner};
         const auto key = details::wire_nested_constant_input(TS<std::int64_t, TimeSeriesGuarantee::const_>::type());
-        key_node = details::wired_output_node_index(*inner, key);
+        key_node = inner->output_node_index(key);
         const auto output = details::wire_nested_output(key, TS<std::int64_t, TimeSeriesGuarantee::const_>::type());
-        output_node = details::wired_output_node_index(*inner, output);
+        output_node = inner->output_node_index(output);
     }
 
     auto signature = ResolvedSignature{
@@ -227,7 +227,7 @@ void wire_source_sink_map(wp<TSS<std::int64_t>> keys) {
     {
         auto context = WiringContext{*inner};
         const auto key = details::wire_nested_constant_input(TS<std::int64_t, TimeSeriesGuarantee::const_>::type());
-        key_node = details::wired_output_node_index(*inner, key);
+        key_node = inner->output_node_index(key);
     }
 
     auto signature = ResolvedSignature{
@@ -253,10 +253,10 @@ wp<TSD<std::int64_t, REF<TS<i64>>>> wire_delayed_map(wp<TSD<std::int64_t, REF<TS
     {
         auto context = WiringContext{*inner};
         const auto value = details::wire_nested_input(TS<i64>::type());
-        value_node = details::wired_output_node_index(*inner, value);
+        value_node = inner->output_node_index(value);
         const auto result = delayed_value(wp<REF<TS<i64>>>{value});
         const auto output = details::wire_nested_output(result, TS<i64>::type());
-        output_node = details::wired_output_node_index(*inner, output);
+        output_node = inner->output_node_index(output);
     }
 
     auto signature = ResolvedSignature{
@@ -284,10 +284,10 @@ wp<TSD<std::int64_t, REF<TS<i64>>>> wire_variable_delayed_map(wp<TSD<std::int64_
     {
         auto context = WiringContext{*inner};
         const auto value = details::wire_nested_input(TS<i64>::type());
-        value_node = details::wired_output_node_index(*inner, value);
+        value_node = inner->output_node_index(value);
         const auto result = variable_delay(wp<REF<TS<i64>>>{value});
         const auto output = details::wire_nested_output(result, TS<i64>::type());
-        output_node = details::wired_output_node_index(*inner, output);
+        output_node = inner->output_node_index(output);
     }
 
     auto signature = ResolvedSignature{
@@ -314,7 +314,7 @@ void wire_sink_map(wp<TSD<std::int64_t, REF<TS<i64>>>> values) {
     {
         auto context = WiringContext{*inner};
         const auto value = details::wire_nested_input(TS<i64>::type());
-        value_node = details::wired_output_node_index(*inner, value);
+        value_node = inner->output_node_index(value);
         map_sink(wp<REF<TS<i64>>>{value});
     }
 
@@ -345,12 +345,12 @@ wp<TSD<std::int64_t, REF<TS<i64>>>> wire_pass_through_map(wp<TSD<std::int64_t, R
     {
         auto context = WiringContext{*inner};
         const auto value = details::wire_nested_input(TS<i64>::type());
-        value_node = details::wired_output_node_index(*inner, value);
+        value_node = inner->output_node_index(value);
         const auto factor_input = details::wire_nested_input(TS<i64>::type());
-        factor_node = details::wired_output_node_index(*inner, factor_input);
+        factor_node = inner->output_node_index(factor_input);
         const auto result = add_values(wp<REF<TS<i64>>>{value}, wp<REF<TS<i64>>>{factor_input});
         const auto output = details::wire_nested_output(result, TS<i64>::type());
-        output_node = details::wired_output_node_index(*inner, output);
+        output_node = inner->output_node_index(output);
     }
 
     auto signature = ResolvedSignature{

@@ -566,7 +566,7 @@ std::vector<std::size_t> dependency_order(const CompilationPlan &plan, const Gra
 
     auto ordering_edges = std::vector<std::pair<std::size_t, std::size_t>>{};
     for (const auto &constraint : wiring.ordering_constraints()) {
-        const auto ordered_node = details::wired_output_node_index(wiring, constraint.ordered_output);
+        const auto ordered_node = wiring.output_node_index(constraint.ordered_output);
         for (auto consumer = std::size_t{}; consumer < plan.nodes.size(); ++consumer) {
             const auto &inputs = plan.nodes[consumer].inputs();
             if (std::ranges::any_of(
@@ -580,7 +580,7 @@ std::vector<std::size_t> dependency_order(const CompilationPlan &plan, const Gra
             continue;
         }
 
-        const auto provider = details::wired_output_node_index(wiring, binding.provider);
+        const auto provider = wiring.output_node_index(binding.provider);
         for (const auto consumer : binding.consumers) {
             if (binding.ordering == GraphWiring::ServiceBindingOrdering::provider_after_consumers) {
                 ordering_edges.emplace_back(provider, consumer);
@@ -2072,9 +2072,10 @@ class CompiledGraphBuilder {
         auto nodes = plan.fixed.service_binding_provider_nodes.objects<std::uint32_t>(storage);
         for (auto index = std::size_t{}; index < plan.service_bindings.size(); ++index) {
             const auto &binding = plan.service_bindings[index];
-            const auto node = binding.provider.has_output() ? plan.compiled_node_index(details::wired_output_node_index(
-                                                                  binding.provider.graph(), binding.provider))
-                                                            : details::no_service_binding_provider_node;
+            const auto node = binding.provider.has_output()
+                                  ? plan.compiled_node_index(
+                                        binding.provider.graph().output_node_index(binding.provider))
+                                  : details::no_service_binding_provider_node;
             std::construct_at(nodes.data() + index, static_cast<std::uint32_t>(node));
         }
     }

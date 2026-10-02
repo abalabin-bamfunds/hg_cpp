@@ -292,7 +292,7 @@ WiredInput GraphWiring::wire_input(WiringPoint point, const TimeSeriesType &type
         return WiredInput::inherited(inherited->requirement);
     }
 
-    const auto materialized = details::materialize_wiring_point(point, type);
+    const auto materialized = materialize(point, type);
     return WiredInput::output(output_index(materialized));
 }
 
@@ -575,12 +575,8 @@ void GraphWiring::register_nested_service_consumers(const GraphWiring &nested, s
     }
 }
 
-} // namespace bg
-
-namespace bg::details {
-
-std::size_t wired_output_node_index(const GraphWiring &wiring, WiringPoint point) {
-    return wiring.outputs_[wiring.output_index(point)].node_index;
+std::size_t GraphWiring::output_node_index(WiringPoint point) const {
+    return outputs_[output_index(point)].node_index;
 }
 
-} // namespace bg::details
+} // namespace bg

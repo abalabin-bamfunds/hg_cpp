@@ -22,7 +22,7 @@ void append_wiring_arguments(std::vector<WiringArgument> &result, WiringArgument
         const auto field = time_series_bundle_field(expansion.bundle, index);
         if (expansion.mode == VariadicMode::named) {
             result.emplace_back(type->item_name(index), field);
-            wiring_argument_access::match_fixed_parameter_by_name(result.back());
+            result.back().match_fixed_parameter_by_name();
         } else {
             result.emplace_back(field);
         }
@@ -45,7 +45,7 @@ std::vector<WiringArgument> prepare_arguments(const Signature &signature, std::s
 
     auto next_positional = std::size_t{};
     for (const auto &argument : arguments) {
-        const auto capture_mode = wiring_argument_access::variadic_capture_mode(argument);
+        const auto capture_mode = argument.variadic_capture_mode();
         if (capture_mode != VariadicMode::none && fixed_count != signature.parameter_count()) {
             variadic.push_back(&argument);
             continue;
@@ -57,7 +57,7 @@ std::vector<WiringArgument> prepare_arguments(const Signature &signature, std::s
                     const auto &parameter = signature.parameter(index);
                     if (parameter.name == *name &&
                         (parameter.context || parameter_aliases != nullptr ||
-                         wiring_argument_access::matches_fixed_parameter_by_name(argument))) {
+                         argument.matches_fixed_parameter_by_name())) {
                         return index;
                     }
                 }
@@ -117,13 +117,13 @@ std::vector<WiringArgument> prepare_arguments(const Signature &signature, std::s
             throw WiringError{"a call is missing a fixed argument"};
         }
 
-        auto value = wiring_argument_access::borrow(*argument);
-        wiring_argument_access::clear_name(value);
+        auto value = WiringArgument::borrow(*argument);
+        value.clear_name();
         prepared.push_back(std::move(value));
     }
 
     for (const auto *argument : variadic) {
-        prepared.push_back(wiring_argument_access::borrow(*argument));
+        prepared.push_back(WiringArgument::borrow(*argument));
     }
     return prepared;
 }
@@ -139,11 +139,11 @@ NormalizedWiringArguments normalize_prepared(const Signature &signature, std::ve
         descriptors.reserve(arguments.size());
         for (const auto &argument : arguments) {
             if (argument.name().has_value() &&
-                wiring_argument_access::variadic_capture_mode(argument) == VariadicMode::none) {
+                argument.variadic_capture_mode() == VariadicMode::none) {
                 throw WiringError{"a non-variadic parameter does not accept named arguments"};
             }
-            auto value = wiring_argument_access::borrow(argument);
-            wiring_argument_access::clear_name(value);
+            auto value = WiringArgument::borrow(argument);
+            value.clear_name();
             normalized.push_back(std::move(value));
             descriptors.emplace_back(normalized.back());
         }
@@ -165,7 +165,7 @@ NormalizedWiringArguments normalize_prepared(const Signature &signature, std::ve
     };
 
     for (const auto &argument : arguments.first(*first_variadic)) {
-        normalized.push_back(wiring_argument_access::borrow(argument));
+        normalized.push_back(WiringArgument::borrow(argument));
         descriptors.emplace_back(normalized.back());
     }
     if (std::ranges::any_of(normalized, [](const auto &argument) { return argument.name().has_value(); })) {
@@ -196,7 +196,7 @@ NormalizedWiringArguments normalize_prepared(const Signature &signature, std::ve
 
     auto named_arguments_started = false;
     for (const auto &argument : arguments.subspan(*first_variadic)) {
-        auto mode = wiring_argument_access::variadic_capture_mode(argument);
+        auto mode = argument.variadic_capture_mode();
         const auto *forwarded = argument.is_time_series() ? variadic_wiring_record(argument.time_series()) : nullptr;
         if (forwarded != nullptr) {
             if (argument.name()) {
@@ -266,7 +266,7 @@ NormalizedWiringArguments normalize_prepared(const Signature &signature, std::ve
                     throw WiringError{"a variadic wiring record has an incompatible capture mode"};
                 }
                 append_record_descriptors(*record);
-                normalized.push_back(wiring_argument_access::borrow(argument));
+                normalized.push_back(WiringArgument::borrow(argument));
                 return;
             }
 
@@ -286,7 +286,7 @@ NormalizedWiringArguments normalize_prepared(const Signature &signature, std::ve
         for (const auto *argument : capture.arguments) {
             const auto name = argument->name();
             if (mode == VariadicMode::positional) {
-                if (name && wiring_argument_access::variadic_capture_mode(*argument) == VariadicMode::none) {
+                if (name && argument->variadic_capture_mode() == VariadicMode::none) {
                     throw WiringError{"var_args does not accept named arguments"};
                 }
                 continue;
@@ -306,7 +306,7 @@ NormalizedWiringArguments normalize_prepared(const Signature &signature, std::ve
         auto captured = std::vector<WiringArgument>{};
         captured.reserve(capture.arguments.size());
         for (const auto *argument : capture.arguments) {
-            captured.push_back(wiring_argument_access::borrow(*argument));
+            captured.push_back(WiringArgument::borrow(*argument));
         }
 
         auto record = std::make_unique<VariadicWiringRecord>(static_cast<const TimeSeriesType &>(*parameter.type), mode,

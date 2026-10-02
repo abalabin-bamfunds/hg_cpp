@@ -1,6 +1,8 @@
 #include "ref_node.hpp"
 
 #include <bg/evaluation_context.hpp>
+#include <bg/graph/details/wiring_record.hpp>
+#include <bg/graph/graph_wiring.hpp>
 #include <bg/graph/node.hpp>
 #include <bg/graph/runtime_graph.hpp>
 #include <bg/graph/wiring_error.hpp>
@@ -112,7 +114,7 @@ WiringPoint materialize_reference(WiringPoint argument, const TimeSeriesType &re
     const auto *argument_reference = type_cast<TimeSeriesReferenceType>(&argument.type());
 
     if (requested_reference != nullptr && argument_reference == nullptr) {
-        argument = materialize_wiring_point(argument, requested_reference->target_type());
+        argument = wiring_record(argument).wiring().materialize(argument, requested_reference->target_type());
         if (type_cast<TimeSeriesReferenceType>(&argument.type()) != nullptr) {
             return argument;
         }

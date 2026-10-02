@@ -226,7 +226,7 @@ WiringPoint wire_nested_output(WiringPoint output, const TimeSeriesType &type) {
     }
 
     auto argument = WiringArgument{output};
-    wiring_argument_access::set_resolution_type(argument, *resolution_type);
+    argument.set_resolution_type(*resolution_type);
     return static_cast<WiringPoint>(nested_output_node(std::move(argument)));
 }
 

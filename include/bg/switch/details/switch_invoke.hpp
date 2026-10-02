@@ -194,7 +194,7 @@ struct switch_operator_implementation {
         overload_arguments.emplace_back(key);
         overload_arguments.emplace_back(std::move(prepared));
         for (const auto &argument : arguments) {
-            overload_arguments.push_back(wiring_argument_access::borrow(argument));
+            overload_arguments.push_back(WiringArgument::borrow(argument));
         }
         return std::invoke(std::forward<SelectOverload>(select_overload),
                            std::span<const WiringArgument>{overload_arguments});

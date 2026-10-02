@@ -66,7 +66,7 @@ class MapGraphArgumentBuilder {
         const auto structure = graph_wiring_structure(*wiring_, boundaries, result);
         if (result) {
             const auto boundary = wire_nested_output(*result, result->type());
-            output_node_ = wired_output_node_index(*wiring_, boundary);
+            output_node_ = wiring_->output_node_index(boundary);
             output_target_ = &type_cast<TimeSeriesReferenceType>(boundary.type()).target_type();
         }
 
@@ -141,7 +141,7 @@ class MapGraphArgumentBuilder {
 
             const auto &key = time_series_value_type(*call_.key_type, TimeSeriesGuarantee::const_);
             const auto boundary = wire_nested_constant_input(key);
-            key_input_node_ = wired_output_node_index(*wiring_, boundary);
+            key_input_node_ = wiring_->output_node_index(boundary);
             boundaries.push_back(boundary);
             fixed[*key_parameter_].emplace(boundary);
         }
@@ -166,7 +166,7 @@ class MapGraphArgumentBuilder {
                                           " argument"};
                     }
 
-                    wiring_argument_access::clear_name(argument);
+                    argument.clear_name();
                     fixed[index].emplace(std::move(argument));
                     continue;
                 }
@@ -210,9 +210,9 @@ class MapGraphArgumentBuilder {
     }
 
     WiringArgument graph_argument(MapArgument &supplied_argument, std::vector<WiringPoint> &boundaries) {
-        auto argument = wiring_argument_access::borrow(supplied_argument.value);
+        auto argument = WiringArgument::borrow(supplied_argument.value);
         if (!preserve_named_arguments_) {
-            wiring_argument_access::clear_name(argument);
+            argument.clear_name();
         }
         if (!argument.is_time_series()) {
             return argument;
@@ -227,7 +227,7 @@ class MapGraphArgumentBuilder {
 
         auto graph_argument = WiringArgument{boundary};
         if (const auto name = argument.name()) {
-            wiring_argument_access::set_variadic_name(graph_argument, *name, VariadicMode::none);
+            graph_argument.set_variadic_name(*name, VariadicMode::none);
         }
 
         const auto parameter_index = parameters_.size();
@@ -237,10 +237,10 @@ class MapGraphArgumentBuilder {
                 : static_cast<const TimeSeriesType &>(time_series_reference_type(type, TimeSeriesGuarantee::ordinary));
         parameters_.push_back({argument_name(supplied_argument.value, parameter_index), &outer_type, active,
                                mapped ? required : optional, false, VariadicMode::none});
-        outer_arguments_.push_back(wiring_argument_access::borrow(supplied_argument.value));
-        wiring_argument_access::clear_name(outer_arguments_.back());
+        outer_arguments_.push_back(WiringArgument::borrow(supplied_argument.value));
+        outer_arguments_.back().clear_name();
         inputs_.push_back({mapped ? MapInputKind::mapped : MapInputKind::pass_through, parameter_index,
-                           wired_output_node_index(*wiring_, boundary)});
+                           wiring_->output_node_index(boundary)});
         return graph_argument;
     }
 

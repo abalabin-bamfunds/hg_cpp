@@ -1,7 +1,6 @@
 #include <bg/time_series/tsl/operators.hpp>
 
 #include <bg/graph.hpp>
-#include <bg/graph/details/wired_output.hpp>
 #include <bg/graph/details/wiring_record.hpp>
 #include <bg/graph/operator.hpp>
 #include <bg/graph/wiring_error.hpp>

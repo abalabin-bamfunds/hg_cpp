@@ -5,6 +5,7 @@
 #include <bg/graph/details/service_binding_section.hpp>
 #include <bg/graph/details/service_implementation.hpp>
 #include <bg/graph/details/service_requirements.hpp>
+#include <bg/graph/details/wiring_record.hpp>
 #include <bg/graph/graph_wiring.hpp>
 #include <bg/graph/operator.hpp>
 #include <bg/graph/runtime_graph.hpp>
@@ -517,7 +518,7 @@ WiringPoint SubscriptionService::wire_implementation_requests(GraphWiring &wirin
     }
 
     const auto &type = static_cast<const TimeSeriesDictionaryType &>(output.type());
-    return details::wiring_point_for_item(output, key_set_item_id, type.key_set_type());
+    return details::wiring_record(output).wiring().output_item(output, key_set_item_id, type.key_set_type());
 }
 
 void SubscriptionService::append_implementation_request_arguments(WiringPoint requests,

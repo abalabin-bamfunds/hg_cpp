@@ -38,26 +38,35 @@ WiringPoint add_wiring_record(std::unique_ptr<WiringRecord> record) {
 
 WiringPoint add_item_wiring_record(WiringPoint parent, item_id_t item,
                                    std::unique_ptr<WiringRecord> record) {
-    return WiringContext::current().wiring().register_item_record(parent, item, std::move(record));
+    return wiring_record(parent).wiring().register_item_record(parent, item, std::move(record));
 }
 
-WiringPoint materialize_wiring_point(WiringPoint point, const TimeSeriesType &type) {
+} // namespace bg::details
+
+namespace bg {
+
+WiringPoint GraphWiring::materialize(WiringPoint point, const TimeSeriesType &type) {
+    using details::WiringRecord;
+    using details::wiring_record;
+
     const auto &record = wiring_record(point);
     if (record.output_ == WiringRecord::resolution_only) {
         throw WiringError{"a resolution-time wiring point cannot be materialized"};
     }
-    auto &wiring = *record.graph_;
+    if (record.graph_ != this) {
+        throw WiringError{"a WiringPoint belongs to another GraphWiring"};
+    }
 
-    const auto existing = std::ranges::find_if(wiring.materialized_wiring_points_, [&](const auto &entry) {
+    const auto existing = std::ranges::find_if(materialized_wiring_points_, [&](const auto &entry) {
         return entry.record == &record && entry.type == &type;
     });
-    if (existing != wiring.materialized_wiring_points_.end()) {
+    if (existing != materialized_wiring_points_.end()) {
         return WiringRecord::point(*existing->result);
     }
 
     const auto result = record.materialize(type);
     const auto &result_record = wiring_record(result);
-    if (result_record.graph_ != &wiring) {
+    if (result_record.graph_ != this) {
         throw WiringError{"wiring-point materialization returned a wiring point from another graph wiring"};
     }
     if (!result_record.has_wired_output()) {
@@ -69,10 +78,14 @@ WiringPoint materialize_wiring_point(WiringPoint point, const TimeSeriesType &ty
     }
 
     if (&result_record != &record) {
-        wiring.materialized_wiring_points_.push_back({&record, &type, &result_record});
+        materialized_wiring_points_.push_back({&record, &type, &result_record});
     }
     return result;
 }
+
+} // namespace bg
+
+namespace bg::details {
 
 const WiringRecord &wiring_record(WiringPoint point) noexcept {
     return *point.record_;

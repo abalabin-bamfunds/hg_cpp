@@ -2,9 +2,9 @@
 
 #include <bg/evaluation_context.hpp>
 #include <bg/graph/compiled_node.hpp>
-#include <bg/graph/details/wired_output.hpp>
 #include <bg/graph/details/variadic_wiring_operations.hpp>
 #include <bg/graph/details/wiring_record.hpp>
+#include <bg/graph/graph_wiring.hpp>
 #include <bg/graph/wiring_argument.hpp>
 #include <bg/graph/runtime_graph.hpp>
 #include <bg/graph/wiring_error.hpp>
@@ -108,7 +108,7 @@ class FreeTimeSeriesBundleWiringRecord final : public WiringRecord {
         }
 
         const auto result = materialize_time_series_bundle(fields_, *bundle);
-        return materialize_wiring_point(result, target_type);
+        return wiring().materialize(result, target_type);
     }
 
     std::vector<NamedBundleWiringPoint> fields_;
@@ -122,9 +122,10 @@ class TimeSeriesBundleFieldWiringRecord final : public WiringRecord {
 
   private:
     WiringPoint materialize(const TimeSeriesType &requested_type) const override {
-        const auto bundle = materialize_wiring_point(bundle_, bundle_.type());
-        const auto field = wiring_point_for_item(bundle, field_, type());
-        return materialize_wiring_point(field, requested_type);
+        auto &graph_wiring = wiring();
+        const auto bundle = graph_wiring.materialize(bundle_, bundle_.type());
+        const auto field = graph_wiring.output_item(bundle, field_, type());
+        return graph_wiring.materialize(field, requested_type);
     }
 
     WiringPoint bundle_;
@@ -171,9 +172,8 @@ class TimeSeriesBundleVariadicWiringOperations final : public VariadicWiringOper
                 }
             }
             fields.push_back({name, type});
-            wiring_argument_access::set_variadic_name(argument, name, mode);
-            captured.push_back(memory == nullptr ? wiring_argument_access::borrow(argument)
-                                                 : wiring_argument_access::clone(argument, *memory));
+            argument.set_variadic_name(name, mode);
+            captured.push_back(memory == nullptr ? WiringArgument::borrow(argument) : argument.clone(*memory));
         }
 
         try {
@@ -218,7 +218,8 @@ class TimeSeriesBundleVariadicWiringOperations final : public VariadicWiringOper
                                    : static_cast<WiringPoint>(operators::const_(argument));
             fields.push_back({*argument.name(), point});
         }
-        return materialize_wiring_point(materialize_time_series_bundle(fields, *bundle), target_type);
+        const auto result = materialize_time_series_bundle(fields, *bundle);
+        return wiring_record(result).wiring().materialize(result, target_type);
     }
 };
 
@@ -256,7 +257,7 @@ WiringPoint materialize_time_series_bundle(std::span<const NamedBundleWiringPoin
 
     const auto &runtime_type = free_time_series_bundle_runtime_type(type);
     const auto result = *free_time_series_bundle_node_template(type)(ordered);
-    set_wired_output_runtime_type(result, runtime_type);
+    wiring_record(result).wiring().set_output_runtime_type(result, runtime_type);
     return result;
 }
 

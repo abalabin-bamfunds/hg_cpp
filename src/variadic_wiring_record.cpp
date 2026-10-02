@@ -1,5 +1,6 @@
 #include <bg/graph/details/variadic_wiring_record.hpp>
 
+#include <bg/graph/graph_wiring.hpp>
 #include <bg/graph/wiring_error.hpp>
 
 #include <stdexcept>
@@ -38,11 +39,11 @@ WiringArgument VariadicWiringRecord::argument(std::size_t index) const {
     }
 
     if (!direct_) {
-        return wiring_argument_access::borrow(arguments_[index]);
+        return WiringArgument::borrow(arguments_[index]);
     }
 
     auto result = WiringArgument{operations_->item(*direct_, index)};
-    wiring_argument_access::set_variadic_name(result, operations_->item_name(direct_->type(), index), mode_);
+    result.set_variadic_name(operations_->item_name(direct_->type(), index), mode_);
     return result;
 }
 
@@ -66,7 +67,7 @@ std::vector<WiringArgumentDescriptor> VariadicWiringRecord::argument_descriptors
 
 WiringPoint VariadicWiringRecord::materialize(const TimeSeriesType &target_type) const {
     if (direct_) {
-        return materialize_wiring_point(*direct_, target_type);
+        return wiring().materialize(*direct_, target_type);
     }
     return operations_->materialize(arguments_, target_type);
 }

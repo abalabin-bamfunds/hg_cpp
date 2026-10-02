@@ -34,8 +34,8 @@ class ServiceCatalogue {
             if (!state) {
                 throw std::logic_error{"the multiservice registration's catalogue no longer exists"};
             }
-            ServiceCatalogue::add_multiservice_impl(state, index_, details::mapped_wiring_access::target(service),
-                                                    details::mapped_wiring_access::type_map(service).copy(), values);
+            ServiceCatalogue::add_multiservice_impl(state, index_, service.target(), service.type_map().copy(),
+                                                    values);
         }
 
         template <typename... Filters>
@@ -98,8 +98,7 @@ class ServiceCatalogue {
                        Arguments &&...arguments) {
         auto values = std::array<WiringArgument, sizeof...(Arguments)>{
             WiringArgument{std::forward<Arguments>(arguments)}...};
-        add_impl(details::mapped_wiring_access::target(service),
-                 details::mapped_wiring_access::type_map(service).copy(),
+        add_impl(service.target(), service.type_map().copy(),
                  std::make_shared<std::remove_cvref_t<Implementation>>(std::forward<Implementation>(implementation)),
                  values);
     }

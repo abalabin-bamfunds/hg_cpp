@@ -39,11 +39,6 @@ class ContextScope;
 class ServiceRequirements;
 WiringPoint add_wiring_record(std::unique_ptr<WiringRecord> record);
 WiringPoint add_item_wiring_record(WiringPoint parent, item_id_t item, std::unique_ptr<WiringRecord> record);
-WiringPoint materialize_wiring_point(WiringPoint point, const TimeSeriesType &type);
-WiringPoint add_wired_output(GraphWiring &wiring, WiredOutput output);
-void set_wired_output_runtime_type(WiringPoint output, const TimeSeriesRuntimeType &runtime_type);
-WiringPoint wiring_point_for_item(WiringPoint parent, item_id_t item, const TimeSeriesType &type);
-std::size_t wired_output_node_index(const GraphWiring &wiring, WiringPoint point);
 GraphWiringStructure graph_wiring_structure(const GraphWiring &, std::span<const WiringPoint>,
                                             std::optional<WiringPoint>);
 GraphWiringStructure graph_wiring_structure(const GraphWiring &, std::span<const std::size_t>,
@@ -116,29 +111,6 @@ class GraphWiring {
 
     [[nodiscard]] const NodeTemplate &own_node_template(std::unique_ptr<NodeTemplate> node_template);
 
-  private:
-    friend class NodeTemplate;
-    friend class Operator;
-    friend class ReferenceService;
-    friend class Service;
-    friend class ServiceDefinition;
-    friend class ServiceCatalogue;
-    friend class SubscriptionService;
-    friend class WiringPoint;
-    friend class WiringTemplate;
-    friend WiringPoint details::add_wiring_record(std::unique_ptr<details::WiringRecord> record);
-    friend WiringPoint details::add_item_wiring_record(WiringPoint parent, item_id_t item,
-                                                       std::unique_ptr<details::WiringRecord> record);
-    friend WiringPoint details::materialize_wiring_point(WiringPoint point, const TimeSeriesType &type);
-    friend WiringPoint details::add_wired_output(GraphWiring &wiring, WiredOutput output);
-    friend void details::set_wired_output_runtime_type(WiringPoint output, const TimeSeriesRuntimeType &runtime_type);
-    friend WiringPoint details::wiring_point_for_item(WiringPoint parent, item_id_t item, const TimeSeriesType &type);
-    friend std::size_t details::wired_output_node_index(const GraphWiring &wiring, WiringPoint point);
-    friend details::GraphWiringStructure
-    details::graph_wiring_structure(const GraphWiring &, std::span<const WiringPoint>, std::optional<WiringPoint>);
-    friend details::GraphWiringStructure
-    details::graph_wiring_structure(const GraphWiring &, std::span<const std::size_t>, std::optional<std::size_t>);
-    friend class details::ContextScope;
     [[nodiscard]] std::optional<WiringPoint> invoke(const WiringTemplate &wiring_template,
                                                     std::span<const WiringArgument> arguments,
                                                     const TypeMap *seed_type_map = nullptr);
@@ -151,8 +123,13 @@ class GraphWiring {
     [[nodiscard]] WiringPoint register_record(std::unique_ptr<details::WiringRecord> record);
     [[nodiscard]] WiringPoint register_item_record(WiringPoint parent, item_id_t item,
                                                    std::unique_ptr<details::WiringRecord> record);
+    [[nodiscard]] WiringPoint register_output(WiredOutput output);
     [[nodiscard]] WiringPoint register_output(WiredOutput output, std::unique_ptr<details::WiringRecord> record);
+    [[nodiscard]] WiringPoint materialize(WiringPoint point, const TimeSeriesType &type);
+    void set_output_runtime_type(WiringPoint output, const TimeSeriesRuntimeType &runtime_type);
+    [[nodiscard]] WiringPoint output_item(WiringPoint parent, item_id_t item, const TimeSeriesType &type);
     [[nodiscard]] std::size_t output_index(WiringPoint point) const;
+    [[nodiscard]] std::size_t output_node_index(WiringPoint point) const;
     [[nodiscard]] std::optional<WiringPoint> find_output_item(std::size_t parent, item_id_t item) const;
     [[nodiscard]] std::optional<WiringPoint> find_wired_node(std::size_t hash, const NodeTemplate &node_template,
                                                              const ResolvedSignature &signature,
@@ -178,9 +155,19 @@ class GraphWiring {
     util::symbol default_label() const;
 
     void destroy_scalars(std::span<const WiredScalar> scalars) noexcept;
+    allocator &allocation() noexcept { return allocator_; }
+    void *allocate_fixed(std::size_t size, std::size_t alignment) {
+        return fixed_memory_.allocate(size, alignment);
+    }
+    void deallocate_fixed(void *data, std::size_t size, std::size_t alignment) noexcept {
+        fixed_memory_.deallocate(data, size, alignment);
+    }
     allocator &variable_allocator() noexcept;
     allocator &variable_allocator(const ScalarRuntimeType &runtime_type);
+    bool is_root() const noexcept { return parent_ == nullptr; }
+    details::ServiceRequirements *service_requirements() noexcept { return service_requirements_.get(); }
 
+  private:
     allocator allocator_;
     GraphWiring *parent_{};
     std::pmr::unsynchronized_pool_resource fixed_memory_;
