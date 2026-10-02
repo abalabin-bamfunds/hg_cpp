@@ -5,10 +5,8 @@
 namespace bg {
 
 class GraphWiring;
-class ServiceDefinition;
-class ServiceCatalogue;
 namespace details {
-class ServiceImplementationAccess;
+class MultiservicePorts;
 } // namespace details
 
 class WiringContext {
@@ -23,23 +21,20 @@ class WiringContext {
 
     static WiringContext &current();
 
+    WiringContext(GraphWiring &wiring, const WiringPath &path) noexcept;
+    WiringContext(GraphWiring &wiring, details::MultiservicePorts &multiservice_ports) noexcept;
+
     GraphWiring &wiring() const noexcept { return *wiring_; }
 
     const WiringPath *path() const noexcept { return path_; }
 
+    details::MultiservicePorts &multiservice_ports() const;
+
   private:
-    friend class GraphWiring;
-    friend class ServiceDefinition;
-    friend class ServiceCatalogue;
-
-    WiringContext(GraphWiring &wiring, const WiringPath &path) noexcept;
-    WiringContext(GraphWiring &wiring, details::ServiceImplementationAccess &service_implementation) noexcept;
-    details::ServiceImplementationAccess &service_implementation() const;
-
     GraphWiring *wiring_;
     const WiringPath *path_{};
     WiringContext *previous_;
-    details::ServiceImplementationAccess *service_implementation_{};
+    details::MultiservicePorts *multiservice_ports_{};
 };
 
 } // namespace bg

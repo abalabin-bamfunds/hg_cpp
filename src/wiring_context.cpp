@@ -17,21 +17,21 @@ util::thread_local_pointer &active_context() {
 
 WiringContext::WiringContext(GraphWiring &wiring)
     : wiring_(&wiring), path_(nullptr), previous_(static_cast<WiringContext *>(active_context().get())),
-      service_implementation_(
-          previous_ == nullptr || previous_->wiring_ != &wiring ? nullptr : previous_->service_implementation_) {
+      multiservice_ports_(previous_ == nullptr || previous_->wiring_ != &wiring ? nullptr
+                                                                               : previous_->multiservice_ports_) {
     active_context().set(this);
 }
 
 WiringContext::WiringContext(GraphWiring &wiring, const WiringPath &path) noexcept
     : wiring_(&wiring), path_(&path), previous_(static_cast<WiringContext *>(active_context().get())),
-      service_implementation_(
-          previous_ == nullptr || previous_->wiring_ != &wiring ? nullptr : previous_->service_implementation_) {
+      multiservice_ports_(previous_ == nullptr || previous_->wiring_ != &wiring ? nullptr
+                                                                               : previous_->multiservice_ports_) {
     active_context().set(this);
 }
 
-WiringContext::WiringContext(GraphWiring &wiring, details::ServiceImplementationAccess &service_implementation) noexcept
+WiringContext::WiringContext(GraphWiring &wiring, details::MultiservicePorts &multiservice_ports) noexcept
     : wiring_(&wiring), path_(nullptr), previous_(static_cast<WiringContext *>(active_context().get())),
-      service_implementation_(&service_implementation) {
+      multiservice_ports_(&multiservice_ports) {
     active_context().set(this);
 }
 
@@ -48,11 +48,11 @@ WiringContext &WiringContext::current() {
     return *context;
 }
 
-details::ServiceImplementationAccess &WiringContext::service_implementation() const {
-    if (service_implementation_ == nullptr) {
-        throw WiringError{"service implementation ports are available only while wiring a multiservice graph"};
+details::MultiservicePorts &WiringContext::multiservice_ports() const {
+    if (multiservice_ports_ == nullptr) {
+        throw WiringError{"multiservice ports are available only while wiring a multiservice graph"};
     }
-    return *service_implementation_;
+    return *multiservice_ports_;
 }
 
 } // namespace bg

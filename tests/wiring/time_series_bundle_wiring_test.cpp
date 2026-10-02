@@ -105,7 +105,7 @@ TEST_CASE("typed TSB field access reuses its wiring record",
     const auto first = bundle->count;
     const auto second = bundle->count;
 
-    CHECK(&bg::details::wiring_record(first) == &bg::details::wiring_record(second));
+    CHECK(static_cast<bg::WiringPoint>(first).record() == static_cast<bg::WiringPoint>(second).record());
     CHECK(wiring.outputs().size() == 1);
 }
 

@@ -40,6 +40,8 @@ class wp<TSL<Item, Size, TimeSeriesProperties...>, WiringProperties...> {
 
     template <typename Target> wp<Target> as() const { return point_.template as<Target>(); }
 
+    static wp from_validated(WiringPoint point) noexcept { return wp{point, unchecked_t{}}; }
+
     using time_series_type = TimeSeries;
     static constexpr std::string_view name = ParsedProperties::name;
     static constexpr bool context = ParsedProperties::context;
@@ -51,8 +53,6 @@ class wp<TSL<Item, Size, TimeSeriesProperties...>, WiringProperties...> {
     struct unchecked_t {};
 
     wp(WiringPoint point, unchecked_t) noexcept : point_(point) {}
-
-    friend struct details::wiring_point_annotation;
 
     WiringPoint point_;
 };

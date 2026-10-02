@@ -16,8 +16,6 @@ class WiringPoint;
 
 namespace details {
 class WiringRecord;
-struct wiring_point_annotation;
-const WiringRecord &wiring_record(WiringPoint point) noexcept;
 } // namespace details
 
 template <typename TimeSeries = TS_T, auto... Properties> class wp;
@@ -31,6 +29,7 @@ class WiringPoint {
 
     const GraphWiring &graph() const;
     const TimeSeriesType &type() const;
+    const details::WiringRecord *record() const noexcept { return record_; }
 
     template <typename TimeSeries> wp<TimeSeries> as() const;
 
@@ -39,9 +38,7 @@ class WiringPoint {
 
     const details::WiringRecord *record_{};
 
-    friend class GraphWiring;
     friend class details::WiringRecord;
-    friend const details::WiringRecord &details::wiring_record(WiringPoint point) noexcept;
 };
 
 template <typename TimeSeries, auto... Properties> class wp {
@@ -73,6 +70,8 @@ template <typename TimeSeries, auto... Properties> class wp {
 
     template <typename Target> wp<Target> as() const { return point_.template as<Target>(); }
 
+    static wp from_validated(WiringPoint point) noexcept { return wp{point, unchecked_t{}}; }
+
     template <typename Key> auto operator[](Key &&key) const;
 
     using time_series_type = TimeSeries;
@@ -85,8 +84,6 @@ template <typename TimeSeries, auto... Properties> class wp {
 
     wp(WiringPoint point, unchecked_t) noexcept : point_(point) {}
 
-    friend struct details::wiring_point_annotation;
-
     WiringPoint point_;
 };
 
@@ -95,16 +92,6 @@ template <typename TimeSeries> wp<TimeSeries> WiringPoint::as() const {
 }
 
 namespace details {
-
-struct wiring_point_annotation {
-    template <typename Point> static Point make_point(WiringPoint point) noexcept {
-        return Point{point, typename Point::unchecked_t{}};
-    }
-
-    template <typename TimeSeries> static wp<TimeSeries> make(WiringPoint point) noexcept {
-        return make_point<wp<TimeSeries>>(point);
-    }
-};
 
 template <typename T> struct typed_wiring_point : std::false_type {};
 

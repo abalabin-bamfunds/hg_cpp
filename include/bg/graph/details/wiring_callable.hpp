@@ -49,7 +49,7 @@ template <typename Parameter> [[nodiscard]] decltype(auto) graph_argument(const 
         static_assert(!std::is_reference_v<Parameter>);
 
         // Signature resolution already validated the annotation. The wiring point retains its actual representation.
-        return wiring_point_annotation::make_point<Value>(argument.time_series());
+        return Value::from_validated(argument.time_series());
     } else if constexpr (std::same_as<Value, WiringPoint>) {
         static_assert(!std::is_reference_v<Parameter>);
 

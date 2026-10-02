@@ -58,7 +58,7 @@ template <template <template <typename, auto...> typename> typename Schema> clas
         template <typename SchemaField> auto make(std::size_t index) const {
             using Field = typename SchemaField::time_series_type;
             const auto &type = TSB<Schema>::type();
-            return wiring_point_annotation::make<Field>(operators::getattr(bundle_, type.item_name(index)));
+            return wp<Field>::from_validated(operators::getattr(bundle_, type.item_name(index)));
         }
 
       private:
@@ -133,7 +133,7 @@ class TypedBundleConstruction<TSB<Schema, Properties...>> {
     template <std::size_t... Index> wp<TimeSeries> finish(std::index_sequence<Index...>) {
         const auto fields = std::array<NamedBundleWiringPoint, sizeof...(Index)>{
             NamedBundleWiringPoint{type().item_name(Index), fields_[Index]}...};
-        return wiring_point_annotation::make<TimeSeries>(make_free_time_series_bundle(fields));
+        return wp<TimeSeries>::from_validated(make_free_time_series_bundle(fields));
     }
 
     static const TimeSeriesBundleType &type() {
@@ -179,6 +179,8 @@ class wp<TSB<Schema, TimeSeriesProperties...>, WiringProperties...> {
 
     template <typename Target> wp<Target> as() const { return point_.template as<Target>(); }
 
+    static wp from_validated(WiringPoint point) noexcept { return wp{point, unchecked_t{}}; }
+
     auto operator->() const
         requires(!details::bundle_schema_variable_declaration<Schema<details::bundle_schema_field>>)
     {
@@ -194,8 +196,6 @@ class wp<TSB<Schema, TimeSeriesProperties...>, WiringProperties...> {
     struct unchecked_t {};
 
     wp(WiringPoint point, unchecked_t) noexcept : point_(point) {}
-
-    friend struct details::wiring_point_annotation;
 
     WiringPoint point_;
 };
@@ -246,6 +246,8 @@ class wp<TSB<Schema, TimeSeriesProperties...>, WiringProperties...> {
 
     template <typename Target> wp<Target> as() const { return point_.template as<Target>(); }
 
+    static wp from_validated(WiringPoint point) noexcept { return wp{point, unchecked_t{}}; }
+
     using time_series_type = TimeSeries;
     static constexpr std::string_view name{};
     static constexpr bool context = false;
@@ -257,8 +259,6 @@ class wp<TSB<Schema, TimeSeriesProperties...>, WiringProperties...> {
     struct unchecked_t {};
 
     wp(WiringPoint point, unchecked_t) noexcept : point_(point) {}
-
-    friend struct details::wiring_point_annotation;
 
     WiringPoint point_;
 };

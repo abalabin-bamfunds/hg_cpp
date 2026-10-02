@@ -88,7 +88,7 @@ template <typename Declaration> decltype(auto) declared_graph_argument(const Wir
     using Value = std::remove_cv_t<Declaration>;
 
     if constexpr (supported_time_series<Value>) {
-        return wiring_point_annotation::make_point<wp<Value>>(argument.time_series());
+        return wp<Value>::from_validated(argument.time_series());
     } else if constexpr (graph_declaration<Value>) {
         return Value{argument.graph()};
     } else {

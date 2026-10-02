@@ -4,12 +4,11 @@
 
 #include <span>
 
-namespace bg {
-namespace details {
+namespace bg::details {
 
-class ServiceImplementationAccess {
+class MultiservicePorts {
   public:
-    virtual ~ServiceImplementationAccess() = default;
+    virtual ~MultiservicePorts() = default;
 
     virtual WiringPoint requests(const ServiceDefinition &service, const TypeMap &type_map,
                                  std::span<const WiringArgument> scalar_arguments) = 0;
@@ -17,5 +16,4 @@ class ServiceImplementationAccess {
                          std::span<const WiringArgument> scalar_arguments) = 0;
 };
 
-} // namespace details
-} // namespace bg
+} // namespace bg::details

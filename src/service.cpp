@@ -3,7 +3,7 @@
 #include <bg/graph/details/nested_binding_identity.hpp>
 #include <bg/graph/details/node_scheduler.hpp>
 #include <bg/graph/details/service_binding_section.hpp>
-#include <bg/graph/details/service_implementation.hpp>
+#include <bg/graph/details/multiservice_ports.hpp>
 #include <bg/graph/details/service_requirements.hpp>
 #include <bg/graph/details/wiring_record.hpp>
 #include <bg/graph/graph_wiring.hpp>
@@ -332,7 +332,7 @@ WiringPoint ServiceDefinition::implementation_requests(const TypeMap &type_map,
     if (!implementation_requests_required()) {
         throw WiringError{"reference services do not have request time series"};
     }
-    return WiringContext::current().service_implementation().requests(*this, type_map, scalar_arguments);
+    return WiringContext::current().multiservice_ports().requests(*this, type_map, scalar_arguments);
 }
 
 void ServiceDefinition::implementation_replies(const TypeMap &type_map, WiringPoint replies,
@@ -340,7 +340,7 @@ void ServiceDefinition::implementation_replies(const TypeMap &type_map, WiringPo
     if (!signature_.has_output()) {
         throw WiringError{"an outputless service cannot be assigned replies"};
     }
-    WiringContext::current().service_implementation().replies(*this, type_map, replies, scalar_arguments);
+    WiringContext::current().multiservice_ports().replies(*this, type_map, replies, scalar_arguments);
 }
 
 std::optional<WiringPoint> ServiceDefinition::wire(GraphWiring &wiring, ResolvedSignature signature,
@@ -518,7 +518,7 @@ WiringPoint SubscriptionService::wire_implementation_requests(GraphWiring &wirin
     }
 
     const auto &type = static_cast<const TimeSeriesDictionaryType &>(output.type());
-    return details::wiring_record(output).wiring().output_item(output, key_set_item_id, type.key_set_type());
+    return output.record()->wiring().output_item(output, key_set_item_id, type.key_set_type());
 }
 
 void SubscriptionService::append_implementation_request_arguments(WiringPoint requests,

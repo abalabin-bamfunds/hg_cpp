@@ -13,9 +13,6 @@
 namespace bg {
 
 class WiringArguments;
-namespace details {
-template <typename ScopeFactory> class ScopedWiringTemplate;
-}
 
 class WiringTemplate {
   public:
@@ -23,6 +20,17 @@ class WiringTemplate {
 
     virtual const Signature &signature() const = 0;
     [[nodiscard]] virtual RequirementResult requirement(const WiringArguments &) const { return accept; }
+    [[nodiscard]] virtual std::optional<WiringPoint>
+    invoke(GraphWiring &wiring, std::span<const WiringArgument> arguments, const TypeMap *seed_type_map) const;
+
+    virtual util::symbol label(const ResolvedSignature &, std::span<const WiringArgument>,
+                               util::symbol default_label) const {
+        return default_label;
+    }
+
+    [[nodiscard]] virtual std::optional<WiringPoint> wire(GraphWiring &wiring, ResolvedSignature signature,
+                                                          const TypeMap &type_map,
+                                                          std::span<const WiringArgument> arguments) const = 0;
 
     template <typename... Arguments>
         requires(details::graph_code_argument<Arguments> && ...)
@@ -88,21 +96,6 @@ class WiringTemplate {
                                                              std::span<const WiringArgument> arguments,
                                                              util::symbol path_name) const;
 
-  private:
-    friend class GraphWiring;
-    template <typename ScopeFactory> friend class details::ScopedWiringTemplate;
-
-    [[nodiscard]] virtual std::optional<WiringPoint>
-    invoke(GraphWiring &wiring, std::span<const WiringArgument> arguments, const TypeMap *seed_type_map) const;
-
-    virtual util::symbol label(const ResolvedSignature &, std::span<const WiringArgument>,
-                               util::symbol default_label) const {
-        return default_label;
-    }
-
-    [[nodiscard]] virtual std::optional<WiringPoint> wire(GraphWiring &wiring, ResolvedSignature signature,
-                                                          const TypeMap &type_map,
-                                                          std::span<const WiringArgument> arguments) const = 0;
 };
 
 } // namespace bg

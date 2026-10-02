@@ -16,6 +16,15 @@ namespace bg {
 
 class WiringArguments {
   public:
+    using ScalarReadFunction = void (*)(void *, std::size_t, Scalar<>);
+
+    WiringArguments(const Signature &signature, const TypeMap &type_map,
+                    std::span<const details::WiringArgumentDescriptor> arguments,
+                    void *scalar_read_context = nullptr,
+                    ScalarReadFunction scalar_read = nullptr) noexcept
+        : signature_{&signature}, type_map_{&type_map}, arguments_{arguments},
+          scalar_read_context_{scalar_read_context}, scalar_read_{scalar_read} {}
+
     std::size_t size() const noexcept { return arguments_.size(); }
 
     util::symbol argument_name(std::size_t index) const {
@@ -82,19 +91,6 @@ class WiringArguments {
     const GraphArgument *graph(std::string_view name) const { return graph(argument_index(name)); }
 
   private:
-    friend class WiringTemplate;
-    friend class Operator;
-    friend class Signature;
-
-    using ScalarReadFunction = void (*)(void *, std::size_t, Scalar<>);
-
-    WiringArguments(const Signature &signature, const TypeMap &type_map,
-                    std::span<const details::WiringArgumentDescriptor> arguments,
-                    void *scalar_read_context = nullptr,
-                    ScalarReadFunction scalar_read = nullptr) noexcept
-        : signature_{&signature}, type_map_{&type_map}, arguments_{arguments},
-          scalar_read_context_{scalar_read_context}, scalar_read_{scalar_read} {}
-
     std::size_t find_argument(std::string_view name) const {
         for (auto index = std::size_t{}; index < arguments_.size(); ++index) {
             if (argument_name(index).text() == name) {

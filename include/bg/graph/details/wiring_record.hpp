@@ -23,7 +23,6 @@ class WiringRecord {
 
     virtual ~WiringRecord() = default;
 
-    const GraphWiring &graph() const noexcept { return *graph_; }
     GraphWiring &wiring() const noexcept { return *graph_; }
     const TimeSeriesType &type() const noexcept { return *type_; }
 
@@ -51,7 +50,6 @@ class WiringRecord {
 WiringPoint add_wiring_record(std::unique_ptr<WiringRecord> record);
 WiringPoint add_item_wiring_record(WiringPoint parent, item_id_t item,
                                    std::unique_ptr<WiringRecord> record);
-const WiringRecord &wiring_record(WiringPoint point) noexcept;
 
 } // namespace details
 } // namespace bg

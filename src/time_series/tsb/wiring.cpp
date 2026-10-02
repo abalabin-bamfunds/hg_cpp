@@ -219,7 +219,7 @@ class TimeSeriesBundleVariadicWiringOperations final : public VariadicWiringOper
             fields.push_back({*argument.name(), point});
         }
         const auto result = materialize_time_series_bundle(fields, *bundle);
-        return wiring_record(result).wiring().materialize(result, target_type);
+        return result.record()->wiring().materialize(result, target_type);
     }
 };
 
@@ -257,7 +257,7 @@ WiringPoint materialize_time_series_bundle(std::span<const NamedBundleWiringPoin
 
     const auto &runtime_type = free_time_series_bundle_runtime_type(type);
     const auto result = *free_time_series_bundle_node_template(type)(ordered);
-    wiring_record(result).wiring().set_output_runtime_type(result, runtime_type);
+    result.record()->wiring().set_output_runtime_type(result, runtime_type);
     return result;
 }
 
@@ -270,7 +270,7 @@ WiringPoint time_series_bundle_field(WiringPoint bundle, std::size_t index) {
         throw WiringError{"time series bundle field index is out of range"};
     }
 
-    const auto &record = wiring_record(bundle);
+    const auto &record = *bundle.record();
     if (const auto *free = dynamic_cast<const FreeTimeSeriesBundleWiringRecord *>(&record)) {
         return free->field(index);
     }

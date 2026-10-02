@@ -107,7 +107,7 @@ WiringPoint materialize_fixed_time_series_list(std::span<const WiringPoint> item
                                                const TimeSeriesListType &type) {
     const auto &runtime_type = free_fixed_time_series_list_runtime_type(type);
     const auto result = *free_fixed_time_series_list_node_template(type)(items);
-    wiring_record(result).wiring().set_output_runtime_type(result, runtime_type);
+    result.record()->wiring().set_output_runtime_type(result, runtime_type);
     return result;
 }
 
@@ -250,7 +250,7 @@ class TimeSeriesListVariadicWiringOperations final : public VariadicWiringOperat
         }
 
         const auto result = materialize_fixed_time_series_list(items, *list);
-        return wiring_record(result).wiring().materialize(result, target_type);
+        return result.record()->wiring().materialize(result, target_type);
     }
 };
 
@@ -282,7 +282,7 @@ WiringPoint time_series_list_item(WiringPoint list, std::size_t index) {
         throw WiringError{"time series list index is out of range"};
     }
 
-    const auto &list_record = wiring_record(list);
+    const auto &list_record = *list.record();
     if (const auto *free = dynamic_cast<const FreeFixedTimeSeriesListWiringRecord *>(&list_record)) {
         return free->item(index);
     }

@@ -38,7 +38,7 @@ WiringPoint add_wiring_record(std::unique_ptr<WiringRecord> record) {
 
 WiringPoint add_item_wiring_record(WiringPoint parent, item_id_t item,
                                    std::unique_ptr<WiringRecord> record) {
-    return wiring_record(parent).wiring().register_item_record(parent, item, std::move(record));
+    return parent.record()->wiring().register_item_record(parent, item, std::move(record));
 }
 
 } // namespace bg::details
@@ -47,9 +47,8 @@ namespace bg {
 
 WiringPoint GraphWiring::materialize(WiringPoint point, const TimeSeriesType &type) {
     using details::WiringRecord;
-    using details::wiring_record;
 
-    const auto &record = wiring_record(point);
+    const auto &record = *point.record();
     if (record.output_ == WiringRecord::resolution_only) {
         throw WiringError{"a resolution-time wiring point cannot be materialized"};
     }
@@ -65,7 +64,7 @@ WiringPoint GraphWiring::materialize(WiringPoint point, const TimeSeriesType &ty
     }
 
     const auto result = record.materialize(type);
-    const auto &result_record = wiring_record(result);
+    const auto &result_record = *result.record();
     if (result_record.graph_ != this) {
         throw WiringError{"wiring-point materialization returned a wiring point from another graph wiring"};
     }
@@ -84,11 +83,3 @@ WiringPoint GraphWiring::materialize(WiringPoint point, const TimeSeriesType &ty
 }
 
 } // namespace bg
-
-namespace bg::details {
-
-const WiringRecord &wiring_record(WiringPoint point) noexcept {
-    return *point.record_;
-}
-
-} // namespace bg::details

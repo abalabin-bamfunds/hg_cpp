@@ -73,7 +73,7 @@ WiringPoint VariadicWiringRecord::materialize(const TimeSeriesType &target_type)
 }
 
 const VariadicWiringRecord *variadic_wiring_record(WiringPoint point) noexcept {
-    return dynamic_cast<const VariadicWiringRecord *>(&wiring_record(point));
+    return dynamic_cast<const VariadicWiringRecord *>(point.record());
 }
 
 } // namespace bg::details

@@ -87,7 +87,7 @@ const GraphWiring &WiringPoint::graph() const {
     if (!has_output()) {
         throw WiringError{"a wiring point has no output"};
     }
-    return record_->graph();
+    return record_->wiring();
 }
 
 const TimeSeriesType &WiringPoint::type() const {
@@ -230,7 +230,7 @@ std::optional<WiringPoint> GraphWiring::find_wired_node(std::size_t hash, const 
         return std::nullopt;
     }
 
-    return WiringPoint{*node_output_records_[*found]};
+    return details::WiringRecord::point(*node_output_records_[*found]);
 }
 
 WiringPoint GraphWiring::add_inherited_requirement(details::NestedBindingIdentity identity, util::symbol name,
@@ -240,12 +240,12 @@ WiringPoint GraphWiring::add_inherited_requirement(details::NestedBindingIdentit
     auto point =
         register_record(std::make_unique<details::InheritedTimeSeriesWiringRecord>(requirement.boundary_input_type()));
     inherited_requirements_.push_back(requirement);
-    inherited_records_.push_back({point.record_, requirement_index});
+    inherited_records_.push_back({point.record(), requirement_index});
     return point;
 }
 
 WiringPoint GraphWiring::inherited_requirement_point(std::size_t index) const {
-    return WiringPoint{*inherited_records_.at(index).record};
+    return details::WiringRecord::point(*inherited_records_.at(index).record);
 }
 
 WiringPoint GraphWiring::import_context(util::symbol name, WiringPoint provider) {
@@ -260,7 +260,7 @@ WiringPoint GraphWiring::import_context(util::symbol name, WiringPoint provider)
         provider = parent_->import_context(name, provider);
     }
 
-    const auto inherited = std::ranges::find(parent_->inherited_records_, provider.record_, &InheritedRecord::record);
+    const auto inherited = std::ranges::find(parent_->inherited_records_, provider.record(), &InheritedRecord::record);
     const auto *source_type = &provider.type();
     if (inherited == parent_->inherited_records_.end()) {
         auto context = WiringContext{*parent_};
@@ -271,7 +271,7 @@ WiringPoint GraphWiring::import_context(util::symbol name, WiringPoint provider)
 
     const auto existing = std::ranges::find_if(context_bindings_, [&](const auto &requirement) {
         return requirement.name == name && requirement.type == source_type &&
-               requirement.provider.record_ == provider.record_;
+               requirement.provider.record() == provider.record();
     });
     if (existing != context_bindings_.end()) {
         return existing->point;
@@ -287,7 +287,7 @@ WiredInput GraphWiring::wire_input(WiringPoint point, const TimeSeriesType &type
         throw WiringError{"a WiringPoint belongs to another GraphWiring"};
     }
 
-    const auto inherited = std::ranges::find(inherited_records_, point.record_, &InheritedRecord::record);
+    const auto inherited = std::ranges::find(inherited_records_, point.record(), &InheritedRecord::record);
     if (inherited != inherited_records_.end()) {
         return WiredInput::inherited(inherited->requirement);
     }
@@ -312,8 +312,8 @@ void GraphWiring::order_after_consumers(WiringPoint consumed, WiringPoint ordere
     }
 
     const auto existing = std::ranges::find_if(ordering_constraints_, [&](const auto &constraint) {
-        return constraint.consumed.record_ == consumed.record_ &&
-               constraint.ordered_output.record_ == ordered_output.record_;
+        return constraint.consumed.record() == consumed.record() &&
+               constraint.ordered_output.record() == ordered_output.record();
     });
     if (existing != ordering_constraints_.end()) {
         return;
@@ -323,12 +323,12 @@ void GraphWiring::order_after_consumers(WiringPoint consumed, WiringPoint ordere
 }
 
 bool GraphWiring::input_consumes(WiredInput input, WiringPoint point) const noexcept {
-    if (!point.has_output() || point.record_->graph_ != this) {
+    if (!point.has_output() || point.record()->graph_ != this) {
         return false;
     }
 
     if (input.is_inherited()) {
-        return input.index() < inherited_records_.size() && inherited_records_[input.index()].record == point.record_;
+        return input.index() < inherited_records_.size() && inherited_records_[input.index()].record == point.record();
     }
 
     if (input.index() >= output_records_.size()) {
@@ -337,7 +337,7 @@ bool GraphWiring::input_consumes(WiredInput input, WiringPoint point) const noex
 
     auto *input_record = output_records_[input.index()];
     while (input_record != nullptr) {
-        if (input_record == point.record_) {
+        if (input_record == point.record()) {
             return true;
         }
 
@@ -368,7 +368,7 @@ std::size_t GraphWiring::register_node(WiredNode node) {
 }
 
 void GraphWiring::register_node_output(std::size_t node_index, WiringPoint output, std::optional<std::size_t> hash) {
-    node_output_records_[node_index] = output.record_;
+    node_output_records_[node_index] = output.record();
     if (hash) {
         cache_wired_node(*hash, node_index);
     }
@@ -378,7 +378,7 @@ WiringPoint GraphWiring::register_record(std::unique_ptr<details::WiringRecord> 
     auto &result = *record;
     result.graph_ = this;
     wiring_records_.push_back(std::move(record));
-    return WiringPoint{result};
+    return details::WiringRecord::point(result);
 }
 
 WiringPoint GraphWiring::register_item_record(WiringPoint parent, item_id_t item,
@@ -388,14 +388,14 @@ WiringPoint GraphWiring::register_item_record(WiringPoint parent, item_id_t item
     }
 
     const auto existing = std::ranges::find_if(
-        item_records_, [&](const auto &entry) { return entry.parent == parent.record_ && entry.item == item; });
+        item_records_, [&](const auto &entry) { return entry.parent == parent.record() && entry.item == item; });
     if (existing != item_records_.end()) {
-        return WiringPoint{*existing->result};
+        return details::WiringRecord::point(*existing->result);
     }
 
     item_records_.reserve(item_records_.size() + 1);
     auto result = register_record(std::move(record));
-    item_records_.push_back({parent.record_, item, result.record_});
+    item_records_.push_back({parent.record(), item, result.record()});
     return result;
 }
 
@@ -417,7 +417,7 @@ WiringPoint GraphWiring::register_output(WiredOutput output, std::unique_ptr<det
     outputs_.push_back(output);
     output_records_.push_back(&result);
     wiring_records_.push_back(std::move(record));
-    return WiringPoint{result};
+    return details::WiringRecord::point(result);
 }
 
 std::optional<WiringPoint> GraphWiring::find_output_item(std::size_t parent, item_id_t item) const {
@@ -429,7 +429,7 @@ std::optional<WiringPoint> GraphWiring::find_output_item(std::size_t parent, ite
         return std::nullopt;
     }
 
-    return WiringPoint{*output_records_[*found]};
+    return details::WiringRecord::point(*output_records_[*found]);
 }
 
 std::size_t GraphWiring::output_index(WiringPoint point) const {
@@ -437,8 +437,8 @@ std::size_t GraphWiring::output_index(WiringPoint point) const {
         throw WiringError{"a WiringPoint belongs to another GraphWiring"};
     }
 
-    const auto output = point.record_->output_;
-    if (!point.record_->has_wired_output()) {
+    const auto output = point.record()->output_;
+    if (!point.record()->has_wired_output()) {
         throw WiringError{"a WiringPoint has no wired output until it is consumed"};
     }
 

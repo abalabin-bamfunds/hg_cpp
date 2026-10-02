@@ -2,7 +2,7 @@
 
 #include <algorithm>
 #include <bg/graph/details/nested_binding_identity.hpp>
-#include <bg/graph/details/service_implementation.hpp>
+#include <bg/graph/details/multiservice_ports.hpp>
 #include <bg/graph/details/service_requirements.hpp>
 #include <bg/graph/graph_wiring.hpp>
 #include <bg/graph/wiring_context.hpp>
@@ -62,9 +62,9 @@ struct ServiceCatalogue::State {
 namespace {
 
 template <typename Requests, typename Replies>
-class MultiservicePorts final : public details::ServiceImplementationAccess {
+class MultiservicePortCallbacks final : public details::MultiservicePorts {
   public:
-    MultiservicePorts(Requests requests, Replies replies)
+    MultiservicePortCallbacks(Requests requests, Replies replies)
         : requests_{std::move(requests)}, replies_{std::move(replies)} {}
 
     WiringPoint requests(const ServiceDefinition &service, const TypeMap &type_map,
@@ -425,7 +425,7 @@ void ServiceCatalogue::BuildOperation::wire_multiservice(std::size_t registratio
 
     auto request_instances = std::vector<details::ServiceInstance *>{};
     auto reply_instances = std::vector<details::ServiceInstance *>{};
-    auto service_access = MultiservicePorts{
+    auto multiservice_ports = MultiservicePortCallbacks{
         [&](const ServiceDefinition &service, const TypeMap &type_map,
             std::span<const WiringArgument> scalar_arguments) {
             auto call = resolve_call(service, type_map, scalar_arguments, true);
@@ -488,7 +488,7 @@ void ServiceCatalogue::BuildOperation::wire_multiservice(std::size_t registratio
             reply_instances.push_back(&instance);
         }};
 
-    auto wiring_context = WiringContext{wiring, service_access};
+    auto wiring_context = WiringContext{wiring, multiservice_ports};
     const auto output =
         (*registration.implementation)(std::span<const WiringArgument>{registration.installation_arguments});
     if (output) {
