@@ -6,7 +6,6 @@
 #include <bg/scalar/string.hpp>
 #include <bg/time_series/tsd/tsd_type.hpp>
 
-#include "../../runtime_graph_access.hpp"
 #include "../../utils/counting_memory_resource.hpp"
 
 #include <catch2/catch_test_macros.hpp>
@@ -56,7 +55,7 @@ TEST_CASE("runtime storage uses the output scalar runtime_type", "[evaluation][s
 
     double_sink_definition::evaluation_count = 0;
     runtime.start(time(1));
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 0);
+    runtime.schedule(0);
     runtime.evaluate(time(1));
 
     CHECK(double_sink_definition::evaluation_count == 1);
@@ -104,7 +103,7 @@ TEST_CASE("a node without output uses no output storage", "[evaluation][storage]
     CHECK(compiled.runtime_storage_size() == 36);
 
     runtime.start(time(1));
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 0);
+    runtime.schedule(0);
     runtime.evaluate(time(1));
 
     CHECK(float_sink_definition::evaluation_count == 1);
@@ -142,14 +141,14 @@ TEST_CASE("runtime graphs keep separate runtime storage", "[evaluation][storage]
     bg::RuntimeGraph first{compiled};
 
     first.start(time(1));
-    bg::testing::RuntimeGraphAccess::schedule(first, 0);
-    bg::testing::RuntimeGraphAccess::schedule(first, 1);
+    first.schedule(0);
+    first.schedule(1);
     first.evaluate(time(1));
 
     bg::RuntimeGraph second{compiled};
     add_definition::evaluation_count = 0;
     second.start(time(1));
-    bg::testing::RuntimeGraphAccess::schedule(second, 2);
+    second.schedule(2);
     second.evaluate(time(1));
 
     CHECK(add_definition::evaluation_count == 0);
@@ -254,17 +253,17 @@ TEST_CASE("scalar fields and state bind to their storage", "[evaluation][storage
 
     bg::RuntimeGraph first{compiled};
     first.start(time(1));
-    bg::testing::RuntimeGraphAccess::schedule(first, 0);
+    first.schedule(0);
     first.evaluate(time(1));
     CHECK(int_sink_definition::last_value == 2);
 
-    bg::testing::RuntimeGraphAccess::schedule(first, 0);
+    first.schedule(0);
     first.evaluate(time(2));
     CHECK(int_sink_definition::last_value == 6);
 
     bg::RuntimeGraph second{compiled};
     second.start(time(1));
-    bg::testing::RuntimeGraphAccess::schedule(second, 0);
+    second.schedule(0);
     second.evaluate(time(1));
     CHECK(int_sink_definition::last_value == 2);
 }

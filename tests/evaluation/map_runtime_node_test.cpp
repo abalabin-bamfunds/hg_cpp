@@ -12,7 +12,6 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include "../runtime_graph_access.hpp"
 #include "../utils/counting_memory_resource.hpp"
 
 #include <array>
@@ -461,11 +460,11 @@ TEST_CASE("stopped map inner graphs are destroyed at the start of the next outer
         auto runtime = RuntimeGraph{compiled, allocator{memory}};
         ControlledKeys::present = true;
         runtime.start(time(1));
-        testing::RuntimeGraphAccess::schedule(runtime, 0);
+        runtime.schedule(0);
         runtime.evaluate(time(1));
 
         ControlledKeys::present = false;
-        testing::RuntimeGraphAccess::schedule(runtime, 0);
+        runtime.schedule(0);
         runtime.evaluate(time(2));
         const auto stopped_allocations = memory.allocations();
 

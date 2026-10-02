@@ -475,7 +475,7 @@ RuntimeGraph::~RuntimeGraph() {
                 continue;
             }
 
-            EvaluationContext context{evaluation_time_, *this, node_index, SystemWallClock::instance()};
+            EvaluationContext context{evaluation_time_, *this, node_index, scratch_, SystemWallClock::instance()};
             const auto allocation_context = details::ScalarAllocationContext{
                 allocator_, global_state_->bundle_allocation_owner(), this, node_index};
             node.state_destruction_function()(node, storage_, &context);
@@ -664,6 +664,9 @@ RuntimeGraph::CycleCallbacks &RuntimeGraph::require_cycle_callbacks() {
 }
 
 void RuntimeGraph::add_cycle_callback(void *receiver, void (*function)(void *) noexcept) {
+    if (stopped_) {
+        return;
+    }
     outer_graph().require_cycle_callbacks().add(*this, receiver, function);
 }
 
@@ -1087,9 +1090,7 @@ void EvaluationContext::cancel(ScheduleHandle handle) const noexcept {
 }
 
 void EvaluationContext::add_cycle_callback(void *receiver, void (*function)(void *) noexcept) const {
-    if (!runtime_graph_->stopped_) {
-        runtime_graph_->add_cycle_callback(receiver, function);
-    }
+    runtime_graph_->add_cycle_callback(receiver, function);
 }
 
 GlobalState &EvaluationContext::global_state() const noexcept {
@@ -1097,10 +1098,11 @@ GlobalState &EvaluationContext::global_state() const noexcept {
 }
 
 EvaluationContext::EvaluationContext(EvaluationTime evaluation_time, RuntimeGraph &runtime_graph,
-                                     std::size_t node_index, const WallClock &wall_clock,
+                                     std::size_t node_index, details::EvaluationScratch *evaluation_scratch,
+                                     const WallClock &wall_clock,
                                      const details::EvaluationContextSection *sections) noexcept
     : evaluation_time_(evaluation_time), wall_clock_(&wall_clock), runtime_graph_(&runtime_graph),
-      node_index_(node_index), scratch_{runtime_graph.scratch_}, sections_(sections) {}
+      node_index_(node_index), scratch_{evaluation_scratch}, sections_(sections) {}
 
 EvaluationContext EvaluationContext::child(details::EvaluationContextSection &section) noexcept {
     section.parent = sections_;

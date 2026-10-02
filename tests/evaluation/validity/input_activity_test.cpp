@@ -8,8 +8,6 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include "../../runtime_graph_access.hpp"
-
 #include <array>
 #include <chrono>
 
@@ -77,21 +75,21 @@ TEST_CASE("an active input schedules evaluation and a passive input supplies its
     const bg::CompiledGraph compiled{wiring};
     bg::RuntimeGraph runtime{compiled};
     runtime.start(time(1));
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 0);
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 1);
+    runtime.schedule(0);
+    runtime.schedule(1);
     runtime.evaluate(time(1));
 
     REQUIRE(mixed_input_definition::evaluation_count == 1);
     REQUIRE(float_sink_definition::last_value == 11.0F);
 
     controlled_source_definition::values[1] = 20.0F;
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 1);
+    runtime.schedule(1);
     runtime.evaluate(time(2));
     CHECK(mixed_input_definition::evaluation_count == 1);
     CHECK(float_sink_definition::last_value == 11.0F);
 
     controlled_source_definition::values[0] = 2.0F;
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 0);
+    runtime.schedule(0);
     runtime.evaluate(time(3));
 
     CHECK(mixed_input_definition::evaluation_count == 2);
@@ -125,15 +123,15 @@ TEST_CASE("an active optional input schedules evaluation on invalidation and rev
     const bg::CompiledGraph compiled{wiring};
     bg::RuntimeGraph runtime{compiled};
     runtime.start(time(1));
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 0);
+    runtime.schedule(0);
     runtime.evaluate(time(1));
 
     controlled_source_definition::valid[0] = false;
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 0);
+    runtime.schedule(0);
     runtime.evaluate(time(2));
 
     controlled_source_definition::valid[0] = true;
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 0);
+    runtime.schedule(0);
     runtime.evaluate(time(3));
 
     REQUIRE(active_optional_observer_definition::observation_count == 3);
@@ -170,19 +168,19 @@ TEST_CASE("a passive optional input does not schedule evaluation",
     const bg::CompiledGraph compiled{wiring};
     bg::RuntimeGraph runtime{compiled};
     runtime.start(time(1));
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 0);
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 1);
+    runtime.schedule(0);
+    runtime.schedule(1);
     runtime.evaluate(time(1));
 
     REQUIRE(passive_optional_observer_definition::evaluation_count == 1);
     REQUIRE(passive_optional_observer_definition::last_valid);
 
     controlled_source_definition::valid[0] = false;
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 0);
+    runtime.schedule(0);
     runtime.evaluate(time(2));
 
     controlled_source_definition::valid[0] = true;
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 0);
+    runtime.schedule(0);
     runtime.evaluate(time(3));
 
     CHECK(passive_optional_observer_definition::evaluation_count == 1);
@@ -220,8 +218,8 @@ TEST_CASE("a passive required input propagates invalidation without evaluation",
     const bg::CompiledGraph compiled{wiring};
     bg::RuntimeGraph runtime{compiled};
     runtime.start(time(1));
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 0);
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 1);
+    runtime.schedule(0);
+    runtime.schedule(1);
     runtime.evaluate(time(1));
 
     REQUIRE(passive_copy_definition::evaluation_count == 1);
@@ -229,7 +227,7 @@ TEST_CASE("a passive required input propagates invalidation without evaluation",
     REQUIRE(active_optional_observer_definition::observed[0]);
 
     controlled_source_definition::valid[0] = false;
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 0);
+    runtime.schedule(0);
     runtime.evaluate(time(2));
 
     CHECK(passive_copy_definition::evaluation_count == 1);
@@ -237,11 +235,11 @@ TEST_CASE("a passive required input propagates invalidation without evaluation",
     CHECK_FALSE(active_optional_observer_definition::observed[1]);
 
     controlled_source_definition::valid[0] = true;
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 0);
+    runtime.schedule(0);
     runtime.evaluate(time(3));
     CHECK(passive_copy_definition::evaluation_count == 1);
 
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 1);
+    runtime.schedule(1);
     runtime.evaluate(time(4));
 
     CHECK(passive_copy_definition::evaluation_count == 2);
@@ -284,34 +282,34 @@ TEST_CASE("a dynamic input can stop and resume its own scheduling",
     const bg::CompiledGraph compiled{wiring};
     bg::RuntimeGraph runtime{compiled};
     runtime.start(time(1));
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 0);
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 1);
+    runtime.schedule(0);
+    runtime.schedule(1);
     runtime.evaluate(time(1));
 
     REQUIRE(dynamically_controlled_input_definition::evaluation_count == 1);
 
     controlled_source_definition::values[0] = 2.0F;
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 0);
+    runtime.schedule(0);
     runtime.evaluate(time(2));
     REQUIRE(dynamically_controlled_input_definition::evaluation_count == 2);
 
     controlled_source_definition::values[1] = 0.0F;
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 1);
+    runtime.schedule(1);
     runtime.evaluate(time(3));
     REQUIRE(dynamically_controlled_input_definition::evaluation_count == 3);
 
     controlled_source_definition::values[0] = 3.0F;
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 0);
+    runtime.schedule(0);
     runtime.evaluate(time(4));
     REQUIRE(dynamically_controlled_input_definition::evaluation_count == 3);
 
     controlled_source_definition::values[1] = 1.0F;
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 1);
+    runtime.schedule(1);
     runtime.evaluate(time(5));
     REQUIRE(dynamically_controlled_input_definition::evaluation_count == 4);
 
     controlled_source_definition::values[0] = 4.0F;
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 0);
+    runtime.schedule(0);
     runtime.evaluate(time(6));
     CHECK(dynamically_controlled_input_definition::evaluation_count == 5);
 }
@@ -344,16 +342,16 @@ TEST_CASE("a passive dynamic input starts passive",
     const bg::CompiledGraph compiled{wiring};
     bg::RuntimeGraph runtime{compiled};
     runtime.start(time(1));
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 0);
+    runtime.schedule(0);
     runtime.evaluate(time(1));
     REQUIRE(initially_passive_dynamic_input_definition::evaluation_count == 0);
 
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 1);
+    runtime.schedule(1);
     runtime.evaluate(time(2));
     REQUIRE(initially_passive_dynamic_input_definition::evaluation_count == 1);
 
     controlled_source_definition::values[0] = 2.0F;
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 0);
+    runtime.schedule(0);
     runtime.evaluate(time(3));
     CHECK(initially_passive_dynamic_input_definition::evaluation_count == 2);
 }
@@ -449,30 +447,30 @@ TEST_CASE("two dynamic inputs sharing one time series control scheduling indepen
     const bg::CompiledGraph compiled{wiring};
     bg::RuntimeGraph runtime{compiled};
     runtime.start(time(1));
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 0);
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 1);
+    runtime.schedule(0);
+    runtime.schedule(1);
     runtime.evaluate(time(1));
     REQUIRE(independently_controlled_inputs_definition::evaluation_count == 1);
 
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 0);
+    runtime.schedule(0);
     runtime.evaluate(time(2));
     REQUIRE(independently_controlled_inputs_definition::evaluation_count == 2);
 
     controlled_source_definition::values[1] = 2.0F;
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 1);
+    runtime.schedule(1);
     runtime.evaluate(time(3));
     REQUIRE(independently_controlled_inputs_definition::evaluation_count == 3);
 
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 0);
+    runtime.schedule(0);
     runtime.evaluate(time(4));
     CHECK(independently_controlled_inputs_definition::evaluation_count == 3);
 
     controlled_source_definition::values[1] = 1.0F;
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 1);
+    runtime.schedule(1);
     runtime.evaluate(time(5));
     REQUIRE(independently_controlled_inputs_definition::evaluation_count == 4);
 
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 0);
+    runtime.schedule(0);
     runtime.evaluate(time(6));
     CHECK(independently_controlled_inputs_definition::evaluation_count == 5);
 }
@@ -517,15 +515,15 @@ TEST_CASE("a dynamically passive required input still propagates invalidation",
     const bg::CompiledGraph compiled{wiring};
     bg::RuntimeGraph runtime{compiled};
     runtime.start(time(1));
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 0);
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 1);
+    runtime.schedule(0);
+    runtime.schedule(1);
     runtime.evaluate(time(1));
     REQUIRE(dynamic_required_copy_definition::evaluation_count == 1);
     REQUIRE(active_optional_observer_definition::observation_count == 1);
     REQUIRE(active_optional_observer_definition::observed[0]);
 
     controlled_source_definition::valid[0] = false;
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 0);
+    runtime.schedule(0);
     runtime.evaluate(time(2));
 
     CHECK(dynamic_required_copy_definition::evaluation_count == 1);
@@ -571,31 +569,31 @@ TEST_CASE("a dynamic optional input applies its current activity to validity cha
     const bg::CompiledGraph compiled{wiring};
     bg::RuntimeGraph runtime{compiled};
     runtime.start(time(1));
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 0);
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 1);
+    runtime.schedule(0);
+    runtime.schedule(1);
     runtime.evaluate(time(1));
 
     controlled_source_definition::valid[0] = false;
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 0);
+    runtime.schedule(0);
     runtime.evaluate(time(2));
 
     controlled_source_definition::valid[0] = true;
     controlled_source_definition::values[1] = 0.0F;
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 0);
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 1);
+    runtime.schedule(0);
+    runtime.schedule(1);
     runtime.evaluate(time(3));
 
     controlled_source_definition::valid[0] = false;
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 0);
+    runtime.schedule(0);
     runtime.evaluate(time(4));
     REQUIRE(dynamic_optional_observer_definition::observation_count == 3);
 
     controlled_source_definition::values[1] = 1.0F;
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 1);
+    runtime.schedule(1);
     runtime.evaluate(time(5));
 
     controlled_source_definition::valid[0] = true;
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 0);
+    runtime.schedule(0);
     runtime.evaluate(time(6));
 
     REQUIRE(dynamic_optional_observer_definition::observation_count == 5);
@@ -655,19 +653,19 @@ TEST_CASE("runtime graphs created from one compiled graph have independent input
     first.start(time(1));
     second.start(time(1));
 
-    bg::testing::RuntimeGraphAccess::schedule(first, 0);
-    bg::testing::RuntimeGraphAccess::schedule(second, 0);
+    first.schedule(0);
+    second.schedule(0);
     first.evaluate(time(1));
     second.evaluate(time(1));
     REQUIRE(runtime_local_activity_definition::evaluation_count == 2);
 
     runtime_local_activity_definition::activate = true;
-    bg::testing::RuntimeGraphAccess::schedule(first, 1);
+    first.schedule(1);
     first.evaluate(time(2));
     REQUIRE(runtime_local_activity_definition::evaluation_count == 3);
 
-    bg::testing::RuntimeGraphAccess::schedule(first, 0);
-    bg::testing::RuntimeGraphAccess::schedule(second, 0);
+    first.schedule(0);
+    second.schedule(0);
     first.evaluate(time(3));
     second.evaluate(time(2));
     CHECK(runtime_local_activity_definition::evaluation_count == 4);

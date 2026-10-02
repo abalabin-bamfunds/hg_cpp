@@ -6,8 +6,6 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include "../../runtime_graph_access.hpp"
-
 #include <array>
 #include <chrono>
 #include <stdexcept>
@@ -63,8 +61,8 @@ TEST_CASE("a runtime graph evaluates scheduled nodes in topological order",
     add_definition::evaluation_count = 0;
 
     runtime.start(time(1));
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 0);
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 1);
+    runtime.schedule(0);
+    runtime.schedule(1);
     runtime.evaluate(time(1));
 
     CHECK(add_definition::evaluation_count == 1);
@@ -73,7 +71,7 @@ TEST_CASE("a runtime graph evaluates scheduled nodes in topological order",
     runtime.evaluate(time(2));
     CHECK(add_definition::evaluation_count == 1);
 
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 0);
+    runtime.schedule(0);
     runtime.evaluate(time(3));
     CHECK(add_definition::evaluation_count == 2);
 }
@@ -166,7 +164,7 @@ TEST_CASE("a scheduled node can omit evaluation",
     CHECK(start_only_sink_definition::evaluation_count == 1);
     CHECK(start_only_sink_definition::last_value == 3.0F);
 
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 0);
+    runtime.schedule(0);
     runtime.evaluate(time(2));
     CHECK(start_only_sink_definition::evaluation_count == 1);
 }
@@ -224,7 +222,7 @@ TEST_CASE("a scalar-only node is inert unless it requests initial evaluation",
     runtime.evaluate(time(1));
     CHECK(inert_scalar_definition::evaluation_count == 0);
 
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 0);
+    runtime.schedule(0);
     runtime.evaluate(time(2));
     CHECK(inert_scalar_definition::evaluation_count == 1);
 }
@@ -259,9 +257,9 @@ TEST_CASE("a runtime graph processes set scheduling bits in node order",
     indexed_definition::evaluation_count = 0;
 
     runtime.start(time(1));
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 129);
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 2);
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 65);
+    runtime.schedule(129);
+    runtime.schedule(2);
+    runtime.schedule(65);
     runtime.evaluate(time(1));
 
     REQUIRE(indexed_definition::evaluation_count == 3);
@@ -308,7 +306,7 @@ TEST_CASE("scheduling during evaluation crosses a scheduling block boundary",
     float_sink_definition::last_value = 0.0F;
 
     runtime.start(time(1));
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 63);
+    runtime.schedule(63);
     runtime.evaluate(time(1));
 
     CHECK(float_sink_definition::evaluation_count == 1);

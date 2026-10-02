@@ -6,8 +6,6 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include "../../runtime_graph_access.hpp"
-
 #include <array>
 #include <chrono>
 
@@ -58,12 +56,12 @@ TEST_CASE("a required input delays evaluation until it becomes valid",
     add_definition::evaluation_count = 0;
 
     runtime.start(time(1));
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 0);
+    runtime.schedule(0);
     runtime.evaluate(time(1));
 
     CHECK(add_definition::evaluation_count == 0);
 
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 1);
+    runtime.schedule(1);
     runtime.evaluate(time(2));
 
     CHECK(add_definition::evaluation_count == 1);
@@ -126,17 +124,17 @@ TEST_CASE("revalidating an active required input schedules normal evaluation",
     float_sink_definition::evaluation_count = 0;
 
     runtime.start(time(1));
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 0);
+    runtime.schedule(0);
     runtime.evaluate(time(1));
     REQUIRE(float_sink_definition::evaluation_count == 1);
 
     switchable_definition::publish = false;
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 0);
+    runtime.schedule(0);
     runtime.evaluate(time(2));
     REQUIRE(float_sink_definition::evaluation_count == 1);
 
     switchable_definition::publish = true;
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 0);
+    runtime.schedule(0);
     runtime.evaluate(time(3));
 
     CHECK(float_sink_definition::evaluation_count == 2);
@@ -200,26 +198,26 @@ TEST_CASE("a node resumes after all required inputs become valid",
     const bg::CompiledGraph compiled{wiring};
     bg::RuntimeGraph runtime{compiled};
     runtime.start(time(1));
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 0);
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 1);
+    runtime.schedule(0);
+    runtime.schedule(1);
     runtime.evaluate(time(1));
     REQUIRE(required_pair_definition::evaluation_count == 1);
 
     paired_source_definition::valid = {false, false};
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 0);
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 1);
+    runtime.schedule(0);
+    runtime.schedule(1);
     runtime.evaluate(time(2));
 
     REQUIRE(required_pair_definition::evaluation_count == 1);
     REQUIRE(required_pair_definition::invalidation_count == 1);
 
     paired_source_definition::valid[0] = true;
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 0);
+    runtime.schedule(0);
     runtime.evaluate(time(3));
     CHECK(required_pair_definition::evaluation_count == 1);
 
     paired_source_definition::valid[1] = true;
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 1);
+    runtime.schedule(1);
     runtime.evaluate(time(4));
 
     CHECK(required_pair_definition::evaluation_count == 2);

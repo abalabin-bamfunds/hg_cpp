@@ -10,8 +10,6 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include "../runtime_graph_access.hpp"
-
 #include <chrono>
 #include <cstddef>
 #include <memory>
@@ -362,7 +360,7 @@ TEST_CASE("a compiled graph owns an opaque scalar copy", "[compiled_graph][featu
     opaque_sink_definition::observed = nullptr;
     opaque_sink_definition::observed_value = 0;
     runtime.start(bg::MIN_DT + std::chrono::microseconds{1});
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 0);
+    runtime.schedule(0);
     runtime.evaluate(bg::MIN_DT + std::chrono::microseconds{1});
 
     CHECK(*stored_pointer == &value);

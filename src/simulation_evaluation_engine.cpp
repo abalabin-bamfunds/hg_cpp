@@ -22,7 +22,7 @@ class SimulationWallClock final : public WallClock {
 } // namespace
 
 void SimulationEvaluationEngine::run(RuntimeGraph &runtime_graph, EvaluationTime start_time) const {
-    auto scratch = details::EvaluationScratch{runtime_graph.allocator_.memory_resource()};
+    auto scratch = details::EvaluationScratch{runtime_graph.allocation().memory_resource()};
     auto wall_clock = SimulationWallClock{};
     wall_clock.set_time(start_time);
     auto start_context = EvaluationContext{start_time, runtime_graph, scratch, wall_clock};

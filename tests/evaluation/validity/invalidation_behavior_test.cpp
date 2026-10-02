@@ -6,8 +6,6 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include "../../runtime_graph_access.hpp"
-
 #include <chrono>
 
 namespace {
@@ -68,12 +66,12 @@ TEST_CASE("required-input invalidation propagates through a graph",
     float_sink_definition::evaluation_count = 0;
 
     runtime.start(time(1));
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 0);
+    runtime.schedule(0);
     runtime.evaluate(time(1));
     REQUIRE(float_sink_definition::evaluation_count == 1);
 
     switchable_definition::publish = false;
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 0);
+    runtime.schedule(0);
     runtime.evaluate(time(2));
 
     CHECK(float_sink_definition::evaluation_count == 1);
@@ -120,16 +118,16 @@ TEST_CASE("required-input invalidation is applied once while the input remains i
     fallback_definition::invalidation_count = 0;
 
     runtime.start(time(1));
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 0);
+    runtime.schedule(0);
     runtime.evaluate(time(1));
     REQUIRE(fallback_definition::evaluation_count == 1);
 
     switchable_definition::publish = false;
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 0);
+    runtime.schedule(0);
     runtime.evaluate(time(2));
     REQUIRE(fallback_definition::invalidation_count == 1);
 
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 0);
+    runtime.schedule(0);
     runtime.evaluate(time(3));
 
     CHECK(fallback_definition::evaluation_count == 1);
@@ -182,7 +180,7 @@ TEST_CASE("a node can preserve its output when a required input becomes invalid"
     validity_observer_definition::evaluation_count = 0;
 
     runtime.start(time(1));
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 0);
+    runtime.schedule(0);
     runtime.evaluate(time(1));
 
     REQUIRE(hold_definition::evaluation_count == 1);
@@ -190,7 +188,7 @@ TEST_CASE("a node can preserve its output when a required input becomes invalid"
     REQUIRE(validity_observer_definition::last_valid);
 
     switchable_definition::publish = false;
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 0);
+    runtime.schedule(0);
     runtime.evaluate(time(2));
 
     CHECK(hold_definition::evaluation_count == 1);
@@ -218,7 +216,7 @@ TEST_CASE("a node can produce an output when a required input becomes invalid",
     float_sink_definition::evaluation_count = 0;
 
     runtime.start(time(1));
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 0);
+    runtime.schedule(0);
     runtime.evaluate(time(1));
 
     REQUIRE(fallback_definition::evaluation_count == 1);
@@ -226,7 +224,7 @@ TEST_CASE("a node can produce an output when a required input becomes invalid",
     REQUIRE(float_sink_definition::last_value == 4.0F);
 
     switchable_definition::publish = false;
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 0);
+    runtime.schedule(0);
     runtime.evaluate(time(2));
 
     CHECK(fallback_definition::evaluation_count == 1);
@@ -267,11 +265,11 @@ TEST_CASE("an invalidation failure stops the runtime graph",
     throwing_invalidation_definition::stop_count = 0;
 
     runtime.start(time(1));
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 0);
+    runtime.schedule(0);
     runtime.evaluate(time(1));
 
     switchable_definition::publish = false;
-    bg::testing::RuntimeGraphAccess::schedule(runtime, 0);
+    runtime.schedule(0);
     CHECK_THROWS_AS(runtime.evaluate(time(2)), std::runtime_error);
     CHECK(throwing_invalidation_definition::stop_count == 1);
     CHECK_THROWS_AS(runtime.evaluate(time(3)), std::logic_error);

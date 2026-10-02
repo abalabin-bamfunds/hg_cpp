@@ -59,7 +59,7 @@ class EvaluationContext {
         : evaluation_time_(evaluation_time), wall_clock_(&wall_clock), runtime_graph_(&runtime_graph), node_index_{},
           scratch_{&evaluation_scratch} {}
     EvaluationContext(EvaluationTime evaluation_time, RuntimeGraph &runtime_graph, std::size_t node_index,
-                      const WallClock &wall_clock,
+                      details::EvaluationScratch *evaluation_scratch, const WallClock &wall_clock,
                       const details::EvaluationContextSection *sections = nullptr) noexcept;
     EvaluationContext(EvaluationContext &parent, RuntimeGraph &runtime_graph, std::size_t node_index) noexcept
         : evaluation_time_(parent.evaluation_time_), wall_clock_(parent.wall_clock_), runtime_graph_(&runtime_graph),

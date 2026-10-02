@@ -18,19 +18,11 @@
 namespace bg {
 
 namespace details {
+struct DynamicSubscribers;
 class EvaluationScratch;
-class NodeScheduler;
-class ReferenceProvider;
 class ServiceRequestBinding;
 } // namespace details
 
-namespace testing {
-class RuntimeGraphAccess;
-}
-
-class TimeSeriesRuntimeType;
-class ItemSubscription;
-class SimulationEvaluationEngine;
 class NestedGraph;
 
 class RuntimeGraph {
@@ -58,15 +50,25 @@ class RuntimeGraph {
     Node node(std::size_t index) noexcept { return {compiled_graph_->node(index), storage_}; }
     Node node(const CompiledNode &compiled_node) noexcept { return {compiled_node, storage_}; }
 
+    void start(EvaluationContext &context);
+    bool evaluate(EvaluationContext &context);
+    void stop(EvaluationContext &context) noexcept;
+
+    void schedule(std::size_t node_index) noexcept;
+    void schedule_validity_check(std::size_t node_index) noexcept;
+    ScheduleHandle schedule_at(std::size_t node_index, EvaluationTime time);
+    void cancel(std::size_t node_index, ScheduleHandle handle) noexcept;
+
+    void set_owner(RuntimeGraph &graph, std::size_t node_index) noexcept;
+    void set_owner(RuntimeGraph &graph, std::size_t node_index, RuntimeGraphOwner owner) noexcept;
+    void clear_owner() noexcept;
+
+    void add_cycle_callback(void *receiver, void (*function)(void *) noexcept);
+    void remove_cycle_callback(const void *receiver) noexcept;
+    void notify_dynamic_subscribers(details::DynamicSubscribers &subscribers, OutputChange change);
+
   private:
-    friend EvaluationContext;
-    friend OutputChangeContext;
-    friend SimulationEvaluationEngine;
     friend NestedGraph;
-    friend RuntimeGraphOwnerContext;
-    friend details::NodeScheduler;
-    friend details::ReferenceProvider;
-    friend testing::RuntimeGraphAccess;
 
     using ScheduleWord = CompiledGraph::ScheduleWord;
     using SchedulingInfo = CompiledGraph::SchedulingInfo;
@@ -81,25 +83,16 @@ class RuntimeGraph {
     auto scheduling_info() noexcept -> std::span<SchedulingInfo>;
     void initialize_storage();
 
-    void schedule(std::size_t node_index) noexcept;
-    void schedule_validity_check(std::size_t node_index) noexcept;
-    ScheduleHandle schedule_at(std::size_t node_index, EvaluationTime time);
-    void cancel(std::size_t node_index, ScheduleHandle handle) noexcept;
     TimedSchedule *&timed_schedule() noexcept;
     TimedSchedule *timed_schedule() const noexcept;
     void activate_scheduled(EvaluationTime evaluation_time) noexcept;
     void clear_timed_schedule() noexcept;
     void notify_timed_schedule_changed(std::optional<EvaluationTime> previous);
     void notify_owner_scheduled() noexcept;
-    void set_owner(RuntimeGraph &graph, std::size_t node_index) noexcept;
-    void set_owner(RuntimeGraph &graph, std::size_t node_index, RuntimeGraphOwner owner) noexcept;
-    void clear_owner() noexcept;
     CycleCallbacks *&cycle_callbacks() noexcept;
     CycleCallbacks *cycle_callbacks() const noexcept;
     RuntimeGraph &outer_graph() noexcept;
     CycleCallbacks &require_cycle_callbacks();
-    void add_cycle_callback(void *receiver, void (*function)(void *) noexcept);
-    void remove_cycle_callback(const void *receiver) noexcept;
     void run_cycle_callbacks() noexcept;
     void clear_cycle_callbacks() noexcept;
     std::optional<OutputChange> output_change(const CompiledNode &node, bool output_was_valid) const noexcept;
@@ -107,7 +100,6 @@ class RuntimeGraph {
     void notify_subscribers(std::span<const Subscriber> subscribers, OutputChange change);
     void notify_node_subscriber(std::size_t node_index, bool active, bool required, bool active_optional,
                                 OutputChange change) noexcept;
-    void notify_dynamic_subscribers(details::DynamicSubscribers &subscribers, OutputChange change);
     void queue_input_notification(InputNotificationFunction function, std::size_t node_index, std::size_t data,
                                   OutputChange change);
     void run_input_notifications();
@@ -116,10 +108,6 @@ class RuntimeGraph {
     void apply_invalidation(const CompiledNode &node, std::size_t node_index, EvaluationContext &context);
     void stop_nodes(std::size_t node_count, EvaluationContext &context) noexcept;
     bool inputs_are_valid(const CompiledNode &node) const noexcept;
-    void start(EvaluationContext &context);
-    bool evaluate(EvaluationContext &context);
-    void stop(EvaluationContext &context) noexcept;
-
     const CompiledGraph *compiled_graph_;
     bg::allocator allocator_;
     std::unique_ptr<GlobalState> owned_global_state_;

@@ -7,8 +7,6 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include "../runtime_graph_access.hpp"
-
 #include <algorithm>
 #include <chrono>
 #include <cstddef>
@@ -154,8 +152,8 @@ bg::CompiledGraph make_inner_graph(int delay) {
 }
 
 void set_owner(bg::RuntimeGraph &inner, bg::RuntimeGraph &outer, InnerGraphOwner &owner, std::size_t token) {
-    bg::testing::RuntimeGraphAccess::set_owner(
-        inner, outer, 0, bg::RuntimeGraphOwner{.receiver = &owner, .token = token, .callbacks = &owner.callbacks});
+    inner.set_owner(
+        outer, 0, bg::RuntimeGraphOwner{.receiver = &owner, .token = token, .callbacks = &owner.callbacks});
 }
 
 } // namespace
@@ -175,8 +173,8 @@ TEST_CASE("multiple inner graphs identify immediate scheduling to their owner",
     outer.start(time(1));
     first.start(time(1));
     second.start(time(1));
-    bg::testing::RuntimeGraphAccess::schedule(second, 0);
-    bg::testing::RuntimeGraphAccess::schedule(first, 0);
+    second.schedule(0);
+    first.schedule(0);
     outer.evaluate(time(1));
 
     CHECK(owner.evaluated_immediate() == std::vector<std::size_t>{11, 7});
