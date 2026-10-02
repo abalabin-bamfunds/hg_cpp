@@ -35,12 +35,14 @@ static_assert(!HasArrowOperator<FloatInput>);
 } // namespace
 
 TEST_CASE("a typed input reads its time-series value", "[node_api][feature:node-api]") {
-    const bg::EvaluationTime updated = bg::MIN_DT + std::chrono::microseconds{1};
+    const auto updated_time = bg::MIN_DT + std::chrono::microseconds{1};
+    auto updated = bg::TimeSeriesState{};
+    updated.publish(updated_time);
     const float value = 1.25F;
     const FloatInput input{updated, &value};
 
     REQUIRE(input.valid());
-    CHECK(input.last_updated() == updated);
+    CHECK(input.last_updated() == updated_time);
     CHECK(input.value() == value);
     CHECK(*input == value);
     const auto read_generic = [](const FloatInput &view) { return view.valid(); };
@@ -63,7 +65,8 @@ TEST_CASE("a typed input reads its time-series value", "[node_api][feature:node-
 
 TEST_CASE("an input reports whether its visible value was modified",
           "[node_api][feature:node-api][feature:time-series-view]") {
-    const auto updated = bg::MIN_DT + std::chrono::microseconds{1};
+    auto updated = bg::TimeSeriesState{};
+    updated.publish(bg::MIN_DT + std::chrono::microseconds{1});
     const auto value = 1.25F;
     const auto modified = FloatInput{updated, &value, true};
     const auto unchanged = FloatInput{updated, &value};
@@ -77,7 +80,8 @@ TEST_CASE("an input reports whether its visible value was modified",
 }
 
 TEST_CASE("a typed value input provides member access to its value", "[node_api][feature:node-api]") {
-    const auto updated = bg::MIN_DT + std::chrono::microseconds{1};
+    auto updated = bg::TimeSeriesState{};
+    updated.publish(bg::MIN_DT + std::chrono::microseconds{1});
     const auto value = std::pmr::string{"value"};
     const auto input = bg::In<bg::TS<bg::string>>{updated, &value};
 
@@ -98,7 +102,8 @@ TEST_CASE("a generic value input returns an erased scalar value view",
           "[node_api][feature:node-api][declaration:generic]") {
     using Input = bg::In<bg::TS<bg::SCALAR>>;
     const auto &runtime_type = bg::cpp_time_series_runtime_type<bg::TS<float>>();
-    const auto updated = bg::MIN_DT + std::chrono::microseconds{1};
+    auto updated = bg::TimeSeriesState{};
+    updated.publish(bg::MIN_DT + std::chrono::microseconds{1});
     const auto value = 1.25F;
     const auto input = Input{updated, &value, runtime_type};
     const auto value_view = input.value_view();
@@ -110,7 +115,8 @@ TEST_CASE("a generic value input returns an erased scalar value view",
 TEST_CASE("an arbitrary time-series input provides its category view", "[node_api][feature:node-api]") {
     using Input = bg::In<bg::TS_T>;
     const auto &runtime_type = bg::cpp_time_series_runtime_type<bg::TS<float>>();
-    const auto updated = bg::MIN_DT + std::chrono::microseconds{1};
+    auto updated = bg::TimeSeriesState{};
+    updated.publish(bg::MIN_DT + std::chrono::microseconds{1});
     const auto value = 1.25F;
     const auto input = Input{updated, &value, runtime_type};
     const auto value_view =

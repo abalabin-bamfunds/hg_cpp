@@ -1,6 +1,7 @@
 #pragma once
 
 #include <bg/evaluation_time.hpp>
+#include <bg/time_series/time_series_state.hpp>
 #include <bg/time_series/item_id.hpp>
 #include <bg/util/tagged_ptr.hpp>
 
@@ -42,10 +43,10 @@ struct ResolvedTimeSeries {
     static ResolvedTimeSeries resolve(Reference reference);
 
     bool valid() const noexcept {
-        return runtime_type != nullptr && storage != nullptr && last_updated != nullptr && *last_updated > MIN_DT;
+        return runtime_type != nullptr && storage != nullptr && last_updated != nullptr && last_updated->valid();
     }
 
-    const EvaluationTime *last_updated{};
+    const TimeSeriesState *last_updated{};
     const void *storage{};
     const TimeSeriesRuntimeType *runtime_type{};
 };

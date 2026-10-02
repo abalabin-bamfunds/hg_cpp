@@ -41,14 +41,14 @@ class FixedTimeSeriesListRuntimeType final : public TimeSeriesRuntimeType {
     ConstItem item(const void *value, item_id_t id) const override {
         const auto field = item_layout(id);
         const auto *bytes = static_cast<const std::byte *>(value);
-        return {field.runtime_type, *reinterpret_cast<const EvaluationTime *>(bytes + field.last_updated_offset),
+        return {field.runtime_type, *reinterpret_cast<const TimeSeriesState *>(bytes + field.last_updated_offset),
                 bytes + field.value_offset};
     }
 
     MutableItem item(void *value, item_id_t id) const override {
         const auto field = item_layout(id);
         auto *bytes = static_cast<std::byte *>(value);
-        return {field.runtime_type, *reinterpret_cast<EvaluationTime *>(bytes + field.last_updated_offset),
+        return {field.runtime_type, *reinterpret_cast<TimeSeriesState *>(bytes + field.last_updated_offset),
                 bytes + field.value_offset};
     }
 
@@ -58,16 +58,16 @@ class FixedTimeSeriesListRuntimeType final : public TimeSeriesRuntimeType {
         }
     }
 
-    bool item_updated(const EvaluationTime &last_updated, const void *value,
+    bool item_updated(const TimeSeriesState &last_updated, const void *value,
                                     item_id_t id) const noexcept override {
         const auto &storage = *static_cast<const time_series_list_storage *>(value);
-        return last_updated > MIN_DT && storage.change_time == last_updated && storage.updated.contains(id);
+        return last_updated.valid() && storage.change_time == last_updated.time() && storage.updated.contains(id);
     }
 
-    void for_each_updated_item(const EvaluationTime &last_updated, const void *value, void *context,
+    void for_each_updated_item(const TimeSeriesState &last_updated, const void *value, void *context,
                                ItemIdFunction function) const override {
         const auto &storage = *static_cast<const time_series_list_storage *>(value);
-        if (last_updated <= MIN_DT || storage.change_time != last_updated) {
+        if (!last_updated.valid() || storage.change_time != last_updated.time()) {
             return;
         }
         for (const auto index : storage.updated) {
@@ -78,32 +78,32 @@ class FixedTimeSeriesListRuntimeType final : public TimeSeriesRuntimeType {
     void invalidate_output(const details::OutputState &output) const override { invalidate_output_items(output); }
 
     [[nodiscard]] bool mark_item_modified(void *value, item_id_t id, EvaluationTime evaluation_time,
-                                          EvaluationTime, allocator &memory) const noexcept override {
+                                          const TimeSeriesState &, allocator &memory) const noexcept override {
         return static_cast<time_series_list_storage *>(value)->mark(id, evaluation_time, memory);
     }
 
     bool collection_valid(const void *value) const noexcept override {
         const auto *bytes = static_cast<const std::byte *>(value);
         for (auto index = std::size_t{}; index < list_type().item_count(); ++index) {
-            if (*reinterpret_cast<const EvaluationTime *>(bytes + item_layout(index).last_updated_offset) > MIN_DT) {
+            if (reinterpret_cast<const TimeSeriesState *>(bytes + item_layout(index).last_updated_offset)->valid()) {
                 return true;
             }
         }
         return false;
     }
 
-    void for_each_modified_item(const EvaluationTime &last_updated, const void *value, EvaluationTime evaluation_time,
+    void for_each_modified_item(const TimeSeriesState &last_updated, const void *value, EvaluationTime evaluation_time,
                                 void *context, ModifiedItemFunction function) const override {
         const auto *bytes = static_cast<const std::byte *>(value);
-        const auto publish = [&](std::size_t index, const EvaluationTime &item_last_updated) {
+        const auto publish = [&](std::size_t index, const TimeSeriesState &item_last_updated) {
             const auto field = item_layout(index);
             function(context, {static_cast<item_id_t>(index), item_, &item_last_updated,
                                bytes + field.value_offset});
         };
 
-        if (last_updated <= MIN_DT) {
+        if (!last_updated.valid()) {
             for (auto index = std::size_t{}; index < list_type().item_count(); ++index) {
-                publish(index, MIN_DT);
+                publish(index, last_updated);
             }
             return;
         }
@@ -114,7 +114,7 @@ class FixedTimeSeriesListRuntimeType final : public TimeSeriesRuntimeType {
         }
         for (const auto index : storage.updated) {
             const auto field = item_layout(index);
-            publish(index, *reinterpret_cast<const EvaluationTime *>(bytes + field.last_updated_offset));
+            publish(index, *reinterpret_cast<const TimeSeriesState *>(bytes + field.last_updated_offset));
         }
     }
 
@@ -123,7 +123,7 @@ class FixedTimeSeriesListRuntimeType final : public TimeSeriesRuntimeType {
         auto *bytes = static_cast<std::byte *>(destination);
         for (auto index = std::size_t{}; index < list_type().item_count(); ++index) {
             const auto field = item_layout(index);
-            std::construct_at(reinterpret_cast<EvaluationTime *>(bytes + field.last_updated_offset), MIN_DT);
+            std::construct_at(reinterpret_cast<TimeSeriesState *>(bytes + field.last_updated_offset));
             item_->construct_initial_value(bytes + field.value_offset);
         }
     }
@@ -136,14 +136,14 @@ class FixedTimeSeriesListRuntimeType final : public TimeSeriesRuntimeType {
             while (constructed != 0) {
                 const auto field = item_layout(--constructed);
                 item_->destroy_value(bytes + field.value_offset, memory);
-                std::destroy_at(reinterpret_cast<EvaluationTime *>(bytes + field.last_updated_offset));
+                std::destroy_at(reinterpret_cast<TimeSeriesState *>(bytes + field.last_updated_offset));
             }
             std::destroy_at(storage);
         }};
 
         for (; constructed < list_type().item_count(); ++constructed) {
             const auto field = item_layout(constructed);
-            std::construct_at(reinterpret_cast<EvaluationTime *>(bytes + field.last_updated_offset), MIN_DT);
+            std::construct_at(reinterpret_cast<TimeSeriesState *>(bytes + field.last_updated_offset));
             item_->construct_runtime_value(bytes + field.value_offset, memory);
         }
         rollback.release();
@@ -154,7 +154,7 @@ class FixedTimeSeriesListRuntimeType final : public TimeSeriesRuntimeType {
         for (auto index = list_type().item_count(); index != 0; --index) {
             const auto field = item_layout(index - 1);
             item_->destroy_value(bytes + field.value_offset, memory);
-            std::destroy_at(reinterpret_cast<EvaluationTime *>(bytes + field.last_updated_offset));
+            std::destroy_at(reinterpret_cast<TimeSeriesState *>(bytes + field.last_updated_offset));
         }
         auto *storage = static_cast<time_series_list_storage *>(value);
         storage->updated.release(memory);

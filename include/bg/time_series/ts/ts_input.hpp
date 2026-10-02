@@ -23,11 +23,13 @@ class In<TS<Variable, TimeSeriesProperties...>, Properties...>
     static_assert(ParsedProperties::valid);
 
   public:
-    In(const EvaluationTime &last_updated, const void *value, const TimeSeriesRuntimeType &runtime_type,
+    In(const TimeSeriesState &last_updated, const void *value, const TimeSeriesRuntimeType &runtime_type,
        bool modified = false, bool *activity = nullptr) noexcept
         : activity_control{activity}, data_{runtime_type, last_updated, value, modified} {}
 
     bool valid() const noexcept { return data_.valid(); }
+    bool became_valid() const noexcept { return data_.became_valid(); }
+    bool became_invalid() const noexcept { return data_.became_invalid(); }
     bool modified() const noexcept { return data_.modified(); }
     EvaluationTime last_updated() const noexcept { return data_.last_updated(); }
     Scalar<Variable> value_view() const {
@@ -68,18 +70,21 @@ class In<TS<T, TimeSeriesProperties...>, Properties...>
     using Stored = typename Traits::stored_type;
 
     In() noexcept
-        : activity_control{}, data_{cpp_time_series_runtime_type<TS<T, TimeSeriesProperties...>>(), MIN_DT, nullptr} {}
+        : activity_control{},
+          data_{cpp_time_series_runtime_type<TS<T, TimeSeriesProperties...>>(), initial_time_series_state, nullptr} {}
 
-    In(const EvaluationTime &last_updated, const Stored *value, bool modified = false,
+    In(const TimeSeriesState &last_updated, const Stored *value, bool modified = false,
        bool *activity = nullptr) noexcept
         : activity_control{activity},
           data_{cpp_time_series_runtime_type<TS<T, TimeSeriesProperties...>>(), last_updated, value, modified} {}
 
-    In(const EvaluationTime &last_updated, const void *value, const TimeSeriesRuntimeType &runtime_type,
+    In(const TimeSeriesState &last_updated, const void *value, const TimeSeriesRuntimeType &runtime_type,
        bool modified = false, bool *activity = nullptr) noexcept
         : activity_control{activity}, data_{runtime_type, last_updated, value, modified} {}
 
     bool valid() const noexcept { return data_.valid(); }
+    bool became_valid() const noexcept { return data_.became_valid(); }
+    bool became_invalid() const noexcept { return data_.became_invalid(); }
     bool modified() const noexcept { return data_.modified(); }
     EvaluationTime last_updated() const noexcept { return data_.last_updated(); }
 

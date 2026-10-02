@@ -34,19 +34,20 @@ TEST_CASE("a time series reference propagates its value",
     auto root = bg::details::RootReference{};
     auto input_reference = bg::Reference{&root};
     auto output_value = bg::Reference{};
-    auto input_time = bg::EvaluationTime{bg::EvaluationTime::duration{1}};
-    auto output_time = bg::MIN_DT;
+    const auto input_time = bg::EvaluationTime{bg::EvaluationTime::duration{1}};
+    const auto input_state = bg::TimeSeriesState{input_time};
+    auto output_state = bg::TimeSeriesState{};
     const auto evaluation_time = bg::EvaluationTime{bg::EvaluationTime::duration{2}};
     const auto &runtime_type = bg::cpp_time_series_runtime_type<bg::REF<bg::TS<bg::i64>>>();
 
-    const auto input = bg::In<bg::REF<bg::TS<bg::i64>>>{input_time, &input_reference};
+    const auto input = bg::In<bg::REF<bg::TS<bg::i64>>>{input_state, &input_reference};
     auto state = bg::details::OutputState{runtime_type};
-    state.bind(output_time, &output_value, evaluation_time);
+    state.bind(output_state, &output_value, evaluation_time);
     const auto output = bg::details::output_factory::make<bg::REF<bg::TS<bg::i64>>>(state);
     output.copy(input);
 
     CHECK(output_value == input_reference);
-    CHECK(output_time == evaluation_time);
+    CHECK(output_state.time() == evaluation_time);
 }
 
 TEST_CASE("an item reference retains its parent and item ID",

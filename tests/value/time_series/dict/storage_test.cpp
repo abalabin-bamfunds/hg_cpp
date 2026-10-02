@@ -35,10 +35,10 @@ TEST_CASE("dictionary runtime items use stable sparse IDs",
     const auto key = bg::ScalarValue<std::int64_t>{7};
     const auto inserted =
         storage.item(key, key_runtime_type, key_layout, item_runtime_type, item_layout, item_value_offset, allocator);
-    storage.key_storage().last_updated = update_time;
+    storage.key_storage().last_updated.publish(update_time);
 
     auto item = runtime_type.item(value, inserted.position);
-    item.last_updated = update_time;
+    item.last_updated.publish(update_time);
     *static_cast<int *>(item.value) = 42;
     REQUIRE(storage.mark_item_modified(inserted.position, update_time, allocator));
 
@@ -51,17 +51,18 @@ TEST_CASE("dictionary runtime items use stable sparse IDs",
 
     const auto const_item = runtime_type.item(static_cast<const void *>(value), inserted.position);
     CHECK(&const_item.runtime_type == &item_runtime_type);
-    CHECK(const_item.last_updated == update_time);
+    CHECK(const_item.last_updated.time() == update_time);
     CHECK(*static_cast<const int *>(const_item.value) == 42);
 
     const auto key_set = runtime_type.item(static_cast<const void *>(value), bg::key_set_item_id);
-    CHECK(key_set.last_updated == update_time);
+    CHECK(key_set.last_updated.time() == update_time);
     CHECK(key_set.value == &storage.key_storage().value);
 
     auto updated = std::vector<bg::item_id_t>{};
-    runtime_type.for_each_updated_item(update_time, value, &updated, [](void *context, bg::item_id_t id) {
-        static_cast<std::vector<bg::item_id_t> *>(context)->push_back(id);
-    });
+    runtime_type.for_each_updated_item(storage.key_storage().last_updated, value, &updated,
+                                       [](void *context, bg::item_id_t id) {
+                                           static_cast<std::vector<bg::item_id_t> *>(context)->push_back(id);
+                                       });
     CHECK(updated == std::vector<bg::item_id_t>{bg::key_set_item_id, inserted.position});
 
     runtime_type.destroy_value(value, allocator);

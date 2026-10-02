@@ -25,15 +25,15 @@ class DereferencedTimeSeriesDictionaryRuntimeType final : public TimeSeriesDicti
 
     ConstItem item(const void *value, item_id_t id) const override;
     MutableItem item(void *, item_id_t) const override;
-    bool item_updated(const EvaluationTime &last_updated, const void *value,
+    bool item_updated(const TimeSeriesState &last_updated, const void *value,
                       item_id_t id) const noexcept override;
-    void for_each_updated_item(const EvaluationTime &last_updated, const void *value, void *context,
+    void for_each_updated_item(const TimeSeriesState &last_updated, const void *value, void *context,
                                ItemIdFunction function) const override;
-    void for_each_modified(const EvaluationTime &last_updated, const void *value, void *context,
+    void for_each_modified(const TimeSeriesState &last_updated, const void *value, void *context,
                            ItemIdFunction function) const override;
-    bool item_modified(const EvaluationTime &last_updated, const void *value,
+    bool item_modified(const TimeSeriesState &last_updated, const void *value,
                        item_id_t id) const noexcept override;
-    void for_each_modified_item(const EvaluationTime &last_updated, const void *value, EvaluationTime evaluation_time,
+    void for_each_modified_item(const TimeSeriesState &last_updated, const void *value, EvaluationTime evaluation_time,
                                 void *context, ModifiedItemFunction function) const override;
 
   private:
@@ -53,7 +53,7 @@ class DereferencedTimeSeriesDictionaryRepresentation final : public ReferenceRep
         const auto base_time_series = ResolvedTimeSeries::resolve(base_reference);
         base_runtime_type.for_each_item_id(base_time_series.storage, this, [](void *context, item_id_t id) {
             auto &self = *static_cast<DereferencedTimeSeriesDictionaryRepresentation *>(context);
-            self.add_item(id, self.last_updated_);
+            self.add_item(id, self.last_updated_.time());
         });
     }
 
@@ -68,42 +68,46 @@ class DereferencedTimeSeriesDictionaryRepresentation final : public ReferenceRep
             invalidate(context);
             return;
         }
-        if (last_updated_ <= MIN_DT) {
+        if (!last_updated_.valid()) {
             revalidate(context);
             return;
         }
 
         const auto base_time_series = ResolvedTimeSeries::resolve(base_reference());
-        const auto input_time = *base_time_series.last_updated;
+        const auto input_time = base_time_series.last_updated->time();
         struct AddCallback {
             DereferencedTimeSeriesDictionaryRepresentation *representation;
             EvaluationTime input_time;
         } add_callback{this, input_time};
-        base_runtime_type_->for_each_added(input_time, base_time_series.storage, &add_callback,
+        base_runtime_type_->for_each_added(*base_time_series.last_updated, base_time_series.storage, &add_callback,
                                            [](void *value, item_id_t id) {
                                                auto &callback = *static_cast<AddCallback *>(value);
                                                callback.representation->add_item(id, callback.input_time);
                                            });
         base_runtime_type_->for_each_modified(
-            input_time, base_time_series.storage, this, [](void *value, item_id_t id) {
+            *base_time_series.last_updated, base_time_series.storage, this, [](void *value, item_id_t id) {
                 auto &self = *static_cast<DereferencedTimeSeriesDictionaryRepresentation *>(value);
                 self.bind_item(id, self.current_base_item(id),
-                               *ResolvedTimeSeries::resolve(self.base_reference()).last_updated);
+                               ResolvedTimeSeries::resolve(self.base_reference()).last_updated->time());
                 self.modified_.set(id, self.provider_->allocation());
             });
         struct RemoveCallback {
             DereferencedTimeSeriesDictionaryRepresentation *representation;
             EvaluationTime evaluation_time;
         } remove_callback{this, context.evaluation_time()};
-        base_runtime_type_->for_each_removed(input_time, base_time_series.storage, &remove_callback,
+        base_runtime_type_->for_each_removed(*base_time_series.last_updated, base_time_series.storage, &remove_callback,
                                              [](void *value, item_id_t id) {
                                                  auto &callback = *static_cast<RemoveCallback *>(value);
                                                  callback.representation->remove_item(id, callback.evaluation_time);
                                              });
 
-        const auto was_valid = last_updated_ > MIN_DT;
-        last_updated_ = input_time;
-        const auto now_valid = last_updated_ > MIN_DT;
+        const auto was_valid = last_updated_.valid();
+        const auto now_valid = base_time_series.valid();
+        if (now_valid) {
+            last_updated_.publish(input_time);
+        } else if (was_valid) {
+            last_updated_.invalidate(context.evaluation_time());
+        }
         if (was_valid || now_valid) {
             ReferenceProvider::notify(reference(), context,
                                       now_valid ? (was_valid ? OutputChange::update : OutputChange::revalidation)
@@ -128,26 +132,22 @@ class DereferencedTimeSeriesDictionaryRepresentation final : public ReferenceRep
             return dictionary_sample_item(**sample);
         }
         if (id >= item_references_.size() || !item_references_[id]) {
-            return {runtime_type_.item_runtime_type(), MIN_DT, nullptr};
+            return {runtime_type_.item_runtime_type(), initial_time_series_state, nullptr};
         }
 
         const auto referenced_item = ResolvedTimeSeries::resolve(item_references_[id]);
         if (!referenced_item.valid()) {
-            return {runtime_type_.item_runtime_type(), MIN_DT, nullptr};
+            return {runtime_type_.item_runtime_type(), initial_time_series_state, nullptr};
         }
 
-        const auto base_item = current_base_item(id);
-        const auto &visible_time = base_item.last_updated > *referenced_item.last_updated
-                                       ? base_item.last_updated
-                                       : *referenced_item.last_updated;
-        return {*referenced_item.runtime_type, visible_time, referenced_item.storage};
+        return {*referenced_item.runtime_type, *referenced_item.last_updated, referenced_item.storage};
     }
     EvaluationTime change_time() const noexcept { return change_time_; }
     const util::index<> &modified() const noexcept { return modified_; }
 
   private:
     void invalidate(OutputChangeContext &context) {
-        if (last_updated_ <= MIN_DT) {
+        if (!last_updated_.valid()) {
             return;
         }
 
@@ -158,7 +158,7 @@ class DereferencedTimeSeriesDictionaryRepresentation final : public ReferenceRep
             sample_switch(id, {}, context.evaluation_time());
             unsubscribe(id);
         }
-        last_updated_ = MIN_DT;
+        last_updated_.invalidate(context.evaluation_time());
         ReferenceProvider::notify(reference(), context, OutputChange::invalidation);
     }
 
@@ -185,7 +185,7 @@ class DereferencedTimeSeriesDictionaryRepresentation final : public ReferenceRep
             self.modified_.set(id, self.provider_->allocation());
         });
 
-        last_updated_ = context.evaluation_time();
+        last_updated_.publish(context.evaluation_time());
         ReferenceProvider::notify(reference(), context, OutputChange::revalidation);
     }
 
@@ -215,8 +215,8 @@ class DereferencedTimeSeriesDictionaryRepresentation final : public ReferenceRep
         const auto previous =
             previous_reference ? ResolvedTimeSeries::resolve(previous_reference) : ResolvedTimeSeries{};
 
-        auto new_reference = base_item.last_updated > MIN_DT ? base_item.runtime_type.reference(base_item.value)
-                                                             : Reference{};
+        auto new_reference = base_item.last_updated.valid() ? base_item.runtime_type.reference(base_item.value)
+                                                            : Reference{};
         if (new_reference) {
             new_reference = ReferenceProvider::representation(new_reference, runtime_type_.item_runtime_type());
         }
@@ -236,7 +236,7 @@ class DereferencedTimeSeriesDictionaryRepresentation final : public ReferenceRep
 
     void sample_switch(item_id_t id, ResolvedTimeSeries current, EvaluationTime evaluation_time,
                        ResolvedTimeSeries previous = {}) {
-        auto previous_last_updated = MIN_DT;
+        auto previous_last_updated = TimeSeriesState{};
         if (auto *existing = samples_.get(id, sample_positions_)) {
             previous = dictionary_sample_previous(**existing);
             previous_last_updated = *previous.last_updated;
@@ -313,7 +313,7 @@ class DereferencedTimeSeriesDictionaryRepresentation final : public ReferenceRep
             sample_switch(id, {}, context.evaluation_time(), previous);
         } else if (change == OutputChange::revalidation) {
             auto previous = referenced_item;
-            previous.last_updated = &MIN_DT;
+            previous.last_updated = &initial_time_series_state;
             previous.storage = nullptr;
             sample_switch(id, referenced_item, context.evaluation_time(), previous);
         }
@@ -321,12 +321,12 @@ class DereferencedTimeSeriesDictionaryRepresentation final : public ReferenceRep
     }
 
     void publish_item_changes(OutputChangeContext &context) {
-        if (last_updated_ == context.evaluation_time()) {
+        if (last_updated_.time() == context.evaluation_time()) {
             return;
         }
 
-        const auto was_valid = last_updated_ > MIN_DT;
-        last_updated_ = context.evaluation_time();
+        const auto was_valid = last_updated_.valid();
+        last_updated_.publish(context.evaluation_time());
         ReferenceProvider::notify(reference(), context,
                                   was_valid ? OutputChange::update : OutputChange::revalidation);
     }
@@ -342,7 +342,7 @@ class DereferencedTimeSeriesDictionaryRepresentation final : public ReferenceRep
     ReferenceProvider *provider_;
     const TimeSeriesDictionaryRuntimeType *base_runtime_type_;
     DereferencedTimeSeriesDictionaryRuntimeType runtime_type_;
-    EvaluationTime last_updated_;
+    TimeSeriesState last_updated_;
     std::pmr::vector<Reference> item_references_;
     util::occupancy_index sample_positions_;
     util::sparse_bunch<SampledDictionary *> samples_;
@@ -365,19 +365,20 @@ TimeSeriesRuntimeType::MutableItem DereferencedTimeSeriesDictionaryRuntimeType::
     throw std::logic_error{"a dereferenced dictionary representation is immutable"};
 }
 
-bool DereferencedTimeSeriesDictionaryRuntimeType::item_updated(const EvaluationTime &last_updated, const void *value,
+bool DereferencedTimeSeriesDictionaryRuntimeType::item_updated(const TimeSeriesState &last_updated, const void *value,
                                                                item_id_t id) const noexcept {
     if (TimeSeriesDictionaryRuntimeType::item_updated(last_updated, value, id)) {
         return true;
     }
-    return representation_->change_time() == last_updated && representation_->modified().contains(id);
+    return last_updated.valid() && representation_->change_time() == last_updated.time() &&
+           representation_->modified().contains(id);
 }
 
-void DereferencedTimeSeriesDictionaryRuntimeType::for_each_updated_item(const EvaluationTime &last_updated,
+void DereferencedTimeSeriesDictionaryRuntimeType::for_each_updated_item(const TimeSeriesState &last_updated,
                                                                         const void *value, void *context,
                                                                         ItemIdFunction function) const {
     TimeSeriesDictionaryRuntimeType::for_each_updated_item(last_updated, value, context, function);
-    if (representation_->change_time() != last_updated) {
+    if (!last_updated.valid() || representation_->change_time() != last_updated.time()) {
         return;
     }
 
@@ -389,10 +390,10 @@ void DereferencedTimeSeriesDictionaryRuntimeType::for_each_updated_item(const Ev
     }
 }
 
-void DereferencedTimeSeriesDictionaryRuntimeType::for_each_modified(const EvaluationTime &last_updated,
+void DereferencedTimeSeriesDictionaryRuntimeType::for_each_modified(const TimeSeriesState &last_updated,
                                                                     const void *value, void *context,
                                                                     ItemIdFunction function) const {
-    if (representation_->change_time() != last_updated) {
+    if (!last_updated.valid() || representation_->change_time() != last_updated.time()) {
         return;
     }
 
@@ -404,33 +405,34 @@ void DereferencedTimeSeriesDictionaryRuntimeType::for_each_modified(const Evalua
     }
 }
 
-bool DereferencedTimeSeriesDictionaryRuntimeType::item_modified(const EvaluationTime &last_updated, const void *value,
+bool DereferencedTimeSeriesDictionaryRuntimeType::item_modified(const TimeSeriesState &last_updated, const void *value,
                                                                 item_id_t id) const noexcept {
     const auto &storage = *static_cast<const time_series_dict_storage *>(value);
-    return representation_->change_time() == last_updated && representation_->modified().contains(id) &&
+    return last_updated.valid() && representation_->change_time() == last_updated.time() &&
+           representation_->modified().contains(id) &&
            !storage.key_storage().value.added().contains(id);
 }
 
-void DereferencedTimeSeriesDictionaryRuntimeType::for_each_modified_item(const EvaluationTime &last_updated,
+void DereferencedTimeSeriesDictionaryRuntimeType::for_each_modified_item(const TimeSeriesState &last_updated,
                                                                          const void *value,
                                                                          EvaluationTime evaluation_time, void *context,
                                                                          ModifiedItemFunction function) const {
     const auto &storage = *static_cast<const time_series_dict_storage *>(value);
     const auto &keys = storage.key_storage().value;
-    if (last_updated <= MIN_DT) {
+    if (!last_updated.valid()) {
         function(context, {key_set_item_id, &TimeSeriesDictionaryRuntimeType::item(value, key_set_item_id).runtime_type,
-                           &MIN_DT, &storage.key_storage().value});
+                           &last_updated, &storage.key_storage().value});
         for (const auto id : keys.removed()) {
             const auto current = this->item(value, id);
-            function(context, {id, &current.runtime_type, &MIN_DT, current.value});
+            function(context, {id, &current.runtime_type, &last_updated, current.value});
         }
         return;
     }
-    if (last_updated != evaluation_time) {
+    if (last_updated.time() != evaluation_time) {
         return;
     }
 
-    if (storage.key_storage().last_updated == evaluation_time) {
+    if (storage.key_storage().last_updated.time() == evaluation_time) {
         const auto key_set = TimeSeriesDictionaryRuntimeType::item(value, key_set_item_id);
         function(context, {key_set_item_id, &key_set.runtime_type, &key_set.last_updated, key_set.value});
     }
@@ -441,7 +443,7 @@ void DereferencedTimeSeriesDictionaryRuntimeType::for_each_modified_item(const E
         }
         for (const auto id : keys.removed()) {
             const auto current = this->item(value, id);
-            function(context, {id, &current.runtime_type, &MIN_DT, current.value});
+            function(context, {id, &current.runtime_type, &initial_time_series_state, current.value});
         }
     }
     if (representation_->change_time() == evaluation_time) {

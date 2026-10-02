@@ -583,9 +583,21 @@ struct invalidating_bundle_source_definition {
 struct optional_bundle_sink_definition {
     bg::In<bg::TSB<DerivedBundle>, bg::optional> input;
 
-    void evaluate() const { validity.push_back({input.valid(), input->count.valid(), input->value.valid()}); }
+    void evaluate() const {
+        validity.push_back({input.valid(), input->count.valid(), input->value.valid()});
+        modified.push_back({input.modified(), input->count.modified(), input->value.modified()});
+    }
 
     inline static std::vector<std::array<bool, 3>> validity;
+    inline static std::vector<std::array<bool, 3>> modified;
+};
+
+struct bundle_transition_sink_definition {
+    bg::In<bg::TS_T> input;
+
+    void evaluate() const { transitions.push_back(input.became_valid()); }
+
+    inline static std::vector<bool> transitions;
 };
 
 } // namespace
@@ -596,10 +608,20 @@ TEST_CASE("invalidating a bundle invalidates every field",
           "[binding:direct][schema:named]") {
     const auto source = bg::node<invalidating_bundle_source_definition>();
     const auto sink = bg::node<optional_bundle_sink_definition>();
+    const auto transition_sink = bg::node<bundle_transition_sink_definition>();
     optional_bundle_sink_definition::validity.clear();
+    optional_bundle_sink_definition::modified.clear();
+    bundle_transition_sink_definition::transitions.clear();
 
-    bg::run_graph([&] { sink(source()); });
+    bg::run_graph([&] {
+        const auto bundle = source();
+        sink(bundle);
+        transition_sink(bundle);
+    });
 
     CHECK(optional_bundle_sink_definition::validity ==
           std::vector<std::array<bool, 3>>{{true, true, true}, {false, false, false}});
+    CHECK(optional_bundle_sink_definition::modified ==
+          std::vector<std::array<bool, 3>>{{true, true, true}, {false, false, false}});
+    CHECK(bundle_transition_sink_definition::transitions == std::vector{true});
 }

@@ -52,12 +52,12 @@ class Out<TSB<Schema, Properties...>> {
     explicit Out(details::OutputState &state) noexcept
         : state_(Proxy::borrow(state)), fields_{details::make_bundle_outputs<Schema>(state_.get())} {}
 
-    Out(EvaluationTime &last_updated, void *value, const TimeSeriesRuntimeType &runtime_type,
+    Out(TimeSeriesState &last_updated, void *value, const TimeSeriesRuntimeType &runtime_type,
         EvaluationContext &context)
         : state_(Proxy::copy(details::OutputState{runtime_type}, context)),
           fields_{bind(last_updated, value, context)} {}
 
-    Out(EvaluationTime &last_updated, void *value, const TimeSeriesRuntimeType &runtime_type, void *output_path)
+    Out(TimeSeriesState &last_updated, void *value, const TimeSeriesRuntimeType &runtime_type, void *output_path)
         : state_(Proxy::copy(details::OutputState{runtime_type}, output_path)),
           fields_{bind(last_updated, value, output_path)} {}
 
@@ -79,7 +79,7 @@ class Out<TSB<Schema, Properties...>> {
   private:
     using Proxy = details::output_proxy<details::OutputState>;
 
-    template <typename Owner> [[nodiscard]] fields_type bind(EvaluationTime &last_updated, void *value, Owner &owner) {
+    template <typename Owner> [[nodiscard]] fields_type bind(TimeSeriesState &last_updated, void *value, Owner &owner) {
         state_->bind(last_updated, value, owner);
         return details::make_bundle_outputs<Schema>(state_.get());
     }
@@ -96,13 +96,13 @@ class Out<TSB<Schema, Properties...>> {
 
     explicit Out(details::OutputState &state) noexcept : state_(Proxy::borrow(state)) {}
 
-    Out(EvaluationTime &last_updated, void *value, const TimeSeriesRuntimeType &runtime_type,
+    Out(TimeSeriesState &last_updated, void *value, const TimeSeriesRuntimeType &runtime_type,
         EvaluationContext &context)
         : state_(Proxy::copy(details::OutputState{runtime_type}, context)) {
         state_->bind(last_updated, value, context);
     }
 
-    Out(EvaluationTime &last_updated, void *value, const TimeSeriesRuntimeType &runtime_type, void *output_path)
+    Out(TimeSeriesState &last_updated, void *value, const TimeSeriesRuntimeType &runtime_type, void *output_path)
         : state_(Proxy::copy(details::OutputState{runtime_type}, output_path)) {
         state_->bind(last_updated, value, output_path);
     }

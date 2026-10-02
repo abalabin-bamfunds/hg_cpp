@@ -53,9 +53,11 @@ class ReferenceBinding {
 
 class DynamicReferenceInputStorage {
   public:
-    const EvaluationTime &last_updated() const noexcept { return value_ ? change_time_ : MIN_DT; }
+    const TimeSeriesState &last_updated() const noexcept { return last_updated_; }
     const Reference &value() const noexcept { return value_; }
-    bool modified(EvaluationTime evaluation_time) const noexcept { return change_time_ == evaluation_time; }
+    bool modified(EvaluationTime evaluation_time) const noexcept {
+        return last_updated_.valid() && last_updated_.time() == evaluation_time;
+    }
 
     void bind(ReferenceBinding binding, EvaluationContext &context, std::size_t storage_offset);
     void unbind(RuntimeGraph &graph, std::size_t storage_offset) noexcept;
@@ -68,7 +70,7 @@ class DynamicReferenceInputStorage {
 
     ReferenceBinding binding_{};
     Reference value_;
-    EvaluationTime change_time_{MIN_DT};
+    TimeSeriesState last_updated_{};
 };
 
 static_assert(sizeof(ReferenceBindingType) == sizeof(void *));

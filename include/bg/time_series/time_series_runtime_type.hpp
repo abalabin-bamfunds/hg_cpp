@@ -5,6 +5,7 @@
 #include <bg/runtime_type.hpp>
 #include <bg/time_series/item_id.hpp>
 #include <bg/time_series/ref/ref_storage.hpp>
+#include <bg/time_series/time_series_state.hpp>
 #include <bg/type/time_series_type.hpp>
 
 #include <cstddef>
@@ -39,19 +40,19 @@ class TimeSeriesRuntimeType : public RuntimeType {
     struct ModifiedItem {
         item_id_t id;
         const TimeSeriesRuntimeType *runtime_type;
-        const EvaluationTime *last_updated;
+        const TimeSeriesState *last_updated;
         const void *value;
     };
 
     struct ConstItem {
         const TimeSeriesRuntimeType &runtime_type;
-        const EvaluationTime &last_updated;
+        const TimeSeriesState &last_updated;
         const void *value;
     };
 
     struct MutableItem {
         const TimeSeriesRuntimeType &runtime_type;
-        EvaluationTime &last_updated;
+        TimeSeriesState &last_updated;
         void *value;
     };
 
@@ -79,14 +80,14 @@ class TimeSeriesRuntimeType : public RuntimeType {
     virtual ConstItem item(const void *, item_id_t) const;
     virtual MutableItem item(void *, item_id_t) const;
     virtual void for_each_item_id(const void *, void *, ItemIdFunction) const;
-    virtual bool item_updated(const EvaluationTime &, const void *, item_id_t) const noexcept;
-    virtual void for_each_updated_item(const EvaluationTime &, const void *, void *, ItemIdFunction) const;
-    [[nodiscard]] virtual bool mark_item_modified(void *, item_id_t, EvaluationTime, EvaluationTime,
+    virtual bool item_updated(const TimeSeriesState &, const void *, item_id_t) const noexcept;
+    virtual void for_each_updated_item(const TimeSeriesState &, const void *, void *, ItemIdFunction) const;
+    [[nodiscard]] virtual bool mark_item_modified(void *, item_id_t, EvaluationTime, const TimeSeriesState &,
                                                   allocator &) const noexcept {
         return false;
     }
     virtual bool collection_valid(const void *) const noexcept { return false; }
-    virtual void for_each_modified_item(const EvaluationTime &, const void *, EvaluationTime, void *,
+    virtual void for_each_modified_item(const TimeSeriesState &, const void *, EvaluationTime, void *,
                                         ModifiedItemFunction) const {}
     virtual Reference reference(const void *) const;
     virtual const details::ReferenceRepresentationFactory *reference_representation_factory() const noexcept {

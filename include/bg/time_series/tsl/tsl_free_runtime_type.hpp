@@ -17,11 +17,11 @@ class FreeFixedTimeSeriesListRuntimeType final : public TimeSeriesRuntimeType {
     std::size_t item_count(const void *value) const override;
     ConstItem item(const void *value, item_id_t id) const override;
     void for_each_item_id(const void *value, void *context, ItemIdFunction function) const override;
-    bool item_updated(const EvaluationTime &last_updated, const void *value,
+    bool item_updated(const TimeSeriesState &last_updated, const void *value,
                       item_id_t id) const noexcept override;
-    void for_each_updated_item(const EvaluationTime &last_updated, const void *value, void *context,
+    void for_each_updated_item(const TimeSeriesState &last_updated, const void *value, void *context,
                                ItemIdFunction function) const override;
-    void for_each_modified_item(const EvaluationTime &last_updated, const void *value,
+    void for_each_modified_item(const TimeSeriesState &last_updated, const void *value,
                                 EvaluationTime evaluation_time, void *context,
                                 ModifiedItemFunction function) const override;
     void construct_initial_value(void *destination) const noexcept override;

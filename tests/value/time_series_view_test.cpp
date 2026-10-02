@@ -23,7 +23,8 @@ TEST_CASE("a time-series input reads validity and update time",
     CHECK_FALSE(invalid.valid());
 
     const auto updated = bg::MIN_DT + std::chrono::microseconds{1};
-    const auto input = bg::In<bg::TS<float>>{updated, &value};
+    const auto updated_state = bg::TimeSeriesState{updated};
+    const auto input = bg::In<bg::TS<float>>{updated_state, &value};
 
     CHECK(input.valid());
     CHECK(input.last_updated() == updated);
@@ -40,16 +41,28 @@ template <template <typename, auto...> typename Field> struct VisitorBundle {
 TEST_CASE("time series input visitors select every resolved interface",
           "[time_series][visitor][feature:time-series-view][feature:visitor][declaration:generic]"
           "[series:generic][series:value][series:reference][series:fixed-tsl][series:tss][series:tsd][series:tsb]") {
-    const auto value = bg::In<bg::TS_T>{bg::MIN_DT, nullptr, bg::cpp_time_series_runtime_type<bg::TS<std::int64_t>>()};
+    const auto value = bg::In<bg::TS_T>{bg::initial_time_series_state,
+                                        nullptr,
+                                        bg::cpp_time_series_runtime_type<bg::TS<std::int64_t>>()};
     const auto reference =
-        bg::In<bg::TS_T>{bg::MIN_DT, nullptr, bg::cpp_time_series_runtime_type<bg::REF<bg::TS<std::int64_t>>>()};
+        bg::In<bg::TS_T>{bg::initial_time_series_state,
+                          nullptr,
+                          bg::cpp_time_series_runtime_type<bg::REF<bg::TS<std::int64_t>>>()};
     const auto list =
-        bg::In<bg::TS_T>{bg::MIN_DT, nullptr, bg::cpp_time_series_runtime_type<bg::TSL<bg::TS<std::int64_t>, 2>>()};
-    const auto set = bg::In<bg::TS_T>{bg::MIN_DT, nullptr, bg::cpp_time_series_runtime_type<bg::TSS<std::int64_t>>()};
+        bg::In<bg::TS_T>{bg::initial_time_series_state,
+                          nullptr,
+                          bg::cpp_time_series_runtime_type<bg::TSL<bg::TS<std::int64_t>, 2>>()};
+    const auto set = bg::In<bg::TS_T>{bg::initial_time_series_state,
+                                      nullptr,
+                                      bg::cpp_time_series_runtime_type<bg::TSS<std::int64_t>>()};
     const auto dict =
-        bg::In<bg::TS_T>{bg::MIN_DT, nullptr, bg::cpp_time_series_runtime_type<bg::TSD<std::int64_t, bg::TS<bg::i64>>>()};
+        bg::In<bg::TS_T>{bg::initial_time_series_state,
+                          nullptr,
+                          bg::cpp_time_series_runtime_type<bg::TSD<std::int64_t, bg::TS<bg::i64>>>()};
     const auto bundle =
-        bg::In<bg::TS_T>{bg::MIN_DT, nullptr, bg::cpp_time_series_runtime_type<bg::TSB<VisitorBundle>>()};
+        bg::In<bg::TS_T>{bg::initial_time_series_state,
+                          nullptr,
+                          bg::cpp_time_series_runtime_type<bg::TSB<VisitorBundle>>()};
     auto value_visited = false;
     auto reference_visited = false;
     auto list_visited = false;
@@ -76,7 +89,10 @@ TEST_CASE("a time series visitor returns its result by value",
           "[time_series][visitor][feature:time-series-view][feature:visitor][declaration:generic]"
           "[series:generic][series:value]") {
     const auto updated = bg::MIN_DT + std::chrono::microseconds{1};
-    const auto input = bg::In<bg::TS_T>{updated, nullptr, bg::cpp_time_series_runtime_type<bg::TS<std::int64_t>>()};
+    const auto updated_state = bg::TimeSeriesState{updated};
+    const auto input = bg::In<bg::TS_T>{updated_state,
+                                        nullptr,
+                                        bg::cpp_time_series_runtime_type<bg::TS<std::int64_t>>()};
 
     const auto result =
         input.visit([](const bg::In<bg::TS<bg::SCALAR>> *value) { return value->last_updated(); }, ddv::noop);
@@ -116,7 +132,7 @@ TEST_CASE("a time series output visitor exposes the resolved output interface",
           "[time_series][visitor][feature:time-series-view][feature:visitor][declaration:generic]"
           "[series:generic][series:value]") {
     const auto evaluation_time = bg::MIN_DT + std::chrono::microseconds{1};
-    auto last_updated = bg::MIN_DT;
+    auto last_updated = bg::TimeSeriesState{};
     auto stored = std::int64_t{};
     auto state = bg::details::OutputState{bg::cpp_time_series_runtime_type<bg::TS<std::int64_t>>()};
     state.bind(last_updated, &stored, evaluation_time);
@@ -133,5 +149,5 @@ TEST_CASE("a time series output visitor exposes the resolved output interface",
 
     CHECK(called);
     CHECK(stored == 42);
-    CHECK(last_updated == evaluation_time);
+    CHECK(last_updated.time() == evaluation_time);
 }

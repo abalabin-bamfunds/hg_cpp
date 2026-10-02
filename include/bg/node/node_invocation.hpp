@@ -178,7 +178,7 @@ template <typename CompiledData = void, typename State = void> class NodeInvocat
         const auto input = runtime_node.input_data(parameter_index);
         return Input{*input.last_updated, input.value,
                      runtime_node.time_series_input_runtime_type(parameter_index, runtime_type_index),
-                     context_->evaluation_time() > MIN_DT && *input.last_updated == context_->evaluation_time(),
+                     input.last_updated->valid() && input.last_updated->time() == context_->evaluation_time(),
                      activity};
     }
 

@@ -30,20 +30,23 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...>
 
     In() noexcept
         : activity_control{},
-          data_{cpp_time_series_runtime_type<TSD<K, Item, TimeSeriesProperties...>>(), MIN_DT, nullptr} {}
+          data_{cpp_time_series_runtime_type<TSD<K, Item, TimeSeriesProperties...>>(), initial_time_series_state, nullptr} {}
 
-    In(const EvaluationTime &last_updated, const storage_type *value, bool modified = false,
+    In(const TimeSeriesState &last_updated, const storage_type *value, bool modified = false,
        bool *activity = nullptr) noexcept
         : activity_control{activity},
           data_{cpp_time_series_runtime_type<TSD<K, Item, TimeSeriesProperties...>>(), last_updated, value, modified} {}
 
-    In(const EvaluationTime &last_updated, const void *value, const TimeSeriesRuntimeType &runtime_type,
+    In(const TimeSeriesState &last_updated, const void *value, const TimeSeriesRuntimeType &runtime_type,
        bool modified = false, bool *activity = nullptr) noexcept
         : activity_control{activity}, data_{runtime_type, last_updated, value, modified} {}
 
     bool valid() const noexcept { return data_.valid(); }
+    bool became_valid() const noexcept { return data_.became_valid(); }
+    bool became_invalid() const noexcept { return data_.became_invalid(); }
     bool modified() const noexcept { return data_.modified(); }
     EvaluationTime last_updated() const noexcept { return data_.last_updated(); }
+    const TimeSeriesState &last_updated_state() const noexcept { return data_.last_updated_ref(); }
     std::size_t size() const noexcept { return valid() ? data_.runtime_type().item_count(data_.data()) : 0; }
     bool contains(const Scalar<K> &key) const { return contains(details::scalar_data(key)); }
 
@@ -97,11 +100,11 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...>
 
     In<TSS<K>> key_set() const {
         if (!valid()) {
-            return {MIN_DT, nullptr, dictionary_runtime_type().key_set_runtime_type()};
+            return {initial_time_series_state, nullptr, dictionary_runtime_type().key_set_runtime_type()};
         }
         const auto item = data_.runtime_type().item(data_.data(), key_set_item_id);
         return {item.last_updated, item.value, item.runtime_type,
-                data_.modified() && item.last_updated == data_.last_updated()};
+                data_.modified() && item.last_updated.valid() && item.last_updated.time() == data_.last_updated()};
     }
 
     item_id_t next_item_id(item_id_t start) const noexcept { return next(ItemRange::current, start); }
@@ -123,15 +126,15 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...>
     }
 
     item_id_t find_added_id(const Scalar<K> &key) const {
-        return dictionary_runtime_type().find_added(last_updated(), data_.data(), details::scalar_data(key));
+        return dictionary_runtime_type().find_added(last_updated_state(), data_.data(), details::scalar_data(key));
     }
 
     item_id_t find_removed_id(const Scalar<K> &key) const {
-        return dictionary_runtime_type().find_removed(last_updated(), data_.data(), details::scalar_data(key));
+        return dictionary_runtime_type().find_removed(last_updated_state(), data_.data(), details::scalar_data(key));
     }
 
     item_id_t find_modified_id(const Scalar<K> &key) const {
-        return dictionary_runtime_type().find_modified(last_updated(), data_.data(), details::scalar_data(key));
+        return dictionary_runtime_type().find_modified(last_updated_state(), data_.data(), details::scalar_data(key));
     }
 
     template <typename Function> void for_each(Function &&function) const {
@@ -202,7 +205,7 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...>
     [[nodiscard]] In<Item> make_item(std::uint32_t position) const {
         const auto item = data_.runtime_type().item(data_.data(), position);
         return {item.last_updated, item.value, item.runtime_type,
-                data_.modified() && item.last_updated == data_.last_updated()};
+                data_.modified() && item.last_updated.valid() && item.last_updated.time() == data_.last_updated()};
     }
 
     Scalar<K> make_key(item_id_t id) const {
@@ -215,7 +218,7 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...>
         }
         const auto id = dictionary_runtime_type().find_item(data_.data(), key);
         return id != util::occupancy_index::npos &&
-               dictionary_runtime_type().item_modified(last_updated(), data_.data(), id);
+               dictionary_runtime_type().item_modified(last_updated_state(), data_.data(), id);
     }
 
     template <typename Function> static void invoke_with_id(void *context, item_id_t id) {
@@ -232,15 +235,15 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...>
     }
 
     using ChangeFunction = void (details::TimeSeriesDictionaryRuntimeType::*)(
-        const EvaluationTime &, const void *, void *, TimeSeriesRuntimeType::ItemIdFunction) const;
+        const TimeSeriesState &, const void *, void *, TimeSeriesRuntimeType::ItemIdFunction) const;
 
     item_id_t next(ItemRange range, item_id_t start) const noexcept {
-        return dictionary_runtime_type().next_item_id(last_updated(), data_.data(), range, start);
+        return dictionary_runtime_type().next_item_id(last_updated_state(), data_.data(), range, start);
     }
 
     template <typename Function> void apply_changes(ChangeFunction changes, Function &function) const {
         auto callback = [&](item_id_t id) { std::invoke(function, make_key(id)); };
-        (dictionary_runtime_type().*changes)(last_updated(), data_.data(), &callback,
+        (dictionary_runtime_type().*changes)(last_updated_state(), data_.data(), &callback,
                                              invoke_with_id<decltype(callback)>);
     }
 

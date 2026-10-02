@@ -362,12 +362,16 @@ class RuntimeGraph::OutputChangePublisher {
 
     void publish_item(TimeSeriesRuntimeType::ModifiedItem item, const ItemSubscription &subscription) {
         auto &sampled_last_updated =
-            *reinterpret_cast<EvaluationTime *>(graph_->storage_ + subscription.sampled_last_updated_offset());
-        const auto was_valid = sampled_last_updated > MIN_DT;
-        const auto now_valid = *item.last_updated > MIN_DT;
+            *reinterpret_cast<TimeSeriesState *>(graph_->storage_ + subscription.sampled_last_updated_offset());
+        const auto was_valid = sampled_last_updated.valid();
+        const auto now_valid = item.last_updated->valid();
 
         if (was_valid || now_valid) {
-            sampled_last_updated = now_valid ? graph_->evaluation_time_ : MIN_DT;
+            if (now_valid) {
+                sampled_last_updated.publish(graph_->evaluation_time_);
+            } else {
+                sampled_last_updated.invalidate(graph_->evaluation_time_);
+            }
             const auto change = now_valid ? (was_valid ? OutputChange::update : OutputChange::revalidation)
                                           : OutputChange::invalidation;
             publish_handlers(subscription.output_notification(), item.runtime_type, item.value, change);
@@ -426,13 +430,13 @@ void RuntimeGraph::initialize_inherited_time_series(std::size_t index, Reference
     }
 
     const auto &binding = requirements[index];
-    auto &stored_last_updated = *reinterpret_cast<EvaluationTime *>(storage_ + binding.last_updated_offset);
+    auto &stored_last_updated = *reinterpret_cast<TimeSeriesState *>(storage_ + binding.last_updated_offset);
     auto &stored_reference = *reinterpret_cast<Reference *>(storage_ + binding.value_offset);
     stored_reference = reference;
     if (!reference) {
         return;
     }
-    stored_last_updated = evaluation_time_;
+    stored_last_updated.publish(evaluation_time_);
 
     if (const auto *notification = compiled_graph_->inherited_time_series_notification(binding)) {
         auto context = OutputChangeContext{*this};
@@ -649,7 +653,8 @@ bool RuntimeGraph::evaluation_pending() const noexcept {
 }
 
 void RuntimeGraph::update_reference_output(std::size_t node_index, Reference reference,
-                                           EvaluationTime last_updated) {
+                                           EvaluationTime evaluation_time) {
+    evaluation_time_ = evaluation_time;
     const auto &compiled_node = compiled_graph_->node(node_index);
     const auto runtime_node = node(compiled_node);
     auto &stored_last_updated = runtime_node.output_last_updated();
@@ -659,23 +664,30 @@ void RuntimeGraph::update_reference_output(std::size_t node_index, Reference ref
         return;
     }
 
-    const auto was_valid = stored_last_updated > MIN_DT;
+    const auto was_valid = stored_last_updated.valid();
     stored_reference = reference;
-    stored_last_updated = reference ? last_updated : MIN_DT;
-    const auto now_valid = stored_last_updated > MIN_DT;
+    if (reference) {
+        stored_last_updated.publish(evaluation_time);
+    } else if (was_valid) {
+        stored_last_updated.invalidate(evaluation_time);
+    } else {
+        return;
+    }
+    const auto now_valid = stored_last_updated.valid();
     const auto change =
         now_valid ? (was_valid ? OutputChange::update : OutputChange::revalidation) : OutputChange::invalidation;
     publish_output(compiled_node, change);
 }
 
 void RuntimeGraph::initialize_constant_output(std::size_t node_index, Scalar<> value,
-                                              EvaluationTime last_updated) {
+                                              EvaluationTime evaluation_time) {
+    evaluation_time_ = evaluation_time;
     const auto &compiled_node = compiled_graph_->node(node_index);
     const auto runtime_node = node(compiled_node);
     const auto &runtime_type =
         static_cast<const TimeSeriesValueRuntimeType &>(compiled_node.node_invocation_output_runtime_type());
     runtime_type.scalar_runtime_type().assign_from_input(runtime_node.output_value(), value);
-    runtime_node.output_last_updated() = last_updated;
+    runtime_node.output_last_updated().publish(evaluation_time);
     publish_output(compiled_node, OutputChange::revalidation);
 }
 
@@ -770,8 +782,8 @@ void RuntimeGraph::notify_node_subscriber(std::size_t node_index, bool is_active
 std::optional<OutputChange> RuntimeGraph::output_change(const CompiledNode &node,
                                                         bool output_was_valid) const noexcept {
     auto &last_updated = Node{node, storage_}.output_last_updated();
-    const auto now_valid = last_updated > MIN_DT;
-    if (last_updated != evaluation_time_ && output_was_valid == now_valid) {
+    const auto now_valid = last_updated.valid();
+    if (last_updated.time() != evaluation_time_ && output_was_valid == now_valid) {
         return std::nullopt;
     }
 
@@ -842,8 +854,8 @@ void RuntimeGraph::apply_invalidation(const CompiledNode &node, std::size_t node
     case InvalidationMode::invalidate_output:
         if (node.has_output()) {
             auto &last_updated = Node{node, storage_}.output_last_updated();
-            if (last_updated > MIN_DT) {
-                last_updated = MIN_DT;
+            if (last_updated.valid()) {
+                last_updated.invalidate(evaluation_time_);
                 publish_output(node, OutputChange::invalidation);
             }
         }
@@ -856,7 +868,7 @@ void RuntimeGraph::apply_invalidation(const CompiledNode &node, std::size_t node
         break;
     }
 
-    const auto output_was_valid = node.has_output() && Node{node, storage_}.output_last_updated() > MIN_DT;
+    const auto output_was_valid = node.has_output() && Node{node, storage_}.output_last_updated().valid();
     EvaluationContext context{parent_context, *this, node_index};
     const auto allocation_context =
         details::ScalarAllocationContext{allocator_, global_state_->bundle_allocation_owner(), this, node_index};
@@ -878,6 +890,9 @@ void RuntimeGraph::start(EvaluationTime evaluation_time) {
 void RuntimeGraph::start(EvaluationContext &parent_context) {
     if (started_ || stopped_) {
         throw std::logic_error{"a runtime graph can only be started once"};
+    }
+    if (&parent_context.runtime_graph() == this && !TimeSeriesState::can_represent(parent_context.evaluation_time())) {
+        throw std::invalid_argument{"evaluation time cannot be represented by a time series"};
     }
 
     const auto inherited_time_series = compiled_graph_->inherited_time_series();
@@ -933,14 +948,14 @@ void RuntimeGraph::start(EvaluationContext &parent_context) {
         initialize_inherited_time_series(index, inherited_references[index]);
     }
     if (const auto offset = compiled_graph_->constant_start_time_offset()) {
-        *reinterpret_cast<EvaluationTime *>(storage_ + *offset) = evaluation_time_;
+        reinterpret_cast<TimeSeriesState *>(storage_ + *offset)->publish(evaluation_time_);
     }
     auto function = starts.functions.begin();
 
     for (const auto node_index : starts.nodes) {
         started_node_count = node_index;
         const auto &node = compiled_graph_->node(node_index);
-        const auto output_was_valid = node.has_output() && Node{node, storage_}.output_last_updated() > MIN_DT;
+        const auto output_was_valid = node.has_output() && Node{node, storage_}.output_last_updated().valid();
 
         EvaluationContext node_context{context, *this, node_index};
         const auto allocation_context =
@@ -1023,7 +1038,7 @@ bool RuntimeGraph::inputs_are_valid(const CompiledNode &node) const noexcept {
             continue;
         }
 
-        if (runtime_node.input_last_updated(parameter_index) <= MIN_DT) {
+        if (!runtime_node.input_last_updated(parameter_index).valid()) {
             return false;
         }
     }
@@ -1042,6 +1057,10 @@ void RuntimeGraph::evaluate(EvaluationTime evaluation_time) {
 bool RuntimeGraph::evaluate(EvaluationContext &parent_context) {
     if (!started_ || stopped_) {
         throw std::logic_error{"a runtime graph must be running to evaluate"};
+    }
+
+    if (&parent_context.runtime_graph() == this && !TimeSeriesState::can_represent(parent_context.evaluation_time())) {
+        throw std::invalid_argument{"evaluation time cannot be represented by a time series"};
     }
 
     auto binding_context = ServiceBindingContext{parent_context, service_bindings()};
@@ -1098,7 +1117,7 @@ bool RuntimeGraph::evaluate(EvaluationContext &parent_context) {
             continue;
         }
 
-        const auto output_was_valid = has_output && Node{node, storage_}.output_last_updated() > MIN_DT;
+        const auto output_was_valid = has_output && Node{node, storage_}.output_last_updated().valid();
         if (const auto evaluate = node.evaluation_function(); evaluate != nullptr) {
             EvaluationContext node_context{context, *this, node_index};
             const auto allocation_context = details::ScalarAllocationContext{

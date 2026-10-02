@@ -5,6 +5,57 @@
 
 #include <array>
 #include <optional>
+#include <vector>
+
+namespace {
+
+struct validity_transition_sink {
+    bg::In<bg::TS<bg::i64>, bg::optional> input;
+
+    void evaluate() const {
+        states.push_back({input.valid(), input.became_valid(), input.became_invalid(), input.modified()});
+        times.push_back(input.last_updated());
+    }
+
+    inline static std::vector<std::array<bool, 4>> states;
+    inline static std::vector<bg::EvaluationTime> times;
+};
+
+} // namespace
+
+TEST_CASE("an optional input exposes its latest validity transition",
+          "[evaluation][series:value][transition:first-tick][transition:update]"
+          "[transition:invalidation][transition:revalidation][feature:validity][validity:optional]") {
+    const auto source = bg::node([](bg::In<bg::TS<bg::i64>> input, bg::Out<bg::TS<bg::i64>> output) {
+        if (*input == 0) {
+            output.invalidate();
+            return;
+        }
+        output.set(*input);
+    });
+    const auto sink = bg::node<validity_transition_sink>();
+    validity_transition_sink::states.clear();
+    validity_transition_sink::times.clear();
+
+    const auto graph = [&](bg::wp<bg::TS<bg::i64>> input) {
+        const auto output = source(input);
+        sink(output);
+        return output;
+    };
+    const auto actual = bg::testing::test_graph(graph, std::array<bg::i64, 4>{1, 2, 0, 3});
+
+    CHECK(actual.equals({1, 2, std::nullopt, 3}));
+    CHECK(validity_transition_sink::states == std::vector<std::array<bool, 4>>{
+                                                {true, true, false, true},
+                                                {true, false, false, true},
+                                                {false, false, true, false},
+                                                {true, true, false, true},
+                                            });
+    REQUIRE(validity_transition_sink::times.size() == 4);
+    CHECK(validity_transition_sink::times[0] < validity_transition_sink::times[1]);
+    CHECK(validity_transition_sink::times[1] < validity_transition_sink::times[2]);
+    CHECK(validity_transition_sink::times[2] < validity_transition_sink::times[3]);
+}
 
 TEST_CASE("a deduplicated value output schedules subscribers only for changed values",
           "[evaluation][feature:scheduling][transition:update][series:value][scalar:integer]"

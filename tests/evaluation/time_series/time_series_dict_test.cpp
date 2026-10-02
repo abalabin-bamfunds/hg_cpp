@@ -230,23 +230,29 @@ struct reference_dictionary_summary_definition {
     bg::Out<bg::TS<bg::i64>> output;
 
     void evaluate() const {
+        item_became_valid.push_back(input[1].became_valid());
         const auto resolved = bg::details::ResolvedTimeSeries::resolve(input[1].value());
         output.set(static_cast<int>(input.size() * 100) + *static_cast<const int *>(resolved.storage));
     }
+
+    inline static std::vector<bool> item_became_valid;
 };
 
 } // namespace
 
 TEST_CASE("a value dictionary provides a source-backed reference representation",
-          "[evaluation][tsd][reference][feature:reference][series:tsd][scalar:integer]"
+          "[evaluation][tsd][reference][feature:reference][feature:validity][series:tsd][scalar:integer]"
           "[binding:value-to-reference][transition:update]") {
     const auto source = bg::node<dict_source_definition>();
     const auto summarize = bg::node<reference_dictionary_summary_definition>();
+    reference_dictionary_summary_definition::item_became_valid.clear();
     const auto graph = [&] { return summarize(source()); };
 
     const auto actual = bg::testing::test_graph(graph);
 
     CHECK(actual.equals({210, std::nullopt, 111}));
+    // The item reference remains valid after an unrelated dictionary change.
+    CHECK(reference_dictionary_summary_definition::item_became_valid == std::vector<bool>{true, true});
 }
 
 namespace {

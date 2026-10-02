@@ -29,19 +29,21 @@ class In<TSL<Item, Size, TimeSeriesProperties...>, Properties...>
     In() noexcept
         requires(!details::size_variable_declaration<decltype(Size)>)
         : activity_control{},
-          data_{cpp_time_series_runtime_type<TSL<Item, Size, TimeSeriesProperties...>>(), MIN_DT, nullptr} {}
+          data_{cpp_time_series_runtime_type<TSL<Item, Size, TimeSeriesProperties...>>(), initial_time_series_state, nullptr} {}
 
-    In(const EvaluationTime &last_updated, const storage_type *value, bool modified = false,
+    In(const TimeSeriesState &last_updated, const storage_type *value, bool modified = false,
        bool *activity = nullptr) noexcept
         requires(!details::size_variable_declaration<decltype(Size)>)
         : activity_control{activity}, data_{cpp_time_series_runtime_type<TSL<Item, Size, TimeSeriesProperties...>>(),
                                             last_updated, value, modified} {}
 
-    In(const EvaluationTime &last_updated, const void *value, const TimeSeriesRuntimeType &runtime_type,
+    In(const TimeSeriesState &last_updated, const void *value, const TimeSeriesRuntimeType &runtime_type,
        bool modified = false, bool *activity = nullptr) noexcept
         : activity_control{activity}, data_{runtime_type, last_updated, value, modified} {}
 
     bool valid() const noexcept { return data_.valid(); }
+    bool became_valid() const noexcept { return data_.became_valid(); }
+    bool became_invalid() const noexcept { return data_.became_invalid(); }
     bool modified() const noexcept { return data_.modified(); }
     EvaluationTime last_updated() const noexcept { return data_.last_updated(); }
     std::size_t size() const noexcept { return data_.runtime_type().item_count(data_.data()); }
@@ -49,7 +51,7 @@ class In<TSL<Item, Size, TimeSeriesProperties...>, Properties...>
     In<Item> operator[](std::size_t index) const {
         const auto item = data_.runtime_type().item(data_.data(), static_cast<item_id_t>(index));
         return {item.last_updated, item.value, item.runtime_type,
-                data_.modified() && item.last_updated == data_.last_updated()};
+                data_.modified() && item.last_updated.valid() && item.last_updated.time() == data_.last_updated()};
     }
 
     bool item_updated(std::size_t index) const noexcept {

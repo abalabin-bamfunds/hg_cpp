@@ -211,8 +211,7 @@ class MapRuntime {
     static NestedGraphInput pass_through_reference(const In<TS_T> &input) {
         return *input.visit(
             [](const In<REF<TS_T>> *reference) {
-                return NestedGraphInput{reference->valid() ? reference->value() : Reference{},
-                                        reference->valid() ? reference->last_updated() : MIN_DT};
+                return NestedGraphInput{reference->valid() ? reference->value() : Reference{}};
             },
             ddv::noop);
     }
@@ -222,14 +221,13 @@ class MapRuntime {
             [&](const In<TSD<SCALAR, TS_T>> *dictionary) {
                 const auto typed_key = Scalar<SCALAR>::from(key);
                 if (!dictionary->contains(typed_key)) {
-                    return NestedGraphInput{Reference{}, MIN_DT};
+                    return NestedGraphInput{Reference{}};
                 }
 
                 const auto item = (*dictionary)[typed_key];
                 return *item.visit(
                     [](const In<REF<TS_T>> *reference) {
-                        return NestedGraphInput{reference->valid() ? reference->value() : Reference{},
-                                                reference->valid() ? reference->last_updated() : MIN_DT};
+                        return NestedGraphInput{reference->valid() ? reference->value() : Reference{}};
                     },
                     ddv::noop);
             },
@@ -246,7 +244,7 @@ class MapRuntime {
             const auto &description = compiled.inputs[update.input_index];
             const auto outer = input(invocation, description.parameter_index);
             entry.inner_graph.update_input(compiled.nested, description.inner_input_index,
-                                           mapped_reference(outer, entries_.key(entry)));
+                                           mapped_reference(outer, entries_.key(entry)), invocation.context());
             entries_.mark_ready(entry);
         }
     }
@@ -267,7 +265,8 @@ class MapRuntime {
                 if (!entry.inner_graph.running()) {
                     continue;
                 }
-                entry.inner_graph.update_input(compiled.nested, description.inner_input_index, reference);
+                entry.inner_graph.update_input(compiled.nested, description.inner_input_index, reference,
+                                               invocation.context());
                 entries_.mark_ready(entry);
             }
         }

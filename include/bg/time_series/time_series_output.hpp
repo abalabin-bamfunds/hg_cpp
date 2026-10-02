@@ -17,13 +17,13 @@ template <details::time_series_variable Variable> class Out<Variable> {
 
     explicit Out(details::OutputState &state) noexcept : state_(Proxy::borrow(state)) {}
 
-    Out(EvaluationTime &last_updated, void *value, const TimeSeriesRuntimeType &runtime_type,
+    Out(TimeSeriesState &last_updated, void *value, const TimeSeriesRuntimeType &runtime_type,
         EvaluationContext &context)
         : state_(Proxy::copy(details::OutputState{runtime_type}, context)) {
         state_->bind(last_updated, value, context);
     }
 
-    Out(EvaluationTime &last_updated, void *value, const TimeSeriesRuntimeType &runtime_type, void *output_path)
+    Out(TimeSeriesState &last_updated, void *value, const TimeSeriesRuntimeType &runtime_type, void *output_path)
         : state_(Proxy::copy(details::OutputState{runtime_type}, output_path)) {
         state_->bind(last_updated, value, output_path);
     }

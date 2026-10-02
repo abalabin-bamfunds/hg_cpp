@@ -13,7 +13,11 @@ bool DynamicReferenceInputStorage::refresh(EvaluationTime evaluation_time) noexc
     }
 
     value_ = value;
-    change_time_ = evaluation_time;
+    if (value_) {
+        last_updated_.publish(evaluation_time);
+    } else if (last_updated_.valid()) {
+        last_updated_.invalidate(evaluation_time);
+    }
     return true;
 }
 
@@ -39,7 +43,9 @@ void DynamicReferenceInputStorage::unbind(RuntimeGraph &graph, std::size_t stora
 
     binding_ = {};
     value_ = {};
-    change_time_ = MIN_DT;
+    if (last_updated_.valid()) {
+        last_updated_.invalidate(graph.evaluation_time());
+    }
 }
 
 void DynamicReferenceInputStorage::notify(OutputChangeContext &context, std::size_t node_index,

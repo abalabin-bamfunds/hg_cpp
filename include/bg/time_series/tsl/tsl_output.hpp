@@ -20,27 +20,27 @@ template <typename Item, auto Size, auto... Properties> class Out<TSL<Item, Size
 
     explicit Out(details::OutputState &state) noexcept : state_(Proxy::borrow(state)) {}
 
-    Out(EvaluationTime &last_updated, storage_type &value, EvaluationContext &context)
+    Out(TimeSeriesState &last_updated, storage_type &value, EvaluationContext &context)
         requires(!details::size_variable_declaration<decltype(Size)>)
         : state_(Proxy::copy(details::OutputState{cpp_time_series_runtime_type<TSL<Item, Size, Properties...>>()},
                              context)) {
         state_->bind(last_updated, &value, context);
     }
 
-    Out(EvaluationTime &last_updated, storage_type &value, void *output_path)
+    Out(TimeSeriesState &last_updated, storage_type &value, void *output_path)
         requires(!details::size_variable_declaration<decltype(Size)>)
         : state_(Proxy::copy(details::OutputState{cpp_time_series_runtime_type<TSL<Item, Size, Properties...>>()},
                              output_path)) {
         state_->bind(last_updated, &value, output_path);
     }
 
-    Out(EvaluationTime &last_updated, void *value, const TimeSeriesRuntimeType &runtime_type,
+    Out(TimeSeriesState &last_updated, void *value, const TimeSeriesRuntimeType &runtime_type,
         EvaluationContext &context)
         : state_(Proxy::copy(details::OutputState{runtime_type}, context)) {
         state_->bind(last_updated, value, context);
     }
 
-    Out(EvaluationTime &last_updated, void *value, const TimeSeriesRuntimeType &runtime_type, void *output_path)
+    Out(TimeSeriesState &last_updated, void *value, const TimeSeriesRuntimeType &runtime_type, void *output_path)
         : state_(Proxy::copy(details::OutputState{runtime_type}, output_path)) {
         state_->bind(last_updated, value, output_path);
     }

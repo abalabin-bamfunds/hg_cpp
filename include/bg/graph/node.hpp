@@ -3,6 +3,7 @@
 #include <bg/graph/compiled_node.hpp>
 #include <bg/time_series/ref/ref_input_storage.hpp>
 #include <bg/time_series/ref/ref_storage.hpp>
+#include <bg/time_series/time_series_state.hpp>
 #include <bg/time_series/time_series_input.hpp>
 
 #include <cstddef>
@@ -14,7 +15,7 @@ namespace bg {
 class Node {
   public:
     struct InputData {
-        const EvaluationTime *last_updated;
+        const TimeSeriesState *last_updated;
         const void *value;
     };
 
@@ -36,12 +37,13 @@ class Node {
         return default_descriptor(compiled_node_->parameters()[parameter_index]);
     }
 
-    const EvaluationTime &input_last_updated(std::size_t parameter_index) const noexcept {
+    const TimeSeriesState &input_last_updated(std::size_t parameter_index) const noexcept {
         return *input_data(parameter_index).last_updated;
     }
 
     bool input_modified(std::size_t parameter_index, EvaluationTime evaluation_time) const noexcept {
-        return evaluation_time > MIN_DT && *input_data(parameter_index).last_updated == evaluation_time;
+        const auto &state = input_last_updated(parameter_index);
+        return state.valid() && state.time() == evaluation_time;
     }
 
     InputData input_data(std::size_t parameter_index) const noexcept {
@@ -52,11 +54,11 @@ class Node {
             const auto &source = descriptor.source;
             const auto source_data = binding_data(source, source.mode());
             const auto *last_updated = &default_input(binding).last_updated;
-            if (*last_updated <= MIN_DT) {
+            if (!last_updated->valid()) {
                 last_updated =
-                    reinterpret_cast<const EvaluationTime *>(runtime_storage_ + descriptor.start_time_offset);
+                    reinterpret_cast<const TimeSeriesState *>(runtime_storage_ + descriptor.start_time_offset);
             }
-            if (*source_data.last_updated <= MIN_DT) {
+            if (!source_data.last_updated->valid()) {
                 return {last_updated, descriptor.fallback};
             }
 
@@ -94,7 +96,7 @@ class Node {
                                EvaluationTime evaluation_time = MIN_DT) const noexcept {
         const auto input = input_data(parameter_index);
         return {*input.last_updated, input.value, time_series_input_runtime_type(parameter_index, runtime_type_index),
-                evaluation_time > MIN_DT && *input.last_updated == evaluation_time};
+                input.last_updated->valid() && input.last_updated->time() == evaluation_time};
     }
 
     bool *input_activity(std::size_t controlled_input_index) const noexcept {
@@ -126,8 +128,8 @@ class Node {
         return *reinterpret_cast<const DefaultInputDescriptor *>(address);
     }
 
-    EvaluationTime &output_last_updated() const noexcept {
-        return *reinterpret_cast<EvaluationTime *>(runtime_storage_ + compiled_node_->output_last_updated_offset());
+    TimeSeriesState &output_last_updated() const noexcept {
+        return *reinterpret_cast<TimeSeriesState *>(runtime_storage_ + compiled_node_->output_last_updated_offset());
     }
 
     void *output_value() const noexcept { return runtime_storage_ + compiled_node_->output_value_offset(); }
@@ -137,7 +139,7 @@ class Node {
   private:
     InputData binding_data(const ParameterBinding &binding, ParameterBindingMode mode) const noexcept {
         const auto &wired_last_updated =
-            *reinterpret_cast<const EvaluationTime *>(runtime_storage_ + binding.last_updated_offset());
+            *reinterpret_cast<const TimeSeriesState *>(runtime_storage_ + binding.last_updated_offset());
         if (mode == ParameterBindingMode::constant) {
             return {&wired_last_updated, binding.constant_data()};
         }
@@ -148,11 +150,11 @@ class Node {
         const auto reference =
             reinterpret_cast<const ReferenceInputStorage *>(runtime_storage_ + binding.value_offset())->value;
         if (!reference) {
-            return {&MIN_DT, nullptr};
+            return {wired_last_updated.valid() ? &initial_time_series_state : &wired_last_updated, nullptr};
         }
 
         const auto resolved = details::ResolvedTimeSeries::resolve(reference);
-        if (*resolved.last_updated <= MIN_DT || *resolved.last_updated >= wired_last_updated) {
+        if (!resolved.last_updated->valid() || !wired_last_updated.later_than(*resolved.last_updated)) {
             return {resolved.last_updated, resolved.storage};
         }
 

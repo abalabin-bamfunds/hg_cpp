@@ -16,12 +16,12 @@ namespace bg::details {
 
 inline std::size_t contained_time_series_value_offset(const TimeSeriesRuntimeType &runtime_type) noexcept {
     const auto alignment = runtime_type.value_alignment();
-    const auto remainder = sizeof(EvaluationTime) % alignment;
-    return remainder == 0 ? sizeof(EvaluationTime) : sizeof(EvaluationTime) + alignment - remainder;
+    const auto remainder = sizeof(TimeSeriesState) % alignment;
+    return remainder == 0 ? sizeof(TimeSeriesState) : sizeof(TimeSeriesState) + alignment - remainder;
 }
 
 inline util::runtime_item_layout contained_time_series_layout(const TimeSeriesRuntimeType &runtime_type) noexcept {
-    const auto alignment = std::max(alignof(EvaluationTime), runtime_type.value_alignment());
+    const auto alignment = std::max(alignof(TimeSeriesState), runtime_type.value_alignment());
     const auto value_offset = contained_time_series_value_offset(runtime_type);
     const auto size = value_offset + runtime_type.value_size();
     const auto remainder = size % alignment;
@@ -29,7 +29,7 @@ inline util::runtime_item_layout contained_time_series_layout(const TimeSeriesRu
 }
 
 struct time_series_set_slot {
-    EvaluationTime last_updated{MIN_DT};
+    TimeSeriesState last_updated{};
     time_series_set_storage value;
 };
 
@@ -76,9 +76,9 @@ class time_series_dict_storage {
                 modified_.grow(position + 1, memory);
                 items_.emplace_at_with(position, item_layout, memory, [&](void *item) {
                     auto *bytes = static_cast<std::byte *>(item);
-                    std::construct_at(reinterpret_cast<EvaluationTime *>(bytes), MIN_DT);
+                    std::construct_at(reinterpret_cast<TimeSeriesState *>(bytes));
                     auto rollback = util::scope_exit{
-                        [&]() noexcept { std::destroy_at(reinterpret_cast<EvaluationTime *>(bytes)); }};
+                        [&]() noexcept { std::destroy_at(reinterpret_cast<TimeSeriesState *>(bytes)); }};
                     item_runtime_type.construct_runtime_value(bytes + item_value_offset, memory);
                     rollback.release();
                 });
@@ -154,12 +154,12 @@ class time_series_dict_storage {
     const time_series_set_slot &key_storage() const noexcept { return keys; }
     const util::index<> &modified() const noexcept { return modified_; }
 
-    EvaluationTime &item_last_updated(Position position, const util::runtime_item_layout &layout) noexcept {
-        return *static_cast<EvaluationTime *>(items_.get(position, layout));
+    TimeSeriesState &item_last_updated(Position position, const util::runtime_item_layout &layout) noexcept {
+        return *static_cast<TimeSeriesState *>(items_.get(position, layout));
     }
 
-    const EvaluationTime &item_last_updated(Position position, const util::runtime_item_layout &layout) const noexcept {
-        return *static_cast<const EvaluationTime *>(items_.get(position, layout));
+    const TimeSeriesState &item_last_updated(Position position, const util::runtime_item_layout &layout) const noexcept {
+        return *static_cast<const TimeSeriesState *>(items_.get(position, layout));
     }
 
     void *item_value(Position position, const util::runtime_item_layout &layout, std::size_t value_offset) noexcept {
@@ -188,7 +188,7 @@ class time_series_dict_storage {
         items_.erase_at_with(position, item_layout, memory, [&](void *item) noexcept {
             auto *bytes = static_cast<std::byte *>(item);
             item_runtime_type.destroy_value(bytes + item_value_offset, memory);
-            std::destroy_at(reinterpret_cast<EvaluationTime *>(bytes));
+            std::destroy_at(reinterpret_cast<TimeSeriesState *>(bytes));
         });
     }
 

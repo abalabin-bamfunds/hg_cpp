@@ -66,8 +66,8 @@ class RuntimeGraph {
     bool set_owner_scheduling_suppressed(bool suppressed) noexcept;
     bool evaluation_pending() const noexcept;
 
-    void update_reference_output(std::size_t node_index, Reference reference, EvaluationTime last_updated);
-    void initialize_constant_output(std::size_t node_index, Scalar<> value, EvaluationTime last_updated);
+    void update_reference_output(std::size_t node_index, Reference reference, EvaluationTime evaluation_time);
+    void initialize_constant_output(std::size_t node_index, Scalar<> value, EvaluationTime evaluation_time);
 
     void add_cycle_callback(void *receiver, void (*function)(void *) noexcept);
     void remove_cycle_callback(const void *receiver) noexcept;

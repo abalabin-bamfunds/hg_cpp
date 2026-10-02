@@ -6,6 +6,7 @@
 #include <bg/node/input_properties.hpp>
 #include <bg/node/invalidation.hpp>
 #include <bg/node/node_template.hpp>
+#include <bg/time_series/time_series_state.hpp>
 #include <bg/util/symbol.hpp>
 
 #include <cstddef>
@@ -294,7 +295,7 @@ static_assert(sizeof(ParameterBinding) == 8);
 static_assert(sizeof(ControlledInput) == 4);
 
 struct DefaultInputState {
-    EvaluationTime last_updated;
+    TimeSeriesState last_updated;
 };
 
 struct DefaultInputDescriptor {

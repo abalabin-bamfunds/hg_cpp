@@ -34,7 +34,7 @@ class TsdKeySubscriptions final
     TsdItemReferenceInput input(Reference reference, Scalar<> key) {
         const auto retained = retain_key(reference, key);
         if (retained.runtime_type == nullptr) {
-            return {&MIN_DT, nullptr, {}, false};
+            return {&initial_time_series_state, nullptr, {}, false};
         }
         auto release_retention = util::scope_exit{
             [&]() noexcept { retained.runtime_type->release_key(retained.value, retained.id, allocation()); }};

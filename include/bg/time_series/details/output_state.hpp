@@ -2,6 +2,7 @@
 
 #include <bg/evaluation_context.hpp>
 #include <bg/time_series/details/output_path.hpp>
+#include <bg/time_series/time_series_state.hpp>
 #include <bg/time_series/time_series_runtime_type.hpp>
 #include <bg/util/tagged_ptr.hpp>
 
@@ -16,19 +17,19 @@ class OutputState {
     explicit OutputState(const TimeSeriesRuntimeType &runtime_type) noexcept
         : runtime_type_{&runtime_type, *runtime_type.type().guarantee().value()} {}
 
-    void bind(EvaluationTime &last_updated, void *data, const EvaluationTime &evaluation_time) noexcept {
+    void bind(TimeSeriesState &last_updated, void *data, const EvaluationTime &evaluation_time) noexcept {
         last_updated_ = &last_updated;
         data_ = data;
         owner_.reset(&evaluation_time);
     }
 
-    void bind(EvaluationTime &last_updated, void *data, EvaluationContext &context) noexcept {
+    void bind(TimeSeriesState &last_updated, void *data, EvaluationContext &context) noexcept {
         last_updated_ = &last_updated;
         data_ = data;
         owner_.reset(&context);
     }
 
-    void bind(EvaluationTime &last_updated, void *data, void *output_path) noexcept {
+    void bind(TimeSeriesState &last_updated, void *data, void *output_path) noexcept {
         last_updated_ = &last_updated;
         data_ = data;
         owner_.reset(static_cast<OutputPath *>(output_path));
@@ -53,13 +54,13 @@ class OutputState {
         }
     }
 
-    bool valid() const noexcept { return *last_updated_ > MIN_DT; }
-    EvaluationTime last_updated() const noexcept { return *last_updated_; }
+    bool valid() const noexcept { return last_updated_->valid(); }
+    EvaluationTime last_updated() const noexcept { return last_updated_->time(); }
     const TimeSeriesRuntimeType &runtime_type() const noexcept { return *runtime_type_; }
     bool suppresses_equal_updates() const noexcept { return runtime_type_.tag() == TimeSeriesGuarantee::deduplicated; }
     const void *data() const noexcept { return data_; }
     void *mutable_data() const noexcept { return const_cast<void *>(data_); }
-    EvaluationTime &mutable_last_updated() const noexcept { return *const_cast<EvaluationTime *>(last_updated_); }
+    TimeSeriesState &mutable_last_updated() const noexcept { return *const_cast<TimeSeriesState *>(last_updated_); }
 
     void invalidate() const { runtime_type().invalidate_output(*this); }
 
@@ -67,12 +68,12 @@ class OutputState {
         if (!valid()) {
             return;
         }
-        mutable_last_updated() = MIN_DT;
+        mutable_last_updated().invalidate(evaluation_time());
         publish_containing_collections();
     }
 
     void publish() const noexcept {
-        mutable_last_updated() = evaluation_time();
+        mutable_last_updated().publish(evaluation_time());
         publish_containing_collections();
     }
 
@@ -109,7 +110,7 @@ class OutputState {
     }
 
     util::tagged_ptr<const TimeSeriesRuntimeType, 2, TimeSeriesGuarantee> runtime_type_{};
-    const EvaluationTime *last_updated_{&MIN_DT};
+    const TimeSeriesState *last_updated_{&initial_time_series_state};
     const void *data_{};
     util::variant_ptr_with_alignment<4, OutputPath, EvaluationContext, const EvaluationTime> owner_{&MIN_DT};
 };

@@ -61,7 +61,7 @@ void NestedGraph::start(const CompiledNestedGraph &compiled, EvaluationContext &
     }
     active_->set_owner_scheduling_suppressed(true);
 
-    update_inputs(compiled, inputs);
+    update_inputs(compiled, inputs, context);
     for (auto i = std::size_t{}; i < constants.size(); ++i) {
         active_->initialize_constant_output(compiled.constant_input_nodes[i], constants[i].value,
                                             context.evaluation_time());
@@ -71,7 +71,8 @@ void NestedGraph::start(const CompiledNestedGraph &compiled, EvaluationContext &
     rollback.release();
 }
 
-void NestedGraph::update_input(const CompiledNestedGraph &compiled, std::size_t input_index, NestedGraphInput input) {
+void NestedGraph::update_input(const CompiledNestedGraph &compiled, std::size_t input_index, NestedGraphInput input,
+                               EvaluationContext &context) {
     if (input_index >= compiled.input_nodes.size()) {
         throw std::out_of_range{"the nested graph input index is out of range"};
     }
@@ -79,10 +80,11 @@ void NestedGraph::update_input(const CompiledNestedGraph &compiled, std::size_t 
     const auto previous_suppression = active_->set_owner_scheduling_suppressed(true);
     auto restore = util::scope_exit{
         [&]() noexcept { active_->set_owner_scheduling_suppressed(previous_suppression); }};
-    active_->update_reference_output(compiled.input_nodes[input_index], input.reference, input.last_updated);
+    active_->update_reference_output(compiled.input_nodes[input_index], input.reference, context.evaluation_time());
 }
 
-void NestedGraph::update_inputs(const CompiledNestedGraph &compiled, std::span<const NestedGraphInput> inputs) {
+void NestedGraph::update_inputs(const CompiledNestedGraph &compiled, std::span<const NestedGraphInput> inputs,
+                                EvaluationContext &context) {
     if (inputs.size() != compiled.input_nodes.size()) {
         throw std::invalid_argument{"the nested graph received the wrong number of inputs"};
     }
@@ -92,7 +94,7 @@ void NestedGraph::update_inputs(const CompiledNestedGraph &compiled, std::span<c
         [&]() noexcept { active_->set_owner_scheduling_suppressed(previous_suppression); }};
 
     for (auto i = std::size_t{}; i < inputs.size(); ++i) {
-        active_->update_reference_output(compiled.input_nodes[i], inputs[i].reference, inputs[i].last_updated);
+        active_->update_reference_output(compiled.input_nodes[i], inputs[i].reference, context.evaluation_time());
     }
 }
 
@@ -131,7 +133,7 @@ Reference NestedGraph::output(const CompiledNestedGraph &compiled) const noexcep
     }
 
     const auto node = active_->node(*compiled.output_node);
-    if (node.output_last_updated() <= MIN_DT) {
+    if (!node.output_last_updated().valid()) {
         return nullptr;
     }
 

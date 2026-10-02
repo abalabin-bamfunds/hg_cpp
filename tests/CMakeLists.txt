@@ -97,6 +97,7 @@ add_executable(
     value/scalar/value_test.cpp
     value/scalar/visitor_test.cpp
     value/scalar/view_test.cpp
+    value/time_series/state_test.cpp
     value/time_series_view_test.cpp
     value/time_series/dict/storage_test.cpp
     value/time_series/list/storage_test.cpp

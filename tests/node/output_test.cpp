@@ -30,7 +30,7 @@ static_assert(ScalarWritableOutput<bg::Out<bg::TS<bg::SCALAR>>>);
 } // namespace
 
 TEST_CASE("a value output publishes at the evaluation time", "[node_api][feature:node-api]") {
-    bg::EvaluationTime last_updated = bg::MIN_DT;
+    bg::TimeSeriesState last_updated;
     float value{};
     const bg::EvaluationTime evaluation_time = bg::MIN_DT + std::chrono::microseconds{1};
     auto state = bg::details::OutputState{bg::cpp_time_series_runtime_type<bg::TS<float>>()};
@@ -45,7 +45,7 @@ TEST_CASE("a value output publishes at the evaluation time", "[node_api][feature
 }
 
 TEST_CASE("invalidating a value output retains its storage", "[node_api][feature:node-api]") {
-    bg::EvaluationTime last_updated = bg::MIN_DT + std::chrono::microseconds{1};
+    bg::TimeSeriesState last_updated{bg::MIN_DT + std::chrono::microseconds{1}};
     float value = 1.25F;
     const bg::EvaluationTime evaluation_time = bg::MIN_DT + std::chrono::microseconds{2};
     auto state = bg::details::OutputState{bg::cpp_time_series_runtime_type<bg::TS<float>>()};
@@ -55,12 +55,13 @@ TEST_CASE("invalidating a value output retains its storage", "[node_api][feature
     output.invalidate();
 
     CHECK_FALSE(output.valid());
-    CHECK(last_updated == bg::MIN_DT);
+    CHECK(last_updated.became_invalid());
+    CHECK(last_updated.time() == evaluation_time);
     CHECK(value == 1.25F);
 }
 
 TEST_CASE("a value output accepts a compatible scalar view", "[node_api][feature:node-api]") {
-    bg::EvaluationTime last_updated = bg::MIN_DT;
+    bg::TimeSeriesState last_updated;
     float value{};
     const bg::EvaluationTime evaluation_time = bg::MIN_DT + std::chrono::microseconds{1};
     auto state = bg::details::OutputState{bg::cpp_time_series_runtime_type<bg::TS<float>>()};
@@ -76,7 +77,7 @@ TEST_CASE("a value output accepts a compatible scalar view", "[node_api][feature
 }
 
 TEST_CASE("a value output rejects an incompatible scalar view", "[node_api][feature:node-api]") {
-    bg::EvaluationTime last_updated = bg::MIN_DT;
+    bg::TimeSeriesState last_updated;
     float value{};
     const bg::EvaluationTime evaluation_time = bg::MIN_DT + std::chrono::microseconds{1};
     auto state = bg::details::OutputState{bg::cpp_time_series_runtime_type<bg::TS<float>>()};
@@ -91,7 +92,7 @@ TEST_CASE("a value output rejects an incompatible scalar view", "[node_api][feat
 
 TEST_CASE("a generic value output accepts a compatible erased scalar view",
           "[node_api][feature:node-api][declaration:generic]") {
-    bg::EvaluationTime last_updated = bg::MIN_DT;
+    bg::TimeSeriesState last_updated;
     float value{};
     const auto evaluation_time = bg::MIN_DT + std::chrono::microseconds{1};
     const auto source_value = 1.25F;
@@ -103,12 +104,12 @@ TEST_CASE("a generic value output accepts a compatible erased scalar view",
     output.set_value(source);
 
     CHECK(value == 1.25F);
-    CHECK(last_updated == evaluation_time);
+    CHECK(last_updated.time() == evaluation_time);
 }
 
 TEST_CASE("a generic value output rejects an incompatible scalar view",
           "[node_api][feature:node-api][declaration:generic]") {
-    bg::EvaluationTime last_updated = bg::MIN_DT;
+    bg::TimeSeriesState last_updated;
     float value{};
     const auto evaluation_time = bg::MIN_DT + std::chrono::microseconds{1};
     const auto source_value = 1.25;
@@ -125,7 +126,7 @@ TEST_CASE("a deduplicated value output suppresses an equal update",
           "[node_api][feature:node-api][transition:update][series:value][scalar:floating-point]"
           "[guarantee:deduplicated]") {
     const auto previous_update = bg::MIN_DT + std::chrono::microseconds{1};
-    auto last_updated = previous_update;
+    auto last_updated = bg::TimeSeriesState{previous_update};
     const auto evaluation_time = previous_update + std::chrono::microseconds{1};
     auto value = 1.25F;
     auto state = bg::details::OutputState{
@@ -135,13 +136,13 @@ TEST_CASE("a deduplicated value output suppresses an equal update",
 
     output.set(1.25F);
 
-    CHECK(last_updated == previous_update);
+    CHECK(last_updated.time() == previous_update);
 }
 
 TEST_CASE("a deduplicated value output publishes revalidation",
           "[node_api][feature:node-api][transition:revalidation][series:value]"
           "[scalar:floating-point][guarantee:deduplicated]") {
-    auto last_updated = bg::MIN_DT;
+    auto last_updated = bg::TimeSeriesState{};
     const auto evaluation_time = bg::MIN_DT + std::chrono::microseconds{2};
     auto value = 1.25F;
     auto state = bg::details::OutputState{
@@ -151,14 +152,15 @@ TEST_CASE("a deduplicated value output publishes revalidation",
 
     output.set(1.25F);
 
-    CHECK(last_updated == evaluation_time);
+    CHECK(last_updated.became_valid());
+    CHECK(last_updated.time() == evaluation_time);
 }
 
 TEST_CASE("a generic deduplicated value output compares through its scalar runtime type",
           "[node_api][feature:node-api][declaration:generic][transition:update][series:value]"
           "[scalar:floating-point][guarantee:deduplicated]") {
     const auto previous_update = bg::MIN_DT + std::chrono::microseconds{1};
-    auto last_updated = previous_update;
+    auto last_updated = bg::TimeSeriesState{previous_update};
     const auto evaluation_time = previous_update + std::chrono::microseconds{1};
     auto value = 1.25F;
     const auto source = bg::Scalar<bg::SCALAR>::from<float>(value);
@@ -169,7 +171,7 @@ TEST_CASE("a generic deduplicated value output compares through its scalar runti
 
     output.set_value(source);
 
-    CHECK(last_updated == previous_update);
+    CHECK(last_updated.time() == previous_update);
 }
 
 TEST_CASE("a default reference output suppresses an equal address",
@@ -178,7 +180,7 @@ TEST_CASE("a default reference output suppresses an equal address",
     auto root = bg::details::RootReference{};
     auto address = bg::Reference{&root};
     const auto previous_update = bg::MIN_DT + std::chrono::microseconds{1};
-    auto last_updated = previous_update;
+    auto last_updated = bg::TimeSeriesState{previous_update};
     const auto evaluation_time = previous_update + std::chrono::microseconds{1};
     auto state = bg::details::OutputState{bg::cpp_time_series_runtime_type<bg::REF<bg::TS<bg::i64>>>()};
     state.bind(last_updated, &address, evaluation_time);
@@ -186,7 +188,7 @@ TEST_CASE("a default reference output suppresses an equal address",
 
     output.set_value(address);
 
-    CHECK(last_updated == previous_update);
+    CHECK(last_updated.time() == previous_update);
 }
 
 TEST_CASE("an ordinary reference output publishes an equal address",
@@ -195,13 +197,14 @@ TEST_CASE("an ordinary reference output publishes an equal address",
 
     auto root = bg::details::RootReference{};
     auto address = bg::Reference{&root};
-    auto last_updated = bg::MIN_DT + std::chrono::microseconds{1};
-    const auto evaluation_time = last_updated + std::chrono::microseconds{1};
+    const auto previous_update = bg::MIN_DT + std::chrono::microseconds{1};
+    auto last_updated = bg::TimeSeriesState{previous_update};
+    const auto evaluation_time = previous_update + std::chrono::microseconds{1};
     auto state = bg::details::OutputState{bg::cpp_time_series_runtime_type<OrdinaryReference>()};
     state.bind(last_updated, &address, evaluation_time);
     const auto output = bg::details::output_factory::make<OrdinaryReference>(state);
 
     output.set_value(address);
 
-    CHECK(last_updated == evaluation_time);
+    CHECK(last_updated.time() == evaluation_time);
 }

@@ -50,14 +50,14 @@ class TimeSeriesBundleRuntimeTypeBase : public TimeSeriesRuntimeType {
     ConstItem item(const void *value, item_id_t id) const final {
         const auto &field = fields_.at(id);
         const auto *bytes = static_cast<const std::byte *>(value);
-        return {field.runtime_type, *reinterpret_cast<const EvaluationTime *>(bytes + field.last_updated_offset),
+        return {field.runtime_type, *reinterpret_cast<const TimeSeriesState *>(bytes + field.last_updated_offset),
                 bytes + field.value_offset};
     }
 
     MutableItem item(void *value, item_id_t id) const final {
         const auto &field = fields_.at(id);
         auto *bytes = static_cast<std::byte *>(value);
-        return {field.runtime_type, *reinterpret_cast<EvaluationTime *>(bytes + field.last_updated_offset),
+        return {field.runtime_type, *reinterpret_cast<TimeSeriesState *>(bytes + field.last_updated_offset),
                 bytes + field.value_offset};
     }
 
@@ -67,16 +67,16 @@ class TimeSeriesBundleRuntimeTypeBase : public TimeSeriesRuntimeType {
         }
     }
 
-    bool item_updated(const EvaluationTime &last_updated, const void *value,
+    bool item_updated(const TimeSeriesState &last_updated, const void *value,
                                     item_id_t id) const noexcept final {
         const auto &storage = *static_cast<const time_series_bundle_storage *>(value);
-        return last_updated > MIN_DT && storage.change_time == last_updated && storage.modified.contains(id);
+        return last_updated.valid() && storage.change_time == last_updated.time() && storage.modified.contains(id);
     }
 
-    void for_each_updated_item(const EvaluationTime &last_updated, const void *value, void *context,
+    void for_each_updated_item(const TimeSeriesState &last_updated, const void *value, void *context,
                                ItemIdFunction function) const final {
         const auto &storage = *static_cast<const time_series_bundle_storage *>(value);
-        if (last_updated <= MIN_DT || storage.change_time != last_updated) {
+        if (!last_updated.valid() || storage.change_time != last_updated.time()) {
             return;
         }
         for (const auto index : storage.modified) {
@@ -87,7 +87,7 @@ class TimeSeriesBundleRuntimeTypeBase : public TimeSeriesRuntimeType {
     void invalidate_output(const details::OutputState &output) const final { invalidate_output_items(output); }
 
     [[nodiscard]] bool mark_item_modified(void *value, item_id_t id, EvaluationTime evaluation_time,
-                                          EvaluationTime, allocator &memory) const noexcept final {
+                                          const TimeSeriesState &, allocator &memory) const noexcept final {
         auto &storage = *static_cast<time_series_bundle_storage *>(value);
         if (storage.change_time != evaluation_time) {
             storage.modified.clear();
@@ -99,23 +99,23 @@ class TimeSeriesBundleRuntimeTypeBase : public TimeSeriesRuntimeType {
     bool collection_valid(const void *value) const noexcept final {
         const auto *bytes = static_cast<const std::byte *>(value);
         return std::ranges::any_of(fields_, [&](const auto &field) {
-            return *reinterpret_cast<const EvaluationTime *>(bytes + field.last_updated_offset) > MIN_DT;
+            return reinterpret_cast<const TimeSeriesState *>(bytes + field.last_updated_offset)->valid();
         });
     }
 
-    void for_each_modified_item(const EvaluationTime &last_updated, const void *value, EvaluationTime evaluation_time,
+    void for_each_modified_item(const TimeSeriesState &last_updated, const void *value, EvaluationTime evaluation_time,
                                 void *context, ModifiedItemFunction function) const final {
         const auto *bytes = static_cast<const std::byte *>(value);
         const auto &storage = *static_cast<const time_series_bundle_storage *>(value);
-        const auto publish = [&](std::size_t index, const EvaluationTime &item_last_updated) {
+        const auto publish = [&](std::size_t index, const TimeSeriesState &item_last_updated) {
             const auto &field = fields_[index];
             function(context, {static_cast<item_id_t>(index), &field.runtime_type, &item_last_updated,
                                bytes + field.value_offset});
         };
 
-        if (last_updated <= MIN_DT) {
+        if (!last_updated.valid()) {
             for (auto index = std::size_t{}; index < fields_.size(); ++index) {
-                publish(index, MIN_DT);
+                publish(index, last_updated);
             }
             return;
         }
@@ -124,7 +124,7 @@ class TimeSeriesBundleRuntimeTypeBase : public TimeSeriesRuntimeType {
         }
         for (const auto index : storage.modified) {
             const auto &field = fields_[index];
-            publish(index, *reinterpret_cast<const EvaluationTime *>(bytes + field.last_updated_offset));
+            publish(index, *reinterpret_cast<const TimeSeriesState *>(bytes + field.last_updated_offset));
         }
     }
 
@@ -132,7 +132,7 @@ class TimeSeriesBundleRuntimeTypeBase : public TimeSeriesRuntimeType {
         std::construct_at(static_cast<time_series_bundle_storage *>(destination));
         auto *bytes = static_cast<std::byte *>(destination);
         for (const auto &field : fields_) {
-            std::construct_at(reinterpret_cast<EvaluationTime *>(bytes + field.last_updated_offset), MIN_DT);
+            std::construct_at(reinterpret_cast<TimeSeriesState *>(bytes + field.last_updated_offset));
             field.runtime_type.construct_initial_value(bytes + field.value_offset);
         }
     }
@@ -146,12 +146,12 @@ class TimeSeriesBundleRuntimeTypeBase : public TimeSeriesRuntimeType {
                 --constructed;
                 const auto &field = fields_[constructed];
                 field.runtime_type.destroy_value(bytes + field.value_offset, memory);
-                std::destroy_at(reinterpret_cast<EvaluationTime *>(bytes + field.last_updated_offset));
+                std::destroy_at(reinterpret_cast<TimeSeriesState *>(bytes + field.last_updated_offset));
             }
             std::destroy_at(storage);
         }};
         for (const auto &field : fields_) {
-            std::construct_at(reinterpret_cast<EvaluationTime *>(bytes + field.last_updated_offset), MIN_DT);
+            std::construct_at(reinterpret_cast<TimeSeriesState *>(bytes + field.last_updated_offset));
             field.runtime_type.construct_runtime_value(bytes + field.value_offset, memory);
             ++constructed;
         }
@@ -162,7 +162,7 @@ class TimeSeriesBundleRuntimeTypeBase : public TimeSeriesRuntimeType {
         auto *bytes = static_cast<std::byte *>(value);
         for (auto field = fields_.rbegin(); field != fields_.rend(); ++field) {
             field->runtime_type.destroy_value(bytes + field->value_offset, memory);
-            std::destroy_at(reinterpret_cast<EvaluationTime *>(bytes + field->last_updated_offset));
+            std::destroy_at(reinterpret_cast<TimeSeriesState *>(bytes + field->last_updated_offset));
         }
         auto *storage = static_cast<time_series_bundle_storage *>(value);
         storage->modified.release(memory);

@@ -1,8 +1,8 @@
 # Time series validity
 
-A time series is valid when its last updated time is greater than `MIN_DT`.
-An invalidatable time series becomes invalid when its last updated time is set
-to `MIN_DT`.
+A time series stores its latest change time with its validity state. An
+invalidation retains its time. A timestamp alone therefore does not indicate
+whether a time series is valid.
 
 ## Invalidation and revalidation
 

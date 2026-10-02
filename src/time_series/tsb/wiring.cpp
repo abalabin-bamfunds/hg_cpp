@@ -65,14 +65,19 @@ class FreeTimeSeriesBundleNodeTemplate final : public NodeTemplate {
         const auto runtime_node = Node{node, runtime_storage};
         static_cast<free_time_series_bundle_storage *>(runtime_node.output_value())->node = &node;
         if (runtime_node.input_count() == 0) {
-            runtime_node.output_last_updated() = context->evaluation_time();
+            runtime_node.output_last_updated().publish(context->evaluation_time());
         }
     }
 
     static bool evaluate(const CompiledNode &node, void *runtime_storage, EvaluationContext *context) noexcept {
         const auto runtime_node = Node{node, runtime_storage};
         const auto &value = *static_cast<const free_time_series_bundle_storage *>(runtime_node.output_value());
-        runtime_node.output_last_updated() = free_bundle_valid(value) ? context->evaluation_time() : MIN_DT;
+        auto &state = runtime_node.output_last_updated();
+        if (free_bundle_valid(value)) {
+            state.publish(context->evaluation_time());
+        } else if (state.valid()) {
+            state.invalidate(context->evaluation_time());
+        }
         return true;
     }
 

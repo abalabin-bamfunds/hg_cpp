@@ -22,7 +22,7 @@ bool free_bundle_valid(const free_time_series_bundle_storage &storage) noexcept 
     }
 
     for (auto index = std::size_t{}; index < node.input_count(); ++index) {
-        if (node.input_last_updated(index) > MIN_DT) {
+        if (node.input_last_updated(index).valid()) {
             return true;
         }
     }

@@ -371,7 +371,7 @@ class SwitchNodeDefinition {
     template <typename Invocation>
     static NestedGraphInput input_reference(Invocation invocation, std::size_t parameter_index) {
         const auto input = invocation.template input<In<REF<TS_T>>>(parameter_index, parameter_index);
-        return {input.valid() ? input.value() : Reference{}, input.valid() ? input.last_updated() : MIN_DT};
+        return {input.valid() ? input.value() : Reference{}};
     }
 
     template <typename Invocation>
@@ -415,7 +415,7 @@ class SwitchNodeDefinition {
     static void branch_input_update(const CompiledSwitchBranch &branch, Invocation invocation,
                                     const CompiledSwitchInput &input) {
         invocation.state().graph.update_input(branch.nested, input.inner_input_index,
-                                              input_reference(invocation, input.parameter_index));
+                                              input_reference(invocation, input.parameter_index), invocation.context());
     }
 
     static void stop_active(EvaluationContext &context, SwitchNodeState &state) {

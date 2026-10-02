@@ -68,7 +68,7 @@ class ReferenceNodeTemplate final : public NodeTemplate {
         root.set_input_node(node);
         root.referenced_runtime_type = &runtime_node.time_series_input_runtime_type(0, 0);
         output = &root;
-        runtime_node.output_last_updated() = context->evaluation_time();
+        runtime_node.output_last_updated().publish(context->evaluation_time());
     }
 
     static void destroy_state(const CompiledNode &node, void *runtime_storage, EvaluationContext *context) noexcept {

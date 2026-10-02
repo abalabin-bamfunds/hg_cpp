@@ -48,7 +48,7 @@ FixedItemReferenceInput fixed_item_reference_input(Reference collection, item_id
     const auto resolved = ResolvedTimeSeries::resolve(collection);
     if (resolved.runtime_type == nullptr || resolved.storage == nullptr ||
         id >= resolved.runtime_type->item_count(resolved.storage)) {
-        return {&MIN_DT, nullptr, {}, false};
+        return {&initial_time_series_state, nullptr, {}, false};
     }
 
     const auto &item_runtime_type = resolved.runtime_type->item(resolved.storage, id).runtime_type;

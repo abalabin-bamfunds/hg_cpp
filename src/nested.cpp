@@ -150,7 +150,7 @@ class NestedNodeDefinition {
             ++input;
             const auto value = (*input).value();
             const auto reference = *value.visit([](const In<REF<TS_T>> *item) { return item->value(); }, ddv::noop);
-            values.push_back({value.valid() ? reference : nullptr, value.valid() ? value.last_updated() : MIN_DT});
+            values.push_back({value.valid() ? reference : nullptr});
         }
 
         const auto graph_inputs = std::span<const NestedGraphInput>{values};
@@ -163,7 +163,7 @@ class NestedNodeDefinition {
                                           invocation.parameter_count() - inherited_count, inherited_count};
             graph.start(invocation.compiled_data(), startup_context.context(), graph_inputs);
         } else {
-            graph.update_inputs(invocation.compiled_data(), graph_inputs);
+            graph.update_inputs(invocation.compiled_data(), graph_inputs, invocation.context());
         }
         return resume(invocation);
     }

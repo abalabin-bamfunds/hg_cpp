@@ -53,7 +53,7 @@ template <typename Collection> struct ItemSelection {
         SelectionStorage() : value_item_reference{} {}
     } selection;
     Reference selected_reference{};
-    EvaluationTime selection_time{MIN_DT};
+    TimeSeriesState selection_time{};
     item_id_t id{};
 
   private:
@@ -142,7 +142,7 @@ template <typename Derived, typename RuntimeType> class ItemSelectionSubscriptio
         auto value = Reference{};
         if (derived().contains_item(collection, entry.id)) {
             const auto item = collection.runtime_type->item(collection.storage, entry.id);
-            if (item.last_updated > MIN_DT) {
+            if (item.last_updated.valid()) {
                 value = entry.stores_reference() ? item.runtime_type.reference(item.value)
                                                  : Reference{entry.selection.value_item_reference};
             }
@@ -152,7 +152,11 @@ template <typename Derived, typename RuntimeType> class ItemSelectionSubscriptio
         }
 
         entry.selected_reference = value;
-        entry.selection_time = value ? evaluation_time : MIN_DT;
+        if (value) {
+            entry.selection_time.publish(evaluation_time);
+        } else if (entry.selection_time.valid()) {
+            entry.selection_time.invalidate(evaluation_time);
+        }
         return true;
     }
 
@@ -162,7 +166,7 @@ template <typename Derived, typename RuntimeType> class ItemSelectionSubscriptio
         queue_release(entry);
 
         return {&entry.selection_time, &item_reference_runtime_type, ReferenceBinding{&entry, binding_type()},
-                entry.selection_time == provider_->owner().evaluation_time()};
+                entry.selection_time.valid() && entry.selection_time.time() == provider_->owner().evaluation_time()};
     }
 
     void release_all() noexcept {
@@ -376,7 +380,9 @@ template <typename Derived, typename RuntimeType> class ItemSelectionSubscriptio
                 continue;
             }
             entry.selected_reference = {};
-            entry.selection_time = MIN_DT;
+            if (entry.selection_time.valid()) {
+                entry.selection_time.invalidate(context.evaluation_time());
+            }
             notify_selection(context, entry, OutputChange::invalidation);
         }
     }

@@ -249,11 +249,13 @@ properties before it. Repeating a property category is a compile error.
 scheduling from other inputs. A change that occurs while the input is passive
 does not schedule evaluation when the input becomes active later.
 
-All time series types provide `valid()`, `modified()`, and `last_updated()`.
-`modified()` reports whether the visible last-updated time is the current
-evaluation time. `TS<T>::value()` returns `const T&`. `value()` and
-`last_updated()` require a valid time series. Collection time series provide
-their type-specific change queries.
+All time series types provide `valid()`, `became_valid()`, `became_invalid()`,
+`modified()`, and `last_updated()`. `became_valid()` and `became_invalid()`
+describe the latest change. They do not imply that the change occurred in the
+current evaluation. `modified()` reports a valid update in the current
+evaluation. `last_updated()` returns the latest change time, including an
+invalidation. `TS<T>::value()` returns `const T&` and requires a valid time
+series. Collection time series provide their type-specific change queries.
 
 An `In` value is valid for one function call. Its last-updated time includes
 [sampling](time-series-references.md#input-sampling) when the input is bound

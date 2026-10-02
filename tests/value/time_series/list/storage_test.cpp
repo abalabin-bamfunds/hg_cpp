@@ -39,11 +39,11 @@ TEST_CASE("fixed list validity is derived from its items",
 
     const auto item = runtime_type.item_layout(1);
     auto &last_updated =
-        *reinterpret_cast<bg::EvaluationTime *>(static_cast<std::byte *>(storage) + item.last_updated_offset);
-    last_updated = bg::MIN_DT + std::chrono::microseconds{1};
+        *reinterpret_cast<bg::TimeSeriesState *>(static_cast<std::byte *>(storage) + item.last_updated_offset);
+    last_updated.publish(bg::MIN_DT + std::chrono::microseconds{1});
     CHECK(runtime_type.collection_valid(storage));
 
-    last_updated = bg::MIN_DT;
+    last_updated.invalidate(bg::MIN_DT + std::chrono::microseconds{2});
     CHECK_FALSE(runtime_type.collection_valid(storage));
 
     runtime_type.destroy_value(storage, allocator);
@@ -66,12 +66,12 @@ TEST_CASE("fixed list runtime items use positional IDs",
 
     const auto update_time = bg::MIN_DT + std::chrono::microseconds{1};
     auto item = runtime_type.item(storage, 1);
-    item.last_updated = update_time;
+    item.last_updated.publish(update_time);
     *static_cast<int *>(item.value) = 42;
 
     const auto const_item = runtime_type.item(static_cast<const void *>(storage), 1);
     CHECK(&const_item.runtime_type == &bg::cpp_time_series_runtime_type<bg::TS<bg::i64>>());
-    CHECK(const_item.last_updated == update_time);
+    CHECK(const_item.last_updated.time() == update_time);
     CHECK(*static_cast<const int *>(const_item.value) == 42);
 
     runtime_type.destroy_value(storage, allocator);

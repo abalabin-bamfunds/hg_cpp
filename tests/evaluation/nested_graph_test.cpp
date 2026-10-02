@@ -28,6 +28,22 @@ struct LifecycleIncrement {
     inline static int stops{};
 };
 
+struct NestedTransitionSink {
+    bg::In<bg::TS<std::int64_t>, bg::optional> input;
+    bg::Out<bg::TS<std::int64_t>> output;
+
+    void evaluate(bg::EvaluationContext *context) const {
+        observed.push_back(
+            {input.valid(), input.became_valid(), input.became_invalid(), input.modified(),
+             input.last_updated() == context->evaluation_time()});
+        if (input.valid()) {
+            output.set(*input);
+        }
+    }
+
+    inline static std::vector<std::array<bool, 5>> observed;
+};
+
 TEST_CASE("a nested graph can be stopped and started repeatedly",
           "[evaluation][nested][lifecycle][feature:nested-graph][shape:nested][transition:start]"
           "[transition:stop][transition:restart][scalar:boolean][scalar:integer][series:value]") {
@@ -48,6 +64,26 @@ TEST_CASE("a nested graph can be stopped and started repeatedly",
     CHECK(actual.equals({2, std::nullopt, 4, std::nullopt, 6}));
     CHECK(LifecycleIncrement::starts == 3);
     CHECK(LifecycleIncrement::stops == 3);
+}
+
+TEST_CASE("a nested boundary samples an existing valid input when it starts",
+          "[evaluation][nested][reference][feature:validity][transition:first-tick][validity:optional]"
+          "[series:value][binding:value-to-reference]") {
+    const auto sink = bg::node<NestedTransitionSink>();
+    const auto inner = bg::graph("name"_n = "nested_transition_sink",
+                                 [&](bg::wp<bg::TS<std::int64_t>> input) { return sink(input); });
+    const auto outer = [&](bg::wp<bg::TS<std::int64_t>> input, bg::wp<bg::TS<bool>> run) {
+        return bg::nested(inner, run, input);
+    };
+    NestedTransitionSink::observed.clear();
+
+    const auto actual = bg::testing::test_graph(
+        outer, std::array<std::optional<std::int64_t>, 3>{10, std::nullopt, std::nullopt},
+        std::array{false, false, true});
+
+    CHECK(actual.equals({std::nullopt, std::nullopt, 10}));
+    CHECK(NestedTransitionSink::observed ==
+          std::vector<std::array<bool, 5>>{{true, true, false, true, true}});
 }
 
 TEST_CASE("a dynamic input controls scheduling inside a nested graph",

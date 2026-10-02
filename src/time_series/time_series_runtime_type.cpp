@@ -90,7 +90,7 @@ void TimeSeriesRuntimeType::invalidate_output_items(const details::OutputState &
         const auto field = output.runtime_type().item_layout(id);
         auto *path = output.add_path(output.runtime_type(), id);
         auto child = details::OutputState{field.runtime_type};
-        child.bind(*reinterpret_cast<EvaluationTime *>(bytes + field.last_updated_offset), bytes + field.value_offset,
+        child.bind(*reinterpret_cast<TimeSeriesState *>(bytes + field.last_updated_offset), bytes + field.value_offset,
                    path);
         child.invalidate();
         child.release_path();
@@ -111,11 +111,11 @@ TimeSeriesRuntimeType::MutableItem TimeSeriesRuntimeType::item(void *, item_id_t
 
 void TimeSeriesRuntimeType::for_each_item_id(const void *, void *, ItemIdFunction) const {}
 
-bool TimeSeriesRuntimeType::item_updated(const EvaluationTime &, const void *, item_id_t) const noexcept {
+bool TimeSeriesRuntimeType::item_updated(const TimeSeriesState &, const void *, item_id_t) const noexcept {
     return false;
 }
 
-void TimeSeriesRuntimeType::for_each_updated_item(const EvaluationTime &, const void *, void *, ItemIdFunction) const {}
+void TimeSeriesRuntimeType::for_each_updated_item(const TimeSeriesState &, const void *, void *, ItemIdFunction) const {}
 
 Reference TimeSeriesRuntimeType::reference(const void *) const {
     throw std::logic_error{"time series does not contain a reference address"};

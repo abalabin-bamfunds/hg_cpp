@@ -39,9 +39,10 @@ runtime storage and node views are not implemented.
 
 ## Layout
 
-A time series value stores its last updated time and value independently. Its
-runtime type describes the value storage. An invalid view points to `MIN_DT` as
-its last updated time.
+A time series value stores its latest change state and value independently. Its
+runtime type describes the value storage. A never-valid view has `MIN_DT` as
+its change time. An invalidated view retains its invalidation time. The packed
+state is defined by [time series validity](time-series-validity.md).
 
 `TimeSeriesRuntimeType` is the runtime type used by `In<>` and `Out<>`. It
 provides the semantic type, physical layout, contained-item access, and runtime

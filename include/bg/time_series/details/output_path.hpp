@@ -2,6 +2,7 @@
 
 #include <bg/evaluation_time.hpp>
 #include <bg/time_series/item_id.hpp>
+#include <bg/time_series/time_series_state.hpp>
 
 #include <cstddef>
 
@@ -15,7 +16,7 @@ namespace details {
 class OutputPath;
 
 [[nodiscard]] void *add_output_path(EvaluationContext &context, const TimeSeriesRuntimeType &runtime_type,
-                                    EvaluationTime &last_updated, void *value, item_id_t id, void *parent);
+                                    TimeSeriesState &last_updated, void *value, item_id_t id, void *parent);
 EvaluationContext &output_path_context(void *path) noexcept;
 void publish_output_path(void *path) noexcept;
 void release_output_path(void *path) noexcept;

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <bg/time_series/time_series_state.hpp>
 #include <bg/scalar/scalar.hpp>
 #include <bg/time_series/item_id.hpp>
 #include <bg/time_series/ref/dynamic_reference_input.hpp>
@@ -10,7 +11,7 @@
 namespace bg::details {
 
 struct TsdItemReferenceInput {
-    const EvaluationTime *last_updated;
+    const TimeSeriesState *last_updated;
     const TimeSeriesRuntimeType *runtime_type;
     ReferenceBinding binding;
     bool modified;

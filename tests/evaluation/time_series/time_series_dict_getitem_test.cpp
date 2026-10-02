@@ -11,6 +11,7 @@
 #include <array>
 #include <cstdint>
 #include <optional>
+#include <vector>
 
 using namespace bg;
 using namespace bg::literals;
@@ -320,8 +321,24 @@ TEST_CASE("a dereferenced dictionary follows a target that is initially invalid"
     CHECK(actual.equals({std::nullopt, 10}));
 }
 
+namespace {
+
+struct rooted_reference_item_sink {
+    In<TSD<std::int64_t, REF<TS<i64>>>> input;
+
+    void evaluate() const {
+        const auto item = input[1];
+        states.push_back({item.valid(), item.became_valid(), item.became_invalid(), item.modified()});
+    }
+
+    inline static std::vector<std::array<bool, 4>> states;
+};
+
+} // namespace
+
 TEST_CASE("a dereferenced dictionary follows target invalidation and revalidation",
           "[evaluation][series:tsd][series:value][reference][feature:reference]"
+          "[feature:validity]"
           "[binding:value-to-reference][binding:reference-to-value]"
           "[transition:invalidation][transition:revalidation]") {
     const auto make_target = node([](In<TS<i64>> command, Out<TS<i64>> output) {
@@ -340,11 +357,22 @@ TEST_CASE("a dereferenced dictionary follows target invalidation and revalidatio
             output.invalidate();
         }
     });
-    const auto graph = [&](wp<TS<i64>> command) { return read(make_dictionary(make_target(command))); };
+    const auto observe_rooted_item = node<rooted_reference_item_sink>();
+    rooted_reference_item_sink::states.clear();
+
+    const auto graph = [&](wp<TS<i64>> command) {
+        const auto dictionary = make_dictionary(make_target(command));
+        observe_rooted_item(dictionary);
+        return read(dictionary);
+    };
 
     const auto actual = testing::test_graph(graph, std::array{10, 0, 20});
 
     CHECK(actual.equals({10, std::nullopt, 20}));
+    // Target changes do not change the stable routed reference.
+    CHECK(rooted_reference_item_sink::states == std::vector<std::array<bool, 4>>{
+                                                    {true, true, false, true},
+                                                });
 }
 
 TEST_CASE("a dictionary reference representation crosses into a nested graph",

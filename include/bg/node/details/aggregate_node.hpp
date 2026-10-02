@@ -695,7 +695,7 @@ template <typename Definition, std::size_t Index>
         constexpr auto ControlledInputIndex =
             aggregate_dynamic_activity_input_index<Definition, Index>(std::make_index_sequence<Index>{});
         const auto input = runtime_node.input_data(ParameterIndex);
-        const auto modified = context->evaluation_time() > MIN_DT && *input.last_updated == context->evaluation_time();
+        const auto modified = input.last_updated->valid() && input.last_updated->time() == context->evaluation_time();
 
         if constexpr (input_view_field<Field>::value) {
             constexpr auto RuntimeTypeIndex = aggregate_time_series_runtime_type_index<Definition, Index>(

@@ -25,19 +25,19 @@ template <typename K, typename Item, auto... Properties> class Out<TSD<K, Item, 
 
     explicit Out(details::OutputState &state) noexcept : state_(Proxy::borrow(state)) {}
 
-    Out(EvaluationTime &last_updated, storage_type &value, EvaluationContext &context)
+    Out(TimeSeriesState &last_updated, storage_type &value, EvaluationContext &context)
         : state_(
               Proxy::copy(details::OutputState{cpp_time_series_runtime_type<TSD<K, Item, Properties...>>()}, context)) {
         state_->bind(last_updated, &value, context);
     }
 
-    Out(EvaluationTime &last_updated, void *value, const TimeSeriesRuntimeType &runtime_type,
+    Out(TimeSeriesState &last_updated, void *value, const TimeSeriesRuntimeType &runtime_type,
         EvaluationContext &context)
         : state_(Proxy::copy(details::OutputState{runtime_type}, context)) {
         state_->bind(last_updated, value, context);
     }
 
-    Out(EvaluationTime &last_updated, void *value, const TimeSeriesRuntimeType &runtime_type, void *output_path)
+    Out(TimeSeriesState &last_updated, void *value, const TimeSeriesRuntimeType &runtime_type, void *output_path)
         : state_(Proxy::copy(details::OutputState{runtime_type}, output_path)) {
         state_->bind(last_updated, value, output_path);
     }
@@ -91,7 +91,7 @@ template <typename K, typename Item, auto... Properties> class Out<TSD<K, Item, 
         value.clear(key_runtime_type(), key_layout(), item_runtime_type(), item_layout(), item_value_offset(), memory);
 
         if (should_publish) {
-            value.key_storage().last_updated = state_->context().evaluation_time();
+            value.key_storage().last_updated.publish(state_->context().evaluation_time());
             state_->publish_item(state_->runtime_type(), key_set_item_id);
         }
     }
@@ -154,7 +154,7 @@ template <typename K, typename Item, auto... Properties> class Out<TSD<K, Item, 
                                        item_value_offset(), memory);
 
         if (result.change == details::time_series_set_change::added) {
-            value.key_storage().last_updated = state_->context().evaluation_time();
+            value.key_storage().last_updated.publish(state_->context().evaluation_time());
             state_->publish_item(state_->runtime_type(), key_set_item_id);
         } else if (result.change == details::time_series_set_change::restored) {
             value.mark_item_resurrected(result.position, state_->context().evaluation_time(), memory);
@@ -174,7 +174,7 @@ template <typename K, typename Item, auto... Properties> class Out<TSD<K, Item, 
                                         item_value_offset(), memory);
 
         if (result.change == details::time_series_set_change::removed) {
-            value.key_storage().last_updated = state_->context().evaluation_time();
+            value.key_storage().last_updated.publish(state_->context().evaluation_time());
             state_->publish_item(state_->runtime_type(), key_set_item_id);
         }
         return result.change != details::time_series_set_change::none;

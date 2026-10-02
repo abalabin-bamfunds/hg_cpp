@@ -63,7 +63,7 @@ TEST_CASE("a runtime node locates output and input data", "[evaluation][storage]
     runtime.evaluate(time(1));
 
     const auto source_node = runtime.node(0);
-    CHECK(source_node.output_last_updated() == time(1));
+    CHECK(source_node.output_last_updated().time() == time(1));
     CHECK(*static_cast<const double *>(source_node.output_value()) == 1.5);
 
     const auto recovered = bg::Node::from_output(compiled.node(0), source_node.output_value());

@@ -12,7 +12,7 @@ namespace bg::details {
 
 class OutputPath {
   public:
-    OutputPath(EvaluationContext &context, const TimeSeriesRuntimeType &runtime_type, EvaluationTime &last_updated,
+    OutputPath(EvaluationContext &context, const TimeSeriesRuntimeType &runtime_type, TimeSeriesState &last_updated,
                void *value, item_id_t id, OutputPath *parent) noexcept
         : runtime_type{&runtime_type}, last_updated{&last_updated}, value{value}, id{id} {
         if (parent == nullptr) {
@@ -35,7 +35,7 @@ class OutputPath {
 
     util::variant_ptr_with_alignment<alignof(void *), OutputPath, EvaluationContext> owner;
     const TimeSeriesRuntimeType *runtime_type;
-    EvaluationTime *last_updated;
+    TimeSeriesState *last_updated;
     void *value;
     item_id_t id;
 };
@@ -44,7 +44,7 @@ static_assert(sizeof(OutputPath) == 40);
 static_assert(alignof(EvaluationContext) >= 2);
 
 void *add_output_path(EvaluationContext &context, const TimeSeriesRuntimeType &runtime_type,
-                      EvaluationTime &last_updated, void *value, item_id_t id, void *parent) {
+                      TimeSeriesState &last_updated, void *value, item_id_t id, void *parent) {
     auto *storage = context.scratch().allocate(sizeof(OutputPath), alignof(OutputPath));
     return std::construct_at(static_cast<OutputPath *>(storage), context, runtime_type, last_updated, value, id,
                              static_cast<OutputPath *>(parent));
@@ -62,7 +62,11 @@ void publish_output_path(void *output_path) noexcept {
         const auto modified = entry.runtime_type->mark_item_modified(
             entry.value, entry.id, context.evaluation_time(), *entry.last_updated,
             current_scalar_allocator());
-        *entry.last_updated = entry.runtime_type->collection_valid(entry.value) ? context.evaluation_time() : MIN_DT;
+        if (entry.runtime_type->collection_valid(entry.value)) {
+            entry.last_updated->publish(context.evaluation_time());
+        } else if (entry.last_updated->valid()) {
+            entry.last_updated->invalidate(context.evaluation_time());
+        }
         if (!modified) {
             return;
         }

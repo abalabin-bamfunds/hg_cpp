@@ -48,16 +48,16 @@ class FreeTimeSeriesBundleRuntimeType final : public TimeSeriesRuntimeType {
         }
     }
 
-    bool item_updated(const EvaluationTime &last_updated, const void *value,
-                                    item_id_t id) const noexcept override {
+    bool item_updated(const TimeSeriesState &last_updated, const void *value,
+                      item_id_t id) const noexcept override {
         const auto &storage = *static_cast<const free_time_series_bundle_storage *>(value);
-        return last_updated > MIN_DT && storage.change_time == last_updated && storage.modified.contains(id);
+        return last_updated.valid() && storage.change_time == last_updated.time() && storage.modified.contains(id);
     }
 
-    void for_each_updated_item(const EvaluationTime &last_updated, const void *value, void *context,
+    void for_each_updated_item(const TimeSeriesState &last_updated, const void *value, void *context,
                                ItemIdFunction function) const override {
         const auto &storage = *static_cast<const free_time_series_bundle_storage *>(value);
-        if (last_updated <= MIN_DT || storage.change_time != last_updated) {
+        if (!last_updated.valid() || storage.change_time != last_updated.time()) {
             return;
         }
         for (const auto index : storage.modified) {
@@ -65,22 +65,22 @@ class FreeTimeSeriesBundleRuntimeType final : public TimeSeriesRuntimeType {
         }
     }
 
-    void for_each_modified_item(const EvaluationTime &last_updated, const void *value, EvaluationTime evaluation_time,
+    void for_each_modified_item(const TimeSeriesState &last_updated, const void *value, EvaluationTime evaluation_time,
                                 void *context, ModifiedItemFunction function) const override {
         const auto &storage = *static_cast<const free_time_series_bundle_storage *>(value);
         if (storage.node == nullptr) {
             return;
         }
         const auto node = free_bundle_node(storage);
-        const auto publish = [&](std::size_t index, const EvaluationTime &item_last_updated) {
+        const auto publish = [&](std::size_t index, const TimeSeriesState &item_last_updated) {
             const auto input = node.time_series_input(index, index);
             function(context, {static_cast<item_id_t>(index), &input.runtime_type(), &item_last_updated,
                                input.data()});
         };
 
-        if (last_updated <= MIN_DT) {
+        if (!last_updated.valid()) {
             for (auto index = std::size_t{}; index < node.input_count(); ++index) {
-                publish(index, MIN_DT);
+                publish(index, last_updated);
             }
             return;
         }

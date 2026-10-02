@@ -44,9 +44,9 @@ void DefaultInputDescriptor::notify_value(OutputChangeContext &context, std::siz
     auto runtime_node = context.runtime_graph().node(node_index);
     auto &input = runtime_node.default_input(parameter_index);
     const auto notification = runtime_node.default_descriptor(parameter_index).notification;
-    const auto initial_revalidation = change == OutputChange::revalidation && input.last_updated == MIN_DT &&
-                                      context.evaluation_time() == runtime_node.input_last_updated(parameter_index);
-    input.last_updated = context.evaluation_time();
+    const auto initial_revalidation = change == OutputChange::revalidation && !input.last_updated.valid() &&
+                                      context.evaluation_time() == runtime_node.input_last_updated(parameter_index).time();
+    input.last_updated.publish(context.evaluation_time());
     if (notification.function != nullptr) {
         notification.function(context, node_index, notification.data,
                               initial_revalidation ? OutputChange::revalidation : OutputChange::update);
@@ -56,7 +56,7 @@ void DefaultInputDescriptor::notify_value(OutputChangeContext &context, std::siz
 void DefaultInputDescriptor::notify_startup(OutputChangeContext &context, std::size_t node_index,
                                             std::size_t parameter_index, OutputChange) {
     auto runtime_node = context.runtime_graph().node(node_index);
-    if (runtime_node.default_input(parameter_index).last_updated > MIN_DT) {
+    if (runtime_node.default_input(parameter_index).last_updated.valid()) {
         return;
     }
 
@@ -861,7 +861,7 @@ const TimeSeriesRuntimeType *find_output_runtime_type(const WiredNode &node, con
         throw std::logic_error{"output storage does not support byte-copy initialization"};
     }
 
-    const auto last_updated = storage.add<EvaluationTime>();
+    const auto last_updated = storage.add<TimeSeriesState>();
     const auto value = storage.add_bytes(runtime_type->value_size(), runtime_type->value_alignment());
 
     return {packed_offset(last_updated.offset, "runtime storage reaches 1 GiB"),
@@ -902,7 +902,7 @@ void plan_runtime_storage(CompilationPlan &plan) {
     }
     if (!plan.constants.empty()) {
         plan.runtime.constant_start_time_offset =
-            packed_offset(storage.add<EvaluationTime>().offset, "runtime storage reaches 1 GiB");
+            packed_offset(storage.add<TimeSeriesState>().offset, "runtime storage reaches 1 GiB");
     }
     if (!plan.service_bindings.empty()) {
         plan.runtime.service_bindings_offset =
@@ -912,14 +912,14 @@ void plan_runtime_storage(CompilationPlan &plan) {
 
     for (auto &requirement : plan.inherited_time_series) {
         requirement.last_updated_offset =
-            packed_offset(storage.add<EvaluationTime>().offset, "runtime storage reaches 1 GiB");
+            packed_offset(storage.add<TimeSeriesState>().offset, "runtime storage reaches 1 GiB");
         requirement.value_offset = packed_offset(storage.add<Reference>().offset, "runtime storage reaches 1 GiB");
     }
 
     const auto add_item_samples = [&](this const auto &self, std::span<ItemSubscriptionPlan> items) -> void {
         for (auto &item : items) {
             item.sampled_last_updated_offset =
-                packed_offset(storage.add<EvaluationTime>().offset, "runtime storage reaches 1 GiB");
+                packed_offset(storage.add<TimeSeriesState>().offset, "runtime storage reaches 1 GiB");
             self(item.items);
         }
     };
@@ -1607,7 +1607,7 @@ class CompiledGraphBuilder {
 
         if (plan.runtime.constant_start_time_offset) {
             auto *start_time =
-                reinterpret_cast<EvaluationTime *>(runtime_storage.data() + *plan.runtime.constant_start_time_offset);
+                reinterpret_cast<TimeSeriesState *>(runtime_storage.data() + *plan.runtime.constant_start_time_offset);
             std::construct_at(start_time, MIN_DT);
         }
 
@@ -1648,8 +1648,7 @@ class CompiledGraphBuilder {
                 continue;
             }
 
-            std::construct_at(reinterpret_cast<EvaluationTime *>(runtime_storage.data() + output.last_updated_offset),
-                              MIN_DT);
+            std::construct_at(reinterpret_cast<TimeSeriesState *>(runtime_storage.data() + output.last_updated_offset));
             output.runtime_type->construct_initial_value(runtime_storage.data() + output.value_offset);
         }
 
@@ -1657,8 +1656,7 @@ class CompiledGraphBuilder {
                                                  std::span<const ItemSubscriptionPlan> items) -> void {
             for (const auto &item : items) {
                 std::construct_at(
-                    reinterpret_cast<EvaluationTime *>(runtime_storage.data() + item.sampled_last_updated_offset),
-                    MIN_DT);
+                    reinterpret_cast<TimeSeriesState *>(runtime_storage.data() + item.sampled_last_updated_offset));
                 self(item.items);
             }
         };
@@ -1675,7 +1673,7 @@ class CompiledGraphBuilder {
 
         for (const auto &requirement : plan.inherited_time_series) {
             std::construct_at(
-                reinterpret_cast<EvaluationTime *>(runtime_storage.data() + requirement.last_updated_offset), MIN_DT);
+                reinterpret_cast<TimeSeriesState *>(runtime_storage.data() + requirement.last_updated_offset));
             std::construct_at(reinterpret_cast<Reference *>(runtime_storage.data() + requirement.value_offset));
         }
 

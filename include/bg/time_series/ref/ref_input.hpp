@@ -64,18 +64,18 @@ class In<REF<Target, TimeSeriesProperties...>, Properties...>
 
     In() noexcept
         : activity_control{},
-          data_{cpp_time_series_runtime_type<REF<Target, TimeSeriesProperties...>>(), MIN_DT, nullptr} {}
+          data_{cpp_time_series_runtime_type<REF<Target, TimeSeriesProperties...>>(), initial_time_series_state, nullptr} {}
 
-    In(const EvaluationTime &last_updated, const storage_type *value, bool modified = false,
+    In(const TimeSeriesState &last_updated, const storage_type *value, bool modified = false,
        bool *activity = nullptr) noexcept
         : activity_control{activity},
           data_{cpp_time_series_runtime_type<REF<Target, TimeSeriesProperties...>>(), last_updated, value, modified} {}
 
-    In(const EvaluationTime &last_updated, const void *value, const TimeSeriesRuntimeType &runtime_type,
+    In(const TimeSeriesState &last_updated, const void *value, const TimeSeriesRuntimeType &runtime_type,
        bool modified = false, bool *activity = nullptr) noexcept
         : activity_control{activity}, data_{runtime_type, last_updated, value, modified} {}
 
-    In(const EvaluationTime &last_updated, details::ReferenceBinding binding, const TimeSeriesRuntimeType &runtime_type,
+    In(const TimeSeriesState &last_updated, details::ReferenceBinding binding, const TimeSeriesRuntimeType &runtime_type,
        bool modified = false, bool *activity = nullptr) noexcept
         : activity_control{activity}, data_{runtime_type, last_updated, &binding.value(), modified}, binding_{binding} {
     }
@@ -88,6 +88,8 @@ class In<REF<Target, TimeSeriesProperties...>, Properties...>
           dynamic_{&storage, &context, storage_offset} {}
 
     bool valid() const noexcept { return data_.valid(); }
+    bool became_valid() const noexcept { return data_.became_valid(); }
+    bool became_invalid() const noexcept { return data_.became_invalid(); }
     bool modified() const noexcept { return data_.modified(); }
     EvaluationTime last_updated() const noexcept { return data_.last_updated(); }
     Reference value() const noexcept { return data_.runtime_type().reference(data_.data()); }
@@ -102,7 +104,7 @@ class In<REF<Target, TimeSeriesProperties...>, Properties...>
         if (!valid()) {
             const auto &reference_type = static_cast<const TimeSeriesReferenceType &>(runtime_type().type());
             const auto &tsd = resolve_time_series_runtime_type(reference_type.target_type());
-            return In<Result>{MIN_DT, nullptr, details::tsd_item_reference_runtime_type(tsd)};
+            return In<Result>{initial_time_series_state, nullptr, details::tsd_item_reference_runtime_type(tsd)};
         }
 
         const auto input = details::tsd_item_reference_input(value(), Scalar<>::from(key));
@@ -130,7 +132,7 @@ class In<REF<Target, TimeSeriesProperties...>, Properties...>
         const auto &tsl_type = type_cast<TimeSeriesListType>(reference_type.target_type());
         if (!valid()) {
             const auto &result_runtime_type = details::fixed_item_reference_runtime_type(tsl_type.item_type());
-            return In<Result>{MIN_DT, nullptr, result_runtime_type};
+            return In<Result>{initial_time_series_state, nullptr, result_runtime_type};
         }
 
         const auto input = details::fixed_item_reference_input(value(), tsl_type.item_id(index));
@@ -157,7 +159,7 @@ class In<REF<Target, TimeSeriesProperties...>, Properties...>
             return details::fixed_item_reference_runtime_type(bundle_type.item_type(index));
         };
         if (!valid()) {
-            return {MIN_DT, nullptr, fallback_runtime_type()};
+            return {initial_time_series_state, nullptr, fallback_runtime_type()};
         }
 
         const auto input = details::fixed_item_reference_input(value(), bundle_type.item_id(index));

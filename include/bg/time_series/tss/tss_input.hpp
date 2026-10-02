@@ -25,18 +25,21 @@ class In<TSS<K, TimeSeriesProperties...>, Properties...>
     using storage_type = details::time_series_set_storage;
 
     In() noexcept
-        : activity_control{}, data_{cpp_time_series_runtime_type<TSS<K, TimeSeriesProperties...>>(), MIN_DT, nullptr} {}
+        : activity_control{},
+          data_{cpp_time_series_runtime_type<TSS<K, TimeSeriesProperties...>>(), initial_time_series_state, nullptr} {}
 
-    In(const EvaluationTime &last_updated, const storage_type *value, bool modified = false,
+    In(const TimeSeriesState &last_updated, const storage_type *value, bool modified = false,
        bool *activity = nullptr) noexcept
         : activity_control{activity},
           data_{cpp_time_series_runtime_type<TSS<K, TimeSeriesProperties...>>(), last_updated, value, modified} {}
 
-    In(const EvaluationTime &last_updated, const void *value, const TimeSeriesRuntimeType &runtime_type,
+    In(const TimeSeriesState &last_updated, const void *value, const TimeSeriesRuntimeType &runtime_type,
        bool modified = false, bool *activity = nullptr) noexcept
         : activity_control{activity}, data_{runtime_type, last_updated, value, modified} {}
 
     bool valid() const noexcept { return data_.valid(); }
+    bool became_valid() const noexcept { return data_.became_valid(); }
+    bool became_invalid() const noexcept { return data_.became_invalid(); }
     bool modified() const noexcept { return data_.modified(); }
     EvaluationTime last_updated() const noexcept { return data_.last_updated(); }
     std::size_t size() const noexcept { return valid() ? storage().size() : 0; }

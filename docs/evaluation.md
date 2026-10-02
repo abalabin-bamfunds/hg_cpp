@@ -30,6 +30,9 @@ The engine applies an external stop request between outer cycles.
 
 `EvaluationTime` is `std::chrono::sys_time<std::chrono::microseconds>`.
 `MIN_DT` is reserved before every valid engine time.
+Time series store a positive evaluation-time count in 62 bits. The engine
+rejects a start or outer-cycle time outside `[MIN_DT + 1 microsecond, 2^62 - 1
+microseconds]`.
 
 ## Evaluation order
 
