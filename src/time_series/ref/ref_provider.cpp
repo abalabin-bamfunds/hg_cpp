@@ -476,7 +476,7 @@ void ReferenceProvider::notify_item_bindings(Reference collection, item_id_t id,
         return;
     }
 
-    auto context = OutputChangeContext{evaluation_context.runtime_graph(), evaluation_context.evaluation_time()};
+    auto context = OutputChangeContext{evaluation_context};
     for (auto *component = provider->components_; component != nullptr; component = component->next_) {
         component->notify_item_bindings(collection, id, context);
     }

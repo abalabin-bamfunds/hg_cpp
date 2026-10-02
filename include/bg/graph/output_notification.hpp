@@ -8,10 +8,10 @@
 
 namespace bg {
 
+class EvaluationContext;
 class RuntimeGraph;
 class TimeSeriesRuntimeType;
 namespace details {
-class ReferenceProvider;
 struct DynamicSubscribers;
 } // namespace details
 
@@ -23,6 +23,9 @@ enum class OutputChange : std::uint8_t {
 
 class OutputChangeContext {
   public:
+    explicit OutputChangeContext(RuntimeGraph &runtime_graph) noexcept;
+    explicit OutputChangeContext(const EvaluationContext &evaluation_context) noexcept;
+
     RuntimeGraph &runtime_graph() const noexcept { return *runtime_graph_; }
     EvaluationTime evaluation_time() const noexcept;
     OutputChangeContext for_graph(RuntimeGraph &graph) const noexcept {
@@ -34,10 +37,6 @@ class OutputChangeContext {
     void notify_subscribers(details::DynamicSubscribers *subscribers, OutputChange change) const;
 
   private:
-    friend class details::ReferenceProvider;
-    friend class RuntimeGraph;
-
-    explicit OutputChangeContext(RuntimeGraph &runtime_graph) noexcept;
     OutputChangeContext(RuntimeGraph &runtime_graph, EvaluationTime evaluation_time) noexcept
         : runtime_graph_{&runtime_graph}, evaluation_time_{evaluation_time} {}
 

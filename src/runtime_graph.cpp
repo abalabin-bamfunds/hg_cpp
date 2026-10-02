@@ -39,6 +39,9 @@ EvaluationContext details::NodeScheduler::node_context(EvaluationContext &parent
 OutputChangeContext::OutputChangeContext(RuntimeGraph &runtime_graph) noexcept
     : runtime_graph_{&runtime_graph}, evaluation_time_{runtime_graph.evaluation_time()} {}
 
+OutputChangeContext::OutputChangeContext(const EvaluationContext &evaluation_context) noexcept
+    : runtime_graph_{&evaluation_context.runtime_graph()}, evaluation_time_{evaluation_context.evaluation_time()} {}
+
 ScheduleHandle RuntimeGraphOwnerContext::schedule_at(EvaluationTime time) const {
     return graph_->schedule_at(node_index_, time);
 }
@@ -792,10 +795,11 @@ void RuntimeGraph::notify_dynamic_subscribers(details::DynamicSubscribers &subsc
                                                  active && !subscriber.required(), change);
     });
 
+    const auto notification_context = OutputChangeContext{*this};
     subscribers.for_each_input_subscriber([&](const auto &subscriber) {
         // A graph that has entered this outer cycle has already run deferred cleanup and can apply the callback now.
         if (subscriber.graph == this || subscriber.graph->last_evaluation_time_ == evaluation_time_) {
-            auto context = OutputChangeContext{*subscriber.graph, evaluation_time_};
+            auto context = notification_context.for_graph(*subscriber.graph);
             subscriber.function(context, subscriber.node_index, subscriber.data, change);
             return;
         }
@@ -804,7 +808,7 @@ void RuntimeGraph::notify_dynamic_subscribers(details::DynamicSubscribers &subsc
     });
 
     subscribers.for_each_observer([&](const auto &observer) {
-        auto context = OutputChangeContext{*observer.graph, evaluation_time_};
+        auto context = notification_context.for_graph(*observer.graph);
         observer.function(context, observer.receiver, change);
     });
 }

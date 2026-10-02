@@ -128,6 +128,8 @@ class GlobalState {
 
     ~GlobalState();
 
+    details::BundleAllocationOwner &bundle_allocation_owner() noexcept { return *bundle_owner_; }
+
     template <typename Function>
         requires std::invocable<Function, const ReadAccess &> &&
                  std::same_as<std::invoke_result_t<Function, const ReadAccess &>, void>
@@ -145,10 +147,6 @@ class GlobalState {
     }
 
   private:
-    friend class RuntimeGraph;
-
-    details::BundleAllocationOwner &bundle_allocation_owner() noexcept { return *bundle_owner_; }
-
     bool contains(util::symbol key) const noexcept { return values_.contains(key); }
     bool contains(std::string_view key) const noexcept { return values_.contains(key); }
 
