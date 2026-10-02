@@ -16,7 +16,6 @@
 namespace bg {
 
 class GraphWiring;
-class RuntimeGraph;
 class CompiledGraphBuilder;
 class TimeSeriesRuntimeType;
 
@@ -54,23 +53,6 @@ class CompiledGraph {
     std::size_t inherited_time_series_count() const noexcept;
     std::size_t service_binding_count() const noexcept;
 
-  private:
-    struct CompilationTag {
-      private:
-        friend std::shared_ptr<const CompiledGraph> details::compile_graph(const GraphWiring &, allocator,
-                                                                           std::span<std::size_t>);
-        CompilationTag() = default;
-    };
-
-    friend class CompiledGraphBuilder;
-    friend class RuntimeGraph;
-    friend std::shared_ptr<const CompiledGraph> details::compile_graph(const GraphWiring &, allocator,
-                                                                       std::span<std::size_t>);
-
-  public:
-    CompiledGraph(CompilationTag, const GraphWiring &wiring, allocator memory, std::span<std::size_t> node_indices);
-
-  private:
     struct NodeFunctions {
         std::span<const NodeFunction> functions;
         std::span<const std::uint32_t> nodes;
@@ -86,6 +68,53 @@ class CompiledGraph {
 
     static constexpr std::size_t schedule_word_bits = std::numeric_limits<ScheduleWord>::digits;
 
+    bool has_timed_scheduling() const noexcept { return (fixed_storage_size_and_flags_ & timed_scheduling_flag) != 0; }
+
+    bool has_cycle_callbacks() const noexcept {
+        return (storage_header().variable_memory_offset & cycle_callbacks_flag) != 0;
+    }
+
+    std::size_t timed_schedule_offset() const noexcept {
+        const auto scheduling_size = schedule_word_count() * sizeof(SchedulingInfo);
+
+        return (scheduling_size + alignof(void *) - 1) & ~(alignof(void *) - 1);
+    }
+
+    std::size_t cycle_callbacks_offset() const noexcept {
+        auto offset = schedule_word_count() * sizeof(SchedulingInfo);
+        if (has_timed_scheduling()) {
+            offset = (offset + alignof(void *) - 1) & ~(alignof(void *) - 1);
+            offset += sizeof(void *);
+        }
+
+        return (offset + alignof(void *) - 1) & ~(alignof(void *) - 1);
+    }
+
+    const std::byte *initial_runtime_storage() const noexcept;
+    NodeFunctions start_functions() const noexcept;
+    NodeFunctions stop_functions() const noexcept;
+    OutputDestruction output_destruction() const noexcept;
+    std::optional<std::size_t> constant_start_time_offset() const noexcept;
+    std::span<const InputNotificationSubscriber> constant_notifications() const noexcept;
+    std::span<const details::InheritedTimeSeriesBinding> inherited_time_series() const noexcept;
+    const details::ServiceBindingMetadata *service_binding_metadata() const noexcept;
+    std::span<const std::uint32_t> service_binding_provider_nodes() const noexcept;
+    std::span<const Subscriber>
+    inherited_time_series_subscribers(const details::InheritedTimeSeriesBinding &requirement) const noexcept;
+    const OutputNotification *
+    inherited_time_series_notification(const details::InheritedTimeSeriesBinding &requirement) const noexcept;
+
+  private:
+    struct CompilationTag {};
+
+    friend class CompiledGraphBuilder;
+    friend std::shared_ptr<const CompiledGraph> details::compile_graph(const GraphWiring &, allocator,
+                                                                       std::span<std::size_t>);
+
+  public:
+    CompiledGraph(CompilationTag, const GraphWiring &wiring, allocator memory, std::span<std::size_t> node_indices);
+
+  private:
     static constexpr std::size_t schedule_word_count(std::size_t node_count) noexcept {
         return (node_count + schedule_word_bits - 1) / schedule_word_bits;
     }
@@ -103,12 +132,6 @@ class CompiledGraph {
     static constexpr std::uint32_t count_mask = (std::uint32_t{1} << alignment_shift) - 1;
 
     bool has_variable_memory() const noexcept { return (fixed_storage_size_and_flags_ & variable_memory_flag) != 0; }
-
-    bool has_timed_scheduling() const noexcept { return (fixed_storage_size_and_flags_ & timed_scheduling_flag) != 0; }
-
-    bool has_cycle_callbacks() const noexcept {
-        return (storage_header().variable_memory_offset & cycle_callbacks_flag) != 0;
-    }
 
     bool has_constants() const noexcept { return (storage_header().variable_memory_offset & constants_flag) != 0; }
 
@@ -132,42 +155,13 @@ class CompiledGraph {
         return storage_header().constant_metadata(node_count());
     }
 
-    std::size_t timed_schedule_offset() const noexcept {
-        const auto scheduling_size = schedule_word_count() * sizeof(SchedulingInfo);
-
-        return (scheduling_size + alignof(void *) - 1) & ~(alignof(void *) - 1);
-    }
-
-    std::size_t cycle_callbacks_offset() const noexcept {
-        auto offset = schedule_word_count() * sizeof(SchedulingInfo);
-        if (has_timed_scheduling()) {
-            offset = (offset + alignof(void *) - 1) & ~(alignof(void *) - 1);
-            offset += sizeof(void *);
-        }
-
-        return (offset + alignof(void *) - 1) & ~(alignof(void *) - 1);
-    }
-
     std::size_t fixed_storage_alignment() const noexcept {
         return std::size_t{1} << (node_count_and_fixed_alignment_ >> alignment_shift);
     }
 
     std::size_t scalar_destruction_count() const noexcept { return scalar_count_and_runtime_alignment_ & count_mask; }
 
-    const std::byte *initial_runtime_storage() const noexcept;
     NodeFunctions node_functions(std::uint32_t functions_offset, std::uint32_t count) const noexcept;
-    NodeFunctions start_functions() const noexcept;
-    NodeFunctions stop_functions() const noexcept;
-    OutputDestruction output_destruction() const noexcept;
-    std::optional<std::size_t> constant_start_time_offset() const noexcept;
-    std::span<const InputNotificationSubscriber> constant_notifications() const noexcept;
-    std::span<const details::InheritedTimeSeriesBinding> inherited_time_series() const noexcept;
-    const details::ServiceBindingMetadata *service_binding_metadata() const noexcept;
-    std::span<const std::uint32_t> service_binding_provider_nodes() const noexcept;
-    std::span<const Subscriber>
-    inherited_time_series_subscribers(const details::InheritedTimeSeriesBinding &requirement) const noexcept;
-    const OutputNotification *
-    inherited_time_series_notification(const details::InheritedTimeSeriesBinding &requirement) const noexcept;
 
     const details::CompiledStorageHeader &storage_header() const noexcept {
         return *reinterpret_cast<const details::CompiledStorageHeader *>(fixed_storage_);
