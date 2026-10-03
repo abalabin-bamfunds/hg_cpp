@@ -575,8 +575,9 @@ TEST_CASE("shared provider replay handles default and view outputs",
           "[evaluation][feature:time-series-storage][series:generic][declaration:concrete]") {
     using Series = provider::Series<bg::i64>;
     auto dispatch = bg::TimeSeriesTickDispatch{};
-    REQUIRE(dispatch.add_replay<Series>(Series::type(), [](const bg::ScalarValue<> &payload, const auto &output) {
-        output.set(bg::scalar_cast<bg::i64>(payload.view()).value());
+    REQUIRE(dispatch.add_replay<Series>(Series::type(), [replays = 0](const bg::ScalarValue<> &payload,
+                                                                      const auto &output) mutable {
+        output.set(bg::scalar_cast<bg::i64>(payload.view()).value() + ++replays);
     }));
     CHECK_FALSE(dispatch.add_replay<Series>(Series::type(), [](const bg::ScalarValue<> &, const auto &) {}));
 
@@ -597,8 +598,8 @@ TEST_CASE("shared provider replay handles default and view outputs",
     dispatch.replay(payload, default_output);
     dispatch.replay(payload, view_output);
 
-    CHECK(default_value == 17);
-    CHECK(view_value.value == 17);
+    CHECK(default_value == 18);
+    CHECK(view_value.value == 19);
 }
 
 TEST_CASE("provider replay uses a specification-specific handler before a shared handler",

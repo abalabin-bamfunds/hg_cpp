@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <functional>
 #include <limits>
+#include <memory>
 #include <memory_resource>
 #include <optional>
 #include <stdexcept>
@@ -113,11 +114,13 @@ class TimeSeriesTickDispatch {
             return false;
         }
 
-        auto shared_replay = std::decay_t<Replay>{std::forward<Replay>(replay)};
+        auto shared_replay = std::allocate_shared<std::decay_t<Replay>>(
+            std::pmr::polymorphic_allocator<std::decay_t<Replay>>{&memory_.memory_resource()},
+            std::forward<Replay>(replay));
         auto default_handler = details::TimeSeriesTickOperations::DefaultReplay{
-            typed_replay<Series, OutputSpecification::default_>(shared_replay)};
+            shared_typed_replay<Series, OutputSpecification::default_>(shared_replay)};
         auto view_handler = details::TimeSeriesTickOperations::ViewReplay{
-            typed_replay<Series, OutputSpecification::view>(std::move(shared_replay))};
+            shared_typed_replay<Series, OutputSpecification::view>(std::move(shared_replay))};
         auto &operations = *runtime_operations_.try_emplace(&runtime_type, memory_.memory_resource()).first;
         operations.shared_default_replay = std::move(default_handler);
         operations.shared_view_replay = std::move(view_handler);
@@ -132,11 +135,13 @@ class TimeSeriesTickDispatch {
             return false;
         }
 
-        auto shared_replay = std::decay_t<Replay>{std::forward<Replay>(replay)};
+        auto shared_replay = std::allocate_shared<std::decay_t<Replay>>(
+            std::pmr::polymorphic_allocator<std::decay_t<Replay>>{&memory_.memory_resource()},
+            std::forward<Replay>(replay));
         auto default_handler = details::TimeSeriesTickOperations::DefaultReplay{
-            typed_replay<Series, OutputSpecification::default_>(shared_replay)};
+            shared_typed_replay<Series, OutputSpecification::default_>(shared_replay)};
         auto view_handler = details::TimeSeriesTickOperations::ViewReplay{
-            typed_replay<Series, OutputSpecification::view>(std::move(shared_replay))};
+            shared_typed_replay<Series, OutputSpecification::view>(std::move(shared_replay))};
         auto &operations = *type_operations_.try_emplace(&type, memory_.memory_resource()).first;
         operations.shared_default_replay = std::move(default_handler);
         operations.shared_view_replay = std::move(view_handler);
@@ -240,6 +245,14 @@ class TimeSeriesTickDispatch {
         return [replay = std::forward<Replay>(replay)](const ScalarValue<> &payload,
                                                        const Out<TS_T, Specification> &output) {
             std::invoke(replay, payload, output.template as<Series>());
+        };
+    }
+
+    template <typename Series, OutputSpecification Specification, typename Replay>
+    static auto shared_typed_replay(std::shared_ptr<Replay> replay) {
+        return [replay = std::move(replay)](const ScalarValue<> &payload,
+                                            const Out<TS_T, Specification> &output) {
+            std::invoke(*replay, payload, output.template as<Series>());
         };
     }
 

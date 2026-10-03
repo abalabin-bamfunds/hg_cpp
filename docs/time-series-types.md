@@ -105,7 +105,8 @@ representations; runtime-type registration applies only to that representation.
 
 Capture is registered independently from replay. A replay handler can be
 shared across both output specifications or registered for one specification.
-A shared replay handler accepts both typed output views.
+A shared replay handler accepts both typed output views and invokes the same
+callable instance for each.
 
 For a matching output, the dispatch prefers an exact runtime-type registration
 over a semantic-type registration and a specification-specific handler over a
