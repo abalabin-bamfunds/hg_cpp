@@ -52,9 +52,15 @@ struct TimeSeriesTickOperation {
 static_assert(std::is_nothrow_move_constructible_v<TimeSeriesTickOperation>);
 
 struct TimeSeriesTickOperations {
-    std::function<void(const In<TS_T> &, bool, std::optional<ScalarValue<>> &, allocator &)> capture;
-    std::function<void(const ScalarValue<> &, const Out<TS_T> &)> replay;
-    std::function<void(const ScalarValue<> &, const Out<TS_T, view> &)> replay_view;
+    using Capture = std::function<void(const In<TS_T> &, bool, std::optional<ScalarValue<>> &, allocator &)>;
+    using DefaultReplay = std::function<void(const ScalarValue<> &, const Out<TS_T> &)>;
+    using ViewReplay = std::function<void(const ScalarValue<> &, const Out<TS_T, view> &)>;
+
+    Capture capture;
+    DefaultReplay shared_default_replay;
+    ViewReplay shared_view_replay;
+    DefaultReplay default_replay;
+    ViewReplay view_replay;
 };
 
 } // namespace details
@@ -71,82 +77,197 @@ class TimeSeriesTickDispatch {
     TimeSeriesTickDispatch(const TimeSeriesTickDispatch &) = delete;
     TimeSeriesTickDispatch &operator=(const TimeSeriesTickDispatch &) = delete;
 
-    template <typename Series, OutputSpecification Specification = OutputSpecification::default_, typename Capture,
-              typename Replay>
-    bool add(const TimeSeriesRuntimeType &runtime_type, Capture &&capture, Replay &&replay) {
-        return add(runtime_type, typed_operations<Series, Specification>(std::forward<Capture>(capture),
-                                                                         std::forward<Replay>(replay)));
+    template <typename Series, typename Capture>
+    bool add_capture(const TimeSeriesRuntimeType &runtime_type, Capture &&capture) {
+        const auto *existing = runtime_operations_.find(&runtime_type);
+        if (existing != nullptr && existing->capture) {
+            return false;
+        }
+
+        auto handler = details::TimeSeriesTickOperations::Capture{
+            typed_capture<Series>(std::forward<Capture>(capture))};
+        auto &operations = *runtime_operations_.try_emplace(&runtime_type, memory_.memory_resource()).first;
+        operations.capture = std::move(handler);
+        return true;
     }
 
-    template <typename Series, OutputSpecification Specification = OutputSpecification::default_, typename Capture,
-              typename Replay>
-    bool add(const TimeSeriesType &type, Capture &&capture, Replay &&replay) {
-        return add(type, typed_operations<Series, Specification>(std::forward<Capture>(capture),
-                                                                 std::forward<Replay>(replay)));
+    template <typename Series, typename Capture>
+    bool add_capture(const TimeSeriesType &type, Capture &&capture) {
+        const auto *existing = type_operations_.find(&type);
+        if (existing != nullptr && existing->capture) {
+            return false;
+        }
+
+        auto handler = details::TimeSeriesTickOperations::Capture{
+            typed_capture<Series>(std::forward<Capture>(capture))};
+        auto &operations = *type_operations_.try_emplace(&type, memory_.memory_resource()).first;
+        operations.capture = std::move(handler);
+        return true;
+    }
+
+    template <typename Series, typename Replay>
+    bool add_replay(const TimeSeriesRuntimeType &runtime_type, Replay &&replay) {
+        const auto *existing = runtime_operations_.find(&runtime_type);
+        if (existing != nullptr &&
+            (existing->shared_default_replay || existing->shared_view_replay)) {
+            return false;
+        }
+
+        auto shared_replay = std::decay_t<Replay>{std::forward<Replay>(replay)};
+        auto default_handler = details::TimeSeriesTickOperations::DefaultReplay{
+            typed_replay<Series, OutputSpecification::default_>(shared_replay)};
+        auto view_handler = details::TimeSeriesTickOperations::ViewReplay{
+            typed_replay<Series, OutputSpecification::view>(std::move(shared_replay))};
+        auto &operations = *runtime_operations_.try_emplace(&runtime_type, memory_.memory_resource()).first;
+        operations.shared_default_replay = std::move(default_handler);
+        operations.shared_view_replay = std::move(view_handler);
+        return true;
+    }
+
+    template <typename Series, typename Replay>
+    bool add_replay(const TimeSeriesType &type, Replay &&replay) {
+        const auto *existing = type_operations_.find(&type);
+        if (existing != nullptr &&
+            (existing->shared_default_replay || existing->shared_view_replay)) {
+            return false;
+        }
+
+        auto shared_replay = std::decay_t<Replay>{std::forward<Replay>(replay)};
+        auto default_handler = details::TimeSeriesTickOperations::DefaultReplay{
+            typed_replay<Series, OutputSpecification::default_>(shared_replay)};
+        auto view_handler = details::TimeSeriesTickOperations::ViewReplay{
+            typed_replay<Series, OutputSpecification::view>(std::move(shared_replay))};
+        auto &operations = *type_operations_.try_emplace(&type, memory_.memory_resource()).first;
+        operations.shared_default_replay = std::move(default_handler);
+        operations.shared_view_replay = std::move(view_handler);
+        return true;
+    }
+
+    template <typename Series, OutputSpecification Specification, typename Replay>
+    bool add_replay(const TimeSeriesRuntimeType &runtime_type, Replay &&replay) {
+        const auto *existing = runtime_operations_.find(&runtime_type);
+        if (existing != nullptr && specific_replay<Specification>(*existing)) {
+            return false;
+        }
+
+        if constexpr (Specification == OutputSpecification::default_) {
+            auto handler = details::TimeSeriesTickOperations::DefaultReplay{
+                typed_replay<Series, Specification>(std::forward<Replay>(replay))};
+            auto &operations = *runtime_operations_.try_emplace(&runtime_type, memory_.memory_resource()).first;
+            operations.default_replay = std::move(handler);
+        } else {
+            auto handler = details::TimeSeriesTickOperations::ViewReplay{
+                typed_replay<Series, Specification>(std::forward<Replay>(replay))};
+            auto &operations = *runtime_operations_.try_emplace(&runtime_type, memory_.memory_resource()).first;
+            operations.view_replay = std::move(handler);
+        }
+        return true;
+    }
+
+    template <typename Series, OutputSpecification Specification, typename Replay>
+    bool add_replay(const TimeSeriesType &type, Replay &&replay) {
+        const auto *existing = type_operations_.find(&type);
+        if (existing != nullptr && specific_replay<Specification>(*existing)) {
+            return false;
+        }
+
+        if constexpr (Specification == OutputSpecification::default_) {
+            auto handler = details::TimeSeriesTickOperations::DefaultReplay{
+                typed_replay<Series, Specification>(std::forward<Replay>(replay))};
+            auto &operations = *type_operations_.try_emplace(&type, memory_.memory_resource()).first;
+            operations.default_replay = std::move(handler);
+        } else {
+            auto handler = details::TimeSeriesTickOperations::ViewReplay{
+                typed_replay<Series, Specification>(std::forward<Replay>(replay))};
+            auto &operations = *type_operations_.try_emplace(&type, memory_.memory_resource()).first;
+            operations.view_replay = std::move(handler);
+        }
+        return true;
     }
 
     void capture(const In<TS_T> &input, bool snapshot, std::optional<ScalarValue<>> &payload,
                  allocator &memory) const {
-        const auto *operations = find(input.runtime_type());
-        if (operations == nullptr || !operations->capture) {
-            throw std::invalid_argument{"no tick capture operation is registered for this time series type"};
+        if (const auto *operations = runtime_operations_.find(&input.runtime_type());
+            operations != nullptr && operations->capture) {
+            operations->capture(input, snapshot, payload, memory);
+            return;
         }
-        operations->capture(input, snapshot, payload, memory);
+
+        if (const auto *operations = type_operations_.find(&input.runtime_type().type());
+            operations != nullptr && operations->capture) {
+            operations->capture(input, snapshot, payload, memory);
+            return;
+        }
+
+        throw std::invalid_argument{"no tick capture operation is registered for this time series type"};
     }
 
     template <OutputSpecification Specification>
     void replay(const ScalarValue<> &payload, const Out<TS_T, Specification> &output) const {
-        const auto *operations = find(output.runtime_type());
-        if constexpr (Specification == OutputSpecification::default_) {
-            if (operations != nullptr && operations->replay) {
-                operations->replay(payload, output);
-                return;
-            }
-        } else {
-            if (operations != nullptr && operations->replay_view) {
-                operations->replay_view(payload, output);
-                return;
-            }
+        if (const auto *operations = runtime_operations_.find(&output.runtime_type());
+            operations != nullptr && replay_from<Specification>(*operations, payload, output)) {
+            return;
         }
+
+        if (const auto *operations = type_operations_.find(&output.runtime_type().type());
+            operations != nullptr && replay_from<Specification>(*operations, payload, output)) {
+            return;
+        }
+
         throw std::invalid_argument{"no tick replay operation is registered for this time series type"};
     }
 
   private:
-    bool add(const TimeSeriesRuntimeType &runtime_type, details::TimeSeriesTickOperations operations) {
-        return runtime_operations_.try_emplace(&runtime_type, memory_.memory_resource(), std::move(operations)).second;
-    }
-
-    bool add(const TimeSeriesType &type, details::TimeSeriesTickOperations operations) {
-        return type_operations_.try_emplace(&type, memory_.memory_resource(), std::move(operations)).second;
-    }
-
-    const details::TimeSeriesTickOperations *find(const TimeSeriesRuntimeType &runtime_type) const noexcept {
-        if (const auto *operations = runtime_operations_.find(&runtime_type)) {
-            return operations;
+    template <OutputSpecification Specification, typename Operations>
+    static auto &specific_replay(Operations &operations) {
+        if constexpr (Specification == OutputSpecification::default_) {
+            return operations.default_replay;
+        } else {
+            return operations.view_replay;
         }
-        return type_operations_.find(&runtime_type.type());
     }
 
-    template <typename Series, OutputSpecification Specification, typename Capture, typename Replay>
-    static details::TimeSeriesTickOperations typed_operations(Capture &&capture, Replay &&replay) {
-        auto operations = details::TimeSeriesTickOperations{};
-        operations.capture = [capture = std::forward<Capture>(capture)](
-                                 const In<TS_T> &input, bool snapshot, std::optional<ScalarValue<>> &payload,
-                                 allocator &memory) {
+    template <typename Series, typename Capture>
+    static auto typed_capture(Capture &&capture) {
+        return [capture = std::forward<Capture>(capture)](const In<TS_T> &input, bool snapshot,
+                                                          std::optional<ScalarValue<>> &payload, allocator &memory) {
             std::invoke(capture, input.template as<Series>(), snapshot, payload, memory);
         };
+    }
+
+    template <typename Series, OutputSpecification Specification, typename Replay>
+    static auto typed_replay(Replay &&replay) {
+        return [replay = std::forward<Replay>(replay)](const ScalarValue<> &payload,
+                                                       const Out<TS_T, Specification> &output) {
+            std::invoke(replay, payload, output.template as<Series>());
+        };
+    }
+
+    template <OutputSpecification Specification>
+    static const auto &shared_replay(const details::TimeSeriesTickOperations &operations) {
         if constexpr (Specification == OutputSpecification::default_) {
-            operations.replay = [replay = std::forward<Replay>(replay)](const ScalarValue<> &payload,
-                                                                        const Out<TS_T> &output) {
-                std::invoke(replay, payload, output.template as<Series>());
-            };
+            return operations.shared_default_replay;
         } else {
-            operations.replay_view = [replay = std::forward<Replay>(replay)](
-                                         const ScalarValue<> &payload, const Out<TS_T, view> &output) {
-                std::invoke(replay, payload, output.template as<Series>());
-            };
+            return operations.shared_view_replay;
         }
-        return operations;
+    }
+
+    template <OutputSpecification Specification>
+    static bool replay_from(const details::TimeSeriesTickOperations &operations, const ScalarValue<> &payload,
+                            const Out<TS_T, Specification> &output) {
+        const auto &specific = specific_replay<Specification>(operations);
+        if (specific) {
+            specific(payload, output);
+            return true;
+        }
+
+        const auto &shared = shared_replay<Specification>(operations);
+        if (shared) {
+            shared(payload, output);
+            return true;
+        }
+
+        return false;
     }
 
     allocator memory_;

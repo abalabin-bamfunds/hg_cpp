@@ -93,12 +93,24 @@ series. It does not support references. TSS and TSD themselves cannot be
 invalidated through their output APIs, so such an event cannot be retained.
 Provider-defined time series can register typed capture and replay operations
 with `TimeSeriesTickDispatch`; the dispatch object must outlive its writer and
-reader. Capture receives the provider's `In<Series>` view. Replay receives its
-`Out<Series, Specification>` view, including the selected output specification.
+reader. Complete registration before concurrent capture or replay; dispatch
+registration is not synchronized. Capture receives the provider's `In<Series>`
+view. Replay receives its `Out<Series, Specification>` view, including the
+selected output specification.
+
 The dispatch adapts the erased views after checking that their semantic types
 are compatible. The provider view uses the normal output binding to publish the
 replayed value. Register by semantic type to share a handler across runtime
 representations; runtime-type registration applies only to that representation.
+
+Capture is registered independently from replay. A replay handler can be
+shared across both output specifications or registered for one specification.
+A shared replay handler accepts both typed output views.
+
+For a matching output, the dispatch prefers an exact runtime-type registration
+over a semantic-type registration and a specification-specific handler over a
+shared handler. A runtime registration without the requested operation falls
+back to the semantic-type registration.
 
 The buffer does not destroy stored tick operations when its final handle is
 released. Create a `TimeSeriesTickReader` for a buffer containing records. It
