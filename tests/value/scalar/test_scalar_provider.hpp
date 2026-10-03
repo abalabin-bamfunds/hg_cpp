@@ -4,10 +4,16 @@
 #include <bg/scalar/storage_traits.hpp>
 #include <bg/type/scalar_type.hpp>
 
+#include <memory>
+
 namespace test_scalar_provider {
+
+struct value_view;
 
 struct value {
     int number;
+
+    operator value_view() const noexcept;
 
     bool operator==(const value &) const noexcept = default;
 };
@@ -15,6 +21,16 @@ struct value {
 struct storage {
     int number;
 };
+
+struct value_view {
+    const int *number{};
+
+    int get() const noexcept { return number == nullptr ? 0 : *number; }
+};
+
+inline value::operator value_view() const noexcept {
+    return {std::addressof(number)};
+}
 
 struct compound_value {
     bg::i64 quantity;
@@ -35,7 +51,7 @@ template <> struct scalar_type_traits<test_scalar_provider::value> {
 
 template <> struct scalar_storage_traits<test_scalar_provider::value> {
     using stored_type = test_scalar_provider::storage;
-    using value_type = test_scalar_provider::value;
+    using value_type = test_scalar_provider::value_view;
 
     static constexpr bool supports_equality = true;
     static constexpr bool supports_hash = false;
@@ -43,16 +59,20 @@ template <> struct scalar_storage_traits<test_scalar_provider::value> {
     static constexpr bool requires_finalization = false;
     static constexpr bool assign_uses_memory_resource = false;
 
-    static value_type read(const stored_type &stored) noexcept { return {stored.number}; }
+    static value_type read(const stored_type &stored) noexcept { return {std::addressof(stored.number)}; }
 
-    static bool equals(value_type left, value_type right) noexcept { return left == right; }
+    static bool equals(value_type left, value_type right) noexcept { return left.get() == right.get(); }
 
-    static void construct(stored_type *destination, value_type source, allocator &) {
+    static void construct(stored_type *destination, test_scalar_provider::value source, allocator &) {
         std::construct_at(destination, source.number);
     }
 
+    static void construct(stored_type *destination, value_type source, allocator &) {
+        std::construct_at(destination, source.get());
+    }
+
     static void assign(stored_type &destination, value_type source, allocator &) noexcept {
-        destination.number = source.number;
+        destination.number = source.get();
     }
 
     static void destroy(stored_type *stored, allocator &) noexcept { std::destroy_at(stored); }

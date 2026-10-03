@@ -8,6 +8,8 @@
 
 namespace bg {
 
+template <typename T> struct scalar_declaration_traits;
+
 struct EqualityComparable {};
 struct Hashable {};
 
@@ -35,7 +37,8 @@ struct is_scalar_variable<ScalarVariable<Name, Constraints...>> : std::true_type
 template <typename T>
 concept scalar_variable = is_scalar_variable<std::remove_cvref_t<T>>::value;
 
-template <typename T> inline constexpr bool generic_scalar = scalar_variable<T>;
+// Kept for existing implementation code. Provider declarations define generic behavior through the public trait.
+template <typename T> inline constexpr bool generic_scalar = scalar_declaration_traits<std::remove_cv_t<T>>::generic;
 
 template <typename T>
 concept scalar_property_constraint = std::same_as<T, EqualityComparable> || std::same_as<T, Hashable>;

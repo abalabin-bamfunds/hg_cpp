@@ -208,7 +208,38 @@ across shared-library boundaries.
 
 `scalar_declaration_traits<T>` controls whether graph signatures accept the
 declaration as a collection, an implicit scalar argument, or a time series
-value. Its defaults describe an ordinary leaf scalar.
+value. Its `generic` flag identifies declarations containing type variables.
+Providers enumerate those variables through
+`declaration_variable_traits<T>::for_each`. The defaults describe a concrete
+ordinary leaf scalar.
+
+### Alternative runtime types
+
+A provider implements another physical representation by deriving from
+`ScalarRuntimeType`. Its virtual methods use `ScalarData` and `ScalarDataMode`
+from `<bg/scalar/data.hpp>`. These are APIs for extension authors implementing
+runtime types. Node code uses `Scalar`, `ScalarValue`, `In`, and `Out`.
+
+`ScalarData` contains a runtime-type pointer, a payload word, and its mode.
+Copying or destroying this descriptor does not retain or release its payload.
+A runtime callback borrows the descriptor and payload for the call. Retaining
+a value requires an owning scalar or the representation's shared owner. The
+runtime type must outlive every descriptor that refers to it.
+
+| Mode | Payload |
+| --- | --- |
+| `stored_view` | Pointer to borrowed runtime storage. |
+| `source_view` | Pointer to a borrowed canonical C++ read value. |
+| `inline_value` | Value bytes stored in the payload word. |
+| `owned_explicit_allocator`, `owned_context_allocator`, `owned_default_allocator` | Pointer to runtime storage owned by the enclosing scalar handle, with the indicated allocator source. |
+| `shared_view`, `shared_value` | Representation-defined shared handle; the enclosing scalar handle retains it only for `shared_value`. |
+
+`data_word()` returns the payload word. `data()` returns its address for inline
+and shared modes, and the payload pointer for the other modes. Providers must
+interpret the payload using its mode. To read another representation, call
+its runtime's `read_value(mode, data_word, destination)`. The destination is
+aligned, uninitialized storage for the canonical C++ read value; the caller
+destroys that value after use.
 
 A runtime type for a list, set, or dictionary semantic type derives from the
 matching collection runtime interface. Its component runtime types correspond

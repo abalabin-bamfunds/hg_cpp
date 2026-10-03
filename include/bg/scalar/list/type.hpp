@@ -31,7 +31,7 @@ template <typename T> class List {
 
   public:
     using item_type = T;
-    using value_type = details::scalar_value_t<T>;
+    using value_type = typename scalar_storage_traits<T>::value_type;
 
     List() = delete;
 

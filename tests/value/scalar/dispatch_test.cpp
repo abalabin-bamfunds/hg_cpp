@@ -72,7 +72,7 @@ class RecordingVisitor {
 void visit_external_type(RecordingVisitor &visitor, bg::Scalar<> value) {
     visitor.record(-1);
     const auto external = bg::unchecked_scalar_cast<test_scalar_provider::value>(value);
-    const auto nested = bg::ScalarValue{static_cast<std::int64_t>(external->number)};
+    const auto nested = bg::ScalarValue{static_cast<std::int64_t>(external->get())};
     const auto nested_view = nested.view();
     visitor.visit(bg::Scalar<>::from(nested_view));
 }
@@ -80,7 +80,7 @@ void visit_external_type(RecordingVisitor &visitor, bg::Scalar<> value) {
 void visit_external_runtime(RecordingVisitor &visitor, bg::Scalar<> value) {
     visitor.record(-2);
     const auto external = bg::unchecked_scalar_cast<test_scalar_provider::value>(value);
-    visitor.record(external->number);
+    visitor.record(external->get());
 }
 
 void reject_structural_collection(RecordingVisitor &, bg::Scalar<>) {

@@ -70,6 +70,7 @@ template <details::scalar_variable Declaration> struct scalar_type_traits<Declar
 };
 
 template <details::scalar_variable Declaration> struct scalar_declaration_traits<Declaration> {
+    static constexpr bool generic = true;
     static constexpr bool is_collection = false;
     static constexpr bool supports_implicit_argument = false;
     static constexpr bool supports_time_series = true;

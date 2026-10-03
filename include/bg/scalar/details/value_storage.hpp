@@ -148,7 +148,8 @@ template <typename T>
     });
 }
 
-template <typename T> [[nodiscard]] ScalarData make_scalar_source(const scalar_value_t<T> &value) noexcept {
+template <typename T>
+[[nodiscard]] ScalarData make_scalar_source(const typename scalar_storage_traits<T>::value_type &value) noexcept {
     return {cpp_scalar_runtime_type<T>(), std::addressof(value), ScalarDataMode::source_view};
 }
 

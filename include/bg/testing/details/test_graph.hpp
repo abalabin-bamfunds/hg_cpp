@@ -127,8 +127,8 @@ class RuntimeSource {
         auto &next = invocation.state();
 
         if (next < data.ticks.size() && data.ticks[next]) {
-            invocation.output().visit(
-                [&](Out<TS<SCALAR>> *output) { output->set_value(data.ticks[next]->view()); }, ddv::noop);
+            invocation.output().visit([&](Out<TS<SCALAR>> *output) { output->set_value(data.ticks[next]->view()); },
+                                      ddv::noop);
         }
 
         ++next;
@@ -172,7 +172,7 @@ struct test_output_scalar<REF<Target, Properties...>> : test_output_scalar<Targe
 template <typename Scalar, std::ranges::input_range Range>
 [[nodiscard]] WiringPoint wire_source(const Range &ticks, EvaluationTime start_time) {
     using Tick = std::remove_cvref_t<std::ranges::range_value_t<Range>>;
-    using Value = bg::details::scalar_value_t<Scalar>;
+    using Value = typename bg::scalar_storage_traits<Scalar>::value_type;
     using StoredValue =
         std::conditional_t<std::same_as<std::remove_cvref_t<Value>, bool>, std::uint8_t, std::remove_cvref_t<Value>>;
 

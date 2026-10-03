@@ -88,10 +88,12 @@ class In<TS<T, TimeSeriesProperties...>, Properties...>
     bool modified() const noexcept { return data_.modified(); }
     EvaluationTime last_updated() const noexcept { return data_.last_updated(); }
 
-    details::scalar_value_t<T> value() const noexcept
+    typename scalar_storage_traits<T>::value_type value() const
         requires(!scalar_declaration_traits<T>::is_collection && !details::hierarchical_scalar_declaration<T>)
     {
-        return Traits::read(*static_cast<const Stored *>(data_.data()));
+        const auto &runtime_type =
+            static_cast<const TimeSeriesValueRuntimeType &>(data_.runtime_type()).scalar_runtime_type();
+        return Scalar<T>::from(runtime_type, data_.data()).value();
     }
 
     Scalar<T> value() const
@@ -100,7 +102,7 @@ class In<TS<T, TimeSeriesProperties...>, Properties...>
         return value_view();
     }
 
-    details::scalar_value_t<T> operator*() const noexcept
+    typename scalar_storage_traits<T>::value_type operator*() const
         requires(!scalar_declaration_traits<T>::is_collection && !details::hierarchical_scalar_declaration<T>)
     {
         return value();
@@ -112,7 +114,7 @@ class In<TS<T, TimeSeriesProperties...>, Properties...>
         return value();
     }
 
-    auto operator->() const noexcept
+    auto operator->() const
         requires(!scalar_declaration_traits<T>::is_collection && !details::hierarchical_scalar_declaration<T> &&
                  details::scalar_value_supports_arrow<T>)
     {

@@ -44,7 +44,7 @@ const DictScalarType &dict_scalar_type(const ScalarType &key_type, const ScalarT
 
 template <typename K, typename V> struct scalar_type_traits<Dict<K, V>> {
     static const ScalarType &type() {
-        if constexpr (details::generic_scalar<K> || details::generic_scalar<V>) {
+        if constexpr (scalar_declaration_traits<K>::generic || scalar_declaration_traits<V>::generic) {
             static const auto type =
                 GenericDictScalarType{details::scalar_type_for<K>(), details::scalar_type_for<V>()};
 
@@ -56,6 +56,7 @@ template <typename K, typename V> struct scalar_type_traits<Dict<K, V>> {
 };
 
 template <typename K, typename V> struct scalar_declaration_traits<Dict<K, V>> {
+    static constexpr bool generic = scalar_declaration_traits<K>::generic || scalar_declaration_traits<V>::generic;
     static constexpr bool is_collection = true;
     static constexpr bool supports_implicit_argument = scalar_declaration_traits<K>::supports_implicit_argument &&
                                                        scalar_declaration_traits<V>::supports_implicit_argument;

@@ -2,13 +2,13 @@
 
 #include <bg/allocator.hpp>
 #include <bg/scalar/builtins.hpp>
-#include <bg/scalar/details/value_type.hpp>
 #include <bg/scalar/opaque.hpp>
 #include <bg/scalar/string.hpp>
 #include <bg/scalar/struct/declaration.hpp>
 
 #include <concepts>
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <memory_resource>
@@ -23,7 +23,7 @@ namespace bg {
 // Scalar providers specialize this trait in their public interface.
 template <typename T> struct scalar_storage_traits {
     using stored_type = T;
-    using value_type = details::scalar_value_t<T>;
+    using value_type = T;
 
     static constexpr bool supports_equality = std::equality_comparable<value_type>;
     static constexpr bool supports_hash = std::same_as<T, byte> || std::same_as<T, date_time_t> ||
@@ -95,7 +95,7 @@ bool equal_native_struct(const T &left, const T &right, std::index_sequence<Inde
 
 template <native_struct T> struct scalar_storage_traits<T> {
     using stored_type = T;
-    using value_type = details::scalar_value_t<T>;
+    using value_type = std::conditional_t<(sizeof(T) <= sizeof(std::uintptr_t)), T, const T &>;
 
     static constexpr bool supports_equality = true;
     static constexpr bool supports_hash = true;
@@ -153,7 +153,8 @@ template <> struct scalar_storage_traits<string> {
 
 template <typename T> struct scalar_storage_traits<Opaque<T>> {
     using stored_type = T;
-    using value_type = T;
+    using value_type =
+        std::conditional_t<std::is_trivially_copyable_v<T> && sizeof(T) <= sizeof(std::uintptr_t), T, const T &>;
 
     static constexpr bool supports_equality = false;
     static constexpr bool supports_hash = false;
@@ -161,7 +162,7 @@ template <typename T> struct scalar_storage_traits<Opaque<T>> {
     static constexpr bool requires_finalization = !std::is_trivially_destructible_v<stored_type>;
     static constexpr bool assign_uses_memory_resource = false;
 
-    static details::scalar_value_t<Opaque<T>> read(const stored_type &value) noexcept { return value; }
+    static value_type read(const stored_type &value) noexcept { return value; }
 
     template <typename Source>
     static void construct(stored_type *destination, Source &&value, allocator &) {

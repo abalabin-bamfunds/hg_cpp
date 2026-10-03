@@ -41,7 +41,8 @@ template <typename T = void> class TestGraphResult {
     template <typename Value = T>
         requires(!std::same_as<Value, void>)
     bool equals(
-        std::initializer_list<std::optional<std::remove_cvref_t<bg::details::scalar_value_t<Value>>>> expected) const {
+        std::initializer_list<std::optional<std::remove_cvref_t<typename bg::scalar_storage_traits<Value>::value_type>>>
+            expected) const {
         if (values_.size() != expected.size()) {
             return false;
         }
@@ -68,7 +69,8 @@ template <typename T = void> class TestGraphResult {
     template <typename Value = T>
         requires(!std::same_as<Value, void>)
     bool operator==(
-        std::initializer_list<std::optional<std::remove_cvref_t<bg::details::scalar_value_t<Value>>>> expected) const {
+        std::initializer_list<std::optional<std::remove_cvref_t<typename bg::scalar_storage_traits<Value>::value_type>>>
+            expected) const {
         return equals(expected);
     }
 

@@ -22,9 +22,6 @@ class CompiledGraphBuilder;
 class CompiledNode;
 class RuntimeType;
 class ScalarRuntimeType;
-namespace details {
-class ScalarData;
-}
 class ItemSubscriptionRange;
 class Type;
 

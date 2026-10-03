@@ -33,7 +33,7 @@ template <typename T> class Set {
 
   public:
     using item_type = T;
-    using value_type = details::scalar_value_t<T>;
+    using value_type = typename scalar_storage_traits<T>::value_type;
 
     Set() = delete;
 
@@ -49,7 +49,7 @@ template <typename T> class Set {
       public:
         using iterator_concept = std::forward_iterator_tag;
         using iterator_category = std::forward_iterator_tag;
-        using value_type = details::scalar_value_t<T>;
+        using value_type = typename scalar_storage_traits<T>::value_type;
         using difference_type = std::ptrdiff_t;
 
         iterator() = default;

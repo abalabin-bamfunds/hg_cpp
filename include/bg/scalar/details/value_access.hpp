@@ -17,10 +17,10 @@ namespace bg::details {
 
 template <typename T>
 inline constexpr bool inline_scalar_value =
-    std::same_as<scalar_stored_t<T>, scalar_value_t<T>> && std::is_trivially_copyable_v<scalar_stored_t<T>> &&
-    sizeof(scalar_stored_t<T>) <= sizeof(std::uintptr_t);
+    std::same_as<scalar_stored_t<T>, typename scalar_storage_traits<T>::value_type> &&
+    std::is_trivially_copyable_v<scalar_stored_t<T>> && sizeof(scalar_stored_t<T>) <= sizeof(std::uintptr_t);
 
-template <typename T> scalar_value_t<T> inline_value(std::uintptr_t data) noexcept {
+template <typename T> typename scalar_storage_traits<T>::value_type inline_value(std::uintptr_t data) noexcept {
     using Traits = scalar_storage_traits<T>;
     using Stored = typename Traits::stored_type;
 
@@ -29,10 +29,10 @@ template <typename T> scalar_value_t<T> inline_value(std::uintptr_t data) noexce
     return Traits::read(std::bit_cast<Stored>(bytes));
 }
 
-template <typename T> scalar_value_t<T> scalar_data_value(const ScalarData &source) {
+template <typename T> typename scalar_storage_traits<T>::value_type scalar_data_value(const ScalarData &source) {
     using Traits = scalar_storage_traits<T>;
     using Stored = typename Traits::stored_type;
-    using Value = scalar_value_t<T>;
+    using Value = typename Traits::value_type;
 
     if constexpr (inline_scalar_value<T>) {
         if (source.mode() == ScalarDataMode::inline_value) {
@@ -60,8 +60,9 @@ template <typename T> scalar_value_t<T> scalar_data_value(const ScalarData &sour
 
 template <typename T>
 concept scalar_value_supports_arrow =
-    std::is_pointer_v<std::remove_cvref_t<scalar_value_t<T>>> ||
-    std::is_class_v<std::remove_cvref_t<scalar_value_t<T>>> || std::is_union_v<std::remove_cvref_t<scalar_value_t<T>>>;
+    std::is_pointer_v<std::remove_cvref_t<typename scalar_storage_traits<T>::value_type>> ||
+    std::is_class_v<std::remove_cvref_t<typename scalar_storage_traits<T>::value_type>> ||
+    std::is_union_v<std::remove_cvref_t<typename scalar_storage_traits<T>::value_type>>;
 
 template <typename T> class ScalarValueArrowProxy {
   public:
@@ -74,8 +75,9 @@ template <typename T> class ScalarValueArrowProxy {
     T value_;
 };
 
-template <typename T> [[nodiscard]] auto scalar_value_arrow(scalar_value_t<T> value) noexcept {
-    using Value = scalar_value_t<T>;
+template <typename T>
+[[nodiscard]] auto scalar_value_arrow(typename scalar_storage_traits<T>::value_type value) noexcept {
+    using Value = typename scalar_storage_traits<T>::value_type;
 
     if constexpr (std::is_pointer_v<std::remove_cvref_t<Value>>) {
         return value;

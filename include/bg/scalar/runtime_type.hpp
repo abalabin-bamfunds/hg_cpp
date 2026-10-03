@@ -13,34 +13,39 @@ namespace bg {
 
 template <typename T> class Scalar;
 template <typename T> class ScalarValue;
-
-namespace details {
 class ScalarData;
 enum class ScalarDataMode : std::uintptr_t;
+
+namespace details {
+using ScalarData = ::bg::ScalarData;
+using ScalarDataMode = ::bg::ScalarDataMode;
+
 template <typename T> const ScalarData &scalar_data(const Scalar<T> &value) noexcept;
 template <typename T> const ScalarData &scalar_data(const ScalarValue<T> &value) noexcept;
 } // namespace details
 
+// Defines scalar storage operations for extension and runtime implementers. Node definitions use Scalar and
+// ScalarValue.
 class ScalarRuntimeType : public RuntimeType {
   public:
     ~ScalarRuntimeType() override;
 
     const ScalarType &type() const noexcept { return static_cast<const ScalarType &>(RuntimeType::type()); }
-    [[nodiscard]] virtual bool copy_inline(details::ScalarDataMode, std::uintptr_t, std::uintptr_t &) const noexcept {
+    [[nodiscard]] virtual bool copy_inline(ScalarDataMode, std::uintptr_t, std::uintptr_t &) const noexcept {
         return false;
     }
 
-    virtual void read_value(details::ScalarDataMode, std::uintptr_t, void *) const { std::terminate(); }
-    virtual std::size_t hash(details::ScalarDataMode, std::uintptr_t data) const noexcept {
+    virtual void read_value(ScalarDataMode, std::uintptr_t, void *) const { std::terminate(); }
+    virtual std::size_t hash(ScalarDataMode, std::uintptr_t data) const noexcept {
         return hash(reinterpret_cast<const void *>(data));
     }
-    virtual bool equals(details::ScalarDataMode, std::uintptr_t data, const details::ScalarData &other) const noexcept {
+    virtual bool equals(ScalarDataMode, std::uintptr_t data, const ScalarData &other) const noexcept {
         return equals(reinterpret_cast<const void *>(data), other);
     }
 
-    details::ScalarData borrow(const void *storage) const noexcept;
+    ScalarData borrow(const void *storage) const noexcept;
     [[nodiscard]] virtual const ScalarRuntimeType *
-    retain_shared(const details::ScalarData &, std::uintptr_t &) const noexcept {
+    retain_shared(const ScalarData &, std::uintptr_t &) const noexcept {
         return nullptr;
     }
     virtual void release_shared(std::uintptr_t) const noexcept { std::terminate(); }
@@ -58,7 +63,7 @@ class ScalarRuntimeType : public RuntimeType {
     virtual void construct_from_value(void *, const void *, allocator &) const { std::terminate(); }
     // Reports whether this runtime type can copy the source into its storage representation.
     virtual bool accepts_input(const ScalarRuntimeType &source) const noexcept;
-    void construct_from_input(void *destination, const details::ScalarData &value, allocator &memory) const;
+    void construct_from_input(void *destination, const ScalarData &value, allocator &memory) const;
     template <typename Value>
         requires requires(const Value &value) { details::scalar_data(value); }
     void construct_from_input(void *destination, const Value &value, allocator &memory) const {
@@ -66,14 +71,14 @@ class ScalarRuntimeType : public RuntimeType {
     }
     virtual void copy_construct(void *destination, const void *source, allocator &memory) const = 0;
     virtual void assign_from_value(void *, const void *) const { std::terminate(); }
-    void assign_from_input(void *destination, const details::ScalarData &value) const;
+    void assign_from_input(void *destination, const ScalarData &value) const;
     template <typename Value>
         requires requires(const Value &value) { details::scalar_data(value); }
     void assign_from_input(void *destination, const Value &value) const {
         assign_from_input(destination, details::scalar_data(value));
     }
     virtual std::size_t hash(const void *value) const noexcept = 0;
-    virtual bool equals(const void *value, const details::ScalarData &other) const noexcept;
+    virtual bool equals(const void *value, const ScalarData &other) const noexcept;
     template <typename Value>
         requires requires(const Value &value) { details::scalar_data(value); }
     bool equals(const void *value, const Value &other) const noexcept {
@@ -89,14 +94,14 @@ class ScalarRuntimeType : public RuntimeType {
               type, size, alignment, uses_variable_memory, requires_finalization,
               supports_byte_copy_initialization, additional_flags} {}
 
-    virtual details::ScalarData borrow_shared(const void *storage) const noexcept;
-    virtual void do_construct_from_input(void *destination, const details::ScalarData &value,
+    virtual ScalarData borrow_shared(const void *storage) const noexcept;
+    virtual void do_construct_from_input(void *destination, const ScalarData &value,
                                          allocator &memory) const = 0;
-    virtual void do_assign_from_input(void *destination, const details::ScalarData &value) const = 0;
+    virtual void do_assign_from_input(void *destination, const ScalarData &value) const = 0;
     static constexpr auto shared_handle_flag = first_additional_flag;
 
   private:
-    virtual bool equals_same_type(const void *value, const details::ScalarData &other) const noexcept = 0;
+    virtual bool equals_same_type(const void *value, const ScalarData &other) const noexcept = 0;
 };
 
 // ScalarData uses the three low bits of a runtime type pointer to record its representation and ownership.

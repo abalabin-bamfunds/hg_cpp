@@ -37,7 +37,7 @@ const ListScalarType &list_scalar_type(const ScalarType &item_type);
 
 template <typename T> struct scalar_type_traits<List<T>> {
     static const ScalarType &type() {
-        if constexpr (details::generic_scalar<T>) {
+        if constexpr (scalar_declaration_traits<T>::generic) {
             static const auto type = GenericListScalarType{details::scalar_type_for<T>()};
 
             return type;
@@ -48,6 +48,7 @@ template <typename T> struct scalar_type_traits<List<T>> {
 };
 
 template <typename T> struct scalar_declaration_traits<List<T>> {
+    static constexpr bool generic = scalar_declaration_traits<T>::generic;
     static constexpr bool is_collection = true;
     static constexpr bool supports_implicit_argument = scalar_declaration_traits<T>::supports_implicit_argument;
     static constexpr bool supports_time_series = scalar_declaration_traits<T>::supports_time_series;

@@ -116,7 +116,7 @@ using hierarchical_scalar_schema_reflection = schema_reflection<Schema, hierarch
 template <typename... Declarations> struct hierarchical_scalar_schema_stack {};
 
 template <typename T, typename Stack> struct hierarchical_scalar_field_supported
-    : std::bool_constant<!generic_scalar<T> && scalar_type_mapped<T>> {};
+    : std::bool_constant<!scalar_declaration_traits<T>::generic && scalar_type_mapped<T>> {};
 
 template <typename T, typename... Seen>
 struct hierarchical_scalar_field_supported<List<T>, hierarchical_scalar_schema_stack<Seen...>>
@@ -225,6 +225,7 @@ struct scalar_type_traits<Bundle<Schema>> {
 
 template <template <template <typename, auto...> typename> typename Schema>
 struct scalar_declaration_traits<Bundle<Schema>> {
+    static constexpr bool generic = false;
     static constexpr bool is_collection = false;
     static constexpr bool supports_implicit_argument = false;
     static constexpr bool supports_time_series = details::hierarchical_scalar_schema_supported<Schema>;

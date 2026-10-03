@@ -85,8 +85,8 @@ template <typename T, typename Base> class CppScalarRuntimeTypeBase : public Bas
     }
 
     void construct_runtime_value(void *destination, allocator &memory) const override {
-        if constexpr (std::default_initializable<Value>) {
-            Traits::construct(static_cast<Stored *>(destination), Value{}, memory);
+        if constexpr (std::default_initializable<ReadValue>) {
+            Traits::construct(static_cast<Stored *>(destination), ReadValue{}, memory);
         } else {
             this->construct_initial_value(destination);
         }

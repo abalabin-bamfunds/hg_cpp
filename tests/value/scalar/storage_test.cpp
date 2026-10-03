@@ -100,6 +100,22 @@ TEST_CASE("scalar storage distinguishes variable memory from finalization",
     CHECK(finalization_count == 1);
 }
 
+TEST_CASE("an opaque scalar runtime constructs a default value through its read type",
+          "[feature:scalar-storage][scalar:opaque][storage:fixed]") {
+    const auto &runtime_type = bg::cpp_scalar_runtime_type<bg::Opaque<finalizable_value>>();
+    auto memory = std::pmr::unsynchronized_pool_resource{};
+    auto allocator = bg::allocator{memory};
+    alignas(finalizable_value) std::byte storage[sizeof(finalizable_value)];
+    auto finalization_count = 0;
+
+    runtime_type.construct_runtime_value(storage, allocator);
+    auto &value = *reinterpret_cast<finalizable_value *>(storage);
+    CHECK(value.count == nullptr);
+    value.count = &finalization_count;
+    runtime_type.destroy(storage, allocator);
+    CHECK(finalization_count == 1);
+}
+
 TEST_CASE("C++ scalar storage constructs an initial runtime value", "[scalar][feature:scalar-storage]") {
     const bg::ScalarRuntimeType &runtime_type = bg::cpp_scalar_runtime_type<double>();
     alignas(double) std::byte storage[sizeof(double)];

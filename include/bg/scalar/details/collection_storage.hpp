@@ -20,8 +20,8 @@ concept scalar_view_source_for = scalar_data_source<Source> && requires {
 };
 
 template <typename Collection>
-void replace_collection_storage(scalar_stored_t<Collection> &destination, scalar_value_t<Collection> value,
-                                allocator &memory) {
+void replace_collection_storage(scalar_stored_t<Collection> &destination,
+                                typename scalar_storage_traits<Collection>::value_type value, allocator &memory) {
     using Storage = scalar_stored_t<Collection>;
     using Traits = scalar_storage_traits<Collection>;
 

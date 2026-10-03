@@ -63,13 +63,13 @@ template <typename T> class Scalar {
     Scalar(Scalar &&) noexcept = default;
     Scalar &operator=(Scalar &&) noexcept = default;
 
-    details::scalar_value_t<T> value() const
+    decltype(auto) value() const
         requires(!erased)
     {
         return details::scalar_data_value<T>(value_);
     }
 
-    details::scalar_value_t<T> operator*() const
+    decltype(auto) operator*() const
         requires(!erased)
     {
         return value();

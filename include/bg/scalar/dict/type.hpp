@@ -38,8 +38,8 @@ template <typename K, typename V> class Dict {
   public:
     using key_type = K;
     using mapped_type = V;
-    using key_value_type = details::scalar_value_t<K>;
-    using mapped_value_type = details::scalar_value_t<V>;
+    using key_value_type = typename scalar_storage_traits<K>::value_type;
+    using mapped_value_type = typename scalar_storage_traits<V>::value_type;
 
     Dict() = delete;
 
