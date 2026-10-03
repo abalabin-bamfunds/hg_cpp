@@ -68,6 +68,7 @@ class In<TSB<Schema, TimeSeriesProperties...>, Properties...>
     bool became_invalid() const noexcept { return data_.became_invalid(); }
     bool modified() const noexcept { return data_.modified(); }
     EvaluationTime last_updated() const noexcept { return data_.last_updated(); }
+    const TimeSeriesRuntimeType &runtime_type() const noexcept { return data_.runtime_type(); }
     const fields_type *operator->() const noexcept { return &fields_; }
     const fields_type &fields() const noexcept { return fields_; }
     bool item_updated(std::size_t index) const noexcept {

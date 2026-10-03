@@ -39,8 +39,15 @@ class Out<TSD<K, Item, Properties...>, Specification> {
 
     bool valid() const noexcept { return state_->valid(); }
     EvaluationTime last_updated() const noexcept { return state_->last_updated(); }
+    const TimeSeriesRuntimeType &runtime_type() const noexcept { return state_->runtime_type(); }
 
     Out<Item, Specification> operator[](const Scalar<K> &key) const { return item(details::scalar_data(key)); }
+
+    Out<Item, Specification> operator[](const Scalar<> &key) const
+        requires details::scalar_variable<K>
+    {
+        return item(details::scalar_data(key));
+    }
 
     template <typename Source>
         requires(!details::scalar_variable<K> && scalar_source_for<K, Source>)
@@ -66,6 +73,12 @@ class Out<TSD<K, Item, Properties...>, Specification> {
     }
 
     bool erase(const Scalar<K> &key) const { return erase(details::scalar_data(key)); }
+
+    bool erase(const Scalar<> &key) const
+        requires details::scalar_variable<K>
+    {
+        return erase(details::scalar_data(key));
+    }
 
     template <typename Source>
         requires(!details::scalar_variable<K> && scalar_source_for<K, Source>)

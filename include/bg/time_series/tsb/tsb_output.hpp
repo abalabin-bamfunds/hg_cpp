@@ -57,6 +57,7 @@ class Out<TSB<Schema, Properties...>, Specification> {
 
     bool valid() const noexcept { return state_->valid(); }
     EvaluationTime last_updated() const noexcept { return state_->last_updated(); }
+    const TimeSeriesRuntimeType &runtime_type() const noexcept { return state_->runtime_type(); }
     const fields_type *operator->() const noexcept { return &fields_; }
     const fields_type &fields() const noexcept { return fields_; }
     void invalidate() const { state_->invalidate(); }
@@ -82,6 +83,7 @@ class Out<TSB<Schema, Properties...>, Specification> {
 
     bool valid() const noexcept { return state_->valid(); }
     EvaluationTime last_updated() const noexcept { return state_->last_updated(); }
+    const TimeSeriesRuntimeType &runtime_type() const noexcept { return state_->runtime_type(); }
     std::size_t size() const noexcept { return state_->runtime_type().item_count(state_->data()); }
     util::symbol item_name(std::size_t index) const {
         return static_cast<const TimeSeriesBundleType &>(state_->runtime_type().type()).item_name(index);

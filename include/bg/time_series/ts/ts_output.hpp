@@ -28,6 +28,7 @@ class Out<TS<Variable, Properties...>, Specification> {
 
     bool valid() const noexcept { return state_->valid(); }
     EvaluationTime last_updated() const noexcept { return state_->last_updated(); }
+    const TimeSeriesRuntimeType &runtime_type() const noexcept { return state_->runtime_type(); }
 
     template <typename Value> void set_value(const Scalar<Value> &value) const {
         const auto &source = details::scalar_data(value);
@@ -90,6 +91,7 @@ class Out<TS<T, Properties...>, Specification> {
 
     bool valid() const noexcept { return state_->valid(); }
     EvaluationTime last_updated() const noexcept { return state_->last_updated(); }
+    const TimeSeriesRuntimeType &runtime_type() const noexcept { return state_->runtime_type(); }
     value_type value() const
         requires(!scalar_declaration_traits<T>::is_collection && !details::hierarchical_scalar_declaration<T>)
     {

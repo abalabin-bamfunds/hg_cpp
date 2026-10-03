@@ -8,6 +8,7 @@
 #include <bg/time_series/output_binding.hpp>
 #include <bg/time_series/output_state.hpp>
 #include <bg/time_series/time_series_type_traits.hpp>
+#include <bg/time_series/tick_serializer.hpp>
 #include <bg/time_series/tsd/tsd_runtime_type.hpp>
 #include <bg/time_series/tss/tss_runtime_type.hpp>
 #include <bg/type/declaration_variables.hpp>
@@ -22,6 +23,7 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <type_traits>
 #include <utility>
@@ -29,6 +31,15 @@
 namespace provider {
 
 inline bool *view_invalidation_observer{};
+inline int captured_tick_count{};
+inline bool captured_tick_snapshot{};
+
+void capture_tick(const bg::In<bg::TS_T> &input, bool snapshot, std::optional<bg::ScalarValue<>> &payload,
+                  bg::allocator &memory) {
+    ++captured_tick_count;
+    captured_tick_snapshot = snapshot;
+    payload.emplace(bg::Scalar<>::from(bg::cpp_scalar_runtime_type<bg::i64>(), input.data()), memory);
+}
 
 template <typename Item>
 struct Number {};
@@ -267,10 +278,17 @@ class In<provider::Series<Item, SeriesProperties...>, Properties...>
         : ActivityControl{activity}, data_{data} {}
 
     bool valid() const noexcept { return data_.valid(); }
+    bool became_valid() const noexcept { return data_.became_valid(); }
+    bool became_invalid() const noexcept { return data_.became_invalid(); }
     bool modified() const noexcept { return data_.modified(); }
     EvaluationTime last_updated() const noexcept { return data_.last_updated(); }
     i64 value() const noexcept { return *static_cast<const i64 *>(data_.data()); }
     const TimeSeriesRuntimeType &runtime_type() const noexcept { return data_.runtime_type(); }
+
+    template <typename... Functions> decltype(auto) visit(Functions &&...functions) const {
+        return In<TS_T>{data_.last_updated_ref(), data_.data(), runtime_type(), data_.modified()}.visit(
+            std::forward<Functions>(functions)...);
+    }
 
     static constexpr auto name = ParsedProperties::name;
     static constexpr auto activity = ParsedProperties::activity;
@@ -430,6 +448,31 @@ TEST_CASE("provider views bind through public input and output owners",
     REQUIRE(output_result);
     CHECK(*input_result);
     CHECK(*output_result);
+}
+
+TEST_CASE("tick capture dispatch reaches provider-defined time series",
+          "[evaluation][feature:time-series-storage][series:generic][declaration:concrete]") {
+    using Series = provider::Series<bg::i64>;
+    const auto time = bg::MIN_DT + std::chrono::microseconds{1};
+    auto input_state = bg::TimeSeriesState{};
+    input_state.publish(time);
+    const auto input_value = bg::i64{17};
+    const auto input_data = bg::TimeSeriesInputData{
+        bg::cpp_time_series_runtime_type<Series>(), input_state, &input_value, true};
+    const auto input = bg::In<Series>{input_data};
+
+    auto dispatch = bg::TimeSeriesTickDispatch{};
+    REQUIRE(dispatch.add(provider::series_runtime_type(Series::type()), {provider::capture_tick, nullptr}));
+    const auto buffer = bg::util::buffer::chain(256);
+    auto writer = bg::TimeSeriesTickWriter{buffer, {}, dispatch};
+    provider::captured_tick_count = 0;
+    provider::captured_tick_snapshot = false;
+
+    CHECK(writer.write(input, time));
+    CHECK(provider::captured_tick_count == 1);
+    CHECK(provider::captured_tick_snapshot);
+    auto reader = bg::TimeSeriesTickReader{buffer, dispatch};
+    CHECK(reader.discard());
 }
 
 TEST_CASE("a provider output binding works in a callable node",

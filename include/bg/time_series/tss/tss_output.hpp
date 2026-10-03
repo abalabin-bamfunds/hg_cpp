@@ -37,8 +37,21 @@ class Out<TSS<K, Properties...>, Specification> {
 
     bool valid() const noexcept { return state_->valid(); }
     EvaluationTime last_updated() const noexcept { return state_->last_updated(); }
+    const TimeSeriesRuntimeType &runtime_type() const noexcept { return state_->runtime_type(); }
     bool insert(const Scalar<K> &item) const { return insert(details::scalar_data(item)); }
     bool erase(const Scalar<K> &item) const { return erase(details::scalar_data(item)); }
+
+    bool insert(const Scalar<> &item) const
+        requires details::scalar_variable<K>
+    {
+        return insert(details::scalar_data(item));
+    }
+
+    bool erase(const Scalar<> &item) const
+        requires details::scalar_variable<K>
+    {
+        return erase(details::scalar_data(item));
+    }
 
     template <typename Source>
         requires(!details::scalar_variable<K> && scalar_source_for<K, Source>)
