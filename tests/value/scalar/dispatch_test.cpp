@@ -6,6 +6,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <cstdint>
+#include <functional>
 #include <stdexcept>
 #include <vector>
 
@@ -14,20 +15,20 @@ namespace {
 class RecordingVisitor {
   public:
     struct Handler {
-        void (*visit)(RecordingVisitor &, bg::Scalar<>);
+        std::function<void(RecordingVisitor &, bg::Scalar<>)> visit;
     };
 
-    template <typename ScalarType>
-    void add_type_handler(void (*handler)(RecordingVisitor &, bg::Scalar<>)) {
-        const auto added = handlers_.add(bg::cpp_scalar_type<ScalarType>(), Handler{handler});
+    template <typename ScalarType, typename Function> void add_type_handler(Function handler) {
+        const auto added = handlers_.add(bg::cpp_scalar_type<ScalarType>(),
+                                         typed_handler<ScalarType>(std::move(handler)));
         if (!added) {
             throw std::logic_error{"duplicate test handler"};
         }
     }
 
-    template <typename ScalarType>
-    void add_runtime_handler(void (*handler)(RecordingVisitor &, bg::Scalar<>)) {
-        const auto added = handlers_.add(bg::cpp_scalar_runtime_type<ScalarType>(), Handler{handler});
+    template <typename ScalarType, typename Function> void add_runtime_handler(Function handler) {
+        const auto added = handlers_.add(bg::cpp_scalar_runtime_type<ScalarType>(),
+                                         typed_handler<ScalarType>(std::move(handler)));
         if (!added) {
             throw std::logic_error{"duplicate test handler"};
         }
@@ -63,27 +64,31 @@ class RecordingVisitor {
     std::size_t extension_lookups() const noexcept { return extension_lookups_; }
 
   private:
+    template <typename ScalarType, typename Function> static Handler typed_handler(Function handler) {
+        return {[handler = std::move(handler)](RecordingVisitor &visitor, bg::Scalar<> value) {
+            std::invoke(handler, visitor, bg::scalar_cast<ScalarType>(value));
+        }};
+    }
+
     bg::ScalarDispatch<Handler> handlers_;
     std::vector<int> values_;
     std::size_t structural_collections_{};
     std::size_t extension_lookups_{};
 };
 
-void visit_external_type(RecordingVisitor &visitor, bg::Scalar<> value) {
+void visit_external_type(RecordingVisitor &visitor, bg::Scalar<test_scalar_provider::value> value) {
     visitor.record(-1);
-    const auto external = bg::unchecked_scalar_cast<test_scalar_provider::value>(value);
-    const auto nested = bg::ScalarValue{static_cast<std::int64_t>(external->get())};
+    const auto nested = bg::ScalarValue{static_cast<std::int64_t>(value.value().get())};
     const auto nested_view = nested.view();
     visitor.visit(bg::Scalar<>::from(nested_view));
 }
 
-void visit_external_runtime(RecordingVisitor &visitor, bg::Scalar<> value) {
+void visit_external_runtime(RecordingVisitor &visitor, bg::Scalar<test_scalar_provider::value> value) {
     visitor.record(-2);
-    const auto external = bg::unchecked_scalar_cast<test_scalar_provider::value>(value);
-    visitor.record(external->get());
+    visitor.record(value.value().get());
 }
 
-void reject_structural_collection(RecordingVisitor &, bg::Scalar<>) {
+void reject_structural_collection(RecordingVisitor &, bg::Scalar<bg::List<test_scalar_provider::value>>) {
     throw std::logic_error{"a structural collection reached extension dispatch"};
 }
 
@@ -108,6 +113,20 @@ TEST_CASE("scalar dispatch prefers an exact runtime type handler",
     visitor.visit(bg::Scalar<>::from(view));
 
     CHECK(visitor.values() == std::vector<int>{-2, 42});
+}
+
+TEST_CASE("an operation adapter delivers the concrete scalar view to an extension handler",
+          "[feature:visitor][scalar:generic][declaration:runtime]") {
+    auto visitor = RecordingVisitor{};
+    visitor.add_type_handler<test_scalar_provider::value>(
+        [](RecordingVisitor &target, bg::Scalar<test_scalar_provider::value> value) {
+            target.record(value.value().get());
+        });
+    const auto value = bg::ScalarValue<test_scalar_provider::value>{test_scalar_provider::value{42}};
+
+    visitor.visit(bg::Scalar<>::from(value));
+
+    CHECK(visitor.values() == std::vector<int>{42});
 }
 
 TEST_CASE("a recursive scalar visitor dispatches extension values from a structural list",

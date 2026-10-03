@@ -8,6 +8,8 @@
 #include <ddv/serial_visitor.h>
 #include <ddv/visitable.h>
 
+#include <typeinfo>
+
 namespace bg {
 
 template <details::time_series_variable Variable, OutputSpecification Specification> class Out<Variable, Specification> {
@@ -21,6 +23,17 @@ template <details::time_series_variable Variable, OutputSpecification Specificat
     const TimeSeriesRuntimeType &runtime_type() const noexcept { return state_->runtime_type(); }
     const void *data() const noexcept { return state_->data(); }
     const Out *operator->() const noexcept { return this; }
+
+    // Returns a provider-defined view that borrows this output state and retains its specification.
+    template <typename Target> Out<Target, Specification> as() const {
+        const auto &target_type = Target::type();
+        const auto &actual_type = runtime_type().type();
+        if (!target_type.is_resolved() || (&target_type != &actual_type && !target_type.accepts(actual_type))) {
+            throw std::bad_cast{};
+        }
+
+        return Out<Target, Specification>{TimeSeriesOutputBinding{state_.get()}};
+    }
 
     void invalidate() const { state_->invalidate(); }
 

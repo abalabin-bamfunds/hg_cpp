@@ -91,12 +91,14 @@ by the record until replay or discard.
 The built-in writer supports value, fixed-list, bundle, set, and dictionary time
 series. It does not support references. TSS and TSD themselves cannot be
 invalidated through their output APIs, so such an event cannot be retained.
-Provider-defined time series can register capture and replay operations with
-`TimeSeriesTickDispatch`; the dispatch object must outlive its writer and
-reader. The writer accepts a provider input view that exposes the common input
-queries and forwards `visit` to runtime dispatch. Extension capture is
-supported; provider-specific value replay remains unavailable because the
-erased `Out<TS_T>` view cannot publish a provider value.
+Provider-defined time series can register typed capture and replay operations
+with `TimeSeriesTickDispatch`; the dispatch object must outlive its writer and
+reader. Capture receives the provider's `In<Series>` view. Replay receives its
+`Out<Series, Specification>` view, including the selected output specification.
+The dispatch adapts the erased views after checking that their semantic types
+are compatible. The provider view uses the normal output binding to publish the
+replayed value. Register by semantic type to share a handler across runtime
+representations; runtime-type registration applies only to that representation.
 
 The buffer does not destroy stored tick operations when its final handle is
 released. Create a `TimeSeriesTickReader` for a buffer containing records. It

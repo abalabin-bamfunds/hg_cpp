@@ -139,6 +139,13 @@ access preserve the output specification. The callback decides how its
 operation handles that family. It must not recursively redispatch the same
 erased view without selecting an implementation.
 
+A provider's typed `In` and `Out` views forward `visit()` to the corresponding
+erased view. This lets generic operations inspect a provider view and dispatch
+back to its typed handler while preserving the output specification.
+An erased view's `as<Declaration>()` checks semantic compatibility before it
+constructs a provider view; the returned view borrows the same invocation data
+or output binding.
+
 The visitor's view is valid only during the callback. Optional operation
 handlers may retain a runtime-type reference, whose lifetime is independent
 of the invocation.

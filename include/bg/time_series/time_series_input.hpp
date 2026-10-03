@@ -12,6 +12,7 @@
 #include <ddv/visitable.h>
 
 #include <string_view>
+#include <typeinfo>
 #include <type_traits>
 #include <utility>
 
@@ -41,6 +42,17 @@ class In<Variable, Properties...>
     const TimeSeriesRuntimeType &runtime_type() const noexcept { return data_.runtime_type(); }
     const void *data() const noexcept { return data_.data(); }
     const In *operator->() const noexcept { return this; }
+
+    // Returns a provider-defined view when its semantic type accepts this input's type.
+    template <typename Target> In<Target> as() const {
+        const auto &target_type = Target::type();
+        const auto &actual_type = runtime_type().type();
+        if (!target_type.is_resolved() || (&target_type != &actual_type && !target_type.accepts(actual_type))) {
+            throw std::bad_cast{};
+        }
+
+        return In<Target>{TimeSeriesInputData{runtime_type(), data_.last_updated_ref(), data(), data_.modified()}};
+    }
 
     template <typename Visitor, typename... Arguments>
         requires ddv::SerialVisitorType<std::remove_cvref_t<Visitor>>

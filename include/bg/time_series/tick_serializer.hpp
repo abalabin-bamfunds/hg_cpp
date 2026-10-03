@@ -51,14 +51,13 @@ struct TimeSeriesTickOperation {
 
 static_assert(std::is_nothrow_move_constructible_v<TimeSeriesTickOperation>);
 
-} // namespace details
-
-// Extension handlers encode one provider-specific delta as an owned scalar value.
 struct TimeSeriesTickOperations {
-    // `snapshot` is true when capture must store the provider's complete value.
-    void (*capture)(const In<TS_T> &, bool, std::optional<ScalarValue<>> &, allocator &){};
-    void (*replay)(const ScalarValue<> &, const Out<TS_T> &){};
+    std::function<void(const In<TS_T> &, bool, std::optional<ScalarValue<>> &, allocator &)> capture;
+    std::function<void(const ScalarValue<> &, const Out<TS_T> &)> replay;
+    std::function<void(const ScalarValue<> &, const Out<TS_T, view> &)> replay_view;
 };
+
+} // namespace details
 
 class TimeSeriesTickDispatch {
   public:
@@ -72,25 +71,87 @@ class TimeSeriesTickDispatch {
     TimeSeriesTickDispatch(const TimeSeriesTickDispatch &) = delete;
     TimeSeriesTickDispatch &operator=(const TimeSeriesTickDispatch &) = delete;
 
-    bool add(const TimeSeriesRuntimeType &runtime_type, TimeSeriesTickOperations operations) {
-        return runtime_operations_.try_emplace(&runtime_type, memory_.memory_resource(), operations).second;
+    template <typename Series, OutputSpecification Specification = OutputSpecification::default_, typename Capture,
+              typename Replay>
+    bool add(const TimeSeriesRuntimeType &runtime_type, Capture &&capture, Replay &&replay) {
+        return add(runtime_type, typed_operations<Series, Specification>(std::forward<Capture>(capture),
+                                                                         std::forward<Replay>(replay)));
     }
 
-    bool add(const TimeSeriesType &type, TimeSeriesTickOperations operations) {
-        return type_operations_.try_emplace(&type, memory_.memory_resource(), operations).second;
+    template <typename Series, OutputSpecification Specification = OutputSpecification::default_, typename Capture,
+              typename Replay>
+    bool add(const TimeSeriesType &type, Capture &&capture, Replay &&replay) {
+        return add(type, typed_operations<Series, Specification>(std::forward<Capture>(capture),
+                                                                 std::forward<Replay>(replay)));
     }
 
-    const TimeSeriesTickOperations *find(const TimeSeriesRuntimeType &runtime_type) const noexcept {
+    void capture(const In<TS_T> &input, bool snapshot, std::optional<ScalarValue<>> &payload,
+                 allocator &memory) const {
+        const auto *operations = find(input.runtime_type());
+        if (operations == nullptr || !operations->capture) {
+            throw std::invalid_argument{"no tick capture operation is registered for this time series type"};
+        }
+        operations->capture(input, snapshot, payload, memory);
+    }
+
+    template <OutputSpecification Specification>
+    void replay(const ScalarValue<> &payload, const Out<TS_T, Specification> &output) const {
+        const auto *operations = find(output.runtime_type());
+        if constexpr (Specification == OutputSpecification::default_) {
+            if (operations != nullptr && operations->replay) {
+                operations->replay(payload, output);
+                return;
+            }
+        } else {
+            if (operations != nullptr && operations->replay_view) {
+                operations->replay_view(payload, output);
+                return;
+            }
+        }
+        throw std::invalid_argument{"no tick replay operation is registered for this time series type"};
+    }
+
+  private:
+    bool add(const TimeSeriesRuntimeType &runtime_type, details::TimeSeriesTickOperations operations) {
+        return runtime_operations_.try_emplace(&runtime_type, memory_.memory_resource(), std::move(operations)).second;
+    }
+
+    bool add(const TimeSeriesType &type, details::TimeSeriesTickOperations operations) {
+        return type_operations_.try_emplace(&type, memory_.memory_resource(), std::move(operations)).second;
+    }
+
+    const details::TimeSeriesTickOperations *find(const TimeSeriesRuntimeType &runtime_type) const noexcept {
         if (const auto *operations = runtime_operations_.find(&runtime_type)) {
             return operations;
         }
         return type_operations_.find(&runtime_type.type());
     }
 
-  private:
+    template <typename Series, OutputSpecification Specification, typename Capture, typename Replay>
+    static details::TimeSeriesTickOperations typed_operations(Capture &&capture, Replay &&replay) {
+        auto operations = details::TimeSeriesTickOperations{};
+        operations.capture = [capture = std::forward<Capture>(capture)](
+                                 const In<TS_T> &input, bool snapshot, std::optional<ScalarValue<>> &payload,
+                                 allocator &memory) {
+            std::invoke(capture, input.template as<Series>(), snapshot, payload, memory);
+        };
+        if constexpr (Specification == OutputSpecification::default_) {
+            operations.replay = [replay = std::forward<Replay>(replay)](const ScalarValue<> &payload,
+                                                                        const Out<TS_T> &output) {
+                std::invoke(replay, payload, output.template as<Series>());
+            };
+        } else {
+            operations.replay_view = [replay = std::forward<Replay>(replay)](
+                                         const ScalarValue<> &payload, const Out<TS_T, view> &output) {
+                std::invoke(replay, payload, output.template as<Series>());
+            };
+        }
+        return operations;
+    }
+
     allocator memory_;
-    util::hash_dictionary<const TimeSeriesRuntimeType *, TimeSeriesTickOperations> runtime_operations_;
-    util::hash_dictionary<const TimeSeriesType *, TimeSeriesTickOperations> type_operations_;
+    util::hash_dictionary<const TimeSeriesRuntimeType *, details::TimeSeriesTickOperations> runtime_operations_;
+    util::hash_dictionary<const TimeSeriesType *, details::TimeSeriesTickOperations> type_operations_;
 };
 
 namespace details {
@@ -244,12 +305,8 @@ class TimeSeriesTickCapture {
     }
 
     void operator()(In<TS_T> *input, EvaluationTime, bool snapshot) {
-        const auto *handler = dispatch_->find(input->runtime_type());
-        if (handler == nullptr || handler->capture == nullptr) {
-            throw std::invalid_argument{"no tick capture operation is registered for this time series type"};
-        }
         auto &operation = operations_->emplace_back(TimeSeriesTickOperation::Kind::extension);
-        handler->capture(*input, snapshot, operation.scalar, *memory_);
+        dispatch_->capture(*input, snapshot, operation.scalar, *memory_);
         if (!operation.scalar) {
             throw std::logic_error{"a time series extension did not write its tick payload"};
         }
@@ -305,7 +362,8 @@ class TimeSeriesTickReplay {
         output.visit([&](const auto *typed) { apply(operation, *typed); }, ddv::noop);
     }
 
-    void operator()(TimeSeriesTickOperation &operation, const Out<TS<SCALAR>> &output) {
+    template <OutputSpecification Specification>
+    void operator()(TimeSeriesTickOperation &operation, const Out<TS<SCALAR>, Specification> &output) {
         if (operation.kind == TimeSeriesTickOperation::Kind::invalidated) {
             output.invalidate();
             return;
@@ -314,7 +372,8 @@ class TimeSeriesTickReplay {
         output.set_value(operation.scalar->view());
     }
 
-    void operator()(TimeSeriesTickOperation &operation, const Out<TSL<TS_T, SIZE>> &output) {
+    template <OutputSpecification Specification>
+    void operator()(TimeSeriesTickOperation &operation, const Out<TSL<TS_T, SIZE>, Specification> &output) {
         if (operation.kind == TimeSeriesTickOperation::Kind::invalidated) {
             output.invalidate();
             return;
@@ -327,7 +386,8 @@ class TimeSeriesTickReplay {
         }
     }
 
-    void operator()(TimeSeriesTickOperation &operation, const Out<TSB<SCHEMA>> &output) {
+    template <OutputSpecification Specification>
+    void operator()(TimeSeriesTickOperation &operation, const Out<TSB<SCHEMA>, Specification> &output) {
         if (operation.kind == TimeSeriesTickOperation::Kind::invalidated) {
             output.invalidate();
             return;
@@ -340,7 +400,8 @@ class TimeSeriesTickReplay {
         }
     }
 
-    void operator()(TimeSeriesTickOperation &operation, const Out<TSS<SCALAR>> &output) {
+    template <OutputSpecification Specification>
+    void operator()(TimeSeriesTickOperation &operation, const Out<TSS<SCALAR>, Specification> &output) {
         require(operation.kind == TimeSeriesTickOperation::Kind::set);
         if (operation.flag) {
             output.clear();
@@ -356,7 +417,8 @@ class TimeSeriesTickReplay {
         }
     }
 
-    void operator()(TimeSeriesTickOperation &operation, const Out<TSD<SCALAR, TS_T>> &output) {
+    template <OutputSpecification Specification>
+    void operator()(TimeSeriesTickOperation &operation, const Out<TSD<SCALAR, TS_T>, Specification> &output) {
         require(operation.kind == TimeSeriesTickOperation::Kind::dictionary);
         if (operation.flag) {
             output.clear();
@@ -374,17 +436,17 @@ class TimeSeriesTickReplay {
         }
     }
 
-    void operator()(TimeSeriesTickOperation &, const Out<REF<TS_T>> &) {
+    template <OutputSpecification Specification>
+    void operator()(TimeSeriesTickOperation &, const Out<REF<TS_T>, Specification> &) {
         throw std::invalid_argument{"retained reference time series ticks are not supported"};
     }
 
-    void operator()(TimeSeriesTickOperation &operation, const Out<TS_T> &output) {
-        const auto *handler = dispatch_->find(output.runtime_type());
-        if (operation.kind != TimeSeriesTickOperation::Kind::extension || handler == nullptr ||
-            handler->replay == nullptr || !operation.scalar) {
-            throw std::invalid_argument{"no tick replay operation is registered for this time series type"};
+    template <OutputSpecification Specification>
+    void operator()(TimeSeriesTickOperation &operation, const Out<TS_T, Specification> &output) {
+        if (operation.kind != TimeSeriesTickOperation::Kind::extension || !operation.scalar) {
+            throw std::logic_error{"time series tick operations do not match their output shape"};
         }
-        handler->replay(*operation.scalar, output);
+        dispatch_->replay(*operation.scalar, output);
     }
 
   private:
