@@ -54,9 +54,12 @@ including normal and free collection layouts.
 target runtime type because the target layout can change when the reference
 changes.
 
-`In<>` and `Out<>` visitors select value, reference, list, bundle, set, or
-dictionary access. The selected view is valid for the visitor callback. Fully
-specified views use their typed operations directly.
+`In<>` and `Out<>` visitors select value, reference, list, bundle, set,
+dictionary, or erased extension access. The selected view is valid for the
+visitor callback. Fully specified views use their typed operations directly.
+
+The [provider API](time-series-providers.md) defines how a separate library
+adds declarations, runtime representations, and input/output views.
 
 Collection storage uses the resolved runtime type of each contained time
 series. Runtime-defined collection types therefore support the same contained

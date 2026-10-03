@@ -55,6 +55,7 @@ class NodeTemplate : public WiringTemplate {
     }
     virtual bool uses_scalar_input_runtime_type(const ResolvedSignature &, std::size_t) const noexcept { return false; }
     virtual bool uses_output_runtime_type() const noexcept { return false; }
+    virtual const TimeSeriesRuntimeType *output_runtime_type(const ResolvedSignature &) const { return nullptr; }
     virtual bool uses_node_invocation() const noexcept { return false; }
     virtual bool uses_timed_scheduling() const noexcept { return false; }
     virtual bool uses_cycle_callbacks() const noexcept { return false; }

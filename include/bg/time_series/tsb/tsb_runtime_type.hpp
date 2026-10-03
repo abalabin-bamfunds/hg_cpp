@@ -84,7 +84,7 @@ class TimeSeriesBundleRuntimeTypeBase : public TimeSeriesRuntimeType {
         }
     }
 
-    void invalidate_output(const details::OutputState &output) const final { invalidate_output_items(output); }
+    void invalidate_output(const OutputState &output) const final { invalidate_output_items(output); }
 
     [[nodiscard]] bool mark_item_modified(void *value, item_id_t id, EvaluationTime evaluation_time,
                                           const TimeSeriesState &, allocator &memory) const noexcept final {
@@ -202,7 +202,7 @@ void append_bundle_item_runtime_types(const TimeSeriesBundleType &type,
     const auto append = [&]<std::size_t Field>() {
         constexpr auto Item = direct_bundle_field_logical_index<Field, Schema>;
         const auto *runtime_type =
-            &CppTimeSeriesRuntimeType<direct_bundle_field_time_series<Field, Schema>>::get(type.item_type(Item));
+            &::bg::cpp_time_series_runtime_type<direct_bundle_field_time_series<Field, Schema>>(type.item_type(Item));
         if (Item < items.size()) {
             items[Item] = runtime_type;
         } else {

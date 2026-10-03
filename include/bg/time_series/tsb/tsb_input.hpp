@@ -27,7 +27,7 @@ class bundle_input_factory {
         using Input = typename SchemaField::template rebind<bundle_input_field>;
         const auto modified =
             data_->modified() && item.last_updated.valid() && item.last_updated.time() == data_->last_updated();
-        return Input{item.last_updated, item.value, item.runtime_type, modified};
+        return Input{TimeSeriesInputData{item.runtime_type, item.last_updated, item.value, modified}};
     }
 
   private:
@@ -59,6 +59,9 @@ class In<TSB<Schema, TimeSeriesProperties...>, Properties...>
        bool modified = false, bool *activity = nullptr) noexcept
         : activity_control{activity}, data_{runtime_type, last_updated, value, modified},
           fields_{details::make_bundle_inputs<Schema>(data_)} {}
+
+    explicit In(const TimeSeriesInputData &data, bool *activity = nullptr) noexcept
+        : activity_control{activity}, data_{data}, fields_{details::make_bundle_inputs<Schema>(data_)} {}
 
     bool valid() const noexcept { return data_.valid(); }
     bool became_valid() const noexcept { return data_.became_valid(); }
@@ -107,6 +110,9 @@ class In<TSB<Schema, TimeSeriesProperties...>, Properties...>
        bool modified = false, bool *activity = nullptr) noexcept
         : activity_control{activity}, data_{runtime_type, last_updated, value, modified} {}
 
+    explicit In(const TimeSeriesInputData &data, bool *activity = nullptr) noexcept
+        : activity_control{activity}, data_{data} {}
+
     bool valid() const noexcept { return data_.valid(); }
     bool became_valid() const noexcept { return data_.became_valid(); }
     bool became_invalid() const noexcept { return data_.became_invalid(); }
@@ -118,8 +124,9 @@ class In<TSB<Schema, TimeSeriesProperties...>, Properties...>
     }
     In<TS_T> operator[](std::size_t index) const {
         const auto item = data_.runtime_type().item(data_.data(), static_cast<item_id_t>(index));
-        return {item.last_updated, item.value, item.runtime_type,
-                data_.modified() && item.last_updated.valid() && item.last_updated.time() == data_.last_updated()};
+        return In<TS_T>{TimeSeriesInputData{item.runtime_type, item.last_updated, item.value,
+                                            data_.modified() && item.last_updated.valid() &&
+                                                item.last_updated.time() == data_.last_updated()}};
     }
     bool item_updated(std::size_t index) const noexcept {
         return data_.runtime_type().item_updated(data_.last_updated_ref(), data_.data(), static_cast<item_id_t>(index));

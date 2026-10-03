@@ -815,35 +815,12 @@ std::vector<const ScalarRuntimeType *> parameter_runtime_types(const WiredNode &
     return result;
 }
 
-const TimeSeriesRuntimeType *find_output_runtime_type(const WiredNode &node, const NodePlan &node_plan,
-                                                      std::span<const WiredOutput> outputs,
-                                                      std::span<const NodePlan> node_plans,
-                                                      const CompilationPlan &plan) {
+const TimeSeriesRuntimeType *find_output_runtime_type(const WiredNode &node, const NodePlan &node_plan) {
     if (node_plan.output.runtime_type != nullptr) {
         return node_plan.output.runtime_type;
     }
 
-    const auto parameter_types = parameter_runtime_types(node, node_plan, outputs, node_plans, plan);
-    auto input_runtime_types = std::vector<const TimeSeriesRuntimeType *>{};
-    input_runtime_types.reserve(node.inputs().size());
-    for (const auto &input : node_plan.time_series_inputs) {
-        if (!input.wired_input.is_inherited() && plan.constant_for_output(input.wired_input.index()) != nullptr) {
-            const auto &parameter =
-                static_cast<const TimeSeriesType &>(*node.signature().parameters[input.parameter].type);
-            input_runtime_types.push_back(&resolve_time_series_runtime_type(parameter));
-            continue;
-        }
-        const auto &parameter = static_cast<const TimeSeriesType &>(*node.signature().parameters[input.parameter].type);
-        const auto *runtime_type =
-            input.wired_input.is_inherited()
-                ? &resolve_time_series_runtime_type(parameter)
-                : input_runtime_type(input,
-                                     wired_output_layout(input.wired_input.index(), outputs, node_plans).runtime_type,
-                                     parameter);
-        input_runtime_types.push_back(runtime_type);
-    }
-
-    return &resolve_time_series_runtime_type(*node.signature().output, input_runtime_types, parameter_types);
+    return &resolve_time_series_runtime_type(*node.signature().output);
 }
 
 [[nodiscard]] OutputLayout add_output_layout(StorageLayout &storage, const WiredNode &node, const NodePlan &node_plan,
@@ -853,7 +830,7 @@ const TimeSeriesRuntimeType *find_output_runtime_type(const WiredNode &node, con
         return {};
     }
 
-    const auto *runtime_type = find_output_runtime_type(node, node_plan, outputs, node_plans, plan);
+    const auto *runtime_type = find_output_runtime_type(node, node_plan);
     if (runtime_type == nullptr) {
         throw std::logic_error{"node output has no runtime type"};
     }

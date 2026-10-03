@@ -2,7 +2,7 @@
 
 #include <bg/evaluation_context.hpp>
 #include <bg/node/details/output_factory.hpp>
-#include <bg/node/details/output_proxy.hpp>
+#include <bg/time_series/output_binding.hpp>
 #include <bg/scalar/canonical.hpp>
 #include <bg/scalar/details/allocation_context.hpp>
 #include <bg/scalar/scalar.hpp>
@@ -14,32 +14,13 @@
 
 namespace bg {
 
-template <typename K, auto... Properties> class Out<TSS<K, Properties...>> {
+template <typename K, OutputSpecification Specification, auto... Properties>
+class Out<TSS<K, Properties...>, Specification> {
   public:
     using storage_type = details::time_series_set_storage;
 
-  private:
-    friend details::output_factory;
-
-    explicit Out(details::OutputState &state) noexcept : state_(Proxy::borrow(state)) {}
-
-    Out(TimeSeriesState &last_updated, storage_type &value, EvaluationContext &context)
-        : state_(Proxy::copy(details::OutputState{cpp_time_series_runtime_type<TSS<K, Properties...>>()}, context)) {
-        state_->bind(last_updated, &value, context);
-    }
-
-    Out(TimeSeriesState &last_updated, void *value, const TimeSeriesRuntimeType &runtime_type,
-        EvaluationContext &context)
-        : state_(Proxy::copy(details::OutputState{runtime_type}, context)) {
-        state_->bind(last_updated, value, context);
-    }
-
-    Out(TimeSeriesState &last_updated, void *value, const TimeSeriesRuntimeType &runtime_type, void *output_path)
-        : state_(Proxy::copy(details::OutputState{runtime_type}, output_path)) {
-        state_->bind(last_updated, value, output_path);
-    }
-
   public:
+    explicit Out(TimeSeriesOutputBinding state) noexcept : state_(std::move(state)) {}
     Out(Out &&) noexcept = default;
     Out(const Out &) = delete;
 
@@ -78,7 +59,7 @@ template <typename K, auto... Properties> class Out<TSS<K, Properties...>> {
     const Out *operator->() const noexcept { return this; }
 
     template <typename... Functions> decltype(auto) visit(Functions &&...functions) const {
-        auto output = details::output_factory::make<TS_T>(state_.get());
+        auto output = details::output_factory::make<TS_T, Specification>(state_.get());
         return output.visit(std::forward<Functions>(functions)...);
     }
 
@@ -123,9 +104,7 @@ template <typename K, auto... Properties> class Out<TSS<K, Properties...>> {
         return result.change != details::time_series_set_change::none;
     }
 
-    using Proxy = details::output_proxy<details::OutputState>;
-
-    Proxy state_;
+    TimeSeriesOutputBinding state_;
 };
 
 } // namespace bg

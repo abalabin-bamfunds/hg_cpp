@@ -32,8 +32,25 @@ template <typename Target, auto... Properties> struct CppTimeSeriesRuntimeType<R
 
 namespace bg {
 
+enum class OutputSpecification {
+    default_,
+    view,
+};
+
+inline constexpr auto view = OutputSpecification::view;
+
+// Maps a C++ time series declaration to its default physical representation. Providers specialize this trait when
+// their declaration has a runtime representation that differs from the composed defaults.
+template <typename TimeSeries> struct time_series_runtime_traits {
+    static const TimeSeriesRuntimeType &get(const TimeSeriesType &type) {
+        return details::CppTimeSeriesRuntimeType<TimeSeries>::get(type);
+    }
+};
+
 template <typename TimeSeries> const TimeSeriesRuntimeType &cpp_time_series_runtime_type(const TimeSeriesType &type) {
-    return details::CppTimeSeriesRuntimeType<TimeSeries>::get(type);
+    const auto &runtime_type = time_series_runtime_traits<TimeSeries>::get(type);
+    register_time_series_runtime_type(runtime_type);
+    return runtime_type;
 }
 
 template <typename TimeSeries>
@@ -45,5 +62,21 @@ inline const TimeSeriesRuntimeType *cpp_time_series_runtime_type_v = [] {
 template <typename TimeSeries> const TimeSeriesRuntimeType &cpp_time_series_runtime_type() {
     return *cpp_time_series_runtime_type_v<TimeSeries>;
 }
+
+// Selects the runtime representation for a node output declaration. Providers specialize this trait to support
+// output specifications other than default_.
+template <typename TimeSeries, OutputSpecification Specification = OutputSpecification::default_>
+struct time_series_output_traits;
+
+template <typename TimeSeries>
+struct time_series_output_traits<TimeSeries, OutputSpecification::default_> {
+    static const TimeSeriesRuntimeType &runtime(const TimeSeriesType &resolved_type) {
+        if constexpr (details::generic_time_series<TimeSeries>) {
+            return resolve_time_series_runtime_type(resolved_type);
+        } else {
+            return cpp_time_series_runtime_type<TimeSeries>(resolved_type);
+        }
+    }
+};
 
 } // namespace bg

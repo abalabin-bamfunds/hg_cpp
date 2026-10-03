@@ -1,7 +1,7 @@
 #pragma once
 
 #include <bg/graph/variadic_parameter.hpp>
-#include <bg/node/input_properties.hpp>
+#include <bg/node/input_property_types.hpp>
 
 #include <concepts>
 #include <cstddef>

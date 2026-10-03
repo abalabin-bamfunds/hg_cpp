@@ -9,15 +9,16 @@ namespace bg::details {
 template <typename Item, auto... Properties> struct time_series_type_traits<TSS<Item, Properties...>> {
     using semantic_type = TimeSeriesSetType;
 
-    static constexpr bool generic = generic_scalar<Item>;
+    static constexpr bool generic = scalar_declaration_traits<Item>::generic;
     static constexpr bool supported =
-        generic_scalar<Item> || (scalar_declaration_traits<Item>::supports_time_series && has_cpp_scalar_type<Item>);
+        scalar_declaration_traits<Item>::generic ||
+        (scalar_declaration_traits<Item>::supports_time_series && has_cpp_scalar_type<Item>);
 
     template <typename Scope, std::size_t Index, bool Input>
     static const TimeSeriesType &get(GuaranteeParameter guarantee) {
         const auto &item = scalar_type_for<Item>();
 
-        if constexpr (Input || generic_scalar<Item>) {
+        if constexpr (Input || scalar_declaration_traits<Item>::generic) {
             static const auto type = GenericTimeSeriesSetType{item, guarantee};
             return type;
         }
@@ -33,7 +34,7 @@ template <typename Item, auto... Properties> struct time_series_type_traits<TSS<
 template <typename Item, auto... Properties> struct declaration_variable_traits<TSS<Item, Properties...>> {
     template <typename Visitor> static void for_each(Visitor &&visitor) {
         for_each_declaration_variable<Item>(visitor);
-        (for_each_property_variable<Properties>(visitor), ...);
+        time_series_properties<Properties...>::for_each_variable(std::forward<Visitor>(visitor));
     }
 };
 

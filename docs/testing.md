@@ -98,7 +98,7 @@ graph compilation or evaluation.
   ring-full rollover, and allocation-failure rollback
 - constant-size scalar value handles
 - visitor dispatch for concrete and generic scalar and time series views, including base-interface fallback, no
-  matching overload, external scalar dispatch, runtime-type precedence, and recursion through scalar collections
+  matching overload, external scalar and time series dispatch, runtime-type precedence, and recursion through collections
 - thread-local context storage
 - scope-bound cleanup and release
 - scheduling bit iteration
@@ -128,6 +128,9 @@ graph compilation or evaluation.
 - types passed as scalars
 - guarantee compatibility, propagation, and enforcement
 - collection types and nested types
+- external declarations, public variable enumeration, runtime registration, and selection of supplied representations
+- default/view output specifications, semantic compatibility, and preservation through invocation and invalidation
+- default output representations independent of input representations, including collection children
 
 ### Wiring
 
@@ -211,6 +214,7 @@ graph compilation or evaluation.
 - dictionary key, item, and validity changes
 - nested dictionary representations and shared key sets
 - output mutation paths and parent notifications
+- provider-defined children accessed through built-in collections
 
 ### Nodes and graphs
 

@@ -8,29 +8,31 @@
 
 namespace bg {
 
-template <typename Target, auto... Properties>
-struct REF : details::time_series_type_access<REF<Target, Properties...>> {
+// Parses the guarantee property accepted by a time series declaration.
+template <auto... Properties>
+using TimeSeriesDeclarationProperties = details::time_series_properties<Properties...>;
+
+// Supplies declaration type() and guarantee metadata for a provider-defined time series declaration.
+template <typename Declaration, auto... Properties>
+struct TimeSeriesDeclaration : details::time_series_type_access<Declaration> {
   private:
-    using ParsedProperties = details::time_series_properties<Properties...>;
+    using ParsedProperties = TimeSeriesDeclarationProperties<Properties...>;
     static_assert(ParsedProperties::valid);
 
   public:
-    using target_type = Target;
-
     static constexpr bool has_explicit_guarantee = ParsedProperties::has_guarantee;
     static constexpr auto guarantee = ParsedProperties::guarantee;
 };
 
-template <typename T, auto... Properties> struct TS : details::time_series_type_access<TS<T, Properties...>> {
-  private:
-    using ParsedProperties = details::time_series_properties<Properties...>;
-    static_assert(ParsedProperties::valid);
+template <typename Target, auto... Properties>
+struct REF : TimeSeriesDeclaration<REF<Target, Properties...>, Properties...> {
+  public:
+    using target_type = Target;
+};
 
+template <typename T, auto... Properties> struct TS : TimeSeriesDeclaration<TS<T, Properties...>, Properties...> {
   public:
     using value_type = T;
-
-    static constexpr bool has_explicit_guarantee = ParsedProperties::has_guarantee;
-    static constexpr auto guarantee = ParsedProperties::guarantee;
 };
 
 namespace details {

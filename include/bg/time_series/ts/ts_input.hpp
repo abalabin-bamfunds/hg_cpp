@@ -27,6 +27,9 @@ class In<TS<Variable, TimeSeriesProperties...>, Properties...>
        bool modified = false, bool *activity = nullptr) noexcept
         : activity_control{activity}, data_{runtime_type, last_updated, value, modified} {}
 
+    explicit In(const TimeSeriesInputData &data, bool *activity = nullptr) noexcept
+        : activity_control{activity}, data_{data} {}
+
     bool valid() const noexcept { return data_.valid(); }
     bool became_valid() const noexcept { return data_.became_valid(); }
     bool became_invalid() const noexcept { return data_.became_invalid(); }
@@ -81,6 +84,9 @@ class In<TS<T, TimeSeriesProperties...>, Properties...>
     In(const TimeSeriesState &last_updated, const void *value, const TimeSeriesRuntimeType &runtime_type,
        bool modified = false, bool *activity = nullptr) noexcept
         : activity_control{activity}, data_{runtime_type, last_updated, value, modified} {}
+
+    explicit In(const TimeSeriesInputData &data, bool *activity = nullptr) noexcept
+        : activity_control{activity}, data_{data} {}
 
     bool valid() const noexcept { return data_.valid(); }
     bool became_valid() const noexcept { return data_.became_valid(); }

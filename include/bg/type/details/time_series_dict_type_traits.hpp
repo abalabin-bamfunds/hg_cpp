@@ -11,9 +11,9 @@ template <typename Key, typename Item, auto... Properties>
 struct time_series_type_traits<TSD<Key, Item, Properties...>> {
     using semantic_type = TimeSeriesDictionaryType;
 
-    static constexpr bool generic = generic_scalar<Key> || generic_time_series<Item>;
+    static constexpr bool generic = scalar_declaration_traits<Key>::generic || generic_time_series<Item>;
     static constexpr bool supported =
-        (generic_scalar<Key> ||
+        (scalar_declaration_traits<Key>::generic ||
          (scalar_declaration_traits<Key>::supports_time_series && has_cpp_scalar_type<Key>)) &&
         supported_time_series<Item>;
 
@@ -23,7 +23,7 @@ struct time_series_type_traits<TSD<Key, Item, Properties...>> {
         const auto &value = time_series_type_for<Scope, Index, Input, Item>(guarantee);
         static const auto key_set = GenericTimeSeriesSetType{key, guarantee};
 
-        if constexpr (Input || generic_scalar<Key>) {
+        if constexpr (Input || scalar_declaration_traits<Key>::generic) {
             static const auto type = GenericTimeSeriesDictionaryType{key, value, key_set, guarantee};
             return type;
         }
@@ -41,7 +41,7 @@ struct declaration_variable_traits<TSD<Key, Item, Properties...>> {
     template <typename Visitor> static void for_each(Visitor &&visitor) {
         for_each_declaration_variable<Key>(visitor);
         for_each_declaration_variable<Item>(visitor);
-        (for_each_property_variable<Properties>(visitor), ...);
+        time_series_properties<Properties...>::for_each_variable(std::forward<Visitor>(visitor));
     }
 };
 

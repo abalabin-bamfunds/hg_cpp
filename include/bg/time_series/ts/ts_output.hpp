@@ -2,9 +2,10 @@
 
 #include <bg/evaluation_context.hpp>
 #include <bg/node/details/output_factory.hpp>
-#include <bg/node/details/output_proxy.hpp>
+#include <bg/time_series/output_binding.hpp>
 #include <bg/scalar/cpp_runtime_type.hpp>
 #include <bg/scalar/details/allocation_context.hpp>
+#include <bg/scalar/details/value_storage.hpp>
 #include <bg/scalar/scalar.hpp>
 #include <bg/time_series/cpp_runtime_type.hpp>
 #include <bg/time_series/details/output_state.hpp>
@@ -18,24 +19,10 @@
 
 namespace bg {
 
-template <details::scalar_variable Variable, auto... Properties> class Out<TS<Variable, Properties...>> {
-  private:
-    friend details::output_factory;
-
-    explicit Out(details::OutputState &state) noexcept : state_(Proxy::borrow(state)) {}
-
-    Out(TimeSeriesState &last_updated, void *value, const TimeSeriesRuntimeType &runtime_type,
-        EvaluationContext &context)
-        : state_(Proxy::copy(details::OutputState{runtime_type}, context)) {
-        state_->bind(last_updated, value, context);
-    }
-
-    Out(TimeSeriesState &last_updated, void *value, const TimeSeriesRuntimeType &runtime_type, void *output_path)
-        : state_(Proxy::copy(details::OutputState{runtime_type}, output_path)) {
-        state_->bind(last_updated, value, output_path);
-    }
-
+template <details::scalar_variable Variable, OutputSpecification Specification, auto... Properties>
+class Out<TS<Variable, Properties...>, Specification> {
   public:
+    explicit Out(TimeSeriesOutputBinding state) noexcept : state_(std::move(state)) {}
     Out(Out &&) noexcept = default;
     Out(const Out &) = delete;
 
@@ -64,55 +51,37 @@ template <details::scalar_variable Variable, auto... Properties> class Out<TS<Va
     const Out *operator->() const noexcept { return this; }
 
     template <typename... Functions> decltype(auto) visit(Functions &&...functions) const {
-        auto output = details::output_factory::make<TS_T>(state_.get());
+        auto output = details::output_factory::make<TS_T, Specification>(state_.get());
         return output.visit(std::forward<Functions>(functions)...);
     }
 
     using time_series_type = TS<Variable, Properties...>;
 
   private:
-    using Proxy = details::output_proxy<details::OutputState>;
-
-    Proxy state_;
+    TimeSeriesOutputBinding state_;
 };
 
-template <typename T, auto... Properties> class Out<TS<T, Properties...>> {
+template <typename T, OutputSpecification Specification, auto... Properties>
+class Out<TS<T, Properties...>, Specification> {
     using Traits = scalar_storage_traits<T>;
 
   public:
     using storage_type = typename Traits::stored_type;
     using value_type = typename Traits::value_type;
 
-  private:
-    friend details::output_factory;
-
-    explicit Out(details::OutputState &state) noexcept : state_(Proxy::borrow(state)) {}
-
-    Out(TimeSeriesState &last_updated, storage_type &value, EvaluationContext &context)
-        : state_(Proxy::copy(details::OutputState{cpp_time_series_runtime_type<TS<T, Properties...>>()}, context)) {
-        state_->bind(last_updated, &value, context);
-    }
-
-    Out(TimeSeriesState &last_updated, storage_type &value, void *output_path)
-        : state_(Proxy::copy(details::OutputState{cpp_time_series_runtime_type<TS<T, Properties...>>()}, output_path)) {
-        state_->bind(last_updated, &value, output_path);
-    }
-
-    Out(TimeSeriesState &last_updated, void *value, const TimeSeriesRuntimeType &runtime_type, void *output_path)
-        : state_(Proxy::copy(details::OutputState{runtime_type}, output_path)) {
-        state_->bind(last_updated, value, output_path);
-    }
-
   public:
+    explicit Out(TimeSeriesOutputBinding state) noexcept : state_(std::move(state)) {}
     Out(Out &&) noexcept = default;
     Out(const Out &) = delete;
 
     bool valid() const noexcept { return state_->valid(); }
     EvaluationTime last_updated() const noexcept { return state_->last_updated(); }
-    value_type value() const noexcept
+    value_type value() const
         requires(!scalar_declaration_traits<T>::is_collection && !details::hierarchical_scalar_declaration<T>)
     {
-        return Traits::read(*static_cast<const storage_type *>(state_->data()));
+        const auto &runtime_type =
+            static_cast<const TimeSeriesValueRuntimeType &>(state_->runtime_type()).scalar_runtime_type();
+        return Scalar<T>::from(runtime_type, state_->data()).value();
     }
 
     Scalar<T> value() const
@@ -131,18 +100,14 @@ template <typename T, auto... Properties> class Out<TS<T, Properties...>> {
                 }
     void set(Value &&value) const {
         auto requested = std::remove_cvref_t<value_type>{std::forward<Value>(value)};
-        if constexpr (Traits::supports_equality) {
-            if (state_->suppresses_equal_updates() && valid() &&
-                Traits::equals(Traits::read(*static_cast<const storage_type *>(state_->data())), requested)) {
-                return;
-            }
+        const auto source = details::make_scalar_source<T>(requested);
+        const auto &runtime_type =
+            static_cast<const TimeSeriesValueRuntimeType &>(state_->runtime_type()).scalar_runtime_type();
+        if (state_->suppresses_equal_updates() && valid() && runtime_type.equals(state_->data(), source)) {
+            return;
         }
 
-        auto memory = allocator{};
-        if constexpr (Traits::assign_uses_memory_resource) {
-            memory = details::current_scalar_allocator();
-        }
-        Traits::assign(*static_cast<storage_type *>(state_->mutable_data()), requested, memory);
+        runtime_type.assign_from_input(state_->mutable_data(), source);
         state_->publish();
     }
 
@@ -174,16 +139,14 @@ template <typename T, auto... Properties> class Out<TS<T, Properties...>> {
     const Out *operator->() const noexcept { return this; }
 
     template <typename... Functions> decltype(auto) visit(Functions &&...functions) const {
-        auto output = details::output_factory::make<TS_T>(state_.get());
+        auto output = details::output_factory::make<TS_T, Specification>(state_.get());
         return output.visit(std::forward<Functions>(functions)...);
     }
 
     using time_series_type = TS<T, Properties...>;
 
   private:
-    using Proxy = details::output_proxy<details::OutputState>;
-
-    Proxy state_;
+    TimeSeriesOutputBinding state_;
 };
 
 static_assert(sizeof(Out<TS<i64>>) == sizeof(void *));

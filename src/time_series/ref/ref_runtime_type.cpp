@@ -8,7 +8,7 @@
 
 namespace bg {
 
-void TimeSeriesReferenceRuntimeType::invalidate_output(const details::OutputState &output) const {
+void TimeSeriesReferenceRuntimeType::invalidate_output(const OutputState &output) const {
     *static_cast<Reference *>(output.mutable_data()) = nullptr;
     output.invalidate_value();
 }

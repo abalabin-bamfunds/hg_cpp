@@ -92,8 +92,8 @@ decltype(auto) make_callable_node_argument(Invocation invocation) {
         constexpr auto ControlledInput = callable_dynamic_activity_input_index<Function, Index>(Indices);
         return invocation.template input<Field, ControlledInput>(Parameter, Input);
     } else if constexpr (output_field<Field>::value) {
-        using TimeSeries = typename output_field<Field>::time_series_type;
-        return invocation.template output<TimeSeries>();
+        return invocation.template output<typename output_field<Field>::time_series_type,
+                                          output_field<Field>::specification>();
     } else {
         using Value = typename scalar_field<Field>::value_type;
         using ParameterScalar = typename scalar_field<Field>::parameter_type;
@@ -123,6 +123,7 @@ template <typename Function, typename... Options> class CallableNodeDefinition {
 
   public:
     using compiled_data_type = std::conditional_t<stores_function, Function, void>;
+    using output_declaration_type = callable_output_declaration_t<Function>;
     using output_time_series_type = callable_output_t<Function>;
     using Invocation = NodeInvocation<compiled_data_type>;
 
@@ -171,11 +172,15 @@ template <typename Function, typename... Options> class CallableNodeDefinition {
     }
 
     static void on_invalidation(Invocation invocation)
-        requires(!std::same_as<output_time_series_type, void> &&
-                 (time_series_variable<output_time_series_type> || is_time_series_reference<output_time_series_type> ||
-                  is_time_series_list<output_time_series_type>))
+        requires(!std::same_as<output_declaration_type, void> &&
+                 requires(Invocation value) {
+                     value.template output<typename output_field<output_declaration_type>::time_series_type,
+                                           output_field<output_declaration_type>::specification>()
+                         .invalidate();
+                 })
     {
-        invocation.template output<output_time_series_type>().invalidate();
+        invocation.template output<output_time_series_type,
+                                   output_field<output_declaration_type>::specification>().invalidate();
     }
 
   private:

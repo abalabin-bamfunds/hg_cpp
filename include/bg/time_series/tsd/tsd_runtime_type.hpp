@@ -257,7 +257,7 @@ class TimeSeriesDictionaryRuntimeType : public TimeSeriesRuntimeType {
         return static_cast<const time_series_dict_storage *>(value)->key_storage().last_updated.valid();
     }
 
-    void invalidate_output(const details::OutputState &) const override {}
+    void invalidate_output(const OutputState &) const override {}
 
     void for_each_modified_item(const TimeSeriesState &last_updated, const void *value, EvaluationTime evaluation_time,
                                 void *context, ModifiedItemFunction function) const override {
@@ -357,7 +357,7 @@ template <typename K, typename Item, auto... Properties> struct CppTimeSeriesRun
     static const TimeSeriesRuntimeType &get(const TimeSeriesType &type) {
         const auto &dictionary = static_cast<const TimeSeriesDictionaryType &>(type);
         return time_series_dictionary_runtime_type(dictionary, cpp_scalar_runtime_type<K>(),
-                                                   CppTimeSeriesRuntimeType<Item>::get(dictionary.value_type()));
+                                                   ::bg::cpp_time_series_runtime_type<Item>(dictionary.value_type()));
     }
 };
 

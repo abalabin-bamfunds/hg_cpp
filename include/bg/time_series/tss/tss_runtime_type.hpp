@@ -21,7 +21,7 @@ class TimeSeriesSetRuntimeType final : public TimeSeriesRuntimeType {
         std::construct_at(static_cast<time_series_set_storage *>(destination));
     }
 
-    void invalidate_output(const details::OutputState &) const override {}
+    void invalidate_output(const OutputState &) const override {}
 
     void destroy_value(void *value, allocator &memory) const noexcept override {
         auto *storage = static_cast<time_series_set_storage *>(value);

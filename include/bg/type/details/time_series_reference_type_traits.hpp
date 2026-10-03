@@ -38,7 +38,7 @@ template <typename Target, auto... Properties> struct time_series_type_traits<RE
 template <typename Target, auto... Properties> struct declaration_variable_traits<REF<Target, Properties...>> {
     template <typename Visitor> static void for_each(Visitor &&visitor) {
         for_each_declaration_variable<Target>(visitor);
-        (for_each_property_variable<Properties>(visitor), ...);
+        time_series_properties<Properties...>::for_each_variable(std::forward<Visitor>(visitor));
     }
 };
 

@@ -8,8 +8,7 @@ namespace bg {
 
 class TimeSeriesRuntimeType;
 
-namespace details {
-
+// Binds an input view to its runtime type, update time, and storage. It does not own the storage.
 class TimeSeriesInputData {
   public:
     TimeSeriesInputData() = default;
@@ -35,5 +34,10 @@ class TimeSeriesInputData {
 
 static_assert(sizeof(TimeSeriesInputData) == 3 * sizeof(void *));
 
-} // namespace details
 } // namespace bg
+
+namespace bg::details {
+
+using ::bg::TimeSeriesInputData;
+
+} // namespace bg::details

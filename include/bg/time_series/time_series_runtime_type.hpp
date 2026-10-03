@@ -14,8 +14,8 @@
 namespace bg {
 
 class ScalarRuntimeType;
-namespace details {
 class OutputState;
+namespace details {
 class ReferenceProvider;
 class ReferenceRepresentation;
 class ReferenceRepresentationFactory;
@@ -97,7 +97,7 @@ class TimeSeriesRuntimeType : public RuntimeType {
     virtual void construct_runtime_value(void *destination, allocator &) const {
         construct_initial_value(destination);
     }
-    virtual void invalidate_output(const details::OutputState &output) const;
+    virtual void invalidate_output(const OutputState &output) const;
     virtual void destroy_value(void *value, allocator &memory) const noexcept = 0;
 
   protected:
@@ -115,8 +115,8 @@ class TimeSeriesRuntimeType : public RuntimeType {
     explicit TimeSeriesRuntimeType(const TimeSeriesType &type) noexcept
         : TimeSeriesRuntimeType{type, 0, 1, false, false, false} {}
 
-    static void invalidate_output_value(const details::OutputState &output) noexcept;
-    static void invalidate_output_items(const details::OutputState &output);
+    static void invalidate_output_value(const OutputState &output) noexcept;
+    static void invalidate_output_items(const OutputState &output);
 
   private:
     static constexpr auto reference_flag = first_additional_flag;
@@ -151,6 +151,10 @@ const TimeSeriesRuntimeType &time_series_value_runtime_type(const TimeSeriesType
 resolve_time_series_runtime_type(const TimeSeriesType &type,
                                  std::span<const TimeSeriesRuntimeType *const> available_time_series = {},
                                  std::span<const ScalarRuntimeType *const> available_scalars = {});
+
+// Registers the default physical representation for its semantic type. Explicitly supplied representations take
+// precedence during resolution.
+void register_time_series_runtime_type(const TimeSeriesRuntimeType &runtime_type);
 
 template <typename TimeSeries> const TimeSeriesRuntimeType &cpp_time_series_runtime_type();
 

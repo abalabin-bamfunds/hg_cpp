@@ -1,11 +1,13 @@
 #pragma once
 
 #include <bg/time_series/guarantee_variable.hpp>
+#include <bg/type/guarantee_variable_instance.hpp>
 #include <bg/type/time_series_guarantee.hpp>
 
 #include <concepts>
 #include <cstddef>
 #include <type_traits>
+#include <utility>
 
 namespace bg::details {
 
@@ -30,6 +32,15 @@ template <auto... Properties> struct time_series_properties {
     static constexpr bool valid = true;
     static constexpr bool has_guarantee = sizeof...(Properties) == 1;
     static constexpr auto guarantee = selected_time_series_guarantee<Properties...>::value;
+
+    template <typename Visitor> static void for_each_variable(Visitor &&visitor) {
+        ([&] {
+            if constexpr (guarantee_variable_declaration<decltype(Properties)>) {
+                using Declaration = std::remove_cv_t<decltype(Properties)>;
+                std::forward<Visitor>(visitor).template operator()<Declaration>(guarantee_variable_instance<Properties>());
+            }
+        }(), ...);
+    }
 };
 
 } // namespace bg::details

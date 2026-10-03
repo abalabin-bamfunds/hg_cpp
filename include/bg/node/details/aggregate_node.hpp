@@ -11,6 +11,7 @@
 #include <bg/scalar/cpp_runtime_type.hpp>
 #include <bg/time_series/ref/dynamic_reference_input.hpp>
 #include <bg/time_series/ref/ref_runtime_type.hpp>
+#include <bg/time_series/input_data.hpp>
 #include <bg/time_series/time_series_runtime_type.hpp>
 #include <bg/time_series/tsb/tsb_runtime_type.hpp>
 #include <bg/time_series/tsb/tsb_type.hpp>
@@ -80,33 +81,40 @@ template <typename T> struct output_field {
     static constexpr bool value = false;
 
     using time_series_type = void;
+    using output_type = void;
 };
 
-template <typename TimeSeries> struct output_field<Out<TimeSeries>> {
+template <typename TimeSeries, OutputSpecification Specification>
+struct output_field<Out<TimeSeries, Specification>> {
     static constexpr bool value = true;
+    static constexpr auto specification = Specification;
 
     using time_series_type = TimeSeries;
+    using output_type = Out<TimeSeries, Specification>;
 };
 
-template <typename... TimeSeries> struct first_output_time_series;
+template <typename... Outputs> struct first_output;
 
-template <typename First, typename... Rest> struct first_output_time_series<First, Rest...> {
-    using type = std::conditional_t<std::same_as<First, void>, typename first_output_time_series<Rest...>::type, First>;
+template <typename First, typename... Rest> struct first_output<First, Rest...> {
+    using type = std::conditional_t<std::same_as<First, void>, typename first_output<Rest...>::type, First>;
 };
 
-template <> struct first_output_time_series<> {
+template <> struct first_output<> {
     using type = void;
 };
 
 template <typename Definition, std::size_t... Index>
-auto aggregate_output_time_series_type(std::index_sequence<Index...>) -> typename first_output_time_series<
-    typename output_field<std::remove_cv_t<util::aggregate_member_type<Index, Definition>>>::time_series_type...>::type;
+auto aggregate_output_declaration_type(std::index_sequence<Index...>) -> typename first_output<
+    typename output_field<std::remove_cv_t<util::aggregate_member_type<Index, Definition>>>::output_type...>::type;
 
 template <typename Definition>
-using aggregate_output_time_series_t = decltype(aggregate_output_time_series_type<Definition>(
+using aggregate_output_declaration_t = decltype(aggregate_output_declaration_type<Definition>(
     std::make_index_sequence<util::aggregate_member_count<Definition>>{}));
 
-template <typename T> inline constexpr bool generic_scalar_state = generic_scalar<T>;
+template <typename Definition>
+using aggregate_output_time_series_t = typename output_field<aggregate_output_declaration_t<Definition>>::time_series_type;
+
+template <typename T> inline constexpr bool generic_scalar_state = scalar_declaration_traits<T>::generic;
 
 template <typename T> struct scalar_field {
     static constexpr bool value = scalar_declaration_traits<T>::supports_implicit_argument &&
@@ -202,28 +210,19 @@ struct generic_input_field<In<TimeSeries, Properties...>> : std::bool_constant<g
 
 template <typename T> struct input_view_field : std::false_type {};
 
-template <typename T> struct time_series_value_has_runtime_layout : std::false_type {};
-
-template <typename T, auto... Properties>
-struct time_series_value_has_runtime_layout<TS<T, Properties...>>
-    : std::bool_constant<scalar_declaration_traits<T>::is_collection> {};
-
 template <typename TimeSeries, auto... Properties>
 struct input_view_field<In<TimeSeries, Properties...>>
-    : std::bool_constant<generic_time_series<TimeSeries> || is_time_series_list<TimeSeries> ||
-                         is_time_series_bundle<TimeSeries> || is_time_series_set<TimeSeries> ||
-                         is_time_series_dict<TimeSeries> || time_series_value_has_runtime_layout<TimeSeries>::value> {};
+    : std::true_type {};
 
 template <typename T> struct generic_output_field : std::false_type {};
 
-template <typename TimeSeries>
-struct generic_output_field<Out<TimeSeries>> : std::bool_constant<generic_time_series<TimeSeries>> {};
+template <typename TimeSeries, OutputSpecification Specification>
+struct generic_output_field<Out<TimeSeries, Specification>> : std::bool_constant<generic_time_series<TimeSeries>> {};
 
 template <typename T> struct output_view_field : std::false_type {};
 
-template <typename TimeSeries>
-struct output_view_field<Out<TimeSeries>>
-    : std::bool_constant<generic_time_series<TimeSeries> || is_time_series_bundle<TimeSeries>> {};
+template <typename TimeSeries, OutputSpecification Specification>
+struct output_view_field<Out<TimeSeries, Specification>> : std::true_type {};
 
 template <typename T> struct generic_scalar_input_field : std::false_type {};
 
@@ -462,13 +461,7 @@ template <typename Definition, std::size_t... Index>
 [[nodiscard]] consteval bool aggregate_output_requires_view_invalidation(std::index_sequence<Index...>) {
     return (false || ... || [] {
         using Field = std::remove_cv_t<util::aggregate_member_type<Index, Definition>>;
-        if constexpr (!output_field<Field>::value) {
-            return false;
-        } else {
-            using TimeSeries = typename output_field<Field>::time_series_type;
-            return time_series_variable<TimeSeries> || is_time_series_reference<TimeSeries> ||
-                   is_time_series_list<TimeSeries>;
-        }
+        return output_field<Field>::value && requires(Field output) { output.invalidate(); };
     }());
 }
 
@@ -701,19 +694,11 @@ template <typename Definition, std::size_t Index>
             constexpr auto RuntimeTypeIndex = aggregate_time_series_runtime_type_index<Definition, Index>(
                 std::make_index_sequence<util::aggregate_member_count<Definition>>{});
             const auto &runtime_type = runtime_node.time_series_input_runtime_type(ParameterIndex, RuntimeTypeIndex);
+            const auto data = TimeSeriesInputData{runtime_type, *input.last_updated, input.value, modified};
             if constexpr (input_field<Field>::dynamic_activity) {
-                return Field{*input.last_updated, input.value, runtime_type, modified,
-                             runtime_node.input_activity(ControlledInputIndex)};
+                return Field{data, runtime_node.input_activity(ControlledInputIndex)};
             } else {
-                return Field{*input.last_updated, input.value, runtime_type, modified};
-            }
-        } else {
-            if constexpr (input_field<Field>::dynamic_activity) {
-                return Field{*input.last_updated, static_cast<const typename Field::storage_type *>(input.value),
-                             modified, runtime_node.input_activity(ControlledInputIndex)};
-            } else {
-                return Field{*input.last_updated, static_cast<const typename Field::storage_type *>(input.value),
-                             modified};
+                return Field{data};
             }
         }
     } else if constexpr (scalar_field<Field>::value) {
@@ -769,19 +754,13 @@ template <typename Definition, std::size_t Index>
     } else {
         auto &last_updated = runtime_node.output_last_updated();
 
-        if constexpr (output_view_field<Field>::value) {
-            constexpr auto TimeSeriesRuntimeTypeCount = aggregate_time_series_runtime_type_count<Definition>(
-                std::make_index_sequence<util::aggregate_member_count<Definition>>{});
-            constexpr auto GenericScalarInputCount = aggregate_generic_scalar_input_count<Definition>(
-                std::make_index_sequence<util::aggregate_member_count<Definition>>{});
-            return output_factory::make<typename Field::time_series_type>(
-                last_updated, runtime_node.output_value(),
-                node.output_runtime_type(TimeSeriesRuntimeTypeCount, GenericScalarInputCount), *context);
-        } else {
-            auto &value = *static_cast<typename Field::storage_type *>(runtime_node.output_value());
-
-            return output_factory::make<typename Field::time_series_type>(last_updated, value, *context);
-        }
+        constexpr auto TimeSeriesRuntimeTypeCount = aggregate_time_series_runtime_type_count<Definition>(
+            std::make_index_sequence<util::aggregate_member_count<Definition>>{});
+        constexpr auto GenericScalarInputCount = aggregate_generic_scalar_input_count<Definition>(
+            std::make_index_sequence<util::aggregate_member_count<Definition>>{});
+        return output_factory::make<typename Field::time_series_type, output_field<Field>::specification>(
+            last_updated, runtime_node.output_value(),
+            node.output_runtime_type(TimeSeriesRuntimeTypeCount, GenericScalarInputCount), *context);
     }
 }
 
@@ -1021,7 +1000,7 @@ void invalidate_aggregate_output(const CompiledNode &node, void *runtime_storage
     (
         [&] {
             using Field = std::remove_cv_t<util::aggregate_member_type<Index, Definition>>;
-            if constexpr (output_field<Field>::value) {
+            if constexpr (output_field<Field>::value && requires(Field output) { output.invalidate(); }) {
                 std::get<Index>(fields).invalidate();
             }
         }(),

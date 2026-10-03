@@ -1,58 +1,10 @@
 #pragma once
 
-#include <bg/optionality.hpp>
-#include <bg/util/named_argument.hpp>
-
-#include <cstdint>
+#include <bg/node/input_property_types.hpp>
+#include <bg/node/details/input_properties.hpp>
 
 namespace bg {
 
-enum class InputActivity : std::uint8_t {
-    active,
-    passive,
-};
-
-inline constexpr InputActivity active = InputActivity::active;
-inline constexpr InputActivity passive = InputActivity::passive;
-
-using InputValidity = Optionality;
-
-struct DynamicBinding {};
-
-inline constexpr DynamicBinding dynamic_binding{};
-
-struct DynamicActivity {};
-
-inline constexpr DynamicActivity dynamic_activity{};
-
-namespace details {
-
-template <bool Enabled> class input_activity_control {
-  public:
-    constexpr explicit input_activity_control(bool * = nullptr) noexcept {}
-
-  protected:
-    constexpr bool *activity() const noexcept { return nullptr; }
-};
-
-template <> class input_activity_control<true> {
-  public:
-    explicit input_activity_control(bool *active = nullptr) noexcept : active_{active} {}
-
-    void make_passive() const noexcept { *active_ = false; }
-    void make_active() const noexcept { *active_ = true; }
-
-  protected:
-    bool *activity() const noexcept { return active_; }
-
-  private:
-    bool *active_;
-};
-
-} // namespace details
-
-struct ContextParameter {};
-
-inline constexpr ContextParameter context{};
+template <auto... Properties> using InputProperties = details::input_properties<Properties...>;
 
 } // namespace bg

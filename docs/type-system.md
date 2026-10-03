@@ -158,6 +158,10 @@ series. `Out<T>` provides time series mutation. The template argument controls
 the available typed or generic operations; separate public view hierarchies are
 not required.
 
+External time series families use the
+[provider API](time-series-providers.md) for declaration metadata, runtime
+registration, and view binding.
+
 ### Time series bundles
 
 A named `TSB` uses the shared C++ schema model and nominal compatibility through

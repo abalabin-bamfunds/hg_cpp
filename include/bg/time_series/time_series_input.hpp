@@ -28,6 +28,10 @@ class In<Variable, Properties...>
        bool modified = false, bool *activity = nullptr) noexcept
         : activity_control{activity}, data_{runtime_type, last_updated, value, modified} {}
 
+    // Binds this view to caller-owned input metadata and storage.
+    explicit In(const TimeSeriesInputData &data, bool *activity = nullptr) noexcept
+        : activity_control{activity}, data_{data} {}
+
     bool valid() const noexcept { return data_.valid(); }
     bool became_valid() const noexcept { return data_.became_valid(); }
     bool became_invalid() const noexcept { return data_.became_invalid(); }
@@ -73,7 +77,7 @@ static_assert(sizeof(In<TS_T, dynamic_activity>) == 4 * sizeof(void *));
 namespace bg {
 
 using TimeSeriesInputTypes = ddv::mux<In<TS<SCALAR>>, In<TSL<TS_T, SIZE>>, In<TSB<SCHEMA>>, In<TSS<SCALAR>>,
-                                      In<TSD<SCALAR, TS_T>>, In<REF<TS_T>>>;
+                                      In<TSD<SCALAR, TS_T>>, In<REF<TS_T>>, In<TS_T>>;
 
 template <details::time_series_variable Variable, auto... Properties>
 template <typename Visitor, typename... Arguments>
@@ -107,7 +111,10 @@ auto In<Variable, Properties...>::visit(Visitor &&visitor, Arguments &&...argume
             auto input = In<REF<TS_T>>{data_.last_updated_ref(), data(), runtime_type(), data_.modified()};
             types.visit(&input);
         },
-        ddv::noop);
+        [&] {
+            auto input = In<TS_T>{data_.last_updated_ref(), data(), runtime_type(), data_.modified()};
+            types.visit(&input);
+        });
 
     if constexpr (!decltype(dispatch)::is_result_void) {
         return *dispatch;

@@ -136,7 +136,7 @@ struct declaration_variable_traits<TSB<Schema, Properties...>> {
             for_each_bundle_field_variable<Schema>(std::make_index_sequence<direct_bundle_field_count<Schema>>{},
                                                    visitor);
         }
-        (for_each_property_variable<Properties>(visitor), ...);
+        time_series_properties<Properties...>::for_each_variable(std::forward<Visitor>(visitor));
     }
 };
 

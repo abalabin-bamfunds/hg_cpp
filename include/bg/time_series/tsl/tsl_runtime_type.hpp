@@ -75,7 +75,7 @@ class FixedTimeSeriesListRuntimeType final : public TimeSeriesRuntimeType {
         }
     }
 
-    void invalidate_output(const details::OutputState &output) const override { invalidate_output_items(output); }
+    void invalidate_output(const OutputState &output) const override { invalidate_output_items(output); }
 
     [[nodiscard]] bool mark_item_modified(void *value, item_id_t id, EvaluationTime evaluation_time,
                                           const TimeSeriesState &, allocator &memory) const noexcept override {
@@ -208,7 +208,7 @@ template <typename Item, auto Size, auto... Properties>
 struct CppTimeSeriesRuntimeType<TSL<Item, Size, Properties...>> {
     static const TimeSeriesRuntimeType &get(const TimeSeriesType &type) {
         const auto &list = static_cast<const TimeSeriesListType &>(type);
-        return fixed_time_series_list_runtime_type(list, CppTimeSeriesRuntimeType<Item>::get(list.item_type()));
+        return fixed_time_series_list_runtime_type(list, ::bg::cpp_time_series_runtime_type<Item>(list.item_type()));
     }
 };
 

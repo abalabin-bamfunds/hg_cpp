@@ -2,7 +2,7 @@
 
 #include <bg/evaluation_context.hpp>
 #include <bg/node/details/output_factory.hpp>
-#include <bg/node/details/output_proxy.hpp>
+#include <bg/time_series/output_binding.hpp>
 #include <bg/scalar/canonical.hpp>
 #include <bg/scalar/details/allocation_context.hpp>
 #include <bg/scalar/scalar.hpp>
@@ -16,44 +16,24 @@
 
 namespace bg {
 
-template <typename K, typename Item, auto... Properties> class Out<TSD<K, Item, Properties...>> {
+template <typename K, typename Item, OutputSpecification Specification, auto... Properties>
+class Out<TSD<K, Item, Properties...>, Specification> {
   public:
     using storage_type = details::time_series_dict_storage;
 
-  private:
-    friend details::output_factory;
-
-    explicit Out(details::OutputState &state) noexcept : state_(Proxy::borrow(state)) {}
-
-    Out(TimeSeriesState &last_updated, storage_type &value, EvaluationContext &context)
-        : state_(
-              Proxy::copy(details::OutputState{cpp_time_series_runtime_type<TSD<K, Item, Properties...>>()}, context)) {
-        state_->bind(last_updated, &value, context);
-    }
-
-    Out(TimeSeriesState &last_updated, void *value, const TimeSeriesRuntimeType &runtime_type,
-        EvaluationContext &context)
-        : state_(Proxy::copy(details::OutputState{runtime_type}, context)) {
-        state_->bind(last_updated, value, context);
-    }
-
-    Out(TimeSeriesState &last_updated, void *value, const TimeSeriesRuntimeType &runtime_type, void *output_path)
-        : state_(Proxy::copy(details::OutputState{runtime_type}, output_path)) {
-        state_->bind(last_updated, value, output_path);
-    }
-
   public:
+    explicit Out(TimeSeriesOutputBinding state) noexcept : state_(std::move(state)) {}
     Out(Out &&) noexcept = default;
     Out(const Out &) = delete;
 
     bool valid() const noexcept { return state_->valid(); }
     EvaluationTime last_updated() const noexcept { return state_->last_updated(); }
 
-    Out<Item> operator[](const Scalar<K> &key) const { return item(details::scalar_data(key)); }
+    Out<Item, Specification> operator[](const Scalar<K> &key) const { return item(details::scalar_data(key)); }
 
     template <typename Source>
         requires(!details::scalar_variable<K> && scalar_source_for<K, Source>)
-    Out<Item> operator[](Source &&key) const {
+    Out<Item, Specification> operator[](Source &&key) const {
         const auto value = scalar_source_value<K>(std::forward<Source>(key));
         return item(details::make_scalar_source<K>(value));
     }
@@ -99,7 +79,7 @@ template <typename K, typename Item, auto... Properties> class Out<TSD<K, Item, 
     const Out *operator->() const noexcept { return this; }
 
     template <typename... Functions> decltype(auto) visit(Functions &&...functions) const {
-        auto output = details::output_factory::make<TS_T>(state_.get());
+        auto output = details::output_factory::make<TS_T, Specification>(state_.get());
         return output.visit(std::forward<Functions>(functions)...);
     }
 
@@ -146,7 +126,7 @@ template <typename K, typename Item, auto... Properties> class Out<TSD<K, Item, 
                                     item_runtime_type(), item_layout(), item_value_offset(), memory);
     }
 
-    Out<Item> item(const details::ScalarData &key) const {
+    Out<Item, Specification> item(const details::ScalarData &key) const {
         auto memory = details::current_scalar_allocator();
         auto &value = storage();
         reset_change_tracking(value, memory);
@@ -163,7 +143,7 @@ template <typename K, typename Item, auto... Properties> class Out<TSD<K, Item, 
 
         auto *path = state_->add_path(state_->runtime_type(), result.position);
         const auto item = state_->runtime_type().item(state_->mutable_data(), result.position);
-        return details::output_factory::make<Item>(item.last_updated, item.value, item.runtime_type, path);
+        return details::output_factory::make<Item, Specification>(item.last_updated, item.value, item.runtime_type, path);
     }
 
     bool erase(const details::ScalarData &key) const {
@@ -180,9 +160,7 @@ template <typename K, typename Item, auto... Properties> class Out<TSD<K, Item, 
         return result.change != details::time_series_set_change::none;
     }
 
-    using Proxy = details::output_proxy<details::OutputState>;
-
-    Proxy state_;
+    TimeSeriesOutputBinding state_;
 };
 
 } // namespace bg

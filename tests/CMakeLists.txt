@@ -57,6 +57,7 @@ add_executable(
     type/time_series_list_type_test.cpp
     type/time_series_set_type_test.cpp
     type/time_series_reference_type_test.cpp
+    type/time_series_provider_test.cpp
     type/operator_specificity_test.cpp
     utils/adaptive_set_test.cpp
     utils/allocator_test.cpp

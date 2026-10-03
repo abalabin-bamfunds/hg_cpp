@@ -17,7 +17,7 @@ class TimeSeriesReferenceRuntimeType : public TimeSeriesRuntimeType {
         std::construct_at(static_cast<Reference *>(destination));
     }
 
-    void invalidate_output(const details::OutputState &output) const override;
+    void invalidate_output(const OutputState &output) const override;
 
     Reference reference(const void *value) const override { return *static_cast<const Reference *>(value); }
 

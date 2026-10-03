@@ -2,7 +2,7 @@
 
 #include <bg/evaluation_context.hpp>
 #include <bg/node/details/output_factory.hpp>
-#include <bg/node/details/output_proxy.hpp>
+#include <bg/time_series/output_binding.hpp>
 #include <bg/time_series/details/output_state.hpp>
 #include <bg/time_series/time_series_output.hpp>
 #include <bg/time_series/tsb/tsb_runtime_type.hpp>
@@ -12,10 +12,12 @@
 namespace bg {
 namespace details {
 
-template <typename Declaration, auto...>
-using bundle_output_field = Out<typename bundle_field_projection<Declaration>::time_series_type>;
+template <OutputSpecification Specification> struct bundle_output_fields {
+    template <typename Declaration, auto...>
+    using type = Out<typename bundle_field_projection<Declaration>::time_series_type, Specification>;
+};
 
-class bundle_output_factory {
+template <OutputSpecification Specification> class bundle_output_factory {
   public:
     explicit bundle_output_factory(const OutputState &state) noexcept : state_{&state} {}
 
@@ -24,44 +26,32 @@ class bundle_output_factory {
         const auto id = static_cast<item_id_t>(index);
         const auto item = state_->runtime_type().item(state_->mutable_data(), id);
         auto *path = state_->add_path(state_->runtime_type(), id);
-        return output_factory::make<Item>(item.last_updated, item.value, item.runtime_type, path);
+        return output_factory::make<Item, Specification>(item.last_updated, item.value, item.runtime_type, path);
     }
 
   private:
     const OutputState *state_;
 };
 
-template <template <template <typename, auto...> typename> typename Schema>
+template <template <template <typename, auto...> typename> typename Schema, OutputSpecification Specification>
 [[nodiscard]] auto make_bundle_outputs(const OutputState &state) {
-    auto factory = bundle_output_factory{state};
-    return make_bundle_fields<Schema, bundle_output_field>(factory);
+    auto factory = bundle_output_factory<Specification>{state};
+    return make_bundle_fields<Schema, bundle_output_fields<Specification>::template type>(factory);
 }
 
 } // namespace details
 
-template <template <template <typename, auto...> typename> typename Schema, auto... Properties>
+template <template <template <typename, auto...> typename> typename Schema, OutputSpecification Specification,
+          auto... Properties>
     requires(!details::bundle_schema_variable_declaration<Schema<details::bundle_schema_field>>)
-class Out<TSB<Schema, Properties...>> {
+class Out<TSB<Schema, Properties...>, Specification> {
   public:
     using time_series_type = TSB<Schema, Properties...>;
-    using fields_type = Schema<details::bundle_output_field>;
-
-  private:
-    friend details::output_factory;
-
-    explicit Out(details::OutputState &state) noexcept
-        : state_(Proxy::borrow(state)), fields_{details::make_bundle_outputs<Schema>(state_.get())} {}
-
-    Out(TimeSeriesState &last_updated, void *value, const TimeSeriesRuntimeType &runtime_type,
-        EvaluationContext &context)
-        : state_(Proxy::copy(details::OutputState{runtime_type}, context)),
-          fields_{bind(last_updated, value, context)} {}
-
-    Out(TimeSeriesState &last_updated, void *value, const TimeSeriesRuntimeType &runtime_type, void *output_path)
-        : state_(Proxy::copy(details::OutputState{runtime_type}, output_path)),
-          fields_{bind(last_updated, value, output_path)} {}
+    using fields_type = Schema<details::bundle_output_fields<Specification>::template type>;
 
   public:
+    explicit Out(TimeSeriesOutputBinding state) noexcept
+        : state_(std::move(state)), fields_{details::make_bundle_outputs<Schema, Specification>(state_.get())} {}
     Out(Out &&) noexcept = default;
     Out(const Out &) = delete;
 
@@ -72,42 +62,21 @@ class Out<TSB<Schema, Properties...>> {
     void invalidate() const { state_->invalidate(); }
 
     template <typename... Functions> decltype(auto) visit(Functions &&...functions) const {
-        auto output = details::output_factory::make<TS_T>(state_.get());
+        auto output = details::output_factory::make<TS_T, Specification>(state_.get());
         return output.visit(std::forward<Functions>(functions)...);
     }
 
   private:
-    using Proxy = details::output_proxy<details::OutputState>;
-
-    template <typename Owner> [[nodiscard]] fields_type bind(TimeSeriesState &last_updated, void *value, Owner &owner) {
-        state_->bind(last_updated, value, owner);
-        return details::make_bundle_outputs<Schema>(state_.get());
-    }
-
-    Proxy state_;
+    TimeSeriesOutputBinding state_;
     fields_type fields_;
 };
 
-template <template <template <typename, auto...> typename> typename Schema, auto... Properties>
+template <template <template <typename, auto...> typename> typename Schema, OutputSpecification Specification,
+          auto... Properties>
     requires details::bundle_schema_variable_declaration<Schema<details::bundle_schema_field>>
-class Out<TSB<Schema, Properties...>> {
-  private:
-    friend details::output_factory;
-
-    explicit Out(details::OutputState &state) noexcept : state_(Proxy::borrow(state)) {}
-
-    Out(TimeSeriesState &last_updated, void *value, const TimeSeriesRuntimeType &runtime_type,
-        EvaluationContext &context)
-        : state_(Proxy::copy(details::OutputState{runtime_type}, context)) {
-        state_->bind(last_updated, value, context);
-    }
-
-    Out(TimeSeriesState &last_updated, void *value, const TimeSeriesRuntimeType &runtime_type, void *output_path)
-        : state_(Proxy::copy(details::OutputState{runtime_type}, output_path)) {
-        state_->bind(last_updated, value, output_path);
-    }
-
+class Out<TSB<Schema, Properties...>, Specification> {
   public:
+    explicit Out(TimeSeriesOutputBinding state) noexcept : state_(std::move(state)) {}
     Out(Out &&) noexcept = default;
     Out(const Out &) = delete;
 
@@ -117,27 +86,25 @@ class Out<TSB<Schema, Properties...>> {
     util::symbol item_name(std::size_t index) const {
         return static_cast<const TimeSeriesBundleType &>(state_->runtime_type().type()).item_name(index);
     }
-    Out<TS_T> operator[](std::size_t index) const {
+    Out<TS_T, Specification> operator[](std::size_t index) const {
         const auto id = static_cast<item_id_t>(index);
         const auto item = state_->runtime_type().item(state_->mutable_data(), id);
         auto *path = state_->add_path(state_->runtime_type(), id);
-        return details::output_factory::make<TS_T>(item.last_updated, item.value, item.runtime_type, path);
+        return details::output_factory::make<TS_T, Specification>(item.last_updated, item.value, item.runtime_type, path);
     }
 
     void invalidate() const { state_->invalidate(); }
     const Out *operator->() const noexcept { return this; }
 
     template <typename... Functions> decltype(auto) visit(Functions &&...functions) const {
-        auto output = details::output_factory::make<TS_T>(state_.get());
+        auto output = details::output_factory::make<TS_T, Specification>(state_.get());
         return output.visit(std::forward<Functions>(functions)...);
     }
 
     using time_series_type = TSB<Schema, Properties...>;
 
   private:
-    using Proxy = details::output_proxy<details::OutputState>;
-
-    Proxy state_;
+    TimeSeriesOutputBinding state_;
 };
 
 } // namespace bg

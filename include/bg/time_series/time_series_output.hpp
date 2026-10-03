@@ -2,8 +2,7 @@
 
 #include <bg/evaluation_context.hpp>
 #include <bg/node/details/output_factory.hpp>
-#include <bg/node/details/output_proxy.hpp>
-#include <bg/time_series/details/output_state.hpp>
+#include <bg/time_series/output_binding.hpp>
 #include <bg/time_series/time_series_type.hpp>
 
 #include <ddv/serial_visitor.h>
@@ -11,24 +10,9 @@
 
 namespace bg {
 
-template <details::time_series_variable Variable> class Out<Variable> {
-  private:
-    friend details::output_factory;
-
-    explicit Out(details::OutputState &state) noexcept : state_(Proxy::borrow(state)) {}
-
-    Out(TimeSeriesState &last_updated, void *value, const TimeSeriesRuntimeType &runtime_type,
-        EvaluationContext &context)
-        : state_(Proxy::copy(details::OutputState{runtime_type}, context)) {
-        state_->bind(last_updated, value, context);
-    }
-
-    Out(TimeSeriesState &last_updated, void *value, const TimeSeriesRuntimeType &runtime_type, void *output_path)
-        : state_(Proxy::copy(details::OutputState{runtime_type}, output_path)) {
-        state_->bind(last_updated, value, output_path);
-    }
-
+template <details::time_series_variable Variable, OutputSpecification Specification> class Out<Variable, Specification> {
   public:
+    explicit Out(TimeSeriesOutputBinding state) noexcept : state_(std::move(state)) {}
     Out(Out &&) noexcept = default;
     Out(const Out &) = delete;
 
@@ -52,9 +36,7 @@ template <details::time_series_variable Variable> class Out<Variable> {
     using time_series_type = Variable;
 
   private:
-    using Proxy = details::output_proxy<details::OutputState>;
-
-    Proxy state_;
+    TimeSeriesOutputBinding state_;
 };
 
 static_assert(sizeof(Out<TS_T>) == sizeof(void *));
@@ -70,42 +52,48 @@ static_assert(sizeof(Out<TS_T>) == sizeof(void *));
 
 namespace bg {
 
-using TimeSeriesOutputTypes = ddv::mux<Out<TS<SCALAR>>, Out<TSL<TS_T, SIZE>>, Out<TSB<SCHEMA>>, Out<TSS<SCALAR>>,
-                                       Out<TSD<SCALAR, TS_T>>, Out<REF<TS_T>>>;
+template <OutputSpecification Specification>
+using TimeSeriesOutputTypes = ddv::mux<Out<TS<SCALAR>, Specification>, Out<TSL<TS_T, SIZE>, Specification>,
+                                       Out<TSB<SCHEMA>, Specification>, Out<TSS<SCALAR>, Specification>,
+                                       Out<TSD<SCALAR, TS_T>, Specification>, Out<REF<TS_T>, Specification>,
+                                       Out<TS_T, Specification>>;
 
-template <details::time_series_variable Variable>
+template <details::time_series_variable Variable, OutputSpecification Specification>
 template <typename Visitor, typename... Arguments>
     requires ddv::SerialVisitorType<std::remove_cvref_t<Visitor>>
-auto Out<Variable>::visit(Visitor &&visitor, Arguments &&...arguments) const {
-    auto dispatch = ddv::make_visitable_visitor<TimeSeriesOutputTypes>(
+auto Out<Variable, Specification>::visit(Visitor &&visitor, Arguments &&...arguments) const {
+    auto dispatch = ddv::make_visitable_visitor<TimeSeriesOutputTypes<Specification>>(
         std::forward_as_tuple(std::forward<Arguments>(arguments)...), std::forward<Visitor>(visitor));
-    auto &types = static_cast<TimeSeriesOutputTypes &>(dispatch);
+    auto &types = static_cast<TimeSeriesOutputTypes<Specification> &>(dispatch);
     runtime_type().type().visit(
         [&](const TimeSeriesValueType *) {
-            auto output = details::output_factory::make<TS<SCALAR>>(state_.get());
+            auto output = details::output_factory::make<TS<SCALAR>, Specification>(state_.get());
             types.visit(&output);
         },
         [&](const TimeSeriesListType *) {
-            auto output = details::output_factory::make<TSL<TS_T, SIZE>>(state_.get());
+            auto output = details::output_factory::make<TSL<TS_T, SIZE>, Specification>(state_.get());
             types.visit(&output);
         },
         [&](const TimeSeriesBundleType *) {
-            auto output = details::output_factory::make<TSB<SCHEMA>>(state_.get());
+            auto output = details::output_factory::make<TSB<SCHEMA>, Specification>(state_.get());
             types.visit(&output);
         },
         [&](const TimeSeriesSetType *) {
-            auto output = details::output_factory::make<TSS<SCALAR>>(state_.get());
+            auto output = details::output_factory::make<TSS<SCALAR>, Specification>(state_.get());
             types.visit(&output);
         },
         [&](const TimeSeriesDictionaryType *) {
-            auto output = details::output_factory::make<TSD<SCALAR, TS_T>>(state_.get());
+            auto output = details::output_factory::make<TSD<SCALAR, TS_T>, Specification>(state_.get());
             types.visit(&output);
         },
         [&](const TimeSeriesReferenceType *) {
-            auto output = details::output_factory::make<REF<TS_T>>(state_.get());
+            auto output = details::output_factory::make<REF<TS_T>, Specification>(state_.get());
             types.visit(&output);
         },
-        ddv::noop);
+        [&] {
+            auto output = details::output_factory::make<TS_T, Specification>(state_.get());
+            types.visit(&output);
+        });
 
     if constexpr (!decltype(dispatch)::is_result_void) {
         return *dispatch;

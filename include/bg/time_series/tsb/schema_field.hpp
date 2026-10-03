@@ -7,7 +7,7 @@
 namespace bg::details {
 
 template <typename Declaration, bool TimeSeries = supported_time_series<Declaration>,
-          bool Scalar = !generic_scalar<Declaration> && has_cpp_scalar_type<Declaration> &&
+          bool Scalar = !scalar_declaration_traits<Declaration>::generic && has_cpp_scalar_type<Declaration> &&
                         scalar_declaration_traits<Declaration>::supports_time_series>
 struct bundle_field_projection {};
 

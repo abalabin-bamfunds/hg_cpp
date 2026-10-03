@@ -1,6 +1,7 @@
 #pragma once
 
 #include <bg/evaluation_context.hpp>
+#include <bg/scalar/details/allocation_context.hpp>
 #include <bg/time_series/details/output_path.hpp>
 #include <bg/time_series/time_series_state.hpp>
 #include <bg/time_series/time_series_runtime_type.hpp>
@@ -8,7 +9,7 @@
 
 #include <cstdint>
 
-namespace bg::details {
+namespace bg {
 
 // Connects an output view to its value storage and the mutation path of any containing collections.
 class OutputState {
@@ -32,7 +33,7 @@ class OutputState {
     void bind(TimeSeriesState &last_updated, void *data, void *output_path) noexcept {
         last_updated_ = &last_updated;
         data_ = data;
-        owner_.reset(static_cast<OutputPath *>(output_path));
+        owner_.reset(static_cast<details::OutputPath *>(output_path));
     }
 
     void release() noexcept {
@@ -41,16 +42,16 @@ class OutputState {
         }
 
         auto &evaluation_context = context();
-        auto *path = owner_.get<OutputPath>();
+        auto *path = owner_.get<details::OutputPath>();
         evaluation_context.scratch().release_last(this, sizeof(OutputState));
         if (path != nullptr) {
-            release_output_path(path);
+            details::release_output_path(path);
         }
     }
 
     void release_path() noexcept {
-        if (auto *path = owner_.get<OutputPath>()) {
-            release_output_path(path);
+        if (auto *path = owner_.get<details::OutputPath>()) {
+            details::release_output_path(path);
         }
     }
 
@@ -78,27 +79,29 @@ class OutputState {
     }
 
     [[nodiscard]] void *add_path(const TimeSeriesRuntimeType &runtime_type, item_id_t id) const {
-        auto *parent = owner_.get<OutputPath>();
-        return add_output_path(context(), runtime_type, mutable_last_updated(), mutable_data(), id, parent);
+        auto *parent = owner_.get<details::OutputPath>();
+        return details::add_output_path(context(), runtime_type, mutable_last_updated(), mutable_data(), id, parent);
     }
 
     void publish_item(const TimeSeriesRuntimeType &runtime_type, item_id_t id) const {
         auto *path = add_path(runtime_type, id);
-        publish_output_path(path);
-        release_output_path(path);
+        details::publish_output_path(path);
+        details::release_output_path(path);
     }
 
     EvaluationContext &context() const noexcept {
         if (auto *evaluation_context = owner_.get<EvaluationContext>()) {
             return *evaluation_context;
         }
-        return output_path_context(owner_.get<OutputPath>());
+        return details::output_path_context(owner_.get<details::OutputPath>());
     }
+
+    bg::allocator &allocator() const noexcept { return details::current_scalar_allocator(); }
 
   private:
     void publish_containing_collections() const noexcept {
-        if (auto *path = owner_.get<OutputPath>()) {
-            publish_output_path(path);
+        if (auto *path = owner_.get<details::OutputPath>()) {
+            details::publish_output_path(path);
         }
     }
 
@@ -112,12 +115,18 @@ class OutputState {
     util::tagged_ptr<const TimeSeriesRuntimeType, 2, TimeSeriesGuarantee> runtime_type_{};
     const TimeSeriesState *last_updated_{&initial_time_series_state};
     const void *data_{};
-    util::variant_ptr_with_alignment<4, OutputPath, EvaluationContext, const EvaluationTime> owner_{&MIN_DT};
+    util::variant_ptr_with_alignment<4, details::OutputPath, EvaluationContext, const EvaluationTime> owner_{&MIN_DT};
 };
 
 static_assert(sizeof(OutputState) == 4 * sizeof(void *));
 static_assert(alignof(TimeSeriesRuntimeType) >= 4);
 static_assert(alignof(EvaluationContext) >= 4);
 static_assert(alignof(EvaluationTime) >= 4);
+
+} // namespace bg
+
+namespace bg::details {
+
+using ::bg::OutputState;
 
 } // namespace bg::details

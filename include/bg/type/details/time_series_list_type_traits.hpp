@@ -42,7 +42,7 @@ struct declaration_variable_traits<TSL<Item, Size, Properties...>> {
             using Declaration = std::remove_cv_t<decltype(Size)>;
             visitor.template operator()<Declaration>(size_variable_instance<Size>());
         }
-        (for_each_property_variable<Properties>(visitor), ...);
+        time_series_properties<Properties...>::for_each_variable(std::forward<Visitor>(visitor));
     }
 };
 

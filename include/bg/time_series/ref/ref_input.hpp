@@ -75,6 +75,9 @@ class In<REF<Target, TimeSeriesProperties...>, Properties...>
        bool modified = false, bool *activity = nullptr) noexcept
         : activity_control{activity}, data_{runtime_type, last_updated, value, modified} {}
 
+    explicit In(const TimeSeriesInputData &data, bool *activity = nullptr) noexcept
+        : activity_control{activity}, data_{data} {}
+
     In(const TimeSeriesState &last_updated, details::ReferenceBinding binding, const TimeSeriesRuntimeType &runtime_type,
        bool modified = false, bool *activity = nullptr) noexcept
         : activity_control{activity}, data_{runtime_type, last_updated, &binding.value(), modified}, binding_{binding} {

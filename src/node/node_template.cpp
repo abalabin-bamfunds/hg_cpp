@@ -102,6 +102,14 @@ std::optional<WiringPoint> NodeTemplate::wire(GraphWiring &wiring, ResolvedSigna
         }
     }
 
+    const auto *selected_output_runtime_type = static_cast<const TimeSeriesRuntimeType *>(nullptr);
+    if (has_output) {
+        selected_output_runtime_type = output_runtime_type(signature);
+        if (selected_output_runtime_type != nullptr && &selected_output_runtime_type->type() != signature.output) {
+            throw WiringError{"a selected output runtime type has a different semantic type"};
+        }
+    }
+
     auto scalar_values = std::vector<WiredScalar>{};
     scalar_values.reserve(materialized_arguments.size() - inputs.size());
     auto release_scalars = util::scope_exit{[&]() noexcept { wiring.destroy_scalars(scalar_values); }};
@@ -154,8 +162,8 @@ std::optional<WiringPoint> NodeTemplate::wire(GraphWiring &wiring, ResolvedSigna
         return std::nullopt;
     }
 
-    const auto output =
-        wiring.register_output({node_index, WiredOutput::npos, 0, wiring.nodes().back().signature().output});
+    const auto output = wiring.register_output(
+        {node_index, WiredOutput::npos, 0, wiring.nodes().back().signature().output, selected_output_runtime_type});
     wiring.register_node_output(node_index, output, hash);
     return output;
 }

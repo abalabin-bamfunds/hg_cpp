@@ -176,10 +176,10 @@ template <typename CompiledData = void, typename State = void> class NodeInvocat
             }
         }
         const auto input = runtime_node.input_data(parameter_index);
-        return Input{*input.last_updated, input.value,
-                     runtime_node.time_series_input_runtime_type(parameter_index, runtime_type_index),
-                     input.last_updated->valid() && input.last_updated->time() == context_->evaluation_time(),
-                     activity};
+        const auto data = TimeSeriesInputData{
+            runtime_node.time_series_input_runtime_type(parameter_index, runtime_type_index), *input.last_updated,
+            input.value, input.last_updated->valid() && input.last_updated->time() == context_->evaluation_time()};
+        return Input{data, activity};
     }
 
     NodeInvocationScalar scalar(std::size_t parameter_index, std::size_t runtime_type_index) const noexcept {
@@ -187,16 +187,12 @@ template <typename CompiledData = void, typename State = void> class NodeInvocat
                 node_->node_invocation_time_series_input_count()};
     }
 
-    template <typename TimeSeries> Out<TimeSeries> output() const {
+    template <typename TimeSeries, OutputSpecification Specification = OutputSpecification::default_>
+    Out<TimeSeries, Specification> output() const {
         const auto runtime_node = Node{*node_, runtime_storage_};
-        if constexpr (!details::generic_time_series<TimeSeries> && !details::is_time_series_bundle<TimeSeries>) {
-            auto &value = *static_cast<typename Out<TimeSeries>::storage_type *>(runtime_node.output_value());
-            return details::output_factory::make<TimeSeries>(runtime_node.output_last_updated(), value, *context_);
-        } else {
-            return details::output_factory::make<TimeSeries>(runtime_node.output_last_updated(),
-                                                             runtime_node.output_value(),
-                                                             node_->node_invocation_output_runtime_type(), *context_);
-        }
+        return details::output_factory::make<TimeSeries, Specification>(
+            runtime_node.output_last_updated(), runtime_node.output_value(), node_->node_invocation_output_runtime_type(),
+            *context_);
     }
 
     void initialize_output_reference(details::RootReference &reference) const noexcept {

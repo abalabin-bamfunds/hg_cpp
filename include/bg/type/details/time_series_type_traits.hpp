@@ -24,18 +24,23 @@ template <typename TimeSeries> struct time_series_type_traits {
     static constexpr bool supported = time_series_variable<TimeSeries>;
 };
 
-template <typename T>
-concept generic_time_series = time_series_type_traits<std::remove_cv_t<T>>::generic;
+} // namespace bg::details
+
+namespace bg {
+
+// Maps a C++ time series declaration to its semantic type. Providers specialize this trait for their declarations.
+template <typename TimeSeries>
+struct time_series_type_traits : details::time_series_type_traits<std::remove_cv_t<TimeSeries>> {};
+
+} // namespace bg
+
+namespace bg::details {
 
 template <typename T>
-concept supported_time_series = time_series_type_traits<std::remove_cv_t<T>>::supported;
+concept generic_time_series = ::bg::time_series_type_traits<std::remove_cv_t<T>>::generic;
 
-template <auto Property, typename Visitor> void for_each_property_variable(Visitor &&visitor) {
-    if constexpr (guarantee_variable_declaration<decltype(Property)>) {
-        using Declaration = std::remove_cv_t<decltype(Property)>;
-        std::forward<Visitor>(visitor).template operator()<Declaration>(guarantee_variable_instance<Property>());
-    }
-}
+template <typename T>
+concept supported_time_series = ::bg::time_series_type_traits<std::remove_cv_t<T>>::supported;
 
 template <typename Scope, std::size_t Index, bool Input, typename TimeSeries>
 [[nodiscard]] const TimeSeriesType &time_series_type_for(GuaranteeParameter inherited_guarantee) {
@@ -52,13 +57,13 @@ template <typename Scope, std::size_t Index, bool Input, typename TimeSeries>
             }
         }();
 
-        return time_series_type_traits<Type>::template get<Scope, Index, Input>(guarantee);
+        return ::bg::time_series_type_traits<Type>::template get<Scope, Index, Input>(guarantee);
     }
 }
 
 template <typename Declaration> decltype(auto) time_series_type_access<Declaration>::type() {
     static_assert(supported_time_series<Declaration>, "unsupported time series declaration");
-    using SemanticType = typename time_series_type_traits<Declaration>::semantic_type;
+    using SemanticType = typename ::bg::time_series_type_traits<Declaration>::semantic_type;
     return static_cast<const SemanticType &>(
         time_series_type_for<Declaration, 0, false, Declaration>(TimeSeriesGuarantee::ordinary));
 }

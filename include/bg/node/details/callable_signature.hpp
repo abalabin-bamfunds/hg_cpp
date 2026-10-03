@@ -30,12 +30,15 @@ consteval bool callable_fields_supported(std::index_sequence<Index...>) {
 }
 
 template <typename Function, std::size_t... Index>
-auto callable_output(std::index_sequence<Index...>) -> typename first_output_time_series<
-    typename output_field<callable_field<Function, Index>>::time_series_type...>::type;
+auto callable_output_declaration(std::index_sequence<Index...>) -> typename first_output<
+    typename output_field<callable_field<Function, Index>>::output_type...>::type;
 
 template <typename Function>
-using callable_output_t =
-    decltype(callable_output<Function>(std::make_index_sequence<callable<Function>::argument_count>{}));
+using callable_output_declaration_t =
+    decltype(callable_output_declaration<Function>(std::make_index_sequence<callable<Function>::argument_count>{}));
+
+template <typename Function>
+using callable_output_t = typename output_field<callable_output_declaration_t<Function>>::time_series_type;
 
 template <typename Scope, typename Function, std::size_t Index>
 const TimeSeriesType &callable_input_type(util::symbol name) {

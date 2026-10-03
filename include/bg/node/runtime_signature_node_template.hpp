@@ -216,6 +216,19 @@ class RuntimeSignatureNodeTemplate final
     }
 
     bool uses_output_runtime_type() const noexcept override { return definition_.signature().has_output(); }
+
+    const TimeSeriesRuntimeType *output_runtime_type(const ResolvedSignature &signature) const override {
+        if constexpr (requires { typename Definition::output_declaration_type; }) {
+            using Output = typename Definition::output_declaration_type;
+            if constexpr (!std::same_as<Output, void>) {
+                using Field = output_declaration_traits<Output>;
+                return &time_series_output_traits<typename Field::time_series_type, Field::specification>::runtime(
+                    *signature.output);
+            }
+        }
+        return nullptr;
+    }
+
     bool uses_node_invocation() const noexcept override { return true; }
 
     bool uses_timed_scheduling() const noexcept override {
