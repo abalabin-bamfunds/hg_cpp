@@ -4,6 +4,7 @@
 #include <bg/evaluation_context.hpp>
 #include <bg/global_state.hpp>
 #include <bg/graph/compiled_graph.hpp>
+#include <bg/graph/dynamic_node_subscriber.hpp>
 #include <bg/graph/node.hpp>
 #include <bg/graph/runtime_graph_owner.hpp>
 
@@ -72,6 +73,14 @@ class RuntimeGraph {
     void add_cycle_callback(void *receiver, void (*function)(void *) noexcept);
     void remove_cycle_callback(const void *receiver) noexcept;
     void notify_dynamic_subscribers(details::DynamicSubscribers &subscribers, OutputChange change);
+    void notify_dynamic_subscriber(const details::DynamicNodeSubscriber &subscriber, OutputChange change) noexcept {
+        auto active = subscriber.active();
+        if (subscriber.controlled_activity()) {
+            active = dynamic_input_active(subscriber.input_offset);
+        }
+        notify_node_subscriber(subscriber.node_index(), active, subscriber.required(), active && !subscriber.required(),
+                               change);
+    }
 
   private:
     using ScheduleWord = CompiledGraph::ScheduleWord;
@@ -104,6 +113,7 @@ class RuntimeGraph {
     void notify_subscribers(std::span<const Subscriber> subscribers, OutputChange change);
     void notify_node_subscriber(std::size_t node_index, bool active, bool required, bool active_optional,
                                 OutputChange change) noexcept;
+    bool dynamic_input_active(std::uint32_t input_offset) const noexcept;
     void queue_input_notification(InputNotificationFunction function, std::size_t node_index, std::size_t data,
                                   OutputChange change);
     void run_input_notifications();

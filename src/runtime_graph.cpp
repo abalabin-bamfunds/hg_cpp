@@ -825,6 +825,12 @@ void RuntimeGraph::notify_dynamic_subscribers(details::DynamicSubscribers &subsc
     });
 }
 
+bool RuntimeGraph::dynamic_input_active(std::uint32_t input_offset) const noexcept {
+    // Compilation places the dynamic activity byte directly after the reference input storage.
+    const auto activity_offset = input_offset + sizeof(ReferenceInputStorage);
+    return *reinterpret_cast<const bool *>(storage_ + activity_offset);
+}
+
 void RuntimeGraph::queue_input_notification(InputNotificationFunction function, std::size_t node_index,
                                             std::size_t data, OutputChange change) {
     if (pending_input_notifications_ == nullptr) {

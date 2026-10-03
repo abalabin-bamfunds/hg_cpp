@@ -1,6 +1,7 @@
 #pragma once
 
 #include <bg/evaluation_time.hpp>
+#include <bg/graph/dynamic_node_subscriber.hpp>
 #include <bg/time_series/time_series_state.hpp>
 #include <bg/time_series/item_id.hpp>
 #include <bg/util/tagged_ptr.hpp>
@@ -34,10 +35,21 @@ using Reference = util::variant_ptr_with_alignment<alignof(void *), details::Roo
 
 namespace details {
 
-// Stores direct root notifications until a provider is required. The provider
-// then owns the notifications and representation state for this root.
-using RootReferenceNotificationStorage =
-    util::variant_ptr_with_alignment<alignof(void *), DynamicSubscribers, ReferenceProvider>;
+// The destination tag distinguishes inline, allocated, and provider-owned
+// notification state without adding work to the compiled-node lookup.
+struct RootNotifications {
+    using Destination =
+        util::variant_ptr_with_alignment<alignof(void *), RuntimeGraph, DynamicSubscribers, ReferenceProvider>;
+
+    DynamicNodeSubscriber inline_subscriber() const noexcept {
+        assert(destination.holds<RuntimeGraph>());
+        return DynamicNodeSubscriber{*destination.get<RuntimeGraph>(), input_offset, node_and_flags};
+    }
+
+    Destination destination;
+    std::uint32_t input_offset{};
+    std::uint32_t node_and_flags{};
+};
 
 struct ResolvedTimeSeries {
     static ResolvedTimeSeries resolve(Reference reference);
@@ -165,19 +177,57 @@ struct RootReference {
 
     bool references_output() const noexcept { return (node_and_output_flag_ & output_flag) != 0; }
 
+    bool has_inline_subscriber() const noexcept { return notifications_.destination.holds<RuntimeGraph>(); }
+    bool has_dynamic_subscribers() const noexcept { return notifications_.destination.holds<DynamicSubscribers>(); }
+    bool has_provider() const noexcept { return notifications_.destination.holds<ReferenceProvider>(); }
+
+    RootNotifications::Destination notification_destination() const noexcept { return notifications_.destination; }
+
+    DynamicNodeSubscriber inline_subscriber() const noexcept { return notifications_.inline_subscriber(); }
+
+    DynamicSubscribers *dynamic_subscribers() const noexcept {
+        return notifications_.destination.get<DynamicSubscribers>();
+    }
+
+    ReferenceProvider *provider() const noexcept { return notifications_.destination.get<ReferenceProvider>(); }
+
+    void set_inline_subscriber(DynamicNodeSubscriber subscriber) noexcept {
+        assert(!notifications_.destination);
+        notifications_.input_offset = subscriber.input_offset;
+        notifications_.node_and_flags = subscriber.node_and_flags;
+        notifications_.destination = subscriber.graph;
+    }
+
+    void set_dynamic_subscribers(DynamicSubscribers *subscribers) noexcept {
+        assert(subscribers != nullptr);
+        assert(!notifications_.destination || has_inline_subscriber());
+        notifications_.destination = subscribers;
+    }
+
+    void set_provider(ReferenceProvider &provider) noexcept {
+        assert(!notifications_.destination || has_dynamic_subscribers());
+        notifications_.destination = &provider;
+    }
+
+    DynamicSubscribers &promote_subscribers();
+
+    void clear_notifications() noexcept { notifications_.destination = nullptr; }
+
     RuntimeGraph *owner_graph{};
     const TimeSeriesRuntimeType *referenced_runtime_type{};
-    RootReferenceNotificationStorage subscribers_or_provider;
 
   private:
     void set_node(const CompiledNode &node, bool output) noexcept {
         const auto address = reinterpret_cast<std::uintptr_t>(&node);
         assert((address & output_flag) == 0);
+        assert(!notifications_.destination);
         node_and_output_flag_ = address | static_cast<std::uintptr_t>(output);
     }
 
     static constexpr auto output_flag = std::uintptr_t{1};
+
     std::uintptr_t node_and_output_flag_{};
+    RootNotifications notifications_;
 };
 
 static_assert(sizeof(ResolvedTimeSeries) == 3 * sizeof(void *));
@@ -185,7 +235,8 @@ static_assert(sizeof(ItemNotificationDescriptor) == sizeof(void *));
 static_assert(sizeof(ReferenceSubscriptionDetail) == 3 * sizeof(std::uint32_t));
 static_assert(sizeof(ItemReference) == 3 * sizeof(void *));
 static_assert(sizeof(RepresentationReference) == 3 * sizeof(void *));
-static_assert(sizeof(RootReference) == 4 * sizeof(void *));
+static_assert(sizeof(RootNotifications) == 2 * sizeof(void *));
+static_assert(sizeof(RootReference) == 5 * sizeof(void *));
 static_assert(sizeof(Reference) == sizeof(void *));
 static_assert(std::is_trivially_copyable_v<ReferenceSubscriptionDetail>);
 static_assert(std::is_trivially_copyable_v<ItemReference>);

@@ -14,7 +14,7 @@
 TEST_CASE("a time series reference value is one pointer",
           "[value][time-series][reference][feature:time-series-storage]") {
     STATIC_CHECK(sizeof(bg::Reference) == sizeof(void *));
-    STATIC_CHECK(sizeof(bg::details::RootReference) == 4 * sizeof(void *));
+    STATIC_CHECK(sizeof(bg::details::RootReference) == 5 * sizeof(void *));
 
     const auto &reference_type = bg::REF<bg::TS<bg::i64>>::type();
     const auto &runtime_type = bg::time_series_reference_runtime_type(reference_type);

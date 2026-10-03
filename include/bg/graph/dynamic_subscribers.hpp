@@ -1,6 +1,7 @@
 #pragma once
 
 #include <bg/allocator.hpp>
+#include <bg/graph/dynamic_node_subscriber.hpp>
 #include <bg/graph/output_notification.hpp>
 #include <bg/util/adaptive_set.hpp>
 
@@ -18,39 +19,6 @@ namespace bg {
 class RuntimeGraph;
 
 namespace details {
-
-struct DynamicNodeSubscriber {
-    DynamicNodeSubscriber(RuntimeGraph &target_graph, std::uint32_t input_offset, std::uint32_t node_index, bool active,
-                          bool required, bool controlled_activity) noexcept
-        : graph{&target_graph}, input_offset{input_offset},
-          node_and_flags{node_index | (active ? active_flag : 0) | (required ? required_flag : 0) |
-                         (active && !required ? active_optional_flag : 0) |
-                         (controlled_activity ? controlled_activity_flag : 0)} {}
-
-    std::size_t node_index() const noexcept { return node_and_flags & node_index_mask; }
-    bool active() const noexcept { return (node_and_flags & active_flag) != 0; }
-    bool required() const noexcept { return (node_and_flags & required_flag) != 0; }
-    bool active_optional() const noexcept { return (node_and_flags & active_optional_flag) != 0; }
-    bool controlled_activity() const noexcept { return (node_and_flags & controlled_activity_flag) != 0; }
-
-    struct Identity {
-        RuntimeGraph *graph;
-        std::uint32_t input_offset;
-    };
-
-    Identity identity() const noexcept { return {graph, input_offset}; }
-
-    RuntimeGraph *graph;
-    std::uint32_t input_offset;
-    std::uint32_t node_and_flags;
-
-  private:
-    static constexpr std::uint32_t active_flag = std::uint32_t{1} << 31;
-    static constexpr std::uint32_t required_flag = std::uint32_t{1} << 30;
-    static constexpr std::uint32_t active_optional_flag = std::uint32_t{1} << 29;
-    static constexpr std::uint32_t controlled_activity_flag = std::uint32_t{1} << 28;
-    static constexpr std::uint32_t node_index_mask = controlled_activity_flag - 1;
-};
 
 struct DynamicNodeSubscriberHash {
     std::size_t operator()(const DynamicNodeSubscriber &subscriber) const noexcept {
@@ -131,13 +99,14 @@ struct DynamicSubscribers {
     void add(RuntimeGraph &graph, std::uint32_t input_offset, std::size_t data, std::uint32_t node_index, bool active,
              bool required, InputNotificationFunction input_function = nullptr, bool controlled_activity = false) {
         if (active || required || controlled_activity) {
-            node_subscribers_.insert(
-                DynamicNodeSubscriber{graph, input_offset, node_index, active, required, controlled_activity}, memory_);
+            add(DynamicNodeSubscriber{graph, input_offset, node_index, active, required, controlled_activity});
         }
         if (input_function != nullptr) {
             input_subscribers().records.emplace_back(graph, input_offset, data, node_index, input_function);
         }
     }
+
+    void add(DynamicNodeSubscriber subscriber) { node_subscribers_.insert(subscriber, memory_); }
 
     void remove(RuntimeGraph &graph, std::size_t input_offset) noexcept {
         node_subscribers_.erase(DynamicNodeSubscriber::Identity{&graph, static_cast<std::uint32_t>(input_offset)},
@@ -237,7 +206,6 @@ struct DynamicSubscribers {
     Observers *observers_{};
 };
 
-static_assert(sizeof(DynamicNodeSubscriber) == 2 * sizeof(void *));
 static_assert(sizeof(DynamicInputSubscriber) == 4 * sizeof(void *));
 static_assert(sizeof(RuntimeObserver) == 3 * sizeof(void *));
 

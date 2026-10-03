@@ -1,3 +1,4 @@
+#include <bg/graph/dynamic_subscribers.hpp>
 #include <bg/node.hpp>
 #include <bg/run_graph.hpp>
 #include <bg/testing/test_graph.hpp>
@@ -111,8 +112,8 @@ TEST_CASE("reference provider access preserves lazy allocation",
     runtime.evaluate(bg::MIN_DT + std::chrono::microseconds{2});
 
     auto &root = *static_cast<bg::details::RootReference *>(runtime.node(1).state());
-    CHECK(root.subscribers_or_provider.holds<bg::details::DynamicSubscribers>());
-    CHECK_FALSE(root.subscribers_or_provider.holds<bg::details::ReferenceProvider>());
+    CHECK(root.has_inline_subscriber());
+    CHECK_FALSE(root.has_provider());
 
     const auto reference = bg::Reference{&root};
     CHECK(bg::details::ReferenceProvider::get({}) == nullptr);
@@ -120,8 +121,40 @@ TEST_CASE("reference provider access preserves lazy allocation",
 
     auto &provider = bg::details::ReferenceProvider::require(reference);
     CHECK(bg::details::ReferenceProvider::get(reference) == &provider);
+    CHECK(root.has_provider());
 
     runtime.stop();
+}
+
+TEST_CASE("a second root subscriber promotes inline storage",
+          "[evaluation][reference][feature:reference][series:value][scalar:integer]"
+          "[binding:value-to-reference][binding:reference-to-value][shape:fan-out]") {
+    auto wiring = bg::GraphWiring{};
+    const auto compiled = bg::CompiledGraph{wiring};
+    auto runtime = bg::RuntimeGraph{compiled};
+    auto root = bg::details::RootReference{};
+    root.owner_graph = &runtime;
+    const auto reference = bg::Reference{&root};
+
+    bg::details::ReferenceProvider::add_subscriber(reference, runtime, 0, 0, 0, true, false);
+
+    CHECK(root.has_inline_subscriber());
+
+    bg::details::ReferenceProvider::remove_subscriber(reference, runtime, 0);
+
+    CHECK_FALSE(root.has_inline_subscriber());
+    CHECK_FALSE(root.has_dynamic_subscribers());
+
+    bg::details::ReferenceProvider::add_subscriber(reference, runtime, 0, 0, 0, true, false);
+    bg::details::ReferenceProvider::add_subscriber(reference, runtime, 8, 0, 1, true, false);
+
+    CHECK_FALSE(root.has_inline_subscriber());
+    CHECK(root.has_dynamic_subscribers());
+    auto subscriber_count = std::size_t{};
+    root.dynamic_subscribers()->for_each_node_subscriber([&](const auto &) { ++subscriber_count; });
+    CHECK(subscriber_count == 2);
+
+    bg::details::ReferenceProvider::finalize_root(root, runtime.allocation());
 }
 
 namespace {

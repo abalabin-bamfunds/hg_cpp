@@ -115,6 +115,11 @@ representations and subscriber groups. A subscriber identifies a receiving
 runtime graph, node, and input slot. It updates the input and applies the
 input's activity and validity rules.
 
+A root reference stores its first node subscriber directly. A second node
+subscriber or an input callback promotes the root to an allocated subscriber
+collection. Creating a representation promotes the root to a provider, which
+retains any existing subscribers.
+
 An observer connects one runtime reference object to another without adding a
 node evaluation. Representations and item selections use observers to maintain
 their own state before they notify their subscribers.
