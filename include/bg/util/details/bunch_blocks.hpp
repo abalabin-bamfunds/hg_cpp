@@ -1,5 +1,7 @@
 #pragma once
 
+#include <bg/util/storage_block.hpp>
+
 #include <algorithm>
 #include <bit>
 #include <cassert>
@@ -114,6 +116,21 @@ template <typename T, std::uint32_t InitialElements = 8> class bunch_blocks {
         const auto &current = block_at(block_index);
 
         return current.data == nullptr ? nullptr : current.data + offset;
+    }
+
+    ::bg::util::storage_block block_containing(size_type position) const noexcept {
+        const auto [block_index, offset] = locate(position);
+        const auto first = static_cast<std::uint64_t>(position) - offset;
+        const auto end = std::min(first + block_capacity(block_index),
+                                  static_cast<std::uint64_t>(std::numeric_limits<size_type>::max()) + 1);
+        const auto *data = static_cast<const T *>(nullptr);
+        if (block_index == 0) {
+            data = first_.data;
+        } else if (block_index <= additional_size_) {
+            data = additional_[block_index - 1].data;
+        }
+
+        return {first, end, data};
     }
 
     [[nodiscard]] T *ensure(size_type position, std::pmr::memory_resource &memory) {

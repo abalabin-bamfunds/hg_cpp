@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <limits>
 #include <stdexcept>
+#include <utility>
 #include <vector>
 
 TEST_CASE("an occupancy index allocates and reuses positions", "[occupancy_index][coverage-exempt]") {
@@ -95,6 +96,44 @@ TEST_CASE("an occupancy index retains its state when allocation fails", "[occupa
     CHECK(index.size() == 1);
     CHECK(index.contains(1));
     CHECK_FALSE(index.contains(1'000));
+
+    index.release(memory);
+    CHECK(memory.allocations() == 0);
+}
+
+TEST_CASE("an occupancy index enumerates live position runs", "[occupancy_index][coverage-exempt]") {
+    auto memory = counting_memory_resource{};
+    auto index = bg::util::occupancy_index{};
+    auto run_count = std::size_t{};
+
+    index.for_each_run([&](std::uint32_t, std::uint32_t) { ++run_count; });
+    CHECK(run_count == 0);
+
+    for (auto position = std::uint32_t{}; position != 70; ++position) {
+        REQUIRE(index.set(position, memory));
+    }
+
+    auto runs = std::array<std::pair<std::uint32_t, std::uint32_t>, 4>{};
+    index.for_each_run([&](std::uint32_t first, std::uint32_t end) { runs[run_count++] = {first, end}; });
+    REQUIRE(run_count == 1);
+    CHECK(runs[0] == std::pair{std::uint32_t{0}, std::uint32_t{70}});
+
+    for (const auto position : std::array{std::uint32_t{1}, std::uint32_t{2}, std::uint32_t{67}, std::uint32_t{68}}) {
+        REQUIRE(index.reset(position));
+    }
+    for (const auto position : std::array{std::uint32_t{127}, std::uint32_t{128}}) {
+        REQUIRE(index.set(position, memory));
+    }
+
+    run_count = 0;
+    const auto allocations = memory.allocations();
+    index.for_each_run([&](std::uint32_t first, std::uint32_t end) { runs[run_count++] = {first, end}; });
+    CHECK(memory.allocations() == allocations);
+    REQUIRE(run_count == 4);
+    CHECK(runs[0] == std::pair{std::uint32_t{0}, std::uint32_t{1}});
+    CHECK(runs[1] == std::pair{std::uint32_t{3}, std::uint32_t{67}});
+    CHECK(runs[2] == std::pair{std::uint32_t{69}, std::uint32_t{70}});
+    CHECK(runs[3] == std::pair{std::uint32_t{127}, std::uint32_t{129}});
 
     index.release(memory);
     CHECK(memory.allocations() == 0);

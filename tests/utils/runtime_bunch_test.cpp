@@ -1,13 +1,17 @@
 #include <bg/util/occupancy_index.hpp>
 #include <bg/util/runtime_bunch.hpp>
 
+#include "counting_memory_resource.hpp"
+
 #include <catch2/catch_test_macros.hpp>
 
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <memory_resource>
 #include <stdexcept>
+#include <type_traits>
 #include <vector>
 
 namespace {
@@ -18,6 +22,7 @@ struct alignas(32) item {
 };
 
 constexpr auto item_layout = bg::util::runtime_item_layout{sizeof(item), alignof(item)};
+constexpr auto byte_layout = bg::util::runtime_item_layout{sizeof(std::byte), alignof(std::byte)};
 
 } // namespace
 
@@ -68,4 +73,41 @@ TEST_CASE("a runtime bunch releases storage after construction fails", "[util][b
                     std::runtime_error);
     CHECK(bunch.empty());
     CHECK(bunch.allocated_block_count() == 0);
+}
+
+TEST_CASE("a runtime sparse bunch exposes raw storage block bounds", "[util][bunch][coverage-exempt]") {
+    auto memory = counting_memory_resource{};
+    auto bunch = bg::util::runtime_sparse_bunch{};
+
+    const auto first = bunch.block_containing(8, item_layout);
+    const auto capped = bunch.block_containing(8'184, item_layout);
+    const auto last = bunch.block_containing(std::numeric_limits<std::uint32_t>::max(), byte_layout);
+    static_assert(std::is_same_v<decltype(first.data), const void *>);
+
+    CHECK(first.first == 8);
+    CHECK(first.end == 24);
+    CHECK(first.data == nullptr);
+    CHECK(capped.first == 8'184);
+    CHECK(capped.end == 16'376);
+    CHECK(capped.data == nullptr);
+    CHECK(last.first <= std::numeric_limits<std::uint32_t>::max());
+    CHECK(last.end == std::uint64_t{std::numeric_limits<std::uint32_t>::max()} + 1);
+    CHECK(last.data == nullptr);
+    CHECK(memory.allocations() == 0);
+
+    auto *item_storage = bunch.emplace_at_with(
+        8, item_layout, memory, [](void *storage) { std::construct_at(static_cast<item *>(storage), item{42}); });
+    const auto allocated = bunch.block_containing(8, item_layout);
+    CHECK(allocated.data == item_storage);
+
+    const auto allocations = memory.allocations();
+    CHECK(bunch.block_containing(9, item_layout).data == allocated.data);
+    CHECK(memory.allocations() == allocations);
+
+    bunch.erase_at_with(8, item_layout, memory,
+                        [](void *storage) noexcept { std::destroy_at(static_cast<item *>(storage)); });
+    CHECK(bunch.block_containing(8, item_layout).data == nullptr);
+
+    bunch.release(item_layout, memory);
+    CHECK(memory.allocations() == 0);
 }

@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <functional>
 #include <limits>
 #include <memory_resource>
 #include <stdexcept>
@@ -83,6 +84,16 @@ class occupancy_index {
     bool dense() const noexcept { return count_ == positions_.size(); }
     size_type extent() const noexcept { return positions_.size(); }
     size_type capacity() const noexcept { return positions_.capacity(); }
+
+    // Calls function with each [first, end) live position run. The callback must not mutate this index.
+    template <typename Function> void for_each_run(Function &&function) const {
+        auto first = positions_.first_set();
+        while (first != positions_.size()) {
+            const auto end = positions_.first_unset(first);
+            std::invoke(function, first, end);
+            first = positions_.first_set(end);
+        }
+    }
 
     void swap(occupancy_index &other) noexcept {
         positions_.swap(other.positions_);

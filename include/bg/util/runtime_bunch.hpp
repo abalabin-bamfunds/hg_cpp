@@ -2,6 +2,7 @@
 
 #include <bg/util/byte_copy.hpp>
 #include <bg/util/scope_exit.hpp>
+#include <bg/util/storage_block.hpp>
 
 #include <algorithm>
 #include <bit>
@@ -84,6 +85,21 @@ class runtime_bunch_blocks {
         const auto &current = block_at(block_index);
 
         return current.data == nullptr ? nullptr : current.data + offset * layout.size;
+    }
+
+    ::bg::util::storage_block block_containing(size_type position, const runtime_item_layout &layout) const noexcept {
+        const auto [block_index, offset] = locate(position, layout);
+        const auto first = static_cast<std::uint64_t>(position) - offset;
+        const auto end = std::min(first + block_capacity(block_index, layout),
+                                  static_cast<std::uint64_t>(std::numeric_limits<size_type>::max()) + 1);
+        const auto *data = static_cast<const std::byte *>(nullptr);
+        if (block_index == 0) {
+            data = first_.data;
+        } else if (block_index <= additional_size_) {
+            data = additional_[block_index - 1].data;
+        }
+
+        return {first, end, data};
     }
 
     [[nodiscard]] void *ensure(size_type position, const runtime_item_layout &layout,
@@ -310,6 +326,7 @@ class runtime_contiguous_bunch {
 class runtime_sparse_bunch {
   public:
     using size_type = std::uint32_t;
+    using storage_block = ::bg::util::storage_block;
     static constexpr bool supports_byte_copy_initialization = true;
 
     template <typename Constructor>
@@ -354,6 +371,10 @@ class runtime_sparse_bunch {
 
     const void *get(size_type position, const runtime_item_layout &layout) const noexcept {
         return blocks_.get(position, layout);
+    }
+
+    storage_block block_containing(size_type position, const runtime_item_layout &layout) const noexcept {
+        return blocks_.block_containing(position, layout);
     }
 
     size_type allocated_block_count() const noexcept { return blocks_.allocated_block_count(); }

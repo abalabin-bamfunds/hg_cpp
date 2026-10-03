@@ -7,7 +7,9 @@
 
 #include <array>
 #include <cstdint>
+#include <limits>
 #include <string>
+#include <type_traits>
 
 TEST_CASE("sparse bunches share one occupancy index", "[sparse_bunch][coverage-exempt]") {
     auto memory = counting_memory_resource{};
@@ -136,5 +138,50 @@ TEST_CASE("a sparse bunch releases a constructed prefix", "[sparse_bunch][covera
 
     values.release_prefix(9, memory);
     CHECK(counted_value::live == 0);
+    CHECK(memory.allocations() == 0);
+}
+
+TEST_CASE("a sparse bunch exposes raw storage block bounds", "[sparse_bunch][coverage-exempt]") {
+    auto memory = counting_memory_resource{};
+    auto positions = bg::util::occupancy_index{};
+    auto values = bg::util::sparse_bunch<std::uint32_t>{};
+
+    const auto first = values.block_containing(7);
+    const auto geometric = values.block_containing(8);
+    const auto capped = values.block_containing(65'528);
+    const auto last = values.block_containing(std::numeric_limits<std::uint32_t>::max());
+    static_assert(std::is_same_v<decltype(first.data), const void *>);
+
+    CHECK(first.first == 0);
+    CHECK(first.end == 8);
+    CHECK(first.data == nullptr);
+    CHECK(geometric.first == 8);
+    CHECK(geometric.end == 24);
+    CHECK(geometric.data == nullptr);
+    CHECK(capped.first == 65'528);
+    CHECK(capped.end == 131'064);
+    CHECK(capped.data == nullptr);
+    CHECK(last.first <= std::numeric_limits<std::uint32_t>::max());
+    CHECK(last.end == std::uint64_t{std::numeric_limits<std::uint32_t>::max()} + 1);
+    CHECK(last.data == nullptr);
+    CHECK(memory.allocations() == 0);
+
+    const auto bytes = bg::util::sparse_bunch<std::byte>{};
+    const auto byte_capped = bytes.block_containing(262'136);
+    CHECK(byte_capped.first == 262'136);
+    CHECK(byte_capped.end == 524'280);
+
+    auto &value = values.emplace_at(8, memory, 42);
+    const auto allocated = values.block_containing(8);
+    CHECK(allocated.data == &value);
+
+    const auto allocations = memory.allocations();
+    CHECK(values.block_containing(9).data == allocated.data);
+    CHECK(memory.allocations() == allocations);
+
+    values.erase_at(8, memory);
+    CHECK(values.block_containing(8).data == nullptr);
+
+    values.release(positions, memory);
     CHECK(memory.allocations() == 0);
 }

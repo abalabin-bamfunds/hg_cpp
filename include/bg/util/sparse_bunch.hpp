@@ -19,6 +19,7 @@ template <typename T, std::uint32_t InitialElements = 8> class sparse_bunch {
   public:
     using size_type = std::uint32_t;
     using const_accessor = typename details::bunch_blocks<T, InitialElements>::const_accessor;
+    using storage_block = ::bg::util::storage_block;
 
     sparse_bunch() = default;
 
@@ -98,6 +99,8 @@ template <typename T, std::uint32_t InitialElements = 8> class sparse_bunch {
     const T &operator[](size_type position) const noexcept { return *blocks_.get(position); }
 
     const_accessor accessor() const noexcept { return blocks_.accessor(); }
+
+    storage_block block_containing(size_type position) const noexcept { return blocks_.block_containing(position); }
 
     size_type allocated_block_count() const noexcept { return blocks_.allocated_block_count(); }
 
