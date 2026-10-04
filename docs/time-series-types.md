@@ -85,23 +85,26 @@ evaluation time; the writer records a change only when its `last_updated()`
 matches that time. This prevents an older invalidation from being recorded
 again when another input causes evaluation. When an input becomes valid or
 revalidates, the record stores a snapshot; other records store only changes.
-Provider capture handlers receive the snapshot flag. Scalar payloads are owned
+Provider write handlers receive the snapshot flag. Scalar payloads are owned
 by the record until replay or discard.
 
 The built-in writer supports value, fixed-list, bundle, set, and dictionary time
 series. It does not support references. TSS and TSD themselves cannot be
 invalidated through their output APIs, so such an event cannot be retained.
-Provider-defined time series register capture, replay, and discard handlers
+Provider-defined time series register write, replay, and discard handlers
 with `TimeSeriesTickDispatch`; the dispatch object must outlive its writer and
-reader. Complete registration before concurrent capture or replay; dispatch
-registration is not synchronized. Handlers read and write directly through the
-tick contexts. Capture receives the provider's `In<Series>` view and the
-snapshot flag. Replay receives its `Out<Series, Specification>` view, including
-the selected output specification. Discard receives the semantic type's record
-format and must consume provider-owned objects. All runtime representations of
-one semantic time series type must use the same record grammar.
+reader. Complete registration before concurrent writes or replay; dispatch
+registration is not synchronized. Write handlers receive the provider's
+`In<Series>` view and a restricted `TimeSeriesTickWriteContext`. Replay and
+discard handlers use `util::buffer_reader`; replay receives its
+`Out<Series, Specification>` view, including the selected output specification.
+Discard receives the semantic type's record format and must destroy provider-
+owned objects. Failed writes discard the complete prefix through that same
+record grammar, so handlers must write records whose completed prefix can be
+discarded. All runtime representations of one semantic time series type must
+use the same write and discard grammar.
 
-A fixed provider scalar type can register typed capture, replay, and discard
+A fixed provider scalar type can register typed write, replay, and discard
 handlers with `TimeSeriesTickDispatch::add_scalar_handlers<T>()`. The handlers
 are selected by semantic scalar type and define one record grammar across its
 runtime representations. Built-in scalar types keep their compact built-in
@@ -111,14 +114,13 @@ unregistered fixed extension types. The scalar view being erased does not imply
 that its semantic type is polymorphic.
 
 The replay handler must call its consumer exactly once with a borrowed scalar
-view whose lifetime covers that call. Capture, replay, and discard must use the
+view whose lifetime covers that call. Write, replay, and discard must use the
 same byte grammar.
 
-The semantic time series type selects the discard handler. Replay registration
-may use a semantic type or a runtime type. For a matching output, the dispatch
-prefers an exact runtime-type handler over a semantic-type handler. A runtime
-registration without a handler for the requested output specification falls
-back to the semantic-type registration.
+The semantic time series type selects the discard handler. Replay handlers are
+registered for an output specification and may be keyed by semantic type or
+runtime representation. Replay first looks for a handler keyed by the output's
+runtime representation, then falls back to one keyed by its semantic type.
 
 Discard handlers must consume valid records without throwing. The reader
 discards unread records during destruction and terminates if that cleanup

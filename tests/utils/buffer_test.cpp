@@ -88,6 +88,43 @@ TEST_CASE("a buffer writer rolls back an uncommitted chain write", "[coverage-ex
     CHECK(reader.readable().empty());
 }
 
+TEST_CASE("rollback cleanup reads an uncommitted chain write across blocks", "[coverage-exempt]") {
+    auto data = bg::util::buffer::chain(8);
+    bg::util::buffer_writer writer{data};
+    const auto committed = std::string_view{"keep"};
+    writer.write_bytes(std::as_bytes(std::span{committed.data(), committed.size()}));
+    writer.commit();
+
+    const auto pending = std::string_view{"this pending payload spans several chain blocks"};
+    writer.write_bytes(std::as_bytes(std::span{pending.data(), pending.size()}));
+
+    auto cleaned_size = std::size_t{};
+    writer.rollback([&](bg::util::buffer_reader &reader) {
+        CHECK_THROWS_AS(reader.fork(), std::logic_error);
+        while (true) {
+            const auto bytes = reader.readable();
+            if (bytes.empty()) {
+                break;
+            }
+
+            cleaned_size += bytes.size();
+            reader.consume(bytes.size());
+        }
+    });
+
+    CHECK(cleaned_size == pending.size());
+
+    const auto next = std::string_view{"next"};
+    writer.write_bytes(std::as_bytes(std::span{next.data(), next.size()}));
+    writer.commit();
+
+    auto reader = bg::util::buffer_reader{data};
+    std::array<char, 8> result{};
+    reader.read_bytes(std::as_writable_bytes(std::span{result}));
+    CHECK(std::string_view{result.data(), result.size()} == "keepnext");
+    CHECK(reader.readable().empty());
+}
+
 TEST_CASE("a buffer writer rolls back an uncommitted contiguous write", "[coverage-exempt]") {
     auto data = bg::util::buffer::contiguous(128);
     bg::util::buffer_writer writer{data};

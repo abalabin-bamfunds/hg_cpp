@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <functional>
 #include <memory>
 #include <span>
 #include <stdexcept>
@@ -19,6 +20,7 @@ namespace bg::util {
 enum class buffer_type { contiguous, single_writer_chain, concurrent_writer_chain };
 
 class buffer_reader;
+class buffer_writer;
 
 class buffer {
   public:
@@ -249,6 +251,9 @@ class buffer_writer {
         position_ = block_.pointer().base_block()->committed.load(std::memory_order_relaxed);
     }
 
+    // Cleanup can inspect the uncommitted prefix only during this synchronous call.
+    template <typename Cleanup> void rollback(Cleanup &&cleanup);
+
     // Writes remain private until commit. Raw bytes may span blocks; a typed object always occupies one block.
     void write_bytes(std::span<const std::byte> bytes) {
         if (bytes.empty()) {
@@ -393,6 +398,8 @@ class buffer_writer {
     details::single_writer_block *pending_tail_{};
     std::size_t position_{};
     std::size_t starting_block_end_{};
+
+    friend class buffer_reader;
 };
 
 class concurrent_buffer_reservation {
@@ -524,12 +531,13 @@ class buffer_reader {
         const auto end = buffer.end_;
         block_ = details::block_reference::adopt(buffer.detach_block());
         if (type == buffer_type::contiguous) {
-            contiguous_ = true;
+            mode_ = mode::contiguous;
             position_ = begin;
             auto *block =
                 block_.pointer().visit([](auto *value) { return static_cast<details::buffer_block *>(value); });
             limit_ = end == 0 ? sizeof(details::buffer_block) + block->capacity : end;
         } else {
+            mode_ = mode::chain;
             position_ = begin;
         }
     }
@@ -538,17 +546,47 @@ class buffer_reader {
     buffer_reader(buffer_reader &&) = delete;
     buffer_reader &operator=(buffer_reader &&) = delete;
 
-    buffer_reader fork() const { return buffer_reader{*this}; }
+    buffer_reader fork() const {
+        if (mode_ == mode::pending_write) {
+            throw std::logic_error{"cannot fork a reader over uncommitted buffer data"};
+        }
+        return buffer_reader{*this};
+    }
 
     std::span<const std::byte> readable() {
-        auto *block = block_.pointer().base_block();
-        if (contiguous_) {
+        if (mode_ == mode::contiguous) {
+            auto *block = block_.pointer().base_block();
             const auto end = std::min(limit_, block->committed.load(std::memory_order_acquire));
             return {block->at(position_), end > position_ ? end - position_ : 0};
         }
 
         while (block_) {
-            block = block_.pointer().base_block();
+            auto *block = block_.pointer().base_block();
+            if (mode_ == mode::pending_write) {
+                const auto &writer = *writer_;
+                const auto *root = writer.block_.pointer().base_block();
+                const auto end = block == root ? (writer.pending_tail_ == nullptr ? writer.position_
+                                                                                 : writer.starting_block_end_)
+                                               : (block == writer.pending_tail_ ? writer.position_
+                                                                                : block_.pointer().sealed_end());
+                if (position_ < end) {
+                    return {block->at(position_), end - position_};
+                }
+                if (writer.pending_tail_ == nullptr || block == writer.pending_tail_) {
+                    return {};
+                }
+
+                const auto next = block == root ? writer.pending_first_.pointer() : block_.pointer().next_block();
+                if (!next) {
+                    return {};
+                }
+
+                next.visit([](auto *value) { value->retain(); });
+                block_ = details::block_reference::adopt(next);
+                position_ = next.data_offset();
+                continue;
+            }
+
             const auto end = block->committed.load(std::memory_order_acquire);
             if (position_ < end) {
                 return {block->at(position_), end - position_};
@@ -578,11 +616,37 @@ class buffer_reader {
     buffer current_block() { return buffer{block_.pointer(), position_, 0}; }
 
     void consume(std::size_t size) {
-        const auto available = readable().size();
-        if (size > available) {
-            throw std::out_of_range{"cannot consume bytes that are not readable"};
+        while (size != 0) {
+            const auto available = readable();
+            if (available.empty()) {
+                throw std::out_of_range{"cannot consume bytes that are not readable"};
+            }
+
+            const auto count = std::min(size, available.size());
+            position_ += count;
+            size -= count;
         }
-        position_ += size;
+    }
+
+    void read_bytes(std::span<std::byte> destination) {
+        while (!destination.empty()) {
+            const auto available = readable();
+            if (available.empty()) {
+                throw std::out_of_range{"buffer reader has insufficient bytes"};
+            }
+
+            const auto count = std::min(destination.size(), available.size());
+            std::memcpy(destination.data(), available.data(), count);
+            position_ += count;
+            destination = destination.subspan(count);
+        }
+    }
+
+    template <typename T> T read_raw() {
+        static_assert(std::is_trivially_copyable_v<T>);
+        auto value = T{};
+        read_bytes(std::as_writable_bytes(std::span{&value, std::size_t{1}}));
+        return value;
     }
 
     template <typename T> const T &peek() {
@@ -615,7 +679,20 @@ class buffer_reader {
 
   private:
     buffer_reader(const buffer_reader &other)
-        : block_{other.block_}, position_{other.position_}, limit_{other.limit_}, contiguous_{other.contiguous_} {}
+        : block_{other.block_}, position_{other.position_}, mode_{other.mode_} {
+        if (mode_ == mode::pending_write) {
+            writer_ = other.writer_;
+        } else {
+            limit_ = other.limit_;
+        }
+    }
+
+    explicit buffer_reader(const buffer_writer &writer)
+        : block_{writer.block_},
+          position_{writer.block_.pointer().base_block()->committed.load(std::memory_order_relaxed)},
+          mode_{mode::pending_write} {
+        writer_ = &writer;
+    }
 
     template <typename T> T *value_at_cursor(std::size_t &end) {
         details::require_supported_alignment(alignof(T));
@@ -630,17 +707,35 @@ class buffer_reader {
         return std::launder(reinterpret_cast<T *>(block->at(begin)));
     }
 
+    enum class mode : std::uint8_t { contiguous, chain, pending_write };
+
     details::block_reference block_;
     std::size_t position_{};
-    std::size_t limit_{};
-    bool contiguous_{};
+    union {
+        std::size_t limit_{};
+        const buffer_writer *writer_;
+    };
+    mode mode_{mode::contiguous};
+
+    friend class buffer_writer;
 };
 
 static_assert(sizeof(buffer_reader) ==
-              ((sizeof(details::block_reference) + 2 * sizeof(std::size_t) + sizeof(bool) +
+              ((sizeof(details::block_reference) + 2 * sizeof(std::size_t) + sizeof(std::uint8_t) +
                 alignof(buffer_reader) - 1) /
                alignof(buffer_reader)) *
                   alignof(buffer_reader));
+
+template <typename Cleanup> void buffer_writer::rollback(Cleanup &&cleanup) {
+    try {
+        auto reader = buffer_reader{*this};
+        std::invoke(std::forward<Cleanup>(cleanup), reader);
+    } catch (...) {
+        rollback();
+        throw;
+    }
+    rollback();
+}
 
 using concurrent_buffer_reader = buffer_reader;
 
