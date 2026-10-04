@@ -71,6 +71,40 @@ TEST_CASE("an unsized write spanning blocks becomes readable on commit", "[cover
     CHECK(reader.readable().empty());
 }
 
+TEST_CASE("a buffer writer rolls back an uncommitted chain write", "[coverage-exempt]") {
+    auto data = bg::util::buffer::chain(16);
+    bg::util::buffer_writer writer{data};
+    writer.write(std::uint64_t{1});
+    writer.commit();
+
+    writer.write_bytes(std::as_bytes(std::span{"abandoned write spanning blocks"}));
+    writer.rollback();
+    writer.write(std::uint64_t{2});
+    writer.commit();
+
+    bg::util::buffer_reader reader{data};
+    CHECK(reader.read<std::uint64_t>() == 1);
+    CHECK(reader.read<std::uint64_t>() == 2);
+    CHECK(reader.readable().empty());
+}
+
+TEST_CASE("a buffer writer rolls back an uncommitted contiguous write", "[coverage-exempt]") {
+    auto data = bg::util::buffer::contiguous(128);
+    bg::util::buffer_writer writer{data};
+    writer.write(std::uint64_t{1});
+    writer.commit();
+
+    writer.write(std::uint64_t{2});
+    writer.rollback();
+    writer.write(std::uint64_t{3});
+    writer.commit();
+
+    bg::util::buffer_reader reader{data};
+    CHECK(reader.read<std::uint64_t>() == 1);
+    CHECK(reader.read<std::uint64_t>() == 3);
+    CHECK(reader.readable().empty());
+}
+
 TEST_CASE("an abandoned unsized write releases private blocks", "[coverage-exempt]") {
     auto memory = counting_memory_resource{};
     {

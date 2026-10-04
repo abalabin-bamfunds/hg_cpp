@@ -24,8 +24,8 @@
 namespace {
 
 struct tick_delay_storage {
-    tick_delay_storage(bg::util::buffer buffer, bg::allocator memory = {})
-        : reader{buffer}, writer{std::move(buffer), memory} {}
+    tick_delay_storage(bg::util::buffer buffer, const bg::TimeSeriesType &type, bg::allocator memory = {})
+        : reader{buffer, type}, writer{std::move(buffer), memory} {}
 
     bg::TimeSeriesTickReader reader;
     bg::TimeSeriesTickWriter writer;
@@ -58,7 +58,7 @@ template <typename SERIES> struct one_tick_delay_definition {
 
     void start(bg::EvaluationContext *context) const {
         auto memory = context->runtime_graph().allocation();
-        *storage = memory.new_object<tick_delay_storage>(bg::util::buffer::chain(256, memory));
+        *storage = memory.new_object<tick_delay_storage>(bg::util::buffer::chain(256, memory), SERIES::type());
     }
 
     void evaluate(bg::EvaluationContext *context) const {
@@ -88,7 +88,7 @@ template <typename SERIES> struct clocked_one_tick_delay_definition {
 
     void start(bg::EvaluationContext *context) const {
         auto memory = context->runtime_graph().allocation();
-        *storage = memory.new_object<tick_delay_storage>(bg::util::buffer::chain(256, memory));
+        *storage = memory.new_object<tick_delay_storage>(bg::util::buffer::chain(256, memory), SERIES::type());
     }
 
     void evaluate(bg::EvaluationContext *context) const {
@@ -170,6 +170,50 @@ struct dictionary_sum_definition {
     }
 };
 
+struct nested_dictionary_sum_definition {
+    bg::In<bg::TSD<bg::i64, bg::TSD<bg::i64, bg::TS<bg::i64>>>> input;
+    bg::Out<bg::TS<bg::i64>> output;
+
+    void evaluate() const {
+        auto sum = bg::i64{};
+        input.for_each_value([&](const auto &inner) {
+            inner.for_each_value([&](const auto &value) {
+                if (value.valid()) {
+                    sum += *value;
+                }
+            });
+        });
+
+        output.set(sum);
+    }
+};
+
+struct set_record_size_definition {
+    bg::In<bg::TSS<bg::i64>> input;
+    bg::Out<bg::TS<bg::i64>> output;
+
+    void evaluate() const {
+        const auto buffer = bg::util::buffer::contiguous(128);
+        auto writer = bg::TimeSeriesTickWriter{buffer};
+        if (writer.write(input, input.last_updated())) {
+            output.set(static_cast<bg::i64>(buffer.bytes().size()));
+        }
+    }
+};
+
+struct dictionary_record_size_definition {
+    bg::In<bg::TSD<bg::i64, bg::TS<bg::i64>>> input;
+    bg::Out<bg::TS<bg::i64>> output;
+
+    void evaluate() const {
+        const auto buffer = bg::util::buffer::contiguous(128);
+        auto writer = bg::TimeSeriesTickWriter{buffer};
+        if (writer.write(input, input.last_updated())) {
+            output.set(static_cast<bg::i64>(buffer.bytes().size()));
+        }
+    }
+};
+
 class allocation_counter : public std::pmr::memory_resource {
   public:
     std::size_t allocations{};
@@ -204,6 +248,87 @@ TEST_CASE("a node can delay time series ticks by one evaluation cycle",
     const auto actual = bg::testing::test_graph(graph, input);
 
     CHECK(actual.equals({std::nullopt, 1, 2, std::nullopt, 3}));
+}
+
+TEST_CASE("a scalar integer tick uses a nine-byte record", "[feature:time-series-storage][series:value][scalar:i64]") {
+    const auto time = bg::MIN_DT + std::chrono::microseconds{1};
+    const auto last_updated = bg::TimeSeriesState{time};
+    const auto value = bg::i64{42};
+    const auto input = bg::In<bg::TS<bg::i64>>{bg::TimeSeriesInputData{
+        bg::cpp_time_series_runtime_type<bg::TS<bg::i64>>(), last_updated, &value, true}};
+    const auto buffer = bg::util::buffer::contiguous(32);
+    auto writer = bg::TimeSeriesTickWriter{buffer};
+
+    REQUIRE(writer.write(input, time));
+    CHECK(buffer.bytes().size() == 1 + sizeof(value));
+
+    auto reader = bg::TimeSeriesTickReader{buffer, bg::TS<bg::i64>::type()};
+    CHECK(reader.discard());
+    CHECK_FALSE(reader.has_next());
+}
+
+TEST_CASE("discarding a scalar tick consumes a chain record across blocks",
+          "[feature:time-series-storage][series:value][scalar:i64][transition:update]") {
+    const auto time = bg::MIN_DT + std::chrono::microseconds{1};
+    auto state = bg::TimeSeriesState{};
+    state.publish(time);
+    const auto value = bg::i64{42};
+    const auto input = bg::In<bg::TS<bg::i64>>{bg::TimeSeriesInputData{
+        bg::cpp_time_series_runtime_type<bg::TS<bg::i64>>(), state, &value, true}};
+    const auto buffer = bg::util::buffer::chain(3);
+    auto writer = bg::TimeSeriesTickWriter{buffer};
+
+    REQUIRE(writer.write(input, time));
+    auto reader = bg::TimeSeriesTickReader{buffer, bg::TS<bg::i64>::type()};
+
+    CHECK(reader.discard());
+    CHECK_FALSE(reader.has_next());
+}
+
+TEST_CASE("discarding a collection tick consumes keys across chain blocks",
+          "[evaluation][feature:test-graph][feature:time-series-storage][series:tss][scalar:i64]"
+          "[shape:chain][transition:addition]") {
+    const auto to_set = bg::node<scalar_to_set_definition>();
+    const auto discard_record = bg::node([](bg::In<bg::TSS<bg::i64>> input, bg::Out<bg::TS<bool>> output) {
+        const auto buffer = bg::util::buffer::chain(3);
+        auto writer = bg::TimeSeriesTickWriter{buffer};
+        if (!writer.write(input, input.last_updated())) {
+            return;
+        }
+
+        auto reader = bg::TimeSeriesTickReader{buffer, bg::TSS<bg::i64>::type()};
+        output.set(reader.discard());
+    });
+    const auto graph = [&](bg::wp<bg::TS<bg::i64>> input) { return discard_record(to_set(input)); };
+
+    const auto actual = bg::testing::test_graph(graph, std::array<bg::i64, 1>{42});
+
+    CHECK(actual.equals({true}));
+}
+
+TEST_CASE("a set tick stores only added and removed keys",
+          "[feature:time-series-storage][series:tss][scalar:i64][transition:update]") {
+    const auto to_set = bg::node<scalar_to_set_definition>();
+    const auto measure_set = bg::node<set_record_size_definition>();
+    const auto set_graph = [&](bg::wp<bg::TS<bg::i64>> input) { return measure_set(to_set(input)); };
+    const auto set_sizes = bg::testing::test_graph(set_graph, std::array<bg::i64, 2>{1, 2});
+
+    CHECK(set_sizes.equals({17, 25}));
+}
+
+TEST_CASE("a dictionary tick stores only its added or modified item",
+          "[feature:time-series-storage][series:tsd][scalar:i64][transition:update]") {
+    const auto make_dictionary = bg::node([](bg::In<bg::TS<bg::i64>> input,
+                                             bg::Out<bg::TSD<bg::i64, bg::TS<bg::i64>>> output) {
+        output[1].set(*input);
+    });
+    const auto measure_dictionary = bg::node<dictionary_record_size_definition>();
+    const auto dictionary_graph = [&](bg::wp<bg::TS<bg::i64>> input) {
+        return measure_dictionary(make_dictionary(input));
+    };
+    const auto dictionary_sizes = bg::testing::test_graph(dictionary_graph, std::array<bg::i64, 2>{1, 2});
+
+    CHECK(dictionary_sizes.equals({30, 30}));
 }
 
 TEST_CASE("a node delays time series invalidation and revalidation by one evaluation cycle",
@@ -364,6 +489,27 @@ TEST_CASE("a node delays dictionary item changes by one evaluation cycle",
     CHECK(actual.equals({std::nullopt, 1, 2, 0}));
 }
 
+TEST_CASE("a node delays nested dictionary changes by one evaluation cycle",
+          "[evaluation][feature:test-graph][feature:time-series-storage][feature:timed-scheduling]"
+          "[series:tsd][scalar:i64][shape:chain][transition:addition][transition:update][transition:removal]") {
+    const auto update = bg::node([](bg::In<bg::TS<bg::i64>> input,
+                                    bg::Out<bg::TSD<bg::i64, bg::TSD<bg::i64, bg::TS<bg::i64>>>> output) {
+        if (*input == 0) {
+            output.erase(1);
+            return;
+        }
+
+        output[1][2].set(*input);
+    });
+    const auto delay = bg::node<one_tick_delay_definition<bg::TSD<bg::i64, bg::TSD<bg::i64, bg::TS<bg::i64>>>>>();
+    const auto sum = bg::node<nested_dictionary_sum_definition>();
+    const auto graph = [&](bg::wp<bg::TS<bg::i64>> input) { return sum(delay(update(input))); };
+
+    const auto actual = bg::testing::test_graph(graph, std::array<bg::i64, 3>{1, 2, 0});
+
+    CHECK(actual.equals({std::nullopt, 1, 2, 0}));
+}
+
 TEST_CASE("discarding an unread tick record releases its scalar payload", "[coverage-exempt]") {
     retained_value_memory.allocations = 0;
     retained_value_memory.deallocations = 0;
@@ -386,7 +532,7 @@ TEST_CASE("discarding an unread tick record releases its scalar payload", "[cove
         REQUIRE(writer.write(input, time));
         CHECK(retained_value_memory.allocations > allocations_before_write);
 
-        auto reader = bg::TimeSeriesTickReader{buffer};
+        auto reader = bg::TimeSeriesTickReader{buffer, bg::TS<bg::string>::type()};
         CHECK(reader.discard());
     }
 
@@ -414,7 +560,7 @@ TEST_CASE("destroying a tick reader releases unread scalar payloads", "[coverage
         REQUIRE(writer.write(input, time));
         CHECK(retained_value_memory.allocations > 0);
 
-        { auto reader = bg::TimeSeriesTickReader{buffer}; }
+        { auto reader = bg::TimeSeriesTickReader{buffer, bg::TS<bg::string>::type()}; }
     }
 
     CHECK(retained_value_memory.allocations == retained_value_memory.deallocations);
@@ -440,7 +586,7 @@ TEST_CASE("tick replay rejects an incompatible output without consuming its reco
         auto writer = bg::TimeSeriesTickWriter{buffer};
         REQUIRE(writer.write(input, input.last_updated()));
 
-        auto reader = bg::TimeSeriesTickReader{buffer};
+        auto reader = bg::TimeSeriesTickReader{buffer, bg::TSS<bg::i64>::type()};
         try {
             reader.replay(output);
         } catch (const std::invalid_argument &) {

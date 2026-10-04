@@ -1,20 +1,24 @@
 #pragma once
 
 #include <bg/allocator.hpp>
+#include <bg/scalar/dispatch.hpp>
 #include <bg/scalar/value.hpp>
 #include <bg/time_series/time_series_input.hpp>
 #include <bg/time_series/time_series_output.hpp>
+#include <bg/time_series/time_series_runtime_type.hpp>
 #include <bg/time_series/time_series_type.hpp>
+#include <bg/type/time_series_value_type.hpp>
 #include <bg/util/buffer.hpp>
 #include <bg/util/hash_dictionary.hpp>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <functional>
 #include <limits>
 #include <memory>
-#include <memory_resource>
-#include <optional>
+#include <span>
 #include <stdexcept>
 #include <type_traits>
 #include <utility>
@@ -22,53 +26,153 @@
 
 namespace bg {
 
-namespace details {
+class TimeSeriesTickWriteContext {
+  public:
+    explicit TimeSeriesTickWriteContext(util::buffer_writer &writer) noexcept : writer_{&writer} {}
 
-struct TimeSeriesTickOperation {
-    enum class Kind : std::uint8_t {
-        header,
-        invalidated,
-        value,
-        fixed_list,
-        bundle,
-        set,
-        dictionary,
-        index,
-        set_key,
-        dictionary_item,
-        dictionary_remove,
-        extension,
+    TimeSeriesTickWriteContext(const TimeSeriesTickWriteContext &) = delete;
+    TimeSeriesTickWriteContext &operator=(const TimeSeriesTickWriteContext &) = delete;
+
+    ~TimeSeriesTickWriteContext() {
+        if (committed_) {
+            return;
+        }
+
+        for (auto value = owned_values_.rbegin(); value != owned_values_.rend(); ++value) {
+            if (value->data != nullptr) {
+                value->destroy(value->data);
+            }
+        }
+        writer_->rollback();
+    }
+
+    void write_bytes(std::span<const std::byte> bytes) { writer_->write_bytes(bytes); }
+
+    template <typename T, typename... Args> T &emplace(Args &&...args) {
+        auto journal_index = std::size_t{};
+        if constexpr (!std::is_trivially_destructible_v<T>) {
+            journal_index = owned_values_.size();
+            owned_values_.push_back({nullptr, [](void *value) noexcept { std::destroy_at(static_cast<T *>(value)); }});
+        }
+
+        auto &value = writer_->emplace<T>(std::forward<Args>(args)...);
+        if constexpr (!std::is_trivially_destructible_v<T>) {
+            owned_values_[journal_index].data = &value;
+        }
+        return value;
+    }
+
+    template <typename T> auto &write(T &&value) {
+        return emplace<std::remove_cvref_t<T>>(std::forward<T>(value));
+    }
+
+    void commit() noexcept {
+        writer_->commit();
+        committed_ = true;
+    }
+
+  private:
+    struct OwnedValue {
+        void *data;
+        void (*destroy)(void *) noexcept;
     };
 
-    explicit TimeSeriesTickOperation(Kind kind) noexcept : kind{kind} {}
-
-    Kind kind;
-    bool flag{};
-    std::uint32_t count{};
-    item_id_t index{};
-    const TimeSeriesType *type{};
-    std::optional<ScalarValue<>> scalar;
+    util::buffer_writer *writer_;
+    std::vector<OwnedValue> owned_values_;
+    bool committed_{};
 };
 
-static_assert(std::is_nothrow_move_constructible_v<TimeSeriesTickOperation>);
+class TimeSeriesTickReadContext {
+  public:
+    explicit TimeSeriesTickReadContext(util::buffer_reader &reader) noexcept : reader_{&reader} {}
 
-struct TimeSeriesTickOperations {
-    using Capture = std::function<void(const In<TS_T> &, bool, std::optional<ScalarValue<>> &, allocator &)>;
-    using DefaultReplay = std::function<void(const ScalarValue<> &, const Out<TS_T> &)>;
-    using ViewReplay = std::function<void(const ScalarValue<> &, const Out<TS_T, view> &)>;
+    std::span<const std::byte> readable() { return reader_->readable(); }
+
+    void consume(std::size_t size) {
+        while (size != 0) {
+            const auto available = reader_->readable();
+            if (available.empty()) {
+                throw std::out_of_range{"incomplete time series tick record"};
+            }
+
+            const auto count = std::min(size, available.size());
+            reader_->consume(count);
+            size -= count;
+        }
+    }
+
+    void read_bytes(std::span<std::byte> destination) {
+        while (!destination.empty()) {
+            const auto available = reader_->readable();
+            if (available.empty()) {
+                throw std::out_of_range{"incomplete time series tick record"};
+            }
+
+            const auto count = std::min(destination.size(), available.size());
+            std::memcpy(destination.data(), available.data(), count);
+            reader_->consume(count);
+            destination = destination.subspan(count);
+        }
+    }
+
+    template <typename T> T read() {
+        static_assert(std::is_trivially_copyable_v<T>);
+        auto value = T{};
+        read_bytes(std::as_writable_bytes(std::span{&value, std::size_t{1}}));
+        return value;
+    }
+
+    template <typename T, typename Function> void visit_object(Function &&function) {
+        std::invoke(std::forward<Function>(function), reader_->peek<T>());
+        reader_->consume<T>();
+    }
+
+  protected:
+    util::buffer_reader *reader_;
+};
+
+class TimeSeriesTickDiscardContext : public TimeSeriesTickReadContext {
+  public:
+    explicit TimeSeriesTickDiscardContext(util::buffer_reader &reader) noexcept : TimeSeriesTickReadContext{reader} {}
+
+    template <typename T> void discard() { reader_->skip<T>(); }
+};
+
+namespace details {
+
+struct ScalarTickValueConsumer {
+    void *context;
+    void (*consume)(void *, Scalar<>);
+
+    void operator()(Scalar<> value) const { consume(context, value); }
+};
+
+struct TimeSeriesTickScalarOperations {
+    using Capture = std::function<void(Scalar<>, TimeSeriesTickWriteContext &, allocator &)>;
+    using Replay = std::function<void(TimeSeriesTickReadContext &, ScalarTickValueConsumer)>;
+    using Discard = std::function<void(TimeSeriesTickDiscardContext &)>;
 
     Capture capture;
-    DefaultReplay shared_default_replay;
-    ViewReplay shared_view_replay;
+    Replay replay;
+    Discard discard;
+};
+
+struct TimeSeriesTickOperations {
+    using Capture = std::function<void(const In<TS_T> &, bool, TimeSeriesTickWriteContext &, allocator &)>;
+    using DefaultReplay = std::function<void(TimeSeriesTickReadContext &, const Out<TS_T> &)>;
+    using ViewReplay = std::function<void(TimeSeriesTickReadContext &, const Out<TS_T, view> &)>;
+
+    Capture capture;
     DefaultReplay default_replay;
     ViewReplay view_replay;
+    std::function<void(TimeSeriesTickDiscardContext &)> discard;
 };
 
 } // namespace details
 
 class TimeSeriesTickDispatch {
   public:
-    explicit TimeSeriesTickDispatch(allocator memory = {}) noexcept : memory_{memory} {}
+    explicit TimeSeriesTickDispatch(allocator memory = {}) noexcept : memory_{memory}, scalar_operations_{memory} {}
 
     ~TimeSeriesTickDispatch() {
         runtime_operations_.release(memory_.memory_resource());
@@ -77,6 +181,52 @@ class TimeSeriesTickDispatch {
 
     TimeSeriesTickDispatch(const TimeSeriesTickDispatch &) = delete;
     TimeSeriesTickDispatch &operator=(const TimeSeriesTickDispatch &) = delete;
+
+    // Register capture, replay, and discard handlers for every runtime representation of this scalar type.
+    template <typename ScalarType, typename Capture, typename Replay, typename Discard>
+    bool add_scalar_handlers(Capture &&capture, Replay &&replay, Discard &&discard) {
+        auto operations = details::TimeSeriesTickScalarOperations{
+            typed_scalar_capture<ScalarType>(std::forward<Capture>(capture)),
+            typed_scalar_replay<ScalarType>(std::forward<Replay>(replay)),
+            details::TimeSeriesTickScalarOperations::Discard{std::forward<Discard>(discard)}};
+        return scalar_operations_.add(cpp_scalar_type<ScalarType>(), std::move(operations));
+    }
+
+    void capture_scalar(Scalar<> value, TimeSeriesTickWriteContext &writer, allocator &memory) const {
+        if (const auto *operations = scalar_operations_.find(value.type()); operations != nullptr) {
+            operations->capture(value, writer, memory);
+            return;
+        }
+
+        writer.write(ScalarValue<>{value, memory});
+    }
+
+    template <typename Function> bool replay_scalar(const ScalarType &type, TimeSeriesTickReadContext &reader,
+                                                    Function &&function) const {
+        const auto *operations = scalar_operations_.find(type);
+        if (operations == nullptr) {
+            return false;
+        }
+
+        using FunctionType = std::remove_reference_t<Function>;
+        auto consume = details::ScalarTickValueConsumer{
+            const_cast<void *>(static_cast<const void *>(std::addressof(function))),
+            [](void *context, Scalar<> value) {
+                std::invoke(*static_cast<FunctionType *>(context), value);
+            }};
+        operations->replay(reader, consume);
+        return true;
+    }
+
+    bool discard_scalar(const ScalarType &type, TimeSeriesTickDiscardContext &reader) const {
+        const auto *operations = scalar_operations_.find(type);
+        if (operations == nullptr) {
+            return false;
+        }
+
+        operations->discard(reader);
+        return true;
+    }
 
     template <typename Series, typename Capture>
     bool add_capture(const TimeSeriesRuntimeType &runtime_type, Capture &&capture) {
@@ -106,101 +256,76 @@ class TimeSeriesTickDispatch {
         return true;
     }
 
-    template <typename Series, typename Replay>
+    template <typename Series, OutputSpecification Specification, typename Replay>
     bool add_replay(const TimeSeriesRuntimeType &runtime_type, Replay &&replay) {
         const auto *existing = runtime_operations_.find(&runtime_type);
-        if (existing != nullptr &&
-            (existing->shared_default_replay || existing->shared_view_replay)) {
+        if (existing != nullptr && specific_replay<Specification>(*existing)) {
             return false;
         }
 
-        auto shared_replay = std::allocate_shared<std::decay_t<Replay>>(
-            std::pmr::polymorphic_allocator<std::decay_t<Replay>>{&memory_.memory_resource()},
-            std::forward<Replay>(replay));
-        auto default_handler = details::TimeSeriesTickOperations::DefaultReplay{
-            shared_typed_replay<Series, OutputSpecification::default_>(shared_replay)};
-        auto view_handler = details::TimeSeriesTickOperations::ViewReplay{
-            shared_typed_replay<Series, OutputSpecification::view>(std::move(shared_replay))};
-        auto &operations = *runtime_operations_.try_emplace(&runtime_type, memory_.memory_resource()).first;
-        operations.shared_default_replay = std::move(default_handler);
-        operations.shared_view_replay = std::move(view_handler);
+        if constexpr (Specification == OutputSpecification::default_) {
+            auto handler = details::TimeSeriesTickOperations::DefaultReplay{
+                typed_replay<Series, Specification>(std::forward<Replay>(replay))};
+            auto &operations = *runtime_operations_.try_emplace(&runtime_type, memory_.memory_resource()).first;
+            operations.default_replay = std::move(handler);
+        } else {
+            auto handler = details::TimeSeriesTickOperations::ViewReplay{
+                typed_replay<Series, Specification>(std::forward<Replay>(replay))};
+            auto &operations = *runtime_operations_.try_emplace(&runtime_type, memory_.memory_resource()).first;
+            operations.view_replay = std::move(handler);
+        }
         return true;
     }
 
-    template <typename Series, typename Replay>
+    template <typename Series, OutputSpecification Specification, typename Replay>
     bool add_replay(const TimeSeriesType &type, Replay &&replay) {
         const auto *existing = type_operations_.find(&type);
-        if (existing != nullptr &&
-            (existing->shared_default_replay || existing->shared_view_replay)) {
+        if (existing != nullptr && specific_replay<Specification>(*existing)) {
             return false;
         }
 
-        auto shared_replay = std::allocate_shared<std::decay_t<Replay>>(
-            std::pmr::polymorphic_allocator<std::decay_t<Replay>>{&memory_.memory_resource()},
-            std::forward<Replay>(replay));
-        auto default_handler = details::TimeSeriesTickOperations::DefaultReplay{
-            shared_typed_replay<Series, OutputSpecification::default_>(shared_replay)};
-        auto view_handler = details::TimeSeriesTickOperations::ViewReplay{
-            shared_typed_replay<Series, OutputSpecification::view>(std::move(shared_replay))};
+        if constexpr (Specification == OutputSpecification::default_) {
+            auto handler = details::TimeSeriesTickOperations::DefaultReplay{
+                typed_replay<Series, Specification>(std::forward<Replay>(replay))};
+            auto &operations = *type_operations_.try_emplace(&type, memory_.memory_resource()).first;
+            operations.default_replay = std::move(handler);
+        } else {
+            auto handler = details::TimeSeriesTickOperations::ViewReplay{
+                typed_replay<Series, Specification>(std::forward<Replay>(replay))};
+            auto &operations = *type_operations_.try_emplace(&type, memory_.memory_resource()).first;
+            operations.view_replay = std::move(handler);
+        }
+        return true;
+    }
+
+    template <typename Discard>
+    bool add_discard(const TimeSeriesType &type, Discard &&discard) {
+        const auto *existing = type_operations_.find(&type);
+        if (existing != nullptr && existing->discard) {
+            return false;
+        }
+
+        auto handler = std::function<void(TimeSeriesTickDiscardContext &)>{std::forward<Discard>(discard)};
         auto &operations = *type_operations_.try_emplace(&type, memory_.memory_resource()).first;
-        operations.shared_default_replay = std::move(default_handler);
-        operations.shared_view_replay = std::move(view_handler);
+        operations.discard = std::move(handler);
         return true;
     }
 
-    template <typename Series, OutputSpecification Specification, typename Replay>
-    bool add_replay(const TimeSeriesRuntimeType &runtime_type, Replay &&replay) {
-        const auto *existing = runtime_operations_.find(&runtime_type);
-        if (existing != nullptr && specific_replay<Specification>(*existing)) {
-            return false;
+    void capture(const In<TS_T> &input, bool snapshot, TimeSeriesTickWriteContext &writer, allocator &memory) const {
+        const auto *semantic_operations = type_operations_.find(&input.runtime_type().type());
+        if (semantic_operations == nullptr || !semantic_operations->discard) {
+            throw std::invalid_argument{"no tick discard operation is registered for this time series type"};
         }
 
-        if constexpr (Specification == OutputSpecification::default_) {
-            auto handler = details::TimeSeriesTickOperations::DefaultReplay{
-                typed_replay<Series, Specification>(std::forward<Replay>(replay))};
-            auto &operations = *runtime_operations_.try_emplace(&runtime_type, memory_.memory_resource()).first;
-            operations.default_replay = std::move(handler);
-        } else {
-            auto handler = details::TimeSeriesTickOperations::ViewReplay{
-                typed_replay<Series, Specification>(std::forward<Replay>(replay))};
-            auto &operations = *runtime_operations_.try_emplace(&runtime_type, memory_.memory_resource()).first;
-            operations.view_replay = std::move(handler);
-        }
-        return true;
-    }
-
-    template <typename Series, OutputSpecification Specification, typename Replay>
-    bool add_replay(const TimeSeriesType &type, Replay &&replay) {
-        const auto *existing = type_operations_.find(&type);
-        if (existing != nullptr && specific_replay<Specification>(*existing)) {
-            return false;
-        }
-
-        if constexpr (Specification == OutputSpecification::default_) {
-            auto handler = details::TimeSeriesTickOperations::DefaultReplay{
-                typed_replay<Series, Specification>(std::forward<Replay>(replay))};
-            auto &operations = *type_operations_.try_emplace(&type, memory_.memory_resource()).first;
-            operations.default_replay = std::move(handler);
-        } else {
-            auto handler = details::TimeSeriesTickOperations::ViewReplay{
-                typed_replay<Series, Specification>(std::forward<Replay>(replay))};
-            auto &operations = *type_operations_.try_emplace(&type, memory_.memory_resource()).first;
-            operations.view_replay = std::move(handler);
-        }
-        return true;
-    }
-
-    void capture(const In<TS_T> &input, bool snapshot, std::optional<ScalarValue<>> &payload,
-                 allocator &memory) const {
         if (const auto *operations = runtime_operations_.find(&input.runtime_type());
             operations != nullptr && operations->capture) {
-            operations->capture(input, snapshot, payload, memory);
+            operations->capture(input, snapshot, writer, memory);
             return;
         }
 
         if (const auto *operations = type_operations_.find(&input.runtime_type().type());
             operations != nullptr && operations->capture) {
-            operations->capture(input, snapshot, payload, memory);
+            operations->capture(input, snapshot, writer, memory);
             return;
         }
 
@@ -208,21 +333,46 @@ class TimeSeriesTickDispatch {
     }
 
     template <OutputSpecification Specification>
-    void replay(const ScalarValue<> &payload, const Out<TS_T, Specification> &output) const {
+    void replay(TimeSeriesTickReadContext &reader, const Out<TS_T, Specification> &output) const {
         if (const auto *operations = runtime_operations_.find(&output.runtime_type());
-            operations != nullptr && replay_from<Specification>(*operations, payload, output)) {
+            operations != nullptr && replay_from<Specification>(*operations, reader, output)) {
             return;
         }
 
         if (const auto *operations = type_operations_.find(&output.runtime_type().type());
-            operations != nullptr && replay_from<Specification>(*operations, payload, output)) {
+            operations != nullptr && replay_from<Specification>(*operations, reader, output)) {
             return;
         }
 
         throw std::invalid_argument{"no tick replay operation is registered for this time series type"};
     }
 
+    void discard(const TimeSeriesType &type, TimeSeriesTickDiscardContext &reader) const {
+        const auto *operations = type_operations_.find(&type);
+        if (operations == nullptr || !operations->discard) {
+            throw std::invalid_argument{"no tick discard operation is registered for this time series type"};
+        }
+        operations->discard(reader);
+    }
+
   private:
+    template <typename ScalarType, typename Capture> static auto typed_scalar_capture(Capture &&capture) {
+        return [capture = std::forward<Capture>(capture)](Scalar<> value, TimeSeriesTickWriteContext &writer,
+                                                          allocator &memory) {
+            std::invoke(capture, scalar_cast<ScalarType>(value), writer, memory);
+        };
+    }
+
+    template <typename ScalarType, typename Replay> static auto typed_scalar_replay(Replay &&replay) {
+        return [replay = std::forward<Replay>(replay)](TimeSeriesTickReadContext &reader,
+                                                       details::ScalarTickValueConsumer consume) {
+            auto typed_consumer = [consume](Scalar<ScalarType> value) {
+                consume(Scalar<>::from(value));
+            };
+            std::invoke(replay, reader, typed_consumer);
+        };
+    }
+
     template <OutputSpecification Specification, typename Operations>
     static auto &specific_replay(Operations &operations) {
         if constexpr (Specification == OutputSpecification::default_) {
@@ -235,203 +385,199 @@ class TimeSeriesTickDispatch {
     template <typename Series, typename Capture>
     static auto typed_capture(Capture &&capture) {
         return [capture = std::forward<Capture>(capture)](const In<TS_T> &input, bool snapshot,
-                                                          std::optional<ScalarValue<>> &payload, allocator &memory) {
-            std::invoke(capture, input.template as<Series>(), snapshot, payload, memory);
+                                                          TimeSeriesTickWriteContext &writer, allocator &memory) {
+            std::invoke(capture, input.template as<Series>(), snapshot, writer, memory);
         };
     }
 
     template <typename Series, OutputSpecification Specification, typename Replay>
     static auto typed_replay(Replay &&replay) {
-        return [replay = std::forward<Replay>(replay)](const ScalarValue<> &payload,
+        return [replay = std::forward<Replay>(replay)](TimeSeriesTickReadContext &reader,
                                                        const Out<TS_T, Specification> &output) {
-            std::invoke(replay, payload, output.template as<Series>());
-        };
-    }
-
-    template <typename Series, OutputSpecification Specification, typename Replay>
-    static auto shared_typed_replay(std::shared_ptr<Replay> replay) {
-        return [replay = std::move(replay)](const ScalarValue<> &payload,
-                                            const Out<TS_T, Specification> &output) {
-            std::invoke(*replay, payload, output.template as<Series>());
+            std::invoke(replay, reader, output.template as<Series>());
         };
     }
 
     template <OutputSpecification Specification>
-    static const auto &shared_replay(const details::TimeSeriesTickOperations &operations) {
-        if constexpr (Specification == OutputSpecification::default_) {
-            return operations.shared_default_replay;
-        } else {
-            return operations.shared_view_replay;
-        }
-    }
-
-    template <OutputSpecification Specification>
-    static bool replay_from(const details::TimeSeriesTickOperations &operations, const ScalarValue<> &payload,
+    static bool replay_from(const details::TimeSeriesTickOperations &operations, TimeSeriesTickReadContext &reader,
                             const Out<TS_T, Specification> &output) {
         const auto &specific = specific_replay<Specification>(operations);
         if (specific) {
-            specific(payload, output);
+            specific(reader, output);
             return true;
         }
-
-        const auto &shared = shared_replay<Specification>(operations);
-        if (shared) {
-            shared(payload, output);
-            return true;
-        }
-
         return false;
     }
 
     allocator memory_;
+    ScalarDispatch<details::TimeSeriesTickScalarOperations> scalar_operations_;
     util::hash_dictionary<const TimeSeriesRuntimeType *, details::TimeSeriesTickOperations> runtime_operations_;
     util::hash_dictionary<const TimeSeriesType *, details::TimeSeriesTickOperations> type_operations_;
 };
 
 namespace details {
 
+enum class TickState : std::uint8_t { value, invalidated };
+
+template <typename Visitor> bool visit_builtin_scalar_type(const ScalarType &type, Visitor &&visitor) {
+    auto matched = false;
+    tp::for_each(builtin_scalar_declarations, [&]<typename Builtin>(tp::unit<Builtin>) {
+        if (!matched && &type == &cpp_scalar_type<Builtin>()) {
+            std::invoke(visitor, std::type_identity<Builtin>{});
+            matched = true;
+        }
+    });
+    return matched;
+}
+
+template <typename T> void write_bytes(TimeSeriesTickWriteContext &writer, const T &value) {
+    static_assert(std::is_trivially_copyable_v<T>);
+    writer.write_bytes(std::as_bytes(std::span{&value, std::size_t{1}}));
+}
+
 class TimeSeriesTickCapture {
   public:
-    TimeSeriesTickCapture(std::pmr::vector<TimeSeriesTickOperation> &operations, allocator &memory,
+    TimeSeriesTickCapture(TimeSeriesTickWriteContext &writer, allocator &memory,
                           const TimeSeriesTickDispatch &dispatch)
-        : operations_{&operations}, memory_{&memory}, dispatch_{&dispatch} {}
+        : writer_{&writer}, memory_{&memory}, dispatch_{&dispatch} {}
 
     template <typename Variable, auto... Properties>
-    bool capture(const In<Variable, Properties...> &input, EvaluationTime now, bool snapshot = false) {
+    bool capture(const In<Variable, Properties...> &input, EvaluationTime now) {
         if (input.runtime_type().is_reference()) {
             throw std::invalid_argument{"retained reference time series ticks are not supported"};
         }
-        if (!snapshot) {
-            if (input.last_updated() != now) {
-                return false;
-            }
-            if (input.valid() ? !input.modified() : !input.became_invalid()) {
-                return false;
-            }
+        if (input.last_updated() != now || (input.valid() ? !input.modified() : !input.became_invalid())) {
+            return false;
         }
 
-        snapshot = snapshot || input.became_valid();
-        input.visit(ddv::serial{std::ref(*this)}, now, snapshot);
+        input.visit(ddv::serial{std::ref(*this)}, now, input.became_valid());
         return true;
     }
 
-    void operator()(In<TS<SCALAR>> *input, EvaluationTime, bool snapshot) {
-        if (!input->valid()) {
-            if (snapshot || input->became_invalid()) {
-                operations_->emplace_back(TimeSeriesTickOperation::Kind::invalidated);
-            }
-            return;
+    void operator()(In<TS<SCALAR>> *input, EvaluationTime, bool) {
+        write_state(input->valid());
+        if (input->valid()) {
+            write_scalar(input->value_view());
         }
-
-        auto &operation = operations_->emplace_back(TimeSeriesTickOperation::Kind::value);
-        operation.scalar.emplace(input->value_view(), *memory_);
     }
 
     void operator()(In<TSL<TS_T, SIZE>> *input, EvaluationTime now, bool snapshot) {
+        write_state(input->valid());
         if (!input->valid()) {
-            if (snapshot || input->became_invalid()) {
-                operations_->emplace_back(TimeSeriesTickOperation::Kind::invalidated);
-            }
             return;
         }
 
-        const auto begin = operations_->size();
-        auto &operation = operations_->emplace_back(TimeSeriesTickOperation::Kind::fixed_list);
-        auto entry_count = std::uint32_t{};
+        auto count = std::size_t{};
+        if (snapshot) {
+            count = input->size();
+        } else {
+            input->for_each_updated([&](item_id_t) { ++count; });
+        }
+        write_count(count);
+
+        auto write_item = [&](item_id_t index) {
+            write_bytes(*writer_, index);
+            write_child((*input)[index], now, snapshot);
+        };
         if (snapshot) {
             for (auto index = item_id_t{}; index < input->size(); ++index) {
-                entry_count += capture_index(index, (*input)[index], now, true);
+                write_item(index);
             }
         } else {
-            input->for_each_updated([&](item_id_t index) {
-                entry_count += capture_index(index, (*input)[index], now, false);
-            });
+            input->for_each_updated(write_item);
         }
-        operations_->at(begin).count = entry_count;
     }
 
     void operator()(In<TSB<SCHEMA>> *input, EvaluationTime now, bool snapshot) {
+        write_state(input->valid());
         if (!input->valid()) {
-            if (snapshot || input->became_invalid()) {
-                operations_->emplace_back(TimeSeriesTickOperation::Kind::invalidated);
-            }
             return;
         }
 
-        const auto begin = operations_->size();
-        auto &operation = operations_->emplace_back(TimeSeriesTickOperation::Kind::bundle);
-        auto entry_count = std::uint32_t{};
+        auto count = std::size_t{};
+        if (snapshot) {
+            count = input->size();
+        } else {
+            input->for_each_updated([&](item_id_t) { ++count; });
+        }
+        write_count(count);
+
+        auto write_item = [&](item_id_t index) {
+            write_bytes(*writer_, index);
+            write_child((*input)[index], now, snapshot);
+        };
         if (snapshot) {
             for (auto index = item_id_t{}; index < input->size(); ++index) {
-                entry_count += capture_index(index, (*input)[index], now, true);
+                write_item(index);
             }
         } else {
-            input->for_each_updated([&](item_id_t index) {
-                entry_count += capture_index(index, (*input)[index], now, false);
-            });
+            input->for_each_updated(write_item);
         }
-        operations_->at(begin).count = entry_count;
     }
 
     void operator()(In<TSS<SCALAR>> *input, EvaluationTime, bool snapshot) {
         if (!input->valid()) {
-            if (snapshot || input->became_invalid()) {
-                throw std::invalid_argument{"TSS invalidation cannot be replayed through its output API"};
-            }
-            return;
+            throw std::invalid_argument{"TSS invalidation cannot be replayed through its output API"};
         }
 
-        const auto begin = operations_->size();
-        auto &operation = operations_->emplace_back(TimeSeriesTickOperation::Kind::set);
-        operation.flag = snapshot;
-        auto entry_count = std::uint32_t{};
+        write_bytes(*writer_, static_cast<std::uint8_t>(snapshot));
+        auto added_count = std::size_t{};
+        auto removed_count = std::size_t{};
         if (snapshot) {
-            input->for_each([&](const auto &key) {
-                capture_set_key(true, Scalar<>::from(key));
-                ++entry_count;
-            });
+            input->for_each([&](const auto &) { ++added_count; });
         } else {
-            input->for_each_added([&](const auto &key) {
-                capture_set_key(true, Scalar<>::from(key));
-                ++entry_count;
-            });
-            input->for_each_removed([&](const auto &key) {
-                capture_set_key(false, Scalar<>::from(key));
-                ++entry_count;
-            });
+            input->for_each_added([&](const auto &) { ++added_count; });
+            input->for_each_removed([&](const auto &) { ++removed_count; });
         }
-        operations_->at(begin).count = entry_count;
+        write_count(added_count);
+        write_count(removed_count);
+
+        if (snapshot) {
+            input->for_each([&](const auto &key) { write_scalar(key); });
+        } else {
+            input->for_each_added([&](const auto &key) { write_scalar(key); });
+            input->for_each_removed([&](const auto &key) { write_scalar(key); });
+        }
     }
 
     void operator()(In<TSD<SCALAR, TS_T>> *input, EvaluationTime now, bool snapshot) {
         if (!input->valid()) {
-            if (snapshot || input->became_invalid()) {
-                throw std::invalid_argument{"TSD invalidation cannot be replayed through its output API"};
-            }
-            return;
+            throw std::invalid_argument{"TSD invalidation cannot be replayed through its output API"};
         }
 
-        const auto begin = operations_->size();
-        auto &operation = operations_->emplace_back(TimeSeriesTickOperation::Kind::dictionary);
-        operation.flag = snapshot;
-        auto entry_count = std::uint32_t{};
+        write_bytes(*writer_, static_cast<std::uint8_t>(snapshot));
+        auto removed_count = std::size_t{};
+        auto added_count = std::size_t{};
+        auto modified_count = std::size_t{};
+        if (snapshot) {
+            added_count = input->size();
+        } else {
+            input->for_each_removed([&](const auto &) { ++removed_count; });
+            input->for_each_added([&](const auto &) { ++added_count; });
+            input->for_each_modified([&](const auto &) { ++modified_count; });
+        }
+        write_count(removed_count);
+        write_count(added_count);
+        write_count(modified_count);
+
         if (snapshot) {
             input->for_each_key_value([&](const auto &key, const auto &item) {
-                entry_count += capture_dictionary_item(Scalar<>::from(key), item, now, true);
+                write_scalar(key);
+                write_child(item, now, true);
             });
         } else {
             input->for_each_removed([&](const auto &key) {
-                capture_dictionary_remove(Scalar<>::from(key));
-                ++entry_count;
+                write_scalar(key);
             });
             input->for_each_added([&](const auto &key) {
-                entry_count += capture_dictionary_item(Scalar<>::from(key), (*input)[key], now, true);
+                write_scalar(key);
+                write_child((*input)[key], now, true);
             });
             input->for_each_modified([&](const auto &key) {
-                entry_count += capture_dictionary_item(Scalar<>::from(key), (*input)[key], now, false);
+                write_scalar(key);
+                write_child((*input)[key], now, false);
             });
         }
-        operations_->at(begin).count = entry_count;
     }
 
     void operator()(In<REF<TS_T>> *, EvaluationTime, bool) {
@@ -439,170 +585,273 @@ class TimeSeriesTickCapture {
     }
 
     void operator()(In<TS_T> *input, EvaluationTime, bool snapshot) {
-        auto &operation = operations_->emplace_back(TimeSeriesTickOperation::Kind::extension);
-        dispatch_->capture(*input, snapshot, operation.scalar, *memory_);
-        if (!operation.scalar) {
-            throw std::logic_error{"a time series extension did not write its tick payload"};
-        }
+        dispatch_->capture(*input, snapshot, *writer_, *memory_);
     }
 
   private:
-    bool capture_index(item_id_t index, const In<TS_T> &input, EvaluationTime now, bool snapshot) {
-        const auto start = operations_->size();
-        if (!capture(input, now, snapshot)) {
-            return false;
+    template <typename T> void write_scalar(const Scalar<T> &value) {
+        const auto matched = visit_builtin_scalar_type(value.type(), [&]<typename Builtin>(std::type_identity<Builtin>) {
+            using Stored = details::scalar_stored_t<Builtin>;
+            if constexpr (std::is_trivially_copyable_v<Stored>) {
+                const auto canonical = scalar_cast<Builtin>(value).value();
+                write_bytes(*writer_, canonical);
+            } else {
+                writer_->write(ScalarValue<>{value, *memory_});
+            }
+        });
+
+        if (!matched) {
+            dispatch_->capture_scalar(Scalar<>::from(value), *writer_, *memory_);
         }
-        auto entry = operations_->emplace(operations_->begin() + static_cast<std::ptrdiff_t>(start),
-                                          TimeSeriesTickOperation::Kind::index);
-        entry->index = index;
-        return true;
     }
 
-    void capture_set_key(bool added, const Scalar<> &key) {
-        auto &operation = operations_->emplace_back(TimeSeriesTickOperation::Kind::set_key);
-        operation.flag = added;
-        operation.scalar.emplace(key, *memory_);
-    }
+    void write_state(bool valid) { write_bytes(*writer_, static_cast<std::uint8_t>(valid ? TickState::value
+                                                                                           : TickState::invalidated)); }
 
-    void capture_dictionary_remove(const Scalar<> &key) {
-        auto &operation = operations_->emplace_back(TimeSeriesTickOperation::Kind::dictionary_remove);
-        operation.scalar.emplace(key, *memory_);
-    }
-
-    bool capture_dictionary_item(const Scalar<> &key, const In<TS_T> &input, EvaluationTime now, bool snapshot) {
-        const auto start = operations_->size();
-        if (!capture(input, now, snapshot)) {
-            return false;
+    void write_count(std::size_t count) {
+        if (count > std::numeric_limits<std::uint32_t>::max()) {
+            throw std::length_error{"time series tick has too many changed items"};
         }
-        auto entry = operations_->emplace(operations_->begin() + static_cast<std::ptrdiff_t>(start),
-                                          TimeSeriesTickOperation::Kind::dictionary_item);
-        entry->scalar.emplace(key, *memory_);
-        return true;
+        write_bytes(*writer_, static_cast<std::uint32_t>(count));
     }
 
-    std::pmr::vector<TimeSeriesTickOperation> *operations_;
+    template <typename Input> void write_child(const Input &input, EvaluationTime now, bool snapshot) {
+        input.visit(ddv::serial{std::ref(*this)}, now, snapshot);
+    }
+
+    TimeSeriesTickWriteContext *writer_;
     allocator *memory_;
     const TimeSeriesTickDispatch *dispatch_;
 };
 
 class TimeSeriesTickReplay {
   public:
-    TimeSeriesTickReplay(util::buffer_reader &reader, const TimeSeriesTickDispatch &dispatch, std::size_t &remaining)
-        : reader_{&reader}, dispatch_{&dispatch}, remaining_{&remaining} {}
+    TimeSeriesTickReplay(TimeSeriesTickReadContext &reader, const TimeSeriesTickDispatch &dispatch)
+        : reader_{&reader}, dispatch_{&dispatch} {}
 
     template <typename Variable, auto... Properties>
-    void apply(const Out<Variable, Properties...> &output) {
-        auto operation = next();
-        output.visit([&](const auto *typed) { apply(operation, *typed); }, ddv::noop);
+    void apply_erased(const TimeSeriesType &type, const Out<Variable, Properties...> &output) {
+        output.visit([&](const auto *typed) { apply_concrete(type, *typed); }, ddv::noop);
     }
 
     template <OutputSpecification Specification>
-    void operator()(TimeSeriesTickOperation &operation, const Out<TS<SCALAR>, Specification> &output) {
-        if (operation.kind == TimeSeriesTickOperation::Kind::invalidated) {
+    void apply_concrete(const TimeSeriesType &type, const Out<TS<SCALAR>, Specification> &output) {
+        const auto &value_type = type_cast<TimeSeriesValueType>(type);
+        if (read_state() == TickState::invalidated) {
             output.invalidate();
             return;
         }
-        require(operation.kind == TimeSeriesTickOperation::Kind::value && operation.scalar.has_value());
-        output.set_value(operation.scalar->view());
+
+        visit_scalar(value_type.value_type(), [&](const auto &value) { output.set_value(value); });
     }
 
     template <OutputSpecification Specification>
-    void operator()(TimeSeriesTickOperation &operation, const Out<TSL<TS_T, SIZE>, Specification> &output) {
-        if (operation.kind == TimeSeriesTickOperation::Kind::invalidated) {
+    void apply_concrete(const TimeSeriesType &type, const Out<TSL<TS_T, SIZE>, Specification> &output) {
+        const auto &list_type = type_cast<TimeSeriesListType>(type);
+        if (read_state() == TickState::invalidated) {
             output.invalidate();
             return;
         }
-        require(operation.kind == TimeSeriesTickOperation::Kind::fixed_list);
-        for (auto i = std::uint32_t{}; i < operation.count; ++i) {
-            auto entry = next();
-            require(entry.kind == TimeSeriesTickOperation::Kind::index);
-            apply(output[entry.index]);
+
+        const auto count = reader_->read<std::uint32_t>();
+        for (auto index = std::uint32_t{}; index < count; ++index) {
+            const auto item_id = reader_->read<bg::item_id_t>();
+            apply_erased(list_type.item_type(item_id), output[item_id]);
         }
     }
 
     template <OutputSpecification Specification>
-    void operator()(TimeSeriesTickOperation &operation, const Out<TSB<SCHEMA>, Specification> &output) {
-        if (operation.kind == TimeSeriesTickOperation::Kind::invalidated) {
+    void apply_concrete(const TimeSeriesType &type, const Out<TSB<SCHEMA>, Specification> &output) {
+        const auto &bundle_type = type_cast<TimeSeriesBundleType>(type);
+        if (read_state() == TickState::invalidated) {
             output.invalidate();
             return;
         }
-        require(operation.kind == TimeSeriesTickOperation::Kind::bundle);
-        for (auto i = std::uint32_t{}; i < operation.count; ++i) {
-            auto entry = next();
-            require(entry.kind == TimeSeriesTickOperation::Kind::index);
-            apply(output[entry.index]);
+
+        const auto count = reader_->read<std::uint32_t>();
+        for (auto index = std::uint32_t{}; index < count; ++index) {
+            const auto item_id = reader_->read<bg::item_id_t>();
+            apply_erased(bundle_type.item_type(item_id), output[item_id]);
         }
     }
 
     template <OutputSpecification Specification>
-    void operator()(TimeSeriesTickOperation &operation, const Out<TSS<SCALAR>, Specification> &output) {
-        require(operation.kind == TimeSeriesTickOperation::Kind::set);
-        if (operation.flag) {
+    void apply_concrete(const TimeSeriesType &type, const Out<TSS<SCALAR>, Specification> &output) {
+        const auto &set_type = type_cast<TimeSeriesSetType>(type);
+        const auto snapshot = reader_->read<std::uint8_t>() != 0;
+        if (snapshot) {
             output.clear();
         }
-        for (auto i = std::uint32_t{}; i < operation.count; ++i) {
-            auto key = next();
-            require(key.kind == TimeSeriesTickOperation::Kind::set_key && key.scalar.has_value());
-            if (key.flag) {
-                output.insert(key.scalar->view());
-            } else {
-                output.erase(key.scalar->view());
-            }
+
+        const auto added_count = reader_->read<std::uint32_t>();
+        const auto removed_count = reader_->read<std::uint32_t>();
+        for (auto index = std::uint32_t{}; index < added_count; ++index) {
+            visit_scalar(set_type.item_type(), [&](const auto &key) { output.insert(key); });
+        }
+        for (auto index = std::uint32_t{}; index < removed_count; ++index) {
+            visit_scalar(set_type.item_type(), [&](const auto &key) { output.erase(key); });
         }
     }
 
     template <OutputSpecification Specification>
-    void operator()(TimeSeriesTickOperation &operation, const Out<TSD<SCALAR, TS_T>, Specification> &output) {
-        require(operation.kind == TimeSeriesTickOperation::Kind::dictionary);
-        if (operation.flag) {
+    void apply_concrete(const TimeSeriesType &type, const Out<TSD<SCALAR, TS_T>, Specification> &output) {
+        const auto &dictionary_type = type_cast<TimeSeriesDictionaryType>(type);
+        const auto snapshot = reader_->read<std::uint8_t>() != 0;
+        if (snapshot) {
             output.clear();
         }
-        for (auto i = std::uint32_t{}; i < operation.count; ++i) {
-            auto entry = next();
-            if (entry.kind == TimeSeriesTickOperation::Kind::dictionary_remove) {
-                require(entry.scalar.has_value());
-                output.erase(entry.scalar->view());
-                continue;
-            }
-            require(entry.kind == TimeSeriesTickOperation::Kind::dictionary_item && entry.scalar.has_value());
-            auto item = output[entry.scalar->view()];
-            apply(item);
+
+        const auto removed_count = reader_->read<std::uint32_t>();
+        const auto added_count = reader_->read<std::uint32_t>();
+        const auto modified_count = reader_->read<std::uint32_t>();
+        for (auto index = std::uint32_t{}; index < removed_count; ++index) {
+            visit_scalar(dictionary_type.key_type(), [&](const auto &key) { output.erase(key); });
+        }
+        for (auto index = std::uint32_t{}; index < added_count; ++index) {
+            visit_scalar(dictionary_type.key_type(), [&](const auto &key) {
+                apply_erased(dictionary_type.value_type(), output[key]);
+            });
+        }
+        for (auto index = std::uint32_t{}; index < modified_count; ++index) {
+            visit_scalar(dictionary_type.key_type(), [&](const auto &key) {
+                apply_erased(dictionary_type.value_type(), output[key]);
+            });
         }
     }
 
     template <OutputSpecification Specification>
-    void operator()(TimeSeriesTickOperation &, const Out<REF<TS_T>, Specification> &) {
+    void apply_concrete(const TimeSeriesType &, const Out<REF<TS_T>, Specification> &) {
         throw std::invalid_argument{"retained reference time series ticks are not supported"};
     }
 
     template <OutputSpecification Specification>
-    void operator()(TimeSeriesTickOperation &operation, const Out<TS_T, Specification> &output) {
-        if (operation.kind != TimeSeriesTickOperation::Kind::extension || !operation.scalar) {
-            throw std::logic_error{"time series tick operations do not match their output shape"};
-        }
-        dispatch_->replay(*operation.scalar, output);
+    void apply_concrete(const TimeSeriesType &, const Out<TS_T, Specification> &output) {
+        dispatch_->replay(*reader_, output);
     }
 
   private:
-    static void require(bool condition) {
-        if (!condition) {
-            throw std::logic_error{"time series tick operations do not match their output shape"};
+    template <typename Function> void visit_scalar(const ScalarType &type, Function &&function) {
+        const auto matched = visit_builtin_scalar_type(type, [&]<typename Builtin>(std::type_identity<Builtin>) {
+            using Stored = details::scalar_stored_t<Builtin>;
+            if constexpr (std::is_trivially_copyable_v<Stored>) {
+                const auto stored = reader_->template read<Stored>();
+                const auto value = Scalar<Builtin>::from(stored);
+                std::invoke(function, Scalar<>::from(value));
+            } else {
+                reader_->template visit_object<ScalarValue<>>(
+                    [&](const auto &value) { std::invoke(function, value.view()); });
+            }
+        });
+
+        if (!matched && !dispatch_->replay_scalar(type, *reader_, function)) {
+            reader_->template visit_object<ScalarValue<>>(
+                [&](const auto &value) { std::invoke(function, value.view()); });
         }
     }
 
-    TimeSeriesTickOperation next() {
-        require(*remaining_ != 0);
-        --*remaining_;
-        return reader_->read<TimeSeriesTickOperation>();
+    TickState read_state() {
+        const auto state = reader_->read<std::uint8_t>();
+        if (state > static_cast<std::uint8_t>(TickState::invalidated)) {
+            throw std::logic_error{"invalid time series tick state"};
+        }
+        return static_cast<TickState>(state);
     }
 
-    template <typename Output> void apply(TimeSeriesTickOperation &operation, const Output &output) {
-        (*this)(operation, output);
-    }
-
-    util::buffer_reader *reader_;
+    TimeSeriesTickReadContext *reader_;
     const TimeSeriesTickDispatch *dispatch_;
-    std::size_t *remaining_;
+};
+
+class TimeSeriesTickDiscard {
+  public:
+    TimeSeriesTickDiscard(TimeSeriesTickDiscardContext &reader, const TimeSeriesTickDispatch &dispatch)
+        : reader_{&reader}, dispatch_{&dispatch} {}
+
+    void apply(const TimeSeriesType &type) {
+        type.visit(
+            [&](const TimeSeriesValueType *value_type) {
+                if (read_state() == TickState::value) {
+                    discard_scalar(value_type->value_type());
+                }
+            },
+            [&](const TimeSeriesListType *list_type) {
+                if (read_state() == TickState::invalidated) {
+                    return;
+                }
+                const auto count = reader_->read<std::uint32_t>();
+                for (auto index = std::uint32_t{}; index < count; ++index) {
+                    const auto item_id = reader_->read<item_id_t>();
+                    apply(list_type->item_type(item_id));
+                }
+            },
+            [&](const TimeSeriesBundleType *bundle_type) {
+                if (read_state() == TickState::invalidated) {
+                    return;
+                }
+                const auto count = reader_->read<std::uint32_t>();
+                for (auto index = std::uint32_t{}; index < count; ++index) {
+                    const auto item_id = reader_->read<item_id_t>();
+                    apply(bundle_type->item_type(item_id));
+                }
+            },
+            [&](const TimeSeriesSetType *set_type) {
+                (void)reader_->read<std::uint8_t>(); // snapshot flag
+                const auto added_count = reader_->read<std::uint32_t>();
+                const auto removed_count = reader_->read<std::uint32_t>();
+                for (auto index = std::uint32_t{}; index < added_count; ++index) {
+                    discard_scalar(set_type->item_type());
+                }
+                for (auto index = std::uint32_t{}; index < removed_count; ++index) {
+                    discard_scalar(set_type->item_type());
+                }
+            },
+            [&](const TimeSeriesDictionaryType *dictionary_type) {
+                (void)reader_->read<std::uint8_t>(); // snapshot flag
+                const auto removed_count = reader_->read<std::uint32_t>();
+                const auto added_count = reader_->read<std::uint32_t>();
+                const auto modified_count = reader_->read<std::uint32_t>();
+                for (auto index = std::uint32_t{}; index < removed_count; ++index) {
+                    discard_scalar(dictionary_type->key_type());
+                }
+                for (auto index = std::uint32_t{}; index < added_count; ++index) {
+                    discard_scalar(dictionary_type->key_type());
+                    apply(dictionary_type->value_type());
+                }
+                for (auto index = std::uint32_t{}; index < modified_count; ++index) {
+                    discard_scalar(dictionary_type->key_type());
+                    apply(dictionary_type->value_type());
+                }
+            },
+            [&](const TimeSeriesReferenceType *) {
+                throw std::invalid_argument{"retained reference time series ticks are not supported"};
+            },
+            [&] { dispatch_->discard(type, *reader_); });
+    }
+
+  private:
+    TickState read_state() {
+        const auto state = reader_->read<std::uint8_t>();
+        if (state > static_cast<std::uint8_t>(TickState::invalidated)) {
+            throw std::logic_error{"invalid time series tick state"};
+        }
+        return static_cast<TickState>(state);
+    }
+
+    void discard_scalar(const ScalarType &type) {
+        const auto matched = visit_builtin_scalar_type(type, [&]<typename Builtin>(std::type_identity<Builtin>) {
+            using Stored = scalar_stored_t<Builtin>;
+            if constexpr (std::is_trivially_copyable_v<Stored>) {
+                reader_->consume(sizeof(Stored));
+            } else {
+                reader_->template discard<ScalarValue<>>();
+            }
+        });
+        if (!matched && !dispatch_->discard_scalar(type, *reader_)) {
+            reader_->template discard<ScalarValue<>>();
+        }
+    }
+
+    TimeSeriesTickDiscardContext *reader_;
+    const TimeSeriesTickDispatch *dispatch_;
 };
 
 } // namespace details
@@ -611,41 +860,26 @@ class TimeSeriesTickWriter {
   public:
     explicit TimeSeriesTickWriter(util::buffer buffer, allocator memory = {},
                                   const TimeSeriesTickDispatch &dispatch = default_dispatch())
-        : writer_{std::move(buffer)}, memory_{memory}, operations_{&memory_.memory_resource()}, dispatch_{&dispatch} {}
+        : writer_{std::move(buffer)}, memory_{memory}, dispatch_{&dispatch} {}
 
     template <typename Variable, auto... Properties>
     // Capture a change made at `now`. The caller supplies the evaluation time
     // so an older invalidation is not recorded again when another input ticks.
     bool write(const In<Variable, Properties...> &input, EvaluationTime now) {
-        operations_.clear();
-        try {
-            auto capture = details::TimeSeriesTickCapture{operations_, memory_, *dispatch_};
-            if (!capture.capture(input, now)) {
-                return false;
-            }
-
-            const auto count = operations_.size();
-            if (count >= std::numeric_limits<std::uint32_t>::max() ||
-                count + 1 > std::numeric_limits<std::size_t>::max() / sizeof(details::TimeSeriesTickOperation)) {
-                throw std::length_error{"time series tick has too many operations"};
-            }
-
-            const auto byte_count = (count + 1) * sizeof(details::TimeSeriesTickOperation);
-            auto reservation = writer_.reserve(byte_count, alignof(details::TimeSeriesTickOperation));
-            auto header = details::TimeSeriesTickOperation{details::TimeSeriesTickOperation::Kind::header};
-            header.type = &input.runtime_type().type();
-            header.count = static_cast<std::uint32_t>(count);
-            reservation.write(std::move(header));
-            for (auto &operation : operations_) {
-                reservation.write(std::move(operation));
-            }
-            reservation.commit();
-            operations_.clear();
-            return true;
-        } catch (...) {
-            operations_.clear();
-            throw;
+        const auto &type = input.runtime_type().type();
+        if (type_ != nullptr && type_ != &type) {
+            throw std::invalid_argument{"a tick writer cannot mix semantic time series types"};
         }
+
+        auto writer = TimeSeriesTickWriteContext{writer_};
+        auto capture = details::TimeSeriesTickCapture{writer, memory_, *dispatch_};
+        if (!capture.capture(input, now)) {
+            return false;
+        }
+
+        writer.commit();
+        type_ = &type;
+        return true;
     }
 
   private:
@@ -656,16 +890,21 @@ class TimeSeriesTickWriter {
 
     util::buffer_writer writer_;
     allocator memory_;
-    std::pmr::vector<details::TimeSeriesTickOperation> operations_;
     const TimeSeriesTickDispatch *dispatch_;
+    const TimeSeriesType *type_{};
 };
 
 class TimeSeriesTickReader {
   public:
-    explicit TimeSeriesTickReader(util::buffer buffer, const TimeSeriesTickDispatch &dispatch = default_dispatch())
-        : reader_{std::move(buffer)}, dispatch_{&dispatch} {}
+    TimeSeriesTickReader(util::buffer buffer, const TimeSeriesType &type,
+                         const TimeSeriesTickDispatch &dispatch = default_dispatch())
+        : reader_{std::move(buffer)}, dispatch_{&dispatch}, type_{&type} {}
 
     ~TimeSeriesTickReader() {
+        if (discard_failed_) {
+            return;
+        }
+
         try {
             while (has_next()) {
                 discard();
@@ -675,8 +914,7 @@ class TimeSeriesTickReader {
         }
     }
 
-    // The reader destroys unread records on destruction. A reader must be
-    // created for a buffer containing records with owned scalar payloads.
+    // The reader destroys unread records on destruction.
     bool has_next() { return !reader_.readable().empty(); }
 
     template <typename Variable, auto... Properties>
@@ -685,25 +923,28 @@ class TimeSeriesTickReader {
             return false;
         }
 
-        const auto &header = reader_.peek<details::TimeSeriesTickOperation>();
-        require_header(header);
-        if (!output.runtime_type().type().accepts(*header.type)) {
+        if (&output.runtime_type().type() != type_) {
             throw std::invalid_argument{"time series tick record has a different semantic output type"};
         }
 
-        auto consumed_header = reader_.read<details::TimeSeriesTickOperation>();
-        auto remaining = static_cast<std::size_t>(consumed_header.count);
-        auto replay = details::TimeSeriesTickReplay{reader_, *dispatch_, remaining};
+        auto replay_buffer = reader_.fork();
+        auto read_context = TimeSeriesTickReadContext{replay_buffer};
+        auto replay = details::TimeSeriesTickReplay{read_context, *dispatch_};
         try {
-            output.visit([&](const auto *typed) { replay.apply(*typed); }, ddv::noop);
-            if (remaining != 0) {
-                throw std::logic_error{"time series tick has unconsumed operations"};
-            }
+            replay.apply_erased(*type_, output);
         } catch (...) {
-            while (remaining != 0) {
-                --remaining;
-                reader_.skip<details::TimeSeriesTickOperation>();
+            try {
+                discard_record();
+            } catch (...) {
+                discard_failed_ = true;
             }
+            throw;
+        }
+
+        try {
+            discard_record();
+        } catch (...) {
+            discard_failed_ = true;
             throw;
         }
         return true;
@@ -713,28 +954,31 @@ class TimeSeriesTickReader {
         if (!has_next()) {
             return false;
         }
-        const auto header = reader_.read<details::TimeSeriesTickOperation>();
-        require_header(header);
-        for (auto i = std::uint32_t{}; i < header.count; ++i) {
-            reader_.skip<details::TimeSeriesTickOperation>();
+
+        try {
+            discard_record();
+        } catch (...) {
+            discard_failed_ = true;
+            throw;
         }
         return true;
     }
 
   private:
+    void discard_record() {
+        auto context = TimeSeriesTickDiscardContext{reader_};
+        details::TimeSeriesTickDiscard{context, *dispatch_}.apply(*type_);
+    }
+
     static const TimeSeriesTickDispatch &default_dispatch() {
         static const TimeSeriesTickDispatch dispatch;
         return dispatch;
     }
 
-    static void require_header(const details::TimeSeriesTickOperation &header) {
-        if (header.kind != details::TimeSeriesTickOperation::Kind::header || header.type == nullptr) {
-            throw std::logic_error{"buffer does not contain a time series tick record"};
-        }
-    }
-
     util::buffer_reader reader_;
     const TimeSeriesTickDispatch *dispatch_;
+    const TimeSeriesType *type_;
+    bool discard_failed_{};
 };
 
 } // namespace bg

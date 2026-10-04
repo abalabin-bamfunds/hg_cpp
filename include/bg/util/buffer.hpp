@@ -18,6 +18,8 @@ namespace bg::util {
 
 enum class buffer_type { contiguous, single_writer_chain, concurrent_writer_chain };
 
+class buffer_reader;
+
 class buffer {
   public:
     // The allocator must outlive all handles. Concurrent chains require thread-safe allocation and deallocation.
@@ -236,6 +238,16 @@ class buffer_writer {
     buffer_writer &operator=(const buffer_writer &) = delete;
     buffer_writer(buffer_writer &&) = delete;
     buffer_writer &operator=(buffer_writer &&) = delete;
+
+    // Discard the current uncommitted write after destroying any typed values it contains.
+    void rollback() noexcept {
+        if (pending_tail_ != nullptr) {
+            pending_first_.reset();
+            pending_tail_ = nullptr;
+            starting_block_end_ = 0;
+        }
+        position_ = block_.pointer().base_block()->committed.load(std::memory_order_relaxed);
+    }
 
     // Writes remain private until commit. Raw bytes may span blocks; a typed object always occupies one block.
     void write_bytes(std::span<const std::byte> bytes) {
@@ -522,10 +534,11 @@ class buffer_reader {
         }
     }
 
-    buffer_reader(const buffer_reader &) = delete;
     buffer_reader &operator=(const buffer_reader &) = delete;
     buffer_reader(buffer_reader &&) = delete;
     buffer_reader &operator=(buffer_reader &&) = delete;
+
+    buffer_reader fork() const { return buffer_reader{*this}; }
 
     std::span<const std::byte> readable() {
         auto *block = block_.pointer().base_block();
@@ -577,6 +590,13 @@ class buffer_reader {
         return *value_at_cursor<T>(end);
     }
 
+    // Advance over a typed object without destroying it. The object must be destroyed separately.
+    template <typename T> void consume() {
+        auto end = std::size_t{};
+        value_at_cursor<T>(end);
+        position_ = end;
+    }
+
     template <typename T> T read() {
         auto end = std::size_t{};
         auto *value = value_at_cursor<T>(end);
@@ -594,6 +614,9 @@ class buffer_reader {
     }
 
   private:
+    buffer_reader(const buffer_reader &other)
+        : block_{other.block_}, position_{other.position_}, limit_{other.limit_}, contiguous_{other.contiguous_} {}
+
     template <typename T> T *value_at_cursor(std::size_t &end) {
         details::require_supported_alignment(alignof(T));
         const auto available = readable();
@@ -612,6 +635,12 @@ class buffer_reader {
     std::size_t limit_{};
     bool contiguous_{};
 };
+
+static_assert(sizeof(buffer_reader) ==
+              ((sizeof(details::block_reference) + 2 * sizeof(std::size_t) + sizeof(bool) +
+                alignof(buffer_reader) - 1) /
+               alignof(buffer_reader)) *
+                  alignof(buffer_reader));
 
 using concurrent_buffer_reader = buffer_reader;
 
