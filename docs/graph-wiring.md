@@ -36,9 +36,17 @@ declared inputs.
 size as `WiringPoint` and converts to `WiringPoint`. Graph definitions use it to
 declare time series parameter and output types.
 
+`wp<TS_T, optional>` declares an optional graph input. Forwarding this input
+requires an optional parameter on the receiving node, graph, or operator
+overload. `opt(point)` supplies this annotation at a call site. It keeps the
+time series type and identity and adds no wiring-point storage. See
+[operator optional arguments](operators.md#optional-arguments) for selection
+and invalid-input behavior.
+
 `point.as<TS_T>()` returns a typed wiring point when the requested type accepts
 the point's runtime type. Constructing `wp<TS_T>` from another wiring point
-performs the same check.
+performs the same check. `as<TS_T>()` preserves an optional typed point's
+validity qualifier.
 
 `point[key]` forwards to `operators::getitem`. Operator overload resolution
 selects the behavior for the collection and key types. A scalar index into a

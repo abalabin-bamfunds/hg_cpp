@@ -101,6 +101,7 @@ class Signature {
                              const TypeMap *type_map = nullptr) const;
     [[nodiscard]] TypeMap match_arguments(std::span<const Type *const> arguments,
                                           const TypeMap *type_map = nullptr) const;
+    void validate_wiring_arguments(std::span<const WiringArgument> arguments) const;
     [[nodiscard]] ResolvedSignature complete_resolution(TypeMap &type_map,
                                                         const WiringArguments *arguments = nullptr) const;
 

@@ -239,6 +239,11 @@ is therefore:
 bg::In<bg::TS<float>, "value"_n>
 ```
 
+A call can supply `opt(point)` to require an optional parameter. A required
+parameter rejects that argument during wiring. An unmarked point can bind to
+either validity constraint. The [operator rules](operators.md#optional-arguments)
+define how overload selection uses this distinction.
+
 Property order has no meaning. A property can be omitted without spelling the
 properties before it. Repeating a property category is a compile error.
 

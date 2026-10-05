@@ -2,7 +2,9 @@
 
 Variadic parameters collect wiring-time arguments into a wiring record. The
 record preserves argument order, names, and whether each argument was supplied
-as a scalar or time series.
+as a scalar or time series. It also preserves `opt` qualifiers when arguments
+are selected or forwarded. An optional variadic parameter accepts qualified
+items; a required variadic parameter rejects them.
 
 Candidate resolution constructs each required record in a disposable wiring
 overlay. The selected call constructs its records in the active `GraphWiring`.

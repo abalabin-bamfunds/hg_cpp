@@ -274,6 +274,23 @@ TypeMap Signature::match_arguments(std::span<const Type *const> arguments, const
     return type_map;
 }
 
+void Signature::validate_wiring_arguments(std::span<const WiringArgument> arguments) const {
+    if (arguments.size() != parameters_.size()) {
+        throw TypeResolutionError{TypeResolutionErrorCode::argument_count, name_,
+                                  "signature received the wrong number of wiring arguments"};
+    }
+
+    for (auto index = std::size_t{}; index < arguments.size(); ++index) {
+        const auto &argument = arguments[index];
+        const auto &parameter = parameters_[index];
+        if (argument.requires_optional() && parameter.validity != optional) {
+            throw TypeResolutionError{TypeResolutionErrorCode::mismatch, parameter.name,
+                                      "an opt-qualified argument requires an optional input parameter",
+                                      parameter.type, &argument.type()};
+        }
+    }
+}
+
 SignatureResolution Signature::resolve_with_type_map(std::span<const Type *const> arguments) const {
     return resolve_seeded(arguments, TypeMap{});
 }
@@ -286,6 +303,8 @@ SignatureResolution Signature::resolve_with_type_map(std::span<const Type *const
 SignatureResolution Signature::resolve_wiring_arguments(std::span<const WiringArgument> arguments,
                                                         std::span<const details::WiringArgumentDescriptor> descriptors,
                                                         const TypeMap *seed) const {
+    validate_wiring_arguments(arguments);
+
     auto argument_types = std::vector<const Type *>{};
     argument_types.reserve(arguments.size());
     for (const auto &argument : arguments) {

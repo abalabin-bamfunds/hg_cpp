@@ -35,6 +35,7 @@ add_executable(
     evaluation/time_series/time_series_value_test.cpp
     evaluation/validity/input_activity_test.cpp
     evaluation/validity/invalidation_behavior_test.cpp
+    evaluation/validity/optional_input_test.cpp
     evaluation/validity/runtime_validity_test.cpp
     graph/compiled_graph_test.cpp
     graph/service_binding_test.cpp
@@ -117,6 +118,7 @@ add_executable(
     wiring/mesh_test.cpp
     wiring/switch_test.cpp
     wiring/operator_test.cpp
+    wiring/optional_wiring_test.cpp
     wiring/requirement_test.cpp
     wiring/service_test.cpp
     wiring/resolver_test.cpp

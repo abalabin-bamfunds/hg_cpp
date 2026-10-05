@@ -125,6 +125,37 @@ Free collection materialization and other wiring adaptations happen
 after selection. This ensures that ranking describes the graph-code arguments,
 not infrastructure introduced by wiring.
 
+## Optional arguments
+
+`opt(point)` requires the receiving parameter to have the `optional` input
+validity constraint. It retains the time series type and identity. It adds no
+node, supplies no fallback value, and does not inspect runtime validity or
+schedule evaluation.
+
+```cpp
+operation(x, y);            // Either validity constraint is applicable.
+operation(opt(x), y);       // The first parameter must be optional.
+operation(opt(x), opt(y));  // Both parameters must be optional.
+```
+
+The selected implementation defines the result for an invalid optional input.
+For example, addition can use zero and multiplication can use one. An operator
+without an applicable optional-input overload reports a wiring error.
+
+When applicable overloads have equivalent parameter types, required time series
+parameters are preferred for unmarked arguments. One overload must be at least
+as preferred at every parameter and strictly preferred at one. Conflicting
+validity preferences remain ambiguous. Type specificity precedes this
+preference. This preference applies only to time series parameters; scalar
+absence keeps its existing matching rules.
+
+Optional inputs retain their declared activity. To publish a result while every
+input is initially invalid, an implementation must request
+[`schedule_on_start`](node-api.md#plain-c-parameters) or schedule itself.
+
+Use `default_(point, fallback)` when every consumer should read the supplied
+fallback while the point is invalid.
+
 ## Resolvers
 
 A resolver supplies a variable that argument matching did not map. Resolvers
@@ -213,7 +244,9 @@ every other applicable candidate. Otherwise the call is ambiguous.
 
 Comparison includes parameter types, constraints, literal components, and
 relationships created by repeated variables. It does not include output types,
-parameter names, input activity, input validity, or requirement functions.
+parameter names, input activity, or requirement functions. Input validity
+constraints break ties between equivalent parameter types as described in
+[Optional arguments](#optional-arguments).
 The implementation must compare complete signatures rather than add numeric
 scores for individual parameters.
 
@@ -289,11 +322,12 @@ before normal overload resolution.
 ## Resolution cache
 
 Each operator has a bounded resolution cache. Its keys include supplied
-argument types and presence, explicit type mappings, plus only the wiring-time
-scalar values read by a resolver or requirement function. Reads made by
-rejected candidates are part of the key when they can affect the selected
-result. The key also includes the presence and type of every implicit context
-value that can affect overload selection. Cache validation rebuilds the flat
+argument types, presence, and `opt` qualifiers, explicit type mappings, and
+only the wiring-time scalar values read by a resolver or requirement function.
+Qualifiers inside forwarded variadic records also contribute to the key. Reads
+made by rejected candidates are part of the key when they can affect the selected
+result. The key also includes the presence, type, and qualifier of every implicit
+context value that can affect overload selection. Cache validation rebuilds the flat
 argument sequence for the candidate that made each read.
 
 Graph arguments use graph structure in the key. Graph arguments with equal

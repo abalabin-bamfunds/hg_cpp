@@ -170,14 +170,24 @@ class wp<TSB<Schema, TimeSeriesProperties...>, WiringProperties...> {
         }
     }
 
-    template <typename Source> explicit wp(wp<Source> source) : wp(static_cast<WiringPoint>(source)) {}
+    template <typename Source, auto... SourceProperties>
+    explicit wp(wp<Source, SourceProperties...> source) : wp(static_cast<WiringPoint>(source)) {
+        static_assert(wp<Source, SourceProperties...>::validity != optional || ParsedProperties::validity == optional,
+                      "an optional wiring point cannot be re-annotated as a required input");
+    }
 
     operator WiringPoint() const noexcept { return point_; }
 
     const GraphWiring &graph() const noexcept { return point_.graph(); }
     const TimeSeriesType &type() const noexcept { return point_.type(); }
 
-    template <typename Target> wp<Target> as() const { return point_.template as<Target>(); }
+    template <typename Target> auto as() const {
+        if constexpr (ParsedProperties::validity == optional) {
+            return wp<Target, optional>{point_};
+        } else {
+            return point_.template as<Target>();
+        }
+    }
 
     static wp from_validated(WiringPoint point) noexcept { return wp{point, unchecked_t{}}; }
 
@@ -191,6 +201,7 @@ class wp<TSB<Schema, TimeSeriesProperties...>, WiringProperties...> {
     static constexpr std::string_view name = ParsedProperties::name;
     static constexpr bool context = ParsedProperties::context;
     static constexpr auto variadic_mode = details::VariadicMode::none;
+    static constexpr InputValidity validity = ParsedProperties::validity;
 
   private:
     struct unchecked_t {};
@@ -205,7 +216,9 @@ template <template <template <typename, auto...> typename> typename Schema, auto
     requires(details::variadic_mode<WiringProperties...>() != details::VariadicMode::none)
 class wp<TSB<Schema, TimeSeriesProperties...>, WiringProperties...> {
     using TimeSeries = TSB<Schema, TimeSeriesProperties...>;
-    static_assert(sizeof...(WiringProperties) == 1,
+    using ParsedProperties = details::wiring_point_properties<WiringProperties...>;
+    static_assert((std::size_t{} + ... + static_cast<std::size_t>(details::is_variadic_mode<
+                      decltype(WiringProperties)>)) == 1,
                   "a variadic TSB wiring point requires exactly one variadic property");
     static_assert(details::variadic_mode<WiringProperties...>() == details::VariadicMode::positional ||
                       details::variadic_mode<WiringProperties...>() == details::VariadicMode::named,
@@ -216,6 +229,12 @@ class wp<TSB<Schema, TimeSeriesProperties...>, WiringProperties...> {
         if (!TimeSeries::type().accepts(point.type()) || details::variadic_wiring_record(point) == nullptr) {
             throw WiringError{"a variadic wiring point requires a matching variadic TSB"};
         }
+    }
+
+    template <typename Source, auto... SourceProperties>
+    explicit wp(wp<Source, SourceProperties...> source) : wp(static_cast<WiringPoint>(source)) {
+        static_assert(wp<Source, SourceProperties...>::validity != optional || ParsedProperties::validity == optional,
+                      "an optional wiring point cannot be re-annotated as a required input");
     }
 
     operator WiringPoint() const noexcept { return point_; }
@@ -244,14 +263,21 @@ class wp<TSB<Schema, TimeSeriesProperties...>, WiringProperties...> {
     const GraphWiring &graph() const noexcept { return point_.graph(); }
     const TimeSeriesType &type() const noexcept { return point_.type(); }
 
-    template <typename Target> wp<Target> as() const { return point_.template as<Target>(); }
+    template <typename Target> auto as() const {
+        if constexpr (ParsedProperties::validity == optional) {
+            return wp<Target, optional>{point_};
+        } else {
+            return point_.template as<Target>();
+        }
+    }
 
     static wp from_validated(WiringPoint point) noexcept { return wp{point, unchecked_t{}}; }
 
     using time_series_type = TimeSeries;
-    static constexpr std::string_view name{};
-    static constexpr bool context = false;
-    static constexpr auto variadic_mode = details::variadic_mode<WiringProperties...>();
+    static constexpr std::string_view name = ParsedProperties::name;
+    static constexpr bool context = ParsedProperties::context;
+    static constexpr auto variadic_mode = ParsedProperties::variadic_mode;
+    static constexpr InputValidity validity = ParsedProperties::validity;
 
   private:
     const details::VariadicWiringRecord &record() const noexcept { return *details::variadic_wiring_record(point_); }
@@ -289,5 +315,9 @@ template <typename... Fields>
 
 static_assert(sizeof(wp<TSB<SCHEMA>, var_args>) == sizeof(WiringPoint));
 static_assert(std::is_trivially_copyable_v<wp<TSB<SCHEMA>, var_args>>);
+static_assert(sizeof(wp<TSB<SCHEMA>, var_args, optional>) == sizeof(WiringPoint));
+static_assert(std::is_trivially_copyable_v<wp<TSB<SCHEMA>, var_args, optional>>);
+static_assert(sizeof(wp<TSB<SCHEMA>, var_kwargs, optional>) == sizeof(WiringPoint));
+static_assert(std::is_trivially_copyable_v<wp<TSB<SCHEMA>, var_kwargs, optional>>);
 
 } // namespace bg

@@ -115,11 +115,14 @@ template <bool AllowVariadic, auto... Properties> struct basic_input_properties 
 template <auto... Properties> using input_properties = basic_input_properties<false, Properties...>;
 
 template <auto... Properties> struct wiring_point_properties {
-    static_assert((... && (is_name<decltype(Properties)> || is_context<decltype(Properties)> ||
+    static_assert((... && (is_name<decltype(Properties)> || is_validity<decltype(Properties)> ||
+                           is_context<decltype(Properties)> ||
                            is_variadic_mode<decltype(Properties)>)),
                   "unsupported wiring point property");
     static_assert((std::size_t{} + ... + static_cast<std::size_t>(is_name<decltype(Properties)>)) <= 1,
                   "a wiring point can have only one name property");
+    static_assert((std::size_t{} + ... + static_cast<std::size_t>(is_validity<decltype(Properties)>)) <= 1,
+                  "a wiring point can have only one validity property");
     static_assert((std::size_t{} + ... + static_cast<std::size_t>(is_context<decltype(Properties)>)) <= 1,
                   "a wiring point can have only one context property");
     static_assert((std::size_t{} + ... + static_cast<std::size_t>(is_variadic_mode<decltype(Properties)>)) <= 1,
@@ -140,6 +143,16 @@ template <auto... Properties> struct wiring_point_properties {
     }();
     static constexpr bool context = (false || ... || is_context<decltype(Properties)>);
     static constexpr auto variadic_mode = bg::details::variadic_mode<Properties...>();
+    static constexpr InputValidity validity = [] {
+        auto result = required;
+        (([&] {
+             if constexpr (is_validity<decltype(Properties)>) {
+                 result = Properties;
+             }
+         }()),
+         ...);
+        return result;
+    }();
 };
 
 } // namespace bg::details

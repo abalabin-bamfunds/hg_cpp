@@ -58,7 +58,11 @@ template <typename TimeSeries, auto... Properties> class wp {
     }
 
     // Re-annotation retains the actual wiring type. Signature resolution validates it at the next wiring boundary.
-    template <typename Source> explicit wp(wp<Source> source) : wp(static_cast<WiringPoint>(source)) {}
+    template <typename Source, auto... SourceProperties>
+    explicit wp(wp<Source, SourceProperties...> source) : wp(static_cast<WiringPoint>(source)) {
+        static_assert(wp<Source, SourceProperties...>::validity != optional || ParsedProperties::validity == optional,
+                      "an optional wiring point cannot be re-annotated as a required input");
+    }
 
     operator WiringPoint() const noexcept { return point_; }
 
@@ -68,7 +72,13 @@ template <typename TimeSeries, auto... Properties> class wp {
     const GraphWiring &graph() const { return point_.graph(); }
     const TimeSeriesType &type() const { return point_.type(); }
 
-    template <typename Target> wp<Target> as() const { return point_.template as<Target>(); }
+    template <typename Target> auto as() const {
+        if constexpr (ParsedProperties::validity == optional) {
+            return wp<Target, optional>{point_};
+        } else {
+            return point_.template as<Target>();
+        }
+    }
 
     static wp from_validated(WiringPoint point) noexcept { return wp{point, unchecked_t{}}; }
 
@@ -78,6 +88,7 @@ template <typename TimeSeries, auto... Properties> class wp {
     static constexpr std::string_view name = ParsedProperties::name;
     static constexpr bool context = ParsedProperties::context;
     static constexpr auto variadic_mode = ParsedProperties::variadic_mode;
+    static constexpr InputValidity validity = ParsedProperties::validity;
 
   private:
     struct unchecked_t {};
@@ -108,5 +119,37 @@ static_assert(sizeof(WiringPoint) == sizeof(void *));
 static_assert(std::is_trivially_copyable_v<WiringPoint>);
 static_assert(sizeof(wp<>) == sizeof(WiringPoint));
 static_assert(std::is_trivially_copyable_v<wp<>>);
+static_assert(sizeof(wp<TS_T, optional>) == sizeof(WiringPoint));
+static_assert(std::is_trivially_copyable_v<wp<TS_T, optional>>);
+
+namespace details {
+
+template <typename TimeSeries, VariadicMode Mode> struct optional_wiring_point {
+    using type = wp<TimeSeries, optional>;
+};
+
+template <typename TimeSeries> struct optional_wiring_point<TimeSeries, VariadicMode::positional> {
+    using type = wp<TimeSeries, var_args, optional>;
+};
+
+template <typename TimeSeries> struct optional_wiring_point<TimeSeries, VariadicMode::named> {
+    using type = wp<TimeSeries, var_kwargs, optional>;
+};
+
+template <typename TimeSeries, VariadicMode Mode>
+using optional_wiring_point_t = typename optional_wiring_point<TimeSeries, Mode>::type;
+
+} // namespace details
+
+inline wp<TS_T, optional> opt(WiringPoint point) { return wp<TS_T, optional>::from_validated(point); }
+
+template <typename Point>
+    requires details::is_typed_wiring_point<Point>
+auto opt(Point point) {
+    using Result = details::optional_wiring_point_t<
+        typename details::typed_wiring_point<std::remove_cvref_t<Point>>::time_series_type,
+        std::remove_cvref_t<Point>::variadic_mode>;
+    return Result::from_validated(static_cast<WiringPoint>(point));
+}
 
 } // namespace bg

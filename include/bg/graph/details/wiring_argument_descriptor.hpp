@@ -16,11 +16,12 @@ class WiringArgumentDescriptor {
         : argument_{&argument}, name_{argument.name()}, type_{&argument.type()}, present_{argument.present()},
           category_{argument.is_time_series() ? Category::time_series
                                               : argument.is_scalar() ? Category::scalar : Category::graph},
-          variadic_mode_{variadic_mode} {}
+          variadic_mode_{variadic_mode}, requires_optional_{argument.requires_optional()} {}
 
-    WiringArgumentDescriptor(util::symbol name, const TimeSeriesType &type, VariadicMode variadic_mode) noexcept
+    WiringArgumentDescriptor(util::symbol name, const TimeSeriesType &type, VariadicMode variadic_mode,
+                             bool requires_optional = false) noexcept
         : name_{name}, type_{&type}, present_{true}, category_{Category::time_series},
-          variadic_mode_{variadic_mode} {}
+          variadic_mode_{variadic_mode}, requires_optional_{requires_optional} {}
 
     bool is_time_series() const noexcept { return category_ == Category::time_series; }
     bool is_scalar() const noexcept { return category_ == Category::scalar; }
@@ -29,6 +30,7 @@ class WiringArgumentDescriptor {
     std::optional<util::symbol> name() const noexcept { return name_; }
     const Type &type() const noexcept { return *type_; }
     VariadicMode variadic_mode() const noexcept { return variadic_mode_; }
+    bool requires_optional() const noexcept { return requires_optional_; }
 
     std::optional<Scalar<>> scalar() const {
         if (argument_ == nullptr || !is_scalar() || !present_) {
@@ -50,6 +52,7 @@ class WiringArgumentDescriptor {
     bool present_;
     Category category_;
     VariadicMode variadic_mode_;
+    bool requires_optional_;
 };
 
 } // namespace bg::details

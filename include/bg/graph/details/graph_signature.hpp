@@ -90,10 +90,10 @@ void add_graph_parameter(std::vector<Parameter> &parameters, std::span<const std
         using TimeSeries = typename typed_wiring_point<Value>::time_series_type;
         constexpr auto mode = graph_parameter_variadic_mode<Value>;
         if constexpr (mode == VariadicMode::none) {
-            parameters.push_back({name, &graph_parameter_type<Function, Index>(name), active, required,
+            parameters.push_back({name, &graph_parameter_type<Function, Index>(name), active, Value::validity,
                                   supported_optional_scalar_argument<Value>, mode, nullptr, Value::context});
         } else {
-            parameters.push_back({name, &graph_parameter_type<Function, Index>(name), active, required,
+            parameters.push_back({name, &graph_parameter_type<Function, Index>(name), active, Value::validity,
                                   supported_optional_scalar_argument<Value>, mode,
                                   variadic_wiring_operations<TimeSeries>()});
         }

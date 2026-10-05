@@ -26,6 +26,9 @@ void append_wiring_arguments(std::vector<WiringArgument> &result, WiringArgument
         } else {
             result.emplace_back(field);
         }
+        if (expansion.requires_optional) {
+            result.back().require_optional();
+        }
     }
 }
 
@@ -232,13 +235,16 @@ NormalizedWiringArguments normalize_prepared(const Signature &signature, std::ve
 
     const auto append_record_descriptors = [&](const VariadicWiringRecord &record) {
         auto record_arguments = record.argument_descriptors();
+        auto contains_optional_argument = false;
         for (const auto &argument : record_arguments) {
             if (record.mode() == VariadicMode::named && argument.name() &&
                 name_conflicts_with_fixed(*argument.name())) {
                 throw WiringError{"a variadic argument name conflicts with a fixed parameter"};
             }
+            contains_optional_argument |= argument.requires_optional();
             descriptors.push_back(argument);
         }
+        return contains_optional_argument;
     };
 
     const auto append_capture = [&](VariadicCaptureArguments &capture) {
@@ -265,8 +271,11 @@ NormalizedWiringArguments normalize_prepared(const Signature &signature, std::ve
                 if (record->mode() != mode) {
                     throw WiringError{"a variadic wiring record has an incompatible capture mode"};
                 }
-                append_record_descriptors(*record);
+                const auto contains_optional_argument = append_record_descriptors(*record);
                 normalized.push_back(WiringArgument::borrow(argument));
+                if (argument.requires_optional() || contains_optional_argument) {
+                    normalized.back().require_optional();
+                }
                 return;
             }
 
@@ -277,6 +286,9 @@ NormalizedWiringArguments normalize_prepared(const Signature &signature, std::ve
                 auto record = std::make_unique<VariadicWiringRecord>(collection, mode, operations);
                 append_record_descriptors(*record);
                 normalized.emplace_back(add_record(std::move(record)));
+                if (argument.requires_optional()) {
+                    normalized.back().require_optional();
+                }
                 return;
             }
         }
@@ -305,14 +317,19 @@ NormalizedWiringArguments normalize_prepared(const Signature &signature, std::ve
 
         auto captured = std::vector<WiringArgument>{};
         captured.reserve(capture.arguments.size());
+        auto requires_optional = false;
         for (const auto *argument : capture.arguments) {
             captured.push_back(WiringArgument::borrow(*argument));
+            requires_optional |= argument->requires_optional();
         }
 
         auto record = std::make_unique<VariadicWiringRecord>(static_cast<const TimeSeriesType &>(*parameter.type), mode,
                                                              operations, std::move(captured), memory);
         append_record_descriptors(*record);
         normalized.emplace_back(add_record(std::move(record)));
+        if (requires_optional) {
+            normalized.back().require_optional();
+        }
     };
 
     if (positional) {

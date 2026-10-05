@@ -34,7 +34,7 @@ class DefaultInputNodeTemplate final : public NodeTemplate {
     const Signature &signature() const override {
         static const auto signature =
             Signature{util::symbol{"default input"},
-                      {{util::symbol{"value"}, &TS<SCALAR>::type()},
+                      {{util::symbol{"value"}, &TS<SCALAR>::type(), active, optional},
                        {util::symbol{"fallback"}, &TS<SCALAR, TimeSeriesGuarantee::const_>::type()}},
                       TS<SCALAR>::type()};
         return signature;
@@ -54,7 +54,8 @@ class DefaultValueTemplate final : public WiringTemplate {
     const Signature &signature() const override {
         static const auto signature =
             Signature{util::symbol{"default"},
-                      {{util::symbol{"value"}, &TS<SCALAR>::type()}, {util::symbol{"fallback"}, &SCALAR::type()}},
+                      {{util::symbol{"value"}, &TS<SCALAR>::type(), active, optional},
+                       {util::symbol{"fallback"}, &SCALAR::type()}},
                       TS<SCALAR>::type()};
         return signature;
     }

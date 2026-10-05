@@ -18,7 +18,8 @@ template <typename Item, auto Size, auto... TimeSeriesProperties, auto... Wiring
 class wp<TSL<Item, Size, TimeSeriesProperties...>, WiringProperties...> {
     using TimeSeries = TSL<Item, Size, TimeSeriesProperties...>;
     using ParsedProperties = details::wiring_point_properties<WiringProperties...>;
-    static_assert(sizeof...(WiringProperties) == 1,
+    static_assert((std::size_t{} + ... + static_cast<std::size_t>(details::is_variadic_mode<
+                      decltype(WiringProperties)>)) == 1,
                   "a variadic TSL wiring point requires exactly one variadic property");
     static_assert(details::variadic_mode<WiringProperties...>() == details::VariadicMode::positional,
                   "a variadic TSL wiring point requires var_args");
@@ -30,6 +31,12 @@ class wp<TSL<Item, Size, TimeSeriesProperties...>, WiringProperties...> {
         }
     }
 
+    template <typename Source, auto... SourceProperties>
+    explicit wp(wp<Source, SourceProperties...> source) : wp(static_cast<WiringPoint>(source)) {
+        static_assert(wp<Source, SourceProperties...>::validity != optional || ParsedProperties::validity == optional,
+                      "an optional wiring point cannot be re-annotated as a required input");
+    }
+
     operator WiringPoint() const noexcept { return point_; }
 
     std::size_t size() const noexcept { return record().size(); }
@@ -38,7 +45,13 @@ class wp<TSL<Item, Size, TimeSeriesProperties...>, WiringProperties...> {
     const GraphWiring &graph() const noexcept { return point_.graph(); }
     const TimeSeriesType &type() const noexcept { return point_.type(); }
 
-    template <typename Target> wp<Target> as() const { return point_.template as<Target>(); }
+    template <typename Target> auto as() const {
+        if constexpr (ParsedProperties::validity == optional) {
+            return wp<Target, optional>{point_};
+        } else {
+            return point_.template as<Target>();
+        }
+    }
 
     static wp from_validated(WiringPoint point) noexcept { return wp{point, unchecked_t{}}; }
 
@@ -46,6 +59,7 @@ class wp<TSL<Item, Size, TimeSeriesProperties...>, WiringProperties...> {
     static constexpr std::string_view name = ParsedProperties::name;
     static constexpr bool context = ParsedProperties::context;
     static constexpr auto variadic_mode = ParsedProperties::variadic_mode;
+    static constexpr InputValidity validity = ParsedProperties::validity;
 
   private:
     const details::VariadicWiringRecord &record() const noexcept { return *details::variadic_wiring_record(point_); }
@@ -65,5 +79,7 @@ template <typename... TimeSeries> [[nodiscard]] wp<> tsl(wp<TimeSeries>... items
 
 static_assert(sizeof(wp<TSL<TS_T, SIZE>, var_args>) == sizeof(WiringPoint));
 static_assert(std::is_trivially_copyable_v<wp<TSL<TS_T, SIZE>, var_args>>);
+static_assert(sizeof(wp<TSL<TS_T, SIZE>, var_args, optional>) == sizeof(WiringPoint));
+static_assert(std::is_trivially_copyable_v<wp<TSL<TS_T, SIZE>, var_args, optional>>);
 
 } // namespace bg

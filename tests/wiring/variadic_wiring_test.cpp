@@ -288,6 +288,29 @@ TEST_CASE("named variadic arguments are validated before absent values are remov
         "a variadic argument name conflicts with a fixed parameter");
 }
 
+namespace {
+
+template <template <typename, auto...> typename Field> struct forwarded_named_bundle {
+    Field<TS<i64>> fixed;
+    Field<TS<float>> value;
+};
+
+} // namespace
+
+TEST_CASE("forwarded named variadic arguments cannot conflict with a fixed parameter",
+          "[feature:wiring][feature:variadic-wiring][series:tsb][schema:generic][definition:function]") {
+    const auto bundle_source = node([](Out<TSB<forwarded_named_bundle>>) {});
+    const auto leaf_source = node([](Out<TS<i64>>) {});
+    const auto receiver = graph("name"_n = "receiver", [](wp<TS<i64>, "fixed"_n> fixed,
+                                                               wp<TSB<SCHEMA>, var_kwargs>) { return fixed; });
+    const auto sender = graph("name"_n = "sender", [&](wp<TSB<SCHEMA>, "values"_n, var_kwargs> values) {
+        return receiver(leaf_source(), values);
+    });
+
+    CHECK_THROWS_WITH(testing::test_wiring([&] { sender("values"_n = bundle_source()); }),
+                      "a variadic argument name conflicts with a fixed parameter");
+}
+
 TEST_CASE("a forwarded variadic pack retains its capture mode",
           "[feature:wiring][feature:variadic-wiring][series:tsb][schema:generic][definition:function]") {
     const auto receiver = graph("name"_n = "receiver", [](wp<TSB<SCHEMA>, var_kwargs>) {});

@@ -144,6 +144,7 @@ graph compilation or evaluation.
 - wiring paths, labels, and diagnostics
 - node-call deduplication, opt-out, and identity inputs
 - operator overload applicability, selection, requirements, resolvers, and caching
+- `opt` argument matching, required-input preference, cache separation, named arguments, and variadic forwarding
 - context time series declaration, lexical binding, explicit arguments, type resolution, diagnostics, and caching
 - graph arguments, including signature type resolution, repeated variables, exact and pattern matching,
   structure-based caching, and callable and aggregate graphs
@@ -177,6 +178,7 @@ graph compilation or evaluation.
 - scheduling during evaluation, including nodes in the current bit block
 - active and passive inputs, including per-input runtime activity changes
 - required-input validity caching, invalidation, and revalidation
+- operation-specific handling of invalid `opt` arguments, including mixed required and optional inputs
 - output update and invalidation propagation
 - `default_` fallback selection, timestamps, modified state, and source validity transitions
 - invalidation behavior selected by a node
