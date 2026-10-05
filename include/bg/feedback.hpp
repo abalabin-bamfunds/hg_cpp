@@ -103,6 +103,10 @@ template <typename SERIES> class Feedback {
   public:
     explicit Feedback(std::string_view name)
         : label_{name.empty() ? util::symbol{"feedback"} : util::symbol{name}} {
+        if (SERIES::type().contains_reference()) {
+            throw WiringError{"feedback does not support time series types containing references"};
+        }
+
         static_assert([] {
             if constexpr (requires { SERIES::has_explicit_guarantee; SERIES::guarantee; }) {
                 return !SERIES::has_explicit_guarantee || SERIES::guarantee != TimeSeriesGuarantee::const_;

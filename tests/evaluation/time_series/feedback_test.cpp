@@ -3,6 +3,8 @@
 #include <bg/graph/graph_wiring.hpp>
 #include <bg/graph/wiring_context.hpp>
 #include <bg/graph/wiring_error.hpp>
+#include <bg/graph.hpp>
+#include <bg/nested.hpp>
 #include <bg/operators.hpp>
 #include <bg/testing/test_graph.hpp>
 #include <bg/time_series/tsd/tsd_input.hpp>
@@ -44,6 +46,67 @@ TEST_CASE("feedback waits for its first input tick",
     CHECK(actual.equals({std::nullopt, std::nullopt, 3, std::nullopt, 8}));
 }
 
+TEST_CASE("feedback can drive a bounded computation loop",
+          "[evaluation][feature:feedback][feature:timed-scheduling][feature:test-graph]"
+          "[series:value][scalar:i64][shape:chain][transition:update]") {
+    const auto advance = bg::node([](bg::In<bg::TS<bg::i64>, bg::optional> seed,
+                                     bg::In<bg::TS<bg::i64>, bg::optional> previous,
+                                     bg::Out<bg::TS<bg::i64>> output) {
+        if (previous.valid()) {
+            if (*previous < 3) {
+                output.set(*previous + 1);
+            }
+            return;
+        }
+
+        if (seed.valid()) {
+            output.set(*seed);
+        }
+    });
+    const auto graph = [&](bg::wp<bg::TS<bg::i64>> seed) {
+        auto loop = bg::feedback<bg::TS<bg::i64>>("bounded");
+        const auto next = advance(seed, loop);
+        loop = next;
+        return static_cast<bg::wp<bg::TS<bg::i64>>>(loop);
+    };
+
+    const auto actual = bg::testing::test_graph(graph, std::array<bg::i64, 1>{1});
+    CHECK(actual.equals({std::nullopt, 1, 2, 3}));
+}
+
+TEST_CASE("feedback can drive a bounded computation loop in a nested graph",
+          "[evaluation][feature:feedback][feature:timed-scheduling][feature:nested-graph]"
+          "[feature:test-graph][series:value][scalar:i64][shape:nested][transition:update]") {
+    using namespace bg::literals;
+
+    const auto advance = bg::node([](bg::In<bg::TS<bg::i64>, bg::optional> seed,
+                                     bg::In<bg::TS<bg::i64>, bg::optional> previous,
+                                     bg::Out<bg::TS<bg::i64>> output) {
+        if (previous.valid()) {
+            if (*previous < 3) {
+                output.set(*previous + 1);
+            }
+            return;
+        }
+
+        if (seed.valid()) {
+            output.set(*seed);
+        }
+    });
+    const auto inner = bg::graph("name"_n = "bounded_feedback", [&](bg::wp<bg::TS<bg::i64>> seed) {
+        auto loop = bg::feedback<bg::TS<bg::i64>>("nested");
+        const auto next = advance(seed, loop);
+        loop = next;
+        return static_cast<bg::wp<bg::TS<bg::i64>>>(loop);
+    });
+    const auto outer = [&](bg::wp<bg::TS<bg::i64>> seed, bg::wp<bg::TS<bool>> run) {
+        return bg::nested(inner, run, seed);
+    };
+
+    const auto actual = bg::testing::test_graph(outer, std::array<bg::i64, 1>{1}, std::array<bool, 1>{true});
+    CHECK(actual.equals({std::nullopt, 1, 2, 3}));
+}
+
 TEST_CASE("feedback wires through the normal guarantee compatibility rules",
           "[feature:feedback][feature:type-system][series:value][scalar:i64][guarantee:final]") {
     auto wiring = bg::GraphWiring{};
@@ -54,6 +117,7 @@ TEST_CASE("feedback wires through the normal guarantee compatibility rules",
         static_cast<void>(static_cast<bg::wp<bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>>>(loop));
     }
 
+    wiring.finalize();
     CHECK_NOTHROW(bg::CompiledGraph{wiring});
 }
 
@@ -139,6 +203,40 @@ TEST_CASE("feedback replays TSD item changes",
     CHECK(actual.equals({std::nullopt, 1, 2, 0}));
 }
 
+TEST_CASE("feedback samples switched dictionary references before retaining their deltas",
+          "[evaluation][feature:feedback][feature:reference][feature:sampling][series:tsd]"
+          "[scalar:i64][binding:reference-to-value][transition:addition][transition:removal]") {
+    const auto make_first = bg::node([](bg::In<bg::TS<bool>>, bg::Out<bg::TSD<bg::i64, bg::TS<bg::i64>>> output) {
+        output[1].set(10);
+    });
+    const auto make_second = bg::node([](bg::In<bg::TS<bool>>, bg::Out<bg::TSD<bg::i64, bg::TS<bg::i64>>> output) {
+        output[2].set(20);
+    });
+    const auto select = bg::node([](bg::In<bg::TS<bool>> use_second,
+                                    bg::In<bg::REF<bg::TSD<bg::i64, bg::TS<bg::i64>>>> first,
+                                    bg::In<bg::REF<bg::TSD<bg::i64, bg::TS<bg::i64>>>> second,
+                                    bg::Out<bg::REF<bg::TSD<bg::i64, bg::TS<bg::i64>>>> output) {
+        output.copy(*use_second ? second : first);
+    });
+    const auto changes = bg::node([](bg::In<bg::TSD<bg::i64, bg::TS<bg::i64>>> input,
+                                     bg::Out<bg::TS<bg::i64>> output) {
+        auto added = bg::i64{};
+        auto removed = bg::i64{};
+        input.for_each_added([&](const auto &key) { added += *key; });
+        input.for_each_removed([&](const auto &key) { removed += *key; });
+        output.set(added * 100 + removed);
+    });
+    const auto graph = [&](bg::wp<bg::TS<bool>> use_second) {
+        auto loop = bg::feedback<bg::TSD<bg::i64, bg::TS<bg::i64>>>();
+        const auto output = changes(loop);
+        loop = select(use_second, make_first(use_second), make_second(use_second));
+        return output;
+    };
+
+    const auto actual = bg::testing::test_graph(graph, std::array<bool, 2>{false, true});
+    CHECK(actual.equals({std::nullopt, 100, 201}));
+}
+
 TEST_CASE("feedback source and sink must be in the same graph",
           "[feature:feedback][feature:wiring][series:value][scalar:i64]") {
     auto first = bg::GraphWiring{};
@@ -150,4 +248,20 @@ TEST_CASE("feedback source and sink must be in the same graph",
         const auto source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
         CHECK_THROWS_AS(loop = source(), bg::WiringError);
     }
+}
+
+TEST_CASE("feedback rejects reference time series",
+          "[feature:feedback][feature:wiring][series:reference][scalar:i64]") {
+    auto wiring = bg::GraphWiring{};
+    auto context = bg::WiringContext{wiring};
+
+    CHECK_THROWS_AS((bg::feedback<bg::REF<bg::TS<bg::i64>>>()), bg::WiringError);
+}
+
+TEST_CASE("feedback rejects collections containing references",
+          "[feature:feedback][feature:wiring][series:tsd][scalar:i64]") {
+    auto wiring = bg::GraphWiring{};
+    auto context = bg::WiringContext{wiring};
+
+    CHECK_THROWS_AS((bg::feedback<bg::TSD<bg::i64, bg::REF<bg::TS<bg::i64>>>>()), bg::WiringError);
 }

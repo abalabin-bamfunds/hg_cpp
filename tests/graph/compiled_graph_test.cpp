@@ -34,6 +34,20 @@ struct input_node_index_sink {
     void evaluate() const {}
 };
 
+struct integer_source_definition {
+    bg::Out<bg::TS<bg::i64>> output;
+
+    void evaluate() const {}
+};
+
+struct all_valid_input_node_index_sink {
+    static constexpr bool uses_input_node_indices = true;
+
+    bg::In<bg::TS<bg::i64>, bg::all_valid> input;
+
+    void evaluate() const {}
+};
+
 struct ordinary_two_input_sink {
     bg::In<bg::TS<float>> first;
     bg::In<bg::TS<float>> second;
@@ -177,6 +191,7 @@ TEST_CASE("compiled node input producer indices use compiled node order",
         sink(input, input);
     }
 
+    wiring.finalize();
     const auto graph = bg::CompiledGraph{wiring};
     REQUIRE(graph.node_count() == 2);
     CHECK(graph.node(1).input_node_index(0) == 0);
@@ -190,8 +205,32 @@ TEST_CASE("compiled node input producer indices use compiled node order",
         const auto input = source();
         ordinary_sink(input, input);
     }
+    ordinary_wiring.finalize();
     const auto ordinary_graph = bg::CompiledGraph{ordinary_wiring};
     CHECK(graph.fixed_storage_size() == ordinary_graph.fixed_storage_size() + 2 * sizeof(std::uint32_t));
+}
+
+TEST_CASE("compiled nodes retain all_valid metadata with input producer indices",
+          "[feature:graph-compilation][feature:validity][series:value][scalar:i64][shape:chain]") {
+    const auto source = bg::node<integer_source_definition>();
+    const auto sink = bg::node<all_valid_input_node_index_sink>();
+    auto wiring = bg::GraphWiring{};
+    {
+        auto context = bg::WiringContext{wiring};
+        sink(source());
+    }
+
+    wiring.finalize();
+    const auto graph = bg::CompiledGraph{wiring};
+    REQUIRE(graph.node_count() == 2);
+    const auto &compiled_sink = graph.node(1);
+    CHECK(compiled_sink.input_node_index(0) == 0);
+    CHECK(compiled_sink.has_all_valid_input_metadata());
+
+    const auto descriptors = compiled_sink.all_valid_input_descriptors();
+    REQUIRE(descriptors.size() == 1);
+    CHECK(descriptors[0].parameter_index == 0);
+    CHECK(descriptors[0].declared_type == &bg::TS<bg::i64>::type());
 }
 
 TEST_CASE("compiled node input producer indices omit lowered inputs and remap direct inputs",
@@ -207,6 +246,7 @@ TEST_CASE("compiled node input producer indices omit lowered inputs and remap di
         sink(constant, source());
     }
 
+    wiring.finalize();
     const auto graph = bg::CompiledGraph{wiring};
     REQUIRE(graph.node_count() == 2);
     const auto &compiled_sink = graph.node(1);

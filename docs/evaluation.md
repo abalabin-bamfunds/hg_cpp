@@ -188,15 +188,17 @@ consume(fb);
 fb = produce();
 ```
 
-The sink retains each change made in its evaluation cycle and schedules the
-source at the next minimum evaluation time. The source replays that change as
-one tick. The source and sink belong to the same graph. The name is optional
-and labels their wiring paths.
+When the input changes in an evaluation cycle, the sink records its final
+change state once and schedules the source at the next minimum evaluation
+time. The source replays that record as one tick. The source and sink belong to
+the same graph. The name is optional and labels their wiring paths.
 
 The declared feedback type determines the output guarantee. A delayed `final`
 output remains `final`; a delayed output cannot be `const` because its first
 tick occurs after graph start. The retained-tick format and supported time
 series are defined in [Time series types](time-series-types.md#retaining-ticks).
+The feedback type cannot contain references. An input bound through a reference
+to a reference-free value series is sampled by normal wiring before capture.
 
 ## Simulation
 
