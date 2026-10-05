@@ -177,6 +177,27 @@ A graph has timed scheduling state only when a node declares its use. The
 runtime graph reports the earliest pending time. `evaluate(time)` schedules
 requests due at that time before it processes nodes.
 
+## Feedback
+
+`feedback<TS_T>(name)` creates a source wiring point. Assign a compatible time
+series to the handle once to bind its capture sink:
+
+```cpp
+auto fb = bg::feedback<bg::TS<bg::i64>>("loop");
+consume(fb);
+fb = produce();
+```
+
+The sink retains each change made in its evaluation cycle and schedules the
+source at the next minimum evaluation time. The source replays that change as
+one tick. The source and sink belong to the same graph. The name is optional
+and labels their wiring paths.
+
+The declared feedback type determines the output guarantee. A delayed `final`
+output remains `final`; a delayed output cannot be `const` because its first
+tick occurs after graph start. The retained-tick format and supported time
+series are defined in [Time series types](time-series-types.md#retaining-ticks).
+
 ## Simulation
 
 `SimulationEvaluationEngine` starts a runtime graph and evaluates its first

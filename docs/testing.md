@@ -20,8 +20,8 @@ Use `[dimension:value]` for each applicable dimension:
   `evaluation-scratch`,
   `lifecycle`, `finalization`, `scheduling`, `timed-scheduling`, `simulation`, `wall-clock`, `input-activity`, `validity`,
   `invalidation`, `operator`, `constant`, `graph-argument`, `map`, `switch`,
-  `time-series-storage`, `time-series-view`, `collection-change`, `reference`, `sampling`, `service`, `getitem`, `getattr`,
-  `nested-graph`, `mesh`, `multiservice`, `variadic-wiring`, or `wiring-materialisation`
+  `time-series-storage`, `time-series-view`, `collection-change`, `reference`, `sampling`, `feedback`, `service`,
+  `getitem`, `getattr`, `nested-graph`, `mesh`, `multiservice`, `variadic-wiring`, or `wiring-materialisation`
 - `series`: `value`, `fixed-tsl`, `tss`, `tsd`, `tsb`, `reference`, or `generic`
 - `schema`: `named`, `unnamed`, or `generic`
 - `representation`: `native`, `free`, or `covariant`
@@ -204,6 +204,8 @@ graph compilation or evaluation.
 - retained tick writing and replay through a one-cycle delay node, current-cycle filtering, delta-only collection
   replay from a matching baseline, nested key changes, empty first ticks, validity transitions, payload cleanup,
   provider scalar handlers, and unsupported references
+- feedback source and sink wiring, next-cycle replay, first ticks, validity changes, guarantee compatibility,
+  separate handles, and same-graph binding
 - `default_` fallback selection, timestamps, modified state, and source validity transitions
 - invalidation behavior selected by a node
 - timed scheduling, cancellation, ordering, and coalescing

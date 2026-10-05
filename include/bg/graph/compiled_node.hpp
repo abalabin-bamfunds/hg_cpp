@@ -388,10 +388,8 @@ class CompiledNode {
     }
 
     std::span<const Subscriber> subscribers() const noexcept {
-        const auto parameter_span = parameters();
-        const auto *first = reinterpret_cast<const Subscriber *>(
-            reinterpret_cast<const ControlledInput *>(parameter_span.data() + parameter_span.size()) +
-            controlled_input_count());
+        const auto inputs = controlled_inputs();
+        const auto *first = reinterpret_cast<const Subscriber *>(inputs.data() + inputs.size());
 
         return {first, subscriber_count()};
     }
