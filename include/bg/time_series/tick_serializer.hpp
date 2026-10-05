@@ -71,12 +71,12 @@ struct TimeSeriesTickOperations {
     using Write = std::function<void(const In<TS_T> &, bool, TimeSeriesTickWriteContext &, allocator &)>;
     struct Replay {
         std::type_index output_view{typeid(void)};
-        std::function<void(util::buffer_reader &, const void *)> apply;
+        std::function<void(util::buffer_reader &, const void *, bool)> apply;
     };
 
     Write write;
     std::vector<Replay> replays;
-    std::function<void(util::buffer_reader &)> discard;
+    std::function<void(util::buffer_reader &, bool)> discard;
 };
 
 } // namespace details
@@ -186,7 +186,7 @@ class TimeSeriesTickDispatch {
             return false;
         }
 
-        auto handler = std::function<void(util::buffer_reader &)>{std::forward<Discard>(discard)};
+        auto handler = std::function<void(util::buffer_reader &, bool)>{std::forward<Discard>(discard)};
         auto &operations = *type_operations_.try_emplace(&type, memory_.memory_resource()).first;
         operations.discard = std::move(handler);
         return true;
@@ -214,27 +214,29 @@ class TimeSeriesTickDispatch {
     }
 
     template <OutputSpecification Specification>
-    void replay(util::buffer_reader &reader, const Out<TS_T, Specification> &output) const {
+    void replay(util::buffer_reader &reader, const Out<TS_T, Specification> &output, bool snapshot) const {
         const auto output_view = std::type_index{typeid(output)};
         if (const auto *operations = runtime_operations_.find(&output.runtime_type());
-            operations != nullptr && replay_from(*operations, output_view, reader, std::addressof(output))) {
+            operations != nullptr &&
+            replay_from(*operations, output_view, reader, std::addressof(output), snapshot)) {
             return;
         }
 
         if (const auto *operations = type_operations_.find(&output.runtime_type().type());
-            operations != nullptr && replay_from(*operations, output_view, reader, std::addressof(output))) {
+            operations != nullptr &&
+            replay_from(*operations, output_view, reader, std::addressof(output), snapshot)) {
             return;
         }
 
         throw std::invalid_argument{"no tick replay operation is registered for this output view"};
     }
 
-    void discard(const TimeSeriesType &type, util::buffer_reader &reader) const {
+    void discard(const TimeSeriesType &type, util::buffer_reader &reader, bool snapshot) const {
         const auto *operations = type_operations_.find(&type);
         if (operations == nullptr || !operations->discard) {
             throw std::invalid_argument{"no tick discard operation is registered for this time series type"};
         }
-        operations->discard(reader);
+        operations->discard(reader, snapshot);
     }
 
   private:
@@ -278,17 +280,18 @@ class TimeSeriesTickDispatch {
 
     template <typename Series, OutputSpecification Specification, typename Replay>
     static auto typed_replay(Replay &&replay) {
-        return [replay = std::forward<Replay>(replay)](util::buffer_reader &reader, const void *output) {
+        return [replay = std::forward<Replay>(replay)](util::buffer_reader &reader, const void *output,
+                                                       bool snapshot) {
             const auto &erased = *static_cast<const Out<TS_T, Specification> *>(output);
-            std::invoke(replay, reader, erased.template as<Series>());
+            std::invoke(replay, reader, erased.template as<Series>(), snapshot);
         };
     }
 
     static bool replay_from(const details::TimeSeriesTickOperations &operations, std::type_index output_view,
-                            util::buffer_reader &reader, const void *output) {
+                            util::buffer_reader &reader, const void *output, bool snapshot) {
         for (const auto &registered : operations.replays) {
             if (registered.output_view == output_view) {
-                registered.apply(reader, output);
+                registered.apply(reader, output, snapshot);
                 return true;
             }
         }
@@ -303,7 +306,45 @@ class TimeSeriesTickDispatch {
 
 namespace details {
 
-enum class TickState : std::uint8_t { value, invalidated };
+enum class TickOperation : std::uint8_t { add, tick, remove, end };
+
+struct TickHeader {
+    static constexpr std::uint8_t operation_mask = 0x03;
+    static constexpr std::uint8_t valid_mask = 0x04;
+    static constexpr std::uint8_t snapshot_mask = 0x08;
+    static constexpr std::uint8_t known_mask = operation_mask | valid_mask | snapshot_mask;
+
+    TickOperation operation;
+    bool valid;
+    bool snapshot;
+
+    static TickHeader read(util::buffer_reader &reader) {
+        const auto raw = reader.read_raw<std::uint8_t>();
+        if ((raw & ~known_mask) != 0) {
+            throw std::logic_error{"invalid time series tick header"};
+        }
+
+        const auto operation = static_cast<TickOperation>(raw & operation_mask);
+        const auto valid = (raw & valid_mask) != 0;
+        const auto snapshot = (raw & snapshot_mask) != 0;
+        if ((operation == TickOperation::remove || operation == TickOperation::end) && (valid || snapshot) ||
+            (!valid && snapshot)) {
+            throw std::logic_error{"invalid time series tick header flags"};
+        }
+        return {operation, valid, snapshot};
+    }
+
+    void write(TimeSeriesTickWriteContext &writer) const {
+        if ((operation == TickOperation::remove || operation == TickOperation::end) && (valid || snapshot) ||
+            (!valid && snapshot)) {
+            throw std::logic_error{"invalid time series tick header flags"};
+        }
+
+        const std::uint8_t raw = static_cast<std::uint8_t>(operation) | (valid ? valid_mask : 0) |
+                                 (snapshot ? snapshot_mask : 0);
+        writer.write_bytes(std::as_bytes(std::span{&raw, std::size_t{1}}));
+    }
+};
 
 template <typename Visitor> bool visit_builtin_scalar_type(const ScalarType &type, Visitor &&visitor) {
     auto matched = false;
@@ -335,34 +376,29 @@ class TimeSeriesTickWrite {
             return false;
         }
 
-        input.visit(ddv::serial{std::ref(*this)}, now, input.became_valid());
+        const auto snapshot = input.became_valid();
+        TickHeader{TickOperation::tick, input.valid(), snapshot}.write(*writer_);
+        write_payload(input, now, snapshot);
         return true;
     }
 
     void operator()(In<TS<SCALAR>> *input, EvaluationTime, bool) {
-        write_state(input->valid());
         if (input->valid()) {
             write_scalar(input->value_view());
         }
     }
 
     void operator()(In<TSL<TS_T, SIZE>> *input, EvaluationTime now, bool snapshot) {
-        write_state(input->valid());
         if (!input->valid()) {
             return;
         }
 
-        auto count = std::size_t{};
-        if (snapshot) {
-            count = input->size();
-        } else {
-            input->for_each_updated([&](item_id_t) { ++count; });
-        }
-        write_count(count);
-
         auto write_item = [&](item_id_t index) {
+            const auto &item = (*input)[index];
+            const auto item_snapshot = snapshot || item.became_valid();
+            TickHeader{TickOperation::tick, item.valid(), item.valid() && item_snapshot}.write(*writer_);
             write_bytes(*writer_, index);
-            write_child((*input)[index], now, snapshot);
+            write_payload(item, now, item_snapshot);
         };
         if (snapshot) {
             for (auto index = item_id_t{}; index < input->size(); ++index) {
@@ -371,25 +407,20 @@ class TimeSeriesTickWrite {
         } else {
             input->for_each_updated(write_item);
         }
+        TickHeader{TickOperation::end}.write(*writer_);
     }
 
     void operator()(In<TSB<SCHEMA>> *input, EvaluationTime now, bool snapshot) {
-        write_state(input->valid());
         if (!input->valid()) {
             return;
         }
 
-        auto count = std::size_t{};
-        if (snapshot) {
-            count = input->size();
-        } else {
-            input->for_each_updated([&](item_id_t) { ++count; });
-        }
-        write_count(count);
-
         auto write_item = [&](item_id_t index) {
+            const auto &item = (*input)[index];
+            const auto item_snapshot = snapshot || item.became_valid();
+            TickHeader{TickOperation::tick, item.valid(), item.valid() && item_snapshot}.write(*writer_);
             write_bytes(*writer_, index);
-            write_child((*input)[index], now, snapshot);
+            write_payload(item, now, item_snapshot);
         };
         if (snapshot) {
             for (auto index = item_id_t{}; index < input->size(); ++index) {
@@ -398,6 +429,7 @@ class TimeSeriesTickWrite {
         } else {
             input->for_each_updated(write_item);
         }
+        TickHeader{TickOperation::end}.write(*writer_);
     }
 
     void operator()(In<TSS<SCALAR>> *input, EvaluationTime, bool snapshot) {
@@ -405,24 +437,22 @@ class TimeSeriesTickWrite {
             throw std::invalid_argument{"TSS invalidation cannot be replayed through its output API"};
         }
 
-        write_bytes(*writer_, static_cast<std::uint8_t>(snapshot));
-        auto added_count = std::size_t{};
-        auto removed_count = std::size_t{};
         if (snapshot) {
-            input->for_each([&](const auto &) { ++added_count; });
+            input->for_each([&](const auto &key) {
+                TickHeader{TickOperation::add}.write(*writer_);
+                write_scalar(key);
+            });
         } else {
-            input->for_each_added([&](const auto &) { ++added_count; });
-            input->for_each_removed([&](const auto &) { ++removed_count; });
+            input->for_each_added([&](const auto &key) {
+                TickHeader{TickOperation::add}.write(*writer_);
+                write_scalar(key);
+            });
+            input->for_each_removed([&](const auto &key) {
+                TickHeader{TickOperation::remove}.write(*writer_);
+                write_scalar(key);
+            });
         }
-        write_count(added_count);
-        write_count(removed_count);
-
-        if (snapshot) {
-            input->for_each([&](const auto &key) { write_scalar(key); });
-        } else {
-            input->for_each_added([&](const auto &key) { write_scalar(key); });
-            input->for_each_removed([&](const auto &key) { write_scalar(key); });
-        }
+        TickHeader{TickOperation::end}.write(*writer_);
     }
 
     void operator()(In<TSD<SCALAR, TS_T>> *input, EvaluationTime now, bool snapshot) {
@@ -430,39 +460,34 @@ class TimeSeriesTickWrite {
             throw std::invalid_argument{"TSD invalidation cannot be replayed through its output API"};
         }
 
-        write_bytes(*writer_, static_cast<std::uint8_t>(snapshot));
-        auto removed_count = std::size_t{};
-        auto added_count = std::size_t{};
-        auto modified_count = std::size_t{};
-        if (snapshot) {
-            added_count = input->size();
-        } else {
-            input->for_each_removed([&](const auto &) { ++removed_count; });
-            input->for_each_added([&](const auto &) { ++added_count; });
-            input->for_each_modified([&](const auto &) { ++modified_count; });
-        }
-        write_count(removed_count);
-        write_count(added_count);
-        write_count(modified_count);
-
         if (snapshot) {
             input->for_each_key_value([&](const auto &key, const auto &item) {
+                const auto item_snapshot = true;
+                TickHeader{TickOperation::add, item.valid(), item.valid() && item_snapshot}.write(*writer_);
                 write_scalar(key);
-                write_child(item, now, true);
+                write_payload(item, now, item_snapshot);
             });
         } else {
             input->for_each_removed([&](const auto &key) {
+                TickHeader{TickOperation::remove}.write(*writer_);
                 write_scalar(key);
             });
             input->for_each_added([&](const auto &key) {
+                const auto item = (*input)[key];
+                const auto item_snapshot = true;
+                TickHeader{TickOperation::add, item.valid(), item.valid() && item_snapshot}.write(*writer_);
                 write_scalar(key);
-                write_child((*input)[key], now, true);
+                write_payload(item, now, item_snapshot);
             });
             input->for_each_modified([&](const auto &key) {
+                const auto item = (*input)[key];
+                const auto item_snapshot = item.became_valid();
+                TickHeader{TickOperation::tick, item.valid(), item.valid() && item_snapshot}.write(*writer_);
                 write_scalar(key);
-                write_child((*input)[key], now, false);
+                write_payload(item, now, item_snapshot);
             });
         }
+        TickHeader{TickOperation::end}.write(*writer_);
     }
 
     void operator()(In<REF<TS_T>> *, EvaluationTime, bool) {
@@ -470,38 +495,31 @@ class TimeSeriesTickWrite {
     }
 
     void operator()(In<TS_T> *input, EvaluationTime, bool snapshot) {
-        dispatch_->write(*input, snapshot, *writer_, *memory_);
+        if (input->valid()) {
+            dispatch_->write(*input, snapshot, *writer_, *memory_);
+        }
     }
 
   private:
+    template <typename Input> void write_payload(const Input &input, EvaluationTime now, bool snapshot) {
+        input.visit(ddv::serial{std::ref(*this)}, now, snapshot);
+    }
+
     template <typename T> void write_scalar(const Scalar<T> &value) {
-        const auto matched = visit_builtin_scalar_type(value.type(), [&]<typename Builtin>(std::type_identity<Builtin>) {
-            using Stored = details::scalar_stored_t<Builtin>;
-            if constexpr (std::is_trivially_copyable_v<Stored>) {
-                const auto canonical = scalar_cast<Builtin>(value).value();
-                write_bytes(*writer_, canonical);
-            } else {
-                writer_->write(ScalarValue<>{value, *memory_});
-            }
-        });
+        const auto matched = visit_builtin_scalar_type(
+            value.type(), [&]<typename Builtin>(std::type_identity<Builtin>) {
+                using Stored = details::scalar_stored_t<Builtin>;
+                if constexpr (std::is_trivially_copyable_v<Stored>) {
+                    const auto canonical = scalar_cast<Builtin>(value).value();
+                    write_bytes(*writer_, canonical);
+                } else {
+                    writer_->write(ScalarValue<>{value, *memory_});
+                }
+            });
 
         if (!matched) {
             dispatch_->write_scalar(Scalar<>::from(value), *writer_, *memory_);
         }
-    }
-
-    void write_state(bool valid) { write_bytes(*writer_, static_cast<std::uint8_t>(valid ? TickState::value
-                                                                                           : TickState::invalidated)); }
-
-    void write_count(std::size_t count) {
-        if (count > std::numeric_limits<std::uint32_t>::max()) {
-            throw std::length_error{"time series tick has too many changed items"};
-        }
-        write_bytes(*writer_, static_cast<std::uint32_t>(count));
-    }
-
-    template <typename Input> void write_child(const Input &input, EvaluationTime now, bool snapshot) {
-        input.visit(ddv::serial{std::ref(*this)}, now, snapshot);
     }
 
     TimeSeriesTickWriteContext *writer_;
@@ -516,13 +534,32 @@ class TimeSeriesTickReplay {
 
     template <typename Variable, auto... Properties>
     void apply_erased(const TimeSeriesType &type, const Out<Variable, Properties...> &output) {
-        output.visit([&](const auto *typed) { apply_concrete(type, *typed); }, ddv::noop);
+        const auto header = TickHeader::read(*reader_);
+        if (header.operation != TickOperation::tick) {
+            throw std::logic_error{"time series tick record does not start with a tick header"};
+        }
+        apply_payload(type, output, header);
+    }
+
+  private:
+    template <typename Output> void apply_payload(const TimeSeriesType &type, const Output &output,
+                                                  TickHeader header) {
+        output.visit([&](const auto *typed) { apply_concrete(type, *typed, header); }, ddv::noop);
+    }
+
+    template <typename Output> void apply_child(const TimeSeriesType &type, const Output &output,
+                                                TickHeader header) {
+        if (header.operation != TickOperation::add && header.operation != TickOperation::tick) {
+            throw std::logic_error{"invalid time series collection entry"};
+        }
+        apply_payload(type, output, header);
     }
 
     template <OutputSpecification Specification>
-    void apply_concrete(const TimeSeriesType &type, const Out<TS<SCALAR>, Specification> &output) {
+    void apply_concrete(const TimeSeriesType &type, const Out<TS<SCALAR>, Specification> &output,
+                        TickHeader header) {
         const auto &value_type = type_cast<TimeSeriesValueType>(type);
-        if (read_state() == TickState::invalidated) {
+        if (!header.valid) {
             output.invalidate();
             return;
         }
@@ -531,90 +568,124 @@ class TimeSeriesTickReplay {
     }
 
     template <OutputSpecification Specification>
-    void apply_concrete(const TimeSeriesType &type, const Out<TSL<TS_T, SIZE>, Specification> &output) {
+    void apply_concrete(const TimeSeriesType &type, const Out<TSL<TS_T, SIZE>, Specification> &output,
+                        TickHeader header) {
         const auto &list_type = type_cast<TimeSeriesListType>(type);
-        if (read_state() == TickState::invalidated) {
+        if (!header.valid) {
             output.invalidate();
             return;
         }
 
-        const auto count = reader_->read_raw<std::uint32_t>();
-        for (auto index = std::uint32_t{}; index < count; ++index) {
+        for (;;) {
+            const auto item_header = TickHeader::read(*reader_);
+            if (item_header.operation == TickOperation::end) {
+                break;
+            }
+            if (item_header.operation != TickOperation::tick) {
+                throw std::logic_error{"invalid list tick entry"};
+            }
             const auto item_id = reader_->read_raw<bg::item_id_t>();
-            apply_erased(list_type.item_type(item_id), output[item_id]);
+            apply_child(list_type.item_type(item_id), output[item_id], item_header);
         }
     }
 
     template <OutputSpecification Specification>
-    void apply_concrete(const TimeSeriesType &type, const Out<TSB<SCHEMA>, Specification> &output) {
+    void apply_concrete(const TimeSeriesType &type, const Out<TSB<SCHEMA>, Specification> &output,
+                        TickHeader header) {
         const auto &bundle_type = type_cast<TimeSeriesBundleType>(type);
-        if (read_state() == TickState::invalidated) {
+        if (!header.valid) {
             output.invalidate();
             return;
         }
 
-        const auto count = reader_->read_raw<std::uint32_t>();
-        for (auto index = std::uint32_t{}; index < count; ++index) {
+        for (;;) {
+            const auto item_header = TickHeader::read(*reader_);
+            if (item_header.operation == TickOperation::end) {
+                break;
+            }
+            if (item_header.operation != TickOperation::tick) {
+                throw std::logic_error{"invalid bundle tick entry"};
+            }
             const auto item_id = reader_->read_raw<bg::item_id_t>();
-            apply_erased(bundle_type.item_type(item_id), output[item_id]);
+            apply_child(bundle_type.item_type(item_id), output[item_id], item_header);
         }
     }
 
     template <OutputSpecification Specification>
-    void apply_concrete(const TimeSeriesType &type, const Out<TSS<SCALAR>, Specification> &output) {
+    void apply_concrete(const TimeSeriesType &type, const Out<TSS<SCALAR>, Specification> &output,
+                        TickHeader header) {
         const auto &set_type = type_cast<TimeSeriesSetType>(type);
-        const auto snapshot = reader_->read_raw<std::uint8_t>() != 0;
-        if (snapshot) {
+        if (!header.valid) {
+            throw std::logic_error{"TSS invalidation cannot be replayed through its output API"};
+        }
+        if (header.snapshot) {
             output.clear();
         }
 
-        const auto added_count = reader_->read_raw<std::uint32_t>();
-        const auto removed_count = reader_->read_raw<std::uint32_t>();
-        for (auto index = std::uint32_t{}; index < added_count; ++index) {
-            visit_scalar(set_type.item_type(), [&](const auto &key) { output.insert(key); });
-        }
-        for (auto index = std::uint32_t{}; index < removed_count; ++index) {
-            visit_scalar(set_type.item_type(), [&](const auto &key) { output.erase(key); });
+        for (;;) {
+            const auto entry_header = TickHeader::read(*reader_);
+            if (entry_header.operation == TickOperation::end) {
+                break;
+            }
+            if ((header.snapshot && entry_header.operation != TickOperation::add) ||
+                (entry_header.operation != TickOperation::add && entry_header.operation != TickOperation::remove)) {
+                throw std::logic_error{"invalid TSS tick entry"};
+            }
+            visit_scalar(set_type.item_type(), [&](const auto &key) {
+                if (entry_header.operation == TickOperation::add) {
+                    output.insert(key);
+                } else {
+                    output.erase(key);
+                }
+            });
         }
     }
 
     template <OutputSpecification Specification>
-    void apply_concrete(const TimeSeriesType &type, const Out<TSD<SCALAR, TS_T>, Specification> &output) {
+    void apply_concrete(const TimeSeriesType &type, const Out<TSD<SCALAR, TS_T>, Specification> &output,
+                        TickHeader header) {
         const auto &dictionary_type = type_cast<TimeSeriesDictionaryType>(type);
-        const auto snapshot = reader_->read_raw<std::uint8_t>() != 0;
-        if (snapshot) {
+        if (!header.valid) {
+            throw std::logic_error{"TSD invalidation cannot be replayed through its output API"};
+        }
+        if (header.snapshot) {
             output.clear();
         }
 
-        const auto removed_count = reader_->read_raw<std::uint32_t>();
-        const auto added_count = reader_->read_raw<std::uint32_t>();
-        const auto modified_count = reader_->read_raw<std::uint32_t>();
-        for (auto index = std::uint32_t{}; index < removed_count; ++index) {
-            visit_scalar(dictionary_type.key_type(), [&](const auto &key) { output.erase(key); });
-        }
-        for (auto index = std::uint32_t{}; index < added_count; ++index) {
+        for (;;) {
+            const auto entry_header = TickHeader::read(*reader_);
+            if (entry_header.operation == TickOperation::end) {
+                break;
+            }
+            if ((header.snapshot && entry_header.operation != TickOperation::add) ||
+                (entry_header.operation != TickOperation::add && entry_header.operation != TickOperation::tick &&
+                 entry_header.operation != TickOperation::remove)) {
+                throw std::logic_error{"invalid TSD tick entry"};
+            }
             visit_scalar(dictionary_type.key_type(), [&](const auto &key) {
-                apply_erased(dictionary_type.value_type(), output[key]);
-            });
-        }
-        for (auto index = std::uint32_t{}; index < modified_count; ++index) {
-            visit_scalar(dictionary_type.key_type(), [&](const auto &key) {
-                apply_erased(dictionary_type.value_type(), output[key]);
+                if (entry_header.operation == TickOperation::remove) {
+                    output.erase(key);
+                } else {
+                    apply_child(dictionary_type.value_type(), output[key], entry_header);
+                }
             });
         }
     }
 
     template <OutputSpecification Specification>
-    void apply_concrete(const TimeSeriesType &, const Out<REF<TS_T>, Specification> &) {
+    void apply_concrete(const TimeSeriesType &, const Out<REF<TS_T>, Specification> &, TickHeader) {
         throw std::invalid_argument{"retained reference time series ticks are not supported"};
     }
 
     template <OutputSpecification Specification>
-    void apply_concrete(const TimeSeriesType &, const Out<TS_T, Specification> &output) {
-        dispatch_->replay(*reader_, output);
+    void apply_concrete(const TimeSeriesType &, const Out<TS_T, Specification> &output, TickHeader header) {
+        if (!header.valid) {
+            output.invalidate();
+            return;
+        }
+        dispatch_->replay(*reader_, output, header.snapshot);
     }
 
-  private:
     template <typename Function> void visit_scalar(const ScalarType &type, Function &&function) {
         const auto matched = visit_builtin_scalar_type(type, [&]<typename Builtin>(std::type_identity<Builtin>) {
             using Stored = details::scalar_stored_t<Builtin>;
@@ -636,14 +707,6 @@ class TimeSeriesTickReplay {
         }
     }
 
-    TickState read_state() {
-        const auto state = reader_->read_raw<std::uint8_t>();
-        if (state > static_cast<std::uint8_t>(TickState::invalidated)) {
-            throw std::logic_error{"invalid time series tick state"};
-        }
-        return static_cast<TickState>(state);
-    }
-
     util::buffer_reader *reader_;
     const TimeSeriesTickDispatch *dispatch_;
 };
@@ -654,73 +717,91 @@ class TimeSeriesTickDiscard {
         : reader_{&reader}, dispatch_{&dispatch} {}
 
     void apply(const TimeSeriesType &type) {
+        const auto header = TickHeader::read(*reader_);
+        if (header.operation != TickOperation::tick) {
+            throw std::logic_error{"time series tick record does not start with a tick header"};
+        }
+        if (!header.valid) {
+            return;
+        }
+        apply_payload(type, header.snapshot);
+    }
+
+  private:
+    void apply_payload(const TimeSeriesType &type, bool snapshot) {
         type.visit(
-            [&](const TimeSeriesValueType *value_type) {
-                if (read_state() == TickState::value) {
-                    discard_scalar(value_type->value_type());
-                }
-            },
+            [&](const TimeSeriesValueType *value_type) { discard_scalar(value_type->value_type()); },
             [&](const TimeSeriesListType *list_type) {
-                if (read_state() == TickState::invalidated) {
-                    return;
-                }
-                const auto count = reader_->read_raw<std::uint32_t>();
-                for (auto index = std::uint32_t{}; index < count; ++index) {
+                for (;;) {
+                    const auto item_header = TickHeader::read(*reader_);
+                    if (item_header.operation == TickOperation::end) {
+                        break;
+                    }
+                    if (item_header.operation != TickOperation::tick) {
+                        throw std::logic_error{"invalid list tick entry"};
+                    }
                     const auto item_id = reader_->read_raw<item_id_t>();
-                    apply(list_type->item_type(item_id));
+                    discard_child(list_type->item_type(item_id), item_header);
                 }
             },
             [&](const TimeSeriesBundleType *bundle_type) {
-                if (read_state() == TickState::invalidated) {
-                    return;
-                }
-                const auto count = reader_->read_raw<std::uint32_t>();
-                for (auto index = std::uint32_t{}; index < count; ++index) {
+                for (;;) {
+                    const auto item_header = TickHeader::read(*reader_);
+                    if (item_header.operation == TickOperation::end) {
+                        break;
+                    }
+                    if (item_header.operation != TickOperation::tick) {
+                        throw std::logic_error{"invalid bundle tick entry"};
+                    }
                     const auto item_id = reader_->read_raw<item_id_t>();
-                    apply(bundle_type->item_type(item_id));
+                    discard_child(bundle_type->item_type(item_id), item_header);
                 }
             },
             [&](const TimeSeriesSetType *set_type) {
-                (void)reader_->read_raw<std::uint8_t>(); // snapshot flag
-                const auto added_count = reader_->read_raw<std::uint32_t>();
-                const auto removed_count = reader_->read_raw<std::uint32_t>();
-                for (auto index = std::uint32_t{}; index < added_count; ++index) {
-                    discard_scalar(set_type->item_type());
-                }
-                for (auto index = std::uint32_t{}; index < removed_count; ++index) {
+                for (;;) {
+                    const auto entry_header = TickHeader::read(*reader_);
+                    if (entry_header.operation == TickOperation::end) {
+                        break;
+                    }
+                    if ((snapshot && entry_header.operation != TickOperation::add) ||
+                        (entry_header.operation != TickOperation::add &&
+                         entry_header.operation != TickOperation::remove)) {
+                        throw std::logic_error{"invalid TSS tick entry"};
+                    }
                     discard_scalar(set_type->item_type());
                 }
             },
             [&](const TimeSeriesDictionaryType *dictionary_type) {
-                (void)reader_->read_raw<std::uint8_t>(); // snapshot flag
-                const auto removed_count = reader_->read_raw<std::uint32_t>();
-                const auto added_count = reader_->read_raw<std::uint32_t>();
-                const auto modified_count = reader_->read_raw<std::uint32_t>();
-                for (auto index = std::uint32_t{}; index < removed_count; ++index) {
+                for (;;) {
+                    const auto entry_header = TickHeader::read(*reader_);
+                    if (entry_header.operation == TickOperation::end) {
+                        break;
+                    }
+                    if ((snapshot && entry_header.operation != TickOperation::add) ||
+                        (entry_header.operation != TickOperation::add &&
+                         entry_header.operation != TickOperation::tick &&
+                         entry_header.operation != TickOperation::remove)) {
+                        throw std::logic_error{"invalid TSD tick entry"};
+                    }
                     discard_scalar(dictionary_type->key_type());
-                }
-                for (auto index = std::uint32_t{}; index < added_count; ++index) {
-                    discard_scalar(dictionary_type->key_type());
-                    apply(dictionary_type->value_type());
-                }
-                for (auto index = std::uint32_t{}; index < modified_count; ++index) {
-                    discard_scalar(dictionary_type->key_type());
-                    apply(dictionary_type->value_type());
+                    if (entry_header.operation != TickOperation::remove) {
+                        discard_child(dictionary_type->value_type(), entry_header);
+                    }
                 }
             },
             [&](const TimeSeriesReferenceType *) {
                 throw std::invalid_argument{"retained reference time series ticks are not supported"};
             },
-            [&] { dispatch_->discard(type, *reader_); });
+            [&] { dispatch_->discard(type, *reader_, snapshot); });
     }
 
-  private:
-    TickState read_state() {
-        const auto state = reader_->read_raw<std::uint8_t>();
-        if (state > static_cast<std::uint8_t>(TickState::invalidated)) {
-            throw std::logic_error{"invalid time series tick state"};
+    void discard_child(const TimeSeriesType &type, TickHeader header) {
+        if (header.operation != TickOperation::add && header.operation != TickOperation::tick) {
+            throw std::logic_error{"invalid time series collection entry"};
         }
-        return static_cast<TickState>(state);
+        if (header.valid) {
+            apply_payload(type, header.snapshot);
+        }
     }
 
     void discard_scalar(const ScalarType &type) {

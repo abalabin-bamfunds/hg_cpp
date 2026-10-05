@@ -6,6 +6,8 @@
 #include <bg/time_series/tsd/tsd_output.hpp>
 #include <bg/time_series/tsl/tsl.hpp>
 #include <bg/time_series/tsl/tsl_input.hpp>
+#include <bg/time_series/tss/tss_input.hpp>
+#include <bg/time_series/tss/tss_output.hpp>
 #include <bg/testing/test_graph.hpp>
 #include <bg/time_series/tick_serializer.hpp>
 
@@ -313,7 +315,7 @@ TEST_CASE("a set tick stores only added and removed keys",
     const auto set_graph = [&](bg::wp<bg::TS<bg::i64>> input) { return measure_set(to_set(input)); };
     const auto set_sizes = bg::testing::test_graph(set_graph, std::array<bg::i64, 2>{1, 2});
 
-    CHECK(set_sizes.equals({17, 25}));
+    CHECK(set_sizes.equals({11, 20}));
 }
 
 TEST_CASE("a dictionary tick stores only its added or modified item",
@@ -328,7 +330,47 @@ TEST_CASE("a dictionary tick stores only its added or modified item",
     };
     const auto dictionary_sizes = bg::testing::test_graph(dictionary_graph, std::array<bg::i64, 2>{1, 2});
 
-    CHECK(dictionary_sizes.equals({30, 30}));
+    CHECK(dictionary_sizes.equals({19, 19}));
+}
+
+TEST_CASE("an empty TSS tick contains a terminator", "[feature:time-series-storage][series:tss][scalar:i64]") {
+    const auto clear_set = bg::node([](bg::In<bg::TS<bg::i64>>, bg::Out<bg::TSS<bg::i64>> output) {
+        output.clear();
+    });
+    const auto measure_set = bg::node([](bg::In<bg::TSS<bg::i64>> input, bg::Out<bg::TS<bg::i64>> output) {
+        const auto buffer = bg::util::buffer::contiguous(16);
+        auto writer = bg::TimeSeriesTickWriter{buffer};
+        if (!writer.write(input, input.last_updated())) {
+            return;
+        }
+
+        auto reader = bg::TimeSeriesTickReader{buffer, bg::TSS<bg::i64>::type()};
+        output.set(reader.discard() && !reader.has_next() ? static_cast<bg::i64>(buffer.bytes().size()) : -1);
+    });
+    const auto set_graph = [&](bg::wp<bg::TS<bg::i64>> input) { return measure_set(clear_set(input)); };
+
+    CHECK(bg::testing::test_graph(set_graph, std::array<bg::i64, 1>{1}).equals({2}));
+}
+
+TEST_CASE("an empty TSD tick contains a terminator", "[feature:time-series-storage][series:tsd][scalar:i64]") {
+    const auto clear_dictionary = bg::node(
+        [](bg::In<bg::TS<bg::i64>>, bg::Out<bg::TSD<bg::i64, bg::TS<bg::i64>>> output) { output.clear(); });
+    const auto measure_dictionary =
+        bg::node([](bg::In<bg::TSD<bg::i64, bg::TS<bg::i64>>> input, bg::Out<bg::TS<bg::i64>> output) {
+            const auto buffer = bg::util::buffer::contiguous(16);
+            auto writer = bg::TimeSeriesTickWriter{buffer};
+            if (!writer.write(input, input.last_updated())) {
+                return;
+            }
+
+            auto reader = bg::TimeSeriesTickReader{buffer, bg::TSD<bg::i64, bg::TS<bg::i64>>::type()};
+            output.set(reader.discard() && !reader.has_next() ? static_cast<bg::i64>(buffer.bytes().size()) : -1);
+        });
+    const auto dictionary_graph = [&](bg::wp<bg::TS<bg::i64>> input) {
+        return measure_dictionary(clear_dictionary(input));
+    };
+
+    CHECK(bg::testing::test_graph(dictionary_graph, std::array<bg::i64, 1>{1}).equals({2}));
 }
 
 TEST_CASE("a node delays time series invalidation and revalidation by one evaluation cycle",

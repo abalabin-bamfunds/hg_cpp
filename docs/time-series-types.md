@@ -88,6 +88,10 @@ revalidates, the record stores a snapshot; other records store only changes.
 Provider write handlers receive the snapshot flag. Scalar payloads are owned
 by the record until replay or discard.
 
+Each record begins with a one-byte header that identifies the update and its
+validity or snapshot state. Collection entries follow in traversal order and
+each collection ends with a standalone `end` header.
+
 The built-in writer supports value, fixed-list, bundle, set, and dictionary time
 series. It does not support references. TSS and TSD themselves cannot be
 invalidated through their output APIs, so such an event cannot be retained.
