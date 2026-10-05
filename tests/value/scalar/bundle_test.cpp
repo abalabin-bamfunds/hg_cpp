@@ -425,7 +425,8 @@ TEST_CASE("a hierarchical scalar survives its runtime graph",
     const auto compiled = bg::CompiledGraph{wiring};
     auto retained = std::optional<bg::ScalarValue<bg::Bundle<Instrument>>>{};
     {
-        auto runtime = bg::RuntimeGraph{compiled};
+        auto runtime_global_state = bg::GlobalState{};
+        auto runtime = bg::RuntimeGraph{compiled, runtime_global_state};
         runtime.global_state().write([&](auto &values) {
             const auto value = bg::bundle<Instrument>(bg::symbol{"ABC"});
 

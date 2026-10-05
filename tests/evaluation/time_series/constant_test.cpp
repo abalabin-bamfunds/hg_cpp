@@ -122,7 +122,8 @@ TEST_CASE("a scalar constant binds directly to its active consumer",
     CHECK(sizeof(bg::ParameterBinding) == 8);
     CHECK(sizeof(bg::Node) == 2 * sizeof(void *));
 
-    auto runtime = bg::RuntimeGraph{compiled};
+    auto runtime_global_state = bg::GlobalState{};
+    auto runtime = bg::RuntimeGraph{compiled, runtime_global_state};
     runtime.start(time(1));
     runtime.evaluate(time(1));
 
@@ -135,7 +136,8 @@ TEST_CASE("a scalar constant binds directly to its active consumer",
     runtime.evaluate(time(2));
     CHECK(constant_sink::evaluations == 1);
 
-    auto second = bg::RuntimeGraph{compiled};
+    auto second_global_state = bg::GlobalState{};
+    auto second = bg::RuntimeGraph{compiled, second_global_state};
     second.start(time(3));
     second.evaluate(time(3));
     CHECK(constant_sink::last_updated == time(3));
@@ -171,7 +173,8 @@ TEST_CASE("one constant serves active and passive consumers",
     const auto compiled = bg::CompiledGraph{wiring};
     CHECK(compiled.node_count() == 2);
 
-    auto runtime = bg::RuntimeGraph{compiled};
+    auto runtime_global_state = bg::GlobalState{};
+    auto runtime = bg::RuntimeGraph{compiled, runtime_global_state};
     runtime.start(time(1));
     runtime.evaluate(time(1));
     CHECK(constant_sink::evaluations == 1);
@@ -191,7 +194,8 @@ TEST_CASE("a string constant uses compiled scalar storage",
     }
 
     const auto compiled = bg::CompiledGraph{wiring};
-    auto runtime = bg::RuntimeGraph{compiled};
+    auto runtime_global_state = bg::GlobalState{};
+    auto runtime = bg::RuntimeGraph{compiled, runtime_global_state};
     runtime.start(time(1));
     runtime.evaluate(time(1));
     CHECK(string_constant_sink::value == "fixed");
@@ -217,7 +221,8 @@ TEST_CASE("a constant value-to-reference binding keeps the reference node in the
     const auto compiled = bg::CompiledGraph{wiring};
     CHECK(compiled.node_count() == 3);
 
-    auto runtime = bg::RuntimeGraph{compiled};
+    auto runtime_global_state = bg::GlobalState{};
+    auto runtime = bg::RuntimeGraph{compiled, runtime_global_state};
     runtime.start(time(1));
     runtime.evaluate(time(1));
     CHECK(constant_reference_sink::evaluations == 1);

@@ -1,5 +1,6 @@
 #include <bg/details/evaluation_context.hpp>
 #include <bg/graph/runtime_graph.hpp>
+#include <bg/graph/runtime_graph_evaluator.hpp>
 
 #include <bg/allocator.hpp>
 #include <bg/details/evaluation_scratch.hpp>
@@ -17,9 +18,9 @@
 
 #include <algorithm>
 #include <bit>
+#include <cassert>
 #include <cstring>
 #include <iterator>
-#include <memory>
 #include <stdexcept>
 #include <vector>
 
@@ -42,11 +43,11 @@ OutputChangeContext::OutputChangeContext(RuntimeGraph &runtime_graph) noexcept
 OutputChangeContext::OutputChangeContext(const EvaluationContext &evaluation_context) noexcept
     : runtime_graph_{&evaluation_context.runtime_graph()}, evaluation_time_{evaluation_context.evaluation_time()} {}
 
-ScheduleHandle RuntimeGraphOwnerContext::schedule_at(EvaluationTime time) const {
+ScheduleHandle RuntimeGraphSchedulingContext::schedule_at(EvaluationTime time) const {
     return graph_->schedule_at(node_index_, time);
 }
 
-void RuntimeGraphOwnerContext::cancel(ScheduleHandle handle) const noexcept {
+void RuntimeGraphSchedulingContext::cancel(ScheduleHandle handle) const noexcept {
     graph_->cancel(node_index_, handle);
 }
 
@@ -155,13 +156,13 @@ class RuntimeGraph::CycleCallbacks {
     struct Record {
         RuntimeGraph *owner;
         void *receiver;
-        void (*function)(void *) noexcept;
+        void (*function)(void *, EvaluationContext &) noexcept;
     };
 
   public:
     explicit CycleCallbacks(allocator memory) : records_{&memory.memory_resource()} {}
 
-    void add(RuntimeGraph &owner, void *receiver, void (*function)(void *) noexcept) {
+    void add(RuntimeGraph &owner, void *receiver, void (*function)(void *, EvaluationContext &) noexcept) {
         records_.push_back({&owner, receiver, function});
     }
 
@@ -173,10 +174,12 @@ class RuntimeGraph::CycleCallbacks {
         std::erase_if(records_, [&](const auto &record) { return record.owner == &owner; });
     }
 
-    void run() noexcept {
+    void run(EvaluationContext &context) noexcept {
         const auto count = records_.size();
         for (auto i = count; i != 0; --i) {
-            records_[i - 1].function(records_[i - 1].receiver);
+            const auto record = records_[i - 1];
+            auto callback_context = EvaluationContext{context, *record.owner, 0};
+            record.function(record.receiver, callback_context);
         }
         records_.erase(records_.begin(), records_.begin() + static_cast<std::ptrdiff_t>(count));
     }
@@ -185,20 +188,6 @@ class RuntimeGraph::CycleCallbacks {
 
   private:
     std::pmr::vector<Record> records_;
-};
-
-class RuntimeGraph::ScratchUse {
-  public:
-    ScratchUse(RuntimeGraph &graph, details::EvaluationScratch &scratch) noexcept
-        : graph_{&graph}, previous_{graph.scratch_} {
-        graph.scratch_ = &scratch;
-    }
-
-    ~ScratchUse() { graph_->scratch_ = previous_; }
-
-  private:
-    RuntimeGraph *graph_;
-    details::EvaluationScratch *previous_;
 };
 
 class ServiceBindingContext {
@@ -382,20 +371,31 @@ class RuntimeGraph::OutputChangePublisher {
     RuntimeGraph *graph_;
 };
 
-RuntimeGraph::RuntimeGraph(const CompiledGraph &compiled_graph) : RuntimeGraph(compiled_graph, allocator{}) {}
-
-RuntimeGraph::RuntimeGraph(const CompiledGraph &compiled_graph, allocator memory)
-    : compiled_graph_(&compiled_graph), allocator_(memory), owned_global_state_(std::make_unique<GlobalState>(memory)),
-      global_state_(owned_global_state_.get()) {
-    initialize_storage();
-}
-
 RuntimeGraph::RuntimeGraph(const CompiledGraph &compiled_graph, GlobalState &global_state)
     : RuntimeGraph(compiled_graph, allocator{}, global_state) {}
 
 RuntimeGraph::RuntimeGraph(const CompiledGraph &compiled_graph, allocator memory, GlobalState &global_state)
-    : compiled_graph_(&compiled_graph), allocator_(memory), global_state_(&global_state) {
+    : compiled_graph_(&compiled_graph), allocator_(memory),
+      evaluator_{allocator_.new_object<RuntimeGraphEvaluator>()}, root_global_state_{&global_state},
+      owns_evaluator_{true} {
+    try {
+        initialize_storage();
+    } catch (...) {
+        allocator_.delete_object(evaluator_);
+        throw;
+    }
+}
+
+RuntimeGraph::RuntimeGraph(const CompiledGraph &compiled_graph, allocator memory, RuntimeGraphEvaluator &evaluator,
+                           RuntimeGraphSchedulingCallbacks::token_type owner_token)
+    : compiled_graph_(&compiled_graph), allocator_(memory), evaluator_{&evaluator}, owner_token_{owner_token} {
+    assert(evaluator.owner_bound());
     initialize_storage();
+}
+
+GlobalState &RuntimeGraph::global_state() const noexcept {
+    assert(owns_evaluator_);
+    return *root_global_state_;
 }
 
 void RuntimeGraph::initialize_storage() {
@@ -441,9 +441,42 @@ std::span<details::ServiceRequestBinding *> RuntimeGraph::service_bindings() noe
 }
 
 RuntimeGraph::~RuntimeGraph() {
-    if (parent_ != nullptr && !callback_owner_ && owner_.direct.timed_schedule.id_ != 0) {
-        parent_->cancel(owner_.direct.node_index, owner_.direct.timed_schedule);
+    if (owns_evaluator_) {
+        finalize(*root_global_state_);
+    } else {
+        assert(finalized_);
     }
+
+    if (compiled_graph_->has_timed_scheduling() && timed_schedule() != nullptr) {
+        allocator_.delete_object(timed_schedule());
+    }
+
+    if (compiled_graph_->has_cycle_callbacks() && cycle_callbacks() != nullptr) {
+        allocator_.delete_object(cycle_callbacks());
+    }
+
+    if (storage_ != nullptr) {
+        allocator_.deallocate_bytes(storage_, compiled_graph_->runtime_storage_size(),
+                                    compiled_graph_->runtime_storage_alignment());
+    }
+
+    if (owns_evaluator_) {
+        allocator_.delete_object(evaluator_);
+    }
+}
+
+void RuntimeGraph::finalize(GlobalState &global_state) noexcept {
+    auto scratch = details::EvaluationScratch{allocator_.memory_resource()};
+    auto context = EvaluationContext{evaluation_time_, *this, 0, global_state, &scratch,
+                                     SystemWallClock::instance()};
+    finalize(context);
+}
+
+void RuntimeGraph::finalize(EvaluationContext &parent_context) noexcept {
+    if (finalized_) {
+        return;
+    }
+    finalized_ = true;
 
     if (storage_ != nullptr) {
         for (auto node_index = compiled_graph_->node_count(); node_index != 0;) {
@@ -468,9 +501,9 @@ RuntimeGraph::~RuntimeGraph() {
                 continue;
             }
 
-            EvaluationContext context{evaluation_time_, *this, node_index, scratch_, SystemWallClock::instance()};
+            EvaluationContext context{parent_context, *this, node_index};
             const auto allocation_context = details::ScalarAllocationContext{
-                allocator_, global_state_->bundle_allocation_owner(), this, node_index};
+                allocator_, context.global_state().bundle_allocation_owner(), this, node_index};
             node.state_destruction_function()(node, storage_, &context);
         }
 
@@ -479,19 +512,6 @@ RuntimeGraph::~RuntimeGraph() {
             output_destruction.runtime_types[i - 1]->destroy_value(storage_ + output_destruction.offsets[i - 1],
                                                                    allocator_);
         }
-    }
-
-    if (compiled_graph_->has_timed_scheduling() && timed_schedule() != nullptr) {
-        allocator_.delete_object(timed_schedule());
-    }
-
-    if (compiled_graph_->has_cycle_callbacks() && cycle_callbacks() != nullptr) {
-        allocator_.delete_object(cycle_callbacks());
-    }
-
-    if (storage_ != nullptr) {
-        allocator_.deallocate_bytes(storage_, compiled_graph_->runtime_storage_size(),
-                                    compiled_graph_->runtime_storage_alignment());
     }
 }
 
@@ -568,60 +588,81 @@ void RuntimeGraph::clear_timed_schedule() noexcept {
 }
 
 void RuntimeGraph::notify_timed_schedule_changed(std::optional<EvaluationTime> previous) {
-    if (parent_ == nullptr) {
+    evaluator_->notify_timed_schedule_changed(*this, previous);
+}
+
+void RuntimeGraphEvaluator::notify_timed_schedule_changed(RuntimeGraph &graph,
+                                                          std::optional<EvaluationTime> previous) {
+    if (!parent_) {
         return;
     }
 
-    const auto next = next_scheduled_time();
+    const auto next = graph.next_scheduled_time();
     if (next == previous) {
         return;
     }
 
-    if (callback_owner_) {
-        auto context = RuntimeGraphOwnerContext{*parent_, owner_.callback.node_index};
-        const auto &owner = owner_.callback.owner;
-        owner.callbacks->timed_schedule_changed(context, owner.receiver, owner.token, next);
+    if (parent_.tag()) {
+        auto context = RuntimeGraphSchedulingContext{*parent_, owner_node_index_};
+        owner_.callback.callbacks->timed_schedule_changed(context, owner_.callback.receiver, graph.owner_token_, next);
         return;
     }
 
-    if (owner_.direct.timed_schedule.id_ != 0) {
-        parent_->cancel(owner_.direct.node_index, owner_.direct.timed_schedule);
+    if (owner_.direct.timed_schedule) {
+        parent_->cancel(owner_node_index_, owner_.direct.timed_schedule);
         owner_.direct.timed_schedule = {};
     }
     if (next) {
-        owner_.direct.timed_schedule = parent_->schedule_at(owner_.direct.node_index, *next);
+        owner_.direct.timed_schedule = parent_->schedule_at(owner_node_index_, *next);
     }
 }
 
 void RuntimeGraph::notify_owner_scheduled() noexcept {
-    if (parent_ == nullptr || suppress_parent_scheduling_) {
+    evaluator_->notify_scheduled(*this);
+}
+
+void RuntimeGraphEvaluator::notify_scheduled(RuntimeGraph &graph) noexcept {
+    if (!parent_ || graph.suppress_parent_scheduling_) {
         return;
     }
 
-    const auto node_index = callback_owner_ ? owner_.callback.node_index : owner_.direct.node_index;
-    if (callback_owner_) {
-        const auto &owner = owner_.callback.owner;
-        owner.callbacks->inner_scheduled(owner.receiver, owner.token);
+    if (parent_.tag()) {
+        owner_.callback.callbacks->inner_scheduled(owner_.callback.receiver, graph.owner_token_);
     }
-    parent_->schedule(node_index);
+    parent_->schedule(owner_node_index_);
 }
 
-void RuntimeGraph::set_owner(RuntimeGraph &graph, std::size_t node_index) noexcept {
-    parent_ = &graph;
-    owner_.direct = {.node_index = node_index};
-    callback_owner_ = false;
+void RuntimeGraphEvaluator::require_owner(RuntimeGraph &graph, std::size_t node_index, void *receiver,
+                                          const RuntimeGraphSchedulingCallbacks *callbacks) {
+    if (!parent_) {
+        parent_.reset(&graph, callbacks != nullptr);
+        owner_node_index_ = node_index;
+        if (callbacks != nullptr) {
+            owner_.callback = {.receiver = receiver, .callbacks = callbacks};
+        } else {
+            owner_.direct = {};
+        }
+        return;
+    }
+
+    if (parent_.get() != &graph || owner_node_index_ != node_index || parent_.tag() != (callbacks != nullptr) ||
+        (callbacks != nullptr &&
+         (owner_.callback.receiver != receiver || owner_.callback.callbacks != callbacks))) {
+        throw std::logic_error{"a runtime graph evaluator cannot change owner"};
+    }
 }
 
-void RuntimeGraph::set_owner(RuntimeGraph &graph, std::size_t node_index, RuntimeGraphOwner owner) noexcept {
-    parent_ = &graph;
-    owner_.callback = {.node_index = node_index, .owner = owner};
-    callback_owner_ = true;
+void RuntimeGraphEvaluator::bind_owner(RuntimeGraph &graph, std::size_t node_index) {
+    require_owner(graph, node_index, nullptr, nullptr);
 }
 
-void RuntimeGraph::clear_owner() noexcept {
-    parent_ = nullptr;
-    owner_.direct = {};
-    callback_owner_ = false;
+void RuntimeGraphEvaluator::bind_owner(RuntimeGraph &graph, std::size_t node_index,
+                                       RuntimeGraphSchedulingHandler handler) {
+    if (handler.receiver == nullptr || handler.callbacks == nullptr || handler.callbacks->inner_scheduled == nullptr ||
+        handler.callbacks->timed_schedule_changed == nullptr) {
+        throw std::invalid_argument{"an inner-graph scheduling handler requires scheduling callbacks"};
+    }
+    require_owner(graph, node_index, handler.receiver, handler.callbacks);
 }
 
 bool RuntimeGraph::set_owner_scheduling_suppressed(bool suppressed) noexcept {
@@ -682,9 +723,13 @@ RuntimeGraph::CycleCallbacks *RuntimeGraph::cycle_callbacks() const noexcept {
 }
 
 RuntimeGraph &RuntimeGraph::outer_graph() noexcept {
-    auto *result = this;
-    while (result->parent_ != nullptr) {
-        result = result->parent_;
+    return evaluator_->outer_graph(*this);
+}
+
+RuntimeGraph &RuntimeGraphEvaluator::outer_graph(RuntimeGraph &graph) const noexcept {
+    auto *result = &graph;
+    while (result->evaluator_->parent_) {
+        result = result->evaluator_->parent_.get();
     }
     return *result;
 }
@@ -701,7 +746,7 @@ RuntimeGraph::CycleCallbacks &RuntimeGraph::require_cycle_callbacks() {
     return *cycle_callbacks();
 }
 
-void RuntimeGraph::add_cycle_callback(void *receiver, void (*function)(void *) noexcept) {
+void RuntimeGraph::add_cycle_callback(void *receiver, void (*function)(void *, EvaluationContext &) noexcept) {
     if (stopped_) {
         return;
     }
@@ -715,9 +760,9 @@ void RuntimeGraph::remove_cycle_callback(const void *receiver) noexcept {
     }
 }
 
-void RuntimeGraph::run_cycle_callbacks() noexcept {
+void RuntimeGraph::run_cycle_callbacks(EvaluationContext &context) noexcept {
     if (compiled_graph_->has_cycle_callbacks() && cycle_callbacks() != nullptr) {
-        cycle_callbacks()->run();
+        cycle_callbacks()->run(context);
     }
 }
 
@@ -829,8 +874,8 @@ void RuntimeGraph::apply_invalidation(const CompiledNode &node, std::size_t node
 
     const auto output_was_valid = node.has_output() && Node{node, storage_}.output_last_updated().valid();
     EvaluationContext context{parent_context, *this, node_index};
-    const auto allocation_context =
-        details::ScalarAllocationContext{allocator_, global_state_->bundle_allocation_owner(), this, node_index};
+    const auto allocation_context = details::ScalarAllocationContext{
+        allocator_, context.global_state().bundle_allocation_owner(), this, node_index};
     node.invalidation_function()(node, storage_, &context);
 
     if (node.has_output()) {
@@ -841,20 +886,29 @@ void RuntimeGraph::apply_invalidation(const CompiledNode &node, std::size_t node
 }
 
 void RuntimeGraph::start(EvaluationTime evaluation_time) {
+    start(evaluation_time, global_state());
+}
+
+void RuntimeGraph::start(EvaluationTime evaluation_time, GlobalState &global_state) {
     auto scratch = details::EvaluationScratch{allocator_.memory_resource()};
-    auto context = EvaluationContext{evaluation_time, *this, scratch, SystemWallClock::instance()};
+    auto context = EvaluationContext{evaluation_time, *this, global_state, scratch, SystemWallClock::instance()};
     start(context);
 }
 
 void RuntimeGraph::start(EvaluationContext &parent_context) {
-    if (started_ || stopped_) {
+    evaluator_->start(*this, parent_context);
+}
+
+void RuntimeGraphEvaluator::start(RuntimeGraph &graph, EvaluationContext &parent_context) {
+    if (graph.started_ || graph.stopped_) {
         throw std::logic_error{"a runtime graph can only be started once"};
     }
-    if (&parent_context.runtime_graph() == this && !TimeSeriesState::can_represent(parent_context.evaluation_time())) {
+    if (&parent_context.runtime_graph() == &graph &&
+        !TimeSeriesState::can_represent(parent_context.evaluation_time())) {
         throw std::invalid_argument{"evaluation time cannot be represented by a time series"};
     }
 
-    const auto inherited_time_series = compiled_graph_->inherited_time_series();
+    const auto inherited_time_series = graph.compiled_graph_->inherited_time_series();
     const auto *inherited_time_series_section =
         inherited_time_series.empty() ? nullptr
                                       : static_cast<const details::InheritedTimeSeriesSection *>(
@@ -866,8 +920,8 @@ void RuntimeGraph::start(EvaluationContext &parent_context) {
         throw std::invalid_argument{"the runtime graph received the wrong number of inherited time series"};
     }
 
-    auto bindings = service_bindings();
-    const auto provider_nodes = compiled_graph_->service_binding_provider_nodes();
+    auto bindings = graph.service_bindings();
+    const auto provider_nodes = graph.compiled_graph_->service_binding_provider_nodes();
     const auto *binding_section = bindings.empty()
                                       ? nullptr
                                       : static_cast<const details::ServiceBindingSection *>(
@@ -886,52 +940,52 @@ void RuntimeGraph::start(EvaluationContext &parent_context) {
             if (provider_nodes[index] == details::no_service_binding_provider_node) {
                 throw std::invalid_argument{"a runtime graph mixes provided and inherited service bindings"};
             }
-            bindings[index] = static_cast<details::ServiceRequestBinding *>(node(provider_nodes[index]).state());
+            bindings[index] =
+                static_cast<details::ServiceRequestBinding *>(graph.node(provider_nodes[index]).state());
         }
     }
 
     auto binding_context = ServiceBindingContext{parent_context, bindings};
     auto &context = binding_context.context();
 
-    started_ = true;
-    const auto scratch_use = ScratchUse{*this, *context.scratch_.evaluation_scratch_};
-    evaluation_time_ = context.evaluation_time();
-    const auto starts = compiled_graph_->start_functions();
+    graph.started_ = true;
+    graph.evaluation_time_ = context.evaluation_time();
+    const auto starts = graph.compiled_graph_->start_functions();
     auto started_node_count = std::size_t{};
     auto stop_on_failure = util::scope_exit{[&]() noexcept {
-        stopped_ = true;
-        stop_nodes(started_node_count, context);
+        graph.stopped_ = true;
+        graph.stop_nodes(started_node_count, context);
     }};
 
     for (auto index = std::size_t{}; index < inherited_references.size(); ++index) {
-        initialize_inherited_time_series(index, inherited_references[index]);
+        graph.initialize_inherited_time_series(index, inherited_references[index]);
     }
-    if (const auto offset = compiled_graph_->constant_start_time_offset()) {
-        reinterpret_cast<TimeSeriesState *>(storage_ + *offset)->publish(evaluation_time_);
+    if (const auto offset = graph.compiled_graph_->constant_start_time_offset()) {
+        reinterpret_cast<TimeSeriesState *>(graph.storage_ + *offset)->publish(graph.evaluation_time_);
     }
     auto function = starts.functions.begin();
 
     for (const auto node_index : starts.nodes) {
         started_node_count = node_index;
-        const auto &node = compiled_graph_->node(node_index);
-        const auto output_was_valid = node.has_output() && Node{node, storage_}.output_last_updated().valid();
+        const auto &node = graph.compiled_graph_->node(node_index);
+        const auto output_was_valid = node.has_output() && Node{node, graph.storage_}.output_last_updated().valid();
 
-        EvaluationContext node_context{context, *this, node_index};
-        const auto allocation_context =
-            details::ScalarAllocationContext{allocator_, global_state_->bundle_allocation_owner(), this, node_index};
-        (*function)(node, storage_, &node_context);
+        EvaluationContext node_context{context, graph, node_index};
+        const auto allocation_context = details::ScalarAllocationContext{
+            graph.allocator_, context.global_state().bundle_allocation_owner(), &graph, node_index};
+        (*function)(node, graph.storage_, &node_context);
         ++function;
         started_node_count = node_index + 1;
 
         if (node.has_output()) {
-            if (const auto change = output_change(node, output_was_valid)) {
-                publish_output(node, *change);
+            if (const auto change = graph.output_change(node, output_was_valid)) {
+                graph.publish_output(node, *change);
             }
         }
     }
     {
-        auto context = OutputChangeContext{*this};
-        for (const auto &notification : compiled_graph_->constant_notifications()) {
+        auto context = OutputChangeContext{graph};
+        for (const auto &notification : graph.compiled_graph_->constant_notifications()) {
             notification.notify(context, OutputChange::revalidation);
         }
     }
@@ -948,8 +1002,8 @@ void RuntimeGraph::stop_nodes(std::size_t node_count, EvaluationContext &parent_
 
         const auto &node = compiled_graph_->node(node_index);
         EvaluationContext context{parent_context, *this, node_index};
-        const auto allocation_context =
-            details::ScalarAllocationContext{allocator_, global_state_->bundle_allocation_owner(), this, node_index};
+        const auto allocation_context = details::ScalarAllocationContext{
+            allocator_, context.global_state().bundle_allocation_owner(), this, node_index};
         stops.functions[i](node, storage_, &context);
     }
 
@@ -958,35 +1012,42 @@ void RuntimeGraph::stop_nodes(std::size_t node_count, EvaluationContext &parent_
 }
 
 void RuntimeGraph::stop() noexcept {
+    stop(global_state());
+}
+
+void RuntimeGraph::stop(GlobalState &global_state) noexcept {
     auto scratch = details::EvaluationScratch{allocator_.memory_resource()};
-    auto context = EvaluationContext{evaluation_time_, *this, scratch, SystemWallClock::instance()};
+    auto context = EvaluationContext{evaluation_time_, *this, global_state, scratch, SystemWallClock::instance()};
     stop(context);
 }
 
 void RuntimeGraph::stop(EvaluationContext &parent_context) noexcept {
-    if (!started_ || stopped_) {
+    evaluator_->stop(*this, parent_context);
+}
+
+void RuntimeGraphEvaluator::stop(RuntimeGraph &graph, EvaluationContext &parent_context) noexcept {
+    if (!graph.started_ || graph.stopped_) {
         return;
     }
 
-    auto binding_context = ServiceBindingContext{parent_context, service_bindings()};
+    auto binding_context = ServiceBindingContext{parent_context, graph.service_bindings()};
     auto &context = binding_context.context();
-    stopped_ = true;
-    const auto scratch_use = ScratchUse{*this, *context.scratch_.evaluation_scratch_};
+    graph.stopped_ = true;
 
-    const auto stops = compiled_graph_->stop_functions();
+    const auto stops = graph.compiled_graph_->stop_functions();
     auto i = stops.nodes.size();
     while (i != 0) {
         --i;
         const auto node_index = stops.nodes[i];
-        const auto &node = compiled_graph_->node(node_index);
-        EvaluationContext node_context{context, *this, node_index};
-        const auto allocation_context =
-            details::ScalarAllocationContext{allocator_, global_state_->bundle_allocation_owner(), this, node_index};
-        stops.functions[i](node, storage_, &node_context);
+        const auto &node = graph.compiled_graph_->node(node_index);
+        EvaluationContext node_context{context, graph, node_index};
+        const auto allocation_context = details::ScalarAllocationContext{
+            graph.allocator_, context.global_state().bundle_allocation_owner(), &graph, node_index};
+        stops.functions[i](node, graph.storage_, &node_context);
     }
 
-    clear_timed_schedule();
-    clear_cycle_callbacks();
+    graph.clear_timed_schedule();
+    graph.clear_cycle_callbacks();
 }
 
 bool RuntimeGraph::inputs_are_valid(const CompiledNode &node) const noexcept {
@@ -1006,65 +1067,73 @@ bool RuntimeGraph::inputs_are_valid(const CompiledNode &node) const noexcept {
 }
 
 void RuntimeGraph::evaluate(EvaluationTime evaluation_time) {
+    evaluate(evaluation_time, global_state());
+}
+
+void RuntimeGraph::evaluate(EvaluationTime evaluation_time, GlobalState &global_state) {
     auto scratch = details::EvaluationScratch{allocator_.memory_resource()};
-    auto context = EvaluationContext{evaluation_time, *this, scratch, SystemWallClock::instance()};
+    auto context = EvaluationContext{evaluation_time, *this, global_state, scratch, SystemWallClock::instance()};
     if (!evaluate(context)) {
         throw std::logic_error{"a pending evaluation escaped the outer graph"};
     }
 }
 
 bool RuntimeGraph::evaluate(EvaluationContext &parent_context) {
-    if (!started_ || stopped_) {
+    return evaluator_->evaluate(*this, parent_context);
+}
+
+bool RuntimeGraphEvaluator::evaluate(RuntimeGraph &graph, EvaluationContext &parent_context) {
+    if (!graph.started_ || graph.stopped_) {
         throw std::logic_error{"a runtime graph must be running to evaluate"};
     }
 
-    if (&parent_context.runtime_graph() == this && !TimeSeriesState::can_represent(parent_context.evaluation_time())) {
+    if (&parent_context.runtime_graph() == &graph &&
+        !TimeSeriesState::can_represent(parent_context.evaluation_time())) {
         throw std::invalid_argument{"evaluation time cannot be represented by a time series"};
     }
 
-    auto binding_context = ServiceBindingContext{parent_context, service_bindings()};
+    auto binding_context = ServiceBindingContext{parent_context, graph.service_bindings()};
     auto &context = binding_context.context();
     const auto evaluation_time = context.evaluation_time();
-    const auto scratch_use = ScratchUse{*this, *context.scratch_.evaluation_scratch_};
-    const auto resuming = paused_node_index_ != std::numeric_limits<std::uint32_t>::max();
+    const auto resuming = graph.paused_node_index_ != std::numeric_limits<std::uint32_t>::max();
     if (!resuming) {
-        if (evaluation_time <= last_evaluation_time_) {
+        if (evaluation_time <= graph.last_evaluation_time_) {
             throw std::invalid_argument{"evaluation time must increase between outer cycles"};
         }
 
-        run_cycle_callbacks();
-        last_evaluation_time_ = evaluation_time;
-        evaluation_time_ = evaluation_time;
-        activate_scheduled(evaluation_time);
-    } else if (evaluation_time != evaluation_time_) {
+        graph.run_cycle_callbacks(context);
+        graph.last_evaluation_time_ = evaluation_time;
+        graph.evaluation_time_ = evaluation_time;
+        graph.activate_scheduled(evaluation_time);
+    } else if (evaluation_time != graph.evaluation_time_) {
         throw std::invalid_argument{"a paused runtime graph must resume in the same outer cycle"};
     }
 
-    auto scheduling = scheduling_info();
-    auto scheduled = ScheduledNodes{scheduling};
+    auto scheduling = graph.scheduling_info();
+    auto scheduled = RuntimeGraph::ScheduledNodes{scheduling};
     auto stop_on_failure = util::scope_exit{[&]() noexcept {
-        stopped_ = true;
-        stop_nodes(compiled_graph_->node_count(), context);
+        graph.stopped_ = true;
+        graph.stop_nodes(graph.compiled_graph_->node_count(), context);
     }};
 
-    for (auto scheduled_node = resuming ? scheduled.begin(paused_node_index_) : scheduled.begin();
+    for (auto scheduled_node = resuming ? scheduled.begin(graph.paused_node_index_) : scheduled.begin();
          scheduled_node != std::default_sentinel;) {
         const auto [node_index, evaluation_requested, validity_check_requested] = *scheduled_node;
         auto advance = util::scope_exit{[&]() noexcept { ++scheduled_node; }};
         const auto word_index = node_index / CompiledGraph::schedule_word_bits;
-        const auto mask = ScheduleWord{1} << (node_index % CompiledGraph::schedule_word_bits);
-        const auto &node = compiled_graph_->node(node_index);
+        const auto mask = RuntimeGraph::ScheduleWord{1} << (node_index % CompiledGraph::schedule_word_bits);
+        const auto &node = graph.compiled_graph_->node(node_index);
         const auto has_output = node.has_output();
         const auto inputs_were_valid = scheduling[word_index].inputs_valid(mask);
         auto inputs_valid = inputs_were_valid;
 
         if (validity_check_requested || (evaluation_requested && !inputs_valid)) {
-            inputs_valid = inputs_are_valid(node);
+            inputs_valid = graph.inputs_are_valid(node);
             scheduling[word_index].inputs_valid(mask, inputs_valid);
         }
 
         if (inputs_were_valid && !inputs_valid) {
-            apply_invalidation(node, node_index, context);
+            graph.apply_invalidation(node, node_index, context);
         }
 
         if (!inputs_valid) {
@@ -1075,13 +1144,13 @@ bool RuntimeGraph::evaluate(EvaluationContext &parent_context) {
             continue;
         }
 
-        const auto output_was_valid = has_output && Node{node, storage_}.output_last_updated().valid();
+        const auto output_was_valid = has_output && Node{node, graph.storage_}.output_last_updated().valid();
         if (const auto evaluate = node.evaluation_function(); evaluate != nullptr) {
-            EvaluationContext node_context{context, *this, node_index};
+            EvaluationContext node_context{context, graph, node_index};
             const auto allocation_context = details::ScalarAllocationContext{
-                allocator_, global_state_->bundle_allocation_owner(), this, node_index};
-            if (!evaluate(node, storage_, &node_context)) {
-                paused_node_index_ = static_cast<std::uint32_t>(node_index);
+                graph.allocator_, context.global_state().bundle_allocation_owner(), &graph, node_index};
+            if (!evaluate(node, graph.storage_, &node_context)) {
+                graph.paused_node_index_ = static_cast<std::uint32_t>(node_index);
                 advance.release();
                 stop_on_failure.release();
                 return false;
@@ -1089,13 +1158,13 @@ bool RuntimeGraph::evaluate(EvaluationContext &parent_context) {
         }
 
         if (has_output) {
-            if (const auto change = output_change(node, output_was_valid)) {
-                publish_output(node, *change);
+            if (const auto change = graph.output_change(node, output_was_valid)) {
+                graph.publish_output(node, *change);
             }
         }
     }
     stop_on_failure.release();
-    paused_node_index_ = std::numeric_limits<std::uint32_t>::max();
+    graph.paused_node_index_ = std::numeric_limits<std::uint32_t>::max();
     return true;
 }
 
@@ -1111,20 +1180,21 @@ void EvaluationContext::cancel(ScheduleHandle handle) const noexcept {
     runtime_graph_->cancel(node_index_, handle);
 }
 
-void EvaluationContext::add_cycle_callback(void *receiver, void (*function)(void *) noexcept) const {
+void EvaluationContext::add_cycle_callback(void *receiver,
+                                           void (*function)(void *, EvaluationContext &) noexcept) const {
     runtime_graph_->add_cycle_callback(receiver, function);
 }
 
 GlobalState &EvaluationContext::global_state() const noexcept {
-    return runtime_graph_->global_state();
+    return *global_state_;
 }
 
 EvaluationContext::EvaluationContext(EvaluationTime evaluation_time, RuntimeGraph &runtime_graph,
-                                     std::size_t node_index, details::EvaluationScratch *evaluation_scratch,
-                                     const WallClock &wall_clock,
+                                     std::size_t node_index, GlobalState &global_state,
+                                     details::EvaluationScratch *evaluation_scratch, const WallClock &wall_clock,
                                      const details::EvaluationContextSection *sections) noexcept
     : evaluation_time_(evaluation_time), wall_clock_(&wall_clock), runtime_graph_(&runtime_graph),
-      node_index_(node_index), scratch_{evaluation_scratch}, sections_(sections) {}
+      node_index_(node_index), global_state_{&global_state}, scratch_{evaluation_scratch}, sections_(sections) {}
 
 EvaluationContext EvaluationContext::child(details::EvaluationContextSection &section) noexcept {
     section.parent = sections_;

@@ -204,9 +204,9 @@ work. Stop code must be `noexcept`.
 The engine invokes stop once for each node whose start completed, including
 after graph failure.
 
-State-destruction functions run when runtime graph storage is destroyed. Their
-context uses `SystemWallClock` because graph destruction runs outside an outer
-engine invocation.
+State-destruction functions run before runtime graph storage is destroyed.
+Nested graph owners pass their evaluation context when finalizing inner graphs.
+The outer graph creates a context with `SystemWallClock` when it is destroyed.
 
 ## Exceptions
 

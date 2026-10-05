@@ -27,7 +27,9 @@ class MapRuntimeState {
     using MapOutput = std::optional<Out<TSD<SCALAR, REF<TS_T>>>>;
 
   public:
-    explicit MapRuntimeState(allocator memory) : branches_{memory} {}
+    MapRuntimeState(allocator memory, EvaluationContext &context) : branches_{memory} {
+        branches_.entries().bind_evaluator(context);
+    }
 
     MapRuntimeState(const MapRuntimeState &) = delete;
     MapRuntimeState &operator=(const MapRuntimeState &) = delete;
@@ -144,7 +146,7 @@ class DefaultMapNodeDefinition : public MapNodeDefinition {
         auto &state = invocation.state();
         if (state.runtime == nullptr) {
             auto memory = invocation.context().runtime_graph().allocation();
-            state.runtime = memory.new_object<MapRuntimeState>(memory);
+            state.runtime = memory.new_object<MapRuntimeState>(memory, invocation.context());
         }
         return state.runtime->evaluate(invocation.compiled_data(), invocation);
     }

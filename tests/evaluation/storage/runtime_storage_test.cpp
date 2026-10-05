@@ -51,7 +51,8 @@ TEST_CASE("runtime storage uses the output scalar runtime_type", "[evaluation][s
     }
 
     const bg::CompiledGraph compiled{wiring};
-    bg::RuntimeGraph runtime{compiled};
+    auto runtime_global_state = bg::GlobalState{};
+    bg::RuntimeGraph runtime{compiled, runtime_global_state};
 
     double_sink_definition::evaluation_count = 0;
     runtime.start(time(1));
@@ -96,7 +97,8 @@ TEST_CASE("a node without output uses no output storage", "[evaluation][storage]
     }
 
     const bg::CompiledGraph compiled{wiring};
-    bg::RuntimeGraph runtime{compiled};
+    auto runtime_global_state = bg::GlobalState{};
+    bg::RuntimeGraph runtime{compiled, runtime_global_state};
     float_sink_definition::evaluation_count = 0;
 
     CHECK_FALSE(compiled.node(1).has_output());
@@ -138,14 +140,16 @@ TEST_CASE("runtime graphs keep separate runtime storage", "[evaluation][storage]
     }
 
     const bg::CompiledGraph compiled{wiring};
-    bg::RuntimeGraph first{compiled};
+    auto first_global_state = bg::GlobalState{};
+    bg::RuntimeGraph first{compiled, first_global_state};
 
     first.start(time(1));
     first.schedule(0);
     first.schedule(1);
     first.evaluate(time(1));
 
-    bg::RuntimeGraph second{compiled};
+    auto second_global_state = bg::GlobalState{};
+    bg::RuntimeGraph second{compiled, second_global_state};
     add_definition::evaluation_count = 0;
     second.start(time(1));
     second.schedule(2);
@@ -182,7 +186,8 @@ TEST_CASE("a runtime graph releases dictionary time-series storage",
     const auto compiled = bg::CompiledGraph{wiring};
     auto memory = counting_memory_resource{};
     {
-        auto runtime = bg::RuntimeGraph{compiled, bg::allocator{memory}};
+        auto runtime_global_state = bg::GlobalState{bg::allocator{memory}};
+        auto runtime = bg::RuntimeGraph{compiled, bg::allocator{memory}, runtime_global_state};
         runtime.start(time(1));
         CHECK(memory.allocations() > 1);
     }
@@ -251,7 +256,8 @@ TEST_CASE("scalar fields and state bind to their storage", "[evaluation][storage
     CHECK(node.parameters()[1].scalar_data() == nullptr);
     CHECK(node.has_state());
 
-    bg::RuntimeGraph first{compiled};
+    auto first_global_state = bg::GlobalState{};
+    bg::RuntimeGraph first{compiled, first_global_state};
     first.start(time(1));
     first.schedule(0);
     first.evaluate(time(1));
@@ -261,7 +267,8 @@ TEST_CASE("scalar fields and state bind to their storage", "[evaluation][storage
     first.evaluate(time(2));
     CHECK(int_sink_definition::last_value == 6);
 
-    bg::RuntimeGraph second{compiled};
+    auto second_global_state = bg::GlobalState{};
+    bg::RuntimeGraph second{compiled, second_global_state};
     second.start(time(1));
     second.schedule(0);
     second.evaluate(time(1));

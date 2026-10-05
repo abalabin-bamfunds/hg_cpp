@@ -167,10 +167,13 @@ class MeshRuntimeState {
         bool pending{};
     };
 
-    explicit MeshRuntimeState(allocator memory)
+    MeshRuntimeState(allocator memory, EvaluationContext &context)
         : memory_{memory}, branches_{memory}, edges_{&memory.memory_resource()},
           evaluation_stack_{&memory.memory_resource()}, cycle_stack_{&memory.memory_resource()},
-          dependencies_to_unlink_{&memory.memory_resource()} {}
+          dependencies_to_unlink_{&memory.memory_resource()} {
+        branches_.entries().bind_evaluator(
+            context, {.receiver = this, .callbacks = &scheduling_callbacks});
+    }
 
     MeshRuntimeState(const MeshRuntimeState &) = delete;
     MeshRuntimeState &operator=(const MeshRuntimeState &) = delete;
@@ -399,14 +402,9 @@ class MeshRuntimeState {
     }
 
     void start(Entry &entry, const CompiledMeshGraph &compiled, MeshInvocation invocation) {
-        const auto owner = RuntimeGraphOwner{
-            .receiver = this,
-            .token = entry.branch_id,
-            .callbacks = &owner_callbacks,
-        };
         auto section = MeshContextSection{*this, entry.branch_id};
         auto branch_context = invocation.context().child(section);
-        branches_.start(entry, compiled.map, invocation, owner, branch_context);
+        branches_.start(entry, compiled.map, invocation, branch_context);
     }
 
     void queue_stop(branch_id_t branch_id) {
@@ -442,7 +440,7 @@ class MeshRuntimeState {
         dependency_unlink_pending_ = true;
     }
 
-    static void unlink_stopped_dependencies_callback(void *receiver) noexcept {
+    static void unlink_stopped_dependencies_callback(void *receiver, EvaluationContext &) noexcept {
         static_cast<MeshRuntimeState *>(receiver)->unlink_stopped_dependencies();
     }
 
@@ -737,19 +735,19 @@ class MeshRuntimeState {
         }
     }
 
-    static void inner_graph_scheduled(void *receiver, RuntimeGraphOwnerCallbacks::token_type token) noexcept {
+    static void inner_graph_scheduled(void *receiver, RuntimeGraphSchedulingCallbacks::token_type token) noexcept {
         auto &runtime = *static_cast<MeshRuntimeState *>(receiver);
         runtime.branches_.entries().mark_ready(static_cast<branch_id_t>(token));
     }
 
-    static void inner_graph_timed_schedule_changed(RuntimeGraphOwnerContext &context, void *receiver,
-                                                   RuntimeGraphOwnerCallbacks::token_type token,
+    static void inner_graph_timed_schedule_changed(RuntimeGraphSchedulingContext &context, void *receiver,
+                                                   RuntimeGraphSchedulingCallbacks::token_type token,
                                                    std::optional<EvaluationTime> time) {
         auto &runtime = *static_cast<MeshRuntimeState *>(receiver);
         runtime.branches_.entries().timed_schedule_changed(context, static_cast<branch_id_t>(token), time);
     }
 
-    static const RuntimeGraphOwnerCallbacks owner_callbacks;
+    static const RuntimeGraphSchedulingCallbacks scheduling_callbacks;
 
     allocator memory_;
     MapRuntime branches_;
@@ -770,7 +768,7 @@ class MeshRuntimeState {
     bool destroying_{};
 };
 
-const RuntimeGraphOwnerCallbacks MeshRuntimeState::owner_callbacks{
+const RuntimeGraphSchedulingCallbacks MeshRuntimeState::scheduling_callbacks{
     .inner_scheduled = MeshRuntimeState::inner_graph_scheduled,
     .timed_schedule_changed = MeshRuntimeState::inner_graph_timed_schedule_changed,
 };
@@ -839,7 +837,7 @@ class MeshNodeDefinition : public MapNodeDefinition {
         auto &state = invocation.state();
         if (state.runtime == nullptr) {
             auto memory = invocation.context().runtime_graph().allocation();
-            state.runtime = memory.new_object<MeshRuntimeState>(memory);
+            state.runtime = memory.new_object<MeshRuntimeState>(memory, invocation.context());
         }
         return state.runtime->evaluate(invocation.compiled_data(), invocation);
     }

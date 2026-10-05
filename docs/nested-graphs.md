@@ -89,6 +89,10 @@ inner runtime graph. The [`mesh` operator](mesh.md) can pause one inner graph
 while it evaluates another inner graph selected by key, then resume the paused
 graph in the same outer cycle.
 
+Each inner runtime graph keeps its own storage, allocator, scheduling, and
+lifecycle state. A `map` or `mesh` owner shares one `RuntimeGraphEvaluator` across
+its inner graphs for the parent connection.
+
 When an inner graph reports [pending evaluation](evaluation.md#pending-evaluation),
 an owner that cannot satisfy it returns pending unchanged. This applies to
 ordinary nested graphs, `map`, `switch_`, and nested meshes.

@@ -52,7 +52,8 @@ TEST_CASE("a required input delays evaluation until it becomes valid",
     }
 
     const bg::CompiledGraph compiled{wiring};
-    bg::RuntimeGraph runtime{compiled};
+    auto runtime_global_state = bg::GlobalState{};
+    bg::RuntimeGraph runtime{compiled, runtime_global_state};
     add_definition::evaluation_count = 0;
 
     runtime.start(time(1));
@@ -119,7 +120,8 @@ TEST_CASE("revalidating an active required input schedules normal evaluation",
     }
 
     const bg::CompiledGraph compiled{wiring};
-    bg::RuntimeGraph runtime{compiled};
+    auto runtime_global_state = bg::GlobalState{};
+    bg::RuntimeGraph runtime{compiled, runtime_global_state};
     switchable_definition::publish = true;
     float_sink_definition::evaluation_count = 0;
 
@@ -196,7 +198,8 @@ TEST_CASE("a node resumes after all required inputs become valid",
     }
 
     const bg::CompiledGraph compiled{wiring};
-    bg::RuntimeGraph runtime{compiled};
+    auto runtime_global_state = bg::GlobalState{};
+    bg::RuntimeGraph runtime{compiled, runtime_global_state};
     runtime.start(time(1));
     runtime.schedule(0);
     runtime.schedule(1);

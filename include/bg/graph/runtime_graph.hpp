@@ -6,12 +6,11 @@
 #include <bg/graph/compiled_graph.hpp>
 #include <bg/graph/dynamic_node_subscriber.hpp>
 #include <bg/graph/node.hpp>
-#include <bg/graph/runtime_graph_owner.hpp>
+#include <bg/graph/runtime_graph_scheduling.hpp>
 
 #include <cstddef>
 #include <cstdint>
 #include <limits>
-#include <memory>
 #include <optional>
 #include <span>
 #include <vector>
@@ -25,13 +24,14 @@ class ServiceRequestBinding;
 } // namespace details
 
 class NestedGraph;
+class RuntimeGraphEvaluator;
 
 class RuntimeGraph {
   public:
-    explicit RuntimeGraph(const CompiledGraph &compiled_graph);
-    RuntimeGraph(const CompiledGraph &compiled_graph, allocator memory);
     RuntimeGraph(const CompiledGraph &compiled_graph, GlobalState &global_state);
     RuntimeGraph(const CompiledGraph &compiled_graph, allocator memory, GlobalState &global_state);
+    RuntimeGraph(const CompiledGraph &compiled_graph, allocator memory, RuntimeGraphEvaluator &evaluator,
+                 RuntimeGraphSchedulingCallbacks::token_type owner_token);
     ~RuntimeGraph();
 
     RuntimeGraph(const RuntimeGraph &) = delete;
@@ -39,12 +39,16 @@ class RuntimeGraph {
     RuntimeGraph(RuntimeGraph &&) = delete;
     RuntimeGraph &operator=(RuntimeGraph &&) = delete;
 
+    // Overloads without a GlobalState or EvaluationContext apply only to outer graphs.
     void start(EvaluationTime evaluation_time);
+    void start(EvaluationTime evaluation_time, GlobalState &global_state);
     void stop() noexcept;
+    void stop(GlobalState &global_state) noexcept;
     void evaluate(EvaluationTime evaluation_time);
+    void evaluate(EvaluationTime evaluation_time, GlobalState &global_state);
     std::optional<EvaluationTime> next_scheduled_time() const noexcept;
     EvaluationTime evaluation_time() const noexcept { return evaluation_time_; }
-    GlobalState &global_state() const noexcept { return *global_state_; }
+    GlobalState &global_state() const noexcept;
     bg::allocator &allocation() noexcept { return allocator_; }
     const bg::allocator &allocation() const noexcept { return allocator_; }
     void *storage_at(std::size_t offset) noexcept { return storage_ + offset; }
@@ -54,15 +58,14 @@ class RuntimeGraph {
     void start(EvaluationContext &context);
     bool evaluate(EvaluationContext &context);
     void stop(EvaluationContext &context) noexcept;
+    void finalize(EvaluationContext &context) noexcept;
+    void finalize(GlobalState &global_state) noexcept;
 
     void schedule(std::size_t node_index) noexcept;
     void schedule_validity_check(std::size_t node_index) noexcept;
     ScheduleHandle schedule_at(std::size_t node_index, EvaluationTime time);
     void cancel(std::size_t node_index, ScheduleHandle handle) noexcept;
 
-    void set_owner(RuntimeGraph &graph, std::size_t node_index) noexcept;
-    void set_owner(RuntimeGraph &graph, std::size_t node_index, RuntimeGraphOwner owner) noexcept;
-    void clear_owner() noexcept;
     // Suppresses propagation to the owning node and returns the previous state.
     bool set_owner_scheduling_suppressed(bool suppressed) noexcept;
     bool evaluation_pending() const noexcept;
@@ -70,7 +73,7 @@ class RuntimeGraph {
     void update_reference_output(std::size_t node_index, Reference reference, EvaluationTime evaluation_time);
     void initialize_constant_output(std::size_t node_index, Scalar<> value, EvaluationTime evaluation_time);
 
-    void add_cycle_callback(void *receiver, void (*function)(void *) noexcept);
+    void add_cycle_callback(void *receiver, void (*function)(void *, EvaluationContext &) noexcept);
     void remove_cycle_callback(const void *receiver) noexcept;
     void notify_dynamic_subscribers(details::DynamicSubscribers &subscribers, OutputChange change);
     void notify_dynamic_subscriber(const details::DynamicNodeSubscriber &subscriber, OutputChange change) noexcept {
@@ -83,13 +86,14 @@ class RuntimeGraph {
     }
 
   private:
+    friend RuntimeGraphEvaluator;
+
     using ScheduleWord = CompiledGraph::ScheduleWord;
     using SchedulingInfo = CompiledGraph::SchedulingInfo;
 
     class ScheduledNodes;
     class TimedSchedule;
     class CycleCallbacks;
-    class ScratchUse;
     class OutputChangePublisher;
 
     auto scheduling_info() noexcept -> std::span<SchedulingInfo>;
@@ -105,7 +109,7 @@ class RuntimeGraph {
     CycleCallbacks *cycle_callbacks() const noexcept;
     RuntimeGraph &outer_graph() noexcept;
     CycleCallbacks &require_cycle_callbacks();
-    void run_cycle_callbacks() noexcept;
+    void run_cycle_callbacks(EvaluationContext &context) noexcept;
     void clear_cycle_callbacks() noexcept;
     std::optional<OutputChange> output_change(const CompiledNode &node, bool output_was_valid) const noexcept;
     void publish_output(const CompiledNode &node, OutputChange change);
@@ -120,36 +124,23 @@ class RuntimeGraph {
     bool inputs_are_valid(const CompiledNode &node) const noexcept;
     const CompiledGraph *compiled_graph_;
     bg::allocator allocator_;
-    std::unique_ptr<GlobalState> owned_global_state_;
-    GlobalState *global_state_;
+    RuntimeGraphEvaluator *evaluator_;
     std::byte *storage_{};
     EvaluationTime last_evaluation_time_{MIN_DT};
     EvaluationTime evaluation_time_{MIN_DT};
-    details::EvaluationScratch *scratch_{};
-    struct DirectOwner {
-        std::size_t node_index{};
-        ScheduleHandle timed_schedule{};
+    // Only outer graphs use the global state pointer; inner graphs use the owner token.
+    union {
+        GlobalState *root_global_state_;
+        RuntimeGraphSchedulingCallbacks::token_type owner_token_;
     };
-
-    struct CallbackOwner {
-        std::size_t node_index{};
-        RuntimeGraphOwner owner{};
-    };
-
-    // An inner graph uses either the compact direct nested() connection or callbacks to an owner of several graphs.
-    union Owner {
-        constexpr Owner() noexcept : direct{} {}
-
-        DirectOwner direct;
-        CallbackOwner callback;
-    } owner_;
-
-    RuntimeGraph *parent_{};
     std::uint32_t paused_node_index_{std::numeric_limits<std::uint32_t>::max()};
     bool suppress_parent_scheduling_ : 1 {};
-    bool callback_owner_ : 1 {};
+    bool owns_evaluator_ : 1 {};
     bool started_ : 1 {};
     bool stopped_ : 1 {};
+    bool finalized_ : 1 {};
 };
+
+static_assert(sizeof(RuntimeGraph) <= 64);
 
 } // namespace bg

@@ -89,7 +89,8 @@ TEST_CASE("a runtime graph activates timed scheduling at the start of evaluation
     }
 
     const auto compiled = bg::CompiledGraph{wiring};
-    auto runtime = bg::RuntimeGraph{compiled};
+    auto runtime_global_state = bg::GlobalState{};
+    auto runtime = bg::RuntimeGraph{compiled, runtime_global_state};
     cancelling_source_definition::evaluation_time = bg::MIN_DT;
 
     runtime.start(time(1));
@@ -126,7 +127,8 @@ TEST_CASE("schedule requests for one node at the same time coalesce",
     }
 
     const bg::CompiledGraph compiled{wiring};
-    bg::RuntimeGraph runtime{compiled};
+    auto runtime_global_state = bg::GlobalState{};
+    bg::RuntimeGraph runtime{compiled, runtime_global_state};
     coalescing_node_definition::evaluation_count = 0;
 
     runtime.start(time(1));
@@ -165,7 +167,8 @@ TEST_CASE("evaluation activates every overdue schedule request",
     }
 
     const bg::CompiledGraph compiled{wiring};
-    bg::RuntimeGraph runtime{compiled};
+    auto runtime_global_state = bg::GlobalState{};
+    bg::RuntimeGraph runtime{compiled, runtime_global_state};
     delayed_node_definition::evaluation_counts = {0, 0};
 
     runtime.start(time(1));
@@ -209,7 +212,8 @@ TEST_CASE("a schedule handle identifies the node that created it",
     }
 
     const bg::CompiledGraph compiled{wiring};
-    bg::RuntimeGraph runtime{compiled};
+    auto runtime_global_state = bg::GlobalState{};
+    bg::RuntimeGraph runtime{compiled, runtime_global_state};
     schedule_owner_definition::evaluation_count = 0;
 
     runtime.start(time(1));
@@ -239,7 +243,8 @@ TEST_CASE("timed scheduling requires a time after the current outer cycle",
     }
 
     const bg::CompiledGraph compiled{wiring};
-    bg::RuntimeGraph runtime{compiled};
+    auto runtime_global_state = bg::GlobalState{};
+    bg::RuntimeGraph runtime{compiled, runtime_global_state};
 
     CHECK_THROWS_AS(runtime.start(time(1)), std::invalid_argument);
 }
@@ -261,7 +266,8 @@ TEST_CASE("a node must declare timed scheduling", "[evaluation][timed_scheduling
     }
 
     const bg::CompiledGraph compiled{wiring};
-    bg::RuntimeGraph runtime{compiled};
+    auto runtime_global_state = bg::GlobalState{};
+    bg::RuntimeGraph runtime{compiled, runtime_global_state};
 
     CHECK_THROWS_AS(runtime.start(time(1)), std::logic_error);
 }
@@ -277,7 +283,8 @@ TEST_CASE("stopping a runtime graph clears schedule requests",
     }
 
     const bg::CompiledGraph compiled{wiring};
-    bg::RuntimeGraph runtime{compiled};
+    auto runtime_global_state = bg::GlobalState{};
+    bg::RuntimeGraph runtime{compiled, runtime_global_state};
     runtime.start(time(1));
     REQUIRE(runtime.next_scheduled_time() == time(3));
 

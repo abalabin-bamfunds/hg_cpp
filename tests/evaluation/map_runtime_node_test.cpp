@@ -457,7 +457,8 @@ TEST_CASE("stopped map inner graphs are destroyed at the start of the next outer
     const auto compiled = CompiledGraph{wiring};
     auto memory = counting_memory_resource{};
     {
-        auto runtime = RuntimeGraph{compiled, allocator{memory}};
+        auto runtime_global_state = bg::GlobalState{allocator{memory}};
+        auto runtime = RuntimeGraph{compiled, allocator{memory}, runtime_global_state};
         ControlledKeys::present = true;
         runtime.start(time(1));
         runtime.schedule(0);

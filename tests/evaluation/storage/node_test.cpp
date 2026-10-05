@@ -58,7 +58,8 @@ TEST_CASE("a runtime node locates output and input data", "[evaluation][storage]
     }();
 
     const auto compiled = bg::CompiledGraph{wiring};
-    auto runtime = bg::RuntimeGraph{compiled};
+    auto runtime_global_state = bg::GlobalState{};
+    auto runtime = bg::RuntimeGraph{compiled, runtime_global_state};
     runtime.start(time(1));
     runtime.evaluate(time(1));
 

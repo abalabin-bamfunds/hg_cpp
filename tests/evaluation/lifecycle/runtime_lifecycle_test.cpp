@@ -117,7 +117,8 @@ TEST_CASE("start and stop follow topological order",
     }
 
     const bg::CompiledGraph compiled{wiring};
-    bg::RuntimeGraph runtime{compiled};
+    auto runtime_global_state = bg::GlobalState{};
+    bg::RuntimeGraph runtime{compiled, runtime_global_state};
     runtime.start(time(1));
     runtime.stop();
 
@@ -143,7 +144,8 @@ TEST_CASE("a start failure stops nodes whose start completed",
     }
 
     const bg::CompiledGraph compiled{wiring};
-    bg::RuntimeGraph runtime{compiled};
+    auto runtime_global_state = bg::GlobalState{};
+    bg::RuntimeGraph runtime{compiled, runtime_global_state};
 
     CHECK_THROWS_AS(runtime.start(time(1)), std::runtime_error);
     CHECK(lifecycle_definition::events == std::vector{1, 2, -1});
@@ -168,7 +170,8 @@ TEST_CASE("an evaluation failure stops nodes in reverse topological order",
     }
 
     const bg::CompiledGraph compiled{wiring};
-    bg::RuntimeGraph runtime{compiled};
+    auto runtime_global_state = bg::GlobalState{};
+    bg::RuntimeGraph runtime{compiled, runtime_global_state};
     runtime.start(time(1));
 
     CHECK_THROWS_AS(runtime.evaluate(time(1)), std::runtime_error);
@@ -191,7 +194,8 @@ TEST_CASE("a runtime graph has one lifecycle",
     }
 
     const bg::CompiledGraph compiled{wiring};
-    bg::RuntimeGraph runtime{compiled};
+    auto runtime_global_state = bg::GlobalState{};
+    bg::RuntimeGraph runtime{compiled, runtime_global_state};
 
     CHECK_THROWS_AS(runtime.evaluate(time(1)), std::logic_error);
     runtime.start(time(1));
@@ -221,7 +225,8 @@ TEST_CASE("an aggregate node finalizes retained state when its runtime graph is 
 
     const auto compiled = bg::CompiledGraph{wiring};
     {
-        auto runtime = bg::RuntimeGraph{compiled};
+        auto runtime_global_state = bg::GlobalState{};
+        auto runtime = bg::RuntimeGraph{compiled, runtime_global_state};
         runtime.start(time(1));
     }
 
@@ -258,7 +263,8 @@ TEST_CASE("start can schedule evaluation in the first outer cycle",
     }
 
     const bg::CompiledGraph compiled{wiring};
-    bg::RuntimeGraph runtime{compiled};
+    auto runtime_global_state = bg::GlobalState{};
+    bg::RuntimeGraph runtime{compiled, runtime_global_state};
     runtime.start(time(1));
     runtime.evaluate(time(1));
 

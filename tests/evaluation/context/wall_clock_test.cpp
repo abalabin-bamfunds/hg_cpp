@@ -178,7 +178,8 @@ TEST_CASE("the simulation engine shares one wall clock across node contexts",
     }
 
     const auto compiled = bg::CompiledGraph{wiring};
-    auto runtime = bg::RuntimeGraph{compiled};
+    auto runtime_global_state = bg::GlobalState{};
+    auto runtime = bg::RuntimeGraph{compiled, runtime_global_state};
     lifecycle_definition::observations.fill(bg::MIN_DT);
     lifecycle_definition::identity = {};
 
@@ -199,7 +200,8 @@ TEST_CASE("direct runtime graph lifecycle paths use the system wall clock",
     }
 
     const auto compiled = bg::CompiledGraph{wiring};
-    auto runtime = bg::RuntimeGraph{compiled};
+    auto runtime_global_state = bg::GlobalState{};
+    auto runtime = bg::RuntimeGraph{compiled, runtime_global_state};
     const auto before = std::chrono::time_point_cast<bg::EvaluationTime::duration>(std::chrono::system_clock::now());
     lifecycle_definition::observations.fill(bg::MIN_DT);
     lifecycle_definition::identity = {};
@@ -227,7 +229,8 @@ TEST_CASE("one simulation wall clock follows each outer evaluation cycle",
     }
 
     const auto compiled = bg::CompiledGraph{wiring};
-    auto runtime = bg::RuntimeGraph{compiled};
+    auto runtime_global_state = bg::GlobalState{};
+    auto runtime = bg::RuntimeGraph{compiled, runtime_global_state};
     scheduled_lifecycle_definition::observations.fill(bg::MIN_DT);
     scheduled_lifecycle_definition::evaluation_count = 0;
     scheduled_lifecycle_definition::identity = {};
@@ -252,7 +255,8 @@ TEST_CASE("failure stop functions retain the active wall clock",
     }
 
     const auto compiled = bg::CompiledGraph{wiring};
-    auto runtime = bg::RuntimeGraph{compiled};
+    auto runtime_global_state = bg::GlobalState{};
+    auto runtime = bg::RuntimeGraph{compiled, runtime_global_state};
     failing_lifecycle_definition::observations.fill(bg::MIN_DT);
     failing_lifecycle_definition::identity = {};
 
@@ -274,7 +278,8 @@ TEST_CASE("invalidation functions retain the active wall clock",
     }
 
     const auto compiled = bg::CompiledGraph{wiring};
-    auto runtime = bg::RuntimeGraph{compiled};
+    auto runtime_global_state = bg::GlobalState{};
+    auto runtime = bg::RuntimeGraph{compiled, runtime_global_state};
     invalidation_observer_definition::observed_time = bg::MIN_DT;
     invalidating_source_definition::clock = nullptr;
     invalidation_observer_definition::shares_clock = false;
@@ -303,7 +308,8 @@ TEST_CASE("nested graph contexts share the outer simulation wall clock",
     }
 
     const auto compiled = bg::CompiledGraph{wiring};
-    auto runtime = bg::RuntimeGraph{compiled};
+    auto runtime_global_state = bg::GlobalState{};
+    auto runtime = bg::RuntimeGraph{compiled, runtime_global_state};
     nested_lifecycle_definition::observations.fill(bg::MIN_DT);
     nested_lifecycle_definition::identity = {};
 

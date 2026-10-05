@@ -61,7 +61,8 @@ TEST_CASE("required-input invalidation propagates through a graph",
     }
 
     const bg::CompiledGraph compiled{wiring};
-    bg::RuntimeGraph runtime{compiled};
+    auto runtime_global_state = bg::GlobalState{};
+    bg::RuntimeGraph runtime{compiled, runtime_global_state};
     switchable_definition::publish = true;
     float_sink_definition::evaluation_count = 0;
 
@@ -112,7 +113,8 @@ TEST_CASE("required-input invalidation is applied once while the input remains i
     }
 
     const bg::CompiledGraph compiled{wiring};
-    bg::RuntimeGraph runtime{compiled};
+    auto runtime_global_state = bg::GlobalState{};
+    bg::RuntimeGraph runtime{compiled, runtime_global_state};
     switchable_definition::publish = true;
     fallback_definition::evaluation_count = 0;
     fallback_definition::invalidation_count = 0;
@@ -174,7 +176,8 @@ TEST_CASE("a node can preserve its output when a required input becomes invalid"
     }
 
     const bg::CompiledGraph compiled{wiring};
-    bg::RuntimeGraph runtime{compiled};
+    auto runtime_global_state = bg::GlobalState{};
+    bg::RuntimeGraph runtime{compiled, runtime_global_state};
     switchable_definition::publish = true;
     hold_definition::evaluation_count = 0;
     validity_observer_definition::evaluation_count = 0;
@@ -209,7 +212,8 @@ TEST_CASE("a node can produce an output when a required input becomes invalid",
     }
 
     const bg::CompiledGraph compiled{wiring};
-    bg::RuntimeGraph runtime{compiled};
+    auto runtime_global_state = bg::GlobalState{};
+    bg::RuntimeGraph runtime{compiled, runtime_global_state};
     switchable_definition::publish = true;
     fallback_definition::evaluation_count = 0;
     fallback_definition::invalidation_count = 0;
@@ -260,7 +264,8 @@ TEST_CASE("an invalidation failure stops the runtime graph",
     }
 
     const bg::CompiledGraph compiled{wiring};
-    bg::RuntimeGraph runtime{compiled};
+    auto runtime_global_state = bg::GlobalState{};
+    bg::RuntimeGraph runtime{compiled, runtime_global_state};
     switchable_definition::publish = true;
     throwing_invalidation_definition::stop_count = 0;
 

@@ -436,7 +436,7 @@ template <typename Derived, typename RuntimeType> class ItemSelectionSubscriptio
         }
     }
 
-    static void release_queued_entries(void *value) noexcept {
+    static void release_queued_entries(void *value, EvaluationContext &) noexcept {
         static_cast<ItemSelectionSubscriptions *>(value)->release_queued_entries();
     }
 

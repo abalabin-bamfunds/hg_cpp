@@ -1,4 +1,5 @@
 #include <bg/evaluation_context.hpp>
+#include <bg/global_state.hpp>
 #include <bg/graph.hpp>
 #include <bg/graph/compiled_graph.hpp>
 #include <bg/graph/graph_wiring.hpp>
@@ -898,8 +899,9 @@ int run(const Arguments &arguments) {
     const auto compilation_nanoseconds = elapsed_nanoseconds([&] { compiled.emplace(*wiring); });
     const auto after_graph_construction_rss = current_rss();
 
+    auto global_state = GlobalState{};
     auto runtime = std::optional<RuntimeGraph>{};
-    const auto runtime_construction_nanoseconds = elapsed_nanoseconds([&] { runtime.emplace(*compiled); });
+    const auto runtime_construction_nanoseconds = elapsed_nanoseconds([&] { runtime.emplace(*compiled, global_state); });
     const auto start_nanoseconds = elapsed_nanoseconds([&] { runtime->start(benchmark_start_time); });
     const auto empty_started_rss = current_rss();
 

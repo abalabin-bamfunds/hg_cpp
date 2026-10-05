@@ -9,6 +9,7 @@ class RuntimeGraph;
 class ScheduleHandle {
   public:
     ScheduleHandle() = default;
+    explicit operator bool() const noexcept { return id_ != 0; }
 
   private:
     friend RuntimeGraph;
