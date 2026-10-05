@@ -249,7 +249,7 @@ TEST_CASE("graph structure compares inherited requirement types, not identities 
 }
 
 TEST_CASE("service clients have equivalent structure across root wirings",
-          "[feature:service][feature:wiring][feature:graph-caching]") {
+          "[feature:service][feature:wiring]") {
     const auto audit = service<auto(TS<i64>)->void>{"audit", {"value"}};
     const auto structure = [&] {
         auto wiring = GraphWiring{};

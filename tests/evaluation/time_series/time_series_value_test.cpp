@@ -104,7 +104,7 @@ TEST_CASE("a deduplicated value output schedules subscribers only for changed va
 }
 
 TEST_CASE("a direct output uses its resolved guarantee",
-          "[evaluation][series:value][guarantee:deduplicated][type_system]") {
+          "[evaluation][feature:type-system][series:value][guarantee:deduplicated]") {
     const auto deduplicate = bg::node<deduplicating_value_source>();
     const auto preserve_guarantee = bg::node<preserve_value_guarantee>();
     const auto graph = [&](bg::wp<bg::TS<bg::i64>> input) {
@@ -117,7 +117,7 @@ TEST_CASE("a direct output uses its resolved guarantee",
 }
 
 TEST_CASE("a nested direct output uses its resolved item guarantee",
-          "[evaluation][series:dictionary][guarantee:deduplicated][type_system]") {
+          "[evaluation][feature:type-system][series:tsd][guarantee:deduplicated]") {
     const auto deduplicate = bg::node<deduplicating_value_source>();
     const auto make_dictionary = bg::node<make_dictionary_with_guarantee>();
     const auto graph = [&](bg::wp<bg::TS<bg::i64>> input) {

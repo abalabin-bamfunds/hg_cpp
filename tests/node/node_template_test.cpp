@@ -539,13 +539,13 @@ TEST_CASE("native collection outputs bind directly only for concrete default dec
 }
 
 TEST_CASE("only outputs with unresolved declarations store an output runtime type",
-          "[node_template][time_series][feature:type-resolution]") {
+          "[node_template][time_series][feature:type-system]") {
     CHECK_FALSE(bg::node<concrete_output_definition>().uses_output_runtime_type());
     CHECK(bg::node<guarantee_variable_output_definition>().uses_output_runtime_type());
 }
 
 TEST_CASE("runtime type use follows resolved input types",
-          "[node_template][feature:type-resolution][feature:node-api]") {
+          "[node_template][feature:type-system][feature:node-api]") {
     const auto node = bg::node(scalar_or_time_series_input_definition{});
     const auto scalar_arguments = std::array<const bg::Type *, 1>{&bg::int64_type()};
     const auto time_series_arguments = std::array<const bg::Type *, 1>{&bg::TS<bg::i64>::type()};

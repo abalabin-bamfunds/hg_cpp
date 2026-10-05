@@ -99,7 +99,7 @@ TEST_CASE("canonical scalar sources retain built-ins and normalize integers to i
 }
 
 TEST_CASE("a default symbol is a safe null value distinct from the empty symbol",
-          "[feature:scalar-api][scalar:symbol][transition:default-value]") {
+          "[feature:scalar-api][scalar:symbol]") {
     const auto null = bg::symbol{};
     const auto empty = bg::symbol{""};
     const auto null_value = bg::ScalarValue{null};

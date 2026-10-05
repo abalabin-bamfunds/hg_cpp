@@ -145,7 +145,7 @@ TEST_CASE("a time series dictionary cursor enumerates current and changed items"
 }
 
 TEST_CASE("an invalid dictionary cursor has no item IDs",
-          "[feature:collection-change][series:tsd][coverage-exempt]") {
+          "[feature:collection-change][series:tsd]") {
     const auto input = bg::In<bg::TSD<std::int64_t, bg::TS<bg::i64>>>{};
 
     CHECK_FALSE(input.key_set().valid());
@@ -190,7 +190,7 @@ struct valid_dictionary_cursor_definition {
 } // namespace
 
 TEST_CASE("a time series dictionary valid cursor skips invalid items",
-          "[evaluation][tsd][series:tsd][validity][transition:invalidation]") {
+          "[evaluation][tsd][feature:validity][series:tsd][transition:invalidation]") {
     const auto source = bg::node<partially_valid_dictionary_source_definition>();
     const auto sink = bg::node<valid_dictionary_cursor_definition>();
     valid_dictionary_cursor_definition::snapshots.clear();

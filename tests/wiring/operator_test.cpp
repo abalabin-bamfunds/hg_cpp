@@ -105,7 +105,7 @@ TEST_CASE("an overload can have a different parameter count from its prototype",
 }
 
 TEST_CASE("operator prototype names provide keyword aliases for overload parameters",
-          "[feature:operator][feature:wiring][feature:named-argument]") {
+          "[feature:operator][feature:wiring]") {
     auto selected = std::string{};
     auto operation = bg::operator_<auto(bg::TS_T, bg::TS_T)->bg::TS_T>{"choose", {"value", "fallback"}};
     operation.overload(
