@@ -26,15 +26,6 @@ WiringPoint GraphWiring::register_output(WiredOutput output) {
     return register_output(output, std::make_unique<OutputWiringRecord>(*output.type));
 }
 
-void GraphWiring::set_output_runtime_type(WiringPoint output, const TimeSeriesRuntimeType &runtime_type) {
-    auto &wired_output = outputs_[output_index(output)];
-    if (&runtime_type.type() != wired_output.type) {
-        throw WiringError{"a wired output runtime type has a different semantic type"};
-    }
-
-    wired_output.runtime_type = &runtime_type;
-}
-
 WiringPoint GraphWiring::output_item(WiringPoint parent, item_id_t item, const TimeSeriesType &type) {
     const auto parent_index = output_index(parent);
     if (const auto existing = find_output_item(parent_index, item)) {

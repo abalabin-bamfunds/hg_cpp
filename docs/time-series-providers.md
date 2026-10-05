@@ -57,9 +57,9 @@ remain alive while the registry can use them.
 
 The general runtime resolver gives explicitly supplied representations
 precedence over registered defaults. Output selection follows the
-[output specification](#output-specifications). Extension implementations can
-override that selection through `GraphWiring::set_output_runtime_type()`.
-The selected runtime must have the wired output's resolved semantic type.
+[output specification](#output-specifications). A node template selects the
+output runtime type during wiring. The selected runtime must have the wired
+output's resolved semantic type.
 
 Initial storage follows the existing
 [byte-copy initialization requirement](type-system.md#runtime-types).
@@ -88,8 +88,6 @@ supporting it supplies both the runtime trait and the corresponding
 
 Callable and aggregate node definitions preserve the complete `Out`
 declaration for runtime selection, invocation binding, and invalidation.
-Explicit `GraphWiring::set_output_runtime_type()` bindings take precedence;
-their selected storage must support the declared output operations.
 
 ## Views and publication
 

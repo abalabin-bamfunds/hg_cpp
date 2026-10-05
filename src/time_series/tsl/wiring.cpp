@@ -34,6 +34,9 @@ class FreeFixedTimeSeriesListNodeTemplate final : public NodeTemplate {
         return &evaluate;
     }
     NodeFunction start_function(const ResolvedSignature &) const noexcept override { return &start; }
+    const TimeSeriesRuntimeType *output_runtime_type(const ResolvedSignature &signature) const override {
+        return &free_fixed_time_series_list_runtime_type(static_cast<const TimeSeriesListType &>(*signature.output));
+    }
     bool uses_time_series_input_runtime_type(const ResolvedSignature &, std::size_t) const noexcept override {
         return true;
     }
@@ -110,10 +113,7 @@ const NodeTemplate &free_fixed_time_series_list_node_template(const TimeSeriesLi
 
 WiringPoint materialize_fixed_time_series_list(std::span<const WiringPoint> items,
                                                const TimeSeriesListType &type) {
-    const auto &runtime_type = free_fixed_time_series_list_runtime_type(type);
-    const auto result = *free_fixed_time_series_list_node_template(type)(items);
-    result.record()->wiring().set_output_runtime_type(result, runtime_type);
-    return result;
+    return *free_fixed_time_series_list_node_template(type)(items);
 }
 
 class FreeFixedTimeSeriesListWiringRecord final : public WiringRecord {

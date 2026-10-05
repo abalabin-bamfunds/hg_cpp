@@ -126,7 +126,6 @@ class GraphWiring {
     [[nodiscard]] WiringPoint register_output(WiredOutput output);
     [[nodiscard]] WiringPoint register_output(WiredOutput output, std::unique_ptr<details::WiringRecord> record);
     [[nodiscard]] WiringPoint materialize(WiringPoint point, const TimeSeriesType &type);
-    void set_output_runtime_type(WiringPoint output, const TimeSeriesRuntimeType &runtime_type);
     [[nodiscard]] WiringPoint output_item(WiringPoint parent, item_id_t item, const TimeSeriesType &type);
     [[nodiscard]] std::size_t output_index(WiringPoint point) const;
     [[nodiscard]] std::size_t output_node_index(WiringPoint point) const;

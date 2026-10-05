@@ -225,6 +225,12 @@ template <typename TimeSeries, OutputSpecification Specification>
 struct output_view_field<Out<TimeSeries, Specification>>
     : std::bool_constant<!direct_time_series_output<Out<TimeSeries, Specification>>> {};
 
+template <typename T> struct output_runtime_type_field : std::false_type {};
+
+template <typename TimeSeries, OutputSpecification Specification>
+struct output_runtime_type_field<Out<TimeSeries, Specification>>
+    : std::bool_constant<output_requires_runtime_type<Out<TimeSeries, Specification>>> {};
+
 template <typename T> struct generic_scalar_input_field : std::false_type {};
 
 template <typename T> struct generic_scalar_input_field<Scalar<T>> : std::bool_constant<generic_scalar_state<T>> {};
@@ -455,7 +461,8 @@ consteval std::size_t aggregate_dynamic_activity_input_index(std::index_sequence
 
 template <typename Definition, std::size_t... Index>
 consteval bool aggregate_uses_output_runtime_type(std::index_sequence<Index...>) {
-    return (false || ... || output_view_field<std::remove_cv_t<util::aggregate_member_type<Index, Definition>>>::value);
+    return (false || ... ||
+            output_runtime_type_field<std::remove_cv_t<util::aggregate_member_type<Index, Definition>>>::value);
 }
 
 template <typename Definition, std::size_t... Index>
@@ -771,6 +778,15 @@ template <typename Definition, std::size_t Index>
                 std::make_index_sequence<util::aggregate_member_count<Definition>>{});
             return output_factory::make<typename Field::time_series_type, output_field<Field>::specification>(
                 last_updated, runtime_node.output_value(),
+                node.output_runtime_type(TimeSeriesRuntimeTypeCount, GenericScalarInputCount), *context);
+        } else if constexpr (output_runtime_type_field<Field>::value) {
+            constexpr auto TimeSeriesRuntimeTypeCount = aggregate_time_series_runtime_type_count<Definition>(
+                std::make_index_sequence<util::aggregate_member_count<Definition>>{});
+            constexpr auto GenericScalarInputCount = aggregate_generic_scalar_input_count<Definition>(
+                std::make_index_sequence<util::aggregate_member_count<Definition>>{});
+            auto &value = *static_cast<typename Field::storage_type *>(runtime_node.output_value());
+            return output_factory::make<typename Field::time_series_type, output_field<Field>::specification>(
+                last_updated, value,
                 node.output_runtime_type(TimeSeriesRuntimeTypeCount, GenericScalarInputCount), *context);
         } else {
             auto &value = *static_cast<typename Field::storage_type *>(runtime_node.output_value());

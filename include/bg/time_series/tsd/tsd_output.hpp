@@ -23,6 +23,17 @@ class Out<TSD<K, Item, Properties...>, Specification> {
 
   public:
     explicit Out(TimeSeriesOutputBinding state) noexcept : state_(std::move(state)) {}
+    Out(TimeSeriesState &last_updated, storage_type &value, EvaluationContext &context)
+        requires(Specification == OutputSpecification::default_ &&
+                 !details::generic_time_series<TSD<K, Item, Properties...>>)
+        : state_{last_updated, &value, cpp_time_series_runtime_type<TSD<K, Item, Properties...>>(), context} {}
+
+    Out(TimeSeriesState &last_updated, storage_type &value, const TimeSeriesRuntimeType &runtime_type,
+        EvaluationContext &context)
+        requires(Specification == OutputSpecification::default_ &&
+                 !details::generic_time_series<TSD<K, Item, Properties...>>)
+        : state_{last_updated, &value, runtime_type, context} {}
+
     Out(Out &&) noexcept = default;
     Out(const Out &) = delete;
 

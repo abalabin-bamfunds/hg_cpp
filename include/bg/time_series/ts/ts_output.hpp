@@ -73,9 +73,16 @@ class Out<TS<T, Properties...>, Specification> {
     explicit Out(TimeSeriesOutputBinding state) noexcept : state_(std::move(state)) {}
 
     Out(TimeSeriesState &last_updated, storage_type &value, EvaluationContext &context)
+        requires(Specification == OutputSpecification::default_ && !scalar_declaration_traits<T>::generic)
         : state_{last_updated, &value, cpp_time_series_runtime_type<TS<T, Properties...>>(), context} {}
 
+    Out(TimeSeriesState &last_updated, storage_type &value, const TimeSeriesRuntimeType &runtime_type,
+        EvaluationContext &context)
+        requires(Specification == OutputSpecification::default_ && !scalar_declaration_traits<T>::generic)
+        : state_{last_updated, &value, runtime_type, context} {}
+
     Out(TimeSeriesState &last_updated, storage_type &value, void *output_path)
+        requires(Specification == OutputSpecification::default_ && !scalar_declaration_traits<T>::generic)
         : state_{last_updated, &value, cpp_time_series_runtime_type<TS<T, Properties...>>(), output_path} {}
 
     Out(Out &&) noexcept = default;

@@ -199,8 +199,13 @@ template <typename CompiledData = void, typename State = void> class NodeInvocat
         using Output = Out<TimeSeries, Specification>;
         if constexpr (details::direct_time_series_output<Output>) {
             auto &value = *static_cast<typename Output::storage_type *>(runtime_node.output_value());
-            return details::output_factory::make<TimeSeries, Specification>(runtime_node.output_last_updated(), value,
-                                                                             *context_);
+            if constexpr (details::output_requires_runtime_type<Output>) {
+                return details::output_factory::make<TimeSeries, Specification>(
+                    runtime_node.output_last_updated(), value, node_->node_invocation_output_runtime_type(), *context_);
+            } else {
+                return details::output_factory::make<TimeSeries, Specification>(
+                    runtime_node.output_last_updated(), value, *context_);
+            }
         } else {
             return details::output_factory::make<TimeSeries, Specification>(
                 runtime_node.output_last_updated(), runtime_node.output_value(),

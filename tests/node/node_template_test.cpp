@@ -306,6 +306,19 @@ namespace {
 inline constexpr auto G = bg::guarantee_variable<"G">;
 using CAPTURED_TIME_SERIES = bg::TimeSeriesVariable<"T">;
 
+struct concrete_output_definition {
+    bg::Out<bg::TS<bg::i64>> output;
+
+    void evaluate() const {}
+};
+
+struct guarantee_variable_output_definition {
+    bg::In<bg::TS<bg::i64, G>> input;
+    bg::Out<bg::TS<bg::i64, G>> output;
+
+    void evaluate() const { output.set(*input); }
+};
+
 struct time_series_variable_guarantee {
     bg::In<CAPTURED_TIME_SERIES::with<G>> input;
     bg::Out<bg::TS<bg::i64, G>> output;
@@ -357,6 +370,10 @@ namespace {
 
 template <template <typename, auto...> typename Field> struct runtime_layout_bundle {
     Field<bg::TS<bg::i64>> value;
+};
+
+template <template <typename, auto...> typename Field> struct guarantee_variable_bundle {
+    Field<bg::TS<bg::i64, bg::guarantee_variable<"G">>> value;
 };
 
 struct runtime_layout_collection_sink {
@@ -413,6 +430,40 @@ TEST_CASE("collection inputs retain their resolved runtime layout", "[node_templ
     CHECK(sink.uses_time_series_input_runtime_type(signature, 1));
     CHECK(sink.uses_time_series_input_runtime_type(signature, 2));
     CHECK(sink.uses_time_series_input_runtime_type(signature, 3));
+}
+
+TEST_CASE("native collection outputs bind directly only for concrete default declarations",
+          "[node_template][time_series][feature:node-api]") {
+    static_assert(!bg::details::direct_time_series_output<bg::Out<bg::TS<bg::SCALAR>>>);
+    static_assert(!bg::details::direct_time_series_output<bg::Out<bg::TS<bg::i64>, bg::view>>);
+    static_assert(bg::details::direct_time_series_output<bg::Out<bg::TSS<bg::i64>>>);
+    static_assert(bg::details::direct_time_series_output<bg::Out<bg::TSD<bg::i64, bg::TS<bg::i64>>>>);
+    static_assert(bg::details::direct_time_series_output<bg::Out<bg::TSL<bg::TS<bg::i64>, 2>>>);
+    static_assert(bg::details::direct_time_series_output<bg::Out<bg::TS<bg::i64, bg::guarantee_variable<"G">>>>);
+    static_assert(bg::details::output_requires_runtime_type<
+                  bg::Out<bg::TS<bg::i64, bg::guarantee_variable<"G">>>>);
+    static_assert(bg::details::output_requires_runtime_type<
+                  bg::Out<bg::TSD<bg::i64, bg::TS<bg::i64, bg::guarantee_variable<"G">>>>>);
+    using GuaranteedReference = bg::REF<bg::TS<bg::i64, bg::guarantee_variable<"G">>>;
+    static_assert(bg::details::output_requires_runtime_type<bg::Out<bg::TSD<bg::i64, GuaranteedReference>>>);
+    static_assert(bg::details::output_requires_runtime_type<
+                  bg::Out<bg::TSD<bg::i64, bg::TSB<guarantee_variable_bundle>>>>);
+    static_assert(!bg::details::output_requires_runtime_type<bg::Out<bg::TS<bg::i64>>>);
+    static_assert(!bg::details::output_requires_runtime_type<bg::Out<bg::TSS<bg::i64>>>);
+    static_assert(!bg::details::output_requires_runtime_type<bg::Out<bg::TSD<bg::i64, bg::TS<bg::i64>>>>);
+    static_assert(!bg::details::output_requires_runtime_type<bg::Out<bg::TSL<bg::TS<bg::i64>, 2>>>);
+    static_assert(!bg::details::direct_time_series_output<bg::Out<bg::TSS<bg::SCALAR>>>);
+    static_assert(!bg::details::direct_time_series_output<bg::Out<bg::TSD<bg::SCALAR, bg::TS_T>>>);
+    static_assert(!bg::details::direct_time_series_output<bg::Out<bg::TSL<bg::TS_T, 2>>>);
+    static_assert(!bg::details::direct_time_series_output<bg::Out<bg::TSL<bg::TS<bg::i64>>>>);
+    static_assert(!bg::details::direct_time_series_output<bg::Out<bg::TSS<bg::i64>, bg::view>>);
+    static_assert(!bg::details::direct_time_series_output<bg::Out<bg::TSB<runtime_layout_bundle>>>);
+}
+
+TEST_CASE("only outputs with unresolved declarations store an output runtime type",
+          "[node_template][time_series][feature:type-resolution]") {
+    CHECK_FALSE(bg::node<concrete_output_definition>().uses_output_runtime_type());
+    CHECK(bg::node<guarantee_variable_output_definition>().uses_output_runtime_type());
 }
 
 TEST_CASE("runtime type use follows resolved input types",

@@ -49,6 +49,7 @@ static_assert(sizeof(Out<TS_T>) == sizeof(void *));
 #include <bg/time_series/tsd/tsd_output.hpp>
 #include <bg/time_series/tsl/tsl_output.hpp>
 #include <bg/time_series/tss/tss_output.hpp>
+#include <bg/time_series/details/guarantee_variable_traits.hpp>
 
 namespace bg::details {
 
@@ -57,6 +58,10 @@ concept direct_time_series_output = requires(TimeSeriesState &last_updated, type
                                               EvaluationContext &context) {
     Output{last_updated, value, context};
 };
+
+template <typename Output>
+inline constexpr bool output_requires_runtime_type =
+    !direct_time_series_output<Output> || contains_guarantee_variable_v<typename Output::time_series_type>;
 
 } // namespace bg::details
 

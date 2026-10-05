@@ -30,6 +30,9 @@ class FreeTimeSeriesBundleNodeTemplate final : public NodeTemplate {
     const Signature &signature() const override { return signature_; }
     EvaluationFunction evaluation_function(const ResolvedSignature &) const noexcept override { return &evaluate; }
     NodeFunction start_function(const ResolvedSignature &) const noexcept override { return &start; }
+    const TimeSeriesRuntimeType *output_runtime_type(const ResolvedSignature &signature) const override {
+        return &free_time_series_bundle_runtime_type(static_cast<const TimeSeriesBundleType &>(*signature.output));
+    }
     bool uses_time_series_input_runtime_type(const ResolvedSignature &, std::size_t) const noexcept override {
         return true;
     }
@@ -260,10 +263,7 @@ WiringPoint materialize_time_series_bundle(std::span<const NamedBundleWiringPoin
         ordered.push_back(field->point);
     }
 
-    const auto &runtime_type = free_time_series_bundle_runtime_type(type);
-    const auto result = *free_time_series_bundle_node_template(type)(ordered);
-    result.record()->wiring().set_output_runtime_type(result, runtime_type);
-    return result;
+    return *free_time_series_bundle_node_template(type)(ordered);
 }
 
 WiringPoint time_series_bundle_field(WiringPoint bundle, std::size_t index) {

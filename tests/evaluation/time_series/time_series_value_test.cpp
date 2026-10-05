@@ -1,4 +1,5 @@
 #include <bg/node.hpp>
+#include <bg/operators.hpp>
 #include <bg/testing/test_graph.hpp>
 
 #include <catch2/catch_test_macros.hpp>
@@ -8,6 +9,37 @@
 #include <vector>
 
 namespace {
+
+inline constexpr auto G = bg::guarantee_variable<"G">;
+
+struct deduplicating_value_source {
+    bg::In<bg::TS<bg::i64>> input;
+    bg::Out<bg::TS<bg::i64, bg::TimeSeriesGuarantee::deduplicated>> output;
+
+    void evaluate() const { output.set(*input); }
+};
+
+struct preserve_value_guarantee {
+    bg::In<bg::TS<bg::i64, G>> input;
+    bg::In<bg::TS<bg::i64>> trigger;
+    bg::Out<bg::TS<bg::i64, G>> output;
+
+    void evaluate() const {
+        static_cast<void>(trigger);
+        output.set(*input);
+    }
+};
+
+struct make_dictionary_with_guarantee {
+    bg::In<bg::TS<bg::i64, G>> input;
+    bg::In<bg::TS<bg::i64>> trigger;
+    bg::Out<bg::TSD<bg::i64, bg::TS<bg::i64, G>>> output;
+
+    void evaluate() const {
+        static_cast<void>(trigger);
+        output[1].set(*input);
+    }
+};
 
 struct validity_transition_sink {
     bg::In<bg::TS<bg::i64>, bg::optional> input;
@@ -69,6 +101,33 @@ TEST_CASE("a deduplicated value output schedules subscribers only for changed va
     const auto actual = bg::testing::test_graph(graph, std::array{1, 1, 2, 2, 1});
 
     CHECK(actual.equals({1, std::nullopt, 2, std::nullopt, 1}));
+}
+
+TEST_CASE("a direct output uses its resolved guarantee",
+          "[evaluation][series:value][guarantee:deduplicated][type_system]") {
+    const auto deduplicate = bg::node<deduplicating_value_source>();
+    const auto preserve_guarantee = bg::node<preserve_value_guarantee>();
+    const auto graph = [&](bg::wp<bg::TS<bg::i64>> input) {
+        return preserve_guarantee(deduplicate(input), input);
+    };
+
+    const auto actual = bg::testing::test_graph(graph, std::array{1, 1, 2});
+
+    CHECK(actual.equals({1, std::nullopt, 2}));
+}
+
+TEST_CASE("a nested direct output uses its resolved item guarantee",
+          "[evaluation][series:dictionary][guarantee:deduplicated][type_system]") {
+    const auto deduplicate = bg::node<deduplicating_value_source>();
+    const auto make_dictionary = bg::node<make_dictionary_with_guarantee>();
+    const auto graph = [&](bg::wp<bg::TS<bg::i64>> input) {
+        return make_dictionary(deduplicate(input), input)[1].as<
+            bg::TS<bg::i64, bg::TimeSeriesGuarantee::deduplicated>>();
+    };
+
+    const auto actual = bg::testing::test_graph(graph, std::array{1, 1, 2});
+
+    CHECK(actual.equals({1, std::nullopt, 2}));
 }
 
 TEST_CASE("a collection guarantee deduplicates contained value outputs",
