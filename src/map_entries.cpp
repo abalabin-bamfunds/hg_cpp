@@ -17,11 +17,11 @@ MapEntries::~MapEntries() {
 }
 
 void MapEntries::bind_evaluator(EvaluationContext &context) {
-    bind_evaluator(context, {.receiver = this, .callbacks = &owner_callbacks});
+    bind_evaluator(context, {.receiver = this, .callbacks = &scheduling_callbacks});
 }
 
-void MapEntries::bind_evaluator(EvaluationContext &context, RuntimeGraphOwner owner) {
-    evaluator_.bind_owner(context.runtime_graph(), context.node_index(), owner);
+void MapEntries::bind_evaluator(EvaluationContext &context, RuntimeGraphSchedulingHandler handler) {
+    evaluator_.bind_owner(context.runtime_graph(), context.node_index(), handler);
 }
 
 void MapEntries::start(Entry &entry, const CompiledNestedGraph &compiled, EvaluationContext &context,
@@ -69,23 +69,23 @@ void MapEntries::mark_ready(branch_id_t branch_id) noexcept {
     mark_ready(table_.value_at(branch_id));
 }
 
-void MapEntries::inner_graph_scheduled(void *receiver, RuntimeGraphOwnerCallbacks::token_type token) noexcept {
+void MapEntries::inner_graph_scheduled(void *receiver, RuntimeGraphSchedulingCallbacks::token_type token) noexcept {
     static_cast<MapEntries *>(receiver)->mark_ready(static_cast<branch_id_t>(token));
 }
 
-void MapEntries::inner_graph_timed_schedule_changed(RuntimeGraphOwnerContext &context, void *receiver,
-                                                    RuntimeGraphOwnerCallbacks::token_type token,
+void MapEntries::inner_graph_timed_schedule_changed(RuntimeGraphSchedulingContext &context, void *receiver,
+                                                    RuntimeGraphSchedulingCallbacks::token_type token,
                                                     std::optional<EvaluationTime> time) {
     auto &entries = *static_cast<MapEntries *>(receiver);
     entries.set_next_scheduled_time(context, entries.table_.value_at(static_cast<branch_id_t>(token)), time);
 }
 
-void MapEntries::timed_schedule_changed(RuntimeGraphOwnerContext &context, branch_id_t branch_id,
+void MapEntries::timed_schedule_changed(RuntimeGraphSchedulingContext &context, branch_id_t branch_id,
                                         std::optional<EvaluationTime> time) {
     set_next_scheduled_time(context, table_.value_at(branch_id), time);
 }
 
-const RuntimeGraphOwnerCallbacks MapEntries::owner_callbacks{
+const RuntimeGraphSchedulingCallbacks MapEntries::scheduling_callbacks{
     .inner_scheduled = inner_graph_scheduled,
     .timed_schedule_changed = inner_graph_timed_schedule_changed,
 };
@@ -190,7 +190,7 @@ void MapEntries::remove_from_schedule_heap(Entry &entry) noexcept {
     move_down_schedule_heap(schedule_heap_[index]->schedule_heap_index);
 }
 
-void MapEntries::set_next_scheduled_time(RuntimeGraphOwnerContext &context, Entry &entry,
+void MapEntries::set_next_scheduled_time(RuntimeGraphSchedulingContext &context, Entry &entry,
                                          std::optional<EvaluationTime> time) {
     const auto previous_first = schedule_heap_.empty()
                                     ? std::optional<EvaluationTime>{}

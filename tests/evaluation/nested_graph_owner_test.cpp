@@ -2,7 +2,7 @@
 #include <bg/graph/graph_wiring.hpp>
 #include <bg/graph/runtime_graph.hpp>
 #include <bg/graph/runtime_graph_evaluator.hpp>
-#include <bg/graph/runtime_graph_owner.hpp>
+#include <bg/graph/runtime_graph_scheduling.hpp>
 #include <bg/graph/wiring_context.hpp>
 #include <bg/node.hpp>
 
@@ -26,7 +26,7 @@ class InnerGraphOwner {
   public:
     void scheduled(std::size_t token) { immediate_.push_back(token); }
 
-    void timed_schedule_changed(bg::RuntimeGraphOwnerContext &context, std::size_t token,
+    void timed_schedule_changed(bg::RuntimeGraphSchedulingContext &context, std::size_t token,
                                  std::optional<bg::EvaluationTime> time) {
         const auto previous_earliest = earliest();
         if (const auto existing = schedule_by_token_.find(token); existing != schedule_by_token_.end()) {
@@ -66,7 +66,7 @@ class InnerGraphOwner {
     const std::vector<std::size_t> &evaluated_immediate() const noexcept { return evaluated_immediate_; }
     const std::vector<std::size_t> &evaluated_tokens() const noexcept { return evaluated_tokens_; }
 
-    static const bg::RuntimeGraphOwnerCallbacks callbacks;
+    static const bg::RuntimeGraphSchedulingCallbacks callbacks;
 
   private:
     using Schedule = std::multimap<bg::EvaluationTime, std::size_t>;
@@ -78,7 +78,7 @@ class InnerGraphOwner {
         return schedule_.begin()->first;
     }
 
-    void update_outer_schedule(bg::RuntimeGraphOwnerContext &context,
+    void update_outer_schedule(bg::RuntimeGraphSchedulingContext &context,
                                std::optional<bg::EvaluationTime> previous_earliest) {
         if (earliest() == previous_earliest) {
             return;
@@ -100,11 +100,11 @@ class InnerGraphOwner {
     std::optional<bg::ScheduleHandle> outer_schedule_;
 };
 
-const bg::RuntimeGraphOwnerCallbacks InnerGraphOwner::callbacks{
+const bg::RuntimeGraphSchedulingCallbacks InnerGraphOwner::callbacks{
     .inner_scheduled = [](void *receiver, std::size_t token) noexcept {
         static_cast<InnerGraphOwner *>(receiver)->scheduled(token);
     },
-    .timed_schedule_changed = [](bg::RuntimeGraphOwnerContext &context, void *receiver, std::size_t token,
+    .timed_schedule_changed = [](bg::RuntimeGraphSchedulingContext &context, void *receiver, std::size_t token,
                                   std::optional<bg::EvaluationTime> time) {
         static_cast<InnerGraphOwner *>(receiver)->timed_schedule_changed(context, token, time);
     },

@@ -172,7 +172,7 @@ class MeshRuntimeState {
           evaluation_stack_{&memory.memory_resource()}, cycle_stack_{&memory.memory_resource()},
           dependencies_to_unlink_{&memory.memory_resource()} {
         branches_.entries().bind_evaluator(
-            context, {.receiver = this, .callbacks = &owner_callbacks});
+            context, {.receiver = this, .callbacks = &scheduling_callbacks});
     }
 
     MeshRuntimeState(const MeshRuntimeState &) = delete;
@@ -735,19 +735,19 @@ class MeshRuntimeState {
         }
     }
 
-    static void inner_graph_scheduled(void *receiver, RuntimeGraphOwnerCallbacks::token_type token) noexcept {
+    static void inner_graph_scheduled(void *receiver, RuntimeGraphSchedulingCallbacks::token_type token) noexcept {
         auto &runtime = *static_cast<MeshRuntimeState *>(receiver);
         runtime.branches_.entries().mark_ready(static_cast<branch_id_t>(token));
     }
 
-    static void inner_graph_timed_schedule_changed(RuntimeGraphOwnerContext &context, void *receiver,
-                                                   RuntimeGraphOwnerCallbacks::token_type token,
+    static void inner_graph_timed_schedule_changed(RuntimeGraphSchedulingContext &context, void *receiver,
+                                                   RuntimeGraphSchedulingCallbacks::token_type token,
                                                    std::optional<EvaluationTime> time) {
         auto &runtime = *static_cast<MeshRuntimeState *>(receiver);
         runtime.branches_.entries().timed_schedule_changed(context, static_cast<branch_id_t>(token), time);
     }
 
-    static const RuntimeGraphOwnerCallbacks owner_callbacks;
+    static const RuntimeGraphSchedulingCallbacks scheduling_callbacks;
 
     allocator memory_;
     MapRuntime branches_;
@@ -768,7 +768,7 @@ class MeshRuntimeState {
     bool destroying_{};
 };
 
-const RuntimeGraphOwnerCallbacks MeshRuntimeState::owner_callbacks{
+const RuntimeGraphSchedulingCallbacks MeshRuntimeState::scheduling_callbacks{
     .inner_scheduled = MeshRuntimeState::inner_graph_scheduled,
     .timed_schedule_changed = MeshRuntimeState::inner_graph_timed_schedule_changed,
 };

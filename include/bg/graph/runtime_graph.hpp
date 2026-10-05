@@ -6,7 +6,7 @@
 #include <bg/graph/compiled_graph.hpp>
 #include <bg/graph/dynamic_node_subscriber.hpp>
 #include <bg/graph/node.hpp>
-#include <bg/graph/runtime_graph_owner.hpp>
+#include <bg/graph/runtime_graph_scheduling.hpp>
 
 #include <cstddef>
 #include <cstdint>
@@ -31,7 +31,7 @@ class RuntimeGraph {
     RuntimeGraph(const CompiledGraph &compiled_graph, GlobalState &global_state);
     RuntimeGraph(const CompiledGraph &compiled_graph, allocator memory, GlobalState &global_state);
     RuntimeGraph(const CompiledGraph &compiled_graph, allocator memory, RuntimeGraphEvaluator &evaluator,
-                 RuntimeGraphOwnerCallbacks::token_type owner_token);
+                 RuntimeGraphSchedulingCallbacks::token_type owner_token);
     ~RuntimeGraph();
 
     RuntimeGraph(const RuntimeGraph &) = delete;
@@ -131,7 +131,7 @@ class RuntimeGraph {
     // Only outer graphs use the global state pointer; inner graphs use the owner token.
     union {
         GlobalState *root_global_state_;
-        RuntimeGraphOwnerCallbacks::token_type owner_token_;
+        RuntimeGraphSchedulingCallbacks::token_type owner_token_;
     };
     std::uint32_t paused_node_index_{std::numeric_limits<std::uint32_t>::max()};
     bool suppress_parent_scheduling_ : 1 {};

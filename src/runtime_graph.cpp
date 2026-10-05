@@ -43,11 +43,11 @@ OutputChangeContext::OutputChangeContext(RuntimeGraph &runtime_graph) noexcept
 OutputChangeContext::OutputChangeContext(const EvaluationContext &evaluation_context) noexcept
     : runtime_graph_{&evaluation_context.runtime_graph()}, evaluation_time_{evaluation_context.evaluation_time()} {}
 
-ScheduleHandle RuntimeGraphOwnerContext::schedule_at(EvaluationTime time) const {
+ScheduleHandle RuntimeGraphSchedulingContext::schedule_at(EvaluationTime time) const {
     return graph_->schedule_at(node_index_, time);
 }
 
-void RuntimeGraphOwnerContext::cancel(ScheduleHandle handle) const noexcept {
+void RuntimeGraphSchedulingContext::cancel(ScheduleHandle handle) const noexcept {
     graph_->cancel(node_index_, handle);
 }
 
@@ -387,7 +387,7 @@ RuntimeGraph::RuntimeGraph(const CompiledGraph &compiled_graph, allocator memory
 }
 
 RuntimeGraph::RuntimeGraph(const CompiledGraph &compiled_graph, allocator memory, RuntimeGraphEvaluator &evaluator,
-                           RuntimeGraphOwnerCallbacks::token_type owner_token)
+                           RuntimeGraphSchedulingCallbacks::token_type owner_token)
     : compiled_graph_(&compiled_graph), allocator_(memory), evaluator_{&evaluator}, owner_token_{owner_token} {
     assert(evaluator.owner_bound());
     initialize_storage();
@@ -603,7 +603,7 @@ void RuntimeGraphEvaluator::notify_timed_schedule_changed(RuntimeGraph &graph,
     }
 
     if (parent_.tag()) {
-        auto context = RuntimeGraphOwnerContext{*parent_, owner_node_index_};
+        auto context = RuntimeGraphSchedulingContext{*parent_, owner_node_index_};
         owner_.callback.callbacks->timed_schedule_changed(context, owner_.callback.receiver, graph.owner_token_, next);
         return;
     }
@@ -633,7 +633,7 @@ void RuntimeGraphEvaluator::notify_scheduled(RuntimeGraph &graph) noexcept {
 }
 
 void RuntimeGraphEvaluator::require_owner(RuntimeGraph &graph, std::size_t node_index, void *receiver,
-                                          const RuntimeGraphOwnerCallbacks *callbacks) {
+                                          const RuntimeGraphSchedulingCallbacks *callbacks) {
     if (!parent_) {
         parent_.reset(&graph, callbacks != nullptr);
         owner_node_index_ = node_index;
@@ -656,12 +656,13 @@ void RuntimeGraphEvaluator::bind_owner(RuntimeGraph &graph, std::size_t node_ind
     require_owner(graph, node_index, nullptr, nullptr);
 }
 
-void RuntimeGraphEvaluator::bind_owner(RuntimeGraph &graph, std::size_t node_index, RuntimeGraphOwner owner) {
-    if (owner.receiver == nullptr || owner.callbacks == nullptr || owner.callbacks->inner_scheduled == nullptr ||
-        owner.callbacks->timed_schedule_changed == nullptr) {
-        throw std::invalid_argument{"a runtime graph owner requires scheduling callbacks"};
+void RuntimeGraphEvaluator::bind_owner(RuntimeGraph &graph, std::size_t node_index,
+                                       RuntimeGraphSchedulingHandler handler) {
+    if (handler.receiver == nullptr || handler.callbacks == nullptr || handler.callbacks->inner_scheduled == nullptr ||
+        handler.callbacks->timed_schedule_changed == nullptr) {
+        throw std::invalid_argument{"an inner-graph scheduling handler requires scheduling callbacks"};
     }
-    require_owner(graph, node_index, owner.receiver, owner.callbacks);
+    require_owner(graph, node_index, handler.receiver, handler.callbacks);
 }
 
 bool RuntimeGraph::set_owner_scheduling_suppressed(bool suppressed) noexcept {

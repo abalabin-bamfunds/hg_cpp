@@ -330,10 +330,10 @@ class SwitchNodeDefinition {
         state.graph.stop_and_destroy(invocation.context());
     }
 
-    static void inner_graph_scheduled(void *, RuntimeGraphOwnerCallbacks::token_type) noexcept {}
+    static void inner_graph_scheduled(void *, RuntimeGraphSchedulingCallbacks::token_type) noexcept {}
 
-    static void inner_graph_timed_schedule_changed(RuntimeGraphOwnerContext &context, void *receiver,
-                                                   RuntimeGraphOwnerCallbacks::token_type,
+    static void inner_graph_timed_schedule_changed(RuntimeGraphSchedulingContext &context, void *receiver,
+                                                   RuntimeGraphSchedulingCallbacks::token_type,
                                                    std::optional<EvaluationTime> time) {
         auto &state = *static_cast<SwitchNodeState *>(receiver);
         if (state.scheduled_time) {
@@ -346,7 +346,7 @@ class SwitchNodeDefinition {
         }
     }
 
-    static constexpr RuntimeGraphOwnerCallbacks owner_callbacks{
+    static constexpr RuntimeGraphSchedulingCallbacks scheduling_callbacks{
         .inner_scheduled = inner_graph_scheduled,
         .timed_schedule_changed = inner_graph_timed_schedule_changed,
     };
@@ -398,7 +398,7 @@ class SwitchNodeDefinition {
         auto &state = invocation.state();
         if (!state.evaluator.owner_bound()) {
             state.evaluator.bind_owner(invocation.context().runtime_graph(), invocation.context().node_index(),
-                                       {.receiver = &state, .callbacks = &owner_callbacks});
+                                       {.receiver = &state, .callbacks = &scheduling_callbacks});
         }
         const auto inherited_start = branch.inherited_parameter_start.value_or(invocation.parameter_count());
         auto startup_context = NestedGraphStartupContext{invocation, branch.nested, inherited_start, inherited_count};

@@ -4,7 +4,7 @@
 #include <bg/evaluation_time.hpp>
 #include <bg/graph/nested_graph.hpp>
 #include <bg/graph/runtime_graph_evaluator.hpp>
-#include <bg/graph/runtime_graph_owner.hpp>
+#include <bg/graph/runtime_graph_scheduling.hpp>
 #include <bg/scalar/value.hpp>
 #include <bg/util/hash_dictionary.hpp>
 #include <bg/util/index.hpp>
@@ -55,7 +55,7 @@ class MapEntries {
     const Table &table() const noexcept { return table_; }
 
     void bind_evaluator(EvaluationContext &context);
-    void bind_evaluator(EvaluationContext &context, RuntimeGraphOwner owner);
+    void bind_evaluator(EvaluationContext &context, RuntimeGraphSchedulingHandler handler);
 
     template <typename Key> Entry &require(const Key &key) {
         if (auto *entry = table_.find(key)) {
@@ -66,7 +66,7 @@ class MapEntries {
         auto [entry, inserted] = table_.try_emplace(std::move(stored_key), memory_.memory_resource());
         (void)inserted;
         entry->branch_id = table_.find_position(key);
-        // Owner scheduling callbacks cannot allocate. Reserve the ready bit before the graph can invoke them.
+        // Scheduling callbacks cannot allocate. Reserve the ready bit before the graph can invoke them.
         ready_.grow(entry->branch_id + 1, memory_.memory_resource());
         return *entry;
     }
@@ -88,26 +88,27 @@ class MapEntries {
 
     void activate_due(EvaluationContext &context);
     void clear_schedule_tracking(EvaluationContext &context) noexcept;
-    void timed_schedule_changed(RuntimeGraphOwnerContext &context, branch_id_t branch_id,
+    void timed_schedule_changed(RuntimeGraphSchedulingContext &context, branch_id_t branch_id,
                                 std::optional<EvaluationTime> time);
 
   private:
-    static void inner_graph_scheduled(void *receiver, RuntimeGraphOwnerCallbacks::token_type token) noexcept;
-    static void inner_graph_timed_schedule_changed(RuntimeGraphOwnerContext &context, void *receiver,
-                                                   RuntimeGraphOwnerCallbacks::token_type token,
+    static void inner_graph_scheduled(void *receiver, RuntimeGraphSchedulingCallbacks::token_type token) noexcept;
+    static void inner_graph_timed_schedule_changed(RuntimeGraphSchedulingContext &context, void *receiver,
+                                                   RuntimeGraphSchedulingCallbacks::token_type token,
                                                    std::optional<EvaluationTime> time);
     static void remove_stopped_entries_callback(void *receiver, EvaluationContext &) noexcept;
 
     void queue_removal(Entry &entry, EvaluationContext &context);
     void remove_stopped_entries() noexcept;
-    void set_next_scheduled_time(RuntimeGraphOwnerContext &context, Entry &entry, std::optional<EvaluationTime> time);
+    void set_next_scheduled_time(RuntimeGraphSchedulingContext &context, Entry &entry,
+                                 std::optional<EvaluationTime> time);
     void remove_from_schedule_heap(Entry &entry) noexcept;
     void move_up_schedule_heap(std::size_t index) noexcept;
     void move_down_schedule_heap(std::size_t index) noexcept;
     void swap_schedule_heap_items(std::size_t left, std::size_t right) noexcept;
     static bool scheduled_before(const Entry *left, const Entry *right) noexcept;
 
-    static const RuntimeGraphOwnerCallbacks owner_callbacks;
+    static const RuntimeGraphSchedulingCallbacks scheduling_callbacks;
 
     allocator memory_;
     RuntimeGraphEvaluator evaluator_;

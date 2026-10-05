@@ -1,7 +1,7 @@
 #pragma once
 
 #include <bg/graph/runtime_graph.hpp>
-#include <bg/graph/runtime_graph_owner.hpp>
+#include <bg/graph/runtime_graph_scheduling.hpp>
 #include <bg/util/tagged_ptr.hpp>
 
 #include <cstddef>
@@ -24,7 +24,7 @@ class RuntimeGraphEvaluator {
     RuntimeGraphEvaluator &operator=(RuntimeGraphEvaluator &&) = delete;
 
     void bind_owner(RuntimeGraph &graph, std::size_t node_index);
-    void bind_owner(RuntimeGraph &graph, std::size_t node_index, RuntimeGraphOwner owner);
+    void bind_owner(RuntimeGraph &graph, std::size_t node_index, RuntimeGraphSchedulingHandler handler);
     bool owner_bound() const noexcept { return parent_.get() != nullptr; }
 
     void start(RuntimeGraph &graph, EvaluationContext &context);
@@ -35,7 +35,7 @@ class RuntimeGraphEvaluator {
     friend RuntimeGraph;
 
     void require_owner(RuntimeGraph &graph, std::size_t node_index, void *receiver,
-                       const RuntimeGraphOwnerCallbacks *callbacks);
+                       const RuntimeGraphSchedulingCallbacks *callbacks);
     void notify_scheduled(RuntimeGraph &graph) noexcept;
     void notify_timed_schedule_changed(RuntimeGraph &graph, std::optional<EvaluationTime> previous);
     RuntimeGraph &outer_graph(RuntimeGraph &graph) const noexcept;
@@ -46,7 +46,7 @@ class RuntimeGraphEvaluator {
 
     struct CallbackOwner {
         void *receiver;
-        const RuntimeGraphOwnerCallbacks *callbacks;
+        const RuntimeGraphSchedulingCallbacks *callbacks;
     };
 
     union Owner {
