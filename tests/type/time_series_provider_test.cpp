@@ -447,7 +447,7 @@ TEST_CASE("provider views bind through public input and output owners",
 TEST_CASE("a provider output binding works in a callable node",
           "[evaluation][time_series][feature:test-graph]") {
     using Series = provider::Series<bg::i64>;
-    static_assert(bg::details::direct_time_series_input<bg::In<Series>>);
+    static_assert(!bg::details::direct_time_series_input<bg::In<Series>>);
     static_assert(bg::details::direct_time_series_output<bg::Out<Series>>);
 
     const auto provide = bg::node([](bg::In<bg::TS<bg::i64>> input, bg::Out<Series> output) { output.set(*input); });

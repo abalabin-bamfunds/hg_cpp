@@ -86,8 +86,8 @@ TEST_CASE("compiled nodes keep hot data in node-local sections", "[compiled_grap
 
     CHECK(parameter_address == node_address + sizeof(bg::CompiledNode));
     CHECK(scalar_address == parameter_address + parameters.size() * sizeof(bg::ParameterBinding));
-    // The source stores its selected output runtime type and automatic invalidation callback.
-    CHECK(graph.fixed_storage_size() == 252);
+    // Fixed storage includes graph metadata, node records, and the initial runtime storage image.
+    CHECK(graph.fixed_storage_size() == 244);
 }
 
 TEST_CASE("compiled nodes store one activity record for each controlled input",

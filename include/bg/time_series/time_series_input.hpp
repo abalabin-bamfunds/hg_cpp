@@ -76,11 +76,25 @@ static_assert(sizeof(In<TS_T, dynamic_activity>) == 4 * sizeof(void *));
 
 namespace bg::details {
 
+// Use direct binding only when the declaration fixes the input storage type: scalar TS values and references.
+// Collection inputs need their compiled runtime type because their item representations can vary at runtime.
+template <typename Input> struct has_direct_time_series_input_layout : std::false_type {};
+
+template <typename T, auto... TimeSeriesProperties, auto... Properties>
+struct has_direct_time_series_input_layout<In<TS<T, TimeSeriesProperties...>, Properties...>>
+    : std::bool_constant<!scalar_declaration_traits<T>::is_collection> {};
+
+template <typename Target, auto... TimeSeriesProperties, auto... Properties>
+struct has_direct_time_series_input_layout<In<REF<Target, TimeSeriesProperties...>, Properties...>>
+    : std::true_type {};
+
 template <typename Input>
-concept direct_time_series_input = requires(const TimeSeriesState &last_updated,
-                                             const typename Input::storage_type *value, bool *activity) {
-    Input{last_updated, value, false, activity};
-};
+concept direct_time_series_input = has_direct_time_series_input_layout<Input>::value &&
+                                   !generic_time_series<typename Input::time_series_type> &&
+                                   requires(const TimeSeriesState &last_updated,
+                                            const typename Input::storage_type *value, bool *activity) {
+                                       Input{last_updated, value, false, activity};
+                                   };
 
 } // namespace bg::details
 

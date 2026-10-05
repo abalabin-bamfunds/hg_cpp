@@ -355,9 +355,15 @@ TEST_CASE("a scalar variable can declare a scalar view field", "[node_template][
 
 namespace {
 
+template <template <typename, auto...> typename Field> struct runtime_layout_bundle {
+    Field<bg::TS<bg::i64>> value;
+};
+
 struct runtime_layout_collection_sink {
     bg::In<bg::TSS<bg::i64>> set;
     bg::In<bg::TSD<bg::i64, bg::TS<bg::i64>>> dictionary;
+    bg::In<bg::TSL<bg::TS<bg::i64>, 2>> list;
+    bg::In<bg::TSB<runtime_layout_bundle>> bundle;
 
     void evaluate() const {}
 };
@@ -383,13 +389,30 @@ struct scalar_or_time_series_input_definition {
 } // namespace
 
 TEST_CASE("collection inputs retain their resolved runtime layout", "[node_template][time_series][feature:node-api]") {
+    static_assert(!bg::details::direct_time_series_input<bg::In<bg::TS<bg::SCALAR>>>);
+    static_assert(bg::details::direct_time_series_input<bg::In<bg::TS<bg::i64, bg::guarantee_variable<"G">>>>);
+    static_assert(!bg::details::direct_time_series_input<bg::In<bg::TSS<bg::i64>>>);
+    static_assert(!bg::details::direct_time_series_input<bg::In<bg::TSD<bg::i64, bg::TS<bg::i64>>>>);
+    static_assert(!bg::details::direct_time_series_input<bg::In<bg::TSL<bg::TS<bg::i64>, 2>>>);
+    static_assert(!bg::details::direct_time_series_input<bg::In<bg::TSB<bg::SCHEMA>>>);
+    static_assert(bg::details::direct_time_series_input<bg::In<bg::REF<bg::TS<bg::i64>>>>);
+    static_assert(!bg::details::direct_time_series_input<bg::In<bg::REF<bg::TS<bg::SCALAR>>>>);
+    static_assert(bg::details::direct_time_series_input<
+                  bg::In<bg::REF<bg::TS<bg::i64, bg::guarantee_variable<"G">>>>>);
+    static_assert(bg::details::direct_time_series_input<bg::In<bg::TS<bg::i64>>>);
+    static_assert(bg::details::direct_time_series_input<
+                  bg::In<bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>>>);
+
     const auto sink = bg::node<runtime_layout_collection_sink>();
-    const auto arguments =
-        std::array<const bg::Type *, 2>{&bg::TSS<bg::i64>::type(), &bg::TSD<bg::i64, bg::TS<bg::i64>>::type()};
+    const auto arguments = std::array<const bg::Type *, 4>{
+        &bg::TSS<bg::i64>::type(), &bg::TSD<bg::i64, bg::TS<bg::i64>>::type(),
+        &bg::TSL<bg::TS<bg::i64>, 2>::type(), &bg::TSB<runtime_layout_bundle>::type()};
     const auto signature = sink.signature().resolve(arguments);
 
     CHECK(sink.uses_time_series_input_runtime_type(signature, 0));
     CHECK(sink.uses_time_series_input_runtime_type(signature, 1));
+    CHECK(sink.uses_time_series_input_runtime_type(signature, 2));
+    CHECK(sink.uses_time_series_input_runtime_type(signature, 3));
 }
 
 TEST_CASE("runtime type use follows resolved input types",
