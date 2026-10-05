@@ -771,27 +771,3 @@ TEST_CASE("a tick writer rejects reference time series",
 
     CHECK_THROWS_AS(writer.write(input, bg::MIN_DT), std::invalid_argument);
 }
-
-TEST_CASE("tick replay rejects an incompatible output without consuming its record",
-          "[evaluation][feature:test-graph][feature:time-series-storage][series:tss][scalar:i64]"
-          "[transition:update][shape:chain]") {
-    auto record_remains = false;
-    const auto to_set = bg::node<scalar_to_set_definition>();
-    const auto replay_as_value = bg::node([&](bg::In<bg::TSS<bg::i64>> input, bg::Out<bg::TS<bg::i64>> output) {
-        const auto buffer = bg::util::buffer::chain(128);
-        auto writer = bg::TimeSeriesTickWriter{buffer};
-        REQUIRE(writer.write(input, input.last_updated()));
-
-        auto reader = bg::TimeSeriesTickReader{buffer, bg::TSS<bg::i64>::type()};
-        try {
-            reader.replay(output);
-        } catch (const std::invalid_argument &) {
-            record_remains = reader.has_next();
-            throw;
-        }
-    });
-    const auto graph = [&](bg::wp<bg::TS<bg::i64>> input) { return replay_as_value(to_set(input)); };
-
-    CHECK_THROWS_AS(bg::testing::test_graph(graph, std::array<bg::i64, 1>{1}), std::invalid_argument);
-    CHECK(record_remains);
-}

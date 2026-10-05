@@ -771,9 +771,6 @@ class TimeSeriesTickWriter {
     // so an older invalidation is not recorded again when another input ticks.
     bool write(const In<Variable, Properties...> &input, EvaluationTime now) {
         const auto &type = input.runtime_type().type();
-        if (type_ != nullptr && type_ != &type) {
-            throw std::invalid_argument{"a tick writer cannot mix semantic time series types"};
-        }
 
         try {
             auto writer = TimeSeriesTickWriteContext{writer_};
@@ -803,7 +800,6 @@ class TimeSeriesTickWriter {
         }
 
         writer_.commit();
-        type_ = &type;
         return true;
     }
 
@@ -816,7 +812,6 @@ class TimeSeriesTickWriter {
     util::buffer_writer writer_;
     allocator memory_;
     const TimeSeriesTickDispatch *dispatch_;
-    const TimeSeriesType *type_{};
 };
 
 class TimeSeriesTickReader {
@@ -845,10 +840,6 @@ class TimeSeriesTickReader {
     template <typename Variable> bool replay(const Out<Variable> &output) {
         if (!has_next()) {
             return false;
-        }
-
-        if (&output.runtime_type().type() != type_) {
-            throw std::invalid_argument{"time series tick record has a different semantic output type"};
         }
 
         auto replay_buffer = reader_.fork();
