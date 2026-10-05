@@ -11,14 +11,14 @@ namespace bg {
 
 void NestedGraph::start(const CompiledNestedGraph &compiled, RuntimeGraphEvaluator &evaluator,
                         EvaluationContext &context, std::span<const NestedGraphInput> inputs,
-                        RuntimeGraphOwnerCallbacks::token_type child_token) {
+                        std::size_t child_token) {
     start(compiled, evaluator, context, inputs, {}, child_token);
 }
 
 void NestedGraph::start(const CompiledNestedGraph &compiled, RuntimeGraphEvaluator &evaluator,
                         EvaluationContext &context,
                         std::span<const NestedGraphInput> inputs, std::span<const NestedGraphConstantInput> constants,
-                        RuntimeGraphOwnerCallbacks::token_type child_token) {
+                        std::size_t child_token) {
     if (active_ != nullptr) {
         throw std::logic_error{"the nested graph is already running"};
     }

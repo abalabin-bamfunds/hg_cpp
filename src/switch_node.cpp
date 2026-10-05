@@ -400,11 +400,10 @@ class SwitchNodeDefinition {
             state.evaluator.bind_owner(invocation.context().runtime_graph(), invocation.context().node_index(),
                                        {.receiver = &state, .callbacks = &owner_callbacks});
         }
-        const auto child_token = RuntimeGraphOwnerCallbacks::token_type{selection.case_index};
         const auto inherited_start = branch.inherited_parameter_start.value_or(invocation.parameter_count());
         auto startup_context = NestedGraphStartupContext{invocation, branch.nested, inherited_start, inherited_count};
         state.graph.start(branch.nested, state.evaluator, startup_context.context(),
-                          std::span<NestedGraphInput>{inputs, branch.inputs.size()}, {}, child_token);
+                          std::span<NestedGraphInput>{inputs, branch.inputs.size()}, {}, selection.case_index);
         state.active_selection = selection;
     }
 

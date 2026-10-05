@@ -1,6 +1,5 @@
 #pragma once
 
-#include <bg/graph/runtime_graph_owner.hpp>
 #include <bg/scalar/scalar.hpp>
 #include <bg/time_series/ref/ref_storage.hpp>
 
@@ -40,10 +39,10 @@ class NestedGraph {
   public:
     void start(const CompiledNestedGraph &compiled, RuntimeGraphEvaluator &evaluator, EvaluationContext &context,
                std::span<const NestedGraphInput> inputs,
-               RuntimeGraphOwnerCallbacks::token_type child_token = 0);
+               std::size_t child_token = 0);
     void start(const CompiledNestedGraph &compiled, RuntimeGraphEvaluator &evaluator, EvaluationContext &context,
                std::span<const NestedGraphInput> inputs, std::span<const NestedGraphConstantInput> constants,
-               RuntimeGraphOwnerCallbacks::token_type child_token = 0);
+               std::size_t child_token = 0);
     void update_inputs(const CompiledNestedGraph &compiled, std::span<const NestedGraphInput> inputs,
                        EvaluationContext &context);
     void update_input(const CompiledNestedGraph &compiled, std::size_t input_index, NestedGraphInput input,
