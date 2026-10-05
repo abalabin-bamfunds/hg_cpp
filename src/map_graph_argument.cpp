@@ -226,6 +226,9 @@ class MapGraphArgumentBuilder {
         boundaries.push_back(boundary);
 
         auto graph_argument = WiringArgument{boundary};
+        if (argument.requires_optional()) {
+            graph_argument.require_optional();
+        }
         if (const auto name = argument.name()) {
             graph_argument.set_variadic_name(*name, VariadicMode::none);
         }

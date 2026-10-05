@@ -4,6 +4,7 @@
 #include <bg/node.hpp>
 #include <bg/operators.hpp>
 #include <bg/testing/test_graph.hpp>
+#include <bg/testing/test_wiring.hpp>
 #include <bg/time_series/tsb/tsb.hpp>
 #include <bg/time_series/tsd/tsd_type.hpp>
 #include <bg/time_series/tss/tss_type.hpp>
@@ -355,6 +356,36 @@ TEST_CASE("a pass-through TSD remains one input to every mapped graph",
         tested, std::array{2, 3, 4}, std::array{10, 20, 30});
 
     CHECK(actual.equals<bg::i64>({12, 23, 34}));
+}
+
+TEST_CASE("map forwards optional positional and named inputs only to optional branch parameters",
+          "[feature:map][feature:nested-graph][feature:operator][feature:wiring][series:tsd]"
+          "[validity:optional][definition:function]") {
+    const auto dictionaries = node([](Out<TSD<std::int64_t, TS<i64>>>) {});
+    const auto values = node([](Out<TS<i64>>) {});
+    const auto optional_positional = graph(
+        "name"_n = "optional_positional_map_branch",
+        [](wp<TS<i64>> item, wp<TS<i64>, optional>) { return item; });
+    const auto required_positional = graph(
+        "name"_n = "required_positional_map_branch",
+        [](wp<TS<i64>> item, wp<TS<i64>>) { return item; });
+    const auto optional_named = graph(
+        "name"_n = "optional_named_map_branch",
+        [](wp<TS<i64>, "item"_n> item, wp<TS<i64>, "context"_n, optional>) { return item; });
+    const auto required_named = graph(
+        "name"_n = "required_named_map_branch",
+        [](wp<TS<i64>, "item"_n> item, wp<TS<i64>, "context"_n>) { return item; });
+
+    testing::test_wiring([&] {
+        const auto dictionary = dictionaries();
+        const auto context = values();
+
+        CHECK_NOTHROW(map(optional_positional, dictionary, opt(context)));
+        CHECK_THROWS_AS(map(required_positional, dictionary, opt(context)), TypeResolutionError);
+        CHECK_NOTHROW(map(optional_named, "item"_n = dictionary, "context"_n = opt(context)));
+        CHECK_THROWS_AS(map(required_named, "item"_n = dictionary, "context"_n = opt(context)),
+                        TypeResolutionError);
+    });
 }
 
 struct NamedMapKey {

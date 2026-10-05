@@ -121,7 +121,8 @@ nb::object getitem(const PythonWiringPoint &collection, nb::handle key) {
 
         const auto argument = record->argument(index);
         if (argument.is_time_series()) {
-            return nb::cast(PythonWiringPoint{argument.time_series(), PythonWiringScope::current()});
+            return nb::cast(PythonWiringPoint{argument.time_series(), PythonWiringScope::current(),
+                                              argument.requires_optional()});
         }
         if (!argument.present()) {
             return nb::none();
@@ -133,7 +134,7 @@ nb::object getitem(const PythonWiringPoint &collection, nb::handle key) {
     auto memory = allocator{temporary_memory};
     auto arguments = std::vector<WiringArgument>{};
     arguments.reserve(2);
-    arguments.emplace_back(point);
+    arguments.emplace_back(collection.argument(wiring));
     arguments.push_back(wiring_argument(key, memory, wiring));
 
     return PythonOperator{operators::getitem}.invoke(arguments);

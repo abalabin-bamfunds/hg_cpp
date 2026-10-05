@@ -82,3 +82,108 @@ def test_extension_can_export_existing_and_sink_operators():
 
     assert bg.test_graph(constant) == [44]
     bg.test_graph(sink)
+
+
+def test_opt_requires_an_optional_python_node_receiver():
+    received = []
+
+    @bg.node
+    def observe(value: int | None) -> None:
+        received.append(value)
+
+    @bg.graph
+    def graph(trigger: bg.TS[int]) -> bg.TS[int]:
+        value = extension.invalidate_on_zero(trigger)
+        observe(value=bg.opt(value))
+        return value
+
+    assert bg.test_graph(graph, [1, 0, 2]) == [1, None, 2]
+    assert received == [1, None, 2]
+
+
+def test_opt_rejects_a_required_python_node_receiver_with_a_clear_diagnostic():
+    @bg.node
+    def observe(value: int) -> None:
+        pass
+
+    @bg.graph
+    def graph(value: bg.TS[int]) -> None:
+        observe(bg.opt(value))
+
+    with pytest.raises(ValueError, match="an opt-qualified argument requires an optional input parameter"):
+        bg.test_graph(graph, [1])
+
+
+def test_opt_rejects_a_required_python_graph_receiver():
+    @bg.graph
+    def required(value: bg.TS[int]) -> bg.TS[int]:
+        return value
+
+    @bg.graph
+    def graph(value: bg.TS[int]) -> bg.TS[int]:
+        return required(bg.opt(value))
+
+    with pytest.raises(ValueError, match="an opt-qualified argument requires an optional input parameter"):
+        bg.test_graph(graph, [1])
+
+
+def test_opt_is_preserved_through_python_operator_calls_and_cache_keys():
+    @bg.node
+    def add(lhs: int, rhs: int) -> int:
+        return lhs + rhs
+
+    @bg.graph
+    def required_then_optional(value: bg.TS[int]) -> bg.TS[int]:
+        required = extension.optional_choice(value=value)
+        optional = extension.optional_choice(value=bg.opt(value))
+        return add(required, optional)
+
+    @bg.graph
+    def optional_then_required(value: bg.TS[int]) -> bg.TS[int]:
+        optional = extension.optional_choice(value=bg.opt(value))
+        required = extension.optional_choice(value=value)
+        return add(optional, required)
+
+    assert bg.test_graph(required_then_optional, [3]) == [36]
+    assert bg.test_graph(optional_then_required, [3]) == [36]
+
+
+def test_opt_rejects_values_without_time_series_identity():
+    with pytest.raises(TypeError, match="time-series wiring point"):
+        bg.opt(1)
+    with pytest.raises(TypeError, match="time-series wiring point"):
+        bg.opt(None)
+
+
+def test_opt_preserves_wiring_point_lifetime():
+    optional_points = []
+
+    @bg.graph
+    def graph(value: bg.TS[int]) -> bg.TS[int]:
+        optional = bg.opt(value)
+        optional_points.append(optional)
+        assert value.type_name == optional.type_name
+        assert value.has_output and optional.has_output
+        assert bg.opt(optional).type_name == value.type_name
+        return value
+
+    assert bg.test_graph(graph, [3]) == [3]
+    with pytest.raises(RuntimeError, match="outside its graph construction"):
+        _ = optional_points[0].has_output
+    with pytest.raises(RuntimeError, match="outside its graph construction"):
+        bg.opt(optional_points[0])
+
+    @bg.graph
+    def use_expired(value: bg.TS[int]) -> bg.TS[int]:
+        return extension.optional_choice(optional_points[0])
+
+    with pytest.raises(RuntimeError, match="outside its graph construction"):
+        bg.test_graph(use_expired, [3])
+
+
+def test_repeated_opt_qualifier_is_accepted_by_an_optional_operator_input():
+    @bg.graph
+    def graph(value: bg.TS[int]) -> bg.TS[int]:
+        return extension.optional_choice(value=bg.opt(bg.opt(value)))
+
+    assert bg.test_graph(graph, [0]) == [20]

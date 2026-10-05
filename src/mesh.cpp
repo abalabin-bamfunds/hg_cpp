@@ -69,9 +69,9 @@ class MeshSelectionWiringScope {
 Signature default_mesh_signature(bool output) {
     auto parameters = std::vector<Parameter>{
         {util::symbol{"function"}, &GraphArgument::type()},
-        {util::symbol{"args"}, &TSB<MESH_POSITIONAL>::type(), active, required, false, VariadicMode::positional,
+        {util::symbol{"args"}, &TSB<MESH_POSITIONAL>::type(), active, optional, false, VariadicMode::positional,
          variadic_wiring_operations<TSB<MESH_POSITIONAL>>()},
-        {util::symbol{"kwargs"}, &TSB<MESH_NAMED>::type(), active, required, false, VariadicMode::named,
+        {util::symbol{"kwargs"}, &TSB<MESH_NAMED>::type(), active, optional, false, VariadicMode::named,
          variadic_wiring_operations<TSB<MESH_NAMED>>()},
     };
     if (!output) {

@@ -210,6 +210,18 @@ def test_switch_selects_cases_tuple_keys_and_default():
     assert bg.test_graph(graph, [1, 2, 3, 9], [5, 6, 7, 8]) == [15, 16, 27, 108]
 
 
+def test_switch_accepts_an_optional_key_wiring_point():
+    @bg.graph
+    def branch(value: bg.TS[int]) -> bg.TS[int]:
+        return add_amount(value, 10)
+
+    @bg.graph
+    def graph(key: bg.TS[int], value: bg.TS[int]) -> bg.TS[int]:
+        return bg.switch_(bg.opt(key), {1: branch}, value)
+
+    assert bg.test_graph(graph, [1, 1], [2, 5]) == [12, 15]
+
+
 def test_switch_reports_an_unmatched_key():
     @bg.graph
     def branch(value: bg.TS[int]) -> bg.TS[int]:

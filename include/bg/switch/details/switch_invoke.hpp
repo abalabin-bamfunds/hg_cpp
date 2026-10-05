@@ -6,6 +6,7 @@
 #include <bg/switch/details/default_switch_wiring.hpp>
 #include <bg/util/named_argument.hpp>
 
+#include <concepts>
 #include <functional>
 #include <span>
 #include <tuple>
@@ -175,10 +176,14 @@ auto invoke_switch(SelectOverload &&select_overload, Key key, const Cases &case_
 }
 
 struct switch_operator_implementation {
-    template <typename SelectOverload>
-    static auto invoke(const TypeMap &, SelectOverload &&select_overload, WiringPoint key,
+    template <typename SelectOverload, typename Key>
+    static auto invoke(const TypeMap &, SelectOverload &&select_overload, Key &&key,
                        std::span<const SwitchCaseArgument> cases,
                        std::span<const WiringArgument> arguments) {
+        static_assert(wiring_point_argument<Key> || std::same_as<std::remove_cvref_t<Key>, WiringArgument>,
+                      "switch_ key must be a wiring point or a time-series wiring argument");
+        auto key_argument = WiringArgument{std::forward<Key>(key)};
+        auto key_point = key_argument.time_series();
         auto prepared_cases = std::vector<PreparedSwitchCase>{};
         prepared_cases.reserve(cases.size());
         for (const auto &item : cases) {
@@ -188,10 +193,10 @@ struct switch_operator_implementation {
             prepared_cases.push_back({item.keys, item.default_case, item.function, true});
         }
 
-        auto prepared = build_switch_graph_argument(key, arguments, prepared_cases);
+        auto prepared = build_switch_graph_argument(key_point, arguments, prepared_cases);
         auto overload_arguments = std::vector<WiringArgument>{};
         overload_arguments.reserve(arguments.size() + 2);
-        overload_arguments.emplace_back(key);
+        overload_arguments.push_back(WiringArgument::borrow(key_argument));
         overload_arguments.emplace_back(std::move(prepared));
         for (const auto &argument : arguments) {
             overload_arguments.push_back(WiringArgument::borrow(argument));

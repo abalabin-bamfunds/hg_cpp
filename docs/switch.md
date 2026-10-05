@@ -33,9 +33,10 @@ arguments normally.
 A graph function receives all supplied arguments in order. This supports
 generic lambdas without an additional graph declaration.
 
-Type-erased callers pass a `WiringPoint`, a span of `SwitchCaseArgument`, and a
-span of `WiringArgument`. A `SwitchCaseArgument` accepts one key, a span of
-keys, or `DEFAULT`.
+Type-erased callers pass a key as a `WiringPoint` or `WiringArgument`, a span
+of `SwitchCaseArgument`, and a span of `WiringArgument`. A qualified key keeps
+its `opt` qualifier during overload resolution. A `SwitchCaseArgument` accepts
+one key, a span of keys, or `DEFAULT`.
 
 ## Selection and output
 

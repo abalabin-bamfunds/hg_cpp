@@ -276,6 +276,9 @@ class SwitchGraphArgumentBuilder {
             boundary_inputs.push_back(
                 {outer_parameter_index(argument.supplied_index), wiring->output_node_index(boundary)});
             auto inner = WiringArgument{boundary};
+            if (argument.value.requires_optional()) {
+                inner.require_optional();
+            }
             if (const auto name = argument.value.name()) {
                 inner.set_variadic_name(*name, argument.value.variadic_capture_mode());
             }
@@ -331,11 +334,11 @@ class SwitchGraphArgumentBuilder {
 
 Signature default_switch_signature(bool output) {
     auto parameters = std::vector<Parameter>{
-        {util::symbol{"key"}, &TS<SCALAR>::type()},
+        {util::symbol{"key"}, &TS<SCALAR>::type(), active, optional},
         {util::symbol{"cases"}, &GraphArgument::type()},
-        {util::symbol{"args"}, &TSB<SWITCH_POSITIONAL>::type(), active, required, false, VariadicMode::positional,
+        {util::symbol{"args"}, &TSB<SWITCH_POSITIONAL>::type(), active, optional, false, VariadicMode::positional,
          variadic_wiring_operations<TSB<SWITCH_POSITIONAL>>()},
-        {util::symbol{"kwargs"}, &TSB<SWITCH_NAMED>::type(), active, required, false, VariadicMode::named,
+        {util::symbol{"kwargs"}, &TSB<SWITCH_NAMED>::type(), active, optional, false, VariadicMode::named,
          variadic_wiring_operations<TSB<SWITCH_NAMED>>()},
     };
     if (!output) {

@@ -552,6 +552,7 @@ void bind_core(nb::module_ &module) {
                          append_type_text(result, point.type());
                          return result;
                      })
+        .def("_as_optional", &PythonWiringPoint::as_optional)
         .def("__getitem__", &details::getitem);
     nb::class_<InputView>(module, "InputView")
         .def_prop_ro("valid", &InputView::valid)

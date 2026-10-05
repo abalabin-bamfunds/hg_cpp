@@ -150,7 +150,7 @@ nb::object wire_switch(const PythonWiringPoint &key, nb::sequence case_values, n
 
     auto arguments = builder.ordinary_arguments(positional, named);
     return wiring_result(static_cast<WiringPoint>(
-        bg::switch_(key.get(wiring), std::span<const SwitchCaseArgument>{cases},
+        bg::switch_(key.argument(wiring), std::span<const SwitchCaseArgument>{cases},
                     std::span<const WiringArgument>{arguments})));
 }
 

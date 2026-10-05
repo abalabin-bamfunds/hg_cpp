@@ -4,6 +4,7 @@
 #include <bg/operators.hpp>
 #include <bg/switch.hpp>
 #include <bg/testing/test_graph.hpp>
+#include <bg/testing/test_wiring.hpp>
 #include <bg/time_series/tsd/tsd_type.hpp>
 #include <bg/time_series/tss/tss_type.hpp>
 
@@ -163,6 +164,27 @@ struct CountSingleMeshDependency {
 };
 
 const auto count_single_mesh_dependency = node<CountSingleMeshDependency>();
+
+TEST_CASE("mesh forwards optional positional input only to an optional branch parameter",
+          "[feature:mesh][feature:nested-graph][feature:operator][feature:wiring][series:tsd]"
+          "[validity:optional][definition:function]") {
+    const auto dictionaries = node([](Out<TSD<std::int64_t, TS<i64>>>) {});
+    const auto values = node([](Out<TS<i64>>) {});
+    const auto optional_branch = graph(
+        "name"_n = "optional_mesh_branch",
+        [](wp<TS<i64>> item, wp<TS<i64>, optional>) { return item; });
+    const auto required_branch = graph(
+        "name"_n = "required_mesh_branch",
+        [](wp<TS<i64>> item, wp<TS<i64>>) { return item; });
+
+    testing::test_wiring([&] {
+        const auto dictionary = dictionaries();
+        const auto context = values();
+
+        CHECK_NOTHROW(mesh(optional_branch, dictionary, opt(context)));
+        CHECK_THROWS_AS(mesh(required_branch, dictionary, opt(context)), TypeResolutionError);
+    });
+}
 
 const auto values_at_key_five =
     node([](In<TS<i64>> value, Out<TSD<std::int64_t, TS<i64>>> output) { output[5].set(*value); });

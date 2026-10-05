@@ -68,7 +68,8 @@ std::optional<WiringPoint> PythonGraphDefinition::wire(GraphWiring &wiring, Reso
     for (const auto &argument : arguments) {
         if (argument.is_time_series()) {
             python_arguments.push_back(
-                nanobind::cast(PythonWiringPoint{argument.time_series(), scope.lifetime()}));
+                nanobind::cast(
+                    PythonWiringPoint{argument.time_series(), scope.lifetime(), argument.requires_optional()}));
             continue;
         }
         if (argument.is_scalar()) {

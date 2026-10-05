@@ -6,6 +6,7 @@
 #include <bg/run_graph.hpp>
 #include <bg/switch.hpp>
 #include <bg/testing/test_graph.hpp>
+#include <bg/testing/test_wiring.hpp>
 #include <bg/time_series/tsb/tsb.hpp>
 #include <bg/time_series/tsd/tsd_type.hpp>
 
@@ -190,6 +191,20 @@ TEST_CASE("switch selects a case graph from its key",
                                             std::array{3, 3, 4, 5});
 
     CHECK(actual.equals<bg::i64>({13, 23, 24, 15}));
+}
+
+TEST_CASE("switch accepts an optional wiring argument as its key",
+          "[feature:switch][feature:nested-graph][feature:operator][shape:nested]"
+          "[series:value][validity:optional][definition:function]") {
+    const auto tested = [](wp<TS<std::int64_t>> key, wp<TS<i64>> value) {
+        return switch_(opt(key), cases{case_(1, [](auto input) { return add(input, 10); })}, value)
+            .as<TS<i64>>();
+    };
+
+    const auto actual = testing::test_graph(tested, std::array<std::int64_t, 2>{1, 1},
+                                            std::array<std::int64_t, 2>{3, 4});
+
+    CHECK(actual.equals<bg::i64>({13, 14}));
 }
 
 TEST_CASE("switch uses DEFAULT for invalid and unmatched keys",
@@ -431,6 +446,77 @@ TEST_CASE("switch accepts fully runtime cases and arguments",
 
     CHECK(testing::test_graph(tested, std::array<std::int64_t, 2>{1, 2}, std::array{2, 5})
               .equals<bg::i64>({5, 8}));
+}
+
+TEST_CASE("runtime switch preserves an optional key qualifier",
+          "[feature:switch][feature:nested-graph][feature:operator][shape:nested]"
+          "[series:value][validity:optional][definition:runtime]") {
+    const auto branch = graph("name"_n = "optional_runtime_switch_branch", [](wp<TS<i64>> value) {
+        return add(value, 3);
+    });
+    auto operation = operator_<auto(TS<i64>, GRAPH_T, TS<i64>) -> TS<i64>,
+                                details::switch_operator_implementation>{"runtime_switch", {"key", "cases", "value"}};
+    operation.overload(graph("name"_n = "runtime_switch_required_key",
+                              [](wp<TS<i64>>, const GraphArgument &, wp<TS<i64>> value) {
+                                  return add(value, 10);
+                              }));
+    operation.overload(graph("name"_n = "runtime_switch_optional_key",
+                              [](wp<TS<i64>, optional>, const GraphArgument &, wp<TS<i64>> value) {
+                                  return add(value, 20);
+                              }));
+
+    const auto combine = node([](In<TS<i64>> left, In<TS<i64>> right, Out<TS<i64>> output) {
+        output.set(left.value() + right.value());
+    });
+    const auto tested = [&](wp<TS<std::int64_t>> key, wp<TS<i64>> value) {
+        const auto runtime_keys = std::array{WiringArgument{std::int64_t{1}}};
+        const auto runtime_cases = std::array{
+            SwitchCaseArgument{std::span<const WiringArgument>{runtime_keys}, branch},
+        };
+        const auto runtime_arguments = std::array{WiringArgument{value}};
+        const auto key_point = static_cast<WiringPoint>(key);
+        const auto required = operation(key_point, std::span<const SwitchCaseArgument>{runtime_cases},
+                                         std::span<const WiringArgument>{runtime_arguments})
+                                  .as<TS<i64>>();
+        const auto optional = operation(WiringArgument{opt(key)},
+                                        std::span<const SwitchCaseArgument>{runtime_cases},
+                                        std::span<const WiringArgument>{runtime_arguments})
+                                  .as<TS<i64>>();
+        return combine(required, optional);
+    };
+
+    CHECK(testing::test_graph(tested, std::array<std::int64_t, 2>{1, 1}, std::array{2, 5})
+              .equals<bg::i64>({34, 40}));
+}
+
+TEST_CASE("switch forwards optional positional and named inputs only to optional branch parameters",
+          "[feature:switch][feature:nested-graph][feature:operator][feature:wiring]"
+          "[validity:optional][definition:function]") {
+    const auto keys = node([](Out<TS<std::int64_t>>) {});
+    const auto values = node([](Out<TS<i64>>) {});
+    const auto optional_positional = graph(
+        "name"_n = "optional_positional_switch_branch",
+        [](wp<TS<i64>, optional> value) { return value; });
+    const auto required_positional = graph(
+        "name"_n = "required_positional_switch_branch",
+        [](wp<TS<i64>> value) { return value; });
+    const auto optional_named = graph(
+        "name"_n = "optional_named_switch_branch",
+        [](wp<TS<i64>, "value"_n, optional> value) { return value; });
+    const auto required_named = graph(
+        "name"_n = "required_named_switch_branch",
+        [](wp<TS<i64>, "value"_n> value) { return value; });
+
+    testing::test_wiring([&] {
+        const auto key = keys();
+        const auto value = values();
+
+        CHECK_NOTHROW(switch_(key, cases{case_(1, optional_positional)}, opt(value)));
+        CHECK_THROWS_AS(switch_(key, cases{case_(1, required_positional)}, opt(value)), TypeResolutionError);
+        CHECK_NOTHROW(switch_(key, cases{case_(1, optional_named)}, "value"_n = opt(value)));
+        CHECK_THROWS_AS(switch_(key, cases{case_(1, required_named)}, "value"_n = opt(value)),
+                        TypeResolutionError);
+    });
 }
 
 TEST_CASE("switch DEFAULT handles an invalid key",

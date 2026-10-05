@@ -298,3 +298,27 @@ def test_variadic_parameters_require_collection_annotations():
         @bg.graph
         def list_kwargs(**values: bg.TSL[bg.TS[int], bg.SIZE]) -> bg.TS[int]:
             raise AssertionError
+
+
+def test_required_variadic_graph_captures_reject_optional_time_series_arguments():
+    @bg.graph
+    def capture_positional(*values: bg.TSL[bg.TS[int], bg.SIZE]) -> bg.TS[int]:
+        return values[0]
+
+    @bg.graph
+    def capture_named(**values: bg.TSB[bg.TS_SCHEMA]) -> bg.TS[int]:
+        return values["value"]
+
+    @bg.graph
+    def forward_positional(value: bg.TS[int]) -> bg.TS[int]:
+        return capture_positional(bg.opt(value))
+
+    @bg.graph
+    def forward_named(value: bg.TS[int]) -> bg.TS[int]:
+        return capture_named(value=bg.opt(value))
+
+    diagnostic = "an opt-qualified argument requires an optional input parameter"
+    with pytest.raises(ValueError, match=diagnostic):
+        bg.test_graph(forward_positional, [1])
+    with pytest.raises(ValueError, match=diagnostic):
+        bg.test_graph(forward_named, [1])

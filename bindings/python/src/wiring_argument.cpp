@@ -14,21 +14,10 @@
 namespace nb = nanobind;
 
 namespace bg::python::details {
-namespace {
-
-WiringArgument wiring_point_argument(nb::handle value, GraphWiring &wiring) {
-    const auto point = nb::cast<PythonWiringPoint>(value).get(wiring);
-    if (!point.has_output()) {
-        throw std::invalid_argument{"a Python wiring point must have an output"};
-    }
-    return WiringArgument{point};
-}
-
-} // namespace
 
 WiringArgument wiring_argument(const Type &expected, nb::handle value, allocator &memory, GraphWiring &wiring) {
     if (nb::isinstance<PythonWiringPoint>(value)) {
-        return wiring_point_argument(value, wiring);
+        return nb::cast<PythonWiringPoint>(value).argument(wiring);
     }
 
     const auto *scalar_type = type_cast<ScalarType>(&expected);
@@ -75,7 +64,7 @@ WiringArgument wiring_argument(const Type &expected, nb::handle value, allocator
 
 WiringArgument wiring_argument(nb::handle value, allocator &memory, GraphWiring &wiring) {
     if (nb::isinstance<PythonWiringPoint>(value)) {
-        return wiring_point_argument(value, wiring);
+        return nb::cast<PythonWiringPoint>(value).argument(wiring);
     }
     if (value.is_none()) {
         throw std::invalid_argument{"None does not identify a scalar type for operator resolution"};
@@ -85,3 +74,29 @@ WiringArgument wiring_argument(nb::handle value, allocator &memory, GraphWiring 
 }
 
 } // namespace bg::python::details
+
+namespace bg::python {
+
+WiringArgument PythonWiringPoint::argument(const GraphWiring &wiring) const {
+    const auto point = get(wiring);
+    if (!point.has_output()) {
+        throw std::invalid_argument{"a Python wiring point must have an output"};
+    }
+
+    auto result = WiringArgument{point};
+    if (requires_optional_) {
+        result.require_optional();
+    }
+    return result;
+}
+
+PythonWiringPoint PythonWiringPoint::as_optional() const {
+    lifetime_->check();
+    if (!point_.has_output()) {
+        throw std::invalid_argument{"opt requires a Python wiring point with an output"};
+    }
+
+    return {point_, lifetime_, true};
+}
+
+} // namespace bg::python

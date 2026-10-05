@@ -63,6 +63,11 @@ def constant() -> bg.TS[int]:
 item = collection[key]  # bg.operators.getitem(collection, key)
 ```
 
+`bg.opt(point)` requires an optional receiving parameter. It returns a new
+wiring proxy for the same time series and leaves `point` unchanged. It adds no
+runtime node or fallback value. The selected node defines how it handles an
+invalid input. See [optional arguments](operators.md#optional-arguments).
+
 Node and graph functions accept positional and named arguments according to
 their Python signatures, including positional-only, keyword-only, `*args`, and
 `**kwargs` parameters. A graph function expands into the active graph while it

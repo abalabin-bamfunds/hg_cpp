@@ -277,9 +277,9 @@ namespace {
 Signature default_map_signature(bool output) {
     auto parameters = std::vector<Parameter>{
         {util::symbol{"function"}, &GraphArgument::type()},
-        {util::symbol{"args"}, &TSB<details::MAP_POSITIONAL>::type(), active, required, false,
+        {util::symbol{"args"}, &TSB<details::MAP_POSITIONAL>::type(), active, optional, false,
          details::VariadicMode::positional, details::variadic_wiring_operations<TSB<details::MAP_POSITIONAL>>()},
-        {util::symbol{"kwargs"}, &TSB<details::MAP_NAMED>::type(), active, required, false,
+        {util::symbol{"kwargs"}, &TSB<details::MAP_NAMED>::type(), active, optional, false,
          details::VariadicMode::named, details::variadic_wiring_operations<TSB<details::MAP_NAMED>>()},
     };
     if (!output) {

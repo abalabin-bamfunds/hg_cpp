@@ -153,6 +153,10 @@ Optional inputs retain their declared activity. To publish a result while every
 input is initially invalid, an implementation must request
 [`schedule_on_start`](node-api.md#plain-c-parameters) or schedule itself.
 
+The default `map`, `mesh`, and `switch_` overloads accept qualified variadic
+arguments. Each branch signature checks the qualifiers of the arguments it
+receives.
+
 Use `default_(point, fallback)` when every consumer should read the supplied
 fallback while the point is invalid.
 

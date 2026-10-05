@@ -11,6 +11,7 @@ from . import operators
 from ._bg import (
     Symbol,
     Dict,
+    WiringPoint as _WiringPoint,
     _Type,
     _make_graph,
     _make_node,
@@ -188,6 +189,13 @@ class _PassThrough:
 def pass_through(value: Any) -> Any:
     """Keep a time series as one shared input to every map or mesh branch."""
     return _PassThrough(value)
+
+
+def opt(point: Any) -> Any:
+    """Require an optional time-series input at the receiving parameter."""
+    if not isinstance(point, _WiringPoint):
+        raise TypeError("opt expects a time-series wiring point")
+    return point._as_optional()
 
 
 def _map_arguments(args: tuple[Any, ...], kwargs: dict[str, Any]) -> tuple[Any, Any]:
@@ -524,6 +532,7 @@ __all__ = [
     "map",
     "mesh",
     "node",
+    "opt",
     "operators",
     "pass_through",
     "source_node",

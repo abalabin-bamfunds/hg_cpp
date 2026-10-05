@@ -10,6 +10,7 @@
 
 namespace bg {
 class NodeTemplate;
+class WiringArgument;
 }
 
 namespace bg::python {
@@ -51,13 +52,18 @@ class BG_PYTHON_API PythonWiringLifetime {
 
 class BG_PYTHON_API PythonWiringPoint {
   public:
-    PythonWiringPoint(WiringPoint point, std::shared_ptr<PythonWiringLifetime> lifetime) noexcept
-        : point_{point}, lifetime_{std::move(lifetime)} {}
+    PythonWiringPoint(WiringPoint point, std::shared_ptr<PythonWiringLifetime> lifetime,
+                      bool requires_optional = false) noexcept
+        : point_{point}, lifetime_{std::move(lifetime)}, requires_optional_{requires_optional} {}
 
     WiringPoint get(const GraphWiring &wiring) const {
         lifetime_->check(wiring);
         return point_;
     }
+
+    WiringArgument argument(const GraphWiring &wiring) const;
+
+    PythonWiringPoint as_optional() const;
 
     bool has_output() const {
         lifetime_->check();
@@ -72,6 +78,7 @@ class BG_PYTHON_API PythonWiringPoint {
   private:
     WiringPoint point_;
     std::shared_ptr<PythonWiringLifetime> lifetime_;
+    bool requires_optional_{};
 };
 
 class BG_PYTHON_API PythonWiringScope {

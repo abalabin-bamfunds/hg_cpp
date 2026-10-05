@@ -36,6 +36,38 @@ const bg::Operator &discard_operator() {
     return operation;
 }
 
+const bg::Operator &invalidate_on_zero_operator() {
+    static auto operation = bg::operator_<auto(bg::TS_T) -> bg::TS_T>{"invalidate_on_zero", {"value"}};
+    static const auto &implementation = operation.overload(bg::node([](bg::In<bg::TS<bg::i64>> input,
+                                                                       bg::Out<bg::TS<bg::i64>> output) {
+        if (input.value() == 0) {
+            output.invalidate();
+            return;
+        }
+
+        output.set(input.value());
+    }));
+    (void)implementation;
+
+    return operation;
+}
+
+const bg::Operator &optional_choice_operator() {
+    static auto operation = bg::operator_<auto(bg::TS_T) -> bg::TS_T>{"optional_choice", {"value"}};
+    static const auto &required = operation.overload(bg::node([](bg::In<bg::TS<bg::i64>> input,
+                                                                 bg::Out<bg::TS<bg::i64>> output) {
+        output.set(input.value() + 10);
+    }));
+    static const auto &optional = operation.overload(bg::node([](bg::In<bg::TS<bg::i64>, bg::optional> input,
+                                                                 bg::Out<bg::TS<bg::i64>> output) {
+        output.set((input.valid() ? input.value() : 0) + 20);
+    }));
+    (void)required;
+    (void)optional;
+
+    return operation;
+}
+
 nanobind::object runtime_double_to_python(bg::Scalar<>, const bg::python::PythonScalarConversions &) {
     return nanobind::str{"runtime double conversion"};
 }
@@ -55,6 +87,8 @@ nanobind::object extension_scalar_to_python(bg::Scalar<>, const bg::python::Pyth
 NB_MODULE(_bg_test_extension, module) {
     bg::python::export_operator(module, "const_", bg::operators::const_);
     bg::python::export_operator(module, "discard", discard_operator());
+    bg::python::export_operator(module, "invalidate_on_zero", invalidate_on_zero_operator());
+    bg::python::export_operator(module, "optional_choice", optional_choice_operator());
 
     module.def("make_list", [] {
         static const auto source = bg::node<list_source_definition>();
