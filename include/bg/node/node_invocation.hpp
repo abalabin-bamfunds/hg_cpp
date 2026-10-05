@@ -176,10 +176,16 @@ template <typename CompiledData = void, typename State = void> class NodeInvocat
             }
         }
         const auto input = runtime_node.input_data(parameter_index);
-        const auto data = TimeSeriesInputData{
-            runtime_node.time_series_input_runtime_type(parameter_index, runtime_type_index), *input.last_updated,
-            input.value, input.last_updated->valid() && input.last_updated->time() == context_->evaluation_time()};
-        return Input{data, activity};
+        const auto modified = input.last_updated->valid() && input.last_updated->time() == context_->evaluation_time();
+        if constexpr (details::direct_time_series_input<Input>) {
+            return Input{*input.last_updated, static_cast<const typename Input::storage_type *>(input.value), modified,
+                         activity};
+        } else {
+            const auto data = TimeSeriesInputData{
+                runtime_node.time_series_input_runtime_type(parameter_index, runtime_type_index), *input.last_updated,
+                input.value, modified};
+            return Input{data, activity};
+        }
     }
 
     NodeInvocationScalar scalar(std::size_t parameter_index, std::size_t runtime_type_index) const noexcept {
@@ -190,9 +196,16 @@ template <typename CompiledData = void, typename State = void> class NodeInvocat
     template <typename TimeSeries, OutputSpecification Specification = OutputSpecification::default_>
     Out<TimeSeries, Specification> output() const {
         const auto runtime_node = Node{*node_, runtime_storage_};
-        return details::output_factory::make<TimeSeries, Specification>(
-            runtime_node.output_last_updated(), runtime_node.output_value(), node_->node_invocation_output_runtime_type(),
-            *context_);
+        using Output = Out<TimeSeries, Specification>;
+        if constexpr (details::direct_time_series_output<Output>) {
+            auto &value = *static_cast<typename Output::storage_type *>(runtime_node.output_value());
+            return details::output_factory::make<TimeSeries, Specification>(runtime_node.output_last_updated(), value,
+                                                                             *context_);
+        } else {
+            return details::output_factory::make<TimeSeries, Specification>(
+                runtime_node.output_last_updated(), runtime_node.output_value(),
+                node_->node_invocation_output_runtime_type(), *context_);
+        }
     }
 
     void initialize_output_reference(details::RootReference &reference) const noexcept {

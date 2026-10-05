@@ -49,7 +49,9 @@ template <typename TimeSeries> struct time_series_runtime_traits {
 
 template <typename TimeSeries> const TimeSeriesRuntimeType &cpp_time_series_runtime_type(const TimeSeriesType &type) {
     const auto &runtime_type = time_series_runtime_traits<TimeSeries>::get(type);
-    register_time_series_runtime_type(runtime_type);
+    if (type.is_resolved()) {
+        register_time_series_runtime_type(runtime_type);
+    }
     return runtime_type;
 }
 

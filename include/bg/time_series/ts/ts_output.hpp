@@ -71,6 +71,13 @@ class Out<TS<T, Properties...>, Specification> {
 
   public:
     explicit Out(TimeSeriesOutputBinding state) noexcept : state_(std::move(state)) {}
+
+    Out(TimeSeriesState &last_updated, storage_type &value, EvaluationContext &context)
+        : state_{last_updated, &value, cpp_time_series_runtime_type<TS<T, Properties...>>(), context} {}
+
+    Out(TimeSeriesState &last_updated, storage_type &value, void *output_path)
+        : state_{last_updated, &value, cpp_time_series_runtime_type<TS<T, Properties...>>(), output_path} {}
+
     Out(Out &&) noexcept = default;
     Out(const Out &) = delete;
 
@@ -79,9 +86,7 @@ class Out<TS<T, Properties...>, Specification> {
     value_type value() const
         requires(!scalar_declaration_traits<T>::is_collection && !details::hierarchical_scalar_declaration<T>)
     {
-        const auto &runtime_type =
-            static_cast<const TimeSeriesValueRuntimeType &>(state_->runtime_type()).scalar_runtime_type();
-        return Scalar<T>::from(runtime_type, state_->data()).value();
+        return Traits::read(*static_cast<const storage_type *>(state_->data()));
     }
 
     Scalar<T> value() const
@@ -100,14 +105,18 @@ class Out<TS<T, Properties...>, Specification> {
                 }
     void set(Value &&value) const {
         auto requested = std::remove_cvref_t<value_type>{std::forward<Value>(value)};
-        const auto source = details::make_scalar_source<T>(requested);
-        const auto &runtime_type =
-            static_cast<const TimeSeriesValueRuntimeType &>(state_->runtime_type()).scalar_runtime_type();
-        if (state_->suppresses_equal_updates() && valid() && runtime_type.equals(state_->data(), source)) {
-            return;
+        if constexpr (Traits::supports_equality) {
+            if (state_->suppresses_equal_updates() && valid() &&
+                Traits::equals(Traits::read(*static_cast<const storage_type *>(state_->data())), requested)) {
+                return;
+            }
         }
 
-        runtime_type.assign_from_input(state_->mutable_data(), source);
+        auto allocator = bg::allocator{};
+        if constexpr (Traits::assign_uses_memory_resource) {
+            allocator = state_->allocator();
+        }
+        Traits::assign(*static_cast<storage_type *>(state_->mutable_data()), requested, allocator);
         state_->publish();
     }
 

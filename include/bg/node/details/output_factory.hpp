@@ -3,6 +3,7 @@
 #include <bg/time_series/cpp_runtime_type.hpp>
 #include <bg/time_series/output_binding.hpp>
 
+#include <concepts>
 #include <utility>
 
 namespace bg {
@@ -27,7 +28,11 @@ struct output_factory {
 
 template <typename TimeSeries, OutputSpecification Specification, typename... Arguments>
 Out<TimeSeries, Specification> output_factory::make(Arguments &&...arguments) {
-    return Out<TimeSeries, Specification>{TimeSeriesOutputBinding{std::forward<Arguments>(arguments)...}};
+    if constexpr (std::constructible_from<Out<TimeSeries, Specification>, Arguments...>) {
+        return Out<TimeSeries, Specification>{std::forward<Arguments>(arguments)...};
+    } else {
+        return Out<TimeSeries, Specification>{TimeSeriesOutputBinding{std::forward<Arguments>(arguments)...}};
+    }
 }
 
 } // namespace details

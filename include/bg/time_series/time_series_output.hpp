@@ -50,6 +50,16 @@ static_assert(sizeof(Out<TS_T>) == sizeof(void *));
 #include <bg/time_series/tsl/tsl_output.hpp>
 #include <bg/time_series/tss/tss_output.hpp>
 
+namespace bg::details {
+
+template <typename Output>
+concept direct_time_series_output = requires(TimeSeriesState &last_updated, typename Output::storage_type &value,
+                                              EvaluationContext &context) {
+    Output{last_updated, value, context};
+};
+
+} // namespace bg::details
+
 namespace bg {
 
 template <OutputSpecification Specification>

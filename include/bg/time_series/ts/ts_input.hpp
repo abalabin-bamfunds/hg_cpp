@@ -78,6 +78,7 @@ class In<TS<T, TimeSeriesProperties...>, Properties...>
 
     In(const TimeSeriesState &last_updated, const Stored *value, bool modified = false,
        bool *activity = nullptr) noexcept
+        requires(!scalar_declaration_traits<T>::is_collection && !details::hierarchical_scalar_declaration<T>)
         : activity_control{activity},
           data_{cpp_time_series_runtime_type<TS<T, TimeSeriesProperties...>>(), last_updated, value, modified} {}
 
@@ -97,9 +98,7 @@ class In<TS<T, TimeSeriesProperties...>, Properties...>
     typename scalar_storage_traits<T>::value_type value() const
         requires(!scalar_declaration_traits<T>::is_collection && !details::hierarchical_scalar_declaration<T>)
     {
-        const auto &runtime_type =
-            static_cast<const TimeSeriesValueRuntimeType &>(data_.runtime_type()).scalar_runtime_type();
-        return Scalar<T>::from(runtime_type, data_.data()).value();
+        return Traits::read(*static_cast<const Stored *>(data_.data()));
     }
 
     Scalar<T> value() const

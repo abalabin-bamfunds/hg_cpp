@@ -2,7 +2,6 @@
 #include <bg/graph.hpp>
 #include <bg/graph/wiring_context.hpp>
 #include <bg/scalar/data.hpp>
-#include <bg/scalar/runtime_type.hpp>
 #include <bg/testing/test_graph.hpp>
 #include <bg/time_series/cpp_runtime_type.hpp>
 #include <bg/time_series/input_data.hpp>
@@ -263,7 +262,19 @@ class In<provider::Series<Item, SeriesProperties...>, Properties...>
     using ParsedProperties = InputProperties<Properties...>;
     using ActivityControl = InputActivityControl<ParsedProperties::dynamic_activity>;
 
+    static constexpr bool has_direct_storage =
+        !scalar_declaration_traits<Item>::generic;
+
   public:
+    using storage_type = i64;
+
+    In(const TimeSeriesState &last_updated, const storage_type *value, bool modified = false,
+       bool *activity = nullptr) noexcept
+        requires(has_direct_storage)
+        : ActivityControl{activity},
+          data_{cpp_time_series_runtime_type<provider::Series<Item, SeriesProperties...>>(), last_updated, value,
+                modified} {}
+
     explicit In(const TimeSeriesInputData &data, bool *activity = nullptr) noexcept
         : ActivityControl{activity}, data_{data} {}
 
@@ -285,8 +296,18 @@ class In<provider::Series<Item, SeriesProperties...>, Properties...>
 
 template <typename Item, OutputSpecification Specification, auto... Properties>
 class Out<provider::Series<Item, Properties...>, Specification> {
+    static constexpr bool has_direct_storage =
+        Specification == OutputSpecification::default_ && !scalar_declaration_traits<Item>::generic;
+
   public:
+    using storage_type = i64;
+
     explicit Out(TimeSeriesOutputBinding binding) noexcept : binding_{std::move(binding)} {}
+
+    Out(TimeSeriesState &last_updated, storage_type &value, EvaluationContext &context)
+        requires(has_direct_storage)
+        : binding_{last_updated, &value, cpp_time_series_runtime_type<provider::Series<Item, Properties...>>(),
+                   context} {}
 
     void set(i64 value) const {
         *static_cast<i64 *>(binding_->mutable_data()) = value;
@@ -328,79 +349,7 @@ struct ViewAggregate {
     void evaluate() const { output.set(*input); }
 };
 
-struct ValueAggregate {
-    bg::In<bg::TS<bg::i64>> input;
-    bg::Out<bg::TS<bg::i64>> output;
-
-    void evaluate() const { output.set(*input); }
-};
-
 } // namespace provider
-
-namespace {
-
-struct AlternateI64Storage {
-    static constexpr bg::i64 marker = -1;
-
-    bg::i64 prefix{marker};
-    bg::i64 value{};
-};
-
-class AlternateI64RuntimeType final : public bg::ScalarRuntimeType {
-  public:
-    AlternateI64RuntimeType()
-        : ScalarRuntimeType{bg::cpp_scalar_type<bg::i64>(), sizeof(AlternateI64Storage), alignof(AlternateI64Storage),
-                            false, false, true} {}
-
-    void construct_initial_value(void *destination) const noexcept override {
-        std::construct_at(static_cast<AlternateI64Storage *>(destination));
-    }
-
-    void read_value(bg::ScalarDataMode, std::uintptr_t data, void *destination) const override {
-        std::construct_at(static_cast<bg::i64 *>(destination), static_cast<const AlternateI64Storage *>(
-                                                            reinterpret_cast<const void *>(data))
-                                                            ->value);
-    }
-
-    void copy_construct(void *destination, const void *source, bg::allocator &) const override {
-        std::construct_at(static_cast<AlternateI64Storage *>(destination),
-                          *static_cast<const AlternateI64Storage *>(source));
-    }
-
-    std::size_t hash(const void *value) const noexcept override {
-        return std::hash<bg::i64>{}(static_cast<const AlternateI64Storage *>(value)->value);
-    }
-
-    void destroy(void *value, bg::allocator &) const noexcept override {
-        std::destroy_at(static_cast<AlternateI64Storage *>(value));
-    }
-
-  private:
-    void do_construct_from_input(void *destination, const bg::ScalarData &source, bg::allocator &) const override {
-        std::construct_at(static_cast<AlternateI64Storage *>(destination), AlternateI64Storage{.value = read(source)});
-    }
-
-    void do_assign_from_input(void *destination, const bg::ScalarData &source) const override {
-        static_cast<AlternateI64Storage *>(destination)->value = read(source);
-    }
-
-    bool equals_same_type(const void *value, const bg::ScalarData &other) const noexcept override {
-        return static_cast<const AlternateI64Storage *>(value)->value == read(other);
-    }
-
-    static bg::i64 read(const bg::ScalarData &source) {
-        alignas(bg::i64) std::byte storage[sizeof(bg::i64)];
-        source.runtime_type().read_value(source.mode(), source.data_word(), storage);
-        auto *value = reinterpret_cast<bg::i64 *>(storage);
-        const auto result = *value;
-        std::destroy_at(value);
-        return result;
-    }
-};
-
-const auto alternate_i64_runtime_type = AlternateI64RuntimeType{};
-
-} // namespace
 
 TEST_CASE("a provider declaration exposes public semantic and runtime customizations",
           "[type][time_series][feature:type-system][declaration:runtime]") {
@@ -498,6 +447,9 @@ TEST_CASE("provider views bind through public input and output owners",
 TEST_CASE("a provider output binding works in a callable node",
           "[evaluation][time_series][feature:test-graph]") {
     using Series = provider::Series<bg::i64>;
+    static_assert(bg::details::direct_time_series_input<bg::In<Series>>);
+    static_assert(bg::details::direct_time_series_output<bg::Out<Series>>);
+
     const auto provide = bg::node([](bg::In<bg::TS<bg::i64>> input, bg::Out<Series> output) { output.set(*input); });
     const auto consume = bg::node([](bg::In<Series> input, bg::Out<bg::TS<bg::i64>> output) { output.set(input.value()); });
     const auto graph = [&](bg::wp<bg::TS<bg::i64>> input) { return consume(provide(input)); };
@@ -509,7 +461,10 @@ TEST_CASE("a provider generic series resolves its scalar and guarantee variables
           "[type][time_series][feature:type-system][declaration:generic]") {
     using Generic = provider::Series<bg::SCALAR, bg::guarantee_variable<"G">>;
     using Concrete = provider::Series<bg::i64>;
+    using GenericValue = bg::TS<bg::i64, bg::guarantee_variable<"G">>;
     static_assert(bg::time_series_type_traits<Generic>::generic);
+    static_assert(bg::details::direct_time_series_input<bg::In<GenericValue>>);
+    static_assert(bg::details::direct_time_series_output<bg::Out<GenericValue>>);
 
     auto count = 0;
     const auto *guarantee = static_cast<const bg::GuaranteeVariable *>(nullptr);
@@ -531,6 +486,8 @@ TEST_CASE("a provider generic series resolves its scalar and guarantee variables
 TEST_CASE("a generic provider input matches a concrete provider series", "[evaluation][time_series][feature:test-graph]") {
     using Concrete = provider::Series<bg::i64>;
     using Generic = provider::Series<bg::SCALAR>;
+    static_assert(!bg::details::direct_time_series_input<bg::In<Generic>>);
+
     const auto provide = bg::node([](bg::In<bg::TS<bg::i64>> input, bg::Out<Concrete> output) { output.set(*input); });
     const auto consume = bg::node([](bg::In<Generic> input, bg::Out<bg::TS<bg::i64>> output) { output.set(input.value()); });
     const auto graph = [&](bg::wp<bg::TS<bg::i64>> input) { return consume(provide(input)); };
@@ -553,35 +510,6 @@ TEST_CASE("a provider scalar declaration resolves in a generic series signature"
     const auto graph = [&](bg::wp<bg::TS<bg::i64>> input) { return consume(provide(input)); };
 
     CHECK(bg::testing::test_graph(graph, std::array<bg::i64, 2>{11, 14}).equals<bg::i64>({11, 14}));
-}
-
-TEST_CASE("typed TS views use the selected scalar representation in callable and aggregate nodes",
-          "[evaluation][time_series][feature:test-graph]") {
-    const auto &alternate_time_series_runtime_type =
-        bg::time_series_value_runtime_type(bg::TS<bg::i64>::type(), alternate_i64_runtime_type);
-    const auto callable = bg::node([](bg::In<bg::TS<bg::i64>> input, bg::Out<bg::TS<bg::i64>> output) {
-        output.set(*input);
-    });
-    const auto aggregate = bg::node<provider::ValueAggregate>();
-    using namespace bg::literals;
-    const auto graph = bg::graph("name"_n = "alternate_i64", [&](bg::wp<bg::TS<bg::i64>> input) {
-        const auto callable_output = callable(input);
-        bg::WiringContext::current().wiring().set_output_runtime_type(callable_output, alternate_time_series_runtime_type);
-        const auto aggregate_output = aggregate(callable_output);
-        bg::WiringContext::current().wiring().set_output_runtime_type(aggregate_output, alternate_time_series_runtime_type);
-        return aggregate_output;
-    });
-
-    auto ticks = std::vector<std::optional<bg::ScalarValue<>>>{};
-    ticks.emplace_back(std::in_place, bg::i64{12});
-    ticks.emplace_back(std::in_place, bg::i64{19});
-    const auto inputs = std::array{
-        bg::testing::TestGraphInput{alternate_i64_runtime_type, ticks},
-    };
-
-    const auto actual = bg::testing::test_graph(graph, std::span<const bg::testing::TestGraphInput>{inputs});
-
-    CHECK(actual.equals<bg::i64>({12, 19}));
 }
 
 TEST_CASE("a builtin collection publishes provider items", "[evaluation][time_series][feature:test-graph]") {

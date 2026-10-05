@@ -74,6 +74,16 @@ static_assert(sizeof(In<TS_T, dynamic_activity>) == 4 * sizeof(void *));
 #include <bg/time_series/tsl/tsl_input.hpp>
 #include <bg/time_series/tss/tss_input.hpp>
 
+namespace bg::details {
+
+template <typename Input>
+concept direct_time_series_input = requires(const TimeSeriesState &last_updated,
+                                             const typename Input::storage_type *value, bool *activity) {
+    Input{last_updated, value, false, activity};
+};
+
+} // namespace bg::details
+
 namespace bg {
 
 using TimeSeriesInputTypes = ddv::mux<In<TS<SCALAR>>, In<TSL<TS_T, SIZE>>, In<TSB<SCHEMA>>, In<TSS<SCALAR>>,
