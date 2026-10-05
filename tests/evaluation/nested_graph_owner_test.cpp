@@ -162,7 +162,7 @@ TEST_CASE("multiple inner graphs identify immediate scheduling to their owner",
     auto outer = bg::RuntimeGraph{outer_compiled, outer_global_state};
     auto owner = InnerGraphOwner{};
     auto evaluator = bg::RuntimeGraphEvaluator{};
-    evaluator.set_owner(outer, 0, {.receiver = &owner, .token = 0, .callbacks = &owner.callbacks});
+    evaluator.bind_owner(outer, 0, {.receiver = &owner, .callbacks = &owner.callbacks});
     auto first = bg::RuntimeGraph{inner_compiled, outer.allocation(), evaluator, 7};
     auto second = bg::RuntimeGraph{inner_compiled, outer.allocation(), evaluator, 11};
     OwnerNode::owner = &owner;
@@ -192,7 +192,7 @@ TEST_CASE("multiple inner graphs report scheduled-time changes without an owner 
     auto outer = bg::RuntimeGraph{outer_compiled, outer_global_state};
     auto owner = InnerGraphOwner{};
     auto evaluator = bg::RuntimeGraphEvaluator{};
-    evaluator.set_owner(outer, 0, {.receiver = &owner, .token = 0, .callbacks = &owner.callbacks});
+    evaluator.bind_owner(outer, 0, {.receiver = &owner, .callbacks = &owner.callbacks});
     auto first = bg::RuntimeGraph{first_compiled, outer.allocation(), evaluator, 7};
     auto second = bg::RuntimeGraph{second_compiled, outer.allocation(), evaluator, 11};
     OwnerNode::owner = &owner;
@@ -227,7 +227,7 @@ TEST_CASE("stopping one inner graph removes only its scheduled time",
     auto outer = bg::RuntimeGraph{outer_compiled, outer_global_state};
     auto owner = InnerGraphOwner{};
     auto evaluator = bg::RuntimeGraphEvaluator{};
-    evaluator.set_owner(outer, 0, {.receiver = &owner, .token = 0, .callbacks = &owner.callbacks});
+    evaluator.bind_owner(outer, 0, {.receiver = &owner, .callbacks = &owner.callbacks});
     auto first = bg::RuntimeGraph{first_compiled, outer.allocation(), evaluator, 7};
     auto second = bg::RuntimeGraph{second_compiled, outer.allocation(), evaluator, 11};
     OwnerNode::owner = &owner;

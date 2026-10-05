@@ -54,6 +54,9 @@ class MapEntries {
     Table &table() noexcept { return table_; }
     const Table &table() const noexcept { return table_; }
 
+    void bind_evaluator(EvaluationContext &context);
+    void bind_evaluator(EvaluationContext &context, RuntimeGraphOwner owner);
+
     template <typename Key> Entry &require(const Key &key) {
         if (auto *entry = table_.find(key)) {
             return *entry;
@@ -75,9 +78,6 @@ class MapEntries {
 
     void start(Entry &entry, const CompiledNestedGraph &compiled, EvaluationContext &context,
                std::span<const NestedGraphInput> inputs, std::span<const NestedGraphConstantInput> constants = {});
-    void start(Entry &entry, const CompiledNestedGraph &compiled, EvaluationContext &context,
-               std::span<const NestedGraphInput> inputs, std::span<const NestedGraphConstantInput> constants,
-               RuntimeGraphOwner owner);
     void stop(Entry &entry, EvaluationContext &context);
     void stop_all(EvaluationContext &context) noexcept;
     void destroy_all(EvaluationContext &context) noexcept;

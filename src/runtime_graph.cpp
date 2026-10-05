@@ -389,6 +389,7 @@ RuntimeGraph::RuntimeGraph(const CompiledGraph &compiled_graph, allocator memory
 RuntimeGraph::RuntimeGraph(const CompiledGraph &compiled_graph, allocator memory, RuntimeGraphEvaluator &evaluator,
                            RuntimeGraphOwnerCallbacks::token_type owner_token)
     : compiled_graph_(&compiled_graph), allocator_(memory), evaluator_{&evaluator}, owner_token_{owner_token} {
+    assert(evaluator.owner_bound());
     initialize_storage();
 }
 
@@ -651,11 +652,15 @@ void RuntimeGraphEvaluator::require_owner(RuntimeGraph &graph, std::size_t node_
     }
 }
 
-void RuntimeGraphEvaluator::set_owner(RuntimeGraph &graph, std::size_t node_index) {
+void RuntimeGraphEvaluator::bind_owner(RuntimeGraph &graph, std::size_t node_index) {
     require_owner(graph, node_index, nullptr, nullptr);
 }
 
-void RuntimeGraphEvaluator::set_owner(RuntimeGraph &graph, std::size_t node_index, const RuntimeGraphOwner &owner) {
+void RuntimeGraphEvaluator::bind_owner(RuntimeGraph &graph, std::size_t node_index, RuntimeGraphOwner owner) {
+    if (owner.receiver == nullptr || owner.callbacks == nullptr || owner.callbacks->inner_scheduled == nullptr ||
+        owner.callbacks->timed_schedule_changed == nullptr) {
+        throw std::invalid_argument{"a runtime graph owner requires scheduling callbacks"};
+    }
     require_owner(graph, node_index, owner.receiver, owner.callbacks);
 }
 

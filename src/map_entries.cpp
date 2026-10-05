@@ -16,20 +16,17 @@ MapEntries::~MapEntries() {
     table_.release(memory_.memory_resource());
 }
 
-void MapEntries::start(Entry &entry, const CompiledNestedGraph &compiled, EvaluationContext &context,
-                       std::span<const NestedGraphInput> inputs, std::span<const NestedGraphConstantInput> constants) {
-    const auto owner = RuntimeGraphOwner{
-        .receiver = this,
-        .token = entry.branch_id,
-        .callbacks = &owner_callbacks,
-    };
-    start(entry, compiled, context, inputs, constants, owner);
+void MapEntries::bind_evaluator(EvaluationContext &context) {
+    bind_evaluator(context, {.receiver = this, .callbacks = &owner_callbacks});
+}
+
+void MapEntries::bind_evaluator(EvaluationContext &context, RuntimeGraphOwner owner) {
+    evaluator_.bind_owner(context.runtime_graph(), context.node_index(), owner);
 }
 
 void MapEntries::start(Entry &entry, const CompiledNestedGraph &compiled, EvaluationContext &context,
-                       std::span<const NestedGraphInput> inputs, std::span<const NestedGraphConstantInput> constants,
-                       RuntimeGraphOwner owner) {
-    entry.inner_graph.start(compiled, evaluator_, context, inputs, constants, owner);
+                       std::span<const NestedGraphInput> inputs, std::span<const NestedGraphConstantInput> constants) {
+    entry.inner_graph.start(compiled, evaluator_, context, inputs, constants, entry.branch_id);
     mark_ready(entry);
 }
 

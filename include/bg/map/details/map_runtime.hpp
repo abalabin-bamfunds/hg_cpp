@@ -48,19 +48,13 @@ class MapRuntime {
 
     template <typename Invocation>
     void start(MapEntries::Entry &entry, const CompiledMapGraph &compiled, Invocation invocation) {
-        start(entry, compiled, invocation, std::nullopt);
+        start(entry, compiled, invocation, invocation.context());
     }
 
     template <typename Invocation>
     void start(MapEntries::Entry &entry, const CompiledMapGraph &compiled, Invocation invocation,
-               RuntimeGraphOwner owner) {
-        start(entry, compiled, invocation, std::optional{owner}, invocation.context());
-    }
-
-    template <typename Invocation>
-    void start(MapEntries::Entry &entry, const CompiledMapGraph &compiled, Invocation invocation,
-               RuntimeGraphOwner owner, EvaluationContext &context) {
-        start(entry, compiled, invocation, std::optional{owner}, context);
+               EvaluationContext &context) {
+        start_entry(entry, compiled, invocation, context);
     }
 
     void stop(MapEntries::Entry &entry, EvaluationContext &context) { entries_.stop(entry, context); }
@@ -169,14 +163,8 @@ class MapRuntime {
     }
 
     template <typename Invocation>
-    void start(MapEntries::Entry &entry, const CompiledMapGraph &compiled, Invocation invocation,
-               std::optional<RuntimeGraphOwner> owner) {
-        start(entry, compiled, invocation, owner, invocation.context());
-    }
-
-    template <typename Invocation>
-    void start(MapEntries::Entry &entry, const CompiledMapGraph &compiled, Invocation invocation,
-               std::optional<RuntimeGraphOwner> owner, EvaluationContext &context) {
+    void start_entry(MapEntries::Entry &entry, const CompiledMapGraph &compiled, Invocation invocation,
+                     EvaluationContext &context) {
         nested_inputs_.clear();
         nested_inputs_.reserve(compiled.inputs.size());
         for (const auto &description : compiled.inputs) {
@@ -199,11 +187,7 @@ class MapRuntime {
             return std::span<const NestedGraphConstantInput>{std::addressof(*nested_constant_), 1};
         }();
 
-        if (owner) {
-            entries_.start(entry, compiled.nested, startup_context.context(), inputs, constants, *owner);
-        } else {
-            entries_.start(entry, compiled.nested, startup_context.context(), inputs, constants);
-        }
+        entries_.start(entry, compiled.nested, startup_context.context(), inputs, constants);
         rollback.release();
         nested_constant_.reset();
     }

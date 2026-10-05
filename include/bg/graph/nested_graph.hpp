@@ -39,12 +39,11 @@ struct NestedGraphConstantInput {
 class NestedGraph {
   public:
     void start(const CompiledNestedGraph &compiled, RuntimeGraphEvaluator &evaluator, EvaluationContext &context,
-               std::span<const NestedGraphInput> inputs);
-    void start(const CompiledNestedGraph &compiled, RuntimeGraphEvaluator &evaluator, EvaluationContext &context,
-               std::span<const NestedGraphInput> inputs, RuntimeGraphOwner owner);
+               std::span<const NestedGraphInput> inputs,
+               RuntimeGraphOwnerCallbacks::token_type child_token = 0);
     void start(const CompiledNestedGraph &compiled, RuntimeGraphEvaluator &evaluator, EvaluationContext &context,
                std::span<const NestedGraphInput> inputs, std::span<const NestedGraphConstantInput> constants,
-               RuntimeGraphOwner owner);
+               RuntimeGraphOwnerCallbacks::token_type child_token = 0);
     void update_inputs(const CompiledNestedGraph &compiled, std::span<const NestedGraphInput> inputs,
                        EvaluationContext &context);
     void update_input(const CompiledNestedGraph &compiled, std::size_t input_index, NestedGraphInput input,
@@ -60,9 +59,6 @@ class NestedGraph {
   private:
     static void destroy_retired_callback(void *receiver, EvaluationContext &context) noexcept;
     static void destroy(RuntimeGraph *graph, EvaluationContext &context) noexcept;
-    void start(const CompiledNestedGraph &compiled, RuntimeGraphEvaluator &evaluator, EvaluationContext &context,
-               std::span<const NestedGraphInput> inputs, std::span<const NestedGraphConstantInput> constants,
-               const RuntimeGraphOwner *owner);
     void destroy_retired(EvaluationContext &context) noexcept;
 
     RuntimeGraph *active_{};

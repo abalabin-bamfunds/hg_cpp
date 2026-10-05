@@ -396,15 +396,15 @@ class SwitchNodeDefinition {
             std::construct_at(inputs + index, input_reference(invocation, branch.inputs[index].parameter_index));
         }
         auto &state = invocation.state();
-        const auto owner = RuntimeGraphOwner{
-            .receiver = &state,
-            .token = selection.case_index,
-            .callbacks = &owner_callbacks,
-        };
+        if (!state.evaluator.owner_bound()) {
+            state.evaluator.bind_owner(invocation.context().runtime_graph(), invocation.context().node_index(),
+                                       {.receiver = &state, .callbacks = &owner_callbacks});
+        }
+        const auto child_token = RuntimeGraphOwnerCallbacks::token_type{selection.case_index};
         const auto inherited_start = branch.inherited_parameter_start.value_or(invocation.parameter_count());
         auto startup_context = NestedGraphStartupContext{invocation, branch.nested, inherited_start, inherited_count};
         state.graph.start(branch.nested, state.evaluator, startup_context.context(),
-                          std::span<NestedGraphInput>{inputs, branch.inputs.size()}, {}, owner);
+                          std::span<NestedGraphInput>{inputs, branch.inputs.size()}, {}, child_token);
         state.active_selection = selection;
     }
 

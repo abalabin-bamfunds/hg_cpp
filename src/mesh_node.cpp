@@ -167,10 +167,13 @@ class MeshRuntimeState {
         bool pending{};
     };
 
-    explicit MeshRuntimeState(allocator memory)
+    MeshRuntimeState(allocator memory, EvaluationContext &context)
         : memory_{memory}, branches_{memory}, edges_{&memory.memory_resource()},
           evaluation_stack_{&memory.memory_resource()}, cycle_stack_{&memory.memory_resource()},
-          dependencies_to_unlink_{&memory.memory_resource()} {}
+          dependencies_to_unlink_{&memory.memory_resource()} {
+        branches_.entries().bind_evaluator(
+            context, {.receiver = this, .callbacks = &owner_callbacks});
+    }
 
     MeshRuntimeState(const MeshRuntimeState &) = delete;
     MeshRuntimeState &operator=(const MeshRuntimeState &) = delete;
@@ -399,14 +402,9 @@ class MeshRuntimeState {
     }
 
     void start(Entry &entry, const CompiledMeshGraph &compiled, MeshInvocation invocation) {
-        const auto owner = RuntimeGraphOwner{
-            .receiver = this,
-            .token = entry.branch_id,
-            .callbacks = &owner_callbacks,
-        };
         auto section = MeshContextSection{*this, entry.branch_id};
         auto branch_context = invocation.context().child(section);
-        branches_.start(entry, compiled.map, invocation, owner, branch_context);
+        branches_.start(entry, compiled.map, invocation, branch_context);
     }
 
     void queue_stop(branch_id_t branch_id) {
@@ -839,7 +837,7 @@ class MeshNodeDefinition : public MapNodeDefinition {
         auto &state = invocation.state();
         if (state.runtime == nullptr) {
             auto memory = invocation.context().runtime_graph().allocation();
-            state.runtime = memory.new_object<MeshRuntimeState>(memory);
+            state.runtime = memory.new_object<MeshRuntimeState>(memory, invocation.context());
         }
         return state.runtime->evaluate(invocation.compiled_data(), invocation);
     }

@@ -10,37 +10,15 @@
 namespace bg {
 
 void NestedGraph::start(const CompiledNestedGraph &compiled, RuntimeGraphEvaluator &evaluator,
-                        EvaluationContext &context, std::span<const NestedGraphInput> inputs) {
-    start(compiled, evaluator, context, inputs, {}, nullptr);
-}
-
-void NestedGraph::start(const CompiledNestedGraph &compiled, RuntimeGraphEvaluator &evaluator,
                         EvaluationContext &context, std::span<const NestedGraphInput> inputs,
-                        RuntimeGraphOwner owner) {
-    if (owner.callbacks == nullptr || owner.callbacks->inner_scheduled == nullptr ||
-        owner.callbacks->timed_schedule_changed == nullptr) {
-        throw std::invalid_argument{"a runtime graph owner requires scheduling callbacks"};
-    }
-
-    start(compiled, evaluator, context, inputs, {}, &owner);
+                        RuntimeGraphOwnerCallbacks::token_type child_token) {
+    start(compiled, evaluator, context, inputs, {}, child_token);
 }
 
 void NestedGraph::start(const CompiledNestedGraph &compiled, RuntimeGraphEvaluator &evaluator,
                         EvaluationContext &context,
                         std::span<const NestedGraphInput> inputs, std::span<const NestedGraphConstantInput> constants,
-                        RuntimeGraphOwner owner) {
-    if (owner.callbacks == nullptr || owner.callbacks->inner_scheduled == nullptr ||
-        owner.callbacks->timed_schedule_changed == nullptr) {
-        throw std::invalid_argument{"a runtime graph owner requires scheduling callbacks"};
-    }
-
-    start(compiled, evaluator, context, inputs, constants, &owner);
-}
-
-void NestedGraph::start(const CompiledNestedGraph &compiled, RuntimeGraphEvaluator &evaluator,
-                        EvaluationContext &context,
-                        std::span<const NestedGraphInput> inputs, std::span<const NestedGraphConstantInput> constants,
-                        const RuntimeGraphOwner *owner) {
+                        RuntimeGraphOwnerCallbacks::token_type child_token) {
     if (active_ != nullptr) {
         throw std::logic_error{"the nested graph is already running"};
     }
@@ -52,14 +30,8 @@ void NestedGraph::start(const CompiledNestedGraph &compiled, RuntimeGraphEvaluat
     }
 
     auto &parent = context.runtime_graph();
-    if (owner == nullptr) {
-        evaluator.set_owner(parent, context.node_index());
-    } else {
-        evaluator.set_owner(parent, context.node_index(), *owner);
-    }
-
     active_ = parent.allocation().new_object<RuntimeGraph>(*compiled.graph, parent.allocation(), evaluator,
-                                                            owner == nullptr ? 0 : owner->token);
+                                                            child_token);
     auto rollback = util::scope_exit{[&]() noexcept {
         destroy(active_, context);
         active_ = nullptr;

@@ -36,9 +36,8 @@ struct RuntimeGraphOwnerCallbacks {
 };
 
 struct RuntimeGraphOwner {
-    // The receiver and shared callback record remain valid until the inner graph stops.
+    // The receiver and callback record remain valid until every graph using this evaluator stops.
     void *receiver;
-    RuntimeGraphOwnerCallbacks::token_type token;
     const RuntimeGraphOwnerCallbacks *callbacks;
 };
 

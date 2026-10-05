@@ -23,8 +23,9 @@ class RuntimeGraphEvaluator {
     RuntimeGraphEvaluator(RuntimeGraphEvaluator &&) = delete;
     RuntimeGraphEvaluator &operator=(RuntimeGraphEvaluator &&) = delete;
 
-    void set_owner(RuntimeGraph &graph, std::size_t node_index);
-    void set_owner(RuntimeGraph &graph, std::size_t node_index, const RuntimeGraphOwner &owner);
+    void bind_owner(RuntimeGraph &graph, std::size_t node_index);
+    void bind_owner(RuntimeGraph &graph, std::size_t node_index, RuntimeGraphOwner owner);
+    bool owner_bound() const noexcept { return parent_.get() != nullptr; }
 
     void start(RuntimeGraph &graph, EvaluationContext &context);
     bool evaluate(RuntimeGraph &graph, EvaluationContext &context);

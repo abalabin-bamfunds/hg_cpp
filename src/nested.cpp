@@ -161,6 +161,9 @@ class NestedNodeDefinition {
 
         auto &graph = state.graph;
         if (!graph.running()) {
+            if (!state.evaluator.owner_bound()) {
+                state.evaluator.bind_owner(invocation.context().runtime_graph(), invocation.context().node_index());
+            }
             const auto inherited_count = invocation.compiled_data().graph->inherited_time_series_count();
             auto startup_context =
                 NestedGraphStartupContext{invocation, invocation.compiled_data(),
