@@ -27,12 +27,12 @@ namespace bg {
 
 namespace details {
 
-struct FeedbackBuffer {
-    FeedbackBuffer(util::buffer buffer, allocator memory, const TimeSeriesType &type)
+struct FeedbackTickStream {
+    FeedbackTickStream(util::buffer buffer, allocator memory, const TimeSeriesType &type)
         : writer{buffer, memory}, reader{std::move(buffer), type} {}
 
-    FeedbackBuffer(util::buffer buffer, allocator memory, const TimeSeriesType &type,
-                   const TimeSeriesTickDispatch &dispatch)
+    FeedbackTickStream(util::buffer buffer, allocator memory, const TimeSeriesType &type,
+                       const TimeSeriesTickDispatch &dispatch)
         : writer{buffer, memory, dispatch}, reader{std::move(buffer), type, dispatch} {}
 
     TimeSeriesTickWriter writer;
@@ -45,29 +45,29 @@ template <typename SERIES> struct FeedbackSource {
 
     Out<SERIES> output;
     Scalar<Opaque<const TimeSeriesTickDispatch *>> dispatch;
-    State<FeedbackBuffer *> buffer;
+    State<FeedbackTickStream *> stream;
 
     void start(EvaluationContext *context) const {
         auto memory = context->runtime_graph().allocation();
         auto storage = util::buffer::chain(256, memory);
         if (const auto *configured_dispatch = dispatch.value(); configured_dispatch != nullptr) {
-            *buffer = memory.new_object<FeedbackBuffer>(std::move(storage), memory, SERIES::type(),
-                                                        *configured_dispatch);
+            *stream = memory.new_object<FeedbackTickStream>(std::move(storage), memory, SERIES::type(),
+                                                            *configured_dispatch);
         } else {
-            *buffer = memory.new_object<FeedbackBuffer>(std::move(storage), memory, SERIES::type());
+            *stream = memory.new_object<FeedbackTickStream>(std::move(storage), memory, SERIES::type());
         }
     }
 
     void evaluate() const {
-        if ((*buffer)->reader.has_next()) {
-            (*buffer)->reader.replay(output);
+        if ((*stream)->reader.has_next()) {
+            (*stream)->reader.replay(output);
         }
     }
 
     void stop(EvaluationContext *context) const noexcept {
         auto memory = context->runtime_graph().allocation();
-        memory.delete_object(*buffer);
-        *buffer = nullptr;
+        memory.delete_object(*stream);
+        *stream = nullptr;
     }
 };
 
@@ -85,8 +85,8 @@ template <typename SERIES> struct FeedbackSink {
         const auto &compiled_node = context->runtime_graph().compiled_node(context->node_index());
         *source_index = compiled_node.input_node_index(1).value();
         auto source_node = context->runtime_graph().node(*source_index);
-        auto *source_buffer = static_cast<FeedbackBuffer **>(source_node.state());
-        *writer = &(*source_buffer)->writer;
+        auto *source_stream = static_cast<FeedbackTickStream **>(source_node.state());
+        *writer = &(*source_stream)->writer;
     }
 
     void evaluate(EvaluationContext *context) const {
