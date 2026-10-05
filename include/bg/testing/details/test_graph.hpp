@@ -236,7 +236,8 @@ template <typename Function, typename Inputs, std::size_t... Index>
     }
 
     const auto compiled = CompiledGraph{wiring};
-    auto runtime = RuntimeGraph{compiled};
+    auto global_state = GlobalState{};
+    auto runtime = RuntimeGraph{compiled, global_state};
     SimulationEvaluationEngine{}.run(runtime, start_time);
 
     return std::move(captured.values);
@@ -266,7 +267,8 @@ template <std::ranges::contiguous_range... Inputs>
     }
 
     const auto compiled = CompiledGraph{wiring};
-    auto runtime = RuntimeGraph{compiled};
+    auto global_state = GlobalState{};
+    auto runtime = RuntimeGraph{compiled, global_state};
     SimulationEvaluationEngine{}.run(runtime, start_time);
 
     return std::move(captured.values);
@@ -304,7 +306,8 @@ template <std::ranges::contiguous_range... Inputs>
     captured.values.resize(cycle_count);
 
     const auto compiled = CompiledGraph{wiring};
-    auto runtime = RuntimeGraph{compiled};
+    auto global_state = GlobalState{};
+    auto runtime = RuntimeGraph{compiled, global_state};
     SimulationEvaluationEngine{}.run(runtime, start_time);
 
     return std::move(captured.values);

@@ -3,6 +3,7 @@
 #include <bg/allocator.hpp>
 #include <bg/evaluation_time.hpp>
 #include <bg/graph/nested_graph.hpp>
+#include <bg/graph/runtime_graph_evaluator.hpp>
 #include <bg/graph/runtime_graph_owner.hpp>
 #include <bg/scalar/value.hpp>
 #include <bg/util/hash_dictionary.hpp>
@@ -95,7 +96,7 @@ class MapEntries {
     static void inner_graph_timed_schedule_changed(RuntimeGraphOwnerContext &context, void *receiver,
                                                    RuntimeGraphOwnerCallbacks::token_type token,
                                                    std::optional<EvaluationTime> time);
-    static void remove_stopped_entries_callback(void *receiver) noexcept;
+    static void remove_stopped_entries_callback(void *receiver, EvaluationContext &) noexcept;
 
     void queue_removal(Entry &entry, EvaluationContext &context);
     void remove_stopped_entries() noexcept;
@@ -109,6 +110,7 @@ class MapEntries {
     static const RuntimeGraphOwnerCallbacks owner_callbacks;
 
     allocator memory_;
+    RuntimeGraphEvaluator evaluator_;
     Table table_;
     std::pmr::vector<Entry *> schedule_heap_;
     util::index<> ready_;

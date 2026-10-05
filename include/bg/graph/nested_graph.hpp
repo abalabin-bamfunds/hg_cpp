@@ -17,6 +17,7 @@ namespace bg {
 class CompiledGraph;
 class EvaluationContext;
 class RuntimeGraph;
+class RuntimeGraphEvaluator;
 
 struct CompiledNestedGraph {
     std::shared_ptr<const CompiledGraph> graph;
@@ -37,11 +38,11 @@ struct NestedGraphConstantInput {
 // Owns one active inner runtime graph and keeps a stopped instance alive until the next outer cycle.
 class NestedGraph {
   public:
-    void start(const CompiledNestedGraph &compiled, EvaluationContext &context,
+    void start(const CompiledNestedGraph &compiled, RuntimeGraphEvaluator &evaluator, EvaluationContext &context,
                std::span<const NestedGraphInput> inputs);
-    void start(const CompiledNestedGraph &compiled, EvaluationContext &context,
+    void start(const CompiledNestedGraph &compiled, RuntimeGraphEvaluator &evaluator, EvaluationContext &context,
                std::span<const NestedGraphInput> inputs, RuntimeGraphOwner owner);
-    void start(const CompiledNestedGraph &compiled, EvaluationContext &context,
+    void start(const CompiledNestedGraph &compiled, RuntimeGraphEvaluator &evaluator, EvaluationContext &context,
                std::span<const NestedGraphInput> inputs, std::span<const NestedGraphConstantInput> constants,
                RuntimeGraphOwner owner);
     void update_inputs(const CompiledNestedGraph &compiled, std::span<const NestedGraphInput> inputs,
@@ -57,12 +58,12 @@ class NestedGraph {
     Reference output(const CompiledNestedGraph &compiled) const noexcept;
 
   private:
-    static void destroy_retired_callback(void *receiver) noexcept;
-    static void destroy(RuntimeGraph *graph) noexcept;
-    void start(const CompiledNestedGraph &compiled, EvaluationContext &context,
+    static void destroy_retired_callback(void *receiver, EvaluationContext &context) noexcept;
+    static void destroy(RuntimeGraph *graph, EvaluationContext &context) noexcept;
+    void start(const CompiledNestedGraph &compiled, RuntimeGraphEvaluator &evaluator, EvaluationContext &context,
                std::span<const NestedGraphInput> inputs, std::span<const NestedGraphConstantInput> constants,
                const RuntimeGraphOwner *owner);
-    void destroy_retired() noexcept;
+    void destroy_retired(EvaluationContext &context) noexcept;
 
     RuntimeGraph *active_{};
     RuntimeGraph *retired_{};

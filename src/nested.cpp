@@ -7,6 +7,7 @@
 #include <bg/graph/details/graph_wiring_structure.hpp>
 #include <bg/graph/details/nested_graph_context.hpp>
 #include <bg/graph/graph_wiring.hpp>
+#include <bg/graph/runtime_graph_evaluator.hpp>
 #include <bg/node.hpp>
 #include <bg/node/input.hpp>
 #include <bg/node/output.hpp>
@@ -56,6 +57,9 @@ const auto nested_constant_input_node = node<NestedConstantInput>();
 const auto nested_output_node = node<NestedOutput>();
 
 struct NestedNodeState {
+    static constexpr bool supports_byte_copy_initialization = true;
+
+    RuntimeGraphEvaluator evaluator;
     NestedGraph graph;
 };
 
@@ -161,7 +165,7 @@ class NestedNodeDefinition {
             auto startup_context =
                 NestedGraphStartupContext{invocation, invocation.compiled_data(),
                                           invocation.parameter_count() - inherited_count, inherited_count};
-            graph.start(invocation.compiled_data(), startup_context.context(), graph_inputs);
+            graph.start(invocation.compiled_data(), state.evaluator, startup_context.context(), graph_inputs);
         } else {
             graph.update_inputs(invocation.compiled_data(), graph_inputs, invocation.context());
         }

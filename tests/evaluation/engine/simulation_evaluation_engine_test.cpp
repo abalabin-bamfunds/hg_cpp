@@ -63,7 +63,8 @@ TEST_CASE("a simulation evaluation engine runs until timed scheduling is empty",
     }
 
     const auto compiled = bg::CompiledGraph{wiring};
-    auto runtime = bg::RuntimeGraph{compiled};
+    auto runtime_global_state = bg::GlobalState{};
+    auto runtime = bg::RuntimeGraph{compiled, runtime_global_state};
     scheduled_source_definition::evaluation_times.clear();
     scheduled_source_definition::stop_count = 0;
     int_sink_definition::values.clear();
@@ -105,7 +106,8 @@ TEST_CASE("timed scheduling orders requests by evaluation time",
     }
 
     const auto compiled = bg::CompiledGraph{wiring};
-    auto runtime = bg::RuntimeGraph{compiled};
+    auto runtime_global_state = bg::GlobalState{};
+    auto runtime = bg::RuntimeGraph{compiled, runtime_global_state};
     unordered_schedule_definition::evaluation_times.clear();
 
     bg::SimulationEvaluationEngine{}.run(runtime, time(1));

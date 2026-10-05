@@ -262,7 +262,8 @@ void ReferenceProvider::remove_item_notification_record(Reference reference, Run
                                 notify_item_change);
 }
 
-void ReferenceProvider::add_cycle_callback(void *receiver, void (*function)(void *) noexcept) {
+void ReferenceProvider::add_cycle_callback(void *receiver,
+                                           void (*function)(void *, EvaluationContext &) noexcept) {
     owner().add_cycle_callback(receiver, function);
 }
 

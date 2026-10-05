@@ -195,7 +195,8 @@ TEST_CASE("a default binding has no default node for a value consumer",
     CHECK(compiled.node(0).parameters()[0].mode() == bg::ParameterBindingMode::default_value);
     CHECK(sizeof(bg::ParameterBinding) == 8);
 
-    auto runtime = bg::RuntimeGraph{compiled};
+    auto runtime_global_state = bg::GlobalState{};
+    auto runtime = bg::RuntimeGraph{compiled, runtime_global_state};
     runtime.start(time(1));
     runtime.evaluate(time(1));
 
@@ -232,7 +233,8 @@ TEST_CASE("a default binding directly reaches a callable value consumer",
     REQUIRE(compiled.node_count() == 1);
     CHECK(compiled.node(0).parameters()[0].mode() == bg::ParameterBindingMode::default_value);
 
-    auto runtime = bg::RuntimeGraph{compiled};
+    auto runtime_global_state = bg::GlobalState{};
+    auto runtime = bg::RuntimeGraph{compiled, runtime_global_state};
     runtime.start(time(1));
     runtime.evaluate(time(1));
 
@@ -257,7 +259,8 @@ TEST_CASE("a default binding materializes only for a reference consumer",
     const auto compiled = bg::CompiledGraph{wiring};
     REQUIRE(compiled.node_count() == 2);
 
-    auto runtime = bg::RuntimeGraph{compiled};
+    auto runtime_global_state = bg::GlobalState{};
+    auto runtime = bg::RuntimeGraph{compiled, runtime_global_state};
     runtime.start(time(1));
     runtime.evaluate(time(1));
 
@@ -305,7 +308,8 @@ TEST_CASE("a default binding updates its timestamp across source validity change
     }
 
     const auto compiled = bg::CompiledGraph{wiring};
-    auto runtime = bg::RuntimeGraph{compiled};
+    auto runtime_global_state = bg::GlobalState{};
+    auto runtime = bg::RuntimeGraph{compiled, runtime_global_state};
     bg::SimulationEvaluationEngine{}.run(runtime, time(1));
 
     CHECK(default_timeline_sink::values == std::vector<bg::i64>{10, 20, 7, 30});
@@ -331,7 +335,8 @@ TEST_CASE("a default binding publishes equal fallback validity switches",
     }
 
     const auto compiled = bg::CompiledGraph{wiring};
-    auto runtime = bg::RuntimeGraph{compiled};
+    auto runtime_global_state = bg::GlobalState{};
+    auto runtime = bg::RuntimeGraph{compiled, runtime_global_state};
     bg::SimulationEvaluationEngine{}.run(runtime, time(1));
 
     CHECK(default_timeline_sink::values == std::vector<bg::i64>{7, 7, 7});
@@ -358,7 +363,8 @@ TEST_CASE("a reference over a default binding receives fallback updates",
     }
 
     const auto compiled = bg::CompiledGraph{wiring};
-    auto runtime = bg::RuntimeGraph{compiled};
+    auto runtime_global_state = bg::GlobalState{};
+    auto runtime = bg::RuntimeGraph{compiled, runtime_global_state};
     bg::SimulationEvaluationEngine{}.run(runtime, time(1));
 
     CHECK(default_timeline_sink::values == std::vector<bg::i64>{10, 20, 7, 30});
@@ -384,7 +390,8 @@ TEST_CASE("a default binding initializes a reference consumer while its source i
     }
 
     const auto compiled = bg::CompiledGraph{wiring};
-    auto runtime = bg::RuntimeGraph{compiled};
+    auto runtime_global_state = bg::GlobalState{};
+    auto runtime = bg::RuntimeGraph{compiled, runtime_global_state};
     bg::SimulationEvaluationEngine{}.run(runtime, time(1));
 
     CHECK(default_timeline_sink::values == std::vector<bg::i64>{7, 10});
@@ -408,7 +415,8 @@ TEST_CASE("nested defaults preserve the first fallback",
     }
 
     const auto compiled = bg::CompiledGraph{wiring};
-    auto runtime = bg::RuntimeGraph{compiled};
+    auto runtime_global_state = bg::GlobalState{};
+    auto runtime = bg::RuntimeGraph{compiled, runtime_global_state};
     bg::SimulationEvaluationEngine{}.run(runtime, time(1));
 
     CHECK(default_timeline_sink::values == std::vector<bg::i64>{7, 10});

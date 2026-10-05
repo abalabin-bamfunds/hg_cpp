@@ -442,7 +442,7 @@ class MeshRuntimeState {
         dependency_unlink_pending_ = true;
     }
 
-    static void unlink_stopped_dependencies_callback(void *receiver) noexcept {
+    static void unlink_stopped_dependencies_callback(void *receiver, EvaluationContext &) noexcept {
         static_cast<MeshRuntimeState *>(receiver)->unlink_stopped_dependencies();
     }
 

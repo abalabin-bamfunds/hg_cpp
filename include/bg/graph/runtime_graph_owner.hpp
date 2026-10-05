@@ -13,15 +13,13 @@ class RuntimeGraph;
 // Gives a nested graph owner access to the owning node's scheduling operations.
 class RuntimeGraphOwnerContext {
   public:
+    RuntimeGraphOwnerContext(RuntimeGraph &graph, std::size_t node_index) noexcept
+        : graph_{&graph}, node_index_{node_index} {}
+
     ScheduleHandle schedule_at(EvaluationTime time) const;
     void cancel(ScheduleHandle handle) const noexcept;
 
   private:
-    friend RuntimeGraph;
-
-    RuntimeGraphOwnerContext(RuntimeGraph &graph, std::size_t node_index) noexcept
-        : graph_{&graph}, node_index_{node_index} {}
-
     RuntimeGraph *graph_;
     std::size_t node_index_;
 };

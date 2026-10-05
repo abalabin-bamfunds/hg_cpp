@@ -107,7 +107,8 @@ TEST_CASE("reference provider access preserves lazy allocation",
     }
 
     const auto compiled = bg::CompiledGraph{wiring};
-    auto runtime = bg::RuntimeGraph{compiled};
+    auto runtime_global_state = bg::GlobalState{};
+    auto runtime = bg::RuntimeGraph{compiled, runtime_global_state};
     runtime.start(bg::MIN_DT + std::chrono::microseconds{1});
     runtime.evaluate(bg::MIN_DT + std::chrono::microseconds{2});
 
@@ -130,8 +131,10 @@ TEST_CASE("a dynamic input callback crosses a graph boundary immediately",
           "[evaluation][reference][feature:reference][shape:multiple][transition:update]") {
     auto wiring = bg::GraphWiring{};
     const auto compiled = bg::CompiledGraph{wiring};
-    auto source = bg::RuntimeGraph{compiled};
-    auto receiver = bg::RuntimeGraph{compiled};
+    auto source_global_state = bg::GlobalState{};
+    auto source = bg::RuntimeGraph{compiled, source_global_state};
+    auto receiver_global_state = bg::GlobalState{};
+    auto receiver = bg::RuntimeGraph{compiled, receiver_global_state};
     const auto start_time = bg::MIN_DT + std::chrono::microseconds{1};
     const auto update_time = start_time + std::chrono::microseconds{1};
     source.start(start_time);
@@ -171,7 +174,8 @@ TEST_CASE("a second root subscriber promotes inline storage",
           "[binding:value-to-reference][binding:reference-to-value][shape:fan-out]") {
     auto wiring = bg::GraphWiring{};
     const auto compiled = bg::CompiledGraph{wiring};
-    auto runtime = bg::RuntimeGraph{compiled};
+    auto runtime_global_state = bg::GlobalState{};
+    auto runtime = bg::RuntimeGraph{compiled, runtime_global_state};
     auto root = bg::details::RootReference{};
     root.owner_graph = &runtime;
     const auto reference = bg::Reference{&root};

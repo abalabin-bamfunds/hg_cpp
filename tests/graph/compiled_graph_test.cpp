@@ -356,7 +356,8 @@ TEST_CASE("a compiled graph owns an opaque scalar copy", "[compiled_graph][featu
     const bg::CompiledGraph graph{wiring};
     const auto *stored_pointer = static_cast<private_data *const *>(graph.node(0).parameters()[0].scalar_data());
     const auto *stored_object = static_cast<const private_data *>(graph.node(0).parameters()[1].scalar_data());
-    bg::RuntimeGraph runtime{graph};
+    auto runtime_global_state = bg::GlobalState{};
+    bg::RuntimeGraph runtime{graph, runtime_global_state};
 
     opaque_sink_definition::observed = nullptr;
     opaque_sink_definition::observed_value = 0;

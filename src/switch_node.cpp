@@ -7,6 +7,7 @@
 #include <bg/graph/details/nested_graph_context.hpp>
 #include <bg/graph/graph_wiring.hpp>
 #include <bg/graph/runtime_graph.hpp>
+#include <bg/graph/runtime_graph_evaluator.hpp>
 #include <bg/node/node_invocation.hpp>
 #include <bg/node/runtime_signature_node_template.hpp>
 #include <bg/time_series/ref/ref_input.hpp>
@@ -124,6 +125,9 @@ struct SwitchSelection {
 };
 
 struct SwitchNodeState {
+    static constexpr bool supports_byte_copy_initialization = true;
+
+    RuntimeGraphEvaluator evaluator;
     NestedGraph graph;
     ScheduleHandle outer_schedule{};
     std::optional<EvaluationTime> scheduled_time;
@@ -399,7 +403,7 @@ class SwitchNodeDefinition {
         };
         const auto inherited_start = branch.inherited_parameter_start.value_or(invocation.parameter_count());
         auto startup_context = NestedGraphStartupContext{invocation, branch.nested, inherited_start, inherited_count};
-        state.graph.start(branch.nested, startup_context.context(),
+        state.graph.start(branch.nested, state.evaluator, startup_context.context(),
                           std::span<NestedGraphInput>{inputs, branch.inputs.size()}, {}, owner);
         state.active_selection = selection;
     }

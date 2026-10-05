@@ -266,7 +266,7 @@ class DereferencedTimeSeriesDictionaryRepresentation final : public ReferenceRep
         destroy_sample.release();
     }
 
-    static void clear_samples_callback(void *value) noexcept {
+    static void clear_samples_callback(void *value, EvaluationContext &) noexcept {
         static_cast<DereferencedTimeSeriesDictionaryRepresentation *>(value)->clear_samples();
     }
 

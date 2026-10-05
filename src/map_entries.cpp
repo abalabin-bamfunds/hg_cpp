@@ -29,7 +29,7 @@ void MapEntries::start(Entry &entry, const CompiledNestedGraph &compiled, Evalua
 void MapEntries::start(Entry &entry, const CompiledNestedGraph &compiled, EvaluationContext &context,
                        std::span<const NestedGraphInput> inputs, std::span<const NestedGraphConstantInput> constants,
                        RuntimeGraphOwner owner) {
-    entry.inner_graph.start(compiled, context, inputs, constants, owner);
+    entry.inner_graph.start(compiled, evaluator_, context, inputs, constants, owner);
     mark_ready(entry);
 }
 
@@ -106,7 +106,7 @@ void MapEntries::queue_removal(Entry &entry, EvaluationContext &context) {
     branches_pending_removal_.push_back(entry.branch_id);
 }
 
-void MapEntries::remove_stopped_entries_callback(void *receiver) noexcept {
+void MapEntries::remove_stopped_entries_callback(void *receiver, EvaluationContext &) noexcept {
     static_cast<MapEntries *>(receiver)->remove_stopped_entries();
 }
 

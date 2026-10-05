@@ -25,11 +25,12 @@ void SimulationEvaluationEngine::run(RuntimeGraph &runtime_graph, EvaluationTime
     auto scratch = details::EvaluationScratch{runtime_graph.allocation().memory_resource()};
     auto wall_clock = SimulationWallClock{};
     wall_clock.set_time(start_time);
-    auto start_context = EvaluationContext{start_time, runtime_graph, scratch, wall_clock};
+    auto start_context =
+        EvaluationContext{start_time, runtime_graph, runtime_graph.global_state(), scratch, wall_clock};
     runtime_graph.start(start_context);
 
     const auto evaluate = [&](EvaluationTime time) {
-        auto context = EvaluationContext{time, runtime_graph, scratch, wall_clock};
+        auto context = EvaluationContext{time, runtime_graph, runtime_graph.global_state(), scratch, wall_clock};
         if (!runtime_graph.evaluate(context)) {
             throw std::logic_error{"a pending evaluation escaped the outer graph"};
         }
@@ -42,7 +43,7 @@ void SimulationEvaluationEngine::run(RuntimeGraph &runtime_graph, EvaluationTime
     }
 
     const auto stop_time = runtime_graph.evaluation_time();
-    auto stop_context = EvaluationContext{stop_time, runtime_graph, scratch, wall_clock};
+    auto stop_context = EvaluationContext{stop_time, runtime_graph, runtime_graph.global_state(), scratch, wall_clock};
     runtime_graph.stop(stop_context);
 }
 

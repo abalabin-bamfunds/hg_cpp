@@ -28,6 +28,34 @@ struct LifecycleIncrement {
     inline static int stops{};
 };
 
+struct FinalizingInner {
+    bg::In<bg::TS<std::int64_t>> input;
+    bg::State<int> marker;
+    bg::Out<bg::TS<std::int64_t>> output;
+
+    void start(bg::EvaluationContext *context) const noexcept {
+        *marker = 1;
+        if (global_state == nullptr) {
+            global_state = &context->global_state();
+        }
+    }
+
+    void evaluate() const { output.set(*input); }
+
+    void finalize(bg::EvaluationContext *context) const noexcept {
+        if (finalization_count < finalization_times.size()) {
+            finalization_times[finalization_count] = context->evaluation_time();
+            correct_state[finalization_count] = *marker == 1 && &context->global_state() == global_state;
+        }
+        ++finalization_count;
+    }
+
+    inline static bg::GlobalState *global_state{};
+    inline static std::array<bg::EvaluationTime, 2> finalization_times{};
+    inline static std::array<bool, 2> correct_state{};
+    inline static std::size_t finalization_count{};
+};
+
 struct NestedTransitionSink {
     bg::In<bg::TS<std::int64_t>, bg::optional> input;
     bg::Out<bg::TS<std::int64_t>> output;
@@ -64,6 +92,28 @@ TEST_CASE("a nested graph can be stopped and started repeatedly",
     CHECK(actual.equals({2, std::nullopt, 4, std::nullopt, 6}));
     CHECK(LifecycleIncrement::starts == 3);
     CHECK(LifecycleIncrement::stops == 3);
+}
+
+TEST_CASE("inner graph finalization uses the outer cycle's global state",
+          "[evaluation][nested][lifecycle][feature:finalization][transition:removal]") {
+    const auto finalizing = bg::node<FinalizingInner>();
+    const auto inner = bg::graph("name"_n = "finalizing_inner", [&](bg::wp<bg::TS<std::int64_t>> input) {
+        return finalizing(input);
+    });
+    const auto outer = [&](bg::wp<bg::TS<std::int64_t>> input, bg::wp<bg::TS<bool>> run) {
+        return bg::nested(inner, run, input);
+    };
+    FinalizingInner::global_state = nullptr;
+    FinalizingInner::finalization_count = 0;
+
+    const auto actual = bg::testing::test_graph(outer, std::array{1, 2, 3, 4},
+                                                 std::array{true, false, false, true});
+
+    CHECK(actual.equals({1, std::nullopt, std::nullopt, 4}));
+    CHECK(FinalizingInner::finalization_count == 2);
+    CHECK(FinalizingInner::finalization_times == std::array{bg::MIN_DT + std::chrono::microseconds{3},
+                                                           bg::MIN_DT + std::chrono::microseconds{4}});
+    CHECK(FinalizingInner::correct_state == std::array{true, true});
 }
 
 TEST_CASE("a nested boundary samples an existing valid input when it starts",

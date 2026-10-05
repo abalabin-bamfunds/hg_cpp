@@ -38,7 +38,8 @@ void run_graph(Function &&function, GlobalState *global_state, const ServiceCata
         return;
     }
 
-    auto runtime = RuntimeGraph{compiled};
+    auto local_state = GlobalState{};
+    auto runtime = RuntimeGraph{compiled, local_state};
     SimulationEvaluationEngine{}.run(runtime, evaluation_time);
 }
 

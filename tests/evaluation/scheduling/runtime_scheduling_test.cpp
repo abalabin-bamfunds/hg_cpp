@@ -57,7 +57,8 @@ TEST_CASE("a runtime graph evaluates scheduled nodes in topological order",
     }
 
     const bg::CompiledGraph compiled{wiring};
-    bg::RuntimeGraph runtime{compiled};
+    auto runtime_global_state = bg::GlobalState{};
+    bg::RuntimeGraph runtime{compiled, runtime_global_state};
     add_definition::evaluation_count = 0;
 
     runtime.start(time(1));
@@ -153,7 +154,8 @@ TEST_CASE("a scheduled node can omit evaluation",
     }
 
     const auto compiled = bg::CompiledGraph{wiring};
-    auto runtime = bg::RuntimeGraph{compiled};
+    auto runtime_global_state = bg::GlobalState{};
+    auto runtime = bg::RuntimeGraph{compiled, runtime_global_state};
     start_only_sink_definition::evaluation_count = 0;
     start_only_sink_definition::last_value = 0.0F;
 
@@ -191,7 +193,8 @@ TEST_CASE("a node can request evaluation in the first cycle",
     }
 
     const auto compiled = bg::CompiledGraph{wiring};
-    auto runtime = bg::RuntimeGraph{compiled};
+    auto runtime_global_state = bg::GlobalState{};
+    auto runtime = bg::RuntimeGraph{compiled, runtime_global_state};
     initially_scheduled_source_definition::evaluation_count = 0;
     initially_scheduled_scalar_definition::evaluation_count = 0;
     initial_value_sink_definition::last_value = 0.0F;
@@ -215,7 +218,8 @@ TEST_CASE("a scalar-only node is inert unless it requests initial evaluation",
     }
 
     const auto compiled = bg::CompiledGraph{wiring};
-    auto runtime = bg::RuntimeGraph{compiled};
+    auto runtime_global_state = bg::GlobalState{};
+    auto runtime = bg::RuntimeGraph{compiled, runtime_global_state};
     inert_scalar_definition::evaluation_count = 0;
 
     runtime.start(time(1));
@@ -253,7 +257,8 @@ TEST_CASE("a runtime graph processes set scheduling bits in node order",
     }
 
     const bg::CompiledGraph compiled{wiring};
-    bg::RuntimeGraph runtime{compiled};
+    auto runtime_global_state = bg::GlobalState{};
+    bg::RuntimeGraph runtime{compiled, runtime_global_state};
     indexed_definition::evaluation_count = 0;
 
     runtime.start(time(1));
@@ -301,7 +306,8 @@ TEST_CASE("scheduling during evaluation crosses a scheduling block boundary",
     }
 
     const bg::CompiledGraph compiled{wiring};
-    bg::RuntimeGraph runtime{compiled};
+    auto runtime_global_state = bg::GlobalState{};
+    bg::RuntimeGraph runtime{compiled, runtime_global_state};
     float_sink_definition::evaluation_count = 0;
     float_sink_definition::last_value = 0.0F;
 
@@ -324,7 +330,8 @@ TEST_CASE("evaluation time must increase between outer cycles",
     }
 
     const bg::CompiledGraph compiled{wiring};
-    bg::RuntimeGraph runtime{compiled};
+    auto runtime_global_state = bg::GlobalState{};
+    bg::RuntimeGraph runtime{compiled, runtime_global_state};
     runtime.start(time(1));
     runtime.evaluate(time(1));
 

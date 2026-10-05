@@ -208,7 +208,8 @@ struct measurement {
 [[nodiscard]] measurement measure(bg::GraphWiring &wiring, std::size_t invocation_size, std::size_t warmup_cycles,
                                   std::size_t measured_cycles) {
     const auto compiled = bg::CompiledGraph{wiring};
-    auto runtime = bg::RuntimeGraph{compiled};
+    auto global_state = bg::GlobalState{};
+    auto runtime = bg::RuntimeGraph{compiled, global_state};
     auto evaluation_time = bg::MIN_DT + bg::EvaluationTime::duration{1};
     runtime.start(evaluation_time);
 

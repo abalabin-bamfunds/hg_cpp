@@ -1,6 +1,6 @@
 # Inner graph owner scheduling
 
-Status: accepted
+Status: superseded by [Shared runtime graph evaluator](0030-shared-runtime-graph-evaluator.md)
 
 ## Context
 

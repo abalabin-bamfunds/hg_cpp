@@ -2,28 +2,31 @@
 
 #include <bg/evaluation_context.hpp>
 #include <bg/graph/runtime_graph.hpp>
+#include <bg/graph/runtime_graph_evaluator.hpp>
 #include <bg/util/scope_exit.hpp>
 
 #include <stdexcept>
 
 namespace bg {
 
-void NestedGraph::start(const CompiledNestedGraph &compiled, EvaluationContext &context,
-                        std::span<const NestedGraphInput> inputs) {
-    start(compiled, context, inputs, {}, nullptr);
+void NestedGraph::start(const CompiledNestedGraph &compiled, RuntimeGraphEvaluator &evaluator,
+                        EvaluationContext &context, std::span<const NestedGraphInput> inputs) {
+    start(compiled, evaluator, context, inputs, {}, nullptr);
 }
 
-void NestedGraph::start(const CompiledNestedGraph &compiled, EvaluationContext &context,
-                        std::span<const NestedGraphInput> inputs, RuntimeGraphOwner owner) {
+void NestedGraph::start(const CompiledNestedGraph &compiled, RuntimeGraphEvaluator &evaluator,
+                        EvaluationContext &context, std::span<const NestedGraphInput> inputs,
+                        RuntimeGraphOwner owner) {
     if (owner.callbacks == nullptr || owner.callbacks->inner_scheduled == nullptr ||
         owner.callbacks->timed_schedule_changed == nullptr) {
         throw std::invalid_argument{"a runtime graph owner requires scheduling callbacks"};
     }
 
-    start(compiled, context, inputs, {}, &owner);
+    start(compiled, evaluator, context, inputs, {}, &owner);
 }
 
-void NestedGraph::start(const CompiledNestedGraph &compiled, EvaluationContext &context,
+void NestedGraph::start(const CompiledNestedGraph &compiled, RuntimeGraphEvaluator &evaluator,
+                        EvaluationContext &context,
                         std::span<const NestedGraphInput> inputs, std::span<const NestedGraphConstantInput> constants,
                         RuntimeGraphOwner owner) {
     if (owner.callbacks == nullptr || owner.callbacks->inner_scheduled == nullptr ||
@@ -31,10 +34,11 @@ void NestedGraph::start(const CompiledNestedGraph &compiled, EvaluationContext &
         throw std::invalid_argument{"a runtime graph owner requires scheduling callbacks"};
     }
 
-    start(compiled, context, inputs, constants, &owner);
+    start(compiled, evaluator, context, inputs, constants, &owner);
 }
 
-void NestedGraph::start(const CompiledNestedGraph &compiled, EvaluationContext &context,
+void NestedGraph::start(const CompiledNestedGraph &compiled, RuntimeGraphEvaluator &evaluator,
+                        EvaluationContext &context,
                         std::span<const NestedGraphInput> inputs, std::span<const NestedGraphConstantInput> constants,
                         const RuntimeGraphOwner *owner) {
     if (active_ != nullptr) {
@@ -48,17 +52,18 @@ void NestedGraph::start(const CompiledNestedGraph &compiled, EvaluationContext &
     }
 
     auto &parent = context.runtime_graph();
-    active_ = parent.allocation().new_object<RuntimeGraph>(*compiled.graph, parent.allocation(), parent.global_state());
+    if (owner == nullptr) {
+        evaluator.set_owner(parent, context.node_index());
+    } else {
+        evaluator.set_owner(parent, context.node_index(), *owner);
+    }
+
+    active_ = parent.allocation().new_object<RuntimeGraph>(*compiled.graph, parent.allocation(), evaluator,
+                                                            owner == nullptr ? 0 : owner->token);
     auto rollback = util::scope_exit{[&]() noexcept {
-        active_->clear_owner();
-        destroy(active_);
+        destroy(active_, context);
         active_ = nullptr;
     }};
-    if (owner == nullptr) {
-        active_->set_owner(parent, context.node_index());
-    } else {
-        active_->set_owner(parent, context.node_index(), *owner);
-    }
     active_->set_owner_scheduling_suppressed(true);
 
     update_inputs(compiled, inputs, context);
@@ -122,7 +127,6 @@ void NestedGraph::stop(EvaluationContext &context) {
     active_->set_owner_scheduling_suppressed(true);
     active_->stop(context);
     active_->set_owner_scheduling_suppressed(false);
-    active_->clear_owner();
     retired_ = active_;
     active_ = nullptr;
 }
@@ -140,20 +144,21 @@ Reference NestedGraph::output(const CompiledNestedGraph &compiled) const noexcep
     return *static_cast<Reference *>(node.output_value());
 }
 
-void NestedGraph::destroy_retired_callback(void *receiver) noexcept {
-    static_cast<NestedGraph *>(receiver)->destroy_retired();
+void NestedGraph::destroy_retired_callback(void *receiver, EvaluationContext &context) noexcept {
+    static_cast<NestedGraph *>(receiver)->destroy_retired(context);
 }
 
-void NestedGraph::destroy(RuntimeGraph *graph) noexcept {
+void NestedGraph::destroy(RuntimeGraph *graph, EvaluationContext &context) noexcept {
     if (graph == nullptr) {
         return;
     }
 
+    graph->finalize(context);
     graph->allocation().delete_object(graph);
 }
 
-void NestedGraph::destroy_retired() noexcept {
-    destroy(retired_);
+void NestedGraph::destroy_retired(EvaluationContext &context) noexcept {
+    destroy(retired_, context);
     retired_ = nullptr;
 }
 
@@ -161,12 +166,11 @@ void NestedGraph::stop_and_destroy(EvaluationContext &context) noexcept {
     if (active_ != nullptr) {
         active_->set_owner_scheduling_suppressed(true);
         active_->stop(context);
-        active_->clear_owner();
-        destroy(active_);
+        destroy(active_, context);
         active_ = nullptr;
     }
 
-    destroy_retired();
+    destroy_retired(context);
 }
 
 } // namespace bg

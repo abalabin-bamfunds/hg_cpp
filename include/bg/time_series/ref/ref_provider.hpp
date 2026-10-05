@@ -148,7 +148,7 @@ class ReferenceProvider {
     void cancel_item_notification_batch() noexcept;
     void publish_item_notification_batch(OutputChangeContext &context);
 
-    void add_cycle_callback(void *receiver, void (*function)(void *) noexcept);
+    void add_cycle_callback(void *receiver, void (*function)(void *, EvaluationContext &) noexcept);
     void remove_cycle_callback(const void *receiver) noexcept;
 
     bool item_reference_has_subscribers(const ItemReference &reference) const noexcept;

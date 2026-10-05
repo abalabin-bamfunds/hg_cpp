@@ -1,6 +1,7 @@
 #include <bg/graph/compiled_graph.hpp>
 #include <bg/graph/graph_wiring.hpp>
 #include <bg/graph/runtime_graph.hpp>
+#include <bg/graph/runtime_graph_evaluator.hpp>
 #include <bg/graph/runtime_graph_owner.hpp>
 #include <bg/graph/wiring_context.hpp>
 #include <bg/node.hpp>
@@ -151,36 +152,34 @@ bg::CompiledGraph make_inner_graph(int delay) {
     return bg::CompiledGraph{wiring};
 }
 
-void set_owner(bg::RuntimeGraph &inner, bg::RuntimeGraph &outer, InnerGraphOwner &owner, std::size_t token) {
-    inner.set_owner(
-        outer, 0, bg::RuntimeGraphOwner{.receiver = &owner, .token = token, .callbacks = &owner.callbacks});
-}
-
 } // namespace
 
 TEST_CASE("multiple inner graphs identify immediate scheduling to their owner",
           "[evaluation][nested][scheduling][feature:nested-graph][shape:nested]") {
     const auto outer_compiled = make_owner_graph();
     const auto inner_compiled = make_inner_graph(0);
-    auto outer = bg::RuntimeGraph{outer_compiled};
-    auto first = bg::RuntimeGraph{inner_compiled, outer.allocation(), outer.global_state()};
-    auto second = bg::RuntimeGraph{inner_compiled, outer.allocation(), outer.global_state()};
+    auto outer_global_state = bg::GlobalState{};
+    auto outer = bg::RuntimeGraph{outer_compiled, outer_global_state};
     auto owner = InnerGraphOwner{};
+    auto evaluator = bg::RuntimeGraphEvaluator{};
+    evaluator.set_owner(outer, 0, {.receiver = &owner, .token = 0, .callbacks = &owner.callbacks});
+    auto first = bg::RuntimeGraph{inner_compiled, outer.allocation(), evaluator, 7};
+    auto second = bg::RuntimeGraph{inner_compiled, outer.allocation(), evaluator, 11};
     OwnerNode::owner = &owner;
-    set_owner(first, outer, owner, 7);
-    set_owner(second, outer, owner, 11);
 
     outer.start(time(1));
-    first.start(time(1));
-    second.start(time(1));
+    first.start(time(1), outer_global_state);
+    second.start(time(1), outer_global_state);
     second.schedule(0);
     first.schedule(0);
     outer.evaluate(time(1));
 
     CHECK(owner.evaluated_immediate() == std::vector<std::size_t>{11, 7});
 
-    first.stop();
-    second.stop();
+    first.stop(outer_global_state);
+    second.stop(outer_global_state);
+    first.finalize(outer_global_state);
+    second.finalize(outer_global_state);
     outer.stop();
 }
 
@@ -189,17 +188,18 @@ TEST_CASE("multiple inner graphs report scheduled-time changes without an owner 
     const auto outer_compiled = make_owner_graph();
     const auto first_compiled = make_inner_graph(2);
     const auto second_compiled = make_inner_graph(4);
-    auto outer = bg::RuntimeGraph{outer_compiled};
-    auto first = bg::RuntimeGraph{first_compiled, outer.allocation(), outer.global_state()};
-    auto second = bg::RuntimeGraph{second_compiled, outer.allocation(), outer.global_state()};
+    auto outer_global_state = bg::GlobalState{};
+    auto outer = bg::RuntimeGraph{outer_compiled, outer_global_state};
     auto owner = InnerGraphOwner{};
+    auto evaluator = bg::RuntimeGraphEvaluator{};
+    evaluator.set_owner(outer, 0, {.receiver = &owner, .token = 0, .callbacks = &owner.callbacks});
+    auto first = bg::RuntimeGraph{first_compiled, outer.allocation(), evaluator, 7};
+    auto second = bg::RuntimeGraph{second_compiled, outer.allocation(), evaluator, 11};
     OwnerNode::owner = &owner;
-    set_owner(first, outer, owner, 7);
-    set_owner(second, outer, owner, 11);
 
     outer.start(time(1));
-    first.start(time(1));
-    second.start(time(1));
+    first.start(time(1), outer_global_state);
+    second.start(time(1), outer_global_state);
     REQUIRE(outer.next_scheduled_time() == time(3));
 
     outer.evaluate(time(3));
@@ -210,8 +210,10 @@ TEST_CASE("multiple inner graphs report scheduled-time changes without an owner 
     CHECK(owner.evaluated_tokens() == std::vector<std::size_t>{7, 11});
     CHECK_FALSE(outer.next_scheduled_time());
 
-    first.stop();
-    second.stop();
+    first.stop(outer_global_state);
+    second.stop(outer_global_state);
+    first.finalize(outer_global_state);
+    second.finalize(outer_global_state);
     outer.stop();
 }
 
@@ -221,25 +223,28 @@ TEST_CASE("stopping one inner graph removes only its scheduled time",
     const auto outer_compiled = make_owner_graph();
     const auto first_compiled = make_inner_graph(2);
     const auto second_compiled = make_inner_graph(4);
-    auto outer = bg::RuntimeGraph{outer_compiled};
-    auto first = bg::RuntimeGraph{first_compiled, outer.allocation(), outer.global_state()};
-    auto second = bg::RuntimeGraph{second_compiled, outer.allocation(), outer.global_state()};
+    auto outer_global_state = bg::GlobalState{};
+    auto outer = bg::RuntimeGraph{outer_compiled, outer_global_state};
     auto owner = InnerGraphOwner{};
+    auto evaluator = bg::RuntimeGraphEvaluator{};
+    evaluator.set_owner(outer, 0, {.receiver = &owner, .token = 0, .callbacks = &owner.callbacks});
+    auto first = bg::RuntimeGraph{first_compiled, outer.allocation(), evaluator, 7};
+    auto second = bg::RuntimeGraph{second_compiled, outer.allocation(), evaluator, 11};
     OwnerNode::owner = &owner;
-    set_owner(first, outer, owner, 7);
-    set_owner(second, outer, owner, 11);
 
     outer.start(time(1));
-    first.start(time(1));
-    second.start(time(1));
+    first.start(time(1), outer_global_state);
+    second.start(time(1), outer_global_state);
     REQUIRE(outer.next_scheduled_time() == time(3));
 
-    first.stop();
+    first.stop(outer_global_state);
     REQUIRE(outer.next_scheduled_time() == time(5));
     outer.evaluate(time(5));
 
     CHECK(owner.evaluated_tokens() == std::vector<std::size_t>{11});
 
-    second.stop();
+    second.stop(outer_global_state);
+    first.finalize(outer_global_state);
+    second.finalize(outer_global_state);
     outer.stop();
 }
