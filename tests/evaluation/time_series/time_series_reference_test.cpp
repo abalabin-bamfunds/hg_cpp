@@ -126,6 +126,46 @@ TEST_CASE("reference provider access preserves lazy allocation",
     runtime.stop();
 }
 
+TEST_CASE("a dynamic input callback crosses a graph boundary immediately",
+          "[evaluation][reference][feature:reference][shape:multiple][transition:update]") {
+    auto wiring = bg::GraphWiring{};
+    const auto compiled = bg::CompiledGraph{wiring};
+    auto source = bg::RuntimeGraph{compiled};
+    auto receiver = bg::RuntimeGraph{compiled};
+    const auto start_time = bg::MIN_DT + std::chrono::microseconds{1};
+    const auto update_time = start_time + std::chrono::microseconds{1};
+    source.start(start_time);
+    receiver.start(start_time);
+    source.evaluate(update_time);
+
+    struct CallbackResult {
+        bg::RuntimeGraph *graph{};
+        bg::EvaluationTime time{bg::MIN_DT};
+        bg::OutputChange change{};
+        int calls{};
+    } result;
+
+    auto *subscribers = static_cast<bg::details::DynamicSubscribers *>(nullptr);
+    auto &subscription = bg::details::DynamicSubscribers::ensure(subscribers, source.allocation());
+    subscription.add(
+        receiver, 0, reinterpret_cast<std::size_t>(&result), 0, false, false,
+        [](bg::OutputChangeContext &context, std::size_t, std::size_t data, bg::OutputChange change) {
+            auto &result = *reinterpret_cast<CallbackResult *>(data);
+            result.graph = &context.runtime_graph();
+            result.time = context.evaluation_time();
+            result.change = change;
+            ++result.calls;
+        });
+
+    source.notify_dynamic_subscribers(subscription, bg::OutputChange::update);
+
+    CHECK(result.graph == &receiver);
+    CHECK(result.time == update_time);
+    CHECK(result.change == bg::OutputChange::update);
+    CHECK(result.calls == 1);
+    bg::details::DynamicSubscribers::release(subscribers);
+}
+
 TEST_CASE("a second root subscriber promotes inline storage",
           "[evaluation][reference][feature:reference][series:value][scalar:integer]"
           "[binding:value-to-reference][binding:reference-to-value][shape:fan-out]") {

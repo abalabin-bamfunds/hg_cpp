@@ -1,6 +1,6 @@
 # Cross-graph input notification delivery
 
-Status: accepted
+Status: superseded by [immediate dynamic input callbacks](0029-immediate-dynamic-input-callbacks.md)
 
 ## Context
 

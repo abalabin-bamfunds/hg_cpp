@@ -219,20 +219,6 @@ class ServiceBindingContext {
     std::optional<EvaluationContext> context_;
 };
 
-struct RuntimeGraph::PendingInputNotifications {
-    // A target graph applies cross-graph input reactions after entering the source's outer cycle.
-    struct Record {
-        InputNotificationFunction function;
-        std::size_t node_index;
-        std::size_t data;
-        OutputChange change;
-    };
-
-    explicit PendingInputNotifications(allocator memory) : records{&memory.memory_resource()} {}
-
-    std::pmr::vector<Record> records;
-};
-
 class RuntimeGraph::ScheduledNodes {
     // Iterates evaluation and validity requests together in node order. A scheduling block remains live until all
     // requests added while that block is current have been returned.
@@ -501,10 +487,6 @@ RuntimeGraph::~RuntimeGraph() {
 
     if (compiled_graph_->has_cycle_callbacks() && cycle_callbacks() != nullptr) {
         allocator_.delete_object(cycle_callbacks());
-    }
-
-    if (pending_input_notifications_ != nullptr) {
-        allocator_.delete_object(pending_input_notifications_);
     }
 
     if (storage_ != nullptr) {
@@ -809,14 +791,8 @@ void RuntimeGraph::notify_dynamic_subscribers(details::DynamicSubscribers &subsc
 
     const auto notification_context = OutputChangeContext{*this};
     subscribers.for_each_input_subscriber([&](const auto &subscriber) {
-        // A graph that has entered this outer cycle has already run deferred cleanup and can apply the callback now.
-        if (subscriber.graph == this || subscriber.graph->last_evaluation_time_ == evaluation_time_) {
-            auto context = notification_context.for_graph(*subscriber.graph);
-            subscriber.function(context, subscriber.node_index, subscriber.data, change);
-            return;
-        }
-
-        subscriber.graph->queue_input_notification(subscriber.function, subscriber.node_index, subscriber.data, change);
+        auto context = notification_context.for_graph(*subscriber.graph);
+        subscriber.function(context, subscriber.node_index, subscriber.data, change);
     });
 
     subscribers.for_each_observer([&](const auto &observer) {
@@ -829,29 +805,6 @@ bool RuntimeGraph::dynamic_input_active(std::uint32_t input_offset) const noexce
     // Compilation places the dynamic activity byte directly after the reference input storage.
     const auto activity_offset = input_offset + sizeof(ReferenceInputStorage);
     return *reinterpret_cast<const bool *>(storage_ + activity_offset);
-}
-
-void RuntimeGraph::queue_input_notification(InputNotificationFunction function, std::size_t node_index,
-                                            std::size_t data, OutputChange change) {
-    if (pending_input_notifications_ == nullptr) {
-        pending_input_notifications_ = allocator_.new_object<PendingInputNotifications>(allocator_);
-    }
-
-    pending_input_notifications_->records.push_back({function, node_index, data, change});
-    notify_owner_scheduled();
-}
-
-void RuntimeGraph::run_input_notifications() {
-    if (pending_input_notifications_ == nullptr || pending_input_notifications_->records.empty()) {
-        return;
-    }
-
-    auto records = std::move(pending_input_notifications_->records);
-    pending_input_notifications_->records.clear();
-    auto context = OutputChangeContext{*this};
-    for (const auto &record : records) {
-        record.function(context, record.node_index, record.data, record.change);
-    }
 }
 
 void RuntimeGraph::apply_invalidation(const CompiledNode &node, std::size_t node_index,
@@ -1082,7 +1035,6 @@ bool RuntimeGraph::evaluate(EvaluationContext &parent_context) {
         run_cycle_callbacks();
         last_evaluation_time_ = evaluation_time;
         evaluation_time_ = evaluation_time;
-        run_input_notifications();
         activate_scheduled(evaluation_time);
     } else if (evaluation_time != evaluation_time_) {
         throw std::invalid_argument{"a paused runtime graph must resume in the same outer cycle"};

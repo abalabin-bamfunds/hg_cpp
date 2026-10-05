@@ -139,11 +139,9 @@ A reference notification notifies its dynamic subscribers directly. Subscriber
 records retain the destination graph. A runtime observer uses that graph's
 context and the notification's outer-cycle time.
 
-A dynamic input callback runs immediately when its receiving graph has entered
-the current outer cycle. Otherwise, the receiving graph queues it until cycle
-entry. This ensures that deferred cleanup runs before a callback accesses that
-graph while preserving same-cycle changes from an inner graph to its outer
-graph.
+A dynamic input callback runs immediately. Deferred cleanup runs once at outer
+cycle entry before any inner graph can publish a change, so callback delivery
+does not depend on whether the receiving inner graph has evaluated.
 
 When a reference changes target:
 

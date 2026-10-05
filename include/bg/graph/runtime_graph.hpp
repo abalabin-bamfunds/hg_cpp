@@ -91,7 +91,6 @@ class RuntimeGraph {
     class CycleCallbacks;
     class ScratchUse;
     class OutputChangePublisher;
-    struct PendingInputNotifications;
 
     auto scheduling_info() noexcept -> std::span<SchedulingInfo>;
     void initialize_storage();
@@ -114,9 +113,6 @@ class RuntimeGraph {
     void notify_node_subscriber(std::size_t node_index, bool active, bool required, bool active_optional,
                                 OutputChange change) noexcept;
     bool dynamic_input_active(std::uint32_t input_offset) const noexcept;
-    void queue_input_notification(InputNotificationFunction function, std::size_t node_index, std::size_t data,
-                                  OutputChange change);
-    void run_input_notifications();
     void initialize_inherited_time_series(std::size_t index, Reference reference);
     std::span<details::ServiceRequestBinding *> service_bindings() noexcept;
     void apply_invalidation(const CompiledNode &node, std::size_t node_index, EvaluationContext &context);
@@ -149,7 +145,6 @@ class RuntimeGraph {
     } owner_;
 
     RuntimeGraph *parent_{};
-    PendingInputNotifications *pending_input_notifications_{};
     std::uint32_t paused_node_index_{std::numeric_limits<std::uint32_t>::max()};
     bool suppress_parent_scheduling_ : 1 {};
     bool callback_owner_ : 1 {};
