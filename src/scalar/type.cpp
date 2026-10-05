@@ -3,22 +3,29 @@
 #include <bg/type/type_map.hpp>
 #include <bg/util/symbol.hpp>
 
+#include <type_traits>
+
 namespace bg {
 namespace {
 
-template <typename T> class CppScalarType final : public ScalarType {
+template <typename T>
+using CppScalarTypeBase = std::conditional_t<tp::contains<T>(details::builtin_scalar_declarations), BuiltinScalarType,
+                                             ScalarType>;
+
+template <typename T> class CppScalarType final : public CppScalarTypeBase<T> {
+    using Base = CppScalarTypeBase<T>;
+
   public:
+    CppScalarType() requires std::same_as<Base, BuiltinScalarType> : Base{tp::unit<T>{}} {}
+    CppScalarType() requires std::same_as<Base, ScalarType> = default;
+
     bool is_resolved() const noexcept override { return true; }
 
     [[nodiscard]] const Type &resolve(const TypeMap &) const override { return *this; }
 
-    bool supports_equality() const noexcept override {
-        return scalar_storage_traits<T>::supports_equality;
-    }
+    bool supports_equality() const noexcept override { return scalar_storage_traits<T>::supports_equality; }
 
-    bool supports_hash() const noexcept override {
-        return scalar_storage_traits<T>::supports_hash;
-    }
+    bool supports_hash() const noexcept override { return scalar_storage_traits<T>::supports_hash; }
 };
 
 } // namespace

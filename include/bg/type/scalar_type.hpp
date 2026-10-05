@@ -4,6 +4,8 @@
 #include <bg/type/type.hpp>
 
 #include <concepts>
+#include <cstddef>
+#include <utility>
 
 namespace bg {
 
@@ -19,6 +21,45 @@ class ScalarType : public Type {
     bool is_time_series() const noexcept final { return false; }
     virtual bool supports_equality() const noexcept { return false; }
     virtual bool supports_hash() const noexcept { return false; }
+};
+
+class BuiltinScalarType : public ScalarType {
+  public:
+    VISITOR_SUPPORT()
+
+    template <typename Visitor> decltype(auto) visit_builtin_type(Visitor &&visitor) const {
+        static_assert(tp::size(details::builtin_scalar_declarations) == 8,
+                      "Update BuiltinScalarType dispatch when adding a built-in scalar");
+
+        switch (index_) {
+        case 0:
+            return std::forward<Visitor>(visitor).template operator()<tp::get_t<0, details::BuiltinScalarTypes>>();
+        case 1:
+            return std::forward<Visitor>(visitor).template operator()<tp::get_t<1, details::BuiltinScalarTypes>>();
+        case 2:
+            return std::forward<Visitor>(visitor).template operator()<tp::get_t<2, details::BuiltinScalarTypes>>();
+        case 3:
+            return std::forward<Visitor>(visitor).template operator()<tp::get_t<3, details::BuiltinScalarTypes>>();
+        case 4:
+            return std::forward<Visitor>(visitor).template operator()<tp::get_t<4, details::BuiltinScalarTypes>>();
+        case 5:
+            return std::forward<Visitor>(visitor).template operator()<tp::get_t<5, details::BuiltinScalarTypes>>();
+        case 6:
+            return std::forward<Visitor>(visitor).template operator()<tp::get_t<6, details::BuiltinScalarTypes>>();
+        case 7:
+            return std::forward<Visitor>(visitor).template operator()<tp::get_t<7, details::BuiltinScalarTypes>>();
+        default:
+            std::unreachable();
+        }
+    }
+
+  protected:
+    template <typename T>
+        requires(tp::contains<T>(details::builtin_scalar_declarations))
+    explicit BuiltinScalarType(tp::unit<T>) : index_{tp::find<T>(details::builtin_scalar_declarations)} {}
+
+  private:
+    std::size_t index_;
 };
 
 inline bool supports_scalar_equality(const ScalarType &type) noexcept {

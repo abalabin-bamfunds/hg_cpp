@@ -1,6 +1,6 @@
 # Built-in scalar visitor dispatch
 
-Status: accepted
+Status: superseded by [0030](0030-builtin-scalar-type-dispatch.md)
 
 ## Context
 

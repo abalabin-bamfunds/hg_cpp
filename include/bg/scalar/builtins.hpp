@@ -23,6 +23,7 @@ namespace details {
 // Drives generic handling of the atomic scalar declarations supplied by the engine.
 inline constexpr auto builtin_scalar_declarations =
     tp::tpack_v<byte, bool, i64, double, date_time_t, timedelta_t, string, symbol>;
+using BuiltinScalarTypes = decltype(builtin_scalar_declarations);
 
 } // namespace details
 

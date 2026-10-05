@@ -9,6 +9,7 @@
 namespace bg {
 
 class DictScalarType;
+class BuiltinScalarType;
 class GraphArgumentType;
 class HierarchicalScalarType;
 class ListScalarType;
@@ -25,10 +26,10 @@ class TimeSeriesValueType;
 class Type;
 class TypeMap;
 
-using TypeVisitor = ddv::mux<Type, ScalarType, ListScalarType, SetScalarType, DictScalarType, StructScalarType,
-                             HierarchicalScalarType, GraphArgumentType, TimeSeriesType,
-                             TimeSeriesValueType, TimeSeriesReferenceType, TimeSeriesListType, TimeSeriesBundleType,
-                             TimeSeriesSetType, TimeSeriesDictionaryType>;
+using TypeVisitor = ddv::mux<Type, ScalarType, BuiltinScalarType, ListScalarType, SetScalarType, DictScalarType,
+                             StructScalarType, HierarchicalScalarType, GraphArgumentType, TimeSeriesType,
+                             TimeSeriesValueType, TimeSeriesReferenceType, TimeSeriesListType,
+                             TimeSeriesBundleType, TimeSeriesSetType, TimeSeriesDictionaryType>;
 
 template <typename Target, typename Visitor> struct is_type_cast_target;
 

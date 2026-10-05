@@ -34,7 +34,9 @@ collection layouts therefore interoperate without converting a view to a C++
 collection object.
 
 The view visitor selects typed built-in atomic access, structural compound,
-list, set, or dictionary access, or erased extension access. Generic node code
+list, set, or dictionary access, or erased extension access. A
+`BuiltinScalarType` carries the built-in declaration index used to select a
+typed atomic view. Other leaf scalar types use the erased view. Generic node code
 can use this interface without inspecting the semantic type. The selected view
 is valid for the visitor callback.
 

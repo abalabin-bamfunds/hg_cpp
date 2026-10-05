@@ -184,23 +184,15 @@ auto Scalar<T>::visit(Visitor &&visitor, Arguments &&...arguments) const {
     auto &types = static_cast<ScalarVisitTypes &>(dispatch);
     const auto &semantic_type = type();
     semantic_type.visit(
-        [&]<typename RuntimeType>(const RuntimeType *) {
-            if constexpr (std::same_as<RuntimeType, ScalarType>) {
-                auto matched = false;
-                // Keep the semantic identity scan in the scalar catch-all. Measure it before adding an index or
-                // registry to scalar type objects.
-                tp::for_each(details::builtin_scalar_declarations, [&]<typename Builtin>(tp::unit<Builtin>) {
-                    if (!matched && &semantic_type == &cpp_scalar_type<Builtin>()) {
-                        auto typed = Scalar<Builtin>::from(*this);
-                        types.visit(&typed);
-                        matched = true;
-                    }
-                });
-
-                if (!matched) {
-                    auto typed = Scalar<>::from(*this);
+        [&]<typename RuntimeType>(const RuntimeType *runtime_type) {
+            if constexpr (std::same_as<RuntimeType, BuiltinScalarType>) {
+                runtime_type->visit_builtin_type([&]<typename Builtin>() {
+                    auto typed = Scalar<Builtin>::from(*this);
                     types.visit(&typed);
-                }
+                });
+            } else if constexpr (std::same_as<RuntimeType, ScalarType>) {
+                auto typed = Scalar<>::from(*this);
+                types.visit(&typed);
             } else if constexpr (requires { typename RuntimeType::generic_scalar_view; }) {
                 using View = typename RuntimeType::generic_scalar_view;
                 auto typed = View::from(*this);
