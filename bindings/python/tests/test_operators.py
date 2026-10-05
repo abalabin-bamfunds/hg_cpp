@@ -187,3 +187,11 @@ def test_repeated_opt_qualifier_is_accepted_by_an_optional_operator_input():
         return extension.optional_choice(value=bg.opt(bg.opt(value)))
 
     assert bg.test_graph(graph, [0]) == [20]
+
+
+def test_opt_qualified_graph_output_keeps_normal_output_semantics():
+    @bg.graph
+    def graph(value: bg.TS[int]) -> bg.TS[int]:
+        return bg.opt(value)
+
+    assert bg.test_graph(graph, [1, 2]) == [1, 2]
