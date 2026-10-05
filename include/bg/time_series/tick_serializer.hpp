@@ -1,6 +1,7 @@
 #pragma once
 
 #include <bg/allocator.hpp>
+#include <bg/export.hpp>
 #include <bg/scalar/dispatch.hpp>
 #include <bg/scalar/value.hpp>
 #include <bg/time_series/time_series_input.hpp>
@@ -78,7 +79,7 @@ struct TimeSeriesTickOperations {
 
 class TimeSeriesTickDispatch {
   public:
-    explicit TimeSeriesTickDispatch(allocator memory = {}) noexcept : memory_{memory}, scalar_operations_{memory} {}
+    BG_EXPORT static TimeSeriesTickDispatch &instance() noexcept;
 
     ~TimeSeriesTickDispatch() {
         runtime_operations_.release(memory_.memory_resource());
@@ -247,6 +248,8 @@ class TimeSeriesTickDispatch {
     }
 
   private:
+    explicit TimeSeriesTickDispatch(allocator memory = {}) noexcept : memory_{memory}, scalar_operations_{memory} {}
+
     template <typename ScalarType, typename Write> static auto typed_scalar_write(Write &&write) {
         return [write = std::forward<Write>(write)](Scalar<> value, TimeSeriesTickWriteContext &writer,
                                                     allocator &memory) {
@@ -762,19 +765,19 @@ class TimeSeriesTickDiscard {
 
 class TimeSeriesTickWriter {
   public:
-    explicit TimeSeriesTickWriter(util::buffer buffer, allocator memory = {},
-                                  const TimeSeriesTickDispatch &dispatch = default_dispatch())
-        : writer_{std::move(buffer)}, memory_{memory}, dispatch_{&dispatch} {}
+    explicit TimeSeriesTickWriter(util::buffer buffer, allocator memory = {})
+        : writer_{std::move(buffer)}, memory_{memory} {}
 
     template <typename Variable, auto... Properties>
     // Write a change made at `now`. The caller supplies the evaluation time
     // so an older invalidation is not recorded again when another input ticks.
     bool write(const In<Variable, Properties...> &input, EvaluationTime now) {
         const auto &type = input.runtime_type().type();
+        const auto &dispatch = TimeSeriesTickDispatch::instance();
 
         try {
             auto writer = TimeSeriesTickWriteContext{writer_};
-            auto write = details::TimeSeriesTickWrite{writer, memory_, *dispatch_};
+            auto write = details::TimeSeriesTickWrite{writer, memory_, dispatch};
             if (!write.write(input, now)) {
                 return false;
             }
@@ -787,7 +790,7 @@ class TimeSeriesTickWriter {
                     }
 
                     try {
-                        details::TimeSeriesTickDiscard{reader, *dispatch_}.apply(type);
+                        details::TimeSeriesTickDiscard{reader, dispatch}.apply(type);
                     } catch (const std::out_of_range &) {
                         // The input ended inside a raw field or typed value. Complete typed values
                         // before that point have been destroyed by the same discard walk.
@@ -804,21 +807,14 @@ class TimeSeriesTickWriter {
     }
 
   private:
-    static const TimeSeriesTickDispatch &default_dispatch() {
-        static const TimeSeriesTickDispatch dispatch;
-        return dispatch;
-    }
-
     util::buffer_writer writer_;
     allocator memory_;
-    const TimeSeriesTickDispatch *dispatch_;
 };
 
 class TimeSeriesTickReader {
   public:
-    TimeSeriesTickReader(util::buffer buffer, const TimeSeriesType &type,
-                         const TimeSeriesTickDispatch &dispatch = default_dispatch())
-        : reader_{std::move(buffer)}, dispatch_{&dispatch}, type_{&type} {}
+    TimeSeriesTickReader(util::buffer buffer, const TimeSeriesType &type)
+        : reader_{std::move(buffer)}, type_{&type} {}
 
     ~TimeSeriesTickReader() {
         if (discard_failed_) {
@@ -843,7 +839,7 @@ class TimeSeriesTickReader {
         }
 
         auto replay_buffer = reader_.fork();
-        auto replay = details::TimeSeriesTickReplay{replay_buffer, *dispatch_};
+        auto replay = details::TimeSeriesTickReplay{replay_buffer, TimeSeriesTickDispatch::instance()};
         try {
             replay.apply_erased(*type_, output);
         } catch (...) {
@@ -880,16 +876,10 @@ class TimeSeriesTickReader {
 
   private:
     void discard_record() {
-        details::TimeSeriesTickDiscard{reader_, *dispatch_}.apply(*type_);
-    }
-
-    static const TimeSeriesTickDispatch &default_dispatch() {
-        static const TimeSeriesTickDispatch dispatch;
-        return dispatch;
+        details::TimeSeriesTickDiscard{reader_, TimeSeriesTickDispatch::instance()}.apply(*type_);
     }
 
     util::buffer_reader reader_;
-    const TimeSeriesTickDispatch *dispatch_;
     const TimeSeriesType *type_;
     bool discard_failed_{};
 };

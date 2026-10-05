@@ -99,13 +99,13 @@ The built-in writer supports value, fixed-list, bundle, set, and dictionary time
 series. It does not support references. TSS and TSD themselves cannot be
 invalidated through their output APIs, so such an event cannot be retained.
 Provider-defined time series register write, replay, and discard handlers
-with `TimeSeriesTickDispatch`; the dispatch object must outlive its writer and
-reader. When passed to `feedback()`, it must also outlive the compiled graph
-and all runtime graphs created from it. Complete registration before
-concurrent writes, replay, or graph evaluation; dispatch registration is not
-synchronized. Write handlers receive the provider's
-`In<Series>` view and a restricted `TimeSeriesTickWriteContext`. Replay and
-discard handlers use `util::buffer_reader`; replay receives its
+with `TimeSeriesTickDispatch::instance()`. This registry is shared by all tick
+writers, readers, and feedback nodes in the process. Complete registration
+before concurrent writes, replay, or graph evaluation; registration is not
+synchronized. A dynamically loaded provider module must remain loaded until
+process exit because the registry retains its handlers. Write handlers receive
+the provider's `In<Series>` view and a restricted `TimeSeriesTickWriteContext`.
+Replay and discard handlers use `util::buffer_reader`; replay receives its
 registered output view. Register the complete output declaration with
 `add_replay<Output>()` and one replay handler per semantic
 type or runtime representation. A runtime registration selects the provider's
@@ -119,9 +119,9 @@ discarded. All runtime representations of one semantic time series type must
 use the same write and discard grammar.
 
 A fixed provider scalar type can register typed write, replay, and discard
-handlers with `TimeSeriesTickDispatch::add_scalar_handlers<T>()`. The handlers
-are selected by semantic scalar type and define one record grammar across its
-runtime representations. Built-in scalar types keep their compact built-in
+handlers with `TimeSeriesTickDispatch::instance().add_scalar_handlers<T>()`.
+The handlers are selected by semantic scalar type and define one record grammar
+across its runtime representations. Built-in scalar types keep their compact built-in
 encodings. An extension scalar type without registered handlers uses the
 owning `ScalarValue<>` fallback; this currently covers both erased values and
 unregistered fixed extension types. The scalar view being erased does not imply

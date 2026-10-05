@@ -181,7 +181,7 @@ requests due at that time before it processes nodes.
 
 `feedback<TS_T>(name)` creates a source wiring point. Assign a compatible time
 series to the handle once to bind its capture sink. Provider-defined time
-series can use a configured tick dispatch:
+series use handlers registered with `TimeSeriesTickDispatch::instance()`:
 
 ```cpp
 auto fb = bg::feedback<bg::TS<bg::i64>>("loop");
@@ -189,14 +189,14 @@ consume(fb);
 fb = produce();
 ```
 
-For a provider-defined type, use `feedback<ProviderSeries>(dispatch, name)`.
-Supported types and dispatch requirements are specified in the
+The provider registers its handlers before graph evaluation. Supported types
+and handler requirements are specified in the
 [retained-tick format](time-series-types.md#retaining-ticks).
 
 When the input changes in an evaluation cycle, the sink records its final
 change state once and schedules the source at the next minimum evaluation
 time. The source replays that record as one tick. The source and sink belong to
-the same graph. The name is optional and labels their wiring paths.
+the same graph. The optional name labels the source and capture sink.
 
 The declared feedback type determines the output guarantee. A delayed `final`
 output remains `final`; a delayed output cannot be `const` because its first

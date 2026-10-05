@@ -110,6 +110,7 @@ add_library(
     src/time_series/tss/tss_reference_sample.cpp
     src/time_series/output_path.cpp
     src/time_series/time_series_runtime_type.cpp
+    src/time_series/tick_serializer.cpp
     src/time_series_type.cpp
     src/time_series_variable.cpp
     src/time_series_value_type.cpp
