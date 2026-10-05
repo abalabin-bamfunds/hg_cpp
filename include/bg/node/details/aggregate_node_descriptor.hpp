@@ -21,7 +21,7 @@ consteval auto aggregate_parameter_runtime_type_uses(std::index_sequence<Index..
                 if constexpr (input_field<Field>::dynamic_binding) {
                     return;
                 }
-                if constexpr (input_view_field<Field>::value) {
+                if constexpr (input_runtime_type_field<Field>::value) {
                     result[parameter] = AggregateRuntimeTypeUse::time_series;
                 }
                 ++parameter;

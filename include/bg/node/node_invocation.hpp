@@ -177,7 +177,7 @@ template <typename CompiledData = void, typename State = void> class NodeInvocat
         }
         const auto input = runtime_node.input_data(parameter_index);
         const auto modified = input.last_updated->valid() && input.last_updated->time() == context_->evaluation_time();
-        if constexpr (details::direct_time_series_input<Input>) {
+        if constexpr (details::direct_time_series_input<Input> && !details::input_requires_runtime_type<Input>) {
             return Input{*input.last_updated, static_cast<const typename Input::storage_type *>(input.value), modified,
                          activity};
         } else {

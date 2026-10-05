@@ -3,6 +3,7 @@
 #include <bg/node/details/input_properties.hpp>
 #include <bg/node/input_fwd.hpp>
 #include <bg/node/input_properties.hpp>
+#include <bg/time_series/details/guarantee_variable_traits.hpp>
 #include <bg/time_series/details/input_data.hpp>
 #include <bg/time_series/time_series_runtime_type.hpp>
 #include <bg/time_series/time_series_type.hpp>
@@ -76,25 +77,19 @@ static_assert(sizeof(In<TS_T, dynamic_activity>) == 4 * sizeof(void *));
 
 namespace bg::details {
 
-// Use direct binding only when the declaration fixes the input storage type: scalar TS values and references.
-// Collection inputs need their compiled runtime type because their item representations can vary at runtime.
-template <typename Input> struct has_direct_time_series_input_layout : std::false_type {};
-
-template <typename T, auto... TimeSeriesProperties, auto... Properties>
-struct has_direct_time_series_input_layout<In<TS<T, TimeSeriesProperties...>, Properties...>>
-    : std::bool_constant<!scalar_declaration_traits<T>::is_collection> {};
-
-template <typename Target, auto... TimeSeriesProperties, auto... Properties>
-struct has_direct_time_series_input_layout<In<REF<Target, TimeSeriesProperties...>, Properties...>>
-    : std::true_type {};
+template <typename Input>
+concept direct_time_series_input = requires(const TimeSeriesState &last_updated,
+                                              const typename Input::storage_type *value, bool *activity) {
+    Input{last_updated, value, false, activity};
+};
 
 template <typename Input>
-concept direct_time_series_input = has_direct_time_series_input_layout<Input>::value &&
-                                   !generic_time_series<typename Input::time_series_type> &&
-                                   requires(const TimeSeriesState &last_updated,
-                                            const typename Input::storage_type *value, bool *activity) {
-                                       Input{last_updated, value, false, activity};
-                                   };
+inline constexpr bool input_requires_runtime_type = true;
+
+template <typename TimeSeries, auto... Properties>
+inline constexpr bool input_requires_runtime_type<In<TimeSeries, Properties...>> =
+    !direct_time_series_input<In<TimeSeries, Properties...>> || generic_time_series<TimeSeries> ||
+    contains_guarantee_variable_v<TimeSeries>;
 
 } // namespace bg::details
 

@@ -60,8 +60,11 @@ concept direct_time_series_output = requires(TimeSeriesState &last_updated, type
 };
 
 template <typename Output>
-inline constexpr bool output_requires_runtime_type =
-    !direct_time_series_output<Output> || contains_guarantee_variable_v<typename Output::time_series_type>;
+inline constexpr bool output_requires_runtime_type = true;
+
+template <typename TimeSeries, OutputSpecification Specification>
+inline constexpr bool output_requires_runtime_type<Out<TimeSeries, Specification>> =
+    !direct_time_series_output<Out<TimeSeries, Specification>> || contains_guarantee_variable_v<TimeSeries>;
 
 } // namespace bg::details
 

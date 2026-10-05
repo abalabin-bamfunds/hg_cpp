@@ -262,19 +262,7 @@ class In<provider::Series<Item, SeriesProperties...>, Properties...>
     using ParsedProperties = InputProperties<Properties...>;
     using ActivityControl = InputActivityControl<ParsedProperties::dynamic_activity>;
 
-    static constexpr bool has_direct_storage =
-        !scalar_declaration_traits<Item>::generic;
-
   public:
-    using storage_type = i64;
-
-    In(const TimeSeriesState &last_updated, const storage_type *value, bool modified = false,
-       bool *activity = nullptr) noexcept
-        requires(has_direct_storage)
-        : ActivityControl{activity},
-          data_{cpp_time_series_runtime_type<provider::Series<Item, SeriesProperties...>>(), last_updated, value,
-                modified} {}
-
     explicit In(const TimeSeriesInputData &data, bool *activity = nullptr) noexcept
         : ActivityControl{activity}, data_{data} {}
 

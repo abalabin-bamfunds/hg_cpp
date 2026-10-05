@@ -11,6 +11,7 @@
 #include <concepts>
 #include <cstdint>
 #include <optional>
+#include <stdexcept>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -385,6 +386,24 @@ struct runtime_layout_collection_sink {
     void evaluate() const {}
 };
 
+struct guarantee_variable_input_sink {
+    bg::In<bg::TS<bg::i64, bg::guarantee_variable<"G">>> input;
+    bg::Out<bg::TS<bg::i64>> output;
+
+    void evaluate() const {
+        if (!input.runtime_type().type().is_resolved()) {
+            throw std::logic_error{"a guarantee-variable input must keep its resolved runtime type"};
+        }
+        output.set(*input);
+    }
+};
+
+struct generic_set_input_sink {
+    bg::In<bg::TSS<bg::SCALAR>> input;
+
+    void evaluate() const { (void)input.size(); }
+};
+
 struct scalar_or_time_series_input_definition {
     static const bg::TypeVariableType<bg::Type> &input_type() {
         static const auto guarantee = bg::GuaranteeVariable{bg::util::symbol{"G"}};
@@ -408,12 +427,20 @@ struct scalar_or_time_series_input_definition {
 TEST_CASE("collection inputs retain their resolved runtime layout", "[node_template][time_series][feature:node-api]") {
     static_assert(!bg::details::direct_time_series_input<bg::In<bg::TS<bg::SCALAR>>>);
     static_assert(bg::details::direct_time_series_input<bg::In<bg::TS<bg::i64, bg::guarantee_variable<"G">>>>);
-    static_assert(!bg::details::direct_time_series_input<bg::In<bg::TSS<bg::i64>>>);
+    static_assert(bg::details::input_requires_runtime_type<
+                  bg::In<bg::TS<bg::i64, bg::guarantee_variable<"G">>>>);
+    static_assert(bg::details::direct_time_series_input<bg::In<bg::TSS<bg::i64>>>);
+    static_assert(!bg::details::input_requires_runtime_type<bg::In<bg::TSS<bg::i64>>>);
+    static_assert(bg::details::input_requires_runtime_type<bg::In<bg::TSS<bg::SCALAR>>>);
+    static_assert(bg::details::direct_time_series_input<bg::In<bg::TSS<bg::i64, bg::guarantee_variable<"G">>>>);
+    static_assert(bg::details::input_requires_runtime_type<
+                  bg::In<bg::TSS<bg::i64, bg::guarantee_variable<"G">>>>);
     static_assert(!bg::details::direct_time_series_input<bg::In<bg::TSD<bg::i64, bg::TS<bg::i64>>>>);
     static_assert(!bg::details::direct_time_series_input<bg::In<bg::TSL<bg::TS<bg::i64>, 2>>>);
     static_assert(!bg::details::direct_time_series_input<bg::In<bg::TSB<bg::SCHEMA>>>);
     static_assert(bg::details::direct_time_series_input<bg::In<bg::REF<bg::TS<bg::i64>>>>);
-    static_assert(!bg::details::direct_time_series_input<bg::In<bg::REF<bg::TS<bg::SCALAR>>>>);
+    static_assert(bg::details::direct_time_series_input<bg::In<bg::REF<bg::TS<bg::SCALAR>>>>);
+    static_assert(bg::details::input_requires_runtime_type<bg::In<bg::REF<bg::TS<bg::SCALAR>>>>);
     static_assert(bg::details::direct_time_series_input<
                   bg::In<bg::REF<bg::TS<bg::i64, bg::guarantee_variable<"G">>>>>);
     static_assert(bg::details::direct_time_series_input<bg::In<bg::TS<bg::i64>>>);
@@ -426,10 +453,61 @@ TEST_CASE("collection inputs retain their resolved runtime layout", "[node_templ
         &bg::TSL<bg::TS<bg::i64>, 2>::type(), &bg::TSB<runtime_layout_bundle>::type()};
     const auto signature = sink.signature().resolve(arguments);
 
-    CHECK(sink.uses_time_series_input_runtime_type(signature, 0));
+    CHECK_FALSE(sink.uses_time_series_input_runtime_type(signature, 0));
     CHECK(sink.uses_time_series_input_runtime_type(signature, 1));
     CHECK(sink.uses_time_series_input_runtime_type(signature, 2));
     CHECK(sink.uses_time_series_input_runtime_type(signature, 3));
+
+    const auto guarantee_input = bg::node<guarantee_variable_input_sink>();
+    const std::array<const bg::Type *, 1> guarantee_arguments{&bg::TS<bg::i64>::type()};
+    const auto guarantee_signature = guarantee_input.signature().resolve(guarantee_arguments);
+    CHECK(guarantee_input.uses_time_series_input_runtime_type(guarantee_signature, 0));
+
+    const auto generic_set_input = bg::node<generic_set_input_sink>();
+    const std::array<const bg::Type *, 1> generic_set_arguments{&bg::TSS<bg::i64>::type()};
+    const auto generic_set_signature = generic_set_input.signature().resolve(generic_set_arguments);
+    CHECK(generic_set_input.uses_time_series_input_runtime_type(generic_set_signature, 0));
+
+    const auto check_guarantee = bg::node([](bg::In<bg::TS<bg::i64, bg::guarantee_variable<"G">>> input,
+                                             bg::Out<bg::TS<bg::i64>> output) {
+        if (!input.runtime_type().type().is_resolved()) {
+            throw std::logic_error{"a guarantee-variable input must keep its resolved runtime type"};
+        }
+        output.set(*input);
+    });
+    const auto graph = [&](bg::wp<bg::TS<bg::i64>> input) { return check_guarantee(input); };
+    CHECK(bg::testing::test_graph(graph, std::array<bg::i64, 1>{42}).equals<bg::i64>({42}));
+}
+
+TEST_CASE("direct TSS inputs keep concrete and resolved key runtime types",
+          "[node_template][time_series][feature:node-api]") {
+    const auto make_set = bg::node([](bg::In<bg::TS<bg::i64>> input, bg::Out<bg::TSS<bg::i64>> output) {
+        output.insert(*input);
+    });
+    const auto read_concrete = bg::node([](bg::In<bg::TSS<bg::i64>> input, bg::Out<bg::TS<bg::i64>> output) {
+        output.set(input.item_at(0).value());
+    });
+    const auto read_generic = bg::node([](bg::In<bg::TSS<bg::SCALAR>> input, bg::Out<bg::TS<bg::i64>> output) {
+        if (!input.runtime_type().type().is_resolved()) {
+            throw std::logic_error{"a generic TSS input must keep its resolved runtime type"};
+        }
+        output.set(bg::scalar_cast<bg::i64>(input.item_at(0)).value());
+    });
+    const auto read_guarantee = bg::node([](bg::In<bg::TSS<bg::i64, bg::guarantee_variable<"G">>> input,
+                                            bg::Out<bg::TS<bg::i64>> output) {
+        if (!input.runtime_type().type().is_resolved()) {
+            throw std::logic_error{"a guarantee-variable TSS input must keep its resolved runtime type"};
+        }
+        output.set(input.item_at(0).value());
+    });
+
+    const auto concrete_graph = [&](bg::wp<bg::TS<bg::i64>> input) { return read_concrete(make_set(input)); };
+    const auto generic_graph = [&](bg::wp<bg::TS<bg::i64>> input) { return read_generic(make_set(input)); };
+    const auto guarantee_graph = [&](bg::wp<bg::TS<bg::i64>> input) { return read_guarantee(make_set(input)); };
+
+    CHECK(bg::testing::test_graph(concrete_graph, std::array<bg::i64, 1>{42}).equals<bg::i64>({42}));
+    CHECK(bg::testing::test_graph(generic_graph, std::array<bg::i64, 1>{42}).equals<bg::i64>({42}));
+    CHECK(bg::testing::test_graph(guarantee_graph, std::array<bg::i64, 1>{42}).equals<bg::i64>({42}));
 }
 
 TEST_CASE("native collection outputs bind directly only for concrete default declarations",

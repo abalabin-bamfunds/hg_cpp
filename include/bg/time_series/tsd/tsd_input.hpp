@@ -32,11 +32,6 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...>
         : activity_control{},
           data_{cpp_time_series_runtime_type<TSD<K, Item, TimeSeriesProperties...>>(), initial_time_series_state, nullptr} {}
 
-    In(const TimeSeriesState &last_updated, const storage_type *value, bool modified = false,
-       bool *activity = nullptr) noexcept
-        : activity_control{activity},
-          data_{cpp_time_series_runtime_type<TSD<K, Item, TimeSeriesProperties...>>(), last_updated, value, modified} {}
-
     In(const TimeSeriesState &last_updated, const void *value, const TimeSeriesRuntimeType &runtime_type,
        bool modified = false, bool *activity = nullptr) noexcept
         : activity_control{activity}, data_{runtime_type, last_updated, value, modified} {}

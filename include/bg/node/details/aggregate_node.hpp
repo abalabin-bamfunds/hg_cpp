@@ -203,16 +203,11 @@ std::vector<const TimeSeriesType *> aggregate_dynamic_reference_input_types(cons
     return result;
 }
 
-template <typename T> struct generic_input_field : std::false_type {};
+template <typename T> struct input_runtime_type_field : std::false_type {};
 
 template <typename TimeSeries, auto... Properties>
-struct generic_input_field<In<TimeSeries, Properties...>> : std::bool_constant<generic_time_series<TimeSeries>> {};
-
-template <typename T> struct input_view_field : std::false_type {};
-
-template <typename TimeSeries, auto... Properties>
-struct input_view_field<In<TimeSeries, Properties...>>
-    : std::bool_constant<!direct_time_series_input<In<TimeSeries, Properties...>>> {};
+struct input_runtime_type_field<In<TimeSeries, Properties...>>
+    : std::bool_constant<input_requires_runtime_type<In<TimeSeries, Properties...>>> {};
 
 template <typename T> struct generic_output_field : std::false_type {};
 
@@ -423,7 +418,7 @@ template <typename Definition, std::size_t... Index>
 consteval std::size_t aggregate_time_series_runtime_type_count(std::index_sequence<Index...>) {
     return (std::size_t{} + ... +
             static_cast<std::size_t>(
-                input_view_field<std::remove_cv_t<util::aggregate_member_type<Index, Definition>>>::value &&
+                input_runtime_type_field<std::remove_cv_t<util::aggregate_member_type<Index, Definition>>>::value &&
                 !input_field<std::remove_cv_t<util::aggregate_member_type<Index, Definition>>>::dynamic_binding));
 }
 
@@ -432,7 +427,7 @@ consteval std::size_t aggregate_time_series_runtime_type_index(std::index_sequen
     return (std::size_t{} + ... +
             static_cast<std::size_t>(
                 Index < Target &&
-                input_view_field<std::remove_cv_t<util::aggregate_member_type<Index, Definition>>>::value &&
+                input_runtime_type_field<std::remove_cv_t<util::aggregate_member_type<Index, Definition>>>::value &&
                 !input_field<std::remove_cv_t<util::aggregate_member_type<Index, Definition>>>::dynamic_binding));
 }
 
@@ -698,7 +693,7 @@ template <typename Definition, std::size_t Index>
         const auto input = runtime_node.input_data(ParameterIndex);
         const auto modified = input.last_updated->valid() && input.last_updated->time() == context->evaluation_time();
 
-        if constexpr (input_view_field<Field>::value) {
+        if constexpr (input_runtime_type_field<Field>::value) {
             constexpr auto RuntimeTypeIndex = aggregate_time_series_runtime_type_index<Definition, Index>(
                 std::make_index_sequence<util::aggregate_member_count<Definition>>{});
             const auto &runtime_type = runtime_node.time_series_input_runtime_type(ParameterIndex, RuntimeTypeIndex);
