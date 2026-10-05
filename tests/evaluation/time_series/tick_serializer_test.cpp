@@ -1,4 +1,6 @@
 #include <bg/node.hpp>
+#include <bg/time_series/output_binding.hpp>
+#include <bg/time_series/output_state.hpp>
 #include <bg/time_series/tsb/tsb.hpp>
 #include <bg/time_series/tsb/tsb_input.hpp>
 #include <bg/time_series/tsb/tsb_output.hpp>
@@ -259,6 +261,30 @@ class allocation_counter : public std::pmr::memory_resource {
 
 allocation_counter retained_value_memory;
 
+template <typename T> void check_builtin_scalar_tick(const typename bg::scalar_storage_traits<T>::stored_type &value) {
+    const auto time = bg::MIN_DT + std::chrono::microseconds{1};
+    const auto input_state = bg::TimeSeriesState{time};
+    const auto &runtime_type = bg::cpp_time_series_runtime_type<bg::TS<T>>();
+    const auto input = bg::In<bg::TS<T>>{bg::TimeSeriesInputData{runtime_type, input_state, &value, true}};
+    const auto buffer = bg::util::buffer::contiguous(256);
+    auto writer = bg::TimeSeriesTickWriter{buffer};
+
+    REQUIRE(writer.write(input, time));
+
+    const auto replay_time = time + std::chrono::microseconds{1};
+    auto output_state = bg::TimeSeriesState{};
+    auto output_value = typename bg::scalar_storage_traits<T>::stored_type{};
+    auto output_data = bg::OutputState{runtime_type};
+    output_data.bind(output_state, &output_value, replay_time);
+    auto output = bg::Out<bg::TS<T>>{bg::TimeSeriesOutputBinding{output_data}};
+    auto reader = bg::TimeSeriesTickReader{buffer, bg::TS<T>::type()};
+
+    REQUIRE(reader.replay(output));
+    CHECK_FALSE(reader.has_next());
+    CHECK(output.valid());
+    CHECK(output.value() == bg::scalar_storage_traits<T>::read(value));
+}
+
 } // namespace
 
 TEST_CASE("a node can delay time series ticks by one evaluation cycle",
@@ -289,6 +315,18 @@ TEST_CASE("a scalar integer tick uses a nine-byte record", "[feature:time-series
     auto reader = bg::TimeSeriesTickReader{buffer, bg::TS<bg::i64>::type()};
     CHECK(reader.discard());
     CHECK_FALSE(reader.has_next());
+}
+
+TEST_CASE("built-in scalar ticks replay through their typed storage",
+          "[feature:time-series-storage][series:value][scalar:generic][transition:update]") {
+    check_builtin_scalar_tick<bg::byte>(bg::byte{0x2a});
+    check_builtin_scalar_tick<bool>(true);
+    check_builtin_scalar_tick<bg::i64>(42);
+    check_builtin_scalar_tick<double>(42.5);
+    check_builtin_scalar_tick<bg::date_time_t>(bg::MIN_DT + std::chrono::microseconds{42});
+    check_builtin_scalar_tick<bg::timedelta_t>(bg::timedelta_t{42});
+    check_builtin_scalar_tick<bg::string>(std::pmr::string{"value"});
+    check_builtin_scalar_tick<bg::symbol>(bg::symbol{"value"});
 }
 
 TEST_CASE("discarding a scalar tick consumes a chain record across blocks",

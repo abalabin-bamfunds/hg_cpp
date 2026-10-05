@@ -7,6 +7,7 @@
 #include <bg/time_series/time_series_output.hpp>
 #include <bg/time_series/time_series_runtime_type.hpp>
 #include <bg/time_series/time_series_type.hpp>
+#include <bg/type/scalar_type.hpp>
 #include <bg/type/time_series_value_type.hpp>
 #include <bg/util/buffer.hpp>
 #include <bg/util/hash_dictionary.hpp>
@@ -339,17 +340,6 @@ struct TickHeader {
     }
 };
 
-template <typename Visitor> bool visit_builtin_scalar_type(const ScalarType &type, Visitor &&visitor) {
-    auto matched = false;
-    tp::for_each(builtin_scalar_declarations, [&]<typename Builtin>(tp::unit<Builtin>) {
-        if (!matched && &type == &cpp_scalar_type<Builtin>()) {
-            std::invoke(visitor, std::type_identity<Builtin>{});
-            matched = true;
-        }
-    });
-    return matched;
-}
-
 template <typename T> void write_bytes(TimeSeriesTickWriteContext &writer, const T &value) {
     static_assert(std::is_trivially_copyable_v<T>);
     writer.write_bytes(std::as_bytes(std::span{&value, std::size_t{1}}));
@@ -472,8 +462,8 @@ class TimeSeriesTickWrite {
     }
 
     template <typename T> void write_scalar(const Scalar<T> &value) {
-        const auto matched = visit_builtin_scalar_type(
-            value.type(), [&]<typename Builtin>(std::type_identity<Builtin>) {
+        if (const auto *builtin = type_cast<BuiltinScalarType>(&value.type())) {
+            builtin->visit_builtin_type([&]<typename Builtin>() {
                 using Stored = details::scalar_stored_t<Builtin>;
                 if constexpr (std::is_trivially_copyable_v<Stored>) {
                     const auto canonical = scalar_cast<Builtin>(value).value();
@@ -482,10 +472,10 @@ class TimeSeriesTickWrite {
                     writer_->write(ScalarValue<>{value, *memory_});
                 }
             });
-
-        if (!matched) {
-            dispatch_->write_scalar(Scalar<>::from(value), *writer_, *memory_);
+            return;
         }
+
+        dispatch_->write_scalar(Scalar<>::from(value), *writer_, *memory_);
     }
 
     TimeSeriesTickWriteContext *writer_;
@@ -654,24 +644,29 @@ class TimeSeriesTickReplay {
     }
 
     template <typename Function> void visit_scalar(const ScalarType &type, Function &&function) {
-        const auto matched = visit_builtin_scalar_type(type, [&]<typename Builtin>(std::type_identity<Builtin>) {
-            using Stored = details::scalar_stored_t<Builtin>;
-            if constexpr (std::is_trivially_copyable_v<Stored>) {
-                const auto stored = reader_->template read_raw<Stored>();
-                const auto value = Scalar<Builtin>::from(stored);
-                std::invoke(function, Scalar<>::from(value));
-            } else {
-                const auto &value = reader_->template peek<ScalarValue<>>();
-                std::invoke(function, value.view());
-                reader_->template consume<ScalarValue<>>();
-            }
-        });
-
-        if (!matched && !dispatch_->replay_scalar(type, *reader_, function)) {
-            const auto &value = reader_->template peek<ScalarValue<>>();
-            std::invoke(function, value.view());
-            reader_->template consume<ScalarValue<>>();
+        if (const auto *builtin = type_cast<BuiltinScalarType>(&type)) {
+            builtin->visit_builtin_type([&]<typename Builtin>() {
+                using Stored = details::scalar_stored_t<Builtin>;
+                if constexpr (std::is_trivially_copyable_v<Stored>) {
+                    const auto stored = reader_->template read_raw<Stored>();
+                    const auto value = Scalar<Builtin>::from(stored);
+                    std::invoke(function, Scalar<>::from(value));
+                } else {
+                    const auto &value = reader_->template peek<ScalarValue<>>();
+                    std::invoke(function, value.view());
+                    reader_->template consume<ScalarValue<>>();
+                }
+            });
+            return;
         }
+
+        if (dispatch_->replay_scalar(type, *reader_, function)) {
+            return;
+        }
+
+        const auto &value = reader_->template peek<ScalarValue<>>();
+        std::invoke(function, value.view());
+        reader_->template consume<ScalarValue<>>();
     }
 
     util::buffer_reader *reader_;
@@ -769,17 +764,23 @@ class TimeSeriesTickDiscard {
     }
 
     void discard_scalar(const ScalarType &type) {
-        const auto matched = visit_builtin_scalar_type(type, [&]<typename Builtin>(std::type_identity<Builtin>) {
-            using Stored = scalar_stored_t<Builtin>;
-            if constexpr (std::is_trivially_copyable_v<Stored>) {
-                reader_->consume(sizeof(Stored));
-            } else {
-                reader_->template skip<ScalarValue<>>();
-            }
-        });
-        if (!matched && !dispatch_->discard_scalar(type, *reader_)) {
-            reader_->template skip<ScalarValue<>>();
+        if (const auto *builtin = type_cast<BuiltinScalarType>(&type)) {
+            builtin->visit_builtin_type([&]<typename Builtin>() {
+                using Stored = scalar_stored_t<Builtin>;
+                if constexpr (std::is_trivially_copyable_v<Stored>) {
+                    reader_->consume(sizeof(Stored));
+                } else {
+                    reader_->template skip<ScalarValue<>>();
+                }
+            });
+            return;
         }
+
+        if (dispatch_->discard_scalar(type, *reader_)) {
+            return;
+        }
+
+        reader_->template skip<ScalarValue<>>();
     }
 
     util::buffer_reader *reader_;
