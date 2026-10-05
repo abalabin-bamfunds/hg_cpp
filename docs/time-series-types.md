@@ -83,14 +83,17 @@ representations.
 or collection delta in a buffer record. The caller supplies the current
 evaluation time; the writer records a change only when its `last_updated()`
 matches that time. This prevents an older invalidation from being recorded
-again when another input causes evaluation. When an input becomes valid or
-revalidates, the record stores a snapshot; other records store only changes.
-Provider write handlers receive the snapshot flag. Scalar payloads are owned
-by the record until replay or discard.
+again when another input causes evaluation. Records contain deltas only, not
+snapshots. Replay applies each delta to the existing output and does not clear
+a valid collection. Reconstructing a value therefore requires replaying from a
+matching baseline, not from an arbitrary later record. Scalar payloads are
+owned by the record until replay or discard.
 
 Each record begins with a one-byte header that identifies the update and its
-validity or snapshot state. Collection entries follow in traversal order and
-each collection ends with a standalone `end` header.
+validity. Collection entries follow, and each collection ends with a
+standalone `end` header. The first valid tick of an empty TSS or TSD has
+a valid root header and an empty collection body. Replay marks an invalid
+output valid for this event; it leaves an already-valid output unchanged.
 
 The built-in writer supports value, fixed-list, bundle, set, and dictionary time
 series. It does not support references. TSS and TSD themselves cannot be

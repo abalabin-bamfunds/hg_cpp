@@ -40,12 +40,10 @@ namespace provider {
 
 inline bool *view_invalidation_observer{};
 inline int written_tick_count{};
-inline bool written_tick_snapshot{};
 
 template <typename Input>
-void write_tick(const Input &input, bool snapshot, bg::TimeSeriesTickWriteContext &writer, bg::allocator &) {
+void write_tick(const Input &input, bg::TimeSeriesTickWriteContext &writer, bg::allocator &) {
     ++written_tick_count;
-    written_tick_snapshot = snapshot;
     const auto value = input.value();
     writer.write_bytes(std::as_bytes(std::span{&value, std::size_t{1}}));
 }
@@ -355,20 +353,20 @@ class Out<provider::Series<Item, Properties...>, Specification> {
 
 namespace provider {
 
-void replay_tick_view(bg::util::buffer_reader &reader, const bg::Out<Series<bg::i64>, bg::view> &output, bool) {
+void replay_tick_view(bg::util::buffer_reader &reader, const bg::Out<Series<bg::i64>, bg::view> &output) {
     output.set(reader.read_raw<bg::i64>());
 }
 
-void replay_tick_default(bg::util::buffer_reader &reader, const bg::Out<Series<bg::i64>> &output, bool) {
+void replay_tick_default(bg::util::buffer_reader &reader, const bg::Out<Series<bg::i64>> &output) {
     output.set(reader.read_raw<bg::i64>());
 }
 
 void replay_tick_view_override(bg::util::buffer_reader &reader,
-                               const bg::Out<Series<bg::i64>, bg::view> &output, bool) {
+                               const bg::Out<Series<bg::i64>, bg::view> &output) {
     output.set(reader.read_raw<bg::i64>() + 100);
 }
 
-void discard_tick(bg::util::buffer_reader &reader, bool) {
+void discard_tick(bg::util::buffer_reader &reader) {
     (void)reader.read_raw<bg::i64>();
 }
 
@@ -409,12 +407,12 @@ void write_owned_payload_value(bg::TimeSeriesTickWriteContext &writer, bg::alloc
     writer.write(std::move(payload));
 }
 
-void write_owned_payload(const bg::In<Series<bg::i64>> &, bool, bg::TimeSeriesTickWriteContext &writer,
+void write_owned_payload(const bg::In<Series<bg::i64>> &, bg::TimeSeriesTickWriteContext &writer,
                          bg::allocator &memory) {
     write_owned_payload_value(writer, memory, "provider-owned retained payload that needs allocated storage");
 }
 
-void write_two_owned_payloads_then_fail(const bg::In<Series<bg::i64>> &, bool,
+void write_two_owned_payloads_then_fail(const bg::In<Series<bg::i64>> &,
                                         bg::TimeSeriesTickWriteContext &writer, bg::allocator &memory) {
     auto count = std::uint32_t{2};
     writer.write_bytes(std::as_bytes(std::span{&count, std::size_t{1}}));
@@ -431,7 +429,7 @@ void write_two_owned_payloads_then_fail(const bg::In<Series<bg::i64>> &, bool,
     throw std::runtime_error{"provider write failed after writing two payloads"};
 }
 
-void replay_owned_payload_record(bg::util::buffer_reader &reader, const bg::Out<Series<bg::i64>> &output, bool) {
+void replay_owned_payload_record(bg::util::buffer_reader &reader, const bg::Out<Series<bg::i64>> &output) {
     const auto count = reader.read_raw<std::uint32_t>();
     output.set(reader.read_raw<bg::i64>());
     for (auto index = std::uint32_t{}; index < count; ++index) {
@@ -440,7 +438,7 @@ void replay_owned_payload_record(bg::util::buffer_reader &reader, const bg::Out<
     }
 }
 
-void replay_owned_payload_then_fail(bg::util::buffer_reader &reader, const bg::Out<Series<bg::i64>> &, bool) {
+void replay_owned_payload_then_fail(bg::util::buffer_reader &reader, const bg::Out<Series<bg::i64>> &) {
     (void)reader.read_raw<std::uint32_t>();
     (void)reader.read_raw<bg::i64>();
     (void)reader.peek<bg::ScalarValue<>>();
@@ -448,13 +446,13 @@ void replay_owned_payload_then_fail(bg::util::buffer_reader &reader, const bg::O
     throw std::runtime_error{"provider replay failed after reading its payload"};
 }
 
-void discard_owned_payload(bg::util::buffer_reader &reader, bool) {
+void discard_owned_payload(bg::util::buffer_reader &reader) {
     (void)reader.read_raw<std::uint32_t>();
     (void)reader.read_raw<bg::i64>();
     reader.skip<bg::ScalarValue<>>();
 }
 
-void discard_owned_payload_record(bg::util::buffer_reader &reader, bool) {
+void discard_owned_payload_record(bg::util::buffer_reader &reader) {
     const auto count = reader.read_raw<std::uint32_t>();
     (void)reader.read_raw<bg::i64>();
     for (auto index = std::uint32_t{}; index < count; ++index) {
@@ -465,7 +463,7 @@ void discard_owned_payload_record(bg::util::buffer_reader &reader, bool) {
 template <typename Output>
 void replay_tick(const bg::TimeSeriesTickDispatch &dispatch, const bg::util::buffer &record, const Output &output) {
     auto buffer_reader = bg::util::buffer_reader{record};
-    dispatch.replay(buffer_reader, output, true);
+    dispatch.replay(buffer_reader, output);
 }
 
 const bg::TimeSeriesTickDispatch &tick_dispatch() {
@@ -647,11 +645,9 @@ TEST_CASE("tick write dispatch reaches provider-defined time series",
     const auto buffer = bg::util::buffer::chain(256);
     auto writer = bg::TimeSeriesTickWriter{buffer, {}, dispatch};
     provider::written_tick_count = 0;
-    provider::written_tick_snapshot = false;
 
     CHECK(writer.write(input, time));
     CHECK(provider::written_tick_count == 1);
-    CHECK(provider::written_tick_snapshot);
     auto reader = bg::TimeSeriesTickReader{buffer, Series::type(), dispatch};
     const auto output_time = time + std::chrono::microseconds{1};
     auto output_last_updated = bg::TimeSeriesState{};
@@ -910,7 +906,7 @@ TEST_CASE("failed TSD write releases owned payloads from completed entries",
     auto buffer = bg::util::buffer::chain(256);
     auto writes = std::size_t{};
     auto dispatch = bg::TimeSeriesTickDispatch{};
-    REQUIRE(dispatch.add_write<Series>(Series::type(), [&](const auto &, bool, auto &writer, auto &payload_memory) {
+    REQUIRE(dispatch.add_write<Series>(Series::type(), [&](const auto &, auto &writer, auto &payload_memory) {
         if (++writes == 2) {
             throw std::runtime_error{"provider write failed in a later TSD entry"};
         }
@@ -951,7 +947,7 @@ TEST_CASE("failed provider write before an owned value leaves no record",
     const auto input = bg::In<Series>{bg::TimeSeriesInputData{
         provider::series_runtime_type(Series::type()), input_state, &input_value, true}};
     auto dispatch = bg::TimeSeriesTickDispatch{};
-    REQUIRE(dispatch.add_write<Series>(Series::type(), [](const auto &, bool, auto &, auto &) {
+    REQUIRE(dispatch.add_write<Series>(Series::type(), [](const auto &, auto &, auto &) {
         throw std::runtime_error{"provider write failed before producing a value"};
     }));
     REQUIRE(dispatch.add_discard(Series::type(), provider::discard_owned_payload_record));
@@ -1048,15 +1044,15 @@ TEST_CASE("provider replay handles default and view outputs",
     using Series = provider::Series<bg::i64>;
     auto dispatch = bg::TimeSeriesTickDispatch{};
     REQUIRE(dispatch.add_replay<Series, bg::OutputSpecification::default_>(Series::type(),
-                                                                           [](auto &reader, const auto &output, bool) {
+                                                                           [](auto &reader, const auto &output) {
         output.set(reader.template read_raw<bg::i64>() + 1);
     }));
     REQUIRE(dispatch.add_replay<Series, bg::OutputSpecification::view>(Series::type(),
-                                                                        [](auto &reader, const auto &output, bool) {
+                                                                        [](auto &reader, const auto &output) {
         output.set(reader.template read_raw<bg::i64>() + 2);
     }));
     CHECK_FALSE(dispatch.add_replay<Series, bg::OutputSpecification::default_>(
-        Series::type(), [](auto &, const auto &, bool) {}));
+        Series::type(), [](auto &, const auto &) {}));
 
     const auto record = provider::tick_record(17);
     const auto output_time = bg::MIN_DT + std::chrono::microseconds{1};
@@ -1084,11 +1080,11 @@ TEST_CASE("provider replay selects the handler for the output specification",
     using Series = provider::Series<bg::i64>;
     auto dispatch = bg::TimeSeriesTickDispatch{};
     REQUIRE(dispatch.add_replay<Series, bg::OutputSpecification::default_>(Series::type(),
-                                                                           [](auto &reader, const auto &output, bool) {
+                                                                           [](auto &reader, const auto &output) {
         output.set(reader.template read_raw<bg::i64>());
     }));
     REQUIRE(dispatch.add_replay<Series, bg::OutputSpecification::view>(Series::type(),
-                                                                        [](auto &reader, const auto &output, bool) {
+                                                                        [](auto &reader, const auto &output) {
         output.set(reader.template read_raw<bg::i64>() + 100);
     }));
     CHECK_FALSE(dispatch.add_replay<Series, bg::OutputSpecification::view>(Series::type(),
@@ -1123,7 +1119,7 @@ TEST_CASE("provider replay prefers exact runtime handlers over semantic handlers
                                                                         provider::replay_tick_view_override));
     REQUIRE(dispatch.add_replay<Series, bg::OutputSpecification::view>(
         provider::series_view_runtime_type(Series::type()),
-        [](auto &reader, const auto &output, bool) {
+        [](auto &reader, const auto &output) {
             output.set(reader.template read_raw<bg::i64>() + 1000);
         }));
 

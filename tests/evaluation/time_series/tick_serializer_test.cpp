@@ -216,6 +216,28 @@ struct dictionary_record_size_definition {
     }
 };
 
+template <typename SERIES> struct empty_collection_on_tick_definition {
+    bg::In<bg::TS<bg::i64>> trigger;
+    bg::Out<SERIES> output;
+
+    void evaluate() const {
+        if (trigger.modified()) {
+            output.clear();
+        }
+    }
+};
+
+template <typename SERIES> struct collection_size_definition {
+    bg::In<SERIES> input;
+    bg::Out<bg::TS<bg::i64>> output;
+
+    void evaluate() const {
+        if (input.valid()) {
+            output.set(static_cast<bg::i64>(input.size()));
+        }
+    }
+};
+
 class allocation_counter : public std::pmr::memory_resource {
   public:
     std::size_t allocations{};
@@ -373,6 +395,78 @@ TEST_CASE("an empty TSD tick contains a terminator", "[feature:time-series-stora
     CHECK(bg::testing::test_graph(dictionary_graph, std::array<bg::i64, 1>{1}).equals({2}));
 }
 
+TEST_CASE("a node delays the first valid empty TSS tick by one evaluation cycle",
+          "[evaluation][feature:test-graph][feature:time-series-storage][feature:timed-scheduling]"
+          "[series:tss][scalar:i64][shape:chain][transition:first-tick]") {
+    const auto make_empty = bg::node<empty_collection_on_tick_definition<bg::TSS<bg::i64>>>();
+    const auto delay = bg::node<one_tick_delay_definition<bg::TSS<bg::i64>>>();
+    const auto size = bg::node<collection_size_definition<bg::TSS<bg::i64>>>();
+    const auto graph = [&](bg::wp<bg::TS<bg::i64>> input) { return size(delay(make_empty(input))); };
+
+    const auto actual = bg::testing::test_graph(graph, std::array<bg::i64, 1>{1});
+
+    CHECK(actual.equals({std::nullopt, 0}));
+}
+
+TEST_CASE("a node delays the first valid empty TSD tick by one evaluation cycle",
+          "[evaluation][feature:test-graph][feature:time-series-storage][feature:timed-scheduling]"
+          "[series:tsd][scalar:i64][shape:chain][transition:first-tick]") {
+    const auto make_empty = bg::node<empty_collection_on_tick_definition<bg::TSD<bg::i64, bg::TS<bg::i64>>>>();
+    const auto delay = bg::node<one_tick_delay_definition<bg::TSD<bg::i64, bg::TS<bg::i64>>>>();
+    const auto size = bg::node<collection_size_definition<bg::TSD<bg::i64, bg::TS<bg::i64>>>>();
+    const auto graph = [&](bg::wp<bg::TS<bg::i64>> input) { return size(delay(make_empty(input))); };
+
+    const auto actual = bg::testing::test_graph(graph, std::array<bg::i64, 1>{1});
+
+    CHECK(actual.equals({std::nullopt, 0}));
+}
+
+TEST_CASE("a node delays a new TSD key with an invalid TSS child",
+          "[evaluation][feature:test-graph][feature:time-series-storage][feature:timed-scheduling]"
+          "[series:tsd][scalar:i64][shape:chain][transition:addition]") {
+    const auto add_key = bg::node([](bg::In<bg::TS<bg::i64>> trigger,
+                                     bg::Out<bg::TSD<bg::i64, bg::TSS<bg::i64>>> output) {
+        if (trigger.modified()) {
+            (void)output[1];
+        }
+    });
+    const auto delay = bg::node<one_tick_delay_definition<bg::TSD<bg::i64, bg::TSS<bg::i64>>>>();
+    const auto observe_child = bg::node([](bg::In<bg::TSD<bg::i64, bg::TSS<bg::i64>>> input,
+                                           bg::Out<bg::TS<bg::i64>> output) {
+        if (input.valid()) {
+            output.set(input.contains(1) && !input[1].valid() ? 1 : 0);
+        }
+    });
+    const auto graph = [&](bg::wp<bg::TS<bg::i64>> input) { return observe_child(delay(add_key(input))); };
+
+    const auto actual = bg::testing::test_graph(graph, std::array<bg::i64, 1>{1});
+
+    CHECK(actual.equals({std::nullopt, 1}));
+}
+
+TEST_CASE("a node delays a new TSD key with an invalid TSD child",
+          "[evaluation][feature:test-graph][feature:time-series-storage][feature:timed-scheduling]"
+          "[series:tsd][scalar:i64][shape:chain][transition:addition]") {
+    const auto add_key = bg::node([](bg::In<bg::TS<bg::i64>> trigger,
+                                     bg::Out<bg::TSD<bg::i64, bg::TSD<bg::i64, bg::TS<bg::i64>>>> output) {
+        if (trigger.modified()) {
+            (void)output[1];
+        }
+    });
+    const auto delay = bg::node<one_tick_delay_definition<bg::TSD<bg::i64, bg::TSD<bg::i64, bg::TS<bg::i64>>>>>();
+    const auto observe_child = bg::node([](bg::In<bg::TSD<bg::i64, bg::TSD<bg::i64, bg::TS<bg::i64>>>> input,
+                                           bg::Out<bg::TS<bg::i64>> output) {
+        if (input.valid()) {
+            output.set(input.contains(1) && !input[1].valid() ? 1 : 0);
+        }
+    });
+    const auto graph = [&](bg::wp<bg::TS<bg::i64>> input) { return observe_child(delay(add_key(input))); };
+
+    const auto actual = bg::testing::test_graph(graph, std::array<bg::i64, 1>{1});
+
+    CHECK(actual.equals({std::nullopt, 1}));
+}
+
 TEST_CASE("a node delays time series invalidation and revalidation by one evaluation cycle",
           "[evaluation][feature:test-graph][feature:time-series-storage][feature:timed-scheduling]"
           "[feature:validity][series:value][scalar:i64][shape:chain]"
@@ -451,7 +545,7 @@ TEST_CASE("a node delays fixed list item changes by one evaluation cycle",
           std::vector<std::array<bool, 2>>{{true, true}, {true, false}, {true, false}});
 }
 
-TEST_CASE("a first fixed list snapshot can contain a never-valid item",
+TEST_CASE("a first fixed list tick can contain a never-valid item",
           "[evaluation][feature:test-graph][feature:time-series-storage][feature:timed-scheduling]"
           "[series:fixed-tsl][scalar:i64][shape:chain][transition:first-tick]") {
     const auto delay = bg::node<one_tick_delay_definition<bg::TSL<bg::TS<bg::i64>, 2>>>();
@@ -550,6 +644,28 @@ TEST_CASE("a node delays nested dictionary changes by one evaluation cycle",
     const auto actual = bg::testing::test_graph(graph, std::array<bg::i64, 3>{1, 2, 0});
 
     CHECK(actual.equals({std::nullopt, 1, 2, 0}));
+}
+
+TEST_CASE("a node delays changes to nested dictionary keys by one evaluation cycle",
+          "[evaluation][feature:test-graph][feature:time-series-storage][feature:timed-scheduling]"
+          "[series:tsd][scalar:i64][shape:chain][transition:addition][transition:removal]") {
+    const auto update = bg::node([](bg::In<bg::TS<bg::i64>> input,
+                                    bg::Out<bg::TSD<bg::i64, bg::TSD<bg::i64, bg::TS<bg::i64>>>> output) {
+        if (*input == 1) {
+            output[1][10].set(5);
+            return;
+        }
+
+        output[1].erase(10);
+        output[1][20].set(7);
+    });
+    const auto delay = bg::node<one_tick_delay_definition<bg::TSD<bg::i64, bg::TSD<bg::i64, bg::TS<bg::i64>>>>>();
+    const auto sum = bg::node<nested_dictionary_sum_definition>();
+    const auto graph = [&](bg::wp<bg::TS<bg::i64>> input) { return sum(delay(update(input))); };
+
+    const auto actual = bg::testing::test_graph(graph, std::array<bg::i64, 2>{1, 2});
+
+    CHECK(actual.equals({std::nullopt, 5, 7}));
 }
 
 TEST_CASE("discarding an unread tick record releases its scalar payload", "[coverage-exempt]") {

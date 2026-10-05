@@ -180,8 +180,9 @@ graph compilation or evaluation.
 - required-input validity caching, invalidation, and revalidation
 - operation-specific handling of invalid `opt` arguments, including mixed required and optional inputs
 - output update and invalidation propagation
-- retained tick writing and replay through a one-cycle delay node, current-cycle filtering, partial collection snapshots,
-  nested collection deltas, validity transitions, payload cleanup, provider scalar handlers, and unsupported references
+- retained tick writing and replay through a one-cycle delay node, current-cycle filtering, delta-only collection
+  replay from a matching baseline, nested key changes, empty first ticks, validity transitions, payload cleanup,
+  provider scalar handlers, and unsupported references
 - `default_` fallback selection, timestamps, modified state, and source validity transitions
 - invalidation behavior selected by a node
 - timed scheduling, cancellation, ordering, and coalescing
