@@ -22,6 +22,8 @@ template <details::time_series_variable Variable, OutputSpecification Specificat
     EvaluationTime last_updated() const noexcept { return state_->last_updated(); }
     const TimeSeriesRuntimeType &runtime_type() const noexcept { return state_->runtime_type(); }
     const void *data() const noexcept { return state_->data(); }
+    // Lets engine adapters rebuild a typed output while preserving its containing output path.
+    OutputState &output_state() const noexcept { return state_.get(); }
     const Out *operator->() const noexcept { return this; }
 
     // Returns a provider-defined view that borrows this output state and retains its specification.

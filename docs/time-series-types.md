@@ -104,7 +104,12 @@ reader. Complete registration before concurrent writes or replay; dispatch
 registration is not synchronized. Write handlers receive the provider's
 `In<Series>` view and a restricted `TimeSeriesTickWriteContext`. Replay and
 discard handlers use `util::buffer_reader`; replay receives its
-`Out<Series, Specification>` view, including the selected output specification.
+`Out<Series, Specification>` view. Register one replay handler per semantic
+type or runtime representation. A runtime registration selects the provider's
+typed output view for that representation. This uses the item's runtime type:
+a generic TSD item inherits its static output specification from the containing
+TSD, which does not identify the item's representation. A semantic handler
+must support every runtime representation without an exact registration.
 Discard receives the semantic type's record format and must destroy provider-
 owned objects. Failed writes discard the complete prefix through that same
 record grammar, so handlers must write records whose completed prefix can be
@@ -124,10 +129,9 @@ The replay handler must call its consumer exactly once with a borrowed scalar
 view whose lifetime covers that call. Write, replay, and discard must use the
 same byte grammar.
 
-The semantic time series type selects the discard handler. Replay handlers are
-registered for an output specification and may be keyed by semantic type or
-runtime representation. Replay first looks for a handler keyed by the output's
-runtime representation, then falls back to one keyed by its semantic type.
+The semantic time series type selects the discard handler. Replay first looks
+for a handler keyed by the output's runtime representation, then falls back to
+one keyed by its semantic type.
 
 Discard handlers must consume valid records without throwing. The reader
 discards unread records during destruction and terminates if that cleanup

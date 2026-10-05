@@ -12,7 +12,6 @@
 #include <bg/util/buffer.hpp>
 #include <bg/util/hash_dictionary.hpp>
 
-#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <exception>
@@ -22,9 +21,7 @@
 #include <span>
 #include <stdexcept>
 #include <type_traits>
-#include <typeindex>
 #include <utility>
-#include <vector>
 
 namespace bg {
 
@@ -70,13 +67,10 @@ struct TimeSeriesTickScalarOperations {
 
 struct TimeSeriesTickOperations {
     using Write = std::function<void(const In<TS_T> &, TimeSeriesTickWriteContext &, allocator &)>;
-    struct Replay {
-        std::type_index output_view{typeid(void)};
-        std::function<void(util::buffer_reader &, const void *)> apply;
-    };
+    using Replay = std::function<void(util::buffer_reader &, OutputState &)>;
 
     Write write;
-    std::vector<Replay> replays;
+    Replay replay;
     std::function<void(util::buffer_reader &)> discard;
 };
 
@@ -170,14 +164,27 @@ class TimeSeriesTickDispatch {
 
     template <typename Series, OutputSpecification Specification, typename Replay>
     bool add_replay(const TimeSeriesRuntimeType &runtime_type, Replay &&replay) {
+        if (const auto *existing = runtime_operations_.find(&runtime_type);
+            existing != nullptr && existing->replay) {
+            return false;
+        }
+
+        auto handler = typed_replay<Series, Specification>(std::forward<Replay>(replay));
         auto &operations = *runtime_operations_.try_emplace(&runtime_type, memory_.memory_resource()).first;
-        return add_replay<Series, Specification>(operations, std::forward<Replay>(replay));
+        operations.replay = std::move(handler);
+        return true;
     }
 
     template <typename Series, OutputSpecification Specification, typename Replay>
     bool add_replay(const TimeSeriesType &type, Replay &&replay) {
+        if (const auto *existing = type_operations_.find(&type); existing != nullptr && existing->replay) {
+            return false;
+        }
+
+        auto handler = typed_replay<Series, Specification>(std::forward<Replay>(replay));
         auto &operations = *type_operations_.try_emplace(&type, memory_.memory_resource()).first;
-        return add_replay<Series, Specification>(operations, std::forward<Replay>(replay));
+        operations.replay = std::move(handler);
+        return true;
     }
 
     template <typename Discard>
@@ -216,20 +223,20 @@ class TimeSeriesTickDispatch {
 
     template <OutputSpecification Specification>
     void replay(util::buffer_reader &reader, const Out<TS_T, Specification> &output) const {
-        const auto output_view = std::type_index{typeid(output)};
         if (const auto *operations = runtime_operations_.find(&output.runtime_type());
-            operations != nullptr &&
-            replay_from(*operations, output_view, reader, std::addressof(output))) {
+            operations != nullptr && operations->replay) {
+            operations->replay(reader, output.output_state());
             return;
         }
 
         if (const auto *operations = type_operations_.find(&output.runtime_type().type());
-            operations != nullptr &&
-            replay_from(*operations, output_view, reader, std::addressof(output))) {
+            operations != nullptr && operations->replay) {
+            // A semantic handler must support every runtime representation without an exact registration.
+            operations->replay(reader, output.output_state());
             return;
         }
 
-        throw std::invalid_argument{"no tick replay operation is registered for this output view"};
+        throw std::invalid_argument{"no tick replay operation is registered for this time series representation"};
     }
 
     void discard(const TimeSeriesType &type, util::buffer_reader &reader) const {
@@ -241,19 +248,6 @@ class TimeSeriesTickDispatch {
     }
 
   private:
-    template <typename Series, OutputSpecification Specification, typename Replay>
-    bool add_replay(details::TimeSeriesTickOperations &operations, Replay &&replay) {
-        const auto output_view = std::type_index{typeid(Out<TS_T, Specification>)};
-        if (std::ranges::any_of(operations.replays,
-                                [&](const auto &registered) { return registered.output_view == output_view; })) {
-            return false;
-        }
-
-        operations.replays.push_back(
-            {output_view, typed_replay<Series, Specification>(std::forward<Replay>(replay))});
-        return true;
-    }
-
     template <typename ScalarType, typename Write> static auto typed_scalar_write(Write &&write) {
         return [write = std::forward<Write>(write)](Scalar<> value, TimeSeriesTickWriteContext &writer,
                                                     allocator &memory) {
@@ -281,21 +275,10 @@ class TimeSeriesTickDispatch {
 
     template <typename Series, OutputSpecification Specification, typename Replay>
     static auto typed_replay(Replay &&replay) {
-        return [replay = std::forward<Replay>(replay)](util::buffer_reader &reader, const void *output) {
-            const auto &erased = *static_cast<const Out<TS_T, Specification> *>(output);
+        return [replay = std::forward<Replay>(replay)](util::buffer_reader &reader, OutputState &state) {
+            const auto erased = Out<TS_T, Specification>{TimeSeriesOutputBinding{state}};
             std::invoke(replay, reader, erased.template as<Series>());
         };
-    }
-
-    static bool replay_from(const details::TimeSeriesTickOperations &operations, std::type_index output_view,
-                            util::buffer_reader &reader, const void *output) {
-        for (const auto &registered : operations.replays) {
-            if (registered.output_view == output_view) {
-                registered.apply(reader, output);
-                return true;
-            }
-        }
-        return false;
     }
 
     allocator memory_;
