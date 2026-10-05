@@ -1,8 +1,9 @@
 #include "../value/scalar/test_scalar_provider.hpp"
 
-#include <bg/node.hpp>
+#include <bg/feedback.hpp>
 #include <bg/graph.hpp>
 #include <bg/graph/wiring_context.hpp>
+#include <bg/node.hpp>
 #include <bg/scalar/data.hpp>
 #include <bg/testing/test_graph.hpp>
 #include <bg/time_series/cpp_runtime_type.hpp>
@@ -1254,6 +1255,52 @@ TEST_CASE("a node delays a configured provider output through ticks",
     const auto actual = bg::testing::test_graph(graph, std::array<bg::i64, 4>{1, 2, 3, 4});
 
     CHECK(actual.equals<bg::i64>({std::nullopt, 1, 2, 3, 4}));
+}
+
+TEST_CASE("feedback uses registered handlers for provider time series",
+          "[evaluation][feature:feedback][feature:time-series-storage][feature:timed-scheduling]"
+          "[series:generic][declaration:concrete][transition:update]") {
+    using Series = provider::Series<bg::i64>;
+    auto writes = 0;
+    auto replays = 0;
+    auto discards = 0;
+    auto dispatch = bg::TimeSeriesTickDispatch{};
+    REQUIRE(dispatch.add_write<Series>(
+        Series::type(), [&writes](const bg::In<Series> &input, bg::TimeSeriesTickWriteContext &writer,
+                                  bg::allocator &) {
+            ++writes;
+            const auto value = input.value();
+            writer.write_bytes(std::as_bytes(std::span{&value, std::size_t{1}}));
+        }));
+    REQUIRE(dispatch.add_replay<bg::Out<Series>>(
+        provider::series_runtime_type(Series::type()),
+        [&replays](bg::util::buffer_reader &reader, const bg::Out<Series> &output) {
+            ++replays;
+            output.set(reader.read_raw<bg::i64>());
+        }));
+    REQUIRE(dispatch.add_discard(Series::type(), [&discards](bg::util::buffer_reader &reader) {
+        ++discards;
+        (void)reader.read_raw<bg::i64>();
+    }));
+
+    const auto provide = bg::node([](bg::In<bg::TS<bg::i64>> input, bg::Out<Series, provider::view> output) {
+        output.set(*input);
+    });
+    const auto consume = bg::node([](bg::In<Series> input, bg::Out<bg::TS<bg::i64>> output) {
+        output.set(input.value());
+    });
+    const auto graph = [&](bg::wp<bg::TS<bg::i64>> input) {
+        auto loop = bg::feedback<Series>(dispatch, "provider_feedback");
+        const auto output = consume(static_cast<bg::wp<Series>>(loop));
+        loop = provide(input);
+        return output;
+    };
+
+    const auto actual = bg::testing::test_graph(graph, std::array<bg::i64, 3>{2, 5, 7});
+    CHECK(actual.equals<bg::i64>({std::nullopt, 2, 5, 7}));
+    CHECK(writes == 3);
+    CHECK(replays == 3);
+    CHECK(discards == 3);
 }
 
 TEST_CASE("a provider output binding works in a callable node",

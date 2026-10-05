@@ -100,8 +100,10 @@ series. It does not support references. TSS and TSD themselves cannot be
 invalidated through their output APIs, so such an event cannot be retained.
 Provider-defined time series register write, replay, and discard handlers
 with `TimeSeriesTickDispatch`; the dispatch object must outlive its writer and
-reader. Complete registration before concurrent writes or replay; dispatch
-registration is not synchronized. Write handlers receive the provider's
+reader. When passed to `feedback()`, it must also outlive the compiled graph
+and all runtime graphs created from it. Complete registration before
+concurrent writes, replay, or graph evaluation; dispatch registration is not
+synchronized. Write handlers receive the provider's
 `In<Series>` view and a restricted `TimeSeriesTickWriteContext`. Replay and
 discard handlers use `util::buffer_reader`; replay receives its
 registered output view. Register the complete output declaration with

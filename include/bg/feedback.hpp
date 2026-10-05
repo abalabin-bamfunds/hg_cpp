@@ -8,6 +8,7 @@
 #include <bg/graph/wiring_context.hpp>
 #include <bg/node.hpp>
 #include <bg/node/aggregate_node_template.hpp>
+#include <bg/scalar/opaque.hpp>
 #include <bg/time_series/tick_serializer.hpp>
 #include <bg/time_series/time_series_variable.hpp>
 #include <bg/time_series/ts/ts_output.hpp>
@@ -30,6 +31,10 @@ struct FeedbackBuffer {
     FeedbackBuffer(util::buffer buffer, allocator memory, const TimeSeriesType &type)
         : writer{buffer, memory}, reader{std::move(buffer), type} {}
 
+    FeedbackBuffer(util::buffer buffer, allocator memory, const TimeSeriesType &type,
+                   const TimeSeriesTickDispatch &dispatch)
+        : writer{buffer, memory, dispatch}, reader{std::move(buffer), type, dispatch} {}
+
     TimeSeriesTickWriter writer;
     TimeSeriesTickReader reader;
 };
@@ -39,11 +44,18 @@ template <typename SERIES> struct FeedbackSource {
     static constexpr bool uses_timed_scheduling = true;
 
     Out<SERIES> output;
+    Scalar<Opaque<const TimeSeriesTickDispatch *>> dispatch;
     State<FeedbackBuffer *> buffer;
 
     void start(EvaluationContext *context) const {
         auto memory = context->runtime_graph().allocation();
-        *buffer = memory.new_object<FeedbackBuffer>(util::buffer::chain(256, memory), memory, SERIES::type());
+        auto storage = util::buffer::chain(256, memory);
+        if (const auto *configured_dispatch = dispatch.value(); configured_dispatch != nullptr) {
+            *buffer = memory.new_object<FeedbackBuffer>(std::move(storage), memory, SERIES::type(),
+                                                        *configured_dispatch);
+        } else {
+            *buffer = memory.new_object<FeedbackBuffer>(std::move(storage), memory, SERIES::type());
+        }
     }
 
     void evaluate() const {
@@ -85,41 +97,13 @@ template <typename SERIES> struct FeedbackSink {
     }
 };
 
-struct FeedbackSourceLabel {
-    util::symbol value;
-
-    util::symbol operator()() const { return value; }
-};
-
-struct FeedbackSinkLabel {
-    util::symbol value;
-
-    util::symbol operator()(WiringPoint, WiringPoint) const { return value; }
-};
-
 } // namespace details
 
 template <typename SERIES> class Feedback {
   public:
-    explicit Feedback(std::string_view name)
-        : label_{name.empty() ? util::symbol{"feedback"} : util::symbol{name}} {
-        if (SERIES::type().contains_reference()) {
-            throw WiringError{"feedback does not support time series types containing references"};
-        }
+    explicit Feedback(std::string_view name) : Feedback{nullptr, name} {}
 
-        static_assert([] {
-            if constexpr (requires { SERIES::has_explicit_guarantee; SERIES::guarantee; }) {
-                return !SERIES::has_explicit_guarantee || SERIES::guarantee != TimeSeriesGuarantee::const_;
-            }
-            return true;
-        }(), "feedback output cannot have the const guarantee");
-
-        auto &wiring = WiringContext::current().wiring();
-        using SourceTemplate = AggregateNodeTemplate<details::FeedbackSource<SERIES>, details::FeedbackSourceLabel>;
-        const auto &source_template =
-            wiring.own_node_template(std::make_unique<SourceTemplate>(details::FeedbackSourceLabel{label_}));
-        source_ = *source_template();
-    }
+    Feedback(const TimeSeriesTickDispatch &dispatch, std::string_view name = {}) : Feedback{&dispatch, name} {}
 
     Feedback(const Feedback &) = delete;
     Feedback &operator=(const Feedback &) = delete;
@@ -142,6 +126,27 @@ template <typename SERIES> class Feedback {
     }
 
   private:
+    Feedback(const TimeSeriesTickDispatch *dispatch, std::string_view name) {
+        if (SERIES::type().contains_reference()) {
+            throw WiringError{"feedback does not support time series types containing references"};
+        }
+
+        static_assert([] {
+            if constexpr (requires { SERIES::has_explicit_guarantee; SERIES::guarantee; }) {
+                return !SERIES::has_explicit_guarantee || SERIES::guarantee != TimeSeriesGuarantee::const_;
+            }
+            return true;
+        }(), "feedback output cannot have the const guarantee");
+
+        auto &wiring = WiringContext::current().wiring();
+        const auto label = name.empty() ? util::symbol{"feedback"} : util::symbol{name};
+        path_ = &wiring.make_path(util::symbol{"feedback"}, label);
+        using SourceTemplate = AggregateNodeTemplate<details::FeedbackSource<SERIES>>;
+        const auto &source_template = wiring.own_node_template(std::make_unique<SourceTemplate>());
+        auto path_context = WiringContext{wiring, *path_};
+        source_ = *source_template(ScalarValue<Opaque<const TimeSeriesTickDispatch *>>{dispatch});
+    }
+
     template <typename SOURCE> void bind(SOURCE &&input) {
         if (assigned_) {
             throw std::logic_error{"a feedback sink can be assigned only once"};
@@ -152,20 +157,25 @@ template <typename SERIES> class Feedback {
             throw WiringError{"a feedback source and sink must be wired in the same GraphWiring"};
         }
 
-        using SinkTemplate = AggregateNodeTemplate<details::FeedbackSink<SERIES>, details::FeedbackSinkLabel>;
-        const auto &sink_template =
-            wiring.own_node_template(std::make_unique<SinkTemplate>(details::FeedbackSinkLabel{label_}));
+        using SinkTemplate = AggregateNodeTemplate<details::FeedbackSink<SERIES>>;
+        const auto &sink_template = wiring.own_node_template(std::make_unique<SinkTemplate>());
+        auto path_context = WiringContext{wiring, *path_};
         (void)sink_template(std::forward<SOURCE>(input), source_);
         assigned_ = true;
     }
 
-    util::symbol label_;
+    const WiringPath *path_{};
     WiringPoint source_;
     bool assigned_{};
 };
 
 template <typename SERIES> [[nodiscard]] auto feedback(std::string_view name = {}) {
     return Feedback<SERIES>{name};
+}
+
+template <typename SERIES>
+[[nodiscard]] auto feedback(const TimeSeriesTickDispatch &dispatch, std::string_view name = {}) {
+    return Feedback<SERIES>{dispatch, name};
 }
 
 } // namespace bg
