@@ -108,7 +108,7 @@ inline constexpr bool input_requires_runtime_type = true;
 template <typename TimeSeries, auto... Properties>
 inline constexpr bool input_requires_runtime_type<In<TimeSeries, Properties...>> =
     !direct_time_series_input<In<TimeSeries, Properties...>> || generic_time_series<TimeSeries> ||
-    contains_guarantee_variable_v<TimeSeries> || is_time_series_set<TimeSeries> || is_time_series_dict<TimeSeries>;
+    contains_guarantee_variable_v<TimeSeries> || is_time_series_set<TimeSeries>;
 
 } // namespace bg::details
 
