@@ -49,6 +49,10 @@ add_library(
     src/map_entries.cpp
     src/map_node.cpp
     src/map.cpp
+    src/reduce_graph_argument.cpp
+    src/reduce_node.cpp
+    src/reduce_node_definition.cpp
+    src/reduce.cpp
     src/mesh_node.cpp
     src/mesh.cpp
     src/switch_node.cpp

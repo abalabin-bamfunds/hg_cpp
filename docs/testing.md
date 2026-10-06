@@ -21,7 +21,7 @@ Use `[dimension:value]` for each applicable dimension:
   `lifecycle`, `finalization`, `scheduling`, `timed-scheduling`, `simulation`, `wall-clock`, `input-activity`, `validity`,
   `invalidation`, `operator`, `constant`, `graph-argument`, `map`, `switch`,
   `time-series-storage`, `time-series-view`, `collection-change`, `reference`, `sampling`, `feedback`, `service`,
-  `getitem`, `getattr`, `nested-graph`, `mesh`, `multiservice`, `variadic-wiring`, or `wiring-materialisation`
+  `getitem`, `getattr`, `nested-graph`, `mesh`, `multiservice`, `reduce`, `variadic-wiring`, or `wiring-materialisation`
 - `series`: `value`, `fixed-tsl`, `tss`, `tsd`, `tsb`, `reference`, or `generic`
 - `schema`: `named`, `unnamed`, or `generic`
 - `representation`: `native`, `free`, or `covariant`
@@ -196,6 +196,7 @@ graph compilation or evaluation.
   matched-binding costs without additional callback execution
 - map argument selection, graph-function adaptation, overload selection, graph identity, and diagnostics
 - mesh argument selection, dependency selection, output inference, overload selection, and diagnostics
+- reducer graph adaptation, input and output compatibility, TSD item type resolution, and diagnostics
 - switch case preparation, argument selection, overload selection, compatibility, and diagnostics
 - service declarations, signature validation, type mapping, scalar multiplicity, installation arguments,
   implementation selection, multiservice claims and request/reply ports, and path-aware diagnostics
@@ -255,6 +256,7 @@ graph compilation or evaluation.
   functions, reference-bound collections, and mapped item replacement while
   another input keeps the inner graph alive
 - mesh dependency creation, key changes, shared dependencies, cycle rejection, evaluation order, and lifecycle
+- reduction of valid TSD items through balanced reducer graphs, odd item counts, defaults, and membership changes
 - switch selection, default selection, inner graph evaluation, scheduling, lifecycle, and composition with map and mesh
 - service request deduplication, invalidation, nested graph binding propagation, provider ordering, and client removal
 

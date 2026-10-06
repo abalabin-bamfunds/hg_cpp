@@ -15,6 +15,7 @@ add_executable(
     evaluation/lifecycle/runtime_lifecycle_test.cpp
     evaluation/map_runtime_node_test.cpp
     evaluation/map_test.cpp
+    evaluation/reduce_test.cpp
     evaluation/mesh_test.cpp
     evaluation/switch_test.cpp
     evaluation/nested_graph_test.cpp
@@ -132,6 +133,7 @@ add_executable(
     wiring/fallible_identity_test.cpp
     wiring/map_call_test.cpp
     wiring/map_test.cpp
+    wiring/reduce_test.cpp
     wiring/mesh_test.cpp
     wiring/switch_test.cpp
     wiring/operator_test.cpp
