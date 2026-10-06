@@ -28,3 +28,8 @@ when the runtime representations are compatible. Other reducer graphs use
 nested runtime graphs. A change to the key set or to the reference stored under
 a key rebuilds the tree. Stopped nested graphs remain allocated until the next
 outer cycle so reference removal completes before their storage is released.
+
+The compact-storage check may call the reducer graph function a second time
+during wiring, using an independent graph wiring. If that call produces a
+different graph body, reduce uses nested runtime graphs. Wiring-time side
+effects in the function run on both calls.
