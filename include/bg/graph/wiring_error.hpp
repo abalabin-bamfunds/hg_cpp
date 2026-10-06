@@ -1,5 +1,6 @@
 #pragma once
 
+#include <bg/node/input_property_types.hpp>
 #include <bg/util/symbol.hpp>
 
 #include <memory>
@@ -26,7 +27,7 @@ struct WiringParameterDiagnostic {
     util::symbol name;
     const Type *type;
     std::shared_ptr<const Type> type_owner{};
-    bool optional_input{};
+    InputValidity validity{};
 };
 
 struct WiringSignatureDiagnostic {

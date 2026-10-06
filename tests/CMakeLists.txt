@@ -37,6 +37,7 @@ add_executable(
     evaluation/validity/input_activity_test.cpp
     evaluation/validity/invalidation_behavior_test.cpp
     evaluation/validity/optional_input_test.cpp
+    evaluation/validity/all_valid_input_test.cpp
     evaluation/validity/runtime_validity_test.cpp
     graph/compiled_graph_test.cpp
     graph/service_binding_test.cpp

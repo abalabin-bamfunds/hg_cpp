@@ -16,6 +16,7 @@ using namespace bg::literals;
 using FloatInput = bg::In<bg::TS<float>, "value"_n>;
 using UnnamedFloatInput = bg::In<bg::TS<float>>;
 using PassiveOptionalFloatInput = bg::In<bg::TS<float>, bg::optional, "value"_n, bg::passive>;
+using AllValidFloatInput = bg::In<bg::TS<float>, bg::InputValidity::all_valid>;
 using FinalFloatInput = bg::In<bg::TS<float, bg::TimeSeriesGuarantee::final>>;
 
 template <typename T>
@@ -29,6 +30,7 @@ static_assert(FloatInput::activity == bg::active);
 static_assert(FloatInput::validity == bg::required);
 static_assert(PassiveOptionalFloatInput::activity == bg::passive);
 static_assert(PassiveOptionalFloatInput::validity == bg::optional);
+static_assert(AllValidFloatInput::validity == bg::InputValidity::all_valid);
 static_assert(FinalFloatInput::time_series_type::guarantee == bg::TimeSeriesGuarantee::final);
 static_assert(!HasArrowOperator<FloatInput>);
 

@@ -91,6 +91,7 @@ class In<REF<Target, TimeSeriesProperties...>, Properties...>
           dynamic_{&storage, &context, storage_offset} {}
 
     bool valid() const noexcept { return data_.valid(); }
+    bool all_valid() const noexcept { return valid(); }
     bool became_valid() const noexcept { return data_.became_valid(); }
     bool became_invalid() const noexcept { return data_.became_invalid(); }
     bool modified() const noexcept { return data_.modified(); }

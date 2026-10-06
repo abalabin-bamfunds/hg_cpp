@@ -18,7 +18,9 @@ template <util::compile_time_string Text> struct is_compile_time_name<compile_ti
 
 template <typename T> inline constexpr bool is_activity = std::same_as<std::remove_cv_t<T>, InputActivity>;
 
-template <typename T> inline constexpr bool is_validity = std::same_as<std::remove_cv_t<T>, InputValidity>;
+template <typename T>
+inline constexpr bool is_validity = std::same_as<std::remove_cv_t<T>, InputValidity> ||
+                                    std::same_as<std::remove_cv_t<T>, Optionality>;
 
 template <typename T> inline constexpr bool is_name = is_compile_time_name<std::remove_cv_t<T>>::value;
 
@@ -119,6 +121,14 @@ template <auto... Properties> struct wiring_point_properties {
                            is_context<decltype(Properties)> ||
                            is_variadic_mode<decltype(Properties)>)),
                   "unsupported wiring point property");
+    static_assert((... && []<auto Property> {
+        if constexpr (is_validity<decltype(Property)>) {
+            return InputValidity{Property} != InputValidity::all_valid;
+        } else {
+            return true;
+        }
+    }.template operator()<Properties>()),
+                  "all_valid is an input requirement and cannot annotate a wiring point");
     static_assert((std::size_t{} + ... + static_cast<std::size_t>(is_name<decltype(Properties)>)) <= 1,
                   "a wiring point can have only one name property");
     static_assert((std::size_t{} + ... + static_cast<std::size_t>(is_validity<decltype(Properties)>)) <= 1,
@@ -144,10 +154,10 @@ template <auto... Properties> struct wiring_point_properties {
     static constexpr bool context = (false || ... || is_context<decltype(Properties)>);
     static constexpr auto variadic_mode = bg::details::variadic_mode<Properties...>();
     static constexpr InputValidity validity = [] {
-        auto result = required;
+        auto result = InputValidity{required};
         (([&] {
              if constexpr (is_validity<decltype(Properties)>) {
-                 result = Properties;
+                 result = InputValidity{Properties};
              }
          }()),
          ...);

@@ -131,10 +131,10 @@ ResolvedTimeSeries ReferenceProvider::resolve_representation(std::uint32_t index
 void ReferenceProvider::add_root_subscriber(RuntimeGraph &graph, std::uint32_t input_offset,
                                             std::size_t notification_data, std::uint32_t node_index, bool active,
                                             bool required, InputNotificationFunction notification,
-                                            bool controlled_activity) {
+                                            bool controlled_activity, bool all_valid) {
     auto &subscribers = DynamicSubscribers::ensure(subscriber_groups_.front(), memory_);
     subscribers.add(graph, input_offset, notification_data, node_index, active, required, notification,
-                    controlled_activity);
+                    controlled_activity, all_valid);
 }
 
 void ReferenceProvider::add_root_observer(RuntimeGraph &graph, void *receiver, RuntimeObserverFunction function) {
@@ -164,7 +164,8 @@ void ReferenceProvider::notify_root(OutputChangeContext &context, OutputChange c
 void ReferenceProvider::add_subscriber(ReferenceSubscriptionDetail &subscriptions, RuntimeGraph &graph,
                                        std::uint32_t input_offset, std::size_t notification_data,
                                        std::uint32_t node_index, bool active, bool required,
-                                       InputNotificationFunction notification, bool controlled_activity) {
+                                       InputNotificationFunction notification, bool controlled_activity,
+                                       bool all_valid) {
     if (!subscriptions.has_subscriber_group()) {
         subscriber_groups_.push_back(nullptr);
         subscriptions.set_subscriber_group(static_cast<std::uint32_t>(subscriber_groups_.size() - 1));
@@ -172,7 +173,7 @@ void ReferenceProvider::add_subscriber(ReferenceSubscriptionDetail &subscription
 
     auto &subscribers = DynamicSubscribers::ensure(subscriber_groups_[subscriptions.subscriber_group_index()], memory_);
     subscribers.add(graph, input_offset, notification_data, node_index, active, required, notification,
-                    controlled_activity);
+                    controlled_activity, all_valid);
 }
 
 void ReferenceProvider::add_observer(ReferenceSubscriptionDetail &subscriptions, RuntimeGraph &graph, void *receiver,
@@ -432,30 +433,31 @@ const TimeSeriesRuntimeType &ReferenceProvider::representation_runtime_type(cons
 void ReferenceProvider::add_subscriber(Reference reference, RuntimeGraph &graph, std::uint32_t input_offset,
                                        std::size_t notification_data, std::uint32_t node_index, bool active,
                                        bool required, InputNotificationFunction notification,
-                                       bool controlled_activity) {
+                                       bool controlled_activity, bool all_valid) {
     if (auto *root = reference.get<RootReference>()) {
         if (auto *provider = root->provider()) {
             provider->add_root_subscriber(graph, input_offset, notification_data, node_index, active, required,
-                                          notification, controlled_activity);
+                                          notification, controlled_activity, all_valid);
             return;
         }
 
-        const auto has_node_subscriber = active || required || controlled_activity;
+        const auto has_node_subscriber = active || required || controlled_activity || all_valid;
         if (!has_node_subscriber && notification == nullptr) {
             return;
         }
         if (!root->has_inline_subscriber() && !root->has_dynamic_subscribers() && notification == nullptr) {
             root->set_inline_subscriber(
-                DynamicNodeSubscriber{graph, input_offset, node_index, active, required, controlled_activity});
+                DynamicNodeSubscriber{graph, input_offset, node_index, active, required, controlled_activity,
+                                      all_valid});
             return;
         }
 
         root->promote_subscribers().add(graph, input_offset, notification_data, node_index, active, required,
-                                        notification, controlled_activity);
+                                        notification, controlled_activity, all_valid);
         return;
     }
     get(reference)->add_subscriber(subscriptions(reference), graph, input_offset, notification_data, node_index, active,
-                                   required, notification, controlled_activity);
+                                   required, notification, controlled_activity, all_valid);
 }
 
 void ReferenceProvider::add_observer(Reference reference, RuntimeGraph &graph, void *receiver,

@@ -3,15 +3,33 @@
 #include <bg/run_graph.hpp>
 #include <bg/testing/test_graph.hpp>
 #include <bg/time_series/time_series_runtime_type.hpp>
+#include <bg/time_series/tsb/tsb.hpp>
 #include <bg/time_series/tsd/tsd_type.hpp>
+#include <bg/time_series/tsl/tsl_type.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <array>
+#include <chrono>
 #include <cstdint>
 #include <optional>
 
 namespace {
+
+template <template <typename, auto...> typename Field> struct RuntimeValidityBaseBundle {
+    Field<bg::i64> value;
+};
+
+template <template <typename, auto...> typename Field>
+struct RuntimeValidityDerivedBundle : bg::bundle_extends<RuntimeValidityBaseBundle, Field> {
+    Field<bg::i64> extra;
+};
+
+struct RuntimeValidityDerivedSource {
+    bg::Out<bg::TSB<RuntimeValidityDerivedBundle>> output;
+
+    void start() const { output->value.set(42); }
+};
 
 struct RuntimeNodeState {
     std::int64_t evaluations{};
@@ -168,6 +186,109 @@ TEST_CASE("an absent optional scalar remains enumerable",
     };
 
     CHECK(bg::testing::test_graph(graph, {1, 2}).equals({1, 2}));
+}
+
+struct RuntimeAllValidDefinition {
+    RuntimeAllValidDefinition()
+        : signature_{bg::util::symbol{"runtime_all_valid"},
+                     {{bg::util::symbol{"known"}, &bg::TS<bg::i64>::type()},
+                      {bg::util::symbol{"adjustment"}, &bg::cpp_scalar_type<bg::i64>()},
+                      {bg::util::symbol{"items"}, &bg::TSL<bg::TS<bg::i64>, 2>::type(), bg::active,
+                       bg::all_valid}},
+                     bg::TS<bg::i64>::type()} {}
+
+    const bg::Signature &signature() const { return signature_; }
+
+    static void evaluate(bg::NodeInvocation<> invocation) {
+        auto known_is_valid = false;
+        auto items_are_valid = false;
+        for (const auto input : invocation.inputs()) {
+            if (input.parameter_index() == 0) {
+                known_is_valid = input.value().valid();
+            } else if (input.parameter_index() == 2) {
+                items_are_valid = input.value().all_valid(
+                    bg::type_cast<bg::TimeSeriesType>(input.parameter_type()));
+            }
+        }
+
+        const auto adjustment = *invocation.scalars().begin();
+        CHECK(adjustment.parameter_index() == 1);
+        const auto output_value = known_is_valid && items_are_valid
+                                      ? bg::scalar_cast<bg::i64>(adjustment.value()).value()
+                                      : bg::i64{};
+        const auto value = bg::Scalar<bg::i64>::from(output_value);
+        invocation.output().visit(
+            [&](bg::Out<bg::TS<bg::SCALAR>> *output) { output->set_value(value); }, ddv::noop);
+    }
+
+    bg::Signature signature_;
+};
+
+struct RuntimePartiallyValidListDefinition {
+    static constexpr bool uses_timed_scheduling = true;
+
+    bg::State<int> step;
+    bg::Out<bg::TSL<bg::TS<bg::i64>, 2>> output;
+
+    void start(bg::EvaluationContext *context) const {
+        output[0].set(10);
+        output[1].set(20);
+        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
+    }
+
+    void evaluate(bg::EvaluationContext *context) const {
+        if (*step == 0) {
+            output[1].invalidate();
+            context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
+        } else {
+            output[1].set(22);
+        }
+
+        ++*step;
+    }
+};
+
+TEST_CASE("a runtime-signature node applies all_valid using invocation metadata",
+          "[node][runtime-signature][definition:runtime][feature:validity][validity:all-valid]"
+          "[series:fixed-tsl][scalar:i64]") {
+    const auto runtime_node = bg::node(RuntimeAllValidDefinition{});
+    const auto list_source = bg::node<RuntimePartiallyValidListDefinition>();
+    const auto graph = [&](bg::wp<bg::TS<bg::i64>> known) -> bg::wp<bg::TS<bg::i64>> {
+        return bg::wp<bg::TS<bg::i64>>{*runtime_node(known, bg::i64{7}, list_source())};
+    };
+
+    CHECK(bg::testing::test_graph(graph, std::array<bg::i64, 3>{1, 2, 3}).equals({7, std::nullopt, 7}));
+}
+
+struct RuntimeBundleAllValidDefinition {
+    RuntimeBundleAllValidDefinition()
+        : signature_{bg::util::symbol{"runtime_bundle_all_valid"},
+                     {{bg::util::symbol{"bundle"}, &bg::TSB<RuntimeValidityBaseBundle>::type(), bg::active,
+                       bg::all_valid}},
+                     bg::TS<bg::i64>::type()} {}
+
+    const bg::Signature &signature() const { return signature_; }
+
+    static void evaluate(bg::NodeInvocation<> invocation) {
+        const auto input = *invocation.inputs().begin();
+        const auto &declared_type = bg::type_cast<bg::TimeSeriesType>(input.parameter_type());
+        const auto result = input.value().all_valid(declared_type) ? bg::i64{1} : bg::i64{};
+        const auto value = bg::Scalar<bg::i64>::from(result);
+        invocation.output().visit(
+            [&](bg::Out<bg::TS<bg::SCALAR>> *output) { output->set_value(value); }, ddv::noop);
+    }
+
+    bg::Signature signature_;
+};
+
+TEST_CASE("a runtime-signature input checks the declared base bundle schema",
+          "[node][runtime-signature][definition:runtime][feature:validity][validity:all-valid]"
+          "[series:tsb][schema:named][binding:covariant][representation:native]") {
+    const auto runtime_node = bg::node(RuntimeBundleAllValidDefinition{});
+    const auto source = bg::node<RuntimeValidityDerivedSource>();
+    const auto graph = [&] { return bg::wp<bg::TS<bg::i64>>{*runtime_node(source())}; };
+
+    CHECK(bg::testing::test_graph(graph).equals({1}));
 }
 
 struct RuntimeDictionarySourceDefinition {

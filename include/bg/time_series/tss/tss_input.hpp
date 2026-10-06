@@ -41,6 +41,7 @@ class In<TSS<K, TimeSeriesProperties...>, Properties...>
         : activity_control{activity}, data_{data} {}
 
     bool valid() const noexcept { return data_.valid(); }
+    bool all_valid() const noexcept { return valid(); }
     bool became_valid() const noexcept { return data_.became_valid(); }
     bool became_invalid() const noexcept { return data_.became_invalid(); }
     bool modified() const noexcept { return data_.modified(); }

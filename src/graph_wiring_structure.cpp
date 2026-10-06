@@ -102,7 +102,7 @@ std::size_t node_label_hash(const NodeShape &node) noexcept {
     for (const auto &parameter : node.parameters) {
         combine_pointer(result, parameter.type);
         combine(result, static_cast<std::size_t>(parameter.activity));
-        combine(result, static_cast<std::size_t>(parameter.validity));
+        combine(result, static_cast<std::size_t>(parameter.validity.value));
         combine(result, parameter.dynamic_activity);
         combine(result, parameter.accepts_absent_scalar);
         combine(result, static_cast<std::size_t>(parameter.variadic_mode));

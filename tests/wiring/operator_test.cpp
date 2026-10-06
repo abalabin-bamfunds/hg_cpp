@@ -141,7 +141,7 @@ TEST_CASE("an operator reports equally specific overloads as ambiguous", "[featu
 }
 
 TEST_CASE("opt selects optional inputs and keeps that choice distinct in the cache",
-          "[feature:operator][feature:wiring][validity:optional][series:value]") {
+          "[feature:operator][feature:wiring][feature:validity][validity:optional][series:value]") {
     auto selected = std::string{};
     auto operation = bg::operator_<auto(bg::TS_T)->bg::TS_T>{"optional", {"value"}};
     operation.overload(bg::graph("name"_n = "required", [&](bg::wp<bg::TS<bg::i64>> value) {
@@ -168,8 +168,60 @@ TEST_CASE("opt selects optional inputs and keeps that choice distinct in the cac
     });
 }
 
+TEST_CASE("all_valid is preferred over optional for an unmarked input",
+          "[feature:operator][feature:wiring][feature:validity][validity:all-valid]") {
+    auto operation = bg::operator_<auto(bg::TS_T)->bg::TS_T>{"validity", {"value"}};
+    operation.overload(bg::node([](bg::In<bg::TS<bg::i64>, bg::all_valid> value, bg::Out<bg::TS<bg::i64>> output) {
+        output.set(value.value());
+    }));
+    operation.overload(bg::node([](bg::In<bg::TS<bg::i64>, bg::optional>, bg::Out<bg::TS<bg::i64>> output) {
+        output.set(0);
+    }));
+
+    const auto graph = [&](bg::wp<bg::TS<bg::i64>> value) -> bg::wp<bg::TS<bg::i64>> {
+        return operation(value).as<bg::TS<bg::i64>>();
+    };
+
+    CHECK(bg::testing::test_graph(graph, std::array<bg::i64, 2>{1, 2}).equals({1, 2}));
+}
+
+TEST_CASE("required and all_valid overloads are equally specific",
+          "[feature:operator][feature:wiring][feature:validity][validity:all-valid]") {
+    auto operation = bg::operator_<auto(bg::TS_T)->bg::TS_T>{"validity", {"value"}};
+    operation.overload(bg::node([](bg::In<bg::TS<bg::i64>>, bg::Out<bg::TS<bg::i64>> output) { output.set(1); }));
+    operation.overload(
+        bg::node([](bg::In<bg::TS<bg::i64>, bg::all_valid>, bg::Out<bg::TS<bg::i64>> output) { output.set(2); }));
+
+    const auto graph = [&](bg::wp<bg::TS<bg::i64>> value) -> bg::wp<bg::TS<bg::i64>> {
+        return operation(value).as<bg::TS<bg::i64>>();
+    };
+
+    try {
+        (void)bg::testing::test_graph(graph, std::array<bg::i64, 1>{1});
+        FAIL("expected required and all_valid overloads to be ambiguous");
+    } catch (const bg::WiringError &error) {
+        REQUIRE(error.diagnostic());
+        CHECK(error.diagnostic()->ambiguous);
+        CHECK(error.diagnostic()->candidates.size() == 2);
+        CHECK(error.diagnostic()->candidates[1].signature.parameters.front().validity == bg::InputValidity::all_valid);
+        CHECK(std::string{error.what()}.contains("all_valid "));
+    }
+}
+
+TEST_CASE("opt-qualified arguments do not match all_valid inputs",
+          "[feature:operator][feature:wiring][feature:validity][validity:all-valid][validity:optional]") {
+    auto operation = bg::operator_<auto(bg::TS_T)->bg::TS_T>{"validity", {"value"}};
+    operation.overload(
+        bg::node([](bg::In<bg::TS<bg::i64>, bg::all_valid>, bg::Out<bg::TS<bg::i64>> output) { output.set(0); }));
+    const auto graph = [&](bg::wp<bg::TS<bg::i64>> value) -> bg::wp<bg::TS<bg::i64>> {
+        return operation(bg::opt(value)).as<bg::TS<bg::i64>>();
+    };
+
+    CHECK_THROWS_AS(bg::testing::test_graph(graph, std::array<bg::i64, 1>{1}), bg::WiringError);
+}
+
 TEST_CASE("type specificity precedes required-input preference",
-          "[feature:operator][feature:wiring][validity:optional][series:value]") {
+          "[feature:operator][feature:wiring][feature:validity][validity:optional][series:value]") {
     auto selected = std::string{};
     auto operation = bg::operator_<auto(bg::TS_T)->bg::TS_T>{"specificity", {"value"}};
     operation.overload(bg::graph("name"_n = "required_generic", [&](bg::wp<bg::TS<bg::SCALAR>> value) {
@@ -188,7 +240,7 @@ TEST_CASE("type specificity precedes required-input preference",
 }
 
 TEST_CASE("conflicting required-input preferences remain ambiguous",
-          "[feature:operator][feature:wiring][validity:optional][series:value]") {
+          "[feature:operator][feature:wiring][feature:validity][validity:optional][series:value]") {
     auto operation = bg::operator_<auto(bg::TS_T, bg::TS_T)->bg::TS_T>{"validity", {"lhs", "rhs"}};
     operation.overload(bg::graph("name"_n = "required_lhs", [](bg::wp<bg::TS<bg::i64>> lhs,
                                                                   bg::wp<bg::TS<bg::i64>, bg::optional> rhs) {
@@ -211,7 +263,7 @@ TEST_CASE("conflicting required-input preferences remain ambiguous",
 }
 
 TEST_CASE("an opt-qualified argument rejects a required-only overload",
-          "[feature:operator][feature:wiring][validity:optional][series:value]") {
+          "[feature:operator][feature:wiring][feature:validity][validity:optional][series:value]") {
     auto operation = bg::operator_<auto(bg::TS_T)->bg::TS_T>{"required", {"value"}};
     operation.overload(bg::graph("name"_n = "required", [](bg::wp<bg::TS<bg::i64>> value) { return value; }));
     const auto source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
@@ -222,9 +274,10 @@ TEST_CASE("an opt-qualified argument rejects a required-only overload",
     } catch (const bg::WiringError &error) {
         REQUIRE(error.diagnostic());
         REQUIRE(error.diagnostic()->arguments.size() == 1);
-        CHECK(error.diagnostic()->arguments.front().optional_input);
+        CHECK(error.diagnostic()->arguments.front().validity == bg::InputValidity::optional);
         REQUIRE(error.diagnostic()->candidates.size() == 1);
-        CHECK_FALSE(error.diagnostic()->candidates.front().signature.parameters.front().optional_input);
+        CHECK(error.diagnostic()->candidates.front().signature.parameters.front().validity ==
+              bg::InputValidity::required);
         CHECK(std::string{error.what()}.contains("opt TS<i64>"));
     }
 }

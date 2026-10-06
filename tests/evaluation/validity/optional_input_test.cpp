@@ -11,6 +11,9 @@
 
 using namespace bg;
 
+static_assert(wp<TS<i64>, InputValidity::required>::validity == required);
+static_assert(wp<TS<i64>, InputValidity::optional>::validity == optional);
+
 TEST_CASE("optional inputs remain evaluable through invalidation and revalidation",
           "[feature:validity][validity:optional][transition:invalidation][transition:revalidation]"
           "[feature:operator][series:value][scalar:i64][shape:chain]") {

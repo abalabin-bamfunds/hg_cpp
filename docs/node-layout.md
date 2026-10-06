@@ -83,6 +83,7 @@ It contains:
 - required-input invalidation mode and an optional function entry point
 - subscribers and optional output-notification metadata
 - one runtime type pointer for each input whose layout is selected during graph compilation
+- declared and runtime type pointers for `all_valid` input checks, independent of input-view construction metadata
 - the selected runtime type pointer for an output whose layout is selected during graph compilation
 - optional data required by a runtime-signature node definition
 

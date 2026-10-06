@@ -81,7 +81,8 @@ class RuntimeGraph {
         if (subscriber.controlled_activity()) {
             active = dynamic_input_active(subscriber.input_offset);
         }
-        notify_node_subscriber(subscriber.node_index(), active, subscriber.required(), active && !subscriber.required(),
+        notify_node_subscriber(subscriber.node_index(), active, subscriber.required(),
+                               active && !subscriber.required(), subscriber.all_valid(),
                                change);
     }
 
@@ -126,7 +127,7 @@ class RuntimeGraph {
     void publish_output(const CompiledNode &node, OutputChange change);
     void notify_subscribers(std::span<const Subscriber> subscribers, OutputChange change);
     void notify_node_subscriber(std::size_t node_index, bool active, bool required, bool active_optional,
-                                OutputChange change) noexcept;
+                                bool all_valid, OutputChange change) noexcept;
     bool dynamic_input_active(std::uint32_t input_offset) const noexcept;
     void initialize_inherited_time_series(std::size_t index, Reference reference);
     std::span<details::ServiceRequestBinding *> service_bindings() noexcept;

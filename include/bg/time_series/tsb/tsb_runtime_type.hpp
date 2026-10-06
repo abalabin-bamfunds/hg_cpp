@@ -67,6 +67,25 @@ class TimeSeriesBundleRuntimeTypeBase : public TimeSeriesRuntimeType {
         }
     }
 
+    bool all_valid(const TimeSeriesState &last_updated, const void *value) const noexcept final {
+        return fields_all_valid(last_updated, value, fields_.size());
+    }
+
+    bool all_valid(const TimeSeriesState &last_updated, const void *value,
+                   const TimeSeriesType &declared_type) const noexcept override {
+        const auto *declared_bundle = type_cast<TimeSeriesBundleType>(&declared_type);
+        if (declared_bundle == nullptr) {
+            return TimeSeriesRuntimeType::all_valid(last_updated, value, declared_type);
+        }
+
+        const auto field_count = declared_bundle->item_count();
+        if (field_count == std::dynamic_extent) {
+            return TimeSeriesRuntimeType::all_valid(last_updated, value, declared_type);
+        }
+
+        return fields_all_valid(last_updated, value, field_count);
+    }
+
     bool item_updated(const TimeSeriesState &last_updated, const void *value,
                                     item_id_t id) const noexcept final {
         const auto &storage = *static_cast<const time_series_bundle_storage *>(value);
@@ -176,6 +195,26 @@ class TimeSeriesBundleRuntimeTypeBase : public TimeSeriesRuntimeType {
     }
 
   private:
+    bool fields_all_valid(const TimeSeriesState &last_updated, const void *value,
+                          std::size_t field_count) const noexcept {
+        if (!last_updated.valid() || value == nullptr) {
+            return false;
+        }
+
+        if (field_count > fields_.size()) {
+            return false;
+        }
+
+        const auto *bytes = static_cast<const std::byte *>(value);
+        for (auto index = std::size_t{}; index < field_count; ++index) {
+            if (!reinterpret_cast<const TimeSeriesState *>(bytes + fields_[index].last_updated_offset)->valid()) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     std::vector<ItemLayout> fields_;
 };
 

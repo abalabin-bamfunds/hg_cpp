@@ -72,26 +72,32 @@ changes. The runtime schedules subscribers for the output and each changed item.
 
 ## Required input invalidation
 
-When a node changes from all required inputs valid to at least one required
-input invalid, the engine applies its invalidation behavior once. Output
+When a node changes from satisfying every input validity constraint to failing
+at least one constraint, the engine applies its invalidation behavior once. Output
 invalidation schedules subscribers.
 
-The runtime records whether all required inputs were valid after the last
+The runtime records whether every input validity constraint passed after the last
 check. An input validity change marks this result for refresh. Before node
 evaluation, the runtime refreshes it when required and uses the result to decide
 whether the node can run.
+
+An `all_valid` input also checks its immediate contained time series. Each input
+update marks the cached result for refresh because item validity can change
+while the root remains valid. This applies to passive inputs and inputs made
+passive through `dynamic_activity`; refreshing validity does not run the
+evaluation function unless the node is also scheduled for evaluation.
 
 The [node API](node-api.md#required-input-invalidation) defines the declaration
 and function interface. The [validity design](time-series-validity.md) defines
 the effects on time series and input views.
 
-Evaluation remains blocked while a required input is invalid. An update or
-revalidation of an active input schedules evaluation. The same changes on a
-passive input schedule nothing.
+Evaluation remains blocked while an input validity constraint fails. An update
+or revalidation of an active input schedules evaluation. The same changes on a
+passive input do not schedule evaluation.
 
 An input with `dynamic_activity` can change this scheduling behavior during a
 node invocation. Its current activity applies only to scheduling caused by that
-input. Required-input validity checks and input callbacks continue regardless
+input. Input validity checks and input callbacks continue regardless
 of its current activity.
 
 ## Evaluation context

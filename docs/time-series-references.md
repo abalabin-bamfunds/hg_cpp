@@ -147,8 +147,8 @@ When a reference changes target:
 
 1. Remove any receiving input subscription from the old target.
 2. Store the new reference.
-3. Add a subscription to the new target when the input is active, required, or
-   updates another logical output.
+3. Add a subscription to the new target when the input is active, has a
+   `required` or `all_valid` constraint, or updates another logical output.
 4. Sample the new target.
 
 The node subscription schedules the receiving node when the input is active.

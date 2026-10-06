@@ -133,7 +133,7 @@ node, supplies no fallback value, and does not inspect runtime validity or
 schedule evaluation.
 
 ```cpp
-operation(x, y);            // Either validity constraint is applicable.
+operation(x, y);            // Any validity constraint is applicable.
 operation(opt(x), y);       // The first parameter must be optional.
 operation(opt(x), opt(y));  // Both parameters must be optional.
 ```
@@ -142,8 +142,10 @@ The selected implementation defines the result for an invalid optional input.
 For example, addition can use zero and multiplication can use one. An operator
 without an applicable optional-input overload reports a wiring error.
 
-When applicable overloads have equivalent parameter types, required time series
-parameters are preferred for unmarked arguments. One overload must be at least
+When applicable overloads have equivalent parameter types, `required` and
+`all_valid` time series parameters are equally preferred over `optional` for
+unmarked arguments. Otherwise equivalent `required` and `all_valid` overloads
+remain ambiguous. One overload must be at least
 as preferred at every parameter and strictly preferred at one. Conflicting
 validity preferences remain ambiguous. Type specificity precedes this
 preference. This preference applies only to time series parameters; scalar

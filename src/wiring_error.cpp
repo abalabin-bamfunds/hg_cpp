@@ -18,8 +18,10 @@ void append_signature(std::string &result, const WiringSignatureDiagnostic &sign
         const auto &parameter = signature.parameters[index];
         result += parameter.name.text();
         result += ": ";
-        if (parameter.optional_input) {
+        if (parameter.validity == InputValidity::optional) {
             result += "optional ";
+        } else if (parameter.validity == InputValidity::all_valid) {
+            result += "all_valid ";
         }
         append_type_text(result, *parameter.type);
     }
@@ -51,7 +53,7 @@ std::string WiringError::render(const WiringDiagnostic &diagnostic) {
         }
         result += diagnostic.arguments[index].name.text();
         result += ": ";
-        if (diagnostic.arguments[index].optional_input) {
+        if (diagnostic.arguments[index].validity == InputValidity::optional) {
             result += "opt ";
         }
         append_type_text(result, *diagnostic.arguments[index].type);

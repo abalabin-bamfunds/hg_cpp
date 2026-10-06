@@ -399,7 +399,8 @@ TimeSeriesRuntimeType::ConstItem SampledDictionaryRuntimeType::item(const void *
 
     const auto item = dictionary_runtime_type(sample.current)->item(sample.current.storage, id);
     if (sample.added.contains(id) || sample.modified.contains(id)) {
-        return {item.runtime_type, sample.sampled_last_updated, item.value};
+        const auto &last_updated = item.last_updated.valid() ? sample.sampled_last_updated : item.last_updated;
+        return {item.runtime_type, last_updated, item.value};
     }
     return {item.runtime_type, item.last_updated, item.value};
 }

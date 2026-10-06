@@ -64,6 +64,10 @@ class In<TSB<Schema, TimeSeriesProperties...>, Properties...>
         : activity_control{activity}, data_{data}, fields_{details::make_bundle_inputs<Schema>(data_)} {}
 
     bool valid() const noexcept { return data_.valid(); }
+    bool all_valid() const noexcept {
+        return data_.valid() &&
+               data_.runtime_type().all_valid(data_.last_updated_ref(), data_.data(), time_series_type::type());
+    }
     bool became_valid() const noexcept { return data_.became_valid(); }
     bool became_invalid() const noexcept { return data_.became_invalid(); }
     bool modified() const noexcept { return data_.modified(); }
@@ -115,6 +119,9 @@ class In<TSB<Schema, TimeSeriesProperties...>, Properties...>
         : activity_control{activity}, data_{data} {}
 
     bool valid() const noexcept { return data_.valid(); }
+    bool all_valid() const noexcept {
+        return data_.valid() && data_.runtime_type().all_valid(data_.last_updated_ref(), data_.data());
+    }
     bool became_valid() const noexcept { return data_.became_valid(); }
     bool became_invalid() const noexcept { return data_.became_invalid(); }
     bool modified() const noexcept { return data_.modified(); }

@@ -4,6 +4,7 @@
 #include <bg/util/named_argument.hpp>
 
 #include <cstdint>
+#include <type_traits>
 
 namespace bg {
 
@@ -12,7 +13,31 @@ enum class InputActivity : std::uint8_t { active, passive };
 inline constexpr InputActivity active = InputActivity::active;
 inline constexpr InputActivity passive = InputActivity::passive;
 
-using InputValidity = Optionality;
+struct InputValidity {
+    enum class Value : std::uint8_t { required, optional, all_valid };
+
+    Value value{Value::required};
+
+    constexpr InputValidity() noexcept = default;
+    constexpr InputValidity(Value value) noexcept : value{value} {}
+    constexpr InputValidity(Optionality validity) noexcept
+        : value{validity == Optionality::required ? Value::required : Value::optional} {}
+
+    constexpr bool operator==(const InputValidity &) const noexcept = default;
+
+    static const InputValidity required;
+    static const InputValidity optional;
+    static const InputValidity all_valid;
+};
+
+inline constexpr InputValidity InputValidity::required{InputValidity::Value::required};
+inline constexpr InputValidity InputValidity::optional{InputValidity::Value::optional};
+inline constexpr InputValidity InputValidity::all_valid{InputValidity::Value::all_valid};
+
+static_assert(sizeof(InputValidity) == sizeof(std::uint8_t));
+static_assert(std::is_trivially_copyable_v<InputValidity>);
+
+inline constexpr InputValidity all_valid = InputValidity::all_valid;
 
 struct DynamicBinding {};
 inline constexpr DynamicBinding dynamic_binding{};

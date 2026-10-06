@@ -72,24 +72,32 @@ class Node {
 
     const TimeSeriesRuntimeType &time_series_input_runtime_type(std::size_t parameter_index,
                                                                 std::size_t runtime_type_index) const noexcept {
-        const auto &binding = compiled_node_->parameters()[parameter_index];
-        const auto *source = &binding;
-        auto mode = binding.mode();
-        if (mode == ParameterBindingMode::default_value) {
-            source = &default_descriptor(binding).source;
-            mode = source->mode();
-        }
-        if (mode == ParameterBindingMode::reference) {
-            const auto reference =
-                reinterpret_cast<const ReferenceInputStorage *>(runtime_storage_ + source->value_offset())->value;
-            if (reference) {
-                if (const auto *runtime_type = details::ResolvedTimeSeries::resolve(reference).runtime_type) {
-                    return *runtime_type;
-                }
-            }
+        if (const auto *runtime_type = bound_reference_runtime_type(parameter_index)) {
+            return *runtime_type;
         }
 
         return compiled_node_->time_series_input_runtime_type(runtime_type_index);
+    }
+
+    const TimeSeriesRuntimeType &all_valid_input_runtime_type(std::size_t parameter_index,
+                                                              std::size_t all_valid_runtime_type_index) const noexcept {
+        const auto &descriptor = compiled_node_->all_valid_input_descriptor(all_valid_runtime_type_index);
+        if (!descriptor.runtime_type->is_reference()) {
+            if (const auto *runtime_type = bound_reference_runtime_type(parameter_index)) {
+                return *runtime_type;
+            }
+        }
+
+        return *descriptor.runtime_type;
+    }
+
+    const TimeSeriesRuntimeType *bound_reference_runtime_type(std::size_t parameter_index) const noexcept {
+        const auto *input = reference_input(parameter_index);
+        if (input == nullptr || input->value == nullptr) {
+            return nullptr;
+        }
+
+        return details::ResolvedTimeSeries::resolve(input->value).runtime_type;
     }
 
     In<TS_T> time_series_input(std::size_t parameter_index, std::size_t runtime_type_index,

@@ -73,9 +73,32 @@ as updated.
 
 ## Nodes
 
-A required input view becoming invalid applies the node's invalidation behavior
-once. The [node API](node-api.md#required-input-invalidation) defines the
-available behavior.
+A `required` input view blocks node evaluation while it is invalid. An
+`optional` input does not block evaluation; the node reads its invalid state
+through the input view.
+
+An `all_valid` input requires a valid root and valid immediate items:
+
+- TSB: every field in the input's declared schema, including optional fields;
+  a base-schema input excludes fields added by a derived schema
+- fixed TSL: every position
+- sparse collections: occupied items; TSD checks live value items, excluding
+  its key set, removed items, and retained non-live keys
+
+A valid empty collection passes. The check does not recurse into items that
+are themselves collections.
+
+For `TS` and `TSS`, `all_valid` has the same effect as `required`. An explicitly
+declared `REF` input checks the reference's own validity, not its target. A
+dereferenced collection input checks its visible collection. The `all_valid()`
+query applies these rules without changing the input constraint or allocating
+representations, subscriptions, or item storage.
+
+The engine refreshes the constraint when the input changes; checking a
+collection scans its immediate items. A transition from satisfying every input
+constraint to failing one applies the node's invalidation behavior once. The
+[node API](node-api.md#required-input-invalidation) defines the available
+behavior.
 
 A node with a `const` or `final` output must preserve its output when a required
 input can become invalid after the output's first update. Wiring rejects an

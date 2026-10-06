@@ -17,7 +17,10 @@ struct BundleField {
     const TimeSeriesType *type;
 };
 
-class BundleSchemaType : public Type {};
+class BundleSchemaType : public Type {
+  public:
+    virtual std::size_t field_count() const noexcept { return std::dynamic_extent; }
+};
 
 class BundleSchema : public BundleSchemaType {
   public:
@@ -28,7 +31,7 @@ class BundleSchema : public BundleSchemaType {
     const void *identity() const noexcept { return identity_; }
     const BundleSchema *base() const noexcept { return base_; }
     std::span<const BundleField> direct_fields() const noexcept { return fields_; }
-    std::size_t field_count() const noexcept;
+    std::size_t field_count() const noexcept override final;
     const BundleField &field(std::size_t index) const;
     const BundleField *find(util::symbol name) const noexcept;
     bool derives_from(const BundleSchema &schema) const noexcept;

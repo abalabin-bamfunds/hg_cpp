@@ -22,6 +22,8 @@ class CompiledGraphBuilder;
 class CompiledNode;
 class RuntimeType;
 class ScalarRuntimeType;
+class TimeSeriesRuntimeType;
+class TimeSeriesType;
 class ItemSubscriptionRange;
 class Type;
 
@@ -43,6 +45,15 @@ struct NodeInvocationMetadata {
 struct StateMetadataCounts {
     std::uint16_t fields;
     std::uint16_t generic_fields;
+};
+
+struct AllValidInputMetadata {
+    std::uint32_t runtime_type_count;
+};
+
+struct AllValidInputDescriptor {
+    const TimeSeriesRuntimeType *runtime_type;
+    const TimeSeriesType *declared_type;
 };
 
 class ControlledInput {
@@ -67,9 +78,9 @@ enum class ParameterBindingMode : std::uint8_t {
 
 class Subscriber {
   public:
-    Subscriber(std::uint32_t node_index, bool active, bool required, bool active_optional) noexcept
+    Subscriber(std::uint32_t node_index, bool active, bool required, bool active_optional, bool all_valid) noexcept
         : node_index_and_flags_{node_index | (active ? active_flag : 0) | (required ? required_flag : 0) |
-                                (active_optional ? active_optional_flag : 0)} {}
+                                (active_optional ? active_optional_flag : 0) | (all_valid ? all_valid_flag : 0)} {}
 
     std::size_t node_index() const noexcept { return node_index_and_flags_ & node_index_mask; }
 
@@ -79,11 +90,14 @@ class Subscriber {
 
     bool active_optional() const noexcept { return (node_index_and_flags_ & active_optional_flag) != 0; }
 
+    bool all_valid() const noexcept { return (node_index_and_flags_ & all_valid_flag) != 0; }
+
   private:
     static constexpr std::uint32_t active_flag = std::uint32_t{1} << 31;
     static constexpr std::uint32_t required_flag = std::uint32_t{1} << 30;
     static constexpr std::uint32_t active_optional_flag = std::uint32_t{1} << 29;
-    static constexpr std::uint32_t node_index_mask = active_optional_flag - 1;
+    static constexpr std::uint32_t all_valid_flag = std::uint32_t{1} << 28;
+    static constexpr std::uint32_t node_index_mask = all_valid_flag - 1;
 
     std::uint32_t node_index_and_flags_;
 };
@@ -227,7 +241,15 @@ class ParameterBinding {
         return address + (value_offset_ & value_location_mask);
     }
 
-    InputValidity validity() const noexcept { return (location_and_flags_ & optional_flag) == 0 ? required : optional; }
+    InputValidity validity() const noexcept {
+        if ((location_and_flags_ & optional_flag) != 0) {
+            return InputValidity::optional;
+        }
+        if (mode() == ParameterBindingMode::default_value) {
+            return (value_offset_ & default_all_valid_flag) != 0 ? InputValidity::all_valid : InputValidity::required;
+        }
+        return (value_offset_ & time_series_all_valid_flag) != 0 ? InputValidity::all_valid : InputValidity::required;
+    }
 
   private:
     friend class CompiledGraphBuilder;
@@ -238,11 +260,13 @@ class ParameterBinding {
     static constexpr std::uint32_t reference_flag = std::uint32_t{1} << 31;
     static constexpr std::uint32_t constant_flag = reference_flag;
     static constexpr std::uint32_t default_flag = std::uint32_t{1} << 30;
+    static constexpr std::uint32_t time_series_all_valid_flag = default_flag;
+    static constexpr std::uint32_t default_all_valid_flag = reference_flag;
     static constexpr std::uint32_t value_location_mask = default_flag - 1;
 
     ParameterBinding(std::uint32_t last_updated_offset, std::uint32_t value_offset, InputValidity validity) noexcept
-        : location_and_flags_{last_updated_offset | (validity == optional ? optional_flag : std::uint32_t{})},
-          value_offset_{value_offset} {}
+        : location_and_flags_{last_updated_offset | (validity == InputValidity::optional ? optional_flag : 0)},
+          value_offset_{value_offset | (validity == InputValidity::all_valid ? time_series_all_valid_flag : 0)} {}
 
     explicit ParameterBinding(std::uint32_t scalar_offset) noexcept
         : location_and_flags_{scalar_offset | scalar_flag}, value_offset_{} {}
@@ -271,14 +295,15 @@ class ParameterBinding {
     ParameterBinding(constant_binding_t, std::uint32_t start_time_offset, std::uint32_t scalar_offset,
                      InputValidity validity) noexcept
         : location_and_flags_{start_time_offset | scalar_flag |
-                              (validity == optional ? optional_flag : std::uint32_t{})},
+                              (validity == InputValidity::optional ? optional_flag : std::uint32_t{})},
           value_offset_{scalar_offset | constant_flag} {}
 
     ParameterBinding(default_binding_t, std::uint32_t last_updated_offset, std::uint32_t input_offset,
                      InputValidity validity) noexcept
         : location_and_flags_{last_updated_offset | scalar_flag |
-                              (validity == optional ? optional_flag : std::uint32_t{})},
-          value_offset_{input_offset | default_flag} {}
+                              (validity == InputValidity::optional ? optional_flag : std::uint32_t{})},
+          value_offset_{input_offset | default_flag |
+                        (validity == InputValidity::all_valid ? default_all_valid_flag : std::uint32_t{})} {}
 
     ParameterBinding() noexcept : location_and_flags_{scalar_flag | optional_flag}, value_offset_{} {}
 
@@ -400,6 +425,13 @@ class CompiledNode {
         return static_cast<const TimeSeriesRuntimeType &>(runtime_type(index));
     }
 
+    const AllValidInputDescriptor &all_valid_input_descriptor(std::size_t index) const noexcept {
+        auto address = runtime_types_address() +
+                       all_valid_input_metadata().runtime_type_count * sizeof(const RuntimeType *);
+        address = align(address, alignof(AllValidInputDescriptor));
+        return reinterpret_cast<const AllValidInputDescriptor *>(address)[index];
+    }
+
     const ScalarRuntimeType &scalar_input_runtime_type(std::size_t time_series_input_count,
                                                        std::size_t index) const noexcept {
         return static_cast<const ScalarRuntimeType &>(runtime_type(time_series_input_count + index));
@@ -459,11 +491,13 @@ class CompiledNode {
         parameter_count_mask << node_invocation_time_series_input_count_shift;
     static constexpr std::uint32_t controlled_input_count_shift = 11;
     static constexpr std::uint32_t controlled_input_count_mask = parameter_count_mask << controlled_input_count_shift;
+    static constexpr std::uint32_t all_valid_input_metadata_flag = std::uint32_t{1} << 21;
 
     CompiledNode(EvaluationFunction evaluation_function, std::uint32_t output_last_updated_offset,
                  std::uint32_t output_value_offset, std::uint32_t parameter_count, std::uint32_t subscriber_count,
                  bool has_output, bool has_state, bool has_output_notification, bool has_item_subscriptions,
-                 bool uses_node_invocation, std::uint32_t time_series_input_count, std::uint32_t controlled_input_count,
+                 bool uses_node_invocation, bool has_all_valid_input_metadata,
+                 std::uint32_t time_series_input_count, std::uint32_t controlled_input_count,
                  InvalidationMode invalidation_mode) noexcept
         : evaluation_function_(evaluation_function),
           output_last_updated_offset_(output_last_updated_offset | (has_output ? std::uint32_t{} : no_output_flag) |
@@ -476,7 +510,8 @@ class CompiledNode {
           flags_((uses_node_invocation ? node_invocation_flag : std::uint32_t{}) |
                  (uses_node_invocation ? time_series_input_count << node_invocation_time_series_input_count_shift
                                        : std::uint32_t{}) |
-                 (controlled_input_count << controlled_input_count_shift)) {}
+                 (controlled_input_count << controlled_input_count_shift) |
+                 (has_all_valid_input_metadata ? all_valid_input_metadata_flag : std::uint32_t{})) {}
 
     std::size_t controlled_input_count() const noexcept {
         return (flags_ & controlled_input_count_mask) >> controlled_input_count_shift;
@@ -568,8 +603,20 @@ class CompiledNode {
         if ((flags_ & node_invocation_flag) != 0) {
             address = align(address, alignof(NodeInvocationMetadata)) + sizeof(NodeInvocationMetadata);
         }
+        if ((flags_ & all_valid_input_metadata_flag) != 0) {
+            address = align(address, alignof(AllValidInputMetadata)) + sizeof(AllValidInputMetadata);
+        }
 
         return align(address, alignof(const RuntimeType *));
+    }
+
+    const AllValidInputMetadata &all_valid_input_metadata() const noexcept {
+        auto address = after_invalidation_metadata_address();
+        if ((flags_ & node_invocation_flag) != 0) {
+            address = align(address, alignof(NodeInvocationMetadata)) + sizeof(NodeInvocationMetadata);
+        }
+        address = align(address, alignof(AllValidInputMetadata));
+        return *reinterpret_cast<const AllValidInputMetadata *>(address);
     }
 
     std::uintptr_t after_invalidation_metadata_address() const noexcept {

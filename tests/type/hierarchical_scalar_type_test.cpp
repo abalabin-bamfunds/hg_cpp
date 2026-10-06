@@ -24,9 +24,14 @@ namespace {
 
 using test_hierarchical_scalar_provider::Instrument;
 
-static_assert(std::same_as<bg::InputValidity, bg::Optionality>);
+static_assert(!std::same_as<bg::InputValidity, bg::Optionality>);
+static_assert(sizeof(bg::InputValidity) == sizeof(std::uint8_t));
+static_assert(std::is_trivially_copyable_v<bg::InputValidity>);
 static_assert(bg::required == bg::InputValidity::required);
 static_assert(bg::optional == bg::InputValidity::optional);
+static_assert(bg::InputValidity::required == bg::required);
+static_assert(bg::InputValidity::optional == bg::optional);
+static_assert(bg::all_valid == bg::InputValidity::all_valid);
 
 template <template <typename, auto...> typename Field>
 struct Equity : bg::schema_extends<Instrument, Field> {

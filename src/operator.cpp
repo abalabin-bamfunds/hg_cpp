@@ -94,8 +94,8 @@ std::partial_ordering compare_input_validity_preference(const ResolvedSignature 
             continue;
         }
 
-        const auto left_required = left.parameters[index].validity == required;
-        const auto right_required = right.parameters[index].validity == required;
+        const auto left_required = left.parameters[index].validity != optional;
+        const auto right_required = right.parameters[index].validity != optional;
         left_better |= left_required && !right_required;
         right_better |= right_required && !left_required;
     }
@@ -175,7 +175,7 @@ WiringSignatureDiagnostic diagnostic_signature(const WiringTemplate &implementat
     parameters.reserve(implementation.signature().parameter_count());
     for (auto index = std::size_t{}; index < implementation.signature().parameter_count(); ++index) {
         const auto &parameter = implementation.signature().parameter(index);
-        parameters.push_back({parameter.name, parameter.type, {}, parameter.validity == optional});
+        parameters.push_back({parameter.name, parameter.type, {}, parameter.validity});
     }
 
     return {implementation.signature().name(), std::move(parameters)};
@@ -216,7 +216,8 @@ WiringDiagnostic diagnostic(const Signature &prototype, std::vector<util::symbol
             supplied[index].is_graph()
                 ? std::shared_ptr<const Type>{supplied[index].graph().exact_type_ptr()}
                 : std::shared_ptr<const Type>{};
-        arguments.push_back({name, &supplied[index].type(), std::move(type_owner), supplied[index].requires_optional()});
+        const auto validity = supplied[index].requires_optional() ? InputValidity::optional : InputValidity::required;
+        arguments.push_back({name, &supplied[index].type(), std::move(type_owner), validity});
     }
 
     return {prototype.name(), std::move(path), std::move(arguments), std::move(candidates), ambiguous};

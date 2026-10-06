@@ -162,8 +162,7 @@ bool TimeSeriesBundleType::contains_reference() const {
 }
 
 std::size_t TimeSeriesBundleType::item_count() const noexcept {
-    const auto *schema = dynamic_cast<const BundleSchema *>(schema_);
-    return schema == nullptr ? std::dynamic_extent : schema->field_count();
+    return schema_->field_count();
 }
 
 const TimeSeriesType &TimeSeriesBundleType::item_type(std::size_t index) const {

@@ -93,7 +93,7 @@ void notify_controlled_inputs(OutputChangeContext &context, const TimeSeriesRunt
             (change == OutputChange::invalidation && active && !record.required())) {
             context.schedule(context.runtime_graph(), record.node_index());
         }
-        if (change != OutputChange::update && record.required()) {
+        if ((change != OutputChange::update && record.required()) || record.all_valid()) {
             context.schedule_validity_check(context.runtime_graph(), record.node_index());
         }
     }
@@ -814,18 +814,18 @@ std::optional<EvaluationTime> RuntimeGraph::next_scheduled_time() const noexcept
 void RuntimeGraph::notify_subscribers(std::span<const Subscriber> subscribers, OutputChange change) {
     for (const auto &subscriber : subscribers) {
         notify_node_subscriber(subscriber.node_index(), subscriber.active(), subscriber.required(),
-                               subscriber.active_optional(), change);
+                               subscriber.active_optional(), subscriber.all_valid(), change);
     }
 }
 
 void RuntimeGraph::notify_node_subscriber(std::size_t node_index, bool is_active, bool is_required,
-                                          bool is_active_optional, OutputChange change) noexcept {
+                                          bool is_active_optional, bool all_valid, OutputChange change) noexcept {
     if ((change != OutputChange::invalidation && is_active) ||
         (change == OutputChange::invalidation && is_active_optional)) {
         schedule(node_index);
     }
 
-    if (change != OutputChange::update && is_required) {
+    if ((change != OutputChange::update && is_required) || all_valid) {
         schedule_validity_check(node_index);
     }
 }
@@ -855,7 +855,8 @@ void RuntimeGraph::notify_dynamic_subscribers(details::DynamicSubscribers &subsc
             active = *static_cast<bool *>(subscriber.graph->storage_at(activity_offset));
         }
         subscriber.graph->notify_node_subscriber(subscriber.node_index(), active, subscriber.required(),
-                                                 active && !subscriber.required(), change);
+                                                 active && !subscriber.required(),
+                                                 subscriber.all_valid(), change);
     });
 
     const auto notification_context = OutputChangeContext{*this};
@@ -1076,14 +1077,38 @@ void RuntimeGraphEvaluator::stop(RuntimeGraph &graph, EvaluationContext &parent_
 
 bool RuntimeGraph::inputs_are_valid(const CompiledNode &node) const noexcept {
     const auto runtime_node = Node{node, storage_};
+    auto all_valid_input_runtime_type_index = std::size_t{};
     for (auto parameter_index = std::size_t{}; parameter_index < runtime_node.input_count(); ++parameter_index) {
         const auto &parameter = node.parameters()[parameter_index];
-        if (parameter.mode() == ParameterBindingMode::scalar || parameter.validity() != required) {
+        if (parameter.mode() == ParameterBindingMode::scalar) {
             continue;
         }
 
-        if (!runtime_node.input_last_updated(parameter_index).valid()) {
+        const auto validity = parameter.validity();
+        if (validity == optional) {
+            continue;
+        }
+
+        if (validity == required) {
+            if (!runtime_node.input_last_updated(parameter_index).valid()) {
+                return false;
+            }
+            continue;
+        }
+
+        const auto input = runtime_node.input_data(parameter_index);
+        if (!input.last_updated->valid()) {
             return false;
+        }
+        if (validity == InputValidity::all_valid) {
+            const auto current_all_valid_input_index = all_valid_input_runtime_type_index++;
+            const auto &runtime_type =
+                runtime_node.all_valid_input_runtime_type(parameter_index, current_all_valid_input_index);
+            const auto &declared_type =
+                *node.all_valid_input_descriptor(current_all_valid_input_index).declared_type;
+            if (!runtime_type.all_valid(*input.last_updated, input.value, declared_type)) {
+                return false;
+            }
         }
     }
 

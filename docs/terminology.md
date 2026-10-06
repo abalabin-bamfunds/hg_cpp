@@ -199,9 +199,10 @@ A rule on a node input that states whether its time series must be valid before
 the node can be evaluated. An input that requires validity prevents evaluation
 while it has no current value.
 
-The constraint is `required` or `optional`. A required input must be valid. An
-optional input does not prevent evaluation while it is invalid. These words
-describe validity; every input has a source.
+The constraint is `required`, `optional`, or `all_valid`. A required input must
+be valid. An optional input does not prevent evaluation while it is invalid.
+An `all_valid` input requires its root and every immediate contained time series
+to be valid. These words describe validity; every input has a source.
 
 ### `valid_items` guarantee
 

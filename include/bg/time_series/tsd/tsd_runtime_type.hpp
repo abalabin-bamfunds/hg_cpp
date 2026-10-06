@@ -208,6 +208,22 @@ class TimeSeriesDictionaryRuntimeType : public TimeSeriesRuntimeType {
         }
     }
 
+    bool all_valid(const TimeSeriesState &last_updated, const void *value) const noexcept override {
+        if (!last_updated.valid() || value == nullptr) {
+            return false;
+        }
+
+        auto id = next_item_id(last_updated, value, ItemRange::current, 0);
+        while (id != util::occupancy_index::npos) {
+            if (!item(value, id).last_updated.valid()) {
+                return false;
+            }
+            id = next_item_id(last_updated, value, ItemRange::current, id + 1);
+        }
+
+        return true;
+    }
+
     bool item_updated(const TimeSeriesState &last_updated, const void *value, item_id_t id) const noexcept override {
         const auto &storage = *static_cast<const time_series_dict_storage *>(value);
         if (!last_updated.valid() || storage.change_time() != last_updated.time()) {

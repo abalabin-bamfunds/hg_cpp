@@ -58,6 +58,22 @@ class FixedTimeSeriesListRuntimeType final : public TimeSeriesRuntimeType {
         }
     }
 
+    bool all_valid(const TimeSeriesState &last_updated, const void *value) const noexcept override {
+        if (!last_updated.valid() || value == nullptr) {
+            return false;
+        }
+
+        const auto *bytes = static_cast<const std::byte *>(value);
+        for (auto index = std::size_t{}; index < list_type().item_count(); ++index) {
+            const auto offset = first_item_offset_ + index * item_stride_;
+            if (!reinterpret_cast<const TimeSeriesState *>(bytes + offset)->valid()) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     bool item_updated(const TimeSeriesState &last_updated, const void *value,
                                     item_id_t id) const noexcept override {
         const auto &storage = *static_cast<const time_series_list_storage *>(value);

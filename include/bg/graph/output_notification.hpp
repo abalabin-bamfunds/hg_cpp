@@ -71,16 +71,20 @@ class InputNotificationSubscriber {
 
 class ControlledInputSubscriber {
   public:
-    ControlledInputSubscriber(std::uint32_t activity_offset, std::uint32_t node_index, bool required) noexcept
-        : activity_offset_{activity_offset}, node_index_and_flags_{node_index | (required ? required_flag : 0)} {}
+    ControlledInputSubscriber(std::uint32_t activity_offset, std::uint32_t node_index, bool required,
+                              bool all_valid) noexcept
+        : activity_offset_{activity_offset}, node_index_and_flags_{node_index | (required ? required_flag : 0) |
+                                                                   (all_valid ? all_valid_flag : 0)} {}
 
     std::size_t activity_offset() const noexcept { return activity_offset_; }
     std::size_t node_index() const noexcept { return node_index_and_flags_ & node_index_mask; }
     bool required() const noexcept { return (node_index_and_flags_ & required_flag) != 0; }
+    bool all_valid() const noexcept { return (node_index_and_flags_ & all_valid_flag) != 0; }
 
   private:
     static constexpr std::uint32_t required_flag = std::uint32_t{1} << 31;
-    static constexpr std::uint32_t node_index_mask = required_flag - 1;
+    static constexpr std::uint32_t all_valid_flag = std::uint32_t{1} << 30;
+    static constexpr std::uint32_t node_index_mask = all_valid_flag - 1;
 
     std::uint32_t activity_offset_;
     std::uint32_t node_index_and_flags_;

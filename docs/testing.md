@@ -34,7 +34,7 @@ Use `[dimension:value]` for each applicable dimension:
 - `shape`: `single-node`, `chain`, `fan-out`, `diamond`, `nested`, `doubly-nested`, `deeply-nested`, `multiple`,
   `source`, or `sink`
 - `activity`: `active` or `passive`
-- `validity`: `required` or `optional`
+- `validity`: `required`, `optional`, or `all-valid`
 - `guarantee`: `ordinary`, `deduplicated`, `final`, or `const`
 - `input-guarantee`: `valid-items`
 - `transition`: `first-tick`, `update`, `invalidation`, `revalidation`, `addition`, `removal`, `resurrection`,
@@ -178,6 +178,10 @@ graph compilation or evaluation.
 - scheduling during evaluation, including nodes in the current bit block
 - active and passive inputs, including per-input runtime activity changes
 - required-input validity caching, invalidation, and revalidation
+- immediate `all_valid` queries and evaluation gating across native, free, and reference-bound collections;
+  passive and dynamically inactive inputs; optional bundle fields and base-schema narrowing;
+  invalid, removed, and retained dictionary items; constant and default bindings;
+  and typed, generic, and runtime node declarations
 - operation-specific handling of invalid `opt` arguments, including mixed required and optional inputs
 - output update and invalidation propagation
 - retained tick writing and replay through a one-cycle delay node, current-cycle filtering, delta-only collection

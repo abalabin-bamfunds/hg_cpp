@@ -208,6 +208,7 @@ TEST_CASE("a bundle schema variable participates in type resolution",
     const auto &argument = bg::TSB<DerivedBundle>::type();
     auto type_map = bg::TypeMap{};
 
+    CHECK(parameter.item_count() == std::dynamic_extent);
     REQUIRE(parameter.match(argument, type_map));
     const auto &variable = dynamic_cast<const bg::Variable &>(parameter.schema_type());
     const auto *mapping = type_map.find(variable);

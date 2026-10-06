@@ -239,10 +239,20 @@ is therefore:
 bg::In<bg::TS<float>, "value"_n>
 ```
 
-A call can supply `opt(point)` to require an optional parameter. A required
-parameter rejects that argument during wiring. An unmarked point can bind to
-either validity constraint. The [operator rules](operators.md#optional-arguments)
+A call can supply `opt(point)` to require an optional parameter. A `required`
+or `all_valid` parameter rejects that argument during wiring. An unmarked point
+can bind to any validity constraint. The [operator rules](operators.md#optional-arguments)
 define how overload selection uses this distinction.
+
+`all_valid` requires the input root and every immediate contained time series
+to be valid before evaluation:
+
+```cpp
+bg::In<bg::TSL<bg::TS<bg::i64>, 2>, bg::all_valid> values;
+```
+
+It uses the same invalidation behavior as `required`. The
+[validity design](time-series-validity.md#nodes) defines which items participate.
 
 Property order has no meaning. A property can be omitted without spelling the
 properties before it. Repeating a property category is a compile error.
@@ -254,13 +264,19 @@ properties before it. Repeating a property category is a compile error.
 scheduling from other inputs. A change that occurs while the input is passive
 does not schedule evaluation when the input becomes active later.
 
-All time series types provide `valid()`, `became_valid()`, `became_invalid()`,
+All time series types provide `valid()`, `all_valid()`, `became_valid()`, `became_invalid()`,
 `modified()`, and `last_updated()`. `became_valid()` and `became_invalid()`
 describe the latest change. They do not imply that the change occurred in the
 current evaluation. `modified()` reports a valid update in the current
 evaluation. `last_updated()` returns the latest change time, including an
 invalidation. `TS<T>::value()` returns `const T&` and requires a valid time
-series. Collection time series provide their type-specific change queries.
+series. `all_valid()` tests the root and immediate item validity without changing
+the input validity constraint. Collection time series provide their type-specific change queries.
+
+The erased `In<TS_T>` query checks the actual runtime type. Runtime-defined nodes
+can pass the declared `TimeSeriesType` to `all_valid(declared_type)` to apply a
+narrowed bundle schema. `NodeInvocationInput::parameter_type()` supplies the
+parameter declaration.
 
 An `In` value is valid for one function call. Its last-updated time includes
 [sampling](time-series-references.md#input-sampling) when the input is bound
@@ -281,9 +297,9 @@ supports it. Use dot notation to access the time series itself.
 
 ## Required input invalidation
 
-By default, invalidation of a required input invalidates an invalidatable node
-output. A TSS or TSD output preserves its value. The evaluation function runs
-only with valid required inputs.
+By default, failure of a `required` or `all_valid` constraint invalidates an
+invalidatable node output. A TSS or TSD output preserves its value. The
+evaluation function runs only when every input validity constraint passes.
 
 A node can preserve its output by setting the `on_invalidation` named argument:
 

@@ -203,6 +203,53 @@ bool TimeSeriesRuntimeType::item_updated(const TimeSeriesState &, const void *, 
 
 void TimeSeriesRuntimeType::for_each_updated_item(const TimeSeriesState &, const void *, void *, ItemIdFunction) const {}
 
+bool TimeSeriesRuntimeType::all_valid(const TimeSeriesState &last_updated, const void *value) const noexcept {
+    if (!last_updated.valid()) {
+        return false;
+    }
+
+    struct CurrentItems {
+        const TimeSeriesRuntimeType *runtime_type;
+        const void *value;
+        bool valid{true};
+    };
+    auto current_items = CurrentItems{this, value};
+    for_each_item_id(value, &current_items, [](void *context, item_id_t id) {
+        auto &current_items = *static_cast<CurrentItems *>(context);
+        if (!current_items.valid) {
+            return;
+        }
+        current_items.valid = current_items.runtime_type->item(current_items.value, id).last_updated.valid();
+    });
+
+    return current_items.valid;
+}
+
+bool TimeSeriesRuntimeType::all_valid(const TimeSeriesState &last_updated, const void *value,
+                                      const TimeSeriesType &declared_type) const noexcept {
+    const auto *declared_bundle = type_cast<TimeSeriesBundleType>(&declared_type);
+    if (declared_bundle == nullptr) {
+        return all_valid(last_updated, value);
+    }
+
+    if (!last_updated.valid() || value == nullptr) {
+        return false;
+    }
+
+    const auto field_count = declared_bundle->item_count();
+    if (field_count == std::dynamic_extent) {
+        return all_valid(last_updated, value);
+    }
+
+    for (auto id = item_id_t{}; id < field_count; ++id) {
+        if (!item(value, id).last_updated.valid()) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 Reference TimeSeriesRuntimeType::reference(const void *) const {
     throw std::logic_error{"time series does not contain a reference address"};
 }
