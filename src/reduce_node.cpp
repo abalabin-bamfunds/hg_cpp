@@ -65,7 +65,6 @@ class ReduceRuntime {
             return true;
         }
         dictionary_valid_ = true;
-        dictionary_empty_ = dictionary.size() == 0;
 
         if (rebuilding_) {
             if (!continue_rebuild(compiled, invocation)) {
@@ -264,7 +263,7 @@ class ReduceRuntime {
                 using_default_ = false;
                 return true;
             }
-            if (dictionary_empty_ && compiled.default_parameter) {
+            if (compiled.default_parameter) {
                 const auto fallback = invocation.scalar(*compiled.default_parameter, 0);
                 if (!fallback.has_value()) {
                     output.invalidate();
@@ -322,7 +321,6 @@ class ReduceRuntime {
     bool rebuilding_{};
     bool building_pair_{};
     bool dictionary_valid_{};
-    bool dictionary_empty_{};
     bool using_default_{};
 };
 

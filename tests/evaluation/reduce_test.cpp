@@ -37,6 +37,24 @@ const auto dictionary_from_three_values = node([](In<TS<i64>> first, In<TS<i64>>
     output[3].set(*third);
 });
 
+const auto dictionary_from_validity_state = node([](In<TS<i64>> first, In<TS<i64>> second, In<TS<i64>> state,
+                                                     Out<TSD<std::int64_t, TS<i64>>> output) {
+    switch (*state) {
+    case 0:
+        output[1].set(*first);
+        output[2].set(*second);
+        output[2].invalidate();
+        break;
+    case 1:
+        output[1].invalidate();
+        output[2].invalidate();
+        break;
+    case 2:
+        output.clear();
+        break;
+    }
+});
+
 const auto add_values = node([](In<TS<i64>> left, In<TS<i64>> right, Out<TS<i64>> output) {
     output.set(*left + *right);
 });
@@ -55,6 +73,13 @@ const auto context_add_graph = graph("name"_n = "context_add_for_reduce", [](wp<
                                                                                wp<TS<i64>> right) {
     return add_values_and_context(left, right);
 });
+
+const auto namespace_scope_reduce_with_default = graph(
+    "name"_n = "namespace_scope_reduce_with_default", [](wp<TS<i64>> first, wp<TS<i64>> second,
+                                                           wp<TS<i64>> state) -> wp<TS<i64>> {
+        return wp<TS<i64>>{
+            reduce(add_graph, dictionary_from_validity_state(first, second, state), "default"_n = std::int64_t{20})};
+    });
 
 TEST_CASE("reduce combines all valid TSD items through nested reducer graphs",
           "[feature:reduce][feature:nested-graph][series:tsd][shape:nested]") {
@@ -130,6 +155,48 @@ TEST_CASE("reduce updates its tree when TSD membership changes and uses the defa
     CHECK(scalar_cast<i64>(*actual[1]).value() == 2);
     CHECK(scalar_cast<i64>(*actual[2]).value() == 9);
     CHECK(scalar_cast<i64>(*actual[3]).value() == 20);
+}
+
+TEST_CASE("reduce omits invalid items while valid items remain",
+          "[feature:reduce][series:tsd][validity:optional][transition:invalidation]") {
+    const auto tested = [](wp<TS<i64>> first, wp<TS<i64>> second, wp<TS<i64>> state) {
+        return reduce(add_graph, dictionary_from_validity_state(first, second, state),
+                      "default"_n = std::int64_t{20});
+    };
+    const auto actual = testing::test_graph(tested, std::array{5}, std::array{9}, std::array{0});
+
+    CHECK(actual.equals<i64>({5}));
+}
+
+TEST_CASE("reduce uses the default when a valid TSD has keys but no valid items",
+          "[feature:reduce][series:tsd][validity:optional][transition:invalidation]") {
+    const auto tested = [](wp<TS<i64>> first, wp<TS<i64>> second, wp<TS<i64>> state) {
+        return reduce(add_graph, dictionary_from_validity_state(first, second, state),
+                      "default"_n = std::int64_t{20});
+    };
+    const auto actual = testing::test_graph(tested, std::array{5}, std::array{9}, std::array{1});
+
+    CHECK(actual.equals<i64>({20}));
+}
+
+TEST_CASE("reduce uses the default when a valid TSD is empty",
+          "[feature:reduce][series:tsd][validity:optional][transition:removal]") {
+    const auto actual = testing::test_graph(namespace_scope_reduce_with_default, std::array{5}, std::array{9},
+                                            std::array{2});
+
+    CHECK(actual.equals<i64>({20}));
+}
+
+TEST_CASE("reduce does not use the default when the TSD is invalid",
+          "[feature:reduce][series:tsd][validity:optional][transition:invalidation]") {
+    const auto tested = [](wp<TS<i64>> first, wp<TS<i64>> second, wp<TS<i64>> state) {
+        return reduce(add_graph, dictionary_from_validity_state(first, second, state),
+                      "default"_n = std::int64_t{20});
+    };
+    const auto actual = testing::test_graph(tested, std::array{5}, std::array{9},
+                                            std::array<std::optional<int>, 1>{std::nullopt});
+
+    CHECK(actual.equals<i64>({std::nullopt}));
 }
 
 } // namespace

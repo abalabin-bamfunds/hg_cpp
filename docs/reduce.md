@@ -10,10 +10,10 @@ The reducer applies to pairs of values in a balanced tree. An unpaired value
 advances to the next level unchanged. A single valid item is forwarded without
 creating a reducer graph instance.
 
-Invalid items are omitted. The default scalar is used only when the TSD is
-valid and has no keys. A valid, non-empty TSD with no valid items produces an
-invalid result. An invalid TSD also produces an invalid result. Without a
-default, an empty TSD produces an invalid result.
+Invalid items are omitted. The default scalar is used when the TSD is valid but
+has no valid items, including when keys exist but all their items are invalid.
+An invalid TSD produces an invalid result. Without a default, a valid TSD with
+no valid items also produces an invalid result.
 
 The operator compiles the reducer graph once and creates a nested runtime graph
 for each pair in the current tree. A change to the key set or to the reference
