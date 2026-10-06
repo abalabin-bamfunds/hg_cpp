@@ -251,6 +251,32 @@ TEST_CASE("reduce carries inherited context references into its reducer graphs",
     CHECK(actual.equals<i64>({15, 27}));
 }
 
+TEST_CASE("reduce fallback reads values from reference TSD items with inherited context",
+          "[feature:reduce][feature:context-time-series][feature:nested-graph][series:tsd]"
+          "[series:reference][binding:reference-to-value][transition:update]") {
+    const auto make_target = node([](In<TS<i64>> value, Out<TS<i64>> output) { output.set(*value); });
+    const auto retain_references = node([](In<TS<bool>> install, In<REF<TS<i64>>, passive> first,
+                                           In<REF<TS<i64>>, passive> second,
+                                           Out<TSD<std::int64_t, REF<TS<i64>>>> output) {
+        if (*install) {
+            output[1].copy(first);
+            output[2].copy(second);
+        }
+    });
+    const auto tested = [=](wp<TS<i64>> first_value, wp<TS<i64>> second_value, wp<TS<bool>> install,
+                            wp<TS<i64>> factor) {
+        auto context_scope = with_context("factor"_n = factor);
+        const auto first = make_target(first_value);
+        const auto second = make_target(second_value);
+        return reduce(context_add_graph, retain_references(install, first, second));
+    };
+
+    const auto actual = testing::test_graph(tested, std::array{3, 4, 5}, std::array{8, 9, 10},
+                                            std::array{true, false, false}, std::array{2, 2, 2});
+
+    CHECK(actual.equals<i64>({13, 15, 17}));
+}
+
 TEST_CASE("reduce updates its tree when TSD membership changes and uses the default only when empty",
           "[feature:reduce][feature:nested-graph][series:tsd][validity:optional]") {
     const auto tested = [](wp<TS<i64>> left, wp<TS<i64>> right, wp<TS<bool>> include_left,

@@ -7,6 +7,7 @@
 #include <bg/node/node_template.hpp>
 #include <bg/reduce/details/default_reduce_wiring.hpp>
 #include <bg/reduce/details/reduce_node.hpp>
+#include "time_series/ref/ref_node.hpp"
 #include <bg/time_series/time_series_type.hpp>
 #include <bg/time_series/tsb/details/wiring.hpp>
 #include <bg/type/time_series_dict_type.hpp>
@@ -30,17 +31,6 @@ const TimeSeriesType &dictionary_type(const WiringArgument &argument) {
     return static_cast<const TimeSeriesType &>(argument.type()).target_type();
 }
 
-const TimeSeriesType &mapped_dictionary_type(const TimeSeriesDictionaryType &dictionary) {
-    if (type_cast<TimeSeriesReferenceType>(&dictionary.value_type()) != nullptr) {
-        return dictionary;
-    }
-
-    const auto guarantee = *dictionary.guarantee().value();
-    const auto &item_reference =
-        time_series_reference_type(dictionary.value_type(), strongest(TimeSeriesGuarantee::final, guarantee));
-    return time_series_dictionary_type(dictionary.key_type(), item_reference, guarantee);
-}
-
 } // namespace
 
 GraphArgument build_reduce_graph_argument(const WiringTemplate &function, const WiringArgument &dictionary,
@@ -60,15 +50,11 @@ GraphArgument build_reduce_graph_argument(const WiringTemplate &function, const 
 
     auto parameters = std::vector<ResolvedParameter>{};
     auto outer_arguments = std::vector<WiringArgument>{};
-    const auto value_dictionary_parameter = std::uint32_t{};
-    const auto reference_dictionary_parameter = std::uint32_t{1};
+    const auto dictionary_parameter = std::uint32_t{};
     const auto &value_dictionary_type = time_series_dictionary_type(
         dictionary_type_value->key_type(), item_type, *dictionary_type_value->guarantee().value());
-    parameters.push_back({util::symbol{"values"}, &value_dictionary_type, active, optional});
-    parameters.push_back({util::symbol{"references"}, &mapped_dictionary_type(*dictionary_type_value), active,
-                          optional});
-    outer_arguments.push_back(dictionary);
-    outer_arguments.back().clear_name();
+    parameters.push_back({util::symbol{"dictionary"}, &value_dictionary_type, active, optional});
+
     outer_arguments.push_back(dictionary);
     outer_arguments.back().clear_name();
 
@@ -95,8 +81,7 @@ GraphArgument build_reduce_graph_argument(const WiringTemplate &function, const 
         .graph = std::move(built.graph),
         .outer_signature = std::move(outer_signature),
         .outer_arguments = std::move(outer_arguments),
-        .value_dictionary_parameter = value_dictionary_parameter,
-        .reference_dictionary_parameter = reference_dictionary_parameter,
+        .dictionary_parameter = dictionary_parameter,
         .default_parameter = default_parameter,
     });
     return GraphArgument{std::move(structure), std::move(payload)};
@@ -111,11 +96,24 @@ const DefaultReduceWiring &DefaultReduceWiring::from(const GraphArgument &argume
 }
 
 std::optional<WiringPoint> DefaultReduceWiring::wire() const {
-    auto node_template = make_reduce_node(graph, outer_signature, value_dictionary_parameter,
-                                          reference_dictionary_parameter, default_parameter);
+    auto node_template = make_reduce_node(graph, outer_signature, dictionary_parameter, default_parameter);
     auto &outer = WiringContext::current().wiring();
+    auto arguments = std::vector<WiringArgument>{};
+    arguments.reserve(outer_arguments.size());
+    for (auto index = std::size_t{}; index < outer_arguments.size(); ++index) {
+        const auto &argument = outer_arguments[index];
+        if (index != dictionary_parameter) {
+            arguments.push_back(argument);
+            continue;
+        }
+
+        const auto &source_type = static_cast<const TimeSeriesDictionaryType &>(dictionary_type(argument));
+        const auto &reference_type = time_series_reference_type(source_type, TimeSeriesGuarantee::const_);
+        arguments.emplace_back(materialize_reference(argument.time_series(), reference_type));
+    }
+
     const auto &owned = outer.own_node_template(std::move(node_template));
-    const auto invocation = outer.invoke_node(owned, std::span<const WiringArgument>{outer_arguments});
+    const auto invocation = outer.invoke_node(owned, std::span<const WiringArgument>{arguments});
     outer.register_nested_service_consumers(*graph.wiring, invocation.identity);
     return invocation.output;
 }

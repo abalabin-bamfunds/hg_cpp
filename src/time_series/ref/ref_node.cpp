@@ -138,7 +138,9 @@ WiringPoint materialize_reference(WiringPoint argument, const TimeSeriesType &re
     const auto *argument_reference = type_cast<TimeSeriesReferenceType>(&argument.type());
 
     if (requested_reference != nullptr && argument_reference == nullptr) {
-        argument = argument.record()->wiring().materialize(argument, requested_reference->target_type());
+        if (!requested_reference->target_type().accepts(argument.type())) {
+            argument = argument.record()->wiring().materialize(argument, requested_reference->target_type());
+        }
         if (type_cast<TimeSeriesReferenceType>(&argument.type()) != nullptr) {
             return argument;
         }

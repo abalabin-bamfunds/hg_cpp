@@ -5,6 +5,7 @@
 #include <bg/node.hpp>
 #include <bg/node/node_template.hpp>
 #include <bg/operators.hpp>
+#include <bg/time_series/ref/ref_input_storage.hpp>
 #include <bg/time_series/ref/ref_notification.hpp>
 #include <bg/type/scalar_type.hpp>
 #include <bg/type/time_series_value_type.hpp>
@@ -14,12 +15,14 @@
 #include <catch2/matchers/catch_matchers_string.hpp>
 
 #include <array>
+#include <algorithm>
 #include <chrono>
 #include <cstddef>
 #include <memory>
 #include <memory_resource>
 #include <stdexcept>
 #include <utility>
+#include <vector>
 
 namespace {
 
@@ -265,7 +268,62 @@ TEST_CASE("compiled callable captures are destroyed when a later node fails comp
     CHECK(token.use_count() == *baseline);
 }
 
-TEST_CASE("an empty runtime-type table preserves all_valid metadata alignment",
+TEST_CASE("sampled reference bindings keep their mode and aligned metadata",
+          "[compiled_graph][feature:reference][feature:sampling][binding:reference-to-value]") {
+    struct dictionary_source {
+        bg::Out<bg::TSD<std::int64_t, bg::TS<bg::i64>>> output;
+
+        void evaluate() const {}
+    };
+
+    const auto source = bg::node<dictionary_source>();
+    const auto retain_reference = bg::node([](bg::In<bg::REF<bg::TSD<std::int64_t, bg::TS<bg::i64>>>> input,
+                                              bg::Out<bg::REF<bg::TSD<std::int64_t, bg::TS<bg::i64>>>> output) {
+        output.copy(input);
+    });
+    const auto inspect = bg::node([](bg::In<bg::TSD<std::int64_t, bg::TS<bg::i64>>> input,
+                                     bg::Out<bg::TS<bg::i64>> output) {
+        if (input.valid()) {
+            output.set(1);
+        }
+    });
+    const auto inspect_dynamic = bg::node([](bg::In<bg::TSD<std::int64_t, bg::TS<bg::i64>>,
+                                                     bg::dynamic_activity> input,
+                                             bg::Out<bg::TS<bg::i64>> output) {
+        if (input.valid()) {
+            output.set(1);
+        }
+    });
+
+    auto wiring = bg::GraphWiring{};
+    {
+        auto context = bg::WiringContext{wiring};
+        const auto reference = retain_reference(source());
+        (void)inspect(reference);
+        (void)inspect_dynamic(reference);
+    }
+    wiring.finalize();
+
+    const auto graph = bg::CompiledGraph{wiring};
+    auto sampled_bindings = std::vector<const bg::ParameterBinding *>{};
+    for (auto node_index = std::size_t{}; node_index < graph.node_count(); ++node_index) {
+        for (const auto &binding : graph.node(node_index).parameters()) {
+            if (binding.mode() == bg::ParameterBindingMode::reference && binding.has_reference_sample()) {
+                sampled_bindings.push_back(&binding);
+            }
+        }
+    }
+
+    REQUIRE(sampled_bindings.size() == 2);
+    CHECK(std::ranges::count_if(sampled_bindings, [](const auto *binding) {
+              return binding->reference_dynamic_activity();
+          }) == 1);
+    for (const auto *binding : sampled_bindings) {
+        CHECK(binding->value_offset() % alignof(bg::ReferenceInputStorage) == 0);
+    }
+}
+
+TEST_CASE("all_valid metadata follows an empty runtime-type array at pointer alignment",
           "[compiled_graph][feature:validity][validity:all-valid][layout]") {
     struct source_definition {
         bg::Out<bg::TS<bg::i64>> output;

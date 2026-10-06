@@ -220,8 +220,11 @@ TEST_CASE("reduce wires its TSD input and output type through the default overlo
     });
 
     testing::test_wiring([&] {
+        auto &wiring = WiringContext::current().wiring();
         const auto dictionary = dictionary_source();
         const auto result = reduce(reducer, dictionary);
+        wiring.finalize();
+        CHECK(wiring.nodes().size() == 3);
         CHECK(&type_cast<TimeSeriesType>(result.type()) ==
               &type_cast<TimeSeriesDictionaryType>(dictionary.type()).value_type());
     });

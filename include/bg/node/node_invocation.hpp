@@ -132,6 +132,10 @@ template <typename CompiledData = void, typename State = void> class NodeInvocat
         return node_->parameters()[parameter_index].mode() != ParameterBindingMode::scalar;
     }
 
+    Reference bound_reference(std::size_t parameter_index) const noexcept {
+        return Node{*node_, runtime_storage_}.reference_input(parameter_index)->value;
+    }
+
     const void *scalar_data(std::size_t parameter_index) const noexcept {
         return node_->parameters()[parameter_index].scalar_data();
     }

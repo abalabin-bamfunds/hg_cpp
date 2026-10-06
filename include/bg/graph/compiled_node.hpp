@@ -244,7 +244,7 @@ class ParameterBinding {
 
     std::size_t value_offset() const noexcept {
         const auto offset = value_offset_ & value_location_mask;
-        return mode() == ParameterBindingMode::reference ? offset & ~reference_dynamic_activity_flag : offset;
+        return mode() == ParameterBindingMode::reference ? offset & ~reference_metadata_flags : offset;
     }
 
     // Packed-record offsets are relative to this binding; call through the stored record entry.
@@ -282,9 +282,11 @@ class ParameterBinding {
     static constexpr std::uint32_t runtime_input_flag = std::uint32_t{1} << 30;
     static constexpr std::uint32_t constant_flag = reference_flag;
     static constexpr std::uint32_t default_flag = std::uint32_t{1} << 30;
-    static constexpr std::uint32_t reference_sample_flag = default_flag;
-    // Reference input slots are aligned, so their low bit records whether the activity byte follows the slot.
+    // Reference input slots are aligned, so their low bits store metadata without growing the binding.
     static constexpr std::uint32_t reference_dynamic_activity_flag = 1;
+    static constexpr std::uint32_t reference_sample_flag = 2;
+    static constexpr std::uint32_t reference_metadata_flags =
+        reference_dynamic_activity_flag | reference_sample_flag;
     static constexpr std::uint32_t value_location_mask = default_flag - 1;
 
     ParameterBinding(std::uint32_t last_updated_offset, std::uint32_t value_offset, InputValidity validity) noexcept

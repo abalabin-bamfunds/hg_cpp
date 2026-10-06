@@ -12,6 +12,7 @@ struct ReferenceInputStorage {
 };
 
 static_assert(sizeof(ReferenceInputStorage) == sizeof(void *));
+static_assert(alignof(ReferenceInputStorage) >= 4);
 static_assert(std::is_trivially_copyable_v<ReferenceInputStorage>);
 
 } // namespace bg
