@@ -1,6 +1,6 @@
 # Shared reference transition samples
 
-Status: accepted
+Status: superseded
 
 ## Context
 
@@ -20,3 +20,5 @@ Subscribers reuse one membership or key comparison, and change data is
 materialized only when queried. Each receiving input stores one sample pointer.
 
 See [reference sampling](../time-series-references.md#input-sampling).
+
+Replaced by [receiving-input reference sample ownership](0039-receiving-input-reference-sample-ownership.md).

@@ -7,26 +7,23 @@
 #include <bg/type/time_series_dict_type.hpp>
 #include <bg/type/time_series_set_type.hpp>
 #include <bg/util/scope_exit.hpp>
-#include <bg/graph/runtime_graph.hpp>
 
 #include <cassert>
-#include <concepts>
-#include <type_traits>
 
 namespace bg::details {
 
 TimeSeriesRuntimeType::ConstItem ReferenceInputSampleStorage::input() const noexcept {
     assert(sample());
-    return sample().visit([](const auto *sample) { return reference_sample_item(*sample); });
+    return sample().input();
 }
 
 ResolvedTimeSeries ReferenceInputSampleStorage::previous() const noexcept {
     assert(sample());
-    return sample().visit([](const auto *sample) { return reference_sample_previous(*sample); });
+    return sample().previous();
 }
 
-SampledReferenceChange make_reference_sample(ResolvedTimeSeries previous, ResolvedTimeSeries current,
-                                             EvaluationTime evaluation_time, allocator &memory) {
+SampledReferenceChange SampledReferenceChange::create(ResolvedTimeSeries previous, ResolvedTimeSeries current,
+                                                       EvaluationTime evaluation_time, allocator &memory) {
     if (!previous.valid() && !current.valid()) {
         return {};
     }
@@ -37,80 +34,80 @@ SampledReferenceChange make_reference_sample(ResolvedTimeSeries previous, Resolv
     }
 
     if (type_cast<TimeSeriesSetType>(&runtime_type->type()) != nullptr) {
-        auto *sample = make_set_sample(previous, current, evaluation_time, memory);
-        return SampledReferenceChange{sample};
+        return SampledReferenceChange{SampledSet::create(previous, current, evaluation_time, memory)};
     }
 
     if (type_cast<TimeSeriesDictionaryType>(&runtime_type->type()) != nullptr) {
-        auto *sample = make_dictionary_sample(previous, current, evaluation_time, memory);
-        if (sample == nullptr) {
-            return {};
-        }
-        return SampledReferenceChange{sample};
+        return SampledReferenceChange{SampledDictionary::create(previous, current, evaluation_time, memory)};
     }
 
     return {};
 }
 
-void destroy_reference_sample(SampledReferenceChange sample) noexcept {
-    if (!sample) {
+void SampledReferenceChange::retain() const noexcept {
+    if (!*this) {
         return;
     }
-    sample.visit([](auto *value) {
-        using T = std::remove_pointer_t<decltype(value)>;
-        if constexpr (std::same_as<T, SampledSet>) {
-            destroy_set_sample(value);
-        } else {
-            destroy_dictionary_sample(value);
-        }
-    });
+    visit([](SampledSet *sample) { sample->retain(); },
+          [](SampledDictionary *sample) { sample->retain(); });
 }
 
-TimeSeriesRuntimeType::ConstItem reference_sample_item(const SampledSet &sample) noexcept {
-    return set_sample_item(sample);
+void SampledReferenceChange::release() const noexcept {
+    if (!*this) {
+        return;
+    }
+    visit([](SampledSet *sample) { sample->release(); },
+          [](SampledDictionary *sample) { sample->release(); });
 }
 
-TimeSeriesRuntimeType::ConstItem reference_sample_item(const SampledDictionary &sample) noexcept {
-    return dictionary_sample_item(sample);
+TimeSeriesRuntimeType::ConstItem SampledReferenceChange::input() const noexcept {
+    assert(*this);
+    return visit([](const auto *sample) { return sample->input(); });
 }
 
-ResolvedTimeSeries reference_sample_previous(const SampledSet &sample) noexcept { return set_sample_previous(sample); }
-
-ResolvedTimeSeries reference_sample_previous(const SampledDictionary &sample) noexcept {
-    return dictionary_sample_previous(sample);
+ResolvedTimeSeries SampledReferenceChange::previous() const noexcept {
+    assert(*this);
+    return visit([](const auto *sample) { return sample->previous; });
 }
 
-ReferenceInputSampleCache::~ReferenceInputSampleCache() { clear(); }
+ReferenceInputSampleLookup::~ReferenceInputSampleLookup() { clear(); }
 
-SampledReferenceChange ReferenceInputSampleCache::get(const RuntimeGraph &publisher, const void *output,
-                                                     Reference previous_reference,
-                                                     Reference current_reference, ResolvedTimeSeries previous,
-                                                     ResolvedTimeSeries current,
-                                                     const TimeSeriesRuntimeType &runtime_type,
-                                                     EvaluationTime evaluation_time) {
-    const auto key = Entry{&publisher, output, previous_reference, current_reference, &runtime_type, {}};
+SampledReferenceChange ReferenceInputSampleLookup::get(Reference previous_reference,
+                                                        Reference current_reference, ResolvedTimeSeries previous,
+                                                        ResolvedTimeSeries current,
+                                                        const TimeSeriesRuntimeType &runtime_type,
+                                                        EvaluationTime evaluation_time) {
+    const auto previous_last_updated =
+        previous.last_updated == nullptr ? initial_time_series_state : *previous.last_updated;
+    const auto key = Entry{previous_reference,
+                           current_reference,
+                           &runtime_type,
+                           previous_last_updated,
+                           previous.storage,
+                           previous.runtime_type,
+                           {}};
     if (const auto *existing = entries_.find(key)) {
         return existing->sample;
     }
 
-    auto sample_memory = publisher.allocation();
-    auto sample = make_reference_sample(previous, current, evaluation_time, sample_memory);
+    auto sample = SampledReferenceChange::create(previous, current, evaluation_time, *memory_);
     if (!sample) {
         return {};
     }
-    auto destroy = util::scope_exit{[&]() noexcept { destroy_reference_sample(sample); }};
+    auto release = util::scope_exit{[&]() noexcept { sample.release(); }};
     const auto [entry, inserted] = entries_.insert(
-        Entry{&publisher, output, previous_reference, current_reference, &runtime_type, sample},
+        Entry{previous_reference, current_reference, &runtime_type, previous_last_updated, previous.storage,
+              previous.runtime_type, sample},
         memory_->memory_resource());
     assert(inserted);
     static_cast<void>(entry);
-    destroy.release();
+    release.release();
     return sample;
 }
 
-void ReferenceInputSampleCache::clear() noexcept {
+void ReferenceInputSampleLookup::clear() noexcept {
     for (const auto &entry : entries_) {
-        destroy_reference_sample(entry.sample);
+        entry.sample.release();
     }
     entries_.release(memory_->memory_resource());
 }

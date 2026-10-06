@@ -197,8 +197,8 @@ class Node {
         if (!binding->has_reference_sample()) {
             return nullptr;
         }
-        const auto offset = details::reference_input_sample_offset(binding->value_offset(),
-                                                                   binding->reference_dynamic_activity());
+        const auto offset = details::ReferenceInputSampleStorage::offset_for(binding->value_offset(),
+                                                                            binding->reference_dynamic_activity());
         return reinterpret_cast<details::ReferenceInputSampleStorage *>(runtime_storage_ + offset);
     }
 

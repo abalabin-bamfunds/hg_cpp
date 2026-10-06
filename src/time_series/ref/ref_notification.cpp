@@ -10,8 +10,8 @@
 
 namespace bg::details {
 
-void ReferenceInputSubscriber::update_input(OutputChangeContext &context, RuntimeGraph &publisher_graph,
-                                            const void *output, Reference new_reference,
+void ReferenceInputSubscriber::update_input(OutputChangeContext &context, ReferenceInputSampleLookup &samples,
+                                            Reference new_reference,
                                             std::size_t notification_data, InputNotificationFunction notification,
                                             OutputChange change) const {
     if (new_reference) {
@@ -35,7 +35,7 @@ void ReferenceInputSubscriber::update_input(OutputChangeContext &context, Runtim
         }
     } else {
         auto *sample_storage = static_cast<ReferenceInputSampleStorage *>(
-            graph.storage_at(reference_input_sample_offset(input_offset(), controlled_activity())));
+            graph.storage_at(ReferenceInputSampleStorage::offset_for(input_offset(), controlled_activity())));
         auto new_sample = SampledReferenceChange{};
         auto callback_added = false;
         auto remove_new_callback = util::scope_exit{[&]() noexcept {
@@ -55,12 +55,13 @@ void ReferenceInputSubscriber::update_input(OutputChangeContext &context, Runtim
                 previous_state.publish(context.evaluation_time());
                 previous.last_updated = &previous_state;
             }
-            new_sample = graph.reference_transition_sample(publisher_graph, output, input.value, new_reference,
-                                                           previous, current, requested_runtime_type());
+            new_sample = samples.get(input.value, new_reference, previous, current,
+                                     requested_runtime_type(), context.evaluation_time());
             if (new_sample && sample_storage->empty()) {
-                graph.add_cycle_callback(sample_storage, [](void *value, EvaluationContext &) noexcept {
+                const auto clear_sample = [](void *value, EvaluationContext &) noexcept {
                     static_cast<ReferenceInputSampleStorage *>(value)->clear();
-                });
+                };
+                graph.add_cycle_callback(sample_storage, clear_sample, true);
                 callback_added = true;
             }
         }
@@ -107,33 +108,58 @@ void ReferenceInputSubscriber::update_input(OutputChangeContext &context, Runtim
 void notify_reference_inputs(OutputChangeContext &context, const TimeSeriesRuntimeType *runtime_type, const void *value,
                              OutputChange change, std::span<const std::byte> record_bytes) {
     auto &publisher_graph = context.runtime_graph();
-    const auto records = std::span{
-        reinterpret_cast<const ReferenceInputSubscriber *>(record_bytes.data()),
-        record_bytes.size() / sizeof(ReferenceInputSubscriber),
-    };
     const auto reference = change == OutputChange::invalidation ? Reference{}
                            : runtime_type == nullptr            ? *static_cast<const Reference *>(value)
                                                                 : runtime_type->reference(value);
+    auto samples = ReferenceInputSampleLookup{publisher_graph.allocation()};
+    const auto subscribers = std::span{
+        reinterpret_cast<const ReferenceInputSubscriber *>(record_bytes.data()),
+        record_bytes.size() / sizeof(ReferenceInputSubscriber)};
 
-    for (const auto &subscriber : records) {
-        subscriber.update_input(context, publisher_graph, value, reference, 0, nullptr, change);
+    for (const auto &subscriber : subscribers) {
+        subscriber.update_input(context, samples, reference, 0, nullptr, change);
     }
 }
 
-void notify_reference_inputs_with_notifications(OutputChangeContext &context, const TimeSeriesRuntimeType *runtime_type,
-                                                const void *value, OutputChange change,
-                                                std::span<const std::byte> record_bytes) {
+void notify_reference_inputs_with_notifications(OutputChangeContext &context,
+                                                const TimeSeriesRuntimeType *runtime_type, const void *value,
+                                                OutputChange change, std::span<const std::byte> record_bytes) {
     auto &publisher_graph = context.runtime_graph();
-    const auto records = std::span{
-        reinterpret_cast<const ReferenceInputNotificationSubscriber *>(record_bytes.data()),
-        record_bytes.size() / sizeof(ReferenceInputNotificationSubscriber),
-    };
     const auto reference = change == OutputChange::invalidation ? Reference{}
                            : runtime_type == nullptr            ? *static_cast<const Reference *>(value)
                                                                 : runtime_type->reference(value);
+    auto samples = ReferenceInputSampleLookup{publisher_graph.allocation()};
+    const auto subscribers = std::span{
+        reinterpret_cast<const ReferenceInputNotificationSubscriber *>(record_bytes.data()),
+        record_bytes.size() / sizeof(ReferenceInputNotificationSubscriber)};
 
-    for (const auto &subscriber : records) {
-        subscriber.subscription().update_input(context, publisher_graph, value, reference,
+    for (const auto &subscriber : subscribers) {
+        subscriber.subscription().update_input(context, samples, reference,
+                                               subscriber.notification_data(), subscriber.notification(), change);
+    }
+}
+
+void notify_mixed_reference_inputs(OutputChangeContext &context, const TimeSeriesRuntimeType *runtime_type,
+                                   const void *value, OutputChange change, std::span<const std::byte> record_bytes) {
+    auto &publisher_graph = context.runtime_graph();
+    const auto &header = *reinterpret_cast<const ReferenceInputNotificationHeader *>(record_bytes.data());
+    const auto *subscriber_data = record_bytes.data() + sizeof(header);
+    const auto subscriber_bytes = header.subscriber_count * sizeof(ReferenceInputSubscriber);
+    const auto subscribers = std::span{
+        reinterpret_cast<const ReferenceInputSubscriber *>(subscriber_data), header.subscriber_count};
+    const auto notifying_subscribers = std::span{
+        reinterpret_cast<const ReferenceInputNotificationSubscriber *>(subscriber_data + subscriber_bytes),
+        header.notifying_subscriber_count};
+    const auto reference = change == OutputChange::invalidation ? Reference{}
+                           : runtime_type == nullptr            ? *static_cast<const Reference *>(value)
+                                                                : runtime_type->reference(value);
+    auto samples = ReferenceInputSampleLookup{publisher_graph.allocation()};
+
+    for (const auto &subscriber : subscribers) {
+        subscriber.update_input(context, samples, reference, 0, nullptr, change);
+    }
+    for (const auto &subscriber : notifying_subscribers) {
+        subscriber.subscription().update_input(context, samples, reference,
                                                subscriber.notification_data(),
                                                subscriber.notification(), change);
     }

@@ -156,37 +156,64 @@ class RuntimeGraph::TimedSchedule {
 
 class RuntimeGraph::CycleCallbacks {
     struct Record {
-        RuntimeGraph *owner;
+        static constexpr std::uintptr_t call_on_stop_flag = 1;
+
+        std::uintptr_t owner_and_flags;
         void *receiver;
         void (*function)(void *, EvaluationContext &) noexcept;
+
+        RuntimeGraph &owner() const noexcept {
+            return *reinterpret_cast<RuntimeGraph *>(owner_and_flags & ~call_on_stop_flag);
+        }
+        bool call_on_stop() const noexcept { return (owner_and_flags & call_on_stop_flag) != 0; }
     };
+    static_assert(sizeof(Record) == 3 * sizeof(void *));
 
   public:
     explicit CycleCallbacks(allocator memory) : records_{&memory.memory_resource()} {}
 
-    void add(RuntimeGraph &owner, void *receiver, void (*function)(void *, EvaluationContext &) noexcept) {
-        records_.push_back({&owner, receiver, function});
+    void add(RuntimeGraph &owner, void *receiver, void (*function)(void *, EvaluationContext &) noexcept,
+             bool call_on_stop) {
+        const auto address = reinterpret_cast<std::uintptr_t>(&owner);
+        assert((address & Record::call_on_stop_flag) == 0);
+        records_.push_back({address | (call_on_stop ? Record::call_on_stop_flag : 0), receiver, function});
     }
 
     void remove(const void *receiver) noexcept {
         std::erase_if(records_, [=](const auto &record) { return record.receiver == receiver; });
     }
 
-    void remove(RuntimeGraph &owner) noexcept {
-        std::erase_if(records_, [&](const auto &record) { return record.owner == &owner; });
+    void remove(RuntimeGraph &owner, EvaluationContext &context) noexcept {
+        auto callback_context = EvaluationContext{context, owner, 0};
+        for (auto record = records_.rbegin(); record != records_.rend(); ++record) {
+            if (&record->owner() == &owner && record->call_on_stop()) {
+                record->function(record->receiver, callback_context);
+            }
+        }
+        std::erase_if(records_, [&](const auto &record) {
+            return &record.owner() == &owner;
+        });
     }
 
     void run(EvaluationContext &context) noexcept {
         const auto count = records_.size();
         for (auto i = count; i != 0; --i) {
             const auto record = records_[i - 1];
-            auto callback_context = EvaluationContext{context, *record.owner, 0};
+            auto callback_context = EvaluationContext{context, record.owner(), 0};
             record.function(record.receiver, callback_context);
         }
         records_.erase(records_.begin(), records_.begin() + static_cast<std::ptrdiff_t>(count));
     }
 
-    void clear() noexcept { records_.clear(); }
+    void clear(EvaluationContext &context) noexcept {
+        for (auto record = records_.rbegin(); record != records_.rend(); ++record) {
+            if (record->call_on_stop()) {
+                auto callback_context = EvaluationContext{context, record->owner(), 0};
+                record->function(record->receiver, callback_context);
+            }
+        }
+        records_.clear();
+    }
 
   private:
     std::pmr::vector<Record> records_;
@@ -509,6 +536,7 @@ void RuntimeGraph::finalize(EvaluationContext &parent_context) noexcept {
     }
     finalized_ = true;
 
+    clear_cycle_callbacks(parent_context);
     if (storage_ != nullptr) {
         for (auto node_index = compiled_graph_->node_count(); node_index != 0;) {
             const auto &node = compiled_graph_->node(--node_index);
@@ -524,8 +552,6 @@ void RuntimeGraph::finalize(EvaluationContext &parent_context) noexcept {
                 details::ReferenceProvider::remove_subscriber(input->value, *this, offset);
             }
         }
-        clear_reference_input_samples();
-
         for (auto node_index = compiled_graph_->node_count(); node_index != 0;) {
             --node_index;
             const auto &node = compiled_graph_->node(node_index);
@@ -543,10 +569,6 @@ void RuntimeGraph::finalize(EvaluationContext &parent_context) noexcept {
         for (auto i = output_destruction.offsets.size(); i != 0; --i) {
             output_destruction.runtime_types[i - 1]->destroy_value(storage_ + output_destruction.offsets[i - 1],
                                                                    allocator_);
-        }
-
-        if (&outer_graph() == this) {
-            destroy_reference_transition_samples();
         }
     }
 }
@@ -614,51 +636,6 @@ void RuntimeGraph::clear_timed_schedule() noexcept {
         const auto previous = next_scheduled_time();
         timed_schedule()->clear();
         notify_timed_schedule_changed(previous);
-    }
-}
-
-void RuntimeGraph::clear_reference_input_samples() noexcept {
-    if (storage_ == nullptr) {
-        return;
-    }
-    for (auto node_index = compiled_graph_->node_count(); node_index != 0;) {
-        auto runtime_node = Node{compiled_graph_->node(--node_index), storage_};
-        for (auto parameter_index = std::size_t{}; parameter_index < runtime_node.input_count(); ++parameter_index) {
-            auto *sample = runtime_node.reference_input_sample(parameter_index);
-            if (sample == nullptr) {
-                continue;
-            }
-            remove_cycle_callback(sample);
-            sample->reset();
-        }
-    }
-}
-
-details::SampledReferenceChange RuntimeGraph::reference_transition_sample(
-    const RuntimeGraph &publisher, const void *output, Reference previous_reference, Reference current_reference,
-    details::ResolvedTimeSeries previous, details::ResolvedTimeSeries current,
-    const TimeSeriesRuntimeType &runtime_type) {
-    auto &outer = outer_graph();
-    if (outer.reference_input_sample_cache_ == nullptr) {
-        outer.reference_input_sample_cache_ =
-            outer.allocator_.new_object<details::ReferenceInputSampleCache>(outer.allocator_);
-    }
-    return outer.reference_input_sample_cache_->get(publisher, output, previous_reference, current_reference,
-                                                    previous, current, runtime_type, outer.evaluation_time_);
-}
-
-void RuntimeGraph::clear_reference_transition_samples() noexcept {
-    auto &outer = outer_graph();
-    if (outer.reference_input_sample_cache_ != nullptr) {
-        outer.reference_input_sample_cache_->clear();
-    }
-}
-
-void RuntimeGraph::destroy_reference_transition_samples() noexcept {
-    assert(&outer_graph() == this);
-    if (reference_input_sample_cache_ != nullptr) {
-        allocator_.delete_object(reference_input_sample_cache_);
-        reference_input_sample_cache_ = nullptr;
     }
 }
 
@@ -821,11 +798,12 @@ RuntimeGraph::CycleCallbacks &RuntimeGraph::require_cycle_callbacks() {
     return *cycle_callbacks();
 }
 
-void RuntimeGraph::add_cycle_callback(void *receiver, void (*function)(void *, EvaluationContext &) noexcept) {
+void RuntimeGraph::add_cycle_callback(void *receiver, void (*function)(void *, EvaluationContext &) noexcept,
+                                     bool call_on_stop) {
     if (stopped_) {
         return;
     }
-    outer_graph().require_cycle_callbacks().add(*this, receiver, function);
+    outer_graph().require_cycle_callbacks().add(*this, receiver, function, call_on_stop);
 }
 
 void RuntimeGraph::remove_cycle_callback(const void *receiver) noexcept {
@@ -841,16 +819,16 @@ void RuntimeGraph::run_cycle_callbacks(EvaluationContext &context) noexcept {
     }
 }
 
-void RuntimeGraph::clear_cycle_callbacks() noexcept {
+void RuntimeGraph::clear_cycle_callbacks(EvaluationContext &context) noexcept {
     auto &outer = outer_graph();
     if (&outer != this) {
         if (outer.compiled_graph_->has_cycle_callbacks() && outer.cycle_callbacks() != nullptr) {
-            outer.cycle_callbacks()->remove(*this);
+            outer.cycle_callbacks()->remove(*this, context);
         }
         return;
     }
     if (compiled_graph_->has_cycle_callbacks() && cycle_callbacks() != nullptr) {
-        cycle_callbacks()->clear();
+        cycle_callbacks()->clear(context);
     }
 }
 
@@ -1083,11 +1061,7 @@ void RuntimeGraph::stop_nodes(std::size_t node_count, EvaluationContext &parent_
     }
 
     clear_timed_schedule();
-    clear_reference_input_samples();
-    if (&outer_graph() == this) {
-        destroy_reference_transition_samples();
-    }
-    clear_cycle_callbacks();
+    clear_cycle_callbacks(parent_context);
 }
 
 void RuntimeGraph::stop() noexcept {
@@ -1126,11 +1100,7 @@ void RuntimeGraphEvaluator::stop(RuntimeGraph &graph, EvaluationContext &parent_
     }
 
     graph.clear_timed_schedule();
-    graph.clear_reference_input_samples();
-    if (&graph.outer_graph() == &graph) {
-        graph.destroy_reference_transition_samples();
-    }
-    graph.clear_cycle_callbacks();
+    graph.clear_cycle_callbacks(context);
 }
 
 bool RuntimeGraph::inputs_are_valid(const CompiledNode &node) const noexcept {
@@ -1193,9 +1163,6 @@ bool RuntimeGraphEvaluator::evaluate(RuntimeGraph &graph, EvaluationContext &par
         }
 
         graph.run_cycle_callbacks(context);
-        if (&graph.outer_graph() == &graph) {
-            graph.clear_reference_transition_samples();
-        }
         graph.last_evaluation_time_ = evaluation_time;
         graph.evaluation_time_ = evaluation_time;
         graph.activate_scheduled(evaluation_time);
@@ -1276,8 +1243,9 @@ void EvaluationContext::cancel(ScheduleHandle handle) const noexcept {
 }
 
 void EvaluationContext::add_cycle_callback(void *receiver,
-                                           void (*function)(void *, EvaluationContext &) noexcept) const {
-    runtime_graph_->add_cycle_callback(receiver, function);
+                                           void (*function)(void *, EvaluationContext &) noexcept,
+                                           bool call_on_stop) const {
+    runtime_graph_->add_cycle_callback(receiver, function, call_on_stop);
 }
 
 GlobalState &EvaluationContext::global_state() const noexcept {

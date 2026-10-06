@@ -1,10 +1,16 @@
+#include <bg/graph.hpp>
 #include <bg/graph/dynamic_subscribers.hpp>
+#include <bg/nested.hpp>
 #include <bg/node.hpp>
 #include <bg/run_graph.hpp>
 #include <bg/testing/test_graph.hpp>
 #include <bg/time_series/ref/ref_provider.hpp>
 #include <bg/time_series/ref/ref_storage.hpp>
+#include <bg/time_series/tsb/tsb.hpp>
+#include <bg/time_series/tsb/tsb_input.hpp>
 #include <bg/time_series/tsl/tsl.hpp>
+#include <bg/time_series/tsd/tsd_input.hpp>
+#include <bg/time_series/tsd/tsd_output.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -13,6 +19,8 @@
 #include <vector>
 
 namespace {
+
+using namespace bg::literals;
 
 struct changing_reference_target {
     static constexpr bool uses_timed_scheduling = true;
@@ -59,6 +67,10 @@ struct optional_reference_consumer {
     void evaluate() const {}
 };
 
+template <template <typename, auto...> typename Field> struct DictionaryBundle {
+    Field<bg::TSD<std::int64_t, bg::TS<bg::i64>>> dictionary;
+};
+
 } // namespace
 
 TEST_CASE("a dereferenced input subscribes directly to a fixed target",
@@ -73,6 +85,91 @@ TEST_CASE("a dereferenced input subscribes directly to a fixed target",
 
     CHECK(reference_pass::evaluation_count == 1);
     CHECK(actual.equals({10, 20, std::nullopt, 30}));
+}
+
+TEST_CASE("plain and notifying inputs share one sampled dictionary",
+          "[evaluation][reference][series:tsd][series:tsb][feature:sampling][transition:update]"
+          "[binding:reference-to-value]") {
+    const auto make_first = bg::node([](bg::In<bg::TS<bool>>, bg::Out<bg::TSD<std::int64_t, bg::TS<bg::i64>>> output) {
+        output[1].set(10);
+    });
+    const auto make_second = bg::node([](bg::In<bg::TS<bool>>, bg::Out<bg::TSD<std::int64_t, bg::TS<bg::i64>>> output) {
+        output[2].set(20);
+    });
+    const auto select = bg::node(
+        [](bg::In<bg::TS<bool>> use_second, bg::In<bg::REF<bg::TSD<std::int64_t, bg::TS<bg::i64>>>> first,
+           bg::In<bg::REF<bg::TSD<std::int64_t, bg::TS<bg::i64>>>> second,
+           bg::Out<bg::REF<bg::TSD<std::int64_t, bg::TS<bg::i64>>>> output) {
+            output.copy(*use_second ? second : first);
+        });
+    const auto store_reference = bg::node(
+        [](bg::In<bg::REF<bg::TSD<std::int64_t, bg::TS<bg::i64>>>> input,
+           bg::Out<bg::TSD<std::int64_t, bg::REF<bg::TSD<std::int64_t, bg::TS<bg::i64>>>>> output) {
+            output[0].copy(input);
+        });
+    const auto compare = bg::node(
+        [](bg::In<bg::TSD<std::int64_t, bg::TS<bg::i64>>> direct,
+           bg::In<bg::TSB<DictionaryBundle>> packaged, bg::Out<bg::TS<bool>> output) {
+            output.set(direct.data() == packaged->dictionary.data());
+        });
+    const auto graph = [&](bg::wp<bg::TS<bool>> use_second) {
+        const auto selected = store_reference(select(use_second, make_first(use_second), make_second(use_second)));
+        const auto item = selected[std::int64_t{0}];
+        return compare(item, bg::bundle<DictionaryBundle>(item));
+    };
+
+    const auto actual = bg::testing::test_graph(graph, std::array{false, true});
+
+    CHECK(actual.equals({true, true}));
+}
+
+TEST_CASE("a nested graph releases its sampled reference change when it stops",
+          "[evaluation][nested][reference][series:tsd][feature:sampling][feature:nested-graph]"
+          "[transition:update][transition:stop][transition:restart][binding:reference-to-value]") {
+    const auto make_first =
+        bg::node([](bg::In<bg::TS<bool>>, bg::Out<bg::TSD<std::int64_t, bg::TS<bg::i64>>> output) {
+            output[1].set(10);
+        });
+    const auto make_second =
+        bg::node([](bg::In<bg::TS<bool>>, bg::Out<bg::TSD<std::int64_t, bg::TS<bg::i64>>> output) {
+            output[2].set(20);
+        });
+    const auto select = bg::node(
+        [](bg::In<bg::TS<bool>> use_second, bg::In<bg::REF<bg::TSD<std::int64_t, bg::TS<bg::i64>>>> first,
+           bg::In<bg::REF<bg::TSD<std::int64_t, bg::TS<bg::i64>>>> second,
+           bg::Out<bg::REF<bg::TSD<std::int64_t, bg::TS<bg::i64>>>> output) {
+            output.copy(*use_second ? second : first);
+        });
+    const auto inspect = bg::node(
+        [](bg::In<bg::TSD<std::int64_t, bg::TS<bg::i64>>> input, bg::Out<bg::TS<bg::i64>> output) {
+            auto added = 0;
+            auto removed = 0;
+            input.for_each_added([&](const auto &key) { added |= 1 << *key; });
+            input.for_each_removed([&](const auto &key) { removed |= 1 << *key; });
+            output.set(added * 100 + removed * 10);
+        });
+    const auto combine = bg::node(
+        [](bg::In<bg::TS<bg::i64>, bg::optional> inner, bg::In<bg::TS<bg::i64>> direct,
+           bg::Out<bg::TS<bg::i64>> output) {
+            output.set((inner.valid() ? *inner : 0) + *direct);
+        });
+    const auto inner = bg::graph(
+        "name"_n = "inspect_sampled_dictionary",
+        [&](bg::wp<bg::TSD<std::int64_t, bg::TS<bg::i64>>> input) -> bg::wp<bg::TS<bg::i64>> {
+            return inspect(input);
+        });
+    const auto outer = [&](bg::wp<bg::TS<bool>> input, bg::wp<bg::TS<bool>> use_second,
+                           bg::wp<bg::TS<bool>> run) {
+        const auto selected = select(use_second, make_first(input), make_second(input));
+        return combine(bg::nested(inner, run, selected), inspect(selected));
+    };
+
+    const auto actual = bg::testing::test_graph(
+        outer, std::array<std::optional<bool>, 4>{true, std::nullopt, std::nullopt, std::nullopt},
+        std::array<std::optional<bool>, 4>{false, std::nullopt, true, false},
+        std::array{true, true, false, true});
+
+    CHECK(actual.equals({400, std::nullopt, 420, 440}));
 }
 
 TEST_CASE("a default reference output does not schedule subscribers for the same reference",

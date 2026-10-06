@@ -7,7 +7,6 @@
 #include <bg/graph/dynamic_node_subscriber.hpp>
 #include <bg/graph/node.hpp>
 #include <bg/graph/runtime_graph_scheduling.hpp>
-#include <bg/time_series/ref/ref_input_sample.hpp>
 
 #include <cstddef>
 #include <cstdint>
@@ -21,7 +20,6 @@ namespace bg {
 namespace details {
 struct DynamicSubscribers;
 class EvaluationScratch;
-class ReferenceInputSampleCache;
 class ServiceRequestBinding;
 } // namespace details
 
@@ -75,15 +73,9 @@ class RuntimeGraph {
     void update_reference_output(std::size_t node_index, Reference reference, EvaluationTime evaluation_time);
     void initialize_constant_output(std::size_t node_index, Scalar<> value, EvaluationTime evaluation_time);
 
-    void add_cycle_callback(void *receiver, void (*function)(void *, EvaluationContext &) noexcept);
+    void add_cycle_callback(void *receiver, void (*function)(void *, EvaluationContext &) noexcept,
+                           bool call_on_stop = false);
     void remove_cycle_callback(const void *receiver) noexcept;
-    details::SampledReferenceChange reference_transition_sample(const RuntimeGraph &publisher, const void *output,
-                                                                Reference previous_reference,
-                                                                Reference current_reference,
-                                                                details::ResolvedTimeSeries previous,
-                                                                details::ResolvedTimeSeries current,
-                                                                const TimeSeriesRuntimeType &runtime_type);
-    void clear_reference_transition_samples() noexcept;
     void notify_dynamic_subscribers(details::DynamicSubscribers &subscribers, OutputChange change);
     void notify_dynamic_subscriber(const details::DynamicNodeSubscriber &subscriber, OutputChange change) noexcept {
         auto active = subscriber.active();
@@ -124,8 +116,6 @@ class RuntimeGraph {
     TimedSchedule *timed_schedule() const noexcept;
     void activate_scheduled(EvaluationTime evaluation_time) noexcept;
     void clear_timed_schedule() noexcept;
-    void clear_reference_input_samples() noexcept;
-    void destroy_reference_transition_samples() noexcept;
     void notify_timed_schedule_changed(std::optional<EvaluationTime> previous);
     void notify_owner_scheduled() noexcept;
     CycleCallbacks *&cycle_callbacks() noexcept;
@@ -133,7 +123,7 @@ class RuntimeGraph {
     RuntimeGraph &outer_graph() noexcept;
     CycleCallbacks &require_cycle_callbacks();
     void run_cycle_callbacks(EvaluationContext &context) noexcept;
-    void clear_cycle_callbacks() noexcept;
+    void clear_cycle_callbacks(EvaluationContext &context) noexcept;
     std::optional<OutputChange> output_change(const CompiledNode &node, bool output_was_valid) const noexcept;
     void publish_output(const CompiledNode &node, OutputChange change);
     void notify_subscribers(std::span<const Subscriber> subscribers, OutputChange change);
@@ -149,7 +139,6 @@ class RuntimeGraph {
     bg::allocator allocator_;
     RuntimeGraphEvaluator *evaluator_;
     std::byte *storage_{};
-    details::ReferenceInputSampleCache *reference_input_sample_cache_{};
     EvaluationTime last_evaluation_time_{MIN_DT};
     EvaluationTime evaluation_time_{MIN_DT};
     // Only outer graphs use the global state pointer; inner graphs use the owner token.
@@ -166,6 +155,6 @@ class RuntimeGraph {
     SchedulingInfo inline_scheduling_{};
 };
 
-static_assert(sizeof(RuntimeGraph) <= 96);
+static_assert(sizeof(RuntimeGraph) == 88);
 
 } // namespace bg

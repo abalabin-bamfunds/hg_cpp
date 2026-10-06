@@ -13,6 +13,8 @@ class TimeSeriesRuntimeType;
 
 namespace details {
 
+class ReferenceInputSampleLookup;
+
 class ReferenceInputSubscriber {
   public:
     ReferenceInputSubscriber(std::uint32_t input_offset, std::uint32_t node_index, bool active, bool required,
@@ -31,7 +33,7 @@ class ReferenceInputSubscriber {
     bool required() const noexcept { return (node_index_and_flags_ & required_flag) != 0; }
     bool controlled_activity() const noexcept { return (node_index_and_flags_ & controlled_activity_flag) != 0; }
 
-    void update_input(OutputChangeContext &context, RuntimeGraph &publisher_graph, const void *output,
+    void update_input(OutputChangeContext &context, ReferenceInputSampleLookup &samples,
                       Reference reference,
                       std::size_t notification_data,
                       InputNotificationFunction notification, OutputChange change) const;
@@ -69,11 +71,18 @@ class ReferenceInputNotificationSubscriber {
     InputNotificationFunction notification_;
 };
 
+struct ReferenceInputNotificationHeader {
+    std::uint32_t subscriber_count;
+    std::uint32_t notifying_subscriber_count;
+};
+
 void notify_reference_inputs(OutputChangeContext &context, const TimeSeriesRuntimeType *runtime_type, const void *value,
                              OutputChange change, std::span<const std::byte> records);
-void notify_reference_inputs_with_notifications(OutputChangeContext &context, const TimeSeriesRuntimeType *runtime_type,
-                                                const void *value, OutputChange change,
-                                                std::span<const std::byte> records);
+void notify_reference_inputs_with_notifications(OutputChangeContext &context,
+                                                const TimeSeriesRuntimeType *runtime_type, const void *value,
+                                                OutputChange change, std::span<const std::byte> records);
+void notify_mixed_reference_inputs(OutputChangeContext &context, const TimeSeriesRuntimeType *runtime_type,
+                                   const void *value, OutputChange change, std::span<const std::byte> records);
 
 static_assert(sizeof(ReferenceInputSubscriber) == 2 * sizeof(void *));
 static_assert(sizeof(ReferenceInputNotificationSubscriber) == 4 * sizeof(void *));

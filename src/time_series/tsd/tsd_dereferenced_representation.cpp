@@ -129,7 +129,7 @@ class DereferencedTimeSeriesDictionaryRepresentation final : public ReferenceRep
 
     TimeSeriesRuntimeType::ConstItem item(item_id_t id) const {
         if (const auto *sample = samples_.get(id, sample_positions_)) {
-            return dictionary_sample_item(**sample);
+            return (*sample)->input();
         }
         if (id >= item_references_.size() || !item_references_[id]) {
             return {runtime_type_.item_runtime_type(), initial_time_series_state, nullptr};
@@ -238,10 +238,10 @@ class DereferencedTimeSeriesDictionaryRepresentation final : public ReferenceRep
                        ResolvedTimeSeries previous = {}) {
         auto previous_last_updated = TimeSeriesState{};
         if (auto *existing = samples_.get(id, sample_positions_)) {
-            previous = dictionary_sample_previous(**existing);
+            previous = (*existing)->previous;
             previous_last_updated = *previous.last_updated;
             previous.last_updated = &previous_last_updated;
-            destroy_dictionary_sample(*existing);
+            (*existing)->release();
             samples_.erase_at(id, provider_->allocation());
             sample_positions_.reset(id);
         }
@@ -249,11 +249,11 @@ class DereferencedTimeSeriesDictionaryRepresentation final : public ReferenceRep
         if (previous.runtime_type == nullptr && id < item_references_.size() && item_references_[id]) {
             previous = ResolvedTimeSeries::resolve(item_references_[id]);
         }
-        auto *sample = make_dictionary_sample(previous, current, evaluation_time, provider_->allocation());
+        auto *sample = SampledDictionary::create(previous, current, evaluation_time, provider_->allocation());
         if (sample == nullptr) {
             return;
         }
-        auto destroy_sample = util::scope_exit{[&]() noexcept { destroy_dictionary_sample(sample); }};
+        auto destroy_sample = util::scope_exit{[&]() noexcept { sample->release(); }};
         if (!sample_cleanup_registered_) {
             provider_->add_cycle_callback(this, clear_samples_callback);
             sample_cleanup_registered_ = true;
@@ -273,7 +273,7 @@ class DereferencedTimeSeriesDictionaryRepresentation final : public ReferenceRep
     void clear_samples() noexcept {
         auto &memory = provider_->allocation();
         for (const auto id : sample_positions_) {
-            destroy_dictionary_sample(samples_[id]);
+            samples_[id]->release();
         }
         samples_.release(sample_positions_, memory);
         sample_positions_.release(memory);

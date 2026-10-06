@@ -975,6 +975,14 @@ std::size_t output_notification_size(const SubscriptionPlan &subscriptions) noex
         std::ranges::count_if(subscriptions.reference_inputs,
                               [](const auto &subscriber) { return subscriber.notification.function != nullptr; });
     const auto reference_count = subscriptions.reference_inputs.size() - notifying_reference_count;
+    const auto reference_bytes = reference_count * sizeof(details::ReferenceInputSubscriber);
+    const auto notifying_reference_bytes =
+        notifying_reference_count * sizeof(details::ReferenceInputNotificationSubscriber);
+    const auto mixed_references = reference_count != 0 && notifying_reference_count != 0;
+    auto reference_payload_bytes = reference_bytes + notifying_reference_bytes;
+    if (mixed_references) {
+        reference_payload_bytes += sizeof(details::ReferenceInputNotificationHeader);
+    }
 
     auto result = std::size_t{};
     if (!subscriptions.controlled_inputs.empty()) {
@@ -982,14 +990,8 @@ std::size_t output_notification_size(const SubscriptionPlan &subscriptions) noex
                                subscriptions.controlled_inputs.size() * sizeof(ControlledInputSubscriber),
                            alignof(OutputNotification));
     }
-    if (reference_count != 0) {
-        result += align_up(sizeof(OutputNotification) + reference_count * sizeof(details::ReferenceInputSubscriber),
-                           alignof(OutputNotification));
-    }
-    if (notifying_reference_count != 0) {
-        result += align_up(sizeof(OutputNotification) +
-                               notifying_reference_count * sizeof(details::ReferenceInputNotificationSubscriber),
-                           alignof(OutputNotification));
+    if (reference_payload_bytes != 0) {
+        result += align_up(sizeof(OutputNotification) + reference_payload_bytes, alignof(OutputNotification));
     }
     if (!subscriptions.input_subscribers.empty()) {
         result += align_up(sizeof(OutputNotification) +
@@ -1694,7 +1696,7 @@ class CompiledGraphBuilder {
                 }
                 std::construct_at(reinterpret_cast<ReferenceInputStorage *>(runtime_storage.data() + reference.offset));
                 if (reference.sampled_reference) {
-                    const auto sample_offset = details::reference_input_sample_offset(
+                    const auto sample_offset = details::ReferenceInputSampleStorage::offset_for(
                         reference.offset, reference.dynamic_activity);
                     std::construct_at(reinterpret_cast<details::ReferenceInputSampleStorage *>(
                         runtime_storage.data() + sample_offset));
@@ -2012,22 +2014,24 @@ class CompiledGraphBuilder {
         const auto reference_bytes = reference_count * sizeof(details::ReferenceInputSubscriber);
         const auto notifying_reference_bytes =
             notifying_reference_count * sizeof(details::ReferenceInputNotificationSubscriber);
+        const auto mixed_references = reference_count != 0 && notifying_reference_count != 0;
+        auto reference_notification_bytes = reference_bytes + notifying_reference_bytes;
+        if (mixed_references) {
+            reference_notification_bytes += sizeof(details::ReferenceInputNotificationHeader);
+        }
         const auto input_bytes = subscribers.input_subscribers.size() * sizeof(InputNotificationSubscriber);
-        const auto reference_block =
-            reference_count == 0 ? std::size_t{}
-                                 : align_up(sizeof(OutputNotification) + reference_bytes, alignof(OutputNotification));
+        const auto reference_block = reference_notification_bytes == 0
+                                         ? std::size_t{}
+                                         : align_up(sizeof(OutputNotification) + reference_notification_bytes,
+                                                    alignof(OutputNotification));
         const auto controlled_block =
             subscribers.controlled_inputs.empty()
                 ? std::size_t{}
                 : align_up(sizeof(OutputNotification) + controlled_bytes, alignof(OutputNotification));
-        const auto notifying_reference_block =
-            notifying_reference_count == 0
-                ? std::size_t{}
-                : align_up(sizeof(OutputNotification) + notifying_reference_bytes, alignof(OutputNotification));
         const auto input_block = subscribers.input_subscribers.empty()
                                      ? std::size_t{}
                                      : align_up(sizeof(OutputNotification) + input_bytes, alignof(OutputNotification));
-        const auto total_bytes = controlled_block + reference_block + notifying_reference_block + input_block;
+        const auto total_bytes = controlled_block + reference_block + input_block;
         auto *block = destination;
 
         if (!subscribers.controlled_inputs.empty()) {
@@ -2044,13 +2048,7 @@ class CompiledGraphBuilder {
             block += controlled_block;
         }
 
-        if (reference_count != 0) {
-            const auto following = total_bytes - static_cast<std::size_t>(block - destination) -
-                                   sizeof(OutputNotification) - reference_bytes;
-            auto *notification =
-                std::construct_at(reinterpret_cast<OutputNotification *>(block), details::notify_reference_inputs,
-                                  static_cast<std::uint32_t>(reference_bytes), static_cast<std::uint32_t>(following));
-            auto *records = reinterpret_cast<details::ReferenceInputSubscriber *>(notification + 1);
+        const auto construct_plain_reference_records = [&](auto *records) {
             for (const auto &subscriber : subscribers.reference_inputs) {
                 if (subscriber.notification.function != nullptr) {
                     continue;
@@ -2062,16 +2060,8 @@ class CompiledGraphBuilder {
                                   subscriber.required, subscriber.controlled_activity,
                                   requested_reference_runtime_type(plan, subscriber), subscriber.sampled_reference);
             }
-            block += reference_block;
-        }
-
-        if (notifying_reference_count != 0) {
-            const auto following = total_bytes - static_cast<std::size_t>(block - destination) -
-                                   sizeof(OutputNotification) - notifying_reference_bytes;
-            auto *notification = std::construct_at(
-                reinterpret_cast<OutputNotification *>(block), details::notify_reference_inputs_with_notifications,
-                static_cast<std::uint32_t>(notifying_reference_bytes), static_cast<std::uint32_t>(following));
-            auto *records = reinterpret_cast<details::ReferenceInputNotificationSubscriber *>(notification + 1);
+        };
+        const auto construct_notifying_reference_records = [&](auto *records) {
             for (const auto &subscriber : subscribers.reference_inputs) {
                 if (subscriber.notification.function == nullptr) {
                     continue;
@@ -2084,7 +2074,39 @@ class CompiledGraphBuilder {
                                   requested_reference_runtime_type(plan, subscriber), subscriber.sampled_reference,
                                   subscriber.notification.function);
             }
-            block += notifying_reference_block;
+        };
+
+        if (reference_notification_bytes != 0) {
+            const auto following = total_bytes - static_cast<std::size_t>(block - destination) -
+                                   sizeof(OutputNotification) - reference_notification_bytes;
+            if (mixed_references) {
+                auto *notification = std::construct_at(
+                    reinterpret_cast<OutputNotification *>(block), details::notify_mixed_reference_inputs,
+                    static_cast<std::uint32_t>(reference_notification_bytes), static_cast<std::uint32_t>(following));
+                auto *header = std::construct_at(reinterpret_cast<details::ReferenceInputNotificationHeader *>(
+                                                      notification + 1),
+                                                  details::ReferenceInputNotificationHeader{
+                                                      static_cast<std::uint32_t>(reference_count),
+                                                      static_cast<std::uint32_t>(notifying_reference_count)});
+                auto *plain_records = reinterpret_cast<details::ReferenceInputSubscriber *>(header + 1);
+                construct_plain_reference_records(plain_records);
+                auto *notifying_records = reinterpret_cast<details::ReferenceInputNotificationSubscriber *>(
+                    reinterpret_cast<std::byte *>(plain_records) + reference_bytes);
+                construct_notifying_reference_records(notifying_records);
+            } else if (reference_count != 0) {
+                auto *notification = std::construct_at(
+                    reinterpret_cast<OutputNotification *>(block), details::notify_reference_inputs,
+                    static_cast<std::uint32_t>(reference_bytes), static_cast<std::uint32_t>(following));
+                construct_plain_reference_records(reinterpret_cast<details::ReferenceInputSubscriber *>(
+                    notification + 1));
+            } else {
+                auto *notification = std::construct_at(
+                    reinterpret_cast<OutputNotification *>(block), details::notify_reference_inputs_with_notifications,
+                    static_cast<std::uint32_t>(notifying_reference_bytes), static_cast<std::uint32_t>(following));
+                construct_notifying_reference_records(reinterpret_cast<details::ReferenceInputNotificationSubscriber *>(
+                    notification + 1));
+            }
+            block += reference_block;
         }
 
         if (!subscribers.input_subscribers.empty()) {

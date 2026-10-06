@@ -1,18 +1,56 @@
 #pragma once
 
+#include <bg/allocator.hpp>
+#include <bg/time_series/ref/ref_input_sample.hpp>
 #include <bg/time_series/ref/ref_storage.hpp>
 #include <bg/time_series/tsd/tsd_runtime_type.hpp>
+#include <bg/util/index.hpp>
 
+#include <memory_resource>
+#include <vector>
 
 namespace bg::details {
 
-struct SampledDictionary;
+struct SampledDictionary {
+    enum class Target { previous, current };
 
-SampledDictionary *make_dictionary_sample(ResolvedTimeSeries previous, ResolvedTimeSeries current,
-                                          EvaluationTime evaluation_time, allocator &memory);
-void destroy_dictionary_sample(SampledDictionary *sample) noexcept;
-TimeSeriesRuntimeType::ConstItem dictionary_sample_item(const SampledDictionary &sample) noexcept;
-ResolvedTimeSeries dictionary_sample_previous(const SampledDictionary &sample) noexcept;
-bool dictionary_sample_changed(const SampledDictionary &sample) noexcept;
+    struct Child {
+        item_id_t id;
+        SampledReferenceChange sample;
+    };
+
+    SampledDictionary(const TimeSeriesDictionaryRuntimeType &shape, ResolvedTimeSeries previous,
+                      ResolvedTimeSeries current, EvaluationTime evaluation_time, allocator &memory);
+    ~SampledDictionary();
+
+    static SampledDictionary *create(ResolvedTimeSeries previous, ResolvedTimeSeries current,
+                                      EvaluationTime evaluation_time, allocator &memory);
+    ResolvedTimeSeries key_set(Target target) const;
+    void retain() noexcept { ++reference_count; }
+    void release() noexcept;
+    TimeSeriesRuntimeType::ConstItem input() const noexcept;
+    void populate_changes() const;
+
+    const TimeSeriesDictionaryRuntimeType *runtime_type;
+    std::size_t reference_count{1};
+    TimeSeriesState previous_last_updated;
+    TimeSeriesState current_last_updated;
+    mutable TimeSeriesState previous_key_set_last_updated;
+    mutable TimeSeriesState current_key_set_last_updated;
+    ResolvedTimeSeries previous;
+    ResolvedTimeSeries current;
+    TimeSeriesState sampled_last_updated;
+    mutable util::index<> added;
+    mutable util::index<> removed;
+    mutable util::index<> modified;
+    mutable std::pmr::vector<Child> children;
+    mutable SampledSet *key_set_sample{};
+    allocator memory;
+    mutable bool changes_populated{};
+
+    void append_child(item_id_t current_id, item_id_t previous_id,
+                      const TimeSeriesRuntimeType::ConstItem *previous_item,
+                      const TimeSeriesRuntimeType::ConstItem *current_item) const;
+};
 
 } // namespace bg::details

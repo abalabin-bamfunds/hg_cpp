@@ -194,11 +194,15 @@ it applies new input updates. This keeps removed storage available for the
 complete cycle in which it was removed and releases downstream objects before
 objects that they can reference.
 
-`EvaluationContext::add_cycle_callback()` registers one callback. Registration
-during stop has no effect because stop code must perform its own cleanup.
+`EvaluationContext::add_cycle_callback()` registers one callback. The callback
+runs at the beginning of the next outer cycle. Registration during stop has no
+effect.
 
-A failed or stopped runtime graph discards its pending callbacks. Its stop code
-performs the required cleanup.
+A failed or stopped runtime graph discards its pending callbacks. A callback
+registered with `call_on_stop = true` also runs when its owning graph stops
+or is finalized. The same function runs in both cases, so callers opt in only
+when that function is valid cleanup during stop. Other callbacks keep the
+discard behavior.
 
 ## Stop
 
@@ -220,9 +224,10 @@ The outer graph creates a context with `SystemWallClock` when it is destroyed.
 ## Exceptions
 
 An exception from start or evaluation stops that runtime graph. The engine
-invokes stop for every node whose start completed, discards scheduled work and
-cleanup callbacks, and propagates the exception. An exception from an inner
-graph therefore also stops the outer graph that invoked it.
+invokes stop for every node whose start completed, runs cleanup callbacks
+registered for stop, discards the other pending callbacks and scheduled work,
+and propagates the exception. An exception from an inner graph therefore also
+stops the outer graph that invoked it.
 
 Output updates are not transactional. Updates made before the exception remain
 visible while the stopped graph's storage exists. A stopped runtime graph

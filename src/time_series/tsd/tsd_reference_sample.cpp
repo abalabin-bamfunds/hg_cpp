@@ -4,6 +4,7 @@
 #include <bg/allocator.hpp>
 #include <bg/time_series/ref/ref_input_sample.hpp>
 #include <bg/time_series/ref/ref_runtime_type.hpp>
+#include <bg/type/time_series_dict_type.hpp>
 #include <bg/util/scope_exit.hpp>
 
 #include <algorithm>
@@ -22,6 +23,7 @@ class SampledDictionaryRuntimeType final : public TimeSeriesDictionaryRuntimeTyp
     explicit SampledDictionaryRuntimeType(const TimeSeriesDictionaryRuntimeType &shape)
         : TimeSeriesDictionaryRuntimeType{static_cast<const TimeSeriesDictionaryType &>(shape.type()),
                                           shape.key_runtime_type(), shape.item_runtime_type()} {}
+    static const SampledDictionaryRuntimeType &for_shape(const TimeSeriesDictionaryRuntimeType &shape);
 
     DictionaryKeyStorage retention_storage(void *value) const noexcept override;
     RetainedDictionaryKey retain_key(void *, const ScalarData &, allocator &) const override;
@@ -50,66 +52,32 @@ class SampledDictionaryRuntimeType final : public TimeSeriesDictionaryRuntimeTyp
     bool item_in_range(const TimeSeriesState &, const void *, ItemRange, item_id_t) const override;
 };
 
-const SampledDictionaryRuntimeType &sampled_runtime_type(const TimeSeriesDictionaryRuntimeType &shape);
-
 constexpr auto previous_item_flag = item_id_t{1} << 31;
 
-struct SampledDictionary {
-    struct Child {
-        item_id_t id;
-        SampledReferenceChange sample;
-    };
-
-    SampledDictionary(const TimeSeriesDictionaryRuntimeType &shape, ResolvedTimeSeries previous,
-                      ResolvedTimeSeries current, EvaluationTime evaluation_time, allocator &memory)
-        : runtime_type{&sampled_runtime_type(shape)},
-          previous_last_updated{previous.last_updated == nullptr ? initial_time_series_state : *previous.last_updated},
-          current_last_updated{current.last_updated == nullptr ? initial_time_series_state : *current.last_updated},
-          previous{previous}, current{current}, children{&memory.memory_resource()}, memory{memory} {
-        this->previous.last_updated = &previous_last_updated;
-        this->current.last_updated = &current_last_updated;
-        if (this->previous.valid()) {
-            sampled_last_updated = previous_last_updated;
-        }
-        if (this->current.valid()) {
-            sampled_last_updated.publish(evaluation_time);
-        } else if (this->previous.valid()) {
-            sampled_last_updated.invalidate(evaluation_time);
-        }
+SampledDictionary::SampledDictionary(const TimeSeriesDictionaryRuntimeType &shape, ResolvedTimeSeries previous,
+                                     ResolvedTimeSeries current, EvaluationTime evaluation_time, allocator &memory)
+    : runtime_type{&SampledDictionaryRuntimeType::for_shape(shape)},
+      previous_last_updated{previous.last_updated == nullptr ? initial_time_series_state : *previous.last_updated},
+      current_last_updated{current.last_updated == nullptr ? initial_time_series_state : *current.last_updated},
+      previous{previous}, current{current}, children{&memory.memory_resource()}, memory{memory} {
+    this->previous.last_updated = &previous_last_updated;
+    this->current.last_updated = &current_last_updated;
+    if (this->previous.valid()) {
+        sampled_last_updated = previous_last_updated;
     }
+    if (this->current.valid()) {
+        sampled_last_updated.publish(evaluation_time);
+    } else if (this->previous.valid()) {
+        sampled_last_updated.invalidate(evaluation_time);
+    }
+}
 
-    const SampledDictionaryRuntimeType *runtime_type;
-    TimeSeriesState previous_last_updated;
-    TimeSeriesState current_last_updated;
-    mutable TimeSeriesState previous_key_set_last_updated;
-    mutable TimeSeriesState current_key_set_last_updated;
-    ResolvedTimeSeries previous;
-    ResolvedTimeSeries current;
-    TimeSeriesState sampled_last_updated;
-    mutable util::index<> added;
-    mutable util::index<> removed;
-    mutable util::index<> modified;
-    mutable std::pmr::vector<Child> children;
-    mutable SampledSet *key_set_sample{};
-    allocator memory;
-    mutable bool changes_populated{};
-
-    void append_child(item_id_t current_id, item_id_t previous_id,
-                      const TimeSeriesRuntimeType::ConstItem *previous_item,
-                      const TimeSeriesRuntimeType::ConstItem *current_item) const;
-    void populate_changes() const;
-};
+namespace {
 
 const TimeSeriesDictionaryRuntimeType *dictionary_runtime_type(ResolvedTimeSeries time_series) noexcept {
     return time_series.runtime_type == nullptr
                ? nullptr
                : &static_cast<const TimeSeriesDictionaryRuntimeType &>(*time_series.runtime_type);
-}
-
-bool is_dictionary(const TimeSeriesRuntimeType &runtime_type) {
-    auto result = false;
-    runtime_type.type().visit([&](const TimeSeriesDictionaryType *) { result = true; }, ddv::noop);
-    return result;
 }
 
 bool same_item(const TimeSeriesRuntimeType::ConstItem &left, const TimeSeriesRuntimeType::ConstItem &right) noexcept {
@@ -120,7 +88,11 @@ bool same_item(const TimeSeriesRuntimeType::ConstItem &left, const TimeSeriesRun
     return &left.runtime_type == &right.runtime_type && left.value == right.value;
 }
 
-ResolvedTimeSeries key_set(ResolvedTimeSeries dictionary, TimeSeriesState &last_updated) {
+} // namespace
+
+ResolvedTimeSeries SampledDictionary::key_set(Target target) const {
+    const auto dictionary = target == Target::previous ? previous : current;
+    auto &last_updated = target == Target::previous ? previous_key_set_last_updated : current_key_set_last_updated;
     const auto *runtime_type = dictionary_runtime_type(dictionary);
     if (runtime_type == nullptr) {
         return {};
@@ -133,7 +105,8 @@ ResolvedTimeSeries key_set(ResolvedTimeSeries dictionary, TimeSeriesState &last_
     return {&last_updated, item.value, &item.runtime_type};
 }
 
-const SampledDictionaryRuntimeType &sampled_runtime_type(const TimeSeriesDictionaryRuntimeType &shape) {
+const SampledDictionaryRuntimeType &SampledDictionaryRuntimeType::for_shape(
+    const TimeSeriesDictionaryRuntimeType &shape) {
     struct Entry {
         const TimeSeriesDictionaryRuntimeType *shape;
         std::unique_ptr<SampledDictionaryRuntimeType> runtime_type;
@@ -174,13 +147,13 @@ void SampledDictionary::append_child(item_id_t current_id, item_id_t previous_id
     const auto previous_time_series = resolve_item(previous_item, previous_last_updated);
     const auto current_time_series = resolve_item(current_item, current_last_updated);
     auto sample_memory = memory;
-    auto sample =
-        make_reference_sample(previous_time_series, current_time_series, sampled_last_updated.time(), sample_memory);
+    auto sample = SampledReferenceChange::create(previous_time_series, current_time_series,
+                                                 sampled_last_updated.time(), sample_memory);
     if (sample) {
-        auto destroy = util::scope_exit{[&]() noexcept { destroy_reference_sample(sample); }};
+        auto release = util::scope_exit{[&]() noexcept { sample.release(); }};
         const auto id = current_id == util::occupancy_index::npos ? previous_id | previous_item_flag : current_id;
         children.push_back({id, sample});
-        destroy.release();
+        release.release();
     }
 }
 
@@ -194,11 +167,11 @@ void SampledDictionary::populate_changes() const {
             return;
         }
         for (const auto child : children) {
-            destroy_reference_sample(child.sample);
+            child.sample.release();
         }
         children.clear();
         if (key_set_sample != nullptr) {
-            destroy_set_sample(key_set_sample);
+            key_set_sample->release();
             key_set_sample = nullptr;
         }
         added.release(memory.memory_resource());
@@ -209,9 +182,8 @@ void SampledDictionary::populate_changes() const {
     const auto *previous_type = dictionary_runtime_type(previous);
     const auto *current_type = dictionary_runtime_type(current);
     auto sample_memory = memory;
-    key_set_sample = make_set_sample(key_set(previous, previous_key_set_last_updated),
-                                     key_set(current, current_key_set_last_updated), sampled_last_updated.time(),
-                                     sample_memory);
+    key_set_sample = SampledSet::create(key_set(Target::previous), key_set(Target::current),
+                                        sampled_last_updated.time(), sample_memory);
 
     if (current.valid()) {
         struct CurrentCallback {
@@ -276,10 +248,10 @@ void SampledDictionary::populate_changes() const {
     rollback.release();
 }
 
-SampledDictionary *make_dictionary_sample(ResolvedTimeSeries previous, ResolvedTimeSeries current,
-                                          EvaluationTime evaluation_time, allocator &memory) {
+SampledDictionary *SampledDictionary::create(ResolvedTimeSeries previous, ResolvedTimeSeries current,
+                                              EvaluationTime evaluation_time, allocator &memory) {
     const auto *runtime_type = current.runtime_type != nullptr ? current.runtime_type : previous.runtime_type;
-    if (runtime_type == nullptr || !is_dictionary(*runtime_type)) {
+    if (runtime_type == nullptr || type_cast<TimeSeriesDictionaryType>(&runtime_type->type()) == nullptr) {
         return nullptr;
     }
 
@@ -289,22 +261,22 @@ SampledDictionary *make_dictionary_sample(ResolvedTimeSeries previous, ResolvedT
     return memory.new_object<SampledDictionary>(shape, previous, current, evaluation_time, memory);
 }
 
-void destroy_dictionary_sample(SampledDictionary *sample) noexcept {
-    if (sample == nullptr) {
-        return;
+SampledDictionary::~SampledDictionary() {
+    for (const auto child : children) {
+        child.sample.release();
     }
+    if (key_set_sample != nullptr) {
+        key_set_sample->release();
+    }
+    added.release(memory);
+    removed.release(memory);
+    modified.release(memory);
+}
 
-    auto memory = sample->memory;
-    for (const auto child : sample->children) {
-        destroy_reference_sample(child.sample);
+void SampledDictionary::release() noexcept {
+    if (--reference_count == 0) {
+        memory.delete_object(this);
     }
-    if (sample->key_set_sample != nullptr) {
-        destroy_set_sample(sample->key_set_sample);
-    }
-    sample->added.release(memory);
-    sample->removed.release(memory);
-    sample->modified.release(memory);
-    memory.delete_object(sample);
 }
 
 item_id_t SampledDictionaryRuntimeType::find_item(const void *value, const ScalarData &key) const {
@@ -464,24 +436,25 @@ bool SampledDictionaryRuntimeType::item_modified(const TimeSeriesState &, const 
 
 std::size_t SampledDictionaryRuntimeType::item_count(const void *value) const {
     const auto &sample = *static_cast<const SampledDictionary *>(value);
-    return sample.current.valid() ? dictionary_runtime_type(sample.current)->item_count(sample.current.storage) : 0;
+    return sample.current.valid()
+               ? dictionary_runtime_type(sample.current)->item_count(sample.current.storage)
+               : 0;
 }
 
 TimeSeriesRuntimeType::ConstItem SampledDictionaryRuntimeType::item(const void *value, item_id_t id) const {
     const auto &sample = *static_cast<const SampledDictionary *>(value);
     sample.populate_changes();
     if (id == key_set_item_id) {
-        return set_sample_item(*sample.key_set_sample);
+        return sample.key_set_sample->input();
     }
     const auto previous = (id & previous_item_flag) != 0;
     const auto position = id & ~previous_item_flag;
     const auto lookup = std::ranges::lower_bound(sample.children, id, {}, &SampledDictionary::Child::id);
     if (lookup != sample.children.end() && lookup->id == id) {
-        return lookup->sample.visit([](const auto *nested) { return reference_sample_item(*nested); });
+        return lookup->sample.input();
     }
     if (previous) {
-        const auto item =
-            dictionary_runtime_type(sample.previous)->item(sample.previous.storage, position);
+        const auto item = dictionary_runtime_type(sample.previous)->item(sample.previous.storage, position);
         return {item.runtime_type, initial_time_series_state, item.value};
     }
 
@@ -557,12 +530,8 @@ void SampledDictionaryRuntimeType::for_each_modified_item(const TimeSeriesState 
     }
 }
 
-TimeSeriesRuntimeType::ConstItem dictionary_sample_item(const SampledDictionary &sample) noexcept {
-    return {*sample.runtime_type, sample.sampled_last_updated, &sample};
-}
-
-ResolvedTimeSeries dictionary_sample_previous(const SampledDictionary &sample) noexcept {
-    return sample.previous;
+TimeSeriesRuntimeType::ConstItem SampledDictionary::input() const noexcept {
+    return {*runtime_type, sampled_last_updated, this};
 }
 
 } // namespace bg::details

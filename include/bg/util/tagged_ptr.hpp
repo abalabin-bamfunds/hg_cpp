@@ -31,6 +31,12 @@ struct type_index<T, First, Types...> : std::integral_constant<std::size_t, 1 + 
 
 template <typename T, typename... Types> inline constexpr auto one_of = (std::same_as<T, Types> || ...);
 
+template <typename... Visitors> struct overloaded : Visitors... {
+    using Visitors::operator()...;
+};
+
+template <typename... Visitors> overloaded(Visitors...) -> overloaded<Visitors...>;
+
 template <typename... Types> inline constexpr auto all_distinct = true;
 
 template <typename T, typename... Types>
@@ -181,6 +187,12 @@ template <std::size_t Alignment, typename... Types> class variant_ptr_with_align
     template <typename Visitor> constexpr decltype(auto) visit(Visitor &&visitor) const {
         assert(*this);
         return visit<0>(index(), std::forward<Visitor>(visitor));
+    }
+
+    template <typename First, typename Second, typename... Rest>
+    constexpr decltype(auto) visit(First &&first, Second &&second, Rest &&...rest) const {
+        return visit(details::overloaded{std::forward<First>(first), std::forward<Second>(second),
+                                         std::forward<Rest>(rest)...});
     }
 
     bool operator==(const variant_ptr_with_alignment &) const = default;

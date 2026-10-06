@@ -17,36 +17,40 @@ namespace bg::details {
 struct SampledSet;
 struct SampledDictionary;
 
-using SampledReferenceChange =
-    util::variant_ptr_with_alignment<alignof(void *), SampledSet, SampledDictionary>;
+struct SampledReferenceChange
+    : util::variant_ptr_with_alignment<alignof(void *), SampledSet, SampledDictionary> {
+    using Base = util::variant_ptr_with_alignment<alignof(void *), SampledSet, SampledDictionary>;
+    using Base::Base;
 
-SampledReferenceChange make_reference_sample(ResolvedTimeSeries previous, ResolvedTimeSeries current,
-                                             EvaluationTime evaluation_time, allocator &memory);
-void destroy_reference_sample(SampledReferenceChange sample) noexcept;
-TimeSeriesRuntimeType::ConstItem reference_sample_item(const SampledSet &sample) noexcept;
-TimeSeriesRuntimeType::ConstItem reference_sample_item(const SampledDictionary &sample) noexcept;
-ResolvedTimeSeries reference_sample_previous(const SampledSet &sample) noexcept;
-ResolvedTimeSeries reference_sample_previous(const SampledDictionary &sample) noexcept;
+    static SampledReferenceChange create(ResolvedTimeSeries previous, ResolvedTimeSeries current,
+                                         EvaluationTime evaluation_time, allocator &memory);
+    void retain() const noexcept;
+    void release() const noexcept;
+    TimeSeriesRuntimeType::ConstItem input() const noexcept;
+    ResolvedTimeSeries previous() const noexcept;
+};
 
-class ReferenceInputSampleCache {
+static_assert(sizeof(SampledReferenceChange) == sizeof(void *));
+
+class ReferenceInputSampleLookup {
   public:
-    explicit ReferenceInputSampleCache(allocator &memory) : memory_{&memory} {}
+    explicit ReferenceInputSampleLookup(allocator &memory) : memory_{&memory} {}
 
-    ~ReferenceInputSampleCache();
+    ~ReferenceInputSampleLookup();
 
-    SampledReferenceChange get(const RuntimeGraph &publisher, const void *output,
-                               Reference previous_reference, Reference current_reference,
+    SampledReferenceChange get(Reference previous_reference, Reference current_reference,
                                ResolvedTimeSeries previous, ResolvedTimeSeries current,
                                const TimeSeriesRuntimeType &runtime_type, EvaluationTime evaluation_time);
     void clear() noexcept;
 
   private:
     struct Entry {
-        const RuntimeGraph *publisher;
-        const void *output;
         Reference previous_reference;
         Reference current_reference;
         const TimeSeriesRuntimeType *runtime_type;
+        TimeSeriesState previous_last_updated;
+        const void *previous_storage;
+        const TimeSeriesRuntimeType *previous_runtime_type;
         SampledReferenceChange sample;
     };
 
@@ -55,20 +59,34 @@ class ReferenceInputSampleCache {
             const auto combine = [](std::size_t seed, std::size_t value) {
                 return seed ^ (value + std::size_t{0x9e3779b9} + (seed << 6) + (seed >> 2));
             };
-            auto result = std::hash<const RuntimeGraph *>{}(entry.publisher);
-            result = combine(result, std::hash<const void *>{}(entry.output));
-            result = combine(result, std::hash<std::uintptr_t>{}(entry.previous_reference.raw()));
+            auto result = std::hash<std::uintptr_t>{}(entry.previous_reference.raw());
             result = combine(result, std::hash<std::uintptr_t>{}(entry.current_reference.raw()));
             result = combine(result, std::hash<const TimeSeriesRuntimeType *>{}(entry.runtime_type));
+            const auto previous_time = entry.previous_last_updated.time().time_since_epoch().count();
+            result = combine(result, std::hash<std::int64_t>{}(previous_time));
+            result = combine(result, std::hash<bool>{}(entry.previous_last_updated.valid()));
+            result = combine(result, std::hash<bool>{}(entry.previous_last_updated.became_valid()));
+            result = combine(result, std::hash<bool>{}(entry.previous_last_updated.became_invalid()));
+            result = combine(result, std::hash<bool>{}(entry.previous_last_updated.never_valid()));
+            result = combine(result, std::hash<const void *>{}(entry.previous_storage));
+            result = combine(result, std::hash<const TimeSeriesRuntimeType *>{}(entry.previous_runtime_type));
             return result;
         }
     };
 
     struct EntryEqual {
         bool operator()(const Entry &left, const Entry &right) const noexcept {
-            return left.publisher == right.publisher && left.output == right.output &&
-                   left.previous_reference == right.previous_reference &&
-                   left.current_reference == right.current_reference && left.runtime_type == right.runtime_type;
+            const auto same_previous_state =
+                left.previous_last_updated.time() == right.previous_last_updated.time() &&
+                left.previous_last_updated.valid() == right.previous_last_updated.valid() &&
+                left.previous_last_updated.became_valid() == right.previous_last_updated.became_valid() &&
+                left.previous_last_updated.became_invalid() == right.previous_last_updated.became_invalid() &&
+                left.previous_last_updated.never_valid() == right.previous_last_updated.never_valid();
+            return left.previous_reference == right.previous_reference &&
+                   left.current_reference == right.current_reference && left.runtime_type == right.runtime_type &&
+                   same_previous_state &&
+                   left.previous_storage == right.previous_storage &&
+                   left.previous_runtime_type == right.previous_runtime_type;
         }
     };
 
@@ -81,6 +99,8 @@ struct ReferenceInputSampleStorage {
     ResolvedTimeSeries previous() const noexcept;
     void set(SampledReferenceChange sample) noexcept {
         assert(sample);
+        assert(empty());
+        sample.retain();
         const auto set_sample = sample.get<SampledSet>();
         const auto dictionary_sample = sample.get<SampledDictionary>();
         const auto pointer = reinterpret_cast<std::uintptr_t>(set_sample != nullptr
@@ -106,11 +126,21 @@ struct ReferenceInputSampleStorage {
         set_target_was_valid(false);
     }
     bool empty() const noexcept { return (bits_ & pointer_mask) == 0; }
+    static constexpr std::size_t offset_for(std::size_t input_offset, bool dynamic_activity) noexcept {
+        const auto after_input = input_offset + sizeof(ReferenceInputStorage) +
+                                 (dynamic_activity ? sizeof(bool) : std::size_t{});
+        return (after_input + alignof(ReferenceInputSampleStorage) - 1) &
+               ~(alignof(ReferenceInputSampleStorage) - 1);
+    }
     bool target_was_valid() const noexcept { return (bits_ & target_valid_flag) != 0; }
     void set_target_was_valid(bool valid) noexcept {
         bits_ = (bits_ & ~target_valid_flag) | (valid ? target_valid_flag : std::uintptr_t{});
     }
-    void clear_pointer() noexcept { bits_ &= target_valid_flag; }
+    void clear_pointer() noexcept {
+        const auto previous = sample();
+        bits_ &= target_valid_flag;
+        previous.release();
+    }
 
   private:
     static constexpr std::uintptr_t target_valid_flag = 1;
@@ -121,13 +151,5 @@ struct ReferenceInputSampleStorage {
 };
 
 static_assert(sizeof(ReferenceInputSampleStorage) == sizeof(void *));
-
-inline constexpr std::size_t reference_input_sample_offset(std::size_t input_offset,
-                                                           bool dynamic_activity) noexcept {
-    const auto after_input = input_offset + sizeof(ReferenceInputStorage) +
-                             (dynamic_activity ? sizeof(bool) : std::size_t{});
-    return (after_input + alignof(ReferenceInputSampleStorage) - 1) &
-           ~(alignof(ReferenceInputSampleStorage) - 1);
-}
 
 } // namespace bg::details

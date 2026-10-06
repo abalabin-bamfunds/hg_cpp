@@ -43,7 +43,8 @@ class EvaluationContext {
     void schedule_now() const noexcept;
     ScheduleHandle schedule_at(EvaluationTime time) const;
     void cancel(ScheduleHandle handle) const noexcept;
-    void add_cycle_callback(void *receiver, void (*function)(void *, EvaluationContext &) noexcept) const;
+    void add_cycle_callback(void *receiver, void (*function)(void *, EvaluationContext &) noexcept,
+                           bool call_on_stop = false) const;
 
     EvaluationContext child(details::EvaluationContextSection &section) noexcept;
 

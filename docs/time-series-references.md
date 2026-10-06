@@ -176,8 +176,10 @@ removed.
 
 A TSS target switch compares membership in the current and previous sets. A TSD
 target switch compares keys and recursively samples contained TSS and TSD items.
-Subscribers of the same reference transition and requested representation share
-one sample, which materializes change data on its first query.
+One reference notification shares a sample among subscribers with the same old
+and new references, resolved previous target state, and requested representation.
+The sample materializes change data on its first query. Inputs retain it until
+the next outer cycle; stopping or finalizing their graph releases it sooner.
 
 Switching a TSD item target from TSD `A` to TSD `B` reports the transition that
 the node observes:

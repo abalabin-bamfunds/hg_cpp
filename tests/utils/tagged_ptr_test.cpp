@@ -71,10 +71,14 @@ TEST_CASE("a variant pointer identifies and visits its active type", "[utils][co
     CHECK(pointer.get<First>() == &first);
     CHECK(pointer.get<Second>() == nullptr);
     CHECK(pointer.visit([](const auto *value) { return value->value; }) == 12);
+    CHECK(pointer.visit([](const First *value) { return value->value; },
+                        [](const Second *value) { return value->value; }) == 12);
 
     pointer = &second;
     CHECK(pointer.holds<Second>());
     CHECK(pointer.visit([](const auto *value) { return value->value; }) == 34);
+    CHECK(pointer.visit([](const First *value) { return value->value; },
+                        [](const Second *value) { return value->value; }) == 34);
 
     pointer = nullptr;
     CHECK_FALSE(pointer);
