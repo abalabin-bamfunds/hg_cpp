@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <limits>
 #include <new>
+#include <optional>
 #include <span>
 #include <type_traits>
 
@@ -336,10 +337,11 @@ struct DefaultInputDescriptor {
                                OutputChange change);
 };
 
-// Begins a packed node record. Parameters, subscribers, optional metadata, and scalar values follow the fixed header.
+// Begins a packed node record. Parameters, optional input node indices, subscribers, and other metadata follow.
 class CompiledNode {
   public:
-    static constexpr std::uint32_t max_all_valid_runtime_type_count = (std::uint32_t{1} << 11) - 2;
+    static constexpr std::uint32_t max_all_valid_runtime_type_count = (std::uint32_t{1} << 10) - 2;
+    static constexpr std::uint32_t no_input_node_index = std::numeric_limits<std::uint32_t>::max();
 
     bool has_output() const noexcept { return (output_last_updated_offset_ & no_output_flag) == 0; }
 
@@ -361,10 +363,28 @@ class CompiledNode {
         return {first, parameter_count()};
     }
 
+    // Returns the compiled producer for a direct local input, when the node template requested producer indices.
+    std::optional<std::size_t> input_node_index(std::size_t parameter_index) const noexcept {
+        if (!has_input_node_indices() || parameter_index >= parameter_count()) {
+            return std::nullopt;
+        }
+
+        const auto *indices = reinterpret_cast<const std::uint32_t *>(parameters().data() + parameter_count());
+        const auto index = indices[parameter_index];
+        if (index == no_input_node_index) {
+            return std::nullopt;
+        }
+
+        return index;
+    }
+
     std::span<const ControlledInput> controlled_inputs() const noexcept {
         const auto parameters = this->parameters();
-        return {reinterpret_cast<const ControlledInput *>(parameters.data() + parameters.size()),
-                controlled_input_count()};
+        auto *first = reinterpret_cast<const std::byte *>(parameters.data() + parameters.size());
+        if (has_input_node_indices()) {
+            first += parameters.size() * sizeof(std::uint32_t);
+        }
+        return {reinterpret_cast<const ControlledInput *>(first), controlled_input_count()};
     }
 
     std::span<const Subscriber> subscribers() const noexcept {
@@ -510,15 +530,15 @@ class CompiledNode {
     // Zero means no metadata; otherwise store the existing runtime-type pointer count plus one.
     static constexpr std::uint32_t all_valid_runtime_type_count_shift = 21;
     static constexpr std::uint32_t all_valid_runtime_type_count_mask =
-        ((std::uint32_t{1} << 11) - 1) << all_valid_runtime_type_count_shift;
+        ((std::uint32_t{1} << 10) - 1) << all_valid_runtime_type_count_shift;
+    static constexpr std::uint32_t input_node_indices_flag = std::uint32_t{1} << 31;
 
     CompiledNode(EvaluationFunction evaluation_function, std::uint32_t output_last_updated_offset,
                  std::uint32_t output_value_offset, std::uint32_t parameter_count, std::uint32_t subscriber_count,
                  bool has_output, bool has_state, bool has_output_notification, bool has_item_subscriptions,
-                 bool uses_node_invocation, bool has_all_valid_input_metadata,
-                 std::uint32_t runtime_type_count,
+                 bool uses_node_invocation, bool has_all_valid_input_metadata, std::uint32_t runtime_type_count,
                  std::uint32_t time_series_input_count, std::uint32_t controlled_input_count,
-                 InvalidationMode invalidation_mode) noexcept
+                 bool has_input_node_indices, InvalidationMode invalidation_mode) noexcept
         : evaluation_function_(evaluation_function),
           output_last_updated_offset_(output_last_updated_offset | (has_output ? std::uint32_t{} : no_output_flag) |
                                       (has_state ? state_flag : std::uint32_t{})),
@@ -532,7 +552,10 @@ class CompiledNode {
                                        : std::uint32_t{}) |
                  (controlled_input_count << controlled_input_count_shift) |
                  ((has_all_valid_input_metadata ? runtime_type_count + 1 : std::uint32_t{})
-                  << all_valid_runtime_type_count_shift)) {}
+                  << all_valid_runtime_type_count_shift) |
+                 (has_input_node_indices ? input_node_indices_flag : std::uint32_t{})) {}
+
+    bool has_input_node_indices() const noexcept { return (flags_ & input_node_indices_flag) != 0; }
 
     std::size_t controlled_input_count() const noexcept {
         return (flags_ & controlled_input_count_mask) >> controlled_input_count_shift;

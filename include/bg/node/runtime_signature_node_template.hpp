@@ -229,6 +229,13 @@ class RuntimeSignatureNodeTemplate final
 
     bool uses_node_invocation() const noexcept override { return true; }
 
+    bool uses_input_node_indices() const noexcept override {
+        if constexpr (requires { Definition::uses_input_node_indices; }) {
+            return Definition::uses_input_node_indices;
+        }
+        return false;
+    }
+
     bool uses_timed_scheduling() const noexcept override {
         if constexpr (requires { Definition::uses_timed_scheduling; }) {
             return Definition::uses_timed_scheduling;

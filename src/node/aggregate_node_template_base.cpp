@@ -50,6 +50,10 @@ bool AggregateNodeTemplateBase::uses_output_runtime_type() const noexcept {
     return descriptor_->uses_output_runtime_type;
 }
 
+bool AggregateNodeTemplateBase::uses_input_node_indices() const noexcept {
+    return descriptor_->uses_input_node_indices;
+}
+
 bool AggregateNodeTemplateBase::uses_timed_scheduling() const noexcept {
     return descriptor_->uses_timed_scheduling;
 }

@@ -4,6 +4,7 @@
 #include <bg/graph/wiring_context.hpp>
 #include <bg/node.hpp>
 #include <bg/node/node_template.hpp>
+#include <bg/operators.hpp>
 #include <bg/time_series/ref/ref_notification.hpp>
 #include <bg/type/scalar_type.hpp>
 #include <bg/type/time_series_value_type.hpp>
@@ -20,6 +21,22 @@ namespace {
 
 struct source_definition {
     bg::Out<bg::TS<float>> output;
+
+    void evaluate() const {}
+};
+
+struct input_node_index_sink {
+    static constexpr bool uses_input_node_indices = true;
+
+    bg::In<bg::TS<float>> first;
+    bg::In<bg::TS<float>> second;
+
+    void evaluate() const {}
+};
+
+struct ordinary_two_input_sink {
+    bg::In<bg::TS<float>> first;
+    bg::In<bg::TS<float>> second;
 
     void evaluate() const {}
 };
@@ -147,6 +164,54 @@ TEST_CASE("all_valid metadata follows an empty runtime-type array at pointer ali
     REQUIRE(descriptors.size() == 1);
     CHECK(descriptors[0].parameter_index == 0);
     CHECK(descriptors[0].declared_type == &bg::TS<bg::i64>::type());
+}
+
+TEST_CASE("compiled node input producer indices use compiled node order",
+          "[feature:graph-compilation][series:value][shape:chain]") {
+    const auto source = bg::node<source_definition>();
+    const auto sink = bg::node<input_node_index_sink>();
+    auto wiring = bg::GraphWiring{};
+    {
+        auto context = bg::WiringContext{wiring};
+        const auto input = source();
+        sink(input, input);
+    }
+
+    const auto graph = bg::CompiledGraph{wiring};
+    REQUIRE(graph.node_count() == 2);
+    CHECK(graph.node(1).input_node_index(0) == 0);
+    CHECK(graph.node(1).input_node_index(1) == 0);
+    CHECK_FALSE(graph.node(0).input_node_index(0).has_value());
+
+    const auto ordinary_sink = bg::node<ordinary_two_input_sink>();
+    auto ordinary_wiring = bg::GraphWiring{};
+    {
+        auto context = bg::WiringContext{ordinary_wiring};
+        const auto input = source();
+        ordinary_sink(input, input);
+    }
+    const auto ordinary_graph = bg::CompiledGraph{ordinary_wiring};
+    CHECK(graph.fixed_storage_size() == ordinary_graph.fixed_storage_size() + 2 * sizeof(std::uint32_t));
+}
+
+TEST_CASE("compiled node input producer indices omit lowered inputs and remap direct inputs",
+          "[feature:graph-compilation][feature:constant][series:value][shape:chain][guarantee:const]") {
+    using namespace bg::operators;
+
+    const auto source = bg::node<source_definition>();
+    const auto sink = bg::node<input_node_index_sink>();
+    auto wiring = bg::GraphWiring{};
+    {
+        auto context = bg::WiringContext{wiring};
+        const auto constant = const_(1.0F).as<bg::TS<float, bg::TimeSeriesGuarantee::const_>>();
+        sink(constant, source());
+    }
+
+    const auto graph = bg::CompiledGraph{wiring};
+    REQUIRE(graph.node_count() == 2);
+    const auto &compiled_sink = graph.node(1);
+    CHECK_FALSE(compiled_sink.input_node_index(0).has_value());
+    CHECK(compiled_sink.input_node_index(1) == 0);
 }
 
 TEST_CASE("compiled nodes store one activity record for each controlled input",

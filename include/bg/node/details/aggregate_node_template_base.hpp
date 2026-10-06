@@ -36,6 +36,7 @@ struct AggregateNodeDescriptor {
     AggregateDynamicReferenceInputTypesFunction dynamic_reference_input_types;
     AggregateRequirementFunction requirement;
     bool uses_output_runtime_type;
+    bool uses_input_node_indices;
     bool uses_timed_scheduling;
     bool deduplicate_wiring;
 };
@@ -57,6 +58,7 @@ class AggregateNodeTemplateBase : public NodeTemplate {
                                              std::size_t parameter_index) const noexcept final;
     bool uses_scalar_input_runtime_type(const ResolvedSignature &, std::size_t parameter_index) const noexcept final;
     bool uses_output_runtime_type() const noexcept final;
+    bool uses_input_node_indices() const noexcept final;
     bool uses_timed_scheduling() const noexcept final;
     NodeStateLayout state_layout(const ResolvedSignature &signature,
                                  std::span<const ScalarRuntimeType *const> parameter_runtime_types,

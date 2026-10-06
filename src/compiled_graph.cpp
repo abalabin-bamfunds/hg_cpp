@@ -164,6 +164,7 @@ class StorageLayout {
 struct FixedNodeLayout {
     std::size_t offset{};
     StorageSection parameters;
+    StorageSection input_node_indices;
     StorageSection controlled_inputs;
     StorageSection default_inputs;
     StorageSection subscribers;
@@ -276,6 +277,7 @@ struct NodePlan {
     StateLayout state;
     CompiledNodeDataLayout compiled_data;
     std::vector<TimeSeriesInputPlan> time_series_inputs;
+    std::vector<std::uint32_t> input_node_indices;
     FixedNodeLayout fixed;
 };
 
@@ -1079,6 +1081,9 @@ RuntimeTypeCounts runtime_type_counts(const WiredNode &node) {
 
     auto result = FixedNodeLayout{};
     result.parameters = storage.add<ParameterBinding>(node.signature().parameters.size());
+    if (!node_plan.input_node_indices.empty()) {
+        result.input_node_indices = storage.add<std::uint32_t>(node_plan.input_node_indices.size());
+    }
     const auto controlled_input_count =
         std::ranges::count_if(node_plan.time_series_inputs, [](const auto &input) { return input.dynamic_activity; });
     if (controlled_input_count != 0) {
@@ -1354,6 +1359,39 @@ void plan_fixed_storage(CompilationPlan &plan) {
 
         result.compiled_node_indices[node_index] = result.wired_node_indices.size();
         result.wired_node_indices.push_back(node_index);
+    }
+
+    for (auto node_index = std::size_t{}; node_index < result.nodes.size(); ++node_index) {
+        const auto &node = result.nodes[node_index];
+        if (!node.node_template().uses_input_node_indices()) {
+            continue;
+        }
+
+        auto &input_node_indices = result.node_plans[node_index].input_node_indices;
+        input_node_indices.assign(node.signature().parameters.size(), CompiledNode::no_input_node_index);
+        auto input_index = std::size_t{};
+        for (auto parameter_index = std::size_t{}; parameter_index < node.signature().parameters.size();
+             ++parameter_index) {
+            if (!node.signature().parameters[parameter_index].type->is_time_series()) {
+                continue;
+            }
+
+            const auto input = node.inputs()[input_index++];
+            if (input.is_inherited()) {
+                continue;
+            }
+
+            const auto producer = root_output_node_index(input.index(), result.outputs);
+            if (!result.is_lowered_node(producer)) {
+                input_node_indices[parameter_index] =
+                    static_cast<std::uint32_t>(result.compiled_node_index(producer));
+            }
+        }
+        if (std::ranges::all_of(input_node_indices, [](auto index) {
+                return index == CompiledNode::no_input_node_index;
+            })) {
+            input_node_indices.clear();
+        }
     }
 
     std::erase_if(result.constants, [&](const auto &constant) {
@@ -1764,8 +1802,11 @@ class CompiledGraphBuilder {
                                      std::size_t &scalar_destruction_index) {
         const auto &node = plan.nodes[node_index];
         const auto &layout = plan.node_plans[node_index].fixed;
+        const auto &node_plan = plan.node_plans[node_index];
         auto *node_storage = storage + layout.offset;
         auto parameters = layout.parameters.objects<ParameterBinding>(node_storage);
+        std::uninitialized_copy(node_plan.input_node_indices.begin(), node_plan.input_node_indices.end(),
+                                layout.input_node_indices.objects<std::uint32_t>(node_storage).begin());
         auto controlled_inputs = layout.controlled_inputs.objects<ControlledInput>(node_storage);
         auto default_inputs = layout.default_inputs.objects<DefaultInputDescriptor>(node_storage);
         auto destruction_runtime_types =
@@ -2310,7 +2351,8 @@ class CompiledGraphBuilder {
                              layout.all_valid_metadata.count != 0,
                              static_cast<std::uint32_t>(layout.runtime_types.count),
                              static_cast<std::uint32_t>(node_plan.time_series_inputs.size()),
-                             static_cast<std::uint32_t>(layout.controlled_inputs.count), node_plan.invalidation.mode});
+                             static_cast<std::uint32_t>(layout.controlled_inputs.count),
+                             !node_plan.input_node_indices.empty(), node_plan.invalidation.mode});
             std::construct_at(node_offsets.data() + compiled_node,
                               packed_offset(layout.offset, "compiled fixed storage reaches 1 GiB"));
         }

@@ -156,6 +156,12 @@ template <typename Definition> const AggregateNodeDescriptor &aggregate_node_des
                 }
             }(),
         .uses_output_runtime_type = aggregate_uses_output_runtime_type<Definition>(Index{}),
+        .uses_input_node_indices = [] {
+            if constexpr (requires { Definition::uses_input_node_indices; }) {
+                return static_cast<bool>(Definition::uses_input_node_indices);
+            }
+            return false;
+        }(),
         .uses_timed_scheduling = aggregate_uses_timed_scheduling<Definition>(),
         .deduplicate_wiring =
             [] {

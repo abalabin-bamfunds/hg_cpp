@@ -54,6 +54,7 @@ class RuntimeGraph {
     void *storage_at(std::size_t offset) noexcept { return storage_ + offset; }
     Node node(std::size_t index) noexcept { return {compiled_graph_->node(index), storage_}; }
     Node node(const CompiledNode &compiled_node) noexcept { return {compiled_node, storage_}; }
+    const CompiledNode &compiled_node(std::size_t index) const noexcept { return compiled_graph_->node(index); }
 
     void start(EvaluationContext &context);
     bool evaluate(EvaluationContext &context);
