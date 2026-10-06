@@ -102,7 +102,7 @@ TEST_CASE("a node without output uses no output storage", "[evaluation][storage]
     float_sink_definition::evaluation_count = 0;
 
     CHECK_FALSE(compiled.node(1).has_output());
-    CHECK(compiled.runtime_storage_size() == 36);
+    CHECK(compiled.runtime_storage_size() == 12);
 
     runtime.start(time(1));
     runtime.schedule(0);

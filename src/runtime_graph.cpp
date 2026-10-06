@@ -21,6 +21,7 @@
 #include <cassert>
 #include <cstring>
 #include <iterator>
+#include <memory>
 #include <stdexcept>
 #include <vector>
 
@@ -240,12 +241,14 @@ class RuntimeGraph::ScheduledNodes {
       private:
         void advance() noexcept {
             while (word_index_ < nodes_->word_count()) {
-                const auto evaluation = nodes_->evaluation(word_index_);
-                const auto validity_check = nodes_->validity_check(word_index_);
+                auto &scheduling = nodes_->graph_->scheduling_info(word_index_);
+                const auto evaluation = scheduling.evaluation;
+                const auto validity_check = scheduling.validity_check;
                 const auto pending = (evaluation | validity_check) & ~processed_;
 
                 if (pending == 0) {
-                    nodes_->clear(word_index_);
+                    scheduling.evaluation = ScheduleWord{};
+                    scheduling.validity_check = ScheduleWord{};
                     ++word_index_;
                     processed_ = ScheduleWord{};
                     continue;
@@ -271,7 +274,8 @@ class RuntimeGraph::ScheduledNodes {
         ScheduledNode current_{};
     };
 
-    explicit ScheduledNodes(std::span<SchedulingInfo> scheduling) noexcept : scheduling_(scheduling) {}
+    explicit ScheduledNodes(RuntimeGraph &graph) noexcept
+        : graph_(&graph), word_count_{graph.compiled_graph_->schedule_word_count()} {}
 
     auto begin() noexcept -> Iterator { return Iterator{*this}; }
     auto begin(std::size_t node_index) noexcept -> Iterator {
@@ -283,18 +287,10 @@ class RuntimeGraph::ScheduledNodes {
     auto end() const noexcept -> std::default_sentinel_t { return {}; }
 
   private:
-    std::size_t word_count() const noexcept { return scheduling_.size(); }
+    std::size_t word_count() const noexcept { return word_count_; }
 
-    ScheduleWord evaluation(std::size_t index) const noexcept { return scheduling_[index].evaluation; }
-
-    ScheduleWord validity_check(std::size_t index) const noexcept { return scheduling_[index].validity_check; }
-
-    void clear(std::size_t index) noexcept {
-        scheduling_[index].evaluation = ScheduleWord{};
-        scheduling_[index].validity_check = ScheduleWord{};
-    }
-
-    std::span<SchedulingInfo> scheduling_;
+    RuntimeGraph *graph_;
+    std::size_t word_count_;
 };
 
 class RuntimeGraph::OutputChangePublisher {
@@ -399,14 +395,49 @@ GlobalState &RuntimeGraph::global_state() const noexcept {
 }
 
 void RuntimeGraph::initialize_storage() {
-    if (compiled_graph_->runtime_storage_size() == 0) {
+    const auto initial_scheduling = compiled_graph_->initial_scheduling_info();
+    if (!initial_scheduling.empty()) {
+        inline_scheduling_ = initial_scheduling.front();
+    }
+
+    if (runtime_allocation_size() == 0) {
         return;
     }
 
-    storage_ = static_cast<std::byte *>(allocator_.allocate_bytes(compiled_graph_->runtime_storage_size(),
-                                                                  compiled_graph_->runtime_storage_alignment()));
-    // The image contains only default states whose runtime types support byte-copy initialization.
-    std::memcpy(storage_, compiled_graph_->initial_runtime_storage(), compiled_graph_->runtime_storage_size());
+    storage_ = static_cast<std::byte *>(
+        allocator_.allocate_bytes(runtime_allocation_size(), runtime_allocation_alignment()));
+    // The compiled image contains only default node states whose runtime types support byte-copy initialization.
+    const auto runtime_storage_size = compiled_graph_->runtime_storage_size();
+    if (runtime_storage_size != 0) {
+        std::memcpy(storage_, compiled_graph_->initial_runtime_storage(), runtime_storage_size);
+    }
+
+    if (initial_scheduling.size() > 1) {
+        const auto offset = (runtime_storage_size + alignof(SchedulingInfo) - 1) & ~(alignof(SchedulingInfo) - 1);
+        auto *spill = reinterpret_cast<SchedulingInfo *>(storage_ + offset);
+        std::uninitialized_copy(initial_scheduling.begin() + 1, initial_scheduling.end(), spill);
+    }
+}
+
+std::size_t RuntimeGraph::runtime_allocation_size() const noexcept {
+    const auto runtime_storage_size = compiled_graph_->runtime_storage_size();
+    const auto scheduling_word_count = compiled_graph_->schedule_word_count();
+    if (scheduling_word_count <= 1) {
+        return runtime_storage_size;
+    }
+
+    const auto spill_count = scheduling_word_count - 1;
+    const auto spill_offset =
+        (runtime_storage_size + alignof(SchedulingInfo) - 1) & ~(alignof(SchedulingInfo) - 1);
+    return spill_offset + spill_count * sizeof(SchedulingInfo);
+}
+
+std::size_t RuntimeGraph::runtime_allocation_alignment() const noexcept {
+    auto alignment = compiled_graph_->runtime_storage_alignment();
+    if (compiled_graph_->schedule_word_count() > 1) {
+        alignment = std::max(alignment, alignof(SchedulingInfo));
+    }
+    return alignment;
 }
 
 void RuntimeGraph::initialize_inherited_time_series(std::size_t index, Reference reference) {
@@ -456,8 +487,7 @@ RuntimeGraph::~RuntimeGraph() {
     }
 
     if (storage_ != nullptr) {
-        allocator_.deallocate_bytes(storage_, compiled_graph_->runtime_storage_size(),
-                                    compiled_graph_->runtime_storage_alignment());
+        allocator_.deallocate_bytes(storage_, runtime_allocation_size(), runtime_allocation_alignment());
     }
 
     if (owns_evaluator_) {
@@ -515,22 +545,16 @@ void RuntimeGraph::finalize(EvaluationContext &parent_context) noexcept {
     }
 }
 
-auto RuntimeGraph::scheduling_info() noexcept -> std::span<SchedulingInfo> {
-    return {reinterpret_cast<SchedulingInfo *>(storage_), compiled_graph_->schedule_word_count()};
-}
-
 void RuntimeGraph::schedule(std::size_t node_index) noexcept {
     const auto word_index = node_index / CompiledGraph::schedule_word_bits;
-    auto scheduling = scheduling_info();
-    auto &word = scheduling[word_index].evaluation;
+    auto &word = scheduling_info(word_index).evaluation;
     word |= ScheduleWord{1} << (node_index % CompiledGraph::schedule_word_bits);
 
     notify_owner_scheduled();
 }
 
 void RuntimeGraph::schedule_validity_check(std::size_t node_index) noexcept {
-    auto scheduling = scheduling_info();
-    auto &word = scheduling[node_index / CompiledGraph::schedule_word_bits].validity_check;
+    auto &word = scheduling_info(node_index / CompiledGraph::schedule_word_bits).validity_check;
     word |= ScheduleWord{1} << (node_index % CompiledGraph::schedule_word_bits);
 
     notify_owner_scheduled();
@@ -564,11 +588,11 @@ void RuntimeGraph::cancel(std::size_t node_index, ScheduleHandle handle) noexcep
 }
 
 RuntimeGraph::TimedSchedule *&RuntimeGraph::timed_schedule() noexcept {
-    return *reinterpret_cast<TimedSchedule **>(storage_ + compiled_graph_->timed_schedule_offset());
+    return *reinterpret_cast<TimedSchedule **>(storage_);
 }
 
 RuntimeGraph::TimedSchedule *RuntimeGraph::timed_schedule() const noexcept {
-    return *reinterpret_cast<TimedSchedule *const *>(storage_ + compiled_graph_->timed_schedule_offset());
+    return *reinterpret_cast<TimedSchedule *const *>(storage_);
 }
 
 void RuntimeGraph::activate_scheduled(EvaluationTime evaluation_time) noexcept {
@@ -1109,8 +1133,7 @@ bool RuntimeGraphEvaluator::evaluate(RuntimeGraph &graph, EvaluationContext &par
         throw std::invalid_argument{"a paused runtime graph must resume in the same outer cycle"};
     }
 
-    auto scheduling = graph.scheduling_info();
-    auto scheduled = RuntimeGraph::ScheduledNodes{scheduling};
+    auto scheduled = RuntimeGraph::ScheduledNodes{graph};
     auto stop_on_failure = util::scope_exit{[&]() noexcept {
         graph.stopped_ = true;
         graph.stop_nodes(graph.compiled_graph_->node_count(), context);
@@ -1124,12 +1147,13 @@ bool RuntimeGraphEvaluator::evaluate(RuntimeGraph &graph, EvaluationContext &par
         const auto mask = RuntimeGraph::ScheduleWord{1} << (node_index % CompiledGraph::schedule_word_bits);
         const auto &node = graph.compiled_graph_->node(node_index);
         const auto has_output = node.has_output();
-        const auto inputs_were_valid = scheduling[word_index].inputs_valid(mask);
+        auto &scheduling = graph.scheduling_info(word_index);
+        const auto inputs_were_valid = scheduling.inputs_valid(mask);
         auto inputs_valid = inputs_were_valid;
 
         if (validity_check_requested || (evaluation_requested && !inputs_valid)) {
             inputs_valid = graph.inputs_are_valid(node);
-            scheduling[word_index].inputs_valid(mask, inputs_valid);
+            scheduling.inputs_valid(mask, inputs_valid);
         }
 
         if (inputs_were_valid && !inputs_valid) {

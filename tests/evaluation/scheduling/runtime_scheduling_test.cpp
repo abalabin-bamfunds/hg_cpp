@@ -287,7 +287,111 @@ struct float_sink_definition {
     inline static float last_value{};
 };
 
+struct cross_block_scheduling_definition {
+    int index;
+
+    void evaluate(bg::EvaluationContext *context) const {
+        evaluation_order[evaluation_count++] = index;
+        if (index == trigger_index) {
+            context->runtime_graph().schedule(previous_block_index);
+            context->runtime_graph().schedule(same_block_index);
+            context->runtime_graph().schedule_validity_check(previous_block_index);
+        }
+    }
+
+    inline static std::array<int, 130> evaluation_order{};
+    inline static std::size_t evaluation_count{};
+    inline static constexpr int trigger_index = 64;
+    inline static constexpr std::size_t previous_block_index = 1;
+    inline static constexpr std::size_t same_block_index = 66;
+};
+
+struct same_block_rescheduling_definition {
+    int index;
+
+    void evaluate(bg::EvaluationContext *context) const {
+        evaluation_order[evaluation_count++] = index;
+        if (index == trigger_index) {
+            context->runtime_graph().schedule(previous_index);
+            context->runtime_graph().schedule(next_index);
+        }
+    }
+
+    inline static std::array<int, 130> evaluation_order{};
+    inline static std::size_t evaluation_count{};
+    inline static constexpr int trigger_index = 65;
+    inline static constexpr std::size_t previous_index = 64;
+    inline static constexpr std::size_t next_index = 66;
+};
+
 } // namespace
+
+TEST_CASE("scheduling honors the processed-node boundary within and across blocks",
+          "[evaluation][scheduling][feature:scheduling][shape:chain]") {
+    SECTION("a request for an earlier block waits until the next cycle") {
+        const auto indexed = bg::node<cross_block_scheduling_definition>();
+        bg::GraphWiring wiring;
+        {
+            bg::WiringContext context{wiring};
+            for (auto node_index = 0; node_index < 130; ++node_index) {
+                indexed(node_index);
+            }
+        }
+
+        const bg::CompiledGraph compiled{wiring};
+        auto global_state = bg::GlobalState{};
+        auto runtime = bg::RuntimeGraph{compiled, global_state};
+        cross_block_scheduling_definition::evaluation_count = 0;
+        runtime.start(time(1));
+        runtime.schedule(cross_block_scheduling_definition::trigger_index);
+        runtime.evaluate(time(1));
+
+        REQUIRE(cross_block_scheduling_definition::evaluation_count == 2);
+        CHECK(cross_block_scheduling_definition::evaluation_order[0] ==
+              cross_block_scheduling_definition::trigger_index);
+        CHECK(cross_block_scheduling_definition::evaluation_order[1] ==
+              cross_block_scheduling_definition::same_block_index);
+
+        cross_block_scheduling_definition::evaluation_count = 0;
+        runtime.evaluate(time(2));
+        REQUIRE(cross_block_scheduling_definition::evaluation_count == 1);
+        CHECK(cross_block_scheduling_definition::evaluation_order[0] ==
+              cross_block_scheduling_definition::previous_block_index);
+
+        cross_block_scheduling_definition::evaluation_count = 0;
+        runtime.schedule(129);
+        runtime.evaluate(time(3));
+        REQUIRE(cross_block_scheduling_definition::evaluation_count == 1);
+        CHECK(cross_block_scheduling_definition::evaluation_order[0] == 129);
+    }
+
+    SECTION("a request for an earlier node in the current block is discarded") {
+        const auto indexed = bg::node<same_block_rescheduling_definition>();
+        bg::GraphWiring wiring;
+        {
+            bg::WiringContext context{wiring};
+            for (auto node_index = 0; node_index < 130; ++node_index) {
+                indexed(node_index);
+            }
+        }
+
+        const bg::CompiledGraph compiled{wiring};
+        auto global_state = bg::GlobalState{};
+        auto runtime = bg::RuntimeGraph{compiled, global_state};
+        same_block_rescheduling_definition::evaluation_count = 0;
+        runtime.start(time(1));
+        runtime.schedule(same_block_rescheduling_definition::trigger_index);
+        runtime.evaluate(time(1));
+
+        REQUIRE(same_block_rescheduling_definition::evaluation_count == 2);
+        CHECK(same_block_rescheduling_definition::evaluation_order[0] ==
+              same_block_rescheduling_definition::trigger_index);
+        CHECK(same_block_rescheduling_definition::evaluation_order[1] ==
+              same_block_rescheduling_definition::next_index);
+        runtime.evaluate(time(2));
+        CHECK(same_block_rescheduling_definition::evaluation_count == 2);
+    }
+}
 
 TEST_CASE("scheduling during evaluation crosses a scheduling block boundary",
           "[evaluation][scheduling][feature:scheduling][series:value][scalar:floating-point]") {

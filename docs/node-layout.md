@@ -122,7 +122,13 @@ A runtime node contains only data that can differ between runtime graphs:
 A runtime graph contains:
 
 - one reference to the shared compiled-node data
+- the first scheduling block, covering up to 64 nodes
 - one packed state allocation
+
+The first scheduling block is stored in the runtime graph object. Any additional
+blocks follow the packed node state in its allocation. Compilation stores the
+initial scheduling blocks and node state in one fixed image. Runtime graph
+creation copies each to its runtime location.
 
 Compiled nodes and their runtime state use the same order as wired nodes. Their
 positions map each runtime state to its compiled node.
@@ -132,8 +138,6 @@ positions map each runtime state to its compiled node.
 Each runtime graph packs fixed output, private implementation, and
 reference-input state into one aligned allocation:
 
-- store the evaluation, validity-check, and cached-validity words for the same
-  64 nodes together
 - calculate output, private-state, and reference-input slot offsets after the
   complete graph has been wired
 - store those offsets with the compiled-node data

@@ -87,6 +87,11 @@ static_assert(alignof(const TimeSeriesRuntimeType *) >= alignof(std::uint32_t));
     return remainder == 0 ? offset : offset + alignment - remainder;
 }
 
+[[nodiscard]] std::size_t runtime_image_data_offset(std::size_t scheduling_word_count,
+                                                    std::size_t runtime_alignment) noexcept {
+    return align_up(scheduling_word_count * sizeof(SchedulingInfo), runtime_alignment);
+}
+
 std::uint32_t packed_offset(std::size_t value, const char *description) {
     if (value > max_packed_offset) {
         throw std::length_error{description};
@@ -313,7 +318,7 @@ struct FixedStorageLayout {
     StorageSection output_destruction_runtime_types;
     StorageSection output_destruction_offsets;
     StorageSection variable_memory;
-    StorageSection initial_runtime_storage;
+    StorageSection initial_runtime_image;
     StorageSection constant_notifications;
     StorageSection inherited_time_series_metadata;
     StorageSection inherited_time_series_bindings;
@@ -870,7 +875,6 @@ void plan_runtime_storage(CompilationPlan &plan) {
     auto storage = StorageLayout{};
     const auto schedule_word_count = (plan.wired_node_indices.size() + std::numeric_limits<ScheduleWord>::digits - 1) /
                                      std::numeric_limits<ScheduleWord>::digits;
-    (void)storage.add<SchedulingInfo>(schedule_word_count);
     if (plan.uses_timed_scheduling) {
         (void)storage.add<void *>();
     }
@@ -1160,7 +1164,11 @@ void plan_fixed_storage(CompilationPlan &plan) {
     if (plan.uses_variable_memory) {
         layout.variable_memory = storage.add<std::pmr::unsynchronized_pool_resource>();
     }
-    layout.initial_runtime_storage = storage.add_bytes(plan.runtime.size, plan.runtime.alignment, plan.runtime.size);
+    const auto runtime_offset = runtime_image_data_offset(plan.runtime.schedule_word_count, plan.runtime.alignment);
+    const auto runtime_image_size = runtime_offset + plan.runtime.size;
+    const auto runtime_image_alignment = std::max(alignof(SchedulingInfo), plan.runtime.alignment);
+    layout.initial_runtime_image =
+        storage.add_bytes(runtime_image_size, runtime_image_alignment, runtime_image_size);
     layout.constant_notifications = storage.add<InputNotificationSubscriber>(plan.constant_notifications.size());
 
     for (auto &requirement : plan.inherited_time_series) {
@@ -1476,7 +1484,7 @@ class CompiledGraphBuilder {
             variable_memory = allocator{*pool};
         }
 
-        construct_initial_runtime_storage(plan, storage);
+        construct_initial_runtime_image(plan, storage);
         construct_output_destruction(plan, storage);
         auto scalar_destruction_index = std::size_t{};
         construct_constants(plan, storage, variable_memory, constructed_scalars, scalar_destruction_index);
@@ -1507,8 +1515,8 @@ class CompiledGraphBuilder {
                     offset(plan.fixed.variable_memory) |
                     (plan.uses_cycle_callbacks ? CompiledGraph::cycle_callbacks_flag : std::uint32_t{}) |
                     (!plan.constants.empty() ? CompiledGraph::constants_flag : std::uint32_t{}),
-                .initial_runtime_storage_offset =
-                    offset(plan.fixed.initial_runtime_storage) |
+                .initial_runtime_image_offset =
+                    offset(plan.fixed.initial_runtime_image) |
                     (!plan.inherited_time_series.empty() ? CompiledGraph::inherited_time_series_flag
                                                          : std::uint32_t{}) |
                     (!plan.service_bindings.empty() ? CompiledGraph::service_bindings_flag : std::uint32_t{}),
@@ -1575,12 +1583,14 @@ class CompiledGraphBuilder {
                                 plan.fixed.stop_nodes.objects<std::uint32_t>(storage).data());
     }
 
-    static void construct_initial_runtime_storage(const CompilationPlan &plan, std::byte *fixed_storage) {
-        auto runtime_storage = plan.fixed.initial_runtime_storage.objects<std::byte>(fixed_storage);
-        std::fill(runtime_storage.begin(), runtime_storage.end(), std::byte{});
-        auto scheduling =
-            std::span{reinterpret_cast<SchedulingInfo *>(runtime_storage.data()), plan.runtime.schedule_word_count};
+    static void construct_initial_runtime_image(const CompilationPlan &plan, std::byte *fixed_storage) {
+        auto runtime_image = plan.fixed.initial_runtime_image.objects<std::byte>(fixed_storage);
+        std::fill(runtime_image.begin(), runtime_image.end(), std::byte{});
+        auto scheduling = std::span{reinterpret_cast<SchedulingInfo *>(runtime_image.data()),
+                                    plan.runtime.schedule_word_count};
         std::uninitialized_value_construct(scheduling.begin(), scheduling.end());
+        const auto runtime_offset = runtime_image_data_offset(scheduling.size(), plan.runtime.alignment);
+        auto runtime_storage = runtime_image.subspan(runtime_offset, plan.runtime.size);
 
         if (plan.runtime.constant_start_time_offset) {
             auto *start_time =
@@ -2283,7 +2293,20 @@ const OutputNotification *CompiledGraph::inherited_time_series_notification(
 }
 
 const std::byte *CompiledGraph::initial_runtime_storage() const noexcept {
-    return fixed_storage_ + (storage_header().initial_runtime_storage_offset & initial_runtime_storage_offset_mask);
+    const auto *image = initial_runtime_image();
+    const auto alignment = runtime_storage_alignment();
+    const auto runtime_offset = runtime_image_data_offset(schedule_word_count(), alignment);
+    return image + runtime_offset;
+}
+
+std::span<const CompiledGraph::SchedulingInfo> CompiledGraph::initial_scheduling_info() const noexcept {
+    const auto *image = initial_runtime_image();
+    return {reinterpret_cast<const SchedulingInfo *>(image), schedule_word_count()};
+}
+
+const std::byte *CompiledGraph::initial_runtime_image() const noexcept {
+    return fixed_storage_ +
+           (storage_header().initial_runtime_image_offset & initial_runtime_image_offset_mask);
 }
 
 CompiledGraph::NodeFunctions CompiledGraph::node_functions(std::uint32_t functions_offset,

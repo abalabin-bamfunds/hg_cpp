@@ -96,7 +96,18 @@ class RuntimeGraph {
     class CycleCallbacks;
     class OutputChangePublisher;
 
-    auto scheduling_info() noexcept -> std::span<SchedulingInfo>;
+    SchedulingInfo &scheduling_info(std::size_t word_index) noexcept {
+        if (word_index == 0) {
+            return inline_scheduling_;
+        }
+
+        const auto runtime_storage_size = compiled_graph_->runtime_storage_size();
+        const auto spill_offset =
+            (runtime_storage_size + alignof(SchedulingInfo) - 1) & ~(alignof(SchedulingInfo) - 1);
+        return reinterpret_cast<SchedulingInfo *>(storage_ + spill_offset)[word_index - 1];
+    }
+    std::size_t runtime_allocation_size() const noexcept;
+    std::size_t runtime_allocation_alignment() const noexcept;
     void initialize_storage();
 
     TimedSchedule *&timed_schedule() noexcept;
@@ -139,8 +150,9 @@ class RuntimeGraph {
     bool started_ : 1 {};
     bool stopped_ : 1 {};
     bool finalized_ : 1 {};
+    SchedulingInfo inline_scheduling_{};
 };
 
-static_assert(sizeof(RuntimeGraph) <= 64);
+static_assert(sizeof(RuntimeGraph) <= 96);
 
 } // namespace bg
