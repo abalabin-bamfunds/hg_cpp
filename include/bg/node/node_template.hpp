@@ -45,6 +45,8 @@ class NodeTemplate : public WiringTemplate {
     // The returned value remains valid after this template object is destroyed.
     virtual NodeTemplateIdentity definition_identity() const { return definition_identity_; }
     virtual bool deduplicate_wiring() const noexcept { return true; }
+    // Custom templates must declare that evaluate() cannot pause before using borrowed evaluation.
+    virtual bool may_pend_evaluation(const ResolvedSignature &) const noexcept { return true; }
     virtual bool schedule_on_start(const ResolvedSignature &) const noexcept { return false; }
     virtual EvaluationFunction evaluation_function(const ResolvedSignature &signature) const noexcept = 0;
     virtual NodeFunction start_function(const ResolvedSignature &) const noexcept { return nullptr; }

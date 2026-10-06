@@ -125,6 +125,10 @@ struct CompiledStorageHeader {
 
     bool has_runtime_inputs() const noexcept { return (wiring_paths_offset_and_flags & runtime_inputs_flag) != 0; }
 
+    bool supports_borrowed_evaluation() const noexcept {
+        return (wiring_paths_offset_and_flags & borrowed_evaluation_flag) != 0;
+    }
+
     std::uint32_t wiring_paths_offset() const noexcept { return wiring_paths_offset_and_flags & offset_mask; }
 
     std::uint32_t wiring_paths_offset_and_flags;
@@ -138,9 +142,10 @@ struct CompiledStorageHeader {
     std::uint32_t variable_memory_offset;
     std::uint32_t initial_runtime_image_offset;
 
-    // Fixed-storage offsets stay below 1 GiB, leaving bit 31 for optional runtime-input metadata.
+    // Fixed-storage offsets stay below 1 GiB, leaving the high two bits for metadata flags.
     static constexpr std::uint32_t runtime_inputs_flag = std::uint32_t{1} << 31;
-    static constexpr std::uint32_t offset_mask = runtime_inputs_flag - 1;
+    static constexpr std::uint32_t borrowed_evaluation_flag = std::uint32_t{1} << 30;
+    static constexpr std::uint32_t offset_mask = borrowed_evaluation_flag - 1;
 };
 
 static_assert(sizeof(CompiledStorageHeader) == 40);

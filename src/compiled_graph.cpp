@@ -376,6 +376,7 @@ struct CompilationPlan {
     bool uses_variable_memory{};
     bool uses_timed_scheduling{};
     bool uses_cycle_callbacks{};
+    bool supports_borrowed_evaluation{};
 
     bool has_lifecycle() const noexcept { return !starts.nodes.empty() || !stops.nodes.empty(); }
 
@@ -1537,6 +1538,41 @@ void plan_fixed_storage(CompilationPlan &plan) {
         }
     }
 
+    result.supports_borrowed_evaluation = !result.has_lifecycle() && !result.uses_timed_scheduling &&
+                                          !result.uses_cycle_callbacks && result.constants.empty() &&
+                                          result.constant_notifications.empty() &&
+                                          result.inherited_time_series.empty() && result.service_bindings.empty() &&
+                                          result.output_destruction_count == 0;
+    for (const auto &output : result.outputs) {
+        if ((output.type != nullptr && output.type->is_time_series() &&
+             static_cast<const TimeSeriesType &>(*output.type).contains_reference()) ||
+            (output.runtime_type != nullptr && output.runtime_type->is_reference())) {
+            result.supports_borrowed_evaluation = false;
+            break;
+        }
+    }
+    for (const auto node_index : result.wired_node_indices) {
+        const auto &node = result.nodes[node_index];
+        const auto &node_plan = result.node_plans[node_index];
+        const auto has_reference_input = std::ranges::any_of(node_plan.time_series_inputs, [&](const auto &input) {
+            const auto &type = *node.signature().parameters[input.parameter].type;
+            return input.dereferences_reference || static_cast<const TimeSeriesType &>(type).contains_reference();
+        });
+        const auto has_reference_output =
+            node.signature().output != nullptr && node.signature().output->contains_reference();
+        if (node.node_template().may_pend_evaluation(node.signature()) || node_plan.state.node.size != 0 ||
+            !node.dynamic_reference_input_types().empty() || has_reference_input || has_reference_output ||
+            (node_plan.output.runtime_type != nullptr && node_plan.output.runtime_type->is_reference())) {
+            result.supports_borrowed_evaluation = false;
+        }
+    }
+    for (const auto &runtime_input : result.runtime_inputs) {
+        if (runtime_input.runtime_type->is_reference() || runtime_input.runtime_type->type().contains_reference()) {
+            result.supports_borrowed_evaluation = false;
+            break;
+        }
+    }
+
     plan_fixed_storage(result);
 
     return result;
@@ -1651,7 +1687,10 @@ class CompiledGraphBuilder {
                 .wiring_paths_offset_and_flags =
                     offset(plan.fixed.wiring_paths) |
                     (!plan.runtime_inputs.empty() ? details::CompiledStorageHeader::runtime_inputs_flag
-                                                   : std::uint32_t{}),
+                                                   : std::uint32_t{}) |
+                    (plan.supports_borrowed_evaluation
+                         ? details::CompiledStorageHeader::borrowed_evaluation_flag
+                         : std::uint32_t{}),
                 .wiring_path_count = static_cast<std::uint32_t>(plan.wiring_paths.paths.size()),
                 .start_functions_offset = offset(plan.fixed.start_functions),
                 .start_count = static_cast<std::uint32_t>(plan.starts.nodes.size()),

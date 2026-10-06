@@ -25,6 +25,7 @@ class ServiceRequestBinding;
 
 class NestedGraph;
 class RuntimeGraphEvaluator;
+class TimeSeriesRuntimeType;
 
 class RuntimeGraph {
   public:
@@ -32,7 +33,20 @@ class RuntimeGraph {
     RuntimeGraph(const CompiledGraph &compiled_graph, allocator memory, GlobalState &global_state);
     RuntimeGraph(const CompiledGraph &compiled_graph, allocator memory, RuntimeGraphEvaluator &evaluator,
                  RuntimeGraphSchedulingCallbacks::token_type owner_token);
+    // Borrowed views are valid only for graphs accepted by supports_borrowed_evaluation(). The caller keeps storage
+    // and its allocator resource alive, uses increasing cycle times per storage instance, and passes each view's
+    // input_validity() to the next view. Node code must not retain graph-allocator allocations beyond an invocation.
+    // A missing mask creates the first view.
+    RuntimeGraph(const CompiledGraph &compiled_graph, allocator memory, std::span<std::byte> storage,
+                 GlobalState &global_state,
+                 std::optional<CompiledGraph::ScheduleWord> previous_input_validity = std::nullopt);
     ~RuntimeGraph();
+
+    // Borrowed storage is initialized once per runtime-graph instance and reused by temporary graph views. The caller
+    // keeps it alive through every view and retains the first scheduling word's input-validity mask separately.
+    static std::size_t borrowed_storage_size(const CompiledGraph &compiled_graph) noexcept;
+    static std::size_t borrowed_storage_alignment(const CompiledGraph &compiled_graph) noexcept;
+    static void initialize_borrowed_storage(const CompiledGraph &compiled_graph, std::span<std::byte> storage);
 
     RuntimeGraph(const RuntimeGraph &) = delete;
     RuntimeGraph &operator=(const RuntimeGraph &) = delete;
@@ -73,11 +87,15 @@ class RuntimeGraph {
 
     void update_reference_output(std::size_t node_index, Reference reference, EvaluationTime evaluation_time);
     void initialize_constant_output(std::size_t node_index, Scalar<> value, EvaluationTime evaluation_time);
-    // Publish a borrowed sample using the representation selected when wiring, before its consuming cycle.
-    void bind_runtime_input(std::size_t index, const TimeSeriesState &source_state, const void *value,
+    // Publish a borrowed sample before its consuming cycle. source_runtime_type must exactly match the type selected
+    // when wiring; the value remains borrowed.
+    void bind_runtime_input(std::size_t index, const TimeSeriesRuntimeType &source_runtime_type,
+                            const TimeSeriesState &source_state, const void *value,
                             EvaluationTime evaluation_time);
     // Publish an invalid sample before the graph evaluates its supplied cycle.
     void clear_runtime_input(std::size_t index, EvaluationTime evaluation_time);
+    // Save this word between temporary borrowed views; spill words already live in borrowed storage.
+    CompiledGraph::ScheduleWord input_validity() const noexcept { return inline_scheduling_.input_validity(); }
 
     void add_cycle_callback(void *receiver, void (*function)(void *, EvaluationContext &) noexcept,
                            bool call_on_stop = false);
@@ -157,6 +175,7 @@ class RuntimeGraph {
     std::uint32_t paused_node_index_{std::numeric_limits<std::uint32_t>::max()};
     bool suppress_parent_scheduling_ : 1 {};
     bool owns_evaluator_ : 1 {};
+    bool owns_storage_ : 1 {};
     bool started_ : 1 {};
     bool stopped_ : 1 {};
     bool finalized_ : 1 {};

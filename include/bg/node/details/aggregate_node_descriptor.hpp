@@ -119,6 +119,7 @@ template <typename Definition> const AggregateNodeDescriptor &aggregate_node_des
                     return EvaluationFunction{};
                 }
             }(),
+        .may_pend_evaluation = aggregate_node_evaluate_returns_bool<Definition>,
         .start_function =
             [] {
                 if constexpr (aggregate_node_has_start<Definition>) {

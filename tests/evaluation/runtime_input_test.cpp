@@ -3,6 +3,7 @@
 #include <bg/graph/runtime_graph.hpp>
 #include <bg/graph/wiring_context.hpp>
 #include <bg/node.hpp>
+#include <bg/time_series/ref/ref_runtime_type.hpp>
 #include <bg/time_series/time_series_runtime_type.hpp>
 
 #include <catch2/catch_test_macros.hpp>
@@ -66,6 +67,10 @@ struct required_runtime_input {
     inline static std::size_t evaluations{};
 };
 
+struct pending_evaluation_node {
+    bool evaluate() const { return true; }
+};
+
 struct runtime_input_reference_source {
     static constexpr bool schedule_on_start = true;
 
@@ -115,8 +120,9 @@ TEST_CASE("runtime inputs sample distinct values and restamp older bindings on r
     add_runtime_inputs::evaluation_times.clear();
     auto global_state = bg::GlobalState{};
     auto runtime = bg::RuntimeGraph{compiled, global_state};
-    runtime.bind_runtime_input(0, left_state, &left_value, time(1));
-    runtime.bind_runtime_input(1, right_state, &right_value, time(1));
+    const auto &value_runtime_type = bg::cpp_time_series_runtime_type<bg::TS<Value>>();
+    runtime.bind_runtime_input(0, value_runtime_type, left_state, &left_value, time(1));
+    runtime.bind_runtime_input(1, value_runtime_type, right_state, &right_value, time(1));
     runtime.start(time(1));
     runtime.evaluate(time(1));
 
@@ -128,7 +134,7 @@ TEST_CASE("runtime inputs sample distinct values and restamp older bindings on r
 
     // The source state is still stamped at time(1); rebinding must make the sampled input current at time(2).
     left_value = 15;
-    runtime.bind_runtime_input(0, left_state, &left_value, time(2));
+    runtime.bind_runtime_input(0, value_runtime_type, left_state, &left_value, time(2));
     runtime.evaluate(time(2));
 
     REQUIRE(add_runtime_inputs::observations.size() == 2);
@@ -166,15 +172,16 @@ TEST_CASE("runtime input notifications preserve active and passive scheduling",
     passive_optional_runtime_input::evaluations = 0;
     auto global_state = bg::GlobalState{};
     auto runtime = bg::RuntimeGraph{compiled, global_state};
-    runtime.bind_runtime_input(0, source_state, &value, time(1));
-    runtime.bind_runtime_input(1, source_state, &value, time(1));
+    const auto &value_runtime_type = bg::cpp_time_series_runtime_type<bg::TS<Value>>();
+    runtime.bind_runtime_input(0, value_runtime_type, source_state, &value, time(1));
+    runtime.bind_runtime_input(1, value_runtime_type, source_state, &value, time(1));
     runtime.start(time(1));
     runtime.evaluate(time(1));
     CHECK(active_optional_runtime_input::evaluations == 1);
     CHECK(passive_optional_runtime_input::evaluations == 0);
 
-    runtime.bind_runtime_input(0, source_state, &value, time(2));
-    runtime.bind_runtime_input(1, source_state, &value, time(2));
+    runtime.bind_runtime_input(0, value_runtime_type, source_state, &value, time(2));
+    runtime.bind_runtime_input(1, value_runtime_type, source_state, &value, time(2));
     runtime.evaluate(time(2));
     CHECK(active_optional_runtime_input::evaluations == 2);
     CHECK(passive_optional_runtime_input::evaluations == 0);
@@ -197,7 +204,8 @@ TEST_CASE("clearing a required runtime input invalidates its output until revali
     required_runtime_input::evaluations = 0;
     auto global_state = bg::GlobalState{};
     auto runtime = bg::RuntimeGraph{compiled, global_state};
-    runtime.bind_runtime_input(0, source_state, &value, time(1));
+    runtime.bind_runtime_input(0, bg::cpp_time_series_runtime_type<bg::TS<Value>>(), source_state, &value,
+                               time(1));
     runtime.start(time(1));
     runtime.evaluate(time(1));
     REQUIRE(required_runtime_input::evaluations == 1);
@@ -210,7 +218,8 @@ TEST_CASE("clearing a required runtime input invalidates its output until revali
     CHECK(runtime.node(0).output_last_updated().became_invalid());
 
     value = 11;
-    runtime.bind_runtime_input(0, source_state, &value, time(3));
+    runtime.bind_runtime_input(0, bg::cpp_time_series_runtime_type<bg::TS<Value>>(), source_state, &value,
+                               time(3));
     runtime.evaluate(time(3));
     CHECK(required_runtime_input::evaluations == 2);
     CHECK(runtime.node(0).output_last_updated().valid());
@@ -219,7 +228,7 @@ TEST_CASE("clearing a required runtime input invalidates its output until revali
 }
 
 TEST_CASE("runtime input changes must be delivered before their graph cycle",
-          "[evaluation][feature:runtime-input][lifecycle:stop][transition:update]") {
+          "[evaluation][feature:runtime-input][transition:stop][transition:update]") {
     const auto consumer = bg::node<active_optional_runtime_input>();
     auto wiring = bg::GraphWiring{};
     {
@@ -233,17 +242,18 @@ TEST_CASE("runtime input changes must be delivered before their graph cycle",
     auto value = Value{9};
     auto global_state = bg::GlobalState{};
     auto runtime = bg::RuntimeGraph{compiled, global_state};
-    runtime.bind_runtime_input(0, source_state, &value, time(1));
+    const auto &value_runtime_type = bg::cpp_time_series_runtime_type<bg::TS<Value>>();
+    runtime.bind_runtime_input(0, value_runtime_type, source_state, &value, time(1));
     runtime.start(time(1));
     runtime.evaluate(time(1));
 
-    CHECK_THROWS_WITH(runtime.bind_runtime_input(0, source_state, &value, time(1)),
+    CHECK_THROWS_WITH(runtime.bind_runtime_input(0, value_runtime_type, source_state, &value, time(1)),
                       "a runtime input change must follow the previous graph cycle");
     CHECK_THROWS_WITH(runtime.clear_runtime_input(0, time(1)),
                       "a runtime input change must follow the previous graph cycle");
 
     runtime.stop();
-    CHECK_THROWS_WITH(runtime.bind_runtime_input(0, source_state, &value, time(2)),
+    CHECK_THROWS_WITH(runtime.bind_runtime_input(0, value_runtime_type, source_state, &value, time(2)),
                       "a stopped or finalized runtime graph cannot bind an input");
     runtime.finalize(global_state);
     CHECK_THROWS_WITH(runtime.clear_runtime_input(0, time(2)),
@@ -252,9 +262,12 @@ TEST_CASE("runtime input changes must be delivered before their graph cycle",
 
 TEST_CASE("reference runtime inputs use ordinary reference binding and notification",
           "[evaluation][feature:runtime-input][feature:reference][series:value]"
-          "[binding:reference-to-value][shape:multiple][transition:first-tick][transition:rebind]") {
+          "[binding:reference-to-value][shape:multiple][transition:first-tick][transition:update]") {
     const auto source_node = bg::node<runtime_input_reference_source>();
     const auto source_node_b = bg::node<runtime_input_reference_source_b>();
+    const auto &reference_type =
+        bg::time_series_reference_type(bg::TS<Value>::type(), bg::TimeSeriesGuarantee::ordinary);
+    const auto &reference_runtime_type = bg::time_series_reference_runtime_type(reference_type);
     auto source_wiring = bg::GraphWiring{};
     auto source_value = bg::WiringPoint{};
     auto reference_output = bg::WiringPoint{};
@@ -263,8 +276,6 @@ TEST_CASE("reference runtime inputs use ordinary reference binding and notificat
         const auto context = bg::WiringContext{source_wiring};
         source_value = source_node();
         const auto value_b = source_node_b();
-        const auto &reference_type =
-            bg::time_series_reference_type(bg::TS<Value>::type(), bg::TimeSeriesGuarantee::const_);
         reference_output = source_wiring.materialize(source_value, reference_type);
         reference_output_b = source_wiring.materialize(value_b, reference_type);
     }
@@ -296,8 +307,20 @@ TEST_CASE("reference runtime inputs use ordinary reference binding and notificat
 
     auto consumer_global_state = bg::GlobalState{};
     auto runtime = bg::RuntimeGraph{consumer_compiled, consumer_global_state};
-    runtime.bind_runtime_input(0, reference_source.output_last_updated(), reference_source.output_value(),
-                               evaluation_time);
+    CHECK(&reference_runtime_type == consumer_compiled.runtime_inputs()[0].runtime_type);
+
+    const auto &const_reference_type =
+        bg::time_series_reference_type(bg::TS<Value>::type(), bg::TimeSeriesGuarantee::const_);
+    const auto &const_reference_runtime_type = bg::time_series_reference_runtime_type(const_reference_type);
+    CHECK(const_reference_runtime_type.value_size() == reference_runtime_type.value_size());
+    CHECK(const_reference_runtime_type.value_alignment() == reference_runtime_type.value_alignment());
+    CHECK_THROWS_WITH(runtime.bind_runtime_input(0, const_reference_runtime_type,
+                                                 reference_source.output_last_updated(),
+                                                 reference_source.output_value(), evaluation_time),
+                      "a runtime input value has a different runtime type than the binding expects");
+
+    runtime.bind_runtime_input(0, reference_runtime_type, reference_source.output_last_updated(),
+                               reference_source.output_value(), evaluation_time);
     required_runtime_input::evaluations = 0;
     runtime.start(evaluation_time);
     runtime.evaluate(evaluation_time);
@@ -312,8 +335,8 @@ TEST_CASE("reference runtime inputs use ordinary reference binding and notificat
     CHECK(runtime.node(0).output_last_updated().became_invalid());
 
     const auto rebind_time = time(3);
-    runtime.bind_runtime_input(0, reference_source_b.output_last_updated(), reference_source_b.output_value(),
-                               rebind_time);
+    runtime.bind_runtime_input(0, reference_runtime_type, reference_source_b.output_last_updated(),
+                               reference_source_b.output_value(), rebind_time);
     runtime.evaluate(rebind_time);
     CHECK(required_runtime_input::evaluations == 2);
     CHECK(*static_cast<const Value *>(runtime.node(0).output_value()) == 47);
@@ -334,4 +357,199 @@ TEST_CASE("runtime input records retain the 16-byte slot layout",
           "[feature:runtime-input][feature:graph-compilation][storage:fixed]") {
     CHECK(sizeof(bg::RuntimeInputBinding) == 16);
     CHECK(sizeof(bg::details::RuntimeInputDescriptor) == 24);
+}
+
+TEST_CASE("borrowed runtime graph views preserve validity between cycles",
+          "[evaluation][feature:runtime-input][feature:graph-compilation][transition:invalidation]") {
+    const auto consumer = bg::node<required_runtime_input>();
+    auto wiring = bg::GraphWiring{};
+    {
+        const auto context = bg::WiringContext{wiring};
+        (void)consumer(wiring.runtime_input(bg::TS<Value>::type()));
+    }
+
+    const auto compiled = bg::CompiledGraph{wiring};
+    REQUIRE(compiled.supports_borrowed_evaluation());
+
+    auto storage = std::vector<std::byte>(bg::RuntimeGraph::borrowed_storage_size(compiled));
+    bg::RuntimeGraph::initialize_borrowed_storage(compiled, storage);
+    auto global_state = bg::GlobalState{};
+    auto source_state = bg::TimeSeriesState{};
+    source_state.publish(time(1));
+    auto value = Value{9};
+    auto previous_input_validity = bg::CompiledGraph::ScheduleWord{};
+
+    {
+        auto runtime = bg::RuntimeGraph{compiled, bg::allocator{}, storage, global_state};
+        runtime.bind_runtime_input(0, bg::cpp_time_series_runtime_type<bg::TS<Value>>(), source_state, &value,
+                                   time(1));
+        runtime.evaluate(time(1), global_state);
+        REQUIRE(runtime.node(0).output_last_updated().valid());
+        previous_input_validity = runtime.input_validity();
+    }
+
+    {
+        auto runtime = bg::RuntimeGraph{compiled, bg::allocator{}, storage, global_state, previous_input_validity};
+        runtime.clear_runtime_input(0, time(2));
+        runtime.evaluate(time(2), global_state);
+        CHECK_FALSE(runtime.node(0).output_last_updated().valid());
+        CHECK(runtime.node(0).output_last_updated().became_invalid());
+    }
+}
+
+TEST_CASE("borrowed runtime graph views preserve spill-word input validity",
+          "[evaluation][feature:runtime-input][feature:graph-compilation][storage:fixed]") {
+    const auto consumer = bg::node<required_runtime_input>();
+    auto wiring = bg::GraphWiring{};
+    auto inputs = std::vector<bg::WiringPoint>{};
+    {
+        const auto context = bg::WiringContext{wiring};
+        for (auto i = std::size_t{}; i < bg::CompiledGraph::schedule_word_bits + 1; ++i) {
+            inputs.push_back(wiring.runtime_input(bg::TS<Value>::type()));
+            (void)consumer(inputs.back());
+        }
+    }
+
+    const auto compiled = bg::CompiledGraph{wiring};
+    REQUIRE(compiled.supports_borrowed_evaluation());
+    REQUIRE(compiled.schedule_word_count() == 2);
+
+    auto storage = std::vector<std::byte>(bg::RuntimeGraph::borrowed_storage_size(compiled));
+    bg::RuntimeGraph::initialize_borrowed_storage(compiled, storage);
+    auto global_state = bg::GlobalState{};
+    auto source_state = bg::TimeSeriesState{};
+    source_state.publish(time(1));
+    auto values = std::vector<Value>(inputs.size(), Value{17});
+    auto previous_input_validity = bg::CompiledGraph::ScheduleWord{};
+
+    {
+        auto runtime = bg::RuntimeGraph{compiled, bg::allocator{}, storage, global_state};
+        for (auto i = std::size_t{}; i < inputs.size(); ++i) {
+            runtime.bind_runtime_input(i, bg::cpp_time_series_runtime_type<bg::TS<Value>>(), source_state,
+                                       &values[i], time(1));
+        }
+        runtime.evaluate(time(1), global_state);
+        REQUIRE(runtime.node(bg::CompiledGraph::schedule_word_bits).output_last_updated().valid());
+        previous_input_validity = runtime.input_validity();
+    }
+
+    {
+        auto runtime = bg::RuntimeGraph{compiled, bg::allocator{}, storage, global_state, previous_input_validity};
+        runtime.clear_runtime_input(inputs.size() - 1, time(2));
+        runtime.evaluate(time(2), global_state);
+        CHECK_FALSE(runtime.node(bg::CompiledGraph::schedule_word_bits).output_last_updated().valid());
+        CHECK(runtime.node(bg::CompiledGraph::schedule_word_bits).output_last_updated().became_invalid());
+    }
+}
+
+TEST_CASE("borrowed runtime graph instances can evaluate at the same time",
+          "[evaluation][feature:runtime-input][feature:graph-compilation][shape:multiple][transition:first-tick]") {
+    const auto consumer = bg::node<required_runtime_input>();
+    auto wiring = bg::GraphWiring{};
+    {
+        const auto context = bg::WiringContext{wiring};
+        (void)consumer(wiring.runtime_input(bg::TS<Value>::type()));
+    }
+
+    const auto compiled = bg::CompiledGraph{wiring};
+    REQUIRE(compiled.supports_borrowed_evaluation());
+    auto first_storage = std::vector<std::byte>(bg::RuntimeGraph::borrowed_storage_size(compiled));
+    auto second_storage = std::vector<std::byte>(bg::RuntimeGraph::borrowed_storage_size(compiled));
+    bg::RuntimeGraph::initialize_borrowed_storage(compiled, first_storage);
+    bg::RuntimeGraph::initialize_borrowed_storage(compiled, second_storage);
+
+    auto global_state = bg::GlobalState{};
+    auto source_state = bg::TimeSeriesState{};
+    source_state.publish(time(1));
+    auto first_value = Value{23};
+    auto second_value = Value{47};
+    auto first = bg::RuntimeGraph{compiled, bg::allocator{}, first_storage, global_state};
+    auto second = bg::RuntimeGraph{compiled, bg::allocator{}, second_storage, global_state};
+    first.bind_runtime_input(0, bg::cpp_time_series_runtime_type<bg::TS<Value>>(), source_state, &first_value,
+                            time(1));
+    second.bind_runtime_input(0, bg::cpp_time_series_runtime_type<bg::TS<Value>>(), source_state, &second_value,
+                             time(1));
+
+    first.evaluate(time(1), global_state);
+    second.evaluate(time(1), global_state);
+    CHECK(*static_cast<const Value *>(first.node(0).output_value()) == 23);
+    CHECK(*static_cast<const Value *>(second.node(0).output_value()) == 47);
+}
+
+TEST_CASE("borrowed zero-node graphs expose a directly returned runtime input",
+          "[evaluation][feature:runtime-input][feature:graph-compilation][shape:source]") {
+    auto wiring = bg::GraphWiring{};
+    auto result = bg::WiringPoint{};
+    {
+        const auto context = bg::WiringContext{wiring};
+        result = wiring.runtime_input(bg::TS<Value>::type());
+        (void)wiring.runtime_input(bg::TS<Value>::type());
+    }
+
+    const auto result_input_index = wiring.runtime_input_index(result);
+    const auto compiled = bg::CompiledGraph{wiring};
+    REQUIRE(compiled.node_count() == 0);
+    REQUIRE(compiled.supports_borrowed_evaluation());
+
+    auto storage = std::vector<std::byte>(bg::RuntimeGraph::borrowed_storage_size(compiled));
+    bg::RuntimeGraph::initialize_borrowed_storage(compiled, storage);
+    auto global_state = bg::GlobalState{};
+    auto source_state = bg::TimeSeriesState{};
+    source_state.publish(time(1));
+    auto result_value = Value{31};
+    auto unused_value = Value{99};
+    auto runtime = bg::RuntimeGraph{compiled, bg::allocator{}, storage, global_state};
+    const auto &runtime_type = bg::cpp_time_series_runtime_type<bg::TS<Value>>();
+    runtime.bind_runtime_input(result_input_index, runtime_type, source_state, &result_value, time(1));
+    runtime.bind_runtime_input(1, runtime_type, source_state, &unused_value, time(1));
+    runtime.evaluate(time(1), global_state);
+
+    const auto &result_binding = *static_cast<const bg::RuntimeInputBinding *>(
+        runtime.storage_at(compiled.runtime_inputs()[result_input_index].slot_offset));
+    CHECK(result_binding.last_updated.valid());
+    CHECK(result_binding.last_updated.time() == time(1));
+    CHECK(*static_cast<const Value *>(result_binding.value) == 31);
+}
+
+TEST_CASE("borrowed runtime views validate storage and runtime representation",
+          "[evaluation][feature:runtime-input][feature:graph-compilation]") {
+    const auto consumer = bg::node<required_runtime_input>();
+    auto wiring = bg::GraphWiring{};
+    {
+        const auto context = bg::WiringContext{wiring};
+        (void)consumer(wiring.runtime_input(bg::TS<Value>::type()));
+    }
+
+    const auto compiled = bg::CompiledGraph{wiring};
+    REQUIRE(compiled.supports_borrowed_evaluation());
+    const auto storage_size = bg::RuntimeGraph::borrowed_storage_size(compiled);
+    auto storage = std::vector<std::byte>(storage_size + 1);
+    auto global_state = bg::GlobalState{};
+    CHECK_THROWS_WITH(bg::RuntimeGraph::initialize_borrowed_storage(compiled,
+                                                                    std::span{storage.data(), storage_size - 1}),
+                      "borrowed runtime storage is too small");
+    CHECK_THROWS_WITH(bg::RuntimeGraph::initialize_borrowed_storage(compiled,
+                                                                    std::span{storage.data() + 1, storage_size}),
+                      "borrowed runtime storage is misaligned");
+
+    bg::RuntimeGraph::initialize_borrowed_storage(compiled, std::span{storage.data(), storage_size});
+    auto runtime = bg::RuntimeGraph{compiled, bg::allocator{}, std::span{storage.data(), storage_size}, global_state};
+    auto source_state = bg::TimeSeriesState{};
+    source_state.publish(time(1));
+    auto value = Value{11};
+    CHECK_THROWS_WITH(runtime.bind_runtime_input(0, bg::cpp_time_series_runtime_type<bg::TS<double>>(), source_state,
+                                                 &value, time(1)),
+                      "a runtime input value has a different runtime type than the binding expects");
+
+    auto pending_wiring = bg::GraphWiring{};
+    const auto pending_node = bg::node<pending_evaluation_node>();
+    {
+        const auto context = bg::WiringContext{pending_wiring};
+        (void)pending_node();
+    }
+    const auto pending_graph = bg::CompiledGraph{pending_wiring};
+    CHECK_FALSE(pending_graph.supports_borrowed_evaluation());
+    CHECK_THROWS_WITH(bg::RuntimeGraph::initialize_borrowed_storage(
+                          pending_graph, std::span{storage.data(), storage_size}),
+                      "the compiled graph does not support borrowed evaluation");
 }

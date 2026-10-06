@@ -401,7 +401,7 @@ RuntimeGraph::RuntimeGraph(const CompiledGraph &compiled_graph, GlobalState &glo
 RuntimeGraph::RuntimeGraph(const CompiledGraph &compiled_graph, allocator memory, GlobalState &global_state)
     : compiled_graph_(&compiled_graph), allocator_(memory),
       evaluator_{allocator_.new_object<RuntimeGraphEvaluator>()}, root_global_state_{&global_state},
-      owns_evaluator_{true} {
+      owns_evaluator_{true}, owns_storage_{true} {
     try {
         initialize_storage();
     } catch (...) {
@@ -412,14 +412,94 @@ RuntimeGraph::RuntimeGraph(const CompiledGraph &compiled_graph, allocator memory
 
 RuntimeGraph::RuntimeGraph(const CompiledGraph &compiled_graph, allocator memory, RuntimeGraphEvaluator &evaluator,
                            RuntimeGraphSchedulingCallbacks::token_type owner_token)
-    : compiled_graph_(&compiled_graph), allocator_(memory), evaluator_{&evaluator}, owner_token_{owner_token} {
+    : compiled_graph_(&compiled_graph), allocator_(memory), evaluator_{&evaluator}, owner_token_{owner_token},
+      owns_storage_{true} {
     assert(evaluator.owner_bound());
     initialize_storage();
 }
 
+RuntimeGraph::RuntimeGraph(const CompiledGraph &compiled_graph, allocator memory, std::span<std::byte> storage,
+                           GlobalState &global_state,
+                           std::optional<CompiledGraph::ScheduleWord> previous_input_validity)
+    : compiled_graph_(&compiled_graph), allocator_(memory), evaluator_{}, storage_{storage.data()},
+      root_global_state_{&global_state}, started_{true} {
+    if (!compiled_graph.supports_borrowed_evaluation()) {
+        throw std::invalid_argument{"the compiled graph does not support borrowed evaluation"};
+    }
+    if (storage.size() < borrowed_storage_size(compiled_graph)) {
+        throw std::invalid_argument{"borrowed runtime storage is too small"};
+    }
+    if (!storage.empty() && reinterpret_cast<std::uintptr_t>(storage.data()) %
+                                borrowed_storage_alignment(compiled_graph) !=
+                            0) {
+        throw std::invalid_argument{"borrowed runtime storage is misaligned"};
+    }
+
+    const auto initial_scheduling = compiled_graph.initial_scheduling_info();
+    if (!initial_scheduling.empty()) {
+        inline_scheduling_ = initial_scheduling.front();
+    }
+    if (previous_input_validity) {
+        inline_scheduling_.clear_requests();
+        inline_scheduling_.input_validity(*previous_input_validity);
+        for (auto word_index = std::size_t{1}; word_index < compiled_graph.schedule_word_count(); ++word_index) {
+            scheduling_info(word_index).clear_requests();
+        }
+    }
+}
+
 GlobalState &RuntimeGraph::global_state() const noexcept {
-    assert(owns_evaluator_);
+    assert(owns_evaluator_ || !owns_storage_);
     return *root_global_state_;
+}
+
+std::size_t RuntimeGraph::borrowed_storage_size(const CompiledGraph &compiled_graph) noexcept {
+    const auto runtime_storage_size = compiled_graph.runtime_storage_size();
+    const auto scheduling_word_count = compiled_graph.schedule_word_count();
+    if (scheduling_word_count <= 1) {
+        return runtime_storage_size;
+    }
+
+    const auto spill_count = scheduling_word_count - 1;
+    const auto spill_offset =
+        (runtime_storage_size + alignof(CompiledGraph::SchedulingInfo) - 1) &
+        ~(alignof(CompiledGraph::SchedulingInfo) - 1);
+    return spill_offset + spill_count * sizeof(CompiledGraph::SchedulingInfo);
+}
+
+std::size_t RuntimeGraph::borrowed_storage_alignment(const CompiledGraph &compiled_graph) noexcept {
+    auto alignment = compiled_graph.runtime_storage_alignment();
+    if (compiled_graph.schedule_word_count() > 1) {
+        alignment = std::max(alignment, alignof(CompiledGraph::SchedulingInfo));
+    }
+    return alignment;
+}
+
+void RuntimeGraph::initialize_borrowed_storage(const CompiledGraph &compiled_graph, std::span<std::byte> storage) {
+    if (!compiled_graph.supports_borrowed_evaluation()) {
+        throw std::invalid_argument{"the compiled graph does not support borrowed evaluation"};
+    }
+    if (storage.size() < borrowed_storage_size(compiled_graph)) {
+        throw std::invalid_argument{"borrowed runtime storage is too small"};
+    }
+    if (!storage.empty() && reinterpret_cast<std::uintptr_t>(storage.data()) %
+                                borrowed_storage_alignment(compiled_graph) !=
+                            0) {
+        throw std::invalid_argument{"borrowed runtime storage is misaligned"};
+    }
+
+    const auto runtime_storage_size = compiled_graph.runtime_storage_size();
+    if (runtime_storage_size != 0) {
+        std::memcpy(storage.data(), compiled_graph.initial_runtime_storage(), runtime_storage_size);
+    }
+
+    const auto initial_scheduling = compiled_graph.initial_scheduling_info();
+    if (initial_scheduling.size() > 1) {
+        const auto spill_offset = (runtime_storage_size + alignof(CompiledGraph::SchedulingInfo) - 1) &
+                                  ~(alignof(CompiledGraph::SchedulingInfo) - 1);
+        auto *spill = reinterpret_cast<CompiledGraph::SchedulingInfo *>(storage.data() + spill_offset);
+        std::uninitialized_copy(initial_scheduling.begin() + 1, initial_scheduling.end(), spill);
+    }
 }
 
 void RuntimeGraph::initialize_storage() {
@@ -448,24 +528,11 @@ void RuntimeGraph::initialize_storage() {
 }
 
 std::size_t RuntimeGraph::runtime_allocation_size() const noexcept {
-    const auto runtime_storage_size = compiled_graph_->runtime_storage_size();
-    const auto scheduling_word_count = compiled_graph_->schedule_word_count();
-    if (scheduling_word_count <= 1) {
-        return runtime_storage_size;
-    }
-
-    const auto spill_count = scheduling_word_count - 1;
-    const auto spill_offset =
-        (runtime_storage_size + alignof(SchedulingInfo) - 1) & ~(alignof(SchedulingInfo) - 1);
-    return spill_offset + spill_count * sizeof(SchedulingInfo);
+    return borrowed_storage_size(*compiled_graph_);
 }
 
 std::size_t RuntimeGraph::runtime_allocation_alignment() const noexcept {
-    auto alignment = compiled_graph_->runtime_storage_alignment();
-    if (compiled_graph_->schedule_word_count() > 1) {
-        alignment = std::max(alignment, alignof(SchedulingInfo));
-    }
-    return alignment;
+    return borrowed_storage_alignment(*compiled_graph_);
 }
 
 void RuntimeGraph::initialize_inherited_time_series(std::size_t index, Reference reference) {
@@ -502,7 +569,7 @@ std::span<details::ServiceRequestBinding *> RuntimeGraph::service_bindings() noe
 RuntimeGraph::~RuntimeGraph() {
     if (owns_evaluator_) {
         finalize(*root_global_state_);
-    } else {
+    } else if (owns_storage_) {
         assert(finalized_);
     }
 
@@ -514,7 +581,7 @@ RuntimeGraph::~RuntimeGraph() {
         allocator_.delete_object(cycle_callbacks());
     }
 
-    if (storage_ != nullptr) {
+    if (owns_storage_ && storage_ != nullptr) {
         allocator_.deallocate_bytes(storage_, runtime_allocation_size(), runtime_allocation_alignment());
     }
 
@@ -535,6 +602,10 @@ void RuntimeGraph::finalize(EvaluationContext &parent_context) noexcept {
         return;
     }
     finalized_ = true;
+
+    if (!owns_storage_) {
+        return;
+    }
 
     clear_cycle_callbacks(parent_context);
     if (storage_ != nullptr) {
@@ -670,7 +741,9 @@ void RuntimeGraphEvaluator::notify_timed_schedule_changed(RuntimeGraph &graph,
 }
 
 void RuntimeGraph::notify_owner_scheduled() noexcept {
-    evaluator_->notify_scheduled(*this);
+    if (evaluator_ != nullptr) {
+        evaluator_->notify_scheduled(*this);
+    }
 }
 
 void RuntimeGraphEvaluator::notify_scheduled(RuntimeGraph &graph) noexcept {
@@ -766,7 +839,8 @@ void RuntimeGraph::initialize_constant_output(std::size_t node_index, Scalar<> v
     publish_output(compiled_node, OutputChange::revalidation);
 }
 
-void RuntimeGraph::bind_runtime_input(std::size_t index, const TimeSeriesState &source_state, const void *value,
+void RuntimeGraph::bind_runtime_input(std::size_t index, const TimeSeriesRuntimeType &source_runtime_type,
+                                     const TimeSeriesState &source_state, const void *value,
                                      EvaluationTime evaluation_time) {
     const auto bindings = compiled_graph_->runtime_inputs();
     if (index >= bindings.size()) {
@@ -778,7 +852,7 @@ void RuntimeGraph::bind_runtime_input(std::size_t index, const TimeSeriesState &
     if (!TimeSeriesState::can_represent(evaluation_time)) {
         throw std::invalid_argument{"evaluation time cannot be represented by a time series"};
     }
-    if (evaluation_time <= last_evaluation_time_) {
+    if (owns_storage_ && evaluation_time <= last_evaluation_time_) {
         throw std::invalid_argument{"a runtime input change must follow the previous graph cycle"};
     }
     if (source_state.valid() && value == nullptr) {
@@ -786,6 +860,9 @@ void RuntimeGraph::bind_runtime_input(std::size_t index, const TimeSeriesState &
     }
 
     const auto &binding = bindings[index];
+    if (&source_runtime_type != binding.runtime_type) {
+        throw std::invalid_argument{"a runtime input value has a different runtime type than the binding expects"};
+    }
     auto &runtime_input = *reinterpret_cast<RuntimeInputBinding *>(storage_ + binding.slot_offset);
     const auto was_valid = runtime_input.last_updated.valid();
     const auto is_valid = source_state.valid();
@@ -810,7 +887,7 @@ void RuntimeGraph::clear_runtime_input(std::size_t index, EvaluationTime evaluat
     if (!TimeSeriesState::can_represent(evaluation_time)) {
         throw std::invalid_argument{"evaluation time cannot be represented by a time series"};
     }
-    if (evaluation_time <= last_evaluation_time_) {
+    if (owns_storage_ && evaluation_time <= last_evaluation_time_) {
         throw std::invalid_argument{"a runtime input change must follow the previous graph cycle"};
     }
 
@@ -1022,6 +1099,9 @@ void RuntimeGraph::start(EvaluationTime evaluation_time, GlobalState &global_sta
 }
 
 void RuntimeGraph::start(EvaluationContext &parent_context) {
+    if (evaluator_ == nullptr) {
+        throw std::logic_error{"a borrowed runtime graph view cannot be started"};
+    }
     evaluator_->start(*this, parent_context);
 }
 
@@ -1148,6 +1228,10 @@ void RuntimeGraph::stop(GlobalState &global_state) noexcept {
 }
 
 void RuntimeGraph::stop(EvaluationContext &parent_context) noexcept {
+    if (evaluator_ == nullptr) {
+        stopped_ = true;
+        return;
+    }
     evaluator_->stop(*this, parent_context);
 }
 
@@ -1213,7 +1297,7 @@ void RuntimeGraph::evaluate(EvaluationTime evaluation_time, GlobalState &global_
 }
 
 bool RuntimeGraph::evaluate(EvaluationContext &parent_context) {
-    return evaluator_->evaluate(*this, parent_context);
+    return RuntimeGraphEvaluator::evaluate(*this, parent_context);
 }
 
 bool RuntimeGraphEvaluator::evaluate(RuntimeGraph &graph, EvaluationContext &parent_context) {

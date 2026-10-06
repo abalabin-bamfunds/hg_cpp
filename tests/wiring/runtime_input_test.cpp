@@ -56,7 +56,7 @@ TEST_CASE("runtime inputs are distinct external graph endpoints",
 }
 
 TEST_CASE("a runtime input can be the graph result without producer nodes",
-          "[wiring][feature:runtime-input][series:value][shape:zero-node]") {
+          "[wiring][feature:runtime-input][series:value][shape:source]") {
     const auto [first, first_has_no_nodes] = direct_runtime_input_structure(0);
     const auto [same, same_has_no_nodes] = direct_runtime_input_structure(0);
     const auto [second, second_has_no_nodes] = direct_runtime_input_structure(1);

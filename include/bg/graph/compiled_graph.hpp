@@ -42,6 +42,11 @@ class CompiledGraph {
 
     std::size_t runtime_storage_size() const noexcept { return runtime_storage_size_; }
 
+    // True when runtime storage can be reused by temporary borrowed RuntimeGraph views.
+    bool supports_borrowed_evaluation() const noexcept {
+        return storage_header().supports_borrowed_evaluation();
+    }
+
     std::size_t runtime_storage_alignment() const noexcept {
         return std::size_t{1} << (scalar_count_and_runtime_alignment_ >> alignment_shift);
     }

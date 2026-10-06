@@ -28,7 +28,7 @@ class RuntimeGraphEvaluator {
     bool owner_bound() const noexcept { return parent_.get() != nullptr; }
 
     void start(RuntimeGraph &graph, EvaluationContext &context);
-    bool evaluate(RuntimeGraph &graph, EvaluationContext &context);
+    static bool evaluate(RuntimeGraph &graph, EvaluationContext &context);
     void stop(RuntimeGraph &graph, EvaluationContext &context) noexcept;
 
   private:

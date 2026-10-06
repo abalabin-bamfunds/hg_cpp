@@ -157,6 +157,15 @@ class RuntimeSignatureNodeTemplate final
         return true;
     }
 
+    bool may_pend_evaluation(const ResolvedSignature &) const noexcept override {
+        if constexpr (requires(Invocation invocation) {
+                          { Definition::evaluate(invocation) } -> std::same_as<bool>;
+                      }) {
+            return true;
+        }
+        return false;
+    }
+
     bool schedule_on_start(const ResolvedSignature &signature) const noexcept override {
         if constexpr (requires { definition_.schedule_on_start(signature); }) {
             return definition_.schedule_on_start(signature);

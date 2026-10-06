@@ -25,6 +25,7 @@ enum class AggregateRuntimeTypeUse : unsigned char {
 struct AggregateNodeDescriptor {
     const Signature *signature;
     EvaluationFunction evaluation_function;
+    bool may_pend_evaluation;
     NodeFunction start_function;
     bool schedule_on_start;
     NodeFunction stop_function;
@@ -49,6 +50,7 @@ class AggregateNodeTemplateBase : public NodeTemplate {
 
     const Signature &signature() const final;
     bool deduplicate_wiring() const noexcept final;
+    bool may_pend_evaluation(const ResolvedSignature &) const noexcept final;
     bool schedule_on_start(const ResolvedSignature &) const noexcept final;
     RequirementResult requirement(const WiringArguments &arguments) const final;
     EvaluationFunction evaluation_function(const ResolvedSignature &) const noexcept final;

@@ -12,6 +12,10 @@ bool AggregateNodeTemplateBase::deduplicate_wiring() const noexcept {
     return descriptor_->deduplicate_wiring;
 }
 
+bool AggregateNodeTemplateBase::may_pend_evaluation(const ResolvedSignature &) const noexcept {
+    return descriptor_->may_pend_evaluation;
+}
+
 bool AggregateNodeTemplateBase::schedule_on_start(const ResolvedSignature &) const noexcept {
     return descriptor_->schedule_on_start;
 }
