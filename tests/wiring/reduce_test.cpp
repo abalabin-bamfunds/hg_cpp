@@ -3,6 +3,7 @@
 #include <bg/node.hpp>
 #include <bg/reduce.hpp>
 #include <bg/reduce/details/reduce_graph_argument.hpp>
+#include <bg/service.hpp>
 #include <bg/testing/test_wiring.hpp>
 #include <bg/time_series/tsd/tsd_type.hpp>
 #include <bg/type/time_series_dict_type.hpp>
@@ -150,6 +151,59 @@ TEST_CASE("reduce wiring preserves inherited context requirements",
 
         CHECK(built.graph.wiring->inherited_requirements().size() == 1);
         CHECK(built.structure.cacheable());
+    });
+}
+
+TEST_CASE("an isolated compact reducer rejects context requirements without changing outer wiring",
+          "[feature:reduce][feature:wiring][feature:context-time-series][series:tsd]") {
+    const auto representation_sensitive = graph(
+        "name"_n = "representation_sensitive_context_reducer",
+        [](wp<TS<std::int64_t>> left, wp<TS<std::int64_t>> right) {
+            if (type_cast<TimeSeriesReferenceType>(&left.type()) == nullptr) {
+                return add_with_context(left, right);
+            }
+            return add_values(left, right);
+        });
+
+    testing::test_wiring([&] {
+        const auto dictionary = dictionary_source();
+        const auto context_source = node([](Out<TS<std::int64_t>>) {});
+        auto context = with_context("factor"_n = context_source());
+        auto &outer = WiringContext::current().wiring();
+        const auto &dictionary_type = type_cast<TimeSeriesDictionaryType>(dictionary.type());
+
+        const auto built = details::build_reduce_graph_argument_wiring(
+            representation_sensitive, dictionary_type.value_type(), TypeMap{});
+
+        CHECK_FALSE(built.graph.compact_graph.has_value());
+        CHECK(built.graph.wiring->inherited_requirements().empty());
+        CHECK(outer.inherited_requirements().empty());
+    });
+}
+
+TEST_CASE("an isolated compact reducer rejects service requirements without changing outer wiring",
+          "[feature:reduce][feature:wiring][feature:service][series:tsd]") {
+    const auto lookup = reference_service<auto()->TS<std::int64_t>>{"reduce_lookup"};
+    const auto representation_sensitive = graph(
+        "name"_n = "representation_sensitive_service_reducer",
+        [&](wp<TS<std::int64_t>> left, wp<TS<std::int64_t>> right) {
+            if (type_cast<TimeSeriesReferenceType>(&left.type()) != nullptr) {
+                return add_values(left, right);
+            }
+            return lookup().as<TS<std::int64_t>>();
+        });
+
+    testing::test_wiring([&] {
+        const auto dictionary = dictionary_source();
+        auto &outer = WiringContext::current().wiring();
+        const auto &dictionary_type = type_cast<TimeSeriesDictionaryType>(dictionary.type());
+
+        const auto built = details::build_reduce_graph_argument_wiring(
+            representation_sensitive, dictionary_type.value_type(), TypeMap{});
+
+        CHECK_FALSE(built.graph.compact_graph.has_value());
+        CHECK(built.graph.wiring->inherited_requirements().empty());
+        CHECK(outer.service_requirements() == nullptr);
     });
 }
 

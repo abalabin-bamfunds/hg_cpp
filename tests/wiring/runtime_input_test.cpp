@@ -28,9 +28,9 @@ details::GraphWiringStructure runtime_input_structure(bool swap_inputs) {
     const auto right = wiring.runtime_input(TS<i64>::type());
     const auto add = node<runtime_input_add>();
     const auto result = swap_inputs ? add(right, left) : add(left, right);
+    const auto concrete_result = wiring.complete_pending_wiring(static_cast<WiringPoint>(result));
 
-    return details::graph_wiring_structure(wiring, std::span<const WiringPoint>{},
-                                           static_cast<WiringPoint>(result));
+    return details::graph_wiring_structure(wiring, std::span<const WiringPoint>{}, concrete_result);
 }
 
 std::pair<details::GraphWiringStructure, bool> direct_runtime_input_structure(std::size_t selected_input) {

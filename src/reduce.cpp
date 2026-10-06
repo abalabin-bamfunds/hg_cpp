@@ -115,10 +115,9 @@ std::optional<WiringPoint> DefaultReduceWiring::wire() const {
                                           reference_dictionary_parameter, default_parameter);
     auto &outer = WiringContext::current().wiring();
     const auto &owned = outer.own_node_template(std::move(node_template));
-    const auto result = owned(std::span<const WiringArgument>{outer_arguments});
-    const auto node_index = result ? outer.output_node_index(*result) : outer.nodes().size();
-    outer.register_nested_service_consumers(*graph.wiring, node_index);
-    return result;
+    const auto invocation = outer.invoke_node(owned, std::span<const WiringArgument>{outer_arguments});
+    outer.register_nested_service_consumers(*graph.wiring, invocation.identity);
+    return invocation.output;
 }
 
 } // namespace bg::details

@@ -88,6 +88,7 @@ TEST_CASE("runtime inputs sample distinct values and restamp older bindings on r
 
     REQUIRE(wiring.runtime_input_index(left) == 0);
     REQUIRE(wiring.runtime_input_index(right) == 1);
+    wiring.finalize();
     const auto compiled = bg::CompiledGraph{wiring};
     REQUIRE(compiled.runtime_input_count() == 2);
     CHECK(compiled.runtime_inputs()[0].slot_offset != compiled.runtime_inputs()[1].slot_offset);
@@ -143,6 +144,7 @@ TEST_CASE("runtime input notifications preserve active and passive scheduling",
         (void)passive(wiring.runtime_input(bg::TS<Value>::type()));
     }
 
+    wiring.finalize();
     const auto compiled = bg::CompiledGraph{wiring};
     REQUIRE(compiled.runtime_inputs().size() == 2);
     REQUIRE(compiled.runtime_input_subscribers(compiled.runtime_inputs()[0]).size() == 1);
@@ -182,6 +184,7 @@ TEST_CASE("clearing a required runtime input invalidates its output until revali
         (void)sink(wiring.runtime_input(bg::TS<Value>::type()));
     }
 
+    wiring.finalize();
     const auto compiled = bg::CompiledGraph{wiring};
     auto source_state = bg::TimeSeriesState{};
     source_state.publish(time(1));
@@ -221,6 +224,7 @@ TEST_CASE("runtime input changes must be delivered before their graph cycle",
         (void)consumer(wiring.runtime_input(bg::TS<Value>::type()));
     }
 
+    wiring.finalize();
     const auto compiled = bg::CompiledGraph{wiring};
     auto source_state = bg::TimeSeriesState{};
     source_state.publish(time(1));
@@ -260,6 +264,7 @@ TEST_CASE("borrowed runtime graph views preserve validity between cycles",
         (void)consumer(wiring.runtime_input(bg::TS<Value>::type()));
     }
 
+    wiring.finalize();
     const auto compiled = bg::CompiledGraph{wiring};
     REQUIRE(compiled.supports_borrowed_evaluation());
 
@@ -302,6 +307,7 @@ TEST_CASE("borrowed runtime graph views preserve spill-word input validity",
         }
     }
 
+    wiring.finalize();
     const auto compiled = bg::CompiledGraph{wiring};
     REQUIRE(compiled.supports_borrowed_evaluation());
     REQUIRE(compiled.schedule_word_count() == 2);
@@ -343,6 +349,7 @@ TEST_CASE("borrowed runtime graph instances can evaluate at the same time",
         (void)consumer(wiring.runtime_input(bg::TS<Value>::type()));
     }
 
+    wiring.finalize();
     const auto compiled = bg::CompiledGraph{wiring};
     REQUIRE(compiled.supports_borrowed_evaluation());
     auto first_storage = std::vector<std::byte>(bg::RuntimeGraph::borrowed_storage_size(compiled));
@@ -379,6 +386,7 @@ TEST_CASE("borrowed zero-node graphs expose a directly returned runtime input",
     }
 
     const auto result_input_index = wiring.runtime_input_index(result);
+    wiring.finalize();
     const auto compiled = bg::CompiledGraph{wiring};
     REQUIRE(compiled.node_count() == 0);
     REQUIRE(compiled.supports_borrowed_evaluation());
@@ -412,6 +420,7 @@ TEST_CASE("borrowed runtime views validate storage and runtime representation",
         (void)consumer(wiring.runtime_input(bg::TS<Value>::type()));
     }
 
+    wiring.finalize();
     const auto compiled = bg::CompiledGraph{wiring};
     REQUIRE(compiled.supports_borrowed_evaluation());
     const auto storage_size = bg::RuntimeGraph::borrowed_storage_size(compiled);
@@ -439,6 +448,7 @@ TEST_CASE("borrowed runtime views validate storage and runtime representation",
         const auto context = bg::WiringContext{pending_wiring};
         (void)pending_node();
     }
+    pending_wiring.finalize();
     const auto pending_graph = bg::CompiledGraph{pending_wiring};
     CHECK_FALSE(pending_graph.supports_borrowed_evaluation());
     CHECK_THROWS_WITH(bg::RuntimeGraph::initialize_borrowed_storage(
