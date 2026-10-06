@@ -47,11 +47,24 @@ class In<TSS<K, TimeSeriesProperties...>, Properties...>
     bool modified() const noexcept { return data_.modified(); }
     EvaluationTime last_updated() const noexcept { return data_.last_updated(); }
     const TimeSeriesState &last_updated_state() const noexcept { return data_.last_updated_ref(); }
-    std::size_t size() const noexcept { return valid() ? storage().size() : 0; }
+    std::size_t size() const noexcept {
+        if (!valid()) {
+            return 0;
+        }
+        return sampled() ? set_runtime_type().set_size(data()) : storage().size();
+    }
     bool contains(const Scalar<K> &item) const { return contains(details::scalar_data(item)); }
 
-    bool was_added(const Scalar<K> &item) const { return valid() && changed(item, storage().added()); }
-    bool was_removed(const Scalar<K> &item) const { return data() != nullptr && changed(item, storage().removed()); }
+    bool was_added(const Scalar<K> &item) const {
+        return valid() && (sampled() ? set_runtime_type().set_was_added(last_updated_state(), data(),
+                                                                         details::scalar_data(item))
+                                     : changed(item, storage().added()));
+    }
+    bool was_removed(const Scalar<K> &item) const {
+        return data() != nullptr && (sampled() ? set_runtime_type().set_was_removed(last_updated_state(), data(),
+                                                                                     details::scalar_data(item))
+                                               : changed(item, storage().removed()));
+    }
 
     template <typename Source>
         requires(!details::scalar_variable<K> && scalar_source_for<K, Source>)
@@ -62,39 +75,67 @@ class In<TSS<K, TimeSeriesProperties...>, Properties...>
 
     template <typename Function> void for_each(Function &&function) const {
         if (valid()) {
-            apply(storage().live(), function);
+            if (sampled()) {
+                apply_sampled(details::TimeSeriesSetRuntimeType::Range::current, function);
+            } else {
+                apply(storage().live(), function);
+            }
         }
     }
 
     template <typename Function> void for_each_added(Function &&function) const {
-        if (valid() && storage().change_time() == last_updated()) {
+        if (!valid()) {
+            return;
+        }
+        if (sampled()) {
+            apply_sampled(details::TimeSeriesSetRuntimeType::Range::added, function);
+        } else if (storage().change_time() == last_updated()) {
             apply(storage().added(), function);
         }
     }
 
     template <typename Function> void for_each_removed(Function &&function) const {
-        if (!valid() || storage().change_time() == last_updated()) {
+        if (sampled()) {
+            apply_sampled(details::TimeSeriesSetRuntimeType::Range::removed, function);
+        } else if (data() != nullptr && storage().change_time() == last_updated()) {
             apply(storage().removed(), function);
         }
     }
 
     Scalar<K> item_at(item_id_t position) const {
+        if (sampled()) {
+            return Scalar<K>::from(key_runtime_type(), set_runtime_type().set_key(data(), position));
+        }
         return Scalar<K>::from(key_runtime_type(), storage().key(position, key_layout()));
     }
 
     item_id_t next_item_id(item_id_t start) const noexcept {
-        return valid() ? next(storage().live(), start) : util::occupancy_index::npos;
+        if (!valid()) {
+            return util::occupancy_index::npos;
+        }
+        return sampled() ? set_runtime_type().set_next_item_id(last_updated_state(), data(),
+                                                               details::TimeSeriesSetRuntimeType::Range::current, start)
+                         : next(storage().live(), start);
     }
 
     item_id_t next_added_id(item_id_t start) const noexcept {
-        return valid() && storage().change_time() == last_updated() ? next(storage().added(), start)
-                                                                    : util::occupancy_index::npos;
+        if (!valid() || (!sampled() && storage().change_time() != last_updated())) {
+            return util::occupancy_index::npos;
+        }
+        return sampled() ? set_runtime_type().set_next_item_id(last_updated_state(), data(),
+                                                               details::TimeSeriesSetRuntimeType::Range::added, start)
+                         : next(storage().added(), start);
     }
 
     item_id_t next_removed_id(item_id_t start) const noexcept {
-        return data() != nullptr && (!valid() || storage().change_time() == last_updated())
-                   ? next(storage().removed(), start)
-                   : util::occupancy_index::npos;
+        if (sampled()) {
+            return set_runtime_type().set_next_item_id(last_updated_state(), data(),
+                                                       details::TimeSeriesSetRuntimeType::Range::removed, start);
+        }
+        if (data() == nullptr || storage().change_time() != last_updated()) {
+            return util::occupancy_index::npos;
+        }
+        return next(storage().removed(), start);
     }
 
     const TimeSeriesRuntimeType &runtime_type() const noexcept { return data_.runtime_type(); }
@@ -116,6 +157,12 @@ class In<TSS<K, TimeSeriesProperties...>, Properties...>
     static constexpr bool dynamic_activity = ParsedProperties::dynamic_activity;
 
   private:
+    bool sampled() const noexcept { return set_runtime_type().is_reference_sample(); }
+
+    const details::TimeSeriesSetRuntimeType &set_runtime_type() const noexcept {
+        return static_cast<const details::TimeSeriesSetRuntimeType &>(data_.runtime_type());
+    }
+
     const details::time_series_set_storage &storage() const noexcept {
         return *static_cast<const details::time_series_set_storage *>(data_.data());
     }
@@ -129,7 +176,8 @@ class In<TSS<K, TimeSeriesProperties...>, Properties...>
     }
 
     bool contains(const details::ScalarData &item) const {
-        return valid() && storage().contains(item, key_runtime_type(), key_layout());
+        return valid() && (sampled() ? set_runtime_type().set_contains(data(), item)
+                                     : storage().contains(item, key_runtime_type(), key_layout()));
     }
 
     bool changed(const Scalar<K> &item, const util::index<> &positions) const {
@@ -152,6 +200,15 @@ class In<TSS<K, TimeSeriesProperties...>, Properties...>
     template <typename Function> void apply(const util::index<> &positions, Function &function) const {
         for (const auto position : positions) {
             std::invoke(function, Scalar<K>::from(key_runtime_type(), storage().key(position, key_layout())));
+        }
+    }
+
+    template <typename Function>
+    void apply_sampled(details::TimeSeriesSetRuntimeType::Range range, Function &function) const {
+        auto id = set_runtime_type().set_next_item_id(last_updated_state(), data(), range, 0);
+        while (id != util::occupancy_index::npos) {
+            std::invoke(function, Scalar<K>::from(key_runtime_type(), set_runtime_type().set_key(data(), id)));
+            id = set_runtime_type().set_next_item_id(last_updated_state(), data(), range, id + 1);
         }
     }
 

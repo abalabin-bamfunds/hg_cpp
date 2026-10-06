@@ -220,9 +220,14 @@ class ParameterBinding {
                                                      : ParameterBindingMode::reference;
     }
 
-    std::size_t last_updated_offset() const noexcept { return location_and_flags_ & location_mask; }
+    std::size_t last_updated_offset() const noexcept {
+        return location_and_flags_ & location_mask;
+    }
 
-    std::size_t value_offset() const noexcept { return value_offset_ & value_location_mask; }
+    std::size_t value_offset() const noexcept {
+        const auto offset = value_offset_ & value_location_mask;
+        return mode() == ParameterBindingMode::reference ? offset & ~reference_dynamic_activity_flag : offset;
+    }
 
     const void *scalar_data() const noexcept {
         if ((location_and_flags_ & optional_flag) != 0) {
@@ -240,6 +245,13 @@ class ParameterBinding {
     }
 
     InputValidity validity() const noexcept { return (location_and_flags_ & optional_flag) == 0 ? required : optional; }
+    bool has_reference_sample() const noexcept {
+        return mode() == ParameterBindingMode::reference && (value_offset_ & reference_sample_flag) != 0;
+    }
+    bool reference_dynamic_activity() const noexcept {
+        return mode() == ParameterBindingMode::reference &&
+               (value_offset_ & reference_dynamic_activity_flag) != 0;
+    }
 
   private:
     friend class CompiledGraphBuilder;
@@ -250,6 +262,9 @@ class ParameterBinding {
     static constexpr std::uint32_t reference_flag = std::uint32_t{1} << 31;
     static constexpr std::uint32_t constant_flag = reference_flag;
     static constexpr std::uint32_t default_flag = std::uint32_t{1} << 30;
+    static constexpr std::uint32_t reference_sample_flag = default_flag;
+    // Reference input slots are aligned, so their low bit records whether the activity byte follows the slot.
+    static constexpr std::uint32_t reference_dynamic_activity_flag = 1;
     static constexpr std::uint32_t value_location_mask = default_flag - 1;
 
     ParameterBinding(std::uint32_t last_updated_offset, std::uint32_t value_offset, InputValidity validity) noexcept
@@ -270,8 +285,12 @@ class ParameterBinding {
     }
 
     static ParameterBinding reference(std::uint32_t last_updated_offset, std::uint32_t input_offset,
-                                     InputValidity validity) noexcept {
-        return ParameterBinding{last_updated_offset, input_offset | reference_flag, validity};
+                                     InputValidity validity, bool sampled = false,
+                                     bool dynamic_activity = false) noexcept {
+        return ParameterBinding{last_updated_offset,
+                                input_offset | reference_flag | (sampled ? reference_sample_flag : std::uint32_t{}) |
+                                    (dynamic_activity ? reference_dynamic_activity_flag : std::uint32_t{}),
+                                validity};
     }
 
     struct constant_binding_t {};

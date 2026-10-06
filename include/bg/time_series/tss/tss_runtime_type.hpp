@@ -9,12 +9,24 @@
 
 namespace bg::details {
 
-class TimeSeriesSetRuntimeType final : public TimeSeriesRuntimeType {
+class TimeSeriesSetRuntimeType : public TimeSeriesRuntimeType {
   public:
     TimeSeriesSetRuntimeType(const TimeSeriesSetType &type, const ScalarRuntimeType &key) noexcept
-        : TimeSeriesRuntimeType{type, sizeof(time_series_set_storage), alignof(time_series_set_storage),
-                                true, key.requires_finalization(),     true},
-          key_{&key} {}
+        : TimeSeriesSetRuntimeType{type, key, sizeof(time_series_set_storage), alignof(time_series_set_storage)} {}
+
+    enum class Range : std::uint8_t { current, added, removed };
+
+    bool is_reference_sample() const noexcept { return reference_sample_; }
+    virtual std::size_t set_size(const void *value) const;
+    virtual bool set_contains(const void *value, const ScalarData &key) const;
+    virtual item_id_t find_set_item(const void *value, const ScalarData &key) const;
+    virtual bool set_was_added(const TimeSeriesState &last_updated, const void *value, const ScalarData &key) const;
+    virtual bool set_was_removed(const TimeSeriesState &last_updated, const void *value,
+                                 const ScalarData &key) const;
+    virtual const void *set_key(const void *value, item_id_t id) const noexcept;
+    virtual item_id_t set_next_item_id(const TimeSeriesState &last_updated, const void *value, Range range,
+                                       item_id_t start) const noexcept;
+
     const ScalarRuntimeType &key_runtime_type() const noexcept { return *key_; }
 
     void construct_initial_value(void *destination) const noexcept override {
@@ -34,8 +46,17 @@ class TimeSeriesSetRuntimeType final : public TimeSeriesRuntimeType {
         std::destroy_at(storage);
     }
 
+  protected:
+    TimeSeriesSetRuntimeType(const TimeSeriesSetType &type, const ScalarRuntimeType &key, std::size_t value_size,
+                             std::size_t value_alignment, bool supports_byte_copy_initialization = true,
+                             bool reference_sample = false) noexcept
+        : TimeSeriesRuntimeType{type, value_size, value_alignment, true, key.requires_finalization(),
+                                supports_byte_copy_initialization},
+          key_{&key}, reference_sample_{reference_sample} {}
+
   private:
     const ScalarRuntimeType *key_;
+    bool reference_sample_;
 };
 
 const TimeSeriesRuntimeType &time_series_set_runtime_type(const TimeSeriesSetType &type,

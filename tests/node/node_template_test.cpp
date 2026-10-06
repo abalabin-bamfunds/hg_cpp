@@ -426,7 +426,7 @@ TEST_CASE("collection inputs retain their resolved runtime layout", "[node_templ
     static_assert(bg::details::input_requires_runtime_type<
                   bg::In<bg::TS<bg::i64, bg::guarantee_variable<"G">>>>);
     static_assert(bg::details::direct_time_series_input<bg::In<bg::TSS<bg::i64>>>);
-    static_assert(!bg::details::input_requires_runtime_type<bg::In<bg::TSS<bg::i64>>>);
+    static_assert(bg::details::input_requires_runtime_type<bg::In<bg::TSS<bg::i64>>>);
     static_assert(bg::details::input_requires_runtime_type<bg::In<bg::TSS<bg::SCALAR>>>);
     static_assert(bg::details::direct_time_series_input<bg::In<bg::TSS<bg::i64, bg::guarantee_variable<"G">>>>);
     static_assert(bg::details::input_requires_runtime_type<
@@ -449,7 +449,7 @@ TEST_CASE("collection inputs retain their resolved runtime layout", "[node_templ
         &bg::TSL<bg::TS<bg::i64>, 2>::type(), &bg::TSB<runtime_layout_bundle>::type()};
     const auto signature = sink.signature().resolve(arguments);
 
-    CHECK_FALSE(sink.uses_time_series_input_runtime_type(signature, 0));
+    CHECK(sink.uses_time_series_input_runtime_type(signature, 0));
     CHECK(sink.uses_time_series_input_runtime_type(signature, 1));
     CHECK(sink.uses_time_series_input_runtime_type(signature, 2));
     CHECK(sink.uses_time_series_input_runtime_type(signature, 3));

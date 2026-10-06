@@ -523,6 +523,7 @@ void RuntimeGraph::finalize(EvaluationContext &parent_context) noexcept {
                 details::ReferenceProvider::remove_subscriber(input->value, *this, offset);
             }
         }
+        clear_reference_input_samples();
 
         for (auto node_index = compiled_graph_->node_count(); node_index != 0;) {
             --node_index;
@@ -608,6 +609,23 @@ void RuntimeGraph::clear_timed_schedule() noexcept {
         const auto previous = next_scheduled_time();
         timed_schedule()->clear();
         notify_timed_schedule_changed(previous);
+    }
+}
+
+void RuntimeGraph::clear_reference_input_samples() noexcept {
+    if (storage_ == nullptr) {
+        return;
+    }
+    for (auto node_index = compiled_graph_->node_count(); node_index != 0;) {
+        auto runtime_node = Node{compiled_graph_->node(--node_index), storage_};
+        for (auto parameter_index = std::size_t{}; parameter_index < runtime_node.input_count(); ++parameter_index) {
+            auto *sample = runtime_node.reference_input_sample(parameter_index);
+            if (sample == nullptr) {
+                continue;
+            }
+            remove_cycle_callback(sample);
+            sample->reset();
+        }
     }
 }
 
@@ -1032,6 +1050,7 @@ void RuntimeGraph::stop_nodes(std::size_t node_count, EvaluationContext &parent_
     }
 
     clear_timed_schedule();
+    clear_reference_input_samples();
     clear_cycle_callbacks();
 }
 
@@ -1071,6 +1090,7 @@ void RuntimeGraphEvaluator::stop(RuntimeGraph &graph, EvaluationContext &parent_
     }
 
     graph.clear_timed_schedule();
+    graph.clear_reference_input_samples();
     graph.clear_cycle_callbacks();
 }
 

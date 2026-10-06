@@ -10,6 +10,7 @@
 #include <bg/scalar/scalar.hpp>
 #include <bg/time_series/ref/dynamic_reference_input.hpp>
 #include <bg/time_series/ref/ref_input_storage.hpp>
+#include <bg/time_series/ref/ref_input_sample.hpp>
 #include <bg/time_series/ref/ref_notification.hpp>
 #include <bg/time_series/ref/ref_provider.hpp>
 #include <bg/time_series/ref/ref_runtime_type.hpp>
@@ -17,6 +18,7 @@
 #include <bg/time_series/time_series_runtime_type.hpp>
 #include <bg/type/signature.hpp>
 #include <bg/type/time_series_reference_type.hpp>
+#include <bg/type/time_series_set_type.hpp>
 #include <bg/type/time_series_value_type.hpp>
 #include <bg/type/type.hpp>
 #include <bg/util/scope_exit.hpp>
@@ -191,6 +193,7 @@ struct ReferenceInputSubscriberPlan {
     bool active;
     bool required;
     bool controlled_activity;
+    bool sampled_reference;
     InputNotification notification;
 };
 
@@ -240,6 +243,7 @@ struct TimeSeriesInputPlan {
     bool default_value;
     bool constant_binding;
     bool dereferences_reference;
+    bool sampled_reference;
     bool dynamic_activity;
     std::uint32_t offset;
     std::uint32_t output_last_updated_offset;
@@ -551,6 +555,8 @@ void plan_time_series_inputs(CompilationPlan &plan, const GraphWiring &wiring) {
                 .default_value = default_value,
                 .constant_binding = constant_binding,
                 .dereferences_reference = output_is_reference && !input_is_reference,
+                .sampled_reference = output_is_reference && !input_is_reference &&
+                                     type_cast<TimeSeriesSetType>(parameter.type) != nullptr,
                 .dynamic_activity = parameter.dynamic_activity,
                 .offset = 0,
                 .output_last_updated_offset = 0,
@@ -717,6 +723,9 @@ void plan_subscribers(std::span<const WiredNode> nodes, std::span<const WiredOut
             const auto &parameter = target.signature().parameters[input.parameter];
             const auto is_active = parameter.activity == active;
             const auto is_required = !input.default_value && parameter.validity != optional;
+            if (input.sampled_reference) {
+                plan.uses_cycle_callbacks = true;
+            }
             const auto subscriber_index = static_cast<std::uint32_t>(plan.compiled_node_index(target_index));
             const auto original_notification = target.node_template().input_notification(input_index);
             const auto notification = input.default_value
@@ -745,6 +754,7 @@ void plan_subscribers(std::span<const WiredNode> nodes, std::span<const WiredOut
                     .active = is_active,
                     .required = is_required,
                     .controlled_activity = input.dynamic_activity,
+                    .sampled_reference = input.sampled_reference,
                     .notification = notification,
                 });
                 if (input.dynamic_activity) {
@@ -938,6 +948,9 @@ void plan_runtime_storage(CompilationPlan &plan) {
             if (input.dynamic_activity) {
                 // Dynamic reference subscribers recover this adjacent byte without growing their records.
                 input.activity_offset = packed_offset(storage.add<bool>().offset, "runtime storage reaches 1 GiB");
+            }
+            if (input.sampled_reference) {
+                (void)storage.add<details::ReferenceInputSampleStorage>();
             }
             input.output_last_updated_offset =
                 input.wired_input.is_inherited()
@@ -1678,6 +1691,12 @@ class CompiledGraphBuilder {
                     continue;
                 }
                 std::construct_at(reinterpret_cast<ReferenceInputStorage *>(runtime_storage.data() + reference.offset));
+                if (reference.sampled_reference) {
+                    const auto sample_offset = details::reference_input_sample_offset(
+                        reference.offset, reference.dynamic_activity);
+                    std::construct_at(reinterpret_cast<details::ReferenceInputSampleStorage *>(
+                        runtime_storage.data() + sample_offset));
+                }
             }
         }
 
@@ -1781,7 +1800,8 @@ class CompiledGraphBuilder {
                     if (source.mode() == ParameterBindingMode::scalar) {
                         if (input.dereferences_reference) {
                             source = ParameterBinding::reference(input.output_last_updated_offset, input.offset,
-                                                                 optional);
+                                                                 optional, input.sampled_reference,
+                                                                 input.dynamic_activity);
                         } else {
                             const auto resolved_output =
                                 input.wired_input.is_inherited()
@@ -1832,7 +1852,8 @@ class CompiledGraphBuilder {
                 if (input.dereferences_reference) {
                     std::construct_at(parameters.data() + parameter_index,
                                       ParameterBinding::reference(input.output_last_updated_offset, input.offset,
-                                                                  parameter.validity));
+                                                                  parameter.validity, input.sampled_reference,
+                                                                  input.dynamic_activity));
                 } else {
                     const auto resolved_output =
                         input.wired_input.is_inherited()
@@ -2037,7 +2058,7 @@ class CompiledGraphBuilder {
                 const auto &input = plan.node_plans[node_index].time_series_inputs[subscriber.input_index];
                 std::construct_at(records++, input.offset, subscriber.node_index, subscriber.active,
                                   subscriber.required, subscriber.controlled_activity,
-                                  requested_reference_runtime_type(plan, subscriber));
+                                  requested_reference_runtime_type(plan, subscriber), subscriber.sampled_reference);
             }
             block += reference_block;
         }
@@ -2058,7 +2079,8 @@ class CompiledGraphBuilder {
                 const auto &input = plan.node_plans[node_index].time_series_inputs[subscriber.input_index];
                 std::construct_at(records++, input.offset, subscriber.notification.data, subscriber.node_index,
                                   subscriber.active, subscriber.required, subscriber.controlled_activity,
-                                  requested_reference_runtime_type(plan, subscriber), subscriber.notification.function);
+                                  requested_reference_runtime_type(plan, subscriber), subscriber.sampled_reference,
+                                  subscriber.notification.function);
             }
             block += notifying_reference_block;
         }

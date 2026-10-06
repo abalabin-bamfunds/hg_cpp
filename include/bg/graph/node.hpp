@@ -2,6 +2,7 @@
 
 #include <bg/graph/compiled_node.hpp>
 #include <bg/time_series/ref/ref_input_storage.hpp>
+#include <bg/time_series/ref/ref_input_sample.hpp>
 #include <bg/time_series/ref/ref_storage.hpp>
 #include <bg/time_series/time_series_state.hpp>
 #include <bg/time_series/time_series_input.hpp>
@@ -72,6 +73,13 @@ class Node {
 
     const TimeSeriesRuntimeType &time_series_input_runtime_type(std::size_t parameter_index,
                                                                 std::size_t runtime_type_index) const noexcept {
+        const auto &binding = compiled_node_->parameters()[parameter_index];
+        if (binding.mode() == ParameterBindingMode::default_value) {
+            const auto &descriptor = default_descriptor(binding);
+            if (!binding_data(descriptor.source, descriptor.source.mode()).last_updated->valid()) {
+                return compiled_node_->time_series_input_runtime_type(runtime_type_index);
+            }
+        }
         if (const auto *runtime_type = bound_reference_runtime_type(parameter_index)) {
             return *runtime_type;
         }
@@ -91,6 +99,9 @@ class Node {
     }
 
     const TimeSeriesRuntimeType *bound_reference_runtime_type(std::size_t parameter_index) const noexcept {
+        if (const auto *sample = reference_input_sample(parameter_index); sample != nullptr && !sample->empty()) {
+            return &sample->input().runtime_type;
+        }
         const auto *input = reference_input(parameter_index);
         if (input == nullptr || input->value == nullptr) {
             return nullptr;
@@ -125,6 +136,15 @@ class Node {
         return reinterpret_cast<ReferenceInputStorage *>(runtime_storage_ + source->value_offset());
     }
 
+    details::ReferenceInputSampleStorage *reference_input_sample(std::size_t parameter_index) const noexcept {
+        const auto &binding = compiled_node_->parameters()[parameter_index];
+        const auto *source = &binding;
+        if (binding.mode() == ParameterBindingMode::default_value) {
+            source = &default_descriptor(binding).source;
+        }
+        return reference_input_sample(source);
+    }
+
     DefaultInputState &default_input(const ParameterBinding &binding) const noexcept {
         const auto offset = binding.last_updated_offset();
         return *reinterpret_cast<DefaultInputState *>(runtime_storage_ + offset);
@@ -154,6 +174,11 @@ class Node {
             return {&wired_last_updated, runtime_storage_ + binding.value_offset()};
         }
 
+        if (const auto *sample = reference_input_sample(&binding); sample != nullptr && !sample->empty()) {
+            const auto input = sample->input();
+            return {&input.last_updated, input.value};
+        }
+
         const auto reference =
             reinterpret_cast<const ReferenceInputStorage *>(runtime_storage_ + binding.value_offset())->value;
         if (!reference) {
@@ -166,6 +191,15 @@ class Node {
         }
 
         return {&wired_last_updated, resolved.storage};
+    }
+
+    details::ReferenceInputSampleStorage *reference_input_sample(const ParameterBinding *binding) const noexcept {
+        if (!binding->has_reference_sample()) {
+            return nullptr;
+        }
+        const auto offset = details::reference_input_sample_offset(binding->value_offset(),
+                                                                   binding->reference_dynamic_activity());
+        return reinterpret_cast<details::ReferenceInputSampleStorage *>(runtime_storage_ + offset);
     }
 
     const CompiledNode *compiled_node_;

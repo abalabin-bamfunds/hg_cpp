@@ -115,6 +115,7 @@ class RuntimeGraph {
     TimedSchedule *timed_schedule() const noexcept;
     void activate_scheduled(EvaluationTime evaluation_time) noexcept;
     void clear_timed_schedule() noexcept;
+    void clear_reference_input_samples() noexcept;
     void notify_timed_schedule_changed(std::optional<EvaluationTime> previous);
     void notify_owner_scheduled() noexcept;
     CycleCallbacks *&cycle_callbacks() noexcept;

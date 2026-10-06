@@ -92,6 +92,7 @@ add_library(
     src/time_series/ref/fixed_item_selection.cpp
     src/time_series/ref/ref_item_notifications.cpp
     src/time_series/ref/ref_notification.cpp
+    src/time_series/ref/ref_input_sample.cpp
     src/time_series/ref/ref_provider.cpp
     src/time_series/ref/ref_runtime_type.cpp
     src/time_series/ref/ref_type.cpp
@@ -106,6 +107,7 @@ add_library(
     src/time_series/tsd/operators.cpp
     src/time_series/tss/tss_type.cpp
     src/time_series/tss/tss_runtime_type.cpp
+    src/time_series/tss/tss_reference_sample.cpp
     src/time_series/output_path.cpp
     src/time_series/time_series_runtime_type.cpp
     src/time_series_type.cpp
