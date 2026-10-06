@@ -49,5 +49,12 @@ GraphWiringStructure graph_wiring_structure(const GraphWiring &wiring,
                                             std::span<const std::size_t> boundary_nodes,
                                             std::optional<std::size_t> result_node = std::nullopt);
 
+// Compares graph bodies after treating corresponding outputs as the same declared inputs, independent of whether
+// each wiring represents those inputs as boundary nodes or runtime inputs.
+bool equivalent_wiring_bodies(const GraphWiring &left, std::span<const WiringPoint> left_inputs,
+                              std::optional<WiringPoint> left_result, const GraphWiring &right,
+                              std::span<const WiringPoint> right_inputs, std::optional<WiringPoint> right_result,
+                              std::span<const TimeSeriesType *const> input_types);
+
 } // namespace details
 } // namespace bg

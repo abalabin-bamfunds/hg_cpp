@@ -97,14 +97,9 @@ ReduceGraphArgumentWiring build_reduce_graph_argument_wiring(const WiringTemplat
 
     const auto concrete_result = wiring->complete_pending_wiring(*result);
     const auto structure = graph_wiring_structure(*wiring, boundaries, concrete_result);
-    const auto output = wire_nested_output(concrete_result, concrete_result.type());
-    wiring->finalize();
-
-    auto input_nodes = std::array{wiring->output_node_index(boundaries[0]),
-                                  wiring->output_node_index(boundaries[1])};
-    const auto output_node = wiring->output_node_index(output);
 
     auto compact_graph = std::optional<ReduceCompactGraphWiring>{};
+    const auto reducer_input_types = std::array<const TimeSeriesType *, 2>{&reducer_input_type, &reducer_input_type};
     if (wiring->inherited_requirements().empty() && wiring->service_binding_requirements().empty()) {
         if (accepts_compact_inputs(function, reducer_input_type)) {
             try {
@@ -125,30 +120,34 @@ ReduceGraphArgumentWiring build_reduce_graph_argument_wiring(const WiringTemplat
                         if (compact_wiring->inherited_requirements().empty() &&
                             compact_wiring->service_binding_requirements().empty() &&
                             (service_requirements == nullptr || service_requirements->instances().empty())) {
-                            const auto compact_input_indices = std::array{
-                                compact_wiring->runtime_input_index(compact_inputs[0]),
-                                compact_wiring->runtime_input_index(compact_inputs[1]),
-                            };
-                            auto output_input = std::optional<std::size_t>{};
-                            auto compact_output_node = std::optional<std::size_t>{};
-                            const auto &compact_output =
-                                compact_wiring->outputs()[compact_wiring->output_index(concrete_compact_result)];
-                            if (compact_output.node_index == WiredOutput::npos) {
-                                output_input = compact_wiring->runtime_input_index(concrete_compact_result);
-                            } else {
-                                compact_output_node = compact_wiring->output_node_index(concrete_compact_result);
-                            }
-                            const auto compact_structure = graph_wiring_structure(
-                                *compact_wiring, std::span<const WiringPoint>{}, concrete_compact_result);
-                            compact_wiring->finalize();
+                            if (equivalent_wiring_bodies(*wiring, boundaries, concrete_result, *compact_wiring,
+                                                         compact_inputs, concrete_compact_result,
+                                                         reducer_input_types)) {
+                                const auto compact_input_indices = std::array{
+                                    compact_wiring->runtime_input_index(compact_inputs[0]),
+                                    compact_wiring->runtime_input_index(compact_inputs[1]),
+                                };
+                                auto output_input = std::optional<std::size_t>{};
+                                auto compact_output_node = std::optional<std::size_t>{};
+                                const auto &compact_output =
+                                    compact_wiring->outputs()[compact_wiring->output_index(concrete_compact_result)];
+                                if (compact_output.node_index == WiredOutput::npos) {
+                                    output_input = compact_wiring->runtime_input_index(concrete_compact_result);
+                                } else {
+                                    compact_output_node = compact_wiring->output_node_index(concrete_compact_result);
+                                }
+                                const auto compact_structure = graph_wiring_structure(
+                                    *compact_wiring, std::span<const WiringPoint>{}, concrete_compact_result);
+                                compact_wiring->finalize();
 
-                            compact_graph.emplace(ReduceCompactGraphWiring{
-                                .wiring = std::move(compact_wiring),
-                                .input_indices = compact_input_indices,
-                                .output_node = compact_output_node,
-                                .output_input = output_input,
-                                .structure = compact_structure,
-                            });
+                                compact_graph.emplace(ReduceCompactGraphWiring{
+                                    .wiring = std::move(compact_wiring),
+                                    .input_indices = compact_input_indices,
+                                    .output_node = compact_output_node,
+                                    .output_input = output_input,
+                                    .structure = compact_structure,
+                                });
+                            }
                         }
                     }
                 }
@@ -157,6 +156,12 @@ ReduceGraphArgumentWiring build_reduce_graph_argument_wiring(const WiringTemplat
             }
         }
     }
+
+    const auto output = wire_nested_output(concrete_result, concrete_result.type());
+    wiring->finalize();
+    auto input_nodes = std::array{wiring->output_node_index(boundaries[0]),
+                                  wiring->output_node_index(boundaries[1])};
+    const auto output_node = wiring->output_node_index(output);
 
     return {
         .structure = structure,

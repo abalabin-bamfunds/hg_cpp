@@ -59,9 +59,22 @@ const auto add_values = node([](In<TS<i64>> left, In<TS<i64>> right, Out<TS<i64>
     output.set(*left + *right);
 });
 
+const auto multiply_values = node([](In<TS<i64>> left, In<TS<i64>> right, Out<TS<i64>> output) {
+    output.set(*left * *right);
+});
+
 const auto add_graph = graph("name"_n = "add_values_for_reduce", [](wp<TS<i64>> left, wp<TS<i64>> right) {
     return add_values(left, right);
 });
+
+const auto representation_sensitive_graph = graph(
+    "name"_n = "representation_sensitive_reduce",
+    [](wp<TS<i64>> left, wp<TS<i64>> right) {
+        if (type_cast<TimeSeriesReferenceType>(&left.type()) != nullptr) {
+            return add_values(left, right);
+        }
+        return multiply_values(left, right);
+    });
 
 const auto add_values_and_context = node([](In<TS<i64>> left, In<TS<i64>> right,
                                             In<TS<i64>, "factor"_n, context> factor,
@@ -115,6 +128,18 @@ TEST_CASE("reduce combines final TSD items with an ordinary compact reducer",
         });
     const auto tested = [=](wp<TS<i64>> left, wp<TS<i64>> right) {
         return reduce(add_graph, final_dictionary_from_values(left, right));
+    };
+
+    const auto actual = testing::test_graph(tested, std::array{3}, std::array{4});
+
+    CHECK(actual.equals<i64>({7}));
+}
+
+TEST_CASE("compact reduce wiring preserves the reducer selected for reference-backed inputs",
+          "[feature:reduce][series:tsd][shape:single-node][binding:reference-to-value]") {
+    const auto tested = [](wp<TS<i64>> left, wp<TS<i64>> right) {
+        return reduce(representation_sensitive_graph,
+                      dictionary_from_two_values(left, right, operators::const_(true), operators::const_(true)));
     };
 
     const auto actual = testing::test_graph(tested, std::array{3}, std::array{4});

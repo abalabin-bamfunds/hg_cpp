@@ -71,6 +71,9 @@ TEST_CASE("reduce wiring records a graph whose result forwards one of its inputs
         const auto built = details::build_reduce_graph_argument_wiring(
             first_value, dictionary_type.value_type(), TypeMap{});
 
+        REQUIRE(built.graph.compact_graph.has_value());
+        CHECK_FALSE(built.graph.compact_graph->output_node.has_value());
+        CHECK(built.graph.compact_graph->output_input.has_value());
         CHECK(built.graph.output_node != built.graph.input_nodes[0]);
     });
 }

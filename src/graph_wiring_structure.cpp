@@ -290,8 +290,7 @@ bool complete_mapping(const GraphWiringStructure::Data &left, const GraphWiringS
 bool equivalent(const GraphWiringStructure::Data &left, const GraphWiringStructure::Data &right) {
     if (!left.cacheable || !right.cacheable || left.hash != right.hash || left.nodes.size() != right.nodes.size() ||
         left.boundaries.size() != right.boundaries.size() || left.boundaries != right.boundaries ||
-        left.runtime_inputs != right.runtime_inputs ||
-        left.inherited_time_series != right.inherited_time_series ||
+        left.runtime_inputs != right.runtime_inputs || left.inherited_time_series != right.inherited_time_series ||
         left.result.has_value() != right.result.has_value() || left.result_type != right.result_type) {
         return false;
     }
@@ -319,39 +318,51 @@ bool path_starts_with(std::span<const OutputStep> path, std::span<const OutputSt
 }
 
 std::shared_ptr<GraphWiringStructure::Data> snapshot(const GraphWiring &wiring,
-                                                     std::span<const std::size_t> boundary_outputs,
+                                                     std::span<const Endpoint> external_boundaries,
+                                                     std::span<const TimeSeriesType *const> boundary_types,
                                                      std::optional<WiredInput> result_input,
                                                      const TimeSeriesType *result_type) {
     auto data = std::make_shared<GraphWiringStructure::Data>();
-    data->boundaries.reserve(boundary_outputs.size());
-    data->runtime_inputs.reserve(wiring.runtime_input_outputs().size());
+    if (!boundary_types.empty() && boundary_types.size() != external_boundaries.size()) {
+        throw std::invalid_argument{"graph body input types must match its input count"};
+    }
+
+    data->boundaries.reserve(external_boundaries.size());
     data->inherited_time_series.reserve(wiring.inherited_requirements().size());
-    for (const auto output_index : wiring.runtime_input_outputs()) {
-        const auto &output = wiring.outputs()[output_index];
+
+    auto runtime_input_indices = std::vector<std::size_t>(wiring.runtime_input_outputs().size(), unmapped);
+    for (auto index = std::size_t{}; index < wiring.runtime_input_outputs().size(); ++index) {
+        if (std::ranges::any_of(external_boundaries, [&](const auto &boundary) {
+                return boundary.kind == EndpointKind::runtime_input && boundary.index == index;
+            })) {
+            continue;
+        }
+
+        runtime_input_indices[index] = data->runtime_inputs.size();
+        const auto &output = wiring.outputs()[wiring.runtime_input_outputs()[index]];
         data->runtime_inputs.push_back({output.type, output.runtime_type});
     }
     for (const auto &requirement : wiring.inherited_requirements()) {
         data->inherited_time_series.push_back(requirement.type);
     }
 
-    auto external_boundaries = std::vector<Endpoint>{};
-    external_boundaries.reserve(boundary_outputs.size());
     auto excluded_nodes = std::vector<bool>(wiring.nodes().size());
-    for (const auto output : boundary_outputs) {
-        auto external = endpoint(wiring, output);
-        if (external.kind != EndpointKind::node) {
-            throw std::invalid_argument{"graph boundaries must identify node outputs"};
+    for (auto index = std::size_t{}; index < external_boundaries.size(); ++index) {
+        const auto &external = external_boundaries[index];
+        if (external.kind == EndpointKind::node) {
+            excluded_nodes[external.index] = true;
         }
-        if (std::ranges::any_of(external_boundaries, [&](const auto &existing) {
-                return external.index == existing.index && (path_starts_with(external.path, existing.path) ||
-                                                            path_starts_with(existing.path, external.path));
+        if (std::ranges::any_of(external_boundaries.begin(), external_boundaries.begin() +
+                                                              static_cast<std::ptrdiff_t>(index),
+                                [&](const auto &existing) {
+                return external.kind == existing.kind && external.index == existing.index &&
+                       (path_starts_with(external.path, existing.path) ||
+                        path_starts_with(existing.path, external.path));
             })) {
             throw std::invalid_argument{"graph boundaries must identify distinct outputs"};
         }
 
-        data->boundaries.push_back(external.path.back().type);
-        excluded_nodes[external.index] = true;
-        external_boundaries.push_back(std::move(external));
+        data->boundaries.push_back(boundary_types.empty() ? external.path.back().type : boundary_types[index]);
     }
 
     auto node_indices = std::vector<std::size_t>(wiring.nodes().size(), unmapped);
@@ -409,13 +420,9 @@ std::shared_ptr<GraphWiringStructure::Data> snapshot(const GraphWiring &wiring,
     }
 
     const auto externalize = [&](Endpoint value) {
-        if (value.kind == EndpointKind::runtime_input) {
-            return value;
-        }
-
         for (auto index = std::size_t{}; index < external_boundaries.size(); ++index) {
             const auto &boundary = external_boundaries[index];
-            if (value.kind != EndpointKind::node || value.index != boundary.index ||
+            if (value.kind != boundary.kind || value.index != boundary.index ||
                 !path_starts_with(value.path, boundary.path)) {
                 continue;
             }
@@ -424,6 +431,11 @@ std::shared_ptr<GraphWiringStructure::Data> snapshot(const GraphWiring &wiring,
             value.index = index;
             value.path.erase(value.path.begin(),
                              value.path.begin() + static_cast<std::ptrdiff_t>(boundary.path.size()));
+            return value;
+        }
+
+        if (value.kind == EndpointKind::runtime_input) {
+            value.index = runtime_input_indices[value.index];
             return value;
         }
 
@@ -445,7 +457,7 @@ std::shared_ptr<GraphWiringStructure::Data> snapshot(const GraphWiring &wiring,
                 node.inputs.push_back({
                     .dereference = input.dereferences_reference(),
                     .kind = EndpointKind::boundary,
-                    .index = boundary_outputs.size() + input.index(),
+                    .index = external_boundaries.size() + input.index(),
                     .path = {},
                 });
                 continue;
@@ -460,13 +472,17 @@ std::shared_ptr<GraphWiringStructure::Data> snapshot(const GraphWiring &wiring,
         if (result_input->is_inherited()) {
             data->result = Endpoint{.dereference = result_input->dereferences_reference(),
                                     .kind = EndpointKind::boundary,
-                                    .index = boundary_outputs.size() + result_input->index()};
+                                    .index = external_boundaries.size() + result_input->index()};
         } else {
             auto source = endpoint(wiring, result_input->index());
             source.dereference = result_input->dereferences_reference();
             data->result = externalize(std::move(source));
         }
         data->result_type = result_type;
+        // A whole declared input has the input's semantic type, independent of its wiring representation.
+        if (!boundary_types.empty() && data->result->kind == EndpointKind::boundary && data->result->path.empty()) {
+            data->result_type = data->boundaries[data->result->index];
+        }
     }
     return data;
 }
@@ -502,10 +518,14 @@ bool operator==(const GraphWiringStructure &left, const GraphWiringStructure &ri
 
 GraphWiringStructure graph_wiring_structure(const GraphWiring &wiring, std::span<const WiringPoint> boundaries,
                                             std::optional<WiringPoint> result) {
-    auto boundary_outputs = std::vector<std::size_t>{};
-    boundary_outputs.reserve(boundaries.size());
+    auto external_boundaries = std::vector<Endpoint>{};
+    external_boundaries.reserve(boundaries.size());
     for (const auto boundary : boundaries) {
-        boundary_outputs.push_back(wiring.output_index(boundary));
+        const auto external = endpoint(wiring, wiring.output_index(boundary));
+        if (external.kind != EndpointKind::node) {
+            throw std::invalid_argument{"graph boundaries must identify node outputs"};
+        }
+        external_boundaries.push_back(external);
     }
     auto result_input = std::optional<WiredInput>{};
     if (result) {
@@ -514,7 +534,7 @@ GraphWiringStructure graph_wiring_structure(const GraphWiring &wiring, std::span
             result_input = WiredInput::output(wiring.output_index(*result));
         }
     }
-    auto data = snapshot(wiring, boundary_outputs, result_input, result ? &result->type() : nullptr);
+    auto data = snapshot(wiring, external_boundaries, {}, result_input, result ? &result->type() : nullptr);
     if (data->cacheable) {
         data->hash = structure_hash(*data);
     }
@@ -523,19 +543,73 @@ GraphWiringStructure graph_wiring_structure(const GraphWiring &wiring, std::span
 
 GraphWiringStructure graph_wiring_structure(const GraphWiring &wiring, std::span<const std::size_t> boundary_nodes,
                                             std::optional<std::size_t> result_node) {
-    auto boundary_outputs = std::vector<std::size_t>{};
-    boundary_outputs.reserve(boundary_nodes.size());
+    auto external_boundaries = std::vector<Endpoint>{};
+    external_boundaries.reserve(boundary_nodes.size());
     for (const auto boundary : boundary_nodes) {
-        boundary_outputs.push_back(root_output_for(wiring, boundary));
+        external_boundaries.push_back(endpoint(wiring, root_output_for(wiring, boundary)));
     }
     const auto result_output = result_node ? std::optional{root_output_for(wiring, *result_node)} : std::nullopt;
-    auto data = snapshot(wiring, boundary_outputs,
+    auto data = snapshot(wiring, external_boundaries, {},
                          result_output ? std::optional{WiredInput::output(*result_output)} : std::nullopt,
                          result_output ? wiring.outputs()[*result_output].type : nullptr);
     if (data->cacheable) {
         data->hash = structure_hash(*data);
     }
     return GraphWiringStructure{std::move(data)};
+}
+
+bool equivalent_wiring_bodies(const GraphWiring &left, std::span<const WiringPoint> left_inputs,
+                              std::optional<WiringPoint> left_result, const GraphWiring &right,
+                              std::span<const WiringPoint> right_inputs, std::optional<WiringPoint> right_result,
+                              std::span<const TimeSeriesType *const> input_types) {
+    if (left_inputs.size() != right_inputs.size() || left_inputs.size() != input_types.size()) {
+        return false;
+    }
+
+    const auto belong_to = [](const GraphWiring &wiring, std::span<const WiringPoint> points) {
+        return std::ranges::all_of(points, [&](const auto point) {
+            return point.has_output() && point.record()->has_wired_output() && &point.graph() == &wiring;
+        });
+    };
+    const auto valid_result = [](const GraphWiring &wiring, const std::optional<WiringPoint> &result) {
+        return !result ||
+               (result->has_output() && result->record()->has_wired_output() && &result->graph() == &wiring);
+    };
+    if (!belong_to(left, left_inputs) || !belong_to(right, right_inputs) || !valid_result(left, left_result) ||
+        !valid_result(right, right_result) ||
+        std::ranges::any_of(input_types, [](const auto *type) { return type == nullptr; })) {
+        return false;
+    }
+
+    const auto input_endpoints = [](const GraphWiring &wiring, std::span<const WiringPoint> points) {
+        auto endpoints = std::vector<Endpoint>{};
+        endpoints.reserve(points.size());
+        for (const auto point : points) {
+            endpoints.push_back(endpoint(wiring, wiring.output_index(point)));
+        }
+        return endpoints;
+    };
+    const auto left_boundaries = input_endpoints(left, left_inputs);
+    const auto right_boundaries = input_endpoints(right, right_inputs);
+    const auto left_input = left_result ? left_result->record()->input_binding(left_result->type()) : std::nullopt;
+    const auto right_input = right_result ? right_result->record()->input_binding(right_result->type()) : std::nullopt;
+    const auto left_data = snapshot(left, left_boundaries, input_types,
+                                    left_input ? left_input
+                                               : left_result ? std::optional{WiredInput::output(left.output_index(*left_result))}
+                                                             : std::nullopt,
+                                    left_result ? &left_result->type() : nullptr);
+    const auto right_data = snapshot(right, right_boundaries, input_types,
+                                     right_input ? right_input
+                                                 : right_result ? std::optional{WiredInput::output(right.output_index(*right_result))}
+                                                                : std::nullopt,
+                                     right_result ? &right_result->type() : nullptr);
+    if (left_data->cacheable) {
+        left_data->hash = structure_hash(*left_data);
+    }
+    if (right_data->cacheable) {
+        right_data->hash = structure_hash(*right_data);
+    }
+    return equivalent(*left_data, *right_data);
 }
 
 } // namespace bg::details
