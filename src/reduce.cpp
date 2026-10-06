@@ -88,7 +88,8 @@ GraphArgument build_reduce_graph_argument(const WiringTemplate &function, const 
         outer_arguments.emplace_back(requirement.provider);
     }
 
-    auto outer_signature = ResolvedSignature{util::symbol{"reduce"}, std::move(parameters), &item_type};
+    const auto &output_type = time_series_value_type(output_value_type->value_type(), TimeSeriesGuarantee::ordinary);
+    auto outer_signature = ResolvedSignature{util::symbol{"reduce"}, std::move(parameters), &output_type};
     auto structure = built.structure;
     auto payload = std::make_shared<DefaultReduceWiring>(DefaultReduceWiring{
         .graph = std::move(built.graph),

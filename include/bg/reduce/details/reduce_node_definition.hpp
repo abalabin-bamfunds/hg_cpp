@@ -13,7 +13,15 @@
 namespace bg::details {
 
 struct CompiledReduceGraph {
+    struct CompactGraph {
+        std::shared_ptr<const CompiledGraph> graph;
+        std::array<std::size_t, 2> input_indices;
+        std::optional<std::size_t> output_node;
+        std::optional<std::size_t> output_input;
+    };
+
     CompiledNestedGraph nested;
+    std::optional<CompactGraph> compact_graph;
     std::uint32_t value_dictionary_parameter{};
     std::uint32_t reference_dictionary_parameter{};
     std::optional<std::uint32_t> default_parameter;

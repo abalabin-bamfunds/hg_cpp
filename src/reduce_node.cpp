@@ -18,8 +18,11 @@
 #include <bg/type/time_series_value_type.hpp>
 
 #include <array>
+#include <cstddef>
+#include <limits>
 #include <memory_resource>
 #include <span>
+#include <stdexcept>
 #include <utility>
 #include <vector>
 
@@ -34,6 +37,18 @@ struct ReduceNodeState {
 
 using ReduceInvocation = NodeInvocation<CompiledReduceGraph, ReduceNodeState>;
 
+struct CompactReducePair {
+    std::array<std::size_t, 2> inputs;
+    CompiledGraph::ScheduleWord input_validity{};
+    bool initialized{};
+};
+
+struct CompactReduceInput {
+    const TimeSeriesState *last_updated{};
+    const void *value{};
+    const TimeSeriesRuntimeType *runtime_type{};
+};
+
 class ReduceRuntime {
   public:
     ReduceRuntime(allocator memory, EvaluationContext &context)
@@ -44,6 +59,9 @@ class ReduceRuntime {
           candidate_references_{&memory_.memory_resource()},
           current_level_{&memory_.memory_resource()},
           next_level_{&memory_.memory_resource()},
+          compact_pairs_{&memory_.memory_resource()},
+          compact_current_level_{&memory_.memory_resource()},
+          compact_next_level_{&memory_.memory_resource()},
           graphs_{&memory_.memory_resource()},
           owned_graphs_{&memory_.memory_resource()} {
         evaluator_.bind_owner(context.runtime_graph(), context.node_index());
@@ -78,10 +96,25 @@ class ReduceRuntime {
         collect_valid_items(references, values);
 
         const auto membership_changed = !same_membership();
-        if (membership_changed) {
-            selected_keys_.swap(candidate_keys_);
-            selected_references_.swap(candidate_references_);
+        const auto use_compact_graph = compact_graph_is_usable(compiled, candidate_references_);
+        const auto compact_mode_changed = use_compact_graph != compact_active_;
+        if (membership_changed || compact_mode_changed) {
+            if (membership_changed) {
+                selected_keys_.swap(candidate_keys_);
+                selected_references_.swap(candidate_references_);
+            }
+
             retire_graphs(invocation.context());
+            compact_active_ = use_compact_graph;
+
+            if (compact_active_) {
+                build_compact_graph(compiled);
+                if (!evaluate_compact_graph(compiled, invocation)) {
+                    return false;
+                }
+                return publish_compact_result(compiled, invocation, true);
+            }
+
             current_level_.assign(selected_references_.begin(), selected_references_.end());
             next_level_.clear();
             next_pair_ = 0;
@@ -95,6 +128,13 @@ class ReduceRuntime {
                 return false;
             }
             return publish_result(compiled, invocation, true);
+        }
+
+        if (compact_active_) {
+            if (!evaluate_compact_graph(compiled, invocation)) {
+                return false;
+            }
+            return publish_compact_result(compiled, invocation, false);
         }
 
         while (evaluation_graph_index_ < graphs_.size()) {
@@ -148,6 +188,250 @@ class ReduceRuntime {
                 selected_references_[index] != candidate_references_[index]) {
                 return false;
             }
+        }
+        return true;
+    }
+
+    bool compact_graph_is_usable(const CompiledReduceGraph &compiled,
+                                 std::span<const Reference> references) const {
+        if (!compiled.compact_graph) {
+            return false;
+        }
+
+        const auto &compact = *compiled.compact_graph;
+        if (!compact.output_node) {
+            return compact.output_input.has_value();
+        }
+
+        const auto inputs = compact.graph->runtime_inputs();
+        for (const auto reference : references) {
+            const auto resolved = ResolvedTimeSeries::resolve(reference);
+            if (!resolved.valid()) {
+                return false;
+            }
+            for (const auto input_index : compact.input_indices) {
+                if (input_index >= inputs.size() || resolved.runtime_type != inputs[input_index].runtime_type) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    void build_compact_graph(const CompiledReduceGraph &compiled) {
+        compact_pairs_.clear();
+        compact_current_level_.clear();
+        compact_next_level_.clear();
+        compact_root_ = std::numeric_limits<std::size_t>::max();
+
+        const auto item_count = selected_references_.size();
+        compact_current_level_.reserve(item_count);
+        for (auto index = std::size_t{}; index < item_count; ++index) {
+            compact_current_level_.push_back(index);
+        }
+
+        const auto &compact = *compiled.compact_graph;
+        if (compact.output_input) {
+            while (compact_current_level_.size() > 1) {
+                const auto pair_count = compact_current_level_.size() / 2;
+                compact_next_level_.clear();
+                compact_next_level_.reserve(pair_count + (compact_current_level_.size() & 1U));
+                for (auto pair = std::size_t{}; pair < pair_count; ++pair) {
+                    compact_next_level_.push_back(compact_current_level_[pair * 2 + *compact.output_input]);
+                }
+                if ((compact_current_level_.size() & 1U) != 0) {
+                    compact_next_level_.push_back(compact_current_level_.back());
+                }
+                compact_current_level_.swap(compact_next_level_);
+            }
+            if (!compact_current_level_.empty()) {
+                compact_root_ = compact_current_level_.front();
+            }
+            return;
+        }
+
+        while (compact_current_level_.size() > 1) {
+            const auto pair_count = compact_current_level_.size() / 2;
+            compact_next_level_.clear();
+            compact_next_level_.reserve(pair_count + (compact_current_level_.size() & 1U));
+            for (auto pair = std::size_t{}; pair < pair_count; ++pair) {
+                const auto pair_index = compact_pairs_.size();
+                compact_pairs_.push_back(CompactReducePair{
+                    .inputs = {compact_current_level_[pair * 2], compact_current_level_[pair * 2 + 1]},
+                });
+                compact_next_level_.push_back(item_count + pair_index);
+            }
+            if ((compact_current_level_.size() & 1U) != 0) {
+                compact_next_level_.push_back(compact_current_level_.back());
+            }
+            compact_current_level_.swap(compact_next_level_);
+        }
+
+        if (!compact_current_level_.empty()) {
+            compact_root_ = compact_current_level_.front();
+        }
+        allocate_compact_pair_storage(compact);
+    }
+
+    void allocate_compact_pair_storage(const CompiledReduceGraph::CompactGraph &compact) {
+        if (compact_pairs_.empty()) {
+            return;
+        }
+
+        compact_storage_size_ = RuntimeGraph::borrowed_storage_size(*compact.graph);
+        compact_storage_alignment_ = RuntimeGraph::borrowed_storage_alignment(*compact.graph);
+        if (compact_storage_size_ > std::numeric_limits<std::size_t>::max() - (compact_storage_alignment_ - 1)) {
+            throw std::length_error{"reduce compact graph storage is too large"};
+        }
+        compact_storage_stride_ = (compact_storage_size_ + compact_storage_alignment_ - 1) &
+                                  ~(compact_storage_alignment_ - 1);
+        if (compact_storage_stride_ == 0 ||
+            compact_pairs_.size() > std::numeric_limits<std::size_t>::max() / compact_storage_stride_) {
+            throw std::length_error{"reduce compact graph storage is too large"};
+        }
+        compact_storage_bytes_ = compact_pairs_.size() * compact_storage_stride_;
+        compact_storage_ = static_cast<std::byte *>(
+            memory_.allocate_bytes(compact_storage_bytes_, compact_storage_alignment_));
+
+        for (auto index = std::size_t{}; index < compact_pairs_.size(); ++index) {
+            const auto storage = std::span{compact_storage_ + index * compact_storage_stride_, compact_storage_size_};
+            RuntimeGraph::initialize_borrowed_storage(*compact.graph, storage);
+        }
+    }
+
+    void clear_compact_graph() noexcept {
+        if (compact_storage_ != nullptr) {
+            memory_.deallocate_bytes(compact_storage_, compact_storage_bytes_, compact_storage_alignment_);
+            compact_storage_ = nullptr;
+        }
+        compact_storage_size_ = 0;
+        compact_storage_alignment_ = 0;
+        compact_storage_stride_ = 0;
+        compact_storage_bytes_ = 0;
+        compact_pairs_.clear();
+        compact_current_level_.clear();
+        compact_next_level_.clear();
+        compact_root_ = std::numeric_limits<std::size_t>::max();
+    }
+
+    std::byte *compact_pair_storage(std::size_t index) const noexcept {
+        return compact_storage_ + index * compact_storage_stride_;
+    }
+
+    CompactReduceInput compact_input(const CompiledReduceGraph::CompactGraph &compact,
+                                     std::size_t input_index) const noexcept {
+        const auto item_count = selected_references_.size();
+        if (input_index < item_count) {
+            const auto resolved = ResolvedTimeSeries::resolve(selected_references_[input_index]);
+            return {resolved.last_updated, resolved.valid() ? resolved.storage : nullptr, resolved.runtime_type};
+        }
+
+        const auto pair_index = input_index - item_count;
+        const auto &node = compact.graph->node(*compact.output_node);
+        const auto runtime_node = Node{node, compact_pair_storage(pair_index)};
+        const auto &state = runtime_node.output_last_updated();
+        return {&state, state.valid() ? runtime_node.output_value() : nullptr,
+                &node.node_invocation_output_runtime_type()};
+    }
+
+    static bool same_state(const TimeSeriesState &left, const TimeSeriesState &right) noexcept {
+        return left.valid() == right.valid() && (!left.valid() || left.time() == right.time());
+    }
+
+    bool evaluate_compact_graph(const CompiledReduceGraph &compiled, ReduceInvocation invocation) {
+        const auto &compact = *compiled.compact_graph;
+        if (!compact.output_node) {
+            return true;
+        }
+
+        const auto runtime_inputs = compact.graph->runtime_inputs();
+        for (auto index = std::size_t{}; index < compact_pairs_.size(); ++index) {
+            auto &pair = compact_pairs_[index];
+            auto storage = std::span{compact_pair_storage(index), compact_storage_size_};
+            const auto left = compact_input(compact, pair.inputs[0]);
+            const auto right = compact_input(compact, pair.inputs[1]);
+            const auto left_index = compact.input_indices[0];
+            const auto right_index = compact.input_indices[1];
+            const auto &left_binding = runtime_inputs[left_index];
+            const auto &right_binding = runtime_inputs[right_index];
+            const auto &left_previous = *reinterpret_cast<const RuntimeInputBinding *>(
+                storage.data() + left_binding.slot_offset);
+            const auto &right_previous = *reinterpret_cast<const RuntimeInputBinding *>(
+                storage.data() + right_binding.slot_offset);
+            const auto left_changed = !same_state(left_previous.last_updated, *left.last_updated);
+            const auto right_changed = !same_state(right_previous.last_updated, *right.last_updated);
+            if (pair.initialized && !left_changed && !right_changed) {
+                continue;
+            }
+
+            auto runtime = RuntimeGraph{*compact.graph, memory_, storage, invocation.context().global_state(),
+                                        pair.initialized ? std::optional{pair.input_validity} : std::nullopt};
+            auto bind_input = [&](std::size_t binding_index, const CompactReduceInput &input, bool changed) {
+                if (!changed) {
+                    return;
+                }
+                if (input.last_updated->valid()) {
+                    runtime.bind_runtime_input(binding_index, *input.runtime_type, *input.last_updated, input.value,
+                                               invocation.context().evaluation_time());
+                } else if (!input.last_updated->never_valid()) {
+                    runtime.clear_runtime_input(binding_index, invocation.context().evaluation_time());
+                }
+            };
+            bind_input(left_index, left, left_changed);
+            bind_input(right_index, right, right_changed);
+            if (!runtime.evaluate(invocation.context())) {
+                throw std::logic_error{"a borrowed reduce graph cannot pend evaluation"};
+            }
+            pair.input_validity = runtime.input_validity();
+            pair.initialized = true;
+        }
+        return true;
+    }
+
+    bool publish_compact_result(const CompiledReduceGraph &compiled, ReduceInvocation invocation, bool force) {
+        auto output = invocation.template output<TS_T>();
+        if (selected_references_.empty()) {
+            return publish_empty_result(compiled, invocation, output);
+        }
+
+        const auto sample = compact_input(*compiled.compact_graph, compact_root_);
+        if (!sample.last_updated->valid()) {
+            output.invalidate();
+            using_default_ = false;
+            return true;
+        }
+        if (!force && sample.last_updated->time() != invocation.context().evaluation_time()) {
+            return true;
+        }
+
+        const auto &value_type = static_cast<const TimeSeriesValueRuntimeType &>(*sample.runtime_type);
+        const auto value = Scalar<>::from(value_type.scalar_runtime_type(), sample.value);
+        output.visit([&](Out<TS<SCALAR>> *target) { target->set_value(value); }, ddv::noop);
+        using_default_ = false;
+        return true;
+    }
+
+    template <typename Output>
+    bool publish_empty_result(const CompiledReduceGraph &compiled, ReduceInvocation invocation, Output &output) {
+        if (!dictionary_valid_) {
+            output.invalidate();
+            using_default_ = false;
+            return true;
+        }
+        if (compiled.default_parameter) {
+            const auto fallback = invocation.scalar(*compiled.default_parameter, 0);
+            if (!fallback.has_value()) {
+                output.invalidate();
+                using_default_ = false;
+                return true;
+            }
+            if (!using_default_) {
+                output.visit([&](Out<TS<SCALAR>> *value) { value->set_value(fallback.value()); }, ddv::noop);
+            }
+            using_default_ = true;
+        } else {
+            output.invalidate();
+            using_default_ = false;
         }
         return true;
     }
@@ -219,6 +503,8 @@ class ReduceRuntime {
         building_pair_ = false;
         rebuilding_ = false;
         evaluation_graph_index_ = 0;
+        clear_compact_graph();
+        compact_active_ = false;
     }
 
     static void release_retired_graphs_callback(void *receiver, EvaluationContext &context) noexcept {
@@ -254,32 +540,14 @@ class ReduceRuntime {
         building_pair_ = false;
         rebuilding_ = false;
         evaluation_graph_index_ = 0;
+        clear_compact_graph();
+        compact_active_ = false;
     }
 
     bool publish_result(const CompiledReduceGraph &compiled, ReduceInvocation invocation, bool force) {
         auto output = invocation.template output<TS_T>();
         if (current_level_.empty()) {
-            if (!dictionary_valid_) {
-                output.invalidate();
-                using_default_ = false;
-                return true;
-            }
-            if (compiled.default_parameter) {
-                const auto fallback = invocation.scalar(*compiled.default_parameter, 0);
-                if (!fallback.has_value()) {
-                    output.invalidate();
-                    using_default_ = false;
-                    return true;
-                }
-                if (!using_default_) {
-                    output.visit([&](Out<TS<SCALAR>> *value) { value->set_value(fallback.value()); }, ddv::noop);
-                }
-                using_default_ = true;
-            } else {
-                output.invalidate();
-                using_default_ = false;
-            }
-            return true;
+            return publish_empty_result(compiled, invocation, output);
         }
 
         const auto reference = current_level_.front();
@@ -314,8 +582,17 @@ class ReduceRuntime {
     std::pmr::vector<Reference> candidate_references_;
     std::pmr::vector<Reference> current_level_;
     std::pmr::vector<Reference> next_level_;
+    std::pmr::vector<CompactReducePair> compact_pairs_;
+    std::pmr::vector<std::size_t> compact_current_level_;
+    std::pmr::vector<std::size_t> compact_next_level_;
     std::pmr::vector<NestedGraph *> graphs_;
     std::pmr::vector<NestedGraph *> owned_graphs_;
+    std::byte *compact_storage_{};
+    std::size_t compact_storage_size_{};
+    std::size_t compact_storage_alignment_{};
+    std::size_t compact_storage_stride_{};
+    std::size_t compact_storage_bytes_{};
+    std::size_t compact_root_{std::numeric_limits<std::size_t>::max()};
     std::size_t next_pair_{};
     std::size_t evaluation_graph_index_{};
     std::size_t retired_graph_count_{};
@@ -323,6 +600,7 @@ class ReduceRuntime {
     bool building_pair_{};
     bool dictionary_valid_{};
     bool using_default_{};
+    bool compact_active_{};
 };
 
 class DefaultReduceNodeDefinition : public ReduceNodeDefinition {

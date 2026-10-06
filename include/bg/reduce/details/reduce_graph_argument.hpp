@@ -16,11 +16,19 @@ class TypeMap;
 
 namespace details {
 
+struct ReduceCompactGraphWiring {
+    std::shared_ptr<const GraphWiring> wiring;
+    std::array<std::size_t, 2> input_indices;
+    std::optional<std::size_t> output_node;
+    std::optional<std::size_t> output_input;
+    GraphWiringStructure structure;
+};
+
 struct ReduceGraphWiring {
     std::shared_ptr<const GraphWiring> wiring;
     std::array<std::size_t, 2> input_nodes;
     std::size_t output_node;
-    const TimeSeriesType *output_type;
+    std::optional<ReduceCompactGraphWiring> compact_graph;
 };
 
 struct ReduceGraphArgumentWiring {

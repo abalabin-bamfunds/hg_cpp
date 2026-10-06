@@ -53,6 +53,20 @@ void validate_signature(const WiringTemplate &function) {
     }
 }
 
+bool accepts_compact_inputs(const WiringTemplate &function, const TimeSeriesType &input_type) {
+    const auto &signature = function.signature();
+    for (auto index = std::size_t{}; index < signature.parameter_count(); ++index) {
+        const auto &parameter = signature.parameter(index);
+        if (parameter.context) {
+            continue;
+        }
+        if (type_cast<TimeSeriesValueType>(parameter.type) == nullptr || !parameter.type->accepts(input_type)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 } // namespace
 
 ReduceGraphArgumentWiring build_reduce_graph_argument_wiring(const WiringTemplate &function,
@@ -64,10 +78,11 @@ ReduceGraphArgumentWiring build_reduce_graph_argument_wiring(const WiringTemplat
     }
     validate_signature(function);
 
+    const auto &reducer_input_type = item_value_type->with_guarantee(TimeSeriesGuarantee::ordinary);
     auto wiring = std::make_shared<GraphWiring>(WiringContext::current().wiring());
     auto context = WiringContext{*wiring};
 
-    auto boundaries = std::array{wire_nested_input(item_type), wire_nested_input(item_type)};
+    auto boundaries = std::array{wire_nested_input(reducer_input_type), wire_nested_input(reducer_input_type)};
     auto arguments = std::array{WiringArgument{boundaries[0]}, WiringArgument{boundaries[1]}};
     const auto result = function(type_map, std::span<const WiringArgument>{arguments});
     if (!result) {
@@ -75,18 +90,59 @@ ReduceGraphArgumentWiring build_reduce_graph_argument_wiring(const WiringTemplat
     }
     const auto &result_type = reference_target(result->type());
     const auto *result_value_type = type_cast<TimeSeriesValueType>(&result_type);
-    if (result_value_type == nullptr || item_value_type == nullptr ||
-        &result_value_type->value_type() != &item_value_type->value_type() || !item_type.accepts(result_type)) {
+    if (result_value_type == nullptr || &result_value_type->value_type() != &item_value_type->value_type()) {
         throw WiringError{"a reduce graph output must have the TSD item value type"};
     }
 
     const auto structure = graph_wiring_structure(*wiring, boundaries, result);
-    const auto &output_type = reference_target(result->type());
     const auto output = wire_nested_output(*result, result->type());
 
     auto input_nodes = std::array{wiring->output_node_index(boundaries[0]),
                                   wiring->output_node_index(boundaries[1])};
     const auto output_node = wiring->output_node_index(output);
+
+    auto compact_graph = std::optional<ReduceCompactGraphWiring>{};
+    if (wiring->inherited_requirements().empty() && wiring->service_binding_requirements().empty()) {
+        if (accepts_compact_inputs(function, reducer_input_type)) {
+            auto compact_wiring = std::make_shared<GraphWiring>(WiringContext::current().wiring());
+            auto compact_context = WiringContext{*compact_wiring};
+            auto compact_inputs = std::array{compact_wiring->runtime_input(reducer_input_type),
+                                             compact_wiring->runtime_input(reducer_input_type)};
+            auto compact_arguments =
+                std::array{WiringArgument{compact_inputs[0]}, WiringArgument{compact_inputs[1]}};
+            const auto compact_result = function(type_map, std::span<const WiringArgument>{compact_arguments});
+            if (compact_result) {
+                const auto &compact_result_type = reference_target(compact_result->type());
+                const auto *compact_value_type = type_cast<TimeSeriesValueType>(&compact_result_type);
+                if (compact_value_type != nullptr &&
+                    &compact_value_type->value_type() == &item_value_type->value_type()) {
+                    const auto compact_input_indices = std::array{
+                        compact_wiring->runtime_input_index(compact_inputs[0]),
+                        compact_wiring->runtime_input_index(compact_inputs[1]),
+                    };
+                    auto output_input = std::optional<std::size_t>{};
+                    auto compact_output_node = std::optional<std::size_t>{};
+                    const auto &compact_output =
+                        compact_wiring->outputs()[compact_wiring->output_index(*compact_result)];
+                    if (compact_output.node_index == WiredOutput::npos) {
+                        output_input = compact_wiring->runtime_input_index(*compact_result);
+                    } else {
+                        compact_output_node = compact_wiring->output_node_index(*compact_result);
+                    }
+                    const auto compact_structure = graph_wiring_structure(
+                        *compact_wiring, std::span<const WiringPoint>{}, compact_result);
+
+                    compact_graph.emplace(ReduceCompactGraphWiring{
+                        .wiring = std::move(compact_wiring),
+                        .input_indices = compact_input_indices,
+                        .output_node = compact_output_node,
+                        .output_input = output_input,
+                        .structure = compact_structure,
+                    });
+                }
+            }
+        }
+    }
 
     return {
         .structure = structure,
@@ -94,7 +150,7 @@ ReduceGraphArgumentWiring build_reduce_graph_argument_wiring(const WiringTemplat
             .wiring = std::move(wiring),
             .input_nodes = input_nodes,
             .output_node = output_node,
-            .output_type = &output_type,
+            .compact_graph = std::move(compact_graph),
         },
     };
 }

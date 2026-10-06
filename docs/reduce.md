@@ -6,6 +6,10 @@ and returns a scalar-valued time series compatible with the TSD item type.
 Context inputs are allowed. A generic C++ lambda can be used when the TSD
 argument has a statically known item type.
 
+Reducer inputs and the reduce output use the ordinary guarantee. A tree
+position can receive a different item after the TSD changes, regardless of the
+guarantee on an individual item.
+
 The reducer applies to pairs of values in a balanced tree. An unpaired value
 advances to the next level unchanged. A single valid item is forwarded without
 creating a reducer graph instance.
@@ -19,8 +23,8 @@ When a TSD stores references, target updates, invalidations, and revalidations
 update the reduction even when the TSD membership and stored references do not
 change.
 
-The operator compiles the reducer graph once and creates a nested runtime graph
-for each pair in the current tree. A change to the key set or to the reference
-stored under a key rebuilds the tree. Stopped nested graphs remain allocated
-until the next outer cycle so reference removal completes before their storage
-is released.
+Reducer graphs that support borrowed evaluation use per-pair reducer storage
+when the runtime representations are compatible. Other reducer graphs use
+nested runtime graphs. A change to the key set or to the reference stored under
+a key rebuilds the tree. Stopped nested graphs remain allocated until the next
+outer cycle so reference removal completes before their storage is released.

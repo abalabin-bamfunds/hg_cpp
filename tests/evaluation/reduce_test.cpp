@@ -105,6 +105,98 @@ TEST_CASE("reduce carries an odd item to the next level of its tree",
     CHECK(actual.equals<i64>({12, 15}));
 }
 
+TEST_CASE("reduce combines final TSD items with an ordinary compact reducer",
+          "[feature:reduce][series:tsd][shape:single-node][guarantee:final]") {
+    const auto final_dictionary_from_values = node(
+        [](In<TS<i64>> left, In<TS<i64>> right,
+           Out<TSD<std::int64_t, TS<i64, TimeSeriesGuarantee::final>>> output) {
+            output[1].set(*left);
+            output[2].set(*right);
+        });
+    const auto tested = [=](wp<TS<i64>> left, wp<TS<i64>> right) {
+        return reduce(add_graph, final_dictionary_from_values(left, right));
+    };
+
+    const auto actual = testing::test_graph(tested, std::array{3}, std::array{4});
+
+    CHECK(actual.equals<i64>({7}));
+}
+
+TEST_CASE("reduce combines final TSD items through a context-dependent fallback reducer",
+          "[feature:reduce][feature:context-time-series][feature:nested-graph][series:tsd][shape:nested]"
+          "[guarantee:final]") {
+    const auto final_dictionary_from_values = node(
+        [](In<TS<i64>> left, In<TS<i64>> right,
+           Out<TSD<std::int64_t, TS<i64, TimeSeriesGuarantee::final>>> output) {
+            output[1].set(*left);
+            output[2].set(*right);
+        });
+    const auto tested = [=](wp<TS<i64>> left, wp<TS<i64>> right, wp<TS<i64>> factor) {
+        auto context_scope = with_context("factor"_n = factor);
+        return reduce(context_add_graph, final_dictionary_from_values(left, right));
+    };
+
+    const auto actual = testing::test_graph(tested, std::array{3}, std::array{4}, std::array{10});
+
+    CHECK(actual.equals<i64>({17}));
+}
+
+TEST_CASE("reduce retains untouched multi-node results and passive input state",
+          "[feature:reduce][series:tsd][shape:chain][activity:passive][validity:optional][transition:update]") {
+    const auto dictionary_from_four_values_with_one_update =
+        node([](In<TS<i64>> first, In<TS<i64>> second, In<TS<i64>> third, In<TS<i64>> fourth,
+                In<TS<bool>> initialize, In<TS<bool>> update_first, Out<TSD<std::int64_t, TS<i64>>> output) {
+            if (*initialize) {
+                output[1].set(*first);
+                output[2].set(*second);
+                output[3].set(*third);
+                output[4].set(*fourth);
+            } else if (*update_first) {
+                output[1].set(*first);
+            }
+        });
+    // Add a sentinel when the passive input is modified so stale modification state is observable.
+    const auto sum_active_left_and_passive_right = node(
+        [](In<TS<i64>> left, In<TS<i64>, passive, optional> right, Out<TS<i64>> output) {
+            if (left.modified()) {
+                output.set(*left + (right.valid() ? *right : i64{}) + (right.modified() ? i64{100} : i64{}));
+            }
+        });
+    const auto copy_reduce_intermediate =
+        node([](In<TS<i64>> input, Out<TS<i64>> output) { output.set(*input); });
+    const auto multi_node_passive_reducer = graph(
+        "name"_n = "multi_node_passive_reducer", [=](wp<TS<i64>> left, wp<TS<i64>> right) {
+            return copy_reduce_intermediate(sum_active_left_and_passive_right(left, opt(right)));
+        });
+
+    const auto tested = [=](wp<TS<i64>> first, wp<TS<i64>> second, wp<TS<i64>> third, wp<TS<i64>> fourth,
+                            wp<TS<bool>> initialize, wp<TS<bool>> update_first) {
+        return reduce(multi_node_passive_reducer,
+                      dictionary_from_four_values_with_one_update(first, second, third, fourth, initialize,
+                                                                  update_first));
+    };
+
+    const auto actual = testing::test_graph(tested, std::array{1, 10}, std::array{2, 2}, std::array{3, 3},
+                                            std::array{4, 4}, std::array{true, false},
+                                            std::array{false, true});
+
+    CHECK(actual.equals<i64>({310, 119}));
+}
+
+TEST_CASE("reduce follows a reducer graph that returns its right input",
+          "[feature:reduce][series:tsd][shape:nested][transition:update]") {
+    const auto select_right = graph("name"_n = "select_reduce_right_input", [](wp<TS<i64>>, wp<TS<i64>> right) {
+        return right;
+    });
+    const auto tested = [select_right](wp<TS<i64>> first, wp<TS<i64>> second, wp<TS<i64>> third) {
+        return reduce(select_right, dictionary_from_three_values(first, second, third));
+    };
+
+    const auto actual = testing::test_graph(tested, std::array{1, 1}, std::array{4, 4}, std::array{7, 8});
+
+    CHECK(actual.equals<i64>({7, 8}));
+}
+
 TEST_CASE("reduce adapts a generic lambda to the TSD item type",
           "[feature:reduce][feature:operator][series:tsd][definition:function]") {
     const auto tested = [](wp<TS<i64>> left, wp<TS<i64>> right, wp<TS<bool>> include_left,

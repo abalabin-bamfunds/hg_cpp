@@ -19,6 +19,8 @@ using namespace bg;
 using namespace bg::literals;
 
 const auto dictionary_source = node([](Out<TSD<std::int64_t, TS<std::int64_t>>>) {});
+const auto final_item_dictionary_source =
+    node([](Out<TSD<std::int64_t, TS<std::int64_t, TimeSeriesGuarantee::final>>>) {});
 const auto add_values = node([](In<TS<std::int64_t>>, In<TS<std::int64_t>>, Out<TS<std::int64_t>>) {});
 const auto add_with_context = node([](In<TS<std::int64_t>>, In<TS<std::int64_t>>,
                                       In<TS<std::int64_t>, "factor"_n, context>, Out<TS<std::int64_t>>) {});
@@ -165,6 +167,32 @@ TEST_CASE("reduce wires its TSD input and output type through the default overlo
         const auto result = reduce(reducer, dictionary);
         CHECK(&type_cast<TimeSeriesType>(result.type()) ==
               &type_cast<TimeSeriesDictionaryType>(dictionary.type()).value_type());
+    });
+}
+
+TEST_CASE("reduce accepts final TSD items and keeps an ordinary output guarantee",
+          "[feature:reduce][feature:operator][feature:wiring][series:tsd][guarantee:final]") {
+    const auto reducer = graph("name"_n = "add_final_items",
+                                [](wp<TS<std::int64_t>> left, wp<TS<std::int64_t>> right) {
+                                    return add_values(left, right);
+                                });
+
+    testing::test_wiring([&] {
+        const auto dictionary = final_item_dictionary_source();
+        const auto &dictionary_type = type_cast<TimeSeriesDictionaryType>(dictionary.type());
+        const auto built = details::build_reduce_graph_argument_wiring(
+            reducer, dictionary_type.value_type().target_type(), TypeMap{});
+        CHECK(built.graph.compact_graph.has_value());
+
+        const auto result = reduce(reducer, dictionary);
+        const auto *result_type = type_cast<TimeSeriesValueType>(&result.type());
+
+        REQUIRE(result_type != nullptr);
+        CHECK(result_type->guarantee().value() == TimeSeriesGuarantee::ordinary);
+        const auto *item_type = type_cast<TimeSeriesValueType>(
+            &type_cast<TimeSeriesDictionaryType>(dictionary.type()).value_type());
+        REQUIRE(item_type != nullptr);
+        CHECK(&result_type->value_type() == &item_type->value_type());
     });
 }
 
