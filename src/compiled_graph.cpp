@@ -1747,8 +1747,8 @@ class CompiledGraphBuilder {
                     }
                     if (source.mode() == ParameterBindingMode::scalar) {
                         if (input.dereferences_reference) {
-                            source = ParameterBinding{input.output_last_updated_offset, input.offset,
-                                                      parameter.activity, optional};
+                            source = ParameterBinding::reference(input.output_last_updated_offset, input.offset,
+                                                                 optional);
                         } else {
                             const auto resolved_output =
                                 input.wired_input.is_inherited()
@@ -1798,8 +1798,8 @@ class CompiledGraphBuilder {
                 }
                 if (input.dereferences_reference) {
                     std::construct_at(parameters.data() + parameter_index,
-                                      ParameterBinding{input.output_last_updated_offset, input.offset,
-                                                       parameter.activity, parameter.validity});
+                                      ParameterBinding::reference(input.output_last_updated_offset, input.offset,
+                                                                  parameter.validity));
                 } else {
                     const auto resolved_output =
                         input.wired_input.is_inherited()

@@ -199,7 +199,7 @@ class ParameterBinding {
   public:
     ParameterBindingMode mode() const noexcept {
         if ((location_and_flags_ & scalar_flag) != 0) {
-            if ((value_offset_ & active_flag) != 0) {
+            if ((value_offset_ & default_flag) != 0) {
                 return ParameterBindingMode::default_value;
             }
             return (value_offset_ & constant_flag) == 0 ? ParameterBindingMode::scalar : ParameterBindingMode::constant;
@@ -211,8 +211,6 @@ class ParameterBinding {
     std::size_t last_updated_offset() const noexcept { return location_and_flags_ & location_mask; }
 
     std::size_t value_offset() const noexcept { return value_offset_ & value_location_mask; }
-
-    bool active() const noexcept { return (value_offset_ & active_flag) != 0; }
 
     const void *scalar_data() const noexcept {
         if ((location_and_flags_ & optional_flag) != 0) {
@@ -239,17 +237,12 @@ class ParameterBinding {
     static constexpr std::uint32_t location_mask = optional_flag - 1;
     static constexpr std::uint32_t reference_flag = std::uint32_t{1} << 31;
     static constexpr std::uint32_t constant_flag = reference_flag;
-    static constexpr std::uint32_t active_flag = std::uint32_t{1} << 30;
-    static constexpr std::uint32_t value_location_mask = active_flag - 1;
+    static constexpr std::uint32_t default_flag = std::uint32_t{1} << 30;
+    static constexpr std::uint32_t value_location_mask = default_flag - 1;
 
     ParameterBinding(std::uint32_t last_updated_offset, std::uint32_t value_offset, InputValidity validity) noexcept
         : location_and_flags_{last_updated_offset | (validity == optional ? optional_flag : std::uint32_t{})},
           value_offset_{value_offset} {}
-
-    ParameterBinding(std::uint32_t reference_last_updated_offset, std::uint32_t input_offset, InputActivity activity,
-                     InputValidity validity) noexcept
-        : location_and_flags_{reference_last_updated_offset | (validity == optional ? optional_flag : std::uint32_t{})},
-          value_offset_{input_offset | reference_flag | (activity == bg::active ? active_flag : std::uint32_t{})} {}
 
     explicit ParameterBinding(std::uint32_t scalar_offset) noexcept
         : location_and_flags_{scalar_offset | scalar_flag}, value_offset_{} {}
@@ -262,6 +255,11 @@ class ParameterBinding {
     static ParameterBinding default_value(std::uint32_t last_updated_offset, std::uint32_t input_offset,
                                           InputValidity validity) noexcept {
         return ParameterBinding{default_binding, last_updated_offset, input_offset, validity};
+    }
+
+    static ParameterBinding reference(std::uint32_t last_updated_offset, std::uint32_t input_offset,
+                                     InputValidity validity) noexcept {
+        return ParameterBinding{last_updated_offset, input_offset | reference_flag, validity};
     }
 
     struct constant_binding_t {};
@@ -280,7 +278,7 @@ class ParameterBinding {
                      InputValidity validity) noexcept
         : location_and_flags_{last_updated_offset | scalar_flag |
                               (validity == optional ? optional_flag : std::uint32_t{})},
-          value_offset_{input_offset | active_flag} {}
+          value_offset_{input_offset | default_flag} {}
 
     ParameterBinding() noexcept : location_and_flags_{scalar_flag | optional_flag}, value_offset_{} {}
 
