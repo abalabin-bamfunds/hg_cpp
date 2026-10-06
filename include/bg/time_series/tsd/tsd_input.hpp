@@ -119,9 +119,9 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...>
         }
         return util::occupancy_index::npos;
     }
-    item_id_t next_added_id(item_id_t start) const noexcept { return next(ItemRange::added, start); }
-    item_id_t next_removed_id(item_id_t start) const noexcept { return next(ItemRange::removed, start); }
-    item_id_t next_modified_id(item_id_t start) const noexcept { return next(ItemRange::modified, start); }
+    item_id_t next_added_id(item_id_t start) const { return next(ItemRange::added, start); }
+    item_id_t next_removed_id(item_id_t start) const { return next(ItemRange::removed, start); }
+    item_id_t next_modified_id(item_id_t start) const { return next(ItemRange::modified, start); }
 
     item_id_t find_item_id(const Scalar<K> &key) const {
         return data_.data() == nullptr ? util::occupancy_index::npos
@@ -241,7 +241,7 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...>
     using ChangeFunction = void (details::TimeSeriesDictionaryRuntimeType::*)(
         const TimeSeriesState &, const void *, void *, TimeSeriesRuntimeType::ItemIdFunction) const;
 
-    item_id_t next(ItemRange range, item_id_t start) const noexcept {
+    item_id_t next(ItemRange range, item_id_t start) const {
         return dictionary_runtime_type().next_item_id(last_updated_state(), data_.data(), range, start);
     }
 

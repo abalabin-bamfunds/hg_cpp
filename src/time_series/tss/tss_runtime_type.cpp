@@ -53,7 +53,7 @@ const void *TimeSeriesSetRuntimeType::set_key(const void *value, item_id_t id) c
 }
 
 item_id_t TimeSeriesSetRuntimeType::set_next_item_id(const TimeSeriesState &last_updated, const void *value, Range range,
-                                                     item_id_t start) const noexcept {
+                                                     item_id_t start) const {
     const auto &storage = *static_cast<const time_series_set_storage *>(value);
     const auto *positions = range == Range::current ? &storage.live()
                             : range == Range::added  ? &storage.added()

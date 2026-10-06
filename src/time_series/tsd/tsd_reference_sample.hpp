@@ -13,5 +13,6 @@ SampledDictionary *make_dictionary_sample(ResolvedTimeSeries previous, ResolvedT
 void destroy_dictionary_sample(SampledDictionary *sample) noexcept;
 TimeSeriesRuntimeType::ConstItem dictionary_sample_item(const SampledDictionary &sample) noexcept;
 ResolvedTimeSeries dictionary_sample_previous(const SampledDictionary &sample) noexcept;
+bool dictionary_sample_changed(const SampledDictionary &sample) noexcept;
 
 } // namespace bg::details

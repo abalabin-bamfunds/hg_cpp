@@ -80,7 +80,7 @@ class TimeSeriesRuntimeType : public RuntimeType {
     virtual ConstItem item(const void *, item_id_t) const;
     virtual MutableItem item(void *, item_id_t) const;
     virtual void for_each_item_id(const void *, void *, ItemIdFunction) const;
-    virtual bool item_updated(const TimeSeriesState &, const void *, item_id_t) const noexcept;
+    virtual bool item_updated(const TimeSeriesState &, const void *, item_id_t) const;
     virtual void for_each_updated_item(const TimeSeriesState &, const void *, void *, ItemIdFunction) const;
     virtual bool all_valid(const TimeSeriesState &, const void *) const noexcept;
     // The declared type must accept this runtime type; a bundle declaration limits the fields checked.

@@ -17,6 +17,7 @@
 #include <bg/time_series/ref/ref_storage.hpp>
 #include <bg/time_series/time_series_runtime_type.hpp>
 #include <bg/type/signature.hpp>
+#include <bg/type/time_series_dict_type.hpp>
 #include <bg/type/time_series_reference_type.hpp>
 #include <bg/type/time_series_set_type.hpp>
 #include <bg/type/time_series_value_type.hpp>
@@ -556,7 +557,8 @@ void plan_time_series_inputs(CompilationPlan &plan, const GraphWiring &wiring) {
                 .constant_binding = constant_binding,
                 .dereferences_reference = output_is_reference && !input_is_reference,
                 .sampled_reference = output_is_reference && !input_is_reference &&
-                                     type_cast<TimeSeriesSetType>(parameter.type) != nullptr,
+                                     (type_cast<TimeSeriesSetType>(parameter.type) != nullptr ||
+                                      type_cast<TimeSeriesDictionaryType>(parameter.type) != nullptr),
                 .dynamic_activity = parameter.dynamic_activity,
                 .offset = 0,
                 .output_last_updated_offset = 0,

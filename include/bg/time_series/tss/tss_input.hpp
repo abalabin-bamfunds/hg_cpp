@@ -109,7 +109,7 @@ class In<TSS<K, TimeSeriesProperties...>, Properties...>
         return Scalar<K>::from(key_runtime_type(), storage().key(position, key_layout()));
     }
 
-    item_id_t next_item_id(item_id_t start) const noexcept {
+    item_id_t next_item_id(item_id_t start) const {
         if (!valid()) {
             return util::occupancy_index::npos;
         }
@@ -118,7 +118,7 @@ class In<TSS<K, TimeSeriesProperties...>, Properties...>
                          : next(storage().live(), start);
     }
 
-    item_id_t next_added_id(item_id_t start) const noexcept {
+    item_id_t next_added_id(item_id_t start) const {
         if (!valid() || (!sampled() && storage().change_time() != last_updated())) {
             return util::occupancy_index::npos;
         }
@@ -127,7 +127,7 @@ class In<TSS<K, TimeSeriesProperties...>, Properties...>
                          : next(storage().added(), start);
     }
 
-    item_id_t next_removed_id(item_id_t start) const noexcept {
+    item_id_t next_removed_id(item_id_t start) const {
         if (sampled()) {
             return set_runtime_type().set_next_item_id(last_updated_state(), data(),
                                                        details::TimeSeriesSetRuntimeType::Range::removed, start);

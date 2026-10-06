@@ -8,11 +8,10 @@
 #include <bg/time_series/ref/ref_storage.hpp>
 #include <bg/util/scope_exit.hpp>
 
-#include "../tss/tss_reference_sample.hpp"
-
 namespace bg::details {
 
-void ReferenceInputSubscriber::update_input(OutputChangeContext &context, Reference new_reference,
+void ReferenceInputSubscriber::update_input(OutputChangeContext &context, RuntimeGraph &publisher_graph,
+                                            const void *output, Reference new_reference,
                                             std::size_t notification_data, InputNotificationFunction notification,
                                             OutputChange change) const {
     if (new_reference) {
@@ -37,12 +36,7 @@ void ReferenceInputSubscriber::update_input(OutputChangeContext &context, Refere
     } else {
         auto *sample_storage = static_cast<ReferenceInputSampleStorage *>(
             graph.storage_at(reference_input_sample_offset(input_offset(), controlled_activity())));
-        auto *new_set_sample = static_cast<SampledSet *>(nullptr);
-        auto destroy_new_sample = util::scope_exit{[&]() noexcept {
-            if (new_set_sample != nullptr) {
-                destroy_set_sample(new_set_sample);
-            }
-        }};
+        auto new_sample = SampledReferenceChange{};
         auto callback_added = false;
         auto remove_new_callback = util::scope_exit{[&]() noexcept {
             if (callback_added) {
@@ -61,8 +55,9 @@ void ReferenceInputSubscriber::update_input(OutputChangeContext &context, Refere
                 previous_state.publish(context.evaluation_time());
                 previous.last_updated = &previous_state;
             }
-            new_set_sample = make_set_sample(previous, current, context.evaluation_time(), graph.allocation());
-            if (new_set_sample != nullptr && sample_storage->empty()) {
+            new_sample = graph.reference_transition_sample(publisher_graph, output, input.value, new_reference,
+                                                           previous, current, requested_runtime_type());
+            if (new_sample && sample_storage->empty()) {
                 graph.add_cycle_callback(sample_storage, [](void *value, EvaluationContext &) noexcept {
                     static_cast<ReferenceInputSampleStorage *>(value)->clear();
                 });
@@ -90,15 +85,13 @@ void ReferenceInputSubscriber::update_input(OutputChangeContext &context, Refere
             }
             input.value = new_reference;
             sample_storage->clear();
-            if (new_set_sample != nullptr) {
-                sample_storage->set(new_set_sample);
-                new_set_sample = nullptr;
+            if (new_sample) {
+                sample_storage->set(new_sample);
             }
             sample_storage->set_target_was_valid(current.valid());
         } else {
             sample_storage->set_target_was_valid(current.valid());
         }
-        destroy_new_sample.release();
         remove_new_callback.release();
         remove_new_subscription.release();
     }
@@ -113,6 +106,7 @@ void ReferenceInputSubscriber::update_input(OutputChangeContext &context, Refere
 
 void notify_reference_inputs(OutputChangeContext &context, const TimeSeriesRuntimeType *runtime_type, const void *value,
                              OutputChange change, std::span<const std::byte> record_bytes) {
+    auto &publisher_graph = context.runtime_graph();
     const auto records = std::span{
         reinterpret_cast<const ReferenceInputSubscriber *>(record_bytes.data()),
         record_bytes.size() / sizeof(ReferenceInputSubscriber),
@@ -122,13 +116,14 @@ void notify_reference_inputs(OutputChangeContext &context, const TimeSeriesRunti
                                                                 : runtime_type->reference(value);
 
     for (const auto &subscriber : records) {
-        subscriber.update_input(context, reference, 0, nullptr, change);
+        subscriber.update_input(context, publisher_graph, value, reference, 0, nullptr, change);
     }
 }
 
 void notify_reference_inputs_with_notifications(OutputChangeContext &context, const TimeSeriesRuntimeType *runtime_type,
                                                 const void *value, OutputChange change,
                                                 std::span<const std::byte> record_bytes) {
+    auto &publisher_graph = context.runtime_graph();
     const auto records = std::span{
         reinterpret_cast<const ReferenceInputNotificationSubscriber *>(record_bytes.data()),
         record_bytes.size() / sizeof(ReferenceInputNotificationSubscriber),
@@ -138,7 +133,8 @@ void notify_reference_inputs_with_notifications(OutputChangeContext &context, co
                                                                 : runtime_type->reference(value);
 
     for (const auto &subscriber : records) {
-        subscriber.subscription().update_input(context, reference, subscriber.notification_data(),
+        subscriber.subscription().update_input(context, publisher_graph, value, reference,
+                                               subscriber.notification_data(),
                                                subscriber.notification(), change);
     }
 }

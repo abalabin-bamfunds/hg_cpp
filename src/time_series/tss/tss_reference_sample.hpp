@@ -12,5 +12,6 @@ SampledSet *make_set_sample(ResolvedTimeSeries previous, ResolvedTimeSeries curr
 void destroy_set_sample(SampledSet *sample) noexcept;
 TimeSeriesRuntimeType::ConstItem set_sample_item(const SampledSet &sample) noexcept;
 ResolvedTimeSeries set_sample_previous(const SampledSet &sample) noexcept;
+bool set_sample_changed(const SampledSet &sample);
 
 } // namespace bg::details

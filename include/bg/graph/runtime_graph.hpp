@@ -7,6 +7,7 @@
 #include <bg/graph/dynamic_node_subscriber.hpp>
 #include <bg/graph/node.hpp>
 #include <bg/graph/runtime_graph_scheduling.hpp>
+#include <bg/time_series/ref/ref_input_sample.hpp>
 
 #include <cstddef>
 #include <cstdint>
@@ -20,6 +21,7 @@ namespace bg {
 namespace details {
 struct DynamicSubscribers;
 class EvaluationScratch;
+class ReferenceInputSampleCache;
 class ServiceRequestBinding;
 } // namespace details
 
@@ -75,6 +77,13 @@ class RuntimeGraph {
 
     void add_cycle_callback(void *receiver, void (*function)(void *, EvaluationContext &) noexcept);
     void remove_cycle_callback(const void *receiver) noexcept;
+    details::SampledReferenceChange reference_transition_sample(const RuntimeGraph &publisher, const void *output,
+                                                                Reference previous_reference,
+                                                                Reference current_reference,
+                                                                details::ResolvedTimeSeries previous,
+                                                                details::ResolvedTimeSeries current,
+                                                                const TimeSeriesRuntimeType &runtime_type);
+    void clear_reference_transition_samples() noexcept;
     void notify_dynamic_subscribers(details::DynamicSubscribers &subscribers, OutputChange change);
     void notify_dynamic_subscriber(const details::DynamicNodeSubscriber &subscriber, OutputChange change) noexcept {
         auto active = subscriber.active();
@@ -116,6 +125,7 @@ class RuntimeGraph {
     void activate_scheduled(EvaluationTime evaluation_time) noexcept;
     void clear_timed_schedule() noexcept;
     void clear_reference_input_samples() noexcept;
+    void destroy_reference_transition_samples() noexcept;
     void notify_timed_schedule_changed(std::optional<EvaluationTime> previous);
     void notify_owner_scheduled() noexcept;
     CycleCallbacks *&cycle_callbacks() noexcept;
@@ -139,6 +149,7 @@ class RuntimeGraph {
     bg::allocator allocator_;
     RuntimeGraphEvaluator *evaluator_;
     std::byte *storage_{};
+    details::ReferenceInputSampleCache *reference_input_sample_cache_{};
     EvaluationTime last_evaluation_time_{MIN_DT};
     EvaluationTime evaluation_time_{MIN_DT};
     // Only outer graphs use the global state pointer; inner graphs use the owner token.

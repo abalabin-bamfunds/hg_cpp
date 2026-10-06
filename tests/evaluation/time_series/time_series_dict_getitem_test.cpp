@@ -749,6 +749,219 @@ TEST_CASE("a contained dictionary target sample recurses into modified items",
     CHECK(actual.equals({300'000, 301'020}));
 }
 
+TEST_CASE("a dictionary reference sample reports key-set changes",
+          "[series:tsd][series:value][feature:reference][feature:sampling]"
+          "[binding:reference-to-value][transition:addition][transition:removal]") {
+    const auto make_first = node([](In<TS<bool>>, Out<TSD<std::int64_t, TS<i64>>> output) {
+        output[1].set(10);
+        output[2].set(20);
+    });
+    const auto make_second = node([](In<TS<bool>>, Out<TSD<std::int64_t, TS<i64>>> output) {
+        output[2].set(200);
+        output[3].set(300);
+    });
+    const auto select = node([](In<TS<bool>> use_second, In<REF<TSD<std::int64_t, TS<i64>>>> first,
+                                In<REF<TSD<std::int64_t, TS<i64>>>> second,
+                                Out<REF<TSD<std::int64_t, TS<i64>>>> output) {
+        output.copy(*use_second ? second : first);
+    });
+    const auto inspect = node([](In<TSD<std::int64_t, TS<i64>>> input, Out<TS<i64>> output) {
+        const auto keys = input.key_set();
+        auto added = 0;
+        auto removed = 0;
+        auto item_added = 0;
+        auto item_removed = 0;
+        keys.for_each_added([&](const auto &key) { added += static_cast<int>(*key); });
+        keys.for_each_removed([&](const auto &key) { removed += static_cast<int>(*key); });
+        input.for_each_added([&](const auto &key) { item_added += static_cast<int>(*key); });
+        input.for_each_removed([&](const auto &key) { item_removed += static_cast<int>(*key); });
+        output.set(item_added * 10'000 + item_removed * 1'000 + added * 100 + removed * 10);
+    });
+    const auto graph = [&](wp<TS<bool>> use_second) {
+        return inspect(select(use_second, make_first(use_second), make_second(use_second)));
+    };
+
+    const auto actual = testing::test_graph(graph, std::array{false, true});
+
+    REQUIRE(actual.size() == 2);
+    CHECK(actual[0]->value() == 30'300);
+    CHECK(actual[1]->value() == 31'310);
+}
+
+TEST_CASE("a dictionary reference follows a target that becomes valid after selection",
+          "[series:tsd][series:value][feature:reference][feature:sampling]"
+          "[binding:reference-to-value][transition:invalidation][transition:revalidation]") {
+    const auto make_target = node([](In<TS<i64>> command, Out<TSD<std::int64_t, TS<i64>>> output) {
+        if (*command != 0) {
+            output[1].set(*command);
+        }
+    });
+    const auto select = node([](In<TS<bool>> selected, In<REF<TSD<std::int64_t, TS<i64>>>> target,
+                                Out<REF<TSD<std::int64_t, TS<i64>>>> output) {
+        if (*selected) {
+            output.copy(target);
+        } else {
+            output.invalidate();
+        }
+    });
+    const auto inspect = node([](In<TSD<std::int64_t, TS<i64>>> input, Out<TS<i64>> output) {
+        output.set(input.contains(1) ? *input[1] : -1);
+    });
+    const auto graph = [&](wp<TS<i64>> command, wp<TS<bool>> selected) {
+        return inspect(select(selected, make_target(command)));
+    };
+
+    const auto actual = testing::test_graph(graph, std::array{0, 0, 10}, std::array{false, true, true});
+
+    CHECK(actual.equals<bg::i64>({std::nullopt, std::nullopt, 10}));
+}
+
+TEST_CASE("a contained dictionary reference sample recurses into nested TSS changes",
+          "[series:tsd][series:tss][series:value][feature:reference][feature:sampling]"
+          "[binding:reference-to-value][shape:nested][transition:addition][transition:removal]") {
+    const auto make_first = node([](In<TS<bool>>, Out<TSD<std::int64_t, TSS<std::int64_t>>> output) {
+        output[2].insert(10);
+        output[2].insert(20);
+    });
+    const auto make_second = node([](In<TS<bool>>, Out<TSD<std::int64_t, TSS<std::int64_t>>> output) {
+        output[2].insert(20);
+        output[2].insert(30);
+    });
+    const auto select = node([](In<TS<bool>> use_second,
+                                In<REF<TSD<std::int64_t, TSS<std::int64_t>>>> first,
+                                In<REF<TSD<std::int64_t, TSS<std::int64_t>>>> second,
+                                Out<TSD<std::int64_t, REF<TSD<std::int64_t, TSS<std::int64_t>>>>> output) {
+        output[0].copy(*use_second ? second : first);
+    });
+    const auto inspect = node([](In<TSD<std::int64_t, TSD<std::int64_t, TSS<std::int64_t>>>> input,
+                                 Out<TS<i64>> output) {
+        const auto nested = input[0][2];
+        auto added = 0;
+        auto removed = 0;
+        nested.for_each_added([&](const auto &item) { added += static_cast<int>(*item); });
+        nested.for_each_removed([&](const auto &item) { removed += static_cast<int>(*item); });
+        output.set(added * 100 + removed);
+    });
+    const auto graph = [&](wp<TS<bool>> use_second) {
+        return inspect(select(use_second, make_first(use_second), make_second(use_second)));
+    };
+
+    const auto actual = testing::test_graph(graph, std::array{false, true});
+
+    CHECK(actual.equals({3000, 3010}));
+}
+
+TEST_CASE("a dictionary reference sample reports nested TSS changes for added and removed items",
+          "[series:tsd][series:tss][series:value][feature:reference][feature:sampling]"
+          "[binding:reference-to-value][shape:nested][transition:addition][transition:removal]") {
+    const auto make_first = node([](In<TS<bool>>, Out<TSD<std::int64_t, TSS<std::int64_t>>> output) {
+        output[1].insert(10);
+        output[1].insert(20);
+    });
+    const auto make_second = node([](In<TS<bool>>, Out<TSD<std::int64_t, TSS<std::int64_t>>> output) {
+        output[2].insert(30);
+        output[2].insert(40);
+    });
+    const auto select = node([](In<TS<bool>> use_second, In<REF<TSD<std::int64_t, TSS<std::int64_t>>>> first,
+                                In<REF<TSD<std::int64_t, TSS<std::int64_t>>>> second,
+                                Out<REF<TSD<std::int64_t, TSS<std::int64_t>>>> output) {
+        output.copy(*use_second ? second : first);
+    });
+    const auto inspect = node([](In<TSD<std::int64_t, TSS<std::int64_t>>> input, Out<TS<i64>> output) {
+        auto added_keys = 0;
+        auto removed_keys = 0;
+        auto added_items = 0;
+        auto removed_items = 0;
+        input.for_each_added([&](const auto &key) {
+            added_keys += static_cast<int>(*key);
+            input[key].for_each_added([&](const auto &item) { added_items += static_cast<int>(*item); });
+        });
+        input.for_each_removed([&](const auto &key) {
+            removed_keys += static_cast<int>(*key);
+            input.item_at(input.find_removed_id(key)).for_each_removed(
+                [&](const auto &item) { removed_items += static_cast<int>(*item); });
+        });
+        output.set(added_keys * 1'000'000 + removed_keys * 100'000 + added_items * 100 + removed_items);
+    });
+    const auto graph = [&](wp<TS<bool>> use_second) {
+        return inspect(select(use_second, make_first(use_second), make_second(use_second)));
+    };
+
+    const auto actual = testing::test_graph(graph, std::array{false, true});
+
+    CHECK(actual.equals({1'003'000, 2'107'030}));
+}
+
+TEST_CASE("sampled dictionary queries work before change enumeration",
+          "[series:tsd][series:value][feature:reference][feature:sampling]"
+          "[binding:reference-to-value][transition:addition][transition:removal][transition:update]") {
+    const auto make_first = node([](In<TS<bool>>, Out<TSD<std::int64_t, TS<i64>>> output) {
+        output[1].set(10);
+        output[2].set(20);
+    });
+    const auto make_second = node([](In<TS<bool>>, Out<TSD<std::int64_t, TS<i64>>> output) {
+        output[2].set(200);
+        output[3].set(300);
+    });
+    const auto select = node([](In<TS<bool>> use_second, In<REF<TSD<std::int64_t, TS<i64>>>> first,
+                                In<REF<TSD<std::int64_t, TS<i64>>>> second,
+                                Out<REF<TSD<std::int64_t, TS<i64>>>> output) {
+        output.copy(*use_second ? second : first);
+    });
+    const auto inspect = node([](In<TS<i64>> query, In<TSD<std::int64_t, TS<i64>>> input,
+                                 Out<TS<i64>> output) {
+        const i64 key_one_value{1};
+        const i64 key_two_value{2};
+        const auto key_one = Scalar<i64>::from(key_one_value);
+        const auto key_two = Scalar<i64>::from(key_two_value);
+        auto result = 0;
+        switch (*query) {
+        case 0:
+            result = input.find_added_id(key_one) != util::occupancy_index::npos;
+            break;
+        case 1:
+            result = input.find_removed_id(key_one) != util::occupancy_index::npos;
+            break;
+        case 2:
+            result = input.find_modified_id(key_two) != util::occupancy_index::npos;
+            break;
+        case 3:
+            result = input.item_modified(key_two);
+            break;
+        case 4: {
+            const auto id = input.find_item_id(key_two);
+            result = id != util::occupancy_index::npos &&
+                     input.runtime_type().item_updated(input.last_updated_state(), input.data(), id);
+            break;
+        }
+        case 5:
+            input.runtime_type().for_each_updated_item(
+                input.last_updated_state(), input.data(), &result,
+                [](void *value, item_id_t) { ++*static_cast<int *>(value); });
+            break;
+        case 6:
+            input.runtime_type().for_each_modified_item(
+                input.last_updated_state(), input.data(), input.last_updated(), &result,
+                [](void *value, TimeSeriesRuntimeType::ModifiedItem) { ++*static_cast<int *>(value); });
+            break;
+        case 7:
+            result = input.runtime_type().item_updated(input.last_updated_state(), input.data(), key_set_item_id);
+            break;
+        default:
+            break;
+        }
+        output.set(result);
+    });
+    const auto graph = [&](wp<TS<i64>> query, wp<TS<bool>> use_second) {
+        return inspect(query, select(use_second, make_first(use_second), make_second(use_second)));
+    };
+
+    const auto actual = testing::test_graph(graph, std::array{0, 1, 2, 3, 4, 5, 6, 7},
+                                            std::array{false, true, false, true, false, true, false, true});
+
+    CHECK(actual.equals({1, 1, 1, 1, 1, 4, 4, 1}));
+}
+
 TEST_CASE("a dictionary item samples nested graph stop and restart",
           "[evaluation][nested][series:tsd][series:value][reference][feature:reference][feature:sampling]"
           "[feature:nested-graph][binding:reference-to-value][shape:nested]"

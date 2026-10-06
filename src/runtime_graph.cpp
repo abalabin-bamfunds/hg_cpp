@@ -12,6 +12,7 @@
 #include <bg/scalar/details/allocation_context.hpp>
 #include <bg/scalar/runtime_type.hpp>
 #include <bg/time_series/ref/ref_input_storage.hpp>
+#include <bg/time_series/ref/ref_input_sample.hpp>
 #include <bg/time_series/ref/ref_provider.hpp>
 #include <bg/time_series/time_series_runtime_type.hpp>
 #include <bg/util/scope_exit.hpp>
@@ -543,6 +544,10 @@ void RuntimeGraph::finalize(EvaluationContext &parent_context) noexcept {
             output_destruction.runtime_types[i - 1]->destroy_value(storage_ + output_destruction.offsets[i - 1],
                                                                    allocator_);
         }
+
+        if (&outer_graph() == this) {
+            destroy_reference_transition_samples();
+        }
     }
 }
 
@@ -626,6 +631,34 @@ void RuntimeGraph::clear_reference_input_samples() noexcept {
             remove_cycle_callback(sample);
             sample->reset();
         }
+    }
+}
+
+details::SampledReferenceChange RuntimeGraph::reference_transition_sample(
+    const RuntimeGraph &publisher, const void *output, Reference previous_reference, Reference current_reference,
+    details::ResolvedTimeSeries previous, details::ResolvedTimeSeries current,
+    const TimeSeriesRuntimeType &runtime_type) {
+    auto &outer = outer_graph();
+    if (outer.reference_input_sample_cache_ == nullptr) {
+        outer.reference_input_sample_cache_ =
+            outer.allocator_.new_object<details::ReferenceInputSampleCache>(outer.allocator_);
+    }
+    return outer.reference_input_sample_cache_->get(publisher, output, previous_reference, current_reference,
+                                                    previous, current, runtime_type, outer.evaluation_time_);
+}
+
+void RuntimeGraph::clear_reference_transition_samples() noexcept {
+    auto &outer = outer_graph();
+    if (outer.reference_input_sample_cache_ != nullptr) {
+        outer.reference_input_sample_cache_->clear();
+    }
+}
+
+void RuntimeGraph::destroy_reference_transition_samples() noexcept {
+    assert(&outer_graph() == this);
+    if (reference_input_sample_cache_ != nullptr) {
+        allocator_.delete_object(reference_input_sample_cache_);
+        reference_input_sample_cache_ = nullptr;
     }
 }
 
@@ -1051,6 +1084,9 @@ void RuntimeGraph::stop_nodes(std::size_t node_count, EvaluationContext &parent_
 
     clear_timed_schedule();
     clear_reference_input_samples();
+    if (&outer_graph() == this) {
+        destroy_reference_transition_samples();
+    }
     clear_cycle_callbacks();
 }
 
@@ -1091,6 +1127,9 @@ void RuntimeGraphEvaluator::stop(RuntimeGraph &graph, EvaluationContext &parent_
 
     graph.clear_timed_schedule();
     graph.clear_reference_input_samples();
+    if (&graph.outer_graph() == &graph) {
+        graph.destroy_reference_transition_samples();
+    }
     graph.clear_cycle_callbacks();
 }
 
@@ -1154,6 +1193,9 @@ bool RuntimeGraphEvaluator::evaluate(RuntimeGraph &graph, EvaluationContext &par
         }
 
         graph.run_cycle_callbacks(context);
+        if (&graph.outer_graph() == &graph) {
+            graph.clear_reference_transition_samples();
+        }
         graph.last_evaluation_time_ = evaluation_time;
         graph.evaluation_time_ = evaluation_time;
         graph.activate_scheduled(evaluation_time);

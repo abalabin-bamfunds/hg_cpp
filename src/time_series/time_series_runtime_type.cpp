@@ -197,7 +197,7 @@ TimeSeriesRuntimeType::MutableItem TimeSeriesRuntimeType::item(void *, item_id_t
 
 void TimeSeriesRuntimeType::for_each_item_id(const void *, void *, ItemIdFunction) const {}
 
-bool TimeSeriesRuntimeType::item_updated(const TimeSeriesState &, const void *, item_id_t) const noexcept {
+bool TimeSeriesRuntimeType::item_updated(const TimeSeriesState &, const void *, item_id_t) const {
     return false;
 }
 

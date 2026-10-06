@@ -25,7 +25,7 @@ class TimeSeriesSetRuntimeType : public TimeSeriesRuntimeType {
                                  const ScalarData &key) const;
     virtual const void *set_key(const void *value, item_id_t id) const noexcept;
     virtual item_id_t set_next_item_id(const TimeSeriesState &last_updated, const void *value, Range range,
-                                       item_id_t start) const noexcept;
+                                       item_id_t start) const;
 
     const ScalarRuntimeType &key_runtime_type() const noexcept { return *key_; }
 

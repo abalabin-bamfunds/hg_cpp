@@ -271,6 +271,19 @@ struct delayed_set_reference_condition_definition {
     void evaluate() const { output.set(1); }
 };
 
+struct same_cycle_set_reference_condition_definition {
+    static constexpr bool uses_timed_scheduling = true;
+
+    bg::Out<bg::TS<bg::i64>> output;
+
+    void start(bg::EvaluationContext *context) const {
+        output.set(0);
+        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
+    }
+
+    void evaluate() const { output.set(1); }
+};
+
 struct set_reference_selector_definition {
     bg::In<bg::TS<bg::i64>> condition;
     bg::In<bg::REF<bg::TSS<bg::i64>>, bg::passive, bg::optional> first;
@@ -459,6 +472,33 @@ TEST_CASE("a TSS input does not report stale removals after an invalid target is
     CHECK(referenced_set_observer_definition::removed ==
           std::vector<std::vector<std::int64_t>>{{}, {11, 12}, {}});
     CHECK(referenced_set_observer_definition::was_removed == std::vector{false, true, false});
+}
+
+TEST_CASE("a TSS reference transition uses the old target's current state after a same-cycle clear",
+          "[series:tss][feature:reference][feature:collection-change]"
+          "[validity:optional][transition:removal][binding:reference-to-value][scalar:integer]") {
+    const auto valid = bg::node<clearing_referenced_set_source_definition>();
+    const auto invalid = bg::node<invalid_set_source_definition>();
+    const auto condition = bg::node<same_cycle_set_reference_condition_definition>();
+    const auto select = bg::node<set_reference_selector_definition>();
+    const auto observe = bg::node<referenced_set_observer_definition>();
+    referenced_set_observer_definition::validity.clear();
+    referenced_set_observer_definition::sizes.clear();
+    referenced_set_observer_definition::added.clear();
+    referenced_set_observer_definition::removed.clear();
+    referenced_set_observer_definition::was_removed.clear();
+    referenced_set_observer_definition::removed_cursor.clear();
+    const auto graph = [&] { observe(select(condition(), valid(), invalid())); };
+
+    bg::run_graph(graph);
+
+    CHECK(referenced_set_observer_definition::validity == std::vector{true, false});
+    CHECK(referenced_set_observer_definition::sizes == std::vector<std::size_t>{2, 0});
+    CHECK(referenced_set_observer_definition::added ==
+          std::vector<std::vector<std::int64_t>>{{11, 12}, {}});
+    CHECK(referenced_set_observer_definition::removed ==
+          std::vector<std::vector<std::int64_t>>{{}, {}});
+    CHECK(referenced_set_observer_definition::was_removed == std::vector{false, false});
 }
 
 TEST_CASE("a TSS input reports removed items when its reference becomes null",

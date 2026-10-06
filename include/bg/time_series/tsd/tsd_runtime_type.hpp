@@ -131,7 +131,7 @@ class TimeSeriesDictionaryRuntimeType : public TimeSeriesRuntimeType {
     // Returns the first item ID at or after start. A sampled removed item retains
     // its existing previous-item flag so that key() and item() select its source.
     virtual item_id_t next_item_id(const TimeSeriesState &last_updated, const void *value, ItemRange range,
-                                   item_id_t start) const noexcept {
+                                   item_id_t start) const {
         if (value == nullptr) {
             return util::occupancy_index::npos;
         }
@@ -164,7 +164,7 @@ class TimeSeriesDictionaryRuntimeType : public TimeSeriesRuntimeType {
         return id;
     }
 
-    virtual bool item_modified(const TimeSeriesState &last_updated, const void *value, item_id_t id) const noexcept {
+    virtual bool item_modified(const TimeSeriesState &last_updated, const void *value, item_id_t id) const {
         const auto &storage = *static_cast<const time_series_dict_storage *>(value);
         return last_updated.valid() && storage.change_time() == last_updated.time() &&
                storage.modified().contains(id) &&
@@ -224,7 +224,7 @@ class TimeSeriesDictionaryRuntimeType : public TimeSeriesRuntimeType {
         return true;
     }
 
-    bool item_updated(const TimeSeriesState &last_updated, const void *value, item_id_t id) const noexcept override {
+    bool item_updated(const TimeSeriesState &last_updated, const void *value, item_id_t id) const override {
         const auto &storage = *static_cast<const time_series_dict_storage *>(value);
         if (!last_updated.valid() || storage.change_time() != last_updated.time()) {
             return false;
@@ -329,7 +329,7 @@ class TimeSeriesDictionaryRuntimeType : public TimeSeriesRuntimeType {
 
   private:
     virtual bool item_in_range(const TimeSeriesState &last_updated, const void *value, ItemRange range,
-                               item_id_t id) const noexcept {
+                               item_id_t id) const {
         const auto &storage = *static_cast<const time_series_dict_storage *>(value);
         if (!last_updated.valid() || storage.change_time() != last_updated.time()) {
             return false;

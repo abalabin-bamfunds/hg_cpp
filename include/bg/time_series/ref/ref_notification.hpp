@@ -31,7 +31,9 @@ class ReferenceInputSubscriber {
     bool required() const noexcept { return (node_index_and_flags_ & required_flag) != 0; }
     bool controlled_activity() const noexcept { return (node_index_and_flags_ & controlled_activity_flag) != 0; }
 
-    void update_input(OutputChangeContext &context, Reference reference, std::size_t notification_data,
+    void update_input(OutputChangeContext &context, RuntimeGraph &publisher_graph, const void *output,
+                      Reference reference,
+                      std::size_t notification_data,
                       InputNotificationFunction notification, OutputChange change) const;
 
   private:
