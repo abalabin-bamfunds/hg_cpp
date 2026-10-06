@@ -53,9 +53,11 @@ class ReduceRuntime {
     ReduceRuntime &operator=(const ReduceRuntime &) = delete;
 
     bool evaluate(const CompiledReduceGraph &compiled, ReduceInvocation invocation) {
-        const auto dictionary = invocation.template input<In<TSD<SCALAR, REF<TS_T>>>>(
-            compiled.dictionary_parameter, 0);
-        if (!dictionary.valid()) {
+        const auto values = invocation.template input<In<TSD<SCALAR, TS_T>>>(
+            compiled.value_dictionary_parameter, 0);
+        const auto references = invocation.template input<In<TSD<SCALAR, REF<TS_T>>>>(
+            compiled.reference_dictionary_parameter, 1);
+        if (!values.valid() || !references.valid()) {
             selected_keys_.clear();
             selected_references_.clear();
             retire_graphs(invocation.context());
@@ -73,7 +75,7 @@ class ReduceRuntime {
             return publish_result(compiled, invocation, true);
         }
 
-        collect_valid_items(dictionary);
+        collect_valid_items(references, values);
 
         const auto membership_changed = !same_membership();
         if (membership_changed) {
@@ -115,15 +117,14 @@ class ReduceRuntime {
     }
 
   private:
-    template <typename Dictionary> void collect_valid_items(const Dictionary &dictionary) {
+    template <typename ReferenceDictionary, typename ValueDictionary>
+    void collect_valid_items(const ReferenceDictionary &references, const ValueDictionary &values) {
         candidate_keys_.clear();
         candidate_references_.clear();
-        if (!dictionary.valid()) {
-            return;
-        }
 
-        dictionary.for_each_key_value([&](const auto &key, const auto &item) {
-            if (!item.valid()) {
+        references.for_each_key_value([&](const auto &key, const auto &item) {
+            const auto value = values[key];
+            if (!item.valid() || !value.valid()) {
                 return;
             }
 
@@ -358,10 +359,12 @@ class DefaultReduceNodeDefinition : public ReduceNodeDefinition {
 } // namespace
 
 std::unique_ptr<NodeTemplate> make_reduce_node(ReduceGraphWiring wiring, const ResolvedSignature &signature,
-                                               std::uint32_t dictionary_parameter,
+                                               std::uint32_t value_dictionary_parameter,
+                                               std::uint32_t reference_dictionary_parameter,
                                                std::optional<std::uint32_t> default_parameter) {
     return std::make_unique<RuntimeSignatureNodeTemplate<DefaultReduceNodeDefinition>>(
-        DefaultReduceNodeDefinition{std::move(wiring), signature, dictionary_parameter, default_parameter});
+        DefaultReduceNodeDefinition{std::move(wiring), signature, value_dictionary_parameter,
+                                    reference_dictionary_parameter, default_parameter});
 }
 
 } // namespace bg::details

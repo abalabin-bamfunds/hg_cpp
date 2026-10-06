@@ -15,6 +15,10 @@ has no valid items, including when keys exist but all their items are invalid.
 An invalid TSD produces an invalid result. Without a default, a valid TSD with
 no valid items also produces an invalid result.
 
+When a TSD stores references, target updates, invalidations, and revalidations
+update the reduction even when the TSD membership and stored references do not
+change.
+
 The operator compiles the reducer graph once and creates a nested runtime graph
 for each pair in the current tree. A change to the key set or to the reference
 stored under a key rebuilds the tree. Stopped nested graphs remain allocated

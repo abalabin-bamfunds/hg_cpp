@@ -60,9 +60,15 @@ GraphArgument build_reduce_graph_argument(const WiringTemplate &function, const 
 
     auto parameters = std::vector<ResolvedParameter>{};
     auto outer_arguments = std::vector<WiringArgument>{};
-    const auto dictionary_parameter = std::uint32_t{};
-    parameters.push_back({dictionary.name().value_or(util::symbol{"dictionary"}),
-                          &mapped_dictionary_type(*dictionary_type_value), active, optional});
+    const auto value_dictionary_parameter = std::uint32_t{};
+    const auto reference_dictionary_parameter = std::uint32_t{1};
+    const auto &value_dictionary_type = time_series_dictionary_type(
+        dictionary_type_value->key_type(), item_type, *dictionary_type_value->guarantee().value());
+    parameters.push_back({util::symbol{"values"}, &value_dictionary_type, active, optional});
+    parameters.push_back({util::symbol{"references"}, &mapped_dictionary_type(*dictionary_type_value), active,
+                          optional});
+    outer_arguments.push_back(dictionary);
+    outer_arguments.back().clear_name();
     outer_arguments.push_back(dictionary);
     outer_arguments.back().clear_name();
 
@@ -88,7 +94,8 @@ GraphArgument build_reduce_graph_argument(const WiringTemplate &function, const 
         .graph = std::move(built.graph),
         .outer_signature = std::move(outer_signature),
         .outer_arguments = std::move(outer_arguments),
-        .dictionary_parameter = dictionary_parameter,
+        .value_dictionary_parameter = value_dictionary_parameter,
+        .reference_dictionary_parameter = reference_dictionary_parameter,
         .default_parameter = default_parameter,
     });
     return GraphArgument{std::move(structure), std::move(payload)};
@@ -103,8 +110,8 @@ const DefaultReduceWiring &DefaultReduceWiring::from(const GraphArgument &argume
 }
 
 std::optional<WiringPoint> DefaultReduceWiring::wire() const {
-    auto node_template = make_reduce_node(graph, outer_signature, dictionary_parameter,
-                                          default_parameter);
+    auto node_template = make_reduce_node(graph, outer_signature, value_dictionary_parameter,
+                                          reference_dictionary_parameter, default_parameter);
     auto &outer = WiringContext::current().wiring();
     const auto &owned = outer.own_node_template(std::move(node_template));
     const auto result = owned(std::span<const WiringArgument>{outer_arguments});

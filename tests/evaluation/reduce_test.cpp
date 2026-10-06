@@ -199,4 +199,64 @@ TEST_CASE("reduce does not use the default when the TSD is invalid",
     CHECK(actual.equals<i64>({std::nullopt}));
 }
 
+TEST_CASE("reduce follows a stable reference to a single TSD item",
+          "[feature:reduce][series:tsd][series:reference][transition:update][transition:invalidation]"
+          "[transition:revalidation]") {
+    const auto make_target = node([](In<TS<i64>> command, Out<TS<i64>> output) {
+        if (*command == 0) {
+            output.invalidate();
+        } else {
+            output.set(*command);
+        }
+    });
+    const auto retain_reference = node([](In<TS<bool>> install, In<REF<TS<i64>>, passive> target,
+                                          Out<TSD<std::int64_t, REF<TS<i64>>>> output) {
+        if (*install) {
+            output[1].copy(target);
+        }
+    });
+    const auto tested = graph(
+        "name"_n = "reduce_tracks_single_referenced_item",
+        [&](wp<TS<i64>> command, wp<TS<bool>> install) -> wp<TS<i64>> {
+            const auto target = make_target(command);
+            return wp<TS<i64>>{reduce(add_graph, retain_reference(install, target))};
+        });
+
+    const auto actual = testing::test_graph(tested, std::array{5, 0, 9}, std::array{true, false, false});
+
+    CHECK(actual.equals<i64>({5, std::nullopt, 9}));
+}
+
+TEST_CASE("reduce follows stable TSD references as initially invalid items become valid",
+          "[feature:reduce][series:tsd][series:reference][transition:update][transition:invalidation]"
+          "[transition:revalidation][shape:nested]") {
+    const auto make_target = node([](In<TS<i64>> command, Out<TS<i64>> output) {
+        if (*command == 0) {
+            output.invalidate();
+        } else {
+            output.set(*command);
+        }
+    });
+    const auto retain_references = node([](In<TS<bool>> install, In<REF<TS<i64>>, passive> first,
+                                           In<REF<TS<i64>>, passive> second,
+                                           Out<TSD<std::int64_t, REF<TS<i64>>>> output) {
+        if (*install) {
+            output[1].copy(first);
+            output[2].copy(second);
+        }
+    });
+    const auto tested = graph(
+        "name"_n = "reduce_tracks_referenced_items",
+        [&](wp<TS<i64>> first_command, wp<TS<i64>> second_command, wp<TS<bool>> install) -> wp<TS<i64>> {
+            const auto first = make_target(first_command);
+            const auto second = make_target(second_command);
+            return wp<TS<i64>>{reduce(add_graph, retain_references(install, first, second))};
+        });
+
+    const auto actual = testing::test_graph(tested, std::array{5, 6, 7, 8}, std::array{0, 9, 0, 11},
+                                            std::array{true, false, false, false});
+
+    CHECK(actual.equals<i64>({5, 15, 7, 19}));
+}
+
 } // namespace

@@ -14,7 +14,8 @@ namespace bg::details {
 
 struct CompiledReduceGraph {
     CompiledNestedGraph nested;
-    std::uint32_t dictionary_parameter{};
+    std::uint32_t value_dictionary_parameter{};
+    std::uint32_t reference_dictionary_parameter{};
     std::optional<std::uint32_t> default_parameter;
 };
 
@@ -23,7 +24,9 @@ class ReduceNodeDefinition {
     using compiled_data_type = CompiledReduceGraph;
 
     ReduceNodeDefinition(ReduceGraphWiring wiring, const ResolvedSignature &signature,
-                         std::uint32_t dictionary_parameter, std::optional<std::uint32_t> default_parameter);
+                         std::uint32_t value_dictionary_parameter,
+                         std::uint32_t reference_dictionary_parameter,
+                         std::optional<std::uint32_t> default_parameter);
 
     const Signature &signature() const noexcept { return *signature_; }
     NodeTemplateIdentity definition_identity() const;
@@ -34,7 +37,8 @@ class ReduceNodeDefinition {
 
     ReduceGraphWiring wiring_;
     std::unique_ptr<Signature> signature_;
-    std::uint32_t dictionary_parameter_;
+    std::uint32_t value_dictionary_parameter_;
+    std::uint32_t reference_dictionary_parameter_;
     std::optional<std::uint32_t> default_parameter_;
 };
 
