@@ -409,7 +409,7 @@ TEST_CASE("a TSS input reports removed items when its reference selects an inval
           std::vector<std::vector<std::int64_t>>{{}, {11, 12}});
 }
 
-TEST_CASE("a TSS input reports key changes when its reference selects another valid target",
+TEST_CASE("a TSS input reports item changes when its reference selects another valid target",
           "[evaluation][reference][series:tss][feature:reference][feature:collection-change]"
           "[validity:optional][transition:addition][transition:removal][binding:reference-to-value]"
           "[scalar:integer]") {
