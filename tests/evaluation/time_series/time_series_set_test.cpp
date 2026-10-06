@@ -8,6 +8,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -197,4 +198,93 @@ TEST_CASE("a time series set accepts its exact non-canonical item type",
     const auto actual = bg::testing::test_graph(graph);
 
     CHECK(actual.equals({true, false}));
+}
+
+namespace {
+
+struct referenced_set_source_definition {
+    bg::Out<bg::TSS<bg::i64>> output;
+
+    void start() const {
+        output.insert(11);
+        output.insert(12);
+    }
+
+    void evaluate() const {}
+};
+
+struct invalid_set_source_definition {
+    bg::Out<bg::TSS<bg::i64>> output;
+
+    void evaluate() const {}
+};
+
+struct set_reference_condition_definition {
+    static constexpr bool uses_timed_scheduling = true;
+
+    bg::Out<bg::TS<bg::i64>> output;
+
+    void start(bg::EvaluationContext *context) const {
+        output.set(0);
+        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
+    }
+
+    void evaluate() const { output.set(1); }
+};
+
+struct set_reference_selector_definition {
+    bg::In<bg::TS<bg::i64>> condition;
+    bg::In<bg::REF<bg::TSS<bg::i64>>, bg::passive, bg::optional> valid;
+    bg::In<bg::REF<bg::TSS<bg::i64>>, bg::passive, bg::optional> invalid;
+    bg::Out<bg::REF<bg::TSS<bg::i64>>> output;
+
+    void evaluate() const { output.copy(*condition == 0 ? valid : invalid); }
+};
+
+struct referenced_set_observer_definition {
+    bg::In<bg::TSS<bg::i64>, bg::optional> input;
+
+    void evaluate() const {
+        validity.push_back(input.valid());
+        sizes.push_back(input.size());
+
+        auto added_items = std::vector<std::int64_t>{};
+        input.for_each_added([&](const auto &item) { added_items.push_back(item.value()); });
+        added.push_back(std::move(added_items));
+
+        auto removed_items = std::vector<std::int64_t>{};
+        input.for_each_removed([&](const auto &item) { removed_items.push_back(item.value()); });
+        removed.push_back(std::move(removed_items));
+    }
+
+    inline static std::vector<bool> validity;
+    inline static std::vector<std::size_t> sizes;
+    inline static std::vector<std::vector<std::int64_t>> added;
+    inline static std::vector<std::vector<std::int64_t>> removed;
+};
+
+} // namespace
+
+TEST_CASE("a TSS input reports removed items when its reference selects an invalid target",
+          "[evaluation][reference][series:tss][feature:reference][feature:collection-change]"
+          "[validity:optional][transition:removal][binding:reference-to-value][scalar:integer]") {
+    const auto valid = bg::node<referenced_set_source_definition>();
+    const auto invalid = bg::node<invalid_set_source_definition>();
+    const auto condition = bg::node<set_reference_condition_definition>();
+    const auto select = bg::node<set_reference_selector_definition>();
+    const auto observe = bg::node<referenced_set_observer_definition>();
+    referenced_set_observer_definition::validity.clear();
+    referenced_set_observer_definition::sizes.clear();
+    referenced_set_observer_definition::added.clear();
+    referenced_set_observer_definition::removed.clear();
+    const auto graph = [&] { observe(select(condition(), valid(), invalid())); };
+
+    bg::run_graph(graph);
+
+    CHECK(referenced_set_observer_definition::validity == std::vector{true, false});
+    CHECK(referenced_set_observer_definition::sizes == std::vector<std::size_t>{2, 0});
+    CHECK(referenced_set_observer_definition::added ==
+          std::vector<std::vector<std::int64_t>>{{11, 12}, {}});
+    CHECK(referenced_set_observer_definition::removed ==
+          std::vector<std::vector<std::int64_t>>{{}, {11, 12}});
 }
