@@ -348,7 +348,7 @@ def _bind_definition_arguments(
         ),
         {},
     )
-    named.update(direct_positional)
+    named = direct_positional | named
 
     return fixed, positional, named
 

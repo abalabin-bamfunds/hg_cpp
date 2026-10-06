@@ -150,6 +150,28 @@ def test_variadic_tsb_can_be_forwarded_through_a_nested_graph():
     assert bg.test_graph(graph, [1, 2], [10, 20]) == [11, 22]
 
 
+def test_positional_and_named_tsb_packs_can_be_forwarded_together():
+    @bg.compute_node
+    def total(
+        *inputs: bg.TSB[bg.TS_SCHEMA],
+        **options: bg.TSB[bg.TS_SCHEMA],
+    ) -> bg.TS[int]:
+        return sum(inputs.value.values()) + sum(options.value.values())
+
+    @bg.graph
+    def forward(
+        *inputs: bg.TSB[bg.TS_SCHEMA],
+        **options: bg.TSB[bg.TS_SCHEMA],
+    ) -> bg.TS[int]:
+        return total(inputs=inputs, options=options)
+
+    @bg.graph
+    def graph(value: bg.TS[int]) -> bg.TS[int]:
+        return forward(value, 2, bonus=3)
+
+    assert bg.test_graph(graph, [1, 4]) == [6, 9]
+
+
 def test_exact_pack_name_accepts_a_prebuilt_tsb():
     class Pair(bg.TimeSeriesSchema):
         left: bg.TS[int]

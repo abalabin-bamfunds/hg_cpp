@@ -30,6 +30,39 @@ TEST_CASE("a time-series input reads validity and update time",
     CHECK(input.last_updated() == updated);
 }
 
+TEST_CASE("a set input preserves its packed validity state when type erased",
+          "[time_series][feature:time-series-view][feature:visitor][declaration:generic][series:tss]") {
+    auto state = bg::TimeSeriesState{};
+    const auto &runtime_type = bg::cpp_time_series_runtime_type<bg::TSS<bg::i64>>();
+    const auto input = bg::In<bg::TSS<bg::i64>>{state, nullptr, runtime_type};
+    const auto erased =
+        bg::In<bg::TS_T>{input.last_updated_state(), input.data(), input.runtime_type(), input.modified()};
+
+    CHECK_FALSE(erased.valid());
+
+    const auto first_update = bg::MIN_DT + std::chrono::microseconds{1};
+    state.publish(first_update);
+    CHECK(erased.valid());
+
+    const auto became_valid = erased.visit(
+        [](const bg::In<bg::TSS<bg::SCALAR>> *value) { return value->became_valid(); }, ddv::noop);
+
+    REQUIRE(became_valid);
+    CHECK(*became_valid);
+    CHECK(erased.last_updated() == first_update);
+
+    const auto invalidation_time = first_update + std::chrono::microseconds{1};
+    state.invalidate(invalidation_time);
+    CHECK_FALSE(erased.valid());
+
+    const auto became_invalid = erased.visit(
+        [](const bg::In<bg::TSS<bg::SCALAR>> *value) { return value->became_invalid(); }, ddv::noop);
+
+    REQUIRE(became_invalid);
+    CHECK(*became_invalid);
+    CHECK(erased.last_updated() == invalidation_time);
+}
+
 namespace {
 
 template <template <typename, auto...> typename Field> struct VisitorBundle {

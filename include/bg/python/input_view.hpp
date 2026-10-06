@@ -67,12 +67,12 @@ class NB_HIDDEN InputView {
     const std::shared_ptr<CallbackLifetime> &lifetime() const noexcept { return lifetime_; }
     std::uint64_t generation() const noexcept { return generation_; }
 
-    template <typename Input> const Input &as() const {
-        const auto result = input_.visit([](const Input *value) { return value; }, ddv::noop);
+    template <typename Input> Input as() const {
+        const auto result = input_.visit([](const Input *value) { return *value; }, ddv::noop);
         if (!result) {
             throw std::logic_error{"the Python input has an unexpected time-series shape"};
         }
-        return **result;
+        return *result;
     }
 
   private:

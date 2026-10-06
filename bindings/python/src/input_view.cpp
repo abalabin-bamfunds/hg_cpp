@@ -1273,7 +1273,7 @@ nb::object TSDInput::iter() const {
 nb::object TSDInput::key_set() const {
     check_lifetime();
     const auto keys = as<In<TSD<SCALAR, TS_T>>>().key_set();
-    return make_input_view(In<TS_T>{keys.last_updated(), keys.data(), keys.runtime_type(), keys.modified()},
+    return make_input_view(In<TS_T>{keys.last_updated_state(), keys.data(), keys.runtime_type(), keys.modified()},
                            conversions(), lifetime(), generation());
 }
 

@@ -284,8 +284,7 @@ std::vector<WiringArgument> wiring_arguments(const Signature &signature, nb::seq
 
     for (auto index = std::size_t{}; index < nb::len(positional_values); ++index) {
         auto argument = details::wiring_argument(positional_values[index], memory, wiring);
-        bg::details::wiring_argument_access::set_variadic_name(argument, util::symbol{std::to_string(index)},
-                                                               bg::details::VariadicMode::positional);
+        argument.set_variadic_name(util::symbol{std::to_string(index)}, bg::details::VariadicMode::positional);
         arguments.push_back(std::move(argument));
     }
 
@@ -299,11 +298,10 @@ std::vector<WiringArgument> wiring_arguments(const Signature &signature, nb::seq
             (named_parameter && signature.parameter(*named_parameter).name == argument_name);
         if (exact_parameter && argument.is_time_series() &&
             bg::details::variadic_wiring_record(argument.time_series()) != nullptr) {
-            bg::details::wiring_argument_access::clear_name(argument);
+            argument.clear_name();
         } else {
-            bg::details::wiring_argument_access::set_variadic_name(argument, argument_name,
-                                                                   exact_parameter ? bg::details::VariadicMode::none
-                                                                                   : bg::details::VariadicMode::named);
+            argument.set_variadic_name(argument_name, exact_parameter ? bg::details::VariadicMode::none
+                                                                      : bg::details::VariadicMode::named);
         }
         arguments.push_back(std::move(argument));
     }

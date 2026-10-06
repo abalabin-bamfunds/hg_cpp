@@ -638,6 +638,57 @@ def test_lazy_tsd_views_cover_removal_key_set_and_expiration():
         list(captured[0])
 
 
+def test_tsd_key_set_tracks_key_changes_and_keeps_its_update_time():
+    observed = []
+    captured_key_sets = []
+
+    @bg.compute_node
+    def make_values(trigger: bg.TS[int]) -> bg.TSD[int, bg.TS[int]]:
+        if trigger.value == 1:
+            return {1: 10}
+        if trigger.value == 2:
+            return {1: 20}
+        if trigger.value == 3:
+            return None
+        if trigger.value == 4:
+            return {1: bg.REMOVE}
+        return {1: 30}
+
+    @bg.compute_node
+    def inspect(trigger: bg.TS[int], values: bg.TSD[int, bg.TS[int]]) -> bg.TS[int]:
+        keys = values.key_set
+        delta = keys.delta_value
+        captured_key_sets.append(keys.value)
+        observed.append(
+            (
+                keys.valid,
+                keys.modified,
+                set(keys.value),
+                None if delta is None else (set(delta.added), set(delta.removed)),
+                keys.last_modified_time,
+            )
+        )
+        return trigger.value
+
+    @bg.graph
+    def graph(trigger: bg.TS[int]) -> bg.TS[int]:
+        return inspect(trigger, make_values(trigger))
+
+    assert bg.test_graph(graph, [1, 2, 3, 4, 5]) == [1, 2, 3, 4, 5]
+    assert [state[:4] for state in observed] == [
+        (True, True, {1}, ({1}, set())),
+        (True, False, {1}, None),
+        (True, False, {1}, None),
+        (True, True, set(), (set(), {1})),
+        (True, True, {1}, ({1}, set())),
+    ]
+    assert observed[0][4] == observed[1][4] == observed[2][4]
+    assert observed[3][4] > observed[2][4]
+    assert observed[4][4] > observed[3][4]
+    with pytest.raises(RuntimeError, match="outside its callback"):
+        set(captured_key_sets[0])
+
+
 def test_tss_input_exposes_lazy_changes_and_membership_queries():
     observed = []
 
