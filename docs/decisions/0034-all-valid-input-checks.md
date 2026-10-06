@@ -1,6 +1,6 @@
 # All-valid input checks
 
-Status: accepted
+Status: superseded by [0035](0035-all-valid-evaluation-checks.md)
 
 ## Context
 

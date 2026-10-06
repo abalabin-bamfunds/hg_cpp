@@ -18,7 +18,7 @@ void ReferenceInputSubscriber::update_input(OutputChangeContext &context, Refere
     auto &input = *static_cast<ReferenceInputStorage *>(context.runtime_graph().storage_at(input_offset()));
     if (input.value != new_reference) {
         const auto needs_subscription =
-            active() || required() || all_valid() || notification != nullptr || controlled_activity();
+            active() || required() || notification != nullptr || controlled_activity();
         if (input.value && needs_subscription) {
             ReferenceProvider::remove_subscriber(input.value, context.runtime_graph(), input_offset());
         }
@@ -26,12 +26,12 @@ void ReferenceInputSubscriber::update_input(OutputChangeContext &context, Refere
             ReferenceProvider::add_subscriber(new_reference, context.runtime_graph(),
                                               static_cast<std::uint32_t>(input_offset()), notification_data,
                                               static_cast<std::uint32_t>(node_index()), active(), required(),
-                                              notification, controlled_activity(), all_valid());
+                                              notification, controlled_activity());
         }
         input.value = new_reference;
     }
 
-    if (required() || all_valid()) {
+    if (required()) {
         context.schedule_validity_check(context.runtime_graph(), node_index());
     }
     if (notification != nullptr) {

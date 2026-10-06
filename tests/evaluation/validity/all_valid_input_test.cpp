@@ -128,20 +128,6 @@ struct partially_valid_list_source {
     }
 };
 
-struct invalidating_list_source {
-    static constexpr bool uses_timed_scheduling = true;
-
-    Out<TSL<TS<i64>, 2>> output;
-
-    void start(EvaluationContext *context) const {
-        output[0].set(1);
-        output[1].set(10);
-        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
-    }
-
-    void evaluate() const { output[1].invalidate(); }
-};
-
 struct invalidating_leaf_source {
     static constexpr bool uses_timed_scheduling = true;
 
@@ -660,6 +646,44 @@ struct repeated_list_validity_changes_source {
     }
 };
 
+struct deferred_list_validity_source {
+    static constexpr bool uses_timed_scheduling = true;
+
+    State<int> step;
+    Out<TSL<TS<i64>, 2>> output;
+
+    void start(EvaluationContext *context) const {
+        output[0].set(1);
+        output[1].set(10);
+        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
+    }
+
+    void evaluate(EvaluationContext *context) const {
+        if ((*step)++ == 0) {
+            output[1].invalidate();
+            context->schedule_at(context->evaluation_time() + std::chrono::microseconds{2});
+            return;
+        }
+
+        output[1].set(12);
+    }
+};
+
+struct timed_all_valid_input_gate {
+    static constexpr bool uses_timed_scheduling = true;
+
+    In<TSL<TS<i64>, 2>, passive, all_valid> input;
+    Out<TS<i64>> output;
+
+    void start(EvaluationContext *context) const {
+        output.set(*input[0] + *input[1]);
+        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{2});
+        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{5});
+    }
+
+    void evaluate() const { output.set(*input[0] + *input[1]); }
+};
+
 TEST_CASE("an all_valid invalidation handler runs once per failed transition",
           "[evaluation][validity][feature:validity][validity:all-valid][transition:invalidation]"
           "[transition:revalidation][series:fixed-tsl]") {
@@ -719,10 +743,10 @@ TEST_CASE("all_valid on a reference checks the reference rather than its target 
     CHECK(testing::test_graph(graph).equals({true}));
 }
 
-TEST_CASE("a passive all_valid input still invalidates its output",
+TEST_CASE("a passive all_valid input checks items on scheduled evaluation attempts",
           "[evaluation][validity][feature:validity][validity:all-valid][feature:input-activity][series:fixed-tsl]"
           "[activity:passive][transition:invalidation]") {
-    const auto source = node<invalidating_list_source>();
+    const auto source = node<deferred_list_validity_source>();
     const auto combine = node([](In<TSL<TS<i64>, 2>, passive, all_valid> input, In<TS<i64>> pulse,
                                  Out<TS<i64>> output) { output.set(*input[0] + *input[1] + *pulse); });
     const auto observe = node([](In<TS<i64>, optional> input, Out<TS<bool>> output) {
@@ -730,13 +754,14 @@ TEST_CASE("a passive all_valid input still invalidates its output",
     });
     const auto graph = [&](wp<TS<i64>> pulse) { return observe(combine(source(), pulse)); };
 
-    CHECK(testing::test_graph(graph, std::array<i64, 1>{100}).equals({true, false}));
+    const auto pulses = std::array<std::optional<i64>, 5>{100, std::nullopt, 200, std::nullopt, 300};
+    CHECK(testing::test_graph(graph, pulses).equals({true, std::nullopt, false, std::nullopt, true}));
 }
 
-TEST_CASE("dynamic activity does not suppress all_valid invalidation checks",
+TEST_CASE("dynamic activity defers all_valid item checks until a scheduled attempt",
           "[evaluation][validity][feature:validity][validity:all-valid][feature:input-activity]"
           "[series:fixed-tsl][activity:active][transition:invalidation][transition:revalidation]") {
-    const auto source = node<partially_valid_list_source>();
+    const auto source = node<deferred_list_validity_source>();
     const auto observe = node([](In<TSL<TS<i64>, 2>, all_valid, dynamic_activity> input, In<TS<i64>> pulse,
                                  Out<TS<i64>> output) {
         output.set(*input[0] + *input[1] + *pulse);
@@ -747,5 +772,19 @@ TEST_CASE("dynamic activity does not suppress all_valid invalidation checks",
     });
     const auto graph = [&](wp<TS<i64>> pulse) { return report(observe(source(), pulse)); };
 
-    CHECK(testing::test_graph(graph, std::array<i64, 3>{1, 2, 3}).equals({true, false, true}));
+    const auto pulses = std::array<std::optional<i64>, 5>{1, std::nullopt, 2, std::nullopt, 3};
+    CHECK(testing::test_graph(graph, pulses).equals({true, std::nullopt, false, std::nullopt, true}));
+}
+
+TEST_CASE("a timer evaluation checks passive all_valid items",
+          "[evaluation][validity][feature:validity][validity:all-valid][series:fixed-tsl]"
+          "[activity:passive][feature:timed-scheduling][transition:invalidation][transition:revalidation]") {
+    const auto source = node<deferred_list_validity_source>();
+    const auto gate = node<timed_all_valid_input_gate>();
+    const auto observe = node([](In<TS<i64>, optional> input, Out<TS<bool>> output) {
+        output.set(input.valid());
+    });
+    const auto graph = [&] { return observe(gate(source())); };
+
+    CHECK(testing::test_graph(graph).equals({true, std::nullopt, false, std::nullopt, std::nullopt, true}));
 }

@@ -79,11 +79,10 @@ class Node {
         return compiled_node_->time_series_input_runtime_type(runtime_type_index);
     }
 
-    const TimeSeriesRuntimeType &all_valid_input_runtime_type(std::size_t parameter_index,
-                                                              std::size_t all_valid_runtime_type_index) const noexcept {
-        const auto &descriptor = compiled_node_->all_valid_input_descriptor(all_valid_runtime_type_index);
+    const TimeSeriesRuntimeType &all_valid_input_runtime_type(
+        const AllValidInputDescriptor &descriptor) const noexcept {
         if (!descriptor.runtime_type->is_reference()) {
-            if (const auto *runtime_type = bound_reference_runtime_type(parameter_index)) {
+            if (const auto *runtime_type = bound_reference_runtime_type(descriptor.parameter_index)) {
                 return *runtime_type;
             }
         }

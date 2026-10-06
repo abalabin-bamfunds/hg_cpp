@@ -94,11 +94,9 @@ dereferenced collection input checks its visible collection. The `all_valid()`
 query applies these rules without changing the input constraint or allocating
 representations, subscriptions, or item storage.
 
-The engine refreshes the constraint when the input changes; checking a
-collection scans its immediate items. A transition from satisfying every input
-constraint to failing one applies the node's invalidation behavior once. The
-[node API](node-api.md#required-input-invalidation) defines the available
-behavior.
+The engine checks immediate collection items before each scheduled evaluation
+attempt. See [evaluation](evaluation.md#required-input-invalidation) for
+scheduling and validity-refresh behavior.
 
 A node with a `const` or `final` output must preserve its output when a required
 input can become invalid after the output's first update. Wiring rejects an

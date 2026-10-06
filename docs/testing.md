@@ -179,7 +179,8 @@ graph compilation or evaluation.
 - active and passive inputs, including per-input runtime activity changes
 - required-input validity caching, invalidation, and revalidation
 - immediate `all_valid` queries and evaluation gating across native, free, and reference-bound collections;
-  passive and dynamically inactive inputs; optional bundle fields and base-schema narrowing;
+  deferred item checks for passive and dynamically inactive inputs, including timer- and other-input-driven
+  evaluation attempts; optional bundle fields and base-schema narrowing;
   invalid, removed, and retained dictionary items; constant and default bindings;
   and typed, generic, and runtime node declarations
 - operation-specific handling of invalid `opt` arguments, including mixed required and optional inputs

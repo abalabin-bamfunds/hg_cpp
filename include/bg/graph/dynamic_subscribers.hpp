@@ -97,10 +97,9 @@ struct DynamicSubscribers {
     }
 
     void add(RuntimeGraph &graph, std::uint32_t input_offset, std::size_t data, std::uint32_t node_index, bool active,
-             bool required, InputNotificationFunction input_function = nullptr, bool controlled_activity = false,
-             bool all_valid = false) {
-        if (active || required || controlled_activity || all_valid) {
-            add(DynamicNodeSubscriber{graph, input_offset, node_index, active, required, controlled_activity, all_valid});
+             bool required, InputNotificationFunction input_function = nullptr, bool controlled_activity = false) {
+        if (active || required || controlled_activity) {
+            add(DynamicNodeSubscriber{graph, input_offset, node_index, active, required, controlled_activity});
         }
         if (input_function != nullptr) {
             input_subscribers().records.emplace_back(graph, input_offset, data, node_index, input_function);

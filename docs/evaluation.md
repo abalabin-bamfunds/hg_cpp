@@ -77,15 +77,18 @@ at least one constraint, the engine applies its invalidation behavior once. Outp
 invalidation schedules subscribers.
 
 The runtime records whether every input validity constraint passed after the last
-check. An input validity change marks this result for refresh. Before node
-evaluation, the runtime refreshes it when required and uses the result to decide
-whether the node can run.
+check. A required input's invalidation or revalidation refreshes this result and
+can apply the node's invalidation behavior. Before every scheduled evaluation
+attempt, the runtime checks `all_valid` inputs again, even if the cached result
+passed. It uses the refreshed result to decide whether the node can run.
 
-An `all_valid` input also checks its immediate contained time series. Each input
-update marks the cached result for refresh because item validity can change
-while the root remains valid. This applies to passive inputs and inputs made
-passive through `dynamic_activity`; refreshing validity does not run the
-evaluation function unless the node is also scheduled for evaluation.
+The `all_valid` check inspects immediate contained time series. Changes to an
+item do not trigger this scan on their own. An active input schedules evaluation
+on updates, so the scan occurs before that evaluation. A passive input does not
+schedule evaluation on updates; its contained-item validity is checked when
+another event schedules the node, such as a timer or another input. If an item
+change also invalidates or revalidates the input root, the required-input
+validity notification refreshes the full validity conjunction immediately.
 
 The [node API](node-api.md#required-input-invalidation) defines the declaration
 and function interface. The [validity design](time-series-validity.md) defines

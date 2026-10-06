@@ -90,6 +90,61 @@ TEST_CASE("compiled nodes keep hot data in node-local sections", "[compiled_grap
     CHECK(graph.fixed_storage_size() == 244);
 }
 
+TEST_CASE("all_valid metadata follows an empty runtime-type array at pointer alignment",
+          "[compiled_graph][feature:validity][validity:all-valid][layout]") {
+    struct source_definition {
+        bg::Out<bg::TS<bg::i64>> output;
+
+        void start() const { output.set(1); }
+    };
+    struct stateful_gate_definition {
+        bg::State<bg::i64> evaluations;
+        bg::In<bg::TS<bg::i64>, bg::all_valid> input;
+        bg::Out<bg::TS<bg::i64>> output;
+
+        void evaluate() const { output.set(++*evaluations); }
+    };
+
+    const auto source = bg::node<source_definition>();
+    const auto gate = bg::node<stateful_gate_definition>();
+    const auto gate_signature = gate.signature().resolve(std::array<const bg::Type *, 1>{&bg::TS<bg::i64>::type()});
+    CHECK_FALSE(gate.uses_time_series_input_runtime_type(gate_signature, 0));
+    CHECK_FALSE(gate.uses_output_runtime_type());
+
+    const auto increment = bg::node([](bg::In<bg::TS<bg::i64>> input, bg::Out<bg::TS<bg::i64>> output) {
+        output.set(*input + 1);
+    });
+    const auto double_value = bg::node([](bg::In<bg::TS<bg::i64>> input, bg::Out<bg::TS<bg::i64>> output) {
+        output.set(*input * 2);
+    });
+    const auto combine = bg::node([](bg::In<bg::TS<bg::i64>> left, bg::In<bg::TS<bg::i64>> right,
+                                     bg::Out<bg::TS<bg::i64>> output) { output.set(*left + *right); });
+
+    auto wiring = bg::GraphWiring{};
+    {
+        auto context = bg::WiringContext{wiring};
+        const auto value = gate(source());
+        static_cast<void>(combine(increment(value), double_value(value)));
+    }
+
+    const auto graph = bg::CompiledGraph{wiring};
+    const bg::CompiledNode *stateful_gate{};
+    for (auto index = std::size_t{}; index < graph.node_count(); ++index) {
+        const auto &node = graph.node(index);
+        if (node.has_state() && node.has_all_valid_input_metadata()) {
+            stateful_gate = &node;
+            break;
+        }
+    }
+
+    REQUIRE(stateful_gate != nullptr);
+    REQUIRE(stateful_gate->subscribers().size() == 2);
+    const auto descriptors = stateful_gate->all_valid_input_descriptors();
+    REQUIRE(descriptors.size() == 1);
+    CHECK(descriptors[0].parameter_index == 0);
+    CHECK(descriptors[0].declared_type == &bg::TS<bg::i64>::type());
+}
+
 TEST_CASE("compiled nodes store one activity record for each controlled input",
           "[feature:input-activity][feature:graph-compilation][series:value][definition:aggregate]"
           "[shape:chain][activity:active]") {

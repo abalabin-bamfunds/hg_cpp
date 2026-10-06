@@ -245,7 +245,7 @@ can bind to any validity constraint. The [operator rules](operators.md#optional-
 define how overload selection uses this distinction.
 
 `all_valid` requires the input root and every immediate contained time series
-to be valid before evaluation:
+to be valid before each scheduled evaluation attempt:
 
 ```cpp
 bg::In<bg::TSL<bg::TS<bg::i64>, 2>, bg::all_valid> values;

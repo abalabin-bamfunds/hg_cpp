@@ -174,8 +174,8 @@ struct FixedNodeLayout {
     StorageSection generic_state_runtime_types;
     StorageSection invalidation_function;
     StorageSection node_invocation_metadata;
-    StorageSection runtime_type_metadata;
     StorageSection runtime_types;
+    StorageSection all_valid_metadata;
     StorageSection all_valid_inputs;
     StorageSection node_invocation_parameters;
     StorageSection node_invocation_controlled_input_indices;
@@ -190,7 +190,6 @@ struct ReferenceInputSubscriberPlan {
     std::uint32_t input_index;
     bool active;
     bool required;
-    bool all_valid;
     bool controlled_activity;
     InputNotification notification;
 };
@@ -205,7 +204,6 @@ struct ControlledInputSubscriberPlan {
     std::uint32_t node_index;
     std::uint32_t input_index;
     bool required;
-    bool all_valid;
 };
 
 struct SubscriptionPlan {
@@ -695,17 +693,16 @@ std::vector<std::size_t> dependency_order(const CompilationPlan &plan, const Gra
 void plan_subscribers(std::span<const WiredNode> nodes, std::span<const WiredOutput> outputs,
                       std::span<NodePlan> node_plans, CompilationPlan &plan) {
     const auto add_subscriber = [](std::vector<Subscriber> &subscribers, std::uint32_t node_index, bool is_active,
-                                   bool is_required, bool is_active_optional, bool is_all_valid) {
+                                   bool is_required, bool is_active_optional) {
         if (!subscribers.empty() && subscribers.back().node_index() == node_index) {
             const auto &existing = subscribers.back();
             subscribers.back() =
                 Subscriber{node_index, existing.active() || is_active, existing.required() || is_required,
-                           existing.active_optional() || is_active_optional,
-                           existing.all_valid() || is_all_valid};
+                           existing.active_optional() || is_active_optional};
             return;
         }
 
-        subscribers.emplace_back(node_index, is_active, is_required, is_active_optional, is_all_valid);
+        subscribers.emplace_back(node_index, is_active, is_required, is_active_optional);
     };
 
     for (auto target_index = std::size_t{}; target_index < nodes.size(); ++target_index) {
@@ -718,7 +715,6 @@ void plan_subscribers(std::span<const WiredNode> nodes, std::span<const WiredOut
             const auto &input = inputs[input_index];
             const auto &parameter = target.signature().parameters[input.parameter];
             const auto is_active = parameter.activity == active;
-            const auto is_all_valid = parameter.validity == all_valid;
             const auto is_required = !input.default_value && parameter.validity != optional;
             const auto subscriber_index = static_cast<std::uint32_t>(plan.compiled_node_index(target_index));
             const auto original_notification = target.node_template().input_notification(input_index);
@@ -747,15 +743,14 @@ void plan_subscribers(std::span<const WiredNode> nodes, std::span<const WiredOut
                     .input_index = static_cast<std::uint32_t>(input_index),
                     .active = is_active,
                     .required = is_required,
-                    .all_valid = is_all_valid,
                     .controlled_activity = input.dynamic_activity,
                     .notification = notification,
                 });
                 if (input.dynamic_activity) {
                     subscriptions.controlled_inputs.push_back(
-                        {subscriber_index, static_cast<std::uint32_t>(input_index), is_required, is_all_valid});
+                        {subscriber_index, static_cast<std::uint32_t>(input_index), is_required});
                 } else if (is_active) {
-                    add_subscriber(subscriptions.nodes, subscriber_index, true, false, !is_required, is_all_valid);
+                    add_subscriber(subscriptions.nodes, subscriber_index, true, false, !is_required);
                 }
             } else {
                 if (notification.function != nullptr) {
@@ -767,12 +762,12 @@ void plan_subscribers(std::span<const WiredNode> nodes, std::span<const WiredOut
                 }
                 if (input.dynamic_activity) {
                     subscriptions.controlled_inputs.push_back(
-                        {subscriber_index, static_cast<std::uint32_t>(input_index), is_required, is_all_valid});
+                        {subscriber_index, static_cast<std::uint32_t>(input_index), is_required});
                     continue;
                 }
-                if (is_active || is_required || is_all_valid) {
+                if (is_active || is_required) {
                     add_subscriber(subscriptions.nodes, subscriber_index, is_active, is_required,
-                                   is_active && !is_required, is_all_valid);
+                                   is_active && !is_required);
                 }
             }
             add_default_startup_notification();
@@ -786,7 +781,7 @@ const TimeSeriesRuntimeType *input_runtime_type(const TimeSeriesInputPlan &input
         return &resolve_time_series_runtime_type(requested_type);
     }
 
-    return output != nullptr ? output : &resolve_time_series_runtime_type(requested_type);
+    return output;
 }
 
 std::vector<const ScalarRuntimeType *> parameter_runtime_types(const WiredNode &node, const NodePlan &node_plan,
@@ -1103,21 +1098,22 @@ RuntimeTypeCounts runtime_type_counts(const WiredNode &node) {
         result.node_invocation_metadata = storage.add<NodeInvocationMetadata>();
     }
 
-    const auto all_valid_runtime_type_count = std::ranges::count_if(
+    const auto all_valid_input_count = std::ranges::count_if(
         node_plan.time_series_inputs, [&](const auto &input) {
             return node.signature().parameters[input.parameter].validity == InputValidity::all_valid &&
                    !input.constant_binding;
         });
-    if (all_valid_runtime_type_count != 0) {
-        result.runtime_type_metadata = storage.add<AllValidInputMetadata>();
-    }
-
     const auto runtime_types = runtime_type_counts(node);
-    if (runtime_types.total() != 0) {
+    if (all_valid_input_count != 0 &&
+        runtime_types.total() > CompiledNode::max_all_valid_runtime_type_count) {
+        throw std::length_error{"a node has too many runtime types for all_valid input metadata"};
+    }
+    if (runtime_types.total() != 0 || all_valid_input_count != 0) {
         result.runtime_types = storage.add<const RuntimeType *>(runtime_types.total());
     }
-    if (all_valid_runtime_type_count != 0) {
-        result.all_valid_inputs = storage.add<AllValidInputDescriptor>(all_valid_runtime_type_count);
+    if (all_valid_input_count != 0) {
+        result.all_valid_metadata = storage.add<AllValidInputMetadata>();
+        result.all_valid_inputs = storage.add<AllValidInputDescriptor>(all_valid_input_count);
     }
 
     result.scalar_offsets.reserve(node.scalar_values().size());
@@ -1890,11 +1886,6 @@ class CompiledGraphBuilder {
         auto input_index = std::size_t{};
         auto scalar_index = std::size_t{};
 
-        if (!layout.runtime_type_metadata.objects<AllValidInputMetadata>(node_storage).empty()) {
-            std::construct_at(layout.runtime_type_metadata.objects<AllValidInputMetadata>(node_storage).data(),
-                              AllValidInputMetadata{static_cast<std::uint32_t>(layout.runtime_types.count)});
-        }
-
         for (auto parameter_index = std::size_t{}; parameter_index < node.signature().parameters.size();
              ++parameter_index) {
             if (!node.signature().parameters[parameter_index].type->is_time_series()) {
@@ -1919,7 +1910,16 @@ class CompiledGraphBuilder {
             const auto &parameter =
                 static_cast<const TimeSeriesType &>(*node.signature().parameters[parameter_index].type);
 
-            const auto runtime_type = [&] {
+            const auto needs_all_valid_check =
+                node.signature().parameters[parameter_index].validity == InputValidity::all_valid &&
+                !input.constant_binding;
+            const auto needs_runtime_type =
+                node.node_template().uses_time_series_input_runtime_type(node.signature(), parameter_index);
+            if (!needs_all_valid_check && !needs_runtime_type) {
+                continue;
+            }
+
+            auto *runtime_type = [&] {
                 if (!input.wired_input.is_inherited() &&
                     plan.constant_for_output(input.wired_input.index()) != nullptr) {
                     return &resolve_time_series_runtime_type(parameter);
@@ -1929,18 +1929,21 @@ class CompiledGraphBuilder {
                 }
                 const auto output = wired_output_layout(input.wired_input.index(), plan.outputs, plan.node_plans);
                 return input_runtime_type(input, output.runtime_type, parameter);
-            };
+            }();
 
-            if (node.signature().parameters[parameter_index].validity == InputValidity::all_valid &&
-                !input.constant_binding) {
+            if (needs_all_valid_check) {
+                if (runtime_type == nullptr) {
+                    runtime_type = &resolve_time_series_runtime_type(parameter);
+                }
                 all_valid_inputs[all_valid_runtime_type_index++] = {
-                    static_cast<const TimeSeriesRuntimeType *>(runtime_type()),
+                    static_cast<std::uint32_t>(parameter_index),
+                    runtime_type,
                     type_cast<TimeSeriesType>(node.signature().parameters[parameter_index].type),
                 };
             }
 
-            if (node.node_template().uses_time_series_input_runtime_type(node.signature(), parameter_index)) {
-                runtime_types[time_series_runtime_type_index++] = runtime_type();
+            if (needs_runtime_type) {
+                runtime_types[time_series_runtime_type_index++] = runtime_type;
             }
         }
 
@@ -1953,6 +1956,11 @@ class CompiledGraphBuilder {
                                              static_cast<std::size_t>(runtime_type_count.output);
         for (const auto *type : node.dynamic_reference_input_types()) {
             runtime_types[dynamic_reference_input_index++] = &resolve_time_series_runtime_type(*type);
+        }
+
+        if (!layout.all_valid_metadata.objects<AllValidInputMetadata>(node_storage).empty()) {
+            std::construct_at(layout.all_valid_metadata.objects<AllValidInputMetadata>(node_storage).data(),
+                              AllValidInputMetadata{static_cast<std::uint32_t>(all_valid_runtime_type_index)});
         }
     }
 
@@ -2004,8 +2012,7 @@ class CompiledGraphBuilder {
             for (const auto &subscriber : subscribers.controlled_inputs) {
                 const auto node_index = plan.wired_node_indices[subscriber.node_index];
                 const auto &input = plan.node_plans[node_index].time_series_inputs[subscriber.input_index];
-                std::construct_at(records++, input.activity_offset, subscriber.node_index, subscriber.required,
-                                  subscriber.all_valid);
+                std::construct_at(records++, input.activity_offset, subscriber.node_index, subscriber.required);
             }
             block += controlled_block;
         }
@@ -2025,7 +2032,7 @@ class CompiledGraphBuilder {
                 const auto node_index = plan.wired_node_indices[subscriber.node_index];
                 const auto &input = plan.node_plans[node_index].time_series_inputs[subscriber.input_index];
                 std::construct_at(records++, input.offset, subscriber.node_index, subscriber.active,
-                                  subscriber.required, subscriber.all_valid, subscriber.controlled_activity,
+                                  subscriber.required, subscriber.controlled_activity,
                                   requested_reference_runtime_type(plan, subscriber));
             }
             block += reference_block;
@@ -2046,8 +2053,7 @@ class CompiledGraphBuilder {
                 const auto node_index = plan.wired_node_indices[subscriber.node_index];
                 const auto &input = plan.node_plans[node_index].time_series_inputs[subscriber.input_index];
                 std::construct_at(records++, input.offset, subscriber.notification.data, subscriber.node_index,
-                                  subscriber.active, subscriber.required, subscriber.all_valid,
-                                  subscriber.controlled_activity,
+                                  subscriber.active, subscriber.required, subscriber.controlled_activity,
                                   requested_reference_runtime_type(plan, subscriber), subscriber.notification.function);
             }
             block += notifying_reference_block;
@@ -2251,7 +2257,8 @@ class CompiledGraphBuilder {
                                  !node_plan.subscriptions.reference_inputs.empty() ||
                              !node_plan.subscriptions.input_subscribers.empty(),
                              !node_plan.item_subscriptions.empty(), node.node_template().uses_node_invocation(),
-                             layout.runtime_type_metadata.count != 0,
+                             layout.all_valid_metadata.count != 0,
+                             static_cast<std::uint32_t>(layout.runtime_types.count),
                              static_cast<std::uint32_t>(node_plan.time_series_inputs.size()),
                              static_cast<std::uint32_t>(layout.controlled_inputs.count), node_plan.invalidation.mode});
             std::construct_at(node_offsets.data() + compiled_node,

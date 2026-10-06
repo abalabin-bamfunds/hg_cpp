@@ -119,8 +119,7 @@ class ReferenceProvider {
 
     static void add_subscriber(Reference reference, RuntimeGraph &graph, std::uint32_t input_offset,
                                std::size_t notification_data, std::uint32_t node_index, bool active, bool required,
-                               InputNotificationFunction notification = nullptr, bool controlled_activity = false,
-                               bool all_valid = false);
+                               InputNotificationFunction notification = nullptr, bool controlled_activity = false);
     static void remove_subscriber(Reference reference, RuntimeGraph &graph, std::size_t input_offset) noexcept;
     static void notify(Reference reference, OutputChangeContext &context, OutputChange change);
     static void notify_item_bindings(Reference collection, item_id_t id, EvaluationContext &context);
@@ -186,14 +185,14 @@ class ReferenceProvider {
 
     void add_root_subscriber(RuntimeGraph &graph, std::uint32_t input_offset, std::size_t notification_data,
                              std::uint32_t node_index, bool active, bool required,
-                             InputNotificationFunction notification, bool controlled_activity, bool all_valid);
+                             InputNotificationFunction notification, bool controlled_activity);
     void add_root_observer(RuntimeGraph &graph, void *receiver, RuntimeObserverFunction function);
     void remove_root_subscriber(RuntimeGraph &graph, std::size_t input_offset) noexcept;
     void remove_root_observer(RuntimeGraph &graph, const void *receiver) noexcept;
     void notify_root(OutputChangeContext &context, OutputChange change);
     void add_subscriber(ReferenceSubscriptionDetail &subscriptions, RuntimeGraph &graph, std::uint32_t input_offset,
                         std::size_t notification_data, std::uint32_t node_index, bool active, bool required,
-                        InputNotificationFunction notification, bool controlled_activity, bool all_valid);
+                        InputNotificationFunction notification, bool controlled_activity);
     void add_observer(ReferenceSubscriptionDetail &subscriptions, RuntimeGraph &graph, void *receiver,
                       RuntimeObserverFunction function);
     void remove_subscriber(ReferenceSubscriptionDetail &subscriptions, RuntimeGraph &graph,
