@@ -2,6 +2,7 @@
 
 #include <bg/evaluation_context.hpp>
 #include <bg/evaluation_time.hpp>
+#include <bg/feedback.hpp>
 #include <bg/wall_clock.hpp>
 #include <bg/global_state.hpp>
 #include <bg/graph.hpp>

@@ -34,6 +34,7 @@ add_executable(
     evaluation/time_series/time_series_set_test.cpp
     evaluation/time_series/time_series_value_test.cpp
     evaluation/time_series/tick_serializer_test.cpp
+    evaluation/time_series/feedback_test.cpp
     evaluation/validity/input_activity_test.cpp
     evaluation/validity/invalidation_behavior_test.cpp
     evaluation/validity/optional_input_test.cpp
