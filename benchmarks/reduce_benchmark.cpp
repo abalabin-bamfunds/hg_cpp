@@ -21,6 +21,7 @@
 #include <exception>
 #include <iomanip>
 #include <iostream>
+#include <limits>
 #include <numeric>
 #include <optional>
 #include <stdexcept>
@@ -387,11 +388,35 @@ Arguments parse_arguments(int argument_count, char **argument_values) {
         }
     }
 
-    if (result.item_count != 10'000 && result.item_count != 100'000) {
-        throw std::invalid_argument{"--size must be 10000 or 100000"};
+    if (result.item_count < 100 || result.item_count % 100 != 0 || result.samples > 100 ||
+        result.lifecycle_rounds > 100) {
+        throw std::invalid_argument{
+            "--size must be a multiple of 100 and at least 100; sample counts must be at most 100"};
     }
-    if (result.item_count < 100 || result.samples > 100 || result.lifecycle_rounds > 100) {
-        throw std::invalid_argument{"sample counts must be at most 100 and item count at least 100"};
+
+    const auto max_sum = static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max());
+    const auto item_count = static_cast<std::uint64_t>(result.item_count);
+    if (item_count > max_sum) {
+        throw std::invalid_argument{"--size is too large for signed 64-bit values and sums"};
+    }
+    auto initial_sum_factor = item_count;
+    auto next_sum_factor = item_count + 1;
+    if (initial_sum_factor % 2 == 0) {
+        initial_sum_factor /= 2;
+    } else {
+        next_sum_factor /= 2;
+    }
+    if (initial_sum_factor > max_sum / next_sum_factor) {
+        throw std::invalid_argument{"--size is too large for signed 64-bit values and sums"};
+    }
+
+    // Values stay positive, so the reducer sum bounds each individual value too.
+    const auto initial_sum = initial_sum_factor * next_sum_factor;
+    const auto remaining_sum = max_sum - initial_sum;
+    const auto burst_item_count = static_cast<std::uint64_t>(result.samples) * (item_count / 100);
+    const auto sparse_increase = static_cast<std::uint64_t>(result.samples);
+    if (burst_item_count > remaining_sum / 17 || sparse_increase > remaining_sum - burst_item_count * 17) {
+        throw std::invalid_argument{"workload can overflow signed 64-bit values or sums"};
     }
     return result;
 }
@@ -512,7 +537,7 @@ int main(int argument_count, char **argument_values) {
     try {
         const auto arguments = parse_arguments(argument_count, argument_values);
         if (arguments.help) {
-            std::cout << "usage: bg_reduce_benchmark [--size 10000|100000] [--mode reduce|source] "
+            std::cout << "usage: bg_reduce_benchmark [--size MULTIPLE_OF_100] [--mode reduce|source] "
                          "[--samples N] [--lifecycle-rounds N]\n";
             return EXIT_SUCCESS;
         }
