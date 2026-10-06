@@ -1142,7 +1142,11 @@ void GraphWiring::register_nested_service_consumers(const GraphWiring &nested, N
 }
 
 std::size_t GraphWiring::output_node_index(WiringPoint point) const {
-    return outputs_[output_index(point)].node_index;
+    const auto node_index = outputs_[output_index(point)].node_index;
+    if (node_index == WiredOutput::npos) {
+        throw WiringError{"a runtime input does not have an owning node"};
+    }
+    return node_index;
 }
 
 } // namespace bg

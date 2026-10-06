@@ -128,7 +128,7 @@ class Node {
             source = &default_descriptor(binding).source;
             mode = source->mode();
         }
-        if (mode != ParameterBindingMode::reference) {
+        if (mode != ParameterBindingMode::reference && mode != ParameterBindingMode::runtime_reference) {
             return nullptr;
         }
         return reinterpret_cast<ReferenceInputStorage *>(runtime_storage_ + source->value_offset());
@@ -163,13 +163,32 @@ class Node {
 
   private:
     InputData binding_data(const ParameterBinding &binding, ParameterBindingMode mode) const noexcept {
-        const auto &wired_last_updated =
-            *reinterpret_cast<const TimeSeriesState *>(runtime_storage_ + binding.last_updated_offset());
-        if (mode == ParameterBindingMode::constant) {
-            return {&wired_last_updated, binding.constant_data()};
+        if (mode == ParameterBindingMode::time_series) {
+            const auto &last_updated =
+                *reinterpret_cast<const TimeSeriesState *>(runtime_storage_ + binding.last_updated_offset());
+            return {&last_updated, runtime_storage_ + binding.value_offset()};
         }
-        if (mode != ParameterBindingMode::reference) {
-            return {&wired_last_updated, runtime_storage_ + binding.value_offset()};
+
+        if (mode == ParameterBindingMode::runtime_input) {
+            const auto &source =
+                *reinterpret_cast<const RuntimeInputBinding *>(runtime_storage_ + binding.value_offset());
+            return {&source.last_updated, source.value};
+        }
+
+        const TimeSeriesState *wired_last_updated{};
+        if (mode == ParameterBindingMode::runtime_reference) {
+            const auto &source =
+                *reinterpret_cast<const RuntimeInputBinding *>(runtime_storage_ + binding.last_updated_offset());
+            wired_last_updated = &source.last_updated;
+        } else {
+            wired_last_updated =
+                reinterpret_cast<const TimeSeriesState *>(runtime_storage_ + binding.last_updated_offset());
+        }
+        if (mode == ParameterBindingMode::constant) {
+            return {wired_last_updated, binding.constant_data()};
+        }
+        if (mode != ParameterBindingMode::reference && mode != ParameterBindingMode::runtime_reference) {
+            return {wired_last_updated, runtime_storage_ + binding.value_offset()};
         }
 
         if (const auto *sample = reference_input_sample(&binding); sample != nullptr && !sample->empty()) {
@@ -180,15 +199,15 @@ class Node {
         const auto reference =
             reinterpret_cast<const ReferenceInputStorage *>(runtime_storage_ + binding.value_offset())->value;
         if (!reference) {
-            return {wired_last_updated.valid() ? &initial_time_series_state : &wired_last_updated, nullptr};
+            return {wired_last_updated->valid() ? &initial_time_series_state : wired_last_updated, nullptr};
         }
 
         const auto resolved = details::ResolvedTimeSeries::resolve(reference);
-        if (!resolved.last_updated->valid() || !wired_last_updated.later_than(*resolved.last_updated)) {
+        if (!resolved.last_updated->valid() || !wired_last_updated->later_than(*resolved.last_updated)) {
             return {resolved.last_updated, resolved.storage};
         }
 
-        return {&wired_last_updated, resolved.storage};
+        return {wired_last_updated, resolved.storage};
     }
 
     details::ReferenceInputSampleStorage *reference_input_sample(const ParameterBinding *binding) const noexcept {

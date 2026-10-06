@@ -73,6 +73,11 @@ class RuntimeGraph {
 
     void update_reference_output(std::size_t node_index, Reference reference, EvaluationTime evaluation_time);
     void initialize_constant_output(std::size_t node_index, Scalar<> value, EvaluationTime evaluation_time);
+    // Publish a borrowed sample using the representation selected when wiring, before its consuming cycle.
+    void bind_runtime_input(std::size_t index, const TimeSeriesState &source_state, const void *value,
+                            EvaluationTime evaluation_time);
+    // Publish an invalid sample before the graph evaluates its supplied cycle.
+    void clear_runtime_input(std::size_t index, EvaluationTime evaluation_time);
 
     void add_cycle_callback(void *receiver, void (*function)(void *, EvaluationContext &) noexcept,
                            bool call_on_stop = false);
@@ -112,6 +117,8 @@ class RuntimeGraph {
     std::size_t runtime_allocation_size() const noexcept;
     std::size_t runtime_allocation_alignment() const noexcept;
     void initialize_storage();
+    void notify_runtime_input(const details::RuntimeInputDescriptor &binding, OutputChange change,
+                              EvaluationTime evaluation_time);
 
     TimedSchedule *&timed_schedule() noexcept;
     TimedSchedule *timed_schedule() const noexcept;

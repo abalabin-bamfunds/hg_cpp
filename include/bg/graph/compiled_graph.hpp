@@ -52,6 +52,12 @@ class CompiledGraph {
 
     std::size_t inherited_time_series_count() const noexcept;
     std::size_t service_binding_count() const noexcept;
+    std::span<const details::RuntimeInputDescriptor> runtime_inputs() const noexcept;
+    std::size_t runtime_input_count() const noexcept { return runtime_inputs().size(); }
+    std::span<const Subscriber>
+    runtime_input_subscribers(const details::RuntimeInputDescriptor &binding) const noexcept;
+    const OutputNotification *runtime_input_notification(
+        const details::RuntimeInputDescriptor &binding) const noexcept;
 
     struct NodeFunctions {
         std::span<const NodeFunction> functions;

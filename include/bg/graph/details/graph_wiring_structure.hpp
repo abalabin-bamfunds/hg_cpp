@@ -39,7 +39,7 @@ class GraphWiringStructure {
                                                        std::optional<std::size_t>);
 };
 
-// Boundary order is semantic. Wiring paths, labels, parameter names, and node indices are not.
+// Boundary and runtime-input order are semantic. Wiring paths, labels, parameter names, and node indices are not.
 GraphWiringStructure graph_wiring_structure(const GraphWiring &wiring,
                                             std::span<const WiringPoint> boundaries,
                                             std::optional<WiringPoint> result = std::nullopt);

@@ -24,6 +24,8 @@ enum class OutputChange : std::uint8_t {
 class OutputChangeContext {
   public:
     explicit OutputChangeContext(RuntimeGraph &runtime_graph) noexcept;
+    OutputChangeContext(RuntimeGraph &runtime_graph, EvaluationTime evaluation_time) noexcept
+        : runtime_graph_{&runtime_graph}, evaluation_time_{evaluation_time} {}
     explicit OutputChangeContext(const EvaluationContext &evaluation_context) noexcept;
 
     RuntimeGraph &runtime_graph() const noexcept { return *runtime_graph_; }
@@ -37,9 +39,6 @@ class OutputChangeContext {
     void notify_subscribers(details::DynamicSubscribers *subscribers, OutputChange change) const;
 
   private:
-    OutputChangeContext(RuntimeGraph &runtime_graph, EvaluationTime evaluation_time) noexcept
-        : runtime_graph_{&runtime_graph}, evaluation_time_{evaluation_time} {}
-
     RuntimeGraph *runtime_graph_;
     EvaluationTime evaluation_time_;
 };

@@ -41,6 +41,7 @@ add_executable(
     evaluation/time_series/time_series_set_test.cpp
     evaluation/time_series/time_series_value_test.cpp
     evaluation/time_series/time_series_copy_test.cpp
+    evaluation/runtime_input_test.cpp
     evaluation/time_series/tick_serializer_test.cpp
     evaluation/time_series/feedback_test.cpp
     evaluation/validity/input_activity_test.cpp
@@ -148,6 +149,7 @@ add_executable(
     wiring/time_series_dict_wiring_test.cpp
     wiring/time_series_list_wiring_test.cpp
     wiring/time_series_reference_wiring_test.cpp
+    wiring/runtime_input_test.cpp
     wiring/type_mapping_test.cpp
 )
 target_link_libraries(bg_tests PRIVATE bg::bg Catch2::Catch2WithMain test_shared_schema_provider)
