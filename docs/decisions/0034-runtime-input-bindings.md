@@ -1,6 +1,6 @@
 # Runtime input bindings
 
-Status: accepted
+Status: superseded by [runtime input types](0035-runtime-input-types.md)
 
 ## Context
 

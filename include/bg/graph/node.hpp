@@ -128,7 +128,7 @@ class Node {
             source = &default_descriptor(binding).source;
             mode = source->mode();
         }
-        if (mode != ParameterBindingMode::reference && mode != ParameterBindingMode::runtime_reference) {
+        if (mode != ParameterBindingMode::reference) {
             return nullptr;
         }
         return reinterpret_cast<ReferenceInputStorage *>(runtime_storage_ + source->value_offset());
@@ -175,19 +175,12 @@ class Node {
             return {&source.last_updated, source.value};
         }
 
-        const TimeSeriesState *wired_last_updated{};
-        if (mode == ParameterBindingMode::runtime_reference) {
-            const auto &source =
-                *reinterpret_cast<const RuntimeInputBinding *>(runtime_storage_ + binding.last_updated_offset());
-            wired_last_updated = &source.last_updated;
-        } else {
-            wired_last_updated =
-                reinterpret_cast<const TimeSeriesState *>(runtime_storage_ + binding.last_updated_offset());
-        }
+        const auto *wired_last_updated =
+            reinterpret_cast<const TimeSeriesState *>(runtime_storage_ + binding.last_updated_offset());
         if (mode == ParameterBindingMode::constant) {
             return {wired_last_updated, binding.constant_data()};
         }
-        if (mode != ParameterBindingMode::reference && mode != ParameterBindingMode::runtime_reference) {
+        if (mode != ParameterBindingMode::reference) {
             return {wired_last_updated, runtime_storage_ + binding.value_offset()};
         }
 

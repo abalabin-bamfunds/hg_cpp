@@ -82,7 +82,6 @@ enum class ParameterBindingMode : std::uint8_t {
     constant,
     default_value,
     runtime_input,
-    runtime_reference,
 };
 
 // The effective state and value pointer bound to one compiled runtime input.
@@ -233,8 +232,7 @@ class ParameterBinding {
             return (value_offset_ & constant_flag) == 0 ? ParameterBindingMode::scalar : ParameterBindingMode::constant;
         }
         if ((value_offset_ & runtime_input_flag) != 0) {
-            return (value_offset_ & reference_flag) == 0 ? ParameterBindingMode::runtime_input
-                                                         : ParameterBindingMode::runtime_reference;
+            return ParameterBindingMode::runtime_input;
         }
         return (value_offset_ & reference_flag) == 0 ? ParameterBindingMode::time_series
                                                      : ParameterBindingMode::reference;
@@ -317,11 +315,6 @@ class ParameterBinding {
 
     static ParameterBinding runtime_input(std::uint32_t slot_offset, InputValidity validity) noexcept {
         return ParameterBinding{0, slot_offset | runtime_input_flag, validity};
-    }
-
-    static ParameterBinding runtime_reference(std::uint32_t slot_offset, std::uint32_t input_offset,
-                                              InputValidity validity) noexcept {
-        return ParameterBinding{slot_offset, input_offset | runtime_input_flag | reference_flag, validity};
     }
 
     struct constant_binding_t {};

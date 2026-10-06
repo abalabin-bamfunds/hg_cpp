@@ -994,8 +994,6 @@ void plan_runtime_storage(CompilationPlan &plan) {
             input.output_last_updated_offset =
                 input.wired_input.is_inherited()
                     ? plan.inherited_time_series_at(input.wired_input.index()).last_updated_offset
-                : plan.runtime_input_for_output[input.wired_input.index()] != WiredOutput::npos
-                    ? plan.runtime_inputs[plan.runtime_input_for_output[input.wired_input.index()]].slot_offset
                     : wired_output_layout(input.wired_input.index(), plan.outputs, plan.node_plans).last_updated_offset;
         }
 
@@ -1566,13 +1564,6 @@ void plan_fixed_storage(CompilationPlan &plan) {
             result.supports_borrowed_evaluation = false;
         }
     }
-    for (const auto &runtime_input : result.runtime_inputs) {
-        if (runtime_input.runtime_type->is_reference() || runtime_input.runtime_type->type().contains_reference()) {
-            result.supports_borrowed_evaluation = false;
-            break;
-        }
-    }
-
     plan_fixed_storage(result);
 
     return result;
@@ -1961,10 +1952,7 @@ class CompiledGraphBuilder {
                         const auto runtime_input_index = input.wired_input.is_inherited()
                                                              ? WiredOutput::npos
                                                              : plan.runtime_input_for_output[input.wired_input.index()];
-                        if (input.dereferences_reference && runtime_input_index != WiredOutput::npos) {
-                            source = ParameterBinding::runtime_reference(
-                                plan.runtime_inputs[runtime_input_index].slot_offset, input.offset, optional);
-                        } else if (input.dereferences_reference) {
+                        if (input.dereferences_reference) {
                             source = ParameterBinding::reference(input.output_last_updated_offset, input.offset,
                                                                  optional, input.sampled_reference,
                                                                  input.dynamic_activity);
@@ -2023,13 +2011,9 @@ class CompiledGraphBuilder {
                                                      : plan.runtime_input_for_output[input.wired_input.index()];
                 if (input.dereferences_reference) {
                     std::construct_at(parameters.data() + parameter_index,
-                                      runtime_input_index != WiredOutput::npos
-                                          ? ParameterBinding::runtime_reference(
-                                                plan.runtime_inputs[runtime_input_index].slot_offset, input.offset,
-                                                parameter.validity)
-                                          : ParameterBinding::reference(input.output_last_updated_offset, input.offset,
-                                                                        parameter.validity, input.sampled_reference,
-                                                                        input.dynamic_activity));
+                                      ParameterBinding::reference(input.output_last_updated_offset, input.offset,
+                                                                  parameter.validity, input.sampled_reference,
+                                                                  input.dynamic_activity));
                 } else if (runtime_input_index != WiredOutput::npos) {
                     std::construct_at(parameters.data() + parameter_index,
                                       ParameterBinding::runtime_input(

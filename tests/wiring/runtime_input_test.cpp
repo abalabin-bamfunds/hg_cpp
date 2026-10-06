@@ -70,13 +70,15 @@ TEST_CASE("a runtime input can be the graph result without producer nodes",
     CHECK_FALSE(first == second);
 }
 
-TEST_CASE("runtime inputs reject collections and value-to-reference materialization",
+TEST_CASE("runtime inputs reject collections and reference time series",
           "[wiring][feature:runtime-input][series:value][binding:value-to-reference]") {
     auto wiring = GraphWiring{};
     const auto context = WiringContext{wiring};
 
     CHECK_THROWS_WITH(wiring.runtime_input(TSD<i64, TS<i64>>::type()),
-                      "runtime inputs currently support TS<V> and REF<TS<V>> only");
+                      "runtime inputs currently support TS<V> only");
+    CHECK_THROWS_WITH(wiring.runtime_input(REF<TS<i64>>::type()),
+                      "runtime inputs currently support TS<V> only");
     CHECK_THROWS_WITH(wiring.runtime_input(TS<i64, TimeSeriesGuarantee::final>::type()),
                       "a rebindable runtime input requires an ordinary guarantee");
     const auto &incompatible_runtime_type = resolve_time_series_runtime_type(TS<double>::type());

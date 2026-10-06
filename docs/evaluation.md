@@ -10,14 +10,14 @@ Every logical time series has one authoritative state and change record.
 References, boundaries, and representations expose that state. They do not
 reproduce or independently propagate it.
 
-A runtime graph can bind external `TS<V>` and `REF<TS<V>>` values to
-compiled runtime-input endpoints. Each endpoint has its own sampled state and
-value pointer. Wiring selects and validates the runtime representation. Binding
-copies source validity and borrows a value pointer in that representation; the
-caller keeps the value alive until the next bind or clear. The supplied
-evaluation time stamps the change and must follow the graph's previous cycle.
-Binding or clearing an endpoint publishes its change through compiled
-notifications and subscribers before that cycle is evaluated.
+A runtime graph can bind external `TS<V>` values to compiled runtime-input
+endpoints. Each endpoint has its own sampled state and value pointer. Wiring
+selects and validates the runtime representation. Binding copies source
+validity and borrows a value pointer in that representation; the caller keeps
+the value alive until the next bind or clear. The supplied evaluation time
+stamps the change and must follow the graph's previous cycle. Binding or
+clearing an endpoint publishes its change through compiled notifications and
+subscribers before that cycle is evaluated.
 
 An outer cycle evaluates the logical dependency graph at one evaluation time.
 Each node observes the completed current-cycle state of its predecessors and

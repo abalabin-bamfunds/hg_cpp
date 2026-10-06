@@ -164,12 +164,9 @@ WiringPoint GraphWiring::runtime_input(const TimeSeriesType &type) {
 }
 
 WiringPoint GraphWiring::runtime_input(const TimeSeriesType &type, const TimeSeriesRuntimeType &runtime_type) {
-    const auto *reference_type = type_cast<TimeSeriesReferenceType>(&type);
     const auto is_value_series = type_cast<TimeSeriesValueType>(&type) != nullptr;
-    const auto is_reference_to_value_series =
-        reference_type != nullptr && type_cast<TimeSeriesValueType>(&reference_type->target_type()) != nullptr;
-    if (!is_value_series && !is_reference_to_value_series) {
-        throw WiringError{"runtime inputs currently support TS<V> and REF<TS<V>> only"};
+    if (!is_value_series) {
+        throw WiringError{"runtime inputs currently support TS<V> only"};
     }
     if (type.guarantee().value() != TimeSeriesGuarantee::ordinary) {
         throw WiringError{"a rebindable runtime input requires an ordinary guarantee"};
