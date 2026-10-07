@@ -11,6 +11,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
 
 #include <array>
 #include <cstdint>
@@ -274,7 +275,7 @@ TEST_CASE("a variadic graph forwards a complete pack only",
     testing::test_wiring([&] { selected(1); });
     CHECK_THROWS_AS(testing::test_wiring([&] { combined(1); }), WiringError);
     CHECK_THROWS_WITH(testing::test_wiring([&] { named(1); }),
-                      "a forwarded variadic wiring record cannot be named");
+                      Catch::Matchers::ContainsSubstring("a forwarded variadic wiring record cannot be named"));
     CHECK_THROWS_AS(testing::test_wiring([&] { renamed(1); }), WiringError);
 }
 
@@ -308,7 +309,8 @@ TEST_CASE("forwarded named variadic arguments cannot conflict with a fixed param
     });
 
     CHECK_THROWS_WITH(testing::test_wiring([&] { sender("values"_n = bundle_source()); }),
-                      "a variadic argument name conflicts with a fixed parameter");
+                      Catch::Matchers::ContainsSubstring("a variadic argument name conflicts with a fixed parameter") &&
+                          Catch::Matchers::ContainsSubstring("while callback sender at sender[1]"));
 }
 
 TEST_CASE("a forwarded variadic pack retains its capture mode",
@@ -468,9 +470,11 @@ TEST_CASE("a forwarded pack rejects additional arguments only in the same pack",
         [&](wp<TSB<SCHEMA>, var_kwargs> named) { receiver("extra"_n = 1, named); });
 
     CHECK_THROWS_WITH(testing::test_wiring([&] { invalid_positional(1); }),
-                      "a forwarded variadic wiring record cannot have additional arguments in its pack");
+                      Catch::Matchers::ContainsSubstring(
+                          "a forwarded variadic wiring record cannot have additional arguments in its pack"));
     CHECK_THROWS_WITH(testing::test_wiring([&] { invalid_named("value"_n = 1); }),
-                      "a forwarded variadic wiring record cannot have additional arguments in its pack");
+                      Catch::Matchers::ContainsSubstring(
+                          "a forwarded variadic wiring record cannot have additional arguments in its pack"));
 }
 
 TEST_CASE("a positional argument cannot follow a named argument",
@@ -930,12 +934,14 @@ TEST_CASE("equivalent variadic node calls reuse materialization and the receiver
     auto context = WiringContext{wiring};
     const auto input = source();
     (void)receiver(7, input);
+    (void)wiring.complete_pending_wiring();
     const auto node_count = wiring.nodes().size();
     const auto output_count = wiring.outputs().size();
     REQUIRE(node_count == 4);
     REQUIRE(output_count == 4);
 
     (void)receiver(7, input);
+    (void)wiring.complete_pending_wiring();
 
     CHECK(wiring.nodes().size() == node_count);
     CHECK(wiring.outputs().size() == output_count);
@@ -994,6 +1000,7 @@ TEST_CASE("a nested graph keeps scalar pack entries inside and crosses time seri
         (void)nested(inner, run_source(), 7, value_source());
     }
 
+    (void)wiring.complete_pending_wiring();
     const auto &nested_node = wiring.nodes().back();
     REQUIRE(nested_node.signature().parameters.size() == 2);
     CHECK(nested_node.scalar_values().empty());

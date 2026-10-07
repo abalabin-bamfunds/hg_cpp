@@ -1,16 +1,21 @@
 #pragma once
 
 #include <bg/allocator.hpp>
+#include <bg/graph/details/graph_signature.hpp>
+#include <bg/graph/details/wiring_callable.hpp>
 #include <bg/graph/details/nested_binding_identity.hpp>
+#include <bg/graph/node_call_identity.hpp>
 #include <bg/graph/wired_input.hpp>
 #include <bg/graph/wired_node.hpp>
 #include <bg/graph/wired_output.hpp>
 #include <bg/graph/wiring_argument.hpp>
+#include <bg/graph/wiring_error.hpp>
 #include <bg/graph/wiring_path.hpp>
 #include <bg/graph/wiring_point.hpp>
 #include <bg/util/linear_hash_table.hpp>
 
 #include <cstdint>
+#include <functional>
 #include <deque>
 #include <memory>
 #include <memory_resource>
@@ -28,8 +33,10 @@ class Service;
 class ServiceDefinition;
 class ServiceCatalogue;
 class SubscriptionService;
+class Signature;
 class TimeSeriesRuntimeType;
 class TimeSeriesType;
+class TypeMap;
 class WiringTemplate;
 
 namespace details {
@@ -47,6 +54,11 @@ GraphWiringStructure graph_wiring_structure(const GraphWiring &, std::span<const
 
 class GraphWiring {
   public:
+    struct NodeCallResult {
+        NodeCallIdentity identity;
+        std::optional<WiringPoint> output;
+    };
+
     enum class ServiceBindingOrdering : std::uint8_t {
         provider_before_consumers,
         provider_after_consumers,
@@ -70,7 +82,7 @@ class GraphWiring {
         details::NestedBindingIdentity identity;
         std::optional<std::size_t> parent_requirement;
         WiringPoint provider;
-        std::vector<std::size_t> consumers;
+        std::vector<NodeCallIdentity> consumers;
         ServiceBindingOrdering ordering{ServiceBindingOrdering::provider_before_consumers};
     };
 
@@ -99,25 +111,48 @@ class GraphWiring {
         return service_binding_requirements_;
     }
 
+    // Resolve collected node calls and materialisations into concrete wired nodes.
+    void finalize();
+    void finalize(const ServiceCatalogue &catalogue);
+    // Engine operation: resolve collected calls and materialisations while allowing later wiring to continue.
+    [[nodiscard]] bool complete_pending_wiring();
+    // Completes wiring needed by a declared body result and returns its concrete form while the graph remains open.
+    [[nodiscard]] WiringPoint complete_pending_wiring(WiringPoint result);
+    // Engine operation: wire currently known services using the attached catalogue session.
+    [[nodiscard]] bool build_known_services();
+    [[nodiscard]] bool is_finalized() const noexcept { return finalization_state_ == FinalizationState::finalized; }
+    std::shared_ptr<void> service_build_session(const void *catalogue_identity) const;
+    void attach_service_build_session(const void *catalogue_identity, std::shared_ptr<void> session,
+                                     std::function<bool()> build, std::function<void()> validate);
+
     [[nodiscard]] WiringPoint require_inherited_time_series(details::NestedBindingIdentity identity, util::symbol name,
                                                             const TimeSeriesType &type);
     void provide_inherited_time_series(const details::NestedBindingIdentity &identity, const TimeSeriesType &type,
                                        WiringPoint provider);
     [[nodiscard]] WiredInput resolve_inherited_input(std::size_t requirement) const;
     void order_after_consumers(WiringPoint consumed, WiringPoint ordered_output);
-    bool input_consumes(WiredInput input, WiringPoint point) const noexcept;
-    void register_service_binding_consumer(const details::NestedBindingIdentity &identity, std::size_t node_index);
-    void register_nested_service_consumers(const GraphWiring &nested, std::size_t node_index);
+    bool input_consumes(WiredInput input, WiringPoint point) const;
+    void register_service_binding_consumer(const details::NestedBindingIdentity &identity, NodeCallIdentity consumer);
+    void register_nested_service_consumers(const GraphWiring &nested, NodeCallIdentity consumer);
 
     [[nodiscard]] const NodeTemplate &own_node_template(std::unique_ptr<NodeTemplate> node_template);
 
     [[nodiscard]] std::optional<WiringPoint> invoke(const WiringTemplate &wiring_template,
                                                     std::span<const WiringArgument> arguments,
                                                     const TypeMap *seed_type_map = nullptr);
+    [[nodiscard]] NodeCallResult invoke_node(const NodeTemplate &node_template,
+                                            std::span<const WiringArgument> arguments);
     [[nodiscard]] std::optional<WiringPoint> invoke_resolved(const WiringTemplate &wiring_template,
                                                              SignatureResolution resolution,
                                                              std::span<const WiringArgument> arguments,
                                                              util::symbol path_name);
+    [[nodiscard]] WiringPoint defer_node_call(const NodeTemplate &node_template, ResolvedSignature signature,
+                                              const TypeMap &type_map,
+                                              std::span<const WiringArgument> arguments,
+                                              const TimeSeriesRuntimeType *output_runtime_type);
+    [[nodiscard]] std::size_t node_index(NodeCallIdentity identity) const;
+    [[nodiscard]] std::optional<NodeCallIdentity> node_call_identity(WiringPoint point) const noexcept;
+    [[nodiscard]] WiringPoint resolve_pending_node_call(std::size_t identity);
     [[nodiscard]] std::size_t register_node(WiredNode node);
     void register_node_output(std::size_t node_index, WiringPoint output, std::optional<std::size_t> hash);
     [[nodiscard]] WiringPoint register_record(std::unique_ptr<details::WiringRecord> record);
@@ -125,6 +160,25 @@ class GraphWiring {
                                                    std::unique_ptr<details::WiringRecord> record);
     [[nodiscard]] WiringPoint register_output(WiredOutput output);
     [[nodiscard]] WiringPoint register_output(WiredOutput output, std::unique_ptr<details::WiringRecord> record);
+    // Extension-facing creation and expansion for deferred wiring points.
+    template <typename TimeSeries, typename... Arguments>
+    [[nodiscard]] wp<TimeSeries> create_wp(Arguments &&...arguments);
+    [[nodiscard]] WiringPoint create_wp(const TimeSeriesType &semantic_type,
+                                        std::span<const WiringArgument> arguments);
+    void add_materialisation_option(WiringPoint point, const TimeSeriesType &target_type, double cost,
+                                   Signature input_signature, WiringMaterialisationBuilder builder);
+    std::vector<WiringMaterialisationOption> materialisation_options(WiringPoint point);
+    // Preserves a selected advertised form as a lazy point for concrete consumers.
+    [[nodiscard]] WiringPoint materialisation_form(WiringPoint point, const TimeSeriesType &target_type);
+    // Registers a root demand and prepares every concrete callback input before any builder runs.
+    void require_materialisation(WiringPoint point, const TimeSeriesType &target_type);
+    void require_materialisation(WiringPoint point, const TimeSeriesType &target_type,
+                                 WiringRequestOrigin origin);
+    // Reports whether this source identity and target were included in a registered root's prepared inputs.
+    bool materialisation_required(WiringPoint point, const TimeSeriesType &target_type) const;
+    // Runs the selected builder synchronously. Callers must activate this graph's WiringContext if the
+    // builder wires graph operations. The returned point may remain lazy.
+    [[nodiscard]] WiringPoint expand_materialisation(WiringPoint point, const TimeSeriesType &target_type);
     [[nodiscard]] WiringPoint materialize(WiringPoint point, const TimeSeriesType &type);
     [[nodiscard]] WiringPoint output_item(WiringPoint parent, item_id_t item, const TimeSeriesType &type);
     [[nodiscard]] std::size_t output_index(WiringPoint point) const;
@@ -173,6 +227,23 @@ class GraphWiring {
     std::optional<std::pmr::unsynchronized_pool_resource> variable_memory_;
     allocator variable_allocator_;
     std::vector<std::unique_ptr<NodeTemplate>> node_templates_;
+    struct PendingNodeCall;
+    std::vector<std::unique_ptr<PendingNodeCall>> pending_node_calls_;
+    std::vector<std::size_t> active_pending_node_calls_;
+    struct NodeCallCapture {
+        const NodeTemplate *node_template;
+        std::optional<std::size_t> identity;
+    };
+    std::vector<NodeCallCapture *> node_call_captures_;
+    enum class FinalizationState : std::uint8_t { open, finalizing, finalized, failed };
+    FinalizationState finalization_state_{FinalizationState::open};
+    void ensure_open() const;
+    bool drain_pending_wiring();
+    bool run_service_build_session();
+    const void *service_catalogue_identity_{};
+    std::shared_ptr<void> service_build_session_;
+    std::function<bool()> service_build_;
+    std::function<void()> service_build_validate_;
     std::unique_ptr<details::ServiceRequirements> service_requirements_;
     std::vector<std::unique_ptr<details::WiringRecord>> wiring_records_;
     struct ItemRecord {
@@ -193,6 +264,38 @@ class GraphWiring {
         const details::WiringRecord *result;
     };
     std::vector<MaterializedWiring> materialized_wiring_points_;
+    struct SelectedMaterialisationForm {
+        const details::WiringRecord *source;
+        const TimeSeriesType *type;
+        const details::WiringRecord *result;
+    };
+    std::vector<SelectedMaterialisationForm> selected_materialisation_forms_;
+    struct ExpandedWiring {
+        const details::WiringRecord *record;
+        const TimeSeriesType *type;
+        const details::WiringRecord *result;
+    };
+    std::vector<ExpandedWiring> expanded_wiring_points_;
+    struct MaterialisationRequest {
+        const details::WiringRecord *record;
+        const TimeSeriesType *type;
+    };
+    std::vector<MaterialisationRequest> active_materialisations_;
+    std::vector<MaterialisationRequest> active_materialisation_expansions_;
+    struct MaterialisationRequirement {
+        const details::WiringRecord *record;
+        const TimeSeriesType *type;
+        std::vector<WiringErrorContext> origins;
+    };
+    struct PreparedMaterialisation {
+        const details::WiringRecord *record;
+        const TimeSeriesType *type;
+        std::vector<WiringArgument> arguments;
+        std::vector<const TimeSeriesType *> input_targets;
+        std::vector<details::MaterialisationDependency> dependencies;
+    };
+    std::vector<MaterialisationRequirement> materialisation_requirements_;
+    std::vector<PreparedMaterialisation> prepared_materialisations_;
     struct InheritedRecord {
         const details::WiringRecord *record;
         std::size_t requirement;
@@ -200,6 +303,7 @@ class GraphWiring {
     struct ContextBinding {
         util::symbol name;
         const TimeSeriesType *type;
+        WiringPoint source_provider;
         WiringPoint provider;
         WiringPoint point;
     };
@@ -210,5 +314,29 @@ class GraphWiring {
     std::vector<InheritedRecord> inherited_records_;
     std::pmr::deque<WiringPath> paths_;
 };
+
+template <typename TimeSeries, typename... Arguments>
+wp<TimeSeries> GraphWiring::create_wp(Arguments &&...arguments) {
+    auto retained_arguments = details::make_wiring_arguments(std::forward<Arguments>(arguments)...);
+    return create_wp(TimeSeries::type(), retained_arguments).template as<TimeSeries>();
+}
+
+template <typename TimeSeries, auto... Properties>
+template <typename Target, typename Builder>
+void wp<TimeSeries, Properties...>::materialisation_option(Builder &&builder, double cost) const {
+    point_.template materialisation_option<Target>(std::forward<Builder>(builder), cost);
+}
+
+template <typename Target, typename Builder>
+void WiringPoint::materialisation_option(Builder &&builder, double cost) const {
+    using Function = std::remove_cvref_t<Builder>;
+    auto input_signature = details::make_graph_input_signature<Function>(util::symbol{"materialisation"});
+    auto erased_builder = [builder = std::forward<Builder>(builder)](
+                              std::span<const WiringArgument> arguments) -> WiringPoint {
+        return details::invoke_graph_function(builder, arguments);
+    };
+    add_materialisation_option(Target::type(), cost, std::move(input_signature),
+                               WiringMaterialisationBuilder{std::move(erased_builder)});
+}
 
 } // namespace bg

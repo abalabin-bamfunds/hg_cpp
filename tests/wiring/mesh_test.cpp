@@ -8,6 +8,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
 
 #include <cstdint>
 #include <memory>
@@ -25,23 +26,30 @@ class MeshOverload final : public WiringTemplate {
   public:
     template <typename Pattern>
     MeshOverload(const Pattern &pattern, bool &selected)
-        : graph_type_{std::make_shared<GraphArgumentType>(std::make_shared<const Pattern>(pattern))},
-          signature_{util::symbol{"mesh_overload"},
-                     {{util::symbol{"function"}, graph_type_.get()},
-                      {util::symbol{"values"}, &TSD<std::int64_t, TS<i64>>::type()}},
-                     TSD<std::int64_t, TS<i64>>::type()},
+        : graph_constraint_{std::make_shared<GraphArgumentConstraint>(
+              std::make_shared<const Pattern>(pattern))},
+          signature_{make_signature(graph_constraint_)},
           selected_{&selected} {}
 
     const Signature &signature() const final { return signature_; }
 
   private:
+    static Signature make_signature(std::shared_ptr<const GraphArgumentConstraint> graph_constraint) {
+        auto function = Parameter{util::symbol{"function"}, &GraphArgument::type()};
+        function.graph_constraint = std::move(graph_constraint);
+        return Signature{util::symbol{"mesh_overload"},
+                         {std::move(function),
+                          {util::symbol{"values"}, &TSD<std::int64_t, TS<i64>>::type()}},
+                         TSD<std::int64_t, TS<i64>>::type()};
+    }
+
     std::optional<WiringPoint> wire(GraphWiring &, ResolvedSignature, const TypeMap &,
                                     std::span<const WiringArgument> arguments) const final {
         *selected_ = true;
         return arguments[1].time_series();
     }
 
-    std::shared_ptr<const GraphArgumentType> graph_type_;
+    std::shared_ptr<const GraphArgumentConstraint> graph_constraint_;
     Signature signature_;
     bool *selected_;
 };
@@ -145,7 +153,7 @@ TEST_CASE("mesh reports invalid enclosing names",
                               },
                               values());
                       }),
-                      "no enclosing mesh is named 'missing'");
+                      Catch::Matchers::ContainsSubstring("no enclosing mesh is named 'missing'"));
 
     CHECK_THROWS_WITH(testing::test_wiring([&] {
                           (void)mesh(
@@ -156,7 +164,7 @@ TEST_CASE("mesh reports invalid enclosing names",
                               },
                               values());
                       }),
-                      "an enclosing mesh already has the name 'same'");
+                      Catch::Matchers::ContainsSubstring("an enclosing mesh already has the name 'same'"));
 }
 
 TEST_CASE("mesh accepts fully runtime graph and argument values",

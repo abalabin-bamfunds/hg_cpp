@@ -16,22 +16,19 @@
 
 namespace bg {
 
-template <typename K, typename Item, OutputSpecification Specification, auto... Properties>
-class Out<TSD<K, Item, Properties...>, Specification> {
+template <typename K, typename Item, auto... Properties> class Out<TSD<K, Item, Properties...>> {
   public:
     using storage_type = details::time_series_dict_storage;
 
   public:
     explicit Out(TimeSeriesOutputBinding state) noexcept : state_(std::move(state)) {}
     Out(TimeSeriesState &last_updated, storage_type &value, EvaluationContext &context)
-        requires(Specification == OutputSpecification::default_ &&
-                 !details::generic_time_series<TSD<K, Item, Properties...>>)
+        requires(!details::generic_time_series<TSD<K, Item, Properties...>>)
         : state_{last_updated, &value, cpp_time_series_runtime_type<TSD<K, Item, Properties...>>(), context} {}
 
     Out(TimeSeriesState &last_updated, storage_type &value, const TimeSeriesRuntimeType &runtime_type,
         EvaluationContext &context)
-        requires(Specification == OutputSpecification::default_ &&
-                 !details::generic_time_series<TSD<K, Item, Properties...>>)
+        requires(!details::generic_time_series<TSD<K, Item, Properties...>>)
         : state_{last_updated, &value, runtime_type, context} {}
 
     Out(Out &&) noexcept = default;
@@ -41,9 +38,9 @@ class Out<TSD<K, Item, Properties...>, Specification> {
     EvaluationTime last_updated() const noexcept { return state_->last_updated(); }
     const TimeSeriesRuntimeType &runtime_type() const noexcept { return state_->runtime_type(); }
 
-    Out<Item, Specification> operator[](const Scalar<K> &key) const { return item(details::scalar_data(key)); }
+    Out<Item> operator[](const Scalar<K> &key) const { return item(details::scalar_data(key)); }
 
-    Out<Item, Specification> operator[](const Scalar<> &key) const
+    Out<Item> operator[](const Scalar<> &key) const
         requires details::scalar_variable<K>
     {
         return item(details::scalar_data(key));
@@ -51,7 +48,7 @@ class Out<TSD<K, Item, Properties...>, Specification> {
 
     template <typename Source>
         requires(!details::scalar_variable<K> && scalar_source_for<K, Source>)
-    Out<Item, Specification> operator[](Source &&key) const {
+    Out<Item> operator[](Source &&key) const {
         const auto value = scalar_source_value<K>(std::forward<Source>(key));
         return item(details::make_scalar_source<K>(value));
     }
@@ -103,7 +100,7 @@ class Out<TSD<K, Item, Properties...>, Specification> {
     const Out *operator->() const noexcept { return this; }
 
     template <typename... Functions> decltype(auto) visit(Functions &&...functions) const {
-        auto output = details::output_factory::make<TS_T, Specification>(state_.get());
+        auto output = details::output_factory::make<Out<TS_T>>(state_.get());
         return output.visit(std::forward<Functions>(functions)...);
     }
 
@@ -150,7 +147,7 @@ class Out<TSD<K, Item, Properties...>, Specification> {
                                     item_runtime_type(), item_layout(), item_value_offset(), memory);
     }
 
-    Out<Item, Specification> item(const details::ScalarData &key) const {
+    Out<Item> item(const details::ScalarData &key) const {
         auto memory = details::current_scalar_allocator();
         auto &value = storage();
         reset_change_tracking(value, memory);
@@ -167,7 +164,7 @@ class Out<TSD<K, Item, Properties...>, Specification> {
 
         auto *path = state_->add_path(state_->runtime_type(), result.position);
         const auto item = state_->runtime_type().item(state_->mutable_data(), result.position);
-        return details::output_factory::make<Item, Specification>(item.last_updated, item.value, item.runtime_type, path);
+        return details::output_factory::make<Out<Item>>(item.last_updated, item.value, item.runtime_type, path);
     }
 
     bool erase(const details::ScalarData &key) const {

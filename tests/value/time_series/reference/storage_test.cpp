@@ -43,7 +43,7 @@ TEST_CASE("a time series reference propagates its value",
     const auto input = bg::In<bg::REF<bg::TS<bg::i64>>>{input_state, &input_reference};
     auto state = bg::details::OutputState{runtime_type};
     state.bind(output_state, &output_value, evaluation_time);
-    const auto output = bg::details::output_factory::make<bg::REF<bg::TS<bg::i64>>>(state);
+    const auto output = bg::details::output_factory::make<bg::Out<bg::REF<bg::TS<bg::i64>>>>(state);
     output.copy(input);
 
     CHECK(output_value == input_reference);

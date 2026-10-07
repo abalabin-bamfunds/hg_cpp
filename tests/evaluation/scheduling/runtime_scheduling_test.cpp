@@ -56,6 +56,7 @@ TEST_CASE("a runtime graph evaluates scheduled nodes in topological order",
         (void)add(constant(1.0F), constant(2.0F));
     }
 
+    wiring.finalize();
     const bg::CompiledGraph compiled{wiring};
     auto runtime_global_state = bg::GlobalState{};
     bg::RuntimeGraph runtime{compiled, runtime_global_state};
@@ -153,6 +154,7 @@ TEST_CASE("a scheduled node can omit evaluation",
         sink(source());
     }
 
+    wiring.finalize();
     const auto compiled = bg::CompiledGraph{wiring};
     auto runtime_global_state = bg::GlobalState{};
     auto runtime = bg::RuntimeGraph{compiled, runtime_global_state};
@@ -192,6 +194,7 @@ TEST_CASE("a node can request evaluation in the first cycle",
         sink(callable_source());
     }
 
+    wiring.finalize();
     const auto compiled = bg::CompiledGraph{wiring};
     auto runtime_global_state = bg::GlobalState{};
     auto runtime = bg::RuntimeGraph{compiled, runtime_global_state};
@@ -217,6 +220,7 @@ TEST_CASE("a scalar-only node is inert unless it requests initial evaluation",
         inert(3);
     }
 
+    wiring.finalize();
     const auto compiled = bg::CompiledGraph{wiring};
     auto runtime_global_state = bg::GlobalState{};
     auto runtime = bg::RuntimeGraph{compiled, runtime_global_state};
@@ -256,6 +260,7 @@ TEST_CASE("a runtime graph processes set scheduling bits in node order",
         }
     }
 
+    wiring.finalize();
     const bg::CompiledGraph compiled{wiring};
     auto runtime_global_state = bg::GlobalState{};
     bg::RuntimeGraph runtime{compiled, runtime_global_state};
@@ -338,6 +343,7 @@ TEST_CASE("scheduling honors the processed-node boundary within and across block
             }
         }
 
+        wiring.finalize();
         const bg::CompiledGraph compiled{wiring};
         auto global_state = bg::GlobalState{};
         auto runtime = bg::RuntimeGraph{compiled, global_state};
@@ -375,6 +381,7 @@ TEST_CASE("scheduling honors the processed-node boundary within and across block
             }
         }
 
+        wiring.finalize();
         const bg::CompiledGraph compiled{wiring};
         auto global_state = bg::GlobalState{};
         auto runtime = bg::RuntimeGraph{compiled, global_state};
@@ -406,7 +413,16 @@ TEST_CASE("scheduling during evaluation crosses a scheduling block boundary",
             indexed(i);
         }
 
-        float_sink(constant(1.0F));
+        (void)wiring.complete_pending_wiring();
+        const auto value = constant(1.0F);
+        const auto source_identity = wiring.node_call_identity(static_cast<bg::WiringPoint>(value));
+        REQUIRE(source_identity);
+        const auto sink_arguments = std::array{bg::WiringArgument{value}};
+        const auto sink_identity = wiring.invoke_node(float_sink, sink_arguments).identity;
+
+        wiring.finalize();
+        CHECK(wiring.node_index(*source_identity) == 63);
+        CHECK(wiring.node_index(sink_identity) == 64);
     }
 
     const bg::CompiledGraph compiled{wiring};
@@ -433,6 +449,7 @@ TEST_CASE("evaluation time must increase between outer cycles",
         indexed(0);
     }
 
+    wiring.finalize();
     const bg::CompiledGraph compiled{wiring};
     auto runtime_global_state = bg::GlobalState{};
     bg::RuntimeGraph runtime{compiled, runtime_global_state};

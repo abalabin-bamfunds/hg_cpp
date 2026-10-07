@@ -232,9 +232,10 @@ template <typename Function, typename Inputs, std::size_t... Index>
     }
 
     if (service_catalogue != nullptr) {
-        service_catalogue->build(wiring);
+        wiring.finalize(*service_catalogue);
+    } else {
+        wiring.finalize();
     }
-
     const auto compiled = CompiledGraph{wiring};
     auto global_state = GlobalState{};
     auto runtime = RuntimeGraph{compiled, global_state};
@@ -263,7 +264,9 @@ template <std::ranges::contiguous_range... Inputs>
     }
 
     if (service_catalogue != nullptr) {
-        service_catalogue->build(wiring);
+        wiring.finalize(*service_catalogue);
+    } else {
+        wiring.finalize();
     }
 
     const auto compiled = CompiledGraph{wiring};
@@ -304,6 +307,8 @@ template <std::ranges::contiguous_range... Inputs>
     }
 
     captured.values.resize(cycle_count);
+
+    wiring.finalize();
 
     const auto compiled = CompiledGraph{wiring};
     auto global_state = GlobalState{};

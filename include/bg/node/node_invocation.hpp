@@ -149,8 +149,9 @@ template <typename CompiledData = void, typename State = void> class NodeInvocat
 
     Out<TS_T> output() const {
         const auto runtime_node = Node{*node_, runtime_storage_};
-        return details::output_factory::make<TS_T>(runtime_node.output_last_updated(), runtime_node.output_value(),
-                                                   node_->node_invocation_output_runtime_type(), *context_);
+        return details::output_factory::make<Out<TS_T>>(runtime_node.output_last_updated(),
+                                                        runtime_node.output_value(),
+                                                        node_->node_invocation_output_runtime_type(), *context_);
     }
 
     template <typename Input, std::size_t ControlledInputIndex = ::bg::ControlledInput::no_control>
@@ -193,21 +194,23 @@ template <typename CompiledData = void, typename State = void> class NodeInvocat
                 node_->node_invocation_time_series_input_count()};
     }
 
-    template <typename TimeSeries, OutputSpecification Specification = OutputSpecification::default_>
-    Out<TimeSeries, Specification> output() const {
+    template <typename TimeSeries> Out<TimeSeries> output() const {
+        return output_as<Out<TimeSeries>>();
+    }
+
+    template <typename Output> Output output_as() const {
         const auto runtime_node = Node{*node_, runtime_storage_};
-        using Output = Out<TimeSeries, Specification>;
         if constexpr (details::direct_time_series_output<Output>) {
             auto &value = *static_cast<typename Output::storage_type *>(runtime_node.output_value());
             if constexpr (details::output_requires_runtime_type<Output>) {
-                return details::output_factory::make<TimeSeries, Specification>(
+                return details::output_factory::make<Output>(
                     runtime_node.output_last_updated(), value, node_->node_invocation_output_runtime_type(), *context_);
             } else {
-                return details::output_factory::make<TimeSeries, Specification>(
+                return details::output_factory::make<Output>(
                     runtime_node.output_last_updated(), value, *context_);
             }
         } else {
-            return details::output_factory::make<TimeSeries, Specification>(
+            return details::output_factory::make<Output>(
                 runtime_node.output_last_updated(), runtime_node.output_value(),
                 node_->node_invocation_output_runtime_type(), *context_);
         }

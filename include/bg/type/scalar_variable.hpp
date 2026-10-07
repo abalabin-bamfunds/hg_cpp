@@ -6,6 +6,7 @@
 #include <bg/type/details/declaration_variables.hpp>
 #include <bg/type/scalar_type.hpp>
 #include <bg/type/type_variable.hpp>
+#include <bg/type/type_registry.hpp>
 #include <bg/util/symbol.hpp>
 
 namespace bg::details {
@@ -38,6 +39,7 @@ struct ScalarVariableInstance<ScalarVariable<Name, Constraints...>> {
             return TypeVariableType<ScalarType>{util::symbol{Name.view()}, std::move(alternatives),
                                                 std::move(property_constraints)};
         }();
+        [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(variable);
 
         return variable;
     }

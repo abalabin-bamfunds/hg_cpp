@@ -4,6 +4,7 @@
 #include <bg/type/time_series_list_type.hpp>
 #include <bg/type/time_series_reference_type.hpp>
 #include <bg/type/time_series_value_type.hpp>
+#include <bg/type/type_registry.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers.hpp>
@@ -83,8 +84,10 @@ TEST_CASE("generic time series list types resolve their item and guarantee",
           "[guarantee:final]") {
     const auto &resolved_list =
         bg::TSL<bg::TS<float, bg::TimeSeriesGuarantee::final>, 2, bg::TimeSeriesGuarantee::final>::type();
-    const bg::GenericTimeSeriesValueType generic_item{bg::float_type(), bg::TimeSeriesGuarantee::final};
-    const bg::GenericTimeSeriesListType generic_list{generic_item, 2, bg::TimeSeriesGuarantee::final};
+    static const bg::GenericTimeSeriesValueType generic_item{bg::float_type(), bg::TimeSeriesGuarantee::final};
+    [[maybe_unused]] static const auto &generic_item_registration = bg::TypeRegistry::register_static(generic_item);
+    static const bg::GenericTimeSeriesListType generic_list{generic_item, 2, bg::TimeSeriesGuarantee::final};
+    [[maybe_unused]] static const auto &generic_list_registration = bg::TypeRegistry::register_static(generic_list);
     auto type_map = bg::TypeMap{};
 
     REQUIRE(generic_list.match(resolved_list, type_map));

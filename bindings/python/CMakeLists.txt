@@ -1,4 +1,4 @@
-find_package(Python 3.10 COMPONENTS Interpreter Development.Module REQUIRED)
+find_package(Python 3.13 COMPONENTS Interpreter Development.Module REQUIRED)
 
 execute_process(
     COMMAND "${Python_EXECUTABLE}" -m nanobind --cmake_dir

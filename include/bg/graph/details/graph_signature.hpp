@@ -9,6 +9,7 @@
 #include <bg/type/time_series_value_type.hpp>
 #include <bg/type/time_series_variable.hpp>
 #include <bg/type/type_variable.hpp>
+#include <bg/type/variable_registry.hpp>
 
 #include <concepts>
 #include <cstddef>
@@ -33,20 +34,30 @@ inline constexpr VariadicMode graph_parameter_variadic_mode = [] {
 template <typename T>
 concept time_series_declaration = supported_time_series<T>;
 
+template <typename Declaration> struct graph_time_series_union : std::false_type {};
+
+template <util::compile_time_string Name, typename... Alternatives>
+struct graph_time_series_union<TypeVariable<Name, Alternatives...>>
+    : std::bool_constant<(supported_time_series<Alternatives> && ...)> {};
+
 template <typename Function, std::size_t Index> const Type &graph_parameter_type(util::symbol name) {
     using Parameter = std::remove_cvref_t<typename callable<Function>::template argument_type<Index>>;
 
     if constexpr (is_typed_wiring_point<Parameter>) {
         using TimeSeries = typename typed_wiring_point<Parameter>::time_series_type;
-        static_assert(time_series_declaration<TimeSeries>, "wp requires a supported time series type");
+        static_assert(time_series_declaration<TimeSeries> || graph_time_series_union<TimeSeries>::value,
+                      "wp requires a supported time series type or a union of supported time series types");
 
         if constexpr (time_series_variable<TimeSeries>) {
             return time_series_variable_instance<TimeSeries>();
+        } else if constexpr (type_variable_declaration<TimeSeries>) {
+            return TimeSeries::type();
         } else if constexpr (TimeSeries::has_explicit_guarantee) {
             return time_series_type_for<Function, Index, true, TimeSeries>(
                 guarantee_parameter<TimeSeries::guarantee>());
         } else {
             static const GuaranteeVariable guarantee{name};
+            [[maybe_unused]] static const auto &registration = VariableRegistry::register_static(guarantee);
             return time_series_type_for<Function, Index, true, TimeSeries>(guarantee);
         }
     } else if constexpr (supported_optional_scalar_argument<Parameter>) {
@@ -98,9 +109,26 @@ void add_graph_parameter(std::vector<Parameter> &parameters, std::span<const std
                                   variadic_wiring_operations<TimeSeries>()});
         }
     } else {
-        parameters.push_back({name, &graph_parameter_type<Function, Index>(name), active, required,
-                              supported_optional_scalar_argument<Value>, graph_parameter_variadic_mode<Value>});
+        auto parameter = Parameter{name, &graph_parameter_type<Function, Index>(name), active, required,
+                                   supported_optional_scalar_argument<Value>, graph_parameter_variadic_mode<Value>};
+        if constexpr (requires { Value::constraint(); }) {
+            parameter.graph_constraint = Value::constraint();
+        }
+        parameters.push_back(std::move(parameter));
     }
+}
+
+template <typename Function, std::size_t... Index>
+[[nodiscard]] std::vector<Parameter> make_graph_parameters(
+    std::span<const std::string_view> parameter_names, std::index_sequence<Index...>) {
+    if (!parameter_names.empty() && parameter_names.size() != sizeof...(Index)) {
+        throw std::invalid_argument{"a graph definition has the wrong number of parameter names"};
+    }
+
+    auto parameters = std::vector<Parameter>{};
+    parameters.reserve(sizeof...(Index));
+    (add_graph_parameter<Function, Index>(parameters, parameter_names), ...);
+    return parameters;
 }
 
 template <typename Function> const TimeSeriesType &graph_output_type() {
@@ -120,13 +148,7 @@ template <typename Function> const TimeSeriesType &graph_output_type() {
 template <typename Function, std::size_t... Index>
 [[nodiscard]] Signature make_graph_signature(util::symbol name, std::span<const std::string_view> parameter_names,
                                              std::vector<VariableResolver> resolvers, std::index_sequence<Index...>) {
-    if (!parameter_names.empty() && parameter_names.size() != sizeof...(Index)) {
-        throw std::invalid_argument{"a graph definition has the wrong number of parameter names"};
-    }
-
-    std::vector<Parameter> parameters;
-    parameters.reserve(sizeof...(Index));
-    (add_graph_parameter<Function, Index>(parameters, parameter_names), ...);
+    auto parameters = make_graph_parameters<Function>(parameter_names, std::index_sequence<Index...>{});
 
     using Result = std::remove_cvref_t<typename callable<Function>::result_type>;
     if constexpr (std::same_as<Result, void>) {
@@ -147,6 +169,21 @@ template <typename Function>
 [[nodiscard]] Signature make_graph_signature(util::symbol name,
                                              std::span<const std::string_view> parameter_names = {}) {
     return make_graph_signature<Function>(name, parameter_names, {});
+}
+
+template <typename Function, std::size_t... Index>
+[[nodiscard]] Signature make_graph_input_signature(util::symbol name,
+                                                   std::span<const std::string_view> parameter_names,
+                                                   std::index_sequence<Index...>) {
+    auto parameters = make_graph_parameters<Function>(parameter_names, std::index_sequence<Index...>{});
+    return {name, std::move(parameters)};
+}
+
+template <typename Function>
+[[nodiscard]] Signature make_graph_input_signature(util::symbol name,
+                                                   std::span<const std::string_view> parameter_names = {}) {
+    return make_graph_input_signature<Function>(
+        name, parameter_names, std::make_index_sequence<callable<Function>::argument_count>{});
 }
 
 } // namespace bg::details

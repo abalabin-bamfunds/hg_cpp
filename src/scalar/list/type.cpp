@@ -1,6 +1,7 @@
 #include <bg/scalar/list/scalar_type.hpp>
 
 #include <bg/type/type_map.hpp>
+#include <bg/type/type_registry.hpp>
 #include <bg/type/type_resolution_error.hpp>
 #include <bg/util/symbol.hpp>
 
@@ -46,26 +47,34 @@ const Type &GenericListScalarType::resolve(const TypeMap &type_map) const {
 }
 
 const ListScalarType &list_scalar_type(const ScalarType &item_type) {
-    static auto types = std::unordered_map<const ScalarType *, std::unique_ptr<ResolvedListScalarType>>{};
+    static auto types = std::unordered_map<const ScalarType *, const ResolvedListScalarType *>{};
 
     const auto lock = std::lock_guard{details::semantic_type_registration_mutex()};
     if (const auto entry = types.find(&item_type); entry != types.end()) {
         return *entry->second;
     }
 
-    auto type = std::make_unique<ResolvedListScalarType>(item_type);
-    const auto *result = type.get();
-    types.emplace(&item_type, std::move(type));
-    if (auto *registration = details::SemanticTypeRegistration::current()) {
-        try {
-            registration->on_rollback([key = &item_type] { types.erase(key); });
-        } catch (...) {
-            types.erase(&item_type);
-            throw;
+    auto entry = types.try_emplace(&item_type, nullptr).first;
+    const ResolvedListScalarType *registered_type = nullptr;
+    try {
+        const auto &result =
+            TypeRegistry::instance().register_owned(std::make_unique<ResolvedListScalarType>(item_type));
+        registered_type = &result;
+        entry->second = registered_type;
+        if (auto *registration = details::SemanticTypeRegistration::current()) {
+            registration->on_rollback([key = &item_type, result = &result] {
+                types.erase(key);
+                TypeRegistry::instance().rollback(*result);
+            });
         }
+        return result;
+    } catch (...) {
+        types.erase(&item_type);
+        if (registered_type != nullptr) {
+            TypeRegistry::instance().rollback(*registered_type);
+        }
+        throw;
     }
-
-    return *result;
 }
 
 } // namespace bg

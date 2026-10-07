@@ -7,6 +7,7 @@
 #include <bg/graph/details/wiring_record_overlay.hpp>
 #include <bg/graph/graph_template.hpp>
 #include <bg/graph/wiring_context.hpp>
+#include <bg/graph/wiring_error.hpp>
 #include <bg/node/node_template.hpp>
 #include <bg/time_series/time_series_type.hpp>
 
@@ -34,9 +35,12 @@ template <typename Graph, details::graph_code_argument Run, details::graph_code_
     auto resolution = graph.signature().resolve_wiring_arguments(normalized, normalized_result.descriptors);
     const auto &resolved = resolution.signature;
 
+    const auto outer_diagnostics = details::WiringDiagnosticContext::current(outer_wiring);
     auto inner_wiring = std::make_shared<GraphWiring>(outer_wiring);
-    auto input_nodes = std::vector<std::size_t>{};
+    auto diagnostics = details::WiringDiagnosticContext{*inner_wiring, outer_diagnostics};
+    auto input_boundaries = std::vector<WiringPoint>{};
     auto output_node = std::size_t{};
+    auto boundary_output = WiringPoint{};
     {
         auto context = WiringContext{*inner_wiring};
         // Make resolved graph context parameters available as inner contexts while wiring the graph body.
@@ -52,7 +56,7 @@ template <typename Graph, details::graph_code_argument Run, details::graph_code_
                 if (record.direct_collection()) {
                     const auto &type = static_cast<const TimeSeriesType &>(*resolved.parameters[i].type);
                     const auto input = details::wire_nested_input(type);
-                    input_nodes.push_back(inner_wiring->output_node_index(input));
+                    input_boundaries.push_back(input);
                     auto argument = WiringArgument{input};
                     argument.set_variadic_name(resolved.parameters[i].name, resolved.parameters[i].variadic_mode);
                     inner_arguments.push_back(std::move(argument));
@@ -65,7 +69,7 @@ template <typename Graph, details::graph_code_argument Run, details::graph_code_
                     if (argument.is_time_series()) {
                         const auto &type = static_cast<const TimeSeriesType &>(argument.type());
                         const auto input = details::wire_nested_input(type);
-                        input_nodes.push_back(inner_wiring->output_node_index(input));
+                        input_boundaries.push_back(input);
                         inner_arguments.back().replace_time_series(input);
                     }
                 }
@@ -76,17 +80,23 @@ template <typename Graph, details::graph_code_argument Run, details::graph_code_
             if (resolved.parameters[i].type->is_time_series()) {
                 const auto &type = static_cast<const TimeSeriesType &>(*resolved.parameters[i].type);
                 const auto input = details::wire_nested_input(type);
-                input_nodes.push_back(inner_wiring->output_node_index(input));
+                input_boundaries.push_back(input);
                 inner_arguments.back().replace_time_series(input);
             }
         }
 
-        const auto output = *static_cast<const WiringTemplate &>(graph)(
+        const auto result = *static_cast<const WiringTemplate &>(graph)(
             resolution.type_map, std::span<const WiringArgument>{inner_arguments});
-        const auto boundary_output =
-            details::wire_nested_output(output, static_cast<const TimeSeriesType &>(*resolved.output));
-        output_node = inner_wiring->output_node_index(boundary_output);
+        boundary_output = details::wire_nested_output(result, static_cast<const TimeSeriesType &>(*resolved.output));
     }
+
+    inner_wiring->finalize();
+    auto input_nodes = std::vector<std::size_t>{};
+    input_nodes.reserve(input_boundaries.size());
+    for (const auto input : input_boundaries) {
+        input_nodes.push_back(inner_wiring->output_node_index(input));
+    }
+    output_node = inner_wiring->output_node_index(boundary_output);
 
     auto flattened = ResolvedSignature{resolved.name, {}, resolved.output};
     flattened.parameters.reserve(resolved.parameters.size());
@@ -163,10 +173,12 @@ template <typename Graph, details::graph_code_argument Run, details::graph_code_
     for (const auto provider : inherited_providers) {
         outer_arguments.emplace_back(provider);
     }
-    auto output_point = *owned_nested(std::span<const WiringArgument>{outer_arguments});
-    const auto node_index = outer_wiring.output_node_index(output_point);
-    outer_wiring.register_nested_service_consumers(*inner_graph_wiring, node_index);
-    return wp<REF<Target>>{output_point};
+    auto call = outer_wiring.invoke_node(owned_nested, outer_arguments);
+    if (!call.output) {
+        throw WiringError{"a nested graph node did not produce its declared output"};
+    }
+    outer_wiring.register_nested_service_consumers(*inner_graph_wiring, call.identity);
+    return wp<REF<Target>>{*call.output};
 }
 
 } // namespace bg

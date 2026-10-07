@@ -1,6 +1,7 @@
 #include <bg/scalar/set/scalar_type.hpp>
 
 #include <bg/type/type_map.hpp>
+#include <bg/type/type_registry.hpp>
 #include <bg/type/type_resolution_error.hpp>
 #include <bg/util/symbol.hpp>
 
@@ -55,36 +56,43 @@ const Type &GenericSetScalarType::resolve(const TypeMap &type_map) const {
 }
 
 const SetScalarType &set_scalar_type(const ScalarType &item_type) {
-    static auto types = std::vector<std::unique_ptr<ResolvedSetScalarType>>{};
+    static auto types = std::vector<std::pair<const ScalarType *, const ResolvedSetScalarType *>>{};
 
     const auto lock = std::lock_guard{details::semantic_type_registration_mutex()};
-    const auto found = std::ranges::find_if(types, [&](const auto &type) { return &type->item_type() == &item_type; });
+    const auto found = std::ranges::find_if(types, [&](const auto &type) { return type.first == &item_type; });
     if (found != types.end()) {
-        return **found;
+        return *found->second;
     }
     if (!item_type.supports_hash()) {
         throw std::invalid_argument{"set item type does not support hashing"};
     }
 
-    types.push_back(std::make_unique<ResolvedSetScalarType>(item_type));
-    const auto *result = types.back().get();
-    if (auto *registration = details::SemanticTypeRegistration::current()) {
-        try {
-            registration->on_rollback([result] {
-                std::erase_if(types, [result](const auto &type) { return type.get() == result; });
-            });
+    types.emplace_back(&item_type, nullptr);
+    const ResolvedSetScalarType *registered_type = nullptr;
+    try {
+        const auto &result =
+            TypeRegistry::instance().register_owned(std::make_unique<ResolvedSetScalarType>(item_type));
+        registered_type = &result;
+        types.back().second = registered_type;
+        if (auto *registration = details::SemanticTypeRegistration::current()) {
             registration->on_validate([&item_type] {
                 if (!item_type.supports_hash()) {
                     throw std::invalid_argument{"set item type does not support hashing"};
                 }
             });
-        } catch (...) {
-            types.pop_back();
-            throw;
+            registration->on_rollback([result = registered_type] {
+                std::erase_if(types, [result](const auto &entry) { return entry.second == result; });
+                TypeRegistry::instance().rollback(*result);
+            });
         }
+        return result;
+    } catch (...) {
+        types.pop_back();
+        if (registered_type != nullptr) {
+            TypeRegistry::instance().rollback(*registered_type);
+        }
+        throw;
     }
-
-    return *result;
 }
 
 } // namespace bg

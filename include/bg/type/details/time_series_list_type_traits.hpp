@@ -4,6 +4,7 @@
 #include <bg/type/details/time_series_type_traits.hpp>
 #include <bg/type/size_variable_instance.hpp>
 #include <bg/type/time_series_list_type.hpp>
+#include <bg/type/type_registry.hpp>
 
 namespace bg::details {
 
@@ -23,10 +24,12 @@ template <typename Item, auto Size, auto... Properties> struct time_series_type_
 
         if constexpr (Input) {
             static const auto type = GenericTimeSeriesListType{item, size, guarantee};
+            [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type);
             return type;
         }
         if (!item.is_resolved() || !size.is_resolved() || !guarantee.is_resolved()) {
             static const auto type = GenericTimeSeriesListType{item, size, guarantee};
+            [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type);
             return type;
         }
 

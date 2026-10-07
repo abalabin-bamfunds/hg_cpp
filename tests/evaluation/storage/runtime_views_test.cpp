@@ -54,6 +54,7 @@ TEST_CASE("a scalar list passes values through compiled wiring", "[evaluation][v
     }
     values[0] = 4.0F;
 
+    wiring.finalize();
     const bg::CompiledGraph compiled{wiring};
     auto runtime_global_state = bg::GlobalState{};
     bg::RuntimeGraph runtime{compiled, runtime_global_state};

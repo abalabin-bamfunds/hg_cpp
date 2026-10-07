@@ -7,7 +7,7 @@ addition to `bg::bg`.
 
 ## Build and install
 
-The Python extension requires Python 3.10 or newer, its development module, and
+The Python extension requires Python 3.13 or newer, its development module, and
 nanobind in the selected Python environment. Python tests also require pytest.
 
 ```sh
@@ -105,7 +105,16 @@ graph parameter must currently be `TS[T]`. Each sequence element is a value or
 `TS[T]`. The result has one entry per cycle: an output value when the graph
 publishes one, otherwise `None`.
 
+Wiring failures preserve an underlying Python exception's identity, type, and
+traceback. Exception notes include the context described by
+[wiring errors](graph-wiring.md#wiring-errors).
+
 ## Time-series types
+
+Python declaration types and their referenced variables follow the
+[type registration contract](type-system.md#type-model). Their metadata has
+process lifetime. Definition and callback ownership follows the
+[runtime boundary](#runtime-boundary).
 
 Python definitions can use these annotations:
 

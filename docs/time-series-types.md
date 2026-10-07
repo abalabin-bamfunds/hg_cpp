@@ -104,11 +104,11 @@ reader. Complete registration before concurrent writes or replay; dispatch
 registration is not synchronized. Write handlers receive the provider's
 `In<Series>` view and a restricted `TimeSeriesTickWriteContext`. Replay and
 discard handlers use `util::buffer_reader`; replay receives its
-`Out<Series, Specification>` view. Register one replay handler per semantic
+registered output view. Register the complete output declaration with
+`add_replay<Output>()` and one replay handler per semantic
 type or runtime representation. A runtime registration selects the provider's
-typed output view for that representation. This uses the item's runtime type:
-a generic TSD item inherits its static output specification from the containing
-TSD, which does not identify the item's representation. A semantic handler
+typed output view for that representation. Collection replay selects handlers
+using each item's actual runtime type. A semantic handler
 must support every runtime representation without an exact registration.
 Discard receives the semantic type's record format and must destroy provider-
 owned objects. Failed writes discard the complete prefix through that same

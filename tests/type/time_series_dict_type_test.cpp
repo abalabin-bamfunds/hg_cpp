@@ -2,12 +2,13 @@
 #include <bg/time_series/tsd/tsd_type.hpp>
 #include <bg/time_series/tss/tss_type.hpp>
 #include <bg/type/scalar_type.hpp>
+#include <bg/type/scalar_variable.hpp>
 #include <bg/type/time_series_dict_type.hpp>
 #include <bg/type/time_series_reference_type.hpp>
 #include <bg/type/time_series_set_type.hpp>
 #include <bg/type/time_series_value_type.hpp>
 #include <bg/type/type_map.hpp>
-#include <bg/type/type_variable.hpp>
+#include <bg/type/type_registry.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -60,10 +61,9 @@ TEST_CASE("generic time series dictionary types resolve their components",
           "[type_system][tsd][series:tsd][feature:type-system][declaration:generic][guarantee:final]") {
     const auto &resolved =
         bg::TSD<bg::i64, bg::TS<float, bg::TimeSeriesGuarantee::final>, bg::TimeSeriesGuarantee::final>::type();
-    bg::TypeVariableType<bg::ScalarType> key{bg::util::symbol{"K"}, {}, {&bg::supports_scalar_hash}};
-    bg::TypeVariableType<bg::TimeSeriesType> value{bg::util::symbol{"V"}};
-    const bg::GenericTimeSeriesSetType key_set{key, bg::TimeSeriesGuarantee::final};
-    const bg::GenericTimeSeriesDictionaryType generic{key, value, key_set, bg::TimeSeriesGuarantee::final};
+    using KEY = bg::ScalarVariable<"K", bg::Hashable>;
+    using VALUE = bg::TimeSeriesVariable<"V">;
+    const auto &generic = bg::TSD<KEY, VALUE, bg::TimeSeriesGuarantee::final>::type();
     auto type_map = bg::TypeMap{};
 
     REQUIRE(generic.match(resolved, type_map));
@@ -75,10 +75,14 @@ TEST_CASE("dictionary item matching is reference transparent",
     const auto &item = bg::TS<float>::type();
     const auto &reference = bg::REF<bg::TS<float>>::type();
     const auto &key_set = bg::TSS<bg::i64>::type();
-    const auto direct_dictionary =
+    static const auto direct_dictionary =
         bg::GenericTimeSeriesDictionaryType{bg::int64_type(), item, key_set, bg::TimeSeriesGuarantee::ordinary};
-    const auto reference_dictionary =
+    [[maybe_unused]] static const auto &direct_dictionary_registration =
+        bg::TypeRegistry::register_static(direct_dictionary);
+    static const auto reference_dictionary =
         bg::GenericTimeSeriesDictionaryType{bg::int64_type(), reference, key_set, bg::TimeSeriesGuarantee::ordinary};
+    [[maybe_unused]] static const auto &reference_dictionary_registration =
+        bg::TypeRegistry::register_static(reference_dictionary);
     const auto &direct = bg::TSD<bg::i64, bg::TS<float>>::type();
     const auto &references = bg::TSD<bg::i64, bg::REF<bg::TS<float>>>::type();
     auto type_map = bg::TypeMap{};

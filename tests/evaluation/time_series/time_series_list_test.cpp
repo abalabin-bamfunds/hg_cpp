@@ -513,6 +513,7 @@ TEST_CASE("sequential item views reuse evaluation scratch storage",
         static_cast<void>(source());
     }
 
+    wiring.finalize();
     const auto compiled = bg::CompiledGraph{wiring};
     auto memory = counting_memory_resource{};
     auto runtime_global_state = bg::GlobalState{bg::allocator{memory}};

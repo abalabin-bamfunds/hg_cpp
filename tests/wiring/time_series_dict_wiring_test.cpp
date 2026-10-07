@@ -44,6 +44,7 @@ TEST_CASE("repeated dictionary item selection reuses its node",
     (void)dictionary[1];
     (void)dictionary[1];
 
+    (void)wiring.complete_pending_wiring();
     REQUIRE(wiring.nodes().size() == 3);
 }
 

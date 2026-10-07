@@ -6,14 +6,7 @@
 #include <bg/python/input_view.hpp>
 #include <bg/python/object.hpp>
 #include <bg/python/scalar_conversion.hpp>
-#include <bg/type/guarantee_variable.hpp>
 #include <bg/type/signature.hpp>
-#include <bg/type/time_series_bundle_type.hpp>
-#include <bg/type/time_series_dict_type.hpp>
-#include <bg/type/time_series_list_type.hpp>
-#include <bg/type/time_series_reference_type.hpp>
-#include <bg/type/time_series_set_type.hpp>
-#include <bg/type/time_series_value_type.hpp>
 
 #include <nanobind/nanobind.h>
 
@@ -30,25 +23,12 @@ namespace bg::python {
 class BG_PYTHON_API PythonNodeDefinition {
   public:
     struct SignatureDefinition {
-        using GenericTimeSeriesType =
-            std::variant<GenericTimeSeriesValueType, GenericTimeSeriesReferenceType, GenericTimeSeriesSetType,
-                         GenericTimeSeriesListType, GenericTimeSeriesDictionaryType, GenericTimeSeriesBundleType>;
-
-        SignatureDefinition(std::vector<std::shared_ptr<const void>> type_owners,
-                            std::vector<GuaranteeVariable> guarantees,
-                            std::vector<GenericTimeSeriesType> time_series_types,
-                            std::vector<const Type *> wiring_parameter_types, Signature signature)
-            : type_owners{std::move(type_owners)}, guarantees{std::move(guarantees)},
-              time_series_types{std::move(time_series_types)},
-              wiring_parameter_types{std::move(wiring_parameter_types)}, signature{std::move(signature)} {}
+        SignatureDefinition(std::vector<const Type *> wiring_parameter_types, Signature signature)
+            : wiring_parameter_types{std::move(wiring_parameter_types)}, signature{std::move(signature)} {}
 
         SignatureDefinition(const SignatureDefinition &) = delete;
         SignatureDefinition &operator=(const SignatureDefinition &) = delete;
 
-        // Signature type pointers refer to these vectors, which are immutable after construction.
-        std::vector<std::shared_ptr<const void>> type_owners;
-        std::vector<GuaranteeVariable> guarantees;
-        std::vector<GenericTimeSeriesType> time_series_types;
         std::vector<const Type *> wiring_parameter_types;
         Signature signature;
     };

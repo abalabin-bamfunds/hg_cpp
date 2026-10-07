@@ -92,8 +92,7 @@ decltype(auto) make_callable_node_argument(Invocation invocation) {
         constexpr auto ControlledInput = callable_dynamic_activity_input_index<Function, Index>(Indices);
         return invocation.template input<Field, ControlledInput>(Parameter, Input);
     } else if constexpr (output_field<Field>::value) {
-        return invocation.template output<typename output_field<Field>::time_series_type,
-                                          output_field<Field>::specification>();
+        return invocation.template output_as<Field>();
     } else {
         using Value = typename scalar_field<Field>::value_type;
         using ParameterScalar = typename scalar_field<Field>::parameter_type;
@@ -174,13 +173,10 @@ template <typename Function, typename... Options> class CallableNodeDefinition {
     static void on_invalidation(Invocation invocation)
         requires(!std::same_as<output_declaration_type, void> &&
                  requires(Invocation value) {
-                     value.template output<typename output_field<output_declaration_type>::time_series_type,
-                                           output_field<output_declaration_type>::specification>()
-                         .invalidate();
+                     value.template output_as<output_declaration_type>().invalidate();
                  })
     {
-        invocation.template output<output_time_series_type,
-                                   output_field<output_declaration_type>::specification>().invalidate();
+        invocation.template output_as<output_declaration_type>().invalidate();
     }
 
   private:

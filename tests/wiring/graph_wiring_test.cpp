@@ -1,15 +1,19 @@
 #include <bg/graph/graph_wiring.hpp>
+#include <bg/graph/context.hpp>
 #include <bg/graph/wiring_context.hpp>
 #include <bg/graph/wiring_error.hpp>
 #include <bg/node.hpp>
 #include <bg/operators.hpp>
 #include <bg/scalar/value.hpp>
+#include <bg/time_series/cpp_runtime_type.hpp>
 #include <bg/time_series/time_series_variable.hpp>
 #include <bg/type/scalar_type.hpp>
 #include <bg/type/time_series_reference_type.hpp>
 #include <bg/type/time_series_value_type.hpp>
+#include <bg/type/type_registry.hpp>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
 
 #include <array>
 #include <chrono>
@@ -36,6 +40,27 @@ struct copy_definition {
     void evaluate() const { output.set(*input); }
 };
 
+class OutputRuntimeSelectorNode final : public bg::NodeTemplate {
+  public:
+    OutputRuntimeSelectorNode(const bg::TimeSeriesRuntimeType &selected_runtime_type, int &selector_calls)
+        : signature_{bg::util::symbol{"output_runtime_selector"}, {}, bg::TS<float>::type()},
+          selected_runtime_type_{&selected_runtime_type}, selector_calls_{&selector_calls} {}
+
+    const bg::Signature &signature() const final { return signature_; }
+    bg::EvaluationFunction evaluation_function(const bg::ResolvedSignature &) const noexcept final { return nullptr; }
+    bool uses_output_runtime_type() const noexcept final { return true; }
+
+    const bg::TimeSeriesRuntimeType *output_runtime_type(const bg::ResolvedSignature &) const final {
+        ++*selector_calls_;
+        return selected_runtime_type_;
+    }
+
+  private:
+    bg::Signature signature_;
+    const bg::TimeSeriesRuntimeType *selected_runtime_type_;
+    int *selector_calls_;
+};
+
 static_assert(sizeof(bg::WiringPoint) == sizeof(void *));
 static_assert(std::is_trivially_copyable_v<bg::WiringPoint>);
 
@@ -55,12 +80,43 @@ TEST_CASE("node calls add wired nodes to the active graph", "[graph_wiring][feat
         CHECK(&output.graph() == &wiring);
     }
 
+    (void)wiring.complete_pending_wiring();
     const auto nodes = wiring.nodes();
     REQUIRE(nodes.size() == 2);
     CHECK(&nodes[0].node_template() == &source);
     CHECK(&nodes[1].node_template() == &copy);
     REQUIRE(nodes[1].inputs().size() == 1);
     CHECK(nodes[1].inputs()[0].index() == 0);
+}
+
+TEST_CASE("collected node calls have identities separate from output indices",
+          "[graph_wiring][feature:wiring]") {
+    const auto source = bg::node<source_definition>();
+    const auto consume = bg::node([](bg::In<bg::TS<float>>) {});
+    bg::GraphWiring wiring;
+    auto source_point = bg::WiringPoint{};
+    auto consume_call = bg::GraphWiring::NodeCallResult{};
+
+    {
+        bg::WiringContext context{wiring};
+        source_point = source();
+        const auto arguments = std::array{bg::WiringArgument{source_point}};
+        consume_call = wiring.invoke_node(consume, arguments);
+    }
+
+    CHECK(wiring.nodes().empty());
+    CHECK_FALSE(consume_call.output);
+    const auto source_identity = wiring.node_call_identity(source_point);
+    REQUIRE(source_identity);
+    CHECK(source_identity->value == 0);
+    CHECK(consume_call.identity.value == 1);
+    CHECK_THROWS_AS(wiring.output_node_index(source_point), bg::WiringError);
+
+    wiring.finalize();
+
+    CHECK(wiring.node_index(*source_identity) == 0);
+    CHECK(wiring.node_index(consume_call.identity) == 1);
+    CHECK(wiring.output_node_index(source_point) == 0);
 }
 
 TEST_CASE("wiring point re-annotation checks type compatibility", "[graph_wiring][feature:wiring]") {
@@ -90,6 +146,7 @@ TEST_CASE("wiring reuses a node called with the same arguments", "[graph_wiring]
     (void)scale(input, 2.0F);
     (void)scale(input, 2.0F);
 
+    (void)wiring.complete_pending_wiring();
     CHECK(wiring.nodes().size() == 2);
 }
 
@@ -103,6 +160,7 @@ TEST_CASE("wiring keeps calls with different scalar arguments separate", "[graph
     (void)scale(input, 2.0F);
     (void)scale(input, 3.0F);
 
+    (void)wiring.complete_pending_wiring();
     CHECK(wiring.nodes().size() == 3);
 }
 
@@ -115,6 +173,7 @@ TEST_CASE("wiring resolves a runtime-selected scalar argument", "[graph_wiring][
     const auto context = bg::WiringContext{wiring};
     (void)static_cast<const bg::WiringTemplate &>(sink)(std::span<const bg::WiringArgument>{arguments});
 
+    (void)wiring.complete_pending_wiring();
     REQUIRE(wiring.nodes().size() == 1);
     CHECK(wiring.nodes()[0].signature().parameters[0].type == &bg::string_type());
     REQUIRE(wiring.nodes()[0].scalar_values().size() == 1);
@@ -160,6 +219,7 @@ TEST_CASE("wiring keeps calls with different input sources separate", "[graph_wi
     (void)copy(first_source());
     (void)copy(second_source());
 
+    (void)wiring.complete_pending_wiring();
     CHECK(wiring.nodes().size() == 4);
 }
 
@@ -171,6 +231,7 @@ TEST_CASE("wiring reuses a node called with the same absent scalar", "[graph_wir
     (void)source(std::optional<int>{});
     (void)source(std::optional<int>{});
 
+    (void)wiring.complete_pending_wiring();
     CHECK(wiring.nodes().size() == 1);
 }
 
@@ -193,6 +254,7 @@ TEST_CASE("wiring does not reuse calls with an unhashable scalar", "[graph_wirin
     (void)source(value);
     (void)source(value);
 
+    (void)wiring.complete_pending_wiring();
     CHECK(wiring.nodes().size() == 2);
 }
 
@@ -206,6 +268,7 @@ TEST_CASE("wiring does not reuse outputless node calls", "[graph_wiring][feature
     sink(input);
     sink(input);
 
+    (void)wiring.complete_pending_wiring();
     CHECK(wiring.nodes().size() == 3);
 }
 
@@ -217,6 +280,7 @@ TEST_CASE("a node can disable wiring deduplication", "[graph_wiring][feature:wir
     (void)source();
     (void)source();
 
+    (void)wiring.complete_pending_wiring();
     CHECK(wiring.nodes().size() == 2);
 }
 
@@ -240,6 +304,7 @@ TEST_CASE("an aggregate node can disable wiring deduplication", "[graph_wiring][
     (void)source();
     (void)source();
 
+    (void)wiring.complete_pending_wiring();
     CHECK(wiring.nodes().size() == 2);
 }
 
@@ -280,6 +345,7 @@ class scale_template final : public bg::NodeTemplate {
   public:
     [[nodiscard]] const bg::Signature &signature() const override {
         static const bg::GenericTimeSeriesValueType input_type{bg::float_type(), bg::TimeSeriesGuarantee::ordinary};
+        [[maybe_unused]] static const auto &input_type_registration = bg::TypeRegistry::register_static(input_type);
         static const bg::Signature value{
             bg::util::symbol{"scale"},
             {{bg::util::symbol{"input"}, &input_type}, {bg::util::symbol{"factor"}, &bg::float_type()}},
@@ -296,7 +362,159 @@ class scale_template final : public bg::NodeTemplate {
     static bool evaluate(const bg::CompiledNode &, void *, bg::EvaluationContext *) { return true; }
 };
 
+class union_input_node_template final : public bg::NodeTemplate {
+  public:
+    [[nodiscard]] const bg::Signature &signature() const override {
+        using FORM = bg::Union<"NODE_MULTIPLE_SERIES_FORMS", std::int64_t,
+                               bg::TS<std::int64_t>, bg::TS<float>>;
+        static const auto value = bg::Signature{
+            bg::util::symbol{"union_input_node"}, {{bg::util::symbol{"input"}, &FORM::type()}}};
+        return value;
+    }
+
+    [[nodiscard]] bg::EvaluationFunction evaluation_function(const bg::ResolvedSignature &) const noexcept override {
+        return nullptr;
+    }
+};
+
+class series_only_union_input_node_template final : public bg::NodeTemplate {
+  public:
+    [[nodiscard]] const bg::Signature &signature() const override {
+        using FORM = bg::Union<"NODE_SERIES_ONLY_FORM", bg::TS<float>>;
+        static const auto value = bg::Signature{
+            bg::util::symbol{"series_only_union_input_node"}, {{bg::util::symbol{"input"}, &FORM::type()}}};
+        return value;
+    }
+
+    [[nodiscard]] bg::EvaluationFunction evaluation_function(const bg::ResolvedSignature &) const noexcept override {
+        return nullptr;
+    }
+};
+
+class scalar_or_time_series_node_template final : public bg::NodeTemplate {
+  public:
+    [[nodiscard]] const bg::Signature &signature() const override {
+        using FORM = bg::Union<"NODE_SCALAR_OR_SERIES", float, bg::TS<float>>;
+        static const auto value = bg::Signature{
+            bg::util::symbol{"scalar_or_time_series_node"}, {{bg::util::symbol{"input"}, &FORM::type()}}};
+        return value;
+    }
+
+    [[nodiscard]] bg::EvaluationFunction evaluation_function(const bg::ResolvedSignature &) const noexcept override {
+        return &evaluate;
+    }
+
+  private:
+    static bool evaluate(const bg::CompiledNode &, void *, bg::EvaluationContext *) { return true; }
+};
+
 } // namespace
+
+TEST_CASE("runtime node templates reject a Union with multiple time-series forms",
+          "[feature:wiring][feature:type-system]") {
+    const auto source = bg::node([](bg::Out<bg::TS<float>>) {});
+    const auto sink = union_input_node_template{};
+    auto wiring = bg::GraphWiring{};
+    const auto context = bg::WiringContext{wiring};
+    const auto input = source();
+
+    CHECK_THROWS_AS(sink(input), bg::WiringError);
+}
+
+TEST_CASE("runtime node templates reject a time-series-only Union",
+          "[feature:wiring][feature:type-system]") {
+    const auto source = bg::node([](bg::Out<bg::TS<float>>) {});
+    const auto sink = series_only_union_input_node_template{};
+    auto wiring = bg::GraphWiring{};
+    const auto context = bg::WiringContext{wiring};
+    const auto input = source();
+
+    CHECK_THROWS_AS(sink(input), bg::WiringError);
+}
+
+TEST_CASE("runtime node templates resolve scalar and selected time-series Union forms",
+          "[feature:wiring][feature:type-system][feature:wiring-materialisation]") {
+    SECTION("the scalar alternative resolves to a scalar node input") {
+        const auto sink = scalar_or_time_series_node_template{};
+        auto wiring = bg::GraphWiring{};
+        const auto context = bg::WiringContext{wiring};
+        (void)sink(4.0F);
+
+        wiring.finalize();
+
+        const auto node = std::ranges::find_if(wiring.nodes(), [&](const auto &candidate) {
+            return &candidate.node_template() == &sink;
+        });
+        REQUIRE(node != wiring.nodes().end());
+        CHECK(node->signature().parameters[0].type == &bg::float_type());
+        CHECK(node->inputs().empty());
+        REQUIRE(node->scalar_values().size() == 1);
+    }
+
+    SECTION("a deferred source binds its selected time-series form") {
+        const auto integer_source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
+        const auto float_source = bg::node([](bg::Out<bg::TS<float>>) {});
+        const auto sink = scalar_or_time_series_node_template{};
+        auto wiring = bg::GraphWiring{};
+        const auto context = bg::WiringContext{wiring};
+        const auto semantic_source = integer_source();
+        const auto selected_source = float_source();
+        auto materialisation_calls = 0;
+        auto deferred = wiring.create_wp<bg::TS<bg::i64>>(semantic_source);
+        deferred.materialisation_option<bg::TS<float>>(
+            [&](bg::wp<bg::TS<bg::i64>>) {
+                ++materialisation_calls;
+                return selected_source;
+            },
+            0.0);
+
+        sink(deferred);
+        CHECK(wiring.materialisation_required(deferred, bg::TS<float>::type()));
+        wiring.finalize();
+
+        const auto node = std::ranges::find_if(wiring.nodes(), [&](const auto &candidate) {
+            return &candidate.node_template() == &sink;
+        });
+        REQUIRE(node != wiring.nodes().end());
+        CHECK(node->signature().parameters[0].type == &bg::TS<float>::type());
+        REQUIRE(node->inputs().size() == 1);
+        CHECK(wiring.input_consumes(node->inputs()[0], selected_source));
+        CHECK(materialisation_calls == 1);
+    }
+}
+
+TEST_CASE("invoke_node captures the intended template while importing context",
+          "[graph_wiring][feature:wiring]") {
+    using namespace bg::literals;
+
+    const auto target = bg::node([](bg::In<bg::TS<float>, "value"_n, bg::context>, bg::Out<bg::TS<bool>>) {});
+    const auto provider = bg::node([](bg::Out<bg::TS<float>>) {});
+    auto outer = bg::GraphWiring{};
+    auto inner = bg::GraphWiring{outer};
+    auto call = bg::GraphWiring::NodeCallResult{};
+    auto outer_provider = bg::WiringPoint{};
+    {
+        const auto outer_context = bg::WiringContext{outer};
+        outer_provider = provider();
+        const auto binding = bg::with_context("value"_n = outer_provider);
+        {
+            const auto inner_context = bg::WiringContext{inner};
+            call = inner.invoke_node(target, std::span<const bg::WiringArgument>{});
+        }
+    }
+
+    CHECK(call.identity.value == 0);
+    REQUIRE(call.output);
+    CHECK(inner.node_call_identity(*call.output)->value == 0);
+    inner.finalize();
+    REQUIRE(inner.nodes().size() == 1);
+    REQUIRE(inner.nodes()[0].inputs().size() == 1);
+    CHECK(inner.nodes()[0].inputs()[0].is_inherited());
+    outer.finalize();
+    REQUIRE(outer.nodes().size() == 2);
+    REQUIRE(outer.nodes()[1].inputs().size() == 1);
+    CHECK(outer.nodes()[1].inputs()[0].index() == outer.output_index(outer_provider));
+}
 
 TEST_CASE("wired nodes retain scalar arguments", "[graph_wiring][feature:wiring]") {
     const auto source = bg::node<source_definition>();
@@ -309,6 +527,7 @@ TEST_CASE("wired nodes retain scalar arguments", "[graph_wiring][feature:wiring]
         (void)scale(input, 2.0F);
     }
 
+    (void)wiring.complete_pending_wiring();
     const auto nodes = wiring.nodes();
     REQUIRE(nodes.size() == 2);
     REQUIRE(nodes[1].inputs().size() == 1);
@@ -339,6 +558,7 @@ TEST_CASE("optional scalar parameters can record absence", "[graph_wiring][featu
         optional_scalar(std::optional<int>{});
     }
 
+    (void)wiring.complete_pending_wiring();
     REQUIRE(wiring.nodes().size() == 1);
     REQUIRE(wiring.nodes()[0].scalar_values().size() == 1);
     CHECK_FALSE(wiring.nodes()[0].scalar_values()[0].has_value());
@@ -357,9 +577,39 @@ struct required_scalar_definition {
 TEST_CASE("required scalar parameters reject absence", "[graph_wiring][feature:wiring]") {
     const auto required_scalar = bg::node<required_scalar_definition>();
     bg::GraphWiring wiring;
-    bg::WiringContext context{wiring};
+    const bg::WiringContext context{wiring};
 
     CHECK_THROWS_AS(required_scalar(std::optional<int>{}), bg::WiringError);
+    CHECK_NOTHROW(wiring.finalize());
+    CHECK(wiring.nodes().empty());
+}
+
+TEST_CASE("node output runtime selector runs at the call and its result is reused when binding",
+          "[graph_wiring][feature:wiring][feature:node-api]") {
+    const auto &matching_runtime_type = bg::cpp_time_series_runtime_type<bg::TS<float>>();
+    const auto &mismatched_runtime_type = bg::cpp_time_series_runtime_type<bg::TS<bg::i64>>();
+    auto mismatch_selector_calls = 0;
+    auto matching_selector_calls = 0;
+    const auto mismatch = OutputRuntimeSelectorNode{mismatched_runtime_type, mismatch_selector_calls};
+    const auto matching = OutputRuntimeSelectorNode{matching_runtime_type, matching_selector_calls};
+    auto wiring = bg::GraphWiring{};
+    {
+        const bg::WiringContext context{wiring};
+        CHECK_THROWS_WITH(mismatch(), Catch::Matchers::ContainsSubstring(
+                                          "a selected output runtime type has a different semantic type"));
+        CHECK(mismatch_selector_calls == 1);
+
+        const auto output = matching();
+        REQUIRE(output);
+        CHECK(matching_selector_calls == 1);
+    }
+
+    CHECK_NOTHROW(wiring.finalize());
+    CHECK(mismatch_selector_calls == 1);
+    CHECK(matching_selector_calls == 1);
+    REQUIRE(wiring.nodes().size() == 1);
+    REQUIRE(wiring.outputs().size() == 1);
+    CHECK(wiring.outputs()[0].runtime_type == &matching_runtime_type);
 }
 
 TEST_CASE("explicit scalar values preserve their declared graph type",
@@ -371,6 +621,7 @@ TEST_CASE("explicit scalar values preserve their declared graph type",
     const auto context = bg::WiringContext{wiring};
     consume(value);
 
+    (void)wiring.complete_pending_wiring();
     REQUIRE(wiring.nodes().size() == 1);
     CHECK(wiring.nodes()[0].signature().parameters[0].type == &bg::int_type());
 }
@@ -397,6 +648,7 @@ TEST_CASE("evaluation time lists pass through normal wiring", "[graph_wiring][fe
         scheduled_times(value);
     }
 
+    (void)wiring.complete_pending_wiring();
     REQUIRE(wiring.nodes().size() == 1);
     REQUIRE(wiring.nodes()[0].scalar_values().size() == 1);
     CHECK(&wiring.nodes()[0].scalar_values()[0].runtime_type().type() ==
@@ -425,6 +677,8 @@ TEST_CASE("nested wiring contexts keep graph connections explicit", "[graph_wiri
         (void)copy(outer_input);
     }
 
+    (void)inner.complete_pending_wiring();
+    (void)outer.complete_pending_wiring();
     CHECK(outer.nodes().size() == 2);
     CHECK(inner.nodes().size() == 2);
 }

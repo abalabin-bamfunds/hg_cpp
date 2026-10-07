@@ -4,6 +4,7 @@
 #include <bg/type/scalar_type.hpp>
 #include <bg/type/type_map.hpp>
 #include <bg/type/type_resolution_error.hpp>
+#include <bg/type/type_registry.hpp>
 #include <bg/util/compile_time_string.hpp>
 
 #include <algorithm>
@@ -15,6 +16,7 @@
 
 namespace bg {
 
+// Engine and extension descriptor. Graph authors use ScalarVariable, TimeSeriesVariable, or TypeVariable declarations.
 template <typename Category> class TypeVariableType final : public Category, public Variable {
     static_assert(std::derived_from<Category, Type>);
 
@@ -143,6 +145,7 @@ template <util::compile_time_string Name, typename... Alternatives> struct TypeV
     static const TypeVariableType<Type> &type() {
         static const auto variable = TypeVariableType<Type>{
             util::symbol{Name.view()}, std::vector<const Type *>{&alternative_type<Alternatives>()...}};
+        [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(variable);
 
         return variable;
     }
@@ -159,7 +162,8 @@ template <util::compile_time_string Name, typename... Alternatives> struct TypeV
     }
 };
 
-template <typename... Alternatives> using Union = TypeVariable<"Union", Alternatives...>;
+template <util::compile_time_string Name, typename... Alternatives>
+using Union = TypeVariable<Name, Alternatives...>;
 
 namespace details {
 

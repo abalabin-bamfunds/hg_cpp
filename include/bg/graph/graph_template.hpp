@@ -64,7 +64,7 @@ class GraphTemplate final
         if constexpr (std::same_as<Label, details::default_wiring_label>) {
             return default_label;
         } else {
-            if (!details::wiring_parameters_match<Label>(signature)) {
+            if (!details::wiring_parameters_match<Label>(signature_, signature)) {
                 throw WiringError{"a graph label function does not match its resolved signature"};
             }
 
@@ -74,7 +74,7 @@ class GraphTemplate final
 
     [[nodiscard]] std::optional<WiringPoint> wire(GraphWiring &, ResolvedSignature signature, const TypeMap &,
                                                   std::span<const WiringArgument> arguments) const override {
-        if (!details::wiring_parameters_match<Function>(signature)) {
+        if (!details::wiring_parameters_match<Function>(signature_, signature)) {
             throw WiringError{"a graph function does not match its resolved signature"};
         }
 

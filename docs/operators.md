@@ -98,15 +98,23 @@ The operator performs overload resolution within its wiring call.
 For each candidate, resolution proceeds in this order:
 
 1. Match its parameters against the supplied argument types.
-2. Run resolvers for variables that matching did not map.
-3. Resolve the complete signature and validate every resolver result.
-4. Run its requirement function.
-5. Retain the candidate when all preceding steps succeed.
+2. Resolve its parameter and output types. This demands only mappings those types use.
+3. Resolve any additional types needed by the wiring template's metadata.
+4. Run the requirement while resolver lookup remains active.
+5. Retain the candidate when each demand and its requirement succeeds.
+
+Resolvers run only when signature resolution, template metadata, requirements, or
+another resolver requests their variable. A resolver can request dependencies
+through `TypeMap::find`. The resolver lookup scope closes before the candidate
+is cached or wired. The completed type map retains mappings produced by the
+candidate's demands.
 
 A missing resolver or an invalid resolver result rejects a candidate when a
-variable remains unresolved. A requirement rejection also rejects the
-candidate. An exception from a resolver or requirement function is a wiring
-failure and stops overload resolution.
+variable is demanded. A requirement rejection also rejects the candidate.
+Type resolution errors propagated from a demanded resolver reject the
+candidate. Other exceptions thrown by resolver or requirement callbacks are
+wiring failures and stop overload resolution. A `TypeResolutionError` thrown by
+the requirement itself is a callback failure.
 
 Reference matching follows the transparent rules in
 [the type system](type-system.md#signature-resolution). Matching retains the
@@ -177,6 +185,11 @@ resolved types, the current type map, and wired scalar values. Arguments can be
 addressed by index or name. Scalar access through this view records the reads
 required by the resolution cache.
 
+`WiringTemplate::resolve_additional_types` is the engine- and extension-facing
+hook for type mappings needed by template metadata. It runs after signature
+resolution and before the requirement, with resolver lookup active. A node
+template uses it to demand state and dynamic-reference input types.
+
 The view presents one flat argument sequence. Fixed arguments come first and
 captured variadic arguments follow. Forwarding a variadic wiring record produces
 the same sequence as supplying its arguments directly. An absent fixed scalar
@@ -221,7 +234,8 @@ Guarantee and size variables use their declaration types.
 
 A requirement function checks scalar values or relationships that type
 matching and resolvers cannot express. It runs only after the candidate has a
-resolved signature. A requirement determines applicability but not
+resolved signature. It can request auxiliary mappings through the wiring
+argument view's type map. A requirement determines applicability but not
 specificity.
 
 Resolvers and requirements must determine their results only from the supplied
@@ -299,12 +313,14 @@ auto implementation = bg::graph(
     });
 ```
 
-An overload can accept any graph, one exact graph structure, or a graph pattern.
+An overload parameter can accept any graph, one exact graph structure, or a graph pattern.
 Pattern matching wires the pattern against the supplied graph's ordered boundary
 types and compares the resulting structure. Exact structures and patterns are
-less generic than the any-graph type. Distinct patterns are unordered.
+less generic than an otherwise equivalent unconstrained parameter. Distinct
+structural constraints are unordered.
 
-`graph_pattern(function)` adds a structural constraint to a graph type:
+`graph_pattern(function)` declares a structural constraint. Signature
+construction attaches it to the parameter declared with `GRAPH`:
 
 ```cpp
 inline constexpr auto addition = bg::graph_pattern(
@@ -336,9 +352,11 @@ result. The key also includes the presence, type, and qualifier of every implici
 context value that can affect overload selection. Cache validation rebuilds the flat
 argument sequence for the candidate that made each read.
 
-Graph arguments use graph structure in the key. Graph arguments with equal
-structures share a cache entry. A graph structure that contains a value without
-equality or hashing bypasses the cache.
+Graph argument keys retain the stable signature type and owned graph structures
+separately. Equal structures share a cache entry; stored scalar values and the
+order of multiple structures participate in equality. Keys retain no argument
+payload. A graph structure that contains a value without equality or hashing
+bypasses the cache.
 
 Resolution is not cached when a read scalar does not provide equality and
 hashing. Cache entries retain the selected operator-owned implementation and
@@ -365,6 +383,16 @@ arguments, and each candidate's first decisive failure. An ambiguity diagnostic
 reports the applicable candidates and states that none is uniquely least
 generic. Exceptions from callbacks retain the operator, candidate, wiring path,
 and callback stage.
+
+Materialisation diagnostics distinguish the forms offered by an argument from
+the forms in a matched argument binding. Candidate diagnostics include form
+costs and, for a completed binding, its total materialisation cost. Failed
+bindings retain their decisive rejection reason; ambiguous bindings retain the
+competing forms. Reporting uses collected resolution results and does not rerun
+requirements or materialisation callbacks.
+
+Errors raised inside deferred wiring retain these diagnostic fields and add
+the [requesting context](graph-wiring.md#wiring-errors).
 
 ```text
 Cannot resolve operator add at portfolio/pricing/spread

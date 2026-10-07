@@ -4,6 +4,7 @@
 #include <bg/type/details/time_series_type_traits.hpp>
 #include <bg/type/time_series_dict_type.hpp>
 #include <bg/type/time_series_set_type.hpp>
+#include <bg/type/type_registry.hpp>
 
 namespace bg::details {
 
@@ -22,13 +23,16 @@ struct time_series_type_traits<TSD<Key, Item, Properties...>> {
         const auto &key = scalar_type_for<Key>();
         const auto &value = time_series_type_for<Scope, Index, Input, Item>(guarantee);
         static const auto key_set = GenericTimeSeriesSetType{key, guarantee};
+        [[maybe_unused]] static const auto &key_set_registration = TypeRegistry::register_static(key_set);
 
         if constexpr (Input || scalar_declaration_traits<Key>::generic) {
             static const auto type = GenericTimeSeriesDictionaryType{key, value, key_set, guarantee};
+            [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type);
             return type;
         }
         if (!value.is_resolved() || !guarantee.is_resolved()) {
             static const auto type = GenericTimeSeriesDictionaryType{key, value, key_set, guarantee};
+            [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type);
             return type;
         }
 

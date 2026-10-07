@@ -256,9 +256,13 @@ class SwitchGraphArgumentBuilder {
             }
         }
 
+        const auto parent_diagnostics =
+            details::WiringDiagnosticContext::current(WiringContext::current().wiring());
         auto wiring = std::make_shared<GraphWiring>(WiringContext::current().wiring());
+        auto diagnostics = details::WiringDiagnosticContext{*wiring, parent_diagnostics};
         auto boundaries = std::vector<WiringPoint>{};
         auto boundary_inputs = std::vector<SwitchInputBoundary>{};
+        auto boundary_input_points = std::vector<WiringPoint>{};
         auto selected = select_arguments(item);
         auto graph_arguments = std::vector<WiringArgument>{};
         graph_arguments.reserve(selected.size());
@@ -273,8 +277,8 @@ class SwitchGraphArgumentBuilder {
             const auto &target = static_cast<const TimeSeriesType &>(argument.value.type()).target_type();
             const auto boundary = wire_nested_input(target);
             boundaries.push_back(boundary);
-            boundary_inputs.push_back(
-                {outer_parameter_index(argument.supplied_index), wiring->output_node_index(boundary)});
+            boundary_inputs.push_back({outer_parameter_index(argument.supplied_index), 0});
+            boundary_input_points.push_back(boundary);
             auto inner = WiringArgument{boundary};
             if (argument.value.requires_optional()) {
                 inner.require_optional();
@@ -290,10 +294,13 @@ class SwitchGraphArgumentBuilder {
         auto structure_result = std::optional<WiringPoint>{};
         const TimeSeriesType *target{};
         if (result) {
-            const auto output = wire_nested_output(*result, result->type());
-            output_node = wiring->output_node_index(output);
-            structure_result = output;
-            target = &type_cast<TimeSeriesReferenceType>(output.type()).target_type();
+            structure_result = wiring->complete_pending_wiring(*result);
+            target = &structure_result->type().target_type();
+        } else {
+            (void)wiring->complete_pending_wiring();
+        }
+        for (std::size_t index = 0; index < boundary_inputs.size(); ++index) {
+            boundary_inputs[index].input_node = wiring->output_node_index(boundary_input_points[index]);
         }
 
         record_output_type(item.default_case, target);
@@ -308,6 +315,13 @@ class SwitchGraphArgumentBuilder {
         }
 
         structures.push_back(graph_wiring_structure(*wiring, boundaries, structure_result));
+        if (result) {
+            const auto output = wire_nested_output(*structure_result, structure_result->type());
+            wiring->finalize();
+            output_node = wiring->output_node_index(output);
+        } else {
+            wiring->finalize();
+        }
         node_.cases.push_back({
             .keys = std::move(stored_keys),
             .default_case = item.default_case,
@@ -413,13 +427,11 @@ std::optional<WiringPoint> DefaultSwitchWiring::wire() const {
     auto node_template = make_switch_node(node, outer_signature);
     auto &outer = WiringContext::current().wiring();
     const auto &owned = outer.own_node_template(std::move(node_template));
-    const auto next_node_index = outer.nodes().size();
-    auto result = owned(std::span<const WiringArgument>{outer_arguments});
-    const auto node_index = result ? outer.output_node_index(*result) : next_node_index;
+    auto call = outer.invoke_node(owned, outer_arguments);
     for (const auto &branch : node.cases) {
-        outer.register_nested_service_consumers(*branch.branch.wiring, node_index);
+        outer.register_nested_service_consumers(*branch.branch.wiring, call.identity);
     }
-    return result;
+    return call.output;
 }
 
 } // namespace bg::details

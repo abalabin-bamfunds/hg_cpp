@@ -36,7 +36,10 @@ class MapGraphArgumentBuilder {
     MapGraphArgumentBuilder(util::symbol name, const WiringTemplate &function, ResolvedMapCall call,
                             bool preserve_named_arguments, const TypeMap &type_map)
         : name_{name}, function_{function}, call_{std::move(call)}, preserve_named_arguments_{preserve_named_arguments},
-          type_map_{type_map}, wiring_{std::make_shared<GraphWiring>(WiringContext::current().wiring())} {}
+          type_map_{type_map}, wiring_{std::make_shared<GraphWiring>(WiringContext::current().wiring())} {
+        const auto parent_diagnostics = details::WiringDiagnosticContext::current(WiringContext::current().wiring());
+        diagnostic_contexts_.assign(parent_diagnostics.begin(), parent_diagnostics.end());
+    }
 
     MapGraphArgumentWiring build() {
         resolve_key_argument();
@@ -45,6 +48,7 @@ class MapGraphArgumentBuilder {
         auto boundaries = std::vector<WiringPoint>{};
         supplied_graph_arguments.reserve(call_.positional.size() + call_.named.size());
 
+        auto diagnostics = details::WiringDiagnosticContext{*wiring_, diagnostic_contexts_};
         auto context = WiringContext{*wiring_};
         const auto append = [&](MapArgument &argument, std::size_t user_index) {
             if (call_.selected_key_set == user_index && call_.omit_selected_key_set_argument) {
@@ -63,15 +67,31 @@ class MapGraphArgumentBuilder {
 
         auto graph_arguments = arrange_graph_arguments(std::move(supplied_graph_arguments), boundaries);
         const auto result = function_(type_map_, std::span<const WiringArgument>{graph_arguments});
-        const auto structure = graph_wiring_structure(*wiring_, boundaries, result);
+        auto structure_result = result;
         if (result) {
-            const auto boundary = wire_nested_output(*result, result->type());
-            output_node_ = wiring_->output_node_index(boundary);
-            output_target_ = &type_cast<TimeSeriesReferenceType>(boundary.type()).target_type();
+            structure_result = wiring_->complete_pending_wiring(*result);
+        } else {
+            (void)wiring_->complete_pending_wiring();
+        }
+        for (std::size_t index = 0; index < inputs_.size(); ++index) {
+            inputs_[index].input_node = wiring_->output_node_index(input_boundaries_[index]);
+        }
+        if (key_input_boundary_) {
+            key_input_node_ = wiring_->output_node_index(*key_input_boundary_);
+        }
+        const auto structure = graph_wiring_structure(*wiring_, boundaries, structure_result);
+        auto output_boundary = std::optional<WiringPoint>{};
+        if (result) {
+            output_boundary = wire_nested_output(*structure_result, structure_result->type());
         }
 
         append_key_set_parameter();
         append_inherited_time_series_parameters();
+        wiring_->finalize();
+        if (output_boundary) {
+            output_node_ = wiring_->output_node_index(*output_boundary);
+            output_target_ = &type_cast<TimeSeriesReferenceType>(output_boundary->type()).target_type();
+        }
         const auto output =
             output_target_ == nullptr
                 ? nullptr
@@ -141,7 +161,7 @@ class MapGraphArgumentBuilder {
 
             const auto &key = time_series_value_type(*call_.key_type, TimeSeriesGuarantee::const_);
             const auto boundary = wire_nested_constant_input(key);
-            key_input_node_ = wiring_->output_node_index(boundary);
+            key_input_boundary_ = boundary;
             boundaries.push_back(boundary);
             fixed[*key_parameter_].emplace(boundary);
         }
@@ -242,8 +262,8 @@ class MapGraphArgumentBuilder {
                                mapped ? required : optional, false, VariadicMode::none});
         outer_arguments_.push_back(WiringArgument::borrow(supplied_argument.value));
         outer_arguments_.back().clear_name();
-        inputs_.push_back({mapped ? MapInputKind::mapped : MapInputKind::pass_through, parameter_index,
-                           wiring_->output_node_index(boundary)});
+        inputs_.push_back({mapped ? MapInputKind::mapped : MapInputKind::pass_through, parameter_index, 0});
+        input_boundaries_.push_back(boundary);
         return graph_argument;
     }
 
@@ -283,11 +303,14 @@ class MapGraphArgumentBuilder {
     bool preserve_named_arguments_;
     const TypeMap &type_map_;
     std::shared_ptr<GraphWiring> wiring_;
+    std::vector<WiringErrorContext> diagnostic_contexts_;
     std::vector<ResolvedParameter> parameters_;
     std::vector<WiringArgument> outer_arguments_;
     std::vector<MapInputBoundary> inputs_;
+    std::vector<WiringPoint> input_boundaries_;
     std::optional<std::size_t> key_parameter_;
     std::optional<std::size_t> key_input_node_;
+    std::optional<WiringPoint> key_input_boundary_;
     std::optional<std::size_t> output_node_;
     std::optional<std::size_t> key_set_parameter_;
     std::optional<std::size_t> dictionary_key_set_parameter_;

@@ -14,22 +14,19 @@
 
 namespace bg {
 
-template <typename K, OutputSpecification Specification, auto... Properties>
-class Out<TSS<K, Properties...>, Specification> {
+template <typename K, auto... Properties> class Out<TSS<K, Properties...>> {
   public:
     using storage_type = details::time_series_set_storage;
 
   public:
     explicit Out(TimeSeriesOutputBinding state) noexcept : state_(std::move(state)) {}
     Out(TimeSeriesState &last_updated, storage_type &value, EvaluationContext &context)
-        requires(Specification == OutputSpecification::default_ &&
-                 !details::generic_time_series<TSS<K, Properties...>>)
+        requires(!details::generic_time_series<TSS<K, Properties...>>)
         : state_{last_updated, &value, cpp_time_series_runtime_type<TSS<K, Properties...>>(), context} {}
 
     Out(TimeSeriesState &last_updated, storage_type &value, const TimeSeriesRuntimeType &runtime_type,
         EvaluationContext &context)
-        requires(Specification == OutputSpecification::default_ &&
-                 !details::generic_time_series<TSS<K, Properties...>>)
+        requires(!details::generic_time_series<TSS<K, Properties...>>)
         : state_{last_updated, &value, runtime_type, context} {}
 
     Out(Out &&) noexcept = default;
@@ -83,7 +80,7 @@ class Out<TSS<K, Properties...>, Specification> {
     const Out *operator->() const noexcept { return this; }
 
     template <typename... Functions> decltype(auto) visit(Functions &&...functions) const {
-        auto output = details::output_factory::make<TS_T, Specification>(state_.get());
+        auto output = details::output_factory::make<Out<TS_T>>(state_.get());
         return output.visit(std::forward<Functions>(functions)...);
     }
 

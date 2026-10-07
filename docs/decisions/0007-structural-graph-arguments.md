@@ -1,6 +1,6 @@
 # Structural graph arguments
 
-Status: accepted
+Status: superseded by [registered types and graph constraints](0037-registered-types-and-graph-constraints.md)
 
 ## Context
 

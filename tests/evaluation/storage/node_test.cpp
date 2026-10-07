@@ -7,6 +7,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <array>
 #include <chrono>
 
 namespace {
@@ -43,20 +44,22 @@ TEST_CASE("a runtime node locates output and input data", "[evaluation][storage]
     const auto sink = bg::node<runtime_node_sink>();
     auto wiring = bg::GraphWiring{};
 
-    auto direct_sink_index = std::size_t{};
-    auto reference_sink_index = std::size_t{};
+    auto direct_sink = bg::NodeCallIdentity{};
+    auto reference_sink = bg::NodeCallIdentity{};
     [&] {
         const auto context = bg::WiringContext{wiring};
         const auto result = source();
-
-        direct_sink_index = wiring.nodes().size();
-        sink(result);
+        const auto direct_arguments = std::array{bg::WiringArgument{result}};
+        direct_sink = wiring.invoke_node(sink, direct_arguments).identity;
 
         const auto referenced = reference(result);
-        reference_sink_index = wiring.nodes().size();
-        sink(referenced);
+        const auto reference_arguments = std::array{bg::WiringArgument{referenced}};
+        reference_sink = wiring.invoke_node(sink, reference_arguments).identity;
     }();
 
+    wiring.finalize();
+    const auto direct_sink_index = wiring.node_index(direct_sink);
+    const auto reference_sink_index = wiring.node_index(reference_sink);
     const auto compiled = bg::CompiledGraph{wiring};
     auto runtime_global_state = bg::GlobalState{};
     auto runtime = bg::RuntimeGraph{compiled, runtime_global_state};

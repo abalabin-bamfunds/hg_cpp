@@ -26,7 +26,9 @@ void run_graph(Function &&function, GlobalState *global_state, const ServiceCata
     }
 
     if (service_catalogue != nullptr) {
-        service_catalogue->build(wiring);
+        wiring.finalize(*service_catalogue);
+    } else {
+        wiring.finalize();
     }
 
     auto compiled = CompiledGraph{wiring};

@@ -34,9 +34,9 @@ class PatternMapOverload final : public WiringTemplate {
     PatternMapOverload(util::symbol name, const Pattern &pattern,
                        const TimeSeriesType &output_type, std::size_t forwarded_argument,
                        int &requirement_calls)
-        : graph_type_{std::make_shared<GraphArgumentType>(
+        : graph_constraint_{std::make_shared<GraphArgumentConstraint>(
               std::make_shared<const Pattern>(pattern))},
-          signature_{make_signature(name, *graph_type_, output_type)},
+          signature_{make_signature(name, graph_constraint_, output_type)},
           forwarded_argument_{forwarded_argument}, requirement_calls_{&requirement_calls} {}
 
     const Signature &signature() const final { return signature_; }
@@ -47,15 +47,16 @@ class PatternMapOverload final : public WiringTemplate {
     }
 
   private:
-    static Signature make_signature(util::symbol name, const GraphArgumentType &graph_type,
+    static Signature make_signature(util::symbol name,
+                                    std::shared_ptr<const GraphArgumentConstraint> graph_constraint,
                                     const TimeSeriesType &output_type) {
-        return {
-            name,
-            {{util::symbol{"function"}, &graph_type},
-             {util::symbol{"integers"}, &TSD<std::int64_t, TS<i64>>::type()},
-             {util::symbol{"floats"}, &TSD<std::int64_t, TS<float>>::type()}},
-            output_type,
-        };
+        auto function = Parameter{util::symbol{"function"}, &GraphArgument::type()};
+        function.graph_constraint = std::move(graph_constraint);
+        return Signature{name,
+                         {std::move(function),
+                          {util::symbol{"integers"}, &TSD<std::int64_t, TS<i64>>::type()},
+                          {util::symbol{"floats"}, &TSD<std::int64_t, TS<float>>::type()}},
+                         output_type};
     }
 
     std::optional<WiringPoint> wire(GraphWiring &, ResolvedSignature, const TypeMap &,
@@ -63,7 +64,7 @@ class PatternMapOverload final : public WiringTemplate {
         return arguments[forwarded_argument_].time_series();
     }
 
-    std::shared_ptr<const GraphArgumentType> graph_type_;
+    std::shared_ptr<const GraphArgumentConstraint> graph_constraint_;
     Signature signature_;
     std::size_t forwarded_argument_;
     int *requirement_calls_;
@@ -73,16 +74,9 @@ class MapOptionOverload final : public WiringTemplate {
   public:
     template <typename Pattern>
     MapOptionOverload(const Pattern &pattern, bool &selected)
-        : graph_type_{std::make_shared<GraphArgumentType>(
+        : graph_constraint_{std::make_shared<GraphArgumentConstraint>(
               std::make_shared<const Pattern>(pattern))},
-          signature_{
-              util::symbol{"map_option"},
-              {{util::symbol{"graph"}, graph_type_.get()},
-               {util::symbol{"values"}, &TSD<std::int64_t, TS<i64>>::type()},
-               {util::symbol{"options"}, &TSB<details::MAP_NAMED>::type(), active, required, false,
-                details::VariadicMode::named,
-                details::variadic_wiring_operations<TSB<details::MAP_NAMED>>()}},
-              TSD<std::int64_t, TS<i64>>::type()},
+          signature_{make_signature(graph_constraint_)},
           selected_{&selected} {}
 
     const Signature &signature() const final { return signature_; }
@@ -97,13 +91,26 @@ class MapOptionOverload final : public WiringTemplate {
     }
 
   private:
+    static Signature make_signature(std::shared_ptr<const GraphArgumentConstraint> graph_constraint) {
+        auto graph = Parameter{util::symbol{"graph"}, &GraphArgument::type()};
+        graph.graph_constraint = std::move(graph_constraint);
+        return Signature{
+            util::symbol{"map_option"},
+            {std::move(graph),
+             {util::symbol{"values"}, &TSD<std::int64_t, TS<i64>>::type()},
+             {util::symbol{"options"}, &TSB<details::MAP_NAMED>::type(), active, required, false,
+              details::VariadicMode::named,
+              details::variadic_wiring_operations<TSB<details::MAP_NAMED>>()}},
+            TSD<std::int64_t, TS<i64>>::type()};
+    }
+
     std::optional<WiringPoint> wire(GraphWiring &, ResolvedSignature, const TypeMap &,
                                     std::span<const WiringArgument> arguments) const final {
         *selected_ = true;
         return arguments[1].time_series();
     }
 
-    std::shared_ptr<const GraphArgumentType> graph_type_;
+    std::shared_ptr<const GraphArgumentConstraint> graph_constraint_;
     Signature signature_;
     bool *selected_;
 };

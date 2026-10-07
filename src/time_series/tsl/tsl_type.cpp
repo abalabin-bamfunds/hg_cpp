@@ -1,6 +1,7 @@
 #include <bg/type/time_series_list_type.hpp>
 
 #include <bg/type/type_map.hpp>
+#include <bg/type/type_registry.hpp>
 #include <bg/type/type_resolution_error.hpp>
 #include <bg/util/symbol.hpp>
 
@@ -111,14 +112,20 @@ const Type &GenericTimeSeriesListType::resolve(const TypeMap &type_map) const {
 const TimeSeriesListType &time_series_list_type(const TimeSeriesType &item_type, std::size_t size,
                                                 TimeSeriesGuarantee guarantee) {
     static auto mutex = std::mutex{};
-    static auto types = std::unordered_map<ListTypeKey, std::unique_ptr<ResolvedTimeSeriesListType>, ListTypeKeyHash>{};
+    static auto types = std::unordered_map<ListTypeKey, const ResolvedTimeSeriesListType *, ListTypeKeyHash>{};
 
     const auto &effective_item = item_type.with_guarantee(strongest(*item_type.guarantee().value(), guarantee));
     const auto lock = std::lock_guard{mutex};
     const auto key = ListTypeKey{&effective_item, size, guarantee};
     auto [entry, inserted] = types.try_emplace(key);
     if (inserted) {
-        entry->second = std::make_unique<ResolvedTimeSeriesListType>(effective_item, size, guarantee);
+        try {
+            entry->second = &TypeRegistry::instance().register_owned(
+                std::make_unique<ResolvedTimeSeriesListType>(effective_item, size, guarantee));
+        } catch (...) {
+            types.erase(entry);
+            throw;
+        }
     }
 
     return *entry->second;

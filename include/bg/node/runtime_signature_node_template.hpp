@@ -221,9 +221,7 @@ class RuntimeSignatureNodeTemplate final
         if constexpr (requires { typename Definition::output_declaration_type; }) {
             using Output = typename Definition::output_declaration_type;
             if constexpr (!std::same_as<Output, void>) {
-                using Field = output_declaration_traits<Output>;
-                return &time_series_output_traits<typename Field::time_series_type, Field::specification>::runtime(
-                    *signature.output);
+                return &output_declaration_traits<Output>::runtime(*signature.output);
             }
         }
         return nullptr;

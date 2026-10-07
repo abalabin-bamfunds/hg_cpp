@@ -190,6 +190,7 @@ TEST_CASE("a default binding has no default node for a value consumer",
         sink(adapted);
     }
 
+    wiring.finalize();
     const auto compiled = bg::CompiledGraph{wiring};
     REQUIRE(compiled.node_count() == 1);
     CHECK(compiled.node(0).parameters()[0].mode() == bg::ParameterBindingMode::default_value);
@@ -229,6 +230,7 @@ TEST_CASE("a default binding directly reaches a callable value consumer",
         static_cast<void>(sink(bg::operators::default_(bg::operators::const_(3), 7)));
     }
 
+    wiring.finalize();
     const auto compiled = bg::CompiledGraph{wiring};
     REQUIRE(compiled.node_count() == 1);
     CHECK(compiled.node(0).parameters()[0].mode() == bg::ParameterBindingMode::default_value);
@@ -256,6 +258,7 @@ TEST_CASE("a default binding materializes only for a reference consumer",
         sink(default_(source, 7));
     }
 
+    wiring.finalize();
     const auto compiled = bg::CompiledGraph{wiring};
     REQUIRE(compiled.node_count() == 2);
 
@@ -307,6 +310,7 @@ TEST_CASE("a default binding updates its timestamp across source validity change
         sink(bg::operators::default_(source(), 7));
     }
 
+    wiring.finalize();
     const auto compiled = bg::CompiledGraph{wiring};
     auto runtime_global_state = bg::GlobalState{};
     auto runtime = bg::RuntimeGraph{compiled, runtime_global_state};
@@ -334,6 +338,7 @@ TEST_CASE("a default binding publishes equal fallback validity switches",
         sink(bg::operators::default_(source(), 7));
     }
 
+    wiring.finalize();
     const auto compiled = bg::CompiledGraph{wiring};
     auto runtime_global_state = bg::GlobalState{};
     auto runtime = bg::RuntimeGraph{compiled, runtime_global_state};
@@ -362,6 +367,7 @@ TEST_CASE("a reference over a default binding receives fallback updates",
         sink(pass(bg::operators::default_(source(), 7)));
     }
 
+    wiring.finalize();
     const auto compiled = bg::CompiledGraph{wiring};
     auto runtime_global_state = bg::GlobalState{};
     auto runtime = bg::RuntimeGraph{compiled, runtime_global_state};
@@ -389,6 +395,7 @@ TEST_CASE("a default binding initializes a reference consumer while its source i
         sink(pass(bg::operators::default_(source(), 7)));
     }
 
+    wiring.finalize();
     const auto compiled = bg::CompiledGraph{wiring};
     auto runtime_global_state = bg::GlobalState{};
     auto runtime = bg::RuntimeGraph{compiled, runtime_global_state};
@@ -414,6 +421,7 @@ TEST_CASE("nested defaults preserve the first fallback",
         sink(bg::operators::default_(bg::operators::default_(source(), 7), 9));
     }
 
+    wiring.finalize();
     const auto compiled = bg::CompiledGraph{wiring};
     auto runtime_global_state = bg::GlobalState{};
     auto runtime = bg::RuntimeGraph{compiled, runtime_global_state};
@@ -452,8 +460,8 @@ TEST_CASE("equal default adapter nodes deduplicate",
         static_cast<void>(second_sink(bg::operators::default_(source, 7)));
     }
 
+    wiring.finalize();
     CHECK(wiring.nodes().size() == 5);
-
     const auto compiled = bg::CompiledGraph{wiring};
     CHECK(compiled.node_count() == 2);
 }
@@ -468,6 +476,7 @@ TEST_CASE("a default binding adds one timestamp to runtime storage",
             const auto source = bg::operators::const_(3).as<bg::TS<bg::i64>>();
             static_cast<void>(with_default ? sink(bg::operators::default_(source, 7)) : sink(source));
         }
+        wiring.finalize();
         return bg::CompiledGraph{wiring}.runtime_storage_size();
     };
 
@@ -484,6 +493,7 @@ TEST_CASE("graph structure distinguishes default fallbacks",
         const auto input = source();
         const auto result = sink(bg::operators::default_(input, fallback));
         const auto boundaries = std::array<bg::WiringPoint, 1>{input};
+        (void)wiring.complete_pending_wiring();
         return bg::details::graph_wiring_structure(wiring, boundaries, static_cast<bg::WiringPoint>(result));
     };
 

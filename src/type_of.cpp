@@ -1,8 +1,7 @@
 #include <bg/type/type_of.hpp>
+#include <bg/type/type_registry.hpp>
 
 #include <memory>
-#include <mutex>
-#include <unordered_map>
 #include <utility>
 
 namespace bg {
@@ -17,37 +16,11 @@ class ResolvedTypeScalarType final : public TypeScalarType {
     [[nodiscard]] const Type &resolve(const TypeMap &) const override { return *this; }
 };
 
-class TypeScalarTypes {
-  public:
-    const TypeScalarType &get(const Type &type) {
-        const std::lock_guard lock(mutex_);
-
-        if (const auto found = types_.find(&type); found != types_.end()) {
-            return *found->second;
-        }
-
-        auto type_of = std::make_unique<ResolvedTypeScalarType>(type);
-        const auto *result = type_of.get();
-        types_.emplace(&type, std::move(type_of));
-
-        return *result;
-    }
-
-  private:
-    std::mutex mutex_;
-    std::unordered_map<const Type *, std::unique_ptr<ResolvedTypeScalarType>> types_;
-};
-
-TypeScalarTypes &type_scalar_types() {
-    static TypeScalarTypes types;
-
-    return types;
-}
-
 } // namespace
 
 const TypeScalarType &type_of(const Type &type) {
-    return type_scalar_types().get(type);
+    return TypeRegistry::instance().get_or_create<ResolvedTypeScalarType, std::hash<const Type *>>(
+        &type, [&] { return std::make_unique<ResolvedTypeScalarType>(type); });
 }
 
 bool GenericTypeScalarType::do_match(const Type &supplied, TypeMap &type_map) const {

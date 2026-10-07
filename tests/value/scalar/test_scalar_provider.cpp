@@ -1,6 +1,7 @@
 #include "test_scalar_provider.hpp"
 
 #include <bg/type/type_map.hpp>
+#include <bg/type/type_registry.hpp>
 
 namespace test_scalar_provider {
 namespace {
@@ -16,6 +17,7 @@ class ExternalScalarType final : public bg::ScalarType {
 
 const bg::ScalarType &semantic_type_from_provider() noexcept {
     static const ExternalScalarType type;
+    [[maybe_unused]] static const auto &registration = bg::TypeRegistry::register_static(type);
 
     return type;
 }

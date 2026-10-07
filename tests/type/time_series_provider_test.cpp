@@ -18,6 +18,7 @@
 #include <bg/type/declaration_variables.hpp>
 #include <bg/type/type_map.hpp>
 #include <bg/type/type_resolution_error.hpp>
+#include <bg/type/type_registry.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -67,10 +68,15 @@ class NumberType final : public bg::ScalarType {
 };
 
 const NumberType &number_type(const bg::ScalarType &item) {
-    static auto types = std::map<const bg::ScalarType *, std::unique_ptr<NumberType>>{};
-    const auto [entry, inserted] = types.try_emplace(&item);
+    static auto types = std::map<const bg::ScalarType *, const NumberType *>{};
+    const auto [entry, inserted] = types.try_emplace(&item, nullptr);
     if (inserted) {
-        entry->second = std::make_unique<NumberType>(item);
+        try {
+            entry->second = &bg::TypeRegistry::instance().register_owned(std::make_unique<NumberType>(item));
+        } catch (...) {
+            types.erase(entry);
+            throw;
+        }
     }
     return *entry->second;
 }
@@ -96,6 +102,9 @@ bool NumberType::do_match(const bg::Type &supplied, bg::TypeMap &type_map) const
 template <typename Item, auto... Properties>
 struct Series : bg::TimeSeriesDeclaration<Series<Item, Properties...>, Properties...> {};
 
+enum class OutputFormat { view };
+inline constexpr auto view = OutputFormat::view;
+
 class SeriesType final : public bg::TimeSeriesType {
   public:
     SeriesType(const bg::ScalarType &item, bg::GuaranteeParameter guarantee)
@@ -117,11 +126,16 @@ const bg::TimeSeriesRuntimeType &series_runtime_type(const bg::TimeSeriesType &t
 
 const SeriesType &series_type(const bg::ScalarType &item, bg::TimeSeriesGuarantee guarantee) {
     using Key = std::pair<const bg::ScalarType *, bg::TimeSeriesGuarantee>;
-    static auto types = std::map<Key, std::unique_ptr<SeriesType>>{};
+    static auto types = std::map<Key, const SeriesType *>{};
     const auto key = Key{&item, guarantee};
-    const auto [entry, inserted] = types.try_emplace(key);
+    const auto [entry, inserted] = types.try_emplace(key, nullptr);
     if (inserted) {
-        entry->second = std::make_unique<SeriesType>(item, guarantee);
+        try {
+            entry->second = &bg::TypeRegistry::instance().register_owned(std::make_unique<SeriesType>(item, guarantee));
+        } catch (...) {
+            types.erase(entry);
+            throw;
+        }
         bg::register_time_series_runtime_type(series_runtime_type(*entry->second));
     }
     return *entry->second;
@@ -253,14 +267,18 @@ template <typename Item, auto... Properties> struct time_series_runtime_traits<p
 };
 
 template <typename Item, auto... SeriesProperties>
-struct time_series_output_traits<provider::Series<Item, SeriesProperties...>, OutputSpecification::view> {
+struct output_declaration_traits<Out<provider::Series<Item, SeriesProperties...>, provider::view>> {
+    using time_series_type = provider::Series<Item, SeriesProperties...>;
+
     static const TimeSeriesRuntimeType &runtime(const TimeSeriesType &type) {
         return provider::series_view_runtime_type(type);
     }
 };
 
 template <>
-struct time_series_output_traits<provider::Series<i64, TimeSeriesGuarantee::final>, OutputSpecification::view> {
+struct output_declaration_traits<Out<provider::Series<i64, TimeSeriesGuarantee::final>, provider::view>> {
+    using time_series_type = provider::Series<i64, TimeSeriesGuarantee::final>;
+
     // This declaration's view API uses the same runtime representation as its default API.
     static const TimeSeriesRuntimeType &runtime(const TimeSeriesType &type) {
         return provider::series_runtime_type(type);
@@ -268,7 +286,9 @@ struct time_series_output_traits<provider::Series<i64, TimeSeriesGuarantee::fina
 };
 
 template <>
-struct time_series_output_traits<provider::Series<string>, OutputSpecification::view> {
+struct output_declaration_traits<Out<provider::Series<string>, provider::view>> {
+    using time_series_type = provider::Series<string>;
+
     static const TimeSeriesRuntimeType &runtime(const TimeSeriesType &) {
         return provider::series_view_runtime_type(provider::Series<i64>::type());
     }
@@ -315,18 +335,14 @@ class In<provider::Series<Item, SeriesProperties...>, Properties...>
     TimeSeriesInputData data_;
 };
 
-template <typename Item, OutputSpecification Specification, auto... Properties>
-class Out<provider::Series<Item, Properties...>, Specification> {
-    static constexpr bool has_direct_storage =
-        Specification == OutputSpecification::default_ && !scalar_declaration_traits<Item>::generic;
-
+template <typename Item, bool DirectStorage, auto... Properties> class SeriesOutput {
   public:
     using storage_type = i64;
 
-    explicit Out(TimeSeriesOutputBinding binding) noexcept : binding_{std::move(binding)} {}
+    explicit SeriesOutput(TimeSeriesOutputBinding binding) noexcept : binding_{std::move(binding)} {}
 
-    Out(TimeSeriesState &last_updated, storage_type &value, EvaluationContext &context)
-        requires(has_direct_storage)
+    SeriesOutput(TimeSeriesState &last_updated, storage_type &value, EvaluationContext &context)
+        requires(DirectStorage && !scalar_declaration_traits<Item>::generic)
         : binding_{last_updated, &value, cpp_time_series_runtime_type<provider::Series<Item, Properties...>>(),
                    context} {}
 
@@ -336,7 +352,7 @@ class Out<provider::Series<Item, Properties...>, Specification> {
     }
 
     void invalidate() const {
-        if constexpr (Specification == OutputSpecification::view) {
+        if constexpr (!DirectStorage) {
             if (provider::view_invalidation_observer != nullptr) {
                 *provider::view_invalidation_observer = true;
             }
@@ -345,9 +361,10 @@ class Out<provider::Series<Item, Properties...>, Specification> {
     }
     bool valid() const noexcept { return binding_->valid(); }
     const TimeSeriesRuntimeType &runtime_type() const noexcept { return binding_->runtime_type(); }
+    OutputState &output_state() const noexcept { return binding_.get(); }
 
     template <typename... Functions> decltype(auto) visit(Functions &&...functions) const {
-        auto erased = Out<TS_T, Specification>{TimeSeriesOutputBinding{binding_.get()}};
+        auto erased = Out<TS_T>{TimeSeriesOutputBinding{binding_.get()}};
         return erased.visit(std::forward<Functions>(functions)...);
     }
 
@@ -357,11 +374,52 @@ class Out<provider::Series<Item, Properties...>, Specification> {
     TimeSeriesOutputBinding binding_;
 };
 
+template <typename Item, auto... Properties>
+class Out<provider::Series<Item, Properties...>> : public SeriesOutput<Item, true, Properties...> {
+    using Base = SeriesOutput<Item, true, Properties...>;
+
+  public:
+    using Base::Base;
+};
+
+template <typename Item, auto... Properties>
+class Out<provider::Series<Item, Properties...>, provider::view>
+    : public SeriesOutput<Item, false, Properties...> {
+    using Base = SeriesOutput<Item, false, Properties...>;
+
+  public:
+    using Base::Base;
+};
+
 } // namespace bg
+
+struct RuntimeProviderViewDefinition {
+    using output_time_series_type = provider::Series<bg::i64>;
+    using output_declaration_type = bg::Out<output_time_series_type, provider::view>;
+
+    RuntimeProviderViewDefinition()
+        : signature_{bg::util::symbol{"runtime_provider_view"},
+                     {{bg::util::symbol{"input"}, &bg::TS<bg::i64>::type()}},
+                     output_time_series_type::type()} {}
+
+    const bg::Signature &signature() const { return signature_; }
+
+    static void evaluate(bg::NodeInvocation<> invocation) {
+        const auto input = invocation.input<bg::In<bg::TS<bg::i64>>>(0, 0);
+        const auto output = invocation.output_as<output_declaration_type>();
+        if (*input == 0) {
+            output.invalidate();
+        } else {
+            output.set(*input);
+        }
+    }
+
+    bg::Signature signature_;
+};
 
 namespace provider {
 
-void replay_tick_view(bg::util::buffer_reader &reader, const bg::Out<Series<bg::i64>, bg::view> &output) {
+void replay_tick_view(bg::util::buffer_reader &reader, const bg::Out<Series<bg::i64>, view> &output) {
     output.set(reader.read_raw<bg::i64>());
 }
 
@@ -370,7 +428,7 @@ void replay_tick_default(bg::util::buffer_reader &reader, const bg::Out<Series<b
 }
 
 void replay_tick_view_override(bg::util::buffer_reader &reader,
-                               const bg::Out<Series<bg::i64>, bg::view> &output) {
+                               const bg::Out<Series<bg::i64>, view> &output) {
     output.set(reader.read_raw<bg::i64>() + 100);
 }
 
@@ -478,7 +536,7 @@ const bg::TimeSeriesTickDispatch &tick_dispatch() {
     static auto dispatch = bg::TimeSeriesTickDispatch{};
     static const auto registered =
         dispatch.add_write<Series<bg::i64>>(Series<bg::i64>::type(), write_tick<bg::In<Series<bg::i64>>>) &&
-        dispatch.add_replay<Series<bg::i64>, bg::OutputSpecification::view>(Series<bg::i64>::type(), replay_tick_view) &&
+        dispatch.add_replay<bg::Out<Series<bg::i64>, provider::view>>(Series<bg::i64>::type(), replay_tick_view) &&
         dispatch.add_discard(Series<bg::i64>::type(), discard_tick);
     if (!registered) {
         throw std::logic_error{"provider tick handlers could not be registered"};
@@ -500,7 +558,7 @@ struct OneTickDelay {
     static constexpr bool uses_timed_scheduling = true;
 
     bg::In<Series<bg::i64>, bg::optional> input;
-    bg::Out<Series<bg::i64>, bg::view> output;
+    bg::Out<Series<bg::i64>, provider::view> output;
     bg::State<TickDelayStorage *> storage;
 
     void start(bg::EvaluationContext *context) const {
@@ -510,7 +568,7 @@ struct OneTickDelay {
 
     void evaluate(bg::EvaluationContext *context) const {
         if ((*storage)->reader.has_next()) {
-            (*storage)->reader.replay(output);
+            (*storage)->reader.replay(bg::Out<bg::TS_T>{bg::TimeSeriesOutputBinding{output.output_state()}});
         }
 
         if ((*storage)->writer.write(input, context->evaluation_time())) {
@@ -534,7 +592,7 @@ struct Aggregate {
 
 struct ViewAggregate {
     bg::In<bg::TS<bg::i64>> input;
-    bg::Out<Series<bg::i64>, bg::view> output;
+    bg::Out<Series<bg::i64>, provider::view> output;
 
     void evaluate() const { output.set(*input); }
 };
@@ -543,10 +601,13 @@ struct ViewAggregate {
 
 TEST_CASE("a provider declaration exposes public semantic and runtime customizations",
           "[type][time_series][feature:type-system][declaration:runtime]") {
+    static_assert(!bg::details::direct_time_series_output<bg::Out<provider::Series<bg::i64>, provider::view>>);
     using Series = provider::Series<bg::i64>;
     const auto &semantic_type = Series::type();
     const auto &runtime_type = bg::cpp_time_series_runtime_type<Series>();
 
+    CHECK(bg::TypeRegistry::instance().contains(provider::number_type(bg::int_type())));
+    CHECK(bg::TypeRegistry::instance().contains(semantic_type));
     CHECK(&runtime_type.type() == &semantic_type);
     CHECK(&bg::resolve_time_series_runtime_type(semantic_type) == &runtime_type);
     CHECK_NOTHROW(bg::register_time_series_runtime_type(runtime_type));
@@ -582,7 +643,7 @@ TEST_CASE("a provider declaration exposes public semantic and runtime customizat
     CHECK_THROWS_AS(bg::register_time_series_runtime_type(wrong_dictionary_component), std::invalid_argument);
 }
 
-TEST_CASE("provider views bind through public input and output owners",
+TEST_CASE("provider inputs and configured outputs bind through public owners",
           "[value][time_series][feature:time-series-view]") {
     using Series = provider::Series<bg::i64>;
     const auto time = bg::MIN_DT + std::chrono::microseconds{1};
@@ -648,7 +709,7 @@ TEST_CASE("tick write dispatch reaches provider-defined time series",
 
     auto dispatch = bg::TimeSeriesTickDispatch{};
     REQUIRE(dispatch.add_write<Series>(Series::type(), provider::write_tick<bg::In<Series>>));
-    REQUIRE(dispatch.add_replay<Series, bg::OutputSpecification::view>(Series::type(), provider::replay_tick_view));
+    REQUIRE(dispatch.add_replay<bg::Out<Series, provider::view>>(Series::type(), provider::replay_tick_view));
     REQUIRE(dispatch.add_discard(Series::type(), provider::discard_tick));
     const auto buffer = bg::util::buffer::chain(256);
     auto writer = bg::TimeSeriesTickWriter{buffer, {}, dispatch};
@@ -662,7 +723,7 @@ TEST_CASE("tick write dispatch reaches provider-defined time series",
     auto output_value = provider::SeriesViewStorage{};
     auto output_state = bg::OutputState{provider::series_view_runtime_type(Series::type())};
     output_state.bind(output_last_updated, &output_value, output_time);
-    auto output = bg::Out<bg::TS_T, bg::OutputSpecification::view>{bg::TimeSeriesOutputBinding{output_state}};
+    auto output = bg::Out<bg::TS_T>{bg::TimeSeriesOutputBinding{output_state}};
 
     CHECK(reader.replay(output));
     CHECK(output_last_updated.valid());
@@ -838,8 +899,7 @@ TEST_CASE("runtime-specific provider write replays through its semantic handler"
     auto dispatch = bg::TimeSeriesTickDispatch{};
     REQUIRE(dispatch.add_write<Series>(provider::series_view_runtime_type(Series::type()),
                                          provider::write_tick<bg::In<Series>>));
-    REQUIRE(dispatch.add_replay<Series, bg::OutputSpecification::default_>(Series::type(),
-                                                                           provider::replay_tick_default));
+    REQUIRE(dispatch.add_replay<bg::Out<Series>>(Series::type(), provider::replay_tick_default));
     REQUIRE(dispatch.add_discard(Series::type(), provider::discard_tick));
     const auto buffer = bg::util::buffer::contiguous(32);
     auto writer = bg::TimeSeriesTickWriter{buffer, {}, dispatch};
@@ -883,7 +943,7 @@ TEST_CASE("failed provider write rolls back all payloads in its record",
 
         auto failing_dispatch = bg::TimeSeriesTickDispatch{};
         REQUIRE(failing_dispatch.add_write<Series>(Series::type(), provider::write_two_owned_payloads_then_fail));
-        REQUIRE(failing_dispatch.add_replay<Series, bg::OutputSpecification::default_>(
+        REQUIRE(failing_dispatch.add_replay<bg::Out<Series>>(
             Series::type(), provider::replay_owned_payload_record));
         REQUIRE(failing_dispatch.add_discard(Series::type(), provider::discard_owned_payload_record));
         auto failing_writer = bg::TimeSeriesTickWriter{buffer, memory, failing_dispatch};
@@ -1006,7 +1066,7 @@ TEST_CASE("a throwing provider replay discards its record only once",
         provider::series_runtime_type(Series::type()), input_state, &input_value, true}};
     auto dispatch = bg::TimeSeriesTickDispatch{};
     REQUIRE(dispatch.add_write<Series>(Series::type(), provider::write_owned_payload));
-    REQUIRE(dispatch.add_replay<Series, bg::OutputSpecification::default_>(
+    REQUIRE(dispatch.add_replay<bg::Out<Series>>(
         Series::type(), provider::replay_owned_payload_then_fail));
     REQUIRE(dispatch.add_discard(Series::type(), provider::discard_owned_payload));
     const auto buffer = bg::util::buffer::contiguous(256);
@@ -1035,12 +1095,12 @@ TEST_CASE("tick replay registration is unique per semantic time series type",
           "[evaluation][feature:time-series-storage][series:generic]") {
     using Series = provider::Series<bg::i64>;
     auto dispatch = bg::TimeSeriesTickDispatch{};
-    REQUIRE(dispatch.add_replay<Series, bg::OutputSpecification::view>(Series::type(), provider::replay_tick_view));
-    CHECK_FALSE(dispatch.add_replay<Series, bg::OutputSpecification::default_>(
+    REQUIRE(dispatch.add_replay<bg::Out<Series, provider::view>>(Series::type(), provider::replay_tick_view));
+    CHECK_FALSE(dispatch.add_replay<bg::Out<Series>>(
         Series::type(), provider::replay_tick_default));
-    REQUIRE(dispatch.add_replay<Series, bg::OutputSpecification::default_>(
+    REQUIRE(dispatch.add_replay<bg::Out<Series>>(
         provider::series_runtime_type(Series::type()), provider::replay_tick_default));
-    CHECK_FALSE(dispatch.add_replay<Series, bg::OutputSpecification::view>(
+    CHECK_FALSE(dispatch.add_replay<bg::Out<Series, provider::view>>(
         provider::series_runtime_type(Series::type()), provider::replay_tick_view));
 }
 
@@ -1048,12 +1108,12 @@ TEST_CASE("nested generic TSD replay selects the handler by item runtime represe
           "[evaluation][feature:test-graph][feature:time-series-storage][series:tsd][series:generic]"
           "[declaration:concrete][transition:update]") {
     using Series = provider::Series<bg::i64, bg::TimeSeriesGuarantee::final>;
-    CHECK(&bg::time_series_output_traits<Series, bg::OutputSpecification::view>::runtime(Series::type()) ==
+    CHECK(&bg::output_declaration_traits<bg::Out<Series, provider::view>>::runtime(Series::type()) ==
           &provider::series_runtime_type(Series::type()));
 
     auto dispatch = bg::TimeSeriesTickDispatch{};
     REQUIRE(dispatch.add_write<Series>(Series::type(), provider::write_tick<bg::In<Series>>));
-    REQUIRE(dispatch.add_replay<Series, bg::OutputSpecification::view>(
+    REQUIRE(dispatch.add_replay<bg::Out<Series, provider::view>>(
         provider::series_runtime_type(Series::type()), [](auto &reader, const auto &output) {
             output.set(reader.template read_raw<bg::i64>());
         }));
@@ -1091,9 +1151,9 @@ TEST_CASE("provider replay prefers exact runtime handlers over semantic handlers
           "[evaluation][feature:time-series-storage][series:generic][declaration:concrete]") {
     using Series = provider::Series<bg::i64>;
     auto dispatch = bg::TimeSeriesTickDispatch{};
-    REQUIRE(dispatch.add_replay<Series, bg::OutputSpecification::view>(Series::type(),
+    REQUIRE(dispatch.add_replay<bg::Out<Series, provider::view>>(Series::type(),
                                                                         provider::replay_tick_view_override));
-    REQUIRE(dispatch.add_replay<Series, bg::OutputSpecification::view>(
+    REQUIRE(dispatch.add_replay<bg::Out<Series, provider::view>>(
         provider::series_view_runtime_type(Series::type()),
         [](auto &reader, const auto &output) {
             output.set(reader.template read_raw<bg::i64>() + 1000);
@@ -1105,7 +1165,7 @@ TEST_CASE("provider replay prefers exact runtime handlers over semantic handlers
     auto view_value = provider::SeriesViewStorage{};
     auto view_state = bg::OutputState{provider::series_view_runtime_type(Series::type())};
     view_state.bind(view_state_time, &view_value, output_time);
-    const auto view_output = bg::Out<bg::TS_T, bg::view>{bg::TimeSeriesOutputBinding{view_state}};
+    const auto view_output = bg::Out<bg::TS_T>{bg::TimeSeriesOutputBinding{view_state}};
 
     provider::replay_tick(dispatch, record, view_output);
 
@@ -1127,7 +1187,7 @@ TEST_CASE("runtime replay registration does not hide semantic write registration
     provider::written_tick_count = 0;
     REQUIRE(dispatch.add_write<Series>(Series::type(), provider::write_tick<bg::In<Series>>));
     CHECK_FALSE(dispatch.add_write<Series>(Series::type(), provider::write_tick<bg::In<Series>>));
-    REQUIRE(dispatch.add_replay<Series, bg::OutputSpecification::view>(
+    REQUIRE(dispatch.add_replay<bg::Out<Series, provider::view>>(
         provider::series_view_runtime_type(Series::type()), provider::replay_tick_view));
     REQUIRE(dispatch.add_discard(Series::type(), provider::discard_tick));
     const auto buffer = bg::util::buffer::chain(256);
@@ -1140,13 +1200,13 @@ TEST_CASE("runtime replay registration does not hide semantic write registration
     auto output_value = provider::SeriesViewStorage{};
     auto output_state = bg::OutputState{provider::series_view_runtime_type(Series::type())};
     output_state.bind(output_time, &output_value, time + std::chrono::microseconds{1});
-    const auto output = bg::Out<bg::TS_T, bg::view>{bg::TimeSeriesOutputBinding{output_state}};
+    const auto output = bg::Out<bg::TS_T>{bg::TimeSeriesOutputBinding{output_state}};
 
     CHECK(reader.replay(output));
     CHECK(output_value.value == 17);
 }
 
-TEST_CASE("tick replay dispatch reaches provider-defined default outputs",
+TEST_CASE("tick replay dispatch reaches provider-declared outputs",
           "[evaluation][feature:time-series-storage][series:generic][declaration:concrete]") {
     using Series = provider::Series<bg::i64>;
     const auto time = bg::MIN_DT + std::chrono::microseconds{1};
@@ -1160,7 +1220,7 @@ TEST_CASE("tick replay dispatch reaches provider-defined default outputs",
     auto dispatch = bg::TimeSeriesTickDispatch{};
     REQUIRE(dispatch.add_write<Series>(provider::series_runtime_type(Series::type()),
                                          provider::write_tick<bg::In<Series>>));
-    REQUIRE(dispatch.add_replay<Series, bg::OutputSpecification::default_>(
+    REQUIRE(dispatch.add_replay<bg::Out<Series>>(
         provider::series_runtime_type(Series::type()), provider::replay_tick_default));
     REQUIRE(dispatch.add_discard(Series::type(), provider::discard_tick));
     const auto buffer = bg::util::buffer::chain(256);
@@ -1178,11 +1238,11 @@ TEST_CASE("tick replay dispatch reaches provider-defined default outputs",
     CHECK(default_output_value == 17);
 }
 
-TEST_CASE("a node delays provider view ticks by one evaluation cycle",
+TEST_CASE("a node delays a configured provider output through ticks",
           "[evaluation][feature:test-graph][feature:time-series-storage][feature:timed-scheduling]"
           "[series:generic][declaration:concrete][transition:update]") {
     using Series = provider::Series<bg::i64>;
-    const auto provide = bg::node([](bg::In<bg::TS<bg::i64>> input, bg::Out<Series, bg::view> output) {
+    const auto provide = bg::node([](bg::In<bg::TS<bg::i64>> input, bg::Out<Series, provider::view> output) {
         output.set(*input);
     });
     const auto delay = bg::node<provider::OneTickDelay>();
@@ -1291,7 +1351,8 @@ TEST_CASE("a builtin collection publishes provider items", "[evaluation][time_se
     CHECK(bg::testing::test_graph(graph, std::array<bg::i64, 2>{6, 10}).equals<bg::i64>({6, 10}));
 }
 
-TEST_CASE("an aggregate node binds provider views through public owners", "[evaluation][time_series][feature:test-graph]") {
+TEST_CASE("an aggregate node binds configured provider outputs through public owners",
+          "[evaluation][time_series][feature:test-graph]") {
     using Series = provider::Series<bg::i64>;
     const auto provide = bg::node([](bg::In<bg::TS<bg::i64>> input, bg::Out<Series> output) { output.set(*input); });
     const auto consume = bg::node([](bg::In<Series> input, bg::Out<bg::TS<bg::i64>> output) { output.set(input.value()); });
@@ -1301,7 +1362,7 @@ TEST_CASE("an aggregate node binds provider views through public owners", "[eval
     CHECK(bg::testing::test_graph(graph, std::array<bg::i64, 2>{5, 7}).equals<bg::i64>({5, 7}));
 }
 
-TEST_CASE("provider output specifications select distinct callable and aggregate runtimes",
+TEST_CASE("configured provider outputs select distinct callable and aggregate runtimes",
           "[evaluation][time_series][feature:test-graph]") {
     using Series = provider::Series<bg::i64>;
     const auto &default_runtime = bg::cpp_time_series_runtime_type<Series>();
@@ -1310,7 +1371,7 @@ TEST_CASE("provider output specifications select distinct callable and aggregate
     CHECK(default_runtime.value_size() != view_runtime.value_size());
 
     const auto *callable_runtime = static_cast<const bg::TimeSeriesRuntimeType *>(nullptr);
-    const auto callable_provide = bg::node([](bg::In<bg::TS<bg::i64>> input, bg::Out<Series, bg::view> output) {
+    const auto callable_provide = bg::node([](bg::In<bg::TS<bg::i64>> input, bg::Out<Series, provider::view> output) {
         output.set(*input);
     });
     const auto callable_consume = bg::node([&](bg::In<Series> input, bg::Out<bg::TS<bg::i64>> output) {
@@ -1334,7 +1395,74 @@ TEST_CASE("provider output specifications select distinct callable and aggregate
     CHECK(aggregate_runtime == &view_runtime);
 }
 
-TEST_CASE("provider default outputs use resolved declarations instead of input runtimes",
+TEST_CASE("a runtime-signature node binds its configured provider output",
+          "[evaluation][time_series][feature:test-graph][definition:runtime]") {
+    using Series = provider::Series<bg::i64>;
+    auto invalidated = false;
+    provider::view_invalidation_observer = &invalidated;
+
+    const auto provide = bg::node(RuntimeProviderViewDefinition{});
+    const auto *selected_runtime = static_cast<const bg::TimeSeriesRuntimeType *>(nullptr);
+    const auto consume = bg::node([&](bg::In<Series> input, bg::Out<bg::TS<bg::i64>> output) {
+        selected_runtime = &input.runtime_type();
+        output.set(input.value());
+    });
+    const auto graph = [&](bg::wp<bg::TS<bg::i64>> input) { return consume(provide(input)); };
+
+    const auto actual = bg::testing::test_graph(graph, std::array<bg::i64, 3>{12, 0, 14});
+    provider::view_invalidation_observer = nullptr;
+
+    CHECK(actual.equals<bg::i64>({12, std::nullopt, 14}));
+    CHECK(invalidated);
+    CHECK(selected_runtime == &provider::series_view_runtime_type(Series::type()));
+}
+
+TEST_CASE("configured output conversion rejects an incompatible semantic time series",
+          "[type][time_series][feature:time-series-storage]") {
+    using Series = provider::Series<bg::i64>;
+    auto time = bg::TimeSeriesState{};
+    auto value = provider::SeriesViewStorage{};
+    auto state = bg::OutputState{provider::series_view_runtime_type(Series::type())};
+    state.bind(time, &value, bg::MIN_DT + std::chrono::microseconds{1});
+    const auto erased = bg::Out<bg::TS_T>{bg::TimeSeriesOutputBinding{state}};
+
+    CHECK_THROWS_AS((erased.as_output<bg::Out<provider::Series<bg::string>, provider::view>>()), std::bad_cast);
+}
+
+TEST_CASE("tick replay rejects an incompatible configured output declaration",
+          "[evaluation][feature:time-series-storage][series:generic]") {
+    using Series = provider::Series<bg::i64>;
+    const auto time = bg::MIN_DT + std::chrono::microseconds{1};
+    auto input_state = bg::TimeSeriesState{};
+    input_state.publish(time);
+    const auto input_value = bg::i64{17};
+    const auto input = bg::In<Series>{bg::TimeSeriesInputData{
+        provider::series_runtime_type(Series::type()), input_state, &input_value, true}};
+
+    auto handler_called = false;
+    auto dispatch = bg::TimeSeriesTickDispatch{};
+    REQUIRE(dispatch.add_write<Series>(Series::type(), provider::write_tick<bg::In<Series>>));
+    REQUIRE(dispatch.add_replay<bg::Out<provider::Series<bg::string>, provider::view>>(
+        provider::series_view_runtime_type(Series::type()), [&](auto &, const auto &) { handler_called = true; }));
+    REQUIRE(dispatch.add_discard(Series::type(), provider::discard_tick));
+
+    const auto buffer = bg::util::buffer::chain(128);
+    auto writer = bg::TimeSeriesTickWriter{buffer, {}, dispatch};
+    REQUIRE(writer.write(input, time));
+
+    auto output_time = bg::TimeSeriesState{};
+    auto output_value = provider::SeriesViewStorage{};
+    auto output_state = bg::OutputState{provider::series_view_runtime_type(Series::type())};
+    output_state.bind(output_time, &output_value, time + std::chrono::microseconds{1});
+    const auto output = bg::Out<bg::TS_T>{bg::TimeSeriesOutputBinding{output_state}};
+    auto reader = bg::TimeSeriesTickReader{buffer, Series::type(), dispatch};
+
+    CHECK_THROWS_AS(reader.replay(output), std::bad_cast);
+    CHECK_FALSE(handler_called);
+    CHECK_FALSE(reader.has_next());
+}
+
+TEST_CASE("ordinary provider outputs use resolved declarations instead of input runtimes",
           "[evaluation][time_series][feature:test-graph]") {
     using Series = provider::Series<bg::i64>;
     using List = bg::TSL<Series, 1>;
@@ -1360,7 +1488,7 @@ TEST_CASE("provider default outputs use resolved declarations instead of input r
     CHECK(generic_runtime == &default_runtime);
 
     const auto *default_runtime_after_view = static_cast<const bg::TimeSeriesRuntimeType *>(nullptr);
-    const auto view_provide = bg::node([](bg::In<bg::TS<bg::i64>> input, bg::Out<Series, bg::view> output) {
+    const auto view_provide = bg::node([](bg::In<bg::TS<bg::i64>> input, bg::Out<Series, provider::view> output) {
         output.set(*input);
     });
     const auto default_copy = bg::node([](bg::In<Series> input, bg::Out<Series> output) { output.set(input.value()); });
@@ -1388,7 +1516,7 @@ TEST_CASE("provider default outputs use resolved declarations instead of input r
     CHECK(list_item_runtime == &default_runtime);
 }
 
-TEST_CASE("a provider view output invalidates through its selected declaration",
+TEST_CASE("a configured provider output invalidates through its declared interface",
           "[evaluation][time_series][feature:test-graph]") {
     using Series = provider::Series<bg::i64>;
     auto invalidated = false;
@@ -1401,7 +1529,7 @@ TEST_CASE("a provider view output invalidates through its selected declaration",
             output.set(*input);
         }
     });
-    const auto provide = bg::node([](bg::In<bg::TS<bg::i64>> input, bg::Out<Series, bg::view> output) {
+    const auto provide = bg::node([](bg::In<bg::TS<bg::i64>> input, bg::Out<Series, provider::view> output) {
         output.set(*input);
     });
     const auto consume = bg::node([](bg::In<Series> input, bg::Out<bg::TS<bg::i64>> output) {
@@ -1416,11 +1544,12 @@ TEST_CASE("a provider view output invalidates through its selected declaration",
 
 TEST_CASE("a mismatched provider selector does not register a node", "[type][time_series][feature:test-graph]") {
     using Series = provider::Series<bg::string>;
-    const auto node = bg::node([](bg::Out<Series, bg::view>) {});
+    const auto node = bg::node([](bg::Out<Series, provider::view>) {});
     auto wiring = bg::GraphWiring{};
     auto context = bg::WiringContext{wiring};
 
     CHECK_THROWS_AS(node(), bg::WiringError);
+    CHECK_NOTHROW(wiring.finalize());
     CHECK(wiring.nodes().empty());
     CHECK(wiring.outputs().empty());
 }

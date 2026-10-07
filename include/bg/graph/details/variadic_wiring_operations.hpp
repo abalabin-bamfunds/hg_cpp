@@ -1,6 +1,7 @@
 #pragma once
 
 #include <bg/graph/variadic_parameter.hpp>
+#include <bg/graph/details/wiring_record.hpp>
 #include <bg/util/symbol.hpp>
 
 #include <cstddef>
@@ -34,6 +35,9 @@ class VariadicWiringOperations {
     virtual util::symbol item_name(const TimeSeriesType &type, std::size_t index) const = 0;
     virtual const TimeSeriesType &item_type(const TimeSeriesType &type, std::size_t index) const = 0;
     virtual WiringPoint item(WiringPoint collection, std::size_t index) const = 0;
+    virtual std::vector<MaterialisationDependency>
+    materialisation_dependencies(std::span<const WiringArgument> arguments,
+                                 const TimeSeriesType &target_type) const = 0;
     virtual WiringPoint materialize(std::span<const WiringArgument> arguments,
                                     const TimeSeriesType &target_type) const = 0;
 };

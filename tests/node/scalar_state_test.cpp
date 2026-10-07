@@ -54,6 +54,7 @@ TEST_CASE("a runtime graph releases collection state storage", "[node][state][sc
         collection_state();
     }
 
+    wiring.finalize();
     const auto graph = bg::CompiledGraph{wiring};
     auto memory = counting_memory_resource{};
     auto global_state = bg::GlobalState{};
@@ -236,6 +237,7 @@ TEST_CASE("a runtime graph releases composed collection state storage",
         composed_dict_state(key, value);
     }
 
+    wiring.finalize();
     const auto graph = bg::CompiledGraph{wiring};
     auto memory = counting_memory_resource{};
     auto state = bg::GlobalState{};
@@ -325,6 +327,7 @@ TEST_CASE("runtime graphs have independent generic collection state",
         generic_list_state(input);
     }
 
+    wiring.finalize();
     const auto graph = bg::CompiledGraph{wiring};
     for (auto run = 0; run < 2; ++run) {
         auto state = bg::GlobalState{};

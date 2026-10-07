@@ -25,10 +25,42 @@ are resolved.
 variable over `Type` reports none until resolution. Every parameter in a
 resolved signature reports one supported category.
 
-Type objects are process-wide so modules can register types before an engine
-exists. Resolved objects are immutable and canonical. Equivalent types have the
-same address, so exact equality is a pointer comparison. A module that
-implements a registered type must remain loaded while the type can be used.
+Every `Type` must be registered. Committed objects have process lifetime; failed
+registration transactions discard their pending objects. Static declaration
+helpers cache references to registered objects. Dynamic composition can register
+unnamed types automatically. This is required to retain type pointers after a
+graph or wiring template is destroyed.
+
+Engine and extension implementations use `TypeRegistry::register_static()` for
+objects with process-static storage and `TypeRegistry::instance().register_owned()`
+to transfer dynamic ownership. Both return a stable typed reference. Static
+registration allocates no memory; primitive accessors remain `noexcept`.
+Type objects cannot be copied or moved.
+
+`TypeRegistry::instance().get_or_create<Descriptor, Hash>(key, factory)` provides
+a shared cache for ordinary canonical factories.
+The factory defines the identity key, validates semantic requirements, and constructs
+an unregistered descriptor. The registry owns the cache and descriptor, publishes
+one canonical object per key, and removes pending entries if publication fails.
+Descriptor, key, and hash types identify separate cache families.
+
+Factories run without registry locks and can request other types. Concurrent
+first requests can construct temporary duplicate candidates; every successful
+caller receives the same canonical object. Factories must tolerate duplicate
+construction and must not request their own key recursively. This operation
+commits one descriptor; recursive scalar schemas use their
+[group registration transaction](decisions/0018-atomic-recursive-semantic-registration.md).
+
+`VariableRegistry` retains non-type metadata such as guarantee and size variables.
+Type variables register through `TypeRegistry`; their variable interface shares
+that object's lifetime. Independent variables keep separate identities even when
+their names match. Category factories define canonical type identity and own
+any group registration transaction they require.
+
+Resolved objects are immutable and canonical. Equivalent types have the same
+address, so exact equality is a pointer comparison. Modules can register types
+before an engine exists. A module that implements a type must remain loaded
+while the type can be used.
 
 A C++ time series declaration exposes its semantic type through `type()`.
 Generic declarations return an unresolved semantic type containing their
@@ -48,8 +80,12 @@ Runtime types define physical storage separately from this hierarchy.
 
 A graph type contains its parameter types and optional time series result type.
 Its nested variables use the surrounding signature's type map. The
-[`GRAPH` declaration](operators.md#graph-arguments) can also constrain graph
-structure.
+[`GRAPH` declaration](operators.md#graph-arguments) can also attach a structural
+constraint to its signature parameter. Structural constraints and graph
+argument values are stored separately from their process-lifetime types.
+Type-only signature resolution resolves the boundary types. Wiring argument
+validation also checks the parameter's structural constraint against the actual
+graph argument.
 
 ## Runtime types
 
@@ -203,6 +239,9 @@ retain the field type and ignore input-only properties.
 Variables express relationships between types in one signature. Reusing a
 variable requires each occurrence to resolve to the same value.
 
+C++ variable declarations manage descriptor lifetime and registration
+automatically. Use their `type()` when constructing runtime signatures.
+
 `ScalarVariable<Name>` declares a scalar type variable in C++ code. `SCALAR`
 is the default declaration. Declarations with different names map
 independently. Additional template arguments constrain the accepted scalar
@@ -242,7 +281,8 @@ using KEY = ScalarVariable<"KEY", EqualityComparable, Hashable>;
 C++ scalar types derive these properties from their value operations. A
 collection scalar has a property when its item type has that property.
 
-Each runtime variable derives from `Variable`. `TypeVariableType<Category>` also
+Runtime variable descriptors are engine and extension APIs. Each descriptor
+derives from `Variable`. `TypeVariableType<Category>` also
 implements its type category, so `TypeVariableType<ScalarType>` can be used
 wherever a scalar type is required. A schema variable is a
 `TypeVariableType<BundleSchemaType>`.
@@ -255,10 +295,16 @@ using K = ScalarVariable<"K", Hashable>;
 using KEY = TypeVariable<"KEY", K, TS<K>>;
 ```
 
-`Union<K, TS<K>>` is the anonymous inline form. Repeated use of the same union
-declaration in one signature selects the same concrete type. Use named variables
-when equal alternatives must map independently or a resolver needs the outer
-mapping.
+`Union<"key", K, TS<K>>` declares an inline union with the name `key`. Reusing
+the same named union declaration in one signature selects the same concrete
+type. Give independent unions different names; variables inside their
+alternatives still share mappings when they use the same declaration.
+
+A node parameter can resolve scalar alternatives, or scalar alternatives plus
+one time series alternative, to a concrete parameter type. A union containing
+only time series alternatives, or more than one time series alternative, is
+graph-only. Graph parameters can retain materialisation options; node parameters
+consume the selected concrete form.
 
 Matching uses normal compatibility after reference transparency. The outer
 variable maps to the supplied concrete type. Variables in every matching

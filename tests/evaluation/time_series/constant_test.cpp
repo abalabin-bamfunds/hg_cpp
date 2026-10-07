@@ -116,6 +116,7 @@ TEST_CASE("a scalar constant binds directly to its active consumer",
         sink(value);
     }
 
+    wiring.finalize();
     const auto compiled = bg::CompiledGraph{wiring};
     REQUIRE(compiled.node_count() == 1);
     REQUIRE(compiled.node(0).parameters()[0].mode() == bg::ParameterBindingMode::constant);
@@ -170,6 +171,7 @@ TEST_CASE("one constant serves active and passive consumers",
         passive_sink(value);
     }
 
+    wiring.finalize();
     const auto compiled = bg::CompiledGraph{wiring};
     CHECK(compiled.node_count() == 2);
 
@@ -193,6 +195,7 @@ TEST_CASE("a string constant uses compiled scalar storage",
         sink(const_("fixed").as<bg::TS<bg::string, bg::TimeSeriesGuarantee::const_>>());
     }
 
+    wiring.finalize();
     const auto compiled = bg::CompiledGraph{wiring};
     auto runtime_global_state = bg::GlobalState{};
     auto runtime = bg::RuntimeGraph{compiled, runtime_global_state};
@@ -218,6 +221,7 @@ TEST_CASE("a constant value-to-reference binding keeps the reference node in the
         sink(pass(const_(9).as<bg::TS<std::int64_t, bg::TimeSeriesGuarantee::const_>>()));
     }
 
+    wiring.finalize();
     const auto compiled = bg::CompiledGraph{wiring};
     CHECK(compiled.node_count() == 3);
 

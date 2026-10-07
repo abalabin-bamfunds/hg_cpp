@@ -19,8 +19,8 @@
 
 namespace bg {
 
-template <details::scalar_variable Variable, OutputSpecification Specification, auto... Properties>
-class Out<TS<Variable, Properties...>, Specification> {
+template <details::scalar_variable Variable, auto... Properties>
+class Out<TS<Variable, Properties...>> {
   public:
     explicit Out(TimeSeriesOutputBinding state) noexcept : state_(std::move(state)) {}
     Out(Out &&) noexcept = default;
@@ -52,7 +52,7 @@ class Out<TS<Variable, Properties...>, Specification> {
     const Out *operator->() const noexcept { return this; }
 
     template <typename... Functions> decltype(auto) visit(Functions &&...functions) const {
-        auto output = details::output_factory::make<TS_T, Specification>(state_.get());
+        auto output = details::output_factory::make<Out<TS_T>>(state_.get());
         return output.visit(std::forward<Functions>(functions)...);
     }
 
@@ -62,8 +62,8 @@ class Out<TS<Variable, Properties...>, Specification> {
     TimeSeriesOutputBinding state_;
 };
 
-template <typename T, OutputSpecification Specification, auto... Properties>
-class Out<TS<T, Properties...>, Specification> {
+template <typename T, auto... Properties>
+class Out<TS<T, Properties...>> {
     using Traits = scalar_storage_traits<T>;
 
   public:
@@ -74,16 +74,16 @@ class Out<TS<T, Properties...>, Specification> {
     explicit Out(TimeSeriesOutputBinding state) noexcept : state_(std::move(state)) {}
 
     Out(TimeSeriesState &last_updated, storage_type &value, EvaluationContext &context)
-        requires(Specification == OutputSpecification::default_ && !scalar_declaration_traits<T>::generic)
+        requires(!scalar_declaration_traits<T>::generic)
         : state_{last_updated, &value, cpp_time_series_runtime_type<TS<T, Properties...>>(), context} {}
 
     Out(TimeSeriesState &last_updated, storage_type &value, const TimeSeriesRuntimeType &runtime_type,
         EvaluationContext &context)
-        requires(Specification == OutputSpecification::default_ && !scalar_declaration_traits<T>::generic)
+        requires(!scalar_declaration_traits<T>::generic)
         : state_{last_updated, &value, runtime_type, context} {}
 
     Out(TimeSeriesState &last_updated, storage_type &value, void *output_path)
-        requires(Specification == OutputSpecification::default_ && !scalar_declaration_traits<T>::generic)
+        requires(!scalar_declaration_traits<T>::generic)
         : state_{last_updated, &value, cpp_time_series_runtime_type<TS<T, Properties...>>(), output_path} {}
 
     Out(Out &&) noexcept = default;
@@ -157,7 +157,7 @@ class Out<TS<T, Properties...>, Specification> {
     const Out *operator->() const noexcept { return this; }
 
     template <typename... Functions> decltype(auto) visit(Functions &&...functions) const {
-        auto output = details::output_factory::make<TS_T, Specification>(state_.get());
+        auto output = details::output_factory::make<Out<TS_T>>(state_.get());
         return output.visit(std::forward<Functions>(functions)...);
     }
 

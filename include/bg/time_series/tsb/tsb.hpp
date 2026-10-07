@@ -9,13 +9,14 @@
 #include <bg/time_series/tsb/details/wiring.hpp>
 #include <bg/type/details/time_series_type.hpp>
 #include <bg/type/time_series_bundle_type.hpp>
+#include <bg/type/variable_registry.hpp>
 #include <bg/util/named_argument.hpp>
 
+#include <algorithm>
 #include <array>
 #include <concepts>
 #include <functional>
 #include <optional>
-#include <ranges>
 #include <stdexcept>
 #include <string_view>
 #include <type_traits>
@@ -126,6 +127,7 @@ class TypedBundleConstruction<TSB<Schema, Properties...>> {
   private:
     static const TimeSeriesBundleType &input_type() {
         static const auto guarantee = GuaranteeVariable{util::symbol{"G"}};
+        [[maybe_unused]] static const auto &registration = VariableRegistry::register_static(guarantee);
         return static_cast<const TimeSeriesBundleType &>(
             time_series_type_for<TypedBundleConstruction, 0, true, TimeSeries>(guarantee));
     }
@@ -165,7 +167,15 @@ class wp<TSB<Schema, TimeSeriesProperties...>, WiringProperties...> {
 
   public:
     wp(WiringPoint point) : point_{point} {
-        if (!TimeSeries::type().accepts(point.type())) {
+        if (TimeSeries::type().accepts(point.type())) {
+            return;
+        }
+
+        const auto accepts_advertised_form = std::ranges::any_of(
+            point.materialisation_options(), [](const auto &option) {
+                return TimeSeries::type().accepts(*option.target_type);
+            });
+        if (!accepts_advertised_form) {
             throw WiringError{"a WiringPoint is incompatible with the requested type"};
         }
     }
@@ -187,6 +197,15 @@ class wp<TSB<Schema, TimeSeriesProperties...>, WiringProperties...> {
         } else {
             return point_.template as<Target>();
         }
+    }
+
+    template <typename Target, typename Builder>
+    void materialisation_option(Builder &&builder, double cost) const {
+        point_.template materialisation_option<Target>(std::forward<Builder>(builder), cost);
+    }
+
+    std::vector<WiringMaterialisationOption> materialisation_options() const {
+        return point_.materialisation_options();
     }
 
     static wp from_validated(WiringPoint point) noexcept { return wp{point, unchecked_t{}}; }

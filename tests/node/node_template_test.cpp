@@ -4,6 +4,7 @@
 #include <bg/type/time_series_reference_type.hpp>
 #include <bg/type/time_series_list_type.hpp>
 #include <bg/type/time_series_value_type.hpp>
+#include <bg/type/type_variable.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -405,17 +406,12 @@ struct generic_set_input_sink {
 };
 
 struct scalar_or_time_series_input_definition {
-    static const bg::TypeVariableType<bg::Type> &input_type() {
-        static const auto guarantee = bg::GuaranteeVariable{bg::util::symbol{"G"}};
-        static const auto time_series = bg::GenericTimeSeriesValueType{bg::int64_type(), guarantee};
-        static const auto type = bg::TypeVariableType<bg::Type>{
-            bg::util::symbol{"VALUE"}, std::vector<const bg::Type *>{&bg::int64_type(), &time_series}};
-        return type;
-    }
+    using VALUE = bg::Union<"VALUE", bg::i64, bg::TS<bg::i64, bg::guarantee_variable<"G">>>;
 
     const bg::Signature &signature() const {
-        static const auto value = bg::Signature{bg::util::symbol{"scalar_or_time_series"},
-                                                std::vector<bg::Parameter>{{bg::util::symbol{"value"}, &input_type()}}};
+        static const auto value = bg::Signature{
+            bg::util::symbol{"scalar_or_time_series"},
+            std::vector<bg::Parameter>{{bg::util::symbol{"value"}, &VALUE::type()}}};
         return value;
     }
 
@@ -510,10 +506,9 @@ TEST_CASE("direct TSS inputs keep concrete and resolved key runtime types",
     CHECK(bg::testing::test_graph(guarantee_graph, std::array<bg::i64, 1>{42}).equals<bg::i64>({42}));
 }
 
-TEST_CASE("native collection outputs bind directly only for concrete default declarations",
+TEST_CASE("native collection outputs bind directly only for concrete declarations",
           "[node_template][time_series][feature:node-api]") {
     static_assert(!bg::details::direct_time_series_output<bg::Out<bg::TS<bg::SCALAR>>>);
-    static_assert(!bg::details::direct_time_series_output<bg::Out<bg::TS<bg::i64>, bg::view>>);
     static_assert(bg::details::direct_time_series_output<bg::Out<bg::TSS<bg::i64>>>);
     static_assert(bg::details::direct_time_series_output<bg::Out<bg::TSD<bg::i64, bg::TS<bg::i64>>>>);
     static_assert(bg::details::direct_time_series_output<bg::Out<bg::TSL<bg::TS<bg::i64>, 2>>>);
@@ -534,7 +529,6 @@ TEST_CASE("native collection outputs bind directly only for concrete default dec
     static_assert(!bg::details::direct_time_series_output<bg::Out<bg::TSD<bg::SCALAR, bg::TS_T>>>);
     static_assert(!bg::details::direct_time_series_output<bg::Out<bg::TSL<bg::TS_T, 2>>>);
     static_assert(!bg::details::direct_time_series_output<bg::Out<bg::TSL<bg::TS<bg::i64>>>>);
-    static_assert(!bg::details::direct_time_series_output<bg::Out<bg::TSS<bg::i64>, bg::view>>);
     static_assert(!bg::details::direct_time_series_output<bg::Out<bg::TSB<runtime_layout_bundle>>>);
 }
 

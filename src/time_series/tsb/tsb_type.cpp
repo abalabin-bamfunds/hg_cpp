@@ -2,6 +2,7 @@
 
 #include <bg/type/type_map.hpp>
 #include <bg/type/type_resolution_error.hpp>
+#include <bg/type/type_registry.hpp>
 #include <bg/type/variable.hpp>
 
 #include <algorithm>
@@ -230,7 +231,7 @@ const Type &GenericTimeSeriesBundleType::resolve(const TypeMap &type_map) const 
 const BundleSchema &bundle_schema(util::symbol name, const void *identity, const BundleSchema *base,
                                   std::span<const BundleField> fields) {
     static auto mutex = std::mutex{};
-    static auto schemas = std::vector<std::unique_ptr<BundleSchema>>{};
+    static auto schemas = std::vector<const BundleSchema *>{};
 
     const auto lock = std::lock_guard{mutex};
     const auto existing = std::ranges::find_if(schemas, [&](const auto &candidate) {
@@ -241,9 +242,15 @@ const BundleSchema &bundle_schema(util::symbol name, const void *identity, const
     }
 
     validate_fields(base, fields);
-    schemas.push_back(
+    const auto &schema = TypeRegistry::instance().register_owned(
         std::make_unique<BundleSchema>(name, identity, base, std::vector<BundleField>{fields.begin(), fields.end()}));
-    return *schemas.back();
+    try {
+        schemas.push_back(&schema);
+        return schema;
+    } catch (...) {
+        TypeRegistry::instance().rollback(schema);
+        throw;
+    }
 }
 
 const BundleSchema &unnamed_bundle_schema(std::span<const BundleField> fields) {
@@ -259,7 +266,7 @@ const TimeSeriesBundleType &time_series_bundle_type(const BundleSchema &schema, 
     };
 
     static auto mutex = std::mutex{};
-    static auto types = std::vector<std::pair<Key, std::unique_ptr<ResolvedTimeSeriesBundleType>>>{};
+    static auto types = std::vector<std::pair<Key, const ResolvedTimeSeriesBundleType *>>{};
 
     const auto &effective_schema = schema_with_minimum_guarantee(schema, guarantee);
     const auto lock = std::lock_guard{mutex};
@@ -269,8 +276,16 @@ const TimeSeriesBundleType &time_series_bundle_type(const BundleSchema &schema, 
         return *existing->second;
     }
 
-    types.emplace_back(key, std::make_unique<ResolvedTimeSeriesBundleType>(effective_schema, guarantee));
-    return *types.back().second;
+    types.emplace_back(key, nullptr);
+    try {
+        const auto &type = TypeRegistry::instance().register_owned(
+            std::make_unique<ResolvedTimeSeriesBundleType>(effective_schema, guarantee));
+        types.back().second = &type;
+        return type;
+    } catch (...) {
+        types.pop_back();
+        throw;
+    }
 }
 
 } // namespace bg

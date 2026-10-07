@@ -162,26 +162,26 @@ class TimeSeriesTickDispatch {
         return true;
     }
 
-    template <typename Series, OutputSpecification Specification, typename Replay>
+    template <typename Output, typename Replay>
     bool add_replay(const TimeSeriesRuntimeType &runtime_type, Replay &&replay) {
         if (const auto *existing = runtime_operations_.find(&runtime_type);
             existing != nullptr && existing->replay) {
             return false;
         }
 
-        auto handler = typed_replay<Series, Specification>(std::forward<Replay>(replay));
+        auto handler = typed_replay<Output>(std::forward<Replay>(replay));
         auto &operations = *runtime_operations_.try_emplace(&runtime_type, memory_.memory_resource()).first;
         operations.replay = std::move(handler);
         return true;
     }
 
-    template <typename Series, OutputSpecification Specification, typename Replay>
+    template <typename Output, typename Replay>
     bool add_replay(const TimeSeriesType &type, Replay &&replay) {
         if (const auto *existing = type_operations_.find(&type); existing != nullptr && existing->replay) {
             return false;
         }
 
-        auto handler = typed_replay<Series, Specification>(std::forward<Replay>(replay));
+        auto handler = typed_replay<Output>(std::forward<Replay>(replay));
         auto &operations = *type_operations_.try_emplace(&type, memory_.memory_resource()).first;
         operations.replay = std::move(handler);
         return true;
@@ -221,8 +221,7 @@ class TimeSeriesTickDispatch {
         throw std::invalid_argument{"no tick write operation is registered for this time series type"};
     }
 
-    template <OutputSpecification Specification>
-    void replay(util::buffer_reader &reader, const Out<TS_T, Specification> &output) const {
+    void replay(util::buffer_reader &reader, const Out<TS_T> &output) const {
         if (const auto *operations = runtime_operations_.find(&output.runtime_type());
             operations != nullptr && operations->replay) {
             operations->replay(reader, output.output_state());
@@ -273,11 +272,12 @@ class TimeSeriesTickDispatch {
         };
     }
 
-    template <typename Series, OutputSpecification Specification, typename Replay>
+    template <typename Output, typename Replay>
     static auto typed_replay(Replay &&replay) {
         return [replay = std::forward<Replay>(replay)](util::buffer_reader &reader, OutputState &state) {
-            const auto erased = Out<TS_T, Specification>{TimeSeriesOutputBinding{state}};
-            std::invoke(replay, reader, erased.template as<Series>());
+            const auto erased = Out<TS_T>{TimeSeriesOutputBinding{state}};
+            auto output = erased.template as_output<Output>();
+            std::invoke(replay, reader, output);
         };
     }
 
@@ -471,8 +471,8 @@ class TimeSeriesTickReplay {
     TimeSeriesTickReplay(util::buffer_reader &reader, const TimeSeriesTickDispatch &dispatch)
         : reader_{&reader}, dispatch_{&dispatch} {}
 
-    template <typename Variable, auto... Properties>
-    void apply_erased(const TimeSeriesType &type, const Out<Variable, Properties...> &output) {
+    template <typename Variable>
+    void apply_erased(const TimeSeriesType &type, const Out<Variable> &output) {
         const auto header = TickHeader::read(*reader_);
         if (header.operation != TickOperation::tick) {
             throw std::logic_error{"time series tick record does not start with a tick header"};
@@ -497,9 +497,7 @@ class TimeSeriesTickReplay {
         apply_payload(type, output, header);
     }
 
-    template <OutputSpecification Specification>
-    void apply_concrete(const TimeSeriesType &type, const Out<TS<SCALAR>, Specification> &output,
-                        TickHeader header) {
+    void apply_concrete(const TimeSeriesType &type, const Out<TS<SCALAR>> &output, TickHeader header) {
         const auto &value_type = type_cast<TimeSeriesValueType>(type);
         if (!header.valid) {
             output.invalidate();
@@ -509,9 +507,7 @@ class TimeSeriesTickReplay {
         visit_scalar(value_type.value_type(), [&](const auto &value) { output.set_value(value); });
     }
 
-    template <OutputSpecification Specification>
-    void apply_concrete(const TimeSeriesType &type, const Out<TSL<TS_T, SIZE>, Specification> &output,
-                        TickHeader header) {
+    void apply_concrete(const TimeSeriesType &type, const Out<TSL<TS_T, SIZE>> &output, TickHeader header) {
         const auto &list_type = type_cast<TimeSeriesListType>(type);
         if (!header.valid) {
             output.invalidate();
@@ -531,9 +527,7 @@ class TimeSeriesTickReplay {
         }
     }
 
-    template <OutputSpecification Specification>
-    void apply_concrete(const TimeSeriesType &type, const Out<TSB<SCHEMA>, Specification> &output,
-                        TickHeader header) {
+    void apply_concrete(const TimeSeriesType &type, const Out<TSB<SCHEMA>> &output, TickHeader header) {
         const auto &bundle_type = type_cast<TimeSeriesBundleType>(type);
         if (!header.valid) {
             output.invalidate();
@@ -553,9 +547,7 @@ class TimeSeriesTickReplay {
         }
     }
 
-    template <OutputSpecification Specification>
-    void apply_concrete(const TimeSeriesType &type, const Out<TSS<SCALAR>, Specification> &output,
-                        TickHeader header) {
+    void apply_concrete(const TimeSeriesType &type, const Out<TSS<SCALAR>> &output, TickHeader header) {
         const auto &set_type = type_cast<TimeSeriesSetType>(type);
         if (!header.valid) {
             throw std::logic_error{"TSS invalidation cannot be replayed through its output API"};
@@ -582,9 +574,7 @@ class TimeSeriesTickReplay {
         }
     }
 
-    template <OutputSpecification Specification>
-    void apply_concrete(const TimeSeriesType &type, const Out<TSD<SCALAR, TS_T>, Specification> &output,
-                        TickHeader header) {
+    void apply_concrete(const TimeSeriesType &type, const Out<TSD<SCALAR, TS_T>> &output, TickHeader header) {
         const auto &dictionary_type = type_cast<TimeSeriesDictionaryType>(type);
         if (!header.valid) {
             throw std::logic_error{"TSD invalidation cannot be replayed through its output API"};
@@ -612,13 +602,11 @@ class TimeSeriesTickReplay {
         }
     }
 
-    template <OutputSpecification Specification>
-    void apply_concrete(const TimeSeriesType &, const Out<REF<TS_T>, Specification> &, TickHeader) {
+    void apply_concrete(const TimeSeriesType &, const Out<REF<TS_T>> &, TickHeader) {
         throw std::invalid_argument{"retained reference time series ticks are not supported"};
     }
 
-    template <OutputSpecification Specification>
-    void apply_concrete(const TimeSeriesType &, const Out<TS_T, Specification> &output, TickHeader header) {
+    void apply_concrete(const TimeSeriesType &, const Out<TS_T> &output, TickHeader header) {
         if (!header.valid) {
             output.invalidate();
             return;
@@ -854,8 +842,7 @@ class TimeSeriesTickReader {
     // The reader destroys unread records on destruction.
     bool has_next() { return !reader_.readable().empty(); }
 
-    template <typename Variable, auto... Properties>
-    bool replay(const Out<Variable, Properties...> &output) {
+    template <typename Variable> bool replay(const Out<Variable> &output) {
         if (!has_next()) {
             return false;
         }

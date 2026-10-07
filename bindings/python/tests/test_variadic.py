@@ -282,8 +282,9 @@ def test_variadic_tsl_rejects_scalars_and_mixed_time_series_types():
     def mixed_graph(integer: bg.TS[int], floating: bg.TS[float]) -> bg.TS[int]:
         return consume(integer, floating)
 
-    with pytest.raises(ValueError, match="variadic TSL accepts only time series"):
+    with pytest.raises(ValueError, match="variadic TSL accepts only time series") as scalar_error:
         bg.test_graph(scalar_graph, [1])
+    assert any("callback scalar_graph at scalar_graph[1]" in note for note in scalar_error.value.__notes__)
     with pytest.raises(ValueError, match="compatible item types"):
         bg.test_graph(mixed_graph, [1], [2.0])
 

@@ -143,12 +143,12 @@ TEST_CASE("time series output visitors select every resolved interface",
     auto set_state = bg::details::OutputState{bg::cpp_time_series_runtime_type<bg::TSS<std::int64_t>>()};
     auto dict_state = bg::details::OutputState{bg::cpp_time_series_runtime_type<bg::TSD<std::int64_t, bg::TS<bg::i64>>>()};
     auto bundle_state = bg::details::OutputState{bg::cpp_time_series_runtime_type<bg::TSB<VisitorBundle>>()};
-    auto value = bg::details::output_factory::make<bg::TS_T>(value_state);
-    auto reference = bg::details::output_factory::make<bg::TS_T>(reference_state);
-    auto list = bg::details::output_factory::make<bg::TS_T>(list_state);
-    auto set = bg::details::output_factory::make<bg::TS_T>(set_state);
-    auto dict = bg::details::output_factory::make<bg::TS_T>(dict_state);
-    auto bundle = bg::details::output_factory::make<bg::TS_T>(bundle_state);
+    auto value = bg::details::output_factory::make<bg::Out<bg::TS_T>>(value_state);
+    auto reference = bg::details::output_factory::make<bg::Out<bg::TS_T>>(reference_state);
+    auto list = bg::details::output_factory::make<bg::Out<bg::TS_T>>(list_state);
+    auto set = bg::details::output_factory::make<bg::Out<bg::TS_T>>(set_state);
+    auto dict = bg::details::output_factory::make<bg::Out<bg::TS_T>>(dict_state);
+    auto bundle = bg::details::output_factory::make<bg::Out<bg::TS_T>>(bundle_state);
     auto visited = 0;
 
     value.visit([&](const bg::Out<bg::TS<bg::SCALAR>> *) { ++visited; }, ddv::noop);
@@ -169,7 +169,7 @@ TEST_CASE("a time series output visitor exposes the resolved output interface",
     auto stored = std::int64_t{};
     auto state = bg::details::OutputState{bg::cpp_time_series_runtime_type<bg::TS<std::int64_t>>()};
     state.bind(last_updated, &stored, evaluation_time);
-    auto output = bg::details::output_factory::make<bg::TS_T>(state);
+    auto output = bg::details::output_factory::make<bg::Out<bg::TS_T>>(state);
     const auto value = bg::ScalarValue<std::int64_t>{42};
     auto called = false;
 

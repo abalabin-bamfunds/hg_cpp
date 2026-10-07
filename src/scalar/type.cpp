@@ -1,6 +1,7 @@
 #include <bg/scalar/details/storage_traits.hpp>
 #include <bg/type/scalar_type.hpp>
 #include <bg/type/type_map.hpp>
+#include <bg/type/type_registry.hpp>
 #include <bg/util/symbol.hpp>
 
 #include <type_traits>
@@ -28,66 +29,52 @@ template <typename T> class CppScalarType final : public CppScalarTypeBase<T> {
     bool supports_hash() const noexcept override { return scalar_storage_traits<T>::supports_hash; }
 };
 
+template <typename T> const CppScalarType<T> &registered_cpp_scalar_type() noexcept {
+    static const CppScalarType<T> type;
+    [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type);
+    return type;
+}
+
 } // namespace
 
 const ScalarType &int_type() noexcept {
-    static const CppScalarType<int> type;
-
-    return type;
+    return registered_cpp_scalar_type<int>();
 }
 
 const ScalarType &byte_type() noexcept {
-    static const CppScalarType<byte> type;
-
-    return type;
+    return registered_cpp_scalar_type<byte>();
 }
 
 const ScalarType &bool_type() noexcept {
-    static const CppScalarType<bool> type;
-
-    return type;
+    return registered_cpp_scalar_type<bool>();
 }
 
 const ScalarType &int64_type() noexcept {
-    static const CppScalarType<i64> type;
-
-    return type;
+    return registered_cpp_scalar_type<i64>();
 }
 
 const ScalarType &float_type() noexcept {
-    static const CppScalarType<float> type;
-
-    return type;
+    return registered_cpp_scalar_type<float>();
 }
 
 const ScalarType &double_type() noexcept {
-    static const CppScalarType<double> type;
-
-    return type;
+    return registered_cpp_scalar_type<double>();
 }
 
 const ScalarType &evaluation_time_type() noexcept {
-    static const CppScalarType<date_time_t> type;
-
-    return type;
+    return registered_cpp_scalar_type<date_time_t>();
 }
 
 const ScalarType &timedelta_type() noexcept {
-    static const CppScalarType<timedelta_t> type;
-
-    return type;
+    return registered_cpp_scalar_type<timedelta_t>();
 }
 
 const ScalarType &string_type() noexcept {
-    static const CppScalarType<string> type;
-
-    return type;
+    return registered_cpp_scalar_type<string>();
 }
 
 const ScalarType &symbol_type() noexcept {
-    static const CppScalarType<symbol> type;
-
-    return type;
+    return registered_cpp_scalar_type<symbol>();
 }
 
 const ScalarType &scalar_type_traits<int>::type() noexcept {

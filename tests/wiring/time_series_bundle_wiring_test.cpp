@@ -52,6 +52,7 @@ TEST_CASE("a typed TSB wiring point exposes typed fields",
 
     const auto context = bg::WiringContext{wiring};
     const auto bundle = source();
+    (void)wiring.complete_pending_wiring(static_cast<bg::WiringPoint>(bundle));
     const auto count = bundle->count;
 
     STATIC_CHECK(std::same_as<decltype(count), const bg::wp<bg::TS<bg::i64>>>);
@@ -60,6 +61,7 @@ TEST_CASE("a typed TSB wiring point exposes typed fields",
     CHECK(wiring.outputs().size() == 1);
 
     sink(count);
+    (void)wiring.complete_pending_wiring();
 
     REQUIRE(wiring.outputs().size() == 2);
     CHECK(wiring.outputs()[1].parent == 0);
@@ -88,7 +90,9 @@ TEST_CASE("unused typed TSB fields remain unmaterialized",
     auto wiring = bg::GraphWiring{};
 
     const auto context = bg::WiringContext{wiring};
-    const auto count = source()->count;
+    const auto bundle = source();
+    (void)wiring.complete_pending_wiring(static_cast<bg::WiringPoint>(bundle));
+    const auto count = bundle->count;
 
     CHECK(&count.type() == &bg::TS<bg::i64>::type());
     CHECK(wiring.outputs().size() == 1);
@@ -104,6 +108,7 @@ TEST_CASE("typed TSB field access reuses its wiring record",
     const auto bundle = source();
     const auto first = bundle->count;
     const auto second = bundle->count;
+    (void)wiring.complete_pending_wiring(static_cast<bg::WiringPoint>(bundle));
 
     CHECK(static_cast<bg::WiringPoint>(first).record() == static_cast<bg::WiringPoint>(second).record());
     CHECK(wiring.outputs().size() == 1);
@@ -124,6 +129,7 @@ TEST_CASE("typed field access preserves free TSB sources",
     const auto bundle = bg::bundle("value"_n = value, "count"_n = count).as<bg::TSB<TestBundle>>();
     sink(bundle->count);
 
+    (void)wiring.complete_pending_wiring();
     REQUIRE(wiring.nodes().size() == 3);
     CHECK(wiring.nodes().back().inputs().front().index() == 0);
     CHECK(wiring.outputs().size() == 2);
@@ -167,6 +173,7 @@ TEST_CASE("getattr selects a field from an unnamed free TSB",
     const auto bundle = bg::bundle("count"_n = count_source(), "value"_n = value_source());
     const auto count = bg::operators::getattr(bundle, "count"_sym);
 
+    (void)wiring.complete_pending_wiring();
     CHECK(&count.type() == &bg::TS<bg::i64>::type());
     CHECK(wiring.nodes().size() == 2);
     CHECK(wiring.outputs().size() == 2);

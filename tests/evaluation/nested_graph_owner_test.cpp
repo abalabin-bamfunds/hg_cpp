@@ -139,6 +139,7 @@ bg::CompiledGraph make_owner_graph() {
         auto context = bg::WiringContext{wiring};
         node();
     }
+    wiring.finalize();
     return bg::CompiledGraph{wiring};
 }
 
@@ -149,6 +150,7 @@ bg::CompiledGraph make_inner_graph(int delay) {
         auto context = bg::WiringContext{wiring};
         node(delay);
     }
+    wiring.finalize();
     return bg::CompiledGraph{wiring};
 }
 

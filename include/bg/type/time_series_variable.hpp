@@ -5,6 +5,7 @@
 #include <bg/type/guarantee_variable_instance.hpp>
 #include <bg/type/time_series_type.hpp>
 #include <bg/type/type_variable.hpp>
+#include <bg/type/type_registry.hpp>
 
 namespace bg {
 
@@ -31,6 +32,7 @@ template <typename Declaration> struct TimeSeriesVariableInstance;
 template <util::compile_time_string Name> struct TimeSeriesVariableInstance<TimeSeriesVariable<Name>> {
     static const TypeVariableType<TimeSeriesType> &get() {
         static const auto variable = TypeVariableType<TimeSeriesType>{util::symbol{Name.view()}};
+        [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(variable);
 
         return variable;
     }
@@ -41,6 +43,7 @@ struct TimeSeriesVariableInstance<TimeSeriesVariableWithGuarantee<Variable, Guar
     static const GenericTimeSeriesVariableType &get() {
         static const auto type = GenericTimeSeriesVariableType{TimeSeriesVariableInstance<Variable>::get(),
                                                                guarantee_parameter<Guarantee>()};
+        [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type);
 
         return type;
     }

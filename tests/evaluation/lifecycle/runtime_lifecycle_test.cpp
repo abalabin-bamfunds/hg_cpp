@@ -116,6 +116,7 @@ TEST_CASE("start and stop follow topological order",
         lifecycle(3);
     }
 
+    wiring.finalize();
     const bg::CompiledGraph compiled{wiring};
     auto runtime_global_state = bg::GlobalState{};
     bg::RuntimeGraph runtime{compiled, runtime_global_state};
@@ -143,6 +144,7 @@ TEST_CASE("a start failure stops nodes whose start completed",
         lifecycle(3);
     }
 
+    wiring.finalize();
     const bg::CompiledGraph compiled{wiring};
     auto runtime_global_state = bg::GlobalState{};
     bg::RuntimeGraph runtime{compiled, runtime_global_state};
@@ -169,6 +171,7 @@ TEST_CASE("an evaluation failure stops nodes in reverse topological order",
         lifecycle(3);
     }
 
+    wiring.finalize();
     const bg::CompiledGraph compiled{wiring};
     auto runtime_global_state = bg::GlobalState{};
     bg::RuntimeGraph runtime{compiled, runtime_global_state};
@@ -193,6 +196,7 @@ TEST_CASE("a runtime graph has one lifecycle",
         lifecycle(1);
     }
 
+    wiring.finalize();
     const bg::CompiledGraph compiled{wiring};
     auto runtime_global_state = bg::GlobalState{};
     bg::RuntimeGraph runtime{compiled, runtime_global_state};
@@ -223,6 +227,7 @@ TEST_CASE("an aggregate node finalizes retained state when its runtime graph is 
         finalizable(bg::ScalarValue<bg::Opaque<int *>>{&finalization_count});
     }
 
+    wiring.finalize();
     const auto compiled = bg::CompiledGraph{wiring};
     {
         auto runtime_global_state = bg::GlobalState{};
@@ -262,6 +267,7 @@ TEST_CASE("start can schedule evaluation in the first outer cycle",
         immediate();
     }
 
+    wiring.finalize();
     const bg::CompiledGraph compiled{wiring};
     auto runtime_global_state = bg::GlobalState{};
     bg::RuntimeGraph runtime{compiled, runtime_global_state};

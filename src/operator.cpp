@@ -3,18 +3,24 @@
 #include <bg/graph/context.hpp>
 #include <bg/graph/details/normalized_wiring_arguments.hpp>
 #include <bg/graph/details/variadic_wiring_record.hpp>
+#include <bg/graph/details/wiring_materialisation.hpp>
+#include <bg/graph/details/wiring_record.hpp>
 #include <bg/graph/details/wiring_record_overlay.hpp>
 #include <bg/graph/wiring_arguments.hpp>
 #include <bg/graph/wiring_context.hpp>
 #include <bg/graph/wiring_error.hpp>
 #include <bg/scalar/value.hpp>
 #include <bg/type/time_series_reference_type.hpp>
+#include <bg/type/details/resolver_type_resolution_error.hpp>
 #include <bg/type/type_resolution_error.hpp>
+#include <bg/type/type_text.hpp>
+#include <bg/type/type_variable.hpp>
 
 #include <algorithm>
 #include <compare>
 #include <deque>
 #include <exception>
+#include <iterator>
 #include <memory>
 #include <optional>
 #include <string>
@@ -35,48 +41,6 @@ WiringFailureStage failure_stage(TypeResolutionErrorCode code) noexcept {
         return WiringFailureStage::resolver;
     }
     return WiringFailureStage::resolver;
-}
-
-std::partial_ordering compare_reference_affinity(const ResolvedSignature &left, const ResolvedSignature &right,
-                                                 std::span<const Type *const> left_arguments,
-                                                 std::span<const Type *const> right_arguments,
-                                                 std::size_t parameter_count) noexcept {
-    auto left_better = false;
-    auto right_better = false;
-    for (auto index = std::size_t{}; index < parameter_count; ++index) {
-        const auto *left_argument = type_cast<TimeSeriesType>(left_arguments[index]);
-        const auto *right_argument = type_cast<TimeSeriesType>(right_arguments[index]);
-        const auto *left_parameter = type_cast<TimeSeriesType>(left.parameters[index].type);
-        const auto *right_parameter = type_cast<TimeSeriesType>(right.parameters[index].type);
-        if (left_argument == nullptr || right_argument == nullptr || left_parameter == nullptr ||
-            right_parameter == nullptr) {
-            continue;
-        }
-
-        const auto *left_argument_reference = type_cast<TimeSeriesReferenceType>(left_argument);
-        const auto *right_argument_reference = type_cast<TimeSeriesReferenceType>(right_argument);
-        const auto *left_reference = type_cast<TimeSeriesReferenceType>(left_parameter);
-        const auto *right_reference = type_cast<TimeSeriesReferenceType>(right_parameter);
-        const auto left_matches = (left_reference != nullptr) == (left_argument_reference != nullptr);
-        const auto right_matches = (right_reference != nullptr) == (right_argument_reference != nullptr);
-        left_better |= left_matches && !right_matches;
-        right_better |= right_matches && !left_matches;
-
-        const auto &left_supplied =
-            left_argument_reference == nullptr ? *left_argument : left_argument_reference->target_type();
-        const auto &right_supplied =
-            right_argument_reference == nullptr ? *right_argument : right_argument_reference->target_type();
-        const auto &left_target = left_reference == nullptr ? *left_parameter : left_reference->target_type();
-        const auto &right_target = right_reference == nullptr ? *right_parameter : right_reference->target_type();
-        const auto left_requires_representation = left_target.requires_reference_representation_for(left_supplied);
-        const auto right_requires_representation = right_target.requires_reference_representation_for(right_supplied);
-        left_better |= !left_requires_representation && right_requires_representation;
-        right_better |= !right_requires_representation && left_requires_representation;
-    }
-    if (left_better == right_better) {
-        return left_better ? std::partial_ordering::unordered : std::partial_ordering::equivalent;
-    }
-    return left_better ? std::partial_ordering::less : std::partial_ordering::greater;
 }
 
 std::partial_ordering compare_input_validity_preference(const ResolvedSignature &left, const ResolvedSignature &right,
@@ -120,8 +84,8 @@ bool preferred(const WiringTemplate &candidate, const ResolvedSignature &candida
         const auto candidate_fixed = *candidate.signature().first_variadic_parameter();
         const auto other_fixed = *other.signature().first_variadic_parameter();
         const auto shared_fixed = std::min(candidate_fixed, other_fixed);
-        const auto reference_affinity = compare_reference_affinity(candidate_signature, other_signature,
-                                                                   candidate_arguments, other_arguments, shared_fixed);
+        const auto reference_affinity = details::compare_wiring_reference_affinity(
+            candidate_signature, other_signature, candidate_arguments, other_arguments, shared_fixed);
         if (reference_affinity != std::partial_ordering::equivalent) {
             return reference_affinity == std::partial_ordering::less;
         }
@@ -134,8 +98,7 @@ bool preferred(const WiringTemplate &candidate, const ResolvedSignature &candida
                 std::min(candidate_signature.parameters.size(), other_signature.parameters.size());
             return compare_input_validity_preference(candidate_signature, other_signature,
                                                      candidate_argument_validity, other_argument_validity,
-                                                     shared_parameters) ==
-                   std::partial_ordering::less;
+                                                     shared_parameters) == std::partial_ordering::less;
         }
 
         const auto shared_specificity =
@@ -147,8 +110,8 @@ bool preferred(const WiringTemplate &candidate, const ResolvedSignature &candida
         return preferences_agree && prefix_length == std::partial_ordering::less;
     }
     const auto shared_parameters = std::min(candidate_signature.parameters.size(), other_signature.parameters.size());
-    const auto reference_affinity = compare_reference_affinity(candidate_signature, other_signature,
-                                                               candidate_arguments, other_arguments, shared_parameters);
+    const auto reference_affinity = details::compare_wiring_reference_affinity(
+        candidate_signature, other_signature, candidate_arguments, other_arguments, shared_parameters);
     if (reference_affinity != std::partial_ordering::equivalent) {
         return reference_affinity == std::partial_ordering::less;
     }
@@ -175,7 +138,7 @@ WiringSignatureDiagnostic diagnostic_signature(const WiringTemplate &implementat
     parameters.reserve(implementation.signature().parameter_count());
     for (auto index = std::size_t{}; index < implementation.signature().parameter_count(); ++index) {
         const auto &parameter = implementation.signature().parameter(index);
-        parameters.push_back({parameter.name, parameter.type, {}, parameter.validity});
+        parameters.push_back({parameter.name, parameter.type, parameter.validity});
     }
 
     return {implementation.signature().name(), std::move(parameters)};
@@ -203,6 +166,53 @@ WiringCandidateDiagnostic failure(const WiringTemplate &implementation, WiringFa
     };
 }
 
+WiringCandidateDiagnostic matched_failure(const WiringTemplate &implementation, const ResolvedSignature &resolution,
+                                          std::span<const WiringArgumentFormMatch> forms, double cost,
+                                          WiringFailureStage stage, std::string message) {
+    auto result = failure(implementation, stage, std::move(message));
+    result.joint_materialisation_cost = cost;
+    result.bindings.reserve(forms.size());
+    const auto &signature = implementation.signature();
+    for (const auto &form : forms) {
+        const auto index = form.argument_index;
+        const auto parameter_name = index < signature.parameter_count()
+                                        ? signature.parameter(index).name
+                                        : util::symbol{std::to_string(index)};
+        auto offered_type = std::string{};
+        append_type_text(offered_type, *form.offered_type);
+        auto accepted_type = std::string{};
+        if (index < resolution.parameters.size()) {
+            append_type_text(accepted_type, *resolution.parameters[index].type);
+        }
+        auto materialisation_type = std::string{};
+        if (form.materialisation_target != nullptr) {
+            append_type_text(materialisation_type, *form.materialisation_target);
+        }
+        result.bindings.push_back({index, parameter_name, std::move(offered_type), std::move(accepted_type),
+                                   std::move(materialisation_type), form.materialisation_cost});
+    }
+    return result;
+}
+
+void require_concrete_materialisation_forms(GraphWiring &wiring, const WiringTemplate &implementation,
+                                             std::span<const WiringArgument> arguments,
+                                             std::span<const TimeSeriesType *const> selected_forms) {
+    const auto &signature = implementation.signature();
+    const auto *path = WiringContext::current().path();
+    for (auto index = std::size_t{}; index < arguments.size(); ++index) {
+        if (!arguments[index].is_time_series() ||
+            details::preserves_union_wiring_input(implementation, index) ||
+            selected_forms[index] == nullptr) {
+            continue;
+        }
+        wiring.require_materialisation(
+            arguments[index].time_series(), *selected_forms[index],
+            {.path = path == nullptr ? std::string{} : path->text(),
+             .consumer = signature.name(),
+             .parameter = signature.parameter(index).name});
+    }
+}
+
 WiringDiagnostic diagnostic(const Signature &prototype, std::vector<util::symbol> path,
                             std::span<const WiringArgument> supplied, std::vector<WiringCandidateDiagnostic> candidates,
                             bool ambiguous = false) {
@@ -212,12 +222,25 @@ WiringDiagnostic diagnostic(const Signature &prototype, std::vector<util::symbol
         const auto name =
             supplied[index].name().value_or(index < prototype.parameter_count() ? prototype.parameter(index).name
                                                                                 : util::symbol{std::to_string(index)});
-        auto type_owner =
-            supplied[index].is_graph()
-                ? std::shared_ptr<const Type>{supplied[index].graph().exact_type_ptr()}
-                : std::shared_ptr<const Type>{};
         const auto validity = supplied[index].requires_optional() ? InputValidity::optional : InputValidity::required;
-        arguments.push_back({name, &supplied[index].type(), std::move(type_owner), validity});
+        auto argument = WiringParameterDiagnostic{name, &supplied[index].type(), validity};
+        const auto append_form = [&](const Type &type, double cost, bool direct) {
+            auto text = std::string{};
+            append_type_text(text, type);
+            argument.offered_forms.push_back({std::move(text), cost, direct});
+        };
+        if (!supplied[index].is_time_series()) {
+            append_form(supplied[index].type(), 0.0, true);
+        } else {
+            const auto point = supplied[index].time_series();
+            if (point.has_default_materialisation()) {
+                append_form(supplied[index].type(), 0.0, true);
+            }
+            for (const auto &option : point.materialisation_options()) {
+                append_form(*option.target_type, option.cost, false);
+            }
+        }
+        arguments.push_back(std::move(argument));
     }
 
     return {prototype.name(), std::move(path), std::move(arguments), std::move(candidates), ambiguous};
@@ -225,46 +248,87 @@ WiringDiagnostic diagnostic(const Signature &prototype, std::vector<util::symbol
 
 struct ArgumentKey {
     const Type *type{};
-    std::shared_ptr<const GraphArgumentType> graph_type;
+    std::optional<GraphArgumentStructures> graph_structures;
     bool present;
     std::optional<util::symbol> name;
-    bool requires_optional;
-    details::VariadicMode variadic_capture_mode;
+    bool requires_optional{};
+    details::VariadicMode variadic_capture_mode{details::VariadicMode::none};
+    bool has_default_materialisation{};
+    std::vector<std::pair<const TimeSeriesType *, double>> materialisation_options;
+    std::size_t source_group{static_cast<std::size_t>(-1)};
 
     bool operator==(const ArgumentKey &other) const {
-        if (present != other.present || name != other.name || requires_optional != other.requires_optional ||
-            variadic_capture_mode != other.variadic_capture_mode ||
-            static_cast<bool>(graph_type) != static_cast<bool>(other.graph_type)) {
+        if (type != other.type || present != other.present || name != other.name ||
+            requires_optional != other.requires_optional || variadic_capture_mode != other.variadic_capture_mode ||
+            static_cast<bool>(graph_structures) != static_cast<bool>(other.graph_structures) ||
+            has_default_materialisation != other.has_default_materialisation ||
+            materialisation_options != other.materialisation_options || source_group != other.source_group) {
             return false;
         }
-        if (!graph_type) {
-            return type == other.type;
+        if (graph_structures) {
+            return *graph_structures == *other.graph_structures;
         }
-        return graph_type->same_constraint(*other.graph_type);
+        return true;
     }
 };
 
-bool append_argument_key(std::vector<ArgumentKey> &result, const WiringArgument &argument) {
+std::size_t source_group_index(std::vector<const details::WiringRecord *> &sources,
+                               const details::WiringRecord *record) {
+    const auto existing = std::ranges::find(sources, record);
+    if (existing != sources.end()) {
+        return static_cast<std::size_t>(existing - sources.begin());
+    }
+    sources.push_back(record);
+    return sources.size() - 1;
+}
+
+bool append_argument_key(std::vector<ArgumentKey> &result,
+                         std::vector<const details::WiringRecord *> &sources, const WiringArgument &argument) {
     if (argument.is_graph()) {
         const auto &graph = argument.graph();
-        if (!graph.exact_type().cacheable_constraint()) {
+        const auto &structures = graph.structures();
+        const auto cacheable = std::visit(
+            [](const auto &value) {
+                using Value = std::remove_cvref_t<decltype(value)>;
+                if constexpr (std::same_as<Value, details::GraphWiringStructure>) {
+                    return value.cacheable();
+                } else {
+                    return !value.empty() &&
+                           std::ranges::all_of(value, &details::GraphWiringStructure::cacheable);
+                }
+            },
+            structures);
+        if (!cacheable) {
             return false;
         }
         result.push_back({.type = nullptr,
-                          .graph_type = graph.exact_type_ptr(),
+                          .graph_structures = structures,
                           .present = true,
                           .name = argument.name(),
-                          .requires_optional = false,
                           .variadic_capture_mode = argument.variadic_capture_mode()});
         return true;
     }
 
+    auto options = std::vector<std::pair<const TimeSeriesType *, double>>{};
+    auto has_default_materialisation = false;
+    auto source_group = static_cast<std::size_t>(-1);
+    if (argument.is_time_series()) {
+        const auto point = argument.time_series();
+        has_default_materialisation = point.has_default_materialisation();
+        source_group = source_group_index(sources, point.record()->source_identity());
+        for (const auto &option : point.materialisation_options()) {
+            options.emplace_back(option.target_type, option.cost);
+        }
+    }
     result.push_back({.type = &argument.type(),
-                      .graph_type = {},
                       .present = argument.present(),
                       .name = argument.name(),
                       .requires_optional = argument.requires_optional(),
-                      .variadic_capture_mode = argument.variadic_capture_mode()});
+                      .variadic_capture_mode = argument.variadic_capture_mode(),
+                      .has_default_materialisation = has_default_materialisation,
+                      .materialisation_options = std::move(options),
+                      .source_group = source_group});
+
     if (!argument.is_time_series()) {
         return true;
     }
@@ -274,10 +338,8 @@ bool append_argument_key(std::vector<ArgumentKey> &result, const WiringArgument 
         return true;
     }
 
-    const auto descriptors = record->argument_descriptors();
-    for (const auto &item : descriptors) {
+    for (const auto &item : record->argument_descriptors()) {
         result.push_back({.type = &item.type(),
-                          .graph_type = {},
                           .present = item.present(),
                           .name = item.name(),
                           .requires_optional = item.requires_optional(),
@@ -288,10 +350,11 @@ bool append_argument_key(std::vector<ArgumentKey> &result, const WiringArgument 
 
 std::optional<std::vector<ArgumentKey>> argument_key(std::span<const WiringArgument> arguments) {
     auto result = std::vector<ArgumentKey>{};
+    auto sources = std::vector<const details::WiringRecord *>{};
     result.reserve(arguments.size());
 
     for (const auto &argument : arguments) {
-        if (!append_argument_key(result, argument)) {
+        if (!append_argument_key(result, sources, argument)) {
             return std::nullopt;
         }
     }
@@ -351,6 +414,7 @@ struct Operator::Cache {
         std::vector<ScalarRead> scalar_reads;
         const WiringTemplate *implementation;
         SignatureResolution resolution;
+        std::vector<const TimeSeriesType *> argument_forms;
     };
 
     std::deque<Entry> entries;
@@ -372,10 +436,23 @@ std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const
                                             const TypeMap *seed_type_map) const {
     auto cache_key = argument_key(arguments);
     if (cache_key) {
+        auto sources = std::vector<const details::WiringRecord *>{};
+        for (const auto &argument : arguments) {
+            if (argument.is_time_series()) {
+                (void)source_group_index(sources, argument.time_series().record()->source_identity());
+            }
+        }
         auto context_names = std::vector<util::symbol>{};
+        auto context_cacheable = true;
         for (const auto &implementation : overloads_) {
+            if (!context_cacheable) {
+                break;
+            }
             const auto &signature = implementation->signature();
             for (auto index = std::size_t{}; index < signature.parameter_count(); ++index) {
+                if (!context_cacheable) {
+                    break;
+                }
                 const auto &parameter = signature.parameter(index);
                 if (!parameter.context || std::ranges::find(context_names, parameter.name) != context_names.end()) {
                     continue;
@@ -388,13 +465,25 @@ std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const
                 });
                 const auto implicit =
                     explicit_argument ? std::optional<WiringArgument>{} : details::ContextScope::find(parameter.name);
-                cache_key->push_back({.type = implicit ? &implicit->type() : nullptr,
-                                      .graph_type = {},
-                                      .present = implicit.has_value(),
-                                      .name = parameter.name,
-                                      .requires_optional = implicit && implicit->requires_optional(),
-                                      .variadic_capture_mode = details::VariadicMode::none});
+                if (implicit) {
+                    auto context_key = std::vector<ArgumentKey>{};
+                    if (!append_argument_key(context_key, sources, *implicit)) {
+                        context_cacheable = false;
+                        break;
+                    }
+                    context_key.front().name = parameter.name;
+                    cache_key->insert(cache_key->end(), std::make_move_iterator(context_key.begin()),
+                                      std::make_move_iterator(context_key.end()));
+                } else {
+                    cache_key->push_back({.type = nullptr,
+                                          .present = false,
+                                          .name = parameter.name,
+                                          .source_group = static_cast<std::size_t>(-1)});
+                }
             }
+        }
+        if (!context_cacheable) {
+            cache_key.reset();
         }
     }
     auto seed_key = std::optional<TypeMap>{};
@@ -438,6 +527,9 @@ std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const
                 continue;
             }
 
+            if (entry.argument_forms.size() != entry.implementation->signature().parameter_count()) {
+                continue;
+            }
             auto committed = details::NormalizedWiringArguments{};
             try {
                 committed = details::normalize_wiring_arguments(entry.implementation->signature(), arguments,
@@ -447,6 +539,11 @@ std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const
             }
 
             auto resolution = SignatureResolution{entry.resolution.signature, entry.resolution.type_map.copy()};
+            const auto &signature = entry.implementation->signature();
+            details::bind_materialisation_forms(wiring, *entry.implementation, committed.arguments,
+                                                entry.argument_forms);
+            require_concrete_materialisation_forms(wiring, *entry.implementation, committed.arguments,
+                                                   entry.argument_forms);
             return invoke_resolved(wiring, *entry.implementation, std::move(resolution), committed.arguments,
                                    prototype_.name());
         }
@@ -457,6 +554,13 @@ std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const
         SignatureResolution resolution;
         std::vector<const Type *> argument_types;
         std::vector<InputValidity> argument_validity;
+        std::vector<WiringArgumentFormMatch> argument_forms;
+        double materialisation_cost;
+    };
+
+    const auto applicable_failure = [](const Candidate &candidate, std::string message) {
+        return matched_failure(*candidate.implementation, candidate.resolution.signature, candidate.argument_forms,
+                               candidate.materialisation_cost, WiringFailureStage::applicable, std::move(message));
     };
 
     auto applicable = std::vector<Candidate>{};
@@ -472,64 +576,196 @@ std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const
                 continue;
             }
 
-            auto resolution = std::optional<SignatureResolution>{};
+            const auto &signature = implementation->signature();
             auto normalized = details::NormalizedWiringArguments{};
-            auto candidate_types = std::vector<const Type *>{};
-            auto candidate_validity = std::vector<InputValidity>{};
             try {
                 temporary_records.clear();
-                normalized = details::probe_wiring_arguments(implementation->signature(), arguments,
-                                                             temporary_records, &prototype_);
+                normalized = details::probe_wiring_arguments(signature, arguments, temporary_records, &prototype_);
             } catch (const std::exception &error) {
                 failures.push_back(failure(*implementation, WiringFailureStage::argument_count, error.what()));
                 continue;
             }
+
+            auto argument_validity = std::vector<InputValidity>{};
+            argument_validity.reserve(normalized.arguments.size());
+            for (const auto &argument : normalized.arguments) {
+                argument_validity.push_back(argument.requires_optional() ? optional : required);
+            }
+
+            auto matches = std::vector<WiringSignatureMatch>{};
             try {
-                implementation->signature().validate_wiring_arguments(normalized.arguments);
-                candidate_types.reserve(normalized.arguments.size());
-                candidate_validity.reserve(normalized.arguments.size());
-                for (const auto &argument : normalized.arguments) {
-                    candidate_types.push_back(&argument.type());
-                    candidate_validity.push_back(argument.requires_optional() ? optional : required);
-                }
-                scalar_reads.implementation = implementation.get();
-                auto type_map = implementation->signature().match_arguments(candidate_types, seed_type_map);
-                auto resolver_arguments = WiringArguments{implementation->signature(), type_map, normalized.descriptors,
-                                                          &scalar_reads, &record_scalar_read};
-                auto signature = implementation->signature().complete_resolution(type_map, &resolver_arguments);
-                resolution.emplace(SignatureResolution{std::move(signature), std::move(type_map)});
+                matches = signature.match_wiring_arguments(normalized.arguments, seed_type_map);
             } catch (const TypeResolutionError &error) {
                 failures.push_back(failure(*implementation, error));
                 continue;
-            } catch (const std::exception &error) {
-                failures.push_back(failure(*implementation, WiringFailureStage::callback, error.what()));
-                throw WiringError{diagnostic(prototype_, current_path(), arguments, std::move(failures))};
             }
 
-            RequirementResult requirement = accept;
-            try {
-                requirement = implementation->requirement(WiringArguments{implementation->signature(),
-                                                                          resolution->type_map, normalized.descriptors,
-                                                                          &scalar_reads, &record_scalar_read});
-            } catch (const std::exception &error) {
-                failures.push_back(failure(*implementation, WiringFailureStage::callback, error.what()));
-                throw WiringError{diagnostic(prototype_, current_path(), arguments, std::move(failures))};
-            }
-
-            if (!requirement.accepted()) {
-                failures.push_back(failure(*implementation, WiringFailureStage::requirement,
-                                           requirement.message().empty() ? "requirement rejected the arguments"
-                                                                         : std::string{requirement.message()}));
+            if (matches.empty()) {
+                auto supplied_types = std::vector<const Type *>{};
+                supplied_types.reserve(normalized.arguments.size());
+                for (const auto &argument : normalized.arguments) {
+                    if (!argument.is_time_series()) {
+                        supplied_types.push_back(&argument.type());
+                        continue;
+                    }
+                    const auto point = argument.time_series();
+                    if (point.has_default_materialisation()) {
+                        supplied_types.push_back(&argument.type());
+                        continue;
+                    }
+                    const auto options = point.materialisation_options();
+                    supplied_types.push_back(options.empty() ? &argument.type() : options.front().target_type);
+                }
+                try {
+                    (void)signature.match_arguments(supplied_types, seed_type_map);
+                    failures.push_back(failure(*implementation, WiringFailureStage::type_match,
+                                               "no supplied form satisfies the signature"));
+                } catch (const TypeResolutionError &error) {
+                    failures.push_back(failure(*implementation, error));
+                }
                 continue;
             }
-            applicable.push_back(
-                {implementation.get(), std::move(*resolution), std::move(candidate_types),
-                 std::move(candidate_validity)});
+
+            for (auto &match : matches) {
+                auto requirement = accept;
+                auto requirement_exception = std::exception_ptr{};
+                scalar_reads.implementation = implementation.get();
+                auto argument_context = WiringArguments{signature, match.type_map, normalized.descriptors,
+                                                        &scalar_reads, &record_scalar_read};
+                auto completed = std::optional<ResolvedWiringSignatureMatch>{};
+                try {
+                    completed.emplace(signature.complete_wiring_match(
+                        std::move(match), argument_context, [&](const TypeMap &resolved_type_map) {
+                            implementation->resolve_additional_types(resolved_type_map);
+                            try {
+                                requirement = implementation->requirement(
+                                    WiringArguments{signature, resolved_type_map, normalized.descriptors,
+                                                    &scalar_reads, &record_scalar_read});
+                            } catch (const details::ResolverTypeResolutionError &) {
+                                throw;
+                            } catch (...) {
+                                requirement_exception = std::current_exception();
+                            }
+                        }));
+                } catch (const TypeResolutionError &error) {
+                    failures.push_back(failure(*implementation, error));
+                    continue;
+                } catch (const std::exception &error) {
+                    failures.push_back(failure(*implementation, WiringFailureStage::callback, error.what()));
+                    throw WiringError{diagnostic(prototype_, current_path(), arguments, std::move(failures)),
+                                      std::current_exception()};
+                } catch (...) {
+                    failures.push_back(failure(*implementation, WiringFailureStage::callback,
+                                               "non-standard exception"));
+                    throw WiringError{diagnostic(prototype_, current_path(), arguments, std::move(failures)),
+                                      std::current_exception()};
+                }
+
+                if (requirement_exception != nullptr) {
+                    try {
+                        std::rethrow_exception(requirement_exception);
+                    } catch (const std::exception &error) {
+                        failures.push_back(matched_failure(*implementation, completed->resolution.signature,
+                                                           completed->argument_forms,
+                                                           completed->materialisation_cost,
+                                                           WiringFailureStage::callback, error.what()));
+                        throw WiringError{diagnostic(prototype_, current_path(), arguments, std::move(failures)),
+                                          requirement_exception};
+                    } catch (...) {
+                        failures.push_back(matched_failure(*implementation, completed->resolution.signature,
+                                                           completed->argument_forms,
+                                                           completed->materialisation_cost,
+                                                           WiringFailureStage::callback,
+                                                           "non-standard exception"));
+                        throw WiringError{diagnostic(prototype_, current_path(), arguments, std::move(failures)),
+                                          requirement_exception};
+                    }
+                }
+
+                if (!requirement.accepted()) {
+                    failures.push_back(matched_failure(
+                        *implementation, completed->resolution.signature, completed->argument_forms,
+                        completed->materialisation_cost, WiringFailureStage::requirement,
+                        requirement.message().empty() ? "requirement rejected the arguments"
+                                                     : std::string{requirement.message()}));
+                    continue;
+                }
+
+                auto candidate_types = std::vector<const Type *>{};
+                candidate_types.reserve(normalized.arguments.size());
+                for (auto index = std::size_t{}; index < normalized.arguments.size(); ++index) {
+                    candidate_types.push_back(details::preserves_union_wiring_input(*implementation, index)
+                                                  ? &normalized.arguments[index].type()
+                                                  : completed->argument_forms[index].offered_type);
+                }
+                applicable.push_back({implementation.get(), std::move(completed->resolution),
+                                      std::move(candidate_types), argument_validity,
+                                      std::move(completed->argument_forms),
+                                      completed->materialisation_cost});
+            }
         }
 
         if (!applicable.empty() || variadic) {
             break;
         }
+    }
+
+    const auto output_ambiguous = [&](const Candidate &candidate) {
+        return std::ranges::any_of(applicable, [&](const auto &other) {
+            return candidate.implementation == other.implementation &&
+                   candidate.resolution.signature.output != other.resolution.signature.output;
+        });
+    };
+    if (std::ranges::any_of(applicable, output_ambiguous)) {
+        failures.clear();
+        for (const auto &candidate : applicable) {
+            if (output_ambiguous(candidate)) {
+                failures.push_back(
+                    applicable_failure(candidate, "viable forms resolve to different semantic output types"));
+            }
+        }
+        throw WiringError{diagnostic(prototype_, current_path(), arguments, std::move(failures), true)};
+    }
+
+    const auto same_concrete_binding = [&](const Candidate &left, const Candidate &right) {
+        if (left.implementation != right.implementation ||
+            left.resolution.signature.output != right.resolution.signature.output) {
+            return false;
+        }
+        const auto &signature = left.implementation->signature();
+        for (auto index = std::size_t{}; index < signature.parameter_count(); ++index) {
+            if (details::preserves_union_wiring_input(*left.implementation, index)) {
+                continue;
+            }
+            if (left.resolution.signature.parameters[index].type !=
+                    right.resolution.signature.parameters[index].type ||
+                left.argument_forms[index].materialisation_target !=
+                    right.argument_forms[index].materialisation_target) {
+                return false;
+            }
+        }
+        return true;
+    };
+    auto unique_applicable = std::vector<Candidate>{};
+    unique_applicable.reserve(applicable.size());
+    for (auto &candidate : applicable) {
+        const auto existing = std::ranges::find_if(unique_applicable, [&](const auto &other) {
+            return same_concrete_binding(candidate, other);
+        });
+        if (existing == unique_applicable.end()) {
+            unique_applicable.push_back(std::move(candidate));
+        } else if (candidate.materialisation_cost < existing->materialisation_cost) {
+            *existing = std::move(candidate);
+        }
+    }
+    applicable = std::move(unique_applicable);
+
+    if (!applicable.empty()) {
+        const auto lowest_cost =
+            std::ranges::min_element(applicable, {}, &Candidate::materialisation_cost)->materialisation_cost;
+        std::erase_if(applicable, [&](const auto &candidate) {
+            return candidate.materialisation_cost != lowest_cost;
+        });
     }
 
     Candidate *selected = nullptr;
@@ -551,7 +787,7 @@ std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const
         if (ambiguous) {
             failures.clear();
             for (const auto &candidate : applicable) {
-                failures.push_back(failure(*candidate.implementation, WiringFailureStage::applicable, "applicable"));
+                failures.push_back(applicable_failure(candidate, "applicable"));
             }
         }
         throw WiringError{diagnostic(prototype_, current_path(), arguments, std::move(failures), ambiguous)};
@@ -561,15 +797,27 @@ std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const
         if (cache_->entries.size() == Cache::maximum_entries) {
             cache_->entries.pop_front();
         }
-        cache_->entries.push_back({std::move(*cache_key),
-                                   std::move(seed_key),
-                                   std::move(scalar_reads.values),
+        auto selected_forms = std::vector<const TimeSeriesType *>{};
+        selected_forms.reserve(selected->argument_forms.size());
+        for (const auto &form : selected->argument_forms) {
+            selected_forms.push_back(form.materialisation_target);
+        }
+        cache_->entries.push_back({std::move(*cache_key), std::move(seed_key), std::move(scalar_reads.values),
                                    selected->implementation,
-                                   {selected->resolution.signature, selected->resolution.type_map.copy()}});
+                                   {selected->resolution.signature, selected->resolution.type_map.copy()},
+                                   std::move(selected_forms)});
     }
 
     auto committed = details::normalize_wiring_arguments(selected->implementation->signature(), arguments,
                                                          wiring.allocation(), &prototype_);
+    const auto &signature = selected->implementation->signature();
+    auto selected_forms = std::vector<const TimeSeriesType *>{};
+    selected_forms.reserve(selected->argument_forms.size());
+    for (const auto &form : selected->argument_forms) {
+        selected_forms.push_back(form.materialisation_target);
+    }
+    details::bind_materialisation_forms(wiring, *selected->implementation, committed.arguments, selected_forms);
+    require_concrete_materialisation_forms(wiring, *selected->implementation, committed.arguments, selected_forms);
     return invoke_resolved(wiring, *selected->implementation, std::move(selected->resolution), committed.arguments,
                            prototype_.name());
 }

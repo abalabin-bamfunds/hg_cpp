@@ -2,6 +2,7 @@
 
 #include <bg/scalar/value.hpp>
 #include <bg/graph/wiring_path.hpp>
+#include <bg/graph/wiring_error.hpp>
 #include <bg/type/signature.hpp>
 #include <bg/type/type_map.hpp>
 
@@ -28,7 +29,7 @@ struct ServiceInstance {
     bool implementation_requests_wired{};
     bool implementation_replies_wired{};
     bool has_client{};
-    std::vector<const WiringPath *> call_paths;
+    std::vector<WiringErrorContext> call_contexts;
 };
 
 class ServiceRequirements {

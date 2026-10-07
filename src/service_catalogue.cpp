@@ -9,6 +9,7 @@
 #include <bg/graph/wiring_error.hpp>
 #include <bg/type/type_text.hpp>
 #include <functional>
+#include <exception>
 #include <optional>
 #include <ranges>
 #include <string>
@@ -52,6 +53,7 @@ struct ServiceCatalogue::State {
 
     struct MultiserviceBuildState {
         std::vector<MultiserviceRegistration::Reply> replies;
+        std::unique_ptr<details::MultiservicePorts> ports;
         bool wired{};
     };
 
@@ -60,6 +62,11 @@ struct ServiceCatalogue::State {
 };
 
 namespace {
+
+WiringError service_error(std::string message, const details::ServiceInstance &instance,
+                          std::exception_ptr cause = {}) {
+    return WiringError::from_exception(std::move(message), instance.call_contexts, std::move(cause));
+}
 
 template <typename Requests, typename Replies>
 class MultiservicePortCallbacks final : public details::MultiservicePorts {
@@ -85,12 +92,21 @@ class MultiservicePortCallbacks final : public details::MultiservicePorts {
 } // namespace
 
 struct ServiceCatalogue::BuildOperation {
-    BuildOperation(const State &catalogue, GraphWiring &wiring, details::ServiceRequirements &requirements)
-        : catalogue_{catalogue}, wiring_{wiring}, requirements_{requirements},
-          multiservice_state_(catalogue.multiservice_registrations.size()) {}
+    struct Session {
+        std::shared_ptr<const State> catalogue;
+        std::vector<State::MultiserviceBuildState> multiservice_state;
+        std::unique_ptr<BuildOperation> operation;
+    };
 
-    void run();
-    void wire_multiservice(std::size_t registration_index, details::ServiceInstance &required_instance);
+    BuildOperation(const State &catalogue, GraphWiring &wiring, details::ServiceRequirements &requirements,
+                   Session &session)
+        : catalogue_{catalogue}, wiring_{wiring}, requirements_{requirements}, session_{session} {
+        session_.multiservice_state.resize(catalogue.multiservice_registrations.size());
+    }
+
+    bool run();
+    void validate() const;
+    void wire_multiservice(std::size_t registration_index);
 
   private:
     static bool same_scalars(std::span<const ScalarValue<>> left, std::span<const ScalarValue<>> right);
@@ -100,7 +116,7 @@ struct ServiceCatalogue::BuildOperation {
     const State &catalogue_;
     GraphWiring &wiring_;
     details::ServiceRequirements &requirements_;
-    std::vector<State::MultiserviceBuildState> multiservice_state_;
+    Session &session_;
 };
 
 ServiceCatalogue::ServiceCatalogue() : state_{std::make_shared<State>()} {}
@@ -259,11 +275,9 @@ void ServiceCatalogue::add_multiservice_impl(const std::shared_ptr<State> &state
     claims.push_back({&service, std::move(type_map), std::move(scalar_filters)});
 }
 
-void ServiceCatalogue::BuildOperation::wire_multiservice(std::size_t registration_index,
-                                                         details::ServiceInstance &required_instance) {
-    auto &wiring = wiring_;
+void ServiceCatalogue::BuildOperation::wire_multiservice(std::size_t registration_index) {
     auto &registration = catalogue_.multiservice_registrations[registration_index];
-    auto &build_state = multiservice_state_[registration_index];
+    auto &build_state = session_.multiservice_state[registration_index];
     if (build_state.wired) {
         throw WiringError{"multiservice implementation was already wired but a later service requirement matched it"};
     }
@@ -287,8 +301,8 @@ void ServiceCatalogue::BuildOperation::wire_multiservice(std::size_t registratio
         return result;
     };
 
-    const auto resolve_call = [&](const ServiceDefinition &service, const TypeMap &seed,
-                                  std::span<const WiringArgument> arguments, bool create_instance) {
+    const auto resolve_call = [this, copy_scalars](const ServiceDefinition &service, const TypeMap &seed,
+                                                   std::span<const WiringArgument> arguments, bool create_instance) {
         auto type_map = seed.copy();
         auto scalar_parameters = std::vector<std::size_t>{};
         for (auto index = std::size_t{}; index < service.signature().parameter_count(); ++index) {
@@ -373,11 +387,13 @@ void ServiceCatalogue::BuildOperation::wire_multiservice(std::size_t registratio
         return ServiceCall{&instance, std::move(resolved_signature), std::move(type_map), std::move(scalars)};
     };
 
-    const auto matching_claim = [&](const ServiceDefinition &service, const TypeMap &type_map,
-                                    const ResolvedSignature &signature,
-                                    std::span<const ScalarValue<>> scalars) -> const State::Claim & {
+    const auto matching_claim = [this, registration_index](const ServiceDefinition &service,
+                                                           const TypeMap &type_map,
+                                                           const ResolvedSignature &signature,
+                                                           std::span<const ScalarValue<>> scalars)
+        -> const State::Claim & {
         auto matched = static_cast<const State::Claim *>(nullptr);
-        for (const auto &claim : registration.claims) {
+        for (const auto &claim : catalogue_.multiservice_registrations[registration_index].claims) {
             if (claim.service != &service || !type_map.includes(claim.type_map)) {
                 continue;
             }
@@ -397,7 +413,7 @@ void ServiceCatalogue::BuildOperation::wire_multiservice(std::size_t registratio
         return *matched;
     };
 
-    const auto bind_reply = [&](details::ServiceInstance &instance, WiringPoint output) {
+    const auto bind_reply = [this](details::ServiceInstance &instance, WiringPoint output) {
         if (instance.implementation_replies_wired) {
             throw WiringError{"a multiservice service reply was declared more than once"};
         }
@@ -405,15 +421,16 @@ void ServiceCatalogue::BuildOperation::wire_multiservice(std::size_t registratio
         if (expected_output == nullptr || !expected_output->accepts(output.type())) {
             throw WiringError{"a multiservice reply has an incompatible output time series"};
         }
-        wiring.provide_inherited_time_series(details::NestedBindingIdentity::object(&instance), *expected_output,
-                                             output);
+        wiring_.provide_inherited_time_series(details::NestedBindingIdentity::object(&instance), *expected_output,
+                                              output);
         instance.implementation_replies_wired = true;
         instance.implementation_wired =
             !instance.service->implementation_requests_required() || instance.implementation_requests_wired;
     };
 
-    const auto matching_reply = [&](const details::ServiceInstance &instance) {
-        return std::ranges::find_if(build_state.replies, [&](const auto &reply) {
+    const auto matching_reply = [this, registration_index](const details::ServiceInstance &instance) {
+        const auto &replies = session_.multiservice_state[registration_index].replies;
+        return std::ranges::find_if(replies, [&](const auto &reply) {
             if (reply.service != instance.service || !same_resolved_signature(reply.signature, instance.signature) ||
                 !instance.type_map.includes(reply.type_map) ||
                 !same_scalars(reply.scalar_arguments, instance.scalar_arguments)) {
@@ -423,11 +440,11 @@ void ServiceCatalogue::BuildOperation::wire_multiservice(std::size_t registratio
         });
     };
 
-    auto request_instances = std::vector<details::ServiceInstance *>{};
-    auto reply_instances = std::vector<details::ServiceInstance *>{};
-    auto multiservice_ports = MultiservicePortCallbacks{
-        [&](const ServiceDefinition &service, const TypeMap &type_map,
+    auto callbacks = MultiservicePortCallbacks{
+        [this, registration_index, resolve_call, matching_claim, matching_reply, bind_reply](
+            const ServiceDefinition &service, const TypeMap &type_map,
             std::span<const WiringArgument> scalar_arguments) {
+            auto &build_state = session_.multiservice_state[registration_index];
             auto call = resolve_call(service, type_map, scalar_arguments, true);
             (void)matching_claim(service, call.type_map, call.signature, call.scalars);
             auto &instance = *call.instance;
@@ -436,28 +453,25 @@ void ServiceCatalogue::BuildOperation::wire_multiservice(std::size_t registratio
             }
 
             const auto requests = service.wire_implementation_requests(
-                wiring, instance.signature, details::NestedBindingIdentity::object(&instance), instance.has_client);
+                wiring_, instance.signature, details::NestedBindingIdentity::object(&instance), instance.has_client);
 
             instance.implementation_requests_wired = true;
-            request_instances.push_back(&instance);
             if (instance.signature.output == nullptr) {
                 instance.implementation_wired = true;
             } else if (const auto reply = matching_reply(instance); reply != build_state.replies.end()) {
                 bind_reply(instance, reply->output);
-                if (std::ranges::find(reply_instances, &instance) == reply_instances.end()) {
-                    reply_instances.push_back(&instance);
-                }
             }
 
             return requests;
         },
-        [&](const ServiceDefinition &service, const TypeMap &type_map, WiringPoint output,
+        [this, registration_index, resolve_call, matching_claim, bind_reply, copy_scalars](
+            const ServiceDefinition &service, const TypeMap &type_map, WiringPoint output,
             std::span<const WiringArgument> scalar_arguments) {
+            auto &build_state = session_.multiservice_state[registration_index];
             auto call = resolve_call(service, type_map, scalar_arguments, false);
             (void)matching_claim(service, call.type_map, call.signature, call.scalars);
             auto reply_instance = details::ServiceInstance{
-                &service, call.signature, call.type_map.copy(), copy_scalars(call.scalars), false, false, false, false,
-                {}};
+                &service, call.signature, call.type_map.copy(), copy_scalars(call.scalars), false, false, false, false};
             const auto *expected_output = service.implementation_output_type(reply_instance.signature);
             if (expected_output == nullptr || !output || !expected_output->accepts(output.type())) {
                 throw WiringError{"a multiservice reply has an incompatible output time series"};
@@ -485,50 +499,49 @@ void ServiceCatalogue::BuildOperation::wire_multiservice(std::size_t registratio
             }
             auto &instance = *call.instance;
             bind_reply(instance, output);
-            reply_instances.push_back(&instance);
         }};
+    build_state.ports = std::make_unique<decltype(callbacks)>(std::move(callbacks));
 
-    auto wiring_context = WiringContext{wiring, multiservice_ports};
-    const auto output =
-        (*registration.implementation)(std::span<const WiringArgument>{registration.installation_arguments});
+    auto wiring_context = WiringContext{wiring_, *build_state.ports};
+    auto service_contexts = std::vector<WiringErrorContext>{};
+    for (const auto &instance_owner : requirements_.instances()) {
+        const auto &instance = *instance_owner;
+        const auto claimed = std::ranges::any_of(registration.claims, [&](const auto &claim) {
+            return claim.service == instance.service && instance.type_map.includes(claim.type_map) &&
+                   matches_scalar_filters(claim.scalar_filters, instance.signature.parameters,
+                                          instance.scalar_arguments);
+        });
+        if (claimed) {
+            service_contexts.insert(service_contexts.end(), instance.call_contexts.begin(),
+                                    instance.call_contexts.end());
+        }
+    }
+    auto diagnostics = details::WiringDiagnosticContext{wiring_, service_contexts};
+    auto output = std::optional<WiringPoint>{};
+    try {
+        output = (*registration.implementation)(std::span<const WiringArgument>{registration.installation_arguments});
+    } catch (...) {
+        throw WiringError::from_exception("multiservice implementation wiring failed", service_contexts,
+                                          std::current_exception());
+    }
     if (output) {
-        throw WiringError{"a multiservice graph must connect service outputs through implementation_replies"};
+        throw WiringError::from_exception(
+            "a multiservice graph must connect service outputs through implementation_replies", service_contexts, {});
     }
 
     build_state.wired = true;
-    if (required_instance.service->implementation_requests_required() &&
-        std::ranges::find(request_instances, &required_instance) == request_instances.end()) {
-        throw WiringError{"multiservice implementation is missing implementation_requests for service '" +
-                          std::string{required_instance.signature.name.text()} + "'"};
-    }
-    if (required_instance.signature.output != nullptr &&
-        std::ranges::find(reply_instances, &required_instance) == reply_instances.end()) {
-        throw WiringError{"multiservice implementation is missing implementation_replies for service '" +
-                          std::string{required_instance.signature.name.text()} + "'"};
-    }
 }
 
-void ServiceCatalogue::BuildOperation::run() {
-    const auto service_paths = [](const details::ServiceInstance &instance) {
-        auto result = std::string{};
-        for (const auto *path : instance.call_paths) {
-            if (path == nullptr) {
-                continue;
-            }
-            result += "\n  at ";
-            result += path->text();
-        }
-        return result;
-    };
-
+bool ServiceCatalogue::BuildOperation::run() {
+    auto changed = false;
     const auto apply_replies = [&](details::ServiceInstance &instance) {
         if (instance.implementation_replies_wired) {
-            return;
+            return false;
         }
         const State::MultiserviceRegistration::Reply *matching_reply{};
         for (const auto registration_index :
              std::views::iota(std::size_t{}, catalogue_.multiservice_registrations.size())) {
-            for (const auto &reply : multiservice_state_[registration_index].replies) {
+            for (const auto &reply : session_.multiservice_state[registration_index].replies) {
                 if (reply.service != instance.service ||
                     !same_resolved_signature(reply.signature, instance.signature) ||
                     !instance.type_map.includes(reply.type_map) ||
@@ -536,31 +549,34 @@ void ServiceCatalogue::BuildOperation::run() {
                     continue;
                 }
                 if (matching_reply != nullptr) {
-                    throw WiringError{"multiple multiservice replies match service '" +
-                                      std::string{instance.signature.name.text()} + "'" + service_paths(instance)};
+                    throw service_error("multiple multiservice replies match service '" +
+                                            std::string{instance.signature.name.text()} + "'",
+                                        instance);
                 }
                 matching_reply = &reply;
             }
         }
         if (matching_reply == nullptr) {
-            return;
+            return false;
         }
 
         const auto *expected_output = instance.service->implementation_output_type(instance.signature);
         if (expected_output == nullptr || !expected_output->accepts(matching_reply->output.type())) {
-            throw WiringError{"a multiservice reply no longer matches service '" +
-                              std::string{instance.signature.name.text()} + "'" + service_paths(instance)};
+            throw service_error("a multiservice reply no longer matches service '" +
+                                    std::string{instance.signature.name.text()} + "'",
+                                instance);
         }
         wiring_.provide_inherited_time_series(details::NestedBindingIdentity::object(&instance), *expected_output,
                                               matching_reply->output);
         instance.implementation_replies_wired = true;
         instance.implementation_wired =
             !instance.service->implementation_requests_required() || instance.implementation_requests_wired;
+        return true;
     };
 
     for (auto instance_index = std::size_t{}; instance_index < requirements_.instances().size(); ++instance_index) {
         auto &instance = *requirements_.instances()[instance_index];
-        apply_replies(instance);
+        changed = apply_replies(instance) || changed;
         if (!instance.has_client && !instance.implementation_replies_wired) {
             continue;
         }
@@ -586,8 +602,9 @@ void ServiceCatalogue::BuildOperation::run() {
                 }
             }
             if (matching_claims > 1) {
-                throw WiringError{"multiservice registration has overlapping claims for service '" +
-                                  std::string{instance.signature.name.text()} + "'" + service_paths(instance)};
+                throw service_error("multiservice registration has overlapping claims for service '" +
+                                        std::string{instance.signature.name.text()} + "'",
+                                    instance);
             }
             if (matching_claims == 1) {
                 multiservice_candidates.push_back(index);
@@ -597,11 +614,10 @@ void ServiceCatalogue::BuildOperation::run() {
         const auto service_name = std::string{instance.signature.name.text()};
         const auto candidate_count = candidates.size() + multiservice_candidates.size();
         if (candidate_count == 0) {
-            throw WiringError{"service '" + service_name + "' has no matching implementation" +
-                              service_paths(instance)};
+            throw service_error("service '" + service_name + "' has no matching implementation", instance);
         }
         if (candidate_count != 1) {
-            throw WiringError{"service '" + service_name + "' has ambiguous implementations" + service_paths(instance)};
+            throw service_error("service '" + service_name + "' has ambiguous implementations", instance);
         }
         if (instance.implementation_wired) {
             continue;
@@ -609,24 +625,16 @@ void ServiceCatalogue::BuildOperation::run() {
 
         if (!multiservice_candidates.empty()) {
             const auto index = multiservice_candidates.front();
-            if (multiservice_state_[index].wired) {
-                if (instance.service->implementation_requests_required() &&
-                    !instance.implementation_requests_wired) {
-                    throw WiringError{"multiservice implementation is missing implementation_requests for service '" +
-                                      service_name + "'" + service_paths(instance)};
-                }
-                if (instance.signature.output != nullptr && !instance.implementation_replies_wired) {
-                    throw WiringError{"multiservice implementation is missing implementation_replies for service '" +
-                                      service_name + "'" + service_paths(instance)};
-                }
-                throw WiringError{"multiservice implementation did not satisfy service '" + service_name + "'" +
-                                  service_paths(instance)};
+            if (session_.multiservice_state[index].wired) {
+                continue;
             }
 
-            wire_multiservice(index, instance);
+            wire_multiservice(index);
+            changed = true;
             continue;
         }
 
+        auto diagnostics = details::WiringDiagnosticContext{wiring_, instance.call_contexts};
         auto context = WiringContext{wiring_};
         auto arguments = std::vector<WiringArgument>{};
         arguments.reserve(instance.scalar_arguments.size() + instance.signature.parameters.size() +
@@ -643,14 +651,20 @@ void ServiceCatalogue::BuildOperation::run() {
             arguments.emplace_back(argument);
         }
 
-        auto output =
-            (*candidates.front()->implementation)(instance.type_map, std::span<const WiringArgument>{arguments});
+        auto output = std::optional<WiringPoint>{};
+        try {
+            output = (*candidates.front()->implementation)(instance.type_map,
+                                                           std::span<const WiringArgument>{arguments});
+        } catch (...) {
+            throw service_error("service implementation wiring failed for '" + service_name + "'", instance,
+                                std::current_exception());
+        }
         const auto *expected_output = instance.service->implementation_output_type(instance.signature);
 
         if (expected_output == nullptr) {
             if (output) {
-                throw WiringError{"service '" + service_name + "' implementation produced unexpected output" +
-                                  service_paths(instance)};
+                throw service_error("service '" + service_name + "' implementation produced unexpected output",
+                                    instance);
             }
         } else {
             if (!output || !expected_output->accepts(output->type())) {
@@ -665,13 +679,62 @@ void ServiceCatalogue::BuildOperation::run() {
                     append_type_text(message, *expected_output);
                     message += "\n  received no output";
                 }
-                throw WiringError{message + service_paths(instance)};
+                auto error = service_error(std::move(message), instance);
+                if (output) {
+                    auto actual = std::string{};
+                    auto expected = std::string{};
+                    append_type_text(actual, output->type());
+                    append_type_text(expected, *expected_output);
+                    error = error.with_context({.stage = WiringFailureStage::type_match,
+                                                .operation = instance.signature.name,
+                                                .expected_type = std::move(expected),
+                                                .actual_type = std::move(actual)});
+                }
+                throw error;
             }
             wiring_.provide_inherited_time_series(details::NestedBindingIdentity::object(&instance), *expected_output,
                                                   *output);
         }
 
         instance.implementation_wired = true;
+        changed = true;
+    }
+
+    return changed;
+}
+
+void ServiceCatalogue::BuildOperation::validate() const {
+    for (auto registration_index = std::size_t{};
+         registration_index < catalogue_.multiservice_registrations.size(); ++registration_index) {
+        const auto &registration = catalogue_.multiservice_registrations[registration_index];
+        const auto &build_state = session_.multiservice_state[registration_index];
+        if (!build_state.wired) {
+            continue;
+        }
+
+        for (const auto &instance_owner : requirements_.instances()) {
+            const auto &instance = *instance_owner;
+            const auto claimed = std::ranges::any_of(registration.claims, [&](const auto &claim) {
+                return claim.service == instance.service && instance.type_map.includes(claim.type_map) &&
+                       matches_scalar_filters(claim.scalar_filters, instance.signature.parameters,
+                                              instance.scalar_arguments);
+            });
+            if (!claimed) {
+                continue;
+            }
+
+            const auto service_name = std::string{instance.signature.name.text()};
+            if (instance.service->implementation_requests_required() && !instance.implementation_requests_wired) {
+                throw service_error("multiservice implementation is missing implementation_requests for service '" +
+                                        service_name + "'",
+                                    instance);
+            }
+            if (instance.signature.output != nullptr && !instance.implementation_replies_wired) {
+                throw service_error("multiservice implementation is missing implementation_replies for service '" +
+                                        service_name + "'",
+                                    instance);
+            }
+        }
     }
 }
 
@@ -679,12 +742,39 @@ void ServiceCatalogue::build(GraphWiring &wiring) const {
     if (!wiring.is_root()) {
         throw std::invalid_argument{"services can only be built on the root GraphWiring"};
     }
-    auto *requirements = wiring.service_requirements();
-    if (requirements == nullptr) {
-        return;
+
+    auto session = std::static_pointer_cast<BuildOperation::Session>(wiring.service_build_session(state_.get()));
+    if (!session) {
+        session = std::make_shared<BuildOperation::Session>();
+        session->catalogue = state_;
+        session->multiservice_state.resize(state_->multiservice_registrations.size());
+        auto build = [&wiring, session] {
+            auto *requirements = wiring.service_requirements();
+            if (requirements == nullptr) {
+                return false;
+            }
+            if (!session->operation) {
+                session->operation =
+                    std::make_unique<BuildOperation>(*session->catalogue, wiring, *requirements, *session);
+            }
+            return session->operation->run();
+        };
+        auto validate = [session] {
+            if (session->operation) {
+                session->operation->validate();
+            }
+        };
+        wiring.attach_service_build_session(state_.get(), session, std::move(build), std::move(validate));
     }
 
-    BuildOperation{*state_, wiring, *requirements}.run();
+    (void)wiring.complete_pending_wiring();
+    while (true) {
+        const auto services_changed = wiring.build_known_services();
+        const auto wiring_changed = wiring.complete_pending_wiring();
+        if (!services_changed && !wiring_changed) {
+            return;
+        }
+    }
 }
 
 } // namespace bg

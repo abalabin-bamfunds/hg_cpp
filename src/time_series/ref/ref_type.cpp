@@ -1,12 +1,12 @@
 #include <bg/type/time_series_reference_type.hpp>
 
 #include <bg/type/type_map.hpp>
+#include <bg/type/type_registry.hpp>
 #include <bg/type/type_resolution_error.hpp>
 
-#include <memory>
-#include <mutex>
 #include <stdexcept>
-#include <unordered_map>
+#include <memory>
+#include <utility>
 
 namespace bg {
 namespace {
@@ -43,17 +43,16 @@ const TimeSeriesReferenceType &time_series_reference_type(const TimeSeriesType &
         throw std::invalid_argument{"a time series reference cannot target another reference"};
     }
 
-    static auto mutex = std::mutex{};
-    static auto types =
-        std::unordered_map<ReferenceTypeKey, std::unique_ptr<ResolvedTimeSeriesReferenceType>, ReferenceTypeKeyHash>{};
+    return TypeRegistry::instance().get_or_create<ResolvedTimeSeriesReferenceType, ReferenceTypeKeyHash>(
+        ReferenceTypeKey{&target_type, guarantee},
+        [&] { return std::make_unique<ResolvedTimeSeriesReferenceType>(target_type, guarantee); });
+}
 
-    const auto lock = std::lock_guard{mutex};
-    const auto key = ReferenceTypeKey{&target_type, guarantee};
-    auto [entry, inserted] = types.try_emplace(key);
-    if (inserted) {
-        entry->second = std::make_unique<ResolvedTimeSeriesReferenceType>(target_type, guarantee);
-    }
-    return *entry->second;
+const GenericTimeSeriesReferenceType &generic_time_series_reference_type(
+    const TimeSeriesType &target_type, TimeSeriesGuarantee guarantee) {
+    return TypeRegistry::instance().get_or_create<GenericTimeSeriesReferenceType, ReferenceTypeKeyHash>(
+        ReferenceTypeKey{&target_type, guarantee},
+        [&] { return std::make_unique<GenericTimeSeriesReferenceType>(target_type, guarantee); });
 }
 
 const TimeSeriesType &TimeSeriesReferenceType::with_guarantee(TimeSeriesGuarantee guarantee) const {

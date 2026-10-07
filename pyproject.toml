@@ -6,7 +6,7 @@ build-backend = "scikit_build_core.build"
 name = "bg-graph"
 version = "0.1.0"
 description = "Python bindings for the bg graph engine"
-requires-python = ">=3.10"
+requires-python = ">=3.13"
 
 [project.optional-dependencies]
 test = ["pytest>=8"]

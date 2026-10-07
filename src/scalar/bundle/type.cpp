@@ -1,6 +1,7 @@
 #include <bg/scalar/bundle/scalar_type.hpp>
 
 #include <bg/type/type_map.hpp>
+#include <bg/type/type_registry.hpp>
 #include <bg/util/scope_exit.hpp>
 
 #include "../type_registration.hpp"
@@ -110,7 +111,7 @@ enum class HierarchicalTypeStatus : std::uint8_t {
 };
 
 struct HierarchicalTypeEntry {
-    std::unique_ptr<HierarchicalScalarType> type;
+    const HierarchicalScalarType *type;
     HierarchicalTypeStatus status;
 };
 
@@ -168,7 +169,14 @@ const HierarchicalScalarType &canonical_hierarchical_scalar_type(
             const auto restore_status = util::scope_exit{[key]() noexcept {
                 types.find(key)->second.status = HierarchicalTypeStatus::finalized;
             }};
-            auto candidate = HierarchicalScalarType{util::symbol{name}};
+            auto candidate_owner =
+                std::unique_ptr<HierarchicalScalarType>{new HierarchicalScalarType{util::symbol{name}}};
+            auto *candidate_type = candidate_owner.get();
+            TypeRegistry::instance().register_owned(std::move(candidate_owner));
+            auto &candidate = *candidate_type;
+            const auto remove_candidate = util::scope_exit{[&candidate]() noexcept {
+                TypeRegistry::instance().rollback(candidate);
+            }};
             initialize(candidate);
             const auto same_fields = std::ranges::equal(
                 existing.direct_fields(), candidate.direct_fields(), [](const auto &left, const auto &right) {
@@ -180,21 +188,32 @@ const HierarchicalScalarType &canonical_hierarchical_scalar_type(
             return existing;
         }
 
-        auto type = std::unique_ptr<HierarchicalScalarType>{new HierarchicalScalarType{util::symbol{name}}};
-        auto *result = type.get();
-        types.emplace(key, HierarchicalTypeEntry{std::move(type), HierarchicalTypeStatus::reserved});
+        auto [entry, inserted] = types.try_emplace(key, HierarchicalTypeEntry{nullptr,
+                                                                             HierarchicalTypeStatus::reserved});
+        HierarchicalScalarType *result = nullptr;
         try {
+            auto type = std::unique_ptr<HierarchicalScalarType>{new HierarchicalScalarType{util::symbol{name}}};
+            auto *pending_type = type.get();
+            TypeRegistry::instance().register_owned(std::move(type));
+            result = pending_type;
+            entry->second.type = result;
             auto &registration = *SemanticTypeRegistration::current();
-            registration.on_rollback([key] { types.erase(key); });
             registration.on_finalize([result] { return result->finalize_capabilities(); });
             registration.on_validate([result] { validate_required_field_cycles(*result); });
             registration.on_commit([key] { types.at(key).status = HierarchicalTypeStatus::finalized; });
+            registration.on_rollback([key, result] {
+                types.erase(key);
+                TypeRegistry::instance().rollback(*result);
+            });
         } catch (...) {
             types.erase(key);
+            if (result != nullptr) {
+                TypeRegistry::instance().rollback(*result);
+            }
             throw;
         }
 
-        initialize(*types.at(key).type);
+        initialize(*result);
         return *result;
     };
 

@@ -393,17 +393,12 @@ inline const auto copy_prices = bg::node(
 `Out<TS_T>` provides access to the resolved output interface. Each specific
 output type provides its mutation operations.
 
-An output can select a provider-defined representation with a second template
-argument: `Out<TS_T, view>`. Omitting that argument selects the default
-representation. The specification controls the output interface and storage;
-it does not change the semantic time series type seen by consumers. A provider
-must implement each specification it supports.
-
-Runtime selection uses the resolved output type and this specification. Input
-representations do not select output storage. A default mutable output remains
-writable when its input is a view. See the
-[provider contract](time-series-providers.md#output-specifications) for the
-extension customization points.
+Built-in outputs use `Out<Declaration>`. A time series provider can define additional
+`Out` specializations with its own options. The complete output declaration
+selects its interface and runtime representation during wiring. Consumers see
+its semantic time series type. Input representations do not select output
+storage. See the [provider contract](time-series-providers.md#output-declarations)
+for the extension customization points.
 
 `Out<TS<T>>::set(value)` assigns the value and sets its last updated time to the
 current evaluation time. Invalidatable output types provide `invalidate()` with

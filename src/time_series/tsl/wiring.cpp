@@ -124,6 +124,21 @@ class FreeFixedTimeSeriesListWiringRecord final : public WiringRecord {
     WiringPoint item(std::size_t index) const { return items_.at(index); }
 
   private:
+    MaterialisationPreparation prepare_materialisation(const TimeSeriesType &target_type) const override {
+        const auto *list = type_cast<TimeSeriesListType>(&target_type.target_type());
+        if (list == nullptr || list->item_count() == std::dynamic_extent || list->item_count() != items_.size()) {
+            throw WiringError{"a free fixed TSL requires a matching fixed TSL parameter"};
+        }
+
+        auto preparation = MaterialisationPreparation{};
+        preparation.dependencies.reserve(items_.size());
+        for (auto index = std::size_t{}; index < items_.size(); ++index) {
+            preparation.dependencies.push_back(
+                {items_[index], &list->item_type(index), {}, {}, std::nullopt, list->item_id(index)});
+        }
+        return preparation;
+    }
+
     WiringPoint materialize(const TimeSeriesType &target_type) const override {
         const auto *list = type_cast<TimeSeriesListType>(&target_type.target_type());
         if (list == nullptr || list->item_count() == std::dynamic_extent) {
@@ -146,6 +161,13 @@ class TimeSeriesListItemWiringRecord final : public WiringRecord {
         : WiringRecord{type.item_type(index)}, list_{list}, item_{type.item_id(index)} {}
 
   private:
+    MaterialisationPreparation prepare_materialisation(const TimeSeriesType &target_type) const override {
+        const auto &type = type_cast<TimeSeriesListType>(list_.type().target_type());
+        auto preparation = WiringRecord::prepare_materialisation(target_type);
+        preparation.dependencies.push_back({list_, &type, {}, {}, std::nullopt, item_});
+        return preparation;
+    }
+
     WiringPoint materialize(const TimeSeriesType &requested_type) const override {
         const auto &type = type_cast<TimeSeriesListType>(list_.type().target_type());
         auto &graph_wiring = wiring();
@@ -231,6 +253,27 @@ class TimeSeriesListVariadicWiringOperations final : public VariadicWiringOperat
 
     util::symbol item_name(const TimeSeriesType &, std::size_t index) const override {
         return util::symbol{std::to_string(index)};
+    }
+
+    std::vector<MaterialisationDependency>
+    materialisation_dependencies(std::span<const WiringArgument> arguments,
+                                 const TimeSeriesType &target_type) const override {
+        const auto *list = type_cast<TimeSeriesListType>(&target_type.target_type());
+        if (list == nullptr || list->item_count() == std::dynamic_extent) {
+            throw WiringError{"variadic TSL wiring requires a fixed TSL"};
+        }
+        if (list->item_count() != arguments.size()) {
+            throw WiringError{"a variadic TSL requires a matching fixed TSL parameter"};
+        }
+
+        auto dependencies = std::vector<MaterialisationDependency>{};
+        dependencies.reserve(arguments.size());
+        for (auto index = std::size_t{}; index < arguments.size(); ++index) {
+            if (arguments[index].is_time_series()) {
+                dependencies.push_back({arguments[index].time_series(), &list->item_type(index)});
+            }
+        }
+        return dependencies;
     }
 
     const TimeSeriesType &item_type(const TimeSeriesType &type, std::size_t) const override {

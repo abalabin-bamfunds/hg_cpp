@@ -67,8 +67,9 @@ def test_operator_reports_normal_overload_diagnostics():
     def invalid() -> bg.TS[int]:
         return bg.operators.getitem(bg.operators.const_(1), 0)
 
-    with pytest.raises(ValueError, match="Cannot resolve operator getitem"):
+    with pytest.raises(ValueError, match="Cannot resolve operator getitem") as raised:
         bg.test_graph(invalid)
+    assert any("callback invalid at invalid[0]" in note for note in raised.value.__notes__)
 
 
 def test_extension_can_export_existing_and_sink_operators():

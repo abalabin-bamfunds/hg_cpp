@@ -201,6 +201,7 @@ TEST_CASE("an exact named TSL binds as one collection and supports lazy item sel
     const auto context = WiringContext{wiring};
     tested("values"_n = source());
 
+    (void)wiring.complete_pending_wiring();
     CHECK(wiring.nodes().size() == 1);
     CHECK(wiring.outputs().size() == 1);
 }
@@ -241,6 +242,7 @@ TEST_CASE("an exact named TSB binds as one collection and supports lazy field se
     const auto context = WiringContext{wiring};
     tested("values"_n = source());
 
+    (void)wiring.complete_pending_wiring();
     CHECK(wiring.nodes().size() == 1);
     CHECK(wiring.outputs().size() == 1);
 }
@@ -294,6 +296,7 @@ TEST_CASE("positional and named packs accept direct collections by their paramet
     const auto context = WiringContext{wiring};
     tested("positional"_n = source(), "named"_n = source());
 
+    (void)wiring.complete_pending_wiring();
     CHECK(wiring.nodes().size() == 1);
     CHECK(wiring.outputs().size() == 1);
 }
@@ -382,6 +385,7 @@ TEST_CASE("a direct variadic TSL crosses a nested boundary as one reference",
         (void)nested(inner, run(), "values"_n = tsl(value(), value()));
     }
 
+    (void)wiring.complete_pending_wiring();
     const auto &nested_node = wiring.nodes().back();
     REQUIRE(nested_node.signature().parameters.size() == 2);
     CHECK(nested_node.inputs().size() == 2);
@@ -440,6 +444,7 @@ TEST_CASE("a direct variadic TSB crosses a nested boundary as one reference",
         (void)nested(inner, run(), "values"_n = make_bundle(count(), value()));
     }
 
+    (void)wiring.complete_pending_wiring();
     const auto &nested_node = wiring.nodes().back();
     REQUIRE(nested_node.signature().parameters.size() == 2);
     CHECK(nested_node.inputs().size() == 2);

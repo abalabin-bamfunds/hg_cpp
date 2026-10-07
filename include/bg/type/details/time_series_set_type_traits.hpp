@@ -3,6 +3,7 @@
 #include <bg/time_series/tss/tss_type.hpp>
 #include <bg/type/details/time_series_type_traits.hpp>
 #include <bg/type/time_series_set_type.hpp>
+#include <bg/type/type_registry.hpp>
 
 namespace bg::details {
 
@@ -20,10 +21,12 @@ template <typename Item, auto... Properties> struct time_series_type_traits<TSS<
 
         if constexpr (Input || scalar_declaration_traits<Item>::generic) {
             static const auto type = GenericTimeSeriesSetType{item, guarantee};
+            [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type);
             return type;
         }
         if (!guarantee.is_resolved()) {
             static const auto type = GenericTimeSeriesSetType{item, guarantee};
+            [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type);
             return type;
         }
 

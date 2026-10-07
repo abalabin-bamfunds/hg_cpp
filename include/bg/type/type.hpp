@@ -1,5 +1,7 @@
 #pragma once
 
+#include <bg/type/details/static_registry_entry.hpp>
+
 #include <ddv/visitable.h>
 
 #include <concepts>
@@ -42,6 +44,11 @@ concept type_cast_target = is_type_cast_target<Target, TypeVisitor>::value;
 
 class Type : public ddv::visitable<Type, TypeVisitor> {
   public:
+    Type() noexcept : registry_entry_{*this} {}
+    Type(const Type &) = delete;
+    Type &operator=(const Type &) = delete;
+    Type(Type &&) = delete;
+    Type &operator=(Type &&) = delete;
     virtual ~Type();
 
     VISITOR_SUPPORT()
@@ -50,12 +57,17 @@ class Type : public ddv::visitable<Type, TypeVisitor> {
     virtual bool is_graph() const noexcept { return false; }
     virtual bool is_scalar() const noexcept { return false; }
     virtual bool is_time_series() const noexcept { return false; }
+    // Engine registration hook. Static registration requires this Type to have process-static storage.
+    details::StaticRegistryEntry<Type> &registry_entry() const noexcept { return registry_entry_; }
     [[nodiscard]] bool accepts(const Type &supplied) const;
     [[nodiscard]] bool match(const Type &supplied, TypeMap &type_map) const;
     [[nodiscard]] virtual const Type &resolve(const TypeMap &type_map) const = 0;
 
   protected:
     [[nodiscard]] virtual bool do_match(const Type &supplied, TypeMap &) const { return this == &supplied; }
+
+  private:
+    mutable details::StaticRegistryEntry<Type> registry_entry_;
 };
 
 template <type_cast_target Target> Target *type_cast(Type *type) noexcept {

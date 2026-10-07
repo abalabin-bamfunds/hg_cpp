@@ -31,6 +31,7 @@ class VariadicWiringRecord final : public WiringRecord {
     VariadicWiringRecord(VariadicCapture captured, VariadicMode mode,
                          const VariadicWiringOperations &operations);
 
+    MaterialisationPreparation prepare_materialisation(const TimeSeriesType &target_type) const override;
     WiringPoint materialize(const TimeSeriesType &target_type) const override;
 
     const VariadicWiringOperations *operations_;

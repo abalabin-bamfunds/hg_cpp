@@ -50,6 +50,7 @@ TEST_CASE("runtime storage uses the output scalar runtime_type", "[evaluation][s
         double_sink(double_source());
     }
 
+    wiring.finalize();
     const bg::CompiledGraph compiled{wiring};
     auto runtime_global_state = bg::GlobalState{};
     bg::RuntimeGraph runtime{compiled, runtime_global_state};
@@ -96,6 +97,7 @@ TEST_CASE("a node without output uses no output storage", "[evaluation][storage]
         float_sink(constant(1.0F));
     }
 
+    wiring.finalize();
     const bg::CompiledGraph compiled{wiring};
     auto runtime_global_state = bg::GlobalState{};
     bg::RuntimeGraph runtime{compiled, runtime_global_state};
@@ -139,6 +141,7 @@ TEST_CASE("runtime graphs keep separate runtime storage", "[evaluation][storage]
         (void)add(constant(1.0F), constant(2.0F));
     }
 
+    wiring.finalize();
     const bg::CompiledGraph compiled{wiring};
     auto first_global_state = bg::GlobalState{};
     bg::RuntimeGraph first{compiled, first_global_state};
@@ -183,6 +186,7 @@ TEST_CASE("a runtime graph releases dictionary time-series storage",
         static_cast<void>(source());
     }
 
+    wiring.finalize();
     const auto compiled = bg::CompiledGraph{wiring};
     auto memory = counting_memory_resource{};
     {
@@ -248,6 +252,7 @@ TEST_CASE("scalar fields and state bind to their storage", "[evaluation][storage
         int_sink(stateful_scalar(2, std::optional<int>{}));
     }
 
+    wiring.finalize();
     const bg::CompiledGraph compiled{wiring};
     const auto &node = compiled.node(0);
 

@@ -99,6 +99,7 @@ TEST_CASE("a runtime graph releases scalar list time-series storage",
         (void)source(input);
     }
 
+    wiring.finalize();
     const auto graph = bg::CompiledGraph{wiring};
     auto memory = counting_memory_resource{};
     {

@@ -73,6 +73,11 @@ class NodeTemplate : public WiringTemplate {
 
     [[nodiscard]] virtual std::vector<const ScalarType *> resolve_state_types(const TypeMap &) const { return {}; }
 
+    void resolve_additional_types(const TypeMap &type_map) const override {
+        (void)resolve_state_types(type_map);
+        (void)dynamic_reference_input_types(type_map);
+    }
+
     virtual CompiledNodeDataLayout compiled_data_layout(const ResolvedSignature &) const noexcept { return {}; }
     virtual void construct_compiled_data(const ResolvedSignature &, void *, allocator &) const {}
     virtual std::optional<ConstantOutput> constant_output(const ResolvedSignature &) const noexcept {
@@ -81,6 +86,12 @@ class NodeTemplate : public WiringTemplate {
     virtual std::optional<DefaultOutput> default_output(const ResolvedSignature &) const noexcept {
         return std::nullopt;
     }
+
+    // Engine-facing concrete wiring path for a node call retained by GraphWiring.
+    [[nodiscard]] std::optional<WiringPoint> bind(GraphWiring &wiring, ResolvedSignature signature,
+                                                  const TypeMap &type_map,
+                                                  std::span<const WiringArgument> arguments,
+                                                  const TimeSeriesRuntimeType *output_runtime_type) const;
 
   protected:
     explicit NodeTemplate(NodeTemplateIdentity identity) : definition_identity_{std::move(identity)} {}

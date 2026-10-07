@@ -105,6 +105,7 @@ details::GraphWiringStructure add_structure() {
     const auto result = add(x, y);
     const auto inputs = std::array<WiringPoint, 2>{x, y};
 
+    (void)wiring.complete_pending_wiring();
     return details::graph_wiring_structure(wiring, inputs, static_cast<WiringPoint>(result));
 }
 
@@ -122,6 +123,7 @@ details::GraphWiringStructure renamed_add_structure() {
     const auto sum = operation(lhs, rhs);
     const auto parameters = std::array<WiringPoint, 2>{lhs, rhs};
 
+    (void)wiring.complete_pending_wiring();
     return details::graph_wiring_structure(wiring, parameters, static_cast<WiringPoint>(sum));
 }
 
@@ -135,6 +137,7 @@ details::GraphWiringStructure multiply_structure() {
     const auto result = multiply(x, y);
     const auto inputs = std::array<WiringPoint, 2>{x, y};
 
+    (void)wiring.complete_pending_wiring();
     return details::graph_wiring_structure(wiring, inputs, static_cast<WiringPoint>(result));
 }
 
@@ -150,6 +153,7 @@ details::GraphWiringStructure branch_structure(bool shared) {
     const auto result = add(left, right);
     const auto inputs = std::array<WiringPoint, 1>{input};
 
+    (void)wiring.complete_pending_wiring();
     return details::graph_wiring_structure(wiring, inputs, static_cast<WiringPoint>(result));
 }
 
@@ -167,6 +171,7 @@ details::GraphWiringStructure nested_structure() {
     const auto result = nested(inner, run, value);
     const auto inputs = std::array<WiringPoint, 2>{run, value};
 
+    (void)wiring.complete_pending_wiring();
     return details::graph_wiring_structure(wiring, inputs, static_cast<WiringPoint>(result));
 }
 
@@ -188,6 +193,8 @@ details::GraphWiringStructure context_structure(bool alternate_provider) {
         result = copy();
     }
 
+    (void)inner.complete_pending_wiring();
+    (void)outer.complete_pending_wiring();
     return details::graph_wiring_structure(inner, std::span<const WiringPoint>{}, result);
 }
 
@@ -206,6 +213,7 @@ details::GraphWiringStructure inherited_requirement_structure(const void *identi
     wiring.provide_inherited_time_series(requirement_identity, TS<i64>::type(), provider);
     const auto boundaries = std::array<WiringPoint, 1>{provider};
 
+    (void)wiring.complete_pending_wiring();
     return details::graph_wiring_structure(wiring, boundaries, static_cast<WiringPoint>(result));
 }
 
@@ -259,6 +267,7 @@ TEST_CASE("service clients have equivalent structure across root wirings",
         audit(input);
         const auto inputs = std::array<WiringPoint, 1>{input};
 
+        (void)wiring.complete_pending_wiring();
         return details::graph_wiring_structure(wiring, inputs, std::nullopt);
     };
 
@@ -277,6 +286,7 @@ TEST_CASE("an unhashable wired scalar disables graph structure caching", "[graph
     const auto source = bg::node<opaque_source_node>();
     const auto value = bg::ScalarValue<bg::Opaque<opaque_value>>{opaque_value{1}};
     const auto result = source(value);
+    (void)wiring.complete_pending_wiring(result);
 
     const auto structure = bg::details::graph_wiring_structure(wiring, std::span<const bg::WiringPoint>{},
                                                                static_cast<bg::WiringPoint>(result));

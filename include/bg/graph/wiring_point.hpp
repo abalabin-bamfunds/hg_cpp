@@ -6,17 +6,33 @@
 #include <bg/time_series/time_series_variable.hpp>
 #include <bg/type/time_series_type.hpp>
 
+#include <algorithm>
 #include <cstddef>
+#include <functional>
+#include <span>
 #include <type_traits>
+#include <vector>
 
 namespace bg {
 
 class GraphWiring;
+class Signature;
 class WiringPoint;
+class WiringArgument;
 
 namespace details {
 class WiringRecord;
 } // namespace details
+
+struct WiringMaterialisationOption {
+    const TimeSeriesType *target_type;
+    double cost;
+    // Borrowed from the graph-owned option; valid while its GraphWiring lives after options are frozen.
+    const Signature *input_signature;
+};
+
+// Erased extension builder called with arguments normalized to its declared input signature.
+using WiringMaterialisationBuilder = std::function<WiringPoint(std::span<const WiringArgument>)>;
 
 template <typename TimeSeries = TS_T, auto... Properties> class wp;
 
@@ -26,10 +42,19 @@ class WiringPoint {
 
     bool has_output() const noexcept { return record_ != nullptr; }
     explicit operator bool() const noexcept { return has_output(); }
+    bool has_default_materialisation() const noexcept;
 
     const GraphWiring &graph() const;
     const TimeSeriesType &type() const;
     const details::WiringRecord *record() const noexcept { return record_; }
+
+    // Extension API for registering an alternative representation with a declared input signature.
+    void add_materialisation_option(const TimeSeriesType &target_type, double cost, Signature input_signature,
+                                   WiringMaterialisationBuilder builder) const;
+    template <typename Target, typename Builder>
+    void materialisation_option(Builder &&builder, double cost) const;
+    // Inspection freezes the point's option set.
+    std::vector<WiringMaterialisationOption> materialisation_options() const;
 
     template <typename TimeSeries> wp<TimeSeries> as() const;
 
@@ -52,9 +77,18 @@ template <typename TimeSeries, auto... Properties> class wp {
     = default;
 
     wp(WiringPoint point) : point_(point) {
-        if (!TimeSeries::type().accepts(point.type())) {
-            throw WiringError{"a WiringPoint is incompatible with the requested type"};
+        if (TimeSeries::type().accepts(point.type())) {
+            return;
         }
+
+        const auto accepts_advertised_form = std::ranges::any_of(
+            point.materialisation_options(), [](const auto &option) {
+                return TimeSeries::type().accepts(*option.target_type);
+            });
+        if (accepts_advertised_form) {
+            return;
+        }
+        throw WiringError{"a WiringPoint is incompatible with the requested type"};
     }
 
     // Re-annotation retains the actual wiring type. Signature resolution validates it at the next wiring boundary.
@@ -78,6 +112,13 @@ template <typename TimeSeries, auto... Properties> class wp {
         } else {
             return point_.template as<Target>();
         }
+    }
+
+    template <typename Target, typename Builder>
+    void materialisation_option(Builder &&builder, double cost) const;
+
+    std::vector<WiringMaterialisationOption> materialisation_options() const {
+        return point_.materialisation_options();
     }
 
     static wp from_validated(WiringPoint point) noexcept { return wp{point, unchecked_t{}}; }

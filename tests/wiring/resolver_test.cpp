@@ -17,6 +17,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -37,9 +38,16 @@ using CYCLIC_RIGHT = bg::ScalarVariable<"CYCLIC_RIGHT">;
 using RESOLVED_TIME_SERIES = bg::TimeSeriesVariable<"RESOLVED_TIME_SERIES">;
 using NESTED_RESULT = bg::ScalarVariable<"NESTED_RESULT">;
 using VARIADIC_RESULT = bg::ScalarVariable<"VARIADIC_RESULT">;
+using UNMATCHED_FORM_VALUE = bg::ScalarVariable<"UNMATCHED_FORM_VALUE">;
+using STATE_ONLY_VALUE = bg::ScalarVariable<"STATE_ONLY_VALUE", std::int64_t, float>;
+using REQUIREMENT_ONLY_VALUE = bg::ScalarVariable<"REQUIREMENT_ONLY_VALUE", std::int64_t, float>;
 
 template <template <typename, auto...> typename Field> struct ResolvedBundle {
     Field<bg::TS<bg::i64>> value;
+};
+
+template <template <typename, auto...> typename Field> struct UnmatchedFormBundle {
+    Field<bg::TS<UNMATCHED_FORM_VALUE>> value;
 };
 
 inline constexpr auto RESOLVED_GUARANTEE = bg::guarantee_variable<"RESOLVED_GUARANTEE">;
@@ -65,6 +73,35 @@ struct resolved_source_definition {
         }
 
         return nullptr;
+    }
+
+    void evaluate() const {}
+};
+
+struct state_only_resolver_definition {
+    bg::State<bg::List<STATE_ONLY_VALUE>> state;
+    bg::Out<bg::TS<bg::i64>> output;
+
+    inline static auto resolver_calls = 0;
+
+    static const bg::ScalarType &resolve(STATE_ONLY_VALUE, const bg::WiringArguments &) {
+        ++resolver_calls;
+        return bg::int64_type();
+    }
+
+    void evaluate() const {}
+};
+
+struct invalid_state_only_resolver_definition {
+    bg::In<bg::TS<bg::SCALAR>> input;
+    bg::State<bg::List<STATE_ONLY_VALUE>> state;
+    bg::Out<bg::TS<bg::i64>> output;
+
+    inline static auto resolver_calls = 0;
+
+    static const bg::ScalarType &resolve(STATE_ONLY_VALUE, const bg::WiringArguments &) {
+        ++resolver_calls;
+        return bg::string_type();
     }
 
     void evaluate() const {}
@@ -178,6 +215,167 @@ TEST_CASE("an aggregate resolver completes an output type",
         REQUIRE(error.diagnostic()->candidates.size() == 1);
         CHECK(error.diagnostic()->candidates.front().stage == bg::WiringFailureStage::resolver);
     }
+}
+
+TEST_CASE("resolvers in unmatched union alternatives stay unused",
+          "[feature:wiring][declaration:generic]") {
+    using FORM = bg::Union<"FORM", bg::TS<bg::i64>, bg::TSB<UnmatchedFormBundle>>;
+
+    auto calls = 0;
+    auto resolvers = std::vector<bg::VariableResolver>{};
+    resolvers.emplace_back(&UNMATCHED_FORM_VALUE::type(), [&](const bg::TypeMap &) -> bg::TypeMapValue {
+        ++calls;
+        return static_cast<const bg::Type *>(&bg::int64_type());
+    });
+    const auto signature = bg::Signature{
+        bg::util::symbol{"consume"}, {{bg::util::symbol{"value"}, &FORM::type()}}, std::move(resolvers)};
+    const auto arguments = std::array<const bg::Type *, 1>{&bg::TS<bg::i64>::type()};
+    auto type_map = signature.match_arguments(arguments);
+    const auto resolved = signature.complete_resolution(type_map);
+
+    REQUIRE(resolved.parameters.size() == 1);
+    CHECK(resolved.parameters.front().type == &bg::TS<bg::i64>::type());
+    CHECK(calls == 0);
+}
+
+TEST_CASE("candidate metadata demands state-only resolver mappings",
+          "[feature:operator][feature:wiring][definition:aggregate]") {
+    state_only_resolver_definition::resolver_calls = 0;
+
+    auto operation = bg::operator_<auto() -> bg::TS<bg::i64>>{"state_source"};
+    operation.overload(bg::node<state_only_resolver_definition>());
+
+    bg::testing::test_wiring([&] { CHECK(&operation().type() == &bg::TS<bg::i64>::type()); });
+
+    CHECK(state_only_resolver_definition::resolver_calls == 1);
+}
+
+TEST_CASE("a failed state-only resolver rejects its candidate before fallback selection",
+          "[feature:operator][feature:wiring][definition:aggregate][declaration:generic]") {
+    using namespace bg::literals;
+
+    invalid_state_only_resolver_definition::resolver_calls = 0;
+    auto fallback_selected = false;
+    auto operation = bg::operator_<auto(bg::TS_T) -> bg::TS<bg::i64>>{"state_fallback", {"input"}};
+    operation.overload(bg::node<invalid_state_only_resolver_definition>());
+    operation.overload(bg::graph("name"_n = "fallback", [&](bg::wp<bg::TS<bg::i64>> input) {
+        fallback_selected = true;
+        return input;
+    }));
+    const auto source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
+
+    bg::testing::test_wiring([&] {
+        CHECK(&operation(source()).type() == &bg::TS<bg::i64>::type());
+        CHECK(fallback_selected);
+    });
+
+    CHECK(invalid_state_only_resolver_definition::resolver_calls == 1);
+}
+
+TEST_CASE("requirements demand auxiliary resolvers and their scalar reads participate in caching",
+          "[feature:operator][feature:wiring][definition:function]") {
+    auto resolver_calls = 0;
+    auto requirement_calls = 0;
+    auto operation = bg::operator_<void(std::int64_t, bg::TS<bg::i64>)>{"consume", {"kind", "input"}};
+    operation.overload(bg::node(
+        bg::eval = [](std::int64_t, bg::In<bg::TS<bg::i64>>) {},
+        bg::resolve<REQUIREMENT_ONLY_VALUE> = [&](const bg::WiringArguments &arguments) -> const bg::ScalarType & {
+            ++resolver_calls;
+            return bg::scalar_cast<std::int64_t>(*arguments.scalar(0)).value() == 0 ? bg::int64_type()
+                                                                                   : bg::float_type();
+        },
+        bg::require = [&](const bg::WiringArguments &arguments) {
+            ++requirement_calls;
+            const auto *mapping = arguments.type_map().find(REQUIREMENT_ONLY_VALUE::type());
+            REQUIRE(mapping != nullptr);
+            const auto *type = std::get_if<const bg::Type *>(mapping);
+            REQUIRE(type != nullptr);
+            return *type == &bg::int64_type() ? bg::accept : bg::reject("resolved value is not int64");
+        }));
+    const auto source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
+
+    bg::testing::test_wiring([&] {
+        const auto input = source();
+        operation(0, input);
+        operation(0, input);
+        CHECK(resolver_calls == 1);
+        CHECK(requirement_calls == 1);
+
+        try {
+            operation(1, input);
+            FAIL("expected the requirement to reject the second resolved type");
+        } catch (const bg::WiringError &error) {
+            REQUIRE(error.diagnostic());
+            REQUIRE(error.diagnostic()->candidates.size() == 1);
+            CHECK(error.diagnostic()->candidates.front().stage == bg::WiringFailureStage::requirement);
+        }
+    });
+
+    CHECK(resolver_calls == 2);
+    CHECK(requirement_calls == 2);
+}
+
+TEST_CASE("a requirement error remains a callback error after catching a resolver failure",
+          "[feature:operator][feature:wiring][definition:function]") {
+    auto operation = bg::operator_<void()>{"requirement_error"};
+    operation.overload(bg::node(
+        bg::eval = [] {},
+        bg::resolve<REQUIREMENT_ONLY_VALUE> = [](const bg::WiringArguments &) -> const bg::ScalarType & {
+            return bg::string_type();
+        },
+        bg::require = [](const bg::WiringArguments &arguments) {
+            try {
+                (void)arguments.type_map().find(REQUIREMENT_ONLY_VALUE::type());
+            } catch (const bg::TypeResolutionError &) {
+                throw bg::TypeResolutionError{bg::TypeResolutionErrorCode::invalid_type_map,
+                                              bg::util::symbol{"requirement"}, "requirement owns this error"};
+            }
+
+            return bg::accept;
+        }));
+
+    bg::testing::test_wiring([&] {
+        try {
+            operation();
+            FAIL("expected the requirement callback to fail");
+        } catch (const bg::WiringError &error) {
+            REQUIRE(error.diagnostic());
+            REQUIRE(error.diagnostic()->candidates.size() == 1);
+            CHECK(error.diagnostic()->candidates.front().stage == bg::WiringFailureStage::callback);
+            CHECK(std::string{error.what()}.contains("requirement owns this error"));
+        }
+    });
+}
+
+TEST_CASE("an invalid resolver demanded by a requirement rejects its candidate",
+          "[feature:operator][feature:wiring][definition:function][declaration:generic]") {
+    using namespace bg::literals;
+
+    auto resolver_calls = 0;
+    auto fallback_selected = false;
+    auto operation = bg::operator_<auto(bg::TS_T) -> bg::TS<bg::i64>>{"requirement_fallback", {"input"}};
+    operation.overload(bg::node(
+        bg::eval = [](bg::In<bg::TS<bg::SCALAR>>, bg::Out<bg::TS<bg::i64>>) {},
+        bg::resolve<REQUIREMENT_ONLY_VALUE> = [&](const bg::WiringArguments &) -> const bg::ScalarType & {
+            ++resolver_calls;
+            return bg::string_type();
+        },
+        bg::require = [](const bg::WiringArguments &arguments) {
+            (void)arguments.type_map().find(REQUIREMENT_ONLY_VALUE::type());
+            return bg::accept;
+        }));
+    operation.overload(bg::graph("name"_n = "fallback", [&](bg::wp<bg::TS<bg::i64>> input) {
+        fallback_selected = true;
+        return input;
+    }));
+    const auto source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
+
+    bg::testing::test_wiring([&] {
+        CHECK(&operation(source()).type() == &bg::TS<bg::i64>::type());
+        CHECK(fallback_selected);
+    });
+
+    CHECK(resolver_calls == 1);
 }
 
 TEST_CASE("an aggregate graph resolver completes its output type",

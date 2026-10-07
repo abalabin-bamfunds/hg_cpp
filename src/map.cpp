@@ -256,17 +256,14 @@ std::optional<WiringPoint> DefaultMapWiring::wire() const {
     auto arguments = outer_arguments;
     if (dictionary_key_set_parameter) {
         auto &key_set = arguments[*dictionary_key_set_parameter];
-        const auto materialized = outer.materialize(key_set.time_series(), key_set.time_series().type());
         const auto &key_set_type =
             static_cast<const TimeSeriesType &>(*outer_signature.parameters[*dictionary_key_set_parameter].type);
-        key_set = WiringArgument{outer.output_item(materialized, key_set_item_id, key_set_type)};
+        key_set = WiringArgument{outer.output_item(key_set.time_series(), key_set_item_id, key_set_type)};
     }
 
-    const auto next_node_index = outer.nodes().size();
-    auto result = owned(std::span<const WiringArgument>{arguments});
-    const auto node_index = result ? outer.output_node_index(*result) : next_node_index;
-    outer.register_nested_service_consumers(*graph.wiring, node_index);
-    return result;
+    auto call = outer.invoke_node(owned, arguments);
+    outer.register_nested_service_consumers(*graph.wiring, call.identity);
+    return call.output;
 }
 
 } // namespace bg::details

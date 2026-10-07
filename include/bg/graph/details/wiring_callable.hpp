@@ -6,6 +6,7 @@
 #include <bg/type/signature.hpp>
 #include <bg/type/time_series_value_type.hpp>
 #include <bg/type/time_series_variable.hpp>
+#include <bg/type/variable_registry.hpp>
 #include <bg/util/symbol.hpp>
 
 #include <concepts>
@@ -107,7 +108,8 @@ decltype(auto) invoke_graph_function(const Function &function, std::span<const W
     return invoke_graph_function(function, arguments, std::make_index_sequence<callable<Function>::argument_count>{});
 }
 
-template <typename Function, std::size_t Index> bool wiring_parameter_matches(const ResolvedParameter &parameter) {
+template <typename Function, std::size_t Index>
+bool wiring_parameter_matches(const Parameter &declaration, const ResolvedParameter &parameter) {
     using Parameter = typename callable<Function>::template argument_type<Index>;
     using Value = std::remove_cvref_t<Parameter>;
 
@@ -115,6 +117,8 @@ template <typename Function, std::size_t Index> bool wiring_parameter_matches(co
         using TimeSeries = typename typed_wiring_point<Value>::time_series_type;
         if constexpr (time_series_variable<TimeSeries>) {
             return parameter.type->is_time_series();
+        } else if constexpr (type_variable_declaration<TimeSeries>) {
+            return parameter.type->is_time_series() && TimeSeries::type().accepts(*parameter.type);
         } else {
             const auto &declared = [&]() -> const TimeSeriesType & {
                 if constexpr (TimeSeries::has_explicit_guarantee) {
@@ -122,6 +126,7 @@ template <typename Function, std::size_t Index> bool wiring_parameter_matches(co
                         guarantee_parameter<TimeSeries::guarantee>());
                 } else {
                     static const auto guarantee = GuaranteeVariable{parameter.name};
+                    [[maybe_unused]] static const auto &registration = VariableRegistry::register_static(guarantee);
                     return time_series_type_for<Function, Index, true, TimeSeries>(guarantee);
                 }
             }();
@@ -133,7 +138,18 @@ template <typename Function, std::size_t Index> bool wiring_parameter_matches(co
         return parameter.type->is_graph();
     } else if constexpr (graph_argument_facade<Value>) {
         const auto *graph = type_cast<GraphArgumentType>(parameter.type);
-        return graph != nullptr && Value::type().accepts_declaration(*graph);
+        if (graph == nullptr || !Value::type().accepts(*graph)) {
+            return false;
+        }
+        if constexpr (requires { Value::constraint(); }) {
+            const auto &constraint = Value::constraint();
+            const auto *declared = declaration.graph_constraint.get();
+            const auto constrained = constraint && constraint->constrained();
+            const auto declaration_constrained = declared != nullptr && declared->constrained();
+            return constrained == declaration_constrained &&
+                   (!constrained || constraint->same_constraint(*declared));
+        }
+        return declaration.graph_constraint == nullptr || !declaration.graph_constraint->constrained();
     } else if constexpr (supported_optional_scalar_argument<Value>) {
         using Scalar = typename optional_scalar_argument<Value>::value_type;
 
@@ -146,12 +162,16 @@ template <typename Function, std::size_t Index> bool wiring_parameter_matches(co
 }
 
 template <typename Function, std::size_t... Index>
-[[nodiscard]] bool wiring_parameters_match(const ResolvedSignature &signature, std::index_sequence<Index...>) {
-    return (wiring_parameter_matches<Function, Index>(signature.parameters[Index]) && ...);
+[[nodiscard]] bool wiring_parameters_match(const Signature &declaration, const ResolvedSignature &signature,
+                                           std::index_sequence<Index...>) {
+    return (wiring_parameter_matches<Function, Index>(declaration.parameter(Index), signature.parameters[Index]) &&
+            ...);
 }
 
-template <typename Function> [[nodiscard]] bool wiring_parameters_match(const ResolvedSignature &signature) {
-    return wiring_parameters_match<Function>(signature, std::make_index_sequence<callable<Function>::argument_count>{});
+template <typename Function>
+[[nodiscard]] bool wiring_parameters_match(const Signature &declaration, const ResolvedSignature &signature) {
+    return wiring_parameters_match<Function>(declaration, signature,
+                                             std::make_index_sequence<callable<Function>::argument_count>{});
 }
 
 template <typename Value> util::symbol wiring_label(Value &&value) {

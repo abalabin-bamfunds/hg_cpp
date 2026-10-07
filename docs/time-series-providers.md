@@ -31,7 +31,8 @@ resolved time series type implements `with_guarantee()` using canonical types.
 This is required to preserve the [guarantee rules](type-system.md#time-series-guarantees)
 when declarations are matched or combined.
 
-Type factories return the same object for equivalent resolved types. The
+Type factories return the same object for equivalent resolved types and follow
+the [semantic type registration contract](type-system.md#type-model). The
 provider library must remain loaded while its type objects, runtime types, or
 values are in use.
 
@@ -57,7 +58,7 @@ remain alive while the registry can use them.
 
 The general runtime resolver gives explicitly supplied representations
 precedence over registered defaults. Output selection follows the
-[output specification](#output-specifications). A node template selects the
+[output declaration](#output-declarations). A node template selects the
 output runtime type during wiring. The selected runtime must have the wired
 output's resolved semantic type.
 
@@ -66,34 +67,38 @@ Initial storage follows the existing
 Runtime construction and destruction use the supplied allocator. A provider
 reports whether its storage uses variable memory or requires finalization.
 
-## Output specifications
+## Output declarations
 
-`Out<Declaration>` uses `OutputSpecification::default_`.
-`Out<Declaration, view>` uses `OutputSpecification::view`. The specification
-belongs to the output declaration; both forms expose the same semantic time
-series type to consumers.
+BG declares `Out<Declaration, Options...>`. Built-in time series implement
+`Out<Declaration>`. Providers define any additional options and their matching
+`Out` specializations.
 
-Include `<bg/time_series/cpp_runtime_type.hpp>` and specialize
-`time_series_output_traits<Declaration, Specification>::runtime(resolved_type)`
-to select a representation. The result must have exactly the supplied resolved
-semantic type. Selection receives no input runtimes. A view representation
-retains source runtime information in its source bindings.
+Include `<bg/node/output_declaration_traits.hpp>` and specialize
+`output_declaration_traits<Output>` for a configured output. Its
+`time_series_type` identifies the semantic declaration.
+`runtime(resolved_type)` selects the representation and must return a runtime
+with exactly the supplied resolved semantic type. Selection receives no input
+runtimes. These traits are APIs for extension authors; node code uses the
+typed output's operations.
 
-The default trait uses the declaration's canonical runtime for concrete
-declarations and resolves registered or composed defaults for generic
-declarations. This also selects default child representations in collections.
-There is no default implementation for the view specification. A provider
-supporting it supplies both the runtime trait and the corresponding
-`Out<Declaration, view>` specialization.
+The ordinary `Out<Declaration>` trait uses the canonical runtime for concrete
+declarations and registered or composed defaults for generic declarations.
+Built-in collection children use `Out<ChildDeclaration>` and retain their
+actual runtime through the output binding.
 
-Callable and aggregate node definitions preserve the complete `Out`
-declaration for runtime selection, invocation binding, and invalidation.
+Callable, aggregate, and runtime-signature nodes bind the complete output
+declaration and use its interface for invalidation. Providers own their option
+semantics and any source bindings required by their representations.
+
+Runtime-signature definitions declare `output_declaration_type` for runtime
+selection and use `NodeInvocation::output_as<Output>()` for binding.
+`output<Declaration>()` binds the ordinary `Out<Declaration>`.
 
 ## Views and publication
 
 The provider supplies `In<Declaration, Properties...>` and `Out<Declaration>`
 specializations using the public input/output bindings. Additional output
-specifications use their own `Out<Declaration, Specification>` specialization.
+options use their own `Out<Declaration, Options...>` specialization.
 Views borrow storage for one node invocation. Binding must preserve the
 selected runtime type.
 
@@ -134,17 +139,19 @@ collection.
 
 Generic input/output visitors dispatch built-in structural families to their
 matching views. An external family reaches the erased `In<TS_T>` or
-`Out<TS_T, Specification>` callback. Output visitation and collection item
-access preserve the output specification. The callback decides how its
-operation handles that family. It must not recursively redispatch the same
+`Out<TS_T>` callback. The erased output retains its actual runtime type and
+output binding. The callback decides how its operation handles that family.
+It must not recursively redispatch the same
 erased view without selecting an implementation.
 
 A provider's typed `In` and `Out` views forward `visit()` to the corresponding
 erased view. This lets generic operations inspect a provider view and dispatch
-back to its typed handler while preserving the output specification.
+back to its typed handler through the actual runtime type.
 An erased view's `as<Declaration>()` checks semantic compatibility before it
 constructs a provider view; the returned view borrows the same invocation data
 or output binding.
+For a configured output, `as_output<Output>()` checks semantic compatibility
+and constructs the complete output declaration over that binding.
 
 The visitor's view is valid only during the callback. Optional operation
 handlers may retain a runtime-type reference, whose lifetime is independent

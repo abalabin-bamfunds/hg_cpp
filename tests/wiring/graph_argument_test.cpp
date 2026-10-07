@@ -9,9 +9,11 @@
 #include <bg/scalar/value.hpp>
 #include <bg/testing/test_wiring.hpp>
 #include <bg/time_series/tsb/tsb.hpp>
+#include <bg/type/type_resolution_error.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
 
 #include <array>
 #include <compare>
@@ -71,6 +73,18 @@ inline constexpr auto binary_first_pattern = graph_pattern(
         return left;
     });
 
+inline constexpr auto unary_identity_pattern = graph_pattern(
+    [](wp<TS<i64, TimeSeriesGuarantee::ordinary>> value) {
+        return value;
+    });
+
+int unary_pattern_calls{};
+inline constexpr auto counted_unary_pattern = graph_pattern(
+    [](wp<TS<i64>> value) {
+        ++unary_pattern_calls;
+        return value;
+    });
+
 using GRAPH_VALUE = ScalarVariable<"GRAPH_VALUE">;
 
 struct opaque_value {
@@ -79,6 +93,18 @@ struct opaque_value {
 
 struct opaque_source_node {
     Scalar<Opaque<opaque_value>> value;
+    Out<TS<i64>> output;
+    void evaluate() const {}
+};
+
+struct captured_integer_node {
+    Scalar<int> value;
+    Out<TS<i64>> output;
+    void evaluate() const {}
+};
+
+struct captured_shared_pointer_node {
+    Scalar<Opaque<std::shared_ptr<int>>> value;
     Out<TS<i64>> output;
     void evaluate() const {}
 };
@@ -94,6 +120,15 @@ struct graph_sink_node {
     void evaluate() const {}
 };
 
+template <template <typename, auto...> typename Field> struct graph_value_bundle {
+    Field<TS<i64>> value;
+};
+
+using GRAPH_INPUT_FORM = Union<"GRAPH_INPUT_FORM", TS<i64>, TSB<graph_value_bundle>>;
+using GRAPH_SHARED_VALUE = ScalarVariable<"GRAPH_SHARED_VALUE">;
+using GRAPH_LEFT_FORM = Union<"GRAPH_LEFT_FORM", TS<GRAPH_SHARED_VALUE>, TSB<graph_value_bundle>>;
+using GRAPH_RIGHT_FORM = Union<"GRAPH_RIGHT_FORM", TS<GRAPH_SHARED_VALUE>, TSB<graph_value_bundle>>;
+
 template <typename Boundary = boundary_node>
 details::GraphWiringStructure identity_structure() {
     auto wiring = GraphWiring{};
@@ -102,6 +137,7 @@ details::GraphWiringStructure identity_structure() {
     const auto value = boundary();
     const auto boundaries = std::array<WiringPoint, 1>{value};
 
+    (void)wiring.complete_pending_wiring();
     return details::graph_wiring_structure(wiring, boundaries, static_cast<WiringPoint>(value));
 }
 
@@ -116,6 +152,7 @@ details::GraphWiringStructure binary_structure() {
     const auto result = operation(left, right);
     const auto boundaries = std::array<WiringPoint, 2>{left, right};
 
+    (void)wiring.complete_pending_wiring();
     return details::graph_wiring_structure(wiring, boundaries, static_cast<WiringPoint>(result));
 }
 
@@ -126,6 +163,29 @@ details::GraphWiringStructure uncacheable_structure() {
     const auto source = node<opaque_source_node>();
     const auto result = source(value);
 
+    (void)wiring.complete_pending_wiring();
+    return details::graph_wiring_structure(wiring, std::span<const WiringPoint>{},
+                                           static_cast<WiringPoint>(result));
+}
+
+details::GraphWiringStructure captured_integer_structure(int captured_value) {
+    auto wiring = GraphWiring{};
+    const auto context = WiringContext{wiring};
+    const auto source = node<captured_integer_node>();
+    const auto result = source(ScalarValue<int>{captured_value});
+
+    (void)wiring.complete_pending_wiring();
+    return details::graph_wiring_structure(wiring, std::span<const WiringPoint>{},
+                                           static_cast<WiringPoint>(result));
+}
+
+details::GraphWiringStructure captured_shared_pointer_structure(const std::shared_ptr<int> &captured_value) {
+    auto wiring = GraphWiring{};
+    const auto context = WiringContext{wiring};
+    const auto source = node<captured_shared_pointer_node>();
+    const auto result = source(ScalarValue<Opaque<std::shared_ptr<int>>>{captured_value});
+
+    (void)wiring.complete_pending_wiring();
     return details::graph_wiring_structure(wiring, std::span<const WiringPoint>{},
                                            static_cast<WiringPoint>(result));
 }
@@ -136,6 +196,7 @@ details::GraphWiringStructure source_structure() {
     const auto source = node<graph_result_node>();
     const auto result = source();
 
+    (void)wiring.complete_pending_wiring();
     return details::graph_wiring_structure(wiring, std::span<const WiringPoint>{},
                                            static_cast<WiringPoint>(result));
 }
@@ -150,15 +211,37 @@ details::GraphWiringStructure sink_structure() {
     sink(left, right);
     const auto boundaries = std::array<WiringPoint, 2>{left, right};
 
+    (void)wiring.complete_pending_wiring();
     return details::graph_wiring_structure(wiring, boundaries);
+}
+
+details::GraphWiringStructure unary_add_structure() {
+    auto wiring = GraphWiring{};
+    const auto context = WiringContext{wiring};
+    const auto boundary = node<boundary_node>();
+    const auto input = boundary();
+    const auto add = node<add_node>();
+    const auto result = add(input, input);
+    const auto boundaries = std::array<WiringPoint, 1>{input};
+
+    (void)wiring.complete_pending_wiring();
+    return details::graph_wiring_structure(wiring, boundaries, static_cast<WiringPoint>(result));
 }
 
 GraphArgument argument(details::GraphWiringStructure structure) {
     return GraphArgument{std::move(structure), std::make_shared<const int>(1)};
 }
 
-Signature graph_overload_signature(util::symbol name, const GraphArgumentType &type, bool output) {
-    auto parameters = std::vector<Parameter>{{util::symbol{"function"}, &type}};
+GraphArgument argument(std::vector<details::GraphWiringStructure> structures) {
+    return GraphArgument{std::move(structures), std::make_shared<const int>(1)};
+}
+
+Signature graph_overload_signature(util::symbol name,
+                                   std::shared_ptr<const GraphArgumentConstraint> constraint, bool output,
+                                   const Type &parameter_type = GraphArgument::type()) {
+    auto parameter = Parameter{util::symbol{"function"}, &parameter_type};
+    parameter.graph_constraint = std::move(constraint);
+    auto parameters = std::vector<Parameter>{std::move(parameter)};
     if (output) {
         return Signature{name, std::move(parameters), TS<i64>::type()};
     }
@@ -168,13 +251,14 @@ Signature graph_overload_signature(util::symbol name, const GraphArgumentType &t
 class GraphOverload final : public WiringTemplate {
   public:
     GraphOverload(util::symbol name, details::GraphWiringStructure structure, bool output,
-                  std::string &selected, int *requirements = nullptr)
-        : type_{std::make_shared<GraphArgumentType>(std::move(structure))},
-          signature_{graph_overload_signature(name, *type_, output)},
+                  std::string &selected, int *requirements = nullptr,
+                  const Type &parameter_type = GraphArgument::type())
+        : constraint_{std::make_shared<GraphArgumentConstraint>(std::move(structure))},
+          signature_{graph_overload_signature(name, constraint_, output, parameter_type)},
           output_{output}, selected_{&selected}, requirements_{requirements} {}
 
     GraphOverload(util::symbol name, bool output, std::string &selected, int *requirements = nullptr)
-        : signature_{graph_overload_signature(name, GraphArgument::type(), output)},
+        : signature_{graph_overload_signature(name, {}, output)},
           output_{output}, selected_{&selected}, requirements_{requirements} {}
 
     const Signature &signature() const final { return signature_; }
@@ -200,7 +284,7 @@ class GraphOverload final : public WiringTemplate {
         return static_cast<WiringPoint>(result_source_());
     }
 
-    std::shared_ptr<const GraphArgumentType> type_;
+    std::shared_ptr<const GraphArgumentConstraint> constraint_;
     Signature signature_;
     bool output_;
     std::string *selected_;
@@ -247,20 +331,20 @@ TEST_CASE("graph argument matching supports any, exact, and generic patterns",
     const auto add_structure = binary_structure<add_node>();
     const auto multiply = binary_structure<multiply_node>();
     const auto supplied = argument(add_structure);
-    const auto exact = GraphArgumentType{add_structure};
-    const auto other = GraphArgumentType{multiply};
+    const auto exact = GraphArgumentConstraint{add_structure};
+    const auto other = GraphArgumentConstraint{multiply};
 
     const auto add_operation = node<add_node>();
     const auto add_graph = graph("name"_n = "add_pattern",
                                  [add_operation](wp<TS<SCALAR>> left, wp<TS<SCALAR>> right) {
         return add_operation(left.as<TS<i64>>(), right.as<TS<i64>>());
     });
-    const auto pattern = GraphArgumentType{std::make_shared<const decltype(add_graph)>(add_graph)};
+    const auto pattern = GraphArgumentConstraint{std::make_shared<const decltype(add_graph)>(add_graph)};
 
     CHECK(GraphArgument::type().accepts(supplied.exact_type()));
-    CHECK(exact.accepts(supplied.exact_type()));
-    CHECK_FALSE(other.accepts(supplied.exact_type()));
-    CHECK(pattern.accepts(supplied.exact_type()));
+    CHECK(exact.matches(supplied));
+    CHECK_FALSE(other.matches(supplied));
+    CHECK(pattern.matches(supplied));
 }
 
 TEST_CASE("operator cache constraints retain every ordered graph structure",
@@ -270,28 +354,27 @@ TEST_CASE("operator cache constraints retain every ordered graph structure",
     const auto multiplication = binary_structure<multiply_node>();
     const auto uncacheable = uncacheable_structure();
 
-    const auto first = GraphArgumentType{
+    const auto first = GraphArgumentConstraint{
         std::vector<details::GraphWiringStructure>{identity, addition}};
-    const auto one_graph_set = GraphArgumentType{
+    const auto one_graph_set = GraphArgumentConstraint{
         std::vector<details::GraphWiringStructure>{identity}};
-    const auto one_graph = GraphArgumentType{identity};
-    const auto equivalent = GraphArgumentType{
+    const auto one_graph = GraphArgumentConstraint{identity};
+    const auto equivalent = GraphArgumentConstraint{
         std::vector<details::GraphWiringStructure>{identity, addition}};
-    const auto different_second = GraphArgumentType{
+    const auto different_second = GraphArgumentConstraint{
         std::vector<details::GraphWiringStructure>{identity, multiplication}};
-    const auto reversed = GraphArgumentType{
+    const auto reversed = GraphArgumentConstraint{
         std::vector<details::GraphWiringStructure>{addition, identity}};
-    const auto not_cacheable = GraphArgumentType{
+    const auto uncacheable_constraint = GraphArgumentConstraint{
         std::vector<details::GraphWiringStructure>{identity, uncacheable}};
 
     CHECK(first.same_constraint(equivalent));
     CHECK_FALSE(first.same_constraint(different_second));
     CHECK_FALSE(first.same_constraint(reversed));
     CHECK_FALSE(one_graph_set.same_constraint(one_graph));
-    CHECK(first.cacheable_constraint());
-    CHECK_FALSE(not_cacheable.cacheable_constraint());
-    CHECK(first.structure() == nullptr);
-    CHECK(one_graph_set.structure() == nullptr);
+    CHECK(first.compare_specificity(equivalent) == std::partial_ordering::equivalent);
+    CHECK(first.compare_specificity(different_second) == std::partial_ordering::unordered);
+    CHECK(uncacheable_constraint.matches(argument({identity, uncacheable})));
 }
 
 TEST_CASE("graph types resolve variables from their parameters and output",
@@ -309,13 +392,30 @@ TEST_CASE("graph types resolve variables from their parameters and output",
     CHECK(std::get<const Type *>(*type_map.find(VALUE::type())) == &cpp_scalar_type<i64>());
 }
 
+TEST_CASE("graph signature interning is independent of structural patterns",
+          "[feature:operator][feature:type-system][feature:graph-argument]") {
+    using Prototype = auto(TS<i64, TimeSeriesGuarantee::ordinary>) -> TS<i64, TimeSeriesGuarantee::ordinary>;
+    using Unpatterned = GRAPH<Prototype>;
+    using Patterned = GRAPH<Prototype, unary_identity_pattern>;
+
+    CHECK(&Unpatterned::type() == &graph_argument_type(Unpatterned::type().parameters(),
+                                                       Unpatterned::type().output()));
+    CHECK(&Patterned::type() == &Unpatterned::type());
+
+    const auto first_structure = identity_structure<boundary_node>();
+    const auto second_structure = identity_structure<other_boundary_node>();
+    const auto first_argument = argument(first_structure);
+    const auto second_argument = argument(second_structure);
+    CHECK(&first_argument.exact_type() == &second_argument.exact_type());
+}
+
 TEST_CASE("graph types resolve scalar parameters with the same variables as time series parameters",
           "[feature:operator][feature:type-system][feature:graph-argument][scalar:integer]") {
     using VALUE = ScalarVariable<"VALUE">;
     using Function = GRAPH<auto(VALUE, TS<VALUE>) -> TS<VALUE>>;
 
-    const auto supplied = GraphArgumentType{
-        std::vector<const Type *>{&cpp_scalar_type<i64>(), &TS<i64>::type()}, &TS<i64>::type()};
+    const auto &supplied = graph_argument_type(
+        std::array<const Type *, 2>{&cpp_scalar_type<i64>(), &TS<i64>::type()}, &TS<i64>::type());
     auto type_map = TypeMap{};
 
     REQUIRE(Function::type().match(supplied, type_map));
@@ -327,8 +427,8 @@ TEST_CASE("repeated variables in graph types reject inconsistent graph signature
     using VALUE = ScalarVariable<"VALUE">;
     using Function = GRAPH<auto(TS<VALUE>, TS<VALUE>) -> TS<VALUE>>;
 
-    const auto mixed = GraphArgumentType{
-        std::vector<const Type *>{&TS<i64>::type(), &TS<float>::type()}, &TS<i64>::type()};
+    const auto &mixed = graph_argument_type(
+        std::array<const Type *, 2>{&TS<i64>::type(), &TS<float>::type()}, &TS<i64>::type());
     auto type_map = TypeMap{};
 
     CHECK_FALSE(Function::type().match(mixed, type_map));
@@ -352,7 +452,112 @@ TEST_CASE("repeated variables make graph types more specific",
     CHECK(compare_specificity(independent, same) == std::partial_ordering::greater);
 }
 
-TEST_CASE("graph patterns constrain graph types during matching",
+TEST_CASE("callable graph time series unions accept each form and preserve the supplied point",
+          "[feature:wiring][feature:type-system][feature:graph-argument][feature:wiring-materialisation]") {
+    STATIC_CHECK(details::graph_time_series_union<GRAPH_INPUT_FORM>::value);
+    STATIC_CHECK_FALSE(details::graph_time_series_union<Union<"INVALID_GRAPH_INPUT", TS<i64>, i64>>::value);
+
+    using namespace bg::literals;
+    auto builder_calls = 0;
+    auto records = std::vector<const details::WiringRecord *>{};
+    auto types = std::vector<const TimeSeriesType *>{};
+    auto option_targets = std::vector<const TimeSeriesType *>{};
+
+    const auto inspect = graph("name"_n = "inspect_union_input", [&](wp<GRAPH_INPUT_FORM> input) {
+        records.push_back(static_cast<WiringPoint>(input).record());
+        types.push_back(&input.type());
+        const auto options = input.materialisation_options();
+        option_targets.push_back(options.empty() ? nullptr : options[0].target_type);
+    });
+
+    auto wiring = GraphWiring{};
+    const auto context = WiringContext{wiring};
+    const auto source = node<boundary_node>();
+    const auto value = source();
+    auto deferred = wiring.create_wp<TS<i64>>(value);
+    deferred.materialisation_option<TSB<graph_value_bundle>>(
+        [&builder_calls](wp<TS<i64>> input) {
+            ++builder_calls;
+            return static_cast<WiringPoint>(bundle<TSB<graph_value_bundle>>("value"_n = input));
+        },
+        0.5);
+    const auto bundle_value = bundle<TSB<graph_value_bundle>>("value"_n = value);
+    const auto deferred_record = static_cast<WiringPoint>(deferred).record();
+    const auto bundle_record = static_cast<WiringPoint>(bundle_value).record();
+
+    inspect(deferred);
+    inspect(bundle_value);
+
+    REQUIRE(records.size() == 2);
+    CHECK(records[0] == deferred_record);
+    CHECK(records[1] == bundle_record);
+    CHECK(types[0] == &TS<i64>::type());
+    CHECK(type_cast<TimeSeriesBundleType>(types[1]) != nullptr);
+    CHECK(option_targets[0] == &TSB<graph_value_bundle>::type());
+    CHECK(option_targets[1] == nullptr);
+    CHECK(builder_calls == 0);
+}
+
+TEST_CASE("callable graph union names share variables inside their alternatives",
+          "[feature:wiring][feature:type-system][feature:graph-argument]") {
+    const auto inspect = graph("name"_n = "inspect_union_variables",
+                               [](wp<GRAPH_LEFT_FORM>, wp<GRAPH_RIGHT_FORM>) {});
+    const auto integer_source = node<boundary_node>();
+    const auto floating_source = node<float_boundary_node>();
+
+    testing::test_wiring([&] {
+        const auto left = integer_source();
+        const auto right = integer_source();
+        inspect(left, right);
+    });
+
+    testing::test_wiring([&] {
+        const auto left = integer_source();
+        const auto right = floating_source();
+        CHECK_THROWS_AS(inspect(left, right), TypeResolutionError);
+    });
+}
+
+TEST_CASE("callable graph labels validate time series union alternatives",
+          "[feature:wiring][feature:type-system][feature:graph-argument]") {
+    using LABEL_FORM = Union<"LABEL_FORM", TS<i64>, TS<double>>;
+    auto label_calls = 0;
+    const auto inspect = graph(
+        "name"_n = "inspect_union_label", "label"_n = [&label_calls](wp<LABEL_FORM>) {
+            ++label_calls;
+            return "selected";
+        },
+        [](wp<TS<bool>>) {});
+    const auto source = node([](Out<TS<bool>>) {});
+
+    testing::test_wiring([&] { CHECK_THROWS_AS(inspect(source()), WiringError); });
+    CHECK(label_calls == 0);
+}
+
+TEST_CASE("aggregate graph time series unions accept each declared form",
+          "[feature:wiring][feature:type-system][feature:graph-argument][definition:aggregate]") {
+    struct union_graph {
+        wp<GRAPH_INPUT_FORM> input;
+
+        void wire() const {
+            if (!input.type().is_time_series()) {
+                throw std::logic_error{"the graph input is not a time series"};
+            }
+        }
+    };
+
+    using namespace bg::literals;
+    const auto inspect = graph<union_graph>();
+    const auto source = node<boundary_node>();
+
+    testing::test_wiring([&] { inspect(source()); });
+    testing::test_wiring([&] {
+        const auto value = source();
+        inspect(bundle<TSB<graph_value_bundle>>("value"_n = value));
+    });
+}
+
+TEST_CASE("graph patterns constrain graph parameters during matching",
           "[feature:operator][feature:type-system][feature:graph-argument]") {
     using Addition = GRAPH<auto(TS<i64>, TS<i64>) -> TS<i64>, addition_pattern>;
 
@@ -360,7 +565,51 @@ TEST_CASE("graph patterns constrain graph types during matching",
     const auto multiply = argument(binary_structure<multiply_node>());
 
     CHECK(Addition::type().accepts(add.exact_type()));
-    CHECK_FALSE(Addition::type().accepts(multiply.exact_type()));
+    CHECK(Addition::constraint()->matches(add));
+    CHECK_FALSE(Addition::constraint()->matches(multiply));
+}
+
+TEST_CASE("graph structure diagnostics retain the reason for identical graph types",
+          "[feature:operator][feature:wiring][feature:graph-argument]") {
+    const auto expected_structure = binary_structure<add_node>();
+    const auto supplied = argument(binary_structure<multiply_node>());
+    const auto &graph_type = graph_argument_type(expected_structure);
+    auto selected = std::string{};
+    auto operation = Operator{Signature{
+        util::symbol{"identity"}, {{util::symbol{"function"}, &graph_type}}}};
+    operation.overload(GraphOverload{util::symbol{"identity"}, expected_structure, false, selected, nullptr,
+                                     graph_type});
+
+    try {
+        testing::test_wiring([&] { (void)operation(supplied); });
+        FAIL("expected the graph structure constraint to reject the supplied graph");
+    } catch (const WiringError &error) {
+        REQUIRE(error.diagnostic());
+        REQUIRE(error.diagnostic()->candidates.size() == 1);
+        const auto &failure = error.diagnostic()->candidates.front();
+        CHECK(failure.expected == &graph_type);
+        CHECK(failure.supplied == &graph_type);
+        CHECK(std::string{error.what()}.contains("graph structure does not match the declared graph constraint"));
+    }
+}
+
+TEST_CASE("graph pattern constraints run only after graph signature matching",
+          "[feature:operator][feature:type-system][feature:graph-argument]") {
+    using Constrained = GRAPH<auto(TS<i64>) -> TS<i64>, counted_unary_pattern>;
+    auto parameter = Parameter{util::symbol{"function"}, &Constrained::type()};
+    parameter.graph_constraint = Constrained::constraint();
+    const auto signature = Signature{util::symbol{"constrained"}, {std::move(parameter)}};
+
+    const auto wrong_signature = argument(identity_structure<float_boundary_node>());
+    const auto mismatched_structure = argument(unary_add_structure());
+    const auto wrong_arguments = std::array<WiringArgument, 1>{WiringArgument{wrong_signature}};
+    const auto mismatched_arguments = std::array<WiringArgument, 1>{WiringArgument{mismatched_structure}};
+
+    unary_pattern_calls = 0;
+    CHECK(signature.match_wiring_arguments(wrong_arguments).empty());
+    CHECK(unary_pattern_calls == 0);
+    CHECK_THROWS_AS(signature.match_wiring_arguments(mismatched_arguments), TypeResolutionError);
+    CHECK(unary_pattern_calls == 1);
 }
 
 TEST_CASE("graph types with the same pattern retain signature specificity",
@@ -369,9 +618,12 @@ TEST_CASE("graph types with the same pattern retain signature specificity",
     using Generic = GRAPH<auto(TS<VALUE>, TS<VALUE>) -> TS<VALUE>, binary_first_pattern>;
     using Exact = GRAPH<auto(TS<i64>, TS<i64>) -> TS<i64>, binary_first_pattern>;
 
-    const auto generic =
-        Signature{util::symbol{"generic"}, {{util::symbol{"function"}, &Generic::type()}}};
-    const auto exact = Signature{util::symbol{"exact"}, {{util::symbol{"function"}, &Exact::type()}}};
+    auto generic_parameter = Parameter{util::symbol{"function"}, &Generic::type()};
+    generic_parameter.graph_constraint = Generic::constraint();
+    const auto generic = Signature{util::symbol{"generic"}, {std::move(generic_parameter)}};
+    auto exact_parameter = Parameter{util::symbol{"function"}, &Exact::type()};
+    exact_parameter.graph_constraint = Exact::constraint();
+    const auto exact = Signature{util::symbol{"exact"}, {std::move(exact_parameter)}};
 
     CHECK(compare_specificity(exact, generic) == std::partial_ordering::less);
     CHECK(compare_specificity(generic, exact) == std::partial_ordering::greater);
@@ -442,6 +694,7 @@ TEST_CASE("graph structure rejects overlapping external boundaries",
     const auto value = boundary();
     const auto boundaries = std::array<WiringPoint, 2>{value, value};
 
+    (void)wiring.complete_pending_wiring();
     CHECK_THROWS_WITH(details::graph_wiring_structure(wiring, boundaries),
                       "graph boundaries must identify distinct outputs");
 }
@@ -489,16 +742,25 @@ TEST_CASE("graph patterns are less generic than any graph and distinct patterns 
                                       [multiply_node_template](wp<TS<i64>> left, wp<TS<i64>> right) {
         return multiply_node_template(left, right);
     });
-    const auto add = GraphArgumentType{std::make_shared<const decltype(add_graph)>(add_graph)};
-    const auto multiply = GraphArgumentType{std::make_shared<const decltype(multiply_graph)>(multiply_graph)};
-    const auto add_signature = Signature{util::symbol{"add"}, {{util::symbol{"function"}, &add}}};
-    const auto multiply_signature = Signature{util::symbol{"multiply"}, {{util::symbol{"function"}, &multiply}}};
+    auto add_parameter = Parameter{util::symbol{"function"}, &GraphArgument::type()};
+    add_parameter.graph_constraint = std::make_shared<GraphArgumentConstraint>(
+        std::make_shared<const decltype(add_graph)>(add_graph));
+    auto multiply_parameter = Parameter{util::symbol{"function"}, &GraphArgument::type()};
+    multiply_parameter.graph_constraint = std::make_shared<GraphArgumentConstraint>(
+        std::make_shared<const decltype(multiply_graph)>(multiply_graph));
+    const auto add_signature = Signature{util::symbol{"add"}, {std::move(add_parameter)}};
+    const auto multiply_signature = Signature{util::symbol{"multiply"}, {std::move(multiply_parameter)}};
     const auto any_signature =
         Signature{util::symbol{"any"}, {{util::symbol{"function"}, &GraphArgument::type()}}};
+    auto empty_constraint_parameter = Parameter{util::symbol{"function"}, &GraphArgument::type()};
+    empty_constraint_parameter.graph_constraint = std::make_shared<GraphArgumentConstraint>();
+    const auto empty_constraint_signature =
+        Signature{util::symbol{"empty_constraint"}, {std::move(empty_constraint_parameter)}};
 
     CHECK(compare_specificity(add_signature, any_signature) == std::partial_ordering::less);
     CHECK(compare_specificity(any_signature, add_signature) == std::partial_ordering::greater);
     CHECK(compare_specificity(add_signature, multiply_signature) == std::partial_ordering::unordered);
+    CHECK(compare_specificity(any_signature, empty_constraint_signature) == std::partial_ordering::equivalent);
 }
 
 TEST_CASE("an output operator selects source, value, and sink graph overloads",
@@ -543,11 +805,55 @@ TEST_CASE("operator caching uses graph structure and bypasses uncacheable struct
     });
     CHECK(requirements == 1);
 
+    const auto captured_one = captured_integer_structure(1);
+    const auto captured_two = captured_integer_structure(2);
+    CHECK_FALSE(captured_one == captured_two);
+    const auto captured_one_argument = argument(captured_one);
+    const auto captured_two_argument = argument(captured_two);
+    CHECK(&captured_one_argument.exact_type() == &captured_two_argument.exact_type());
+    testing::test_wiring([&] {
+        (void)operation(argument(captured_one));
+        (void)operation(argument(captured_one));
+        (void)operation(argument(captured_two));
+        (void)operation(argument(captured_two));
+    });
+    CHECK(requirements == 3);
+
     testing::test_wiring([&] {
         (void)operation(argument(uncacheable_structure()));
         (void)operation(argument(uncacheable_structure()));
+        const auto uncacheable = uncacheable_structure();
+        (void)operation(argument(std::vector<details::GraphWiringStructure>{identity_structure(), uncacheable}));
+        (void)operation(argument(std::vector<details::GraphWiringStructure>{identity_structure(), uncacheable}));
+        (void)operation(argument(std::vector<details::GraphWiringStructure>{}));
+        (void)operation(argument(std::vector<details::GraphWiringStructure>{}));
     });
-    CHECK(requirements == 3);
+    CHECK(requirements == 9);
+}
+
+TEST_CASE("graph signature constraints own captured scalars without registry retention",
+          "[feature:wiring][feature:type-system][feature:graph-argument]") {
+    auto lifetime = std::weak_ptr<int>{};
+    auto signature = std::unique_ptr<Signature>{};
+
+    {
+        auto captured = std::make_shared<int>(7);
+        lifetime = captured;
+        const auto structure = captured_shared_pointer_structure(captured);
+        auto graph_value = argument(structure);
+        auto parameter = Parameter{util::symbol{"function"}, &GraphArgument::type()};
+        parameter.graph_constraint =
+            std::make_shared<GraphArgumentConstraint>(structure);
+        signature = std::make_unique<Signature>(util::symbol{"captured"},
+                                                std::vector<Parameter>{std::move(parameter)});
+
+        captured.reset();
+        CHECK_FALSE(lifetime.expired());
+    }
+
+    CHECK_FALSE(lifetime.expired());
+    signature.reset();
+    CHECK(lifetime.expired());
 }
 
 TEST_CASE("operator diagnostics retain graph argument types",
@@ -580,9 +886,14 @@ TEST_CASE("variadic parameters reject graph arguments",
 
 TEST_CASE("a graph argument cannot become node runtime storage",
           "[feature:operator][feature:wiring][feature:graph-argument]") {
-    CHECK_THROWS_WITH(testing::test_wiring([&] {
-                          const auto invalid = GraphNode{};
-                          (void)invalid(argument(identity_structure()));
-                      }),
-                      "a graph argument cannot be stored by a node");
+    auto wiring = GraphWiring{};
+    {
+        const auto context = WiringContext{wiring};
+        const auto invalid = GraphNode{};
+        CHECK_THROWS_WITH(invalid(argument(identity_structure())),
+                          Catch::Matchers::ContainsSubstring("a graph argument cannot be stored by a node"));
+    }
+
+    CHECK_NOTHROW(wiring.finalize());
+    CHECK(wiring.nodes().empty());
 }

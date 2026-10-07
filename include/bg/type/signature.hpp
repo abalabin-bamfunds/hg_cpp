@@ -9,6 +9,7 @@
 
 #include <compare>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <span>
 #include <utility>
@@ -16,6 +17,7 @@
 
 namespace bg {
 
+class GraphArgumentConstraint;
 class WiringArguments;
 class WiringArgument;
 
@@ -34,6 +36,7 @@ struct Parameter {
     const details::VariadicWiringOperations *variadic_operations{};
     bool context{};
     bool dynamic_activity{};
+    std::shared_ptr<const GraphArgumentConstraint> graph_constraint{};
 };
 
 struct VariableResolver {
@@ -78,6 +81,26 @@ struct SignatureResolution {
     TypeMap type_map;
 };
 
+struct WiringArgumentFormMatch {
+    // Index of the original argument passed to Signature::match_wiring_arguments.
+    std::size_t argument_index;
+    const Type *offered_type;
+    const TimeSeriesType *materialisation_target;
+    double materialisation_cost;
+};
+
+struct WiringSignatureMatch {
+    TypeMap type_map;
+    std::vector<WiringArgumentFormMatch> argument_forms;
+    double materialisation_cost{};
+};
+
+struct ResolvedWiringSignatureMatch {
+    SignatureResolution resolution;
+    std::vector<WiringArgumentFormMatch> argument_forms;
+    double materialisation_cost{};
+};
+
 class Signature {
   public:
     Signature(util::symbol name, std::vector<Parameter> parameters, std::vector<VariableResolver> resolvers = {})
@@ -98,12 +121,25 @@ class Signature {
     [[nodiscard]] SignatureResolution
     resolve_wiring_arguments(std::span<const WiringArgument> arguments,
                              std::span<const details::WiringArgumentDescriptor> descriptors,
-                             const TypeMap *type_map = nullptr) const;
+                             const TypeMap *type_map = nullptr,
+                             const std::function<void(const TypeMap &)> &completion = {}) const;
+    // Match normalized arguments, with one entry per signature parameter. Variadic captures remain one argument.
+    // This returns match-only candidates and does not invoke materialisation builders or completion callbacks.
+    [[nodiscard]] std::vector<WiringSignatureMatch>
+    match_wiring_arguments(std::span<const WiringArgument> arguments, const TypeMap *type_map = nullptr) const;
+    // Consume one form match and complete it while resolver lookup is active. The argument context supplies the
+    // original descriptors and scalar-read tracking; resolved_type() observes this match's type map.
+    [[nodiscard]] ResolvedWiringSignatureMatch complete_wiring_match(
+        WiringSignatureMatch match, const WiringArguments &argument_context,
+        const std::function<void(const TypeMap &)> &completion = {}) const;
     [[nodiscard]] TypeMap match_arguments(std::span<const Type *const> arguments,
                                           const TypeMap *type_map = nullptr) const;
     void validate_wiring_arguments(std::span<const WiringArgument> arguments) const;
-    [[nodiscard]] ResolvedSignature complete_resolution(TypeMap &type_map,
-                                                        const WiringArguments *arguments = nullptr) const;
+    // Completion runs after signature resolution while resolver lookup is active.
+    // It must not retain that lookup scope.
+    [[nodiscard]] ResolvedSignature complete_resolution(
+        TypeMap &type_map, const WiringArguments *arguments = nullptr,
+        const std::function<void(const TypeMap &)> &completion = {}) const;
 
     util::symbol name() const noexcept { return name_; }
 
@@ -136,6 +172,7 @@ class Signature {
 
   private:
     void validate_variadic_parameters() const;
+    void validate_graph_constraints(std::span<const WiringArgument> arguments) const;
     [[nodiscard]] SignatureResolution resolve_seeded(std::span<const Type *const> arguments, TypeMap type_map) const;
 
     util::symbol name_;

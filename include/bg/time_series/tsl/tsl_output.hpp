@@ -11,23 +11,20 @@
 
 namespace bg {
 
-template <typename Item, auto Size, OutputSpecification Specification, auto... Properties>
-class Out<TSL<Item, Size, Properties...>, Specification> {
+template <typename Item, auto Size, auto... Properties> class Out<TSL<Item, Size, Properties...>> {
   public:
     using storage_type = details::time_series_list_storage;
 
   public:
     explicit Out(TimeSeriesOutputBinding state) noexcept : state_(std::move(state)) {}
     Out(TimeSeriesState &last_updated, storage_type &value, EvaluationContext &context)
-        requires(Specification == OutputSpecification::default_ &&
-                 !details::generic_time_series<TSL<Item, Size, Properties...>> &&
+        requires(!details::generic_time_series<TSL<Item, Size, Properties...>> &&
                  !details::size_variable_declaration<decltype(Size)> && Size != std::dynamic_extent)
         : state_{last_updated, &value, cpp_time_series_runtime_type<TSL<Item, Size, Properties...>>(), context} {}
 
     Out(TimeSeriesState &last_updated, storage_type &value, const TimeSeriesRuntimeType &runtime_type,
         EvaluationContext &context)
-        requires(Specification == OutputSpecification::default_ &&
-                 !details::generic_time_series<TSL<Item, Size, Properties...>> &&
+        requires(!details::generic_time_series<TSL<Item, Size, Properties...>> &&
                  !details::size_variable_declaration<decltype(Size)> && Size != std::dynamic_extent)
         : state_{last_updated, &value, runtime_type, context} {}
 
@@ -39,11 +36,11 @@ class Out<TSL<Item, Size, Properties...>, Specification> {
     const TimeSeriesRuntimeType &runtime_type() const noexcept { return state_->runtime_type(); }
     std::size_t size() const noexcept { return state_->runtime_type().item_count(state_->data()); }
 
-    Out<Item, Specification> operator[](std::size_t index) const {
+    Out<Item> operator[](std::size_t index) const {
         const auto id = static_cast<item_id_t>(index);
         const auto item = state_->runtime_type().item(state_->mutable_data(), id);
         auto *path = state_->add_path(state_->runtime_type(), id);
-        return details::output_factory::make<Item, Specification>(item.last_updated, item.value, item.runtime_type, path);
+        return details::output_factory::make<Out<Item>>(item.last_updated, item.value, item.runtime_type, path);
     }
 
     void invalidate() const { state_->invalidate(); }
@@ -51,7 +48,7 @@ class Out<TSL<Item, Size, Properties...>, Specification> {
     const Out *operator->() const noexcept { return this; }
 
     template <typename... Functions> decltype(auto) visit(Functions &&...functions) const {
-        auto output = details::output_factory::make<TS_T, Specification>(state_.get());
+        auto output = details::output_factory::make<Out<TS_T>>(state_.get());
         return output.visit(std::forward<Functions>(functions)...);
     }
 

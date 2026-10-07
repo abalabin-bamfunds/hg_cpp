@@ -20,8 +20,10 @@
 #include <bg/type/time_series_reference_type.hpp>
 #include <bg/type/time_series_set_type.hpp>
 #include <bg/type/type_resolution_error.hpp>
+#include <bg/type/type_registry.hpp>
 #include <bg/type/type_text.hpp>
 #include <bg/type/type_variable.hpp>
+#include <bg/type/variable_registry.hpp>
 #include <bg/util/scope_exit.hpp>
 #include <bg/version.hpp>
 
@@ -40,6 +42,7 @@
 #include <Python.h>
 
 #include <cstdint>
+#include <exception>
 #include <memory_resource>
 #include <ranges>
 #include <span>
@@ -57,60 +60,71 @@ using namespace nanobind::literals;
 namespace bg::python {
 namespace {
 
+std::exception_ptr python_error_cause(std::exception_ptr cause) {
+    if (cause == nullptr) {
+        return {};
+    }
+
+    try {
+        std::rethrow_exception(cause);
+    } catch (const WiringError &error) {
+        return python_error_cause(error.cause());
+    } catch (const nb::python_error &) {
+        return cause;
+    } catch (...) {
+        return {};
+    }
+}
+
+[[noreturn]] void rethrow_python_error(const WiringError &error) {
+    const auto cause = python_error_cause(error.cause());
+    if (cause == nullptr) {
+        throw error;
+    }
+
+    try {
+        std::rethrow_exception(cause);
+    } catch (nb::python_error &python_exception) {
+        auto preserved = nb::python_error{python_exception};
+        if (!error.contexts().empty()) {
+            const auto context = WiringError::from_exception("BG wiring context", error.contexts(), {});
+            try {
+                const auto add_note = nb::getattr(nb::borrow<nb::object>(PyExc_BaseException), "add_note");
+                add_note(preserved.value(), nb::str{context.what()});
+            } catch (const nb::python_error &) {
+                PyErr_Clear();
+            }
+        }
+        preserved.restore();
+        nb::raise_python_error();
+    }
+
+    std::terminate();
+}
+
 class TypeDescriptor {
   public:
     explicit TypeDescriptor(const Type &type, bool accepts_absent_scalar = false) noexcept
         : type_{&type}, accepts_absent_scalar_{accepts_absent_scalar} {}
     explicit TypeDescriptor(const BundleSchema &schema) noexcept : type_{&schema}, bundle_schema_{&schema} {}
-    TypeDescriptor(const Type &type, std::shared_ptr<const void> owner) noexcept
-        : type_{&type}, owner_{std::move(owner)} {}
     TypeDescriptor(const TypeDescriptor &value, bool accepts_time_series_value) noexcept
         : type_{value.type_}, bundle_schema_{value.bundle_schema_},
-          accepts_absent_scalar_{value.accepts_absent_scalar_}, owner_{value.owner_},
+          accepts_absent_scalar_{value.accepts_absent_scalar_},
           accepts_time_series_value_{accepts_time_series_value} {}
 
     const Type &type() const noexcept { return *type_; }
     const BundleSchema *bundle_schema() const noexcept { return bundle_schema_; }
     bool accepts_absent_scalar() const noexcept { return accepts_absent_scalar_; }
     bool accepts_time_series_value() const noexcept { return accepts_time_series_value_; }
-    const std::shared_ptr<const void> &owner() const noexcept { return owner_; }
 
   private:
     const Type *type_;
     const BundleSchema *bundle_schema_{};
     bool accepts_absent_scalar_{};
-    std::shared_ptr<const void> owner_;
     bool accepts_time_series_value_{};
 };
 
-struct VariadicBundleAnnotation {
-    VariadicBundleAnnotation() : schema{util::symbol{"TS_SCHEMA"}}, type{schema, TimeSeriesGuarantee::ordinary} {}
-
-    TypeVariableType<BundleSchemaType> schema;
-    GenericTimeSeriesBundleType type;
-};
-
-struct VariadicListAnnotation {
-    VariadicListAnnotation(const TimeSeriesType &item, std::shared_ptr<const void> item_owner)
-        : item_owner{std::move(item_owner)}, size{util::symbol{"SIZE"}},
-          type{item, size, TimeSeriesGuarantee::ordinary} {}
-
-    std::shared_ptr<const void> item_owner;
-    SizeVariable size;
-    GenericTimeSeriesListType type;
-};
-
 using PythonParameter = std::tuple<std::string, TypeDescriptor, std::string>;
-
-struct PythonValueInputType {
-    PythonValueInputType(std::string_view name, const ScalarType &scalar_type)
-        : guarantee{util::symbol{name}}, time_series{scalar_type, guarantee},
-          type{util::symbol{name}, std::vector<const Type *>{&scalar_type, &time_series}} {}
-
-    GuaranteeVariable guarantee;
-    GenericTimeSeriesValueType time_series;
-    TypeVariableType<Type> type;
-};
 
 class PythonSchemaRegistry {
   public:
@@ -149,26 +163,26 @@ PythonSchemaRegistry &schema_registry() {
     return registry;
 }
 
-PythonNodeDefinition::SignatureDefinition::GenericTimeSeriesType
-generic_time_series_type(const TimeSeriesType &type, const GuaranteeVariable &guarantee) {
+std::unique_ptr<TimeSeriesType> generic_time_series_type(const TimeSeriesType &type,
+                                                         const GuaranteeVariable &guarantee) {
     if (const auto *value = type_cast<TimeSeriesValueType>(&type)) {
-        return GenericTimeSeriesValueType{value->value_type(), guarantee};
+        return std::make_unique<GenericTimeSeriesValueType>(value->value_type(), guarantee);
     }
     if (const auto *reference = type_cast<TimeSeriesReferenceType>(&type)) {
-        return GenericTimeSeriesReferenceType{reference->target_type(), guarantee};
+        return std::make_unique<GenericTimeSeriesReferenceType>(reference->target_type(), guarantee);
     }
     if (const auto *set = type_cast<TimeSeriesSetType>(&type)) {
-        return GenericTimeSeriesSetType{set->item_type(), guarantee};
+        return std::make_unique<GenericTimeSeriesSetType>(set->item_type(), guarantee);
     }
     if (const auto *list = type_cast<TimeSeriesListType>(&type)) {
-        return GenericTimeSeriesListType{list->item_type(), list->size(), guarantee};
+        return std::make_unique<GenericTimeSeriesListType>(list->item_type(), list->size(), guarantee);
     }
     if (const auto *dictionary = type_cast<TimeSeriesDictionaryType>(&type)) {
-        return GenericTimeSeriesDictionaryType{dictionary->key_type(), dictionary->value_type(),
-                                               dictionary->key_set_type(), guarantee};
+        return std::make_unique<GenericTimeSeriesDictionaryType>(dictionary->key_type(), dictionary->value_type(),
+                                                                 dictionary->key_set_type(), guarantee);
     }
     if (const auto *bundle = type_cast<TimeSeriesBundleType>(&type)) {
-        return GenericTimeSeriesBundleType{bundle->schema_type(), guarantee};
+        return std::make_unique<GenericTimeSeriesBundleType>(bundle->schema_type(), guarantee);
     }
 
     throw std::invalid_argument{"a Python definition uses an unsupported time-series type"};
@@ -177,23 +191,11 @@ generic_time_series_type(const TimeSeriesType &type, const GuaranteeVariable &gu
 std::shared_ptr<const PythonNodeDefinition::SignatureDefinition>
 make_signature(std::string_view name, const std::vector<PythonParameter> &parameters,
                const std::optional<TypeDescriptor> &output) {
-    const auto time_series_parameter_count = static_cast<std::size_t>(std::ranges::count_if(
-        parameters, [](const auto &parameter) { return std::get<1>(parameter).type().is_time_series(); }));
-    auto type_owners = std::vector<std::shared_ptr<const void>>{};
-    type_owners.reserve(parameters.size() + static_cast<std::size_t>(output.has_value()));
-    auto guarantees = std::vector<GuaranteeVariable>{};
-    guarantees.reserve(time_series_parameter_count);
-    auto time_series_types = std::vector<PythonNodeDefinition::SignatureDefinition::GenericTimeSeriesType>{};
-    time_series_types.reserve(time_series_parameter_count);
     auto resolved_parameters = std::vector<Parameter>{};
     resolved_parameters.reserve(parameters.size());
     auto wiring_parameter_types = std::vector<const Type *>{};
     wiring_parameter_types.reserve(parameters.size());
     for (const auto &[parameter_name, parameter_type, variadic] : parameters) {
-        if (parameter_type.owner()) {
-            type_owners.push_back(parameter_type.owner());
-        }
-
         const Type *type = &parameter_type.type();
         const Type *wiring_type = type;
         if (parameter_type.accepts_time_series_value()) {
@@ -202,15 +204,19 @@ make_signature(std::string_view name, const std::vector<PythonParameter> &parame
                 throw std::invalid_argument{"a Python @node input requires a scalar annotation"};
             }
 
-            auto owner = std::make_shared<PythonValueInputType>(parameter_name, *scalar);
-            type = &owner->type;
+            const auto &guarantee = VariableRegistry::instance().register_owned(
+                std::make_unique<GuaranteeVariable>(util::symbol{parameter_name}));
+            const auto &time_series = TypeRegistry::instance().register_owned(
+                std::make_unique<GenericTimeSeriesValueType>(*scalar, guarantee));
+            const auto &input_type = TypeRegistry::instance().register_owned(std::make_unique<TypeVariableType<Type>>(
+                util::symbol{parameter_name}, std::vector<const Type *>{scalar, &time_series}));
+            type = &input_type;
             wiring_type = scalar;
-            type_owners.push_back(std::move(owner));
         }
         if (const auto *time_series = type_cast<TimeSeriesType>(type); time_series != nullptr && variadic.empty()) {
-            guarantees.emplace_back(util::symbol{parameter_name});
-            time_series_types.push_back(generic_time_series_type(*time_series, guarantees.back()));
-            type = std::visit([](const auto &value) -> const Type * { return &value; }, time_series_types.back());
+            const auto &guarantee = VariableRegistry::instance().register_owned(
+                std::make_unique<GuaranteeVariable>(util::symbol{parameter_name}));
+            type = &TypeRegistry::instance().register_owned(generic_time_series_type(*time_series, guarantee));
         }
 
         auto parameter = Parameter{util::symbol{parameter_name}, type};
@@ -247,10 +253,6 @@ make_signature(std::string_view name, const std::vector<PythonParameter> &parame
         wiring_parameter_types.push_back(wiring_type);
     }
 
-    if (output && output->owner()) {
-        type_owners.push_back(output->owner());
-    }
-
     auto signature = [&]() -> Signature {
         if (!output) {
             return {util::symbol{name}, std::move(resolved_parameters)};
@@ -262,9 +264,8 @@ make_signature(std::string_view name, const std::vector<PythonParameter> &parame
         return {util::symbol{name}, std::move(resolved_parameters), *time_series_type};
     }();
 
-    return std::make_shared<const PythonNodeDefinition::SignatureDefinition>(
-        std::move(type_owners), std::move(guarantees), std::move(time_series_types), std::move(wiring_parameter_types),
-        std::move(signature));
+    return std::make_shared<const PythonNodeDefinition::SignatureDefinition>(std::move(wiring_parameter_types),
+                                                                              std::move(signature));
 }
 
 std::vector<WiringArgument> wiring_arguments(const Signature &signature, nb::sequence fixed_values,
@@ -350,9 +351,13 @@ nb::list test_graph(const PythonGraphDefinition &definition, nb::sequence input_
     }
 
     auto results = [&] {
-        auto release_gil = nb::gil_scoped_release{};
-        return testing::test_graph(static_cast<const WiringTemplate &>(definition),
-                                   std::span<const testing::TestGraphInput>{input_views});
+        try {
+            auto release_gil = nb::gil_scoped_release{};
+            return testing::test_graph(static_cast<const WiringTemplate &>(definition),
+                                       std::span<const testing::TestGraphInput>{input_views});
+        } catch (const WiringError &error) {
+            rethrow_python_error(error);
+        }
     }();
     auto output = nb::list{};
     for (auto index = std::size_t{}; index < results.size(); ++index) {
@@ -484,9 +489,11 @@ void bind_core(nb::module_ &module) {
         if (item == nullptr) {
             throw std::invalid_argument{"TSL[..., SIZE] requires a time-series item annotation"};
         }
-        auto annotation = std::make_shared<VariadicListAnnotation>(*item, value.owner());
-        const auto &type = annotation->type;
-        return TypeDescriptor{type, std::move(annotation)};
+        const auto &size = VariableRegistry::instance().register_owned(
+            std::make_unique<SizeVariable>(util::symbol{"SIZE"}));
+        const auto &type = TypeRegistry::instance().register_owned(
+            std::make_unique<GenericTimeSeriesListType>(*item, size, TimeSeriesGuarantee::ordinary));
+        return TypeDescriptor{type};
     });
     module.def("_time_series_dict_type", [](const TypeDescriptor &key_value, const TypeDescriptor &item_value) {
         const auto *key = type_cast<ScalarType>(&key_value.type());
@@ -509,9 +516,11 @@ void bind_core(nb::module_ &module) {
         return TypeDescriptor{time_series_bundle_type(*schema, TimeSeriesGuarantee::ordinary)};
     });
     module.def("_variadic_time_series_bundle_type", [] {
-        auto annotation = std::make_shared<VariadicBundleAnnotation>();
-        const auto &type = annotation->type;
-        return TypeDescriptor{type, std::move(annotation)};
+        const auto &schema = TypeRegistry::instance().register_owned(
+            std::make_unique<TypeVariableType<BundleSchemaType>>(util::symbol{"TS_SCHEMA"}));
+        const auto &type = TypeRegistry::instance().register_owned(
+            std::make_unique<GenericTimeSeriesBundleType>(schema, TimeSeriesGuarantee::ordinary));
+        return TypeDescriptor{type};
     });
     module.def("_optional_type", [](const TypeDescriptor &value) {
         if (value.type().is_time_series() || !value.type().is_scalar()) {

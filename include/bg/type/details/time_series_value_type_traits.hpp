@@ -3,6 +3,7 @@
 #include <bg/time_series/time_series_type.hpp>
 #include <bg/type/details/time_series_type_traits.hpp>
 #include <bg/type/time_series_value_type.hpp>
+#include <bg/type/type_registry.hpp>
 
 namespace bg::details {
 
@@ -20,10 +21,12 @@ template <typename T, auto... Properties> struct time_series_type_traits<TS<T, P
 
         if constexpr (Input || scalar_declaration_traits<T>::generic) {
             static const auto type = GenericTimeSeriesValueType{value, guarantee};
+            [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type);
             return type;
         }
         if (!guarantee.is_resolved()) {
             static const auto type = GenericTimeSeriesValueType{value, guarantee};
+            [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type);
             return type;
         }
 

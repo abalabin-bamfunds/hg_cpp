@@ -5,8 +5,10 @@
 #include <bg/graph/wiring_context.hpp>
 #include <bg/graph/wiring_error.hpp>
 #include <bg/scalar/scalar.hpp>
+#include <bg/type/type_variable.hpp>
 #include <bg/util/scope_exit.hpp>
 
+#include <algorithm>
 #include <functional>
 
 namespace bg {
@@ -70,10 +72,58 @@ std::optional<std::size_t> node_hash(const NodeTemplate &node_template, const Re
 
 std::optional<WiringPoint> NodeTemplate::wire(GraphWiring &wiring, ResolvedSignature signature, const TypeMap &type_map,
                                               std::span<const WiringArgument> arguments) const {
+    for (auto index = std::size_t{}; index < this->signature().parameter_count(); ++index) {
+        const auto *variable = dynamic_cast<const TypeVariableType<Type> *>(this->signature().parameter(index).type);
+        if (variable == nullptr || variable->alternatives().empty()) {
+            continue;
+        }
+
+        auto scalar_alternatives = std::size_t{};
+        auto time_series_alternatives = std::size_t{};
+        for (const auto *alternative : variable->alternatives()) {
+            if (type_cast<TimeSeriesType>(alternative) != nullptr) {
+                ++time_series_alternatives;
+                continue;
+            }
+            if (type_cast<ScalarType>(alternative) == nullptr) {
+                throw WiringError{"a node input Union may contain only scalar and time-series types"};
+            }
+            ++scalar_alternatives;
+        }
+        if (time_series_alternatives > 0 && (scalar_alternatives == 0 || time_series_alternatives > 1)) {
+            throw WiringError{"a node input Union may contain scalar alternatives and at most one time-series type"};
+        }
+    }
+
     if (std::ranges::any_of(arguments, &WiringArgument::is_graph)) {
         throw WiringError{"a graph argument cannot be stored by a node"};
     }
+    for (std::size_t index = 0; index < arguments.size(); ++index) {
+        if (!arguments[index].present() && !signature.parameters[index].accepts_absent_scalar) {
+            throw WiringError{"a required scalar parameter has no value"};
+        }
+    }
 
+    auto selected_output_runtime_type = static_cast<const TimeSeriesRuntimeType *>(nullptr);
+    if (signature.output != nullptr) {
+        selected_output_runtime_type = output_runtime_type(signature);
+        if (selected_output_runtime_type != nullptr && &selected_output_runtime_type->type() != signature.output) {
+            throw WiringError{"a selected output runtime type has a different semantic type"};
+        }
+    }
+
+    auto output = wiring.defer_node_call(*this, std::move(signature), type_map, arguments,
+                                         selected_output_runtime_type);
+    if (!output) {
+        return std::nullopt;
+    }
+    return output;
+}
+
+std::optional<WiringPoint> NodeTemplate::bind(GraphWiring &wiring, ResolvedSignature signature,
+                                              const TypeMap &type_map,
+                                              std::span<const WiringArgument> arguments,
+                                              const TimeSeriesRuntimeType *selected_output_runtime_type) const {
     auto materialized_arguments = std::vector<WiringArgument>{};
     materialized_arguments.reserve(arguments.size());
     for (const auto &argument : arguments) {
@@ -102,14 +152,6 @@ std::optional<WiringPoint> NodeTemplate::wire(GraphWiring &wiring, ResolvedSigna
         }
     }
 
-    const auto *selected_output_runtime_type = static_cast<const TimeSeriesRuntimeType *>(nullptr);
-    if (has_output) {
-        selected_output_runtime_type = output_runtime_type(signature);
-        if (selected_output_runtime_type != nullptr && &selected_output_runtime_type->type() != signature.output) {
-            throw WiringError{"a selected output runtime type has a different semantic type"};
-        }
-    }
-
     auto scalar_values = std::vector<WiredScalar>{};
     scalar_values.reserve(materialized_arguments.size() - inputs.size());
     auto release_scalars = util::scope_exit{[&]() noexcept { wiring.destroy_scalars(scalar_values); }};
@@ -121,10 +163,6 @@ std::optional<WiringPoint> NodeTemplate::wire(GraphWiring &wiring, ResolvedSigna
         }
 
         if (!argument.present()) {
-            if (!signature.parameters[index].accepts_absent_scalar) {
-                throw WiringError{"a required scalar parameter has no value"};
-            }
-
             scalar_values.push_back(
                 WiredScalar{argument.scalar_runtime_type(), nullptr});
             continue;

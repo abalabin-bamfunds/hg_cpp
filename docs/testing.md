@@ -21,7 +21,7 @@ Use `[dimension:value]` for each applicable dimension:
   `lifecycle`, `finalization`, `scheduling`, `timed-scheduling`, `simulation`, `wall-clock`, `input-activity`, `validity`,
   `invalidation`, `operator`, `constant`, `graph-argument`, `map`, `switch`,
   `time-series-storage`, `time-series-view`, `collection-change`, `reference`, `sampling`, `service`, `getitem`, `getattr`,
-  `nested-graph`, `mesh`, `multiservice`, or `variadic-wiring`
+  `nested-graph`, `mesh`, `multiservice`, `variadic-wiring`, or `wiring-materialisation`
 - `series`: `value`, `fixed-tsl`, `tss`, `tsd`, `tsb`, `reference`, or `generic`
 - `schema`: `named`, `unnamed`, or `generic`
 - `representation`: `native`, `free`, or `covariant`
@@ -58,7 +58,7 @@ implementing it. Select combinations that exercise each code path,
 compatibility boundary, failure mode, and regression. Use pairwise combinations
 for independent dimensions and explicit combinations for higher-order behavior.
 
-With Python 3.10 or newer, build the `test-coverage-report` target to validate
+With Python 3.13 or newer, build the `test-coverage-report` target to validate
 the tags and write `test-coverage.md` to the build directory.
 
 ## Test layout
@@ -120,16 +120,22 @@ graph compilation or evaluation.
 ### Type system
 
 - resolved type identity and scalar or time series classification
+- process-owned dynamic declarations and type-pointer validity after graph or wiring-template destruction
+- canonical factory cache identity, nested construction, failed factory retries, and concurrent cold misses
+- registration of primitive, generic, extension, and graph types; allocation-free primitive registration;
+  independent variable identities and failed-registration rollback
 - type variables, constraints, repeated variables, and lower bounds
 - type-map overlays and functional variable resolution
 - signature matching, resolution, and parameter category inference
+- scalar-or-time-series node parameter resolution to a selected concrete form;
+  graph-only unions between time series forms
 - hierarchical scalar inheritance and directional compatibility through scalar containers
 - operator signature specificity and ambiguity
 - types passed as scalars
 - guarantee compatibility, propagation, and enforcement
 - collection types and nested types
 - external declarations, public variable enumeration, runtime registration, and selection of supplied representations
-- default/view output specifications, semantic compatibility, and preservation through invocation and invalidation
+- extension-owned configured output declarations, runtime selection, semantic compatibility, and preservation through invocation and invalidation
 - default output representations independent of input representations, including collection children
 
 ### Wiring
@@ -143,14 +149,24 @@ graph compilation or evaluation.
 - graph-template boundaries and inner graph isolation
 - wiring paths, labels, and diagnostics
 - node-call deduplication, opt-out, and identity inputs
-- operator overload applicability, selection, requirements, resolvers, and caching
+- operator overload applicability, selection, on-demand metadata and requirement resolvers, error handling, and caching
 - `opt` argument matching, required-input preference, cache separation, named arguments, and variadic forwarding
-- context time series declaration, lexical binding, explicit arguments, type resolution, diagnostics, and caching
+- context time series declaration, lexical binding, snapshot capture and activation, explicit arguments, type
+  resolution, diagnostics, and caching
 - graph arguments, including signature type resolution, repeated variables, exact and pattern matching,
   structure-based caching, and callable and aggregate graphs
+- graph signature types shared across different structures, constraint specificity, captured-value cache separation,
+  and release of argument and overload constraint values
 - incompatible types, graph ownership errors, and invalid results
 - variadic capture by TSB and homogeneous TSL, forwarding, materialization, exact-name direct collection binding,
   nested boundaries, and operator selection
+- deferred wiring points, retained arguments, advertised materialisation options, signature form matching and completion,
+  deduplicated materialisation cost, callback non-execution during matching and root collection, shared concrete demands
+  across Union and concrete consumers, retained context bindings, failed transitive collection, unforced expansion,
+  lazy results, and expansion caching
+- immediate validation before pending-call registration; deferred errors retaining consumer, parameter, collection-item,
+  and service contexts; shared request origins; callback exception causes; diagnostic lifetime; offered-form and
+  matched-binding costs without additional callback execution
 - map argument selection, graph-function adaptation, overload selection, graph identity, and diagnostics
 - mesh argument selection, dependency selection, output inference, overload selection, and diagnostics
 - switch case preparation, argument selection, overload selection, compatibility, and diagnostics
@@ -237,6 +253,12 @@ For each reusable node and graph, test:
 - supported scalar and time series types
 - supported graph shapes
 - reported errors
+
+### Python integration
+
+- declaration metadata lifetime after definition destruction and callback ownership
+- scalar-or-time-series node input resolution and concrete binding
+- wiring failures preserving Python exception identity, type, traceback, and context notes
 
 ### Performance and portability
 

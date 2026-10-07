@@ -45,8 +45,10 @@ TEST_CASE("compiled root graph contains its service binding provider",
         const auto context = WiringContext{wiring};
         consume(lookup(clock().as<TS<std::int64_t, TimeSeriesGuarantee::final>>()));
         catalogue.build(wiring);
+        wiring.finalize();
     }
 
+    wiring.finalize();
     const auto compiled = CompiledGraph{wiring};
 
     CHECK(compiled.service_binding_count() == 1);
@@ -69,6 +71,7 @@ TEST_CASE("service request ordering points at the service client after input mat
         const auto reference = make_reference();
         audit(reference);
         catalogue.build(wiring);
+        wiring.finalize();
     }
 
     const auto &binding = wiring.service_binding_requirements().front();
@@ -76,7 +79,7 @@ TEST_CASE("service request ordering points at the service client after input mat
 
     auto found_service_client = false;
     for (const auto consumer_index : binding.consumers) {
-        const auto &consumer = wiring.nodes()[consumer_index];
+        const auto &consumer = wiring.nodes()[wiring.node_index(consumer_index)];
         if (consumer.path().name.text() == "service_client") {
             found_service_client = true;
         }

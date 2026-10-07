@@ -65,6 +65,18 @@ std::vector<WiringArgumentDescriptor> VariadicWiringRecord::argument_descriptors
     return result;
 }
 
+MaterialisationPreparation
+VariadicWiringRecord::prepare_materialisation(const TimeSeriesType &target_type) const {
+    auto preparation = MaterialisationPreparation{};
+    if (direct_) {
+        preparation.dependencies.push_back({*direct_, &target_type});
+        return preparation;
+    }
+
+    preparation.dependencies = operations_->materialisation_dependencies(arguments_, target_type);
+    return preparation;
+}
+
 WiringPoint VariadicWiringRecord::materialize(const TimeSeriesType &target_type) const {
     if (direct_) {
         return wiring().materialize(*direct_, target_type);

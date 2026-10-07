@@ -20,6 +20,9 @@ class WiringTemplate {
 
     virtual const Signature &signature() const = 0;
     [[nodiscard]] virtual RequirementResult requirement(const WiringArguments &) const { return accept; }
+    // Engine and extension API. Resolve types outside the input/output signature, such as node state types,
+    // while resolver lookup is active and before checking requirements.
+    virtual void resolve_additional_types(const TypeMap &) const {}
     [[nodiscard]] virtual std::optional<WiringPoint>
     invoke(GraphWiring &wiring, std::span<const WiringArgument> arguments, const TypeMap *seed_type_map) const;
 

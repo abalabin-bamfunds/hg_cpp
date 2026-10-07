@@ -206,7 +206,8 @@ The provider defines `scalar_type_traits<T>::type()` out of line. It also
 explicitly instantiates `cpp_scalar_runtime_type<T>()` in the provider library
 and declares that instantiation with `extern template` in its public header.
 This gives the semantic type and canonical runtime type one stable identity
-across shared-library boundaries.
+across shared-library boundaries. Semantic type factories follow the
+[type registration contract](type-system.md#type-model).
 
 `scalar_declaration_traits<T>` controls whether graph signatures accept the
 declaration as a collection, an implicit scalar argument, or a time series

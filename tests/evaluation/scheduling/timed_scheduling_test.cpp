@@ -47,7 +47,9 @@ TEST_CASE("timed scheduling adds storage only to graphs that declare it",
         scheduling_node(0);
     }
 
+    unscheduled_wiring.finalize();
     const auto unscheduled = bg::CompiledGraph{unscheduled_wiring};
+    scheduling_wiring.finalize();
     const auto scheduling = bg::CompiledGraph{scheduling_wiring};
 
     CHECK(scheduling.runtime_storage_size() == unscheduled.runtime_storage_size() + sizeof(void *));
@@ -88,6 +90,7 @@ TEST_CASE("a runtime graph activates timed scheduling at the start of evaluation
         int_sink(cancelling_source());
     }
 
+    wiring.finalize();
     const auto compiled = bg::CompiledGraph{wiring};
     auto runtime_global_state = bg::GlobalState{};
     auto runtime = bg::RuntimeGraph{compiled, runtime_global_state};
@@ -126,6 +129,7 @@ TEST_CASE("schedule requests for one node at the same time coalesce",
         coalescing_node();
     }
 
+    wiring.finalize();
     const bg::CompiledGraph compiled{wiring};
     auto runtime_global_state = bg::GlobalState{};
     bg::RuntimeGraph runtime{compiled, runtime_global_state};
@@ -166,6 +170,7 @@ TEST_CASE("evaluation activates every overdue schedule request",
         delayed_node(1, 6);
     }
 
+    wiring.finalize();
     const bg::CompiledGraph compiled{wiring};
     auto runtime_global_state = bg::GlobalState{};
     bg::RuntimeGraph runtime{compiled, runtime_global_state};
@@ -211,6 +216,7 @@ TEST_CASE("a schedule handle identifies the node that created it",
         foreign_canceller();
     }
 
+    wiring.finalize();
     const bg::CompiledGraph compiled{wiring};
     auto runtime_global_state = bg::GlobalState{};
     bg::RuntimeGraph runtime{compiled, runtime_global_state};
@@ -242,6 +248,7 @@ TEST_CASE("timed scheduling requires a time after the current outer cycle",
         invalid_time();
     }
 
+    wiring.finalize();
     const bg::CompiledGraph compiled{wiring};
     auto runtime_global_state = bg::GlobalState{};
     bg::RuntimeGraph runtime{compiled, runtime_global_state};
@@ -265,6 +272,7 @@ TEST_CASE("a node must declare timed scheduling", "[evaluation][timed_scheduling
         undeclared_scheduling();
     }
 
+    wiring.finalize();
     const bg::CompiledGraph compiled{wiring};
     auto runtime_global_state = bg::GlobalState{};
     bg::RuntimeGraph runtime{compiled, runtime_global_state};
@@ -282,6 +290,7 @@ TEST_CASE("stopping a runtime graph clears schedule requests",
         coalescing_node();
     }
 
+    wiring.finalize();
     const bg::CompiledGraph compiled{wiring};
     auto runtime_global_state = bg::GlobalState{};
     bg::RuntimeGraph runtime{compiled, runtime_global_state};

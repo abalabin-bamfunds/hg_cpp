@@ -3,6 +3,7 @@
 #include <bg/type/time_series_set_type.hpp>
 #include <bg/type/time_series_reference_type.hpp>
 #include <bg/type/type_map.hpp>
+#include <bg/type/type_registry.hpp>
 #include <bg/type/type_resolution_error.hpp>
 #include <bg/util/symbol.hpp>
 
@@ -96,7 +97,7 @@ const TimeSeriesDictionaryType &time_series_dictionary_type(const ScalarType &ke
     };
 
     static auto mutex = std::mutex{};
-    static auto types = std::vector<std::pair<Key, std::unique_ptr<ResolvedTimeSeriesDictionaryType>>>{};
+    static auto types = std::vector<std::pair<Key, const ResolvedTimeSeriesDictionaryType *>>{};
 
     const auto &effective_value = value_type.with_guarantee(strongest(*value_type.guarantee().value(), guarantee));
     const auto lock = std::lock_guard{mutex};
@@ -110,9 +111,16 @@ const TimeSeriesDictionaryType &time_series_dictionary_type(const ScalarType &ke
     }
 
     const auto &key_set = time_series_set_type(key_type, guarantee);
-    types.emplace_back(
-        key, std::make_unique<ResolvedTimeSeriesDictionaryType>(key_type, effective_value, key_set, guarantee));
-    return *types.back().second;
+    types.emplace_back(key, nullptr);
+    try {
+        const auto &type = TypeRegistry::instance().register_owned(
+            std::make_unique<ResolvedTimeSeriesDictionaryType>(key_type, effective_value, key_set, guarantee));
+        types.back().second = &type;
+        return type;
+    } catch (...) {
+        types.pop_back();
+        throw;
+    }
 }
 
 } // namespace bg

@@ -52,6 +52,7 @@ add_executable(
     node/scalar_state_test.cpp
     testing/test_graph_test.cpp
     type/type_system_test.cpp
+    type/type_registry_test.cpp
     type/hierarchical_scalar_type_test.cpp
     type/test_hierarchical_scalar_provider.cpp
     type/type_variable_test.cpp
@@ -125,6 +126,7 @@ add_executable(
     wiring/service_test.cpp
     wiring/resolver_test.cpp
     wiring/time_series_bundle_wiring_test.cpp
+    wiring/wiring_materialisation_test.cpp
     wiring/variadic_collection_wiring_test.cpp
     wiring/variadic_wiring_test.cpp
     wiring/time_series_dict_wiring_test.cpp
@@ -156,7 +158,7 @@ set_property(DIRECTORY APPEND PROPERTY TEST_INCLUDE_FILES "${catch2_environment}
 
 catch_discover_tests(bg_tests DISCOVERY_MODE PRE_TEST)
 
-find_package(Python3 3.10 COMPONENTS Interpreter QUIET)
+find_package(Python3 3.13 COMPONENTS Interpreter QUIET)
 if(Python3_Interpreter_FOUND)
     add_custom_target(
         test-coverage-report

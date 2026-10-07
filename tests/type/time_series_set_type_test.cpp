@@ -31,8 +31,8 @@ TEST_CASE("resolved time series set types are canonical", "[type_system][tss][se
 TEST_CASE("generic time series set types resolve their item and guarantee",
           "[type_system][tss][series:tss][feature:type-system][declaration:generic][guarantee:final]") {
     const auto &resolved = bg::TSS<bg::i64, bg::TimeSeriesGuarantee::final>::type();
-    bg::TypeVariableType<bg::ScalarType> item{bg::util::symbol{"K"}, {}, {&bg::supports_scalar_hash}};
-    const bg::GenericTimeSeriesSetType generic{item, bg::TimeSeriesGuarantee::final};
+    using KEY = bg::ScalarVariable<"K", bg::Hashable>;
+    const auto &generic = bg::TSS<KEY, bg::TimeSeriesGuarantee::final>::type();
     auto type_map = bg::TypeMap{};
 
     REQUIRE(generic.match(resolved, type_map));

@@ -31,6 +31,7 @@ TEST_CASE("wiring inserts and reuses a reference-making node",
         const auto value = source();
         (void)pass(value);
         (void)pass(value);
+        wiring.finalize();
     }
 
     REQUIRE(wiring.nodes().size() == 3);
@@ -50,6 +51,7 @@ TEST_CASE("wiring preserves an existing reference",
         const auto context = bg::WiringContext{wiring};
         const auto reference = pass(source());
         (void)pass(reference);
+        wiring.finalize();
 
         REQUIRE(wiring.nodes().size() == 4);
         const auto input = wiring.nodes().back().inputs().front().index();

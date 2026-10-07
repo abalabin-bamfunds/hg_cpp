@@ -361,7 +361,9 @@ std::shared_ptr<GraphWiringStructure::Data> snapshot(const GraphWiring &wiring,
         for (auto binding_index = std::size_t{}; binding_index < wiring.service_binding_requirements().size();
              ++binding_index) {
             const auto &binding = wiring.service_binding_requirements()[binding_index];
-            if (std::ranges::contains(binding.consumers, original_index)) {
+            if (std::ranges::any_of(binding.consumers, [&](const auto consumer) {
+                    return wiring.node_index(consumer) == original_index;
+                })) {
                 node.service_bindings.push_back(binding_index);
             }
         }

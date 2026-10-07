@@ -5,6 +5,7 @@
 #include <bg/graph/wiring_context.hpp>
 #include <bg/graph/wiring_error.hpp>
 #include <bg/graph.hpp>
+#include <bg/nested.hpp>
 #include <bg/node.hpp>
 #include <bg/service.hpp>
 #include <bg/service_catalogue.hpp>
@@ -17,6 +18,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
 
+#include <algorithm>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -33,6 +35,12 @@ using RESULT = TimeSeriesVariable<"RESULT">;
 
 template <template <typename, auto...> typename Field> struct ReferenceServiceBundle {
     Field<REF<TS<std::int64_t>>> selected;
+};
+
+struct FloatConsumer {
+    In<TS<float>> value;
+
+    void evaluate() const noexcept {}
 };
 
 TEST_CASE("service declarations retain their client signatures", "[feature:service][feature:wiring]") {
@@ -96,6 +104,7 @@ TEST_CASE("multiservice registration remains attached when its catalogue is move
         (void)clock();
         moved.build(wiring);
     }
+    wiring.finalize();
     CHECK_NOTHROW(CompiledGraph{wiring});
 }
 
@@ -168,7 +177,112 @@ TEST_CASE("a catalogue builds the reference service implementation selected by s
     catalogue.build(wiring);
 
     CHECK(selected == 2);
+    wiring.finalize();
     CHECK_NOTHROW(CompiledGraph{wiring});
+}
+
+TEST_CASE("finalize with a catalogue drains materialisation added by a late service implementation",
+          "[feature:service][feature:wiring][feature:wiring-materialisation]") {
+    const auto service = reference_service<auto()->TS<float>>{"late_materialisation"};
+    const auto integer_source = node([](Out<TS<std::int64_t>>) {});
+    const auto float_source = node([](Out<TS<float>>) {});
+    const auto consume = node([](In<TS<float>>, Out<TS<float>>) {});
+    auto materialisation_builds = 0;
+    const auto implementation = graph("name"_n = "late_materialisation_impl", [&] {
+        auto &wiring = WiringContext::current().wiring();
+        auto deferred = wiring.create_wp<TS<std::int64_t>>(integer_source());
+        deferred.materialisation_option<TS<float>>(
+            [&](wp<TS<std::int64_t>>) {
+                ++materialisation_builds;
+                return float_source();
+            },
+            0.0);
+        return consume(deferred);
+    });
+    auto catalogue = ServiceCatalogue{};
+    catalogue.register_impl(service, implementation);
+
+    auto wiring = GraphWiring{};
+    {
+        const auto context = WiringContext{wiring};
+        (void)service();
+    }
+
+    wiring.finalize(catalogue);
+
+    CHECK(wiring.is_finalized());
+    CHECK(materialisation_builds == 1);
+    wiring.finalize();
+    CHECK_NOTHROW(CompiledGraph{wiring});
+}
+
+template <template <typename, auto...> typename Field> struct MaterialisationServiceBundle {
+    Field<TS<std::int64_t>> value;
+};
+
+TEST_CASE("a committed materialisation keeps its result when a late service adds another form",
+          "[feature:service][feature:wiring][feature:wiring-materialisation]") {
+    const auto service = reference_service<auto()->TS<bool>>{"materialisation_service"};
+    const auto integer_source = node([](Out<TS<std::int64_t>>) {});
+    const auto consume = node([](In<TS<std::int64_t>>, Out<TS<bool>>) {});
+    const auto sink = node([](In<TSB<MaterialisationServiceBundle>>) {});
+    auto wiring = GraphWiring{};
+    const auto context = WiringContext{wiring};
+    auto shared = wiring.create_wp<TS<std::int64_t>>(integer_source());
+    auto expression_builds = 0;
+    auto concrete_builds = 0;
+    auto expression_result = WiringPoint{};
+    shared.materialisation_option<TSB<MaterialisationServiceBundle>>(
+        [&](wp<TS<std::int64_t>> value) {
+            ++expression_builds;
+            CHECK_FALSE(wiring.materialisation_required(shared, TS<std::int64_t>::type()));
+            (void)service();
+            expression_result = bundle<TSB<MaterialisationServiceBundle>>("value"_n = value);
+            return expression_result;
+        },
+        0.0);
+    shared.materialisation_option<TS<std::int64_t>>(
+        [&](wp<TS<std::int64_t>> value) {
+            ++concrete_builds;
+            return static_cast<WiringPoint>(value);
+        },
+        0.0);
+    (void)sink(shared);
+
+    const auto implementation = graph("name"_n = "materialisation_service_impl", [&] {
+        return consume(shared);
+    });
+    auto catalogue = ServiceCatalogue{};
+    catalogue.register_impl(service, implementation);
+
+    wiring.finalize(catalogue);
+
+    CHECK(expression_builds == 1);
+    CHECK(concrete_builds == 1);
+    CHECK(wiring.materialisation_required(shared, TS<std::int64_t>::type()));
+    CHECK(wiring.expand_materialisation(shared, TSB<MaterialisationServiceBundle>::type()).record() ==
+          expression_result.record());
+
+    wiring.finalize(catalogue);
+
+    CHECK(expression_builds == 1);
+    CHECK(concrete_builds == 1);
+    CHECK_NOTHROW(CompiledGraph{wiring});
+}
+
+TEST_CASE("catalogue finalization failure closes GraphWiring",
+          "[feature:service][feature:wiring]") {
+    const auto service = reference_service<auto()->TS<std::int64_t>>{"missing_implementation"};
+    auto catalogue = ServiceCatalogue{};
+    auto wiring = GraphWiring{};
+    {
+        const auto context = WiringContext{wiring};
+        (void)service();
+    }
+
+    CHECK_THROWS_AS(wiring.finalize(catalogue), WiringError);
+    CHECK_FALSE(wiring.is_finalized());
+    CHECK_THROWS_WITH(wiring.finalize(), Catch::Matchers::ContainsSubstring("failed GraphWiring"));
 }
 
 TEST_CASE("catalogue type mappings select a generic reference service implementation",
@@ -189,6 +303,7 @@ TEST_CASE("catalogue type mappings select a generic reference service implementa
     }
     catalogue.build(wiring);
 
+    wiring.finalize();
     CHECK_NOTHROW(CompiledGraph{wiring});
 }
 
@@ -213,6 +328,7 @@ TEST_CASE("service building includes requirements introduced by implementation g
     catalogue.build(wiring);
 
     CHECK(wiring.inherited_requirements().size() == 2);
+    wiring.finalize();
     CHECK_NOTHROW(CompiledGraph{wiring});
 }
 
@@ -270,6 +386,71 @@ TEST_CASE("service output mismatch identifies the service and call path", "[feat
     CHECK(diagnostic.find("received:") != std::string::npos);
 }
 
+TEST_CASE("late service failures retain the materialisation consumer", "[feature:service][feature:wiring]") {
+    const auto lookup = reference_service<auto()->TS<float>>{"lookup"};
+    const auto source = node([](Out<TS<std::int64_t>>) {});
+    const auto consumer = node<FloatConsumer>();
+    auto wiring = GraphWiring{};
+    const auto context = WiringContext{wiring};
+    const auto producer_path = WiringPath{nullptr, util::symbol{"producer"}, util::symbol{"create"}};
+    auto deferred = [&] {
+        const auto producer_context = WiringContext{wiring, producer_path};
+        auto point = wiring.create_wp<TS<std::int64_t>>(source());
+        point.materialisation_option<TS<float>>(
+            [lookup](wp<TS<std::int64_t>>) { return lookup(); }, 0.0);
+        return point;
+    }();
+    consumer(deferred);
+
+    try {
+        wiring.finalize(ServiceCatalogue{});
+        FAIL("expected a missing service implementation");
+    } catch (const WiringError &error) {
+        INFO(error.what());
+        CHECK(std::ranges::any_of(error.contexts(), [](const auto &entry) {
+            return entry.stage == WiringFailureStage::requirement && entry.parameter == util::symbol{"value"} &&
+                   !entry.operation.text().empty() && !entry.path.empty();
+        }));
+        CHECK(std::ranges::any_of(error.contexts(), [](const auto &entry) {
+            return entry.stage == WiringFailureStage::callback &&
+                   entry.operation == util::symbol{"materialisation"} &&
+                   entry.path == "producer[create]" && !entry.requested_type.empty();
+        }));
+    }
+}
+
+TEST_CASE("nested service failures retain caller and child graph contexts",
+          "[feature:service][feature:wiring][feature:nested-graph]") {
+    const auto service = reference_service<auto(std::int64_t)->TS<std::int64_t>>{"nested_lookup", {"value"}};
+    const auto running_source = node([](Out<TS<bool>>) {});
+    const auto inner = graph("name"_n = "service_child", [&](std::int64_t value) -> wp<TS<std::int64_t>> {
+        return service(value).as<TS<std::int64_t>>();
+    });
+    const auto outer = graph("name"_n = "service_outer", [&](std::int64_t value) -> wp<REF<TS<std::int64_t>>> {
+        const auto run = running_source();
+        return nested(inner, run, value);
+    });
+    auto root = GraphWiring{};
+    {
+        auto context = WiringContext{root};
+        (void)outer(42);
+    }
+
+    try {
+        ServiceCatalogue{}.build(root);
+        FAIL("expected a missing nested service implementation");
+    } catch (const WiringError &error) {
+        CHECK(std::ranges::any_of(error.contexts(), [](const auto &entry) {
+            return entry.stage == WiringFailureStage::callback &&
+                   entry.path.find("service_outer") != std::string::npos;
+        }));
+        CHECK(std::ranges::any_of(error.contexts(), [](const auto &entry) {
+            return entry.operation == util::symbol{"nested_lookup"} &&
+                   entry.path.find("service_child") != std::string::npos;
+        }));
+    }
+}
+
 TEST_CASE("multiservice wiring reports missing and duplicate replies", "[feature:multiservice][feature:wiring]") {
     const auto service = reference_service<auto()->TS<std::int64_t>>{"lookup"};
     const auto source = node([](Out<TS<std::int64_t>>) {});
@@ -286,8 +467,11 @@ TEST_CASE("multiservice wiring reports missing and duplicate replies", "[feature
             (void)service();
         }
 
-        CHECK_THROWS_WITH(catalogue.build(wiring),
+        catalogue.build(wiring);
+        CHECK_THROWS_WITH(wiring.finalize(),
                           Catch::Matchers::ContainsSubstring("missing implementation_replies"));
+        CHECK_FALSE(wiring.is_finalized());
+        CHECK_THROWS_WITH(wiring.finalize(), Catch::Matchers::ContainsSubstring("failed GraphWiring"));
     }
 
     SECTION("duplicate reply") {
@@ -342,13 +526,15 @@ TEST_CASE("multiservice wiring reports a missing subscription request port",
     registration.register_impl(lookup);
 
     auto wiring = GraphWiring{};
+    const auto key = node([](Out<TS<std::int64_t, TimeSeriesGuarantee::final>>) {});
     {
         const auto context = WiringContext{wiring};
-        const auto key = node([](Out<TS<std::int64_t, TimeSeriesGuarantee::final>>) {});
         (void)lookup(key());
     }
 
-    CHECK_THROWS_WITH(catalogue.build(wiring), Catch::Matchers::ContainsSubstring("missing implementation_requests"));
+    catalogue.build(wiring);
+    CHECK_THROWS_WITH(wiring.finalize(),
+                      Catch::Matchers::ContainsSubstring("missing implementation_requests"));
 }
 
 TEST_CASE("multiservice wiring rejects an unregistered request port", "[feature:multiservice][feature:wiring]") {

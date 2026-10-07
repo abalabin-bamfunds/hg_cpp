@@ -1,5 +1,6 @@
 #include <bg/type/time_series_set_type.hpp>
 
+#include <bg/type/type_registry.hpp>
 #include <bg/type/type_map.hpp>
 #include <bg/type/type_resolution_error.hpp>
 #include <bg/util/symbol.hpp>
@@ -67,7 +68,7 @@ const TimeSeriesSetType &time_series_set_type(const ScalarType &item_type, TimeS
     };
 
     static auto mutex = std::mutex{};
-    static auto types = std::vector<std::pair<Key, std::unique_ptr<ResolvedTimeSeriesSetType>>>{};
+    static auto types = std::vector<std::pair<Key, const ResolvedTimeSeriesSetType *>>{};
 
     const auto lock = std::lock_guard{mutex};
     const auto key = Key{&item_type, guarantee};
@@ -79,8 +80,16 @@ const TimeSeriesSetType &time_series_set_type(const ScalarType &item_type, TimeS
         throw std::invalid_argument{"time series set item type does not support hashing"};
     }
 
-    types.emplace_back(key, std::make_unique<ResolvedTimeSeriesSetType>(item_type, guarantee));
-    return *types.back().second;
+    types.emplace_back(key, nullptr);
+    try {
+        const auto &type = TypeRegistry::instance().register_owned(
+            std::make_unique<ResolvedTimeSeriesSetType>(item_type, guarantee));
+        types.back().second = &type;
+        return type;
+    } catch (...) {
+        types.pop_back();
+        throw;
+    }
 }
 
 } // namespace bg

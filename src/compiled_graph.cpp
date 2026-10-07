@@ -593,10 +593,11 @@ std::vector<std::size_t> dependency_order(const CompilationPlan &plan, const Gra
 
         const auto provider = wiring.output_node_index(binding.provider);
         for (const auto consumer : binding.consumers) {
+            const auto consumer_node = wiring.node_index(consumer);
             if (binding.ordering == GraphWiring::ServiceBindingOrdering::provider_after_consumers) {
-                ordering_edges.emplace_back(provider, consumer);
+                ordering_edges.emplace_back(provider, consumer_node);
             } else {
-                ordering_edges.emplace_back(consumer, provider);
+                ordering_edges.emplace_back(consumer_node, provider);
             }
         }
     }
@@ -1426,6 +1427,9 @@ class CompiledGraphBuilder {
   public:
     static void build(CompiledGraph &graph, const GraphWiring &wiring, allocator memory,
                       std::span<std::size_t> node_indices = {}) {
+        if (!wiring.is_finalized()) {
+            throw std::invalid_argument{"a GraphWiring must be finalized before compilation"};
+        }
         auto plan = make_compilation_plan(wiring);
         if (plan.wired_node_indices.size() > CompiledGraph::count_mask) {
             throw std::length_error{"a compiled graph has too many nodes"};

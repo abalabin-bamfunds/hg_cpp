@@ -4,6 +4,8 @@
 
 #include "thread_local_pointer.hpp"
 
+#include <algorithm>
+
 namespace bg {
 namespace {
 
@@ -13,7 +15,39 @@ util::thread_local_pointer &active_context() {
     return value;
 }
 
+util::thread_local_pointer &active_diagnostic_context() {
+    static util::thread_local_pointer value;
+
+    return value;
+}
+
 } // namespace
+
+details::WiringDiagnosticContext::WiringDiagnosticContext(GraphWiring &wiring,
+                                                         std::span<const WiringErrorContext> contexts)
+    : wiring_{&wiring}, previous_{static_cast<details::WiringDiagnosticContext *>(
+                                    active_diagnostic_context().get())} {
+    if (previous_ != nullptr && previous_->wiring_ == &wiring) {
+        contexts_ = previous_->contexts_;
+    }
+    for (const auto &context : contexts) {
+        if (std::ranges::find(contexts_, context) == contexts_.end()) {
+            contexts_.push_back(context);
+        }
+    }
+    active_diagnostic_context().set(this);
+}
+
+details::WiringDiagnosticContext::~WiringDiagnosticContext() {
+    active_diagnostic_context().set(previous_);
+}
+
+std::span<const WiringErrorContext>
+details::WiringDiagnosticContext::current(const GraphWiring &wiring) noexcept {
+    const auto *context = static_cast<const details::WiringDiagnosticContext *>(active_diagnostic_context().get());
+    return context == nullptr || context->wiring_ != &wiring ? std::span<const WiringErrorContext>{}
+                                                              : std::span{context->contexts_};
+}
 
 WiringContext::WiringContext(GraphWiring &wiring)
     : wiring_(&wiring), path_(nullptr), previous_(static_cast<WiringContext *>(active_context().get())),
@@ -31,6 +65,13 @@ WiringContext::WiringContext(GraphWiring &wiring, const WiringPath &path) noexce
 
 WiringContext::WiringContext(GraphWiring &wiring, details::MultiservicePorts &multiservice_ports) noexcept
     : wiring_(&wiring), path_(nullptr), previous_(static_cast<WiringContext *>(active_context().get())),
+      multiservice_ports_(&multiservice_ports) {
+    active_context().set(this);
+}
+
+WiringContext::WiringContext(GraphWiring &wiring, const WiringPath &path,
+                             details::MultiservicePorts &multiservice_ports) noexcept
+    : wiring_(&wiring), path_(&path), previous_(static_cast<WiringContext *>(active_context().get())),
       multiservice_ports_(&multiservice_ports) {
     active_context().set(this);
 }

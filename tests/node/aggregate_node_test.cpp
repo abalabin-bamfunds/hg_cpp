@@ -36,7 +36,8 @@ TEST_CASE("an aggregate node declaration evaluates through its fields",
     auto output_state = bg::details::OutputState{bg::cpp_time_series_runtime_type<bg::TS<float>>()};
     output_state.bind(output_state_value, &output_value, evaluation_time);
 
-    add value{{input_state, &lhs}, {input_state, &rhs}, bg::details::output_factory::make<bg::TS<float>>(output_state)};
+    add value{{input_state, &lhs}, {input_state, &rhs},
+              bg::details::output_factory::make<bg::Out<bg::TS<float>>>(output_state)};
 
     value.evaluate();
 

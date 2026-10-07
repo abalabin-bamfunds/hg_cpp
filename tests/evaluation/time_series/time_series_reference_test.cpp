@@ -106,6 +106,7 @@ TEST_CASE("reference provider access preserves lazy allocation",
         sink(pass(source()));
     }
 
+    wiring.finalize();
     const auto compiled = bg::CompiledGraph{wiring};
     auto runtime_global_state = bg::GlobalState{};
     auto runtime = bg::RuntimeGraph{compiled, runtime_global_state};
@@ -130,6 +131,7 @@ TEST_CASE("reference provider access preserves lazy allocation",
 TEST_CASE("a dynamic input callback crosses a graph boundary immediately",
           "[evaluation][reference][feature:reference][shape:multiple][transition:update]") {
     auto wiring = bg::GraphWiring{};
+    wiring.finalize();
     const auto compiled = bg::CompiledGraph{wiring};
     auto source_global_state = bg::GlobalState{};
     auto source = bg::RuntimeGraph{compiled, source_global_state};
@@ -173,6 +175,7 @@ TEST_CASE("a second root subscriber promotes inline storage",
           "[evaluation][reference][feature:reference][series:value][scalar:integer]"
           "[binding:value-to-reference][binding:reference-to-value][shape:fan-out]") {
     auto wiring = bg::GraphWiring{};
+    wiring.finalize();
     const auto compiled = bg::CompiledGraph{wiring};
     auto runtime_global_state = bg::GlobalState{};
     auto runtime = bg::RuntimeGraph{compiled, runtime_global_state};

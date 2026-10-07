@@ -274,6 +274,30 @@ def test_callback_exception_propagates_from_test_graph():
         bg.test_graph(graph, [3])
 
 
+def test_graph_callback_exception_keeps_identity_traceback_and_wiring_note():
+    class CallbackError(Exception):
+        pass
+
+    callback_error = CallbackError("graph callback failed")
+
+    @bg.graph
+    def invalid() -> bg.TS[int]:
+        raise callback_error
+
+    with pytest.raises(CallbackError, match="graph callback failed") as raised:
+        bg.test_graph(invalid)
+
+    assert raised.value is callback_error
+    traceback_names = []
+    traceback = raised.value.__traceback__
+    while traceback is not None:
+        traceback_names.append(traceback.tb_frame.f_code.co_name)
+        traceback = traceback.tb_next
+    assert "invalid" in traceback_names
+    assert any("callback invalid at invalid[0]" in note for note in raised.value.__notes__)
+    assert all("Traceback (most recent call last)" not in note for note in raised.value.__notes__)
+
+
 def test_none_requests_no_output_change():
     @bg.compute_node
     def no_change(value: bg.TS[int]) -> bg.TS[int]:

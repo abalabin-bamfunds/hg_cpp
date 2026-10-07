@@ -60,6 +60,7 @@ TEST_CASE("required-input invalidation propagates through a graph",
         float_sink(copy(switchable()));
     }
 
+    wiring.finalize();
     const bg::CompiledGraph compiled{wiring};
     auto runtime_global_state = bg::GlobalState{};
     bg::RuntimeGraph runtime{compiled, runtime_global_state};
@@ -112,6 +113,7 @@ TEST_CASE("required-input invalidation is applied once while the input remains i
         (void)fallback(switchable());
     }
 
+    wiring.finalize();
     const bg::CompiledGraph compiled{wiring};
     auto runtime_global_state = bg::GlobalState{};
     bg::RuntimeGraph runtime{compiled, runtime_global_state};
@@ -175,6 +177,7 @@ TEST_CASE("a node can preserve its output when a required input becomes invalid"
         validity_observer(hold(switchable()));
     }
 
+    wiring.finalize();
     const bg::CompiledGraph compiled{wiring};
     auto runtime_global_state = bg::GlobalState{};
     bg::RuntimeGraph runtime{compiled, runtime_global_state};
@@ -211,6 +214,7 @@ TEST_CASE("a node can produce an output when a required input becomes invalid",
         float_sink(fallback(switchable()));
     }
 
+    wiring.finalize();
     const bg::CompiledGraph compiled{wiring};
     auto runtime_global_state = bg::GlobalState{};
     bg::RuntimeGraph runtime{compiled, runtime_global_state};
@@ -263,6 +267,7 @@ TEST_CASE("an invalidation failure stops the runtime graph",
         throwing_invalidation(switchable());
     }
 
+    wiring.finalize();
     const bg::CompiledGraph compiled{wiring};
     auto runtime_global_state = bg::GlobalState{};
     bg::RuntimeGraph runtime{compiled, runtime_global_state};

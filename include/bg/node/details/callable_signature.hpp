@@ -4,6 +4,7 @@
 #include <bg/graph/details/wiring_callable.hpp>
 #include <bg/node/details/aggregate_node.hpp>
 #include <bg/type/details/time_series_type.hpp>
+#include <bg/type/variable_registry.hpp>
 
 #include <cstddef>
 #include <string>
@@ -51,6 +52,7 @@ const TimeSeriesType &callable_input_type(util::symbol name) {
         return time_series_type_for<Scope, Index, true, TimeSeries>(guarantee_parameter<TimeSeries::guarantee>());
     } else {
         static const auto guarantee = GuaranteeVariable{name};
+        [[maybe_unused]] static const auto &registration = VariableRegistry::register_static(guarantee);
         return time_series_type_for<Scope, Index, true, TimeSeries>(guarantee);
     }
 }

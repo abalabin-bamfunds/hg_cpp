@@ -21,8 +21,13 @@ class TimeSeriesReferenceType : public TimeSeriesType {
     const TimeSeriesType *target_type_;
 };
 
+class GenericTimeSeriesReferenceType;
+
 const TimeSeriesReferenceType &time_series_reference_type(const TimeSeriesType &target_type,
                                                           TimeSeriesGuarantee guarantee);
+// The returned type has process lifetime. The target type must also have process lifetime.
+const GenericTimeSeriesReferenceType &generic_time_series_reference_type(
+    const TimeSeriesType &target_type, TimeSeriesGuarantee guarantee);
 
 class GenericTimeSeriesReferenceType final : public TimeSeriesReferenceType {
   public:

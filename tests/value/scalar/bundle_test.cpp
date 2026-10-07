@@ -422,6 +422,7 @@ TEST_CASE("a hierarchical scalar survives its runtime graph",
           "[value][feature:lifecycle][scalar:hierarchical][storage:variable]"
           "[transition:lifecycle]") {
     auto wiring = bg::GraphWiring{};
+    wiring.finalize();
     const auto compiled = bg::CompiledGraph{wiring};
     auto retained = std::optional<bg::ScalarValue<bg::Bundle<Instrument>>>{};
     {

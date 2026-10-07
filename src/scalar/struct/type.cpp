@@ -1,4 +1,5 @@
 #include <bg/scalar/struct/scalar_type.hpp>
+#include <bg/type/type_registry.hpp>
 
 #include <memory>
 #include <mutex>
@@ -29,7 +30,7 @@ const StructScalarType &canonical_struct_scalar_type(const std::type_info &ident
                                                      std::string_view name, std::size_t size, std::size_t alignment,
                                                      std::span<const StructScalarField> fields) {
     static auto mutex = std::mutex{};
-    static auto types = std::unordered_map<std::type_index, std::unique_ptr<ResolvedStructScalarType>>{};
+    static auto types = std::unordered_map<std::type_index, const ResolvedStructScalarType *>{};
 
     const auto lock = std::lock_guard{mutex};
     const auto key = std::type_index{identity};
@@ -53,12 +54,17 @@ const StructScalarType &canonical_struct_scalar_type(const std::type_info &ident
         return *entry->second;
     }
 
-    auto resolved = std::make_unique<ResolvedStructScalarType>(
-        util::symbol{full_name}, util::symbol{name}, size, alignment,
-        std::vector<StructScalarField>{fields.begin(), fields.end()});
-    const auto *result = resolved.get();
-    types.emplace(key, std::move(resolved));
-    return *result;
+    const auto entry = types.try_emplace(key, nullptr).first;
+    try {
+        const auto &resolved = TypeRegistry::instance().register_owned(std::make_unique<ResolvedStructScalarType>(
+            util::symbol{full_name}, util::symbol{name}, size, alignment,
+            std::vector<StructScalarField>{fields.begin(), fields.end()}));
+        entry->second = &resolved;
+        return resolved;
+    } catch (...) {
+        types.erase(key);
+        throw;
+    }
 }
 
 } // namespace details

@@ -3,6 +3,7 @@
 #include <bg/scalar/dict/type.hpp>
 #include <bg/type/details/declaration_variables.hpp>
 #include <bg/type/scalar_type.hpp>
+#include <bg/type/type_registry.hpp>
 
 namespace bg {
 
@@ -47,6 +48,7 @@ template <typename K, typename V> struct scalar_type_traits<Dict<K, V>> {
         if constexpr (scalar_declaration_traits<K>::generic || scalar_declaration_traits<V>::generic) {
             static const auto type =
                 GenericDictScalarType{details::scalar_type_for<K>(), details::scalar_type_for<V>()};
+            [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type);
 
             return type;
         } else {

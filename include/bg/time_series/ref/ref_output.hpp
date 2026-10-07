@@ -12,8 +12,7 @@
 
 namespace bg {
 
-template <typename Target, OutputSpecification Specification, auto... Properties>
-class Out<REF<Target, Properties...>, Specification> {
+template <typename Target, auto... Properties> class Out<REF<Target, Properties...>> {
   public:
     using storage_type = Reference;
 
@@ -57,7 +56,7 @@ class Out<REF<Target, Properties...>, Specification> {
     const Out *operator->() const noexcept { return this; }
 
     template <typename... Functions> decltype(auto) visit(Functions &&...functions) const {
-        auto output = details::output_factory::make<TS_T, Specification>(state_.get());
+        auto output = details::output_factory::make<Out<TS_T>>(state_.get());
         return output.visit(std::forward<Functions>(functions)...);
     }
 

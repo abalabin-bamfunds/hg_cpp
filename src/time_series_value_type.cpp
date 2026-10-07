@@ -1,10 +1,9 @@
 #include <bg/type/time_series_value_type.hpp>
+#include <bg/type/type_registry.hpp>
 
 #include <cstddef>
 #include <memory>
-#include <mutex>
 #include <stdexcept>
-#include <unordered_map>
 #include <utility>
 
 namespace bg {
@@ -36,35 +35,6 @@ struct TimeSeriesValueTypeKeyHash {
     }
 };
 
-class TimeSeriesValueTypes {
-  public:
-    const TimeSeriesValueType &get(const ScalarType &value_type, TimeSeriesGuarantee guarantee) {
-        const std::lock_guard lock(mutex_);
-        const auto key = TimeSeriesValueTypeKey{&value_type, guarantee};
-
-        if (const auto found = types_.find(key); found != types_.end()) {
-            return *found->second;
-        }
-
-        auto type = std::make_unique<ResolvedTimeSeriesValueType>(value_type, guarantee);
-        const auto *result = type.get();
-        types_.emplace(key, std::move(type));
-
-        return *result;
-    }
-
-  private:
-    std::mutex mutex_;
-    std::unordered_map<TimeSeriesValueTypeKey, std::unique_ptr<ResolvedTimeSeriesValueType>, TimeSeriesValueTypeKeyHash>
-        types_;
-};
-
-TimeSeriesValueTypes &time_series_value_types() {
-    static TimeSeriesValueTypes types;
-
-    return types;
-}
-
 } // namespace
 
 const TimeSeriesValueType &time_series_value_type(const ScalarType &value_type, TimeSeriesGuarantee guarantee) {
@@ -72,7 +42,9 @@ const TimeSeriesValueType &time_series_value_type(const ScalarType &value_type, 
         throw std::invalid_argument{"a deduplicated time series requires a scalar type that supports equality"};
     }
 
-    return time_series_value_types().get(value_type, guarantee);
+    return TypeRegistry::instance().get_or_create<ResolvedTimeSeriesValueType, TimeSeriesValueTypeKeyHash>(
+        TimeSeriesValueTypeKey{&value_type, guarantee},
+        [&] { return std::make_unique<ResolvedTimeSeriesValueType>(value_type, guarantee); });
 }
 
 const TimeSeriesType &TimeSeriesValueType::with_guarantee(TimeSeriesGuarantee guarantee) const {

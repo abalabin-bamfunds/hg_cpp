@@ -66,9 +66,7 @@ class AggregateNodeTemplate final
     const TimeSeriesRuntimeType *output_runtime_type(const ResolvedSignature &signature) const override {
         if constexpr (details::aggregate_node_has_output<Definition>()) {
             using Output = details::aggregate_output_declaration_t<Definition>;
-            using Field = details::output_field<Output>;
-            return &time_series_output_traits<typename Field::time_series_type, Field::specification>::runtime(
-                *signature.output);
+            return &output_declaration_traits<Output>::runtime(*signature.output);
         }
         return nullptr;
     }
@@ -78,7 +76,7 @@ class AggregateNodeTemplate final
         if constexpr (std::same_as<Label, details::default_wiring_label>) {
             return default_label;
         } else {
-            if (!details::wiring_parameters_match<Label>(signature)) {
+            if (!details::wiring_parameters_match<Label>(this->signature(), signature)) {
                 throw WiringError{"a node label function does not match its resolved signature"};
             }
 

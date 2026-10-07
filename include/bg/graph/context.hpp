@@ -22,6 +22,33 @@ class thread_local_pointer;
 
 namespace bg::details {
 
+struct ContextBinding {
+    util::symbol name;
+    WiringArgument argument;
+    const ContextBinding *previous{};
+};
+
+// Installs a borrowed lexical binding chain and restores the previous chain when its scope ends.
+class ContextBindingState {
+  public:
+    explicit ContextBindingState(ContextBinding &binding) noexcept;
+    explicit ContextBindingState(const ContextBinding *head) noexcept;
+    ~ContextBindingState();
+
+    ContextBindingState(const ContextBindingState &) = delete;
+    ContextBindingState &operator=(const ContextBindingState &) = delete;
+    ContextBindingState(ContextBindingState &&) = delete;
+    ContextBindingState &operator=(ContextBindingState &&) = delete;
+
+    static const ContextBinding *current() noexcept;
+    static std::optional<WiringArgument> find(util::symbol name);
+
+  private:
+    static util::thread_local_pointer &active_binding();
+
+    const ContextBinding *previous_;
+};
+
 class ContextScope {
   public:
     ContextScope(util::symbol name, WiringArgument argument);
@@ -32,18 +59,49 @@ class ContextScope {
     ContextScope(ContextScope &&) = delete;
     ContextScope &operator=(ContextScope &&) = delete;
 
-    util::symbol name() const noexcept { return name_; }
-    const WiringArgument &argument() const noexcept { return argument_; }
+    util::symbol name() const noexcept { return binding_.name; }
+    const WiringArgument &argument() const noexcept { return binding_.argument; }
 
     static std::optional<WiringArgument> find(util::symbol name);
     static std::optional<WiringArgument> import(util::symbol name);
 
   private:
-    static util::thread_local_pointer &active_scope();
+    ContextBinding binding_;
+    ContextBindingState state_;
+};
 
-    util::symbol name_;
-    WiringArgument argument_;
-    ContextScope *previous_;
+// Engine-facing API for retaining visible lexical bindings beyond their stack scopes.
+class ContextSnapshot {
+    struct Storage;
+
+  public:
+    class Activation {
+      public:
+        explicit Activation(const ContextSnapshot &snapshot) noexcept;
+        ~Activation();
+
+        Activation(const Activation &) = delete;
+        Activation &operator=(const Activation &) = delete;
+        Activation(Activation &&) = delete;
+        Activation &operator=(Activation &&) = delete;
+
+      private:
+        std::shared_ptr<const Storage> storage_;
+        ContextBindingState state_;
+    };
+
+    ContextSnapshot();
+    // Captures visible bindings. The snapshot owns scalar values; time-series bindings retain their graph-owned points.
+    static ContextSnapshot capture();
+
+    // Temporarily makes only the saved bindings visible. The activation owns the snapshot storage until it restores
+    // the prior context.
+    [[nodiscard]] Activation activate() const noexcept { return Activation{*this}; }
+
+  private:
+    std::shared_ptr<const Storage> storage_;
+
+    explicit ContextSnapshot(std::shared_ptr<const Storage> storage) noexcept;
 };
 
 class ContextScopes {

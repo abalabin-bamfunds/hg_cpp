@@ -12,7 +12,7 @@
 
 namespace bg {
 
-template <details::time_series_variable Variable, OutputSpecification Specification> class Out<Variable, Specification> {
+template <details::time_series_variable Variable> class Out<Variable> {
   public:
     explicit Out(TimeSeriesOutputBinding state) noexcept : state_(std::move(state)) {}
     Out(Out &&) noexcept = default;
@@ -26,15 +26,19 @@ template <details::time_series_variable Variable, OutputSpecification Specificat
     OutputState &output_state() const noexcept { return state_.get(); }
     const Out *operator->() const noexcept { return this; }
 
-    // Returns a provider-defined view that borrows this output state and retains its specification.
-    template <typename Target> Out<Target, Specification> as() const {
+    template <typename Output> Output as_output() const {
+        using Target = typename output_declaration_traits<Output>::time_series_type;
         const auto &target_type = Target::type();
         const auto &actual_type = runtime_type().type();
         if (!target_type.is_resolved() || (&target_type != &actual_type && !target_type.accepts(actual_type))) {
             throw std::bad_cast{};
         }
 
-        return Out<Target, Specification>{TimeSeriesOutputBinding{state_.get()}};
+        return details::output_factory::make<Output>(TimeSeriesOutputBinding{state_.get()});
+    }
+
+    template <typename Target> Out<Target> as() const {
+        return as_output<Out<Target>>();
     }
 
     void invalidate() const { state_->invalidate(); }
@@ -77,54 +81,51 @@ concept direct_time_series_output = requires(TimeSeriesState &last_updated, type
 template <typename Output>
 inline constexpr bool output_requires_runtime_type = true;
 
-template <typename TimeSeries, OutputSpecification Specification>
-inline constexpr bool output_requires_runtime_type<Out<TimeSeries, Specification>> =
-    !direct_time_series_output<Out<TimeSeries, Specification>> || contains_guarantee_variable_v<TimeSeries>;
+template <typename TimeSeries>
+inline constexpr bool output_requires_runtime_type<Out<TimeSeries>> =
+    !direct_time_series_output<Out<TimeSeries>> || contains_guarantee_variable_v<TimeSeries>;
 
 } // namespace bg::details
 
 namespace bg {
 
-template <OutputSpecification Specification>
-using TimeSeriesOutputTypes = ddv::mux<Out<TS<SCALAR>, Specification>, Out<TSL<TS_T, SIZE>, Specification>,
-                                       Out<TSB<SCHEMA>, Specification>, Out<TSS<SCALAR>, Specification>,
-                                       Out<TSD<SCALAR, TS_T>, Specification>, Out<REF<TS_T>, Specification>,
-                                       Out<TS_T, Specification>>;
+using TimeSeriesOutputTypes = ddv::mux<Out<TS<SCALAR>>, Out<TSL<TS_T, SIZE>>, Out<TSB<SCHEMA>>, Out<TSS<SCALAR>>,
+                                       Out<TSD<SCALAR, TS_T>>, Out<REF<TS_T>>, Out<TS_T>>;
 
-template <details::time_series_variable Variable, OutputSpecification Specification>
+template <details::time_series_variable Variable>
 template <typename Visitor, typename... Arguments>
     requires ddv::SerialVisitorType<std::remove_cvref_t<Visitor>>
-auto Out<Variable, Specification>::visit(Visitor &&visitor, Arguments &&...arguments) const {
-    auto dispatch = ddv::make_visitable_visitor<TimeSeriesOutputTypes<Specification>>(
+auto Out<Variable>::visit(Visitor &&visitor, Arguments &&...arguments) const {
+    auto dispatch = ddv::make_visitable_visitor<TimeSeriesOutputTypes>(
         std::forward_as_tuple(std::forward<Arguments>(arguments)...), std::forward<Visitor>(visitor));
-    auto &types = static_cast<TimeSeriesOutputTypes<Specification> &>(dispatch);
+    auto &types = static_cast<TimeSeriesOutputTypes &>(dispatch);
     runtime_type().type().visit(
         [&](const TimeSeriesValueType *) {
-            auto output = details::output_factory::make<TS<SCALAR>, Specification>(state_.get());
+            auto output = details::output_factory::make<Out<TS<SCALAR>>>(state_.get());
             types.visit(&output);
         },
         [&](const TimeSeriesListType *) {
-            auto output = details::output_factory::make<TSL<TS_T, SIZE>, Specification>(state_.get());
+            auto output = details::output_factory::make<Out<TSL<TS_T, SIZE>>>(state_.get());
             types.visit(&output);
         },
         [&](const TimeSeriesBundleType *) {
-            auto output = details::output_factory::make<TSB<SCHEMA>, Specification>(state_.get());
+            auto output = details::output_factory::make<Out<TSB<SCHEMA>>>(state_.get());
             types.visit(&output);
         },
         [&](const TimeSeriesSetType *) {
-            auto output = details::output_factory::make<TSS<SCALAR>, Specification>(state_.get());
+            auto output = details::output_factory::make<Out<TSS<SCALAR>>>(state_.get());
             types.visit(&output);
         },
         [&](const TimeSeriesDictionaryType *) {
-            auto output = details::output_factory::make<TSD<SCALAR, TS_T>, Specification>(state_.get());
+            auto output = details::output_factory::make<Out<TSD<SCALAR, TS_T>>>(state_.get());
             types.visit(&output);
         },
         [&](const TimeSeriesReferenceType *) {
-            auto output = details::output_factory::make<REF<TS_T>, Specification>(state_.get());
+            auto output = details::output_factory::make<Out<REF<TS_T>>>(state_.get());
             types.visit(&output);
         },
         [&] {
-            auto output = details::output_factory::make<TS_T, Specification>(state_.get());
+            auto output = details::output_factory::make<Out<TS_T>>(state_.get());
             types.visit(&output);
         });
 

@@ -11,7 +11,9 @@
 namespace {
 
 using KEY = bg::ScalarVariable<"KEY", bg::Hashable>;
-using KEY_ARGUMENT = bg::Union<KEY, bg::TS<KEY>>;
+using KEY_ARGUMENT = bg::Union<"key", KEY, bg::TS<KEY>>;
+using LEFT_KEY_ARGUMENT = bg::Union<"left_key", KEY, bg::TS<KEY>>;
+using RIGHT_KEY_ARGUMENT = bg::Union<"right_key", KEY, bg::TS<KEY>>;
 
 TEST_CASE("a union type variable matches each alternative",
           "[feature:type-system][declaration:generic][series:value]") {
@@ -51,6 +53,31 @@ TEST_CASE("repeated union declarations select one concrete type",
         bg::util::symbol{"same"},
         {{bg::util::symbol{"left"}, &KEY_ARGUMENT::type()}, {bg::util::symbol{"right"}, &KEY_ARGUMENT::type()}}};
     const auto arguments = std::array<const bg::Type *, 2>{&bg::int64_type(), &bg::TS<std::int64_t>::type()};
+
+    CHECK_THROWS_AS(signature.resolve(arguments), bg::TypeResolutionError);
+}
+
+TEST_CASE("named unions bind outer types independently and share inner variables",
+          "[feature:type-system][declaration:generic][series:value]") {
+    const auto signature = bg::Signature{
+        bg::util::symbol{"independent"},
+        {{bg::util::symbol{"left"}, &LEFT_KEY_ARGUMENT::type()},
+         {bg::util::symbol{"right"}, &RIGHT_KEY_ARGUMENT::type()}}};
+    const auto arguments = std::array<const bg::Type *, 2>{&bg::int64_type(), &bg::TS<std::int64_t>::type()};
+    const auto resolution = signature.resolve_with_type_map(arguments);
+
+    CHECK(&KEY::type().resolve(resolution.type_map) == &bg::int64_type());
+    CHECK(&LEFT_KEY_ARGUMENT::type().resolve(resolution.type_map) == &bg::int64_type());
+    CHECK(&RIGHT_KEY_ARGUMENT::type().resolve(resolution.type_map) == &bg::TS<std::int64_t>::type());
+}
+
+TEST_CASE("named unions still reject conflicting shared inner mappings",
+          "[feature:type-system][declaration:generic][series:value]") {
+    const auto signature = bg::Signature{
+        bg::util::symbol{"conflicting"},
+        {{bg::util::symbol{"left"}, &LEFT_KEY_ARGUMENT::type()},
+         {bg::util::symbol{"right"}, &RIGHT_KEY_ARGUMENT::type()}}};
+    const auto arguments = std::array<const bg::Type *, 2>{&bg::int64_type(), &bg::TS<float>::type()};
 
     CHECK_THROWS_AS(signature.resolve(arguments), bg::TypeResolutionError);
 }

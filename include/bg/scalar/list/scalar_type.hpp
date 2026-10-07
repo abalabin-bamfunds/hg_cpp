@@ -3,6 +3,7 @@
 #include <bg/scalar/list/type.hpp>
 #include <bg/type/details/declaration_variables.hpp>
 #include <bg/type/scalar_type.hpp>
+#include <bg/type/type_registry.hpp>
 
 namespace bg {
 
@@ -39,6 +40,7 @@ template <typename T> struct scalar_type_traits<List<T>> {
     static const ScalarType &type() {
         if constexpr (scalar_declaration_traits<T>::generic) {
             static const auto type = GenericListScalarType{details::scalar_type_for<T>()};
+            [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type);
 
             return type;
         } else {

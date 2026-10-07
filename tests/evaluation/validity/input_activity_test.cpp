@@ -72,6 +72,7 @@ TEST_CASE("an active input schedules evaluation and a passive input supplies its
         float_sink(mixed_input(trigger, sampled));
     }
 
+    wiring.finalize();
     const bg::CompiledGraph compiled{wiring};
     auto runtime_global_state = bg::GlobalState{};
     bg::RuntimeGraph runtime{compiled, runtime_global_state};
@@ -121,6 +122,7 @@ TEST_CASE("an active optional input schedules evaluation on invalidation and rev
         active_optional_observer(controlled_source(0));
     }
 
+    wiring.finalize();
     const bg::CompiledGraph compiled{wiring};
     auto runtime_global_state = bg::GlobalState{};
     bg::RuntimeGraph runtime{compiled, runtime_global_state};
@@ -167,6 +169,7 @@ TEST_CASE("a passive optional input does not schedule evaluation",
         passive_optional_observer(controlled_source(0));
     }
 
+    wiring.finalize();
     const bg::CompiledGraph compiled{wiring};
     auto runtime_global_state = bg::GlobalState{};
     bg::RuntimeGraph runtime{compiled, runtime_global_state};
@@ -218,6 +221,7 @@ TEST_CASE("a passive required input propagates invalidation without evaluation",
         active_optional_observer(passive_copy(controlled_source(0)));
     }
 
+    wiring.finalize();
     const bg::CompiledGraph compiled{wiring};
     auto runtime_global_state = bg::GlobalState{};
     bg::RuntimeGraph runtime{compiled, runtime_global_state};
@@ -283,6 +287,7 @@ TEST_CASE("a dynamic input can stop and resume its own scheduling",
         controlled(input, control);
     }
 
+    wiring.finalize();
     const bg::CompiledGraph compiled{wiring};
     auto runtime_global_state = bg::GlobalState{};
     bg::RuntimeGraph runtime{compiled, runtime_global_state};
@@ -344,6 +349,7 @@ TEST_CASE("a passive dynamic input starts passive",
         controlled(source(0));
     }
 
+    wiring.finalize();
     const bg::CompiledGraph compiled{wiring};
     auto runtime_global_state = bg::GlobalState{};
     bg::RuntimeGraph runtime{compiled, runtime_global_state};
@@ -450,6 +456,7 @@ TEST_CASE("two dynamic inputs sharing one time series control scheduling indepen
         controlled(value, value, control);
     }
 
+    wiring.finalize();
     const bg::CompiledGraph compiled{wiring};
     auto runtime_global_state = bg::GlobalState{};
     bg::RuntimeGraph runtime{compiled, runtime_global_state};
@@ -519,6 +526,7 @@ TEST_CASE("a dynamically passive required input still propagates invalidation",
         observer(copy(input, control));
     }
 
+    wiring.finalize();
     const bg::CompiledGraph compiled{wiring};
     auto runtime_global_state = bg::GlobalState{};
     bg::RuntimeGraph runtime{compiled, runtime_global_state};
@@ -574,6 +582,7 @@ TEST_CASE("a dynamic optional input applies its current activity to validity cha
         observer(input, control);
     }
 
+    wiring.finalize();
     const bg::CompiledGraph compiled{wiring};
     auto runtime_global_state = bg::GlobalState{};
     bg::RuntimeGraph runtime{compiled, runtime_global_state};
@@ -656,6 +665,7 @@ TEST_CASE("runtime graphs created from one compiled graph have independent input
         controlled(source(0));
     }
 
+    wiring.finalize();
     const bg::CompiledGraph compiled{wiring};
     auto first_global_state = bg::GlobalState{};
     bg::RuntimeGraph first{compiled, first_global_state};

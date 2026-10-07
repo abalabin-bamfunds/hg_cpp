@@ -4,6 +4,7 @@
 #include <bg/type/details/time_series_type_traits.hpp>
 #include <bg/type/schema_variable_instance.hpp>
 #include <bg/type/time_series_bundle_type.hpp>
+#include <bg/type/type_registry.hpp>
 
 #include <type_traits>
 #include <vector>
@@ -100,15 +101,18 @@ struct time_series_type_traits<TSB<Schema, Properties...>> {
     template <typename Scope, std::size_t, bool Input> static const TimeSeriesType &get(GuaranteeParameter guarantee) {
         if constexpr (schema_variable) {
             static const auto type = GenericTimeSeriesBundleType{schema_variable_instance<Schema>(), guarantee};
+            [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type);
             return type;
         } else {
             const auto &schema = cpp_bundle_schema<Scope, Input, Schema>(guarantee);
             if constexpr (Input || generic) {
                 static const auto type = GenericTimeSeriesBundleType{schema, guarantee};
+                [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type);
                 return type;
             }
             if (!guarantee.is_resolved()) {
                 static const auto type = GenericTimeSeriesBundleType{schema, guarantee};
+                [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type);
                 return type;
             }
             return time_series_bundle_type(schema, *guarantee.value());

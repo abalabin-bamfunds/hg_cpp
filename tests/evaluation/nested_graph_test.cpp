@@ -1,10 +1,14 @@
 #include <bg/graph.hpp>
+#include <bg/graph/details/nested.hpp>
+#include <bg/graph/graph_wiring.hpp>
 #include <bg/nested.hpp>
 #include <bg/node.hpp>
+#include <bg/node/node_template.hpp>
 #include <bg/testing/test_graph.hpp>
 #include <bg/time_series/tsb/tsb.hpp>
 #include <bg/time_series/tsd/tsd_type.hpp>
 #include <bg/time_series/tsl/tsl.hpp>
+#include <bg/type/time_series_reference_type.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -92,6 +96,33 @@ TEST_CASE("a nested graph can be stopped and started repeatedly",
     CHECK(actual.equals({2, std::nullopt, 4, std::nullopt, 6}));
     CHECK(LifecycleIncrement::starts == 3);
     CHECK(LifecycleIncrement::stops == 3);
+}
+
+TEST_CASE("nested reference signature types outlive their node templates",
+          "[wiring][nested][reference][feature:type-system][declaration:generic]") {
+    const auto wiring = std::make_shared<bg::GraphWiring>();
+    const auto graph_signature = bg::ResolvedSignature{
+        bg::util::symbol{"inner"},
+        {{bg::util::symbol{"input"}, &bg::TS<std::int64_t>::type()}},
+        &bg::TS<std::int64_t>::type()};
+
+    const auto make_node = [&] {
+        return bg::details::make_nested_node({wiring, {}, 0}, graph_signature);
+    };
+
+    auto first_node = make_node();
+    const auto *reference_type = first_node->signature().parameter(1).type;
+    first_node.reset();
+
+    REQUIRE(reference_type == &bg::generic_time_series_reference_type(
+                                  bg::TS<std::int64_t>::type(), bg::TimeSeriesGuarantee::ordinary));
+    CHECK(reference_type->is_time_series());
+    const auto &reference = bg::type_cast<bg::TimeSeriesReferenceType>(*reference_type);
+    CHECK(&reference.target_type() == &bg::TS<std::int64_t>::type());
+    CHECK(reference.guarantee().value() == bg::TimeSeriesGuarantee::ordinary);
+
+    const auto second_node = make_node();
+    CHECK(second_node->signature().parameter(1).type == reference_type);
 }
 
 TEST_CASE("inner graph finalization uses the outer cycle's global state",

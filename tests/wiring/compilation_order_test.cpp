@@ -68,6 +68,7 @@ TEST_CASE("compilation orders a node after every direct consumer of a wiring poi
     wiring.order_after_consumers(requirement, collector);
     REQUIRE(wiring.ordering_constraints().size() == 1);
 
+    wiring.finalize();
     const auto compiled = CompiledGraph{wiring};
     const auto index_of_label = [&](std::string_view label) {
         for (auto index = std::size_t{}; index < compiled.node_count(); ++index) {
@@ -104,6 +105,7 @@ TEST_CASE("ordering constraints include consumers wired after an inherited provi
     (void)consume(requirement);
     wiring.order_after_consumers(requirement, collector);
 
+    wiring.finalize();
     const auto compiled = CompiledGraph{wiring};
     auto client_index = compiled.node_count();
     auto collector_index = compiled.node_count();
@@ -148,6 +150,7 @@ TEST_CASE("ordering constraints include consumers across nested graph boundaries
     wiring.provide_inherited_time_series(requirement_identity, TS<std::int64_t>::type(), provider);
     wiring.order_after_consumers(requirement, collector);
 
+    wiring.finalize();
     const auto compiled = CompiledGraph{wiring};
     auto collector_index = compiled.node_count();
     auto nested_indices = std::vector<std::size_t>{};
@@ -183,6 +186,7 @@ TEST_CASE("mixed data and ordering dependencies report every wiring path in a cy
     wiring.provide_inherited_time_series(requirement_identity, TS<std::int64_t>::type(), producer_output);
     wiring.order_after_consumers(requirement, producer_output);
 
+    wiring.finalize();
     CHECK_THROWS_WITH(CompiledGraph{wiring}, Catch::Matchers::ContainsSubstring("OrderJoin[client]") &&
                                                  Catch::Matchers::ContainsSubstring("OrderSource[collector]"));
 }

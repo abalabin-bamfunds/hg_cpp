@@ -6,7 +6,7 @@ find_dependency(Threads REQUIRED)
 
 set(bg_python_FOUND FALSE)
 if("python" IN_LIST bg_FIND_COMPONENTS AND @BG_BUILD_PYTHON@)
-    find_dependency(Python 3.10 COMPONENTS Interpreter Development.Module)
+    find_dependency(Python 3.13 COMPONENTS Interpreter Development.Module)
     execute_process(
         COMMAND "${Python_EXECUTABLE}" -m nanobind --cmake_dir
         OUTPUT_VARIABLE nanobind_cmake_dir

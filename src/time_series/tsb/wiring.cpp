@@ -109,6 +109,26 @@ class FreeTimeSeriesBundleWiringRecord final : public WiringRecord {
     WiringPoint field(std::size_t index) const { return fields_.at(index).point; }
 
   private:
+    MaterialisationPreparation prepare_materialisation(const TimeSeriesType &target_type) const override {
+        const auto *bundle = type_cast<TimeSeriesBundleType>(&target_type.target_type());
+        if (bundle == nullptr) {
+            throw WiringError{"a free TSB requires a TSB parameter"};
+        }
+
+        auto preparation = MaterialisationPreparation{};
+        preparation.dependencies.reserve(bundle->item_count());
+        for (auto index = std::size_t{}; index < bundle->item_count(); ++index) {
+            const auto name = bundle->item_name(index);
+            const auto field = std::ranges::find(fields_, name, &NamedBundleWiringPoint::name);
+            if (field == fields_.end()) {
+                throw WiringError{"a free TSB does not provide a required field"};
+            }
+            preparation.dependencies.push_back(
+                {field->point, &bundle->item_type(index), {}, {}, name, bundle->item_id(index)});
+        }
+        return preparation;
+    }
+
     WiringPoint materialize(const TimeSeriesType &target_type) const override {
         const auto *bundle = type_cast<TimeSeriesBundleType>(&target_type.target_type());
         if (bundle == nullptr) {
@@ -129,6 +149,12 @@ class TimeSeriesBundleFieldWiringRecord final : public WiringRecord {
         : WiringRecord{type.item_type(index)}, bundle_{bundle}, field_{type.item_id(index)} {}
 
   private:
+    MaterialisationPreparation prepare_materialisation(const TimeSeriesType &target_type) const override {
+        auto preparation = WiringRecord::prepare_materialisation(target_type);
+        preparation.dependencies.push_back({bundle_, &bundle_.type(), {}, {}, std::nullopt, field_});
+        return preparation;
+    }
+
     WiringPoint materialize(const TimeSeriesType &requested_type) const override {
         auto &graph_wiring = wiring();
         const auto bundle = graph_wiring.materialize(bundle_, bundle_.type());
@@ -209,6 +235,32 @@ class TimeSeriesBundleVariadicWiringOperations final : public VariadicWiringOper
 
     WiringPoint item(WiringPoint collection, std::size_t index) const override {
         return time_series_bundle_field(collection, index);
+    }
+
+    std::vector<MaterialisationDependency>
+    materialisation_dependencies(std::span<const WiringArgument> arguments,
+                                 const TimeSeriesType &target_type) const override {
+        const auto *bundle = type_cast<TimeSeriesBundleType>(&target_type.target_type());
+        if (bundle == nullptr) {
+            throw WiringError{"variadic TSB wiring requires a TSB"};
+        }
+
+        auto dependencies = std::vector<MaterialisationDependency>{};
+        dependencies.reserve(bundle->item_count());
+        for (auto index = std::size_t{}; index < bundle->item_count(); ++index) {
+            const auto name = bundle->item_name(index);
+            const auto argument = std::ranges::find_if(arguments, [&](const auto &candidate) {
+                return candidate.name() == name;
+            });
+            if (argument == arguments.end()) {
+                throw WiringError{"a variadic TSB does not provide a required field"};
+            }
+            if (argument->is_time_series()) {
+                dependencies.push_back({argument->time_series(), &bundle->item_type(index), {}, {}, name,
+                                        bundle->item_id(index)});
+            }
+        }
+        return dependencies;
     }
 
     WiringPoint materialize(std::span<const WiringArgument> arguments,

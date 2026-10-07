@@ -4,6 +4,7 @@
 #include <bg/time_series/tsb/schema_field.hpp>
 #include <bg/type/time_series_bundle_type.hpp>
 #include <bg/type/type_variable.hpp>
+#include <bg/type/type_registry.hpp>
 
 namespace bg::details {
 
@@ -12,6 +13,7 @@ template <typename Declaration>
 const TypeVariableType<BundleSchemaType> &schema_variable_instance() {
     using Variable = std::remove_cv_t<Declaration>;
     static const auto variable = TypeVariableType<BundleSchemaType>{util::symbol{Variable::name.view()}};
+    [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(variable);
 
     return variable;
 }

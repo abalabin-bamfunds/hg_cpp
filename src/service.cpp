@@ -30,6 +30,7 @@
 #include <bg/type/time_series_value_type.hpp>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cassert>
 #include <functional>
@@ -66,8 +67,9 @@ class ServiceRequestBinding {
         auto *bundle_owner = current_bundle_allocation_owner();
         assert(bundle_owner != nullptr);
         const auto allocation_context = ScalarAllocationContext{graph.allocation(), *bundle_owner, &graph, node_index};
-        auto output = output_factory::make<TimeSeries>(runtime_node.output_last_updated(), runtime_node.output_value(),
-                                                       *runtime_type_, provider_context);
+        auto output = output_factory::make<Out<TimeSeries>>(runtime_node.output_last_updated(),
+                                                            runtime_node.output_value(), *runtime_type_,
+                                                            provider_context);
 
         if (std::invoke(std::forward<Function>(function), output)) {
             provider_.schedule();
@@ -429,11 +431,12 @@ std::optional<WiringPoint> Service::wire_client(GraphWiring &wiring, ResolvedSig
     const auto &client_template =
         wiring.own_node_template(std::make_unique<RuntimeSignatureNodeTemplate<ServiceRequestClient>>(
             ServiceRequestClient{signature, binding_index}));
-    const auto client = client_template(std::span<const WiringArgument>{client_arguments});
-    if (!client) {
+    auto client_call = wiring.invoke_node(client_template, client_arguments);
+    if (!client_call.output) {
         throw WiringError{"a service client did not produce its client id"};
     }
-    wiring.register_service_binding_consumer(identity, wiring.nodes().size() - 1);
+    const auto client = client_call.output;
+    wiring.register_service_binding_consumer(identity, client_call.identity);
     if (signature.output == nullptr) {
         return std::nullopt;
     }
@@ -540,8 +543,11 @@ std::optional<WiringPoint> SubscriptionService::wire_client(GraphWiring &wiring,
     const auto identity = details::NestedBindingIdentity::object(&instance);
     const auto binding_index =
         wiring.require_service_binding(identity, GraphWiring::ServiceBindingOrdering::provider_after_consumers);
-    subscription_request_client(arguments[0].time_series(), ScalarValue<Opaque<std::size_t>>{binding_index});
-    wiring.register_service_binding_consumer(identity, wiring.nodes().size() - 1);
+    const auto request_binding = ScalarValue<Opaque<std::size_t>>{binding_index};
+    const auto request =
+        std::array{WiringArgument{arguments[0].time_series()}, WiringArgument{request_binding}};
+    const auto request_call = wiring.invoke_node(subscription_request_client, request);
+    wiring.register_service_binding_consumer(identity, request_call.identity);
 
     const auto &response_type = *implementation_output_type(signature);
     const auto response = wiring.require_inherited_time_series(identity, signature.name, response_type);
@@ -576,6 +582,15 @@ details::ServiceInstance &details::ServiceRequirements::require_resolved(const S
                                                                          const TypeMap &type_map,
                                                                          std::vector<ScalarValue<>> scalars,
                                                                          const WiringPath *call_path) {
+    const auto call_context = WiringErrorContext{.stage = WiringFailureStage::requirement,
+                                                .path = call_path == nullptr ? std::string{} : call_path->text(),
+                                                .operation = signature.name};
+    const auto active_contexts =
+        details::WiringDiagnosticContext::current(WiringContext::current().wiring());
+    auto call_contexts = std::vector<WiringErrorContext>{active_contexts.begin(), active_contexts.end()};
+    if (std::ranges::find(call_contexts, call_context) == call_contexts.end()) {
+        call_contexts.push_back(call_context);
+    }
 
     const auto same_scalars = [&](const auto &instance) {
         if (instance.scalar_arguments.size() != scalars.size()) {
@@ -596,18 +611,18 @@ details::ServiceInstance &details::ServiceRequirements::require_resolved(const S
     });
     if (existing != instances_.end()) {
         auto &instance = **existing;
-        if (call_path != nullptr && std::ranges::find(instance.call_paths, call_path) == instance.call_paths.end()) {
-            instance.call_paths.push_back(call_path);
+        for (const auto &context : call_contexts) {
+            if (std::ranges::find(instance.call_contexts, context) == instance.call_contexts.end()) {
+                instance.call_contexts.push_back(context);
+            }
         }
         return instance;
     }
 
     auto instance =
         std::make_unique<ServiceInstance>(&service, std::move(signature), type_map.copy(), std::move(scalars), false,
-                                          false, false, false, std::vector<const WiringPath *>{});
-    if (call_path != nullptr) {
-        instance->call_paths.push_back(call_path);
-    }
+                                          false, false, false);
+    instance->call_contexts = std::move(call_contexts);
     auto &result = *instance;
     instances_.push_back(std::move(instance));
     return result;

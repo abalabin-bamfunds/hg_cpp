@@ -114,12 +114,15 @@ add_library(
     src/thread_local_pointer.cpp
     src/type.cpp
     src/type_of.cpp
+    src/type_registry.cpp
     src/type_text.cpp
     src/variadic_wiring_record.cpp
     src/variable.cpp
+    src/variable_registry.cpp
     src/version.cpp
     src/wiring_context.cpp
     src/wiring_error.cpp
+    src/wiring_materialisation.cpp
     src/wiring_record.cpp
     src/wired_output.cpp
     src/wiring_template.cpp

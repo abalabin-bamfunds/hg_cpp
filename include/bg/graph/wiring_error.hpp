@@ -3,8 +3,12 @@
 #include <bg/node/input_property_types.hpp>
 #include <bg/util/symbol.hpp>
 
+#include <cstdint>
+#include <cstddef>
 #include <memory>
+#include <exception>
 #include <optional>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -26,8 +30,22 @@ enum class WiringFailureStage {
 struct WiringParameterDiagnostic {
     util::symbol name;
     const Type *type;
-    std::shared_ptr<const Type> type_owner{};
     InputValidity validity{};
+    struct Form {
+        std::string type;
+        double cost{};
+        bool direct{};
+    };
+    std::vector<Form> offered_forms;
+};
+
+struct WiringBindingDiagnostic {
+    std::size_t argument_index{};
+    util::symbol parameter;
+    std::string offered_type;
+    std::string accepted_type;
+    std::string materialisation_type;
+    double cost{};
 };
 
 struct WiringSignatureDiagnostic {
@@ -42,6 +60,8 @@ struct WiringCandidateDiagnostic {
     const Type *expected{};
     const Type *supplied{};
     std::string message;
+    std::vector<WiringBindingDiagnostic> bindings;
+    std::optional<double> joint_materialisation_cost;
 };
 
 struct WiringDiagnostic {
@@ -52,18 +72,51 @@ struct WiringDiagnostic {
     bool ambiguous{};
 };
 
+struct WiringErrorContext {
+    WiringFailureStage stage{WiringFailureStage::callback};
+    std::string path;
+    util::symbol operation;
+    std::optional<util::symbol> parameter;
+    std::optional<std::uint32_t> item;
+    std::string requested_type;
+    std::string expected_type;
+    std::string actual_type;
+
+    bool operator==(const WiringErrorContext &) const = default;
+};
+
+struct WiringRequestOrigin {
+    std::string path;
+    util::symbol consumer;
+    std::optional<util::symbol> parameter;
+};
+
 class WiringError : public std::runtime_error {
   public:
-    using std::runtime_error::runtime_error;
+    explicit WiringError(std::string message, std::exception_ptr cause = {});
 
-    explicit WiringError(WiringDiagnostic diagnostic);
+    explicit WiringError(WiringDiagnostic diagnostic, std::exception_ptr cause = {});
 
     const std::optional<WiringDiagnostic> &diagnostic() const noexcept { return diagnostic_; }
+    std::span<const WiringErrorContext> contexts() const noexcept { return contexts_; }
+    const std::exception_ptr &cause() const noexcept { return cause_; }
+
+    WiringError with_context(WiringErrorContext context) const;
+    static WiringError from_exception(std::string message, WiringErrorContext context,
+                                      std::exception_ptr cause);
+    static WiringError from_exception(std::string message, std::span<const WiringErrorContext> contexts,
+                                      std::exception_ptr cause);
 
   private:
+    WiringError(std::string message, std::optional<WiringDiagnostic> diagnostic,
+                std::vector<WiringErrorContext> contexts, std::exception_ptr cause);
     static std::string render(const WiringDiagnostic &diagnostic);
+    static std::string render(std::string message, std::span<const WiringErrorContext> contexts);
 
+    std::string message_;
     std::optional<WiringDiagnostic> diagnostic_;
+    std::vector<WiringErrorContext> contexts_;
+    std::exception_ptr cause_;
 };
 
 } // namespace bg

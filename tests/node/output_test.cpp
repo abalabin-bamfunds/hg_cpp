@@ -35,7 +35,7 @@ TEST_CASE("a value output publishes at the evaluation time", "[node_api][feature
     const bg::EvaluationTime evaluation_time = bg::MIN_DT + std::chrono::microseconds{1};
     auto state = bg::details::OutputState{bg::cpp_time_series_runtime_type<bg::TS<float>>()};
     state.bind(last_updated, &value, evaluation_time);
-    auto output = bg::details::output_factory::make<bg::TS<float>>(state);
+    auto output = bg::details::output_factory::make<bg::Out<bg::TS<float>>>(state);
 
     output.set(1.25F);
 
@@ -50,7 +50,7 @@ TEST_CASE("invalidating a value output retains its storage", "[node_api][feature
     const bg::EvaluationTime evaluation_time = bg::MIN_DT + std::chrono::microseconds{2};
     auto state = bg::details::OutputState{bg::cpp_time_series_runtime_type<bg::TS<float>>()};
     state.bind(last_updated, &value, evaluation_time);
-    auto output = bg::details::output_factory::make<bg::TS<float>>(state);
+    auto output = bg::details::output_factory::make<bg::Out<bg::TS<float>>>(state);
 
     output.invalidate();
 
@@ -66,7 +66,7 @@ TEST_CASE("a value output accepts a compatible scalar view", "[node_api][feature
     const bg::EvaluationTime evaluation_time = bg::MIN_DT + std::chrono::microseconds{1};
     auto state = bg::details::OutputState{bg::cpp_time_series_runtime_type<bg::TS<float>>()};
     state.bind(last_updated, &value, evaluation_time);
-    auto output = bg::details::output_factory::make<bg::TS<float>>(state);
+    auto output = bg::details::output_factory::make<bg::Out<bg::TS<float>>>(state);
     const auto source_value = 1.25F;
     const auto source = bg::Scalar<bg::SCALAR>::from<float>(source_value);
 
@@ -82,7 +82,7 @@ TEST_CASE("a value output rejects an incompatible scalar view", "[node_api][feat
     const bg::EvaluationTime evaluation_time = bg::MIN_DT + std::chrono::microseconds{1};
     auto state = bg::details::OutputState{bg::cpp_time_series_runtime_type<bg::TS<float>>()};
     state.bind(last_updated, &value, evaluation_time);
-    auto output = bg::details::output_factory::make<bg::TS<float>>(state);
+    auto output = bg::details::output_factory::make<bg::Out<bg::TS<float>>>(state);
     const auto source_value = 1.25;
     const auto source = bg::Scalar<double>::from(source_value);
 
@@ -99,7 +99,7 @@ TEST_CASE("a generic value output accepts a compatible erased scalar view",
     const auto source = bg::Scalar<bg::SCALAR>::from<float>(source_value);
     auto state = bg::details::OutputState{bg::cpp_time_series_runtime_type<bg::TS<float>>()};
     state.bind(last_updated, &value, evaluation_time);
-    const auto output = bg::details::output_factory::make<bg::TS<bg::SCALAR>>(state);
+    const auto output = bg::details::output_factory::make<bg::Out<bg::TS<bg::SCALAR>>>(state);
 
     output.set_value(source);
 
@@ -116,7 +116,7 @@ TEST_CASE("a generic value output rejects an incompatible scalar view",
     const auto source = bg::Scalar<bg::SCALAR>::from<double>(source_value);
     auto state = bg::details::OutputState{bg::cpp_time_series_runtime_type<bg::TS<float>>()};
     state.bind(last_updated, &value, evaluation_time);
-    const auto output = bg::details::output_factory::make<bg::TS<bg::SCALAR>>(state);
+    const auto output = bg::details::output_factory::make<bg::Out<bg::TS<bg::SCALAR>>>(state);
 
     CHECK_THROWS_AS(output.set_value(source), std::invalid_argument);
     CHECK_FALSE(output.valid());
@@ -132,7 +132,7 @@ TEST_CASE("a deduplicated value output suppresses an equal update",
     auto state = bg::details::OutputState{
         bg::cpp_time_series_runtime_type<bg::TS<float, bg::TimeSeriesGuarantee::deduplicated>>()};
     state.bind(last_updated, &value, evaluation_time);
-    const auto output = bg::details::output_factory::make<bg::TS<float>>(state);
+    const auto output = bg::details::output_factory::make<bg::Out<bg::TS<float>>>(state);
 
     output.set(1.25F);
 
@@ -148,7 +148,7 @@ TEST_CASE("a deduplicated value output publishes revalidation",
     auto state = bg::details::OutputState{
         bg::cpp_time_series_runtime_type<bg::TS<float, bg::TimeSeriesGuarantee::deduplicated>>()};
     state.bind(last_updated, &value, evaluation_time);
-    const auto output = bg::details::output_factory::make<bg::TS<float>>(state);
+    const auto output = bg::details::output_factory::make<bg::Out<bg::TS<float>>>(state);
 
     output.set(1.25F);
 
@@ -167,7 +167,7 @@ TEST_CASE("a generic deduplicated value output compares through its scalar runti
     auto state = bg::details::OutputState{
         bg::cpp_time_series_runtime_type<bg::TS<float, bg::TimeSeriesGuarantee::deduplicated>>()};
     state.bind(last_updated, &value, evaluation_time);
-    const auto output = bg::details::output_factory::make<bg::TS<bg::SCALAR>>(state);
+    const auto output = bg::details::output_factory::make<bg::Out<bg::TS<bg::SCALAR>>>(state);
 
     output.set_value(source);
 
@@ -184,7 +184,7 @@ TEST_CASE("a default reference output suppresses an equal address",
     const auto evaluation_time = previous_update + std::chrono::microseconds{1};
     auto state = bg::details::OutputState{bg::cpp_time_series_runtime_type<bg::REF<bg::TS<bg::i64>>>()};
     state.bind(last_updated, &address, evaluation_time);
-    const auto output = bg::details::output_factory::make<bg::REF<bg::TS<bg::i64>>>(state);
+    const auto output = bg::details::output_factory::make<bg::Out<bg::REF<bg::TS<bg::i64>>>>(state);
 
     output.set_value(address);
 
@@ -202,7 +202,7 @@ TEST_CASE("an ordinary reference output publishes an equal address",
     const auto evaluation_time = previous_update + std::chrono::microseconds{1};
     auto state = bg::details::OutputState{bg::cpp_time_series_runtime_type<OrdinaryReference>()};
     state.bind(last_updated, &address, evaluation_time);
-    const auto output = bg::details::output_factory::make<OrdinaryReference>(state);
+    const auto output = bg::details::output_factory::make<bg::Out<OrdinaryReference>>(state);
 
     output.set_value(address);
 

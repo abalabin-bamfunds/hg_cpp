@@ -25,6 +25,11 @@ class WiringArguments {
         : signature_{&signature}, type_map_{&type_map}, arguments_{arguments},
           scalar_read_context_{scalar_read_context}, scalar_read_{scalar_read} {}
 
+    // Return a borrowed view with the same descriptors and scalar-read tracking, bound to another type map.
+    WiringArguments with_type_map(const TypeMap &type_map) const noexcept {
+        return {*signature_, type_map, arguments_, scalar_read_context_, scalar_read_};
+    }
+
     std::size_t size() const noexcept { return arguments_.size(); }
 
     util::symbol argument_name(std::size_t index) const {

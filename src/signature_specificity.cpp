@@ -359,11 +359,6 @@ Order compare_types(const Type &left, const Type &right, Comparison &comparison)
         if (left_graph->output() != nullptr) {
             result = combine(result, compare_types(*left_graph->output(), *right_graph->output(), comparison));
         }
-        if (left_graph->constrained_structure() != right_graph->constrained_structure()) {
-            result = combine(result, left_graph->constrained_structure() ? Order::less : Order::greater);
-        } else if (left_graph->constrained_structure() && !left_graph->same_constraint(*right_graph)) {
-            result = combine(result, Order::unordered);
-        }
         return result;
     }
 
@@ -470,8 +465,24 @@ std::partial_ordering details::compare_parameter_specificity(const Signature &le
                                                              std::size_t parameter_count) {
     auto comparison = Comparison{};
     for (auto index = std::size_t{}; index < parameter_count; ++index) {
+        const auto &left_parameter = left.parameter(index);
+        const auto &right_parameter = right.parameter(index);
         comparison.order = combine(
-            comparison.order, compare_types(*left.parameter(index).type, *right.parameter(index).type, comparison));
+            comparison.order, compare_types(*left_parameter.type, *right_parameter.type, comparison));
+        const auto constraint_order = [&] {
+            const auto *left_constraint = left_parameter.graph_constraint.get();
+            const auto *right_constraint = right_parameter.graph_constraint.get();
+            const auto left_constrained = left_constraint != nullptr && left_constraint->constrained();
+            const auto right_constrained = right_constraint != nullptr && right_constraint->constrained();
+            if (!left_constrained) {
+                return right_constrained ? std::partial_ordering::greater : std::partial_ordering::equivalent;
+            }
+            if (!right_constrained) {
+                return std::partial_ordering::less;
+            }
+            return left_constraint->compare_specificity(*right_constraint);
+        }();
+        comparison.order = combine(comparison.order, constraint_order);
     }
     return combine(comparison.order, repeated_variable_order(comparison));
 }

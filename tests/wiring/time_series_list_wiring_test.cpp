@@ -20,9 +20,11 @@ TEST_CASE("a free fixed time series list is materialized when consumed",
     const auto first = first_source();
     const auto second = second_source();
     const auto list = bg::tsl(first, second);
+    (void)wiring.complete_pending_wiring();
     REQUIRE(wiring.nodes().size() == 2);
     (void)sink(list);
 
+    (void)wiring.complete_pending_wiring();
     REQUIRE(wiring.nodes().size() == 4);
     CHECK(wiring.nodes()[2].inputs().size() == 2);
 }
@@ -52,6 +54,7 @@ TEST_CASE("a free fixed time series list reuses materialization for the same inp
     (void)sink(list);
     (void)sink(list);
 
+    (void)wiring.complete_pending_wiring();
     REQUIRE(wiring.nodes().size() == 5);
     CHECK(wiring.nodes()[3].inputs()[0] == wiring.nodes()[4].inputs()[0]);
 }
@@ -68,6 +71,7 @@ TEST_CASE("a free fixed time series list can satisfy a reference input",
     const auto list = bg::tsl(first_source(), second_source());
     sink(list);
 
+    (void)wiring.complete_pending_wiring();
     REQUIRE(wiring.nodes().size() == 5);
     CHECK(wiring.nodes()[2].signature().name == bg::util::symbol{"tsl"});
     CHECK(wiring.nodes()[3].signature().name == bg::util::symbol{"reference"});
@@ -85,6 +89,7 @@ TEST_CASE("getitem selects an item from a free fixed time series list without ma
     const auto selected = list[std::int64_t{1}];
 
     STATIC_CHECK(std::same_as<decltype(selected), const bg::wp<>>);
+    (void)wiring.complete_pending_wiring();
     CHECK(&selected.type() == &bg::TS<float>::type());
     CHECK(wiring.nodes().size() == 1);
     CHECK(wiring.outputs().size() == 1);
@@ -97,12 +102,15 @@ TEST_CASE("getitem creates a contained wired output when a stored list item is c
     auto wiring = bg::GraphWiring{};
 
     const auto context = bg::WiringContext{wiring};
-    const auto selected = source()[std::int64_t{1}];
+    const auto list = source();
+    const auto selected = list[std::int64_t{1}];
 
     CHECK(&selected.type() == &bg::TS<float>::type());
+    (void)wiring.complete_pending_wiring();
     CHECK(wiring.outputs().size() == 1);
 
     sink(selected);
+    (void)wiring.complete_pending_wiring();
 
     REQUIRE(wiring.outputs().size() == 2);
     CHECK(wiring.outputs()[1].parent == 0);
@@ -121,6 +129,7 @@ TEST_CASE("getitem reuses a contained wired output",
     sink(list[std::int64_t{1}]);
     sink(list[std::int64_t{1}]);
 
+    (void)wiring.complete_pending_wiring();
     CHECK(wiring.outputs().size() == 2);
 }
 
@@ -135,6 +144,7 @@ TEST_CASE("getitem distinguishes items belonging to different wired outputs",
     sink(first_source()[std::int64_t{1}]);
     sink(second_source()[std::int64_t{1}]);
 
+    (void)wiring.complete_pending_wiring();
     REQUIRE(wiring.outputs().size() == 4);
     CHECK(wiring.outputs()[1].parent == 0);
     CHECK(wiring.outputs()[3].parent == 2);
@@ -152,4 +162,5 @@ TEST_CASE("getitem selects an item through a reference-backed fixed list",
 
     CHECK(&selected.type() == &bg::REF<bg::TS<float>, bg::TimeSeriesGuarantee::ordinary>::type());
     sink(selected);
+    (void)wiring.complete_pending_wiring();
 }

@@ -9,6 +9,7 @@
 #include <bg/type/details/time_series_type.hpp>
 #include <bg/type/guarantee_variable.hpp>
 #include <bg/type/type_variable.hpp>
+#include <bg/type/variable_registry.hpp>
 
 #include <array>
 #include <concepts>
@@ -53,6 +54,7 @@ const Type &declared_graph_parameter_type() {
             return time_series_type_for<Scope, Index, true, Value>(guarantee_parameter<Value::guarantee>());
         } else {
             static const auto guarantee = GuaranteeVariable{util::symbol{std::to_string(Index)}};
+            [[maybe_unused]] static const auto &registration = VariableRegistry::register_static(guarantee);
             return time_series_type_for<Scope, Index, true, Value>(guarantee);
         }
     } else if constexpr (generic_scalar<Value>) {
@@ -117,10 +119,7 @@ class GraphPatternTemplate<Result(Arguments...), Pattern> final : public WiringT
     static Signature make_signature(std::index_sequence<Index...>) {
         auto parameters = std::vector<Parameter>{};
         parameters.reserve(sizeof...(Arguments));
-        (parameters.push_back(
-             {util::symbol{std::to_string(Index)},
-              &declared_graph_parameter_type<GraphPatternTemplate, Arguments, Index>()}),
-         ...);
+        (add_parameter<Arguments, Index>(parameters), ...);
 
         if constexpr (std::same_as<Result, void>) {
             static_assert(std::same_as<std::invoke_result_t<const Function &, graph_api_argument_t<Arguments>...>,
@@ -135,6 +134,16 @@ class GraphPatternTemplate<Result(Arguments...), Pattern> final : public WiringT
                 declared_graph_output_type<GraphPatternTemplate, Result, sizeof...(Arguments)>();
             return {util::symbol{"graph_pattern"}, std::move(parameters), output};
         }
+    }
+
+    template <typename Argument, std::size_t Index>
+    static void add_parameter(std::vector<Parameter> &parameters) {
+        auto parameter = Parameter{util::symbol{std::to_string(Index)},
+                                   &declared_graph_parameter_type<GraphPatternTemplate, Argument, Index>()};
+        if constexpr (requires { Argument::constraint(); }) {
+            parameter.graph_constraint = Argument::constraint();
+        }
+        parameters.push_back(std::move(parameter));
     }
 
     template <std::size_t... Index>
@@ -200,18 +209,23 @@ template <typename Prototype, auto Pattern = details::no_graph_pattern> class GR
     const GraphArgument &graph_argument() const noexcept { return *argument_; }
 
     static const GraphArgumentType &type() {
-        static const auto value = [] {
-            auto parameters = Declaration::template parameters<GRAPH>(
+        static const auto &value = []() -> const GraphArgumentType & {
+            auto parameters = Declaration::template parameters<GRAPH<Prototype>>(
                 std::make_index_sequence<Declaration::argument_count>{});
-            auto pattern = std::shared_ptr<const WiringTemplate>{};
-            const auto *pattern_identity = static_cast<const void *>(nullptr);
-            if constexpr (!std::same_as<std::remove_cv_t<decltype(Pattern)>, details::no_graph_pattern_t>) {
-                pattern = std::make_shared<const details::GraphPatternTemplate<Prototype, Pattern>>();
-                pattern_identity = &details::graph_pattern_identity<Pattern>;
+            return graph_argument_type(parameters, Declaration::template output<GRAPH<Prototype>>());
+        }();
+        return value;
+    }
+
+    static const std::shared_ptr<const GraphArgumentConstraint> &constraint() {
+        static const auto value = [] {
+            if constexpr (std::same_as<std::remove_cv_t<decltype(Pattern)>, details::no_graph_pattern_t>) {
+                return std::shared_ptr<const GraphArgumentConstraint>{};
+            } else {
+                auto pattern = std::make_shared<const details::GraphPatternTemplate<Prototype, Pattern>>();
+                return std::make_shared<const GraphArgumentConstraint>(
+                    std::move(pattern), &details::graph_pattern_identity<Pattern>);
             }
-            return GraphArgumentType{
-                std::move(parameters), Declaration::template output<GRAPH>(), std::move(pattern),
-                pattern_identity};
         }();
         return value;
     }

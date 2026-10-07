@@ -1,6 +1,6 @@
 # Provider-owned time-series runtimes
 
-Status: accepted
+Status: superseded by [extension-owned output options](0038-extension-owned-output-options.md)
 
 ## Context
 

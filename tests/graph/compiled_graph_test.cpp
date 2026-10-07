@@ -7,6 +7,7 @@
 #include <bg/time_series/ref/ref_notification.hpp>
 #include <bg/type/scalar_type.hpp>
 #include <bg/type/time_series_value_type.hpp>
+#include <bg/type/type_registry.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -32,6 +33,7 @@ class scale_template final : public bg::NodeTemplate {
   public:
     [[nodiscard]] const bg::Signature &signature() const override {
         static const bg::GenericTimeSeriesValueType input_type{bg::float_type(), bg::TimeSeriesGuarantee::ordinary};
+        [[maybe_unused]] static const auto &input_type_registration = bg::TypeRegistry::register_static(input_type);
         static const bg::Signature value{
             bg::util::symbol{"scale"},
             {{bg::util::symbol{"input"}, &input_type}, {bg::util::symbol{"factor"}, &bg::float_type()}},
@@ -60,6 +62,7 @@ TEST_CASE("compiled nodes keep hot data in node-local sections", "[compiled_grap
         (void)scale(source(), 2.0F);
     }
 
+    wiring.finalize();
     bg::CompiledGraph graph{wiring};
 
     REQUIRE(graph.node_count() == 2);
@@ -127,6 +130,7 @@ TEST_CASE("all_valid metadata follows an empty runtime-type array at pointer ali
         static_cast<void>(combine(increment(value), double_value(value)));
     }
 
+    wiring.finalize();
     const auto graph = bg::CompiledGraph{wiring};
     const bg::CompiledNode *stateful_gate{};
     for (auto index = std::size_t{}; index < graph.node_count(); ++index) {
@@ -156,6 +160,7 @@ TEST_CASE("compiled nodes store one activity record for each controlled input",
         sink(source());
     }
 
+    wiring.finalize();
     const auto compiled = bg::CompiledGraph{wiring};
     CHECK(compiled.node(0).subscribers().empty());
     CHECK(compiled.node(0).output_notification() != nullptr);
@@ -198,6 +203,7 @@ TEST_CASE("compiled reference notifications identify each receiving input slot",
         sink(reference, reference);
     }
 
+    wiring.finalize();
     const auto graph = bg::CompiledGraph{wiring};
     const auto &reference_node = graph.node(2);
     const auto *notification = reference_node.output_notification();
@@ -233,6 +239,7 @@ TEST_CASE("graph wiring can compile more than once", "[compiled_graph][feature:g
         (void)scale(source(), 2.0F);
     }
 
+    wiring.finalize();
     bg::CompiledGraph first{wiring};
     bg::CompiledGraph second{wiring};
 
@@ -266,6 +273,7 @@ TEST_CASE("compiled parameters retain validity without a passive subscription",
         (void)passive_copy(source());
     }
 
+    wiring.finalize();
     bg::CompiledGraph graph{wiring};
 
     CHECK(graph.node(0).subscribers().empty());
@@ -281,6 +289,7 @@ TEST_CASE("a compiled graph owns its scalar copies", "[compiled_graph][feature:g
         bg::GraphWiring wiring;
         bg::WiringContext context{wiring};
         (void)scale(source(), 2.0F);
+        wiring.finalize();
         graph = std::make_unique<bg::CompiledGraph>(wiring);
     }
 
@@ -327,6 +336,7 @@ TEST_CASE("compiled fixed storage uses one allocation", "[compiled_graph][featur
     counting_memory_resource memory;
 
     {
+        wiring.finalize();
         bg::CompiledGraph graph{wiring, bg::allocator{memory}};
 
         CHECK(graph.fixed_storage_size() > 0);
@@ -355,6 +365,7 @@ TEST_CASE("a compiled graph stores an evaluation time output", "[compiled_graph]
         (void)evaluation_time_source();
     }
 
+    wiring.finalize();
     const bg::CompiledGraph graph{wiring};
 
     REQUIRE(graph.node_count() == 1);
@@ -408,6 +419,7 @@ TEST_CASE("a compiled graph owns an opaque scalar copy", "[compiled_graph][featu
         opaque_sink(pointer, object);
     }
 
+    wiring.finalize();
     const bg::CompiledGraph graph{wiring};
     const auto *stored_pointer = static_cast<private_data *const *>(graph.node(0).parameters()[0].scalar_data());
     const auto *stored_object = static_cast<const private_data *>(graph.node(0).parameters()[1].scalar_data());

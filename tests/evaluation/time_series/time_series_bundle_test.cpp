@@ -424,6 +424,7 @@ TEST_CASE("a free bundle reuses materialization for the same input type",
     (void)first_sum(bundle);
     (void)second_sum(bundle);
 
+    (void)wiring.complete_pending_wiring();
     REQUIRE(wiring.nodes().size() == 5);
     CHECK(wiring.nodes()[3].inputs()[0] == wiring.nodes()[4].inputs()[0]);
 }
@@ -443,6 +444,7 @@ TEST_CASE("a free bundle materializes independently for different input schemas"
     (void)sum(bundle);
     (void)count(bundle);
 
+    (void)wiring.complete_pending_wiring();
     REQUIRE(wiring.nodes().size() == 6);
     CHECK(wiring.nodes()[3].inputs()[0] != wiring.nodes()[5].inputs()[0]);
 }

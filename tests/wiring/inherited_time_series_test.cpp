@@ -110,6 +110,7 @@ TEST_CASE("an unresolved inherited time series fails compilation with its requir
                                                                   TS<std::int64_t>::type());
     consume(requirement);
 
+    wiring.finalize();
     CHECK_THROWS_WITH(CompiledGraph{wiring}, "an inherited time series requirement has no provider");
 }
 
@@ -125,6 +126,7 @@ TEST_CASE("a late inherited provider dependency cycle fails compilation",
     const auto provider = copy(requirement);
     wiring.provide_inherited_time_series(requirement_identity, TS<std::int64_t>::type(), provider);
 
+    wiring.finalize();
     CHECK_THROWS_WITH(CompiledGraph{wiring},
                       Catch::Matchers::ContainsSubstring("graph wiring contains a dependency cycle"));
 }
@@ -144,6 +146,7 @@ TEST_CASE("compilation keeps an inherited provider next to its consumer",
     const auto provider = source(2);
     wiring.provide_inherited_time_series(requirement_identity, TS<std::int64_t>::type(), provider);
 
+    wiring.finalize();
     const auto compiled = CompiledGraph{wiring};
 
     const auto index_of_label = [&](std::string_view label) {

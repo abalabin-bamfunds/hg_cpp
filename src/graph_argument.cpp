@@ -7,12 +7,15 @@
 #include <bg/node/node_template.hpp>
 #include <bg/type/time_series_type.hpp>
 #include <bg/type/type_map.hpp>
+#include <bg/type/type_registry.hpp>
 #include <bg/type/type_resolution_error.hpp>
 
+#include <algorithm>
 #include <memory>
 #include <mutex>
 #include <stdexcept>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace bg {
@@ -31,98 +34,31 @@ class GraphArgumentBoundaryNode final : public NodeTemplate {
     Signature signature_;
 };
 
+struct GraphTypeKey {
+    std::vector<const Type *> parameters;
+    const TimeSeriesType *output;
+
+    bool operator==(const GraphTypeKey &) const = default;
+};
+
+struct GraphTypeKeyHash {
+    std::size_t operator()(const GraphTypeKey &key) const noexcept {
+        auto result = std::hash<const TimeSeriesType *>{}(key.output);
+        for (const auto *parameter : key.parameters) {
+            result ^= std::hash<const Type *>{}(parameter) + (result << 6) + (result >> 2);
+        }
+        return result;
+    }
+};
+
 } // namespace
 
-GraphArgumentType::GraphArgumentType(details::GraphWiringStructure structure)
-    : signature_{true}, structures_{std::move(structure)} {
-    const auto &stored = *this->structure();
-    parameters_.reserve(stored.boundary_count());
-    for (auto index = std::size_t{}; index < stored.boundary_count(); ++index) {
-        parameters_.push_back(&stored.boundary_type(index));
-    }
-    output_ = stored.result_type();
-}
-
-GraphArgumentType::GraphArgumentType(std::vector<details::GraphWiringStructure> structures)
-    : structures_{std::move(structures)} {
-    auto &stored = std::get<std::vector<details::GraphWiringStructure>>(structures_);
-    if (stored.empty()) {
-        structures_.emplace<std::monostate>();
-    }
-}
-
-GraphArgumentType::GraphArgumentType(std::shared_ptr<const WiringTemplate> pattern)
-    : pattern_{std::move(pattern)}, pattern_identity_{pattern_.get()} {
-    const auto &signature = pattern_->signature();
-    signature_ = true;
-    parameters_.reserve(signature.parameter_count());
-    for (auto index = std::size_t{}; index < signature.parameter_count(); ++index) {
-        parameters_.push_back(signature.parameter(index).type);
-    }
-    output_ = signature.output();
-}
-
-GraphArgumentType::GraphArgumentType(std::vector<const Type *> parameters, const TimeSeriesType *output,
-                                     std::shared_ptr<const WiringTemplate> pattern,
-                                     const void *pattern_identity)
-    : signature_{true}, parameters_{std::move(parameters)}, output_{output}, pattern_{std::move(pattern)},
-      pattern_identity_{pattern_identity == nullptr ? pattern_.get() : pattern_identity} {}
+GraphArgumentType::GraphArgumentType(std::vector<const Type *> parameters, const TimeSeriesType *output)
+    : signature_{true}, parameters_{std::move(parameters)}, output_{output} {}
 
 bool GraphArgumentType::is_resolved() const noexcept {
     return !signature_ || (std::ranges::all_of(parameters_, [](const auto *type) { return type->is_resolved(); }) &&
                            (output_ == nullptr || output_->is_resolved()));
-}
-
-bool GraphArgumentType::constrained_structure() const noexcept {
-    return structure_count() != 0 || pattern_ != nullptr;
-}
-
-std::size_t GraphArgumentType::structure_count() const noexcept {
-    if (std::holds_alternative<details::GraphWiringStructure>(structures_)) {
-        return 1;
-    }
-    if (const auto *multiple =
-            std::get_if<std::vector<details::GraphWiringStructure>>(&structures_)) {
-        return multiple->size();
-    }
-    return 0;
-}
-
-const details::GraphWiringStructure &
-GraphArgumentType::structure_at(std::size_t index) const noexcept {
-    if (const auto *single = std::get_if<details::GraphWiringStructure>(&structures_)) {
-        return *single;
-    }
-    return std::get<std::vector<details::GraphWiringStructure>>(structures_)[index];
-}
-
-bool GraphArgumentType::same_constraint(const GraphArgumentType &other) const {
-    if (static_cast<bool>(pattern_) != static_cast<bool>(other.pattern_) ||
-        structures_.index() != other.structures_.index() ||
-        structure_count() != other.structure_count()) {
-        return false;
-    }
-    if (pattern_) {
-        return pattern_identity_ == other.pattern_identity_;
-    }
-    for (auto index = std::size_t{}; index < structure_count(); ++index) {
-        if (!(structure_at(index) == other.structure_at(index))) {
-            return false;
-        }
-    }
-    return true;
-}
-
-bool GraphArgumentType::cacheable_constraint() const noexcept {
-    if (structure_count() == 0) {
-        return false;
-    }
-    for (auto index = std::size_t{}; index < structure_count(); ++index) {
-        if (!structure_at(index).cacheable()) {
-            return false;
-        }
-    }
-    return true;
 }
 
 bool GraphArgumentType::match_signature(const GraphArgumentType &supplied, TypeMap &type_map) const {
@@ -142,12 +78,116 @@ bool GraphArgumentType::match_signature(const GraphArgumentType &supplied, TypeM
     return output_ == nullptr || output_->match(*supplied.output_, type_map);
 }
 
-bool GraphArgumentType::accepts_declaration(const GraphArgumentType &supplied) const {
-    auto type_map = TypeMap{};
-    return match_signature(supplied, type_map) && same_constraint(supplied);
+bool GraphArgumentType::do_match(const Type &supplied, TypeMap &type_map) const {
+    const auto *graph = type_cast<GraphArgumentType>(&supplied);
+    if (graph == nullptr) {
+        return false;
+    }
+
+    auto trial = type_map.overlay();
+    if (!match_signature(*graph, trial)) {
+        return false;
+    }
+
+    type_map.apply(std::move(trial));
+    return true;
 }
 
-bool GraphArgumentType::matches_pattern(const details::GraphWiringStructure &supplied) const {
+const Type &GraphArgumentType::resolve(const TypeMap &type_map) const {
+    if (is_resolved()) {
+        return *this;
+    }
+    auto parameters = std::vector<const Type *>{};
+    parameters.reserve(parameters_.size());
+    for (const auto *parameter : parameters_) {
+        parameters.push_back(&parameter->resolve(type_map));
+    }
+
+    const auto *output = output_ == nullptr ? nullptr : type_cast<TimeSeriesType>(&output_->resolve(type_map));
+    if (output_ != nullptr && output == nullptr) {
+        throw TypeResolutionError{TypeResolutionErrorCode::invalid_type_map, util::symbol{"GRAPH"},
+                                  "graph output did not resolve to a time series type"};
+    }
+
+    return graph_argument_type(parameters, output);
+}
+
+const GraphArgumentType &graph_argument_type(std::span<const Type *const> parameters,
+                                             const TimeSeriesType *output) {
+    if (std::ranges::any_of(parameters, [](const auto *type) { return type == nullptr; })) {
+        throw std::invalid_argument{"a graph type requires non-null parameter types"};
+    }
+
+    static auto mutex = std::mutex{};
+    static auto types = std::unordered_map<GraphTypeKey, const GraphArgumentType *, GraphTypeKeyHash>{};
+
+    auto key = GraphTypeKey{std::vector<const Type *>{parameters.begin(), parameters.end()}, output};
+    const auto lock = std::lock_guard{mutex};
+    auto entry = types.try_emplace(std::move(key), nullptr).first;
+    if (entry->second == nullptr) {
+        try {
+            entry->second = &TypeRegistry::instance().register_owned(
+                std::make_unique<GraphArgumentType>(entry->first.parameters, output));
+        } catch (...) {
+            types.erase(entry);
+            throw;
+        }
+    }
+    return *entry->second;
+}
+
+const GraphArgumentType &graph_argument_type(const details::GraphWiringStructure &structure) {
+    auto parameters = std::vector<const Type *>{};
+    parameters.reserve(structure.boundary_count());
+    for (auto index = std::size_t{}; index < structure.boundary_count(); ++index) {
+        parameters.push_back(&structure.boundary_type(index));
+    }
+    return graph_argument_type(parameters, structure.result_type());
+}
+
+GraphArgumentConstraint::GraphArgumentConstraint(details::GraphWiringStructure structure)
+    : structures_{std::move(structure)} {}
+
+GraphArgumentConstraint::GraphArgumentConstraint(std::vector<details::GraphWiringStructure> structures)
+    : structures_{std::move(structures)} {
+    if (std::get<std::vector<details::GraphWiringStructure>>(structures_).empty()) {
+        structures_.emplace<std::monostate>();
+    }
+}
+
+GraphArgumentConstraint::GraphArgumentConstraint(std::shared_ptr<const WiringTemplate> pattern,
+                                                 const void *pattern_identity)
+    : pattern_{std::move(pattern)}, pattern_identity_{pattern_identity == nullptr ? pattern_.get() : pattern_identity} {
+    if (!pattern_) {
+        throw std::invalid_argument{"a graph argument pattern constraint requires a pattern"};
+    }
+}
+
+bool GraphArgumentConstraint::constrained() const noexcept {
+    return !std::holds_alternative<std::monostate>(structures_) || pattern_ != nullptr;
+}
+
+bool GraphArgumentConstraint::same_constraint(const GraphArgumentConstraint &other) const {
+    if (static_cast<bool>(pattern_) != static_cast<bool>(other.pattern_)) {
+        return false;
+    }
+    if (pattern_) {
+        return pattern_identity_ == other.pattern_identity_;
+    }
+    return structures_ == other.structures_;
+}
+
+std::partial_ordering GraphArgumentConstraint::compare_specificity(const GraphArgumentConstraint &other) const {
+    if (constrained() != other.constrained()) {
+        return constrained() ? std::partial_ordering::less : std::partial_ordering::greater;
+    }
+    if (!constrained() || same_constraint(other)) {
+        return std::partial_ordering::equivalent;
+    }
+    return std::partial_ordering::unordered;
+}
+
+bool GraphArgumentConstraint::matches_pattern(const details::GraphWiringStructure &supplied) const {
     auto wiring = GraphWiring{};
     const auto context = WiringContext{wiring};
     auto boundaries = std::vector<WiringPoint>{};
@@ -164,8 +204,14 @@ bool GraphArgumentType::matches_pattern(const details::GraphWiringStructure &sup
     }
 
     try {
-        const auto result = (*pattern_)(std::span<const WiringArgument>{arguments});
+        auto result = (*pattern_)(std::span<const WiringArgument>{arguments});
+        if (result) {
+            result = wiring.complete_pending_wiring(*result);
+        } else {
+            (void)wiring.complete_pending_wiring();
+        }
         const auto structure = details::graph_wiring_structure(wiring, boundaries, result);
+        wiring.finalize();
         return structure == supplied;
     } catch (const TypeResolutionError &) {
         return false;
@@ -174,103 +220,49 @@ bool GraphArgumentType::matches_pattern(const details::GraphWiringStructure &sup
     }
 }
 
-bool GraphArgumentType::do_match(const Type &supplied, TypeMap &type_map) const {
-    const auto *graph = type_cast<GraphArgumentType>(&supplied);
-    if (graph == nullptr) {
-        return false;
+bool GraphArgumentConstraint::matches(const GraphArgument &argument) const {
+    if (!constrained()) {
+        return true;
     }
 
-    auto trial = type_map.overlay();
-    if (!match_signature(*graph, trial)) {
-        return false;
-    }
     if (pattern_) {
-        if (graph->structure() == nullptr || !matches_pattern(*graph->structure())) {
-            return false;
-        }
-    } else if (structure_count() != 0 && !same_constraint(*graph)) {
-        return false;
+        const auto *single = std::get_if<details::GraphWiringStructure>(&argument.structures());
+        return single != nullptr && matches_pattern(*single);
     }
 
-    type_map.apply(std::move(trial));
+    if (const auto *single = std::get_if<details::GraphWiringStructure>(&structures_)) {
+        const auto *supplied = std::get_if<details::GraphWiringStructure>(&argument.structures());
+        return supplied != nullptr && *single == *supplied;
+    }
+    if (const auto *multiple = std::get_if<std::vector<details::GraphWiringStructure>>(&structures_)) {
+        const auto *supplied = std::get_if<std::vector<details::GraphWiringStructure>>(&argument.structures());
+        return supplied != nullptr && *multiple == *supplied;
+    }
     return true;
 }
 
-const Type &GraphArgumentType::resolve(const TypeMap &type_map) const {
-    if (is_resolved()) {
-        return *this;
+const details::GraphWiringStructure &GraphArgument::structure() const {
+    const auto *structure = std::get_if<details::GraphWiringStructure>(&structures_);
+    if (structure == nullptr) {
+        throw std::logic_error{"a graph argument does not contain one graph structure"};
     }
-
-    auto parameters = std::vector<const Type *>{};
-    parameters.reserve(parameters_.size());
-    for (const auto *parameter : parameters_) {
-        parameters.push_back(&parameter->resolve(type_map));
-    }
-
-    const auto *output = output_ == nullptr
-                             ? nullptr
-                             : type_cast<TimeSeriesType>(&output_->resolve(type_map));
-    if (output_ != nullptr && output == nullptr) {
-        throw TypeResolutionError{TypeResolutionErrorCode::invalid_type_map, util::symbol{"GRAPH"},
-                                  "graph output did not resolve to a time series type"};
-    }
-
-    return graph_argument_type(parameters, output, pattern_, pattern_identity_);
+    return *structure;
 }
 
-namespace {
+GraphArgument::GraphArgument(details::GraphWiringStructure structure, std::shared_ptr<const void> payload,
+                             const std::type_info *payload_type)
+    : structures_{std::move(structure)},
+      type_{&graph_argument_type(std::get<details::GraphWiringStructure>(structures_))},
+      payload_{std::move(payload)},
+      payload_type_{payload_type} {}
 
-struct GraphTypeKey {
-    std::vector<const Type *> parameters;
-    const TimeSeriesType *output;
-    const void *pattern_identity;
-
-    bool operator==(const GraphTypeKey &) const = default;
-};
-
-struct GraphTypeKeyHash {
-    std::size_t operator()(const GraphTypeKey &key) const noexcept {
-        auto result = std::hash<const TimeSeriesType *>{}(key.output);
-        result ^= std::hash<const void *>{}(key.pattern_identity) + (result << 6) + (result >> 2);
-        for (const auto *parameter : key.parameters) {
-            result ^= std::hash<const Type *>{}(parameter) + (result << 6) + (result >> 2);
-        }
-        return result;
-    }
-};
-
-} // namespace
-
-const GraphArgumentType &graph_argument_type(std::span<const Type *const> parameters,
-                                             const TimeSeriesType *output,
-                                             std::shared_ptr<const WiringTemplate> pattern,
-                                             const void *pattern_identity) {
-    if (std::ranges::any_of(parameters, [](const auto *type) { return type == nullptr || !type->is_resolved(); }) ||
-        (output != nullptr && !output->is_resolved())) {
-        throw std::invalid_argument{"a resolved graph type requires resolved parameter and output types"};
-    }
-
-    static auto mutex = std::mutex{};
-    static auto types =
-        std::unordered_map<GraphTypeKey, std::unique_ptr<GraphArgumentType>, GraphTypeKeyHash>{};
-
-    if (pattern && pattern_identity == nullptr) {
-        pattern_identity = pattern.get();
-    }
-
-    auto key = GraphTypeKey{
-        std::vector<const Type *>{parameters.begin(), parameters.end()}, output, pattern_identity};
-    const auto lock = std::lock_guard{mutex};
-    auto [entry, inserted] = types.try_emplace(std::move(key));
-    if (inserted) {
-        entry->second = std::make_unique<GraphArgumentType>(
-            entry->first.parameters, output, std::move(pattern), pattern_identity);
-    }
-    return *entry->second;
-}
+GraphArgument::GraphArgument(std::vector<details::GraphWiringStructure> structures,
+                             std::shared_ptr<const void> payload, const std::type_info *payload_type)
+    : structures_{std::move(structures)}, type_{&type()}, payload_{std::move(payload)}, payload_type_{payload_type} {}
 
 const GraphArgumentType &GraphArgument::type() noexcept {
     static const auto type = GraphArgumentType{};
+    [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type);
     return type;
 }
 

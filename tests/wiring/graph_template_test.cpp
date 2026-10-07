@@ -67,6 +67,7 @@ TEST_CASE("a graph template expands into the active graph", "[graph_template][fe
         (void)scale_graph(input, 2.0F);
     }
 
+    (void)wiring.complete_pending_wiring();
     const auto nodes = wiring.nodes();
     REQUIRE(nodes.size() == 2);
     CHECK(nodes[1].signature().name.text() == "scale_definition");
@@ -90,6 +91,7 @@ TEST_CASE("a graph template can omit its output", "[graph_template][feature:wiri
         scale_sink_graph(source(), 2.0F);
     }
 
+    (void)wiring.complete_pending_wiring();
     const auto nodes = wiring.nodes();
     REQUIRE(nodes.size() == 2);
     REQUIRE(nodes[1].path().parent != nullptr);
@@ -176,6 +178,7 @@ TEST_CASE("a struct graph definition supplies its signature", "[graph_template][
         (void)reflected_scale_graph(source(), 2.0F);
     }
 
+    (void)wiring.complete_pending_wiring();
     REQUIRE(wiring.nodes().size() == 2);
     REQUIRE(wiring.nodes()[1].path().parent != nullptr);
     CHECK(wiring.nodes()[1].path().parent->name.text() == "struct_scale_graph");
@@ -194,6 +197,7 @@ TEST_CASE("node and graph templates share the wiring interface", "[graph_templat
         REQUIRE(graph_template(input, 3.0F));
     }
 
+    (void)wiring.complete_pending_wiring();
     CHECK(wiring.nodes().size() == 3);
 }
 
@@ -207,6 +211,7 @@ TEST_CASE("deduplicated graph calls retain their first wiring path", "[graph_tem
         (void)scale_graph(input, 2.0F);
     }
 
+    (void)wiring.complete_pending_wiring();
     const auto nodes = wiring.nodes();
     REQUIRE(nodes.size() == 2);
     REQUIRE(nodes[1].path().parent != nullptr);
@@ -222,6 +227,7 @@ TEST_CASE("a compiled graph owns its wiring paths", "[graph_template][feature:wi
         const bg::WiringPoint input = source();
         (void)scale_graph(input, 2.0F);
 
+        wiring.finalize();
         compiled = std::make_unique<bg::CompiledGraph>(wiring);
     }
 

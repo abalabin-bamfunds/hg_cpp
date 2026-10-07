@@ -1,4 +1,5 @@
 #include <bg/graph.hpp>
+#include <bg/graph/context.hpp>
 #include <bg/node.hpp>
 #include <bg/testing/test_graph.hpp>
 #include <bg/testing/test_wiring.hpp>
@@ -185,6 +186,24 @@ TEST_CASE("a graph context parameter inherits and shadows lexical context",
     CHECK(actual.equals({10, 20}));
 }
 
+TEST_CASE("repeated context imports share the same pending boundary provider",
+          "[feature:context-time-series][feature:wiring][shape:fan-out]") {
+    const auto source = node([](Out<TS<std::int64_t>>) {});
+    auto root = GraphWiring{};
+    const auto root_context = WiringContext{root};
+    const auto value = source();
+    auto lexical_context = with_context("value"_n = value);
+    auto child = GraphWiring{root};
+
+    {
+        const auto child_context = WiringContext{child};
+        (void)copy_context();
+        (void)copy_context();
+    }
+
+    CHECK(child.inherited_requirements().size() == 1);
+}
+
 TEST_CASE("context input resolves a graph type variable and output",
           "[feature:context-time-series][feature:wiring][feature:type-system]") {
     using VALUE = ScalarVariable<"VALUE">;
@@ -216,6 +235,132 @@ TEST_CASE("the nearest incompatible context time series is an error",
 
         CHECK_THROWS_AS((void)copy_context(), TypeResolutionError);
     });
+}
+
+TEST_CASE("context snapshots preserve the nearest binding after scopes exit",
+          "[feature:context-time-series][feature:wiring]") {
+    const auto name = util::symbol{"value"};
+    const auto outer_name = util::symbol{"outer"};
+    auto snapshot = details::ContextSnapshot{};
+    {
+        const auto outer = details::ContextScope{outer_name, WiringArgument{std::int64_t{1}}};
+        {
+            const auto inner = details::ContextScope{name, WiringArgument{std::int64_t{42}}};
+            snapshot = details::ContextSnapshot::capture();
+        }
+    }
+
+    const auto later = details::ContextScope{name, WiringArgument{std::int64_t{99}}};
+    const auto later_outer = details::ContextScope{outer_name, WiringArgument{std::int64_t{100}}};
+    {
+        const auto activation = snapshot.activate();
+        const auto value = details::ContextScope::find(name);
+        REQUIRE(value.has_value());
+        CHECK(scalar_cast<std::int64_t>(value->scalar()).value() == 42);
+        const auto outer = details::ContextScope::find(outer_name);
+        REQUIRE(outer.has_value());
+        CHECK(scalar_cast<std::int64_t>(outer->scalar()).value() == 1);
+    }
+
+    const auto restored = details::ContextScope::find(name);
+    REQUIRE(restored.has_value());
+    CHECK(scalar_cast<std::int64_t>(restored->scalar()).value() == 99);
+    const auto restored_outer = details::ContextScope::find(outer_name);
+    REQUIRE(restored_outer.has_value());
+    CHECK(scalar_cast<std::int64_t>(restored_outer->scalar()).value() == 100);
+}
+
+TEST_CASE("context snapshots isolate absent bindings and empty snapshots",
+          "[feature:context-time-series][feature:wiring]") {
+    const auto value_name = util::symbol{"value"};
+    const auto other_name = util::symbol{"other"};
+    const auto empty = details::ContextSnapshot::capture();
+    auto value_snapshot = details::ContextSnapshot{};
+    {
+        const auto value = details::ContextScope{value_name, WiringArgument{std::int64_t{7}}};
+        value_snapshot = details::ContextSnapshot::capture();
+    }
+
+    const auto later_value = details::ContextScope{value_name, WiringArgument{std::int64_t{8}}};
+    const auto later_other = details::ContextScope{other_name, WiringArgument{std::int64_t{9}}};
+    {
+        const auto activation = value_snapshot.activate();
+        CHECK(details::ContextScope::find(other_name) == std::nullopt);
+        const auto value = details::ContextScope::find(value_name);
+        REQUIRE(value.has_value());
+        CHECK(scalar_cast<std::int64_t>(value->scalar()).value() == 7);
+    }
+    {
+        const auto activation = empty.activate();
+        CHECK(details::ContextScope::find(value_name) == std::nullopt);
+        CHECK(details::ContextScope::find(other_name) == std::nullopt);
+    }
+
+    CHECK(details::ContextScope::find(value_name).has_value());
+    CHECK(details::ContextScope::find(other_name).has_value());
+}
+
+TEST_CASE("nested context snapshot activations restore their enclosing bindings",
+          "[feature:context-time-series][feature:wiring]") {
+    const auto name = util::symbol{"value"};
+    auto first = details::ContextSnapshot{};
+    auto second = details::ContextSnapshot{};
+    {
+        const auto value = details::ContextScope{name, WiringArgument{std::int64_t{1}}};
+        first = details::ContextSnapshot::capture();
+    }
+    {
+        const auto value = details::ContextScope{name, WiringArgument{std::int64_t{2}}};
+        second = details::ContextSnapshot::capture();
+    }
+
+    const auto outer = details::ContextScope{name, WiringArgument{std::int64_t{9}}};
+    const auto expect_value = [&](std::int64_t expected) {
+        const auto value = details::ContextScope::find(name);
+        REQUIRE(value.has_value());
+        CHECK(scalar_cast<std::int64_t>(value->scalar()).value() == expected);
+    };
+    {
+        const auto first_activation = first.activate();
+        expect_value(1);
+        {
+            const auto shadow = details::ContextScope{name, WiringArgument{std::int64_t{3}}};
+            expect_value(3);
+        }
+        expect_value(1);
+        {
+            const auto second_activation = second.activate();
+            expect_value(2);
+        }
+        expect_value(1);
+        CHECK_THROWS_AS(([&] {
+                             const auto shadow =
+                                 details::ContextScope{name, WiringArgument{std::int64_t{4}}};
+                             const auto second_activation = second.activate();
+                             throw std::runtime_error{"unwind context activation"};
+                         }()),
+                        std::runtime_error);
+        expect_value(1);
+    }
+    expect_value(9);
+}
+
+TEST_CASE("context snapshots own copied scalar arguments",
+          "[feature:context-time-series][feature:wiring]") {
+    const auto name = util::symbol{"value"};
+    auto snapshot = details::ContextSnapshot{};
+    {
+        auto scalar = ScalarValue<std::int64_t>{42};
+        const auto scope = details::ContextScope{name, WiringArgument{scalar}};
+        snapshot = details::ContextSnapshot::capture();
+        scalar = ScalarValue<std::int64_t>{99};
+    }
+
+    const auto activation = snapshot.activate();
+    snapshot = details::ContextSnapshot{};
+    const auto value = details::ContextScope::find(name);
+    REQUIRE(value.has_value());
+    CHECK(scalar_cast<std::int64_t>(value->scalar()).value() == 42);
 }
 
 TEST_CASE("operator cache entries include implicit context types",

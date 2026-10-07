@@ -91,10 +91,9 @@ class NestedNodeDefinition {
                     parameters.push_back({parameter.name, parameter.type, passive, optional});
                     continue;
                 }
-                auto type = std::make_unique<GenericTimeSeriesReferenceType>(
+                const auto &type = generic_time_series_reference_type(
                     static_cast<const TimeSeriesType &>(*parameter.type), TimeSeriesGuarantee::ordinary);
-                parameters.push_back({parameter.name, type.get(), active, optional});
-                parameter_types_.push_back(std::move(type));
+                parameters.push_back({parameter.name, &type, active, optional});
             } else {
                 parameters.push_back({parameter.name, parameter.type, parameter.activity, parameter.validity,
                                       parameter.accepts_absent_scalar, details::VariadicMode::none, nullptr, false});
@@ -206,7 +205,6 @@ class NestedNodeDefinition {
   private:
     NestedGraphWiring wiring_;
     const TimeSeriesType *output_type_;
-    std::vector<std::unique_ptr<GenericTimeSeriesReferenceType>> parameter_types_;
     const TimeSeriesReferenceType *reference_output_{};
     std::unique_ptr<Signature> signature_;
 };
