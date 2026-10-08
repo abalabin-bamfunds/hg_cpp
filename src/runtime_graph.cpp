@@ -876,6 +876,33 @@ void RuntimeGraph::bind_runtime_input(std::size_t index, const TimeSeriesRuntime
     }
 }
 
+void RuntimeGraph::refresh_runtime_input(std::size_t index, const TimeSeriesRuntimeType &source_runtime_type,
+                                        const void *value) {
+    const auto bindings = compiled_graph_->runtime_inputs();
+    if (index >= bindings.size()) {
+        throw std::out_of_range{"the runtime input index is out of range"};
+    }
+    if (owns_storage_) {
+        throw std::logic_error{"only a borrowed runtime graph can refresh an input address"};
+    }
+    if (stopped_ || finalized_) {
+        throw std::logic_error{"a stopped or finalized runtime graph cannot refresh an input"};
+    }
+    if (value == nullptr) {
+        throw std::invalid_argument{"a refreshed runtime input requires a value"};
+    }
+
+    const auto &binding = bindings[index];
+    if (&source_runtime_type != binding.runtime_type) {
+        throw std::invalid_argument{"a runtime input value has a different runtime type than the binding expects"};
+    }
+    auto &runtime_input = *reinterpret_cast<RuntimeInputBinding *>(storage_ + binding.slot_offset);
+    if (!runtime_input.last_updated.valid()) {
+        throw std::logic_error{"an invalid runtime input cannot refresh its value address"};
+    }
+    runtime_input.value = value;
+}
+
 void RuntimeGraph::clear_runtime_input(std::size_t index, EvaluationTime evaluation_time) {
     const auto bindings = compiled_graph_->runtime_inputs();
     if (index >= bindings.size()) {

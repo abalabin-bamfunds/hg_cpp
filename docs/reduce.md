@@ -10,9 +10,11 @@ Reducer inputs and the reduce output use the ordinary guarantee. A tree
 position can receive a different item after the TSD changes, regardless of the
 guarantee on an individual item.
 
-The reducer applies to pairs of values in a balanced tree. An unpaired value
-advances to the next level unchanged. A single valid item is forwarded without
-creating a reducer graph instance.
+The reducer operation must be associative and commutative. TSD item order is
+not part of the reduce contract.
+
+A single valid item is forwarded directly without creating a reducer graph
+instance.
 
 Invalid items are omitted. The default scalar is used when the TSD is valid but
 has no valid items, including when keys exist but all their items are invalid.
@@ -23,11 +25,16 @@ When a TSD stores references, target updates, invalidations, and revalidations
 update the reduction even when the TSD membership and stored references do not
 change.
 
-Reducer graphs that support borrowed evaluation use per-pair reducer storage
-when the runtime representations are compatible. Other reducer graphs use
-nested runtime graphs. A change to the key set or to the reference stored under
-a key rebuilds the tree. Stopped nested graphs remain allocated until the next
-outer cycle so reference removal completes before their storage is released.
+When the reducer graph supports borrowed evaluation and the runtime
+representations are compatible, reduce uses a compact path. It stores valid
+items in a compressed binary Patricia tree keyed by their physical TSD item IDs.
+Item changes update affected paths; membership changes and physical-ID
+remapping update the tree structure.
+
+Other reducer graphs use nested runtime graphs arranged in adjacent pairs by
+TSD iteration order. A membership change rebuilds that graph set. Stopped
+nested graphs remain allocated until the next outer cycle so reference removal
+completes before their storage is released.
 
 The compact-storage check may call the reducer graph function a second time
 during wiring, using an independent graph wiring. If that call produces a

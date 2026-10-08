@@ -135,6 +135,91 @@ TEST_CASE("reduce combines final TSD items with an ordinary compact reducer",
     CHECK(actual.equals<i64>({7}));
 }
 
+TEST_CASE("compact reduce does not propagate a dirty path when a child reducer does not publish",
+          "[feature:reduce][series:tsd][shape:single-node][transition:update][notification:suppressed]") {
+    const auto make_dictionary = node([](In<TS<i64>> first, In<TS<i64>> second, In<TS<i64>> third,
+                                         In<TS<i64>> fourth, In<TS<bool>> initialize,
+                                         In<TS<bool>> update_first, Out<TSD<std::int64_t, TS<i64>>> output) {
+        if (*initialize) {
+            output[1].set(*first);
+            output[2].set(*second);
+            output[3].set(*third);
+            output[4].set(*fourth);
+        } else if (*update_first) {
+            output[1].set(*first);
+        }
+    });
+    const auto suppress_selected_value = graph(
+        "name"_n = "suppress_selected_reduce_value", [](wp<TS<i64>> left, wp<TS<i64>> right) -> wp<TS<i64>> {
+            const auto selected = node([](In<TS<i64>> left_value, In<TS<i64>> right_value, Out<TS<i64>> output) {
+                if (*left_value != 99) {
+                    output.set(*left_value + *right_value);
+                }
+            })(left, right);
+            return wp<TS<i64>>{*selected};
+        });
+    const auto tested = [=](wp<TS<i64>> first, wp<TS<i64>> second, wp<TS<i64>> third,
+                            wp<TS<i64>> fourth, wp<TS<bool>> initialize, wp<TS<bool>> update_first) {
+        return reduce(suppress_selected_value,
+                      make_dictionary(first, second, third, fourth, initialize, update_first));
+    };
+
+    const auto actual = testing::test_graph(tested, std::array{1, 99}, std::array{2, 2}, std::array{3, 3},
+                                            std::array{4, 4}, std::array{true, false},
+                                            std::array{false, true});
+
+    CHECK(actual.equals<i64>({10, std::nullopt}));
+}
+
+TEST_CASE("compact reduce does not republish an unchanged root when membership changes",
+          "[feature:reduce][series:tsd][shape:single-node][transition:removal][notification:suppressed]") {
+    const auto make_dictionary = node([](In<TS<bool>> initialize, Out<TSD<std::int64_t, TS<i64>>> output) {
+        if (*initialize) {
+            output[10].set(1);
+            output[20].set(2);
+            output[30].set(3);
+            output[40].set(4);
+            return;
+        }
+
+        const auto updated_key = output.key(1);
+        const auto removed_key = output.key(0);
+        output[updated_key].set(99);
+        output.erase(removed_key);
+    });
+    const auto suppress_item = node([](In<TS<i64>> left, In<TS<i64>> right, Out<TS<i64>> output) {
+        if (*left != 99) {
+            output.set(*left + *right);
+        }
+    });
+    const auto suppress_item_with_context = node(
+        [](In<TS<i64>> left, In<TS<i64>> right, In<TS<i64>, "factor"_n, context> factor,
+           Out<TS<i64>> output) {
+            if (*left != 99) {
+                output.set(*left + *right + *factor);
+            }
+        });
+    const auto suppress_selected_value = graph("name"_n = "suppress_selected_reduce_value",
+                                               [=](wp<TS<i64>> left, wp<TS<i64>> right) {
+                                                   return suppress_item(left, right);
+                                               });
+    const auto suppress_selected_value_with_context = graph(
+        "name"_n = "suppress_selected_reduce_value_with_context",
+        [=](wp<TS<i64>> left, wp<TS<i64>> right) { return suppress_item_with_context(left, right); });
+    const auto compact_graph = [=](wp<TS<bool>> initialize) {
+        return reduce(suppress_selected_value, make_dictionary(initialize));
+    };
+    const auto fallback_graph = [=](wp<TS<bool>> initialize, wp<TS<i64>> factor) {
+        auto context_scope = with_context("factor"_n = factor);
+        return reduce(suppress_selected_value_with_context, make_dictionary(initialize));
+    };
+    const auto compact_output = testing::test_graph(compact_graph, std::array{true, false});
+    const auto fallback_output = testing::test_graph(fallback_graph, std::array{true, false}, std::array{0, 0});
+
+    CHECK(compact_output.equals<i64>({10, std::nullopt}));
+    CHECK(fallback_output.equals<i64>({10, std::nullopt}));
+}
+
 TEST_CASE("compact reduce wiring preserves the reducer selected for reference-backed inputs",
           "[feature:reduce][series:tsd][shape:single-node][binding:reference-to-value]") {
     const auto tested = [](wp<TS<i64>> left, wp<TS<i64>> right) {
@@ -145,6 +230,89 @@ TEST_CASE("compact reduce wiring preserves the reducer selected for reference-ba
     const auto actual = testing::test_graph(tested, std::array{3}, std::array{4});
 
     CHECK(actual.equals<i64>({7}));
+}
+
+TEST_CASE("compact reduce tracks keys when a sampled TSD reassigns physical item IDs",
+          "[feature:reduce][series:tsd][series:reference][feature:item-id-remapping][transition:rebind]") {
+    const auto first_dictionary = node([](In<TS<bool>>, Out<TSD<std::int64_t, TS<i64>>> output) {
+        output[10].set(2);
+        output[20].set(3);
+        output[30].set(5);
+    });
+    const auto second_dictionary = node([](In<TS<bool>>, Out<TSD<std::int64_t, TS<i64>>> output) {
+        output[30].set(6);
+        output[20].set(4);
+        output[10].set(3);
+    });
+    const auto select_dictionary = node(
+        [](In<TS<bool>> use_second, In<REF<TSD<std::int64_t, TS<i64>>>> first,
+           In<REF<TSD<std::int64_t, TS<i64>>>> second, Out<REF<TSD<std::int64_t, TS<i64>>>> output) {
+            output.copy(*use_second ? second : first);
+        });
+    const auto tested = [=](wp<TS<bool>> use_second) {
+        const auto first = first_dictionary(use_second);
+        const auto second = second_dictionary(use_second);
+        const auto selected = select_dictionary(use_second, first.as<REF<TSD<std::int64_t, TS<i64>>>>(),
+                                                second.as<REF<TSD<std::int64_t, TS<i64>>>>());
+        return reduce(add_graph, selected);
+    };
+
+    const auto actual = testing::test_graph(tested, std::array{false, true, false, true});
+
+    CHECK(actual.equals<i64>({10, 13, 10, 13}));
+}
+
+TEST_CASE("compact reduce handles addition that reuses an expired physical item ID",
+          "[feature:reduce][series:tsd][transition:removal][transition:addition][storage:item-id-reuse]") {
+    const auto make_dictionary = node([](In<TS<i64>> phase, Out<TSD<std::int64_t, TS<i64>>> output) {
+        if (*phase == 0) {
+            output[10].set(2);
+            output[20].set(3);
+            return;
+        }
+
+        if (*phase == 1) {
+            output.erase(10);
+            output[30].set(7);
+            return;
+        }
+
+        output.erase(30);
+        const auto new_item = output[40];
+        const auto reused_id = output.item_id(40) == 0;
+        new_item.set(reused_id ? i64{11} : i64{1'011});
+    });
+    const auto tested = [=](wp<TS<i64>> phase) { return reduce(add_graph, make_dictionary(phase)); };
+
+    const auto actual = testing::test_graph(tested, std::array{0, 1, 2});
+
+    REQUIRE(actual.size() == 3);
+    CHECK((actual[0] && scalar_cast<i64>(*actual[0]).value() == 5));
+    CHECK((actual[1] && scalar_cast<i64>(*actual[1]).value() == 10));
+    CHECK((actual[2] && scalar_cast<i64>(*actual[2]).value() == 14));
+}
+
+TEST_CASE("compact reduce updates a sparse path in a larger TSD",
+          "[feature:reduce][series:tsd][shape:single-node][transition:update][activity:sparse]") {
+    const auto make_dictionary = node([](In<TS<bool>> initialize, In<TS<i64>> changed_key,
+                                         In<TS<i64>> changed_value, Out<TSD<std::int64_t, TS<i64>>> output) {
+        if (*initialize) {
+            for (auto key = std::int64_t{1}; key <= 64; ++key) {
+                output[key].set(key);
+            }
+            return;
+        }
+
+        output[*changed_key].set(*changed_value);
+    });
+    const auto tested = [=](wp<TS<bool>> initialize, wp<TS<i64>> changed_key, wp<TS<i64>> changed_value) {
+        return reduce(add_graph, make_dictionary(initialize, changed_key, changed_value));
+    };
+
+    const auto actual = testing::test_graph(tested, std::array{true, false}, std::array{32, 32},
+                                            std::array{100, 100});
+
+    CHECK(actual.equals<i64>({2080, 2148}));
 }
 
 TEST_CASE("reduce combines final TSD items through a context-dependent fallback reducer",
@@ -206,20 +374,6 @@ TEST_CASE("reduce retains untouched multi-node results and passive input state",
                                             std::array{false, true});
 
     CHECK(actual.equals<i64>({310, 119}));
-}
-
-TEST_CASE("reduce follows a reducer graph that returns its right input",
-          "[feature:reduce][series:tsd][shape:nested][transition:update]") {
-    const auto select_right = graph("name"_n = "select_reduce_right_input", [](wp<TS<i64>>, wp<TS<i64>> right) {
-        return right;
-    });
-    const auto tested = [select_right](wp<TS<i64>> first, wp<TS<i64>> second, wp<TS<i64>> third) {
-        return reduce(select_right, dictionary_from_three_values(first, second, third));
-    };
-
-    const auto actual = testing::test_graph(tested, std::array{1, 1}, std::array{4, 4}, std::array{7, 8});
-
-    CHECK(actual.equals<i64>({7, 8}));
 }
 
 TEST_CASE("reduce adapts a generic lambda to the TSD item type",
@@ -452,7 +606,11 @@ TEST_CASE("reduce follows stable TSD references as initially invalid items becom
     const auto actual = testing::test_graph(tested, std::array{5, 6, 7, 8}, std::array{0, 9, 0, 11},
                                             std::array{true, false, false, false});
 
-    CHECK(actual.equals<i64>({5, 15, 7, 19}));
+    REQUIRE(actual.size() == 4);
+    CHECK((actual[0] && scalar_cast<i64>(*actual[0]).value() == 5));
+    CHECK((actual[1] && scalar_cast<i64>(*actual[1]).value() == 15));
+    CHECK((actual[2] && scalar_cast<i64>(*actual[2]).value() == 7));
+    CHECK((actual[3] && scalar_cast<i64>(*actual[3]).value() == 19));
 }
 
 } // namespace

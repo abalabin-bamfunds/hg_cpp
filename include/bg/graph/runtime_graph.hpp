@@ -92,6 +92,10 @@ class RuntimeGraph {
     void bind_runtime_input(std::size_t index, const TimeSeriesRuntimeType &source_runtime_type,
                             const TimeSeriesState &source_state, const void *value,
                             EvaluationTime evaluation_time);
+    // Refreshes a valid borrowed input's address without changing its state or notifying subscribers. The caller must
+    // know that the source's logical state is unchanged.
+    void refresh_runtime_input(std::size_t index, const TimeSeriesRuntimeType &source_runtime_type,
+                               const void *value);
     // Publish an invalid sample before the graph evaluates its supplied cycle.
     void clear_runtime_input(std::size_t index, EvaluationTime evaluation_time);
     // Save this word between temporary borrowed views; spill words already live in borrowed storage.

@@ -259,7 +259,8 @@ graph compilation or evaluation.
   functions, reference-bound collections, and mapped item replacement while
   another input keeps the inner graph alive
 - mesh dependency creation, key changes, shared dependencies, cycle rejection, evaluation order, and lifecycle
-- reduction of valid TSD items through balanced reducer graphs, odd item counts, defaults, and membership changes
+- reduction through compact and nested reducers, odd item counts, defaults, sparse updates, physical item-ID changes,
+  and membership changes
 - switch selection, default selection, inner graph evaluation, scheduling, lifecycle, and composition with map and mesh
 - service request deduplication, invalidation, nested graph binding propagation, provider ordering, and client removal
 

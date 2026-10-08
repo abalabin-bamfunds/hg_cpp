@@ -294,6 +294,63 @@ TEST_CASE("borrowed runtime graph views preserve validity between cycles",
     }
 }
 
+TEST_CASE("borrowed runtime input refresh changes its address without notifying subscribers",
+          "[evaluation][feature:runtime-input][feature:graph-compilation][activity:active]"
+          "[transition:update][binding:borrowed]") {
+    const auto addition = bg::node<add_runtime_inputs>();
+    const auto observer = bg::node<active_optional_runtime_input>();
+    auto wiring = bg::GraphWiring{};
+    auto left = bg::WiringPoint{};
+    auto right = bg::WiringPoint{};
+    {
+        const auto context = bg::WiringContext{wiring};
+        left = wiring.runtime_input(bg::TS<Value>::type());
+        right = wiring.runtime_input(bg::TS<Value>::type());
+        (void)addition(left, right);
+        (void)observer(left);
+    }
+
+    wiring.finalize();
+    const auto compiled = bg::CompiledGraph{wiring};
+    REQUIRE(compiled.supports_borrowed_evaluation());
+    auto storage = std::vector<std::byte>(bg::RuntimeGraph::borrowed_storage_size(compiled));
+    bg::RuntimeGraph::initialize_borrowed_storage(compiled, storage);
+
+    auto global_state = bg::GlobalState{};
+    auto left_state = bg::TimeSeriesState{};
+    left_state.publish(time(1));
+    auto right_state = left_state;
+    auto left_value = Value{10};
+    auto replacement_left_value = Value{15};
+    auto right_value = Value{32};
+    const auto &runtime_type = bg::cpp_time_series_runtime_type<bg::TS<Value>>();
+    add_runtime_inputs::observations.clear();
+    add_runtime_inputs::evaluation_times.clear();
+    active_optional_runtime_input::evaluations = 0;
+
+    auto runtime = bg::RuntimeGraph{compiled, bg::allocator{}, storage, global_state};
+    runtime.bind_runtime_input(0, runtime_type, left_state, &left_value, time(1));
+    runtime.bind_runtime_input(1, runtime_type, right_state, &right_value, time(1));
+    runtime.evaluate(time(1), global_state);
+    REQUIRE(add_runtime_inputs::observations.size() == 1);
+    REQUIRE(active_optional_runtime_input::evaluations == 1);
+
+    right_state.publish(time(2));
+    runtime.refresh_runtime_input(0, runtime_type, &replacement_left_value);
+    runtime.bind_runtime_input(1, runtime_type, right_state, &right_value, time(2));
+    runtime.evaluate(time(2), global_state);
+
+    REQUIRE(add_runtime_inputs::observations.size() == 2);
+    CHECK_FALSE(add_runtime_inputs::observations.back().left_modified);
+    CHECK(add_runtime_inputs::observations.back().right_modified);
+    CHECK(active_optional_runtime_input::evaluations == 1);
+    CHECK(*static_cast<const Value *>(runtime.node(0).output_value()) == 47);
+
+    auto owned_runtime = bg::RuntimeGraph{compiled, global_state};
+    CHECK_THROWS_WITH(owned_runtime.refresh_runtime_input(0, runtime_type, &replacement_left_value),
+                      "only a borrowed runtime graph can refresh an input address");
+}
+
 TEST_CASE("borrowed runtime graph views preserve spill-word input validity",
           "[evaluation][feature:runtime-input][feature:graph-compilation][storage:fixed]") {
     const auto consumer = bg::node<required_runtime_input>();
