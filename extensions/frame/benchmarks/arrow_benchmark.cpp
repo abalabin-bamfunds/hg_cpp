@@ -267,6 +267,7 @@ RunResult run_case(const BenchmarkCase &benchmark_case) {
         static_cast<void>(node_template<Consumer>()(column));
     }
 
+    wiring.finalize();
     const auto compiled = CompiledGraph{wiring};
     auto global_state = GlobalState{};
     auto runtime = RuntimeGraph{compiled, global_state};
