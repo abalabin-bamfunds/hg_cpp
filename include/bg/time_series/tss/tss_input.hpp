@@ -10,6 +10,7 @@
 #include <bg/time_series/tss/tss_type.hpp>
 
 #include <functional>
+#include <memory>
 #include <string_view>
 
 namespace bg {
@@ -140,6 +141,18 @@ class In<TSS<K, TimeSeriesProperties...>, Properties...>
         return next(storage().removed(), start);
     }
 
+    // A sampled reference reports whether any common item has a different physical ID.
+    bool has_item_id_remapping() const {
+        return data_.data() != nullptr && set_runtime_type().has_item_id_remapping(data_.data());
+    }
+
+    template <typename Function> void for_each_item_id_remapping(Function &&function) const {
+        if (data_.data() != nullptr) {
+            set_runtime_type().for_each_item_id_remapping(data_.data(), std::addressof(function),
+                                                         invoke_with_id_remapping<std::remove_reference_t<Function>>);
+        }
+    }
+
     const TimeSeriesRuntimeType &runtime_type() const noexcept { return data_.runtime_type(); }
     const void *data() const noexcept { return data_.data(); }
     const In *operator->() const noexcept { return this; }
@@ -196,6 +209,11 @@ class In<TSS<K, TimeSeriesProperties...>, Properties...>
     static item_id_t next(const util::index<> &positions, item_id_t start) noexcept {
         const auto position = positions.first_set(start);
         return position == positions.size() ? util::occupancy_index::npos : position;
+    }
+
+    template <typename Function>
+    static void invoke_with_id_remapping(void *context, item_id_t old_id, item_id_t new_id) {
+        std::invoke(*static_cast<Function *>(context), old_id, new_id);
     }
 
     template <typename Function> void apply(const util::index<> &positions, Function &function) const {

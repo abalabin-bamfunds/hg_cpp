@@ -19,6 +19,11 @@ struct SampledDictionary {
         SampledReferenceChange sample;
     };
 
+    struct ItemIdRemapping {
+        item_id_t old_id;
+        item_id_t new_id;
+    };
+
     SampledDictionary(const TimeSeriesDictionaryRuntimeType &shape, ResolvedTimeSeries previous,
                       ResolvedTimeSeries current, EvaluationTime evaluation_time, allocator &memory);
     ~SampledDictionary();
@@ -44,6 +49,7 @@ struct SampledDictionary {
     mutable util::index<> removed;
     mutable util::index<> modified;
     mutable std::pmr::vector<Child> children;
+    mutable std::pmr::vector<ItemIdRemapping> item_id_remappings;
     mutable SampledSet *key_set_sample{};
     allocator memory;
     mutable bool changes_populated{};

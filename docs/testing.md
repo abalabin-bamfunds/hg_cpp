@@ -21,7 +21,8 @@ Use `[dimension:value]` for each applicable dimension:
   `lifecycle`, `finalization`, `scheduling`, `timed-scheduling`, `simulation`, `wall-clock`, `input-activity`, `validity`,
   `invalidation`, `operator`, `constant`, `graph-argument`, `map`, `switch`,
   `time-series-storage`, `time-series-view`, `collection-change`, `reference`, `sampling`, `feedback`,
-  `runtime-input`, `service`, `getitem`, `getattr`, `nested-graph`, `mesh`, `multiservice`, `reduce`,
+  `runtime-input`, `item-id-remapping`, `service`, `getitem`, `getattr`, `nested-graph`, `mesh`,
+  `multiservice`, `reduce`,
   `variadic-wiring`, or `wiring-materialisation`
 - `series`: `value`, `fixed-tsl`, `tss`, `tsd`, `tsb`, `reference`, or `generic`
 - `schema`: `named`, `unnamed`, or `generic`
@@ -279,6 +280,7 @@ graph compilation or evaluation.
 ### Collection time series
 
 - set additions and removals
+- sampled set and dictionary item-ID remapping across reference changes, including ID exchanges and ordinary deltas
 - fixed-list updates
 - bundle fields and inheritance
 - dictionary key, item, and validity changes

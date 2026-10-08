@@ -58,6 +58,7 @@ class TimeSeriesRuntimeType : public RuntimeType {
     };
 
     using ItemIdFunction = void (*)(void *, item_id_t);
+    using ItemIdRemappingFunction = void (*)(void *, item_id_t, item_id_t);
     using ModifiedItemFunction = void (*)(void *, ModifiedItem);
 
     ~TimeSeriesRuntimeType() override;

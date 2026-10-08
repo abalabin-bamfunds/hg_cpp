@@ -1,6 +1,7 @@
 #include "tss_reference_sample.hpp"
 
 #include <bg/util/index.hpp>
+#include <bg/util/scope_exit.hpp>
 
 #include <exception>
 #include <memory>
@@ -27,6 +28,9 @@ class SampledSetRuntimeType final : public TimeSeriesSetRuntimeType {
     const void *set_key(const void *value, item_id_t id) const noexcept override;
     item_id_t set_next_item_id(const TimeSeriesState &last_updated, const void *value, Range range,
                                item_id_t start) const override;
+    bool has_item_id_remapping(const void *value) const override;
+    void for_each_item_id_remapping(const void *value, void *context,
+                                    ItemIdRemappingFunction function) const override;
     void construct_initial_value(void *) const noexcept override;
     void destroy_value(void *value, allocator &) const noexcept override;
 
@@ -42,7 +46,7 @@ SampledSet::SampledSet(const TimeSeriesSetRuntimeType &shape, ResolvedTimeSeries
     : runtime_type{&SampledSetRuntimeType::for_shape(shape)},
       previous_last_updated{previous.last_updated == nullptr ? initial_time_series_state : *previous.last_updated},
       current_last_updated{current.last_updated == nullptr ? initial_time_series_state : *current.last_updated},
-      previous{previous}, current{current}, memory{memory} {
+      previous{previous}, current{current}, item_id_remappings{&memory.memory_resource()}, memory{memory} {
     this->previous.last_updated = &previous_last_updated;
     this->current.last_updated = &current_last_updated;
     if (this->previous.valid()) {
@@ -64,6 +68,14 @@ void SampledSet::populate_changes() const {
     if (changes_populated) {
         return;
     }
+
+    const auto original_remapping_count = item_id_remappings.size();
+    auto committed = false;
+    auto rollback = util::scope_exit{[&]() noexcept {
+        if (!committed) {
+            item_id_remappings.resize(original_remapping_count);
+        }
+    }};
 
     if (previous.valid()) {
         const auto &previous_type = static_cast<const TimeSeriesSetRuntimeType &>(*previous.runtime_type);
@@ -89,14 +101,20 @@ void SampledSet::populate_changes() const {
              id = current_type.set_next_item_id(current_last_updated, current.storage,
                                                 TimeSeriesSetRuntimeType::Range::current, id + 1)) {
             const auto key = ScalarData{current_type.key_runtime_type(), current_type.set_key(current.storage, id)};
-            if (!previous.valid() ||
-                !static_cast<const TimeSeriesSetRuntimeType &>(*previous.runtime_type)
-                     .set_contains(previous.storage, key)) {
+            const auto previous_id = previous.valid()
+                                         ? static_cast<const TimeSeriesSetRuntimeType &>(*previous.runtime_type)
+                                               .find_set_item(previous.storage, key)
+                                         : util::occupancy_index::npos;
+            if (previous_id == util::occupancy_index::npos) {
                 added.set(id, memory);
+            } else if (previous_id != id) {
+                item_id_remappings.push_back({previous_id, id});
             }
         }
     }
     changes_populated = true;
+    committed = true;
+    rollback.release();
 }
 
 namespace {
@@ -206,6 +224,27 @@ item_id_t SampledSetRuntimeType::set_next_item_id(const TimeSeriesState &last_up
         return util::occupancy_index::npos;
     }
     return previous ? (position | previous_item_flag) : position;
+}
+
+bool SampledSetRuntimeType::has_item_id_remapping(const void *value) const {
+    if (value == nullptr) {
+        return false;
+    }
+    const auto &sample = *static_cast<const SampledSet *>(value);
+    sample.populate_changes();
+    return !sample.item_id_remappings.empty();
+}
+
+void SampledSetRuntimeType::for_each_item_id_remapping(const void *value, void *context,
+                                                       ItemIdRemappingFunction function) const {
+    if (value == nullptr) {
+        return;
+    }
+    const auto &sample = *static_cast<const SampledSet *>(value);
+    sample.populate_changes();
+    for (const auto remapping : sample.item_id_remappings) {
+        function(context, remapping.old_id, remapping.new_id);
+    }
 }
 
 void SampledSetRuntimeType::construct_initial_value(void *) const noexcept { std::terminate(); }

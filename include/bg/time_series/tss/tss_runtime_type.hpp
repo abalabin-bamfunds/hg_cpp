@@ -26,6 +26,8 @@ class TimeSeriesSetRuntimeType : public TimeSeriesRuntimeType {
     virtual const void *set_key(const void *value, item_id_t id) const noexcept;
     virtual item_id_t set_next_item_id(const TimeSeriesState &last_updated, const void *value, Range range,
                                        item_id_t start) const;
+    virtual bool has_item_id_remapping(const void *) const { return false; }
+    virtual void for_each_item_id_remapping(const void *, void *, ItemIdRemappingFunction) const {}
 
     const ScalarRuntimeType &key_runtime_type() const noexcept { return *key_; }
 

@@ -788,6 +788,148 @@ TEST_CASE("a dictionary reference sample reports key-set changes",
     CHECK(actual[1]->value() == 31'310);
 }
 
+TEST_CASE("a sampled TSD reports item ID exchanges across a reference rebind",
+          "[series:tsd][feature:reference][feature:sampling][feature:item-id-remapping]"
+          "[transition:update]") {
+    const auto first = node([](In<TS<bool>>, Out<TSD<std::int64_t, TS<i64>>> output) {
+        output[10].set(10);
+        output[20].set(20);
+    });
+    const auto second = node([](In<TS<bool>>, Out<TSD<std::int64_t, TS<i64>>> output) {
+        output[20].set(20);
+        output[10].set(10);
+    });
+    const auto select = node([](In<TS<bool>> use_second, In<REF<TSD<std::int64_t, TS<i64>>>> first,
+                                In<REF<TSD<std::int64_t, TS<i64>>>> second,
+                                Out<REF<TSD<std::int64_t, TS<i64>>>> output) {
+        output.copy(*use_second ? second : first);
+    });
+    const auto inspect = node([](In<TS<bool>> use_second, In<TSD<std::int64_t, TS<i64>>> input,
+                                 In<TSD<std::int64_t, TS<i64>>> first,
+                                 In<TSD<std::int64_t, TS<i64>>> second, Out<TS<i64>> output) {
+        auto actual = std::vector<std::pair<item_id_t, item_id_t>>{};
+        input.for_each_item_id_remapping([&](item_id_t old_id, item_id_t new_id) {
+            actual.emplace_back(old_id, new_id);
+        });
+
+        auto expected = std::vector<std::pair<item_id_t, item_id_t>>{};
+        if (*use_second) {
+            for (auto new_id = input.next_item_id(0); new_id != util::occupancy_index::npos;
+                 new_id = input.next_item_id(new_id + 1)) {
+                const auto key = input.key_at(new_id);
+                if (key.value() != second.key_at(new_id).value()) {
+                    output.set(false);
+                    return;
+                }
+                const auto old_id = first.find_item_id(key);
+                if (old_id != util::occupancy_index::npos && old_id != new_id) {
+                    expected.emplace_back(old_id, new_id);
+                }
+            }
+        }
+        const auto valid = actual == expected && input.has_item_id_remapping() == !expected.empty() &&
+                           (!*use_second || expected.size() == 2);
+        output.set(valid ? (*use_second ? 2 : 1) : (*use_second ? 20 : 10));
+    });
+    const auto graph = [&](wp<TS<bool>> use_second) {
+        const auto first_dictionary = first(use_second);
+        const auto second_dictionary = second(use_second);
+        return inspect(use_second, select(use_second, first_dictionary, second_dictionary), first_dictionary,
+                       second_dictionary);
+    };
+
+    const auto actual = testing::test_graph(graph, std::array{false, true});
+
+    REQUIRE(actual.size() == 2);
+    REQUIRE(actual[0].has_value());
+    REQUIRE(actual[1].has_value());
+    CHECK(actual[0]->value() == 1);
+    CHECK(actual[1]->value() == 2);
+}
+
+TEST_CASE("a sampled TSD does not report remapping for additions and removals at unchanged IDs",
+          "[series:tsd][feature:reference][feature:sampling][feature:item-id-remapping]"
+          "[transition:addition][transition:removal]") {
+    const auto first = node([](In<TS<bool>>, Out<TSD<std::int64_t, TS<i64>>> output) {
+        output[10].set(10);
+        output[20].set(20);
+    });
+    const auto second = node([](In<TS<bool>>, Out<TSD<std::int64_t, TS<i64>>> output) {
+        output[10].set(10);
+        output[30].set(30);
+    });
+    const auto select = node([](In<TS<bool>> use_second, In<REF<TSD<std::int64_t, TS<i64>>>> first,
+                                In<REF<TSD<std::int64_t, TS<i64>>>> second,
+                                Out<REF<TSD<std::int64_t, TS<i64>>>> output) {
+        output.copy(*use_second ? second : first);
+    });
+    const auto inspect = node([](In<TS<bool>> use_second, In<TSD<std::int64_t, TS<i64>>> input,
+                                 In<TSD<std::int64_t, TS<i64>>> first,
+                                 In<TSD<std::int64_t, TS<i64>>> second, Out<TS<i64>> output) {
+        auto actual = std::vector<std::pair<item_id_t, item_id_t>>{};
+        input.for_each_item_id_remapping([&](item_id_t old_id, item_id_t new_id) {
+            actual.emplace_back(old_id, new_id);
+        });
+
+        auto expected = std::vector<std::pair<item_id_t, item_id_t>>{};
+        if (*use_second) {
+            for (auto new_id = input.next_item_id(0); new_id != util::occupancy_index::npos;
+                 new_id = input.next_item_id(new_id + 1)) {
+                const auto key = input.key_at(new_id);
+                const auto old_id = first.find_item_id(key);
+                if (old_id != util::occupancy_index::npos && old_id != new_id) {
+                    expected.emplace_back(old_id, new_id);
+                }
+            }
+        }
+        const auto added_key_value = std::int64_t{30};
+        const auto removed_key_value = std::int64_t{20};
+        const auto has_addition_and_removal =
+            !*use_second ||
+            (input.find_added_id(Scalar<std::int64_t>::from(added_key_value)) != util::occupancy_index::npos &&
+             input.find_removed_id(Scalar<std::int64_t>::from(removed_key_value)) != util::occupancy_index::npos);
+        const auto valid = actual == expected && !input.has_item_id_remapping() && has_addition_and_removal;
+        output.set(valid ? (*use_second ? 2 : 1) : (*use_second ? 20 : 10));
+    });
+    const auto graph = [&](wp<TS<bool>> use_second) {
+        const auto first_dictionary = first(use_second);
+        const auto second_dictionary = second(use_second);
+        return inspect(use_second, select(use_second, first_dictionary, second_dictionary), first_dictionary,
+                       second_dictionary);
+    };
+
+    const auto actual = testing::test_graph(graph, std::array{false, true});
+
+    REQUIRE(actual.size() == 2);
+    REQUIRE(actual[0].has_value());
+    REQUIRE(actual[1].has_value());
+    CHECK(actual[0]->value() == 1);
+    CHECK(actual[1]->value() == 2);
+}
+
+TEST_CASE("a TSD reports no item ID remapping for ordinary additions and removals",
+          "[series:tsd][feature:item-id-remapping][transition:addition][transition:removal]") {
+    const auto source = node([](In<TS<i64>> command, Out<TSD<std::int64_t, TS<i64>>> output) {
+        if (*command == 0) {
+            output[10].set(10);
+        } else {
+            output.erase(10);
+            output[20].set(20);
+        }
+    });
+    const auto inspect = node([](In<TS<i64>> command, In<TSD<std::int64_t, TS<i64>>> input, Out<TS<i64>> output) {
+        auto remapping_count = std::size_t{};
+        input.for_each_item_id_remapping([&](item_id_t, item_id_t) { ++remapping_count; });
+        const auto remapping_found = input.has_item_id_remapping() || remapping_count != 0;
+        output.set(remapping_found ? 10 + *command : *command);
+    });
+    const auto graph = [&](wp<TS<i64>> command) { return inspect(command, source(command)); };
+
+    const auto actual = testing::test_graph(graph, std::array{i64{0}, i64{1}});
+
+    CHECK(actual.equals<i64>({0, 1}));
+}
+
 TEST_CASE("a dictionary reference follows a target that becomes valid after selection",
           "[series:tsd][series:value][feature:reference][feature:sampling]"
           "[binding:reference-to-value][transition:invalidation][transition:revalidation]") {

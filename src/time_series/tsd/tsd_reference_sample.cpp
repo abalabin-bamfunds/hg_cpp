@@ -44,6 +44,9 @@ class SampledDictionaryRuntimeType final : public TimeSeriesDictionaryRuntimeTyp
     MutableItem item(void *, item_id_t) const override;
     void for_each_item_id(const void *value, void *context, ItemIdFunction function) const override;
     bool item_updated(const TimeSeriesState &, const void *, item_id_t id) const override;
+    bool has_item_id_remapping(const void *value) const override;
+    void for_each_item_id_remapping(const void *value, void *context,
+                                    ItemIdRemappingFunction function) const override;
     void for_each_updated_item(const TimeSeriesState &, const void *, void *, ItemIdFunction) const override;
     bool collection_valid(const void *value) const noexcept override;
     void for_each_modified_item(const TimeSeriesState &, const void *, EvaluationTime, void *,
@@ -60,7 +63,8 @@ SampledDictionary::SampledDictionary(const TimeSeriesDictionaryRuntimeType &shap
     : runtime_type{&SampledDictionaryRuntimeType::for_shape(shape)},
       previous_last_updated{previous.last_updated == nullptr ? initial_time_series_state : *previous.last_updated},
       current_last_updated{current.last_updated == nullptr ? initial_time_series_state : *current.last_updated},
-      previous{previous}, current{current}, children{&memory.memory_resource()}, memory{memory} {
+      previous{previous}, current{current}, children{&memory.memory_resource()},
+      item_id_remappings{&memory.memory_resource()}, memory{memory} {
     this->previous.last_updated = &previous_last_updated;
     this->current.last_updated = &current_last_updated;
     if (this->previous.valid()) {
@@ -171,6 +175,7 @@ void SampledDictionary::populate_changes() const {
             child.sample.release();
         }
         children.clear();
+        item_id_remappings.clear();
         if (key_set_sample != nullptr) {
             key_set_sample->release();
             key_set_sample = nullptr;
@@ -205,6 +210,10 @@ void SampledDictionary::populate_changes() const {
                 sample.added.set(id, sample.memory);
                 sample.append_child(id, util::occupancy_index::npos, nullptr, &current_item);
                 return;
+            }
+
+            if (previous_id != id) {
+                sample.item_id_remappings.push_back({previous_id, id});
             }
 
             const auto previous_item = callback.previous_type->item(sample.previous.storage, previous_id);
@@ -536,6 +545,27 @@ bool SampledDictionaryRuntimeType::item_updated(const TimeSeriesState &, const v
         return sample.removed.contains(id & ~previous_item_flag);
     }
     return sample.added.contains(id) || sample.modified.contains(id);
+}
+
+bool SampledDictionaryRuntimeType::has_item_id_remapping(const void *value) const {
+    if (value == nullptr) {
+        return false;
+    }
+    const auto &sample = *static_cast<const SampledDictionary *>(value);
+    sample.populate_changes();
+    return !sample.item_id_remappings.empty();
+}
+
+void SampledDictionaryRuntimeType::for_each_item_id_remapping(const void *value, void *context,
+                                                              ItemIdRemappingFunction function) const {
+    if (value == nullptr) {
+        return;
+    }
+    const auto &sample = *static_cast<const SampledDictionary *>(value);
+    sample.populate_changes();
+    for (const auto remapping : sample.item_id_remappings) {
+        function(context, remapping.old_id, remapping.new_id);
+    }
 }
 
 void SampledDictionaryRuntimeType::for_each_updated_item(const TimeSeriesState &, const void *value, void *context,

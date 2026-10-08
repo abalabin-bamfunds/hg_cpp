@@ -211,6 +211,18 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...>
         return id;
     }
 
+    // A sampled reference reports whether any common key has a different physical ID.
+    bool has_item_id_remapping() const {
+        return data_.data() != nullptr && dictionary_runtime_type().has_item_id_remapping(data_.data());
+    }
+
+    template <typename Function> void for_each_item_id_remapping(Function &&function) const {
+        if (data_.data() != nullptr) {
+            dictionary_runtime_type().for_each_item_id_remapping(
+                data_.data(), std::addressof(function), invoke_with_id_remapping<std::remove_reference_t<Function>>);
+        }
+    }
+
     item_id_t find_item_id(const Scalar<K> &key) const {
         if (data_.data() == nullptr) {
             return util::occupancy_index::npos;
@@ -359,6 +371,11 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...>
 
     template <typename Function> static void invoke_with_id(void *context, item_id_t id) {
         std::invoke(*static_cast<Function *>(context), id);
+    }
+
+    template <typename Function>
+    static void invoke_with_id_remapping(void *context, item_id_t old_id, item_id_t new_id) {
+        std::invoke(*static_cast<Function *>(context), old_id, new_id);
     }
 
     template <typename Function> void for_each_live_id(Function &&function) const {

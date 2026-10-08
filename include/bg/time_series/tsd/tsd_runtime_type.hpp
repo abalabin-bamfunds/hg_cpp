@@ -166,6 +166,9 @@ class TimeSeriesDictionaryRuntimeType : public TimeSeriesRuntimeType {
         return id;
     }
 
+    virtual bool has_item_id_remapping(const void *) const { return false; }
+    virtual void for_each_item_id_remapping(const void *, void *, ItemIdRemappingFunction) const {}
+
     virtual bool item_modified(const TimeSeriesState &last_updated, const void *value, item_id_t id) const {
         const auto &storage = *static_cast<const time_series_dict_storage *>(value);
         return last_updated.valid() && storage.change_time() == last_updated.time() &&

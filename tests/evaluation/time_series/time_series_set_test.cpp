@@ -6,6 +6,8 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -239,6 +241,28 @@ struct overlapping_referenced_set_source_definition {
     void evaluate() const {}
 };
 
+struct reversed_referenced_set_source_definition {
+    bg::Out<bg::TSS<bg::i64>> output;
+
+    void start() const {
+        output.insert(12);
+        output.insert(11);
+    }
+
+    void evaluate() const {}
+};
+
+struct same_position_referenced_set_source_definition {
+    bg::Out<bg::TSS<bg::i64>> output;
+
+    void start() const {
+        output.insert(11);
+        output.insert(13);
+    }
+
+    void evaluate() const {}
+};
+
 struct invalid_set_source_definition {
     bg::Out<bg::TSS<bg::i64>> output;
 
@@ -447,6 +471,99 @@ TEST_CASE("a TSS input reports item changes when its reference selects another v
           std::vector<std::vector<std::int64_t>>{{11, 12}, {13}});
     CHECK(referenced_set_observer_definition::removed ==
           std::vector<std::vector<std::int64_t>>{{}, {11}});
+}
+
+TEST_CASE("a sampled TSS reports item ID exchanges across a reference rebind",
+          "[evaluation][reference][series:tss][feature:sampling][feature:item-id-remapping]"
+          "[binding:reference-to-value][transition:update]") {
+    const auto first = bg::node<referenced_set_source_definition>();
+    const auto second = bg::node<reversed_referenced_set_source_definition>();
+    const auto condition = bg::node<set_reference_condition_definition>();
+    const auto select = bg::node<set_reference_selector_definition>();
+    const auto inspect = bg::node([](bg::In<bg::TS<bg::i64>> phase, bg::In<bg::TSS<bg::i64>> input,
+                                     bg::In<bg::TSS<bg::i64>> first, bg::Out<bg::TS<bg::i64>> output) {
+        auto actual = std::vector<std::pair<bg::item_id_t, bg::item_id_t>>{};
+        input.for_each_item_id_remapping([&](bg::item_id_t old_id, bg::item_id_t new_id) {
+            actual.emplace_back(old_id, new_id);
+        });
+
+        auto expected = std::vector<std::pair<bg::item_id_t, bg::item_id_t>>{};
+        if (*phase == 1) {
+            for (auto new_id = input.next_item_id(0); new_id != bg::util::occupancy_index::npos;
+                 new_id = input.next_item_id(new_id + 1)) {
+                const auto key = input.item_at(new_id);
+                for (auto old_id = first.next_item_id(0); old_id != bg::util::occupancy_index::npos;
+                     old_id = first.next_item_id(old_id + 1)) {
+                    if (first.item_at(old_id).value() == key.value() && old_id != new_id) {
+                        expected.emplace_back(old_id, new_id);
+                    }
+                }
+            }
+        }
+
+        std::ranges::sort(actual);
+        std::ranges::sort(expected);
+        const auto remapping_found = input.has_item_id_remapping();
+        const auto valid = actual == expected && remapping_found == !expected.empty() &&
+                           (*phase == 0 || expected.size() == 2);
+        output.set(valid ? 1 + *phase : 10 + *phase);
+    });
+    const auto graph = [&] {
+        const auto phase = condition();
+        return inspect(phase, select(phase, first(), second()), first());
+    };
+
+    const auto actual = bg::testing::test_graph(graph);
+
+    CHECK(actual.equals<std::int64_t>({1, 2}));
+}
+
+TEST_CASE("a sampled TSS does not report remapping for additions and removals at unchanged IDs",
+          "[evaluation][reference][series:tss][feature:sampling][feature:item-id-remapping]"
+          "[binding:reference-to-value][transition:addition][transition:removal]") {
+    const auto first = bg::node<referenced_set_source_definition>();
+    const auto second = bg::node<same_position_referenced_set_source_definition>();
+    const auto condition = bg::node<set_reference_condition_definition>();
+    const auto select = bg::node<set_reference_selector_definition>();
+    const auto inspect = bg::node([](bg::In<bg::TS<bg::i64>> phase, bg::In<bg::TSS<bg::i64>> input,
+                                     bg::Out<bg::TS<bg::i64>> output) {
+        auto remapping_count = std::size_t{};
+        input.for_each_item_id_remapping([&](bg::item_id_t, bg::item_id_t) { ++remapping_count; });
+        const auto remapping_found = input.has_item_id_remapping() || remapping_count != 0;
+        output.set(remapping_found ? 10 + *phase : 1 + *phase);
+    });
+    const auto graph = [&] {
+        const auto phase = condition();
+        return inspect(phase, select(phase, first(), second()));
+    };
+
+    const auto actual = bg::testing::test_graph(graph);
+
+    CHECK(actual.equals<bg::i64>({1, 2}));
+}
+
+TEST_CASE("a TSS reports no item ID remapping for ordinary additions and removals",
+          "[evaluation][series:tss][feature:item-id-remapping]"
+          "[transition:addition][transition:removal]") {
+    const auto source = bg::node([](bg::In<bg::TS<bg::i64>> command, bg::Out<bg::TSS<bg::i64>> output) {
+        if (*command == 0) {
+            output.insert(10);
+        } else {
+            output.erase(10);
+            output.insert(20);
+        }
+    });
+    const auto inspect = bg::node([](bg::In<bg::TS<bg::i64>> command, bg::In<bg::TSS<bg::i64>> input,
+                                     bg::Out<bg::TS<bool>> output) {
+        auto remapping_count = std::size_t{};
+        input.for_each_item_id_remapping([&](bg::item_id_t, bg::item_id_t) { ++remapping_count; });
+        output.set(input.has_item_id_remapping() || remapping_count != 0 || *command == 0);
+    });
+    const auto graph = [&](bg::wp<bg::TS<bg::i64>> command) { return inspect(command, source(command)); };
+
+    const auto actual = bg::testing::test_graph(graph, std::array{bg::i64{0}, bg::i64{1}});
+
+    CHECK(actual.equals<bool>({true, false}));
 }
 
 TEST_CASE("a TSS input does not report stale removals after an invalid target is rewired",
