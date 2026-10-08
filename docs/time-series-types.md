@@ -98,42 +98,34 @@ output valid for this event; it leaves an already-valid output unchanged.
 The built-in writer supports value, fixed-list, bundle, set, and dictionary time
 series. It does not support references. TSS and TSD themselves cannot be
 invalidated through their output APIs, so such an event cannot be retained.
-Provider-defined time series register write, replay, and discard handlers
-with `TimeSeriesTickDispatch::instance()`. This registry is shared by all tick
-writers, readers, and feedback nodes in the process. Complete registration
-before concurrent writes, replay, or graph evaluation; registration is not
-synchronized. A dynamically loaded provider module must remain loaded until
-process exit because the registry retains its handlers. Write handlers receive
-the provider's `In<Series>` view and a restricted `TimeSeriesTickWriteContext`.
-Replay and discard handlers use `util::buffer_reader`; replay receives its
-registered output view. Register the complete output declaration with
-`add_replay<Output>()` and one replay handler per semantic
-type or runtime representation. A runtime registration selects the provider's
-typed output view for that representation. Collection replay selects handlers
-using each item's actual runtime type. A semantic handler
-must support every runtime representation without an exact registration.
-Discard receives the semantic type's record format and must destroy provider-
-owned objects. Failed writes discard the complete prefix through that same
-record grammar, so handlers must write records whose completed prefix can be
-discarded. All runtime representations of one semantic time series type must
-use the same write and discard grammar.
+Provider-defined time series register `TimeSeriesTickOperations` with
+`TimeSeriesDispatch<TimeSeriesTickOperations>::instance()`. This registry is
+shared by tick writers, readers, and feedback nodes in the process. Complete
+registration before concurrent writes, replay, or graph evaluation;
+registration is not synchronized. A dynamically loaded provider module must
+remain loaded until process exit because the registry retains its handlers.
 
-A fixed provider scalar type can register typed write, replay, and discard
-handlers with `TimeSeriesTickDispatch::instance().add_scalar_handlers<T>()`.
-The handlers are selected by semantic scalar type and define one record grammar
-across its runtime representations. Built-in scalar types keep their compact built-in
-encodings. An extension scalar type without registered handlers uses the
-owning `ScalarValue<>` fallback; this currently covers both erased values and
-unregistered fixed extension types. The scalar view being erased does not imply
-that its semantic type is polymorphic.
+Each operations record can supply writing, replay, and discard independently.
+Register a record under either a semantic type or a runtime representation.
+Writing and replay select exact runtime handlers first, then use the semantic
+record when that action is absent from the runtime record. Discard uses the
+semantic record because the semantic type determines the record grammar.
+Write handlers receive the provider's `In<Series>` view and a restricted
+`ScalarBufferWriteContext`. Replay handlers receive a typed output view;
+discard handlers receive `util::buffer_reader`. A semantic replay handler must
+support every runtime representation that has no exact replay handler.
 
-The replay handler must call its consumer exactly once with a borrowed scalar
-view whose lifetime covers that call. Write, replay, and discard must use the
-same byte grammar.
+Discard handlers must destroy provider-owned objects. Failed writes discard
+the complete prefix through that same record grammar, so handlers must write
+records whose completed prefix can be discarded. All runtime representations
+of one semantic time series type must use the same write and discard grammar.
 
-The semantic time series type selects the discard handler. Replay first looks
-for a handler keyed by the output's runtime representation, then falls back to
-one keyed by its semantic type.
+Tick serialization uses the shared `ScalarBufferOperations` for provider
+scalars; its registration API is documented in the [scalar API](scalar-api.md#optional-operations).
+Built-in scalar types keep their compact encodings. An extension scalar type
+without registered write operations uses the owning `ScalarValue<>` fallback.
+Each retained record is read and discarded according to its declared semantic
+scalar type.
 
 Discard handlers must consume valid records without throwing. The reader
 discards unread records during destruction and terminates if that cleanup

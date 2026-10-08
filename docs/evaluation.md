@@ -181,7 +181,8 @@ requests due at that time before it processes nodes.
 
 `feedback<TS_T>(name)` creates a source wiring point. Assign a compatible time
 series to the handle once to bind its capture sink. Provider-defined time
-series use handlers registered with `TimeSeriesTickDispatch::instance()`:
+series use operations registered with
+`TimeSeriesDispatch<TimeSeriesTickOperations>::instance()`:
 
 ```cpp
 auto fb = bg::feedback<bg::TS<bg::i64>>("loop");

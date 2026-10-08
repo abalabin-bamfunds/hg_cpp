@@ -269,3 +269,14 @@ when the handler must recurse.
 
 Complete registration before concurrent lookup. `ScalarDispatch::add()`
 rejects a duplicate exact registration.
+
+`ScalarBufferOperations` is the shared optional operation set for scalar values
+stored in buffers. It registers independent write, read, and discard handlers
+through `ScalarDispatch<ScalarBufferOperations>::instance()`. Scalar extensions
+can use this registry for any buffer-backed facility; retained tick storage is
+one consumer. Write handlers receive `ScalarBufferWriteContext`, which exposes
+typed emplacement and byte writes without exposing the underlying buffer
+writer. A runtime registration can provide only the actions that depend on
+that representation. A caller can use `find_exact()` to select each action
+independently and fall back to the semantic registration when that action is
+absent.

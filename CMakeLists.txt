@@ -65,6 +65,7 @@ add_library(
     src/service.cpp
     src/service_catalogue.cpp
     src/scalar/allocation.cpp
+    src/scalar/buffer_operations.cpp
     src/scalar/bundle/allocation_owner.cpp
     src/scalar/bundle/runtime_type.cpp
     src/scalar/dict/type.cpp
