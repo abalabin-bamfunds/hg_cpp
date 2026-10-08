@@ -116,6 +116,11 @@ class TimeSeriesDictionaryRuntimeType : public TimeSeriesRuntimeType {
         }
     }
 
+    virtual void for_each_removed_physical_id(const TimeSeriesState &last_updated, const void *value, void *context,
+                                              ItemIdFunction function) const {
+        for_each_removed(last_updated, value, context, function);
+    }
+
     virtual void for_each_modified(const TimeSeriesState &last_updated, const void *value, void *context,
                                    ItemIdFunction function) const {
         const auto &storage = *static_cast<const time_series_dict_storage *>(value);

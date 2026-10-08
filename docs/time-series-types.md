@@ -72,11 +72,14 @@ items. Packed output storage also provides each item's storage layout.
 
 TSD input can enumerate keys, item IDs, values, key-value pairs, or ID-value
 pairs. Added, removed, and modified queries enumerate keys for the current
-change. A sampled TSS or TSD input can also report whether a logical item
-present in both the previous and current collections changed physical item ID,
-then enumerate those `(old_id, new_id)` pairs. These IDs are unflagged physical
-IDs; the key for a TSD remapping is available with `key_at(new_id)`. Ordinary
-collection inputs report no remappings.
+change. `for_each_removed_physical_id` enumerates untagged storage IDs for
+removed entries. For a sampled TSD, these identify entries in the previous
+dictionary; `for_each_removed` provides their keys. A sampled TSS or TSD input
+can also report whether a logical item present in both the previous and current
+collections changed physical item ID, then enumerate those `(old_id, new_id)`
+pairs. These IDs are unflagged physical IDs; the key for a TSD remapping is
+available with `key_at(new_id)`. Ordinary collection inputs report no
+remappings.
 
 The [TSD layout](tsd-layout.md) defines dictionary storage and reference
 representations.

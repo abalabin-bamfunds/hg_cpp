@@ -640,22 +640,35 @@ TEST_CASE("a sampled dictionary cursor enumerates every removed key",
                                 Out<TSD<std::int64_t, REF<TSD<std::int64_t, TS<i64>>>>> output) {
         output[0].copy(*use_second ? second : first);
     });
-    const auto inspect = node([](In<TSD<std::int64_t, TSD<std::int64_t, TS<i64>>>> input, Out<TS<i64>> output) {
+    auto actual_ids = std::vector<std::vector<item_id_t>>{};
+    auto expected_ids = std::vector<std::vector<item_id_t>>{};
+    const auto inspect = node([&](In<TSD<std::int64_t, TSD<std::int64_t, TS<i64>>>> input,
+                                  In<TSD<std::int64_t, TS<i64>>> previous, Out<TS<i64>> output) {
         const auto sampled = input[0];
         auto removed = i64{};
         for (auto id = sampled.next_removed_id(0); id != util::occupancy_index::npos;
              id = sampled.next_removed_id(id + 1)) {
             removed = removed * 10 + *sampled.key_at(id);
         }
+
+        auto actual = std::vector<item_id_t>{};
+        auto expected = std::vector<item_id_t>{};
+        sampled.for_each_removed([&](const auto &key) { expected.push_back(previous.find_item_id(key)); });
+        sampled.for_each_removed_physical_id([&](item_id_t id) { actual.push_back(id); });
+        actual_ids.push_back(std::move(actual));
+        expected_ids.push_back(std::move(expected));
         output.set(removed);
     });
     const auto graph = [&](wp<TS<bool>> use_second) {
-        return inspect(select(use_second, make_first(use_second), make_second(use_second)));
+        const auto first = make_first(use_second);
+        return inspect(select(use_second, first, make_second(use_second)), first);
     };
 
     const auto actual = testing::test_graph(graph, std::array{false, true});
 
     CHECK(actual.equals({0, 12}));
+    CHECK(actual_ids == expected_ids);
+    CHECK(actual_ids == std::vector<std::vector<item_id_t>>{{}, {0, 1}});
 }
 
 TEST_CASE("all consumers see the same dictionary target sample",

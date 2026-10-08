@@ -98,6 +98,10 @@ struct dictionary_cursor_definition {
         added.push_back(collect(&bg::In<bg::TSD<std::int64_t, bg::TS<bg::i64>>>::next_added_id));
         removed.push_back(collect(&bg::In<bg::TSD<std::int64_t, bg::TS<bg::i64>>>::next_removed_id));
         modified.push_back(collect(&bg::In<bg::TSD<std::int64_t, bg::TS<bg::i64>>>::next_modified_id));
+
+        auto removed_physical_ids = std::vector<bg::item_id_t>{};
+        input.for_each_removed_physical_id([&](bg::item_id_t id) { removed_physical_ids.push_back(id); });
+        removed_physical.push_back(std::move(removed_physical_ids));
     }
 
     using Next = bg::item_id_t (bg::In<bg::TSD<std::int64_t, bg::TS<bg::i64>>>::*)(bg::item_id_t) const;
@@ -119,6 +123,7 @@ struct dictionary_cursor_definition {
     inline static std::vector<std::vector<bg::item_id_t>> added;
     inline static std::vector<std::vector<bg::item_id_t>> removed;
     inline static std::vector<std::vector<bg::item_id_t>> modified;
+    inline static std::vector<std::vector<bg::item_id_t>> removed_physical;
 };
 
 } // namespace
@@ -133,6 +138,7 @@ TEST_CASE("a time series dictionary cursor enumerates current and changed items"
     dictionary_cursor_definition::added.clear();
     dictionary_cursor_definition::removed.clear();
     dictionary_cursor_definition::modified.clear();
+    dictionary_cursor_definition::removed_physical.clear();
 
     bg::run_graph([&] { sink(source()); });
 
@@ -142,6 +148,7 @@ TEST_CASE("a time series dictionary cursor enumerates current and changed items"
     CHECK(dictionary_cursor_definition::added == std::vector<std::vector<bg::item_id_t>>{{0, 1}, {}, {}});
     CHECK(dictionary_cursor_definition::removed == std::vector<std::vector<bg::item_id_t>>{{}, {}, {1}});
     CHECK(dictionary_cursor_definition::modified == std::vector<std::vector<bg::item_id_t>>{{}, {0}, {}});
+    CHECK(dictionary_cursor_definition::removed_physical == dictionary_cursor_definition::removed);
 }
 
 TEST_CASE("an invalid dictionary cursor has no item IDs",
@@ -154,6 +161,10 @@ TEST_CASE("an invalid dictionary cursor has no item IDs",
     CHECK(input.next_added_id(0) == bg::util::occupancy_index::npos);
     CHECK(input.next_removed_id(0) == bg::util::occupancy_index::npos);
     CHECK(input.next_modified_id(0) == bg::util::occupancy_index::npos);
+
+    auto removed_physical_id_count = 0;
+    input.for_each_removed_physical_id([&](bg::item_id_t) { ++removed_physical_id_count; });
+    CHECK(removed_physical_id_count == 0);
 }
 
 namespace {

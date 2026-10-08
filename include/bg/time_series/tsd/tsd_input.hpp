@@ -265,6 +265,15 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...>
         }
     }
 
+    template <typename Function> void for_each_removed_physical_id(Function &&function) const {
+        if (data_.data() == nullptr) {
+            return;
+        }
+        dictionary_runtime_type().for_each_removed_physical_id(
+            last_updated_state(), data_.data(), std::addressof(function),
+            invoke_with_id<std::remove_reference_t<Function>>);
+    }
+
     template <typename Function> void for_each_modified(Function &&function) const {
         if (uses_valid_items()) {
             apply_filtered_changes(ItemRange::modified, function);

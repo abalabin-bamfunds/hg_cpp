@@ -35,6 +35,7 @@ class SampledDictionaryRuntimeType final : public TimeSeriesDictionaryRuntimeTyp
     const void *key(const void *value, item_id_t id) const noexcept override;
     void for_each_added(const TimeSeriesState &, const void *, void *, ItemIdFunction) const override;
     void for_each_removed(const TimeSeriesState &, const void *, void *, ItemIdFunction) const override;
+    void for_each_removed_physical_id(const TimeSeriesState &, const void *, void *, ItemIdFunction) const override;
     void for_each_modified(const TimeSeriesState &, const void *, void *, ItemIdFunction) const override;
     item_id_t next_item_id(const TimeSeriesState &, const void *, ItemRange, item_id_t) const override;
     bool item_modified(const TimeSeriesState &, const void *, item_id_t id) const override;
@@ -380,6 +381,20 @@ void SampledDictionaryRuntimeType::for_each_removed(const TimeSeriesState &, con
     sample.populate_changes();
     for (const auto id : sample.removed) {
         function(context, id | previous_item_flag);
+    }
+}
+
+void SampledDictionaryRuntimeType::for_each_removed_physical_id(const TimeSeriesState &, const void *value,
+                                                                void *context,
+                                                                ItemIdFunction function) const {
+    if (value == nullptr) {
+        return;
+    }
+
+    const auto &sample = *static_cast<const SampledDictionary *>(value);
+    sample.populate_changes();
+    for (const auto id : sample.removed) {
+        function(context, id);
     }
 }
 
