@@ -134,11 +134,11 @@ to construct the declared typed view while retaining the actual scalar runtime.
 Optional extension-facing scalar storage trait operations:
 
 ```cpp
-static value_type read(const details::ScalarData &source);
+static value_type read_value(const details::ScalarData &data);
 static const ScalarRuntimeType &copy_runtime_type(const details::ScalarData &source);
 ```
 
-The read operation constructs the declared view from the source representation.
+The `read_value` operation constructs the declared view from the source representation.
 The copy operation selects the runtime used for an owning copy. Existing traits
 retain their current behavior. An owning `ScalarValue<Frame<Base>>` copied from
 Derived retains Derived's actual schema and columns. Selecting the source
