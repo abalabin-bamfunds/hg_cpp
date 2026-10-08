@@ -71,7 +71,7 @@ invalid input. See [optional arguments](operators.md#optional-arguments).
 Node and graph functions accept positional and named arguments according to
 their Python signatures, including positional-only, keyword-only, `*args`, and
 `**kwargs` parameters. A graph function expands into the active graph while it
-being wired; it does not create a runtime nested-graph boundary.
+is being wired; it does not create a runtime nested-graph boundary.
 
 For `@graph` and `@node`, a plain scalar annotation such as `int` accepts an
 `int` scalar or a `TS[int]` wiring point. A graph function receives the scalar

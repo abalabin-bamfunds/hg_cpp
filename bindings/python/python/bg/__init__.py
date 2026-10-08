@@ -401,6 +401,8 @@ def _definition_signature(
             scalar_only = isinstance(native_type, _ScalarAnnotation)
             if scalar_only:
                 native_type = native_type.type
+                if native_type.is_time_series:
+                    raise TypeError("Scalar[...] parameters must use scalar annotations, not TS[...] annotations")
             if scalar_or_time_series_inputs:
                 if native_type.is_time_series:
                     raise TypeError("@node parameters must use scalar annotations, not TS[...] annotations")
@@ -534,9 +536,9 @@ def graph(function: Any) -> GraphDefinition:
     if output is inspect.Signature.empty or output is None or output is type(None):
         output = None
     else:
+        output = _native_type(output)
         if isinstance(output, _ScalarAnnotation):
             raise TypeError("Scalar[...] can only annotate a Python node or graph input")
-        output = _native_type(output)
         if not output.is_time_series:
             output = _time_series_type(output)
             lift_scalar_output = True

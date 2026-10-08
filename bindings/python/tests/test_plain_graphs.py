@@ -70,6 +70,22 @@ def test_scalar_graph_parameter_accepts_a_scalar():
     assert bg.test_graph(graph) == [7]
 
 
+def test_scalar_annotation_rejects_a_time_series_type():
+    with pytest.raises(TypeError, match="Scalar.*not TS"):
+
+        @bg.graph
+        def graph(value: bg.Scalar[bg.TS[int]]) -> bg.TS[int]:
+            return value
+
+
+def test_scalar_annotation_is_not_a_graph_return_type():
+    with pytest.raises(TypeError, match="Scalar.*graph input"):
+
+        @bg.graph
+        def graph() -> bg.Scalar[int]:
+            return 1
+
+
 def test_plain_graph_inputs_forward_through_nested_graphs():
     @bg.node
     def identity(value: int) -> int:
