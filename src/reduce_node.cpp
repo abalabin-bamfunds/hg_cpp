@@ -97,11 +97,12 @@ class ReduceRuntime {
         collect_valid_items(values);
 
         const auto use_compact_graph = compact_graph_is_usable(compiled, candidate_values_);
-        if (!use_compact_graph) {
+        const auto needs_item_references = !use_compact_graph && candidate_values_.size() > 1;
+        if (needs_item_references) {
             collect_item_references(invocation.bound_reference(compiled.dictionary_parameter));
         }
 
-        const auto membership_changed = !same_membership(!use_compact_graph);
+        const auto membership_changed = !same_membership(needs_item_references);
         const auto compact_mode_changed = use_compact_graph != compact_active_;
         if (!membership_changed) {
             selected_values_.swap(candidate_values_);
@@ -562,6 +563,23 @@ class ReduceRuntime {
 
     bool publish_result(const CompiledReduceGraph &compiled, ReduceInvocation invocation, bool force) {
         auto output = invocation.template output<TS_T>();
+        if (selected_values_.size() == 1) {
+            const auto &value = selected_values_.front();
+            if (!value.last_updated.valid()) {
+                output.invalidate();
+                using_default_ = false;
+                return true;
+            }
+            if (!force && value.last_updated.time() != invocation.context().evaluation_time()) {
+                return true;
+            }
+
+            const auto &value_type = static_cast<const TimeSeriesValueRuntimeType &>(*value.runtime_type);
+            const auto scalar = Scalar<>::from(value_type.scalar_runtime_type(), value.value);
+            output.visit([&](Out<TS<SCALAR>> *target) { target->set_value(scalar); }, ddv::noop);
+            using_default_ = false;
+            return true;
+        }
         if (current_level_.empty()) {
             return publish_empty_result(compiled, invocation, output);
         }

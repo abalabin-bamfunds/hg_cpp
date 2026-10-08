@@ -277,6 +277,59 @@ TEST_CASE("reduce fallback reads values from reference TSD items with inherited 
     CHECK(actual.equals<i64>({13, 15, 17}));
 }
 
+TEST_CASE("reduce publishes a singleton fallback value after retiring a pair graph",
+          "[feature:reduce][feature:nested-graph][series:tsd][shape:nested]"
+          "[transition:removal][transition:update]") {
+    const auto make_dictionary = node([](In<TS<i64>> left, In<TS<i64>> right, In<TS<bool>> include_right,
+                                         Out<TSD<std::int64_t, TS<i64>>> output) {
+        output[1].set(*left);
+        if (*include_right) {
+            output[2].set(*right);
+        } else {
+            output.erase(2);
+        }
+    });
+    const auto tested = [=](wp<TS<i64>> left, wp<TS<i64>> right, wp<TS<bool>> include_right,
+                           wp<TS<i64>> factor) {
+        auto context_scope = with_context("factor"_n = factor);
+        return reduce(context_add_graph, make_dictionary(left, right, include_right));
+    };
+
+    const auto actual = testing::test_graph(tested, std::array{3, 4, 7}, std::array{5, 6, 8},
+                                            std::array{true, false, false}, std::array{2, 2, 2});
+
+    CHECK(actual.equals<i64>({10, 4, 7}));
+}
+
+TEST_CASE("reduce fallback refreshes a singleton reference item after selection cleanup",
+          "[feature:reduce][feature:context-time-series][feature:nested-graph][series:tsd]"
+          "[series:reference][binding:reference-to-value][transition:update][transition:invalidation]"
+          "[transition:revalidation]") {
+    const auto make_target = node([](In<TS<i64>> command, Out<TS<i64>> output) {
+        if (*command == 0) {
+            output.invalidate();
+        } else {
+            output.set(*command);
+        }
+    });
+    const auto retain_reference = node([](In<TS<bool>> install, In<REF<TS<i64>>, passive> target,
+                                          Out<TSD<std::int64_t, REF<TS<i64>>>> output) {
+        if (*install) {
+            output[1].copy(target);
+        }
+    });
+    const auto tested = [=](wp<TS<i64>> command, wp<TS<bool>> install, wp<TS<i64>> factor) {
+        auto context_scope = with_context("factor"_n = factor);
+        const auto target = make_target(command);
+        return reduce(context_add_graph, retain_reference(install, target));
+    };
+
+    const auto actual = testing::test_graph(tested, std::array{5, 0, 9}, std::array{true, false, false},
+                                            std::array{2, 2, 2});
+
+    CHECK(actual.equals<i64>({5, std::nullopt, 9}));
+}
+
 TEST_CASE("reduce updates its tree when TSD membership changes and uses the default only when empty",
           "[feature:reduce][feature:nested-graph][series:tsd][validity:optional]") {
     const auto tested = [](wp<TS<i64>> left, wp<TS<i64>> right, wp<TS<bool>> include_left,
