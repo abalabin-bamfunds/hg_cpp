@@ -10,7 +10,7 @@ schemas constructed programmatically. Generic nodes must preserve a captured
 schema through ordinary BG type resolution. Native and Arrow representations
 must expose the same value and change APIs.
 
-The existing source is preserved in commit `90238bc6` on `agent/frame-schema`.
+The existing source is preserved in commit `12471d94` on `agent/frame-schema`.
 The [shared BG schema foundation](../../docs/type-system.md#schemas) is merged
 into main. Frames use its descriptors, reflection, and canonical factories.
 
@@ -119,19 +119,19 @@ Schema-preserving nodes capture `SCHEMA`, including the supplied schema's
 additional fields. Each TSF output uses its resolved schema. Input columns do
 not extend the output schema.
 
-Matching a named parameter against an anonymous runtime schema by required
-field names and types remains an owner decision.
+An anonymous runtime schema matches a named input by its required field names
+and compatible cell types. The input retains the actual anonymous schema.
 
-### Scalar extension proposal
+### Scalar extension integration
 
-Status: proposed BG changes awaiting owner approval.
+Status: approved BG changes under implementation in `agent/scalar-view-hooks`.
 
 BG's current scalar read path asks the source runtime to construct a C++ view
 in storage sized for the declared view. `FrameView<Base>` and
 `FrameView<Derived>` can have different layouts. Shared frame storage is required
 to construct the declared typed view while retaining the actual scalar runtime.
 
-Proposed optional extension-facing scalar storage trait operations:
+Optional extension-facing scalar storage trait operations:
 
 ```cpp
 static value_type read(const details::ScalarData &source);
@@ -140,10 +140,12 @@ static const ScalarRuntimeType &copy_runtime_type(const details::ScalarData &sou
 
 The read operation constructs the declared view from the source representation.
 The copy operation selects the runtime used for an owning copy. Existing traits
-retain their current behavior. Whether an owning `ScalarValue<Frame<Base>>`
-copied from Derived retains Derived or constructs a Base snapshot remains an
-owner decision. Existing typed same-schema Arrow copies retain canonical native
-storage.
+retain their current behavior. An owning `ScalarValue<Frame<Base>>` copied from
+Derived retains Derived's actual schema and columns. Selecting the source
+runtime retains shared immutable storage when supported, or clones through
+that runtime. Typed copies from a same-schema Arrow representation use canonical
+native storage. Node code uses the scalar and time series APIs rather than
+these trait operations.
 
 ## Node and value APIs
 
