@@ -10,6 +10,7 @@
 #include <bg/time_series/input_data.hpp>
 #include <bg/time_series/output_binding.hpp>
 #include <bg/time_series/output_state.hpp>
+#include <bg/time_series/tick_operations.hpp>
 #include <bg/time_series/time_series_type_traits.hpp>
 #include <bg/time_series/tick_serializer.hpp>
 #include <bg/time_series/tsd/tsd_input.hpp>

@@ -99,7 +99,8 @@ The built-in writer supports value, fixed-list, bundle, set, and dictionary time
 series. It does not support references. TSS and TSD themselves cannot be
 invalidated through their output APIs, so such an event cannot be retained.
 Provider-defined time series register `TimeSeriesTickOperations` with
-`TimeSeriesDispatch<TimeSeriesTickOperations>::instance()`. This registry is
+`TimeSeriesDispatch<TimeSeriesTickOperations>::instance()`, declared in
+`<bg/time_series/tick_operations.hpp>`. This registry is
 shared by tick writers, readers, and feedback nodes in the process. Complete
 registration before concurrent writes, replay, or graph evaluation;
 registration is not synchronized. A dynamically loaded provider module must
