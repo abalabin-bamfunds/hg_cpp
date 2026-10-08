@@ -1,7 +1,9 @@
 # Frame schema foundation
 
-Status: migration started. The first milestone replaces semantic descriptors;
-runtime storage and generic node access follow.
+Status: schema-backed semantic descriptors are committed in `e9f04c74` on
+`agent/frame-schema`. The common borrowed read descriptor is committed in
+`c3f4fafc` and passes all five extension tests, including Arrow. Shared owning
+storage, inherited input matching, and generic node access follow.
 
 ## Purpose
 
@@ -115,6 +117,11 @@ Base. `Frame<Base>` accepts the corresponding derived scalar type. Typed access
 uses Base's declared fields; runtime inspection sees the actual Derived schema.
 `value_view()` retains that actual scalar runtime and borrows its storage.
 
+Semantic inheritance determines compatibility independently of native or Arrow
+storage. Owning copies from a scalar view or a C++ `FrameView<Base>` preserve
+the actual schema and all its columns. An explicit projection constructs a
+value containing only the selected fields.
+
 Schema-preserving nodes capture `SCHEMA`, including the supplied schema's
 additional fields. Each TSF output uses its resolved schema. Input columns do
 not extend the output schema.
@@ -124,7 +131,9 @@ and compatible cell types. The input retains the actual anonymous schema.
 
 ### Scalar extension integration
 
-Status: approved BG changes under implementation in `agent/scalar-view-hooks`.
+Status: source-aware scalar reads and copies are committed in `dbbbe24f` on
+`agent/frame-bg-foundation`. Typed time-series reads use that path in `0d208d21`
+on `agent/scalar-access-paths`. Neither package is merged into main.
 
 BG's current scalar read path asks the source runtime to construct a C++ view
 in storage sized for the declared view. `FrameView<Base>` and
@@ -146,6 +155,12 @@ runtime retains shared immutable storage when supported, or clones through
 that runtime. Typed copies from a same-schema Arrow representation use canonical
 native storage. Node code uses the scalar and time series APIs rather than
 these trait operations.
+
+The remaining BG integration needs are canonical scalar runtime customization
+and construction from a borrowed C++ view carrying its actual semantic type.
+The proposed extension hooks are awaiting approval. Scalar node parameter reads
+use their actual runtime in `20cbf814` on `agent/scalar-access-paths`. The full
+BG test suite passes: 1464 tests, including Python tests.
 
 ## Node and value APIs
 
@@ -182,6 +197,12 @@ Frame semantic types, field validation, storage, column operations, Arrow
 adapters, and output options belong to the extension. The common BG descriptor
 provides schema identity and field metadata. Report any required BG change for
 owner review before implementing it.
+
+BG review item: aggregate scalar arguments without a source-aware read hook
+retain the supplied runtime's storage but read it as canonical trait storage.
+Different layouts require a BG policy decision. Ordinary typed TS outputs
+construct their configured canonical representation; manually bound alternative
+TS inputs need the same review.
 
 ## Build order and acceptance
 
