@@ -25,7 +25,7 @@ namespace {
 
 class ComposedHierarchicalScalarRuntimeType final : public HierarchicalScalarRuntimeType {
   public:
-    explicit ComposedHierarchicalScalarRuntimeType(const HierarchicalScalarType &type) noexcept;
+    explicit ComposedHierarchicalScalarRuntimeType(const ResolvedHierarchicalScalarType &type) noexcept;
 
     void initialize(std::span<const ScalarRuntimeType *const> fields);
     details::ScalarData field(const details::ScalarData &value, std::size_t index) const override;
@@ -94,7 +94,7 @@ std::size_t ComposedHierarchicalScalarRuntimeType::align_up(std::size_t offset, 
 }
 
 ComposedHierarchicalScalarRuntimeType::ComposedHierarchicalScalarRuntimeType(
-    const HierarchicalScalarType &type) noexcept
+    const ResolvedHierarchicalScalarType &type) noexcept
     : HierarchicalScalarRuntimeType{type, sizeof(Storage *), alignof(Storage *), true, false,
                                     true, shared_handle_flag} {}
 
@@ -402,7 +402,7 @@ void ComposedHierarchicalScalarRuntimeType::destroy_storage(Storage &storage) co
 namespace details {
 
 OwnedScalarData construct_composed_hierarchical_scalar_value(
-    const HierarchicalScalarType &type, std::span<const ScalarData *const> fields,
+    const ResolvedHierarchicalScalarType &type, std::span<const ScalarData *const> fields,
     BundleAllocationOwner &owner) {
     const auto &runtime_type = static_cast<const ComposedHierarchicalScalarRuntimeType &>(
         resolve_composed_hierarchical_scalar_runtime_type(type));
@@ -412,7 +412,7 @@ OwnedScalarData construct_composed_hierarchical_scalar_value(
 }
 
 std::unique_ptr<HierarchicalScalarRuntimeType>
-make_composed_hierarchical_scalar_runtime_type(const HierarchicalScalarType &type) {
+make_composed_hierarchical_scalar_runtime_type(const ResolvedHierarchicalScalarType &type) {
     return std::make_unique<ComposedHierarchicalScalarRuntimeType>(type);
 }
 

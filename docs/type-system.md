@@ -183,6 +183,22 @@ declarations. `Field<T, optional>` marks an optional field; fields are required
 by default. Each schema has nominal identity, and a base type accepts its
 declared derived types.
 
+`Bundle<SCHEMA>` captures the supplied hierarchical scalar's semantic schema. Resolving
+the captured schema returns its canonical hierarchical scalar type, including
+the existing type for a C++ declaration. Runtime-defined schemas use the same
+type factory and composed storage.
+
+`HierarchicalScalarType` is the engine and extension interface for this family.
+`GenericHierarchicalScalarType` holds the unresolved schema;
+`ResolvedHierarchicalScalarType` provides concrete fields, inheritance, and
+capabilities. `HierarchicalScalarRuntimeType` always references a resolved type.
+
+The extension factory `hierarchical_scalar_type(schema)` returns the canonical
+resolved bundle type. A C++ schema requires prior registration of its bundle
+type; normal access through `cpp_scalar_type<Bundle<Schema>>()` performs this
+registration. An unregistered C++ schema produces a registration error.
+Runtime-defined and anonymous schemas construct their bundle types directly.
+
 Compatibility is covariant through `List` items and `Dict` values. `Set` items
 and `Dict` keys remain invariant because lookup requires one hash and equality
 domain.
@@ -190,7 +206,7 @@ domain.
 Each resolved hierarchical scalar has a `HierarchicalScalarRuntimeType`.
 The composed runtime type records field layout, optional-field presence, and
 the value's actual hierarchical type. A base view of a derived value therefore
-retains the derived type while exposing the fields declared by the base.
+exposes the derived fields and their actual types.
 
 The same schema can describe a hierarchical scalar and a time series bundle.
 `Bundle<Schema>` requires every field to be a supported scalar declaration.
@@ -304,8 +320,8 @@ variable. `SIZE` is the default declaration. For example,
 C++ schema parameters. `SCHEMA` is the default declaration. It captures a resolved
 `Schema`, including its ordered field names, types, and optional presence. Its identity is shared
 across reflection field adapters. Reusing the variable requires the same
-descriptor; each owning type validates the captured fields. For example,
-`TSB<SCHEMA>` requires present time series fields.
+descriptor; each owning type validates the captured fields. `Bundle<SCHEMA>`
+requires scalar fields; `TSB<SCHEMA>` requires present time series fields.
 
 `schema_type<SCHEMA>` exposes the variable for resolvers and explicit type
 mappings. Concrete `schema_type<Quote>` exposes the TSB projection of `Quote`.

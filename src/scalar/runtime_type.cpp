@@ -822,7 +822,10 @@ class ScalarRuntimeTypeResolver {
         const ScalarRuntimeType *result = nullptr;
         type.visit(
             [&](const HierarchicalScalarType *hierarchical) {
-                result = &resolve_composed(*hierarchical);
+                if (!hierarchical->is_resolved()) {
+                    throw std::invalid_argument{"an unresolved hierarchical scalar has no runtime type"};
+                }
+                result = &resolve_composed(static_cast<const ResolvedHierarchicalScalarType &>(*hierarchical));
             },
             [&](const ListScalarType *list) {
                 auto runtime_type = std::make_unique<ComposedListRuntimeType>(*list, resolve(list->item_type()));
@@ -845,7 +848,7 @@ class ScalarRuntimeTypeResolver {
         return *result;
     }
 
-    const HierarchicalScalarRuntimeType &resolve_composed(const HierarchicalScalarType &type) {
+    const HierarchicalScalarRuntimeType &resolve_composed(const ResolvedHierarchicalScalarType &type) {
         if (const auto *existing = registered_runtime_type(runtime_types_, type, false)) {
             return static_cast<const HierarchicalScalarRuntimeType &>(*existing);
         }
@@ -937,7 +940,7 @@ void release_scalar_value(const ScalarData &value) noexcept {
 }
 
 const HierarchicalScalarRuntimeType &
-resolve_composed_hierarchical_scalar_runtime_type(const HierarchicalScalarType &type) {
+resolve_composed_hierarchical_scalar_runtime_type(const ResolvedHierarchicalScalarType &type) {
     auto &runtime_types = scalar_runtime_types();
     const auto lock = std::lock_guard{runtime_types.mutex};
     auto resolver = ScalarRuntimeTypeResolver{runtime_types, {}};

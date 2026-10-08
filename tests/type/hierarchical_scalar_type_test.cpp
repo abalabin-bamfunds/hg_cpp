@@ -3,13 +3,16 @@
 
 #include <bg/node/input_properties.hpp>
 #include <bg/scalar/bundle/scalar_type.hpp>
+#include <bg/scalar/bundle/value.hpp>
 #include <bg/scalar/dict/scalar_type.hpp>
+#include <bg/scalar/list/scalar.hpp>
 #include <bg/scalar/list/scalar_type.hpp>
 #include <bg/scalar/opaque.hpp>
 #include <bg/scalar/set/scalar_type.hpp>
 #include <bg/schema/reflection.hpp>
 #include <bg/type/opaque_scalar_type.hpp>
 #include <bg/type/type_text.hpp>
+#include <bg/util/named_argument.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers.hpp>
@@ -49,13 +52,28 @@ template <template <typename, auto...> typename Field> struct UnrelatedInstrumen
     Field<double, bg::optional> price;
 };
 
+template <template <typename, auto...> typename Field>
+using ENTITY = bg::BundleSchemaVariableDeclaration<"ENTITY", Field>;
+
+template <template <typename, auto...> typename Field> struct NotYetRegistered {
+    Field<bg::i64> value;
+};
+
+const bg::ResolvedHierarchicalScalarType &resolved_hierarchical_scalar_type(const bg::Type &type) {
+    const auto &hierarchical = bg::type_cast<bg::HierarchicalScalarType>(type);
+    if (!hierarchical.is_resolved()) {
+        throw std::logic_error{"expected a resolved hierarchical scalar type"};
+    }
+    return static_cast<const bg::ResolvedHierarchicalScalarType &>(hierarchical);
+}
+
 } // namespace
 
 TEST_CASE("a hierarchical scalar has canonical ordered schema metadata",
           "[feature:type-system][scalar:hierarchical][schema:named][declaration:concrete]") {
     const auto &type = bg::cpp_scalar_type<bg::Bundle<Equity>>();
     const auto &same = bg::cpp_scalar_type<bg::Bundle<Equity>>();
-    const auto &hierarchical = bg::type_cast<bg::HierarchicalScalarType>(type);
+    const auto &hierarchical = resolved_hierarchical_scalar_type(type);
     auto text = std::string{};
     bg::append_type_text(text, type);
 
@@ -83,6 +101,61 @@ TEST_CASE("a hierarchical scalar has one semantic identity across translation un
           "[feature:type-system][scalar:hierarchical][schema:named][declaration:concrete]") {
     CHECK(&bg::cpp_scalar_type<bg::Bundle<Instrument>>() ==
           &test_hierarchical_scalar_provider::instrument_type());
+}
+
+TEST_CASE("a C++ schema needs its scalar bundle registered before runtime lookup",
+          "[feature:type-system][scalar:hierarchical][schema:named][declaration:concrete]") {
+    const auto &schema = bg::details::cpp_hierarchical_scalar_schema<NotYetRegistered>();
+    const auto lookup = [&] { return &bg::hierarchical_scalar_type(schema); };
+
+    CHECK_THROWS_WITH(lookup(), "a C++-identified schema requires prior hierarchical scalar registration");
+    CHECK_THROWS_WITH(lookup(), "a C++-identified schema requires prior hierarchical scalar registration");
+
+    const auto &registered = bg::cpp_scalar_type<bg::Bundle<NotYetRegistered>>();
+    const auto &resolved = bg::hierarchical_scalar_type(schema);
+    CHECK(&resolved == &bg::type_cast<bg::HierarchicalScalarType>(registered));
+}
+
+TEST_CASE("runtime schemas have canonical hierarchical scalar types",
+          "[feature:type-system][scalar:hierarchical][schema:named][declaration:runtime]") {
+    const auto runtime_fields = std::array{bg::SchemaField{bg::util::symbol{"value"}, &bg::int64_type()}};
+    const auto &runtime_schema = bg::schema(bg::util::symbol{"RuntimeRecord"}, bg::new_runtime_schema_id(), nullptr,
+                                            runtime_fields);
+    const auto &runtime_type = bg::hierarchical_scalar_type(runtime_schema);
+    CHECK(&bg::hierarchical_scalar_type(runtime_schema) == &runtime_type);
+    CHECK(runtime_type.accepts(runtime_type));
+
+    const auto same_shape_fields = std::array{bg::SchemaField{bg::util::symbol{"value"}, &bg::int64_type()}};
+    const auto &same_shape = bg::hierarchical_scalar_type(bg::schema(
+        bg::util::symbol{"OtherRuntimeRecord"}, bg::new_runtime_schema_id(), nullptr, same_shape_fields));
+    CHECK_FALSE(runtime_type.accepts(same_shape));
+}
+
+TEST_CASE("anonymous schemas have canonical hierarchical scalar types",
+          "[feature:type-system][scalar:hierarchical][schema:unnamed][declaration:runtime]") {
+    const auto fields = std::array{bg::SchemaField{bg::util::symbol{"label"}, &bg::string_type()}};
+    const auto &anonymous = bg::anonymous_schema(fields);
+    const auto &type = bg::hierarchical_scalar_type(anonymous);
+
+    CHECK(&bg::hierarchical_scalar_type(anonymous) == &type);
+    CHECK(type.accepts(type));
+}
+
+TEST_CASE("runtime hierarchical schema compatibility follows nominal inheritance",
+          "[feature:type-system][scalar:hierarchical][schema:named][declaration:runtime][binding:covariant]") {
+    const auto base_fields = std::array{bg::SchemaField{bg::util::symbol{"symbol"}, &bg::symbol_type()}};
+    const auto &base_schema =
+        bg::schema(bg::util::symbol{"RuntimeInstrument"}, bg::new_runtime_schema_id(), nullptr, base_fields);
+    const auto derived_fields = std::array{bg::SchemaField{bg::util::symbol{"lot_size"}, &bg::int64_type()}};
+    const auto &derived_schema = bg::schema(bg::util::symbol{"RuntimeEquity"}, bg::new_runtime_schema_id(),
+                                            &base_schema, derived_fields);
+
+    const auto &base_type = bg::hierarchical_scalar_type(base_schema);
+    const auto &derived_type = bg::hierarchical_scalar_type(derived_schema);
+
+    CHECK(base_type.accepts(derived_type));
+    CHECK_FALSE(derived_type.accepts(base_type));
+    CHECK(derived_type.field_count() == 2);
 }
 
 TEST_CASE("shared schemas have one scalar and TSB projection across shared libraries",
@@ -125,6 +198,60 @@ TEST_CASE("HIERARCHICAL resolves to a concrete hierarchical scalar",
 
     auto rejected_type_map = bg::TypeMap{};
     CHECK_FALSE(variable.match(bg::int64_type(), rejected_type_map));
+}
+
+TEST_CASE("a generic bundle type keeps its wrapper in type text",
+          "[feature:type-system][scalar:hierarchical][declaration:generic]") {
+    const auto &type = bg::cpp_scalar_type<bg::Bundle<bg::SCHEMA>>();
+    auto text = std::string{};
+
+    bg::append_type_text(text, type);
+
+    CHECK(text == "Bundle<SCHEMA>");
+}
+
+TEST_CASE("a generic bundle declaration captures and resolves its schema variable",
+          "[feature:type-system][scalar:hierarchical][declaration:generic]") {
+    const auto &generic = bg::cpp_scalar_type<bg::Bundle<bg::SCHEMA>>();
+    const auto &concrete = bg::cpp_scalar_type<bg::Bundle<Equity>>();
+    const auto &schema_variable = bg::details::schema_variable_instance<bg::SCHEMA>();
+    auto type_map = bg::TypeMap{};
+
+    REQUIRE(generic.match(concrete, type_map));
+    CHECK(std::get<const bg::Type *>(*type_map.find(schema_variable)) ==
+          &bg::type_cast<bg::HierarchicalScalarType>(concrete).schema_type());
+    CHECK(&generic.resolve(type_map) == &bg::type_cast<bg::HierarchicalScalarType>(concrete));
+
+    const auto &unrelated = bg::cpp_scalar_type<bg::Bundle<UnrelatedInstrument>>();
+    CHECK_FALSE(generic.match(unrelated, type_map));
+    CHECK(std::get<const bg::Type *>(*type_map.find(schema_variable)) ==
+          &bg::type_cast<bg::HierarchicalScalarType>(concrete).schema_type());
+}
+
+TEST_CASE("a generic bundle declaration captures a named schema variable",
+          "[feature:type-system][scalar:hierarchical][schema:named][declaration:generic]") {
+    const auto &generic = bg::cpp_scalar_type<bg::Bundle<ENTITY>>();
+    const auto &concrete = bg::cpp_scalar_type<bg::Bundle<Equity>>();
+    const auto &schema_variable = bg::details::schema_variable_instance<ENTITY>();
+    auto type_map = bg::TypeMap{};
+
+    REQUIRE(generic.match(concrete, type_map));
+    CHECK(schema_variable.name().text() == "ENTITY");
+    CHECK(std::get<const bg::Type *>(*type_map.find(schema_variable)) ==
+          &bg::type_cast<bg::HierarchicalScalarType>(concrete).schema_type());
+}
+
+TEST_CASE("a generic bundle declaration enumerates its schema variable",
+          "[feature:type-system][scalar:hierarchical][declaration:generic]") {
+    auto visited = false;
+    bg::for_each_declaration_variable<bg::Bundle<bg::SCHEMA>>(
+        [&]<typename Declaration>(const bg::Variable &variable) {
+            STATIC_CHECK(std::same_as<Declaration, bg::schema_type<bg::SCHEMA>>);
+            CHECK(variable.name().text() == "SCHEMA");
+            visited = true;
+        });
+
+    CHECK(visited);
 }
 
 TEST_CASE("hierarchical scalar covariance composes through scalar containers",
@@ -187,13 +314,22 @@ struct OptionalSymbol : bg::schema_extends<Instrument, Field> {
 TEST_CASE("a derived hierarchical scalar can narrow inherited fields",
           "[feature:type-system][scalar:hierarchical][scalar:list][schema:named]"
           "[declaration:concrete][binding:covariant]") {
-    const auto &portfolio = bg::type_cast<bg::HierarchicalScalarType>(
+    const auto &portfolio = resolved_hierarchical_scalar_type(
         bg::cpp_scalar_type<bg::Bundle<EquityPortfolio>>());
-    const auto &required_price = bg::type_cast<bg::HierarchicalScalarType>(
+    const auto &required_price = resolved_hierarchical_scalar_type(
         bg::cpp_scalar_type<bg::Bundle<RequiredPrice>>());
 
     REQUIRE(portfolio.field_count() == 1);
     CHECK(portfolio.field(0).type == &bg::cpp_scalar_type<bg::List<bg::Bundle<Equity>>>());
+    using namespace bg::literals;
+    auto memory = bg::allocator{};
+    const auto equity = bg::bundle<Equity>(memory, "symbol"_n = bg::symbol{"ABC"}, "lot_size"_n = bg::i64{100});
+    const auto instruments =
+        bg::ScalarValue<bg::List<bg::Bundle<Equity>>>{std::array{equity.view()}, memory};
+    const auto derived_value = bg::bundle<EquityPortfolio>(memory, instruments.view());
+    const auto derived_view = bg::Scalar<bg::Bundle<EquityPortfolio>>::from(derived_value);
+    const auto base_view = bg::Scalar<bg::Bundle<Portfolio>>::from(derived_view);
+    CHECK(&base_view.field_type(0) == &bg::cpp_scalar_type<bg::List<bg::Bundle<Equity>>>());
     REQUIRE(required_price.field_count() == 2);
     CHECK(required_price.field(1).name.text() == "price");
     CHECK_FALSE(required_price.field(1).optional);
@@ -241,21 +377,23 @@ template <template <typename, auto...> typename Field> struct DictNode {
 
 TEST_CASE("hierarchical scalar schemas can refer to themselves directly",
           "[feature:type-system][scalar:hierarchical][schema:named][declaration:concrete]") {
-    const auto &type = bg::type_cast<bg::HierarchicalScalarType>(
+    const auto &type = resolved_hierarchical_scalar_type(
         bg::cpp_scalar_type<bg::Bundle<DirectNode>>());
+    const auto &schema = bg::details::cpp_hierarchical_scalar_schema<DirectNode>();
 
     REQUIRE(type.field_count() == 2);
     CHECK(type.field(1).type == &type);
     CHECK(type.field(1).optional);
     CHECK(type.supports_equality());
     CHECK(type.supports_hash());
+    CHECK(&bg::hierarchical_scalar_type(schema) == &type);
 }
 
 TEST_CASE("hierarchical scalar schemas can refer to each other",
           "[feature:type-system][scalar:hierarchical][schema:named][declaration:concrete]") {
-    const auto &left = bg::type_cast<bg::HierarchicalScalarType>(
+    const auto &left = resolved_hierarchical_scalar_type(
         bg::cpp_scalar_type<bg::Bundle<MutualLeft>>());
-    const auto &right = bg::type_cast<bg::HierarchicalScalarType>(
+    const auto &right = resolved_hierarchical_scalar_type(
         bg::cpp_scalar_type<bg::Bundle<MutualRight>>());
 
     REQUIRE(left.field_count() == 1);
@@ -269,13 +407,13 @@ TEST_CASE("hierarchical scalar schemas can refer to each other",
 TEST_CASE("hierarchical scalar recursion composes through scalar collections",
           "[feature:type-system][scalar:hierarchical][scalar:list][scalar:set][scalar:dict]"
           "[schema:named][declaration:concrete]") {
-    const auto &list_node = bg::type_cast<bg::HierarchicalScalarType>(
+    const auto &list_node = resolved_hierarchical_scalar_type(
         bg::cpp_scalar_type<bg::Bundle<ListNode>>());
     const auto &list = bg::type_cast<bg::ListScalarType>(*list_node.field(0).type);
-    const auto &set_node = bg::type_cast<bg::HierarchicalScalarType>(
+    const auto &set_node = resolved_hierarchical_scalar_type(
         bg::cpp_scalar_type<bg::Bundle<SetNode>>());
     const auto &set = bg::type_cast<bg::SetScalarType>(*set_node.field(0).type);
-    const auto &dict_node = bg::type_cast<bg::HierarchicalScalarType>(
+    const auto &dict_node = resolved_hierarchical_scalar_type(
         bg::cpp_scalar_type<bg::Bundle<DictNode>>());
     const auto &dict = bg::type_cast<bg::DictScalarType>(*dict_node.field(0).type);
 
@@ -289,7 +427,7 @@ TEST_CASE("hierarchical scalar recursion composes through scalar collections",
 
 TEST_CASE("a recursive hierarchical scalar has one identity across translation units",
           "[feature:type-system][scalar:hierarchical][schema:named][declaration:concrete]") {
-    const auto &type = bg::type_cast<bg::HierarchicalScalarType>(
+    const auto &type = resolved_hierarchical_scalar_type(
         bg::cpp_scalar_type<bg::Bundle<test_hierarchical_scalar_provider::RecursiveInstrument>>());
 
     CHECK(&type == &test_hierarchical_scalar_provider::recursive_instrument_type());
@@ -382,13 +520,13 @@ TEST_CASE("a required direct self-cycle is rejected",
 
 TEST_CASE("recursive scalar schemas preserve base inheritance and narrowed fields",
           "[feature:type-system][scalar:hierarchical][schema:named][declaration:concrete]") {
-    const auto &base = bg::type_cast<bg::HierarchicalScalarType>(
+    const auto &base = resolved_hierarchical_scalar_type(
         bg::cpp_scalar_type<bg::Bundle<RecursiveInheritanceBase>>());
-    const auto &derived = bg::type_cast<bg::HierarchicalScalarType>(
+    const auto &derived = resolved_hierarchical_scalar_type(
         bg::cpp_scalar_type<bg::Bundle<RecursiveInheritanceDerived>>());
-    const auto &parent = bg::type_cast<bg::HierarchicalScalarType>(
+    const auto &parent = resolved_hierarchical_scalar_type(
         bg::cpp_scalar_type<bg::Bundle<RecursiveSchemaParent>>());
-    const auto &child = bg::type_cast<bg::HierarchicalScalarType>(
+    const auto &child = resolved_hierarchical_scalar_type(
         bg::cpp_scalar_type<bg::Bundle<RecursiveSchemaChild>>());
 
     CHECK(derived.base() == &base);
@@ -422,13 +560,13 @@ TEST_CASE("concurrent first access publishes one complete recursive type",
           "[schema:named][declaration:concrete]") {
     constexpr auto thread_count = std::size_t{8};
     auto start = std::barrier{thread_count};
-    auto results = std::array<const bg::HierarchicalScalarType *, thread_count>{};
+    auto results = std::array<const bg::ResolvedHierarchicalScalarType *, thread_count>{};
     auto threads = std::array<std::jthread, thread_count>{};
 
     for (auto index = std::size_t{}; index < thread_count; ++index) {
         threads[index] = std::jthread{[&, index] {
             start.arrive_and_wait();
-            results[index] = &bg::type_cast<bg::HierarchicalScalarType>(
+            results[index] = &resolved_hierarchical_scalar_type(
                 bg::cpp_scalar_type<bg::Bundle<ConcurrentNode>>());
         }};
     }

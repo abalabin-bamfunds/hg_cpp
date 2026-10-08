@@ -3,6 +3,7 @@
 #include <bg/graph/wiring_context.hpp>
 #include <bg/node.hpp>
 #include <bg/operator.hpp>
+#include <bg/scalar/bundle/value.hpp>
 #include <bg/scalar/type.hpp>
 #include <bg/testing/test_wiring.hpp>
 #include <bg/time_series/tsd/tsd_type.hpp>
@@ -51,6 +52,26 @@ struct generic_bundle_source_definition {
     void evaluate() const {}
 };
 
+template <template <typename, auto...> typename Field> struct concrete_scalar_bundle_schema {
+    Field<i64> value;
+};
+
+template <template <typename, auto...> typename Field> struct BaseScalarBundle {
+    Field<i64> value;
+};
+
+template <template <typename, auto...> typename Field>
+struct DerivedScalarBundle : schema_extends<BaseScalarBundle, Field> {
+    Field<double> extra;
+};
+
+struct generic_bundle_scalar_source_definition {
+    Scalar<Bundle<SCHEMA>> value;
+    Out<TS<Bundle<SCHEMA>>> output;
+
+    void evaluate() const { output.set(value); }
+};
+
 struct cached_generic_sink_definition {
     In<RESULT> input;
 
@@ -63,6 +84,25 @@ struct cached_generic_sink_definition {
 
     void evaluate() const {}
 };
+
+TEST_CASE("scalar wiring arguments preserve declared types and actual runtime types",
+          "[feature:wiring][scalar:hierarchical][binding:covariant]") {
+    auto memory = allocator{};
+    const auto derived = bundle<DerivedScalarBundle>(memory, i64{42}, 2.5);
+    const auto base = ScalarValue<Bundle<BaseScalarBundle>>{derived.view()};
+    const auto argument = WiringArgument{base};
+
+    const auto check_argument = [&](const WiringArgument &value) {
+        CHECK(&value.type() == &cpp_scalar_type<Bundle<BaseScalarBundle>>());
+        CHECK(&value.scalar_runtime_type() == &derived.runtime_type());
+        CHECK(&value.scalar().type() == &derived.type());
+    };
+
+    check_argument(argument);
+    check_argument(WiringArgument{argument});
+
+    check_argument(argument.clone(memory));
+}
 
 struct recording_operator_invocation {
     inline static bool called{};
@@ -141,6 +181,19 @@ TEST_CASE("an explicit schema argument resolves a bundle schema variable",
     testing::test_wiring([&] {
         const auto output = source[type<schema_type<concrete_bundle_schema>>]();
         CHECK(&output.type() == &TSB<concrete_bundle_schema>::type());
+    });
+}
+
+TEST_CASE("a scalar bundle argument resolves a generic bundle node output",
+          "[feature:wiring][feature:type-system][definition:aggregate][series:value]"
+          "[schema:named][declaration:generic]") {
+    auto allocator = bg::allocator{};
+    const auto value = bg::bundle<concrete_scalar_bundle_schema>(allocator, i64{42});
+    const auto source = node<schema_type<SCHEMA>, generic_bundle_scalar_source_definition>();
+
+    testing::test_wiring([&] {
+        const auto output = source(value);
+        CHECK(&output.type() == &TS<Bundle<concrete_scalar_bundle_schema>>::type());
     });
 }
 

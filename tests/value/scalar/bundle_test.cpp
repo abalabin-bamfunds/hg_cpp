@@ -8,6 +8,7 @@
 #include <bg/scalar/opaque.hpp>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers.hpp>
 
 #include <array>
 #include <concepts>
@@ -103,9 +104,12 @@ auto bundle_allocator = bg::allocator{};
 template <typename T>
 concept HashableScalar = requires(const bg::Scalar<T> &value) { value.hash(); };
 
+template <template <template <typename, auto...> typename> typename Schema>
+concept PositionalBundleConstructible = requires(bg::allocator &memory) { bg::bundle<Schema>(memory, bg::i64{1}); };
+
 class AlternateHierarchicalRuntimeType final : public bg::HierarchicalScalarRuntimeType {
   public:
-    explicit AlternateHierarchicalRuntimeType(const bg::HierarchicalScalarType &type) noexcept
+    explicit AlternateHierarchicalRuntimeType(const bg::ResolvedHierarchicalScalarType &type) noexcept
         : HierarchicalScalarRuntimeType{type, sizeof(void *), alignof(void *), false, false, true} {}
 
     bg::details::ScalarData field(const bg::details::ScalarData &, std::size_t) const override {
@@ -149,6 +153,7 @@ static_assert(!std::constructible_from<
               const std::array<bg::Scalar<bg::Bundle<Equity>>, 1> &>);
 static_assert(HashableScalar<bg::Bundle<HashableRecord>>);
 static_assert(!HashableScalar<bg::Bundle<UnhashableRecord>>);
+static_assert(!PositionalBundleConstructible<bg::SCHEMA>);
 
 TEST_CASE("bundle construction outside an allocation context requires an allocator",
           "[feature:scalar-api][scalar:hierarchical][storage:variable]") {
@@ -338,6 +343,124 @@ TEST_CASE("an owning base hierarchical scalar retains a derived value",
     CHECK(bg::scalar_cast<bg::i64>(bg::scalar_cast<bg::Bundle<Equity>>(*from_value)[2]).value() == 100);
 }
 
+TEST_CASE("an owning generic bundle scalar retains its actual runtime schema",
+          "[value][feature:scalar-storage][scalar:hierarchical][declaration:generic]") {
+    const auto equity = bg::bundle<Equity>(bundle_allocator, bg::symbol{"ABC"}, 12.5, bg::i64{100});
+    const auto erased = bg::ScalarValue<bg::Bundle<bg::SCHEMA>>{equity.view()};
+
+    CHECK(&erased.type() == &equity.type());
+    CHECK(erased.view().field_count() == 3);
+    CHECK(erased.view().field_name(2) == "lot_size");
+    CHECK(bg::scalar_cast<bg::i64>(erased.view()[2]).value() == 100);
+}
+
+TEST_CASE("generic bundle declarations retain ownership through lists and dictionaries",
+          "[value][feature:scalar-storage][scalar:hierarchical][scalar:list][scalar:dict]"
+          "[declaration:generic]") {
+    auto generic_list = std::optional<bg::ScalarValue<bg::List<bg::Bundle<bg::SCHEMA>>>>{};
+    auto generic_dictionary = std::optional<bg::ScalarValue<bg::Dict<bg::i64, bg::Bundle<bg::SCHEMA>>>>{};
+    auto derived_type = static_cast<const bg::ScalarType *>(nullptr);
+    {
+        using namespace bg::literals;
+
+        const auto equity = bg::bundle<Equity>(bundle_allocator, bg::symbol{"ABC"}, "lot_size"_n = bg::i64{100});
+        derived_type = &equity.type();
+
+        const auto list = bg::ScalarValue<bg::List<bg::Bundle<Equity>>>{
+            std::array<bg::Scalar<bg::Bundle<Equity>>, 1>{equity.view()}};
+        const auto dictionary = bg::ScalarValue<bg::Dict<bg::i64, bg::Bundle<Equity>>>{
+            std::array{std::pair{bg::i64{1}, equity.view()}}};
+        const auto source_list_view = list.view();
+        const auto source_dictionary_view = dictionary.view();
+        const auto list_view = bg::Scalar<bg::List<bg::Bundle<bg::SCHEMA>>>::from(source_list_view);
+        const auto dictionary_view =
+            bg::Scalar<bg::Dict<bg::i64, bg::Bundle<bg::SCHEMA>>>::from(source_dictionary_view);
+
+        generic_list.emplace(list_view);
+        generic_dictionary.emplace(dictionary_view);
+    }
+
+    REQUIRE(generic_list.has_value());
+    REQUIRE(generic_dictionary.has_value());
+    REQUIRE(generic_list->view().size() == 1);
+    CHECK(&generic_list->view()[0].type() == derived_type);
+    CHECK(bg::scalar_cast<bg::i64>(generic_list->view()[0][2]).value() == 100);
+    REQUIRE(generic_dictionary->view().size() == 1);
+    CHECK(&generic_dictionary->view().at(1).type() == derived_type);
+    CHECK(bg::scalar_cast<bg::i64>(generic_dictionary->view().at(1)[2]).value() == 100);
+}
+
+TEST_CASE("a runtime schema constructs a bundle with optional and nested fields",
+          "[feature:scalar-api][scalar:hierarchical][scalar:list][schema:named][declaration:runtime]"
+          "[validity:optional][shape:nested]") {
+    const auto fields = std::array{
+        bg::SchemaField{bg::util::symbol{"values"}, &bg::cpp_scalar_type<bg::List<bg::i64>>(), false},
+        bg::SchemaField{bg::util::symbol{"comment"}, &bg::cpp_scalar_type<bg::symbol>(), true},
+    };
+    const auto &schema = bg::schema(bg::util::symbol{"RuntimeValues"}, bg::new_runtime_schema_id(), nullptr, fields);
+    auto result = std::optional<bg::ScalarValue<bg::Bundle<bg::SCHEMA>>>{};
+
+    {
+        const auto items = std::array{bg::ScalarValue<bg::i64>{17}};
+        const auto values = bg::ScalarValue<bg::List<bg::i64>>{
+            std::array<bg::Scalar<bg::i64>, 1>{items[0].view()}, bundle_allocator};
+        const auto values_view = values.view();
+        const auto inputs = std::array{
+            std::optional<bg::Scalar<>>{bg::Scalar<>::from(values_view)},
+            std::optional<bg::Scalar<>>{},
+        };
+
+        result.emplace(bg::bundle(bundle_allocator, schema, inputs));
+    }
+
+    REQUIRE(result.has_value());
+    CHECK(result->view().field_count() == 2);
+    CHECK(result->view().field_name(0) == "values");
+    CHECK(result->view().present(0));
+    CHECK_FALSE(result->view().present(1));
+    const auto stored_values = bg::scalar_cast<bg::List<bg::i64>>(result->view()[0]);
+    REQUIRE(stored_values.size() == 1);
+    CHECK(bg::scalar_cast<bg::i64>(stored_values[0]).value() == 17);
+}
+
+TEST_CASE("runtime bundle construction rejects invalid field counts values and schemas",
+          "[feature:scalar-api][scalar:hierarchical][schema:named][declaration:runtime]"
+          "[validity:required]") {
+    const auto fields = std::array{
+        bg::SchemaField{bg::util::symbol{"value"}, &bg::cpp_scalar_type<bg::i64>(), false},
+        bg::SchemaField{bg::util::symbol{"comment"}, &bg::cpp_scalar_type<bg::symbol>(), true},
+    };
+    const auto &schema = bg::schema(bg::util::symbol{"RuntimeRequired"}, bg::new_runtime_schema_id(), nullptr, fields);
+    const auto integer = bg::ScalarValue<bg::i64>{42};
+    const auto text = bg::ScalarValue<bg::symbol>{bg::symbol{"wrong type"}};
+    const auto integer_view = integer.view();
+    const auto text_view = text.view();
+    const auto short_inputs = std::array{std::optional<bg::Scalar<>>{bg::Scalar<>::from(integer_view)}};
+    const auto missing_required = std::array{
+        std::optional<bg::Scalar<>>{},
+        std::optional<bg::Scalar<>>{},
+    };
+    const auto wrong_representation = std::array{
+        std::optional<bg::Scalar<>>{bg::Scalar<>::from(text_view)},
+        std::optional<bg::Scalar<>>{},
+    };
+
+    CHECK_THROWS_WITH(bg::bundle(bundle_allocator, schema, short_inputs),
+                      "hierarchical scalar field count does not match its type");
+    CHECK_THROWS_WITH(bg::bundle(bundle_allocator, schema, missing_required),
+                      "required hierarchical scalar field is absent");
+    CHECK_THROWS_WITH(bg::bundle(bundle_allocator, schema, wrong_representation),
+                      "hierarchical scalar field has an incompatible runtime representation");
+
+    const auto unresolved_fields = std::array{
+        bg::SchemaField{bg::util::symbol{"value"}, &bg::cpp_scalar_type<bg::SCALAR>(), false},
+    };
+    const auto &unresolved_schema =
+        bg::schema(bg::util::symbol{"RuntimeUnresolved"}, bg::new_runtime_schema_id(), nullptr, unresolved_fields);
+    CHECK_THROWS_WITH(bg::hierarchical_scalar_type(unresolved_schema),
+                      "a hierarchical scalar schema requires resolved scalar fields");
+}
+
 TEST_CASE("an owning hierarchical scalar rejects an unrelated schema",
           "[value][feature:scalar-storage][scalar:hierarchical][declaration:concrete]") {
     const auto value = bg::bundle<UnrelatedRecord>(bundle_allocator, bg::i64{42});
@@ -466,9 +589,12 @@ TEST_CASE("a base hierarchical view preserves the derived runtime type",
     const auto base = bg::scalar_cast<bg::Bundle<Instrument>>(derived);
 
     CHECK(&base.type() == &derived.type());
-    CHECK(base.field_count() == 2);
+    CHECK(base.field_count() == 3);
+    CHECK(base.field_name(2) == "lot_size");
+    CHECK(&base.field_type(2) == &bg::cpp_scalar_type<bg::i64>());
     CHECK(bg::scalar_cast<bg::symbol>(base[0]).value().text() == "ABC");
     CHECK(bg::scalar_cast<double>(base[1]).value() == 12.5);
+    CHECK(bg::scalar_cast<bg::i64>(base[2]).value() == 100);
 }
 
 TEST_CASE("hierarchical equality compares compatible facades using the actual value type",
@@ -499,7 +625,7 @@ TEST_CASE("composed hierarchical storage rejects another runtime layout",
 
 TEST_CASE("bundle construction uses composed storage when an extension runtime type is registered",
           "[feature:scalar-storage][scalar:hierarchical]") {
-    const auto &type = static_cast<const bg::HierarchicalScalarType &>(
+    const auto &type = static_cast<const bg::ResolvedHierarchicalScalarType &>(
         bg::cpp_scalar_type<bg::Bundle<ExtensionBackedRecord>>());
     static const auto alternate = AlternateHierarchicalRuntimeType{type};
     bg::register_scalar_runtime_type(alternate);

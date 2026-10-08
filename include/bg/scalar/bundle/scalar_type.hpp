@@ -4,8 +4,11 @@
 #include <bg/scalar/declaration.hpp>
 #include <bg/scalar/bundle/type.hpp>
 #include <bg/schema/reflection.hpp>
+#include <bg/time_series/schema_variable.hpp>
 #include <bg/type/schema.hpp>
+#include <bg/type/schema_variable_instance.hpp>
 #include <bg/type/scalar_type.hpp>
+#include <bg/type/type_registry.hpp>
 #include <bg/util/symbol.hpp>
 
 #include <array>
@@ -24,61 +27,93 @@ template <typename T> class Set;
 template <typename K, typename V> class Dict;
 
 class HierarchicalScalarType;
+class ResolvedHierarchicalScalarType;
+class TypeMap;
 
 namespace details {
 
-const HierarchicalScalarType &canonical_hierarchical_scalar_type(
-    const std::type_info &identity, std::string_view name, void (*initialize)(HierarchicalScalarType &));
+const ResolvedHierarchicalScalarType &canonical_hierarchical_scalar_type(
+    const std::type_info &identity, std::string_view name, void (*initialize)(ResolvedHierarchicalScalarType &));
+const ResolvedHierarchicalScalarType &canonical_hierarchical_scalar_type(const Schema &schema);
 template <template <template <typename, auto...> typename> typename Schema>
-const HierarchicalScalarType &hierarchical_scalar_type();
+const ResolvedHierarchicalScalarType &hierarchical_scalar_type();
 template <template <template <typename, auto...> typename> typename Schema>
-void initialize_hierarchical_scalar_type(HierarchicalScalarType &type);
+void initialize_hierarchical_scalar_type(ResolvedHierarchicalScalarType &type);
 
 } // namespace details
 
-class HierarchicalScalarType final : public ScalarType {
+class HierarchicalScalarType : public ScalarType {
   public:
     using generic_scalar_view = Scalar<HIERARCHICAL>;
 
     VISITOR_SUPPORT()
 
-    util::symbol name() const noexcept { return name_; }
+    virtual const SchemaType &schema_type() const noexcept = 0;
+
+  protected:
+    bool do_match(const Type &supplied, TypeMap &type_map) const override = 0;
+};
+
+class ResolvedHierarchicalScalarType final : public HierarchicalScalarType {
+  public:
+    util::symbol name() const noexcept { return schema_->name(); }
     const Schema &schema() const noexcept { return *schema_; }
-    const HierarchicalScalarType *base() const noexcept { return base_; }
+    const SchemaType &schema_type() const noexcept override { return *schema_; }
+    const ResolvedHierarchicalScalarType *base() const noexcept { return base_; }
     std::span<const SchemaField> direct_fields() const noexcept { return schema_->direct_fields(); }
     std::span<const SchemaField> fields() const noexcept { return schema_->fields(); }
     std::size_t field_count() const noexcept { return schema_->field_count(); }
     const SchemaField &field(std::size_t index) const { return schema_->field(index); }
     const SchemaField *find(util::symbol name) const noexcept { return schema_->find(name); }
-    bool derives_from(const HierarchicalScalarType &type) const noexcept;
+    bool derives_from(const ResolvedHierarchicalScalarType &type) const noexcept;
 
     bool is_resolved() const noexcept override { return true; }
     const Type &resolve(const TypeMap &) const override { return *this; }
-    bool supports_equality() const noexcept override;
-    bool supports_hash() const noexcept override;
+    bool supports_equality() const noexcept override { return supports_equality_; }
+    bool supports_hash() const noexcept override { return supports_hash_; }
 
   protected:
     bool do_match(const Type &supplied, TypeMap &type_map) const override;
 
   private:
-    explicit HierarchicalScalarType(util::symbol name) noexcept;
-    void set_base(const HierarchicalScalarType *base) noexcept { base_ = base; }
+    ResolvedHierarchicalScalarType() noexcept = default;
+    void set_base(const ResolvedHierarchicalScalarType *base) noexcept { base_ = base; }
     void initialize(const Schema &schema);
     bool finalize_capabilities() noexcept;
 
-    friend const HierarchicalScalarType &details::canonical_hierarchical_scalar_type(
-        const std::type_info &, std::string_view, void (*)(HierarchicalScalarType &));
+    friend const ResolvedHierarchicalScalarType &details::canonical_hierarchical_scalar_type(
+        const std::type_info &, std::string_view, void (*)(ResolvedHierarchicalScalarType &));
     template <template <template <typename, auto...> typename> typename Schema>
-    friend const HierarchicalScalarType &details::hierarchical_scalar_type();
+    friend const ResolvedHierarchicalScalarType &details::hierarchical_scalar_type();
     template <template <template <typename, auto...> typename> typename Schema>
-    friend void details::initialize_hierarchical_scalar_type(HierarchicalScalarType &);
+    friend void details::initialize_hierarchical_scalar_type(ResolvedHierarchicalScalarType &);
+    friend const ResolvedHierarchicalScalarType &details::canonical_hierarchical_scalar_type(const Schema &);
 
-    util::symbol name_;
-    const HierarchicalScalarType *base_;
     const Schema *schema_{};
+    const ResolvedHierarchicalScalarType *base_{};
     bool supports_equality_{true};
     bool supports_hash_{true};
 };
+
+class GenericHierarchicalScalarType final : public HierarchicalScalarType {
+  public:
+    explicit GenericHierarchicalScalarType(const SchemaType &schema);
+
+    const SchemaType &schema_type() const noexcept override { return *schema_; }
+    bool is_resolved() const noexcept override { return false; }
+    [[nodiscard]] const Type &resolve(const TypeMap &type_map) const override;
+    bool supports_equality() const noexcept override { return false; }
+    bool supports_hash() const noexcept override { return false; }
+
+  protected:
+    bool do_match(const Type &supplied, TypeMap &type_map) const override;
+
+  private:
+    const SchemaType *schema_;
+};
+
+// Extension-facing canonical lookup for a resolved, runtime schema.
+[[nodiscard]] const ResolvedHierarchicalScalarType &hierarchical_scalar_type(const Schema &schema);
 
 namespace details {
 
@@ -200,7 +235,7 @@ const bg::Schema &cpp_hierarchical_scalar_schema() {
 }
 
 template <template <template <typename, auto...> typename> typename Schema>
-void initialize_hierarchical_scalar_type(HierarchicalScalarType &type) {
+void initialize_hierarchical_scalar_type(ResolvedHierarchicalScalarType &type) {
     static_assert(hierarchical_scalar_schema_supported<Schema>,
                   "a hierarchical scalar schema requires supported scalar fields and optional properties");
 
@@ -210,7 +245,7 @@ void initialize_hierarchical_scalar_type(HierarchicalScalarType &type) {
             using Base = typename Reflection::base_schema;
             return &hierarchical_scalar_type<Base::template apply>();
         } else {
-            return static_cast<const HierarchicalScalarType *>(nullptr);
+            return static_cast<const ResolvedHierarchicalScalarType *>(nullptr);
         }
     }();
     type.set_base(base);
@@ -218,25 +253,53 @@ void initialize_hierarchical_scalar_type(HierarchicalScalarType &type) {
 }
 
 template <template <template <typename, auto...> typename> typename Schema>
-const HierarchicalScalarType &hierarchical_scalar_type() {
+const ResolvedHierarchicalScalarType &hierarchical_scalar_type() {
     return canonical_hierarchical_scalar_type(
         typeid(Bundle<Schema>), util::unqualified_type_name<Schema<hierarchical_scalar_schema_field>>(),
         &initialize_hierarchical_scalar_type<Schema>);
+}
+
+template <template <template <typename, auto...> typename> typename Schema>
+const GenericHierarchicalScalarType &generic_hierarchical_scalar_type() {
+    static const auto type = GenericHierarchicalScalarType{schema_type<Schema>::type()};
+    [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type);
+    return type;
 }
 
 } // namespace details
 
 template <template <template <typename, auto...> typename> typename Schema>
 struct scalar_type_traits<Bundle<Schema>> {
-    static const ScalarType &type() { return details::hierarchical_scalar_type<Schema>(); }
+    static const ScalarType &type() {
+        if constexpr (details::schema_variable_template<Schema>) {
+            return details::generic_hierarchical_scalar_type<Schema>();
+        } else {
+            return details::hierarchical_scalar_type<Schema>();
+        }
+    }
 };
 
 template <template <template <typename, auto...> typename> typename Schema>
 struct scalar_declaration_traits<Bundle<Schema>> {
-    static constexpr bool generic = false;
+    static constexpr bool generic = details::schema_variable_template<Schema>;
     static constexpr bool is_collection = false;
     static constexpr bool supports_implicit_argument = false;
-    static constexpr bool supports_time_series = details::hierarchical_scalar_schema_supported<Schema>;
+    static constexpr bool supports_time_series = details::schema_variable_template<Schema> ||
+                                                 details::hierarchical_scalar_schema_supported<Schema>;
 };
+
+namespace details {
+
+template <template <template <typename, auto...> typename> typename Schema>
+struct declaration_variable_traits<Bundle<Schema>> {
+    template <typename Visitor> static void for_each(Visitor &&visitor) {
+        if constexpr (schema_variable_template<Schema>) {
+            using Declaration = schema_type<Schema>;
+            std::forward<Visitor>(visitor).template operator()<Declaration>(schema_variable_instance<Schema>());
+        }
+    }
+};
+
+} // namespace details
 
 } // namespace bg

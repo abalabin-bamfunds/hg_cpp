@@ -114,6 +114,8 @@ graph compilation or evaluation.
 - opaque values and scalar collections, including generic and nested types
 - compound scalar metadata, native access, generic field access, nesting, equality, hashing, and invalid declarations
 - hierarchical scalar identity, schema metadata, inheritance, field narrowing, and container variance
+- schema-capturing hierarchical scalar views and construction, runtime field inspection through base annotations,
+  shared-handle ownership, and programmatic field-count, type, and presence validation
 - time series validity, update time, mutation, and invalidation
 - global state ownership, replacement, lookup, and allocation
 
@@ -136,6 +138,8 @@ graph compilation or evaluation.
 - shared schema identity across translation units and libraries, C++ and runtime declarations,
   ordered fields, inheritance, optional presence, field-variable resolution, and recursive registration rollback
 - schema variables shared across reflection adapters, repeated-variable matching, and owning type field validation
+- hierarchical scalar schema capture through scalar arguments, time series values, and scalar collections;
+  canonical type identity shared by C++ declarations and programmatic schema construction
 - operator signature specificity and ambiguity
 - types passed as scalars
 - guarantee compatibility, propagation, and enforcement

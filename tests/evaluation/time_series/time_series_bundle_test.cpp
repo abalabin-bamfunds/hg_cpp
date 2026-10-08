@@ -211,6 +211,82 @@ TEST_CASE("a hierarchical time series output accepts a derived scalar representa
     CHECK(bg::scalar_cast<bg::symbol>((*result)[0]).value().text() == "ABC");
 }
 
+TEST_CASE("a generic bundle node forwards a derived runtime scalar through its base schema",
+          "[evaluation][feature:node-api][series:value][scalar:hierarchical][schema:named][declaration:generic]"
+          "[binding:covariant][transition:update]") {
+    auto allocator = bg::allocator{};
+    const auto publish = bg::node(
+        [](bg::In<bg::TS<bg::i64>> trigger, bg::Scalar<bg::Bundle<Equity>> value,
+           bg::Out<bg::TS<bg::Bundle<Instrument>>> output) {
+            (void)trigger;
+            output.set(value);
+        });
+    const auto forward = bg::node(
+        [](bg::In<bg::TS<bg::Bundle<bg::SCHEMA>>> input,
+           bg::Out<bg::TS<bg::Bundle<bg::SCHEMA>>> output) { output.set(input.value()); });
+    const auto inspect = bg::node(
+        [](bg::In<bg::TS<bg::Bundle<Instrument>>> input, bg::Out<bg::TS<bg::i64>> output) {
+            const auto equity = bg::scalar_cast<bg::Bundle<Equity>>(input.value());
+            output.set(bg::scalar_cast<bg::i64>(equity[1]).value());
+        });
+    const auto equity = bg::bundle<Equity>(allocator, bg::symbol{"ABC"}, bg::i64{100});
+    const auto graph = [&](bg::wp<bg::TS<bg::i64>> trigger) {
+        const auto forwarded = forward(publish(trigger, equity));
+        CHECK(&forwarded.type() == &bg::TS<bg::Bundle<Instrument>>::type());
+        return inspect(forwarded);
+    };
+
+    const auto actual = bg::testing::test_graph(graph, std::array{1});
+
+    CHECK(actual.equals({100}));
+}
+
+TEST_CASE("a generic bundle node constructs a runtime schema inside its allocation context",
+          "[evaluation][feature:node-api][series:value][scalar:hierarchical][schema:named]"
+          "[declaration:runtime][transition:update]") {
+    const auto schema_fields = std::array{
+        bg::SchemaField{bg::util::symbol{"value"}, &bg::cpp_scalar_type<bg::i64>(), false},
+        bg::SchemaField{bg::util::symbol{"comment"}, &bg::cpp_scalar_type<bg::symbol>(), true},
+    };
+    const auto &schema = bg::schema(
+        bg::util::symbol{"RuntimeNodeBundle"}, bg::new_runtime_schema_id(), nullptr, schema_fields);
+    const auto initial_field = bg::ScalarValue<bg::i64>{42};
+    const auto initial_field_view = initial_field.view();
+    const auto initial_inputs = std::array{
+        std::optional<bg::Scalar<>>{bg::Scalar<>::from(initial_field_view)},
+        std::optional<bg::Scalar<>>{},
+    };
+    auto allocator = bg::allocator{};
+    const auto initial = bg::bundle(allocator, schema, initial_inputs);
+    const auto rebuild = bg::node(
+        bg::eval = [](bg::Scalar<bg::Bundle<bg::SCHEMA>> input,
+                      bg::Out<bg::TS<bg::Bundle<bg::SCHEMA>>> output) {
+            auto fields = std::vector<std::optional<bg::Scalar<>>>{};
+            fields.reserve(input.field_count());
+            for (auto index = std::size_t{}; index < input.field_count(); ++index) {
+                if (input.present(index)) {
+                    const auto field = input[index];
+                    fields.emplace_back(bg::Scalar<>::from(field));
+                } else {
+                    fields.emplace_back(std::nullopt);
+                }
+            }
+
+            const auto value = bg::bundle(input.type().schema(), fields);
+            output.set_value(value.view());
+        },
+        bg::schedule_on_start = true);
+    const auto read = bg::node(
+        [](bg::In<bg::TS<bg::Bundle<bg::SCHEMA>>> input, bg::Out<bg::TS<bg::i64>> output) {
+            output.set(bg::scalar_cast<bg::i64>(input.value()[0]).value());
+        });
+    const auto graph = [&] { return read(rebuild(initial)); };
+
+    const auto actual = bg::testing::test_graph(graph);
+
+    CHECK(actual.equals({42}));
+}
+
 TEST_CASE("a derived hierarchical value crosses a nested graph boundary",
           "[feature:nested-graph][series:value][scalar:hierarchical]"
           "[binding:value-to-reference][binding:reference-to-value][shape:nested]") {

@@ -144,10 +144,11 @@ class WiringArgument {
     template <typename T>
         requires details::supported_scalar_value_argument<T>
     WiringArgument(const T &value)
-        : value_(ScalarArgument{
-              cpp_scalar_type<typename details::scalar_value_argument<std::remove_cvref_t<T>>::scalar_type>(),
-              cpp_scalar_runtime_type<typename details::scalar_value_argument<std::remove_cvref_t<T>>::scalar_type>(),
-              nullptr, &details::scalar_data(value)}) {}
+        : value_([&] {
+              using Scalar = typename details::scalar_value_argument<std::remove_cvref_t<T>>::scalar_type;
+              const auto &type = scalar_declaration_traits<Scalar>::generic ? value.type() : cpp_scalar_type<Scalar>();
+              return ScalarArgument{type, value.runtime_type(), nullptr, &details::scalar_data(value)};
+          }()) {}
 
     template <util::compile_time_string Name, typename T>
         requires requires(T &&value) { WiringArgument{std::forward<T>(value)}; }
@@ -255,7 +256,7 @@ class WiringArgument {
   private:
     const ScalarType &scalar_type() const noexcept {
         const auto &scalar = std::get<ScalarArgument>(value_);
-        return scalar.owned ? scalar.owned->type() : *scalar.type;
+        return scalar.type != nullptr ? *scalar.type : scalar.owned->type();
     }
     const void *scalar_data() const noexcept { return std::get<ScalarArgument>(value_).data; }
     const details::ScalarData *scalar_view() const noexcept {

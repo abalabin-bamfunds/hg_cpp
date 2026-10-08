@@ -73,8 +73,8 @@ class HierarchicalBundleConstruction {
     }
 
   private:
-    static const HierarchicalScalarType &type() {
-        return static_cast<const HierarchicalScalarType &>(cpp_scalar_type<Bundle<Schema>>());
+    static const ResolvedHierarchicalScalarType &type() {
+        return static_cast<const ResolvedHierarchicalScalarType &>(cpp_scalar_type<Bundle<Schema>>());
     }
 
     SchemaArgumentAssignment<Reflection::field_count> assignment_;
@@ -97,17 +97,29 @@ ScalarValue<Bundle<Schema>> make_hierarchical_bundle(allocator *memory, Argument
 namespace bg {
 
 template <template <template <typename, auto...> typename> typename Schema, typename... Arguments>
-    requires details::hierarchical_scalar_schema_supported<Schema> &&
+    requires(!details::schema_variable_template<Schema>) &&
+             details::hierarchical_scalar_schema_supported<Schema> &&
              (details::hierarchical_bundle_scalar_argument<Arguments> && ...)
 [[nodiscard]] ScalarValue<Bundle<Schema>> bundle(Arguments &&...arguments) {
     return details::make_hierarchical_bundle<Schema>(nullptr, std::forward<Arguments>(arguments)...);
 }
 
 template <template <template <typename, auto...> typename> typename Schema, typename... Arguments>
-    requires details::hierarchical_scalar_schema_supported<Schema> &&
+    requires(!details::schema_variable_template<Schema>) &&
+             details::hierarchical_scalar_schema_supported<Schema> &&
              (details::hierarchical_bundle_scalar_argument<Arguments> && ...)
 [[nodiscard]] ScalarValue<Bundle<Schema>> bundle(allocator &memory, Arguments &&...arguments) {
     return details::make_hierarchical_bundle<Schema>(&memory, std::forward<Arguments>(arguments)...);
+}
+
+[[nodiscard]] inline ScalarValue<Bundle<SCHEMA>> bundle(
+    const Schema &schema, std::span<const std::optional<Scalar<>>> fields) {
+    return details::HierarchicalScalarValueFactory::make(schema, fields);
+}
+
+[[nodiscard]] inline ScalarValue<Bundle<SCHEMA>> bundle(
+    allocator &memory, const Schema &schema, std::span<const std::optional<Scalar<>>> fields) {
+    return details::HierarchicalScalarValueFactory::make(schema, fields, &memory);
 }
 
 } // namespace bg

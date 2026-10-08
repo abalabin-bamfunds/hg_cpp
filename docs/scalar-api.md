@@ -87,7 +87,8 @@ strings convert to `bg::string`, whose read API returns `std::string_view`.
 `EvaluationTime` retains its type.
 
 Wiring applies the same conversion to raw C++ scalar arguments before type
-resolution. An explicit `ScalarValue<T>` retains `T`.
+resolution. An explicit `ScalarValue<T>` retains a concrete `T` as its semantic
+type. For a generic declaration, wiring uses the value's resolved type.
 
 `ScalarValue<Opaque<T>>` owns a copy of private C++ data without adding graph
 operations. `T` must be copy constructible and destructible. For `Opaque<T*>`,
@@ -145,11 +146,27 @@ addresses from offsets. Equality and hashing process fields and ignore padding.
 
 ## Hierarchical scalars
 
-`Scalar<Bundle<Schema>>` exposes the fields declared by `Schema`.
+`Scalar<Bundle<Schema>>` exposes the fields of the actual value through its
+runtime type. A base annotation controls compatibility; field inspection
+includes derived fields and their actual types.
 `Scalar<HIERARCHICAL>` provides the same structural access for any hierarchical
 scalar. `present()` distinguishes an absent optional field from a present
 default value. Indexing returns a borrowed erased scalar view and throws
 `std::bad_optional_access` for an absent field.
+
+`Scalar<Bundle<SCHEMA>>` provides this access for any resolved bundle.
+Its view and an owning `ScalarValue<Bundle<SCHEMA>>` retain the actual runtime
+type. Borrowing copies no fields. Composed bundle ownership retains the existing
+shared handle.
+
+For example, a node can forward a bundle with a captured schema:
+
+```cpp
+void forward_bundle(In<TS<Bundle<SCHEMA>>> input,
+                    Out<TS<Bundle<SCHEMA>>> output) {
+    output.set(input.value());
+}
+```
 
 `bundle<Schema>(arguments...)` constructs a `ScalarValue<Bundle<Schema>>` when
 all arguments are scalars. Positional arguments follow inherited logical field
@@ -158,6 +175,13 @@ argument. Optional fields may be omitted. An overload taking `bg::allocator&`
 as its first argument places owned storage under that allocator. Construction
 uses the engine's composed hierarchical runtime type. Extension runtime types
 provide their own construction APIs.
+
+`bundle(schema, fields)` constructs a `ScalarValue<Bundle<SCHEMA>>` from a
+runtime schema. `fields` is a `std::span<const std::optional<Scalar<>>>` in
+flattened schema order. The span must contain one entry per field; an empty
+entry is allowed only for an optional field. Each present value must have a
+compatible runtime type. `bundle(allocator, schema, fields)` selects an explicit
+allocator. Both forms use the same composed construction as C++ bundles.
 
 `In<TS<Bundle<Schema>>>::value()` and `operator*` return the borrowed
 `Scalar<Bundle<Schema>>` view. `Out<TS<Bundle<Schema>>>` accepts a compatible

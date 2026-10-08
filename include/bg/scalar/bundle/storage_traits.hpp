@@ -67,10 +67,20 @@ struct hierarchical_capability<Bundle<Schema>, hierarchical_capability_stack<See
 
 template <template <template <typename, auto...> typename> typename Schema>
 struct scalar_handle_traits<Bundle<Schema>> {
-    static constexpr bool supports_equality =
-        hierarchical_capability<Bundle<Schema>, hierarchical_capability_stack<>, false>::value;
-    static constexpr bool supports_hash =
-        hierarchical_capability<Bundle<Schema>, hierarchical_capability_stack<>, true>::value;
+    static constexpr bool supports_equality = [] {
+        if constexpr (schema_variable_template<Schema>) {
+            return false;
+        } else {
+            return hierarchical_capability<Bundle<Schema>, hierarchical_capability_stack<>, false>::value;
+        }
+    }();
+    static constexpr bool supports_hash = [] {
+        if constexpr (schema_variable_template<Schema>) {
+            return false;
+        } else {
+            return hierarchical_capability<Bundle<Schema>, hierarchical_capability_stack<>, true>::value;
+        }
+    }();
 };
 
 template <typename Source>

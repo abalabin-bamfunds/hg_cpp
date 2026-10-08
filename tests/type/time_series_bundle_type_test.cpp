@@ -66,7 +66,8 @@ TEST_CASE("one schema can describe a hierarchical scalar and a time series bundl
     CHECK(&time_series.item_type(0) == &bg::TS<bg::i64>::type());
     CHECK(&time_series.item_type(1) == &bg::TS<double>::type());
 
-    const auto &scalar_schema = bg::type_cast<bg::HierarchicalScalarType>(scalar).schema();
+    const auto &hierarchical = bg::type_cast<bg::HierarchicalScalarType>(scalar);
+    const auto &scalar_schema = static_cast<const bg::ResolvedHierarchicalScalarType &>(hierarchical).schema();
     const auto &time_series_schema = time_series.schema();
     CHECK(scalar_schema.identity() == time_series_schema.identity());
     CHECK(&scalar_schema != &time_series_schema);

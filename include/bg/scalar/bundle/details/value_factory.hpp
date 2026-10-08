@@ -10,18 +10,54 @@
 #include <optional>
 #include <span>
 #include <stdexcept>
+#include <utility>
+#include <vector>
 
 namespace bg::details {
 
 OwnedScalarData construct_composed_hierarchical_scalar_value(
-    const HierarchicalScalarType &type, std::span<const ScalarData *const> fields,
+    const ResolvedHierarchicalScalarType &type, std::span<const ScalarData *const> fields,
     BundleAllocationOwner &owner);
 
 class HierarchicalScalarValueFactory {
   public:
     template <template <template <typename, auto...> typename> typename Schema>
+        requires(!schema_variable_template<Schema>)
     static ScalarValue<Bundle<Schema>> make(std::span<const std::optional<Scalar<>>> fields,
                                             allocator *upstream = nullptr) {
+        const auto &type = static_cast<const ResolvedHierarchicalScalarType &>(cpp_scalar_type<Bundle<Schema>>());
+
+        auto sources = std::array<const ScalarData *, hierarchical_scalar_schema_reflection<Schema>::field_count>{};
+        if (fields.size() != sources.size()) {
+            throw std::invalid_argument{"hierarchical scalar field count does not match its schema"};
+        }
+        for (auto index = std::size_t{}; index < fields.size(); ++index) {
+            sources[index] = fields[index] ? &scalar_data(*fields[index]) : nullptr;
+        }
+
+        return with_owner<ScalarValue<Bundle<Schema>>>(upstream, [&](BundleAllocationOwner &owner) {
+            return ScalarValue<Bundle<Schema>>{construct_composed_hierarchical_scalar_value(type, sources, owner)};
+        });
+    }
+
+    static ScalarValue<Bundle<SCHEMA>> make(const Schema &schema, std::span<const std::optional<Scalar<>>> fields,
+                                           allocator *upstream = nullptr) {
+        const auto &type = hierarchical_scalar_type(schema);
+
+        auto sources = std::vector<const ScalarData *>{};
+        sources.reserve(fields.size());
+        for (const auto &field : fields) {
+            sources.push_back(field ? &scalar_data(*field) : nullptr);
+        }
+
+        return with_owner<ScalarValue<Bundle<SCHEMA>>>(upstream, [&](BundleAllocationOwner &owner) {
+            return ScalarValue<Bundle<SCHEMA>>{construct_composed_hierarchical_scalar_value(type, sources, owner)};
+        });
+    }
+
+  private:
+    template <typename Value, typename Construct>
+    static Value with_owner(allocator *upstream, Construct &&construct) {
         auto *owner = upstream == nullptr ? current_bundle_allocation_owner() : nullptr;
         auto owns_owner = false;
         if (owner == nullptr) {
@@ -38,14 +74,9 @@ class HierarchicalScalarValueFactory {
             }
         }};
 
-        auto sources = std::array<const ScalarData *, hierarchical_scalar_schema_reflection<Schema>::field_count>{};
-        for (auto index = std::size_t{}; index < fields.size(); ++index) {
-            sources[index] = fields[index] ? &scalar_data(*fields[index]) : nullptr;
-        }
-
-        return ScalarValue<Bundle<Schema>>{construct_composed_hierarchical_scalar_value(
-            static_cast<const HierarchicalScalarType &>(cpp_scalar_type<Bundle<Schema>>()), sources, *owner)};
+        return std::forward<Construct>(construct)(*owner);
     }
+
 };
 
 } // namespace bg::details

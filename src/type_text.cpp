@@ -75,7 +75,13 @@ void append_scalar(std::string &result, const ScalarType &type) {
     } else if (const auto *structure = type_cast<StructScalarType>(&type)) {
         result += structure->name().text();
     } else if (const auto *hierarchical = type_cast<HierarchicalScalarType>(&type)) {
-        result += hierarchical->name().text();
+        if (hierarchical->is_resolved()) {
+            append_type_text(result, hierarchical->schema_type());
+        } else {
+            result += "Bundle<";
+            append_type_text(result, hierarchical->schema_type());
+            result += '>';
+        }
     } else if (const auto *type_value = dynamic_cast<const TypeScalarType *>(&type)) {
         result += "Type<";
         append_type_text(result, type_value->type());
