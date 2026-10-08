@@ -131,9 +131,11 @@ and compatible cell types. The input retains the actual anonymous schema.
 
 ### Scalar extension integration
 
-Status: source-aware scalar reads and copies are committed in `dbbbe24f` on
-`agent/frame-bg-foundation`. Typed time-series reads use that path in `0d208d21`
-on `agent/scalar-access-paths`. Neither package is merged into main.
+Status: source-aware scalar reads and copies (`dbbbe24f`), typed time-series
+reads (`0d208d21`), node scalar reads (`20cbf814`), and runtime selection and
+borrowing hooks (`42f63586`) are committed on `agent/scalar-access-paths`.
+The installed package passes all 1469 BG tests, including Python, and the
+coverage check. These changes are not merged into main.
 
 BG's current scalar read path asks the source runtime to construct a C++ view
 in storage sized for the declared view. `FrameView<Base>` and
@@ -159,11 +161,8 @@ native storage. Node code uses the scalar and time series APIs rather than
 these trait operations.
 
 Canonical scalar runtime customization and borrowing of C++ views carrying
-their actual semantic type are approved and under implementation in
-`agent/scalar-access-paths`. Both hooks belong to `scalar_storage_traits<T>`.
-Scalar node parameter reads use their actual runtime in `20cbf814` on that
-branch. Before the additional hooks, the full BG test suite passes: 1464 tests,
-including Python tests.
+their actual semantic type both use `scalar_storage_traits<T>`.
+`docs/scalar-api.md` at commit `42f63586` defines their implemented contracts.
 
 ## Node and value APIs
 
