@@ -1,0 +1,70 @@
+cmake_minimum_required(VERSION 3.31)
+
+project(bg_frame LANGUAGES CXX)
+
+include(CTest)
+
+option(BG_FRAME_BUILD_ARROW "Build the optional Arrow adapter" OFF)
+option(BG_FRAME_BUILD_BENCHMARKS "Build optional frame benchmarks" OFF)
+
+if(NOT TARGET bg::bg)
+    find_package(bg CONFIG REQUIRED)
+endif()
+
+add_library(bg_frame SHARED src/column.cpp src/frame.cpp)
+add_library(bg::frame ALIAS bg_frame)
+
+target_compile_features(bg_frame PUBLIC cxx_std_23)
+target_link_libraries(bg_frame PUBLIC bg::bg)
+set_target_properties(bg_frame PROPERTIES CXX_EXTENSIONS OFF WINDOWS_EXPORT_ALL_SYMBOLS ON)
+target_include_directories(
+    bg_frame
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+)
+
+if(BG_FRAME_BUILD_ARROW)
+    find_package(Arrow CONFIG REQUIRED)
+    if(NOT TARGET Arrow::arrow_shared)
+        message(FATAL_ERROR "The Arrow package must provide Arrow::arrow_shared")
+    endif()
+
+    add_library(bg_frame_arrow SHARED src/arrow.cpp)
+    add_library(bg::frame_arrow ALIAS bg_frame_arrow)
+    target_compile_features(bg_frame_arrow PUBLIC cxx_std_23)
+    target_link_libraries(bg_frame_arrow PUBLIC bg::frame Arrow::arrow_shared)
+    target_include_directories(bg_frame_arrow PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>)
+    set_target_properties(bg_frame_arrow PROPERTIES CXX_EXTENSIONS OFF WINDOWS_EXPORT_ALL_SYMBOLS ON)
+
+    if(BG_FRAME_BUILD_BENCHMARKS)
+        find_package(ArrowCompute CONFIG REQUIRED)
+        add_executable(bg_frame_arrow_benchmark benchmarks/arrow_benchmark.cpp)
+        target_link_libraries(bg_frame_arrow_benchmark PRIVATE bg::frame_arrow ArrowCompute::arrow_compute_shared)
+    endif()
+elseif(BG_FRAME_BUILD_BENCHMARKS)
+    message(FATAL_ERROR "BG_FRAME_BUILD_BENCHMARKS requires BG_FRAME_BUILD_ARROW")
+endif()
+
+if(BUILD_TESTING)
+    add_executable(bg_frame_column_test tests/column_test.cpp)
+    target_link_libraries(bg_frame_column_test PRIVATE bg::frame)
+    add_test(NAME bg_frame_column_test COMMAND bg_frame_column_test)
+
+    add_executable(bg_frame_provider_integration_test tests/provider_integration_test.cpp)
+    target_link_libraries(bg_frame_provider_integration_test PRIVATE bg::frame)
+    add_test(NAME bg_frame_provider_integration_test COMMAND bg_frame_provider_integration_test)
+
+    add_executable(bg_frame_tsc_test tests/tsc_test.cpp)
+    target_link_libraries(bg_frame_tsc_test PRIVATE bg::frame)
+    add_test(NAME bg_frame_tsc_test COMMAND bg_frame_tsc_test)
+
+    add_executable(bg_frame_frame_test tests/frame_test.cpp)
+    target_link_libraries(bg_frame_frame_test PRIVATE bg::frame)
+    add_test(NAME bg_frame_frame_test COMMAND bg_frame_frame_test)
+
+    if(BG_FRAME_BUILD_ARROW)
+        add_executable(bg_frame_arrow_test tests/arrow_test.cpp)
+        target_link_libraries(bg_frame_arrow_test PRIVATE bg::frame_arrow)
+        add_test(NAME bg_frame_arrow_test COMMAND bg_frame_arrow_test)
+    endif()
+endif()
