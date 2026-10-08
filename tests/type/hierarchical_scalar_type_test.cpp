@@ -1,4 +1,5 @@
 #include "test_hierarchical_scalar_provider.hpp"
+#include "test_shared_schema_provider.hpp"
 
 #include <bg/node/input_properties.hpp>
 #include <bg/scalar/bundle/scalar_type.hpp>
@@ -82,6 +83,14 @@ TEST_CASE("a hierarchical scalar has one semantic identity across translation un
           "[feature:type-system][scalar:hierarchical][schema:named][declaration:concrete]") {
     CHECK(&bg::cpp_scalar_type<bg::Bundle<Instrument>>() ==
           &test_hierarchical_scalar_provider::instrument_type());
+}
+
+TEST_CASE("shared schemas have one scalar and TSB projection across shared libraries",
+          "[feature:type-system][schema:named][declaration:concrete]") {
+    CHECK(&test_shared_schema_provider::scalar_type() ==
+          &bg::cpp_scalar_type<bg::Bundle<test_shared_schema_provider::SharedSchema>>());
+    CHECK(&test_shared_schema_provider::time_series_type() ==
+          &bg::TSB<test_shared_schema_provider::SharedSchema>::type());
 }
 
 TEST_CASE("a conflicting hierarchical scalar declaration in another translation unit is rejected",
@@ -194,9 +203,9 @@ TEST_CASE("hierarchical scalar field redefinitions preserve base compatibility",
           "[feature:type-system][scalar:hierarchical][schema:named][declaration:concrete]"
           "[binding:covariant]") {
     CHECK_THROWS_WITH(bg::cpp_scalar_type<bg::Bundle<InvalidPortfolio>>(),
-                      "a redefined hierarchical scalar field must have a compatible narrower type");
+                      "a redefined schema field must have a compatible narrower type");
     CHECK_THROWS_WITH(bg::cpp_scalar_type<bg::Bundle<OptionalSymbol>>(),
-                      "a required hierarchical scalar field cannot become optional");
+                      "a required schema field cannot become optional");
 }
 
 namespace {
@@ -308,6 +317,29 @@ template <template <typename, auto...> typename Field> struct RequiredSelfCycle 
     Field<bg::Bundle<RequiredSelfCycle>> next;
 };
 
+template <template <typename, auto...> typename Field> struct RecursiveSchemaParent {
+    Field<bg::i64> value;
+};
+
+template <template <typename, auto...> typename Field>
+struct RecursiveSchemaChild : bg::schema_extends<RecursiveSchemaParent, Field> {
+    Field<bg::i64> extra;
+};
+
+template <template <typename, auto...> typename Field> struct RecursiveInheritanceBase;
+template <template <typename, auto...> typename Field> struct RecursiveInheritanceDerived;
+
+template <template <typename, auto...> typename Field> struct RecursiveInheritanceBase {
+    Field<bg::Bundle<RecursiveInheritanceDerived>, bg::optional> nested;
+    Field<bg::Bundle<RecursiveSchemaParent>> item;
+};
+
+template <template <typename, auto...> typename Field>
+struct RecursiveInheritanceDerived : bg::schema_extends<RecursiveInheritanceBase, Field> {
+    Field<bg::Bundle<RecursiveSchemaChild>> item;
+    Field<bg::i64> extra;
+};
+
 template <template <typename, auto...> typename Field> struct RequiredMutualRight;
 
 template <template <typename, auto...> typename Field> struct RequiredMutualLeft {
@@ -331,9 +363,9 @@ TEST_CASE("failed recursive registration can be retried",
     const auto register_type = [] { return &bg::cpp_scalar_type<bg::Bundle<InvalidRecursive>>(); };
 
     CHECK_THROWS_WITH(register_type(),
-                      "a redefined hierarchical scalar field must have a compatible narrower type");
+                      "a redefined schema field must have a compatible narrower type");
     CHECK_THROWS_WITH(register_type(),
-                      "a redefined hierarchical scalar field must have a compatible narrower type");
+                      "a redefined schema field must have a compatible narrower type");
 }
 
 TEST_CASE("a required direct self-cycle is rejected",
@@ -346,6 +378,26 @@ TEST_CASE("a required direct self-cycle is rejected",
                       "required hierarchical scalar fields cannot form a recursive cycle");
     CHECK_THROWS_WITH(register_type(),
                       "required hierarchical scalar fields cannot form a recursive cycle");
+}
+
+TEST_CASE("recursive scalar schemas preserve base inheritance and narrowed fields",
+          "[feature:type-system][scalar:hierarchical][schema:named][declaration:concrete]") {
+    const auto &base = bg::type_cast<bg::HierarchicalScalarType>(
+        bg::cpp_scalar_type<bg::Bundle<RecursiveInheritanceBase>>());
+    const auto &derived = bg::type_cast<bg::HierarchicalScalarType>(
+        bg::cpp_scalar_type<bg::Bundle<RecursiveInheritanceDerived>>());
+    const auto &parent = bg::type_cast<bg::HierarchicalScalarType>(
+        bg::cpp_scalar_type<bg::Bundle<RecursiveSchemaParent>>());
+    const auto &child = bg::type_cast<bg::HierarchicalScalarType>(
+        bg::cpp_scalar_type<bg::Bundle<RecursiveSchemaChild>>());
+
+    CHECK(derived.base() == &base);
+    REQUIRE(derived.field_count() == 3);
+    CHECK(derived.field(0).name.text() == "nested");
+    CHECK(derived.field(0).type == &derived);
+    CHECK(derived.field(1).name.text() == "item");
+    CHECK(derived.field(1).type == &child);
+    CHECK(child.base() == &parent);
 }
 
 TEST_CASE("a required direct mutual cycle is rejected",

@@ -176,7 +176,7 @@ class TimeSeriesBundleVariadicWiringOperations final : public VariadicWiringOper
 
     VariadicCapture capture(const TimeSeriesType &, VariadicMode mode,
                             std::vector<WiringArgument> arguments, allocator *memory) const override {
-        auto fields = std::vector<BundleField>{};
+        auto fields = std::vector<SchemaField>{};
         auto captured = std::vector<WiringArgument>{};
         fields.reserve(arguments.size());
         captured.reserve(arguments.size());
@@ -286,7 +286,7 @@ class TimeSeriesBundleVariadicWiringOperations final : public VariadicWiringOper
 } // namespace
 
 WiringPoint make_free_time_series_bundle(std::span<const NamedBundleWiringPoint> fields) {
-    auto field_types = std::vector<BundleField>{};
+    auto field_types = std::vector<SchemaField>{};
     field_types.reserve(fields.size());
     for (const auto &[name, point] : fields) {
         field_types.push_back({name, &point.type()});

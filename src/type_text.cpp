@@ -173,7 +173,7 @@ void append_type_text(std::string &result, const Type &type) {
         result += '>';
         return;
     }
-    if (const auto *schema = dynamic_cast<const BundleSchema *>(&type)) {
+    if (const auto *schema = dynamic_cast<const Schema *>(&type)) {
         result += schema->name().text();
         return;
     }

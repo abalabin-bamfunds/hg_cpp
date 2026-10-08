@@ -4,7 +4,7 @@
 #include <bg/type/type_registry.hpp>
 #include <bg/util/scope_exit.hpp>
 
-#include "../type_registration.hpp"
+#include "../../type/type_registration.hpp"
 
 #include <algorithm>
 #include <cstdint>
@@ -20,63 +20,27 @@ namespace bg {
 
 HierarchicalScalarType::HierarchicalScalarType(util::symbol name) noexcept : name_{name}, base_{nullptr} {}
 
-void HierarchicalScalarType::initialize(const HierarchicalScalarType *base,
-                                        std::span<const HierarchicalScalarField> direct_fields) {
-    for (auto index = std::size_t{}; index < direct_fields.size(); ++index) {
-        const auto &field = direct_fields[index];
-        if (field.type == nullptr || !field.type->is_resolved()) {
-            throw std::invalid_argument{"a hierarchical scalar requires resolved field types"};
-        }
-        if (std::ranges::find(direct_fields.subspan(index + 1), field.name,
-                              &HierarchicalScalarField::name) != direct_fields.end()) {
-            throw std::invalid_argument{"a hierarchical scalar has duplicate field names"};
-        }
-
-        const auto *inherited = base == nullptr ? nullptr : base->find(field.name);
-        if (inherited == nullptr) {
-            continue;
-        }
-        if (!inherited->type->accepts(*field.type)) {
-            throw std::invalid_argument{
-                "a redefined hierarchical scalar field must have a compatible narrower type"};
-        }
-        if (!inherited->optional && field.optional) {
-            throw std::invalid_argument{"a required hierarchical scalar field cannot become optional"};
-        }
+void HierarchicalScalarType::initialize(const Schema &schema) {
+    if (!schema.is_resolved() || std::ranges::any_of(schema.fields(), [](const auto &field) {
+            return type_cast<ScalarType>(field.type) == nullptr;
+        })) {
+        throw std::invalid_argument{"a hierarchical scalar schema requires resolved scalar fields"};
     }
 
-    base_ = base;
-    direct_fields_.assign(direct_fields.begin(), direct_fields.end());
-    if (base_ != nullptr) {
-        fields_.assign(base_->fields().begin(), base_->fields().end());
-    }
-
-    for (const auto &field : direct_fields_) {
-        const auto inherited = std::ranges::find(fields_, field.name, &HierarchicalScalarField::name);
-        if (inherited == fields_.end()) {
-            fields_.push_back(field);
-        } else {
-            *inherited = field;
-        }
-    }
+    schema_ = &schema;
 }
 
 bool HierarchicalScalarType::finalize_capabilities() noexcept {
-    const auto equality = std::ranges::all_of(fields_, [](const auto &field) {
-        return field.type->supports_equality();
+    const auto equality = std::ranges::all_of(fields(), [](const auto &field) {
+        return static_cast<const ScalarType &>(*field.type).supports_equality();
     });
-    const auto hash = std::ranges::all_of(fields_, [](const auto &field) {
-        return field.type->supports_hash();
+    const auto hash = std::ranges::all_of(fields(), [](const auto &field) {
+        return static_cast<const ScalarType &>(*field.type).supports_hash();
     });
     const auto changed = equality != supports_equality_ || hash != supports_hash_;
     supports_equality_ = equality;
     supports_hash_ = hash;
     return changed;
-}
-
-const HierarchicalScalarField *HierarchicalScalarType::find(util::symbol name) const noexcept {
-    const auto field = std::ranges::find(fields_, name, &HierarchicalScalarField::name);
-    return field == fields_.end() ? nullptr : std::addressof(*field);
 }
 
 bool HierarchicalScalarType::derives_from(const HierarchicalScalarType &type) const noexcept {
@@ -178,11 +142,7 @@ const HierarchicalScalarType &canonical_hierarchical_scalar_type(
                 TypeRegistry::instance().rollback(candidate);
             }};
             initialize(candidate);
-            const auto same_fields = std::ranges::equal(
-                existing.direct_fields(), candidate.direct_fields(), [](const auto &left, const auto &right) {
-                    return left.name == right.name && left.type == right.type && left.optional == right.optional;
-                });
-            if (existing.base() != candidate.base() || !same_fields) {
+            if (existing.base() != candidate.base() || &existing.schema() != &candidate.schema()) {
                 throw std::logic_error{"conflicting hierarchical scalar declaration: " + std::string{name}};
             }
             return existing;

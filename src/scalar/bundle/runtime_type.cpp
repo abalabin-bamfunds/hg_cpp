@@ -103,7 +103,7 @@ void ComposedHierarchicalScalarRuntimeType::initialize(std::span<const ScalarRun
         throw std::logic_error{"hierarchical scalar runtime field count does not match its semantic type"};
     }
 
-    optional_words_ = (std::ranges::count_if(type().fields(), &HierarchicalScalarField::optional) + 63) / 64;
+    optional_words_ = (std::ranges::count_if(type().fields(), &SchemaField::optional) + 63) / 64;
     auto offset = sizeof(Storage) + optional_words_ * sizeof(std::uint64_t);
     auto alignment = alignof(Storage);
     auto optional_bit = std::uint32_t{};

@@ -46,7 +46,7 @@ bool valid_resolver_mapping(const Variable &variable, const TypeMapValue &mappin
     if (const auto result = variable_accepts<TimeSeriesType>(variable, mapping)) {
         return *result;
     }
-    if (const auto result = variable_accepts<BundleSchemaType>(variable, mapping)) {
+    if (const auto result = variable_accepts<SchemaType>(variable, mapping)) {
         return *result;
     }
     if (const auto *guarantee = dynamic_cast<const GuaranteeVariable *>(&variable)) {

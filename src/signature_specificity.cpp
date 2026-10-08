@@ -171,7 +171,7 @@ std::optional<DirectVariable> direct_variable(const Type &type) noexcept {
     if (const auto *variable = dynamic_cast<const TypeVariableType<TimeSeriesType> *>(&type)) {
         return DirectVariable{variable, DirectVariable::Category::time_series};
     }
-    if (const auto *variable = dynamic_cast<const TypeVariableType<BundleSchemaType> *>(&type)) {
+    if (const auto *variable = dynamic_cast<const TypeVariableType<SchemaType> *>(&type)) {
         return DirectVariable{variable, DirectVariable::Category::schema};
     }
     return std::nullopt;
@@ -193,8 +193,8 @@ Order compare_direct_variables(const Type &left, const Type &right, Comparison &
             return compare_variables(*left_variable, *right_variable, comparison);
         }
     }
-    if (const auto *left_variable = dynamic_cast<const TypeVariableType<BundleSchemaType> *>(&left)) {
-        if (const auto *right_variable = dynamic_cast<const TypeVariableType<BundleSchemaType> *>(&right)) {
+    if (const auto *left_variable = dynamic_cast<const TypeVariableType<SchemaType> *>(&left)) {
+        if (const auto *right_variable = dynamic_cast<const TypeVariableType<SchemaType> *>(&right)) {
             return compare_variables(*left_variable, *right_variable, comparison);
         }
     }
@@ -331,8 +331,8 @@ Order compare_types(const Type &left, const Type &right, Comparison &comparison)
         return *result;
     }
     if (const auto result =
-            compare_one_variable(left, right, dynamic_cast<const TypeVariableType<BundleSchemaType> *>(&left),
-                                 dynamic_cast<const TypeVariableType<BundleSchemaType> *>(&right), comparison)) {
+            compare_one_variable(left, right, dynamic_cast<const TypeVariableType<SchemaType> *>(&left),
+                                 dynamic_cast<const TypeVariableType<SchemaType> *>(&right), comparison)) {
         return *result;
     }
 
@@ -439,8 +439,8 @@ Order compare_types(const Type &left, const Type &right, Comparison &comparison)
             return combine(result, compare_guarantees(left_bundle->guarantee(), right_bundle->guarantee(), comparison));
         }
     }
-    if (const auto *left_schema = dynamic_cast<const BundleSchema *>(&left)) {
-        if (const auto *right_schema = dynamic_cast<const BundleSchema *>(&right)) {
+    if (const auto *left_schema = dynamic_cast<const Schema *>(&left)) {
+        if (const auto *right_schema = dynamic_cast<const Schema *>(&right)) {
             if (left_schema->named() && right_schema->named()) {
                 const auto left_derives = left_schema->derives_from(*right_schema);
                 const auto right_derives = right_schema->derives_from(*left_schema);

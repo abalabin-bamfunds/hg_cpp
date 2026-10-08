@@ -20,7 +20,9 @@ template <> class Scalar<HIERARCHICAL> {
 
     std::size_t field_count() const noexcept { return type().field_count(); }
     std::string_view field_name(std::size_t index) const { return type().field(index).name.text(); }
-    const ScalarType &field_type(std::size_t index) const { return *type().field(index).type; }
+    const ScalarType &field_type(std::size_t index) const {
+        return static_cast<const ScalarType &>(*type().field(index).type);
+    }
     bool present(std::size_t index) const {
         check_index(index);
         return runtime_type().field_present(value_, index);
@@ -79,7 +81,9 @@ template <template <template <typename, auto...> typename> typename Schema> clas
 
     std::size_t field_count() const noexcept { return declared_type().field_count(); }
     std::string_view field_name(std::size_t index) const { return declared_type().field(index).name.text(); }
-    const ScalarType &field_type(std::size_t index) const { return *declared_type().field(index).type; }
+    const ScalarType &field_type(std::size_t index) const {
+        return static_cast<const ScalarType &>(*declared_type().field(index).type);
+    }
     bool present(std::size_t index) const {
         check_index(index);
         return runtime_type().field_present(value_, index);

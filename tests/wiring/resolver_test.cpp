@@ -160,7 +160,7 @@ struct collection_source_definition {
 struct resolved_bundle_source_definition {
     bg::Out<bg::TSB<bg::SCHEMA>> output;
 
-    static const bg::BundleSchemaType &resolve(bg::schema_type<bg::SCHEMA>, const bg::WiringArguments &) {
+    static const bg::SchemaType &resolve(bg::schema_type<bg::SCHEMA>, const bg::WiringArguments &) {
         return bg::TSB<ResolvedBundle>::type().schema_type();
     }
 
@@ -576,7 +576,7 @@ TEST_CASE("a callable resolver can resolve a bundle schema variable",
     auto operation = bg::operator_<auto()->bg::TSB<ResolvedBundle>>{"resolved_bundle"};
     operation.overload(bg::node(
         bg::eval = [](bg::Out<bg::TSB<bg::SCHEMA>>) {},
-        bg::resolve<bg::schema_type<bg::SCHEMA>> = []() -> const bg::BundleSchemaType & {
+        bg::resolve<bg::schema_type<bg::SCHEMA>> = []() -> const bg::SchemaType & {
             return bg::TSB<ResolvedBundle>::type().schema_type();
         }));
 

@@ -4,6 +4,7 @@
 #include <bg/scalar/declaration.hpp>
 #include <bg/scalar/bundle/type.hpp>
 #include <bg/schema/reflection.hpp>
+#include <bg/type/schema.hpp>
 #include <bg/type/scalar_type.hpp>
 #include <bg/util/symbol.hpp>
 
@@ -15,19 +16,12 @@
 #include <type_traits>
 #include <typeinfo>
 #include <utility>
-#include <vector>
 
 namespace bg {
 
 template <typename T> class List;
 template <typename T> class Set;
 template <typename K, typename V> class Dict;
-
-struct HierarchicalScalarField {
-    util::symbol name;
-    const ScalarType *type;
-    bool optional;
-};
 
 class HierarchicalScalarType;
 
@@ -49,12 +43,13 @@ class HierarchicalScalarType final : public ScalarType {
     VISITOR_SUPPORT()
 
     util::symbol name() const noexcept { return name_; }
+    const Schema &schema() const noexcept { return *schema_; }
     const HierarchicalScalarType *base() const noexcept { return base_; }
-    std::span<const HierarchicalScalarField> direct_fields() const noexcept { return direct_fields_; }
-    std::span<const HierarchicalScalarField> fields() const noexcept { return fields_; }
-    std::size_t field_count() const noexcept { return fields_.size(); }
-    const HierarchicalScalarField &field(std::size_t index) const { return fields_.at(index); }
-    const HierarchicalScalarField *find(util::symbol name) const noexcept;
+    std::span<const SchemaField> direct_fields() const noexcept { return schema_->direct_fields(); }
+    std::span<const SchemaField> fields() const noexcept { return schema_->fields(); }
+    std::size_t field_count() const noexcept { return schema_->field_count(); }
+    const SchemaField &field(std::size_t index) const { return schema_->field(index); }
+    const SchemaField *find(util::symbol name) const noexcept { return schema_->find(name); }
     bool derives_from(const HierarchicalScalarType &type) const noexcept;
 
     bool is_resolved() const noexcept override { return true; }
@@ -67,7 +62,8 @@ class HierarchicalScalarType final : public ScalarType {
 
   private:
     explicit HierarchicalScalarType(util::symbol name) noexcept;
-    void initialize(const HierarchicalScalarType *base, std::span<const HierarchicalScalarField> direct_fields);
+    void set_base(const HierarchicalScalarType *base) noexcept { base_ = base; }
+    void initialize(const Schema &schema);
     bool finalize_capabilities() noexcept;
 
     friend const HierarchicalScalarType &details::canonical_hierarchical_scalar_type(
@@ -79,8 +75,7 @@ class HierarchicalScalarType final : public ScalarType {
 
     util::symbol name_;
     const HierarchicalScalarType *base_;
-    std::vector<HierarchicalScalarField> direct_fields_;
-    std::vector<HierarchicalScalarField> fields_;
+    const Schema *schema_{};
     bool supports_equality_{true};
     bool supports_hash_{true};
 };
@@ -183,10 +178,25 @@ inline constexpr bool hierarchical_scalar_schema_supported =
 template <template <template <typename, auto...> typename> typename Schema, std::size_t... Index>
 auto hierarchical_scalar_fields(std::index_sequence<Index...>) {
     using Reflection = hierarchical_scalar_schema_reflection<Schema>;
-    return std::array<HierarchicalScalarField, sizeof...(Index)>{HierarchicalScalarField{
+    return std::array<SchemaField, sizeof...(Index)>{SchemaField{
         util::symbol{Reflection::template direct_field_name<Index>()},
         &cpp_scalar_type<typename Reflection::template direct_field<Index>::scalar_type>(),
         Reflection::template direct_field<Index>::optional}...};
+}
+
+template <template <template <typename, auto...> typename> typename Schema>
+const bg::Schema &cpp_hierarchical_scalar_schema() {
+    using Reflection = hierarchical_scalar_schema_reflection<Schema>;
+    const bg::Schema *base = nullptr;
+    if constexpr (Reflection::has_base) {
+        using Base = typename Reflection::base_schema;
+        base = &cpp_hierarchical_scalar_schema<Base::template apply>();
+    }
+
+    const auto fields = hierarchical_scalar_fields<Schema>(
+        std::make_index_sequence<Reflection::direct_field_count>{});
+    const auto name = util::symbol{util::unqualified_type_name<Schema<hierarchical_scalar_schema_field>>()};
+    return bg::schema(name, std::type_index{typeid(schema_template<Schema>)}, base, fields);
 }
 
 template <template <template <typename, auto...> typename> typename Schema>
@@ -203,10 +213,8 @@ void initialize_hierarchical_scalar_type(HierarchicalScalarType &type) {
             return static_cast<const HierarchicalScalarType *>(nullptr);
         }
     }();
-    const auto fields = hierarchical_scalar_fields<Schema>(
-        std::make_index_sequence<Reflection::direct_field_count>{});
-
-    type.initialize(base, fields);
+    type.set_base(base);
+    type.initialize(cpp_hierarchical_scalar_schema<Schema>());
 }
 
 template <template <template <typename, auto...> typename> typename Schema>

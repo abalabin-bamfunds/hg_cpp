@@ -857,7 +857,7 @@ class ScalarRuntimeTypeResolver {
         auto fields = std::vector<const ScalarRuntimeType *>{};
         fields.reserve(type.field_count());
         for (const auto &field : type.fields()) {
-            fields.push_back(&resolve(*field.type));
+            fields.push_back(&resolve(static_cast<const ScalarType &>(*field.type)));
         }
         initialize_composed_hierarchical_scalar_runtime_type(*result, fields);
         return *result;

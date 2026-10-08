@@ -5,7 +5,7 @@
 #include <bg/type/type_resolution_error.hpp>
 #include <bg/util/symbol.hpp>
 
-#include "../type_registration.hpp"
+#include "../../type/type_registration.hpp"
 
 #include <memory>
 #include <unordered_map>

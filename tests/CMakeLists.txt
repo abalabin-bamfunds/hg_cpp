@@ -1,5 +1,10 @@
 find_package(Catch2 3 REQUIRED)
 
+add_library(test_shared_schema_provider SHARED type/test_shared_schema_provider.cpp)
+target_link_libraries(test_shared_schema_provider PRIVATE bg::bg)
+target_include_directories(test_shared_schema_provider PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/type")
+set_target_properties(test_shared_schema_provider PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
+
 add_executable(
     bg_tests
     evaluation/context/evaluation_context_test.cpp
@@ -57,6 +62,7 @@ add_executable(
     type/type_system_test.cpp
     type/type_registry_test.cpp
     type/hierarchical_scalar_type_test.cpp
+    type/schema_test.cpp
     type/test_hierarchical_scalar_provider.cpp
     type/type_variable_test.cpp
     type/time_series_dict_type_test.cpp
@@ -137,7 +143,7 @@ add_executable(
     wiring/time_series_reference_wiring_test.cpp
     wiring/type_mapping_test.cpp
 )
-target_link_libraries(bg_tests PRIVATE bg::bg Catch2::Catch2WithMain)
+target_link_libraries(bg_tests PRIVATE bg::bg Catch2::Catch2WithMain test_shared_schema_provider)
 target_compile_options(bg_tests PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/bigobj>)
 target_compile_definitions(bg_tests PRIVATE $<$<CXX_COMPILER_ID:MSVC>:CATCH_CONFIG_NO_CPP17_STRING_VIEW>)
 

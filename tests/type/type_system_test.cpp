@@ -36,7 +36,7 @@ static_assert(bg::type_cast_target<bg::Type>);
 static_assert(bg::type_cast_target<bg::ScalarType>);
 static_assert(bg::type_cast_target<bg::TimeSeriesListType>);
 static_assert(!bg::type_cast_target<bg::TypeScalarType>);
-static_assert(!bg::type_cast_target<bg::BundleSchemaType>);
+static_assert(!bg::type_cast_target<bg::SchemaType>);
 static_assert(!bg::type_cast_target<bg::GenericTimeSeriesVariableType>);
 
 [[nodiscard]] bool is_value_type(const bg::Type *type, const bg::ScalarType &value_type,

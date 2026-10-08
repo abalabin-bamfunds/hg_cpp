@@ -381,7 +381,7 @@ const TimeSeriesType *Service::implementation_output_type(const ResolvedSignatur
 WiringPoint Service::wire_implementation_requests(GraphWiring &wiring, const ResolvedSignature &signature,
                                                   details::NestedBindingIdentity identity, bool bind_clients) const {
     const auto &client_id_type = cpp_scalar_type<service_client_id_t>();
-    auto fields = std::vector<BundleField>{};
+    auto fields = std::vector<SchemaField>{};
     for (const auto &parameter : signature.parameters) {
         if (!parameter.type->is_time_series()) {
             continue;

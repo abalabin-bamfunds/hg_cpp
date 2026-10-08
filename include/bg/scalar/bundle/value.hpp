@@ -53,7 +53,7 @@ class HierarchicalBundleConstruction {
     void add(Source &source) {
         const auto index = assignment_.add(schema_argument_name<Argument>(), [&](util::symbol name) {
             const auto fields = type().fields();
-            const auto field = std::ranges::find(fields, name, &HierarchicalScalarField::name);
+            const auto field = std::ranges::find(fields, name, &SchemaField::name);
             if (field == fields.end()) {
                 return std::optional<std::size_t>{};
             }

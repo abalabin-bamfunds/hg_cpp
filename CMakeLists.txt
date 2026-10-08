@@ -74,7 +74,6 @@ add_library(
     src/scalar/list/type.cpp
     src/scalar/set/type.cpp
     src/scalar/struct/type.cpp
-    src/scalar/type_registration.cpp
     src/scalar/runtime_type.cpp
     src/scalar/type.cpp
     src/signature.cpp
@@ -117,6 +116,8 @@ add_library(
     src/time_series_value_type.cpp
     src/thread_local_pointer.cpp
     src/type.cpp
+    src/type/schema.cpp
+    src/type/type_registration.cpp
     src/type_of.cpp
     src/type_registry.cpp
     src/type_text.cpp

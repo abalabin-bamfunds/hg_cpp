@@ -82,7 +82,7 @@ struct tsb_getattr {
         const auto value = arguments.scalar("name");
         const auto field_name = scalar_cast<util::symbol>(*value).value();
         const auto *field = type.schema().find(field_name);
-        return field == nullptr ? nullptr : field->type;
+        return field == nullptr ? nullptr : static_cast<const TimeSeriesType *>(field->type);
     }
 
     wp<TS_T> wire() const {

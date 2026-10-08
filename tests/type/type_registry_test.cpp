@@ -241,8 +241,8 @@ TEST_CASE("registry membership covers primitive, generic, composed, graph, and s
     CHECK(bg::TypeRegistry::instance().contains(graph));
     CHECK(bg::TypeRegistry::instance().contains(bg::GraphArgument::type()));
 
-    const auto &schema = bg::bundle_schema(bg::util::symbol{"RegistrySchema"}, nullptr, nullptr,
-                                           std::span<const bg::BundleField>{});
+    const auto &schema = bg::schema(bg::util::symbol{"RegistrySchema"}, std::monostate{}, nullptr,
+                                    std::span<const bg::SchemaField>{});
     CHECK(bg::TypeRegistry::instance().contains(schema));
 }
 

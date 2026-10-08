@@ -106,62 +106,25 @@ class TypeDescriptor {
   public:
     explicit TypeDescriptor(const Type &type, bool accepts_absent_scalar = false) noexcept
         : type_{&type}, accepts_absent_scalar_{accepts_absent_scalar} {}
-    explicit TypeDescriptor(const BundleSchema &schema) noexcept : type_{&schema}, bundle_schema_{&schema} {}
+    explicit TypeDescriptor(const Schema &schema) noexcept : type_{&schema}, schema_{&schema} {}
     TypeDescriptor(const TypeDescriptor &value, bool accepts_time_series_value) noexcept
-        : type_{value.type_}, bundle_schema_{value.bundle_schema_},
+        : type_{value.type_}, schema_{value.schema_},
           accepts_absent_scalar_{value.accepts_absent_scalar_},
           accepts_time_series_value_{accepts_time_series_value} {}
 
     const Type &type() const noexcept { return *type_; }
-    const BundleSchema *bundle_schema() const noexcept { return bundle_schema_; }
+    const Schema *schema() const noexcept { return schema_; }
     bool accepts_absent_scalar() const noexcept { return accepts_absent_scalar_; }
     bool accepts_time_series_value() const noexcept { return accepts_time_series_value_; }
 
   private:
     const Type *type_;
-    const BundleSchema *bundle_schema_{};
+    const Schema *schema_{};
     bool accepts_absent_scalar_{};
     bool accepts_time_series_value_{};
 };
 
 using PythonParameter = std::tuple<std::string, TypeDescriptor, std::string>;
-
-class PythonSchemaRegistry {
-  public:
-    TypeDescriptor make(std::string_view name, const std::optional<TypeDescriptor> &base,
-                        const std::vector<std::pair<std::string, TypeDescriptor>> &fields) {
-        const BundleSchema *base_schema = nullptr;
-        if (base) {
-            base_schema = base->bundle_schema();
-            if (base_schema == nullptr) {
-                throw std::invalid_argument{"a Python time-series schema base must be a bundle schema"};
-            }
-        }
-
-        auto bundle_fields = std::vector<BundleField>{};
-        bundle_fields.reserve(fields.size());
-        for (const auto &[field_name, field_type] : fields) {
-            const auto *time_series = type_cast<TimeSeriesType>(&field_type.type());
-            if (time_series == nullptr) {
-                throw std::invalid_argument{"a Python time-series schema field must have a time-series type"};
-            }
-            bundle_fields.push_back({util::symbol{field_name}, time_series});
-        }
-
-        auto identity = std::make_shared<const char>();
-        const auto *identity_address = identity.get();
-        identities_.push_back(std::move(identity));
-        return TypeDescriptor{bundle_schema(util::symbol{name}, identity_address, base_schema, bundle_fields)};
-    }
-
-  private:
-    std::vector<std::shared_ptr<const char>> identities_;
-};
-
-PythonSchemaRegistry &schema_registry() {
-    static auto registry = PythonSchemaRegistry{};
-    return registry;
-}
 
 std::unique_ptr<TimeSeriesType> generic_time_series_type(const TimeSeriesType &type,
                                                          const GuaranteeVariable &guarantee) {
@@ -512,10 +475,28 @@ void bind_core(nb::module_ &module) {
     module.def("_make_time_series_schema", [](std::string name, nb::handle identity, std::optional<TypeDescriptor> base,
                                               const std::vector<std::pair<std::string, TypeDescriptor>> &fields) {
         (void)identity;
-        return schema_registry().make(name, base, fields);
+        const Schema *base_schema = nullptr;
+        if (base) {
+            base_schema = base->schema();
+            if (base_schema == nullptr) {
+                throw std::invalid_argument{"a Python time-series schema base must be a schema"};
+            }
+        }
+
+        auto schema_fields = std::vector<SchemaField>{};
+        schema_fields.reserve(fields.size());
+        for (const auto &[field_name, field_type] : fields) {
+            const auto *time_series = type_cast<TimeSeriesType>(&field_type.type());
+            if (time_series == nullptr) {
+                throw std::invalid_argument{"a Python time-series schema field must have a time-series type"};
+            }
+            schema_fields.push_back({util::symbol{field_name}, time_series});
+        }
+
+        return TypeDescriptor{schema(util::symbol{name}, new_runtime_schema_id(), base_schema, schema_fields)};
     });
     module.def("_time_series_bundle_type", [](const TypeDescriptor &value) {
-        const auto *schema = value.bundle_schema();
+        const auto *schema = value.schema();
         if (schema == nullptr) {
             throw std::invalid_argument{"TSB[...] requires a TimeSeriesSchema"};
         }
@@ -523,7 +504,7 @@ void bind_core(nb::module_ &module) {
     });
     module.def("_variadic_time_series_bundle_type", [] {
         const auto &schema = TypeRegistry::instance().register_owned(
-            std::make_unique<TypeVariableType<BundleSchemaType>>(util::symbol{"TS_SCHEMA"}));
+            std::make_unique<TypeVariableType<SchemaType>>(util::symbol{"TS_SCHEMA"}));
         const auto &type = TypeRegistry::instance().register_owned(
             std::make_unique<GenericTimeSeriesBundleType>(schema, TimeSeriesGuarantee::ordinary));
         return TypeDescriptor{type};

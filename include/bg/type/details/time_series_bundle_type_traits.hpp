@@ -11,12 +11,10 @@
 
 namespace bg::details {
 
-template <typename Schema> inline constexpr int bundle_schema_identity = 0;
-
 template <typename Scope, bool Input, template <template <typename, auto...> typename> typename Schema,
           std::size_t... Index>
-std::vector<BundleField> direct_bundle_fields(GuaranteeParameter guarantee, std::index_sequence<Index...>) {
-    auto fields = std::vector<BundleField>{};
+std::vector<SchemaField> direct_bundle_fields(GuaranteeParameter guarantee, std::index_sequence<Index...>) {
+    auto fields = std::vector<SchemaField>{};
     fields.reserve(sizeof...(Index));
     (fields.push_back({util::symbol{direct_bundle_field_name<Index, Schema>()},
                        &time_series_type_for<Scope, direct_bundle_field_logical_index<Index, Schema>, Input,
@@ -26,8 +24,8 @@ std::vector<BundleField> direct_bundle_fields(GuaranteeParameter guarantee, std:
 }
 
 template <typename Scope, bool Input, template <template <typename, auto...> typename> typename Schema>
-const BundleSchema &cpp_bundle_schema(GuaranteeParameter guarantee) {
-    const BundleSchema *base = nullptr;
+const bg::Schema &cpp_bundle_schema(GuaranteeParameter guarantee) {
+    const bg::Schema *base = nullptr;
     if constexpr (bundle_has_base<Schema>) {
         using Base = bundle_base_t<Schema>;
         base = &cpp_bundle_schema<Scope, Input, Base::template apply>(guarantee);
@@ -35,8 +33,8 @@ const BundleSchema &cpp_bundle_schema(GuaranteeParameter guarantee) {
 
     const auto fields = direct_bundle_fields<Scope, Input, Schema>(
         guarantee, std::make_index_sequence<direct_bundle_field_count<Schema>>{});
-    return bundle_schema(util::symbol{util::unqualified_type_name<Schema<bundle_schema_field>>()},
-                         &bundle_schema_identity<Schema<bundle_schema_field>>, base, fields);
+    return bg::schema(util::symbol{util::unqualified_type_name<Schema<bundle_schema_field>>()},
+                      std::type_index{typeid(schema_template<Schema>)}, base, fields);
 }
 
 template <template <template <typename, auto...> typename> typename Schema, bool HasBase>
@@ -146,11 +144,11 @@ struct declaration_variable_traits<TSB<Schema, Properties...>> {
 
 } // namespace bg::details
 
-namespace bg {
+namespace bg::details {
 
 template <template <template <typename, auto...> typename> typename Schema>
-const BundleSchemaType &schema_type<Schema>::type() {
+const SchemaType &time_series_schema_type() {
     return TSB<Schema>::type().schema_type();
 }
 
-} // namespace bg
+} // namespace bg::details

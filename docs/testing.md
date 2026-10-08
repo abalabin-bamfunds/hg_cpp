@@ -133,6 +133,9 @@ graph compilation or evaluation.
   values, canonical conversion, reference and constant bindings, scalar return
   publication, and scalar-only scheduling
 - hierarchical scalar inheritance and directional compatibility through scalar containers
+- shared schema identity across translation units and libraries, C++ and runtime declarations,
+  ordered fields, inheritance, optional presence, field-variable resolution, and recursive registration rollback
+- schema variables shared across reflection adapters, repeated-variable matching, and owning type field validation
 - operator signature specificity and ambiguity
 - types passed as scalars
 - guarantee compatibility, propagation, and enforcement

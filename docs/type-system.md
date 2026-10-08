@@ -102,6 +102,50 @@ that supports byte-copy initialization.
 The process owns registered and composed runtime types. Graph compilation
 reuses them across graphs.
 
+## Schemas
+
+`Schema` is the shared field descriptor for hierarchical scalars, time series
+bundles, and extension types. `SchemaType` is the category used by schema
+variables. Each field records its name, semantic `Type`, and optional presence.
+The owning type validates its field category and defines compatibility. Runtime
+types provide storage and field access.
+
+A schema records its name, declaration identity, base schema, ordered direct
+fields, and flattened fields. A redefinition keeps the inherited field position,
+requires a compatible narrower type, and preserves required presence. Field
+variables resolve through the ordinary `TypeMap`.
+
+The canonical key contains the name, declaration identity, base pointer, and
+ordered direct fields. Field equality compares name, canonical type pointer,
+and optionality. The factory hashes these components and returns one registered
+descriptor per key. Schema entries created during recursive scalar registration
+commit or roll back with that group.
+
+A C++ declaration such as `Quote` is identified by
+`std::type_index{typeid(details::schema_template<Quote>)}`. A runtime declaration
+uses a unique `RuntimeSchemaId` allocated by `new_runtime_schema_id()`. Anonymous
+schemas use no declaration identity. Separate declarations remain distinct when
+their fields match.
+
+Projections retain that declaration identity and record their actual field types:
+
+| Use | Descriptor fields |
+| --- | --- |
+| `Bundle<Quote>` | `bid: double`, `ask: double` |
+| `TSB<Quote>` | `bid: TS<double>`, `ask: TS<double>` |
+
+These projections have distinct canonical keys. Optional presence describes an
+absent field; extensions define nullable cell values through their column values.
+Extensions construct descriptors through `schema(name, identity, base, fields)`
+or `anonymous_schema(fields)`. These factories are engine and extension APIs.
+
+### Shared C++ schemas
+
+A C++ schema declares fields through a supplied field template. A schema can
+declare one base with `schema_extends<Base, Field>`. A derived schema can add
+fields or redefine an inherited field. `bundle_extends` is a compatibility alias
+for `schema_extends`.
+
 ## Scalar types
 
 Scalar types separate graph identity and compatibility from C++ storage. Each
@@ -132,14 +176,6 @@ not make two distinct C++ aggregate types compatible.
 structural access after type resolution. Declared base relationships determine
 compatibility between concrete hierarchical scalar types.
 
-### Shared C++ schemas
-
-A C++ schema declares fields through a supplied field template. A schema can
-declare one base with `schema_extends<Base, Field>`. A derived schema can add
-fields or redefine an inherited field with a compatible narrower type. A
-redefined field keeps its inherited position. `bundle_extends` is a
-compatibility alias for `schema_extends`.
-
 ### Hierarchical scalars
 
 `Bundle<Schema>` declares a hierarchical scalar. Its fields are scalar
@@ -165,9 +201,8 @@ permits an absent `Bundle` field. In a TSB, it configures the typed input field;
 the structural TSB field remains present.
 
 Hierarchical scalar schemas can refer to themselves or each other directly and
-through scalar collections. Semantic registration publishes every type created
-for one recursive schema group atomically. Readers cannot observe incomplete
-field metadata.
+through scalar collections. Semantic registration publishes the complete group
+of types and schemas atomically. Readers observe complete field metadata.
 
 Required direct hierarchical fields must not form a recursive cycle. Every
 direct cycle must contain an optional field. A scalar collection also terminates
@@ -206,9 +241,8 @@ declared schema inheritance.
 A named `TSB` input also accepts an unnamed, automatically bound `TSB` with a
 compatible item schema. Graph compilation maps the item offsets directly.
 
-`BundleSchema` is the runtime description of a TSB. It records the ordered field
-names and time series types. A C++ schema supplies the same information and
-produces typed input and output access. A schema can declare time series fields
+A TSB uses the shared `Schema` descriptor with present time series fields. A C++
+schema produces typed input and output access. It can declare time series fields
 explicitly:
 
 ```cpp
@@ -265,10 +299,16 @@ requires that guarantee or a stronger one.
 variable. `SIZE` is the default declaration. For example,
 `TSL<TS_T, SIZE>` captures both the item time series type and the list size.
 
-`BundleSchemaVariableDeclaration<Name, Field>` declares a bundle schema
-variable. `SCHEMA` is the default declaration. `TSB<SCHEMA>` captures the
-resolved `BundleSchemaType`, including its ordered field names and time series
-types.
+`SchemaVariableDeclaration<Name>` declares a schema variable.
+`BundleSchemaVariableDeclaration<Name, Field>` retains the template form used by
+C++ schema parameters. `SCHEMA` is the default declaration. It captures a resolved
+`Schema`, including its ordered field names, types, and optional presence. Its identity is shared
+across reflection field adapters. Reusing the variable requires the same
+descriptor; each owning type validates the captured fields. For example,
+`TSB<SCHEMA>` requires present time series fields.
+
+`schema_type<SCHEMA>` exposes the variable for resolvers and explicit type
+mappings. Concrete `schema_type<Quote>` exposes the TSB projection of `Quote`.
 
 `EqualityComparable` and `Hashable` require the corresponding scalar
 operation. A scalar variable view exposes an operation when its declaration
@@ -285,7 +325,7 @@ Runtime variable descriptors are engine and extension APIs. Each descriptor
 derives from `Variable`. `TypeVariableType<Category>` also
 implements its type category, so `TypeVariableType<ScalarType>` can be used
 wherever a scalar type is required. A schema variable is a
-`TypeVariableType<BundleSchemaType>`.
+`TypeVariableType<SchemaType>`.
 Size and guarantee variables derive only from `Variable`.
 
 A root-category variable can restrict its value to alternative declarations:

@@ -21,8 +21,7 @@ inline constexpr bool schema_type_parameter_declaration = [] {
         return false;
     } else {
         using Traits = schema_type_traits<Value>;
-        return bundle_schema_variable_declaration<
-            typename Traits::template declaration<bundle_schema_field>>;
+        return schema_variable_declaration<typename Traits::template declaration<schema_variable_field>>;
     }
 }();
 

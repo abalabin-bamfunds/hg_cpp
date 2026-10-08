@@ -196,6 +196,52 @@ def test_time_series_bundle_value_delta_inheritance_and_item_access():
     ]
 
 
+def test_time_series_schemas_keep_nominal_identity_and_support_inheritance():
+    def make_pair_schema():
+        class Pair(bg.TimeSeriesSchema):
+            value: bg.TS[int]
+
+        return Pair
+
+    first_pair = make_pair_schema()
+    second_pair = make_pair_schema()
+
+    @bg.source_node
+    def make_first_pair() -> bg.TSB[first_pair]:
+        return {"value": 10}
+
+    @bg.compute_node
+    def read_second_pair(value: bg.TSB[second_pair]) -> bg.TS[int]:
+        return value.value.value
+
+    @bg.graph
+    def incompatible_graph() -> bg.TS[int]:
+        return read_second_pair(make_first_pair())
+
+    with pytest.raises(ValueError):
+        bg.test_graph(incompatible_graph)
+
+    class Base(bg.TimeSeriesSchema):
+        value: bg.TS[int]
+
+    class Derived(Base):
+        extra: bg.TS[int]
+
+    @bg.source_node
+    def make_derived() -> bg.TSB[Derived]:
+        return {"value": 11, "extra": 12}
+
+    @bg.compute_node
+    def read_base(value: bg.TSB[Base]) -> bg.TS[int]:
+        return value.value.value
+
+    @bg.graph
+    def compatible_graph() -> bg.TS[int]:
+        return read_base(make_derived())
+
+    assert bg.test_graph(compatible_graph) == [11]
+
+
 def test_collection_lookup_defaults_and_missing_bundle_attributes():
     class Pair(bg.TimeSeriesSchema):
         left: bg.TS[int]

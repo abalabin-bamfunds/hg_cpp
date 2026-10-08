@@ -65,6 +65,11 @@ TEST_CASE("one schema can describe a hierarchical scalar and a time series bundl
     REQUIRE(time_series.item_count() == 2);
     CHECK(&time_series.item_type(0) == &bg::TS<bg::i64>::type());
     CHECK(&time_series.item_type(1) == &bg::TS<double>::type());
+
+    const auto &scalar_schema = bg::type_cast<bg::HierarchicalScalarType>(scalar).schema();
+    const auto &time_series_schema = time_series.schema();
+    CHECK(scalar_schema.identity() == time_series_schema.identity());
+    CHECK(&scalar_schema != &time_series_schema);
 }
 
 TEST_CASE("explicit time series fields remain time series fields",
@@ -83,9 +88,9 @@ TEST_CASE("invalid shared-schema fields are rejected without instantiating a pro
 TEST_CASE("a time series bundle type derives an unnamed schema from resolved fields",
           "[type_system][tsb][series:tsb][feature:type-system][schema:unnamed][guarantee:final]") {
     const auto fields = std::array{
-        bg::BundleField{bg::util::symbol{"count"}, &bg::TS<bg::i64>::type()},
-        bg::BundleField{bg::util::symbol{"value"}, &bg::TS<float>::type()},
-        bg::BundleField{bg::util::symbol{"reference"}, &bg::REF<bg::TS<float>>::type()},
+        bg::SchemaField{bg::util::symbol{"count"}, &bg::TS<bg::i64>::type()},
+        bg::SchemaField{bg::util::symbol{"value"}, &bg::TS<float>::type()},
+        bg::SchemaField{bg::util::symbol{"reference"}, &bg::REF<bg::TS<float>>::type()},
     };
 
     const auto &type = bg::TimeSeriesBundleType::from_fields(fields, bg::TimeSeriesGuarantee::final);
@@ -99,20 +104,20 @@ TEST_CASE("a time series bundle type derives an unnamed schema from resolved fie
 
 TEST_CASE("a time series bundle type requires concrete fields",
           "[type_system][tsb][series:tsb][feature:type-system][schema:unnamed][declaration:generic]") {
-    const auto null_field = std::array{bg::BundleField{bg::util::symbol{"value"}, nullptr}};
+    const auto null_field = std::array{bg::SchemaField{bg::util::symbol{"value"}, nullptr}};
     const auto unresolved_field =
-        std::array{bg::BundleField{bg::util::symbol{"value"}, &bg::TS<bg::SCALAR>::type()}};
+        std::array{bg::SchemaField{bg::util::symbol{"value"}, &bg::TS<bg::SCALAR>::type()}};
     const auto duplicate_fields = std::array{
-        bg::BundleField{bg::util::symbol{"value"}, &bg::TS<bg::i64>::type()},
-        bg::BundleField{bg::util::symbol{"value"}, &bg::TS<float>::type()},
+        bg::SchemaField{bg::util::symbol{"value"}, &bg::TS<bg::i64>::type()},
+        bg::SchemaField{bg::util::symbol{"value"}, &bg::TS<float>::type()},
     };
 
     CHECK_THROWS_WITH(bg::TimeSeriesBundleType::from_fields(null_field),
-                      "a time series bundle type requires resolved field types");
+                      "a time series bundle type requires resolved time-series fields");
     CHECK_THROWS_WITH(bg::TimeSeriesBundleType::from_fields(unresolved_field),
-                      "a time series bundle type requires resolved field types");
+                      "a time series bundle type requires resolved time-series fields");
     CHECK_THROWS_WITH(bg::TimeSeriesBundleType::from_fields(duplicate_fields),
-                      "a time series bundle schema has duplicate field names");
+                      "a schema has duplicate field names");
 }
 
 namespace {
@@ -137,9 +142,9 @@ TEST_CASE("an unnamed bundle matches a compatible named schema",
         bg::details::time_series_type_for<BundleTypeScope, 0, true, bg::TSB<BaseBundle>>(
             bg::TimeSeriesGuarantee::ordinary));
     const auto &count = bg::TS<bg::i64>::type();
-    const auto fields = std::array{bg::BundleField{bg::util::symbol{"count"}, &count}};
+    const auto fields = std::array{bg::SchemaField{bg::util::symbol{"count"}, &count}};
     const auto &argument =
-        bg::time_series_bundle_type(bg::unnamed_bundle_schema(fields), bg::TimeSeriesGuarantee::ordinary);
+        bg::time_series_bundle_type(bg::anonymous_schema(fields), bg::TimeSeriesGuarantee::ordinary);
     auto type_map = bg::TypeMap{};
 
     CHECK(parameter.match(argument, type_map));
@@ -189,9 +194,9 @@ TEST_CASE("bundle matching resolves generic field types",
         bg::details::time_series_type_for<BundleTypeScope, 0, true, bg::TSB<GenericBundle>>(
             bg::TimeSeriesGuarantee::ordinary));
     const auto &value = bg::TS<bg::i64>::type();
-    const auto fields = std::array{bg::BundleField{bg::util::symbol{"value"}, &value}};
+    const auto fields = std::array{bg::SchemaField{bg::util::symbol{"value"}, &value}};
     const auto &argument =
-        bg::time_series_bundle_type(bg::unnamed_bundle_schema(fields), bg::TimeSeriesGuarantee::ordinary);
+        bg::time_series_bundle_type(bg::anonymous_schema(fields), bg::TimeSeriesGuarantee::ordinary);
     auto type_map = bg::TypeMap{};
 
     REQUIRE(parameter.match(argument, type_map));
