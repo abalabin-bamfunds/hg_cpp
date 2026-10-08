@@ -353,6 +353,50 @@ template <template <template <typename, auto...> typename> typename Schema> stru
     std::size_t size{};
 };
 
+template <template <template <typename, auto...> typename> typename Schema>
+const ArrowScalarRuntime<Frame<Schema>, ArrowFrameStorage<Schema>, FrameView<Schema>> &frame_scalar_runtime();
+
+template <cell_type T> void bind_arrow_column_view(const void *source, void *destination) {
+    *static_cast<ColumnView<T> *>(destination) =
+        ColumnView<T>{*static_cast<const ArrowColumnReadSource<T> *>(source)};
+}
+
+template <template <template <typename, auto...> typename> typename Schema, std::size_t Index>
+FrameColumnReadBinding arrow_frame_column_binding(const void *context) {
+    using Cell = frame::details::frame_schema_cell_t<Index, Schema>;
+    const auto fields = util::aggregate_members(
+        *static_cast<const typename ArrowFrameStorage<Schema>::source_schema *>(context));
+    return {std::addressof(cpp_scalar_type<Cell>()), std::addressof(std::get<Index>(fields)),
+            &bind_arrow_column_view<Cell>, nullptr};
+}
+
+template <template <template <typename, auto...> typename> typename Schema, std::size_t... Index>
+FrameColumnReadBinding arrow_frame_column_binding(const void *context, std::size_t index,
+                                                   std::index_sequence<Index...>) {
+    using binding_function = FrameColumnReadBinding (*)(const void *);
+    static constexpr std::array<binding_function, sizeof...(Index)> bindings{
+        &arrow_frame_column_binding<Schema, Index>...};
+    return index < bindings.size() ? bindings[index](context) : FrameColumnReadBinding{};
+}
+
+template <template <template <typename, auto...> typename> typename Schema>
+FrameReadStorage frame_read_storage(const ArrowFrameStorage<Schema> &storage) {
+    constexpr auto count = util::aggregate_member_count<Schema<Column>>;
+    static_assert(!bg::details::schema_variable_template<Schema>);
+    auto result = FrameReadStorage{};
+    result.schema = std::addressof(bg::details::cpp_hierarchical_scalar_schema<Schema>());
+    result.valid = true;
+    result.size = storage.size;
+    result.columns_context = std::addressof(storage.sources);
+    result.column_binding = [](const void *context, std::size_t index) {
+        return arrow_frame_column_binding<Schema>(context, index, std::make_index_sequence<count>{});
+    };
+    result.source_owner = std::addressof(storage);
+    result.source_payload = std::addressof(storage);
+    result.source_runtime = std::addressof(frame_scalar_runtime<Schema>());
+    return result;
+}
+
 template <template <template <typename, auto...> typename> typename Schema, std::size_t... Index>
 FrameView<Schema> frame_view(const ArrowFrameStorage<Schema> &storage, std::index_sequence<Index...>) {
     auto columns = Schema<ColumnView>{};

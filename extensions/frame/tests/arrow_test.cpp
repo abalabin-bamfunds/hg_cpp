@@ -181,6 +181,15 @@ void test_imports_and_runtime_lifetime() {
                                     {std::move(sizes), std::move(bids).ValueUnsafe(), std::move(asks).ValueUnsafe()},
                                     4);
 
+    const auto arrow_storage = arrow_details::ArrowFrameStorage<Quotes>{table};
+    const auto read_storage = arrow_details::frame_read_storage(arrow_storage);
+    auto read_bid = ColumnView<double>{};
+    read_storage.bind_column_view(util::symbol{"bid"}, read_bid);
+    require(read_storage.schema == std::addressof(frame_schema_type<Quotes>()) && read_storage.size == 4 &&
+                read_storage.source_runtime == std::addressof(arrow_details::frame_scalar_runtime<Quotes>()) &&
+                read_bid.size() == 4 && read_bid.cell(0) == 1.5 && read_bid.cell(3) == 4.5,
+            "Arrow frame read storage did not bind a typed column view");
+
     auto imported_result = from_arrow<Quotes>(table);
     require(imported_result.ok(), "Arrow frame import failed");
     auto imported = std::move(imported_result).ValueUnsafe();

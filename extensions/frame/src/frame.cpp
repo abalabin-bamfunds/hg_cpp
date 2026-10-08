@@ -49,14 +49,28 @@ FrameSeriesKey frame_series_key(const SchemaType &schema, const GuaranteeParamet
 auto canonical_mutex = std::mutex{};
 auto canonical_series_runtimes = std::unordered_map<std::type_index, std::unique_ptr<TimeSeriesRuntimeType>>{};
 
+void validate_frame_schema(const SchemaType &schema) {
+    const auto *concrete = dynamic_cast<const Schema *>(std::addressof(schema));
+    if (concrete == nullptr)
+        return;
+    for (const auto &field : concrete->fields()) {
+        if (field.optional)
+            throw std::invalid_argument{"frame schema columns must be present"};
+        if (type_cast<ScalarType>(field.type) == nullptr)
+            throw std::invalid_argument{"frame schema fields must have scalar types"};
+    }
+}
+
 } // namespace
 
 const FrameType &frame_type(const SchemaType &schema) {
+    validate_frame_schema(schema);
     return TypeRegistry::instance().get_or_create<FrameType, std::hash<const SchemaType *>>(
         std::addressof(schema), [&] { return std::make_unique<FrameType>(schema); });
 }
 
 const FrameSeriesType &frame_series_type(const SchemaType &schema, GuaranteeParameter guarantee) {
+    validate_frame_schema(schema);
     const auto key = frame_series_key(schema, guarantee);
     return TypeRegistry::instance().get_or_create<FrameSeriesType, FrameSeriesKeyHash>(
         key, [&] { return std::make_unique<FrameSeriesType>(schema, std::move(guarantee)); });

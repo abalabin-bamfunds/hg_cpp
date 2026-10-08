@@ -393,6 +393,60 @@ void test_frame_scalar_views_and_snapshots() {
                 &frame_series_type(bg::anonymous_schema(anonymous_fields), TimeSeriesGuarantee::ordinary),
             "frame series types over canonical anonymous schemas were not canonical");
 
+    const auto optional_fields = std::array{SchemaField{util::symbol{"optional"}, &cpp_scalar_type<i64>(), true}};
+    const auto &optional_schema = bg::anonymous_schema(optional_fields);
+    auto optional_frame_rejected = false;
+    auto optional_series_rejected = false;
+    try {
+        static_cast<void>(frame_type(optional_schema));
+    } catch (const std::invalid_argument &) {
+        optional_frame_rejected = true;
+    }
+    try {
+        static_cast<void>(frame_series_type(optional_schema, TimeSeriesGuarantee::ordinary));
+    } catch (const std::invalid_argument &) {
+        optional_series_rejected = true;
+    }
+    require(optional_frame_rejected && optional_series_rejected,
+            "frame scalar or time series accepted an optional column field");
+
+    using OPTIONAL_CELL = ScalarVariable<"FRAME_OPTIONAL_CELL">;
+    const auto optional_unresolved_fields = std::array{SchemaField{
+        util::symbol{"optional_unresolved"}, &cpp_scalar_type<OPTIONAL_CELL>(), true}};
+    const auto &optional_unresolved_schema = bg::anonymous_schema(optional_unresolved_fields);
+    auto optional_unresolved_frame_rejected = false;
+    auto optional_unresolved_series_rejected = false;
+    try {
+        static_cast<void>(frame_type(optional_unresolved_schema));
+    } catch (const std::invalid_argument &) {
+        optional_unresolved_frame_rejected = true;
+    }
+    try {
+        static_cast<void>(frame_series_type(optional_unresolved_schema, TimeSeriesGuarantee::ordinary));
+    } catch (const std::invalid_argument &) {
+        optional_unresolved_series_rejected = true;
+    }
+    require(optional_unresolved_frame_rejected && optional_unresolved_series_rejected,
+            "frame scalar or time series accepted an optional field with an unresolved scalar type");
+
+    const auto non_scalar_fields = std::array{SchemaField{
+        util::symbol{"nested"}, &column_time_series_type<i64>(TimeSeriesGuarantee::ordinary), false}};
+    const auto &non_scalar_schema = bg::anonymous_schema(non_scalar_fields);
+    auto non_scalar_frame_rejected = false;
+    auto non_scalar_series_rejected = false;
+    try {
+        static_cast<void>(frame_type(non_scalar_schema));
+    } catch (const std::invalid_argument &) {
+        non_scalar_frame_rejected = true;
+    }
+    try {
+        static_cast<void>(frame_series_type(non_scalar_schema, TimeSeriesGuarantee::ordinary));
+    } catch (const std::invalid_argument &) {
+        non_scalar_series_rejected = true;
+    }
+    require(non_scalar_frame_rejected && non_scalar_series_rejected,
+            "frame scalar or time series accepted a non-scalar field");
+
     const auto &generic_series_type = frame_series_type(frame_schema_type<bg::SCHEMA>(),
                                                         TimeSeriesGuarantee::ordinary);
     auto generic_series_name = std::string{};
@@ -403,6 +457,31 @@ void test_frame_scalar_views_and_snapshots() {
             "generic frame series schema did not capture a concrete schema");
     require(&generic_series_type.resolve(series_type_map) == &series_type,
             "generic frame series schema did not resolve to the captured schema");
+
+    auto shared_schema_type_map = TypeMap{};
+    require(generic_frame_type.match(concrete_frame_type, shared_schema_type_map),
+            "generic frame scalar did not capture a shared schema");
+    require(generic_series_type.match(series_type, shared_schema_type_map),
+            "generic frame time series did not reuse the scalar schema capture");
+    require(&generic_series_type.resolve(shared_schema_type_map) == &series_type,
+            "generic frame time series resolved to a different schema than the scalar");
+    const auto &shared_schema_variable = dynamic_cast<const Variable &>(generic_frame_type.schema_type());
+    const auto *captured_schema = shared_schema_type_map.find(shared_schema_variable);
+    const auto &mismatched_series_type = frame_series_type(frame_schema_type<EmptySchema>(),
+                                                           TimeSeriesGuarantee::ordinary);
+    require(!generic_series_type.match(mismatched_series_type, shared_schema_type_map),
+            "generic frame time series accepted a different schema in a shared type map");
+    require(shared_schema_type_map.find(shared_schema_variable) == captured_schema,
+            "a failed time series match changed the shared scalar schema capture");
+
+    const auto &anonymous_series_type = frame_series_type(anonymous_schema, TimeSeriesGuarantee::ordinary);
+    auto anonymous_type_map = TypeMap{};
+    require(generic_frame_type.match(frame_type(anonymous_schema), anonymous_type_map) &&
+                generic_series_type.match(anonymous_series_type, anonymous_type_map),
+            "Frame and TSF did not share an anonymous runtime schema capture");
+    require(&generic_frame_type.resolve(anonymous_type_map) == &frame_type(anonymous_schema) &&
+                &generic_series_type.resolve(anonymous_type_map) == &anonymous_series_type,
+            "Frame and TSF did not resolve to the shared anonymous runtime schema");
 
     const auto &empty_series_type = frame_series_type(frame_schema_type<EmptySchema>(),
                                                       TimeSeriesGuarantee::ordinary);
@@ -768,6 +847,17 @@ void test_tsf_graph_behavior() {
     const auto observe_filtered_bid = observe_child(filtered_bid_consumer_observations);
     const auto observe_filtered_ask = observe_child(filtered_ask_consumer_observations);
     const auto observe_frame = node([&](In<TSF<Quotes>, optional> input) {
+        const auto read_storage = input.extension_descriptor();
+        require(read_storage.source_runtime == std::addressof(input.runtime_type()),
+                "TSF shared read storage lost its runtime binding");
+        if (input.valid()) {
+            auto bid = ColumnView<double>{};
+            read_storage.bind_column_view(util::symbol{"bid"}, bid);
+            require(bid.size() == input.size(), "TSF shared read storage returned the wrong column size");
+            if (input.size() != 0)
+                require(bid.cell(0) == input.cell<1>(read_storage.rows.at(0)),
+                        "TSF shared read storage bound the wrong native column");
+        }
         auto result = frame_observation{.valid = input.valid(),
                                         .became_valid = input.became_valid(),
                                         .became_invalid = input.became_invalid(),
