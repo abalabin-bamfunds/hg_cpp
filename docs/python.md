@@ -76,8 +76,9 @@ is being wired; it does not create a runtime nested-graph boundary.
 For `@graph` and `@node`, a plain scalar annotation such as `int` accepts an
 `int` scalar or a `TS[int]` wiring point. A graph function receives the scalar
 value or wiring point supplied by its caller. `Scalar[int]` restricts a
-parameter to an `int` scalar. Explicit time-series annotations remain
-time-series-only. These forms can be mixed in one signature. For
+parameter to an `int` scalar. In `@graph`, explicit time-series annotations
+remain time-series-only and can be mixed with plain scalar annotations. `@node`
+parameters must use scalar annotations rather than `TS[...]`. For
 `@compute_node`, a plain scalar annotation remains scalar-only.
 
 `Optional[T]` lets a plain graph or node parameter accept an absent scalar or
