@@ -268,7 +268,8 @@ RunResult run_case(const BenchmarkCase &benchmark_case) {
     }
 
     const auto compiled = CompiledGraph{wiring};
-    auto runtime = RuntimeGraph{compiled};
+    auto global_state = GlobalState{};
+    auto runtime = RuntimeGraph{compiled, global_state};
     const auto start_time = MIN_DT + EvaluationTime::duration{1};
     runtime.start(start_time);
 
