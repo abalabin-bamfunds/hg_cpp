@@ -5,7 +5,7 @@ from __future__ import annotations
 import inspect
 import types
 from functools import update_wrapper
-from typing import Any, get_args, get_type_hints
+from typing import Annotated, Any, get_args, get_origin, get_type_hints
 
 from . import operators
 from ._bg import (
@@ -94,6 +94,24 @@ class TS:
 
     def __class_getitem__(cls, scalar_type: type) -> Any:
         return _time_series_type(_native_type(scalar_type))
+
+
+class _ScalarAnnotation:
+    __slots__ = ("type",)
+
+    def __init__(self, scalar_type: Any):
+        self.type = scalar_type
+
+
+class _ScalarOnly:
+    pass
+
+
+class Scalar:
+    """A scalar-only input annotation for nodes and graphs."""
+
+    def __class_getitem__(cls, scalar_type: type) -> Any:
+        return Annotated[scalar_type, _ScalarOnly]
 
 
 class REF:
@@ -362,10 +380,10 @@ def _bind_definition_arguments(
 
 
 def _definition_signature(
-    function: Any, *, scalar_or_time_series_inputs: bool = False
+    function: Any, *, scalar_or_time_series_inputs: bool = False, promote_plain_graph_inputs: bool = False
 ) -> tuple[list[tuple[str, Any, str]], tuple[str, ...], Any]:
     signature = inspect.signature(function)
-    annotations = get_type_hints(function)
+    annotations = get_type_hints(function, include_extras=True)
     fixed = []
     variadic = []
 
@@ -380,9 +398,15 @@ def _definition_signature(
             parameter.KEYWORD_ONLY,
         ):
             native_type = _native_type(annotation)
+            scalar_only = isinstance(native_type, _ScalarAnnotation)
+            if scalar_only:
+                native_type = native_type.type
             if scalar_or_time_series_inputs:
                 if native_type.is_time_series:
                     raise TypeError("@node parameters must use scalar annotations, not TS[...] annotations")
+                if not scalar_only:
+                    native_type = _node_input_type(native_type)
+            elif promote_plain_graph_inputs and not scalar_only and not native_type.is_time_series:
                 native_type = _node_input_type(native_type)
             fixed.append((parameter.name, native_type, ""))
         elif parameter.kind is parameter.VAR_POSITIONAL:
@@ -426,7 +450,7 @@ def _define_node(
     function: Any, *, schedule_on_start: bool = False, scalar_or_time_series_inputs: bool = False
 ) -> NodeDefinition:
     signature = inspect.signature(function)
-    annotations = get_type_hints(function)
+    annotations = get_type_hints(function, include_extras=True)
     parameters, fixed_parameters, callback = _definition_signature(
         function, scalar_or_time_series_inputs=scalar_or_time_series_inputs
     )
@@ -434,13 +458,16 @@ def _define_node(
     output = annotations.get("return", signature.return_annotation)
     if output is inspect.Signature.empty or output is None or output is type(None):
         output = None
-    elif scalar_or_time_series_inputs:
-        output_type = _native_type(output)
-        if output_type.is_time_series:
-            raise TypeError("@node return annotations must be scalar annotations, not TS[...] annotations")
-        output = _time_series_type(output_type)
     else:
-        output = _native_type(output)
+        output_type = _native_type(output)
+        if isinstance(output_type, _ScalarAnnotation):
+            raise TypeError("Scalar[...] can only annotate a Python node or graph input")
+        if scalar_or_time_series_inputs:
+            if output_type.is_time_series:
+                raise TypeError("@node return annotations must be scalar annotations, not TS[...] annotations")
+            output = _time_series_type(output_type)
+        else:
+            output = output_type
 
     native_definition = _make_node(
         function.__name__, parameters, output, callback, schedule_on_start, scalar_or_time_series_inputs
@@ -451,6 +478,12 @@ def _define_node(
 def _native_type(annotation: Any) -> Any:
     if isinstance(annotation, _Type):
         return annotation
+    if get_origin(annotation) is Annotated:
+        value_type, *metadata = get_args(annotation)
+        native_type = _native_type(value_type)
+        if _ScalarOnly in metadata:
+            return _ScalarAnnotation(native_type)
+        return native_type
     if isinstance(annotation, type):
         return _scalar_type(annotation)
     if getattr(annotation, "__origin__", None) is dict:
@@ -459,7 +492,10 @@ def _native_type(annotation: Any) -> Any:
     union_arguments = get_args(annotation)
     if len(union_arguments) == 2 and type(None) in union_arguments:
         value_type = next(value for value in union_arguments if value is not type(None))
-        return _optional_type(_native_type(value_type))
+        native_type = _native_type(value_type)
+        if isinstance(native_type, _ScalarAnnotation):
+            return _ScalarAnnotation(_optional_type(native_type.type))
+        return _optional_type(native_type)
     raise TypeError(f"unsupported Python node annotation: {annotation!r}")
 
 
@@ -479,7 +515,7 @@ def source_node(function: Any) -> NodeDefinition:
     if signature.parameters:
         raise TypeError("Python source nodes cannot have parameters")
 
-    annotations = get_type_hints(function)
+    annotations = get_type_hints(function, include_extras=True)
     output = annotations.get("return", signature.return_annotation)
     if output is inspect.Signature.empty or not isinstance(output, _Type) or not output.is_time_series:
         raise TypeError("Python source nodes must return a time-series value")
@@ -490,16 +526,22 @@ def source_node(function: Any) -> NodeDefinition:
 def graph(function: Any) -> GraphDefinition:
     """Declare a graph template composed from Python nodes and graph functions."""
     signature = inspect.signature(function)
-    annotations = get_type_hints(function)
-    parameters, fixed_parameters, callback = _definition_signature(function)
+    annotations = get_type_hints(function, include_extras=True)
+    parameters, fixed_parameters, callback = _definition_signature(function, promote_plain_graph_inputs=True)
 
     output = annotations.get("return", signature.return_annotation)
+    lift_scalar_output = False
     if output is inspect.Signature.empty or output is None or output is type(None):
         output = None
     else:
+        if isinstance(output, _ScalarAnnotation):
+            raise TypeError("Scalar[...] can only annotate a Python node or graph input")
         output = _native_type(output)
+        if not output.is_time_series:
+            output = _time_series_type(output)
+            lift_scalar_output = True
 
-    native = _make_graph(function.__name__, parameters, output, callback)
+    native = _make_graph(function.__name__, parameters, output, callback, lift_scalar_output)
     return GraphDefinition(function, native, fixed_parameters, callback)
 
 
@@ -517,6 +559,7 @@ __all__ = [
     "REF",
     "REMOVE",
     "Removed",
+    "Scalar",
     "SetDelta",
     "SIZE",
     "Symbol",

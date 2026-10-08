@@ -71,9 +71,24 @@ invalid input. See [optional arguments](operators.md#optional-arguments).
 Node and graph functions accept positional and named arguments according to
 their Python signatures, including positional-only, keyword-only, `*args`, and
 `**kwargs` parameters. A graph function expands into the active graph while it
-is being wired; it does not create a runtime nested-graph boundary. Scalar
-arguments are supported. `Optional[T]` is supported for scalar parameters and
-passes `None` to the callback when absent.
+being wired; it does not create a runtime nested-graph boundary.
+
+For `@graph` and `@node`, a plain scalar annotation such as `int` accepts an
+`int` scalar or a `TS[int]` wiring point. A graph function receives the scalar
+value or wiring point supplied by its caller. `Scalar[int]` restricts a
+parameter to an `int` scalar. Explicit time-series annotations remain
+time-series-only. These forms can be mixed in one signature. For
+`@compute_node`, a plain scalar annotation remains scalar-only.
+
+`Optional[T]` lets a plain graph or node parameter accept an absent scalar or
+an optional time-series input. A graph receives `None` for an absent scalar;
+it receives an optional wiring point for a time-series argument. A node
+callback receives `None` when a scalar is absent or its time-series input is
+invalid. `Optional[Scalar[T]]` accepts only an absent or present scalar. A
+scalar return annotation on `@graph` declares a `TS[T]` output. The
+graph may return a scalar value, which is wired through `const_`, or a
+compatible time-series wiring point. An explicit `TS[T]` return annotation
+requires a wiring point.
 
 Variadic parameters use a collection annotation. The function body receives
 one collection rather than expanded Python arguments:
@@ -99,11 +114,13 @@ receives a wiring-time collection. A node receives a materialized input view.
 A prebuilt TSL or TSB supplied with the variadic parameter's name binds as the
 complete collection.
 
-`test_graph` accepts one update sequence for every graph parameter, and every
-graph parameter must currently be `TS[T]`. Each sequence element is a value or
-`None`; `None` skips that input's update for the cycle. The graph must return a
-`TS[T]`. The result has one entry per cycle: an output value when the graph
-publishes one, otherwise `None`.
+`test_graph` accepts one update sequence for every graph parameter and wires
+each sequence as a `TS[T]` input. Plain scalar annotations accept this
+time-series form. `Scalar[T]` parameters require scalar arguments during graph
+construction; call them from a graph function to test that form. Each sequence
+element is a value or `None`; `None` skips that input's update for the cycle.
+The graph must return a `TS[T]`. The result has one entry per cycle: an output
+value when the graph publishes one, otherwise `None`.
 
 Wiring failures preserve an underlying Python exception's identity, type, and
 traceback. Exception notes include the context described by
@@ -164,9 +181,10 @@ def example(value: bg.TS[int]) -> bg.TS[int]:
     return add(value, 1)
 ```
 
-`@node` parameters must use scalar annotations, not `TS[...]`. `Optional[T]`
-marks a scalar argument as optional and makes a time-series input optional if
-that parameter is wired to a time series.
+`@node` parameters must use scalar annotations, not `TS[...]`. `Scalar[T]`
+restricts a parameter to a scalar. `Optional[T]` marks a scalar argument as
+optional and makes a time-series input optional if that parameter is wired to
+a time series.
 
 `dict[K, V]` declares a scalar dictionary. A plain `@node` callback receives a
 read-only `bg.Dict` mapping view for a dictionary parameter, whether graph code

@@ -1,9 +1,15 @@
 #include <bg/python/graph_definition.hpp>
 
+#include <bg/operators.hpp>
 #include <bg/python/scalar_conversion.hpp>
 #include <bg/python/wiring_point.hpp>
 #include <bg/graph/wiring_context.hpp>
 
+#include "wiring_argument.hpp"
+
+#include <array>
+#include <memory_resource>
+#include <span>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -44,8 +50,9 @@ std::shared_ptr<PythonWiringLifetime> PythonWiringScope::current() {
 }
 
 PythonGraphDefinition::PythonGraphDefinition(
-    std::shared_ptr<const PythonNodeDefinition::SignatureDefinition> signature, nanobind::handle function)
-    : signature_{std::move(signature)}, function_{function} {
+    std::shared_ptr<const PythonNodeDefinition::SignatureDefinition> signature, nanobind::handle function,
+    bool lift_scalar_output)
+    : signature_{std::move(signature)}, function_{function}, lift_scalar_output_{lift_scalar_output} {
     if (signature_ == nullptr) {
         throw std::invalid_argument{"a Python graph requires a signature"};
     }
@@ -54,7 +61,7 @@ PythonGraphDefinition::PythonGraphDefinition(
     }
 }
 
-std::optional<WiringPoint> PythonGraphDefinition::wire(GraphWiring &wiring, ResolvedSignature,
+std::optional<WiringPoint> PythonGraphDefinition::wire(GraphWiring &wiring, ResolvedSignature resolved_signature,
                                                        const TypeMap &,
                                                        std::span<const WiringArgument> arguments) const {
     if (&WiringContext::current().wiring() != &wiring) {
@@ -65,11 +72,13 @@ std::optional<WiringPoint> PythonGraphDefinition::wire(GraphWiring &wiring, Reso
     auto gil = nanobind::gil_scoped_acquire{};
     auto python_arguments = std::vector<nanobind::object>{};
     python_arguments.reserve(arguments.size());
-    for (const auto &argument : arguments) {
+    for (auto index = std::size_t{}; index < arguments.size(); ++index) {
+        const auto &argument = arguments[index];
         if (argument.is_time_series()) {
+            const auto optional = argument.requires_optional() ||
+                                  resolved_signature.parameters[index].validity == InputValidity::optional;
             python_arguments.push_back(
-                nanobind::cast(
-                    PythonWiringPoint{argument.time_series(), scope.lifetime(), argument.requires_optional()}));
+                nanobind::cast(PythonWiringPoint{argument.time_series(), scope.lifetime(), optional}));
             continue;
         }
         if (argument.is_scalar()) {
@@ -107,11 +116,30 @@ std::optional<WiringPoint> PythonGraphDefinition::wire(GraphWiring &wiring, Reso
     if (expected_output == nullptr) {
         throw std::invalid_argument{"a Python sink graph must return None"};
     }
-    const auto point = nanobind::cast<PythonWiringPoint>(returned).get(wiring);
-    if (!expected_output->accepts(point.type())) {
-        throw WiringError{"a Python graph returned an incompatible time series"};
+    if (nanobind::isinstance<PythonWiringPoint>(returned)) {
+        return nanobind::cast<PythonWiringPoint>(returned).get(wiring);
     }
-    return point;
+
+    if (!lift_scalar_output_) {
+        throw std::invalid_argument{"a Python graph with a time-series return annotation must return a wiring point"};
+    }
+
+    const auto *output_type = type_cast<TimeSeriesValueType>(expected_output);
+    if (output_type == nullptr) {
+        throw std::logic_error{"a scalar-returning Python graph requires a time-series value output"};
+    }
+
+    auto temporary_memory = std::pmr::unsynchronized_pool_resource{};
+    auto memory = allocator{temporary_memory};
+    auto scalar_argument = details::wiring_argument(output_type->value_type(), returned, memory, wiring);
+    const auto scalar_arguments = std::array{std::move(scalar_argument)};
+    const auto point = static_cast<const WiringTemplate &>(operators::const_)(
+        std::span<const WiringArgument>{scalar_arguments});
+    if (!point) {
+        throw WiringError{"a Python graph returned a scalar that cannot be lifted to its declared time series"};
+    }
+
+    return *point;
 }
 
 } // namespace bg::python

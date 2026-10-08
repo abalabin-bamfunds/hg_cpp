@@ -6,16 +6,21 @@
 
 #include <nanobind/nanobind.h>
 
+#include <cstddef>
 #include <memory>
+#include <span>
 
 namespace bg::python {
 
 class BG_PYTHON_API PythonGraphDefinition final : public WiringTemplate {
   public:
     PythonGraphDefinition(std::shared_ptr<const PythonNodeDefinition::SignatureDefinition> signature,
-                          nanobind::handle function);
+                          nanobind::handle function, bool lift_scalar_output);
 
     const Signature &signature() const override { return signature_->signature; }
+    std::span<const Type *const> wiring_parameter_types() const noexcept {
+        return signature_->wiring_parameter_types;
+    }
 
   private:
     std::optional<WiringPoint> wire(GraphWiring &, ResolvedSignature, const TypeMap &,
@@ -23,6 +28,7 @@ class BG_PYTHON_API PythonGraphDefinition final : public WiringTemplate {
 
     std::shared_ptr<const PythonNodeDefinition::SignatureDefinition> signature_;
     WeakObject function_;
+    bool lift_scalar_output_;
 };
 
 } // namespace bg::python

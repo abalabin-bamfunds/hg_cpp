@@ -329,12 +329,18 @@ nb::list test_graph(const PythonGraphDefinition &definition, nb::sequence input_
     input_views.reserve(signature.parameter_count());
 
     for (auto index = std::size_t{}; index < signature.parameter_count(); ++index) {
-        const auto *time_series = type_cast<TimeSeriesValueType>(signature.parameter(index).type);
-        if (time_series == nullptr) {
-            throw std::invalid_argument{"test_graph currently requires every graph parameter to be TS[T]"};
+        const auto &input_type = *definition.wiring_parameter_types()[index];
+        const auto *scalar_type = type_cast<ScalarType>(&input_type);
+        if (scalar_type == nullptr) {
+            if (const auto *time_series = type_cast<TimeSeriesValueType>(&input_type)) {
+                scalar_type = &time_series->value_type();
+            }
+        }
+        if (scalar_type == nullptr) {
+            throw std::invalid_argument{
+                "test_graph currently requires every graph parameter to be a scalar or TS[scalar] type"};
         }
 
-        const auto &scalar_type = time_series->value_type();
         auto ticks = nb::cast<nb::sequence>(input_sequences[index]);
         auto values = std::vector<std::optional<ScalarValue<>>>{};
         values.reserve(nb::len(ticks));
@@ -343,9 +349,9 @@ nb::list test_graph(const PythonGraphDefinition &definition, nb::sequence input_
                 values.emplace_back(std::nullopt);
                 continue;
             }
-            values.emplace_back(scalar_conversions().from_python(scalar_type, tick, memory));
+            values.emplace_back(scalar_conversions().from_python(*scalar_type, tick, memory));
         }
-        const auto &runtime_type = resolve_scalar_runtime_type(scalar_type, {});
+        const auto &runtime_type = resolve_scalar_runtime_type(*scalar_type, {});
         owned_inputs.push_back(std::move(values));
         input_views.push_back({runtime_type, owned_inputs.back()});
     }
@@ -413,8 +419,8 @@ nb::object wire_graph(const PythonGraphDefinition &definition, nb::sequence fixe
     auto &wiring = WiringContext::current().wiring();
     auto temporary_memory = std::pmr::unsynchronized_pool_resource{};
     auto memory = allocator{temporary_memory};
-    auto arguments =
-        wiring_arguments(definition.signature(), fixed_values, positional_values, named_values, memory, wiring);
+    auto arguments = wiring_arguments(definition.signature(), fixed_values, positional_values, named_values, memory,
+                                      wiring, definition.wiring_parameter_types());
 
     try {
         const auto result = static_cast<const WiringTemplate &>(definition)(std::span<const WiringArgument>{arguments});
@@ -541,8 +547,9 @@ void bind_core(nb::module_ &module) {
                                     pass_time_series_values};
     });
     module.def("_make_graph", [](std::string name, const std::vector<PythonParameter> &parameters,
-                                 std::optional<TypeDescriptor> output, nb::handle function) {
-        return PythonGraphDefinition{make_signature(name, parameters, output), function};
+                                 std::optional<TypeDescriptor> output, nb::handle function,
+                                 bool lift_scalar_output) {
+        return PythonGraphDefinition{make_signature(name, parameters, output), function, lift_scalar_output};
     });
     module.def("_wire_node", &wire_node);
     module.def("_wire_graph", &wire_graph);
