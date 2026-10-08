@@ -8,8 +8,8 @@ time series access, and tracked output modification.
 ## Aggregate class declaration
 
 A node can be declared as an aggregate class. The class name supplies the node
-name. Each field declares a time series input, scalar parameter, private state,
-or output. Parameter field names supply their signature names.
+name. Each field declares a parameter, private state, or output. Parameter field
+names supply their signature names.
 
 ```cpp
 struct add_state {
@@ -36,7 +36,7 @@ inline const auto add_node = bg::node<add>();
 An aggregate node class:
 
 - uses `In<>` fields for time series inputs
-- uses plain C++ fields or Scalar<T> for scalar parameters
+- uses plain C++ fields for scalar-or-time-series parameters and `Scalar<T>` for scalar-only parameters
 - can contain `State<T>` fields and at most one `Out<>` field
 - defines a `const evaluate()` that returns `void` or `bool`, or a `const start()` that returns `void`
 - contains at most 32 fields
@@ -75,7 +75,7 @@ const auto add = bg::node(
     });
 ```
 
-Parameters can be `In<>`, scalar values, or one `Out<>`. An `In<>` name
+Parameters can be `In<>`, plain values, `Scalar<>`, or one `Out<>`. An `In<>` name
 supplies its signature name. Captures are immutable compiled node data. Use an
 aggregate declaration when the node needs state or lifecycle functions.
 
@@ -119,22 +119,17 @@ storage.
 
 ## Plain C++ parameters
 
-A plain C++ function declares its parameter names separately:
+A callable or aggregate node can declare a parameter with its plain C++ type:
 
 ```cpp
-inline const auto add = bg::node(
-    "add",
-    bg::parameters("lhs", "rhs"),
-    [](float lhs, float rhs) noexcept {
-        return lhs + rhs;
-    });
+const auto add = bg::node([](bg::i64 lhs, bg::i64 rhs) { return lhs + rhs; });
 ```
 
 Wiring classifies each parameter from its graph-code argument:
 
 ```cpp
 auto series_sum = add(lhs_series, rhs_series);
-auto shifted = add(lhs_series, 2.0F);
+auto shifted = add(lhs_series, 2);
 ```
 
 The first call resolves both parameters as time series inputs. The second call
@@ -146,45 +141,58 @@ parameter of type `std::optional<T>` accepts an absent scalar or an invalid time
 series input. The resolved category determines the source of absence.
 `std::optional<T>` is node API syntax rather than a graph scalar type.
 
-Parameter descriptions can select the activity used when the parameter resolves
-to a time series input. Inputs are active by default.
+Resolved time series inputs are active. Use `In<>` to select another activity or
+validity constraint. Mixing plain parameters with `In<>` or `Scalar<>` does not
+disable scalar-or-time-series resolution. Matching captures the incoming time
+series guarantee independently for each plain parameter.
 
-```cpp
-bg::parameters(
-    bg::parameter("trigger", bg::active),
-    bg::parameter("value", bg::passive))
-```
+A callable scalar return declares a `TS<canonical T>` output. A disengaged
+`std::optional<T>` return leaves the output unchanged. A callable `bool` return
+publishes a Boolean value; the completion Boolean described above applies to
+aggregate and runtime-signature `evaluate()` functions. A callable with an
+`Out<>` parameter returns `void`.
 
 Only resolved time series inputs create graph dependencies and subscriptions or
 participate in validity gating. Scalars remain immutable shared wired-node data.
-A node with only scalar parameters does not run unless it is explicitly
-scheduled or declares `schedule_on_start`.
+A callable node with only scalar parameters runs in the first cycle by default.
+An explicit `bg::schedule_on_start = false` disables that evaluation. Aggregate
+and runtime-signature nodes retain their declared scheduling behavior.
 
 `schedule_on_start` requests one initial evaluation in the first cycle. It does
 not call `start()` and does not make a node active in later cycles. An aggregate
 or runtime-signature definition declares `static constexpr bool
 schedule_on_start = true`. A callable definition uses
-`bg::schedule_on_start = true` as a `node()` option. The runtime-signature form
+`bg::schedule_on_start = true` as a `node()` option, together with
+`bg::eval = callable`. The runtime-signature form
 can provide `schedule_on_start() const` or
 `schedule_on_start(const ResolvedSignature &) const`. The resolved-signature
 form lets the definition request initial evaluation based on the concrete input
 types selected during wiring.
 
-`std::optional<T>` owns its value, so passing a valid time series input can copy
-`T`. Use `In<TS<T>, ...>` to access an expensive value by reference.
+Plain parameters retain their declared C++ type and use its canonical graph
+type for matching. Passing a time series can copy its value. Use
+`In<TS<T>, ...>` to access an expensive value by reference.
+
+An aggregate with a plain field resolved as a time series cannot declare
+`start()`, `stop()`, or `finalize()`. Wiring rejects that call. Scalar-resolved
+calls remain supported. `on_invalidation()` is allowed: required
+time-series-resolved plain fields contain default-constructed placeholders;
+optional fields are empty. The callback must not read either as a time series
+value. Scalar-resolved fields contain their actual values. Required placeholder
+types must be default constructible. Automatic state destruction and
+dynamic-input cleanup still run.
 
 ## Scalar parameters
 
-An aggregate plain C++ field is an immutable scalar parameter. Its signature
-uses the canonical graph type for that C++ type. The invocation field retains
-the declared C++ type.
+`Scalar<T>` restricts a parameter to a scalar argument. Scalars remain immutable
+after wiring.
 
 `Scalar<V>` requests a read-only view when `V` is a scalar type variable.
 `Scalar<List<V>>` provides the corresponding view of a scalar list. The
 [scalar API](scalar-api.md) defines their operations and lifetimes.
 
-An aggregate `std::optional<T>` field accepts `T` or `std::optional<T>`. A
-disengaged `std::optional<T>` supplies no value.
+An aggregate `std::optional<T>` field also accepts a scalar `T` or
+`std::optional<T>`. A disengaged scalar supplies no value.
 
 ## Private state
 

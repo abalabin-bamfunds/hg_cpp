@@ -46,6 +46,7 @@ add_executable(
     node/aggregate_node_test.cpp
     node/input_test.cpp
     node/node_template_test.cpp
+    node/node_promotion_test.cpp
     node/runtime_signature_node_test.cpp
     node/output_test.cpp
     node/scalar/dict_test.cpp

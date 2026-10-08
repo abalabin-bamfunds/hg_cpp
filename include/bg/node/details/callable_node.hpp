@@ -11,6 +11,7 @@
 #include <bg/util/reflection.hpp>
 
 #include <concepts>
+#include <algorithm>
 #include <cstddef>
 #include <functional>
 #include <tuple>
@@ -23,9 +24,11 @@ namespace bg::details {
 template <typename Function>
 concept callable_node =
     requires { &Function::operator(); } && std::copy_constructible<Function> &&
-    std::same_as<typename callable<Function>::result_type, void> &&
+    callable_result_supported<Function> &&
     callable_fields_supported<Function>(std::make_index_sequence<callable<Function>::argument_count>{}) &&
-    callable_output_count<Function>(std::make_index_sequence<callable<Function>::argument_count>{}) <= 1;
+    callable_output_count<Function>(std::make_index_sequence<callable<Function>::argument_count>{}) <= 1 &&
+    (callable_output_count<Function>(std::make_index_sequence<callable<Function>::argument_count>{}) == 0 ||
+     std::same_as<typename callable<Function>::result_type, void>);
 
 template <typename Option>
 void append_callable_resolver(std::vector<VariableResolver> &resolvers, const Option &option) {
@@ -72,7 +75,13 @@ consteval std::size_t callable_input_index(std::index_sequence<Index...>) {
 template <typename Function, std::size_t Target, std::size_t... Index>
 consteval std::size_t callable_scalar_index(std::index_sequence<Index...>) {
     return (std::size_t{} + ... +
-            static_cast<std::size_t>(Index < Target && scalar_field<callable_field<Function, Index>>::value));
+            static_cast<std::size_t>(Index < Target && scalar_field<callable_field<Function, Index>>::value &&
+                                     !promoted_field<callable_field<Function, Index>>::value));
+}
+
+template <typename Function, std::size_t... Index>
+consteval bool callable_has_promoted_fields(std::index_sequence<Index...>) {
+    return (false || ... || promoted_field<callable_field<Function, Index>>::value);
 }
 
 template <typename Function, std::size_t Target, std::size_t... Index>
@@ -82,7 +91,7 @@ consteval std::size_t callable_dynamic_activity_input_index(std::index_sequence<
 }
 
 template <typename Function, std::size_t Index, typename Invocation>
-decltype(auto) make_callable_node_argument(Invocation invocation) {
+auto make_callable_node_argument(Invocation invocation) {
     using Field = callable_field<Function, Index>;
     constexpr auto Indices = std::make_index_sequence<callable<Function>::argument_count>{};
 
@@ -90,7 +99,47 @@ decltype(auto) make_callable_node_argument(Invocation invocation) {
         constexpr auto Parameter = callable_parameter_index<Function, Index>(Indices);
         constexpr auto Input = callable_input_index<Function, Index>(Indices);
         constexpr auto ControlledInput = callable_dynamic_activity_input_index<Function, Index>(Indices);
-        return invocation.template input<Field, ControlledInput>(Parameter, Input);
+        if constexpr (callable_has_promoted_fields<Function>(Indices)) {
+            return invocation.template input<Field, ControlledInput>(
+                Parameter, invocation.time_series_input_index(Parameter));
+        } else {
+            return invocation.template input<Field, ControlledInput>(Parameter, Input);
+        }
+    } else if constexpr (promoted_field<Field>::value) {
+        using Value = typename promoted_field<Field>::value_type;
+        using ParameterScalar = typename promoted_field<Field>::parameter_type;
+        constexpr auto Parameter = callable_parameter_index<Function, Index>(Indices);
+
+        if (invocation.parameter_is_time_series(Parameter)) {
+            using Input = In<TS<ParameterScalar>>;
+            const auto input = invocation.template input<Input>(
+                Parameter, invocation.time_series_input_index(Parameter));
+            if constexpr (promoted_field<Field>::optional) {
+                if (!input.valid()) {
+                    return Field{};
+                }
+            }
+            const auto value = scalar_api_value<Value>(input.value());
+            if constexpr (promoted_field<Field>::optional) {
+                return Field{std::move(value)};
+            } else {
+                return value;
+            }
+        }
+
+        const auto *data = invocation.scalar_data(Parameter);
+        if constexpr (promoted_field<Field>::optional) {
+            if (data == nullptr) {
+                return Field{};
+            }
+        }
+        using Traits = scalar_storage_traits<ParameterScalar>;
+        auto value = scalar_api_value<Value>(Traits::read(*static_cast<const typename Traits::stored_type *>(data)));
+        if constexpr (promoted_field<Field>::optional) {
+            return Field{std::move(value)};
+        } else {
+            return value;
+        }
     } else if constexpr (output_field<Field>::value) {
         return invocation.template output_as<Field>();
     } else {
@@ -98,7 +147,13 @@ decltype(auto) make_callable_node_argument(Invocation invocation) {
         using ParameterScalar = typename scalar_field<Field>::parameter_type;
         constexpr auto ParameterIndex = callable_parameter_index<Function, Index>(Indices);
         constexpr auto ScalarIndex = callable_scalar_index<Function, Index>(Indices);
-        const auto scalar = invocation.scalar(ParameterIndex, ScalarIndex);
+        const auto scalar = [&] {
+            if constexpr (callable_has_promoted_fields<Function>(Indices)) {
+                return invocation.scalar(ParameterIndex, invocation.scalar_input_index(ParameterIndex));
+            } else {
+                return invocation.scalar(ParameterIndex, ScalarIndex);
+            }
+        }();
 
         if constexpr (scalar_field<Field>::optional) {
             return scalar.has_value()
@@ -138,8 +193,14 @@ template <typename Function, typename... Options> class CallableNodeDefinition {
                           options_);
     }
 
-    bool schedule_on_start() const noexcept {
-        return std::apply([](const auto &...option) { return (callable_schedule_on_start(option) || ...); }, options_);
+    bool schedule_on_start(const ResolvedSignature &signature) const noexcept {
+        if constexpr ((is_callable_start_scheduling_v<Options> || ...)) {
+            return std::apply(
+                [](const auto &...option) { return (callable_schedule_on_start(option) || ...); }, options_);
+        }
+
+        return std::ranges::all_of(signature.parameters,
+                                   [](const auto &parameter) { return parameter.type->is_scalar(); });
     }
 
     RequirementResult requirement(const WiringArguments &arguments) const {
@@ -167,7 +228,21 @@ template <typename Function, typename... Options> class CallableNodeDefinition {
     }
 
     static void evaluate(Invocation invocation) {
-        invoke(function(invocation), invocation, std::make_index_sequence<callable<Function>::argument_count>{});
+        using Result = std::remove_cvref_t<typename callable<Function>::result_type>;
+        if constexpr (std::same_as<Result, void>) {
+            invoke(function(invocation), invocation, std::make_index_sequence<callable<Function>::argument_count>{});
+        } else {
+            auto value = invoke(function(invocation), invocation,
+                                std::make_index_sequence<callable<Function>::argument_count>{});
+            auto output = invocation.template output_as<output_declaration_type>();
+            if constexpr (scalar_field<Result>::optional) {
+                if (value.has_value()) {
+                    output.set(*value);
+                }
+            } else {
+                output.set(std::move(value));
+            }
+        }
     }
 
     static void on_invalidation(Invocation invocation)
@@ -181,8 +256,8 @@ template <typename Function, typename... Options> class CallableNodeDefinition {
 
   private:
     template <std::size_t... Index>
-    static void invoke(const Function &function, Invocation invocation, std::index_sequence<Index...>) {
-        std::invoke(function, make_callable_node_argument<Function, Index>(invocation)...);
+    static decltype(auto) invoke(const Function &function, Invocation invocation, std::index_sequence<Index...>) {
+        return std::invoke(function, make_callable_node_argument<Function, Index>(invocation)...);
     }
 
     static const Function &function(Invocation invocation) {

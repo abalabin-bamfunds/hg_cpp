@@ -26,13 +26,34 @@ template <typename Function, std::size_t... Index>
 consteval bool callable_fields_supported(std::index_sequence<Index...>) {
     return ((input_field<callable_field<Function, Index>>::value ||
              output_field<callable_field<Function, Index>>::value ||
+             promoted_field<callable_field<Function, Index>>::value ||
              scalar_field<callable_field<Function, Index>>::value) &&
             ...);
 }
 
+template <typename Result> struct callable_return_output {
+    static constexpr bool value = false;
+    using type = void;
+};
+
+template <typename Result>
+    requires(scalar_field<std::remove_cvref_t<Result>>::value &&
+             !scalar_view<std::remove_cvref_t<Result>>::value)
+struct callable_return_output<Result> {
+    static constexpr bool value = true;
+    using Value = typename scalar_field<std::remove_cvref_t<Result>>::parameter_type;
+    using type = Out<TS<Value>>;
+};
+
+template <typename Function>
+inline constexpr bool callable_result_supported =
+    std::same_as<typename callable<Function>::result_type, void> ||
+    callable_return_output<typename callable<Function>::result_type>::value;
+
 template <typename Function, std::size_t... Index>
 auto callable_output_declaration(std::index_sequence<Index...>) -> typename first_output<
-    typename output_field<callable_field<Function, Index>>::output_type...>::type;
+    typename output_field<callable_field<Function, Index>>::output_type...,
+    typename callable_return_output<typename callable<Function>::result_type>::type>::type;
 
 template <typename Function>
 using callable_output_declaration_t =
@@ -66,7 +87,7 @@ template <typename Scope, typename TimeSeries, std::size_t Index> const TimeSeri
 }
 
 template <typename Scope, typename Function, std::size_t Index>
-void add_callable_parameter(std::vector<Parameter> &parameters) {
+void add_callable_parameter(std::vector<Parameter> &parameters, std::vector<VariableResolver> &resolvers) {
     using Field = callable_field<Function, Index>;
 
     if constexpr (input_field<Field>::value) {
@@ -87,6 +108,16 @@ void add_callable_parameter(std::vector<Parameter> &parameters) {
                                   Field::validity, false, mode, variadic_wiring_operations<TimeSeries>(), false,
                                   input_field<Field>::dynamic_activity});
         }
+    } else if constexpr (promoted_field<Field>::value) {
+        const auto name = util::symbol{std::to_string(parameters.size())};
+        using Value = typename promoted_field<Field>::value_type;
+        using Parameter = typename promoted_field<Field>::parameter_type;
+        using TimeSeries = TS<Parameter>;
+        constexpr auto validity = promoted_field<Field>::optional ? InputValidity::optional : InputValidity::required;
+        parameters.push_back(
+            {name, &promoted_type<Scope, Index, Parameter>(name), active, validity, promoted_field<Field>::optional});
+        append_aggregate_resolvers<Scope, Value>(resolvers);
+        append_aggregate_resolvers<Scope, TimeSeries>(resolvers);
     } else {
         static_assert(scalar_field<Field>::value,
                       "a callable parameter must be In, a scalar, an optional scalar, or Out");
@@ -97,14 +128,15 @@ void add_callable_parameter(std::vector<Parameter> &parameters) {
 }
 
 template <typename Scope, typename Function, std::size_t Index>
-void add_callable_field(std::vector<Parameter> &parameters, const TimeSeriesType *&output) {
+void add_callable_field(std::vector<Parameter> &parameters, std::vector<VariableResolver> &resolvers,
+                        const TimeSeriesType *&output) {
     using Field = callable_field<Function, Index>;
 
     if constexpr (output_field<Field>::value) {
         using TimeSeries = typename output_field<Field>::time_series_type;
         output = &callable_output_type<Scope, TimeSeries, Index>();
     } else {
-        add_callable_parameter<Scope, Function, Index>(parameters);
+        add_callable_parameter<Scope, Function, Index>(parameters, resolvers);
     }
 }
 
@@ -114,7 +146,16 @@ Signature make_callable_signature(util::symbol name, std::index_sequence<Index..
     auto parameters = std::vector<Parameter>{};
     parameters.reserve(sizeof...(Index));
     const TimeSeriesType *output = nullptr;
-    (add_callable_field<Scope, Function, Index>(parameters, output), ...);
+    (add_callable_field<Scope, Function, Index>(parameters, resolvers, output), ...);
+
+    using Result = std::remove_cvref_t<typename callable<Function>::result_type>;
+    if constexpr (callable_return_output<Result>::value) {
+        if (output == nullptr) {
+            using Output = typename callable_return_output<Result>::type;
+            using TimeSeries = typename output_field<Output>::time_series_type;
+            output = &callable_output_type<Scope, TimeSeries, sizeof...(Index)>();
+        }
+    }
 
     return output == nullptr ? Signature{name, std::move(parameters), std::move(resolvers)}
                              : Signature{name, std::move(parameters), *output, std::move(resolvers)};

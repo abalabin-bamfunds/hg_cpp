@@ -117,21 +117,43 @@ Order compare_variables(const TypeVariableType<Category> &left, const TypeVariab
     return combine(alternatives, constraints);
 }
 
-template <typename Category> bool variable_accepts(const TypeVariableType<Category> &variable, const Type &type) {
+template <typename Category>
+bool variable_accepts(const TypeVariableType<Category> &variable, const Type &type, bool variable_is_left,
+                      Comparison &comparison) {
     if (type.is_resolved()) {
         return variable.accepts(type);
     }
 
+    const Category *category;
     if constexpr (std::same_as<Category, Type>) {
-        return variable.alternatives().empty();
+        category = &type;
     } else {
-        const auto *category = dynamic_cast<const Category *>(&type);
-        if (category == nullptr || !variable.alternatives().empty()) {
-            return false;
-        }
-        return std::ranges::all_of(variable.constraints(),
-                                   [category](auto constraint) { return constraint(*category); });
+        category = dynamic_cast<const Category *>(&type);
     }
+    if (category == nullptr ||
+        !std::ranges::all_of(variable.constraints(), [category](auto constraint) { return constraint(*category); })) {
+        return false;
+    }
+
+    if (variable.alternatives().empty()) {
+        return true;
+    }
+
+    for (const auto *alternative : variable.alternatives()) {
+        auto trial = comparison;
+        const auto order = variable_is_left ? compare_types(*alternative, type, trial)
+                                            : compare_types(type, *alternative, trial);
+        const auto contained = variable_is_left ? (order == Order::greater || order == Order::equivalent)
+                                                : (order == Order::less || order == Order::equivalent);
+        if (!contained) {
+            continue;
+        }
+
+        comparison = std::move(trial);
+        return true;
+    }
+
+    return false;
 }
 
 struct DirectVariable {
@@ -195,12 +217,13 @@ Order compare_direct_variables(const Type &left, const Type &right, Comparison &
 template <typename Category>
 std::optional<Order> compare_one_variable(const Type &left, const Type &right,
                                           const TypeVariableType<Category> *left_variable,
-                                          const TypeVariableType<Category> *right_variable) {
+                                          const TypeVariableType<Category> *right_variable,
+                                          Comparison &comparison) {
     if (left_variable != nullptr && right_variable == nullptr) {
-        return variable_accepts(*left_variable, right) ? Order::greater : Order::unordered;
+        return variable_accepts(*left_variable, right, true, comparison) ? Order::greater : Order::unordered;
     }
     if (left_variable == nullptr && right_variable != nullptr) {
-        return variable_accepts(*right_variable, left) ? Order::less : Order::unordered;
+        return variable_accepts(*right_variable, left, false, comparison) ? Order::less : Order::unordered;
     }
     return std::nullopt;
 }
@@ -295,21 +318,21 @@ Order compare_types(const Type &left, const Type &right, Comparison &comparison)
     }
 
     if (const auto result = compare_one_variable(left, right, dynamic_cast<const TypeVariableType<Type> *>(&left),
-                                                 dynamic_cast<const TypeVariableType<Type> *>(&right))) {
+                                                 dynamic_cast<const TypeVariableType<Type> *>(&right), comparison)) {
         return *result;
     }
     if (const auto result = compare_one_variable(left, right, dynamic_cast<const TypeVariableType<ScalarType> *>(&left),
-                                                 dynamic_cast<const TypeVariableType<ScalarType> *>(&right))) {
+                                                 dynamic_cast<const TypeVariableType<ScalarType> *>(&right), comparison)) {
         return *result;
     }
     if (const auto result =
             compare_one_variable(left, right, dynamic_cast<const TypeVariableType<TimeSeriesType> *>(&left),
-                                 dynamic_cast<const TypeVariableType<TimeSeriesType> *>(&right))) {
+                                 dynamic_cast<const TypeVariableType<TimeSeriesType> *>(&right), comparison)) {
         return *result;
     }
     if (const auto result =
             compare_one_variable(left, right, dynamic_cast<const TypeVariableType<BundleSchemaType> *>(&left),
-                                 dynamic_cast<const TypeVariableType<BundleSchemaType> *>(&right))) {
+                                 dynamic_cast<const TypeVariableType<BundleSchemaType> *>(&right), comparison)) {
         return *result;
     }
 
@@ -325,7 +348,8 @@ Order compare_types(const Type &left, const Type &right, Comparison &comparison)
         const auto &variable =
             left_series_variable == nullptr ? right_series_variable->variable() : left_series_variable->variable();
         const auto &other = left_series_variable == nullptr ? left : right;
-        if (!variable_accepts(variable, other)) {
+        const auto variable_is_left = left_series_variable != nullptr;
+        if (!variable_accepts(variable, other, variable_is_left, comparison)) {
             return Order::unordered;
         }
         return left_series_variable == nullptr ? Order::less : Order::greater;

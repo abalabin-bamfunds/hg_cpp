@@ -36,14 +36,18 @@ InvalidationBehavior AggregateNodeTemplateBase::invalidation_behavior(const Reso
     return descriptor_->invalidation_behavior;
 }
 
-bool AggregateNodeTemplateBase::uses_time_series_input_runtime_type(const ResolvedSignature &,
+bool AggregateNodeTemplateBase::uses_time_series_input_runtime_type(const ResolvedSignature &signature,
                                                                     std::size_t parameter_index) const noexcept {
-    return descriptor_->parameter_runtime_type_uses[parameter_index] == AggregateRuntimeTypeUse::time_series;
+    const auto uses = descriptor_->parameter_runtime_type_uses[parameter_index];
+    return signature.parameters[parameter_index].type->is_time_series() &&
+           uses == AggregateRuntimeTypeUse::time_series;
 }
 
-bool AggregateNodeTemplateBase::uses_scalar_input_runtime_type(const ResolvedSignature &,
+bool AggregateNodeTemplateBase::uses_scalar_input_runtime_type(const ResolvedSignature &signature,
                                                                std::size_t parameter_index) const noexcept {
-    return descriptor_->parameter_runtime_type_uses[parameter_index] == AggregateRuntimeTypeUse::scalar;
+    const auto uses = descriptor_->parameter_runtime_type_uses[parameter_index];
+    return signature.parameters[parameter_index].type->is_scalar() &&
+           uses == AggregateRuntimeTypeUse::scalar;
 }
 
 bool AggregateNodeTemplateBase::uses_output_runtime_type() const noexcept {

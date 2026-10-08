@@ -129,6 +129,9 @@ graph compilation or evaluation.
 - signature matching, resolution, and parameter category inference
 - scalar-or-time-series node parameter resolution to a selected concrete form;
   graph-only unions between time series forms
+- plain callable and aggregate parameters mixed with explicit views, optional
+  values, canonical conversion, reference and constant bindings, scalar return
+  publication, and scalar-only scheduling
 - hierarchical scalar inheritance and directional compatibility through scalar containers
 - operator signature specificity and ambiguity
 - types passed as scalars
@@ -190,6 +193,8 @@ graph compilation or evaluation.
 ### Evaluation
 
 - start, evaluation, and stop order
+- rejection of user lifecycle functions with time-series-resolved plain fields;
+  invalidation placeholders, revalidation, and automatic state and dynamic-input cleanup
 - one node evaluation per outer cycle
 - scheduling during evaluation, including nodes in the current bit block
 - active and passive inputs, including per-input runtime activity changes

@@ -2,10 +2,56 @@
 
 #include <bg/node/details/aggregate_node.hpp>
 #include <bg/node/details/aggregate_node_template_base.hpp>
+#include <bg/graph/wiring_arguments.hpp>
 
 #include <array>
 
 namespace bg::details {
+
+template <typename Definition, std::size_t... Index>
+RequirementResult aggregate_node_requirement(const WiringArguments &arguments, std::index_sequence<Index...>) {
+    if constexpr (requires { requirement_result(Definition::require(arguments)); }) {
+        auto result = requirement_result(Definition::require(arguments));
+        if (!result.accepted()) {
+            return result;
+        }
+    }
+
+    if constexpr (aggregate_node_has_start<Definition> || aggregate_node_has_stop<Definition> ||
+                  aggregate_node_has_finalize<Definition> || aggregate_node_has_invalidation_function<Definition>) {
+        auto has_lifecycle_time_series_parameter = false;
+        auto has_non_default_constructible_invalidation_parameter = false;
+        (
+            [&] {
+                using Field = std::remove_cv_t<util::aggregate_member_type<Index, Definition>>;
+                if constexpr (promoted_field<Field>::value) {
+                    constexpr auto Parameter = parameter_index<Definition>(std::make_index_sequence<Index>{});
+                    if (arguments.present(Parameter) && arguments.resolved_type(Parameter).is_time_series()) {
+                        if constexpr (aggregate_node_has_start<Definition> || aggregate_node_has_stop<Definition> ||
+                                      aggregate_node_has_finalize<Definition>) {
+                            has_lifecycle_time_series_parameter = true;
+                        }
+                        if constexpr (aggregate_node_has_invalidation_function<Definition> &&
+                                      !promoted_field<Field>::optional &&
+                                      !std::default_initializable<typename promoted_field<Field>::value_type>) {
+                            has_non_default_constructible_invalidation_parameter = true;
+                        }
+                    }
+                }
+            }(),
+            ...);
+
+        if (has_lifecycle_time_series_parameter) {
+            return reject("a promoted parameter cannot resolve to a time series for a node with lifecycle functions");
+        }
+        if (has_non_default_constructible_invalidation_parameter) {
+            return reject("a required promoted time series parameter needs a default-constructible value for "
+                          "on_invalidation()");
+        }
+    }
+
+    return accept;
+}
 
 template <typename Definition, std::size_t... Index>
 consteval auto aggregate_parameter_runtime_type_uses(std::index_sequence<Index...>) {
@@ -22,6 +68,11 @@ consteval auto aggregate_parameter_runtime_type_uses(std::index_sequence<Index..
                     return;
                 }
                 if constexpr (input_runtime_type_field<Field>::value) {
+                    result[parameter] = AggregateRuntimeTypeUse::time_series;
+                }
+                ++parameter;
+            } else if constexpr (promoted_field<Field>::value) {
+                if constexpr (promoted_input_runtime_type_field<Field>::value) {
                     result[parameter] = AggregateRuntimeTypeUse::time_series;
                 }
                 ++parameter;
@@ -146,10 +197,12 @@ template <typename Definition> const AggregateNodeDescriptor &aggregate_node_des
         .requirement =
             [] {
                 if constexpr (requires(const WiringArguments &arguments) {
-                                  requirement_result(Definition::require(arguments));
-                              }) {
+                              requirement_result(Definition::require(arguments));
+                              } || aggregate_node_has_start<Definition> || aggregate_node_has_stop<Definition> ||
+                              aggregate_node_has_finalize<Definition> ||
+                              aggregate_node_has_invalidation_function<Definition>) {
                     return AggregateRequirementFunction{[](const WiringArguments &arguments) {
-                        return requirement_result(Definition::require(arguments));
+                        return aggregate_node_requirement<Definition>(arguments, Index{});
                     }};
                 } else {
                     return AggregateRequirementFunction{};

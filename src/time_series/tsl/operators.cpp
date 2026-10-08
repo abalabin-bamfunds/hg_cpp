@@ -41,18 +41,18 @@ template <typename Item> struct tsl_getitem_time_series {
 
 template <typename Item> struct tsl_getitem_scalar_reference {
     In<REF<TSL<Item, SIZE, G>, G>, optional> tsl;
-    std::int64_t index;
+    Scalar<i64> index;
     In<REF<V, G>, dynamic_binding, optional> item;
     Out<REF<V, G>> output;
 
     void evaluate() const {
-        if (index < 0) {
+        if (index.value() < 0) {
             item.unbind();
             output.invalidate();
             return;
         }
 
-        item.bind(tsl[static_cast<std::size_t>(index)]);
+        item.bind(tsl[static_cast<std::size_t>(index.value())]);
         output.copy(item);
     }
 };

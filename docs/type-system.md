@@ -368,7 +368,7 @@ Resolution retains the original argument type for graph compilation. This lets
 compilation preserve, create, or dereference a reference after type variables
 have been resolved from its target.
 
-This also classifies each plain C++ function parameter as a scalar or time
+This also classifies each plain C++ node parameter as a scalar or time
 series input. A plain `float` parameter can accept `float` or `TS<float, G>`;
 the graph-code argument selects the category.
 
@@ -432,16 +432,18 @@ omitted output guarantee resolves to `ordinary`, except that a `REF` output
 resolves to `deduplicated`. An explicit `ordinary` guarantee disables this
 default.
 
-For example, a generic `add(float, float)` signature is:
+For example, a plain callable `add(float, float)` captures each input guarantee
+independently:
 
 ```text
-lhs:    TypeVar<Type, float, TS<float, G>>
-rhs:    TypeVar<Type, float, TS<float, G>>
-output: TS<float, G>
+lhs:    TypeVar<Type, float, TS<float, G1>>
+rhs:    TypeVar<Type, float, TS<float, G2>>
+output: TS<float, ordinary>
 ```
 
-The shared `G` gives the output the weakest input guarantee. Output publication
-enforces that guarantee.
+Plain return inference uses the default output guarantee. Explicit declarations
+can share a guarantee variable between inputs and output to propagate the
+weakest input guarantee. Output publication enforces the resolved guarantee.
 
 The start time is when a time series becomes observable: the first outer cycle
 for a fixed graph output, the inner graph start cycle for an inner graph output,

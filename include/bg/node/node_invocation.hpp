@@ -141,6 +141,32 @@ template <typename CompiledData = void, typename State = void> class NodeInvocat
 
     std::size_t parameter_count() const noexcept { return node_->parameters().size(); }
 
+    bool parameter_is_time_series(std::size_t parameter_index) const noexcept {
+        return node_->parameters()[parameter_index].mode() != ParameterBindingMode::scalar;
+    }
+
+    std::size_t time_series_input_index(std::size_t parameter_index) const noexcept {
+        const auto parameters = node_->parameters();
+        auto index = std::size_t{};
+        for (auto current = std::size_t{}; current < parameter_index; ++current) {
+            index += static_cast<std::size_t>(parameters[current].mode() != ParameterBindingMode::scalar);
+        }
+        return index;
+    }
+
+    std::size_t scalar_input_index(std::size_t parameter_index) const noexcept {
+        const auto parameters = node_->parameters();
+        auto index = std::size_t{};
+        for (auto current = std::size_t{}; current < parameter_index; ++current) {
+            index += static_cast<std::size_t>(parameters[current].mode() == ParameterBindingMode::scalar);
+        }
+        return index;
+    }
+
+    const void *scalar_data(std::size_t parameter_index) const noexcept {
+        return node_->parameters()[parameter_index].scalar_data();
+    }
+
     auto inputs() const noexcept -> NodeInvocationParameterRange<true> { return {*node_, runtime_storage_, 0}; }
 
     auto scalars() const noexcept -> NodeInvocationParameterRange<false> {

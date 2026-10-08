@@ -230,6 +230,7 @@ class ParameterBinding {
         return mode() == ParameterBindingMode::reference ? offset & ~reference_dynamic_activity_flag : offset;
     }
 
+    // Packed-record offsets are relative to this binding; call through the stored record entry.
     const void *scalar_data() const noexcept {
         if ((location_and_flags_ & optional_flag) != 0) {
             return nullptr;
