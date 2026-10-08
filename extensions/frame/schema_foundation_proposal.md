@@ -145,6 +145,8 @@ Optional extension-facing scalar storage trait operations:
 ```cpp
 static value_type read_value(const details::ScalarData &data);
 static const ScalarRuntimeType &copy_runtime_type(const details::ScalarData &source);
+static const ScalarRuntimeType &runtime_type(const ScalarType &type);
+static ScalarData borrow_value(const value_type &value);
 ```
 
 The `read_value` operation constructs the declared view from the source representation.
@@ -156,16 +158,20 @@ that runtime. Typed copies from a same-schema Arrow representation use canonical
 native storage. Node code uses the scalar and time series APIs rather than
 these trait operations.
 
-The remaining BG integration needs are canonical scalar runtime customization
-and construction from a borrowed C++ view carrying its actual semantic type.
-The proposed extension hooks are awaiting approval. Scalar node parameter reads
-use their actual runtime in `20cbf814` on `agent/scalar-access-paths`. The full
-BG test suite passes: 1464 tests, including Python tests.
+Canonical scalar runtime customization and borrowing of C++ views carrying
+their actual semantic type are approved and under implementation in
+`agent/scalar-access-paths`. Both hooks belong to `scalar_storage_traits<T>`.
+Scalar node parameter reads use their actual runtime in `20cbf814` on that
+branch. Before the additional hooks, the full BG test suite passes: 1464 tests,
+including Python tests.
 
 ## Node and value APIs
 
 Keep the existing concrete-schema surface: typed columns, `Row<Quotes>`,
 `RowPatch<Quotes>`, zero-copy `value_view()`, and typed `In`/`Out` operations.
+`FrameView<Quotes>` exposes its typed columns through read-only `columns()`,
+matching `Frame<Quotes>`. This keeps column bindings consistent with the
+retained actual schema.
 
 Add the corresponding generic surface:
 
