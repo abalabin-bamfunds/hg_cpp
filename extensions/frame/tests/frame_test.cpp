@@ -303,8 +303,8 @@ void test_frame_scalar_views_and_snapshots() {
     require(immutable.size() == 2, "immutable frame has wrong row count");
     auto scalar = Scalar<Frame<Quotes>>::from(immutable.scalar_storage());
     const auto view = scalar.value();
-    require(view.size() == 2 && view.columns.size.cell(1) == 6 && view.columns.bid.cell(0) == 10.5 &&
-                !view.columns.ask.cell(0),
+    require(view.size() == 2 && view.columns().size.cell(1) == 6 && view.columns().bid.cell(0) == 10.5 &&
+                !view.columns().ask.cell(0),
             "immutable frame scalar view lost columns, values, or nulls");
     require(&cpp_scalar_type<Frame<Quotes>>() == &cpp_scalar_type<Frame<Quotes>>(),
             "frame schema scalar identity is not canonical");
@@ -363,7 +363,7 @@ void test_frame_scalar_views_and_snapshots() {
         auto bid_patch = Quotes<PatchCell>{};
         bid_patch.bid = 99.0;
         native.set(id, bid_patch, snapshot_time, memory);
-        require(stable.view().value().columns.bid.cell(0) == 10.5,
+        require(stable.view().value().columns().bid.cell(0) == 10.5,
                 "owning frame scalar changed after native row mutation");
     }
     require(failing_memory.allocations == failing_memory.deallocations, "owning frame snapshot leaked allocations");
@@ -527,8 +527,8 @@ void test_scalar_frame_time_series_graph() {
     const auto graph = [&](wp<TS<FrameValue>> input) { return copy(input); };
     const auto result = testing::test_graph(graph, std::vector{first, second});
     require(result.size() == 2 && result[0] && result[1], "TS<Frame> graph lost scalar frame values");
-    require(result[0]->value().columns.bid.cell(0) == 10.5 && !result[0]->value().columns.ask.cell(0) &&
-                result[1]->value().columns.size.cell(0) == 6,
+    require(result[0]->value().columns().bid.cell(0) == 10.5 && !result[0]->value().columns().ask.cell(0) &&
+                result[1]->value().columns().size.cell(0) == 6,
             "TS<Frame> graph changed the scalar frame data");
 }
 
@@ -702,7 +702,7 @@ struct frame_runtime_capture {
 
     void evaluate() const {
         static_cast<void>(trigger);
-        captured_bid = frame.value_view().value().columns.bid.cell(0).value_or(-1.0);
+        captured_bid = frame.value_view().value().columns().bid.cell(0).value_or(-1.0);
     }
 
     inline static double captured_bid{};
@@ -716,7 +716,7 @@ struct frame_view_runtime_capture {
         static_cast<void>(trigger);
         const auto value = frame.value_view().value();
         captured_size = value.size();
-        captured_bid = value.columns.bid.cell(0).value_or(-1.0);
+        captured_bid = value.columns().bid.cell(0).value_or(-1.0);
     }
 
     inline static std::size_t captured_size{};
@@ -972,10 +972,10 @@ void test_tsf_graph_behavior() {
     require(snapshots.size() == commands.size() && snapshots[0] && snapshots[1] && snapshots[2] && snapshots[3] &&
                 snapshots[4] && snapshots[5] && snapshots[7] && snapshots[8],
             "TSF did not export valid whole-frame scalar snapshots");
-    require(snapshots[0]->value().size() == 0 && snapshots[1]->value().columns.bid.cell(0) == 10.5 &&
-                snapshots[2]->value().columns.bid.cell(0) == 11.5 &&
-                !snapshots[2]->value().columns.ask.cell(0) && snapshots[3]->value().columns.ask.cell(0) == 12.5 &&
-                snapshots[4]->value().columns.bid.cell(0) == 11.5 && snapshots[5]->value().size() == 0 &&
+    require(snapshots[0]->value().size() == 0 && snapshots[1]->value().columns().bid.cell(0) == 10.5 &&
+                snapshots[2]->value().columns().bid.cell(0) == 11.5 &&
+                !snapshots[2]->value().columns().ask.cell(0) && snapshots[3]->value().columns().ask.cell(0) == 12.5 &&
+                snapshots[4]->value().columns().bid.cell(0) == 11.5 && snapshots[5]->value().size() == 0 &&
                 snapshots[7]->value().size() == 0 && snapshots[8]->value().size() == 0,
             "TSF scalar snapshots changed after later row mutations");
 }
@@ -1010,10 +1010,10 @@ void test_tsf_projection_view() {
         if (input.valid() && input.size() != 0) {
             input.for_each_row([&](row_id_t id, std::size_t) { result.price = input.cell<0>(id); });
             auto source_values = std::vector<const double *>{};
-            source.value_view().value().columns.bid.batches(
+            source.value_view().value().columns().bid.batches(
                 [&](const auto &batch) { source_values.push_back(batch.values); });
             auto projected_values = std::vector<const double *>{};
-            input.value_view().value().columns.price.batches(
+            input.value_view().value().columns().price.batches(
                 [&](const auto &batch) { projected_values.push_back(batch.values); });
             result.zero_copy = !source_values.empty() && source_values == projected_values;
         }
@@ -1344,8 +1344,8 @@ void test_incremental_numeric_filter() {
     require(observations[9].valid && observations[9].became_valid && observations[9].rows.empty(),
             "numeric filter did not rebuild after an empty source revalidation");
     require(snapshots.size() == commands.size() && snapshots[2] && snapshots[2]->value().size() == 2 &&
-                snapshots[2]->value().columns.bid.cell(0) == 10.5 &&
-                snapshots[3]->value().columns.bid.cell(0) == 11.5,
+                snapshots[2]->value().columns().bid.cell(0) == 10.5 &&
+                snapshots[3]->value().columns().bid.cell(0) == 11.5,
             "numeric filter snapshots did not retain stable row data");
 }
 

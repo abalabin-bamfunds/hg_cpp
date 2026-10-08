@@ -386,13 +386,14 @@ template <template <template <typename, auto...> typename> typename Schema> clas
     using columns_type = Schema<ColumnView>;
 
     FrameView() = default;
-    FrameView(columns_type columns, std::size_t size) : columns{std::move(columns)}, size_{size} {}
+    FrameView(columns_type columns, std::size_t size) : columns_{std::move(columns)}, size_{size} {}
     explicit FrameView(const Frame<Schema> &frame);
 
     std::size_t size() const noexcept { return size_; }
-    columns_type columns;
+    const columns_type &columns() const noexcept { return columns_; }
 
   private:
+    columns_type columns_;
     std::size_t size_{};
 };
 
@@ -473,7 +474,7 @@ template <template <template <typename, auto...> typename> typename Schema> clas
 template <template <template <typename, auto...> typename> typename Schema>
 FrameView<Schema>::FrameView(const Frame<Schema> &frame) : size_{frame.size()} {
     auto source = util::aggregate_members(frame.columns());
-    auto destination = util::aggregate_members(columns);
+    auto destination = util::aggregate_members(columns_);
     [&]<std::size_t... Index>(std::index_sequence<Index...>) {
         ((std::get<Index>(destination) = std::get<Index>(source).view()), ...);
     }(std::make_index_sequence<util::aggregate_member_count<typename Frame<Schema>::columns_type>>{});
@@ -1835,7 +1836,7 @@ struct scalar_storage_traits<frame::Frame<Schema>> {
     static void copy_columns(stored_type &destination, value_type source, allocator &memory,
                              std::index_sequence<Index...>) {
         auto destination_fields = util::aggregate_members(destination.columns);
-        auto source_fields = util::aggregate_members(source.columns);
+        auto source_fields = util::aggregate_members(source.columns());
         (scalar_storage_traits<typename frame::details::frame_column_storage<
              std::remove_cvref_t<decltype(std::get<Index>(destination_fields))>>::scalar_type>::assign(
              std::get<Index>(destination_fields), std::get<Index>(source_fields), memory),

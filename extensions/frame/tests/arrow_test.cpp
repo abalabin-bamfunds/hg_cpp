@@ -199,14 +199,14 @@ void test_imports_and_runtime_lifetime() {
     const auto scalar = Scalar<Frame<Quotes>>::from(imported_view);
     const auto view = scalar.value();
     require(view.size() == 4, "imported Arrow frame lost its row count");
-    require(view.columns.size.cell(0) == 5 && !view.columns.size.cell(1) && view.columns.size.cell(3) == 9,
+    require(view.columns().size.cell(0) == 5 && !view.columns().size.cell(1) && view.columns().size.cell(3) == 9,
             "imported sliced Arrow column has incorrect values");
-    require(view.columns.bid.cell(3) == 4.5 && !view.columns.ask.cell(1),
+    require(view.columns().bid.cell(3) == 4.5 && !view.columns().ask.cell(1),
             "imported independently chunked columns have incorrect values");
 
     auto size_values = std::array<const i64 *, 2>{};
     auto size_batch = std::size_t{};
-    view.columns.size.batches([&](const auto &batch) { size_values[size_batch++] = batch.values; });
+    view.columns().size.batches([&](const auto &batch) { size_values[size_batch++] = batch.values; });
     auto borrowed_result = borrow_arrow(view);
     require(borrowed_result.ok(), "borrowed Arrow frame export failed");
     auto borrowed = std::move(borrowed_result).ValueUnsafe();
@@ -226,7 +226,7 @@ void test_imports_and_runtime_lifetime() {
             "Arrow frame export lost imported values or validity");
 
     const auto consume_frame = bg::node([](In<TS<i64>> trigger, Scalar<Frame<Quotes>> input, Out<TS<i64>> output) {
-        output.set(input.value().columns.size.cell(0).value_or(-1) + *trigger);
+        output.set(input.value().columns().size.cell(0).value_or(-1) + *trigger);
     });
     auto graph_owner = ScalarValue<>{scalar};
     const auto graph = [&](wp<TS<i64>> trigger) { return consume_frame(trigger, std::move(graph_owner)); };
@@ -256,10 +256,10 @@ void test_arrow_scalar_owners() {
     table.reset();
     source = ScalarValue<>{i64{0}};
     const auto typed_view = typed_owner.view();
-    require(typed_view.value().columns.size.cell(0) == 17,
+    require(typed_view.value().columns().size.cell(0) == 17,
             "typed native snapshot did not outlive its Arrow source owner");
     const auto erased_view = erased_owner.view();
-    require(Scalar<Frame<Quotes>>::from(erased_view).value().columns.ask.cell(0) == 2.0,
+    require(Scalar<Frame<Quotes>>::from(erased_view).value().columns().ask.cell(0) == 2.0,
             "erased Arrow scalar owner did not outlive its source owner");
 }
 

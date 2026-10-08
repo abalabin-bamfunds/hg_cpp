@@ -266,7 +266,7 @@ arrow::Result<std::shared_ptr<arrow::Table>> export_frame(const FrameView<Schema
     ARROW_RETURN_NOT_OK(check_length(frame.size()));
     auto columns = std::vector<std::shared_ptr<arrow::ChunkedArray>>{};
     columns.reserve(sizeof...(Index));
-    auto source = util::aggregate_members(frame.columns);
+    auto source = util::aggregate_members(frame.columns());
     auto status = arrow::Status::OK();
     (([&] {
          if (!status.ok())
