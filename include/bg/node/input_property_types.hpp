@@ -39,6 +39,9 @@ static_assert(std::is_trivially_copyable_v<InputValidity>);
 
 inline constexpr InputValidity all_valid = InputValidity::all_valid;
 
+struct ValidItems {};
+inline constexpr ValidItems valid_items{};
+
 struct DynamicBinding {};
 inline constexpr DynamicBinding dynamic_binding{};
 

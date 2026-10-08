@@ -22,6 +22,8 @@ template <typename T>
 inline constexpr bool is_validity = std::same_as<std::remove_cv_t<T>, InputValidity> ||
                                     std::same_as<std::remove_cv_t<T>, Optionality>;
 
+template <typename T> inline constexpr bool is_valid_items = std::same_as<std::remove_cv_t<T>, ValidItems>;
+
 template <typename T> inline constexpr bool is_name = is_compile_time_name<std::remove_cv_t<T>>::value;
 
 template <typename T> inline constexpr bool is_dynamic_binding = std::same_as<std::remove_cv_t<T>, DynamicBinding>;
@@ -34,7 +36,8 @@ template <typename T> inline constexpr bool is_variadic_mode = std::same_as<std:
 
 template <auto Property>
 consteval void apply_input_property(InputActivity &activity, InputValidity &validity, bool &dynamic_binding,
-                                    bool &dynamic_activity, bool &context, std::string_view &name) {
+                                    bool &dynamic_activity, bool &context, bool &valid_items,
+                                    std::string_view &name) {
     using PropertyType = decltype(Property);
 
     if constexpr (is_activity<PropertyType>) {
@@ -47,6 +50,8 @@ consteval void apply_input_property(InputActivity &activity, InputValidity &vali
         dynamic_activity = true;
     } else if constexpr (is_context<PropertyType>) {
         context = true;
+    } else if constexpr (is_valid_items<PropertyType>) {
+        valid_items = true;
     } else if constexpr (is_name<PropertyType>) {
         name = is_compile_time_name<std::remove_cv_t<PropertyType>>::text;
     }
@@ -56,6 +61,7 @@ template <bool AllowVariadic, auto... Properties> struct basic_input_properties 
     static_assert((... && (is_activity<decltype(Properties)> || is_validity<decltype(Properties)> ||
                            is_dynamic_binding<decltype(Properties)> || is_dynamic_activity<decltype(Properties)> ||
                            is_name<decltype(Properties)> || is_context<decltype(Properties)> ||
+                           is_valid_items<decltype(Properties)> ||
                            (AllowVariadic && is_variadic_mode<decltype(Properties)>))),
                   "unsupported input property");
     static_assert((std::size_t{} + ... + static_cast<std::size_t>(is_activity<decltype(Properties)>)) <= 1,
@@ -70,6 +76,8 @@ template <bool AllowVariadic, auto... Properties> struct basic_input_properties 
                   "an input can have only one dynamic_activity property");
     static_assert((std::size_t{} + ... + static_cast<std::size_t>(is_context<decltype(Properties)>)) <= 1,
                   "an input can have only one context property");
+    static_assert((std::size_t{} + ... + static_cast<std::size_t>(is_valid_items<decltype(Properties)>)) <= 1,
+                  "an input can have only one valid_items property");
     static_assert((std::size_t{} + ... + static_cast<std::size_t>(is_variadic_mode<decltype(Properties)>)) <= 1,
                   "an input can have only one variadic property");
     static_assert(!(false || ... || is_context<decltype(Properties)>) ||
@@ -91,13 +99,14 @@ template <bool AllowVariadic, auto... Properties> struct basic_input_properties 
         bool dynamic_binding{};
         bool dynamic_activity{};
         bool context{};
+        bool valid_items{};
         std::string_view name;
     };
 
     static consteval values parse() {
         values result;
         (apply_input_property<Properties>(result.activity, result.validity, result.dynamic_binding,
-                                          result.dynamic_activity, result.context, result.name),
+                                          result.dynamic_activity, result.context, result.valid_items, result.name),
          ...);
 
         return result;
@@ -111,6 +120,7 @@ template <bool AllowVariadic, auto... Properties> struct basic_input_properties 
     static constexpr bool dynamic_binding = parsed.dynamic_binding;
     static constexpr bool dynamic_activity = parsed.dynamic_activity;
     static constexpr bool context = parsed.context;
+    static constexpr bool valid_items = parsed.valid_items;
     static constexpr std::string_view name = parsed.name;
 };
 

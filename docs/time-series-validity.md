@@ -52,6 +52,15 @@ remaining lifetime of the reference.
 tick that publishes an empty collection. They remain valid after that tick.
 `TSD` item validity is independent of TSD validity.
 
+`In<TSD<K, TS_T>, valid_items>` filters current-item enumeration, size,
+membership, and keyed access to valid immediate items. Its change queries
+report an item becoming valid as an added key and an item becoming invalid as a
+removed key. The guarantee does not change the TSD or add per-input item
+history. With `all_valid`, only the TSD root must be valid. Item IDs from removal
+cursors remain usable until the outer-cycle boundary. `key_set()` returns the
+TSD's physical key set, and generic `visit()`
+does not preserve the filter.
+
 A TSS or TSD input view can become invalid when its reference is removed or
 selects an invalid target. An invalid view has no current collection value. A
 dereferenced TSD representation reports changes to its item targets through the

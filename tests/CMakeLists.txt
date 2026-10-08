@@ -25,6 +25,7 @@ add_executable(
     evaluation/time_series/constant_test.cpp
     evaluation/time_series/default_test.cpp
     evaluation/time_series/time_series_dict_test.cpp
+    evaluation/time_series/valid_items_tsd_test.cpp
     evaluation/time_series/time_series_dict_getitem_test.cpp
     evaluation/time_series/time_series_reference_test.cpp
     evaluation/service_test.cpp

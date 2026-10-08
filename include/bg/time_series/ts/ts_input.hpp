@@ -21,6 +21,7 @@ class In<TS<Variable, TimeSeriesProperties...>, Properties...>
     using ParsedProperties = details::input_properties<Properties...>;
     using activity_control = details::input_activity_control<ParsedProperties::dynamic_activity>;
     static_assert(ParsedProperties::valid);
+    static_assert(!ParsedProperties::valid_items, "valid_items applies only to TSD inputs");
 
   public:
     In(const TimeSeriesState &last_updated, const void *value, const TimeSeriesRuntimeType &runtime_type,
@@ -68,6 +69,7 @@ class In<TS<T, TimeSeriesProperties...>, Properties...>
     using ParsedProperties = details::input_properties<Properties...>;
     using activity_control = details::input_activity_control<ParsedProperties::dynamic_activity>;
     static_assert(ParsedProperties::valid);
+    static_assert(!ParsedProperties::valid_items, "valid_items applies only to TSD inputs");
 
   public:
     using Traits = scalar_storage_traits<T>;

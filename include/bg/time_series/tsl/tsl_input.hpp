@@ -22,6 +22,7 @@ class In<TSL<Item, Size, TimeSeriesProperties...>, Properties...>
     using ParsedProperties = details::basic_input_properties<true, Properties...>;
     using activity_control = details::input_activity_control<ParsedProperties::dynamic_activity>;
     static_assert(ParsedProperties::valid);
+    static_assert(!ParsedProperties::valid_items, "valid_items applies only to TSD inputs");
 
   public:
     using storage_type = details::time_series_list_storage;

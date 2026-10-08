@@ -58,6 +58,7 @@ class In<REF<Target, TimeSeriesProperties...>, Properties...>
     using ParsedProperties = details::input_properties<Properties...>;
     using activity_control = details::input_activity_control<ParsedProperties::dynamic_activity>;
     static_assert(ParsedProperties::valid);
+    static_assert(!ParsedProperties::valid_items, "valid_items applies only to TSD inputs");
 
   public:
     using storage_type = Reference;

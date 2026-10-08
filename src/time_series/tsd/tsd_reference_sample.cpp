@@ -38,6 +38,7 @@ class SampledDictionaryRuntimeType final : public TimeSeriesDictionaryRuntimeTyp
     void for_each_modified(const TimeSeriesState &, const void *, void *, ItemIdFunction) const override;
     item_id_t next_item_id(const TimeSeriesState &, const void *, ItemRange, item_id_t) const override;
     bool item_modified(const TimeSeriesState &, const void *, item_id_t id) const override;
+    bool item_was_valid(const TimeSeriesState &, const void *, item_id_t id) const override;
     std::size_t item_count(const void *value) const override;
     ConstItem item(const void *value, item_id_t id) const override;
     MutableItem item(void *, item_id_t) const override;
@@ -392,7 +393,12 @@ item_id_t SampledDictionaryRuntimeType::next_item_id(const TimeSeriesState &, co
     if (range != ItemRange::current) {
         sample.populate_changes();
     }
-    const auto unflagged_start = start & ~previous_item_flag;
+    const auto previous_start = (start & previous_item_flag) != 0;
+    if (previous_start && range != ItemRange::removed) {
+        return util::occupancy_index::npos;
+    }
+    const auto unflagged_start = range == ItemRange::removed && !previous_start ? item_id_t{}
+                                                                                 : start & ~previous_item_flag;
     const auto next = [&](const util::index<> &ids) {
         const auto id = ids.first_set(unflagged_start);
         return id == ids.size() ? util::occupancy_index::npos : id;
@@ -432,6 +438,48 @@ bool SampledDictionaryRuntimeType::item_modified(const TimeSeriesState &, const 
     const auto &sample = *static_cast<const SampledDictionary *>(value);
     sample.populate_changes();
     return sample.modified.contains(id);
+}
+
+bool SampledDictionaryRuntimeType::item_was_valid(const TimeSeriesState &, const void *value, item_id_t id) const {
+    const auto &sample = *static_cast<const SampledDictionary *>(value);
+    sample.populate_changes();
+    const auto *previous_type = dictionary_runtime_type(sample.previous);
+    if (previous_type == nullptr || sample.previous.storage == nullptr) {
+        return false;
+    }
+
+    auto previous_id = id & ~previous_item_flag;
+    if ((id & previous_item_flag) == 0) {
+        const auto *current_type = dictionary_runtime_type(sample.current);
+        if (current_type == nullptr || sample.current.storage == nullptr) {
+            return false;
+        }
+        const auto key = ScalarData{current_type->key_runtime_type(), current_type->key(sample.current.storage, id)};
+        previous_id = previous_type->find_item(sample.previous.storage, key);
+        if (previous_id == util::occupancy_index::npos) {
+            return false;
+        }
+    }
+
+    const auto item = previous_type->item(sample.previous.storage, previous_id);
+    const TimeSeriesState *last_updated = &item.last_updated;
+    if (item.runtime_type.is_reference()) {
+        const auto previous = ResolvedTimeSeries::resolve(item.runtime_type.reference(item.value));
+        last_updated = previous.last_updated;
+    }
+
+    if (last_updated == nullptr) {
+        return false;
+    }
+    if (last_updated->time() == sample.sampled_last_updated.time()) {
+        if (last_updated->became_valid()) {
+            return false;
+        }
+        if (last_updated->became_invalid()) {
+            return true;
+        }
+    }
+    return last_updated->valid();
 }
 
 std::size_t SampledDictionaryRuntimeType::item_count(const void *value) const {

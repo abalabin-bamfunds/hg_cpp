@@ -171,6 +171,19 @@ class TimeSeriesDictionaryRuntimeType : public TimeSeriesRuntimeType {
                !storage.key_storage().value.added().contains(id);
     }
 
+    virtual bool item_was_valid(const TimeSeriesState &last_updated, const void *value, item_id_t id) const {
+        const auto &item_state = item(value, id).last_updated;
+        if (item_state.time() == last_updated.time()) {
+            if (item_state.became_valid()) {
+                return false;
+            }
+            if (item_state.became_invalid()) {
+                return true;
+            }
+        }
+        return item_state.valid();
+    }
+
     ItemLayout item_layout(item_id_t id) const override {
         if (id != key_set_item_id) {
             throw std::out_of_range{"time series dictionary item is not in packed output storage"};
