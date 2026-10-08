@@ -10,7 +10,6 @@
 #include <bg/time_series/time_series_type.hpp>
 #include <bg/time_series/time_series_output.hpp>
 #include <bg/type/declaration_variables.hpp>
-#include <bg/type/type_registry.hpp>
 #include <bg/type/type_map.hpp>
 #include <bg/node/output_declaration_traits.hpp>
 
@@ -18,17 +17,26 @@ namespace bg {
 
 namespace frame {
 
-template <cell_type T> class ColumnSeriesType final : public TimeSeriesType {
+// Extension descriptor for TSC<T>; node declarations use TSC<T> and do not access this type directly.
+class ColumnSeriesType final : public TimeSeriesType {
   public:
-    explicit ColumnSeriesType(GuaranteeParameter guarantee) : TimeSeriesType{guarantee} {}
+    ColumnSeriesType(const ScalarType &cell_type, GuaranteeParameter guarantee) noexcept
+        : TimeSeriesType{guarantee}, cell_type_{cell_type} {}
 
-    bool is_resolved() const noexcept override { return guarantee().is_resolved(); }
+    const ScalarType &cell_type() const noexcept { return cell_type_; }
+    bool is_resolved() const noexcept override { return cell_type_.is_resolved() && guarantee().is_resolved(); }
     const TimeSeriesType &with_guarantee(TimeSeriesGuarantee guarantee) const override;
     const Type &resolve(const TypeMap &type_map) const override;
 
   protected:
     bool do_match(const Type &supplied, TypeMap &type_map) const override;
+
+  private:
+    const ScalarType &cell_type_;
 };
+
+// Extension factory for semantic descriptors used during type resolution.
+const ColumnSeriesType &column_series_type(const ScalarType &cell_type, GuaranteeParameter guarantee);
 
 template <cell_type T> class ColumnSeriesRuntimeType : public TimeSeriesRuntimeType {
   public:
@@ -55,11 +63,8 @@ struct time_series_type_traits<frame::TSC<T, Properties...>> {
 
     template <typename Scope, std::size_t Index, bool Input>
     static const TimeSeriesType &get(GuaranteeParameter guarantee) {
-        if (!guarantee.is_resolved()) {
-            static const auto type = frame::ColumnSeriesType<T>{guarantee};
-            [[maybe_unused]] static const auto &registered_type = TypeRegistry::register_static(type);
-            return registered_type;
-        }
+        if (!guarantee.is_resolved())
+            return frame::column_series_type(cpp_scalar_type<T>(), guarantee);
         return frame::column_time_series_type<T>(*guarantee.value());
     }
 };

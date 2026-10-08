@@ -168,7 +168,8 @@ void test_tsc_guarantee_matching() {
     }
     require(rejected_declaration, "TSC accepted an unsupported resolved guarantee");
 
-    const auto deduplicated = bg::frame::ColumnSeriesType<bg::i64>{bg::TimeSeriesGuarantee::deduplicated};
+    const auto deduplicated = bg::frame::ColumnSeriesType{
+        bg::cpp_scalar_type<bg::i64>(), bg::TimeSeriesGuarantee::deduplicated};
     auto rejected_runtime = false;
     try {
         static_cast<void>(bg::frame::column_time_series_runtime_type<bg::i64>(deduplicated));
@@ -177,7 +178,8 @@ void test_tsc_guarantee_matching() {
     }
     require(rejected_runtime, "TSC runtime accepted an unsupported semantic type");
 
-    const auto noncanonical = bg::frame::ColumnSeriesType<bg::i64>{bg::TimeSeriesGuarantee::ordinary};
+    const auto noncanonical = bg::frame::ColumnSeriesType{
+        bg::cpp_scalar_type<bg::i64>(), bg::TimeSeriesGuarantee::ordinary};
     auto rejected_noncanonical_runtime = false;
     try {
         static_cast<void>(bg::frame::column_time_series_runtime_type<bg::i64>(noncanonical));
@@ -202,6 +204,53 @@ void test_tsc_guarantee_matching() {
         rejected_other_runtime = true;
     }
     require(rejected_other_runtime, "TSC runtime accepted another time series family");
+}
+
+void test_column_descriptor_resolution() {
+    using CELL = bg::ScalarVariable<"FRAME_CELL_TYPE">;
+    const auto &generic_column = bg::frame::column_type(bg::cpp_scalar_type<CELL>());
+    const auto &integer_column = bg::frame::column_type(bg::cpp_scalar_type<bg::i64>());
+    require(!generic_column.is_resolved(), "generic column descriptor resolved before its cell type");
+    require(&integer_column == &bg::frame::column_type(bg::cpp_scalar_type<bg::i64>()),
+            "column descriptor factory did not canonicalize concrete cell types");
+    require(&bg::cpp_scalar_type<bg::frame::Column<bg::i64>>() == &integer_column,
+            "Column<T> did not use the canonical column descriptor factory");
+
+    auto column_map = bg::TypeMap{};
+    require(generic_column.match(integer_column, column_map), "column descriptor did not match a scalar variable");
+    require(&generic_column.resolve(column_map) == &integer_column, "column descriptor resolved to a noncanonical type");
+    require(bg::TypeRegistry::instance().contains(integer_column), "column descriptor was not registered");
+    require(!generic_column.match(bg::frame::column_type(bg::cpp_scalar_type<double>()), column_map),
+            "column descriptor accepted a conflicting scalar mapping");
+
+    const auto &generic_series = bg::frame::column_series_type(
+        bg::cpp_scalar_type<CELL>(), bg::TimeSeriesGuarantee::ordinary);
+    const auto &integer_series = bg::frame::TSC<bg::i64>::type();
+    auto series_map = bg::TypeMap{};
+    require(!generic_series.is_resolved(), "generic column series descriptor resolved before its cell type");
+    require(generic_series.match(integer_series, series_map), "column series descriptor did not match a scalar variable");
+    require(&generic_series.resolve(series_map) == &integer_series,
+            "column series descriptor resolved to a noncanonical type");
+
+    const auto &cell_and_guarantee = bg::frame::column_series_type(
+        bg::cpp_scalar_type<CELL>(), bg::TimeSeriesGuarantee::final);
+    auto failed_match_map = bg::TypeMap{};
+    require(!cell_and_guarantee.match(integer_series, failed_match_map),
+            "column series descriptor accepted an incompatible guarantee");
+    require(failed_match_map.find(bg::details::scalar_variable_instance<CELL>()) == nullptr,
+            "failed column series matching retained its partial cell mapping");
+
+    constexpr auto FIRST_GUARANTEE = bg::guarantee_variable<"FRAME_FIRST_GUARANTEE">;
+    constexpr auto SECOND_GUARANTEE = bg::guarantee_variable<"FRAME_SECOND_GUARANTEE">;
+    const auto &first_guarantee = bg::frame::column_series_type(
+        bg::cpp_scalar_type<bg::i64>(), bg::details::guarantee_parameter<FIRST_GUARANTEE>());
+    const auto &same_guarantee = bg::frame::column_series_type(
+        bg::cpp_scalar_type<bg::i64>(), bg::details::guarantee_parameter<FIRST_GUARANTEE>());
+    const auto &second_guarantee = bg::frame::column_series_type(
+        bg::cpp_scalar_type<bg::i64>(), bg::details::guarantee_parameter<SECOND_GUARANTEE>());
+    require(&first_guarantee == &same_guarantee, "column series factory did not canonicalize a guarantee variable");
+    require(&first_guarantee != &second_guarantee,
+            "column series factory conflated distinct guarantee variables");
 }
 
 void test_runtime_initialization() {
@@ -491,6 +540,7 @@ void test_tsc_view_rebinding() {
 int main() {
     try {
         test_tsc_guarantee_matching();
+        test_column_descriptor_resolution();
         test_runtime_initialization();
         test_tsc_graph_behavior();
         test_double_tsc_graph();

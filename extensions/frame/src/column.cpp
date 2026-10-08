@@ -1,18 +1,18 @@
 #include <bg/frame/tsc.hpp>
 
 #include <bg/type/type_map.hpp>
+#include <bg/type/type_resolution_error.hpp>
 #include <bg/type/type_registry.hpp>
+#include <bg/util/symbol.hpp>
 
 #include <cstdint>
+#include <functional>
 #include <memory>
+#include <stdexcept>
+#include <type_traits>
+#include <variant>
 
 namespace {
-
-template <bg::frame::cell_type T> class ColumnScalarType final : public bg::ScalarType {
-  public:
-    bool is_resolved() const noexcept override { return true; }
-    const bg::Type &resolve(const bg::TypeMap &) const override { return *this; }
-};
 
 template <bg::frame::cell_type T>
 class NativeColumnSeriesRuntimeType final : public bg::frame::ColumnSeriesRuntimeType<T> {
@@ -79,11 +79,39 @@ class ColumnBindingViewSeriesRuntimeType final : public bg::frame::ColumnSeriesR
     }
 };
 
+struct ColumnSeriesTypeKey {
+    const bg::ScalarType *cell_type;
+    std::variant<bg::TimeSeriesGuarantee, const bg::GuaranteeVariable *> guarantee;
+
+    bool operator==(const ColumnSeriesTypeKey &) const = default;
+};
+
+struct ColumnSeriesTypeKeyHash {
+    std::size_t operator()(const ColumnSeriesTypeKey &key) const noexcept {
+        const auto guarantee_hash = std::visit(
+            [](const auto &guarantee) {
+                using Guarantee = std::remove_cvref_t<decltype(guarantee)>;
+                if constexpr (std::same_as<Guarantee, bg::TimeSeriesGuarantee>)
+                    return std::hash<int>{}(static_cast<int>(guarantee));
+                else
+                    return std::hash<const bg::GuaranteeVariable *>{}(guarantee);
+            },
+            key.guarantee);
+        return std::hash<const bg::ScalarType *>{}(key.cell_type) ^ (guarantee_hash << 1U);
+    }
+};
+
+ColumnSeriesTypeKey column_series_type_key(const bg::ScalarType &cell_type, bg::GuaranteeParameter guarantee) {
+    if (const auto value = guarantee.value())
+        return {&cell_type, *value};
+    if (const auto *variable = guarantee.variable())
+        return {&cell_type, variable};
+    throw std::invalid_argument{"a frame column time series requires a guarantee"};
+}
+
 template <bg::frame::cell_type T>
-const bg::frame::ColumnSeriesType<T> &ordinary_column_series_type() {
-    static const auto type = bg::frame::ColumnSeriesType<T>{bg::TimeSeriesGuarantee::ordinary};
-    [[maybe_unused]] static const auto &registered_type = bg::TypeRegistry::register_static(type);
-    return registered_type;
+const bg::frame::ColumnSeriesType &ordinary_column_series_type() {
+    return bg::frame::column_series_type(bg::cpp_scalar_type<T>(), bg::TimeSeriesGuarantee::ordinary);
 }
 
 template <bg::frame::cell_type T>
@@ -106,39 +134,80 @@ const ColumnBindingViewSeriesRuntimeType<T> &column_binding_view_series_runtime_
 
 } // namespace
 
-template <bg::frame::cell_type T>
-const bg::TimeSeriesType &bg::frame::ColumnSeriesType<T>::with_guarantee(bg::TimeSeriesGuarantee guarantee) const {
-    return column_time_series_type<T>(guarantee);
+const bg::frame::ColumnType &bg::frame::column_type(const bg::ScalarType &cell_type) {
+    return bg::TypeRegistry::instance().get_or_create<bg::frame::ColumnType, std::hash<const bg::ScalarType *>>(
+        &cell_type, [&] { return std::make_unique<bg::frame::ColumnType>(cell_type); });
 }
 
-template <bg::frame::cell_type T>
-const bg::Type &bg::frame::ColumnSeriesType<T>::resolve(const bg::TypeMap &type_map) const {
-    return column_time_series_type<T>(guarantee().resolve(type_map));
+const bg::Type &bg::frame::ColumnType::resolve(const bg::TypeMap &type_map) const {
+    const auto &resolved_cell_type = cell_type().resolve(type_map);
+    const auto *scalar_type = bg::type_cast<bg::ScalarType>(&resolved_cell_type);
+    if (scalar_type == nullptr) {
+        throw bg::TypeResolutionError{bg::TypeResolutionErrorCode::invalid_type_map, bg::util::symbol{"Column"},
+                                      "column cell type did not resolve to a scalar type"};
+    }
+    return bg::frame::column_type(*scalar_type);
 }
 
-template <bg::frame::cell_type T>
-bool bg::frame::ColumnSeriesType<T>::do_match(const bg::Type &supplied, bg::TypeMap &type_map) const {
-    const auto *column = dynamic_cast<const ColumnSeriesType<T> *>(&supplied);
+bool bg::frame::ColumnType::do_match(const bg::Type &supplied, bg::TypeMap &type_map) const {
+    const auto *column = dynamic_cast<const ColumnType *>(&supplied);
     if (column == nullptr || !column->is_resolved())
         return false;
 
     auto trial = type_map.overlay();
-    if (!guarantee().match(*column->guarantee().value(), trial))
+    if (!cell_type().match(column->cell_type(), trial))
         return false;
+    type_map.apply(std::move(trial));
+    return true;
+}
+
+const bg::frame::ColumnSeriesType &bg::frame::column_series_type(const bg::ScalarType &cell_type,
+                                                                 bg::GuaranteeParameter guarantee) {
+    const auto key = column_series_type_key(cell_type, guarantee);
+    return bg::TypeRegistry::instance().get_or_create<bg::frame::ColumnSeriesType, ColumnSeriesTypeKeyHash>(
+        key, [&] { return std::make_unique<bg::frame::ColumnSeriesType>(cell_type, guarantee); });
+}
+
+const bg::TimeSeriesType &bg::frame::ColumnSeriesType::with_guarantee(bg::TimeSeriesGuarantee guarantee) const {
+    if (guarantee != bg::TimeSeriesGuarantee::ordinary)
+        throw std::invalid_argument{"frame TSC requires ordinary"};
+    return column_series_type(cell_type(), guarantee);
+}
+
+const bg::Type &bg::frame::ColumnSeriesType::resolve(const bg::TypeMap &type_map) const {
+    const auto &resolved_cell_type = cell_type().resolve(type_map);
+    const auto *scalar_type = bg::type_cast<bg::ScalarType>(&resolved_cell_type);
+    if (scalar_type == nullptr) {
+        throw bg::TypeResolutionError{bg::TypeResolutionErrorCode::invalid_type_map, bg::util::symbol{"TSC"},
+                                      "column time series cell type did not resolve to a scalar type"};
+    }
+    const auto resolved_guarantee = guarantee().resolve(type_map);
+    if (resolved_guarantee != bg::TimeSeriesGuarantee::ordinary)
+        throw std::invalid_argument{"frame TSC requires ordinary"};
+    return column_series_type(*scalar_type, resolved_guarantee);
+}
+
+bool bg::frame::ColumnSeriesType::do_match(const bg::Type &supplied, bg::TypeMap &type_map) const {
+    const auto *column = dynamic_cast<const ColumnSeriesType *>(&supplied);
+    if (column == nullptr || !column->is_resolved())
+        return false;
+
+    auto trial = type_map.overlay();
+    if (!cell_type().match(column->cell_type(), trial) || !guarantee().match(*column->guarantee().value(), trial))
+        return false;
+
     type_map.apply(std::move(trial));
     return true;
 }
 
 namespace bg {
 
-template <frame::cell_type T> const ScalarType &scalar_type_traits<frame::Column<T>>::type() noexcept {
-    static const ColumnScalarType<T> type;
-    [[maybe_unused]] static const auto &registered_type = TypeRegistry::register_static(type);
-    return registered_type;
+template <frame::cell_type T> const ScalarType &scalar_type_traits<frame::Column<T>>::type() {
+    return frame::column_type(cpp_scalar_type<T>());
 }
 
-template const ScalarType &scalar_type_traits<frame::Column<i64>>::type() noexcept;
-template const ScalarType &scalar_type_traits<frame::Column<double>>::type() noexcept;
+template const ScalarType &scalar_type_traits<frame::Column<i64>>::type();
+template const ScalarType &scalar_type_traits<frame::Column<double>>::type();
 template const ScalarRuntimeType &cpp_scalar_runtime_type<frame::Column<i64>>();
 template const ScalarRuntimeType &cpp_scalar_runtime_type<frame::Column<double>>();
 
@@ -174,8 +243,6 @@ const TimeSeriesRuntimeType &frame::column_binding_view_time_series_runtime_type
     return column_binding_view_series_runtime_type<T>();
 }
 
-template class frame::ColumnSeriesType<i64>;
-template class frame::ColumnSeriesType<double>;
 template const TimeSeriesType &frame::column_time_series_type<i64>(TimeSeriesGuarantee);
 template const TimeSeriesType &frame::column_time_series_type<double>(TimeSeriesGuarantee);
 template const TimeSeriesRuntimeType &frame::column_time_series_runtime_type<i64>(const TimeSeriesType &);

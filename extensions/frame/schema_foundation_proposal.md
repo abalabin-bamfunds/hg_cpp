@@ -1,7 +1,7 @@
 # Frame schema foundation
 
-Status: proposal for owner review. No schema implementation is authorized by
-this document. Names below describe proposed APIs.
+Status: migration started. The first milestone replaces semantic descriptors;
+runtime storage and generic node access follow.
 
 ## Purpose
 
@@ -10,17 +10,11 @@ schemas constructed programmatically. Generic nodes must preserve a captured
 schema through ordinary BG type resolution. Native and Arrow representations
 must expose the same value and change APIs.
 
-The existing source is preserved in `frame-output-options`. This lane starts
-from BG `e470d432`. All five existing extension tests pass against an installed
-BG package from that revision with Arrow enabled.
+The existing source is preserved in commit `90238bc6` on `agent/frame-schema`.
+The [shared BG schema foundation](../../docs/type-system.md#schemas) is merged
+into main. Frames use its descriptors, reflection, and canonical factories.
 
-The [shared BG schema proposal](../../../schema-foundation/experiments/schema_foundation/proposal.md)
-now precedes frame adaptation. Frames use its common descriptor and factories.
-The foundation is implemented and verified in its lane. The existing frame
-extension also passes its five tests against that installed BG package with
-Arrow enabled, without source changes.
-
-## Scope to confirm
+## Scope
 
 A schema supplied programmatically during wiring is resolved and fixed for
 the graph lifetime. Evaluation-time changes to the column set are a separate
@@ -30,6 +24,9 @@ candidate representation for pivot columns.
 The initial cell implementations remain nullable `i64` and `double`.
 Unsupported resolved cell types fail during wiring. This work adds schema
 generality rather than additional cell layouts or expression operations.
+
+Frame inheritance matching remains an owner decision. Existing concrete frame
+matching is unchanged until that decision is made.
 
 ## One implementation
 
@@ -76,6 +73,13 @@ membership changes, and publication have one implementation.
 Frame construction validates that fields describe supported cell scalar types
 and present columns. Cell nullability belongs to column values. The extension
 does not implement a separate schema descriptor, lookup, or registry.
+
+The column descriptor milestone adds `ColumnType` and `ColumnSeriesType` shared
+by concrete declarations. Their extension-facing factories match and resolve
+scalar variables through `TypeMap`. Frame and frame-series descriptors follow
+with schema variable matching. Generic node binding becomes available with the
+shared runtime storage; the descriptor milestone retains the existing concrete
+storage and runtime implementations.
 
 Concrete C++ access resolves column ordinals and cell declarations at compile
 time. Generic access resolves them from the schema. Both access the same
@@ -133,35 +137,18 @@ schema descriptor. Both construct the same frame semantic types. Typed imports
 validate against their C++ schema descriptor. Borrowed export and owning copy
 continue to use the existing lifetime contracts.
 
-## Required BG change for review
+## Extension boundary
 
-Before the shared foundation, BG's `SCHEMA` variable was specifically
-`TypeVariableType<BundleSchemaType>`. Its resolver parameters and diagnostics
-also assumed that category. A frame schema could not use this variable without
-pretending to be a bundle schema or inventing a second variable identity.
-
-The approved shared BG schema proposal supplies `SchemaType : Type` and the
-common `Schema` descriptor, migrating both bundle and hierarchical scalar
-metadata:
-
-- TSB and hierarchical scalar types refer to the common `Schema` descriptor.
-- `SCHEMA` captures `SchemaType`; the declaration supports named variables.
-- Schema variable parameters, mapping validation, and overload specificity
-  use this category.
-- Bundle resolution checks time series field types; frame resolution checks
-  cell scalar field types and column presence.
-- `schema_type<SCHEMA>` remains the resolver parameter declaration. Concrete
-  bundle schema declarations retain their current meaning.
-
-The common descriptor owns no frame storage, column operations, or Arrow
-semantics. Frame semantic types, access, runtimes, and output options remain
-in the extension. No implementation is to be made before owner review.
+Frame semantic types, field validation, storage, column operations, Arrow
+adapters, and output options belong to the extension. The common BG descriptor
+provides schema identity and field metadata. Report any required BG change for
+owner review before implementing it.
 
 ## Build order and acceptance
 
 1. Verify the existing numeric extension baseline against latest BG (complete).
-2. Implement the approved common schema foundation in BG (complete on its lane).
-3. Add canonical frame/column semantic descriptors and generic resolution.
+2. Implement the common schema foundation in BG (merged).
+3. Add canonical frame/column semantic descriptors and generic descriptor resolution.
 4. Convert frame storage and mutation to the shared runtime layout; retain
    concrete typed access and existing behavior tests.
 5. Add generic input/output access, programmatic schema sources, views, and

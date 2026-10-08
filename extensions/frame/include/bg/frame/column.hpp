@@ -7,6 +7,7 @@
 #include <bg/time_series/input_data.hpp>
 #include <bg/time_series/output_binding.hpp>
 #include <bg/type/scalar_type.hpp>
+#include <bg/type/type_map.hpp>
 #include <bg/type/time_series_type.hpp>
 #include <bg/util/index.hpp>
 #include <bg/util/occupancy_index.hpp>
@@ -34,6 +35,26 @@ using row_id_t = std::uint32_t;
 inline constexpr auto no_row = std::numeric_limits<row_id_t>::max();
 template <typename T>
 concept cell_type = std::same_as<T, i64> || std::same_as<T, double>;
+
+// Extension descriptor for Column<T>; node declarations use Column<T> and do not access this type directly.
+class ColumnType final : public ScalarType {
+  public:
+    explicit ColumnType(const ScalarType &cell_type) noexcept : cell_type_{cell_type} {}
+
+    const ScalarType &cell_type() const noexcept { return cell_type_; }
+    bool is_resolved() const noexcept override { return cell_type_.is_resolved(); }
+    const Type &resolve(const TypeMap &type_map) const override;
+
+  protected:
+    bool do_match(const Type &supplied, TypeMap &type_map) const override;
+
+  private:
+    const ScalarType &cell_type_;
+};
+
+// Extension factory for semantic descriptors used during type resolution.
+const ColumnType &column_type(const ScalarType &cell_type);
+
 template <typename T> class NativeColumn;
 template <typename T> class NativeColumnData;
 template <typename T> class ColumnSeriesView;
@@ -1027,7 +1048,7 @@ template <typename T> inline typename ColumnView<T>::cell_type ColumnView<T>::ce
 
 namespace bg {
 template <frame::cell_type T> struct scalar_type_traits<frame::Column<T>> {
-    static const ScalarType &type() noexcept;
+    static const ScalarType &type();
 };
 template <frame::cell_type T> struct scalar_storage_traits<frame::Column<T>> {
     using stored_type = frame::ColumnStorage<T>;
