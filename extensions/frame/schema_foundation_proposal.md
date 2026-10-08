@@ -25,8 +25,8 @@ The initial cell implementations remain nullable `i64` and `double`.
 Unsupported resolved cell types fail during wiring. This work adds schema
 generality rather than additional cell layouts or expression operations.
 
-Frame inheritance matching remains an owner decision. Existing concrete frame
-matching is unchanged until that decision is made.
+Frame input inheritance is approved. Concrete matching remains unchanged until
+the shared storage and scalar access support inherited inputs safely.
 
 ## One implementation
 
@@ -107,6 +107,43 @@ registered `FrameType` or `FrameSeriesType`, not a generated C++ specialization.
 
 Schemas with scalar variables in individual fields also resolve through BG's
 type map. The runtime is selected only after all schema fields resolve.
+
+### Inherited inputs
+
+`In<TSF<Base>>` accepts `TSF<Derived>` when Derived declares inheritance from
+Base. `Frame<Base>` accepts the corresponding derived scalar type. Typed access
+uses Base's declared fields; runtime inspection sees the actual Derived schema.
+`value_view()` retains that actual scalar runtime and borrows its storage.
+
+Schema-preserving nodes capture `SCHEMA`, including the supplied schema's
+additional fields. Each TSF output uses its resolved schema. Input columns do
+not extend the output schema.
+
+Matching a named parameter against an anonymous runtime schema by required
+field names and types remains an owner decision.
+
+### Scalar extension proposal
+
+Status: proposed BG changes awaiting owner approval.
+
+BG's current scalar read path asks the source runtime to construct a C++ view
+in storage sized for the declared view. `FrameView<Base>` and
+`FrameView<Derived>` can have different layouts. Shared frame storage is required
+to construct the declared typed view while retaining the actual scalar runtime.
+
+Proposed optional extension-facing scalar storage trait operations:
+
+```cpp
+static value_type read(const details::ScalarData &source);
+static const ScalarRuntimeType &copy_runtime_type(const details::ScalarData &source);
+```
+
+The read operation constructs the declared view from the source representation.
+The copy operation selects the runtime used for an owning copy. Existing traits
+retain their current behavior. Whether an owning `ScalarValue<Frame<Base>>`
+copied from Derived retains Derived or constructs a Base snapshot remains an
+owner decision. Existing typed same-schema Arrow copies retain canonical native
+storage.
 
 ## Node and value APIs
 
