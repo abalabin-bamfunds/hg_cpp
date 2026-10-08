@@ -5,6 +5,13 @@ Status: schema-backed semantic descriptors are committed in `e9f04c74` on
 `c3f4fafc` and passes all five extension tests, including Arrow. Shared owning
 storage, inherited input matching, and generic node access follow.
 
+The existing extension at `c4360703` also passes all five tests against the
+installed BG hook package at `42f63586`. Its six-case benchmark completed
+before the storage migration. Reports are local build artifacts:
+`build/schema-hooks-consumer/baseline.md` and `baseline.csv`. Extension and
+benchmark code use Release; the installed BG library uses Debug. Use the same
+package and workload for the storage comparison.
+
 ## Purpose
 
 Use one frame implementation for concrete C++ schemas, schema variables, and
