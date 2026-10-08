@@ -16,6 +16,7 @@
 #include <bg/type/type_registry.hpp>
 #include <bg/type/type_map.hpp>
 #include <bg/node/output_declaration_traits.hpp>
+#include <bg/scalar/bundle/scalar_type.hpp>
 #include <bg/util/compile_time_string.hpp>
 #include <bg/util/reflection.hpp>
 
@@ -24,10 +25,12 @@
 #include <memory>
 #include <optional>
 #include <stdexcept>
+#include <string>
 #include <tuple>
 #include <typeinfo>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 namespace bg::frame {
 
@@ -69,39 +72,53 @@ struct TSF : TimeSeriesDeclaration<TSF<Schema, Properties...>, Properties...> {}
 template <util::compile_time_string... Names> struct ColumnNames {};
 template <util::compile_time_string... Names> constexpr auto columns() noexcept { return ColumnNames<Names...>{}; }
 
-namespace details {
+class FrameType final : public ScalarType {
+  public:
+    explicit FrameType(const SchemaType &schema) noexcept : schema_{std::addressof(schema)} {}
 
-template <typename T, auto... Properties> using frame_column_series = TSC<T, Properties...>;
+    void format_name(std::string &result) const override;
+    const SchemaType &schema_type() const noexcept { return *schema_; }
+    bool is_resolved() const noexcept override { return schema_->is_resolved(); }
+    const Type &resolve(const TypeMap &type_map) const override;
 
-template <template <template <typename, auto...> typename> typename Schema, std::size_t... Index>
-auto frame_column_series_types(std::index_sequence<Index...>) {
-    using Fields = Schema<frame_column_series>;
-    const auto fields = Fields{};
-    const auto members = util::aggregate_members(fields);
-    return std::array<const TimeSeriesType *, sizeof...(Index)>{
-        &std::remove_cvref_t<decltype(std::get<Index>(members))>::type()...};
-}
+  protected:
+    bool do_match(const Type &supplied, TypeMap &type_map) const override;
 
-} // namespace details
+  private:
+    const SchemaType *schema_;
+};
 
-template <template <template <typename, auto...> typename> typename Schema>
 class FrameSeriesType final : public FixedItemTimeSeriesType {
   public:
-    static constexpr auto field_count = util::aggregate_member_count<Schema<Column>>;
-    explicit FrameSeriesType(GuaranteeParameter guarantee) : FixedItemTimeSeriesType{guarantee} {}
+    FrameSeriesType(const SchemaType &schema, GuaranteeParameter guarantee);
 
-    bool is_resolved() const noexcept override { return guarantee().is_resolved(); }
-    std::size_t item_count() const noexcept override { return field_count; }
-    const TimeSeriesType &item_type(std::size_t index) const override {
-        const auto types = details::frame_column_series_types<Schema>(std::make_index_sequence<field_count>{});
-        return *types.at(index);
-    }
+    void format_name(std::string &result) const override;
+    const SchemaType &schema_type() const noexcept { return *schema_; }
+    bool is_resolved() const noexcept override { return schema_->is_resolved() && guarantee().is_resolved(); }
+    std::size_t item_count() const noexcept override { return schema_->field_count(); }
+    const TimeSeriesType &item_type(std::size_t index) const override;
     const TimeSeriesType &with_guarantee(TimeSeriesGuarantee guarantee) const override;
     const Type &resolve(const TypeMap &type_map) const override;
 
   protected:
     bool do_match(const Type &supplied, TypeMap &type_map) const override;
+
+  private:
+    const SchemaType *schema_;
+    std::vector<const TimeSeriesType *> item_types_;
 };
+
+const FrameType &frame_type(const SchemaType &schema);
+const FrameSeriesType &frame_series_type(const SchemaType &schema, GuaranteeParameter guarantee);
+
+template <template <template <typename, auto...> typename> typename Schema>
+const SchemaType &frame_schema_type() {
+    if constexpr (bg::details::schema_variable_template<Schema>) {
+        return bg::details::schema_variable_instance<Schema>();
+    } else {
+        return bg::details::cpp_hierarchical_scalar_schema<Schema>();
+    }
+}
 
 template <template <template <typename, auto...> typename> typename Schema>
 const TimeSeriesType &frame_time_series_type(TimeSeriesGuarantee guarantee);
@@ -112,12 +129,7 @@ template <template <template <typename, auto...> typename> typename Schema> clas
 template <template <template <typename, auto...> typename> typename Schema> class FrameView;
 
 namespace details {
-const ScalarType &canonical_frame_scalar_type(const std::type_info &identity, std::string_view name);
-using frame_series_type_factory = std::unique_ptr<TimeSeriesType> (*)(TimeSeriesGuarantee);
 using frame_series_runtime_factory = std::unique_ptr<TimeSeriesRuntimeType> (*)(const TimeSeriesType &);
-const TimeSeriesType &canonical_frame_series_type(const std::type_info &identity, std::string_view name,
-                                                  TimeSeriesGuarantee guarantee,
-                                                  frame_series_type_factory factory);
 const TimeSeriesRuntimeType &canonical_frame_series_runtime_type(const std::type_info &identity,
                                                                  const TimeSeriesType &type,
                                                                  frame_series_runtime_factory factory);
@@ -1261,60 +1273,45 @@ template <template <template <typename, auto...> typename> typename Schema>
 const TimeSeriesType &frame_time_series_type(TimeSeriesGuarantee guarantee) {
     if (guarantee != TimeSeriesGuarantee::ordinary)
         throw std::invalid_argument{"TSF requires ordinary"};
-    const auto &type = details::canonical_frame_series_type(
-        typeid(TSF<Schema>), util::unqualified_type_name<Schema<Column>>(), guarantee,
-        [](TimeSeriesGuarantee value) -> std::unique_ptr<TimeSeriesType> {
-            return std::make_unique<FrameSeriesType<Schema>>(value);
-        });
-    const auto &runtime = details::canonical_frame_series_runtime_type(
-        typeid(TSF<Schema>), type, [](const TimeSeriesType &series_type) -> std::unique_ptr<TimeSeriesRuntimeType> {
-            return std::make_unique<details::NativeFrameSeriesRuntimeType<Schema>>(series_type);
-        });
-    register_time_series_runtime_type(runtime);
+    const auto &type = frame_series_type(frame_schema_type<Schema>(), guarantee);
+    if constexpr (!bg::details::schema_variable_template<Schema>) {
+        const auto &runtime = details::canonical_frame_series_runtime_type(
+            typeid(TSF<Schema>), type,
+            [](const TimeSeriesType &series_type) -> std::unique_ptr<TimeSeriesRuntimeType> {
+                return std::make_unique<details::NativeFrameSeriesRuntimeType<Schema>>(series_type);
+            });
+        register_time_series_runtime_type(runtime);
+    }
     return type;
 }
 
 template <template <template <typename, auto...> typename> typename Schema>
 const TimeSeriesRuntimeType &frame_time_series_runtime_type(const TimeSeriesType &type) {
-    const auto &canonical = frame_time_series_type<Schema>(TimeSeriesGuarantee::ordinary);
-    if (&type != &canonical)
-        throw std::invalid_argument{"TSF runtime requires resolved ordinary type"};
-    return details::canonical_frame_series_runtime_type(
-        typeid(TSF<Schema>), canonical, [](const TimeSeriesType &series_type) -> std::unique_ptr<TimeSeriesRuntimeType> {
-            return std::make_unique<details::NativeFrameSeriesRuntimeType<Schema>>(series_type);
-        });
+    if constexpr (bg::details::schema_variable_template<Schema>) {
+        throw std::logic_error{"runtime-schema TSF storage is not implemented"};
+    } else {
+        const auto &canonical = frame_time_series_type<Schema>(TimeSeriesGuarantee::ordinary);
+        if (&type != &canonical)
+            throw std::invalid_argument{"TSF runtime requires resolved ordinary type"};
+        return details::canonical_frame_series_runtime_type(
+            typeid(TSF<Schema>), canonical,
+            [](const TimeSeriesType &series_type) -> std::unique_ptr<TimeSeriesRuntimeType> {
+                return std::make_unique<details::NativeFrameSeriesRuntimeType<Schema>>(series_type);
+            });
+    }
 }
 
 template <template <template <typename, auto...> typename> typename Schema>
 const TimeSeriesRuntimeType &frame_view_time_series_runtime_type(const TimeSeriesType &type) {
-    const auto &canonical = frame_time_series_type<Schema>(TimeSeriesGuarantee::ordinary);
-    if (&type != &canonical)
-        throw std::invalid_argument{"TSF view runtime requires resolved ordinary type"};
-    static const auto runtime = details::FrameViewSeriesRuntimeType<Schema>{canonical};
-    return runtime;
-}
-
-template <template <template <typename, auto...> typename> typename Schema>
-const TimeSeriesType &FrameSeriesType<Schema>::with_guarantee(TimeSeriesGuarantee guarantee) const {
-    return frame_time_series_type<Schema>(guarantee);
-}
-
-template <template <template <typename, auto...> typename> typename Schema>
-const Type &FrameSeriesType<Schema>::resolve(const TypeMap &type_map) const {
-    return frame_time_series_type<Schema>(guarantee().resolve(type_map));
-}
-
-template <template <template <typename, auto...> typename> typename Schema>
-bool FrameSeriesType<Schema>::do_match(const Type &supplied, TypeMap &type_map) const {
-    const auto *frame = dynamic_cast<const FrameSeriesType<Schema> *>(&supplied);
-    if (frame == nullptr || !frame->is_resolved())
-        return false;
-
-    auto trial = type_map.overlay();
-    if (!guarantee().match(*frame->guarantee().value(), trial))
-        return false;
-    type_map.apply(std::move(trial));
-    return true;
+    if constexpr (bg::details::schema_variable_template<Schema>) {
+        throw std::logic_error{"runtime-schema TSF views are not implemented"};
+    } else {
+        const auto &canonical = frame_time_series_type<Schema>(TimeSeriesGuarantee::ordinary);
+        if (&type != &canonical)
+            throw std::invalid_argument{"TSF view runtime requires resolved ordinary type"};
+        static const auto runtime = details::FrameViewSeriesRuntimeType<Schema>{canonical};
+        return runtime;
+    }
 }
 
 } // namespace bg::frame
@@ -1500,17 +1497,34 @@ class Out<frame::TSF<Schema, Properties...>, frame::view> {
 template <template <template <typename, auto...> typename> typename Schema, auto... Properties>
 struct time_series_type_traits<frame::TSF<Schema, Properties...>> {
     using semantic_type = TimeSeriesType;
-    static constexpr bool generic = false;
+    static constexpr bool generic = details::schema_variable_template<Schema>;
     static constexpr bool supported = true;
 
     template <typename Scope, std::size_t Index, bool Input>
     static const TimeSeriesType &get(GuaranteeParameter guarantee) {
         if (!guarantee.is_resolved()) {
-            static const auto type = frame::FrameSeriesType<Schema>{guarantee};
-            [[maybe_unused]] static const auto &registered_type = TypeRegistry::register_static(type);
-            return registered_type;
+            return frame::frame_series_type(frame::frame_schema_type<Schema>(), guarantee);
         }
         return frame::frame_time_series_type<Schema>(*guarantee.value());
+    }
+};
+
+template <template <template <typename, auto...> typename> typename Schema>
+struct scalar_declaration_traits<frame::Frame<Schema>> {
+    static constexpr bool generic = details::schema_variable_template<Schema>;
+    static constexpr bool is_collection = false;
+    static constexpr bool supports_implicit_argument = false;
+    static constexpr bool supports_time_series = true;
+};
+
+template <template <template <typename, auto...> typename> typename Schema>
+struct declaration_variable_traits<frame::Frame<Schema>> {
+    template <typename Visitor> static void for_each(Visitor &&visitor) {
+        if constexpr (details::schema_variable_template<Schema>) {
+            using Declaration = schema_type<Schema>;
+            std::forward<Visitor>(visitor).template operator()<Declaration>(
+                details::schema_variable_instance<Schema>());
+        }
     }
 };
 
@@ -1595,8 +1609,7 @@ namespace bg {
 template <template <template <typename, auto...> typename> typename Schema>
 struct scalar_type_traits<frame::Frame<Schema>> {
     static const ScalarType &type() {
-        return frame::details::canonical_frame_scalar_type(
-            typeid(frame::Frame<Schema>), util::unqualified_type_name<Schema<frame::Column>>());
+        return frame::frame_type(frame::frame_schema_type<Schema>());
     }
 };
 

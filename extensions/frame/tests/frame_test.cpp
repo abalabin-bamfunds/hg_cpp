@@ -314,6 +314,12 @@ void test_frame_scalar_views_and_snapshots() {
     require(&series_type == &frame_time_series_type<Quotes>(TimeSeriesGuarantee::ordinary),
             "frame schema time series identity is not canonical");
     require(TypeRegistry::instance().contains(series_type), "frame time series semantic type was not registered");
+    auto scalar_type_name = std::string{};
+    cpp_scalar_type<Frame<Quotes>>().format_name(scalar_type_name);
+    require(scalar_type_name == "Frame<Quotes>", "frame scalar type formatted with the wrong name");
+    auto series_type_name = std::string{};
+    series_type.format_name(series_type_name);
+    require(series_type_name == "TSF<Quotes>", "frame time series type formatted with the wrong name");
     require(&frame_time_series_runtime_type<Quotes>(series_type) ==
                 &frame_time_series_runtime_type<Quotes>(series_type),
             "frame schema runtime identity is not canonical");
@@ -363,6 +369,67 @@ void test_frame_scalar_views_and_snapshots() {
     require(failing_memory.allocations == failing_memory.deallocations, "owning frame snapshot leaked allocations");
     require(cpp_scalar_type<Frame<Quotes>>().accepts(cpp_scalar_type<Frame<EmptySchema>>()) == false,
             "frame semantic types with distinct schemas matched");
+
+    const auto &generic_frame_type = frame_type(frame_schema_type<bg::SCHEMA>());
+    const auto &concrete_frame_type = frame_type(frame_schema_type<Quotes>());
+    auto generic_frame_name = std::string{};
+    generic_frame_type.format_name(generic_frame_name);
+    require(generic_frame_name == "Frame<SCHEMA>", "generic frame type formatted with the wrong name");
+    auto frame_type_map = TypeMap{};
+    require(generic_frame_type.match(concrete_frame_type, frame_type_map),
+            "generic frame schema did not capture a concrete schema");
+    require(!generic_frame_type.match(frame_type(frame_schema_type<EmptySchema>()), frame_type_map),
+            "a repeated frame schema variable matched a different schema");
+    require(&generic_frame_type.resolve(frame_type_map) == &concrete_frame_type,
+            "generic frame schema did not resolve to the captured schema");
+
+    const auto anonymous_fields = std::array{SchemaField{util::symbol{"value"}, &cpp_scalar_type<i64>()}};
+    const auto &anonymous_schema = bg::anonymous_schema(anonymous_fields);
+    require(&anonymous_schema == &bg::anonymous_schema(anonymous_fields),
+            "equivalent anonymous schema descriptors were not canonical");
+    require(&frame_type(anonymous_schema) == &frame_type(bg::anonymous_schema(anonymous_fields)),
+            "frame types over canonical anonymous schemas were not canonical");
+    require(&frame_series_type(anonymous_schema, TimeSeriesGuarantee::ordinary) ==
+                &frame_series_type(bg::anonymous_schema(anonymous_fields), TimeSeriesGuarantee::ordinary),
+            "frame series types over canonical anonymous schemas were not canonical");
+
+    const auto &generic_series_type = frame_series_type(frame_schema_type<bg::SCHEMA>(),
+                                                        TimeSeriesGuarantee::ordinary);
+    auto generic_series_name = std::string{};
+    generic_series_type.format_name(generic_series_name);
+    require(generic_series_name == "TSF<SCHEMA>", "generic frame time series type formatted with the wrong name");
+    auto series_type_map = TypeMap{};
+    require(generic_series_type.match(series_type, series_type_map),
+            "generic frame series schema did not capture a concrete schema");
+    require(&generic_series_type.resolve(series_type_map) == &series_type,
+            "generic frame series schema did not resolve to the captured schema");
+
+    const auto &empty_series_type = frame_series_type(frame_schema_type<EmptySchema>(),
+                                                      TimeSeriesGuarantee::ordinary);
+    require(generic_series_type.item_count() == std::dynamic_extent && empty_series_type.item_count() == 0,
+            "unknown frame schema arity was confused with an empty schema");
+
+    constexpr auto FRAME_GUARANTEE = guarantee_variable<"FRAME_SCHEMA_GUARANTEE">;
+    const auto guarantee_parameter = bg::details::guarantee_parameter<FRAME_GUARANTEE>();
+    const auto &schema_and_guarantee_type = frame_series_type(frame_schema_type<bg::SCHEMA>(), guarantee_parameter);
+    auto guarantee_type_map = TypeMap{};
+    require(schema_and_guarantee_type.match(series_type, guarantee_type_map),
+            "frame series schema and guarantee variables did not match");
+    require(&schema_and_guarantee_type.resolve(guarantee_type_map) == &series_type,
+            "frame series schema and guarantee variables did not resolve");
+
+    static const auto minimum_deduplicated =
+        GuaranteeVariable{util::symbol{"FRAME_SCHEMA_MIN_DEDUPLICATED"}, TimeSeriesGuarantee::deduplicated};
+    const auto &constrained_series_type = frame_series_type(
+        frame_schema_type<bg::SCHEMA>(), GuaranteeParameter{minimum_deduplicated});
+    const auto &schema_variable = dynamic_cast<const Variable &>(constrained_series_type.schema_type());
+    auto rollback_type_map = TypeMap{};
+    require(!constrained_series_type.match(series_type, rollback_type_map),
+            "a frame guarantee variable matched below its minimum guarantee");
+    require(rollback_type_map.find(schema_variable) == nullptr,
+            "failed frame series matching retained a schema variable mapping");
+    require(rollback_type_map.find(minimum_deduplicated) == nullptr,
+            "failed frame series matching retained a guarantee variable mapping");
 }
 
 void test_scalar_frame_time_series_graph() {
