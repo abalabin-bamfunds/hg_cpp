@@ -1,5 +1,6 @@
 #include <bg/graph/details/variadic_wiring_operations.hpp>
 #include <bg/graph/details/variadic_wiring_record.hpp>
+#include <bg/library.hpp>
 #include <bg/node/runtime_signature_node_template.hpp>
 #include <bg/operators.hpp>
 #include <bg/python/graph_definition.hpp>
@@ -546,7 +547,7 @@ void bind_core(nb::module_ &module) {
     });
 
     details::bind_operators(module);
-    const auto add_operator = module.attr("operators").attr("add");
+    const auto add_operator = details::PythonOperator{operators::add};
 
     nb::class_<TypeDescriptor>(module, "_Type")
         .def_prop_ro("is_time_series", [](const TypeDescriptor &value) { return value.type().is_time_series(); })
@@ -564,12 +565,12 @@ void bind_core(nb::module_ &module) {
         .def(
             "__add__",
             [add_operator](const PythonWiringPoint &self, nb::handle other) {
-                return add_operator(nb::cast(self), other);
+                return add_operator.call(nb::cast(self), other);
             },
             nb::is_operator())
         .def("__radd__",
              [add_operator](const PythonWiringPoint &self, nb::handle other) {
-                 return add_operator(other, nb::cast(self));
+                 return add_operator.call(other, nb::cast(self));
              },
              nb::is_operator());
     nb::class_<InputView>(module, "InputView")

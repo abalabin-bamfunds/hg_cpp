@@ -1,3 +1,6 @@
+import subprocess
+import sys
+
 import pytest
 
 import bg
@@ -121,6 +124,46 @@ def test_add_rejects_optional_input_qualifiers_without_an_optional_overload():
 
     with pytest.raises(ValueError, match="an opt-qualified argument requires an optional input parameter"):
         bg.test_graph(graph, [1.0])
+
+
+def test_wiring_point_addition_rejects_optional_inputs_without_an_optional_overload():
+    @bg.graph
+    def graph(value: bg.TS[float]) -> bg.TS[float]:
+        return bg.opt(value) + 1.0
+
+    with pytest.raises(ValueError, match="an opt-qualified argument requires an optional input parameter"):
+        bg.test_graph(graph, [1.0])
+
+
+def test_wiring_point_addition_does_not_depend_on_python_operator_attributes():
+    script = """
+import gc
+import bg
+import bg._bg as native
+
+del bg.operators.add
+del native.operators.add
+gc.collect()
+bg.operators.add = object()
+native.operators.add = object()
+gc.collect()
+
+@bg.graph
+def graph(lhs: bg.TS[float], rhs: bg.TS[float]) -> bg.TS[float]:
+    return lhs + rhs
+
+@bg.graph
+def reflected(value: bg.TS[float]) -> bg.TS[float]:
+    return 2.0 + value
+
+assert bg.test_graph(graph, [1.0], [2.0]) == [3.0]
+assert bg.test_graph(reflected, [3.0]) == [5.0]
+"""
+
+    completed = subprocess.run([sys.executable, "-c", script], check=False, capture_output=True, text=True)
+
+    assert completed.returncode == 0, completed.stderr
+    assert "nanobind: leaked" not in completed.stderr
 
 
 def test_add_reports_native_overload_diagnostics_for_unsupported_types():

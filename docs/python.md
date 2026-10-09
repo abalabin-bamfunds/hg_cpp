@@ -51,9 +51,11 @@ def example() -> bg.TS[int]:
 assert bg.test_graph(example) == [3]
 ```
 
-`bg.operators` exposes engine operators through their normal C++ overload
-resolution. Positional and named arguments can contain wiring points or
-registered Python scalar values. A sink operator returns `None`.
+`bg.operators` is the shared namespace for engine operators and higher-order
+graph operators. Engine operators use their normal C++ overload resolution.
+Positional and named arguments can contain wiring points or registered Python
+scalar values. A sink operator returns `None`. The higher-order operators are
+the same objects as `bg.map`, `bg.mesh`, and `bg.switch_`.
 
 ```python
 @bg.graph
