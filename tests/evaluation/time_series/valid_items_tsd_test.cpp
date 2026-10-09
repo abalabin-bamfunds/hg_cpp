@@ -138,37 +138,11 @@ struct one_invalid_key_dictionary_source_definition {
 
 } // namespace
 
-TEST_CASE("erased time series input preserves both input flags",
-          "[evaluation][tsd][feature:validity][feature:time-series-view][input-guarantee:valid-items]") {
-    static_assert(sizeof(bg::TimeSeriesInputData) == 3 * sizeof(void *));
-
-    using Dictionary = bg::TSD<std::int64_t, bg::TS<bg::i64>>;
-    const auto updated = bg::TimeSeriesState{bg::EvaluationTime{bg::EvaluationTime::duration{1}}};
-    auto data = bg::TimeSeriesInputData{bg::cpp_time_series_runtime_type<Dictionary>(), updated, nullptr, true, true};
-    auto erased = bg::In<bg::TS_T>{data};
-    const auto converted = erased.as<Dictionary>();
-
-    CHECK(converted.input_data().modified());
-    CHECK(converted.input_data().valid_items());
-    CHECK(erased.all_valid());
-    CHECK(erased.all_valid(Dictionary::type()));
-
-    auto visited = false;
-    erased.visit(
-        [&](const bg::In<bg::TSD<bg::SCALAR, bg::TS_T>> *dictionary) {
-            visited = true;
-            CHECK(dictionary->input_data().modified());
-            CHECK(dictionary->input_data().valid_items());
-            CHECK(dictionary->all_valid());
-        },
-        ddv::noop);
-
-    CHECK(visited);
-}
-
 TEST_CASE("valid_items survives erased input conversion",
           "[evaluation][tsd][feature:validity][input-guarantee:valid-items][feature:time-series-view]"
           "[feature:node-api]") {
+    static_assert(sizeof(bg::TimeSeriesInputData) == 3 * sizeof(void *));
+
     const auto source = bg::node<valid_item_dictionary_reference_source_definition>();
     const auto size_after_as = bg::node([](bg::In<bg::TSD<std::int64_t, bg::TS<bg::i64>>, bg::valid_items> input,
                                            bg::Out<bg::TS<bg::i64>> output) {
@@ -176,13 +150,18 @@ TEST_CASE("valid_items survives erased input conversion",
         const auto dictionary = erased.as<bg::TSD<std::int64_t, bg::TS<bg::i64>>>();
         const auto visible_size = dictionary.size();
         const auto physical_size = dictionary.runtime_type().item_count(dictionary.data());
-        output.set(static_cast<std::int64_t>(visible_size * 10 + physical_size));
+        const auto flags_survived = erased.modified() && erased.input_data().valid_items() && dictionary.modified() &&
+                                    dictionary.input_data().valid_items() && erased.all_valid() &&
+                                    erased.all_valid(bg::TSD<std::int64_t, bg::TS<bg::i64>>::type());
+        output.set(flags_survived ? static_cast<std::int64_t>(visible_size * 10 + physical_size) : -1);
     });
     const auto size_after_visit = bg::node([](bg::In<bg::TSD<std::int64_t, bg::TS<bg::i64>>, bg::valid_items> input,
                                               bg::Out<bg::TS<bg::i64>> output) {
         auto size = std::int64_t{-1};
         input.visit([&](const bg::In<bg::TSD<bg::SCALAR, bg::TS_T>> *dictionary) {
-            size = static_cast<std::int64_t>(dictionary->size());
+            if (dictionary->modified() && dictionary->input_data().valid_items() && dictionary->all_valid()) {
+                size = static_cast<std::int64_t>(dictionary->size());
+            }
         }, ddv::noop);
         output.set(size);
     });
