@@ -21,7 +21,7 @@
 #include <bg/type/time_series_set_type.hpp>
 #include <bg/type/type_resolution_error.hpp>
 #include <bg/type/type_registry.hpp>
-#include <bg/type/type_text.hpp>
+#include <bg/type/type.hpp>
 #include <bg/type/type_variable.hpp>
 #include <bg/type/variable_registry.hpp>
 #include <bg/util/scope_exit.hpp>
@@ -368,9 +368,9 @@ nb::object wire_node(const PythonNodeDefinition &definition, nb::sequence fixed_
                        std::string{error.subject().text()} + "'";
         if (error.expected() != nullptr && error.supplied() != nullptr) {
             message += " (expected ";
-            append_type_text(message, *error.expected());
+            error.expected()->format_name(message);
             message += ", received ";
-            append_type_text(message, *error.supplied());
+            error.supplied()->format_name(message);
             message += ')';
         }
         throw std::invalid_argument{std::move(message)};
@@ -397,9 +397,9 @@ nb::object wire_graph(const PythonGraphDefinition &definition, nb::sequence fixe
                        std::string{error.subject().text()} + "'";
         if (error.expected() != nullptr && error.supplied() != nullptr) {
             message += " (expected ";
-            append_type_text(message, *error.expected());
+            error.expected()->format_name(message);
             message += ", received ";
-            append_type_text(message, *error.supplied());
+            error.supplied()->format_name(message);
             message += ')';
         }
         throw std::invalid_argument{std::move(message)};
@@ -553,7 +553,7 @@ void bind_core(nb::module_ &module) {
         .def_prop_ro("type_name",
                      [](const PythonWiringPoint &point) {
                          auto result = std::string{};
-                         append_type_text(result, point.type());
+                         point.type().format_name(result);
                          return result;
                      })
         .def("_as_optional", &PythonWiringPoint::as_optional)

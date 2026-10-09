@@ -1,6 +1,6 @@
 #include <bg/graph/wiring_error.hpp>
 
-#include <bg/type/type_text.hpp>
+#include <bg/type/type.hpp>
 
 #include <cstddef>
 #include <array>
@@ -12,7 +12,7 @@ namespace {
 
 void append_type(std::string &result, const Type *type) {
     if (type != nullptr) {
-        append_type_text(result, *type);
+        type->format_name(result);
     }
 }
 

@@ -19,6 +19,7 @@ class ScalarType : public Type {
 
     bool is_scalar() const noexcept final { return true; }
     bool is_time_series() const noexcept final { return false; }
+    void format_name(std::string &result) const override { result += "scalar"; }
     virtual bool supports_equality() const noexcept { return false; }
     virtual bool supports_hash() const noexcept { return false; }
 };

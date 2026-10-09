@@ -7,6 +7,7 @@ namespace bg {
 
 class TypeScalarType : public ScalarType {
   public:
+    void format_name(std::string &result) const override;
     const Type &type() const noexcept { return *type_; }
 
   protected:

@@ -9,6 +9,7 @@ class TimeSeriesReferenceType : public TimeSeriesType {
   public:
     VISITOR_SUPPORT()
 
+    void format_name(std::string &result) const override;
     bool contains_reference() const final { return true; }
     const TimeSeriesType &target_type() const noexcept override { return *target_type_; }
     const TimeSeriesType &dereferenced_type() const override;

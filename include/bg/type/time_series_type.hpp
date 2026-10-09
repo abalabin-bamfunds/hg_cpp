@@ -3,6 +3,8 @@
 #include <bg/type/guarantee_parameter.hpp>
 #include <bg/type/type.hpp>
 
+#include <string>
+
 namespace bg {
 
 enum class TimeSeriesTypeRole { declaration, input, output };
@@ -30,6 +32,7 @@ class TimeSeriesType : public Type {
     virtual bool requires_reference_representation_for(const TimeSeriesType &) const noexcept { return false; }
 
   protected:
+    void append_guarantee(std::string &result) const;
     TimeSeriesType() = default;
     explicit TimeSeriesType(GuaranteeParameter guarantee) : guarantee_(guarantee) {}
 

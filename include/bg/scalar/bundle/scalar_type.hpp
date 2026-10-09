@@ -48,6 +48,7 @@ class HierarchicalScalarType : public ScalarType {
 
     VISITOR_SUPPORT()
 
+    void format_name(std::string &result) const override;
     virtual const SchemaType &schema_type() const noexcept = 0;
 
   protected:

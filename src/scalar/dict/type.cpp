@@ -33,6 +33,14 @@ class ResolvedDictScalarType final : public DictScalarType {
 
 } // namespace
 
+void DictScalarType::format_name(std::string &result) const {
+    result += "Dict<";
+    key_type().format_name(result);
+    result += ", ";
+    mapped_type().format_name(result);
+    result += '>';
+}
+
 bool DictScalarType::do_match(const Type &supplied, TypeMap &type_map) const {
     const auto *dict = type_cast<DictScalarType>(&supplied);
     if (dict == nullptr || !dict->is_resolved()) {

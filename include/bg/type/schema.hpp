@@ -53,6 +53,7 @@ class Schema final : public SchemaType {
     std::span<const SchemaField> direct_fields() const noexcept { return direct_fields_; }
     std::span<const SchemaField> fields() const noexcept { return fields_; }
     std::size_t field_count() const noexcept override { return fields_.size(); }
+    void format_name(std::string &result) const override { result += name_.text(); }
     const SchemaField &field(std::size_t index) const { return fields_.at(index); }
     const SchemaField *find(util::symbol name) const noexcept;
     bool derives_from(const Schema &schema) const noexcept;

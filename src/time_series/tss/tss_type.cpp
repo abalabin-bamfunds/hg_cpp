@@ -25,6 +25,13 @@ class ResolvedTimeSeriesSetType final : public TimeSeriesSetType {
 
 } // namespace
 
+void TimeSeriesSetType::format_name(std::string &result) const {
+    result += "TSS<";
+    item_type().format_name(result);
+    append_guarantee(result);
+    result += '>';
+}
+
 const TimeSeriesType &TimeSeriesSetType::with_guarantee(TimeSeriesGuarantee guarantee) const {
     return time_series_set_type(item_type(), guarantee);
 }

@@ -14,6 +14,7 @@ class TimeSeriesListType : public FixedItemTimeSeriesType {
   public:
     VISITOR_SUPPORT()
 
+    void format_name(std::string &result) const override;
     static const TimeSeriesListType &from_items(
         std::span<const TimeSeriesType *const> items,
         TimeSeriesGuarantee guarantee = TimeSeriesGuarantee::ordinary);

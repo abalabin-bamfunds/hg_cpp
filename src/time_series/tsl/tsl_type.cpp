@@ -43,6 +43,19 @@ struct ListTypeKeyHash {
 
 } // namespace
 
+void TimeSeriesListType::format_name(std::string &result) const {
+    result += "TSL<";
+    item_type().format_name(result);
+    result += ", ";
+    if (const auto size_value = size().value()) {
+        result += std::to_string(*size_value);
+    } else {
+        result += size().variable()->name().text();
+    }
+    append_guarantee(result);
+    result += '>';
+}
+
 const TimeSeriesListType &TimeSeriesListType::from_items(std::span<const TimeSeriesType *const> items,
                                                         TimeSeriesGuarantee collection_guarantee) {
     if (items.empty()) {

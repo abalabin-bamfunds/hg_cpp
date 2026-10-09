@@ -24,6 +24,32 @@ template <typename T> class CppScalarType final : public CppScalarTypeBase<T> {
 
     [[nodiscard]] const Type &resolve(const TypeMap &) const override { return *this; }
 
+    void format_name(std::string &result) const override {
+        if constexpr (std::same_as<T, int>) {
+            result += "int";
+        } else if constexpr (std::same_as<T, byte>) {
+            result += "byte";
+        } else if constexpr (std::same_as<T, bool>) {
+            result += "bool";
+        } else if constexpr (std::same_as<T, i64>) {
+            result += "i64";
+        } else if constexpr (std::same_as<T, float>) {
+            result += "float";
+        } else if constexpr (std::same_as<T, double>) {
+            result += "double";
+        } else if constexpr (std::same_as<T, date_time_t>) {
+            result += "date_time_t";
+        } else if constexpr (std::same_as<T, timedelta_t>) {
+            result += "timedelta_t";
+        } else if constexpr (std::same_as<T, string>) {
+            result += "string";
+        } else if constexpr (std::same_as<T, symbol>) {
+            result += "symbol";
+        } else {
+            ScalarType::format_name(result);
+        }
+    }
+
     bool supports_equality() const noexcept override { return scalar_storage_traits<T>::supports_equality; }
 
     bool supports_hash() const noexcept override { return scalar_storage_traits<T>::supports_hash; }

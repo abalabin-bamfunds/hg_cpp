@@ -27,6 +27,7 @@ class GraphArgumentType final : public Type {
 
     bool is_resolved() const noexcept final;
     bool is_graph() const noexcept final { return true; }
+    void format_name(std::string &result) const override;
     const Type &resolve(const TypeMap &) const final;
 
     bool has_signature() const noexcept { return signature_; }

@@ -10,7 +10,6 @@
 #include <bg/node/node_template.hpp>
 #include <bg/scalar/scalar.hpp>
 #include <bg/type/time_series_reference_type.hpp>
-#include <bg/type/type_text.hpp>
 #include <bg/util/scope_exit.hpp>
 
 #include "time_series/ref/ref_node.hpp"
@@ -288,10 +287,10 @@ std::optional<WiringPoint> GraphWiring::invoke_resolved(const WiringTemplate &wi
             mismatch.expected_type = expected_output == nullptr ? "no output" : std::string{};
             mismatch.actual_type = output ? std::string{} : "no output";
             if (expected_output != nullptr) {
-                append_type_text(mismatch.expected_type, *expected_output);
+                expected_output->format_name(mismatch.expected_type);
             }
             if (output) {
-                append_type_text(mismatch.actual_type, output->type());
+                output->type().format_name(mismatch.actual_type);
             }
             throw WiringError{"a wiring-template result does not match its output declaration"}
                 .with_context(std::move(mismatch));
@@ -307,8 +306,8 @@ std::optional<WiringPoint> GraphWiring::invoke_resolved(const WiringTemplate &wi
 
         if (!expected_output->accepts(output->type())) {
             auto mismatch = call_context;
-            append_type_text(mismatch.expected_type, *expected_output);
-            append_type_text(mismatch.actual_type, output->type());
+            expected_output->format_name(mismatch.expected_type);
+            output->type().format_name(mismatch.actual_type);
             throw WiringError{"a wiring-template result does not satisfy its resolved output type"}
                 .with_context(std::move(mismatch));
         }

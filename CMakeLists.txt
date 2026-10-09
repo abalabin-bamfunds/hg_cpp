@@ -121,7 +121,6 @@ add_library(
     src/type/type_registration.cpp
     src/type_of.cpp
     src/type_registry.cpp
-    src/type_text.cpp
     src/variadic_wiring_record.cpp
     src/variable.cpp
     src/variable_registry.cpp

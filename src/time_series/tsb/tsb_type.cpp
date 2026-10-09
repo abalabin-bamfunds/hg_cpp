@@ -57,6 +57,13 @@ const Schema &schema_with_minimum_guarantee(const Schema &schema, TimeSeriesGuar
 
 } // namespace
 
+void TimeSeriesBundleType::format_name(std::string &result) const {
+    result += "TSB<";
+    schema_type().format_name(result);
+    append_guarantee(result);
+    result += '>';
+}
+
 TimeSeriesBundleType::TimeSeriesBundleType(const SchemaType &schema, GuaranteeParameter guarantee)
     : FixedItemTimeSeriesType(guarantee), schema_{&schema} {
     validate_time_series_schema_type(schema);

@@ -13,6 +13,11 @@ categories are scalar, time series, and graph types. Each type exposes its
 structure through the applicable interface. Matching and resolution use virtual
 operations on these interfaces.
 
+`Type::format_name(result)` appends the type's formal diagnostic name to
+`result`. Built-in types format their own names and nested type arguments.
+Extensions can override the same operation. The default `Type` name is `type`,
+and the default `ScalarType` name is `scalar`.
+
 `type_cast<T>()` casts between the structural categories in `TypeVisitor`.
 Pointer casts return null on mismatch. Reference casts throw `std::bad_cast`.
 

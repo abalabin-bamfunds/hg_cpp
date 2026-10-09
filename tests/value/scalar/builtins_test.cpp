@@ -1,5 +1,4 @@
 #include <bg/scalar/value.hpp>
-#include <bg/type/type_text.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -37,13 +36,13 @@ TEST_CASE("built-in scalar types have diagnostic names",
           "[feature:type-system][declaration:concrete][scalar:byte][scalar:i64][scalar:evaluation-time]"
           "[scalar:timedelta]") {
     auto byte_text = std::string{};
-    bg::append_type_text(byte_text, bg::byte_type());
+    bg::byte_type().format_name(byte_text);
     auto integer_text = std::string{};
-    bg::append_type_text(integer_text, bg::int64_type());
+    bg::int64_type().format_name(integer_text);
     auto date_time_text = std::string{};
-    bg::append_type_text(date_time_text, bg::evaluation_time_type());
+    bg::evaluation_time_type().format_name(date_time_text);
     auto timedelta_text = std::string{};
-    bg::append_type_text(timedelta_text, bg::timedelta_type());
+    bg::timedelta_type().format_name(timedelta_text);
 
     CHECK(byte_text == "byte");
     CHECK(integer_text == "i64");

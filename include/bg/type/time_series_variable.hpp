@@ -16,6 +16,7 @@ class GenericTimeSeriesVariableType final : public TimeSeriesType {
     GenericTimeSeriesVariableType(const TypeVariableType<TimeSeriesType> &variable, GuaranteeParameter guarantee)
         : TimeSeriesType(guarantee), variable_(&variable) {}
 
+    void format_name(std::string &result) const override;
     bool is_resolved() const noexcept override { return false; }
     [[nodiscard]] const Type &resolve(const TypeMap &type_map) const override;
     const TypeVariableType<TimeSeriesType> &variable() const noexcept { return *variable_; }

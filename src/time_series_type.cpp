@@ -5,6 +5,8 @@
 #include <bg/type/type_resolution_error.hpp>
 
 #include <algorithm>
+#include <array>
+#include <string_view>
 
 namespace bg {
 namespace {
@@ -24,6 +26,17 @@ bool item_requires_reference_representation(const TimeSeriesType &requested, con
 bool TimeSeriesType::contains_reference() const { return false; }
 
 const TimeSeriesType &TimeSeriesType::dereferenced_type() const { return *this; }
+
+void TimeSeriesType::append_guarantee(std::string &result) const {
+    if (const auto value = guarantee().value(); value && *value != TimeSeriesGuarantee::ordinary) {
+        constexpr auto names = std::array<std::string_view, 4>{"", "deduplicated", "final", "const"};
+        result += ", ";
+        result += names[static_cast<std::size_t>(*value)];
+    } else if (const auto *variable = guarantee().variable()) {
+        result += ", ";
+        result += variable->name().text();
+    }
+}
 
 const TimeSeriesType &TimeSeriesType::with_guarantee(TimeSeriesGuarantee guarantee) const {
     if (this->guarantee().value() == guarantee) {

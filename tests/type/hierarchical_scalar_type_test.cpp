@@ -11,7 +11,6 @@
 #include <bg/scalar/set/scalar_type.hpp>
 #include <bg/schema/reflection.hpp>
 #include <bg/type/opaque_scalar_type.hpp>
-#include <bg/type/type_text.hpp>
 #include <bg/util/named_argument.hpp>
 
 #include <catch2/catch_test_macros.hpp>
@@ -75,7 +74,7 @@ TEST_CASE("a hierarchical scalar has canonical ordered schema metadata",
     const auto &same = bg::cpp_scalar_type<bg::Bundle<Equity>>();
     const auto &hierarchical = resolved_hierarchical_scalar_type(type);
     auto text = std::string{};
-    bg::append_type_text(text, type);
+    type.format_name(text);
 
     CHECK(&type == &same);
     CHECK(type.is_scalar());
@@ -205,7 +204,7 @@ TEST_CASE("a generic bundle type keeps its wrapper in type text",
     const auto &type = bg::cpp_scalar_type<bg::Bundle<bg::SCHEMA>>();
     auto text = std::string{};
 
-    bg::append_type_text(text, type);
+    type.format_name(text);
 
     CHECK(text == "Bundle<SCHEMA>");
 }

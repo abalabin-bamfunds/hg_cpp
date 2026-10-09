@@ -37,6 +37,13 @@ struct ReferenceTypeKeyHash {
 
 } // namespace
 
+void TimeSeriesReferenceType::format_name(std::string &result) const {
+    result += "REF<";
+    target_type().format_name(result);
+    append_guarantee(result);
+    result += '>';
+}
+
 const TimeSeriesReferenceType &time_series_reference_type(const TimeSeriesType &target_type,
                                                           TimeSeriesGuarantee guarantee) {
     if (type_cast<TimeSeriesReferenceType>(&target_type) != nullptr) {

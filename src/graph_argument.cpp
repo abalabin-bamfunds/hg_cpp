@@ -56,6 +56,28 @@ struct GraphTypeKeyHash {
 GraphArgumentType::GraphArgumentType(std::vector<const Type *> parameters, const TimeSeriesType *output)
     : signature_{true}, parameters_{std::move(parameters)}, output_{output} {}
 
+void GraphArgumentType::format_name(std::string &result) const {
+    if (!has_signature()) {
+        result += "GRAPH_T";
+        return;
+    }
+
+    result += "GRAPH<auto(";
+    for (auto index = std::size_t{}; index < parameters().size(); ++index) {
+        if (index != 0) {
+            result += ", ";
+        }
+        parameters()[index]->format_name(result);
+    }
+    result += ") -> ";
+    if (output() == nullptr) {
+        result += "void";
+    } else {
+        output()->format_name(result);
+    }
+    result += '>';
+}
+
 bool GraphArgumentType::is_resolved() const noexcept {
     return !signature_ || (std::ranges::all_of(parameters_, [](const auto *type) { return type->is_resolved(); }) &&
                            (output_ == nullptr || output_->is_resolved()));
