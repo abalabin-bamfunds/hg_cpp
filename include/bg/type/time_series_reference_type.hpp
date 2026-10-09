@@ -11,6 +11,7 @@ class TimeSeriesReferenceType : public TimeSeriesType {
 
     bool contains_reference() const final { return true; }
     const TimeSeriesType &target_type() const noexcept override { return *target_type_; }
+    const TimeSeriesType &dereferenced_type() const override;
     [[nodiscard]] const TimeSeriesType &with_guarantee(TimeSeriesGuarantee guarantee) const override;
 
   protected:

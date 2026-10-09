@@ -54,6 +54,45 @@ TEST_CASE("a time series list type derives its shape from resolved items",
     CHECK(&list.item_type() == &final);
 }
 
+TEST_CASE("dereferencing a direct time series preserves its type and guarantee",
+          "[type_system][feature:type-system][series:value][guarantee:final]") {
+    const auto &direct = bg::TS<float, bg::TimeSeriesGuarantee::final>::type();
+
+    CHECK(&direct.dereferenced_type() == &direct);
+    CHECK(direct.dereferenced_type().guarantee().value() == bg::TimeSeriesGuarantee::final);
+}
+
+TEST_CASE("a time series list type applies reference guarantees to dereferenced items",
+          "[type_system][tsl][reference][series:fixed-tsl][feature:type-system]"
+          "[guarantee:ordinary][guarantee:deduplicated][guarantee:final][guarantee:const]") {
+    constexpr auto guarantees = std::array{bg::TimeSeriesGuarantee::ordinary,
+                                           bg::TimeSeriesGuarantee::deduplicated,
+                                           bg::TimeSeriesGuarantee::final,
+                                           bg::TimeSeriesGuarantee::const_};
+    constexpr auto expected = std::array{
+        std::array{bg::TimeSeriesGuarantee::ordinary, bg::TimeSeriesGuarantee::ordinary,
+                   bg::TimeSeriesGuarantee::ordinary, bg::TimeSeriesGuarantee::ordinary},
+        std::array{bg::TimeSeriesGuarantee::ordinary, bg::TimeSeriesGuarantee::ordinary,
+                   bg::TimeSeriesGuarantee::ordinary, bg::TimeSeriesGuarantee::ordinary},
+        std::array{bg::TimeSeriesGuarantee::ordinary, bg::TimeSeriesGuarantee::deduplicated,
+                   bg::TimeSeriesGuarantee::final, bg::TimeSeriesGuarantee::final},
+        std::array{bg::TimeSeriesGuarantee::ordinary, bg::TimeSeriesGuarantee::deduplicated,
+                   bg::TimeSeriesGuarantee::final, bg::TimeSeriesGuarantee::const_},
+    };
+
+    for (auto reference_index = std::size_t{}; reference_index < guarantees.size(); ++reference_index) {
+        for (auto target_index = std::size_t{}; target_index < guarantees.size(); ++target_index) {
+            const auto &target = bg::time_series_value_type(bg::int64_type(), guarantees[target_index]);
+            const auto &reference = bg::time_series_reference_type(target, guarantees[reference_index]);
+            const auto items = std::array<const bg::TimeSeriesType *, 1>{&reference};
+            const auto &list = bg::TimeSeriesListType::from_items(items);
+            CAPTURE(guarantees[reference_index], guarantees[target_index]);
+
+            CHECK(list.item_type().guarantee().value() == expected[reference_index][target_index]);
+        }
+    }
+}
+
 TEST_CASE("a time series list type requires concrete homogeneous items",
           "[type_system][tsl][series:fixed-tsl][feature:type-system][declaration:generic]") {
     const auto empty = std::array<const bg::TimeSeriesType *, 0>{};

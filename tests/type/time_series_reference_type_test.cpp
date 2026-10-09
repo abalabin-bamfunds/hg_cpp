@@ -214,6 +214,9 @@ TEST_CASE("dereferenced matching rejects unresolved references",
 
     CHECK_FALSE(bg::TS_T::type().match(unresolved_target, type_map));
     CHECK_FALSE(bg::TS_T::type().match(unresolved_guarantee, type_map));
+
+    CHECK_THROWS_AS(unresolved_target.dereferenced_type(), bg::TypeResolutionError);
+    CHECK_THROWS_AS(unresolved_guarantee.dereferenced_type(), bg::TypeResolutionError);
 }
 
 TEST_CASE("an unresolved TSL cannot limit its guarantee",

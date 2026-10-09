@@ -16,12 +16,14 @@
 
 #include <array>
 #include <cstdint>
+#include <vector>
 
 namespace {
 
 using namespace bg;
 using namespace bg::literals;
 
+inline constexpr auto G = guarantee_variable<"G">;
 using DIRECT_RESULT = ScalarVariable<"DIRECT_RESULT">;
 
 template <template <typename, auto...> typename Field> using ARGS = BundleSchemaVariableDeclaration<"ARGS", Field>;
@@ -55,6 +57,33 @@ TEST_CASE("a callable variadic TSL captures homogeneous time series and resolves
     });
 
     testing::test_wiring([&] { tested(source(), source()); });
+}
+
+TEST_CASE("a variadic TSL infers the guarantee observable through references",
+          "[feature:wiring][feature:variadic-wiring][reference][series:fixed-tsl]"
+          "[guarantee:ordinary][guarantee:deduplicated][guarantee:final][guarantee:const]") {
+    auto observed_guarantees = std::vector<TimeSeriesGuarantee>{};
+    const auto capture = graph(
+        "name"_n = "capture_reference_guarantees",
+        [&](wp<TSL<TS<i64, G>, SIZE>, var_args> values) {
+            const auto &type = static_cast<const TimeSeriesListType &>(values.type());
+            observed_guarantees.push_back(*type.item_type().guarantee().value());
+        });
+    const auto ordinary = node([](Out<REF<TS<i64, TimeSeriesGuarantee::final>, TimeSeriesGuarantee::ordinary>>) {});
+    const auto deduplicated =
+        node([](Out<REF<TS<i64, TimeSeriesGuarantee::const_>, TimeSeriesGuarantee::deduplicated>>) {});
+    const auto final = node([](Out<REF<TS<i64, TimeSeriesGuarantee::const_>, TimeSeriesGuarantee::final>>) {});
+    const auto constant = node([](Out<REF<TS<i64, TimeSeriesGuarantee::const_>, TimeSeriesGuarantee::const_>>) {});
+
+    testing::test_wiring([&] {
+        capture(ordinary());
+        capture(deduplicated());
+        capture(final());
+        capture(constant());
+    });
+
+    CHECK(observed_guarantees == std::vector{TimeSeriesGuarantee::ordinary, TimeSeriesGuarantee::ordinary,
+                                              TimeSeriesGuarantee::final, TimeSeriesGuarantee::const_});
 }
 
 TEST_CASE("each variadic pack uses its declared collection operations",

@@ -52,12 +52,12 @@ const TimeSeriesListType &TimeSeriesListType::from_items(std::span<const TimeSer
         throw std::invalid_argument{"a time series list type requires resolved item types"};
     }
 
-    const auto &first = items.front()->target_type();
+    const auto &first = items.front()->dereferenced_type();
     auto guarantee = *first.guarantee().value();
     const auto &shape = first.with_guarantee(TimeSeriesGuarantee::ordinary);
 
     for (const auto *item : items.subspan(1)) {
-        const auto &candidate = item->target_type();
+        const auto &candidate = item->dereferenced_type();
         if (&candidate.with_guarantee(TimeSeriesGuarantee::ordinary) != &shape) {
             throw std::invalid_argument{"a time series list requires compatible item types"};
         }

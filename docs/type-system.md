@@ -234,6 +234,10 @@ type, and guarantee.
 
 `TimeSeriesType::target_type()` returns the type itself. A reference type
 returns the time series type that it references.
+`TimeSeriesType::dereferenced_type()` returns the type that a non-reference
+consumer observes, applying the [reference guarantee limit](#reference-guarantees)
+when the supplied type is a reference. Signature matching and TSL item inference
+use this operation.
 
 A variable scalar component provides a type-erased scalar view. A variable time
 series component provides a type-erased time series view. This lets one compiled

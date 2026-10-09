@@ -400,7 +400,7 @@ TEST_CASE("an inner graph selects an outer dictionary reference across stop and 
     const auto read = node([](In<TS<i64>> input, Out<TS<i64>> output) { output.set(*input); });
     const auto inner = graph("name"_n = "select_outer_dictionary_item",
                              [&](wp<TSD<std::int64_t, REF<TS<i64>>>> input) -> wp<TS<i64>> {
-                                 return input[std::int64_t{1}];
+                                 return input[std::int64_t{1}].as<TS<i64>>();
                              });
     const auto outer = [&](wp<TS<i64>> input, wp<TS<bool>> run) {
         return read(nested(inner, run, make_dictionary(input)));
@@ -467,7 +467,7 @@ TEST_CASE("an inner graph selects a dictionary reference from another inner grap
     const auto read = node([](In<TS<i64>> input, Out<TS<i64>> output) { output.set(*input); });
     const auto consumer = graph("name"_n = "select_inner_dictionary_item",
                                 [&](wp<TSD<std::int64_t, REF<TS<i64>>>> input) -> wp<TS<i64>> {
-                                    return input[std::int64_t{1}];
+                                    return input[std::int64_t{1}].as<TS<i64>>();
                                 });
     const auto outer = [&](wp<TS<i64>> input, wp<TS<bool>> run_producer, wp<TS<bool>> run_consumer) {
         return read(nested(consumer, run_consumer, nested(producer, run_producer, input)));
@@ -1006,7 +1006,7 @@ TEST_CASE("dictionary getitem releases and restores its subscription across a ne
         return make_dictionary(input);
     });
     const auto outer = [&](wp<TS<i64>> input, wp<TS<bool>> run) -> wp<TS<i64>> {
-        return nested(inner, run, input)[std::int64_t{1}];
+        return nested(inner, run, input)[std::int64_t{1}].as<TS<i64>>();
     };
 
     const auto actual =

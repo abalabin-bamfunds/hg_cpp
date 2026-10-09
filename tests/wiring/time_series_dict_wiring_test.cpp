@@ -26,7 +26,7 @@ TEST_CASE("getitem selects a dictionary item through a reference",
     const auto context = bg::WiringContext{wiring};
     const auto selected = source()[1];
 
-    STATIC_CHECK(std::same_as<decltype(selected), const bg::wp<bg::TS<float>>>);
+    STATIC_CHECK(std::same_as<decltype(selected), const bg::wp<>>);
     const auto &reference = dynamic_cast<const bg::TimeSeriesReferenceType &>(selected.type());
     CHECK(&reference.target_type() == &bg::TS<float>::type());
     CHECK(reference.guarantee().value() == bg::TimeSeriesGuarantee::ordinary);
@@ -69,7 +69,7 @@ TEST_CASE("getitem preserves a dictionary reference item's target type",
     const auto context = bg::WiringContext{wiring};
     const auto selected = source()[1];
 
-    STATIC_CHECK(std::same_as<decltype(selected), const bg::wp<bg::TS<float>>>);
+    STATIC_CHECK(std::same_as<decltype(selected), const bg::wp<>>);
     CHECK(&selected.type() ==
           &bg::time_series_reference_type(bg::TS<float>::type(), bg::TimeSeriesGuarantee::ordinary));
 }
@@ -94,8 +94,15 @@ TEST_CASE("getitem preserves reference item guarantees",
                            bg::TimeSeriesGuarantee::final>>) {});
 
     bg::testing::test_wiring([&] {
-        CHECK(&source()[1].type() ==
+        const auto selected = source()[1];
+        STATIC_CHECK(std::same_as<decltype(selected), const bg::wp<>>);
+        const auto untyped = bg::wp<>{source()};
+        const auto untyped_selected = untyped[1];
+        STATIC_CHECK(std::same_as<decltype(untyped_selected), const bg::wp<>>);
+
+        CHECK(&selected.type() ==
               &bg::REF<bg::TS<float, bg::TimeSeriesGuarantee::final>, bg::TimeSeriesGuarantee::final>::type());
+        CHECK(&untyped_selected.type() == &selected.type());
     });
 }
 

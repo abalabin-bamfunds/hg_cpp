@@ -2,6 +2,8 @@
 #include <bg/graph/wiring_context.hpp>
 #include <bg/node.hpp>
 #include <bg/operators.hpp>
+#include <bg/testing/test_wiring.hpp>
+#include <bg/type/time_series_dict_type.hpp>
 #include <bg/time_series/tsl/tsl.hpp>
 
 #include <catch2/catch_test_macros.hpp>
@@ -37,6 +39,54 @@ TEST_CASE("a free fixed time series list reports incompatible item types as a wi
 
     const auto context = bg::WiringContext{wiring};
     CHECK_THROWS_AS(bg::tsl(integer(), floating()), bg::WiringError);
+}
+
+TEST_CASE("free fixed TSL inference uses reference guarantees",
+          "[wiring][tsl][reference][feature:wiring][guarantee:ordinary][guarantee:deduplicated]"
+          "[guarantee:final][guarantee:const]") {
+    const auto ordinary_reference = bg::node([](bg::Out<bg::REF<
+                                                   bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>,
+                                                   bg::TimeSeriesGuarantee::ordinary>>) {});
+    const auto deduplicated_reference = bg::node([](bg::Out<bg::REF<
+                                                       bg::TS<bg::i64, bg::TimeSeriesGuarantee::const_>,
+                                                       bg::TimeSeriesGuarantee::deduplicated>>) {});
+    const auto final_reference = bg::node([](bg::Out<bg::REF<
+                                                bg::TS<bg::i64, bg::TimeSeriesGuarantee::const_>,
+                                                bg::TimeSeriesGuarantee::final>>) {});
+    const auto const_reference = bg::node([](bg::Out<bg::REF<
+                                                bg::TS<bg::i64, bg::TimeSeriesGuarantee::const_>,
+                                                bg::TimeSeriesGuarantee::const_>>) {});
+
+    bg::testing::test_wiring([&] {
+        const auto &ordinary = static_cast<const bg::TimeSeriesListType &>(bg::tsl(ordinary_reference()).type());
+        const auto &deduplicated =
+            static_cast<const bg::TimeSeriesListType &>(bg::tsl(deduplicated_reference()).type());
+        const auto &final = static_cast<const bg::TimeSeriesListType &>(bg::tsl(final_reference()).type());
+        const auto &constant = static_cast<const bg::TimeSeriesListType &>(bg::tsl(const_reference()).type());
+
+        CHECK(ordinary.item_type().guarantee().value() == bg::TimeSeriesGuarantee::ordinary);
+        CHECK(deduplicated.item_type().guarantee().value() == bg::TimeSeriesGuarantee::ordinary);
+        CHECK(final.item_type().guarantee().value() == bg::TimeSeriesGuarantee::final);
+        CHECK(constant.item_type().guarantee().value() == bg::TimeSeriesGuarantee::const_);
+    });
+}
+
+TEST_CASE("free fixed TSL inference applies reference guarantees to nested children",
+          "[wiring][tsl][reference][feature:wiring][series:tsd][guarantee:ordinary]") {
+    const auto source = bg::node([](bg::Out<bg::REF<
+                                        bg::TSD<bg::i64, bg::TS<bg::i64, bg::TimeSeriesGuarantee::const_>,
+                                                bg::TimeSeriesGuarantee::const_>,
+                                        bg::TimeSeriesGuarantee::ordinary>>) {});
+
+    bg::testing::test_wiring([&] {
+        const auto list = bg::tsl(source());
+        const auto &type = static_cast<const bg::TimeSeriesListType &>(list.type());
+        const auto &dictionary = static_cast<const bg::TimeSeriesDictionaryType &>(type.item_type());
+
+        CHECK(dictionary.guarantee().value() == bg::TimeSeriesGuarantee::ordinary);
+        CHECK(dictionary.key_set_type().guarantee().value() == bg::TimeSeriesGuarantee::ordinary);
+        CHECK(dictionary.value_type().guarantee().value() == bg::TimeSeriesGuarantee::ordinary);
+    });
 }
 
 TEST_CASE("a free fixed time series list reuses materialization for the same input type",

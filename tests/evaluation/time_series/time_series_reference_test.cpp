@@ -23,6 +23,8 @@ namespace {
 
 using namespace bg::literals;
 
+inline constexpr auto G = bg::guarantee_variable<"G">;
+
 struct changing_reference_target {
     static constexpr bool uses_timed_scheduling = true;
 
@@ -177,6 +179,34 @@ TEST_CASE("a dereferenced list keeps the target runtime type when only guarantee
 
     CHECK(actual.equals<bg::i64>({3}));
     CHECK(received_type == target_type);
+}
+
+TEST_CASE("a materialized free TSL samples retargeted ordinary references",
+          "[evaluation][reference][tsl][feature:reference][feature:test-graph][series:fixed-tsl]"
+          "[guarantee:ordinary][guarantee:const][binding:reference-to-value][transition:update]") {
+    const auto read = bg::node([](bg::In<bg::TSL<bg::TS<bg::i64, G>, 1>> input) { return *input[0]; });
+    const auto select = bg::node(
+        [](bg::In<bg::TS<bool>> use_second,
+           bg::In<bg::REF<bg::TS<bg::i64, bg::TimeSeriesGuarantee::const_>, bg::TimeSeriesGuarantee::ordinary>,
+                  bg::passive> first,
+           bg::In<bg::REF<bg::TS<bg::i64, bg::TimeSeriesGuarantee::const_>, bg::TimeSeriesGuarantee::ordinary>,
+                  bg::passive> second,
+           bg::Out<bg::REF<bg::TS<bg::i64, bg::TimeSeriesGuarantee::const_>, bg::TimeSeriesGuarantee::ordinary>>
+               output) { output.copy(*use_second ? second : first); });
+    const auto graph = [&](bg::wp<bg::TS<bool>> use_second) {
+        const auto first = bg::operators::const_(std::int64_t{4}).as<
+            bg::TS<bg::i64, bg::TimeSeriesGuarantee::const_>>();
+        const auto second = bg::operators::const_(std::int64_t{7}).as<
+            bg::TS<bg::i64, bg::TimeSeriesGuarantee::const_>>();
+        const auto values = bg::tsl(select(use_second, first, second));
+        const auto &type = dynamic_cast<const bg::TimeSeriesListType &>(values.type());
+        CHECK(type.item_type().guarantee().value() == bg::TimeSeriesGuarantee::ordinary);
+        return read(values);
+    };
+
+    const auto actual = bg::testing::test_graph(graph, std::array{false, true, false, true});
+
+    CHECK(actual.equals({4, 7, 4, 7}));
 }
 
 TEST_CASE("an ordinary list reference samples the selected list with final items",

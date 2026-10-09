@@ -52,8 +52,9 @@ the point's declared type or an advertised materialisation target. Constructing
 retain the original point without selecting a materialisation. `as<TS_T>()`
 preserves an optional typed point's validity qualifier.
 
-`point[key]` forwards to `operators::getitem`. Operator overload resolution
-selects the behavior for the collection and key types. A scalar index into a
+`point[key]` forwards to `operators::getitem` and returns its `wp<>` unchanged.
+The selected overload determines the result's semantic type, including its
+reference and target guarantees. A scalar index into a
 fixed TSL selects its contained wiring point without adding a node. A time
 series index, or a TSD key supplied as either a scalar or time series, creates a
 node that tracks the selected item.
@@ -61,6 +62,8 @@ node that tracks the selected item.
 `bg::tsl(a, b, ...)` groups item wiring points without creating item storage.
 The receiving parameter determines whether each item is a value or a reference.
 Wiring then creates one TSL output over the selected items.
+Inferred value items use the [dereferenced guarantees](type-system.md#reference-guarantees)
+that consumers can observe, rather than a reference target's guarantees alone.
 
 The logical output preserves dependency ordering. Item updates schedule it as a
 normal node. It combines updates from the same cycle and copies no item value.

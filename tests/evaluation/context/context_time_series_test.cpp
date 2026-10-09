@@ -88,7 +88,8 @@ TEST_CASE("a nested graph can select an item from a context TSL during wiring",
           "[feature:context-time-series][feature:nested-graph][feature:getitem][series:fixed-tsl]") {
     const auto inner = graph(
         "name"_n = "nested_context_list_item",
-        [](wp<TSL<TS<std::int64_t>, 2>, "values"_n, context> values) -> wp<TS<std::int64_t>> { return values[0]; });
+        [](wp<TSL<TS<std::int64_t>, 2>, "values"_n, context> values)
+            -> wp<TS<std::int64_t>> { return values[0].as<TS<std::int64_t>>(); });
     const auto tested = [&](wp<TS<std::int64_t>> first, wp<TS<std::int64_t>> second, wp<TS<bool>> run) {
         return with_context("values"_n = tsl(first, second), [&] { return nested(inner, run); });
     };
@@ -161,7 +162,8 @@ TEST_CASE("a collection context retains its semantic type across two nested grap
           "[shape:doubly-nested]") {
     const auto leaf = graph(
         "name"_n = "leaf_context_list_item",
-        [](wp<TSL<TS<std::int64_t>, 2>, "values"_n, context> values) -> wp<TS<std::int64_t>> { return values[0]; });
+        [](wp<TSL<TS<std::int64_t>, 2>, "values"_n, context> values)
+            -> wp<TS<std::int64_t>> { return values[0].as<TS<std::int64_t>>(); });
     const auto middle = graph("name"_n = "middle_context_list_item",
                               [&](wp<TS<bool>> run) { return nested(leaf, run).as<TS<std::int64_t>>(); });
     const auto tested = [&](wp<TS<std::int64_t>> first, wp<TS<std::int64_t>> second, wp<TS<bool>> run) {

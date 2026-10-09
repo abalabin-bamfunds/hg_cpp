@@ -588,7 +588,7 @@ TEST_CASE("a pass-through reference replacement updates each running map inner g
     const auto graph = [&](wp<TS<i64>> value, wp<TS<bool>> use_left) {
         const auto mapped = make_values(target(value, 1));
         const auto factor = choose(use_left, target(value, 10), target(value, 100));
-        return wire_pass_through_map(mapped, factor)[std::int64_t{1}];
+        return wire_pass_through_map(mapped, factor)[std::int64_t{1}].as<TS<i64>>();
     };
 
     const auto actual = testing::test_graph(graph, std::array{1, 2, 3}, std::array{true, false, true});
@@ -602,7 +602,9 @@ TEST_CASE("a map inner graph reports timed work through the map owner",
     const auto target = node([](In<TS<i64>> value, Out<TS<i64>> output) { output.set(*value); });
     const auto make_values =
         node([](In<REF<TS<i64>>> value, Out<TSD<std::int64_t, REF<TS<i64>>>> output) { output[1].copy(value); });
-    const auto graph = [&](wp<TS<i64>> value) { return wire_delayed_map(make_values(target(value)))[std::int64_t{1}]; };
+    const auto graph = [&](wp<TS<i64>> value) {
+        return wire_delayed_map(make_values(target(value)))[std::int64_t{1}].as<TS<i64>>();
+    };
 
     const auto actual = testing::test_graph(graph, std::array{5});
 
@@ -628,7 +630,7 @@ TEST_CASE("map schedules the next scheduled time after one inner graph becomes d
     const auto graph = [&](wp<TS<i64>> command) {
         const auto values = targets(command);
         const auto mapped = wire_variable_delayed_map(rekey(values[std::int64_t{1}], values[std::int64_t{2}]));
-        return mapped[std::int64_t{2}];
+        return mapped[std::int64_t{2}].as<TS<i64>>();
     };
     VariableDelay::evaluations.clear();
 
