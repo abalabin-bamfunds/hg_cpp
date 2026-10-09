@@ -153,6 +153,28 @@ set_target_properties(
         SOVERSION ${PROJECT_VERSION_MAJOR}
 )
 
+add_library(bg_library SHARED src/library/operators.cpp)
+add_library(bg::library ALIAS bg_library)
+
+target_compile_features(bg_library PUBLIC cxx_std_23)
+target_compile_definitions(bg_library PRIVATE BG_BUILDING_LIBRARY)
+target_link_libraries(bg_library PUBLIC bg::bg)
+target_include_directories(
+    bg_library
+    PUBLIC
+        $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+)
+
+set_target_properties(
+    bg_library
+    PROPERTIES
+        CXX_EXTENSIONS OFF
+        EXPORT_NAME library
+        VERSION ${PROJECT_VERSION}
+        SOVERSION ${PROJECT_VERSION_MAJOR}
+)
+
 if(BUILD_TESTING)
     add_subdirectory(tests)
 endif()
@@ -180,7 +202,7 @@ write_basic_package_version_file(
 )
 
 install(
-    TARGETS bg
+    TARGETS bg bg_library
     EXPORT bgTargets
     ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
     LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"

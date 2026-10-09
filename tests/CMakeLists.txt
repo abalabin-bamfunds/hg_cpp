@@ -172,6 +172,23 @@ set_property(DIRECTORY APPEND PROPERTY TEST_INCLUDE_FILES "${catch2_environment}
 
 catch_discover_tests(bg_tests DISCOVERY_MODE PRE_TEST)
 
+add_executable(bg_library_tests library/add_test.cpp)
+target_link_libraries(bg_library_tests PRIVATE bg::library Catch2::Catch2WithMain)
+target_compile_options(bg_library_tests PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/bigobj>)
+target_compile_definitions(bg_library_tests PRIVATE $<$<CXX_COMPILER_ID:MSVC>:CATCH_CONFIG_NO_CPP17_STRING_VIEW>)
+
+if(WIN32)
+    add_custom_command(
+        TARGET bg_library_tests POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                $<TARGET_RUNTIME_DLLS:bg_library_tests>
+                $<TARGET_FILE_DIR:bg_library_tests>
+        COMMAND_EXPAND_LISTS
+    )
+endif()
+
+catch_discover_tests(bg_library_tests DISCOVERY_MODE PRE_TEST)
+
 find_package(Python3 3.13 COMPONENTS Interpreter QUIET)
 if(Python3_Interpreter_FOUND)
     add_custom_target(
@@ -181,7 +198,13 @@ if(Python3_Interpreter_FOUND)
             --dimensions "${PROJECT_SOURCE_DIR}/docs/testing.md"
             --output "${PROJECT_BINARY_DIR}/test-coverage.md"
             --check
-        DEPENDS bg_tests
+        COMMAND
+            "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/tools/test_coverage.py"
+            "$<TARGET_FILE:bg_library_tests>"
+            --dimensions "${PROJECT_SOURCE_DIR}/docs/testing.md"
+            --output "${PROJECT_BINARY_DIR}/library-test-coverage.md"
+            --check
+        DEPENDS bg_tests bg_library_tests
         VERBATIM
     )
 endif()

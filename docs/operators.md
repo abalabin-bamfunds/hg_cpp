@@ -83,6 +83,13 @@ independently of the source guarantee. A reference consumer uses a normal
 reference node over the adapter output. Nested graph outputs therefore use the
 reference path.
 
+The C++ library declares `bg::operators::add` in `<bg/library.hpp>` and
+registers overloads in the `bg::library` target. Its initial overloads add
+`double` scalars and time series in all scalar/time-series combinations. The
+result is a time series and retains the weakest time-series input guarantee.
+Adding two scalars creates a constant graph source. The C++ wiring-point
+`operator+` overloads are defined by the same library header.
+
 An operator owns its registered overloads. Registration is permanent and is
 not concurrent with graph wiring. Adding an overload clears that operator's
 resolution cache. Existing wired graphs remain valid because the operator

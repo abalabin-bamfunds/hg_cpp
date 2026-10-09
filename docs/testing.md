@@ -69,6 +69,7 @@ the tags and write `test-coverage.md` to the build directory.
 - `tests/wiring`: graph construction and wiring-template calls
 - `tests/graph`: graph compilation and compiled layout
 - `tests/evaluation`: evaluation context, engines, lifecycle, scheduling, storage, time series, and validity
+- `tests/library`: public C++ library operators
 - `tests/node`: node declaration and invocation interfaces
 - `tests/testing`: test utilities
 
@@ -282,6 +283,11 @@ For each reusable node and graph, test:
 - supported scalar and time series types
 - supported graph shapes
 - reported errors
+
+### C++ library operators
+
+- declarations, scalar and time-series overloads, guarantee propagation, validity changes, reference inputs, nested
+  graphs, and unsupported scalar types
 
 ### Python integration
 
