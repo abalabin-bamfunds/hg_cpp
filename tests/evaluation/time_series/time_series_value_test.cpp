@@ -122,7 +122,7 @@ TEST_CASE("a nested direct output uses its resolved item guarantee",
     const auto make_dictionary = bg::node<make_dictionary_with_guarantee>();
     const auto graph = [&](bg::wp<bg::TS<bg::i64>> input) {
         return make_dictionary(deduplicate(input), input)[1].as<
-            bg::TS<bg::i64, bg::TimeSeriesGuarantee::deduplicated>>();
+            bg::REF<bg::TS<bg::i64, bg::TimeSeriesGuarantee::deduplicated>, bg::TimeSeriesGuarantee::ordinary>>();
     };
 
     const auto actual = bg::testing::test_graph(graph, std::array{1, 1, 2});

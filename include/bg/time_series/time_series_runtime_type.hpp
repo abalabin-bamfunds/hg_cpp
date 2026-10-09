@@ -166,6 +166,7 @@ resolve_time_series_runtime_type(const TimeSeriesType &type,
 // precedence during resolution.
 void register_time_series_runtime_type(const TimeSeriesRuntimeType &runtime_type);
 
-template <typename TimeSeries> const TimeSeriesRuntimeType &cpp_time_series_runtime_type();
+template <typename TimeSeries, TimeSeriesTypeRole Role = TimeSeriesTypeRole::declaration>
+const TimeSeriesRuntimeType &cpp_time_series_runtime_type();
 
 } // namespace bg

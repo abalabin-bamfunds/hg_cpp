@@ -18,14 +18,14 @@ struct time_series_type_traits<TSD<Key, Item, Properties...>> {
          (scalar_declaration_traits<Key>::supports_time_series && has_cpp_scalar_type<Key>)) &&
         supported_time_series<Item>;
 
-    template <typename Scope, std::size_t Index, bool Input>
+    template <typename Scope, std::size_t Index, TimeSeriesTypeRole Role>
     static const TimeSeriesType &get(GuaranteeParameter guarantee) {
         const auto &key = scalar_type_for<Key>();
-        const auto &value = time_series_type_for<Scope, Index, Input, Item>(guarantee);
+        const auto &value = time_series_type_for<Scope, Index, Role, Item>(guarantee);
         static const auto key_set = GenericTimeSeriesSetType{key, guarantee};
         [[maybe_unused]] static const auto &key_set_registration = TypeRegistry::register_static(key_set);
 
-        if constexpr (Input || scalar_declaration_traits<Key>::generic) {
+        if constexpr (Role == TimeSeriesTypeRole::input || scalar_declaration_traits<Key>::generic) {
             static const auto type = GenericTimeSeriesDictionaryType{key, value, key_set, guarantee};
             [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type);
             return type;

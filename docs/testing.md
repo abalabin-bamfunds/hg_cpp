@@ -143,6 +143,10 @@ graph compilation or evaluation.
 - operator signature specificity and ambiguity
 - types passed as scalars
 - guarantee compatibility, propagation, and enforcement
+- neutral type declarations, input matching, and output defaults through
+  collections and reference targets, for callable and aggregate definitions
+- reference guarantee limits through collections and unions, explicit reference
+  targets, and rollback of rejected structural matches
 - collection types and nested types
 - external declarations, public variable enumeration, runtime registration, and selection of supplied representations
 - extension-owned configured output declarations, runtime selection, semantic compatibility, and preservation through invocation and invalidation
@@ -231,6 +235,9 @@ graph compilation or evaluation.
 - global state shared by outer and inner graphs
 - context time series startup sampling, changes, validity, and use across nested graph boundaries
 - mapped TSD unions, selected key sets, per-key inner graph evaluation, scheduling, and lifecycle
+- inner graph input reference guarantees, generic and explicitly typed map
+  functions, reference-bound collections, and mapped item replacement while
+  another input keeps the inner graph alive
 - mesh dependency creation, key changes, shared dependencies, cycle rejection, evaluation order, and lifecycle
 - switch selection, default selection, inner graph evaluation, scheduling, lifecycle, and composition with map and mesh
 - service request deduplication, invalidation, nested graph binding propagation, provider ordering, and client removal

@@ -53,12 +53,12 @@ template <typename Function, std::size_t Index> const Type &graph_parameter_type
         } else if constexpr (type_variable_declaration<TimeSeries>) {
             return TimeSeries::type();
         } else if constexpr (TimeSeries::has_explicit_guarantee) {
-            return time_series_type_for<Function, Index, true, TimeSeries>(
+            return time_series_type_for<Function, Index, TimeSeriesTypeRole::input, TimeSeries>(
                 guarantee_parameter<TimeSeries::guarantee>());
         } else {
             static const GuaranteeVariable guarantee{name};
             [[maybe_unused]] static const auto &registration = VariableRegistry::register_static(guarantee);
-            return time_series_type_for<Function, Index, true, TimeSeries>(guarantee);
+            return time_series_type_for<Function, Index, TimeSeriesTypeRole::input, TimeSeries>(guarantee);
         }
     } else if constexpr (supported_optional_scalar_argument<Parameter>) {
         using Scalar = typename optional_scalar_argument<Parameter>::value_type;
@@ -140,7 +140,8 @@ template <typename Function> const TimeSeriesType &graph_output_type() {
     if constexpr (time_series_variable<TimeSeries>) {
         return time_series_variable_instance<TimeSeries>();
     } else {
-        return time_series_type_for<Function, callable<Function>::argument_count, false, TimeSeries>(
+        return time_series_type_for<Function, callable<Function>::argument_count, TimeSeriesTypeRole::output,
+                                    TimeSeries>(
             TimeSeriesGuarantee::ordinary);
     }
 }

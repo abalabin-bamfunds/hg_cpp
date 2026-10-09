@@ -19,18 +19,6 @@
 namespace bg::details {
 namespace {
 
-const TimeSeriesType &mapped_dictionary_type(const TimeSeriesDictionaryType &dictionary) {
-    const auto &item = dictionary.value_type();
-    if (type_cast<TimeSeriesReferenceType>(&item) != nullptr) {
-        return dictionary;
-    }
-
-    const auto dictionary_guarantee = *dictionary.guarantee().value();
-    const auto &reference =
-        time_series_reference_type(item, strongest(TimeSeriesGuarantee::final, dictionary_guarantee));
-    return time_series_dictionary_type(dictionary.key_type(), reference, dictionary_guarantee);
-}
-
 class MapGraphArgumentBuilder {
   public:
     MapGraphArgumentBuilder(util::symbol name, const WiringTemplate &function, ResolvedMapCall call,
@@ -116,11 +104,23 @@ class MapGraphArgumentBuilder {
     }
 
   private:
+    static const TimeSeriesType &mapped_dictionary_type(const TimeSeriesDictionaryType &dictionary) {
+        const auto &item = dictionary.value_type();
+        if (type_cast<TimeSeriesReferenceType>(&item) != nullptr) {
+            return dictionary;
+        }
+
+        const auto dictionary_guarantee = *dictionary.guarantee().value();
+        const auto &reference =
+            time_series_reference_type(item, strongest(TimeSeriesGuarantee::final, dictionary_guarantee));
+        return time_series_dictionary_type(dictionary.key_type(), reference, dictionary_guarantee);
+    }
+
     static const TimeSeriesType &argument_time_series(const WiringArgument &argument) {
         if (!argument.is_time_series()) {
             throw WiringError{"a map or mesh collection argument must be a time series"};
         }
-        return static_cast<const TimeSeriesType &>(argument.type()).target_type();
+        return static_cast<const TimeSeriesType &>(argument.type()).dereferenced_type();
     }
 
     void resolve_key_argument() {
@@ -238,11 +238,19 @@ class MapGraphArgumentBuilder {
             return argument;
         }
 
-        const auto &type = argument_time_series(argument);
-        const auto *dictionary = type_cast<TimeSeriesDictionaryType>(&type);
-        const auto mapped = dictionary != nullptr && !supplied_argument.pass_through;
-        const auto &inner_type = mapped ? dictionary->value_type().target_type() : type;
-        const auto boundary = wire_nested_input(inner_type);
+        const auto &supplied_type = static_cast<const TimeSeriesType &>(argument.type());
+        const auto &supplied_target = supplied_type.target_type();
+        const auto *supplied_dictionary = type_cast<TimeSeriesDictionaryType>(&supplied_target);
+        const auto mapped = supplied_dictionary != nullptr && !supplied_argument.pass_through;
+        const auto &inner_type = mapped ? supplied_dictionary->value_type().target_type() : supplied_target;
+        const auto *supplied_reference = type_cast<TimeSeriesReferenceType>(&supplied_type);
+        const auto &input_reference = mapped
+                                          ? time_series_reference_type(inner_type, TimeSeriesGuarantee::ordinary)
+                                          : supplied_reference != nullptr
+                                                ? *supplied_reference
+                                                : time_series_reference_type(supplied_type,
+                                                                             TimeSeriesGuarantee::const_);
+        const auto boundary = wire_nested_input(input_reference);
         boundaries.push_back(boundary);
 
         auto graph_argument = WiringArgument{boundary};
@@ -254,10 +262,10 @@ class MapGraphArgumentBuilder {
         }
 
         const auto parameter_index = parameters_.size();
-        const auto &outer_type =
-            mapped
-                ? mapped_dictionary_type(*dictionary)
-                : static_cast<const TimeSeriesType &>(time_series_reference_type(type, TimeSeriesGuarantee::ordinary));
+        const auto &mapped_type = mapped ? mapped_dictionary_type(*supplied_dictionary) : input_reference;
+        const auto &outer_type = mapped && supplied_reference != nullptr
+                                     ? mapped_type.with_guarantee_limit(supplied_reference->reference_limit())
+                                     : mapped_type;
         parameters_.push_back({argument_name(supplied_argument.value, parameter_index), &outer_type, active,
                                mapped ? required : optional, false, VariadicMode::none});
         outer_arguments_.push_back(WiringArgument::borrow(supplied_argument.value));

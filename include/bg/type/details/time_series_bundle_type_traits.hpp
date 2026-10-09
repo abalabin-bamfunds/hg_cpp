@@ -11,27 +11,29 @@
 
 namespace bg::details {
 
-template <typename Scope, bool Input, template <template <typename, auto...> typename> typename Schema,
+template <typename Scope, TimeSeriesTypeRole Role,
+          template <template <typename, auto...> typename> typename Schema,
           std::size_t... Index>
 std::vector<SchemaField> direct_bundle_fields(GuaranteeParameter guarantee, std::index_sequence<Index...>) {
     auto fields = std::vector<SchemaField>{};
     fields.reserve(sizeof...(Index));
     (fields.push_back({util::symbol{direct_bundle_field_name<Index, Schema>()},
-                       &time_series_type_for<Scope, direct_bundle_field_logical_index<Index, Schema>, Input,
+                       &time_series_type_for<Scope, direct_bundle_field_logical_index<Index, Schema>, Role,
                                              direct_bundle_field_time_series<Index, Schema>>(guarantee)}),
      ...);
     return fields;
 }
 
-template <typename Scope, bool Input, template <template <typename, auto...> typename> typename Schema>
+template <typename Scope, TimeSeriesTypeRole Role,
+          template <template <typename, auto...> typename> typename Schema>
 const bg::Schema &cpp_bundle_schema(GuaranteeParameter guarantee) {
     const bg::Schema *base = nullptr;
     if constexpr (bundle_has_base<Schema>) {
         using Base = bundle_base_t<Schema>;
-        base = &cpp_bundle_schema<Scope, Input, Base::template apply>(guarantee);
+        base = &cpp_bundle_schema<Scope, Role, Base::template apply>(guarantee);
     }
 
-    const auto fields = direct_bundle_fields<Scope, Input, Schema>(
+    const auto fields = direct_bundle_fields<Scope, Role, Schema>(
         guarantee, std::make_index_sequence<direct_bundle_field_count<Schema>>{});
     return bg::schema(util::symbol{util::unqualified_type_name<Schema<bundle_schema_field>>()},
                       std::type_index{typeid(schema_template<Schema>)}, base, fields);
@@ -96,19 +98,20 @@ struct time_series_type_traits<TSB<Schema, Properties...>> {
         }
     }();
 
-    template <typename Scope, std::size_t, bool Input> static const TimeSeriesType &get(GuaranteeParameter guarantee) {
+    template <typename Scope, std::size_t, TimeSeriesTypeRole Role>
+    static const TimeSeriesType &get(GuaranteeParameter guarantee) {
         if constexpr (schema_variable) {
             static const auto type = GenericTimeSeriesBundleType{schema_variable_instance<Schema>(), guarantee};
             [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type);
             return type;
         } else {
-            const auto &schema = cpp_bundle_schema<Scope, Input, Schema>(guarantee);
-            if constexpr (Input || generic) {
+            const auto &schema = cpp_bundle_schema<Scope, Role, Schema>(guarantee);
+            if constexpr (Role == TimeSeriesTypeRole::input || generic) {
                 static const auto type = GenericTimeSeriesBundleType{schema, guarantee};
                 [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type);
                 return type;
             }
-            if (!guarantee.is_resolved()) {
+            if (!schema.is_resolved() || !guarantee.is_resolved()) {
                 static const auto type = GenericTimeSeriesBundleType{schema, guarantee};
                 [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type);
                 return type;

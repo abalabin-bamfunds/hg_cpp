@@ -70,11 +70,12 @@ const TimeSeriesType &callable_input_type(util::symbol name) {
     if constexpr (time_series_variable<TimeSeries>) {
         return time_series_variable_instance<TimeSeries>();
     } else if constexpr (TimeSeries::has_explicit_guarantee) {
-        return time_series_type_for<Scope, Index, true, TimeSeries>(guarantee_parameter<TimeSeries::guarantee>());
+        return time_series_type_for<Scope, Index, TimeSeriesTypeRole::input, TimeSeries>(
+            guarantee_parameter<TimeSeries::guarantee>());
     } else {
         static const auto guarantee = GuaranteeVariable{name};
         [[maybe_unused]] static const auto &registration = VariableRegistry::register_static(guarantee);
-        return time_series_type_for<Scope, Index, true, TimeSeries>(guarantee);
+        return time_series_type_for<Scope, Index, TimeSeriesTypeRole::input, TimeSeries>(guarantee);
     }
 }
 
@@ -82,7 +83,8 @@ template <typename Scope, typename TimeSeries, std::size_t Index> const TimeSeri
     if constexpr (time_series_variable<TimeSeries>) {
         return time_series_variable_instance<TimeSeries>();
     } else {
-        return time_series_type_for<Scope, Index, false, TimeSeries>(TimeSeriesGuarantee::ordinary);
+        return time_series_type_for<Scope, Index, TimeSeriesTypeRole::output, TimeSeries>(
+            TimeSeriesGuarantee::ordinary);
     }
 }
 

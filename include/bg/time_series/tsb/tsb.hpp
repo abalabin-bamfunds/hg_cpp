@@ -129,7 +129,7 @@ class TypedBundleConstruction<TSB<Schema, Properties...>> {
         static const auto guarantee = GuaranteeVariable{util::symbol{"G"}};
         [[maybe_unused]] static const auto &registration = VariableRegistry::register_static(guarantee);
         return static_cast<const TimeSeriesBundleType &>(
-            time_series_type_for<TypedBundleConstruction, 0, true, TimeSeries>(guarantee));
+            time_series_type_for<TypedBundleConstruction, 0, TimeSeriesTypeRole::input, TimeSeries>(guarantee));
     }
 
     template <std::size_t... Index> wp<TimeSeries> finish(std::index_sequence<Index...>) {

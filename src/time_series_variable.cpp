@@ -5,14 +5,22 @@
 namespace bg {
 
 bool GenericTimeSeriesVariableType::do_match(const Type &supplied, TypeMap &type_map) const {
+    return do_match(supplied, type_map, std::nullopt);
+}
+
+bool GenericTimeSeriesVariableType::do_match(const Type &supplied, TypeMap &type_map,
+                                             std::optional<TimeSeriesGuarantee> reference_limit) const {
     const auto *time_series = type_cast<TimeSeriesType>(&supplied);
     if (time_series == nullptr || !time_series->is_resolved()) {
         return false;
     }
 
     const auto &structure = time_series->with_guarantee(TimeSeriesGuarantee::ordinary);
+    const auto supplied_guarantee = *time_series->guarantee().value();
+    const auto observed_guarantee = reference_limit ? weakest(supplied_guarantee, *reference_limit)
+                                                    : supplied_guarantee;
     auto trial = type_map.overlay();
-    if (!variable_->match(structure, trial) || !guarantee().match(*time_series->guarantee().value(), trial)) {
+    if (!variable_->match(structure, trial, reference_limit) || !guarantee().match(observed_guarantee, trial)) {
         return false;
     }
 

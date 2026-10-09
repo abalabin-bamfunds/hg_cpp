@@ -8,9 +8,9 @@
 
 namespace bg::details {
 
-template <typename TimeSeries>
+template <typename TimeSeries, TimeSeriesTypeRole Role>
 const TimeSeriesType &concrete_time_series_type(TimeSeriesGuarantee inherited) {
-    return time_series_type_for<TimeSeries, 0, false, TimeSeries>(inherited);
+    return time_series_type_for<TimeSeries, 0, Role, TimeSeries>(inherited);
 }
 
 template <typename TimeSeries> struct CppTimeSeriesRuntimeType;
@@ -48,14 +48,15 @@ template <typename TimeSeries> const TimeSeriesRuntimeType &cpp_time_series_runt
     return runtime_type;
 }
 
-template <typename TimeSeries>
+template <typename TimeSeries, TimeSeriesTypeRole Role = TimeSeriesTypeRole::declaration>
 inline const TimeSeriesRuntimeType *cpp_time_series_runtime_type_v = [] {
-    const auto &type = details::concrete_time_series_type<TimeSeries>(TimeSeriesGuarantee::ordinary);
+    const auto &type = details::concrete_time_series_type<TimeSeries, Role>(TimeSeriesGuarantee::ordinary);
     return &cpp_time_series_runtime_type<TimeSeries>(type);
 }();
 
-template <typename TimeSeries> const TimeSeriesRuntimeType &cpp_time_series_runtime_type() {
-    return *cpp_time_series_runtime_type_v<TimeSeries>;
+template <typename TimeSeries, TimeSeriesTypeRole Role>
+const TimeSeriesRuntimeType &cpp_time_series_runtime_type() {
+    return *cpp_time_series_runtime_type_v<TimeSeries, Role>;
 }
 
 } // namespace bg

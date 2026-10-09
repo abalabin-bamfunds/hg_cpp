@@ -39,6 +39,8 @@ template <typename Graph, details::graph_code_argument Run, details::graph_code_
     auto inner_wiring = std::make_shared<GraphWiring>(outer_wiring);
     auto diagnostics = details::WiringDiagnosticContext{*inner_wiring, outer_diagnostics};
     auto input_boundaries = std::vector<WiringPoint>{};
+    auto flattened_parameters = std::vector<ResolvedParameter>{};
+    flattened_parameters.reserve(resolved.parameters.size());
     auto output_node = std::size_t{};
     auto boundary_output = WiringPoint{};
     {
@@ -54,9 +56,18 @@ template <typename Graph, details::graph_code_argument Run, details::graph_code_
             if (resolved.parameters[i].variadic_mode != details::VariadicMode::none) {
                 const auto &record = *details::variadic_wiring_record(normalized[i].time_series());
                 if (record.direct_collection()) {
-                    const auto &type = static_cast<const TimeSeriesType &>(*resolved.parameters[i].type);
-                    const auto input = details::wire_nested_input(type);
+                    const auto direct = *record.direct_collection();
+                    const auto &type = static_cast<const TimeSeriesType &>(direct.type());
+                    const auto *reference = type_cast<TimeSeriesReferenceType>(&type);
+                    const auto &input_reference = reference != nullptr
+                                                      ? *reference
+                                                      : time_series_reference_type(type, TimeSeriesGuarantee::const_);
+                    const auto input = details::wire_nested_input(input_reference);
                     input_boundaries.push_back(input);
+                    auto parameter = resolved.parameters[i];
+                    parameter.type = &input.type();
+                    parameter.variadic_mode = details::VariadicMode::none;
+                    flattened_parameters.push_back(parameter);
                     auto argument = WiringArgument{input};
                     argument.set_variadic_name(resolved.parameters[i].name, resolved.parameters[i].variadic_mode);
                     inner_arguments.push_back(std::move(argument));
@@ -68,9 +79,15 @@ template <typename Graph, details::graph_code_argument Run, details::graph_code_
                     inner_arguments.push_back(WiringArgument::borrow(argument));
                     if (argument.is_time_series()) {
                         const auto &type = static_cast<const TimeSeriesType &>(argument.type());
-                        const auto input = details::wire_nested_input(type);
+                        const auto *reference = type_cast<TimeSeriesReferenceType>(&type);
+                        const auto &input_reference = reference != nullptr
+                                                          ? *reference
+                                                          : time_series_reference_type(type, TimeSeriesGuarantee::const_);
+                        const auto input = details::wire_nested_input(input_reference);
                         input_boundaries.push_back(input);
                         inner_arguments.back().replace_time_series(input);
+                        flattened_parameters.push_back(
+                            {*argument.name(), &input.type(), active, optional, false, details::VariadicMode::none});
                     }
                 }
                 continue;
@@ -78,10 +95,19 @@ template <typename Graph, details::graph_code_argument Run, details::graph_code_
 
             inner_arguments.push_back(WiringArgument::borrow(normalized[i]));
             if (resolved.parameters[i].type->is_time_series()) {
-                const auto &type = static_cast<const TimeSeriesType &>(*resolved.parameters[i].type);
-                const auto input = details::wire_nested_input(type);
+                const auto &type = static_cast<const TimeSeriesType &>(normalized[i].type());
+                const auto *reference = type_cast<TimeSeriesReferenceType>(&type);
+                const auto &input_reference = reference != nullptr
+                                                  ? *reference
+                                                  : time_series_reference_type(type, TimeSeriesGuarantee::const_);
+                const auto input = details::wire_nested_input(input_reference);
                 input_boundaries.push_back(input);
                 inner_arguments.back().replace_time_series(input);
+                auto parameter = resolved.parameters[i];
+                parameter.type = &input.type();
+                flattened_parameters.push_back(parameter);
+            } else {
+                flattened_parameters.push_back(resolved.parameters[i]);
             }
         }
 
@@ -98,34 +124,7 @@ template <typename Graph, details::graph_code_argument Run, details::graph_code_
     }
     output_node = inner_wiring->output_node_index(boundary_output);
 
-    auto flattened = ResolvedSignature{resolved.name, {}, resolved.output};
-    flattened.parameters.reserve(resolved.parameters.size());
-    for (auto index = std::size_t{}; index < resolved.parameters.size(); ++index) {
-        const auto &parameter = resolved.parameters[index];
-        if (parameter.context) {
-            continue;
-        }
-        if (parameter.variadic_mode == details::VariadicMode::none) {
-            flattened.parameters.push_back(parameter);
-            continue;
-        }
-
-        const auto &record = *details::variadic_wiring_record(normalized[index].time_series());
-        if (record.direct_collection()) {
-            auto direct = parameter;
-            direct.variadic_mode = details::VariadicMode::none;
-            flattened.parameters.push_back(direct);
-        } else {
-            for (auto item = std::size_t{}; item < record.size(); ++item) {
-                const auto argument = record.argument(item);
-                if (argument.is_scalar()) {
-                    continue;
-                }
-                flattened.parameters.push_back(
-                    {*argument.name(), &argument.type(), active, optional, false, details::VariadicMode::none});
-            }
-        }
-    }
+    auto flattened = ResolvedSignature{resolved.name, std::move(flattened_parameters), resolved.output};
 
     for (const auto &requirement : inner_wiring->inherited_requirements()) {
         flattened.parameters.push_back({requirement.name, &requirement.boundary_input_type(), passive, optional});

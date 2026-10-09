@@ -17,6 +17,7 @@
 #include <bg/time_series/time_series_runtime_type.hpp>
 #include <bg/time_series/time_series_variable.hpp>
 #include <bg/type/scalar_variable.hpp>
+#include <bg/type/guarantee_variable_instance.hpp>
 #include <bg/type/time_series_reference_type.hpp>
 #include <bg/type/time_series_value_type.hpp>
 #include <bg/type/type.hpp>
@@ -29,10 +30,12 @@ namespace bg::details {
 
 namespace {
 
+inline constexpr auto G = guarantee_variable<"G">;
+
 struct NestedInput {
     static constexpr bool deduplicate_wiring = false;
 
-    Out<REF<TS_T>> output;
+    Out<REF<TS_T, G>> output;
 
     void evaluate() const noexcept {}
 };
@@ -91,9 +94,7 @@ class NestedNodeDefinition {
                     parameters.push_back({parameter.name, parameter.type, passive, optional});
                     continue;
                 }
-                const auto &type = generic_time_series_reference_type(
-                    static_cast<const TimeSeriesType &>(*parameter.type), TimeSeriesGuarantee::ordinary);
-                parameters.push_back({parameter.name, &type, active, optional});
+                parameters.push_back({parameter.name, parameter.type, active, optional});
             } else {
                 parameters.push_back({parameter.name, parameter.type, parameter.activity, parameter.validity,
                                       parameter.accepts_absent_scalar, details::VariadicMode::none, nullptr, false});
@@ -211,9 +212,10 @@ class NestedNodeDefinition {
 
 } // namespace
 
-WiringPoint wire_nested_input(const TimeSeriesType &type) {
+WiringPoint wire_nested_input(const TimeSeriesReferenceType &type) {
     auto type_map = TypeMap{};
-    type_map.set(TimeSeriesVariableInstance<TS_T>::get(), &type);
+    type_map.set(TimeSeriesVariableInstance<TS_T>::get(), &type.target_type());
+    type_map.set(guarantee_variable_instance<G>(), *type.guarantee().value());
     return static_cast<WiringPoint>(nested_input_node(type_map));
 }
 

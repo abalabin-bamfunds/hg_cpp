@@ -51,11 +51,12 @@ const Type &declared_graph_parameter_type() {
         if constexpr (time_series_variable<Value>) {
             return time_series_variable_instance<Value>();
         } else if constexpr (Value::has_explicit_guarantee) {
-            return time_series_type_for<Scope, Index, true, Value>(guarantee_parameter<Value::guarantee>());
+            return time_series_type_for<Scope, Index, TimeSeriesTypeRole::input, Value>(
+                guarantee_parameter<Value::guarantee>());
         } else {
             static const auto guarantee = GuaranteeVariable{util::symbol{std::to_string(Index)}};
             [[maybe_unused]] static const auto &registration = VariableRegistry::register_static(guarantee);
-            return time_series_type_for<Scope, Index, true, Value>(guarantee);
+            return time_series_type_for<Scope, Index, TimeSeriesTypeRole::input, Value>(guarantee);
         }
     } else if constexpr (generic_scalar<Value>) {
         return scalar_variable_instance<Value>();
@@ -74,7 +75,7 @@ const TimeSeriesType &declared_graph_output_type() {
     if constexpr (time_series_variable<Value>) {
         return time_series_variable_instance<Value>();
     } else {
-        return time_series_type_for<Scope, Index, false, Value>(TimeSeriesGuarantee::ordinary);
+        return time_series_type_for<Scope, Index, TimeSeriesTypeRole::output, Value>(TimeSeriesGuarantee::ordinary);
     }
 }
 

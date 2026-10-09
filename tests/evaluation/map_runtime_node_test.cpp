@@ -120,11 +120,13 @@ wp<TSD<std::int64_t, REF<TS<i64>>>> wire_map(wp<TSD<std::int64_t, REF<TS<i64>>>>
     auto output_node = std::size_t{};
     {
         auto context = WiringContext{*inner};
-        const auto value = details::wire_nested_input(TS<i64>::type());
+        const auto value = details::wire_nested_input(REF<TS<i64>, TimeSeriesGuarantee::ordinary>::type());
 
         const auto key = details::wire_nested_constant_input(TS<std::int64_t, TimeSeriesGuarantee::const_>::type());
 
-        const auto result = add_key(wp<REF<TS<i64>>>{value}, wp<TS<std::int64_t, TimeSeriesGuarantee::const_>>{key});
+        const auto result = add_key(
+            wp<REF<TS<i64>, TimeSeriesGuarantee::ordinary>>{value},
+            wp<TS<std::int64_t, TimeSeriesGuarantee::const_>>{key});
         const auto output = details::wire_nested_output(result, TS<i64>::type());
         const auto concrete_output = inner->complete_pending_wiring(output);
         value_node = inner->output_node_index(value);
@@ -136,10 +138,10 @@ wp<TSD<std::int64_t, REF<TS<i64>>>> wire_map(wp<TSD<std::int64_t, REF<TS<i64>>>>
     auto signature = ResolvedSignature{
         .name = util::symbol{"test_map"},
         .parameters = {{.name = util::symbol{"values"},
-                        .type = &values.type().target_type(),
+                        .type = &values.type().dereferenced_type(),
                         .activity = active,
                         .validity = required}},
-        .output = &TSD<std::int64_t, REF<TS<i64>>>::type(),
+        .output = &TSD<std::int64_t, REF<TS<i64>, TimeSeriesGuarantee::deduplicated>>::type(),
     };
     auto node_template = details::make_map_node(
         {.wiring = std::move(inner),
@@ -160,10 +162,11 @@ wp<TSD<std::int64_t, REF<TS<i64>>>> wire_union_map(wp<TSD<std::int64_t, REF<TS<i
     auto output_node = std::size_t{};
     {
         auto context = WiringContext{*inner};
-        const auto left_input = details::wire_nested_input(TS<i64>::type());
-        const auto right_input = details::wire_nested_input(TS<i64>::type());
+        const auto left_input = details::wire_nested_input(REF<TS<i64>, TimeSeriesGuarantee::ordinary>::type());
+        const auto right_input = details::wire_nested_input(REF<TS<i64>, TimeSeriesGuarantee::ordinary>::type());
 
-        const auto result = add_available(wp<REF<TS<i64>>>{left_input}, wp<REF<TS<i64>>>{right_input});
+        const auto result = add_available(wp<REF<TS<i64>, TimeSeriesGuarantee::ordinary>>{left_input},
+                                          wp<REF<TS<i64>, TimeSeriesGuarantee::ordinary>>{right_input});
         const auto output = details::wire_nested_output(result, TS<i64>::type());
         const auto concrete_output = inner->complete_pending_wiring(output);
         left_node = inner->output_node_index(left_input);
@@ -175,11 +178,11 @@ wp<TSD<std::int64_t, REF<TS<i64>>>> wire_union_map(wp<TSD<std::int64_t, REF<TS<i
     auto signature = ResolvedSignature{
         .name = util::symbol{"test_union_map"},
         .parameters = {{.name = util::symbol{"left"},
-                        .type = &left.type().target_type(),
+                        .type = &left.type().dereferenced_type(),
                         .activity = active,
                         .validity = required},
                        {.name = util::symbol{"right"},
-                        .type = &right.type().target_type(),
+                        .type = &right.type().dereferenced_type(),
                         .activity = active,
                         .validity = required}},
         .output = &TSD<std::int64_t, REF<TS<i64>>>::type(),
@@ -213,7 +216,7 @@ wp<TSD<std::int64_t, REF<TS<std::int64_t, TimeSeriesGuarantee::const_>>>> wire_s
     auto signature = ResolvedSignature{
         .name = util::symbol{"test_source_map"},
         .parameters = {{.name = util::symbol{"keys"},
-                        .type = &keys.type().target_type(),
+                        .type = &keys.type().dereferenced_type(),
                         .activity = active,
                         .validity = required}},
         .output = &TSD<std::int64_t, REF<TS<std::int64_t, TimeSeriesGuarantee::const_>>>::type(),
@@ -240,7 +243,7 @@ void wire_source_sink_map(wp<TSS<std::int64_t>> keys) {
     auto signature = ResolvedSignature{
         .name = util::symbol{"test_source_sink_map"},
         .parameters = {{.name = util::symbol{"keys"},
-                        .type = &keys.type().target_type(),
+                        .type = &keys.type().dereferenced_type(),
                         .activity = active,
                         .validity = required}},
         .output = nullptr,
@@ -259,8 +262,8 @@ wp<TSD<std::int64_t, REF<TS<i64>>>> wire_delayed_map(wp<TSD<std::int64_t, REF<TS
     auto output_node = std::size_t{};
     {
         auto context = WiringContext{*inner};
-        const auto value = details::wire_nested_input(TS<i64>::type());
-        const auto result = delayed_value(wp<REF<TS<i64>>>{value});
+        const auto value = details::wire_nested_input(REF<TS<i64>, TimeSeriesGuarantee::ordinary>::type());
+        const auto result = delayed_value(wp<REF<TS<i64>, TimeSeriesGuarantee::ordinary>>{value});
         const auto output = details::wire_nested_output(result, TS<i64>::type());
         const auto concrete_output = inner->complete_pending_wiring(output);
         value_node = inner->output_node_index(value);
@@ -271,7 +274,7 @@ wp<TSD<std::int64_t, REF<TS<i64>>>> wire_delayed_map(wp<TSD<std::int64_t, REF<TS
     auto signature = ResolvedSignature{
         .name = util::symbol{"test_delayed_map"},
         .parameters = {{.name = util::symbol{"values"},
-                        .type = &values.type().target_type(),
+                        .type = &values.type().dereferenced_type(),
                         .activity = active,
                         .validity = required}},
         .output = &TSD<std::int64_t, REF<TS<i64>>>::type(),
@@ -292,8 +295,8 @@ wp<TSD<std::int64_t, REF<TS<i64>>>> wire_variable_delayed_map(wp<TSD<std::int64_
     auto output_node = std::size_t{};
     {
         auto context = WiringContext{*inner};
-        const auto value = details::wire_nested_input(TS<i64>::type());
-        const auto result = variable_delay(wp<REF<TS<i64>>>{value});
+        const auto value = details::wire_nested_input(REF<TS<i64>, TimeSeriesGuarantee::ordinary>::type());
+        const auto result = variable_delay(wp<REF<TS<i64>, TimeSeriesGuarantee::ordinary>>{value});
         const auto output = details::wire_nested_output(result, TS<i64>::type());
         const auto concrete_output = inner->complete_pending_wiring(output);
         value_node = inner->output_node_index(value);
@@ -304,7 +307,7 @@ wp<TSD<std::int64_t, REF<TS<i64>>>> wire_variable_delayed_map(wp<TSD<std::int64_
     auto signature = ResolvedSignature{
         .name = util::symbol{"test_variable_delayed_map"},
         .parameters = {{.name = util::symbol{"values"},
-                        .type = &values.type().target_type(),
+                        .type = &values.type().dereferenced_type(),
                         .activity = active,
                         .validity = required}},
         .output = &TSD<std::int64_t, REF<TS<i64>>>::type(),
@@ -324,8 +327,8 @@ void wire_sink_map(wp<TSD<std::int64_t, REF<TS<i64>>>> values) {
     auto value_node = std::size_t{};
     {
         auto context = WiringContext{*inner};
-        const auto value = details::wire_nested_input(TS<i64>::type());
-        map_sink(wp<REF<TS<i64>>>{value});
+        const auto value = details::wire_nested_input(REF<TS<i64>, TimeSeriesGuarantee::ordinary>::type());
+        map_sink(wp<REF<TS<i64>, TimeSeriesGuarantee::ordinary>>{value});
         (void)inner->complete_pending_wiring();
         value_node = inner->output_node_index(value);
     }
@@ -334,7 +337,7 @@ void wire_sink_map(wp<TSD<std::int64_t, REF<TS<i64>>>> values) {
     auto signature = ResolvedSignature{
         .name = util::symbol{"test_sink_map"},
         .parameters = {{.name = util::symbol{"values"},
-                        .type = &values.type().target_type(),
+                        .type = &values.type().dereferenced_type(),
                         .activity = active,
                         .validity = required}},
         .output = nullptr,
@@ -357,9 +360,10 @@ wp<TSD<std::int64_t, REF<TS<i64>>>> wire_pass_through_map(wp<TSD<std::int64_t, R
     auto output_node = std::size_t{};
     {
         auto context = WiringContext{*inner};
-        const auto value = details::wire_nested_input(TS<i64>::type());
-        const auto factor_input = details::wire_nested_input(TS<i64>::type());
-        const auto result = add_values(wp<REF<TS<i64>>>{value}, wp<REF<TS<i64>>>{factor_input});
+        const auto value = details::wire_nested_input(REF<TS<i64>, TimeSeriesGuarantee::ordinary>::type());
+        const auto factor_input = details::wire_nested_input(REF<TS<i64>>::type());
+        const auto result = add_values(wp<REF<TS<i64>, TimeSeriesGuarantee::ordinary>>{value},
+                                       wp<REF<TS<i64>>>{factor_input});
         const auto output = details::wire_nested_output(result, TS<i64>::type());
         const auto concrete_output = inner->complete_pending_wiring(output);
         value_node = inner->output_node_index(value);
@@ -372,7 +376,7 @@ wp<TSD<std::int64_t, REF<TS<i64>>>> wire_pass_through_map(wp<TSD<std::int64_t, R
         .name = util::symbol{"test_pass_through_map"},
         .parameters =
             {{.name = util::symbol{"values"},
-              .type = &values.type().target_type(),
+              .type = &values.type().dereferenced_type(),
               .activity = active,
               .validity = required},
              {.name = util::symbol{"factor"}, .type = &factor.type(), .activity = active, .validity = required}},
@@ -588,7 +592,7 @@ TEST_CASE("a pass-through reference replacement updates each running map inner g
     const auto graph = [&](wp<TS<i64>> value, wp<TS<bool>> use_left) {
         const auto mapped = make_values(target(value, 1));
         const auto factor = choose(use_left, target(value, 10), target(value, 100));
-        return wire_pass_through_map(mapped, factor)[std::int64_t{1}];
+        return wire_pass_through_map(mapped, factor)[std::int64_t{1}].as<TS<i64>>();
     };
 
     const auto actual = testing::test_graph(graph, std::array{1, 2, 3}, std::array{true, false, true});
@@ -602,7 +606,9 @@ TEST_CASE("a map inner graph reports timed work through the map owner",
     const auto target = node([](In<TS<i64>> value, Out<TS<i64>> output) { output.set(*value); });
     const auto make_values =
         node([](In<REF<TS<i64>>> value, Out<TSD<std::int64_t, REF<TS<i64>>>> output) { output[1].copy(value); });
-    const auto graph = [&](wp<TS<i64>> value) { return wire_delayed_map(make_values(target(value)))[std::int64_t{1}]; };
+    const auto graph = [&](wp<TS<i64>> value) {
+        return wire_delayed_map(make_values(target(value)))[std::int64_t{1}].as<TS<i64>>();
+    };
 
     const auto actual = testing::test_graph(graph, std::array{5});
 
@@ -628,7 +634,7 @@ TEST_CASE("map schedules the next scheduled time after one inner graph becomes d
     const auto graph = [&](wp<TS<i64>> command) {
         const auto values = targets(command);
         const auto mapped = wire_variable_delayed_map(rekey(values[std::int64_t{1}], values[std::int64_t{2}]));
-        return mapped[std::int64_t{2}];
+        return mapped[std::int64_t{2}].as<TS<i64>>();
     };
     VariableDelay::evaluations.clear();
 

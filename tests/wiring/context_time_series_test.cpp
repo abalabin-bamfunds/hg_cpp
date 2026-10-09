@@ -80,8 +80,9 @@ TEST_CASE("an aggregate graph establishes a context time series",
 
 TEST_CASE("a TSL graph parameter can request lexical context",
           "[feature:context-time-series][feature:wiring][series:fixed-tsl][definition:function]") {
-    const auto first_item = graph("name"_n = "context_list_item",
-                                  [](wp<TSL<TS<std::int64_t>, 2>, "values"_n, context> values) { return values[0]; });
+    const auto first_item = graph(
+        "name"_n = "context_list_item",
+        [](wp<TSL<TS<std::int64_t>, 2>, "values"_n, context> values) { return values[0].as<TS<std::int64_t>>(); });
     const auto tested = [&](wp<TS<std::int64_t>> first, wp<TS<std::int64_t>> second) {
         return with_context("values"_n = tsl(first, second), [&] { return first_item(); });
     };

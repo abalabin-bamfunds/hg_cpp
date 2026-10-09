@@ -40,6 +40,21 @@ const TimeSeriesType &TimeSeriesDictionaryType::with_guarantee(TimeSeriesGuarant
     return time_series_dictionary_type(key_type(), value_type(), guarantee);
 }
 
+const TimeSeriesType &TimeSeriesDictionaryType::with_guarantee_limit(TimeSeriesGuarantee limit) const {
+    if (!is_resolved()) {
+        return TimeSeriesType::with_guarantee_limit(limit);
+    }
+
+    const auto current = *guarantee().value();
+    const auto &limited_value = value_type().with_guarantee_limit(limit);
+    const auto limited_guarantee = weakest(current, limit);
+    if (&limited_value == &value_type() && limited_guarantee == current) {
+        return *this;
+    }
+
+    return time_series_dictionary_type(key_type(), limited_value, limited_guarantee);
+}
+
 bool TimeSeriesDictionaryType::requires_reference_representation_for(const TimeSeriesType &supplied) const noexcept {
     const auto *tsd = type_cast<TimeSeriesDictionaryType>(&supplied);
     if (tsd == nullptr) {
@@ -53,14 +68,23 @@ bool TimeSeriesDictionaryType::requires_reference_representation_for(const TimeS
 }
 
 bool TimeSeriesDictionaryType::do_match(const Type &supplied, TypeMap &type_map) const {
+    return do_match(supplied, type_map, std::nullopt);
+}
+
+bool TimeSeriesDictionaryType::do_match(const Type &supplied, TypeMap &type_map,
+                                        std::optional<TimeSeriesGuarantee> reference_limit) const {
     const auto *dictionary = type_cast<TimeSeriesDictionaryType>(&supplied);
     if (dictionary == nullptr || !dictionary->is_resolved()) {
         return false;
     }
 
     auto trial = type_map.overlay();
-    if (!key_type().match(dictionary->key_type(), trial) || !value_type().match(dictionary->value_type(), trial) ||
-        !guarantee().match(*dictionary->guarantee().value(), trial)) {
+    const auto supplied_guarantee = *dictionary->guarantee().value();
+    const auto observed_guarantee = reference_limit ? weakest(supplied_guarantee, *reference_limit)
+                                                    : supplied_guarantee;
+    if (!key_type().match(dictionary->key_type(), trial) ||
+        !value_type().match(dictionary->value_type(), trial, reference_limit) ||
+        !guarantee().match(observed_guarantee, trial)) {
         return false;
     }
 

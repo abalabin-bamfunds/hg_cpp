@@ -52,12 +52,12 @@ const TimeSeriesListType &TimeSeriesListType::from_items(std::span<const TimeSer
         throw std::invalid_argument{"a time series list type requires resolved item types"};
     }
 
-    const auto &first = items.front()->target_type();
+    const auto &first = items.front()->dereferenced_type();
     auto guarantee = *first.guarantee().value();
     const auto &shape = first.with_guarantee(TimeSeriesGuarantee::ordinary);
 
     for (const auto *item : items.subspan(1)) {
-        const auto &candidate = item->target_type();
+        const auto &candidate = item->dereferenced_type();
         if (&candidate.with_guarantee(TimeSeriesGuarantee::ordinary) != &shape) {
             throw std::invalid_argument{"a time series list requires compatible item types"};
         }
@@ -82,15 +82,38 @@ const TimeSeriesType &TimeSeriesListType::with_guarantee(TimeSeriesGuarantee gua
     return TimeSeriesType::with_guarantee(guarantee);
 }
 
+const TimeSeriesType &TimeSeriesListType::with_guarantee_limit(TimeSeriesGuarantee limit) const {
+    if (!is_resolved()) {
+        return TimeSeriesType::with_guarantee_limit(limit);
+    }
+
+    const auto current = *guarantee().value();
+    const auto &limited_item = item_type().with_guarantee_limit(limit);
+    const auto limited_guarantee = weakest(current, limit);
+    if (&limited_item == &item_type() && limited_guarantee == current) {
+        return *this;
+    }
+
+    return time_series_list_type(limited_item, item_count(), limited_guarantee);
+}
+
 bool TimeSeriesListType::do_match(const Type &supplied, TypeMap &type_map) const {
+    return do_match(supplied, type_map, std::nullopt);
+}
+
+bool TimeSeriesListType::do_match(const Type &supplied, TypeMap &type_map,
+                                  std::optional<TimeSeriesGuarantee> reference_limit) const {
     const auto *list = type_cast<TimeSeriesListType>(&supplied);
     if (list == nullptr || !list->is_resolved()) {
         return false;
     }
 
     auto trial = type_map.overlay();
-    if (!size().match(list->item_count(), trial) || !item_type().match(list->item_type(), trial) ||
-        !guarantee().match(*list->guarantee().value(), trial)) {
+    const auto supplied_guarantee = *list->guarantee().value();
+    const auto observed_guarantee = reference_limit ? weakest(supplied_guarantee, *reference_limit)
+                                                    : supplied_guarantee;
+    if (!size().match(list->item_count(), trial) || !item_type().match(list->item_type(), trial, reference_limit) ||
+        !guarantee().match(observed_guarantee, trial)) {
         return false;
     }
 

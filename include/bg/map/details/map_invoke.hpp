@@ -83,6 +83,45 @@ decltype(auto) select_map_overload(SelectOverload &&select_overload, const Graph
 
 template <typename T> using map_graph_function_parameter_t = typename map_callable_argument_t<T>::parameter_type;
 
+template <typename Function> inline constexpr bool map_function_signature_available = [] {
+    if constexpr (std::is_pointer_v<Function>) {
+        return true;
+    } else if constexpr (std::is_class_v<Function>) {
+        return requires { &Function::operator(); };
+    } else {
+        return false;
+    }
+}();
+
+template <typename Function, bool = map_function_signature_available<Function>> struct map_function_signature {
+    static constexpr bool available = false;
+    static constexpr std::size_t argument_count = 0;
+};
+
+template <typename Function> struct map_function_signature<Function, true> {
+    using callable_type = callable<Function>;
+
+    static constexpr bool available = true;
+    static constexpr std::size_t argument_count = callable_type::argument_count;
+
+    template <std::size_t Index> using argument_type = typename callable_type::template argument_type<Index>;
+};
+
+template <typename Function, std::size_t Index, typename Supplied,
+          bool HasDeclaredParameter = map_function_signature<Function>::available &&
+                                      Index < map_function_signature<Function>::argument_count>
+struct map_function_parameter {
+    using type = map_graph_function_parameter_t<Supplied>;
+};
+
+template <typename Function, std::size_t Index, typename Supplied>
+struct map_function_parameter<Function, Index, Supplied, true> {
+    using type = std::remove_cvref_t<typename map_function_signature<Function>::template argument_type<Index>>;
+};
+
+template <typename Function, std::size_t Index, typename Supplied>
+using map_function_parameter_t = typename map_function_parameter<Function, Index, Supplied>::type;
+
 template <typename Function, typename... Arguments> struct BoundMapGraphFunction {
     Function function;
 
@@ -134,7 +173,10 @@ consteval MapGraphFunctionResult map_graph_function_result() {
 
     if constexpr (Index == std::tuple_size_v<Supplied>) {
         if constexpr (!HasKey || KeyInserted) {
-            result = combine_map_graph_function_results(result, map_graph_function_result<Function, Parameters...>());
+            if constexpr (!map_function_signature<Function>::available ||
+                          sizeof...(Parameters) == map_function_signature<Function>::argument_count) {
+                result = combine_map_graph_function_results(result, map_graph_function_result<Function, Parameters...>());
+            }
         }
         return result;
     } else {
@@ -145,10 +187,13 @@ consteval MapGraphFunctionResult map_graph_function_result() {
                                                   Key, Parameters...>());
         }
         if constexpr (!OmitSoleSet || SetOmitted || !map_callable_key_set<Argument>) {
-            using Parameter = map_graph_function_parameter_t<Argument>;
-            result = combine_map_graph_function_results(
-                result, map_graph_function_result<Index + 1, HasKey, KeyInserted, SetOmitted, OmitSoleSet, Supplied,
-                                                  Function, Key, Parameters..., Parameter>());
+            if constexpr (!map_function_signature<Function>::available ||
+                          sizeof...(Parameters) < map_function_signature<Function>::argument_count) {
+                using Parameter = map_function_parameter_t<Function, sizeof...(Parameters), Argument>;
+                result = combine_map_graph_function_results(
+                    result, map_graph_function_result<Index + 1, HasKey, KeyInserted, SetOmitted, OmitSoleSet,
+                                                      Supplied, Function, Key, Parameters..., Parameter>());
+            }
         }
         return result;
     }
@@ -193,9 +238,14 @@ void dispatch_map_graph_function(const Function &function, Callback &callback,
             }
         }
 
-        using Parameter = map_graph_function_parameter_t<Supplied>;
-        dispatch_map_graph_function<Index + 1, KeyInserted, Arguments, Function, Callback, Key, Parameters...,
-                                    Parameter>(function, callback, selected_key_set, key_parameter);
+        if constexpr (!map_function_signature<Function>::available ||
+                      sizeof...(Parameters) < map_function_signature<Function>::argument_count) {
+            using Parameter = map_function_parameter_t<Function, sizeof...(Parameters), Supplied>;
+            dispatch_map_graph_function<Index + 1, KeyInserted, Arguments, Function, Callback, Key, Parameters...,
+                                        Parameter>(function, callback, selected_key_set, key_parameter);
+        } else {
+            throw WiringError{"the inner graph function does not accept the arguments for one key"};
+        }
     }
 }
 

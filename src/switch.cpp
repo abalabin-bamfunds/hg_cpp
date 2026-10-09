@@ -87,8 +87,11 @@ class SwitchGraphArgumentBuilder {
                 continue;
             }
 
-            const auto &target = static_cast<const TimeSeriesType &>(argument.type()).target_type();
-            const auto &reference = time_series_reference_type(target, TimeSeriesGuarantee::ordinary);
+            const auto &source_type = static_cast<const TimeSeriesType &>(argument.type());
+            const auto *source_reference = type_cast<TimeSeriesReferenceType>(&source_type);
+            const auto &reference = source_reference != nullptr
+                                        ? *source_reference
+                                        : time_series_reference_type(source_type, TimeSeriesGuarantee::const_);
             const auto parameter_index = parameters_.size();
             outer_parameter_indices_.push_back({index, parameter_index});
             parameters_.push_back({argument.name().value_or(util::symbol{std::to_string(index)}), &reference, active,
@@ -274,8 +277,12 @@ class SwitchGraphArgumentBuilder {
                 continue;
             }
 
-            const auto &target = static_cast<const TimeSeriesType &>(argument.value.type()).target_type();
-            const auto boundary = wire_nested_input(target);
+            const auto &source_type = static_cast<const TimeSeriesType &>(argument.value.type());
+            const auto *source_reference = type_cast<TimeSeriesReferenceType>(&source_type);
+            const auto &reference = source_reference != nullptr
+                                        ? *source_reference
+                                        : time_series_reference_type(source_type, TimeSeriesGuarantee::const_);
+            const auto boundary = wire_nested_input(reference);
             boundaries.push_back(boundary);
             boundary_inputs.push_back({outer_parameter_index(argument.supplied_index), 0});
             boundary_input_points.push_back(boundary);

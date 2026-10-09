@@ -15,11 +15,11 @@ template <typename Item, auto... Properties> struct time_series_type_traits<TSS<
         scalar_declaration_traits<Item>::generic ||
         (scalar_declaration_traits<Item>::supports_time_series && has_cpp_scalar_type<Item>);
 
-    template <typename Scope, std::size_t Index, bool Input>
+    template <typename Scope, std::size_t Index, TimeSeriesTypeRole Role>
     static const TimeSeriesType &get(GuaranteeParameter guarantee) {
         const auto &item = scalar_type_for<Item>();
 
-        if constexpr (Input || scalar_declaration_traits<Item>::generic) {
+        if constexpr (Role == TimeSeriesTypeRole::input || scalar_declaration_traits<Item>::generic) {
             static const auto type = GenericTimeSeriesSetType{item, guarantee};
             [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type);
             return type;

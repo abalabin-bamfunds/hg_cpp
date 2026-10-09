@@ -21,7 +21,10 @@ template <typename Item, auto Size, auto... Properties> class Out<TSL<Item, Size
     Out(TimeSeriesState &last_updated, storage_type &value, EvaluationContext &context)
         requires(!details::generic_time_series<TSL<Item, Size, Properties...>> &&
                  !details::size_variable_declaration<decltype(Size)> && Size != std::dynamic_extent)
-        : state_{last_updated, &value, cpp_time_series_runtime_type<TSL<Item, Size, Properties...>>(), context} {}
+        : state_{last_updated,
+                 &value,
+                 cpp_time_series_runtime_type<TSL<Item, Size, Properties...>, TimeSeriesTypeRole::output>(),
+                 context} {}
 
     Out(TimeSeriesState &last_updated, storage_type &value, const TimeSeriesRuntimeType &runtime_type,
         EvaluationContext &context)

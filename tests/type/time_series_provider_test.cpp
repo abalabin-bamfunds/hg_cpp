@@ -277,7 +277,7 @@ template <typename Item, auto... Properties> struct time_series_type_traits<prov
     static constexpr bool generic = scalar_declaration_traits<Item>::generic;
     static constexpr bool supported = scalar_declaration_traits<Item>::generic || scalar_type_mapped<Item>;
 
-    template <typename, std::size_t, bool> static const TimeSeriesType &get(GuaranteeParameter guarantee) {
+    template <typename, std::size_t, TimeSeriesTypeRole> static const TimeSeriesType &get(GuaranteeParameter guarantee) {
         const auto &item = cpp_scalar_type<Item>();
         if constexpr (generic) {
             static const auto type = provider::SeriesType{item, guarantee};
@@ -785,6 +785,16 @@ TEST_CASE("a provider declaration exposes public semantic and runtime customizat
         bg::TSD<bg::i64, bg::TS<bg::string>>::type(), bg::cpp_scalar_runtime_type<bg::string>(),
         bg::cpp_time_series_runtime_type<bg::TS<bg::string>>());
     CHECK_THROWS_AS(bg::register_time_series_runtime_type(wrong_dictionary_component), std::invalid_argument);
+}
+
+TEST_CASE("an extension time series limits its leaf guarantee through its factory",
+          "[type][time_series][feature:type-system][declaration:runtime]"
+          "[guarantee:final][guarantee:const]") {
+    const auto &source = provider::series_type(bg::int64_type(), bg::TimeSeriesGuarantee::const_);
+
+    CHECK(&source.with_guarantee_limit(bg::TimeSeriesGuarantee::final) ==
+          &provider::series_type(bg::int64_type(), bg::TimeSeriesGuarantee::final));
+    CHECK(&source.with_guarantee_limit(bg::TimeSeriesGuarantee::const_) == &source);
 }
 
 TEST_CASE("provider inputs and configured outputs bind through public owners",

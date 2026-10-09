@@ -182,7 +182,8 @@ TEST_CASE("a default reference output suppresses an equal address",
     const auto previous_update = bg::MIN_DT + std::chrono::microseconds{1};
     auto last_updated = bg::TimeSeriesState{previous_update};
     const auto evaluation_time = previous_update + std::chrono::microseconds{1};
-    auto state = bg::details::OutputState{bg::cpp_time_series_runtime_type<bg::REF<bg::TS<bg::i64>>>()};
+    auto state = bg::details::OutputState{bg::cpp_time_series_runtime_type<
+        bg::REF<bg::TS<bg::i64>>, bg::TimeSeriesTypeRole::output>()};
     state.bind(last_updated, &address, evaluation_time);
     const auto output = bg::details::output_factory::make<bg::Out<bg::REF<bg::TS<bg::i64>>>>(state);
 

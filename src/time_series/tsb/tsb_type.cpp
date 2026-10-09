@@ -121,7 +121,40 @@ const TimeSeriesType &TimeSeriesBundleType::with_guarantee(TimeSeriesGuarantee g
     return time_series_bundle_type(schema(), guarantee);
 }
 
+const TimeSeriesType &TimeSeriesBundleType::with_guarantee_limit(TimeSeriesGuarantee limit) const {
+    if (!is_resolved()) {
+        return TimeSeriesType::with_guarantee_limit(limit);
+    }
+
+    const auto current = *guarantee().value();
+    const auto &limited_schema = limit_schema_guarantees(schema(), limit);
+    const auto limited_guarantee = weakest(current, limit);
+    if (&limited_schema == &schema() && limited_guarantee == current) {
+        return *this;
+    }
+
+    return time_series_bundle_type(limited_schema, limited_guarantee);
+}
+
+const Schema &TimeSeriesBundleType::limit_schema_guarantees(const Schema &descriptor,
+                                                            TimeSeriesGuarantee limit) {
+    auto fields = std::vector<SchemaField>{};
+    fields.reserve(descriptor.direct_fields().size());
+    for (const auto &field : descriptor.direct_fields()) {
+        const auto &time_series = static_cast<const TimeSeriesType &>(*field.type);
+        fields.push_back({field.name, &time_series.with_guarantee_limit(limit), false});
+    }
+
+    const auto *base = descriptor.base() == nullptr ? nullptr : &limit_schema_guarantees(*descriptor.base(), limit);
+    return bg::schema(descriptor.name(), descriptor.identity(), base, fields);
+}
+
 bool TimeSeriesBundleType::do_match(const Type &supplied, TypeMap &type_map) const {
+    return do_match(supplied, type_map, std::nullopt);
+}
+
+bool TimeSeriesBundleType::do_match(const Type &supplied, TypeMap &type_map,
+                                    std::optional<TimeSeriesGuarantee> reference_limit) const {
     const auto *bundle = type_cast<TimeSeriesBundleType>(&supplied);
     if (bundle == nullptr || !bundle->is_resolved()) {
         return false;
@@ -142,14 +175,24 @@ bool TimeSeriesBundleType::do_match(const Type &supplied, TypeMap &type_map) con
 
             const auto &parameter_type = static_cast<const TimeSeriesType &>(*parameter.type);
             const auto &argument_type = static_cast<const TimeSeriesType &>(*argument->type);
-            if (!parameter_type.match(argument_type, trial)) {
+            if (!parameter_type.match(argument_type, trial, reference_limit)) {
                 return false;
             }
         }
-    } else if (!schema_->match(bundle->schema(), trial)) {
-        return false;
+    } else {
+        const auto &observed_bundle = !reference_limit
+                                          ? *bundle
+                                          : static_cast<const TimeSeriesBundleType &>(
+                                                bundle->with_guarantee_limit(*reference_limit));
+        if (!schema_->match(observed_bundle.schema(), trial)) {
+            return false;
+        }
     }
-    if (!guarantee().match(*bundle->guarantee().value(), trial)) {
+
+    const auto supplied_guarantee = *bundle->guarantee().value();
+    const auto observed_guarantee = reference_limit ? weakest(supplied_guarantee, *reference_limit)
+                                                    : supplied_guarantee;
+    if (!guarantee().match(observed_guarantee, trial)) {
         return false;
     }
 

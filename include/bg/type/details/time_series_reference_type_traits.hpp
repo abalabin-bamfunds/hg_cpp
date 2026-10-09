@@ -13,22 +13,23 @@ template <typename Target, auto... Properties> struct time_series_type_traits<RE
     static constexpr bool generic = generic_time_series<Target>;
     static constexpr bool supported = supported_time_series<Target>;
 
-    template <typename Scope, std::size_t Index, bool Input>
+    template <typename Scope, std::size_t Index, TimeSeriesTypeRole Role>
     static const TimeSeriesType &get(GuaranteeParameter guarantee) {
-        const auto &target = time_series_type_for<Scope, Index, Input, Target>(TimeSeriesGuarantee::ordinary);
+        constexpr auto target_role = Role == TimeSeriesTypeRole::input ? Role : TimeSeriesTypeRole::declaration;
+        const auto &target = time_series_type_for<Scope, Index, target_role, Target>(TimeSeriesGuarantee::ordinary);
 
-        if constexpr (!Input && sizeof...(Properties) == 0) {
+        if constexpr (Role == TimeSeriesTypeRole::output && sizeof...(Properties) == 0) {
             const auto inherited = guarantee.value();
             guarantee = inherited ? strongest(*inherited, TimeSeriesGuarantee::deduplicated)
                                   : TimeSeriesGuarantee::deduplicated;
         }
 
-        if constexpr (Input || generic_time_series<Target>) {
+        if constexpr (Role == TimeSeriesTypeRole::input || generic_time_series<Target>) {
             static const auto type = GenericTimeSeriesReferenceType{target, guarantee};
             [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type);
             return type;
         }
-        if (!guarantee.is_resolved()) {
+        if (!target.is_resolved() || !guarantee.is_resolved()) {
             static const auto type = GenericTimeSeriesReferenceType{target, guarantee};
             [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type);
             return type;

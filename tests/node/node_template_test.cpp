@@ -126,6 +126,16 @@ struct reference_source {
     void evaluate() const {}
 };
 
+template <template <typename, auto...> typename Field> struct ReferenceBundle {
+    Field<bg::REF<bg::TS<bg::i64>>> reference;
+};
+
+struct reference_bundle_source {
+    bg::Out<bg::TSB<ReferenceBundle>> output;
+
+    void evaluate() const {}
+};
+
 } // namespace
 
 TEST_CASE("aggregate and callable reference outputs default to deduplicated",
@@ -136,6 +146,43 @@ TEST_CASE("aggregate and callable reference outputs default to deduplicated",
 
     CHECK(aggregate.signature().output()->guarantee().value() == bg::TimeSeriesGuarantee::deduplicated);
     CHECK(callable.signature().output()->guarantee().value() == bg::TimeSeriesGuarantee::deduplicated);
+}
+
+TEST_CASE("callable and aggregate collection outputs apply reference defaults to nested fields",
+          "[node_template][reference][feature:node-api][definition:aggregate][definition:function]"
+          "[series:tsb][guarantee:ordinary][guarantee:deduplicated]") {
+    const auto aggregate = bg::node<reference_bundle_source>();
+    const auto callable = bg::node([](bg::Out<bg::TSB<ReferenceBundle>>) {});
+    const auto &aggregate_output =
+        static_cast<const bg::TimeSeriesBundleType &>(*aggregate.signature().output());
+    const auto &callable_output = static_cast<const bg::TimeSeriesBundleType &>(*callable.signature().output());
+
+    CHECK(aggregate_output.item_type(0).guarantee().value() == bg::TimeSeriesGuarantee::deduplicated);
+    CHECK(callable_output.item_type(0).guarantee().value() == bg::TimeSeriesGuarantee::deduplicated);
+
+    const auto enclosing_reference = bg::node([](bg::Out<bg::REF<bg::TSB<ReferenceBundle>>>) {});
+    const auto &reference = static_cast<const bg::TimeSeriesReferenceType &>(*enclosing_reference.signature().output());
+    const auto &target = static_cast<const bg::TimeSeriesBundleType &>(reference.target_type());
+
+    CHECK(reference.guarantee().value() == bg::TimeSeriesGuarantee::deduplicated);
+    CHECK(target.item_type(0).guarantee().value() == bg::TimeSeriesGuarantee::ordinary);
+
+    const auto enclosing_dictionary_reference = bg::node(
+        [](bg::Out<bg::REF<bg::TSD<bg::i64, bg::REF<bg::TS<bg::i64>>>>>) {});
+    const auto &dictionary_reference = static_cast<const bg::TimeSeriesReferenceType &>(
+        *enclosing_dictionary_reference.signature().output());
+    const auto &dictionary_target =
+        static_cast<const bg::TimeSeriesDictionaryType &>(dictionary_reference.target_type());
+    CHECK(dictionary_reference.guarantee().value() == bg::TimeSeriesGuarantee::deduplicated);
+    CHECK(dictionary_target.value_type().guarantee().value() == bg::TimeSeriesGuarantee::ordinary);
+
+    const auto enclosing_list_reference = bg::node(
+        [](bg::Out<bg::REF<bg::TSL<bg::REF<bg::TS<bg::i64>>, 2>>>) {});
+    const auto &list_reference = static_cast<const bg::TimeSeriesReferenceType &>(
+        *enclosing_list_reference.signature().output());
+    const auto &list_target = static_cast<const bg::TimeSeriesListType &>(list_reference.target_type());
+    CHECK(list_reference.guarantee().value() == bg::TimeSeriesGuarantee::deduplicated);
+    CHECK(list_target.item_type().guarantee().value() == bg::TimeSeriesGuarantee::ordinary);
 }
 
 namespace {

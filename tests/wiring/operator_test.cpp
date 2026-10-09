@@ -338,7 +338,7 @@ TEST_CASE("operator matching treats a reference argument transparently",
 
     bg::testing::test_wiring([&] {
         const auto output = operation(source());
-        CHECK(&output.type() == &bg::REF<bg::TS<float>>::type());
+        CHECK(&output.type() == &bg::REF<bg::TS<float>, bg::TimeSeriesGuarantee::deduplicated>::type());
     });
 }
 

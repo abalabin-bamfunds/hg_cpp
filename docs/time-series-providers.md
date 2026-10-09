@@ -19,6 +19,14 @@ semantic type and whether the declaration is supported or generic.
 guarantee metadata for declarations with BG guarantee properties. Include
 `<bg/time_series/time_series_type_traits.hpp>` for the customization point.
 
+`get<Scope, Index, Role>(GuaranteeParameter)` receives a `TimeSeriesTypeRole`:
+`declaration`, `input`, or `output`. A declaration uses neutral guarantees and
+returns a canonical resolved type when its components are concrete. Input
+construction retains variables for matching; output construction applies
+[output defaults](type-system.md#time-series-guarantees). Propagate the role to
+owned time series components. A reference output constructs its target with
+the declaration role because it does not own that target.
+
 `declaration_variable_traits<Declaration>::for_each` enumerates variables in
 the declaration. It must include component variables and guarantee variables.
 `for_each_declaration_variable` recurses into a component declaration through
@@ -52,8 +60,10 @@ calls `copy()` for a current-cycle change. Collection providers override it to
 copy only changed items. The default `copy()` reports that copying is unsupported.
 
 `time_series_runtime_traits<Declaration>::get(resolved_type)` supplies the
-canonical C++ runtime through `cpp_time_series_runtime_type<Declaration>()`.
-It must use the supplied resolved type, including inherited guarantees.
+canonical C++ runtime through `cpp_time_series_runtime_type<Declaration>(resolved_type)`.
+It must use the supplied resolved type, including inherited guarantees. The
+no-argument runtime accessor uses a neutral declaration; direct output bindings
+request `TimeSeriesTypeRole::output` to apply output defaults.
 The provider registers defaults with `register_time_series_runtime_type()`
 when it creates resolved family types, including resolution of generic
 declarations. This makes the default available before graph compilation

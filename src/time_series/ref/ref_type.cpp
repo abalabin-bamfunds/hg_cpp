@@ -48,6 +48,29 @@ const TimeSeriesReferenceType &time_series_reference_type(const TimeSeriesType &
         [&] { return std::make_unique<ResolvedTimeSeriesReferenceType>(target_type, guarantee); });
 }
 
+const TimeSeriesType &TimeSeriesReferenceType::dereferenced_type() const {
+    if (!is_resolved() || !target_type().is_resolved() || !guarantee().value()) {
+        throw TypeResolutionError{TypeResolutionErrorCode::invalid_type_map, util::symbol{"REF"},
+                                  "an unresolved reference cannot be dereferenced"};
+    }
+
+    return target_type().with_guarantee_limit(reference_limit());
+}
+
+TimeSeriesGuarantee TimeSeriesReferenceType::reference_limit() const {
+    const auto reference_guarantee = guarantee().value();
+    if (!reference_guarantee) {
+        throw TypeResolutionError{TypeResolutionErrorCode::invalid_type_map, util::symbol{"REF"},
+                                  "an unresolved reference has no guarantee limit"};
+    }
+
+    if (*reference_guarantee == TimeSeriesGuarantee::final || *reference_guarantee == TimeSeriesGuarantee::const_) {
+        return *reference_guarantee;
+    }
+
+    return TimeSeriesGuarantee::ordinary;
+}
+
 const GenericTimeSeriesReferenceType &generic_time_series_reference_type(
     const TimeSeriesType &target_type, TimeSeriesGuarantee guarantee) {
     return TypeRegistry::instance().get_or_create<GenericTimeSeriesReferenceType, ReferenceTypeKeyHash>(

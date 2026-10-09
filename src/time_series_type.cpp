@@ -23,6 +23,8 @@ bool item_requires_reference_representation(const TimeSeriesType &requested, con
 
 bool TimeSeriesType::contains_reference() const { return false; }
 
+const TimeSeriesType &TimeSeriesType::dereferenced_type() const { return *this; }
+
 const TimeSeriesType &TimeSeriesType::with_guarantee(TimeSeriesGuarantee guarantee) const {
     if (this->guarantee().value() == guarantee) {
         return *this;
@@ -30,6 +32,21 @@ const TimeSeriesType &TimeSeriesType::with_guarantee(TimeSeriesGuarantee guarant
 
     throw TypeResolutionError{TypeResolutionErrorCode::invalid_type_map, util::symbol{"guarantee"},
                               "an unresolved time series type cannot change guarantee"};
+}
+
+const TimeSeriesType &TimeSeriesType::with_guarantee_limit(TimeSeriesGuarantee limit) const {
+    if (!is_resolved()) {
+        throw TypeResolutionError{TypeResolutionErrorCode::invalid_type_map, util::symbol{"guarantee"},
+                                  "an unresolved time series type cannot limit its guarantee"};
+    }
+
+    const auto current = guarantee().value();
+    const auto limited = weakest(*current, limit);
+    if (limited == *current) {
+        return *this;
+    }
+
+    return with_guarantee(limited);
 }
 
 const TimeSeriesType *TimeSeriesType::common_type(const TimeSeriesType &other) const {
