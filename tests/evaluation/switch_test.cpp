@@ -405,7 +405,7 @@ TEST_CASE("switch supports source and sink case graphs",
                            return operators::const_(42).as<TS<std::int64_t,
                                                                TimeSeriesGuarantee::const_>>();
                        })})
-            .as<TS<std::int64_t, TimeSeriesGuarantee::const_>>();
+            .as<REF<TS<std::int64_t, TimeSeriesGuarantee::const_>, TimeSeriesGuarantee::deduplicated>>();
     };
     CHECK(testing::test_graph(source_tested, std::array<std::int64_t, 1>{1})
               .equals<std::int64_t>({42}));
@@ -546,7 +546,7 @@ TEST_CASE("switch starts a DEFAULT source when its key is initially invalid",
                        return operators::const_(7).as<TS<std::int64_t,
                                                           TimeSeriesGuarantee::const_>>();
                    })})
-            .as<TS<std::int64_t, TimeSeriesGuarantee::const_>>();
+            .as<REF<TS<std::int64_t, TimeSeriesGuarantee::const_>, TimeSeriesGuarantee::deduplicated>>();
     };
 
     CHECK(testing::test_graph(tested, std::array<std::int64_t, 1>{-1})

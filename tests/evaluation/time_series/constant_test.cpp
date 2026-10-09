@@ -70,8 +70,8 @@ struct constant_reference_sink {
 };
 
 struct constant_reference_pass {
-    bg::In<bg::REF<bg::TS<std::int64_t, bg::TimeSeriesGuarantee::const_>>> input;
-    bg::Out<bg::REF<bg::TS<std::int64_t, bg::TimeSeriesGuarantee::const_>>> output;
+    bg::In<bg::REF<bg::TS<std::int64_t, bg::TimeSeriesGuarantee::const_>, bg::TimeSeriesGuarantee::const_>> input;
+    bg::Out<bg::REF<bg::TS<std::int64_t, bg::TimeSeriesGuarantee::const_>, bg::TimeSeriesGuarantee::const_>> output;
 
     void evaluate() const { output.copy(input); }
 };

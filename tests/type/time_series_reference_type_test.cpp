@@ -1,7 +1,9 @@
 #include <bg/node.hpp>
 #include <bg/time_series/time_series_type.hpp>
 #include <bg/type/scalar_type.hpp>
+#include <bg/type/time_series_bundle_type.hpp>
 #include <bg/type/time_series_dict_type.hpp>
+#include <bg/type/time_series_list_type.hpp>
 #include <bg/type/time_series_reference_type.hpp>
 #include <bg/type/time_series_set_type.hpp>
 #include <bg/type/time_series_value_type.hpp>
@@ -18,6 +20,33 @@
 
 namespace {
 
+inline constexpr auto G1 = bg::guarantee_variable<"G1">;
+inline constexpr auto G2 = bg::guarantee_variable<"G2">;
+
+bool has_ordinary_guarantee(const bg::TimeSeriesType &type) noexcept {
+    return type.guarantee().value() == bg::TimeSeriesGuarantee::ordinary;
+}
+
+bool has_final_guarantee(const bg::TimeSeriesType &type) noexcept {
+    return type.guarantee().value() == bg::TimeSeriesGuarantee::final;
+}
+
+class ExtensionMatcherTimeSeriesType final : public bg::TimeSeriesType {
+  public:
+    VISITOR_SUPPORT()
+
+    bool is_resolved() const noexcept override { return true; }
+    const bg::Type &resolve(const bg::TypeMap &) const override { return *this; }
+
+    inline static const bg::TimeSeriesType *observed_type{};
+
+  protected:
+    bool do_match(const bg::Type &supplied, bg::TypeMap &) const override {
+        observed_type = bg::type_cast<bg::TimeSeriesType>(&supplied);
+        return observed_type != nullptr;
+    }
+};
+
 template <template <typename, auto...> typename Field> struct ReferenceGuaranteeBase {
     Field<bg::TS<bg::i64, bg::TimeSeriesGuarantee::const_>> base_value;
 };
@@ -29,13 +58,30 @@ struct ReferenceGuaranteeDerived : bg::schema_extends<ReferenceGuaranteeBase, Fi
 
 } // namespace
 
-TEST_CASE("an omitted reference output guarantee is deduplicated",
-          "[type][reference][feature:type-system][guarantee:deduplicated]") {
-    CHECK(bg::REF<bg::TS<std::int64_t>>::type().guarantee().value() == bg::TimeSeriesGuarantee::deduplicated);
+TEST_CASE("reference declarations are neutral and outputs default to deduplicated",
+          "[type][reference][feature:type-system][guarantee:ordinary][guarantee:deduplicated]") {
+    const auto &reference = bg::REF<bg::TS<std::int64_t>>::type();
+    CHECK(reference.is_resolved());
+    CHECK(reference.guarantee().value() == bg::TimeSeriesGuarantee::ordinary);
+    CHECK(&reference == &bg::REF<bg::TS<std::int64_t>>::type());
 
     const auto explicit_ordinary =
         bg::REF<bg::TS<std::int64_t>, bg::TimeSeriesGuarantee::ordinary>::type().guarantee().value();
     CHECK(explicit_ordinary == bg::TimeSeriesGuarantee::ordinary);
+
+    const auto producer = bg::node([](bg::Out<bg::REF<bg::TS<std::int64_t>>>) {});
+    CHECK(producer.signature().output()->guarantee().value() == bg::TimeSeriesGuarantee::deduplicated);
+
+    using Dictionary = bg::TSD<std::int64_t, bg::REF<bg::TS<std::int64_t>>>;
+    const auto &dictionary = Dictionary::type();
+    CHECK(dictionary.is_resolved());
+    CHECK(dictionary.value_type().guarantee().value() == bg::TimeSeriesGuarantee::ordinary);
+    CHECK(&dictionary == &Dictionary::type());
+
+    const auto dictionary_producer = bg::node(
+        [](bg::Out<bg::TSD<std::int64_t, bg::REF<bg::TS<std::int64_t>>>>) {});
+    const auto &output = static_cast<const bg::TimeSeriesDictionaryType &>(*dictionary_producer.signature().output());
+    CHECK(output.value_type().guarantee().value() == bg::TimeSeriesGuarantee::deduplicated);
 }
 
 TEST_CASE("an omitted reference input guarantee remains unconstrained",
@@ -175,6 +221,49 @@ TEST_CASE("dereferenced matching limits each target guarantee by the reference g
     }
 }
 
+TEST_CASE("reference limits preserve the existing extension matcher path",
+          "[type][reference][resolution][feature:type-system][declaration:generic]"
+          "[guarantee:ordinary][guarantee:final][binding:reference-to-value]") {
+    static const auto extension_type = ExtensionMatcherTimeSeriesType{};
+    [[maybe_unused]] static const auto &extension_type_registration =
+        bg::TypeRegistry::register_static(extension_type);
+    const auto &final_target = bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>::type();
+    const auto &supplied = bg::REF<bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>,
+                                   bg::TimeSeriesGuarantee::ordinary>::type();
+    auto type_map = bg::TypeMap{};
+    ExtensionMatcherTimeSeriesType::observed_type = nullptr;
+
+    REQUIRE(extension_type.match(final_target, type_map));
+    CHECK(ExtensionMatcherTimeSeriesType::observed_type == &final_target);
+
+    type_map = bg::TypeMap{};
+    ExtensionMatcherTimeSeriesType::observed_type = nullptr;
+    REQUIRE(extension_type.match(supplied, type_map));
+    CHECK(ExtensionMatcherTimeSeriesType::observed_type == &bg::TS<bg::i64>::type());
+}
+
+TEST_CASE("time-series type-variable constraints inspect the observed guarantee",
+          "[type][reference][resolution][feature:type-system][declaration:generic]"
+          "[guarantee:ordinary][guarantee:final][binding:reference-to-value]") {
+    static const auto ordinary_variable = bg::TypeVariableType<bg::TimeSeriesType>{
+        bg::util::symbol{"ordinary observed series"}, {}, {&has_ordinary_guarantee}};
+    [[maybe_unused]] static const auto &ordinary_variable_registration =
+        bg::TypeRegistry::register_static(ordinary_variable);
+    static const auto final_variable = bg::TypeVariableType<bg::TimeSeriesType>{
+        bg::util::symbol{"final observed series"}, {}, {&has_final_guarantee}};
+    [[maybe_unused]] static const auto &final_variable_registration =
+        bg::TypeRegistry::register_static(final_variable);
+    const auto &supplied = bg::REF<bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>,
+                                   bg::TimeSeriesGuarantee::ordinary>::type();
+    auto type_map = bg::TypeMap{};
+
+    REQUIRE(ordinary_variable.match(supplied, type_map));
+    CHECK(&ordinary_variable.resolve(type_map) == &bg::TS<bg::i64>::type());
+
+    type_map = bg::TypeMap{};
+    CHECK_FALSE(final_variable.match(supplied, type_map));
+}
+
 TEST_CASE("dereferenced guarantee variables resolve from the observed guarantee",
           "[type][reference][resolution][feature:type-system][declaration:generic]"
           "[guarantee:ordinary][guarantee:final]") {
@@ -262,6 +351,204 @@ TEST_CASE("nested reference item matching combines its own guarantees",
     REQUIRE(parameter.match(argument, type_map));
     CHECK(&parameter.resolve(type_map) ==
           &bg::TSD<std::int64_t, bg::TS<double>>::type());
+}
+
+TEST_CASE("a reference limit preserves nested reference targets and caps their guarantees",
+          "[type][reference][resolution][feature:type-system][declaration:generic]"
+          "[series:tsd][guarantee:ordinary][guarantee:final][binding:reference-to-reference]") {
+    using ITEM = bg::REF<bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>,
+                         bg::guarantee_variable<"G">>;
+    using PARAMETER = bg::TSD<bg::i64, ITEM>;
+    using SUPPLIED_ITEM = bg::REF<bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>, bg::TimeSeriesGuarantee::const_>;
+    using SUPPLIED_TARGET = bg::TSD<bg::i64, SUPPLIED_ITEM>;
+    using SUPPLIED = bg::REF<SUPPLIED_TARGET, bg::TimeSeriesGuarantee::ordinary>;
+    using EXPECTED_ITEM = bg::REF<bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>,
+                                  bg::TimeSeriesGuarantee::ordinary>;
+    using EXPECTED = bg::TSD<bg::i64, EXPECTED_ITEM>;
+    const auto &parameter = PARAMETER::type();
+    auto type_map = bg::TypeMap{};
+
+    REQUIRE(parameter.match(SUPPLIED::type(), type_map));
+    CHECK(&parameter.resolve(type_map) == &EXPECTED::type());
+}
+
+TEST_CASE("an outer reference limit rejects stronger nested reference guarantees",
+          "[type][reference][resolution][feature:type-system][declaration:generic]"
+          "[series:tsd][guarantee:ordinary][guarantee:final][guarantee:const]") {
+    using ITEM = bg::REF<bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>, bg::TimeSeriesGuarantee::final>;
+    using PARAMETER = bg::TSD<bg::i64, ITEM>;
+    using SUPPLIED_ITEM = bg::REF<bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>, bg::TimeSeriesGuarantee::const_>;
+    using SUPPLIED_TARGET = bg::TSD<bg::i64, SUPPLIED_ITEM>;
+    using SUPPLIED = bg::REF<SUPPLIED_TARGET, bg::TimeSeriesGuarantee::ordinary>;
+    auto type_map = bg::TypeMap{};
+    using CONST_PARAMETER = bg::TSD<
+        bg::i64, bg::REF<bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>, bg::TimeSeriesGuarantee::const_>>;
+
+    CHECK_FALSE(PARAMETER::type().match(SUPPLIED::type(), type_map));
+    CHECK_FALSE(CONST_PARAMETER::type().match(SUPPLIED::type(), type_map));
+}
+
+TEST_CASE("an outer reference limit reaches TSL reference items",
+          "[type][reference][resolution][feature:type-system][declaration:generic]"
+          "[series:fixed-tsl][guarantee:ordinary][guarantee:final]") {
+    using ITEM = bg::REF<bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>, bg::guarantee_variable<"G">>;
+    using PARAMETER = bg::TSL<ITEM, 2>;
+    using SUPPLIED_ITEM = bg::REF<bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>, bg::TimeSeriesGuarantee::const_>;
+    using SUPPLIED_TARGET = bg::TSL<SUPPLIED_ITEM, 2>;
+    using SUPPLIED = bg::REF<SUPPLIED_TARGET, bg::TimeSeriesGuarantee::ordinary>;
+    using EXPECTED_ITEM = bg::REF<bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>,
+                                  bg::TimeSeriesGuarantee::ordinary>;
+    using EXPECTED = bg::TSL<EXPECTED_ITEM, 2>;
+    const auto &parameter = PARAMETER::type();
+    auto type_map = bg::TypeMap{};
+
+    REQUIRE(parameter.match(SUPPLIED::type(), type_map));
+    CHECK(&parameter.resolve(type_map) == &EXPECTED::type());
+}
+
+TEST_CASE("an outer reference limit reaches TSB reference fields",
+          "[type][reference][resolution][feature:type-system][declaration:generic]"
+          "[series:tsb][guarantee:ordinary][guarantee:final]") {
+    const auto &field_target = bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>::type();
+    static const auto field_guarantee = bg::GuaranteeVariable{bg::util::symbol{"bundle field guarantee"}};
+    [[maybe_unused]] static const auto &field_guarantee_registration =
+        bg::VariableRegistry::register_static(field_guarantee);
+    static const auto generic_field = bg::GenericTimeSeriesReferenceType{
+        field_target, bg::GuaranteeParameter{field_guarantee}};
+    [[maybe_unused]] static const auto &generic_field_registration = bg::TypeRegistry::register_static(generic_field);
+    const auto parameter_fields = std::array{bg::SchemaField{bg::util::symbol{"value"}, &generic_field}};
+    const auto &parameter_schema = bg::anonymous_schema(parameter_fields);
+    static const auto parameter = bg::GenericTimeSeriesBundleType{
+        parameter_schema, bg::TimeSeriesGuarantee::ordinary};
+    [[maybe_unused]] static const auto &parameter_registration = bg::TypeRegistry::register_static(parameter);
+
+    const auto &supplied_field =
+        bg::REF<bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>, bg::TimeSeriesGuarantee::const_>::type();
+    const auto supplied_fields = std::array{bg::SchemaField{bg::util::symbol{"value"}, &supplied_field}};
+    const auto &supplied_target = bg::TimeSeriesBundleType::from_fields(supplied_fields);
+    const auto &supplied = bg::time_series_reference_type(supplied_target, bg::TimeSeriesGuarantee::ordinary);
+    auto type_map = bg::TypeMap{};
+
+    REQUIRE(parameter.match(supplied, type_map));
+    const auto &resolved = static_cast<const bg::TimeSeriesBundleType &>(parameter.resolve(type_map));
+    const auto &resolved_field = bg::type_cast<bg::TimeSeriesReferenceType>(resolved.item_type(0));
+    CHECK(&resolved_field.target_type() == &field_target);
+    CHECK(resolved_field.guarantee().value() == bg::TimeSeriesGuarantee::ordinary);
+}
+
+TEST_CASE("top-level reference union alternatives preserve their guarantees and limited target mapping",
+          "[type][reference][resolution][feature:type-system][declaration:generic]"
+          "[guarantee:ordinary][guarantee:deduplicated][guarantee:final][guarantee:const]"
+          "[binding:reference-to-reference]") {
+    using GENERIC_REFERENCE = bg::REF<bg::TS<bg::i64, G2>, G1>;
+    using OMITTED_REFERENCE = bg::REF<bg::TS<bg::i64>>;
+    using ORDINARY_REFERENCE =
+        bg::REF<bg::TS<bg::i64, bg::TimeSeriesGuarantee::ordinary>, bg::TimeSeriesGuarantee::ordinary>;
+    using DEDUPLICATED_REFERENCE =
+        bg::REF<bg::TS<bg::i64, bg::TimeSeriesGuarantee::deduplicated>, bg::TimeSeriesGuarantee::deduplicated>;
+    using FINAL_REFERENCE =
+        bg::REF<bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>, bg::TimeSeriesGuarantee::final>;
+    using CONST_REFERENCE =
+        bg::REF<bg::TS<bg::i64, bg::TimeSeriesGuarantee::const_>, bg::TimeSeriesGuarantee::const_>;
+    using REFERENCE_UNION = bg::TypeVariable<"REFERENCE_UNION", GENERIC_REFERENCE, OMITTED_REFERENCE,
+                                              ORDINARY_REFERENCE, DEDUPLICATED_REFERENCE, FINAL_REFERENCE,
+                                              CONST_REFERENCE>;
+
+    const auto &union_type = REFERENCE_UNION::type();
+    const auto verify_match = [&](const bg::TimeSeriesType &supplied, bg::TimeSeriesGuarantee expected_root,
+                                  bg::TimeSeriesGuarantee expected_target,
+                                  const bg::TimeSeriesType &expected_mapping) {
+        auto type_map = bg::TypeMap{};
+
+        REQUIRE(union_type.match(supplied, type_map));
+        const auto *root = std::get_if<bg::TimeSeriesGuarantee>(
+            type_map.find(bg::details::guarantee_variable_instance<G1>()));
+        const auto *target = std::get_if<bg::TimeSeriesGuarantee>(
+            type_map.find(bg::details::guarantee_variable_instance<G2>()));
+        REQUIRE(root != nullptr);
+        REQUIRE(target != nullptr);
+        CHECK(*root == expected_root);
+        CHECK(*target == expected_target);
+        CHECK(&union_type.resolve(type_map) == &expected_mapping);
+    };
+
+    verify_match(OMITTED_REFERENCE::type(), bg::TimeSeriesGuarantee::ordinary,
+                 bg::TimeSeriesGuarantee::ordinary, bg::TS<bg::i64>::type());
+    verify_match(ORDINARY_REFERENCE::type(), bg::TimeSeriesGuarantee::ordinary,
+                 bg::TimeSeriesGuarantee::ordinary, bg::TS<bg::i64>::type());
+    verify_match(DEDUPLICATED_REFERENCE::type(), bg::TimeSeriesGuarantee::deduplicated,
+                 bg::TimeSeriesGuarantee::deduplicated,
+                 bg::TS<bg::i64>::type());
+    verify_match(FINAL_REFERENCE::type(), bg::TimeSeriesGuarantee::final, bg::TimeSeriesGuarantee::final,
+                 bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>::type());
+    verify_match(CONST_REFERENCE::type(), bg::TimeSeriesGuarantee::const_, bg::TimeSeriesGuarantee::const_,
+                 bg::TS<bg::i64, bg::TimeSeriesGuarantee::const_>::type());
+
+    auto rejected_type_map = bg::TypeMap{};
+    const auto &rejected = bg::REF<bg::TS<float, bg::TimeSeriesGuarantee::final>,
+                                   bg::TimeSeriesGuarantee::deduplicated>::type();
+    CHECK_FALSE(union_type.match(rejected, rejected_type_map));
+    CHECK(rejected_type_map.find(bg::details::guarantee_variable_instance<G1>()) == nullptr);
+    CHECK(rejected_type_map.find(bg::details::guarantee_variable_instance<G2>()) == nullptr);
+}
+
+TEST_CASE("singleton reference unions enforce their explicit guarantees",
+          "[type][reference][resolution][feature:type-system][guarantee:deduplicated]"
+          "[guarantee:final][guarantee:const][binding:reference-to-reference]") {
+    using DEDUPLICATED = bg::TypeVariable<
+        "DEDUPLICATED", bg::REF<bg::TS<bg::i64>, bg::TimeSeriesGuarantee::deduplicated>>;
+    using FINAL = bg::TypeVariable<"FINAL", bg::REF<bg::TS<bg::i64>, bg::TimeSeriesGuarantee::final>>;
+    using CONST = bg::TypeVariable<"CONST", bg::REF<bg::TS<bg::i64>, bg::TimeSeriesGuarantee::const_>>;
+
+    auto type_map = bg::TypeMap{};
+    CHECK(DEDUPLICATED::type().match(
+        bg::REF<bg::TS<bg::i64>, bg::TimeSeriesGuarantee::deduplicated>::type(), type_map));
+    type_map = bg::TypeMap{};
+    CHECK_FALSE(DEDUPLICATED::type().match(
+        bg::REF<bg::TS<bg::i64>, bg::TimeSeriesGuarantee::ordinary>::type(), type_map));
+
+    type_map = bg::TypeMap{};
+    CHECK(FINAL::type().match(bg::REF<bg::TS<bg::i64>, bg::TimeSeriesGuarantee::final>::type(), type_map));
+    type_map = bg::TypeMap{};
+    CHECK_FALSE(FINAL::type().match(
+        bg::REF<bg::TS<bg::i64>, bg::TimeSeriesGuarantee::deduplicated>::type(), type_map));
+
+    type_map = bg::TypeMap{};
+    CHECK(CONST::type().match(bg::REF<bg::TS<bg::i64>, bg::TimeSeriesGuarantee::const_>::type(), type_map));
+    type_map = bg::TypeMap{};
+    CHECK_FALSE(CONST::type().match(
+        bg::REF<bg::TS<bg::i64>, bg::TimeSeriesGuarantee::final>::type(), type_map));
+}
+
+TEST_CASE("union alternatives match original nested reference shapes with their limit",
+          "[type][reference][resolution][feature:type-system][declaration:generic]"
+          "[series:tsd][binding:reference-to-reference]") {
+    using ITEM = bg::REF<bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>, bg::TimeSeriesGuarantee::ordinary>;
+    using DICTIONARY = bg::TSD<bg::i64, ITEM>;
+    using ALTERNATIVE = bg::TypeVariable<"DICTIONARY", DICTIONARY>;
+    using SUPPLIED_ITEM = bg::REF<bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>, bg::TimeSeriesGuarantee::const_>;
+    using SUPPLIED_TARGET = bg::TSD<bg::i64, SUPPLIED_ITEM>;
+    using SUPPLIED = bg::REF<SUPPLIED_TARGET, bg::TimeSeriesGuarantee::ordinary>;
+    const auto &variable = ALTERNATIVE::type();
+    auto type_map = bg::TypeMap{};
+
+    REQUIRE(variable.match(SUPPLIED::type(), type_map));
+    CHECK(&variable.resolve(type_map) == &DICTIONARY::type());
+}
+
+TEST_CASE("failed nested reference matching rolls back type-variable mappings",
+          "[type][reference][resolution][feature:type-system][declaration:generic]"
+          "[series:tsd]") {
+    using KEY = bg::ScalarVariable<"KEY", bg::Hashable>;
+    using ITEM = bg::REF<bg::TS<float, bg::TimeSeriesGuarantee::final>, bg::guarantee_variable<"G">>;
+    using PARAMETER = bg::TSD<KEY, ITEM>;
+    using SUPPLIED_ITEM = bg::REF<bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>, bg::TimeSeriesGuarantee::const_>;
+    using SUPPLIED_TARGET = bg::TSD<bg::i64, SUPPLIED_ITEM>;
+    using SUPPLIED = bg::REF<SUPPLIED_TARGET, bg::TimeSeriesGuarantee::ordinary>;
+    auto type_map = bg::TypeMap{};
+
+    CHECK_FALSE(PARAMETER::type().match(SUPPLIED::type(), type_map));
+    CHECK(type_map.find(KEY::type()) == nullptr);
 }
 
 TEST_CASE("dereferenced collection matching limits guarantees recursively",

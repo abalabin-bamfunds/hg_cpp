@@ -665,6 +665,38 @@ struct reference_list {
     void evaluate() const { output[0].copy(input); }
 };
 
+struct repeated_value_target {
+    static constexpr bool uses_timed_scheduling = true;
+
+    bg::Out<bg::TS<bg::i64>> output;
+
+    void start(bg::EvaluationContext *context) const {
+        output.set(10);
+        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
+    }
+
+    void evaluate() const { output.set(20); }
+};
+
+struct reference_list_copy {
+    bg::In<bg::TS<bg::i64>> trigger;
+    bg::In<bg::REF<bg::TS<bg::i64>>> input;
+    bg::Out<bg::TSL<bg::REF<bg::TS<bg::i64>>, 1>> output;
+
+    void evaluate() const {
+        (void)trigger;
+        output[0].copy(input);
+    }
+};
+
+struct reference_list_observer {
+    bg::In<bg::TSL<bg::REF<bg::TS<bg::i64>>, 1>> input;
+
+    void evaluate() const { ++evaluation_count; }
+
+    inline static int evaluation_count{};
+};
+
 } // namespace
 
 TEST_CASE("a dereferenced input subscribes directly to a fixed collection item",
@@ -777,6 +809,22 @@ TEST_CASE("a reference stored in a fixed collection item updates its consumer",
     const auto actual = bg::testing::test_graph(graph);
 
     CHECK(actual.equals({10, 20, std::nullopt, 30}));
+}
+
+TEST_CASE("a fixed collection output suppresses an equal nested reference update",
+          "[evaluation][reference][tsl][series:fixed-tsl][feature:reference][transition:update]"
+          "[guarantee:deduplicated]") {
+    const auto source = bg::node<repeated_value_target>();
+    const auto copy = bg::node<reference_list_copy>();
+    const auto observe = bg::node<reference_list_observer>();
+    reference_list_observer::evaluation_count = 0;
+
+    bg::run_graph([&] {
+        const auto target = source();
+        observe(copy(target, target));
+    });
+
+    CHECK(reference_list_observer::evaluation_count == 1);
 }
 
 namespace {

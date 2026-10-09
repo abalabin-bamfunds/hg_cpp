@@ -150,6 +150,11 @@ const Schema &TimeSeriesBundleType::limit_schema_guarantees(const Schema &descri
 }
 
 bool TimeSeriesBundleType::do_match(const Type &supplied, TypeMap &type_map) const {
+    return do_match(supplied, type_map, std::nullopt);
+}
+
+bool TimeSeriesBundleType::do_match(const Type &supplied, TypeMap &type_map,
+                                    std::optional<TimeSeriesGuarantee> reference_limit) const {
     const auto *bundle = type_cast<TimeSeriesBundleType>(&supplied);
     if (bundle == nullptr || !bundle->is_resolved()) {
         return false;
@@ -170,14 +175,24 @@ bool TimeSeriesBundleType::do_match(const Type &supplied, TypeMap &type_map) con
 
             const auto &parameter_type = static_cast<const TimeSeriesType &>(*parameter.type);
             const auto &argument_type = static_cast<const TimeSeriesType &>(*argument->type);
-            if (!parameter_type.match(argument_type, trial)) {
+            if (!parameter_type.match(argument_type, trial, reference_limit)) {
                 return false;
             }
         }
-    } else if (!schema_->match(bundle->schema(), trial)) {
-        return false;
+    } else {
+        const auto &observed_bundle = !reference_limit
+                                          ? *bundle
+                                          : static_cast<const TimeSeriesBundleType &>(
+                                                bundle->with_guarantee_limit(*reference_limit));
+        if (!schema_->match(observed_bundle.schema(), trial)) {
+            return false;
+        }
     }
-    if (!guarantee().match(*bundle->guarantee().value(), trial)) {
+
+    const auto supplied_guarantee = *bundle->guarantee().value();
+    const auto observed_guarantee = reference_limit ? weakest(supplied_guarantee, *reference_limit)
+                                                    : supplied_guarantee;
+    if (!guarantee().match(observed_guarantee, trial)) {
         return false;
     }
 

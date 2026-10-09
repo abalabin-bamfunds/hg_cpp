@@ -63,8 +63,9 @@ before an engine exists. A module that implements a type must remain loaded
 while the type can be used.
 
 A C++ time series declaration exposes its semantic type through `type()`.
-Generic declarations return an unresolved semantic type containing their
-declared variables:
+This constructs a neutral declaration: an omitted root guarantee is `ordinary`,
+including for references. [Collection guarantees](#collection-guarantees) still
+apply. Generic declarations retain their declared variables:
 
 ```cpp
 TS<float>::type()
@@ -236,8 +237,7 @@ type, and guarantee.
 returns the time series type that it references.
 `TimeSeriesType::dereferenced_type()` returns the type that a non-reference
 consumer observes, applying the [reference guarantee limit](#reference-guarantees)
-when the supplied type is a reference. Signature matching and TSL item inference
-use this operation.
+when the supplied type is a reference. TSL item inference uses this operation.
 
 A variable scalar component provides a type-erased scalar view. A variable time
 series component provides a type-erased time series view. This lets one compiled
@@ -366,8 +366,9 @@ only time series alternatives, or more than one time series alternative, is
 graph-only. Graph parameters can retain materialisation options; node parameters
 consume the selected concrete form.
 
-Matching uses normal compatibility after reference transparency. The outer
-variable maps to the supplied concrete type. Variables in every matching
+Each alternative matches the original supplied type using normal reference
+rules. Constraints and the outer-variable mapping use the observed type after
+reference transparency and guarantee limits. Variables in every matching
 alternative also map. Compatible overlapping alternatives combine their
 mappings; conflicting mappings reject the match as ambiguous.
 
@@ -493,6 +494,16 @@ omitted output guarantee resolves to `ordinary`, except that a `REF` output
 resolves to `deduplicated`. An explicit `ordinary` guarantee disables this
 default.
 
+Wiring-point annotation checks use normal type compatibility, including
+contained time series. An omitted reference guarantee accepts the supplied
+guarantee; an explicit guarantee remains a minimum requirement. The annotation
+retains the wiring point's actual type.
+
+Output construction applies defaults to the output and its contained time
+series. A reference target is a neutral declaration, not an output owned by
+that reference. For example, `Out<TSD<K, REF<V>>>` defaults its item references
+to `deduplicated`; `Out<REF<TSD<K, REF<V>>>>` defaults only the root reference.
+
 For example, a plain callable `add(float, float)` captures each input guarantee
 independently:
 
@@ -564,6 +575,17 @@ limit. The limit applies recursively to collection items. At a contained
 explicit `REF`, it limits the reference's guarantee and preserves its target
 type. Matching an explicit reference parameter keeps the reference and target
 guarantees separate. Direct non-reference arguments keep their guarantees.
+
+Matching retains the supplied child types until each parameter's category is
+known. For example, an ordinary reference to `TSD<K, TS<T, final>>`
+can supply `TSD<K, REF<TS<T, final>, ordinary>>`. Its generated item references
+can change, but each target still updates at most once.
+
+`Type::match()` handles reference compatibility. Engine and extension types
+implement type-specific matching through `do_match()`. Its three-argument
+overload receives the inherited reference limit; the default implementation
+calls the two-argument overload with a canonical limited type. Collection
+implementations pass the original child types and limit to `Type::match()`.
 
 For example, an ordinary reference to a final fixed TSL exposes ordinary items.
 Changing the reference can sample a different final list and publish another

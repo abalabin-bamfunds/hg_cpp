@@ -98,14 +98,22 @@ const TimeSeriesType &TimeSeriesListType::with_guarantee_limit(TimeSeriesGuarant
 }
 
 bool TimeSeriesListType::do_match(const Type &supplied, TypeMap &type_map) const {
+    return do_match(supplied, type_map, std::nullopt);
+}
+
+bool TimeSeriesListType::do_match(const Type &supplied, TypeMap &type_map,
+                                  std::optional<TimeSeriesGuarantee> reference_limit) const {
     const auto *list = type_cast<TimeSeriesListType>(&supplied);
     if (list == nullptr || !list->is_resolved()) {
         return false;
     }
 
     auto trial = type_map.overlay();
-    if (!size().match(list->item_count(), trial) || !item_type().match(list->item_type(), trial) ||
-        !guarantee().match(*list->guarantee().value(), trial)) {
+    const auto supplied_guarantee = *list->guarantee().value();
+    const auto observed_guarantee = reference_limit ? weakest(supplied_guarantee, *reference_limit)
+                                                    : supplied_guarantee;
+    if (!size().match(list->item_count(), trial) || !item_type().match(list->item_type(), trial, reference_limit) ||
+        !guarantee().match(observed_guarantee, trial)) {
         return false;
     }
 

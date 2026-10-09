@@ -33,7 +33,8 @@ const auto add_mesh_dependency = node([](In<TS<i64>> value, In<TS<i64>, optional
     output.set(*value + (dependency.valid() ? *dependency : 0));
 });
 
-const auto observe_mesh_dependency = node([](In<TS<std::int64_t, TimeSeriesGuarantee::const_>, optional>) {});
+const auto observe_mesh_dependency =
+    node([](In<REF<TS<std::int64_t>, TimeSeriesGuarantee::deduplicated>, optional>) {});
 
 const auto selectable_mesh_values = node([](In<TS<i64>> value, Out<TSD<std::int64_t, TS<i64>>> output) {
     output[1].set(*value);
@@ -309,7 +310,8 @@ TEST_CASE("mesh creates a branch for a requested missing key",
                 return key;
             },
             selectable_mesh_dependencies(selected), "__key_arg__"_n = 0);
-        return result[std::int64_t{1}].as<TS<std::int64_t, TimeSeriesGuarantee::const_>>();
+        return result[std::int64_t{1}].as<REF<TS<std::int64_t, TimeSeriesGuarantee::const_>,
+                                              TimeSeriesGuarantee::ordinary>>();
     };
 
     const auto actual = testing::test_graph(tested, std::array<std::int64_t, 1>{1});
@@ -357,7 +359,8 @@ TEST_CASE("mesh retains a dependency-only branch until its last dependent is rem
                 return key;
             },
             optional_mesh_values(value, present), optional_mesh_dependencies(present), "__key_arg__"_n = 0);
-        return result[std::int64_t{1}].as<TS<std::int64_t, TimeSeriesGuarantee::const_>>();
+        return result[std::int64_t{1}].as<REF<TS<std::int64_t, TimeSeriesGuarantee::const_>,
+                                              TimeSeriesGuarantee::ordinary>>();
     };
 
     const auto actual = testing::test_graph(tested, std::array{7, 8, 9}, std::array{true, false, true});
@@ -375,7 +378,8 @@ TEST_CASE("mesh destroys removed dependent branches and their dependency branche
                 return key;
             },
             optional_mesh_values(value, present), optional_mesh_dependencies(present), "__key_arg__"_n = 0);
-        return result[std::int64_t{1}].as<TS<std::int64_t, TimeSeriesGuarantee::const_>>();
+        return result[std::int64_t{1}].as<REF<TS<std::int64_t, TimeSeriesGuarantee::const_>,
+                                              TimeSeriesGuarantee::ordinary>>();
     };
 
     const auto actual = testing::test_graph(tested, std::array{7, 8, 9}, std::array{true, false, false});
@@ -394,7 +398,8 @@ TEST_CASE("mesh destroys a removed dependency while its dependent remains",
             },
             optional_mesh_values(value, operators::const_(true)), optional_mesh_dependencies(selected),
             "__key_arg__"_n = 0);
-        return result[std::int64_t{2}].as<TS<std::int64_t, TimeSeriesGuarantee::const_>>();
+        return result[std::int64_t{2}].as<REF<TS<std::int64_t, TimeSeriesGuarantee::const_>,
+                                              TimeSeriesGuarantee::ordinary>>();
     };
 
     const auto actual = testing::test_graph(tested, std::array{7, 8, 9}, std::array{true, false, false});
@@ -412,7 +417,8 @@ TEST_CASE("mesh transfers a dependency after its previous dependent releases it"
                 return key;
             },
             dependent_branches(first_dependent), transferred_mesh_dependency(first_dependent), "__key_arg__"_n = 0);
-        return result[std::int64_t{3}].as<TS<std::int64_t, TimeSeriesGuarantee::const_>>();
+        return result[std::int64_t{3}].as<REF<TS<std::int64_t, TimeSeriesGuarantee::const_>,
+                                              TimeSeriesGuarantee::ordinary>>();
     };
 
     const auto actual = testing::test_graph(tested, std::array{true, false, false});
@@ -711,7 +717,7 @@ TEST_CASE("mesh supports source and sink graphs",
 
     const auto source_test = [](wp<TS<bool>> present) {
         return mesh([](auto key) { return key; }, mesh_keys(present))[std::int64_t{7}]
-            .as<TS<std::int64_t, TimeSeriesGuarantee::const_>>();
+            .as<REF<TS<std::int64_t, TimeSeriesGuarantee::const_>, TimeSeriesGuarantee::ordinary>>();
     };
     const auto source_result = testing::test_graph(source_test, std::array{true, false, true});
 

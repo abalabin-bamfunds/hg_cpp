@@ -122,12 +122,12 @@ bool wiring_parameter_matches(const Parameter &declaration, const ResolvedParame
         } else {
             const auto &declared = [&]() -> const TimeSeriesType & {
                 if constexpr (TimeSeries::has_explicit_guarantee) {
-                    return time_series_type_for<Function, Index, true, TimeSeries>(
+                    return time_series_type_for<Function, Index, TimeSeriesTypeRole::input, TimeSeries>(
                         guarantee_parameter<TimeSeries::guarantee>());
                 } else {
                     static const auto guarantee = GuaranteeVariable{parameter.name};
                     [[maybe_unused]] static const auto &registration = VariableRegistry::register_static(guarantee);
-                    return time_series_type_for<Function, Index, true, TimeSeries>(guarantee);
+                    return time_series_type_for<Function, Index, TimeSeriesTypeRole::input, TimeSeries>(guarantee);
                 }
             }();
             return declared.accepts(*parameter.type);

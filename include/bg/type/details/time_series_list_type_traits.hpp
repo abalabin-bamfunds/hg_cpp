@@ -14,15 +14,15 @@ template <typename Item, auto Size, auto... Properties> struct time_series_type_
     static constexpr bool generic = generic_time_series<Item> || size_variable_declaration<decltype(Size)>;
     static constexpr bool supported = supported_time_series<Item>;
 
-    template <typename Scope, std::size_t Index, bool Input>
+    template <typename Scope, std::size_t Index, TimeSeriesTypeRole Role>
     static const TimeSeriesType &get(GuaranteeParameter guarantee) {
         if constexpr (!size_variable_declaration<decltype(Size)>) {
             static_assert(Size != std::dynamic_extent, "variable-size time series lists are not implemented");
         }
-        const auto &item = time_series_type_for<Scope, Index, Input, Item>(guarantee);
+        const auto &item = time_series_type_for<Scope, Index, Role, Item>(guarantee);
         const auto size = size_parameter<Size>();
 
-        if constexpr (Input) {
+        if constexpr (Role == TimeSeriesTypeRole::input) {
             static const auto type = GenericTimeSeriesListType{item, size, guarantee};
             [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type);
             return type;

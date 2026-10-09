@@ -101,9 +101,10 @@ TEST_CASE("a nested graph can be stopped and started repeatedly",
 TEST_CASE("nested reference signature types outlive their node templates",
           "[wiring][nested][reference][feature:type-system][declaration:generic]") {
     const auto wiring = std::make_shared<bg::GraphWiring>();
+    const auto &input_type = bg::REF<bg::TS<std::int64_t>, bg::TimeSeriesGuarantee::const_>::type();
     const auto graph_signature = bg::ResolvedSignature{
         bg::util::symbol{"inner"},
-        {{bg::util::symbol{"input"}, &bg::TS<std::int64_t>::type()}},
+        {{bg::util::symbol{"input"}, &input_type}},
         &bg::TS<std::int64_t>::type()};
 
     const auto make_node = [&] {
@@ -114,12 +115,11 @@ TEST_CASE("nested reference signature types outlive their node templates",
     const auto *reference_type = first_node->signature().parameter(1).type;
     first_node.reset();
 
-    REQUIRE(reference_type == &bg::generic_time_series_reference_type(
-                                  bg::TS<std::int64_t>::type(), bg::TimeSeriesGuarantee::ordinary));
+    REQUIRE(reference_type == &input_type);
     CHECK(reference_type->is_time_series());
     const auto &reference = bg::type_cast<bg::TimeSeriesReferenceType>(*reference_type);
     CHECK(&reference.target_type() == &bg::TS<std::int64_t>::type());
-    CHECK(reference.guarantee().value() == bg::TimeSeriesGuarantee::ordinary);
+    CHECK(reference.guarantee().value() == bg::TimeSeriesGuarantee::const_);
 
     const auto second_node = make_node();
     CHECK(second_node->signature().parameter(1).type == reference_type);
@@ -165,6 +165,28 @@ TEST_CASE("a nested boundary samples an existing valid input when it starts",
     CHECK(actual.equals({std::nullopt, std::nullopt, 10}));
     CHECK(NestedTransitionSink::observed ==
           std::vector<std::array<bool, 5>>{{true, true, false, true, true}});
+}
+
+TEST_CASE("a nested boundary retains a direct final target guarantee",
+          "[evaluation][nested][reference][feature:nested-graph][shape:nested][series:value]"
+          "[guarantee:final][binding:value-to-reference][binding:reference-to-value]") {
+    const auto publish_final = bg::node([](bg::In<bg::TS<std::int64_t>> input,
+                                           bg::Out<bg::TS<std::int64_t, bg::TimeSeriesGuarantee::final>> output) {
+        output.set(*input);
+    });
+    const auto read_final = bg::node([](bg::In<bg::TS<std::int64_t, bg::TimeSeriesGuarantee::final>> input,
+                                        bg::Out<bg::TS<std::int64_t, bg::TimeSeriesGuarantee::final>> output) {
+        output.set(*input);
+    });
+    const auto inner = bg::graph(
+        "name"_n = "read_final_nested_input",
+        [&](bg::wp<bg::REF<bg::TS<std::int64_t, bg::TimeSeriesGuarantee::final>,
+                            bg::TimeSeriesGuarantee::const_>> input) { return read_final(input); });
+    const auto outer = [&](bg::wp<bg::TS<std::int64_t>> input, bg::wp<bg::TS<bool>> run) {
+        return bg::nested(inner, run, publish_final(input));
+    };
+
+    CHECK(bg::testing::test_graph(outer, std::array<std::int64_t, 1>{17}, std::array{true}).equals({17}));
 }
 
 TEST_CASE("a dynamic input controls scheduling inside a nested graph",

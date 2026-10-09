@@ -49,18 +49,26 @@ const TimeSeriesReferenceType &time_series_reference_type(const TimeSeriesType &
 }
 
 const TimeSeriesType &TimeSeriesReferenceType::dereferenced_type() const {
-    const auto reference_guarantee = guarantee().value();
-    if (!is_resolved() || !target_type().is_resolved() || !reference_guarantee) {
+    if (!is_resolved() || !target_type().is_resolved() || !guarantee().value()) {
         throw TypeResolutionError{TypeResolutionErrorCode::invalid_type_map, util::symbol{"REF"},
                                   "an unresolved reference cannot be dereferenced"};
     }
 
-    auto guarantee_limit = TimeSeriesGuarantee::ordinary;
-    if (*reference_guarantee == TimeSeriesGuarantee::final || *reference_guarantee == TimeSeriesGuarantee::const_) {
-        guarantee_limit = *reference_guarantee;
+    return target_type().with_guarantee_limit(reference_limit());
+}
+
+TimeSeriesGuarantee TimeSeriesReferenceType::reference_limit() const {
+    const auto reference_guarantee = guarantee().value();
+    if (!reference_guarantee) {
+        throw TypeResolutionError{TypeResolutionErrorCode::invalid_type_map, util::symbol{"REF"},
+                                  "an unresolved reference has no guarantee limit"};
     }
 
-    return target_type().with_guarantee_limit(guarantee_limit);
+    if (*reference_guarantee == TimeSeriesGuarantee::final || *reference_guarantee == TimeSeriesGuarantee::const_) {
+        return *reference_guarantee;
+    }
+
+    return TimeSeriesGuarantee::ordinary;
 }
 
 const GenericTimeSeriesReferenceType &generic_time_series_reference_type(

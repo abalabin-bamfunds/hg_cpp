@@ -4,6 +4,8 @@
 #include <bg/type/guarantee_parameter.hpp>
 #include <bg/type/scalar_type.hpp>
 
+#include <optional>
+
 namespace bg {
 
 class TimeSeriesDictionaryType : public FixedItemTimeSeriesType {
@@ -22,14 +24,15 @@ class TimeSeriesDictionaryType : public FixedItemTimeSeriesType {
     item_id_t item_id(std::size_t) const noexcept final { return key_set_item_id; }
     bool supports_invalidation() const noexcept final { return false; }
     bool requires_reference_representation_for(const TimeSeriesType &supplied) const noexcept final;
+    [[nodiscard]] bool do_match(const Type &supplied, TypeMap &type_map) const override;
+    [[nodiscard]] bool do_match(const Type &supplied, TypeMap &type_map,
+                                std::optional<TimeSeriesGuarantee> reference_limit) const override;
 
   protected:
     TimeSeriesDictionaryType(const ScalarType &key_type, const TimeSeriesType &value_type,
                              const TimeSeriesType &key_set_type, GuaranteeParameter guarantee)
         : FixedItemTimeSeriesType(guarantee), key_type_(&key_type), value_type_(&value_type),
           key_set_type_(&key_set_type) {}
-
-    [[nodiscard]] bool do_match(const Type &supplied, TypeMap &type_map) const override;
 
   private:
     const ScalarType *key_type_;

@@ -97,26 +97,57 @@ template <typename Argument> struct map_callable_argument {
     static constexpr bool key_set = false;
 };
 
-template <typename Target, auto... Properties>
-struct map_callable_argument<wp<REF<Target, Properties...>>> : map_callable_argument<wp<Target>> {};
-
-template <typename K, typename Item, auto... Properties> struct map_callable_argument<wp<TSD<K, Item, Properties...>>> {
-    using key_type = K;
-    using parameter_type = wp<dereferenced_time_series_t<Item>>;
+template <typename Reference, typename Target, auto... WiringProperties>
+struct map_callable_reference_argument {
+    using key_type = void;
+    using parameter_type = wp<Reference, WiringProperties...>;
 
     static constexpr bool key_set = false;
 };
 
-template <typename K, auto... Properties> struct map_callable_argument<wp<TSS<K, Properties...>>> {
+template <typename Reference, typename K, typename Item, auto... SeriesProperties, auto... WiringProperties>
+struct map_callable_reference_argument<Reference, TSD<K, Item, SeriesProperties...>, WiringProperties...> {
     using key_type = K;
-    using parameter_type = wp<TSS<K, Properties...>>;
+    using parameter_type = wp<REF<dereferenced_time_series_t<Item>, TimeSeriesGuarantee::ordinary>,
+                              WiringProperties...>;
+
+    static constexpr bool key_set = false;
+};
+
+template <typename Reference, typename K, auto... SeriesProperties, auto... WiringProperties>
+struct map_callable_reference_argument<Reference, TSS<K, SeriesProperties...>, WiringProperties...> {
+    using key_type = K;
+    using parameter_type = wp<Reference, WiringProperties...>;
 
     static constexpr bool key_set = true;
 };
 
+template <typename TimeSeries, auto... WiringProperties>
+struct map_callable_argument<wp<TimeSeries, WiringProperties...>>
+    : map_callable_reference_argument<REF<TimeSeries, TimeSeriesGuarantee::const_>, TimeSeries,
+                                      WiringProperties...> {};
+
+template <typename TimeSeries, auto... ReferenceProperties, auto... WiringProperties>
+struct map_callable_argument<wp<REF<TimeSeries, ReferenceProperties...>, WiringProperties...>>
+    : map_callable_reference_argument<REF<TimeSeries, ReferenceProperties...>, TimeSeries, WiringProperties...> {};
+
+template <typename T> struct map_pass_through_parameter {
+    using type = std::remove_cvref_t<T>;
+};
+
+template <typename TimeSeries, auto... WiringProperties>
+struct map_pass_through_parameter<wp<TimeSeries, WiringProperties...>> {
+    using type = wp<REF<TimeSeries, TimeSeriesGuarantee::const_>, WiringProperties...>;
+};
+
+template <typename TimeSeries, auto... ReferenceProperties, auto... WiringProperties>
+struct map_pass_through_parameter<wp<REF<TimeSeries, ReferenceProperties...>, WiringProperties...>> {
+    using type = wp<REF<TimeSeries, ReferenceProperties...>, WiringProperties...>;
+};
+
 template <typename T> struct map_callable_argument<pass_through_argument<T>> {
     using key_type = void;
-    using parameter_type = T;
+    using parameter_type = typename map_pass_through_parameter<T>::type;
 
     static constexpr bool key_set = false;
 };

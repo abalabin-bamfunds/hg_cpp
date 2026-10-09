@@ -5,6 +5,7 @@
 #include <bg/type/size_parameter.hpp>
 
 #include <cstddef>
+#include <optional>
 #include <span>
 
 namespace bg {
@@ -24,12 +25,13 @@ class TimeSeriesListType : public FixedItemTimeSeriesType {
     const TimeSeriesType &item_type(std::size_t index) const final;
     [[nodiscard]] const TimeSeriesType &with_guarantee(TimeSeriesGuarantee guarantee) const override;
     const TimeSeriesType &with_guarantee_limit(TimeSeriesGuarantee limit) const override;
+    [[nodiscard]] bool do_match(const Type &supplied, TypeMap &type_map) const override;
+    [[nodiscard]] bool do_match(const Type &supplied, TypeMap &type_map,
+                                std::optional<TimeSeriesGuarantee> reference_limit) const override;
 
   protected:
     TimeSeriesListType(const TimeSeriesType &item_type, SizeParameter size, GuaranteeParameter guarantee)
         : FixedItemTimeSeriesType(guarantee), item_type_(&item_type), size_(size) {}
-
-    [[nodiscard]] bool do_match(const Type &supplied, TypeMap &type_map) const override;
 
   private:
     const TimeSeriesType *item_type_;

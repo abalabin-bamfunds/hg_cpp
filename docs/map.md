@@ -15,6 +15,14 @@ Map's operator implementation converts a graph function to a graph argument
 before normal overload resolution. This keeps generic lambdas unannotated while
 allowing overloads to match the resulting graph signature and structure.
 
+A generic C++ lambda receives the reference wiring points supplied to the
+[inner graph inputs](nested-graphs.md#wiring). For example, a mapped
+`TSD<K, TS<i64, final>>` supplies `wp<REF<TS<i64, final>, ordinary>>`.
+An `In<TS<i64, G>>` consumer resolves `G` to `ordinary`; an explicit reference
+input can retain the target's `final` guarantee separately. An explicitly typed
+C++ graph function keeps its declared parameter types, which normal signature
+resolution checks against the supplied references.
+
 ## Runtime calls
 
 A caller that obtains the graph template and arguments at runtime passes a

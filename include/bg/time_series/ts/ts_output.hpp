@@ -93,7 +93,10 @@ class Out<TS<T, Properties...>> {
 
     Out(TimeSeriesState &last_updated, storage_type &value, EvaluationContext &context)
         requires(!scalar_declaration_traits<T>::generic)
-        : state_{last_updated, &value, cpp_time_series_runtime_type<TS<T, Properties...>>(), context} {}
+        : state_{last_updated,
+                 &value,
+                 cpp_time_series_runtime_type<TS<T, Properties...>, TimeSeriesTypeRole::output>(),
+                 context} {}
 
     Out(TimeSeriesState &last_updated, storage_type &value, const TimeSeriesRuntimeType &runtime_type,
         EvaluationContext &context)
@@ -102,7 +105,10 @@ class Out<TS<T, Properties...>> {
 
     Out(TimeSeriesState &last_updated, storage_type &value, void *output_path)
         requires(!scalar_declaration_traits<T>::generic)
-        : state_{last_updated, &value, cpp_time_series_runtime_type<TS<T, Properties...>>(), output_path} {}
+        : state_{last_updated,
+                 &value,
+                 cpp_time_series_runtime_type<TS<T, Properties...>, TimeSeriesTypeRole::output>(),
+                 output_path} {}
 
     Out(Out &&) noexcept = default;
     Out(const Out &) = delete;

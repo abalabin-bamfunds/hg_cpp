@@ -23,7 +23,10 @@ template <typename K, auto... Properties> class Out<TSS<K, Properties...>> {
     explicit Out(TimeSeriesOutputBinding state) noexcept : state_(std::move(state)) {}
     Out(TimeSeriesState &last_updated, storage_type &value, EvaluationContext &context)
         requires(!details::generic_time_series<TSS<K, Properties...>>)
-        : state_{last_updated, &value, cpp_time_series_runtime_type<TSS<K, Properties...>>(), context} {}
+        : state_{last_updated,
+                 &value,
+                 cpp_time_series_runtime_type<TSS<K, Properties...>, TimeSeriesTypeRole::output>(),
+                 context} {}
 
     Out(TimeSeriesState &last_updated, storage_type &value, const TimeSeriesRuntimeType &runtime_type,
         EvaluationContext &context)

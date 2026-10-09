@@ -277,7 +277,7 @@ template <typename Item, auto... Properties> struct time_series_type_traits<prov
     static constexpr bool generic = scalar_declaration_traits<Item>::generic;
     static constexpr bool supported = scalar_declaration_traits<Item>::generic || scalar_type_mapped<Item>;
 
-    template <typename, std::size_t, bool> static const TimeSeriesType &get(GuaranteeParameter guarantee) {
+    template <typename, std::size_t, TimeSeriesTypeRole> static const TimeSeriesType &get(GuaranteeParameter guarantee) {
         const auto &item = cpp_scalar_type<Item>();
         if constexpr (generic) {
             static const auto type = provider::SeriesType{item, guarantee};

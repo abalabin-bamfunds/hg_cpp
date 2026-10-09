@@ -42,11 +42,11 @@ TEST_CASE("resolved time series dictionary types are canonical",
     CHECK_THROWS_AS(dictionary.item_type(1), std::out_of_range);
 }
 
-TEST_CASE("dictionary reference items default to deduplicated",
-          "[type_system][tsd][reference][series:tsd][feature:type-system][guarantee:deduplicated]") {
+TEST_CASE("dictionary declaration reference items keep a neutral guarantee",
+          "[type_system][tsd][reference][series:tsd][feature:type-system][guarantee:ordinary]") {
     const auto &dictionary = bg::TSD<bg::i64, bg::REF<bg::TS<float>>>::type();
 
-    CHECK(dictionary.value_type().guarantee().value() == bg::TimeSeriesGuarantee::deduplicated);
+    CHECK(dictionary.value_type().guarantee().value() == bg::TimeSeriesGuarantee::ordinary);
 }
 
 TEST_CASE("a dictionary guarantee strengthens an explicit item guarantee",

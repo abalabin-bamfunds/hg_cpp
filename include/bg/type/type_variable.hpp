@@ -2,6 +2,8 @@
 
 #include <bg/type/details/declaration_variables.hpp>
 #include <bg/type/scalar_type.hpp>
+#include <bg/type/time_series_type.hpp>
+#include <bg/type/time_series_reference_type.hpp>
 #include <bg/type/type_map.hpp>
 #include <bg/type/type_resolution_error.hpp>
 #include <bg/type/type_registry.hpp>
@@ -9,6 +11,7 @@
 
 #include <algorithm>
 #include <concepts>
+#include <optional>
 #include <ranges>
 #include <span>
 #include <utility>
@@ -22,6 +25,7 @@ template <typename Category> class TypeVariableType final : public Category, pub
 
   public:
     using Constraint = bool (*)(const Category &) noexcept;
+    using Category::match;
 
     explicit TypeVariableType(util::symbol name, std::vector<const Category *> alternatives = {},
                               std::vector<Constraint> constraints = {})
@@ -29,16 +33,37 @@ template <typename Category> class TypeVariableType final : public Category, pub
 
     bool is_resolved() const noexcept override { return false; }
 
-  protected:
-    [[nodiscard]] bool do_match(const Type &supplied, TypeMap &type_map) const override {
+    // Alternatives may constrain the reference itself; constraints and mappings observe its limited target.
+    [[nodiscard]] bool match(const Type &supplied, TypeMap &type_map,
+                             std::optional<TimeSeriesGuarantee> reference_limit) const override {
+        auto effective_limit = reference_limit;
+        auto observed_type = &supplied;
+
+        if (const auto *reference = type_cast<TimeSeriesReferenceType>(&supplied)) {
+            if (!reference->is_resolved() || !reference->target_type().is_resolved()) {
+                return false;
+            }
+
+            const auto argument_limit = reference->reference_limit();
+            effective_limit = effective_limit ? weakest(*effective_limit, argument_limit) : argument_limit;
+            observed_type = &reference->target_type();
+        }
+
+        if (effective_limit) {
+            const auto *time_series = type_cast<TimeSeriesType>(observed_type);
+            if (time_series != nullptr && time_series->is_resolved()) {
+                observed_type = &time_series->with_guarantee_limit(*effective_limit);
+            }
+        }
+
         const Category *candidate;
         if constexpr (!std::same_as<Category, Type>) {
-            candidate = dynamic_cast<const Category *>(&supplied);
+            candidate = dynamic_cast<const Category *>(observed_type);
             if (candidate == nullptr) {
                 return false;
             }
         } else {
-            candidate = &supplied;
+            candidate = observed_type;
         }
 
         if (!std::ranges::all_of(constraints_, [candidate](auto constraint) { return constraint(*candidate); })) {
@@ -53,14 +78,14 @@ template <typename Category> class TypeVariableType final : public Category, pub
                                           "type variable has a non-type mapping"};
             }
 
-            if (*type != &supplied) {
+            if (*type != observed_type) {
                 return false;
             }
         }
 
         if (alternatives_.empty()) {
             if (mapping == nullptr) {
-                type_map.set(*this, &supplied);
+                type_map.set(*this, observed_type);
             }
             return true;
         }
@@ -71,7 +96,7 @@ template <typename Category> class TypeVariableType final : public Category, pub
         for (const auto *alternative : alternatives_) {
             auto trial_type_map = type_map.overlay();
 
-            if (!alternative->match(supplied, trial_type_map)) {
+            if (!alternative->match(supplied, trial_type_map, reference_limit)) {
                 continue;
             }
 
@@ -88,13 +113,12 @@ template <typename Category> class TypeVariableType final : public Category, pub
 
         type_map.apply(std::move(selected_type_map));
         if (mapping == nullptr) {
-            type_map.set(*this, &supplied);
+            type_map.set(*this, observed_type);
         }
 
         return true;
     }
 
-  public:
     [[nodiscard]] const Type &resolve(const TypeMap &type_map) const override {
         const auto *mapping = type_map.find(*this);
         if (mapping == nullptr) {

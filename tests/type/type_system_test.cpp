@@ -124,8 +124,8 @@ TEST_CASE("generic C++ declarations expose their semantic types",
     struct SignatureScope {};
 
     const auto &value = bg::TS<bg::SCALAR>::type();
-    const auto &parameter = bg::details::time_series_type_for<SignatureScope, 0, true, bg::TS<bg::SCALAR>>(
-        bg::TimeSeriesGuarantee::ordinary);
+    const auto &parameter = bg::details::time_series_type_for<SignatureScope, 0, bg::TimeSeriesTypeRole::input,
+                                                               bg::TS<bg::SCALAR>>(bg::TimeSeriesGuarantee::ordinary);
     const auto &time_series = bg::TS_T::type();
     auto integer_bindings = bg::TypeMap{};
     auto float_bindings = bg::TypeMap{};
@@ -167,8 +167,8 @@ TEST_CASE("an ordinary time-series input accepts final and const values",
           "[guarantee:const]") {
     struct InputScope {};
 
-    const auto &ordinary_input = bg::details::time_series_type_for<InputScope, 0, true,
-                                                                   bg::TS<bg::i64, bg::TimeSeriesGuarantee::ordinary>>(
+    const auto &ordinary_input = bg::details::time_series_type_for<
+        InputScope, 0, bg::TimeSeriesTypeRole::input, bg::TS<bg::i64, bg::TimeSeriesGuarantee::ordinary>>(
         bg::TimeSeriesGuarantee::ordinary);
 
     CHECK(ordinary_input.accepts(bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>::type()));

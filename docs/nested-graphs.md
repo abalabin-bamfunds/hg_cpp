@@ -32,6 +32,16 @@ Time series arguments cross the boundary as references. Scalar arguments become
 immutable data in the inner compiled graph. The node output is a reference to
 the graph output.
 
+For a non-reference outer graph output `T`, the inner graph input has type
+`REF<T, const>`. It identifies that output for the inner graph's lifetime. An
+outer graph reference output keeps its complete type, including its reference
+guarantee and target type.
+
+Mapped TSD items use `REF<V, ordinary>`, where `V` is the item's target type.
+With several mapped inputs, removing and reintroducing an item in one input can
+replace its time series while another input keeps the inner graph alive.
+Dereferencing follows the [reference guarantee rules](type-system.md#reference-guarantees).
+
 An inner graph records each [context time series](graph-wiring.md#context-time-series)
 that its graph code requests from an enclosing lexical binding. Wiring resolves
 the binding at once and imports its provider through nested boundaries as a

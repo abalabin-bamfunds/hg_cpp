@@ -42,7 +42,7 @@ concept generic_time_series = ::bg::time_series_type_traits<std::remove_cv_t<T>>
 template <typename T>
 concept supported_time_series = ::bg::time_series_type_traits<std::remove_cv_t<T>>::supported;
 
-template <typename Scope, std::size_t Index, bool Input, typename TimeSeries>
+template <typename Scope, std::size_t Index, TimeSeriesTypeRole Role, typename TimeSeries>
 [[nodiscard]] const TimeSeriesType &time_series_type_for(GuaranteeParameter inherited_guarantee) {
     using Type = std::remove_cv_t<TimeSeries>;
 
@@ -57,7 +57,7 @@ template <typename Scope, std::size_t Index, bool Input, typename TimeSeries>
             }
         }();
 
-        return ::bg::time_series_type_traits<Type>::template get<Scope, Index, Input>(guarantee);
+        return ::bg::time_series_type_traits<Type>::template get<Scope, Index, Role>(guarantee);
     }
 }
 
@@ -65,7 +65,8 @@ template <typename Declaration> decltype(auto) time_series_type_access<Declarati
     static_assert(supported_time_series<Declaration>, "unsupported time series declaration");
     using SemanticType = typename ::bg::time_series_type_traits<Declaration>::semantic_type;
     return static_cast<const SemanticType &>(
-        time_series_type_for<Declaration, 0, false, Declaration>(TimeSeriesGuarantee::ordinary));
+        time_series_type_for<Declaration, 0, TimeSeriesTypeRole::declaration, Declaration>(
+            TimeSeriesGuarantee::ordinary));
 }
 
 } // namespace bg::details

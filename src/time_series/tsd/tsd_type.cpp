@@ -68,14 +68,23 @@ bool TimeSeriesDictionaryType::requires_reference_representation_for(const TimeS
 }
 
 bool TimeSeriesDictionaryType::do_match(const Type &supplied, TypeMap &type_map) const {
+    return do_match(supplied, type_map, std::nullopt);
+}
+
+bool TimeSeriesDictionaryType::do_match(const Type &supplied, TypeMap &type_map,
+                                        std::optional<TimeSeriesGuarantee> reference_limit) const {
     const auto *dictionary = type_cast<TimeSeriesDictionaryType>(&supplied);
     if (dictionary == nullptr || !dictionary->is_resolved()) {
         return false;
     }
 
     auto trial = type_map.overlay();
-    if (!key_type().match(dictionary->key_type(), trial) || !value_type().match(dictionary->value_type(), trial) ||
-        !guarantee().match(*dictionary->guarantee().value(), trial)) {
+    const auto supplied_guarantee = *dictionary->guarantee().value();
+    const auto observed_guarantee = reference_limit ? weakest(supplied_guarantee, *reference_limit)
+                                                    : supplied_guarantee;
+    if (!key_type().match(dictionary->key_type(), trial) ||
+        !value_type().match(dictionary->value_type(), trial, reference_limit) ||
+        !guarantee().match(observed_guarantee, trial)) {
         return false;
     }
 

@@ -5,6 +5,7 @@
 #include <ddv/visitable.h>
 
 #include <concepts>
+#include <optional>
 #include <type_traits>
 #include <typeinfo>
 
@@ -27,6 +28,7 @@ class TimeSeriesType;
 class TimeSeriesValueType;
 class Type;
 class TypeMap;
+enum class TimeSeriesGuarantee;
 
 using TypeVisitor = ddv::mux<Type, ScalarType, BuiltinScalarType, ListScalarType, SetScalarType, DictScalarType,
                              StructScalarType, HierarchicalScalarType, GraphArgumentType, TimeSeriesType,
@@ -61,10 +63,17 @@ class Type : public ddv::visitable<Type, TypeVisitor> {
     details::StaticRegistryEntry<Type> &registry_entry() const noexcept { return registry_entry_; }
     [[nodiscard]] bool accepts(const Type &supplied) const;
     [[nodiscard]] bool match(const Type &supplied, TypeMap &type_map) const;
+    [[nodiscard]] virtual bool match(const Type &supplied, TypeMap &type_map,
+                                     std::optional<TimeSeriesGuarantee> reference_limit) const;
     [[nodiscard]] virtual const Type &resolve(const TypeMap &type_map) const = 0;
 
-  protected:
+    // Engine and extension matching hooks. match() handles reference compatibility first.
     [[nodiscard]] virtual bool do_match(const Type &supplied, TypeMap &) const { return this == &supplied; }
+
+    // The default limits guarantees before calling the two-argument hook. Collections pass original child types and
+    // the limit to match().
+    [[nodiscard]] virtual bool do_match(const Type &supplied, TypeMap &type_map,
+                                        std::optional<TimeSeriesGuarantee> reference_limit) const;
 
   private:
     mutable details::StaticRegistryEntry<Type> registry_entry_;

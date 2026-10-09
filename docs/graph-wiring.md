@@ -48,9 +48,10 @@ and invalid-input behavior.
 
 `point.as<TS_T>()` returns a typed wiring point when the requested type accepts
 the point's declared type or an advertised materialisation target. Constructing
-`wp<TS_T>` from another wiring point performs the same check. Both operations
-retain the original point without selecting a materialisation. `as<TS_T>()`
-preserves an optional typed point's validity qualifier.
+`wp<TS_T>` from another wiring point performs the same check using
+[input guarantee rules](type-system.md#time-series-guarantees). Both operations
+retain the original point and actual type without selecting a materialisation.
+`as<TS_T>()` preserves an optional typed point's validity qualifier.
 
 `point[key]` forwards to `operators::getitem` and returns its `wp<>` unchanged.
 The selected overload determines the result's semantic type, including its

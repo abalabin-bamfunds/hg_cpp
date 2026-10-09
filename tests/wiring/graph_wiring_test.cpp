@@ -7,6 +7,7 @@
 #include <bg/scalar/value.hpp>
 #include <bg/time_series/cpp_runtime_type.hpp>
 #include <bg/time_series/time_series_variable.hpp>
+#include <bg/testing/test_wiring.hpp>
 #include <bg/type/scalar_type.hpp>
 #include <bg/type/time_series_reference_type.hpp>
 #include <bg/type/time_series_value_type.hpp>
@@ -134,6 +135,42 @@ TEST_CASE("wiring point re-annotation checks type compatibility", "[graph_wiring
     CHECK_NOTHROW(point.as<bg::REF<bg::TS<float>>>());
     CHECK_THROWS_AS(point.as<bg::TS<double>>(), bg::WiringError);
     CHECK_THROWS_AS(bg::wp<bg::TS<double>>{typed}, bg::WiringError);
+}
+
+TEST_CASE("wiring point reference annotations check guarantee compatibility",
+          "[graph_wiring][feature:wiring][feature:reference][guarantee:ordinary]"
+          "[guarantee:deduplicated][guarantee:final]") {
+    using DEDUPLICATED_REFERENCE = bg::REF<bg::TS<float>, bg::TimeSeriesGuarantee::deduplicated>;
+    using FINAL_REFERENCE = bg::REF<bg::TS<float>, bg::TimeSeriesGuarantee::final>;
+    using VARIABLE_REFERENCE =
+        bg::REF<bg::TS<float, bg::guarantee_variable<"G1">>, bg::guarantee_variable<"G2">>;
+
+    const auto ordinary_source = bg::node(
+        [](bg::Out<bg::REF<bg::TS<float>, bg::TimeSeriesGuarantee::ordinary>>) {});
+    const auto deduplicated_source = bg::node(
+        [](bg::Out<bg::REF<bg::TS<float>, bg::TimeSeriesGuarantee::deduplicated>>) {});
+    const auto final_source = bg::node([](bg::Out<bg::REF<bg::TS<float>, bg::TimeSeriesGuarantee::final>>) {});
+
+    bg::testing::test_wiring([&] {
+        const auto ordinary = static_cast<bg::WiringPoint>(ordinary_source());
+        CHECK_NOTHROW(bg::wp<bg::REF<bg::TS<float>>>{ordinary});
+        CHECK_THROWS_AS((bg::wp<DEDUPLICATED_REFERENCE>{ordinary}), bg::WiringError);
+
+        const auto annotation = ordinary.as<bg::REF<bg::TS<float>>>();
+        CHECK(&annotation.type() == &ordinary.type());
+
+        const auto deduplicated = static_cast<bg::WiringPoint>(deduplicated_source());
+        CHECK_THROWS_AS((bg::wp<FINAL_REFERENCE>{deduplicated}), bg::WiringError);
+
+        const auto final = static_cast<bg::WiringPoint>(final_source());
+        CHECK_NOTHROW((bg::wp<DEDUPLICATED_REFERENCE>{final}));
+        CHECK_NOTHROW((bg::wp<FINAL_REFERENCE>{final}));
+        CHECK_NOTHROW((bg::wp<VARIABLE_REFERENCE>{final}));
+
+        auto optional = bg::wp<bg::REF<bg::TS<float>>, bg::optional>{ordinary}.as<bg::TS<float>>();
+        STATIC_CHECK(std::same_as<decltype(optional), bg::wp<bg::TS<float>, bg::optional>>);
+        CHECK(&optional.type() == &ordinary.type());
+    });
 }
 
 TEST_CASE("wiring reuses a node called with the same arguments", "[graph_wiring][feature:wiring]") {
@@ -328,7 +365,7 @@ struct bound_reference_source {
 TEST_CASE("a node call can seed type resolution", "[graph_wiring][type_system][feature:wiring]") {
     const auto source = bg::node<bound_reference_source>();
     const auto &target = bg::TS<std::int64_t>::type();
-    const auto &expected = bg::REF<bg::TS<std::int64_t>>::type();
+    const auto &expected = bg::REF<bg::TS<std::int64_t>, bg::TimeSeriesGuarantee::deduplicated>::type();
     auto type_map = bg::TypeMap{};
     type_map.set(bg::details::TimeSeriesVariableInstance<BOUND_TIME_SERIES>::get(), &target);
     auto wiring = bg::GraphWiring{};

@@ -563,6 +563,34 @@ TEST_CASE("direct graph Union inputs keep the original point and its other forms
     CHECK_FALSE(wiring.materialisation_required(deferred, bg::TS<float>::type()));
 }
 
+TEST_CASE("a direct graph Union input preserves its actual reference point",
+          "[feature:wiring-materialisation][feature:wiring][feature:reference]"
+          "[binding:reference-to-reference]") {
+    using namespace bg::literals;
+    using FORM = bg::Union<"DIRECT_GRAPH_REFERENCE_FORM", bg::REF<bg::TS<bg::i64>>, bg::TS<bg::i64>>;
+
+    auto wiring = bg::GraphWiring{};
+    const auto context = bg::WiringContext{wiring};
+    const auto reference_source = bg::node([](bg::Out<bg::REF<bg::TS<bg::i64>>>) {});
+    const auto bool_source = bg::node([](bg::Out<bg::TS<bool>>) {});
+    const auto reference = reference_source();
+    const auto original_point = static_cast<bg::WiringPoint>(reference);
+    auto observed_record = static_cast<const bg::details::WiringRecord *>(nullptr);
+    auto observed_type = static_cast<const bg::Type *>(nullptr);
+    const auto identity = bg::graph("name"_n = "reference_identity", [&](bg::wp<FORM> input) {
+        const auto point = static_cast<bg::WiringPoint>(input);
+        observed_record = point.record();
+        observed_type = &point.type();
+        return bool_source();
+    });
+
+    const auto result = identity(reference);
+
+    REQUIRE(result);
+    CHECK(observed_record == original_point.record());
+    CHECK(observed_type == &original_point.type());
+}
+
 TEST_CASE("direct graph form ties use reference affinity",
           "[feature:wiring-materialisation][feature:wiring][series:reference]") {
     using namespace bg::literals;

@@ -40,6 +40,16 @@ TEST_CASE("map validates collection key types for every graph form",
     });
 }
 
+TEST_CASE("map rejects a graph template with an unmatched argument count",
+          "[feature:map][feature:wiring][series:tsd][definition:runtime]") {
+    const auto values = node([](Out<TSD<std::int64_t, TS<float>>>) {});
+    const auto two_parameters = graph(
+        "name"_n = "two_map_parameters",
+        [](wp<TS<float>> value, wp<TS<float>>) { return value; });
+
+    testing::test_wiring([&] { CHECK_THROWS(map(two_parameters, values())); });
+}
+
 TEST_CASE("map requires one selected TSS for every graph form",
           "[feature:map][feature:wiring][series:tss][definition:function][definition:runtime]") {
     const auto first = node([](Out<TSS<std::int64_t>>) {});

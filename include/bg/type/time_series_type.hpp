@@ -5,6 +5,8 @@
 
 namespace bg {
 
+enum class TimeSeriesTypeRole { declaration, input, output };
+
 class TimeSeriesType : public Type {
   public:
     VISITOR_SUPPORT()

@@ -7,6 +7,8 @@
 #include <bg/type/type_variable.hpp>
 #include <bg/type/type_registry.hpp>
 
+#include <optional>
+
 namespace bg {
 
 class GenericTimeSeriesVariableType final : public TimeSeriesType {
@@ -17,9 +19,9 @@ class GenericTimeSeriesVariableType final : public TimeSeriesType {
     bool is_resolved() const noexcept override { return false; }
     [[nodiscard]] const Type &resolve(const TypeMap &type_map) const override;
     const TypeVariableType<TimeSeriesType> &variable() const noexcept { return *variable_; }
-
-  protected:
     [[nodiscard]] bool do_match(const Type &supplied, TypeMap &type_map) const override;
+    [[nodiscard]] bool do_match(const Type &supplied, TypeMap &type_map,
+                                std::optional<TimeSeriesGuarantee> reference_limit) const override;
 
   private:
     const TypeVariableType<TimeSeriesType> *variable_;

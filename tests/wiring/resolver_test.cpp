@@ -605,7 +605,10 @@ TEST_CASE("nested graph resolution provides wiring arguments to resolvers",
     const auto run = bg::node([](bg::Out<bg::TS<bool>>) {});
 
     bg::testing::test_wiring(
-        [&] { CHECK(&bg::nested(inner, run(), 0, source()).type() == &bg::REF<bg::TS<bg::i64>>::type()); });
+        [&] {
+            CHECK(&bg::nested(inner, run(), 0, source()).type() ==
+                  &bg::REF<bg::TS<bg::i64>, bg::TimeSeriesGuarantee::deduplicated>::type());
+        });
     CHECK(resolver_calls == 1);
 }
 

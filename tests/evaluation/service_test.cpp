@@ -206,26 +206,15 @@ TEST_CASE("subscription implementation receives named installation inputs after 
                                       std::int64_t offset) { return respond(requests, route, factor, offset); });
 
     auto catalogue = ServiceCatalogue{};
-    struct FinalKeyDictionary {
-        Out<TSD<std::int64_t, TS<std::int64_t, TimeSeriesGuarantee::final>>> output;
-
-        void start() const {
-            output[1].set(1);
-            output[2].set(2);
-        }
-
-        void evaluate() const noexcept {}
-    };
-    const auto key_dictionary = node<FinalKeyDictionary>();
-    const auto tested = [&](wp<TS<std::int64_t>> key, wp<TS<std::int64_t>> factor) {
+    const auto key_source = node<FinalKeySource<std::int64_t>>();
+    const auto tested = [&](wp<TS<std::int64_t>> factor) {
         catalogue.register_impl(service, implementation, "route"_n = 10, factor, 100);
-        return service(key_dictionary()[key], 10).as<TS<std::int64_t>>();
+        return service(key_source(1), 10).as<TS<std::int64_t>>();
     };
 
-    const auto actual = testing::test_graph(tested, catalogue, std::array<std::int64_t, 3>{1, 0, 2},
-                                            std::array<std::int64_t, 3>{2, 3, 4});
+    const auto actual = testing::test_graph(tested, catalogue, std::array<std::int64_t, 3>{2, 3, 4});
 
-    CHECK(actual.equals<std::int64_t>({113, std::nullopt, 116}));
+    CHECK(actual.equals<std::int64_t>({113, 114, 115}));
 }
 
 TEST_CASE("service clients in map branches withdraw requests when branches stop",

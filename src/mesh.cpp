@@ -155,7 +155,8 @@ GraphArgument build_mesh_graph_argument(const WiringTemplate &function, Resolved
     const auto branch = ScopedWiringTemplate{
         function,
         [name = std::move(name)](const ResolvedSignature &signature) {
-            return MeshSelectionWiringScope{name, signature.output};
+            const auto *output = type_cast<TimeSeriesType>(signature.output);
+            return MeshSelectionWiringScope{name, output == nullptr ? nullptr : &output->target_type()};
         },
     };
     auto built = build_map_graph_argument_wiring(util::symbol{"mesh"}, branch, std::move(call),

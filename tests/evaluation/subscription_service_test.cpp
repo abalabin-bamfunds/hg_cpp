@@ -1,5 +1,7 @@
 #include "service_test_helpers.hpp"
 
+#include <bg/testing/test_wiring.hpp>
+
 TEST_CASE("subscription services deduplicate requests and return values by key",
           "[feature:service][series:tss][series:tsd]") {
     const auto service = subscription_service<auto(TS<std::int64_t, TimeSeriesGuarantee::final>)->TS<float>>{
@@ -48,58 +50,20 @@ TEST_CASE("subscription services deduplicate requests and return values by key",
     CHECK(log.removed == std::vector<std::size_t>{0});
 }
 
-TEST_CASE("subscription services remove an invalid key from their request set",
-          "[feature:service][feature:invalidation][series:tss][series:tsd]"
-          "[transition:invalidation]") {
+TEST_CASE("subscription services reject a replaceable reference to a final key",
+          "[feature:service][feature:wiring][series:tss][series:tsd][guarantee:final]"
+          "[binding:reference-to-value]") {
     const auto service = subscription_service<auto(TS<std::int64_t, TimeSeriesGuarantee::final>)->TS<float>>{
         "prices", {"key"}};
-    struct RequestLog {
-        std::vector<std::size_t> sizes;
-        std::vector<std::size_t> added;
-        std::vector<std::size_t> removed;
-    };
-    auto log = RequestLog{};
-    const auto respond = node([&](In<TSS<std::int64_t>> requests, Out<TSD<std::int64_t, TS<float>>> responses) {
-        log.sizes.push_back(requests.size());
-
-        auto added_count = std::size_t{};
-        requests.for_each_added([&](const auto &key) {
-            ++added_count;
-            responses[key].set(static_cast<float>(*key));
-        });
-        log.added.push_back(added_count);
-
-        auto removed_count = std::size_t{};
-        requests.for_each_removed([&](const auto &key) {
-            ++removed_count;
-            responses.erase(key);
-        });
-        log.removed.push_back(removed_count);
-    });
-    const auto implementation =
-        graph("name"_n = "price_lookup", [&](wp<TSS<std::int64_t>> requests) { return respond(requests); });
-    auto catalogue = ServiceCatalogue{};
-    catalogue.register_impl(service, implementation);
-    const auto keys = node([](In<TS<bool>> present,
-                              Out<TSD<std::int64_t, TS<std::int64_t, TimeSeriesGuarantee::final>>> output) {
-        if (*present) {
-            output[7].set(7);
-        } else {
-            output.erase(7);
-        }
+    const auto keys = node([](Out<TSD<std::int64_t, TS<std::int64_t, TimeSeriesGuarantee::final>>> output) {
+        output[7].set(7);
     });
     const auto selector = node<FinalKeySource<std::int64_t>>();
-    const auto tested = [&](wp<TS<bool>> present) {
-        const auto key = keys(present)[selector(7)];
-        return service(key).as<TS<float>>();
-    };
 
-    const auto actual = testing::test_graph(tested, catalogue, std::array{true, false});
-
-    CHECK(actual.equals<float>({7.0F, std::nullopt}));
-    CHECK(log.sizes == std::vector<std::size_t>{1, 0});
-    CHECK(log.added == std::vector<std::size_t>{1, 0});
-    CHECK(log.removed == std::vector<std::size_t>{0, 1});
+    testing::test_wiring([&] {
+        const auto key = keys()[selector(7)];
+        CHECK_THROWS_AS(service(key), TypeResolutionError);
+    });
 }
 
 TEST_CASE("subscription service clients inside map branches update one root request dictionary",
@@ -138,11 +102,11 @@ TEST_CASE("subscription service clients inside map branches update one root requ
     const auto tested = [&](wp<TS<std::int64_t>> tick) {
         (void)tick;
         const auto mapped = map(
-            [&](auto item) {
-                (void)service(item);
+            [&](auto key, auto item) {
+                (void)service(key);
                 return item;
             },
-            values());
+            values(), "__key_arg__"_n = 0);
         return mapped[std::int64_t{1}].as<TS<std::int64_t>>();
     };
 
@@ -224,11 +188,11 @@ TEST_CASE("subscription service clients inside mesh branches update one root req
     const auto tested = [&](wp<TS<std::int64_t>> tick) {
         (void)tick;
         const auto mapped = mesh(
-            [&](auto item) {
-                (void)service(item);
+            [&](auto key, auto item) {
+                (void)service(key);
                 return item;
             },
-            values());
+            values(), "__key_arg__"_n = 0);
         return mapped[std::int64_t{1}].as<TS<std::int64_t>>();
     };
 
@@ -308,8 +272,12 @@ TEST_CASE("removing a map branch removes its subscription request",
     });
     const auto tested = [&](wp<TS<bool>> present) {
         const auto mapped = map(
-            [&](auto item) { (void)service(item); return item; },
-            optional_values(present));
+            [&](auto key, auto item) {
+                (void)service(key);
+
+                return item;
+            },
+            optional_values(present), "__key_arg__"_n = 0);
         return mapped[std::int64_t{5}].as<TS<std::int64_t>>();
     };
 
@@ -336,7 +304,9 @@ TEST_CASE("response-producing subscription clients inside a map reject dependenc
     const auto values = node<FinalValueDictionarySource>();
     const auto tested = [&](wp<TS<std::int64_t>> tick) {
         (void)tick;
-        const auto mapped = map([&](auto item) { return service(item).template as<TS<std::int64_t>>(); }, values());
+        const auto mapped = map(
+            [&](auto key, auto) { return service(key).template as<TS<std::int64_t>>(); }, values(),
+            "__key_arg__"_n = 0);
         return mapped[std::int64_t{1}].as<TS<std::int64_t>>();
     };
 

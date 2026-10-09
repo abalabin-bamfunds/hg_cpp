@@ -28,11 +28,12 @@ class TimeSeriesBundleType : public FixedItemTimeSeriesType {
     std::optional<std::size_t> find_item_index(util::symbol name) const;
     [[nodiscard]] const TimeSeriesType &with_guarantee(TimeSeriesGuarantee guarantee) const override;
     const TimeSeriesType &with_guarantee_limit(TimeSeriesGuarantee limit) const override;
+    [[nodiscard]] bool do_match(const Type &supplied, TypeMap &type_map) const override;
+    [[nodiscard]] bool do_match(const Type &supplied, TypeMap &type_map,
+                                std::optional<TimeSeriesGuarantee> reference_limit) const override;
 
   protected:
     TimeSeriesBundleType(const SchemaType &schema, GuaranteeParameter guarantee);
-
-    [[nodiscard]] bool do_match(const Type &supplied, TypeMap &type_map) const override;
 
   private:
     static const Schema &limit_schema_guarantees(const Schema &schema, TimeSeriesGuarantee limit);
