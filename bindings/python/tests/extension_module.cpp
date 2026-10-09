@@ -14,6 +14,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <string_view>
 
 namespace {
 
@@ -130,4 +131,9 @@ NB_MODULE(_bg_test_extension, module) {
     });
     module.def("scalar_conversions_address",
                [] { return reinterpret_cast<std::uintptr_t>(&bg::python::scalar_conversions()); });
+    module.def("decode_invalid_string", [] {
+        const auto invalid_utf8 = std::string_view{"\xFF", 1};
+        const auto value = bg::ScalarValue<bg::string>{invalid_utf8};
+        return bg::python::scalar_conversions().to_python(bg::Scalar<>::from(value));
+    });
 }

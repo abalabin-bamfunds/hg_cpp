@@ -10,6 +10,7 @@
 #include <bg/time_series/tsl/tsl_input.hpp>
 #include <bg/time_series/tss/tss_input.hpp>
 #include <bg/time_series/tss/tss_output.hpp>
+#include <bg/scalar/details/string_storage.hpp>
 #include <bg/testing/test_graph.hpp>
 #include <bg/time_series/tick_serializer.hpp>
 
@@ -325,8 +326,40 @@ TEST_CASE("built-in scalar ticks replay through their typed storage",
     check_builtin_scalar_tick<double>(42.5);
     check_builtin_scalar_tick<bg::date_time_t>(bg::MIN_DT + std::chrono::microseconds{42});
     check_builtin_scalar_tick<bg::timedelta_t>(bg::timedelta_t{42});
-    check_builtin_scalar_tick<bg::string>(std::pmr::string{"value"});
     check_builtin_scalar_tick<bg::symbol>(bg::symbol{"value"});
+}
+
+TEST_CASE("a string tick keeps its text after the source value is released",
+          "[feature:time-series-storage][series:value][scalar:string][transition:update]") {
+    const auto time = bg::MIN_DT + std::chrono::microseconds{1};
+    const auto input_state = bg::TimeSeriesState{time};
+    const auto &runtime_type = bg::cpp_time_series_runtime_type<bg::TS<bg::string>>();
+    const auto &scalar_runtime_type = bg::cpp_scalar_runtime_type<bg::string>();
+    const auto buffer = bg::util::buffer::contiguous(128);
+    auto writer = bg::TimeSeriesTickWriter{buffer};
+
+    {
+        auto source = bg::ScalarValue<bg::string>{"value"};
+        auto *stored = bg::details::StringStorage::from(bg::details::scalar_data(source.view()));
+        const auto input = bg::In<bg::TS<bg::string>>{
+            bg::TimeSeriesInputData{runtime_type, input_state, &stored, true}};
+        REQUIRE(writer.write(input, time));
+    }
+
+    auto output_state = bg::TimeSeriesState{};
+    auto *output_value = static_cast<bg::details::StringStorage *>(nullptr);
+    auto output_data = bg::OutputState{runtime_type};
+    output_data.bind(output_state, &output_value, time + std::chrono::microseconds{1});
+    auto output = bg::Out<bg::TS<bg::string>>{bg::TimeSeriesOutputBinding{output_data}};
+    auto reader = bg::TimeSeriesTickReader{buffer, bg::TS<bg::string>::type()};
+
+    REQUIRE(reader.replay(output));
+    CHECK(output.valid());
+    CHECK(output.value() == "value");
+    CHECK_FALSE(reader.has_next());
+
+    auto memory = bg::allocator{};
+    scalar_runtime_type.destroy(&output_value, memory);
 }
 
 TEST_CASE("discarding a scalar tick consumes a chain record across blocks",
@@ -712,24 +745,33 @@ TEST_CASE("discarding an unread tick record releases its scalar payload", "[cove
 
     {
         auto value_memory = bg::allocator{retained_value_memory};
-        const auto value = bg::ScalarValue<bg::string>{
-            std::string{"a retained string payload long enough to require allocated storage"}, value_memory};
-        const auto scalar = value.view();
-        const auto time = bg::MIN_DT + std::chrono::microseconds{1};
-        const auto last_updated = bg::TimeSeriesState{time};
-        const auto input_data = bg::TimeSeriesInputData{
-            bg::cpp_time_series_runtime_type<bg::TS<bg::string>>(), last_updated, scalar.data(), true};
-        const auto input = bg::In<bg::TS<bg::string>>{input_data};
         const auto buffer = bg::util::buffer::chain(256);
         auto writer = bg::TimeSeriesTickWriter{buffer, value_memory};
-        const auto allocations_before_write = retained_value_memory.allocations;
 
-        REQUIRE(writer.write(input, time));
-        REQUIRE(writer.write(input, time));
-        CHECK(retained_value_memory.allocations > allocations_before_write);
+        {
+            const auto value = bg::ScalarValue<bg::string>{
+                std::string{"a retained string payload long enough to require allocated storage"}, value_memory};
+            const auto scalar = value.view();
+            const auto time = bg::MIN_DT + std::chrono::microseconds{1};
+            const auto last_updated = bg::TimeSeriesState{time};
+            const auto input_data = bg::TimeSeriesInputData{
+                bg::cpp_time_series_runtime_type<bg::TS<bg::string>>(), last_updated, scalar.data(), true};
+            const auto input = bg::In<bg::TS<bg::string>>{input_data};
 
-        auto reader = bg::TimeSeriesTickReader{buffer, bg::TS<bg::string>::type()};
-        CHECK(reader.discard());
+            REQUIRE(writer.write(input, time));
+            REQUIRE(writer.write(input, time));
+        }
+
+        CHECK(retained_value_memory.allocations > 0);
+        CHECK(retained_value_memory.deallocations == 0);
+
+        {
+            auto reader = bg::TimeSeriesTickReader{buffer, bg::TS<bg::string>::type()};
+            CHECK(reader.discard());
+            CHECK(retained_value_memory.deallocations == 0);
+        }
+
+        CHECK(retained_value_memory.allocations == retained_value_memory.deallocations);
     }
 
     CHECK(retained_value_memory.allocations == retained_value_memory.deallocations);
@@ -741,22 +783,28 @@ TEST_CASE("destroying a tick reader releases unread scalar payloads", "[coverage
 
     {
         auto value_memory = bg::allocator{retained_value_memory};
-        const auto value = bg::ScalarValue<bg::string>{
-            std::string{"a retained string payload long enough to require allocated storage"}, value_memory};
-        const auto scalar = value.view();
-        const auto time = bg::MIN_DT + std::chrono::microseconds{1};
-        const auto last_updated = bg::TimeSeriesState{time};
-        const auto input_data = bg::TimeSeriesInputData{
-            bg::cpp_time_series_runtime_type<bg::TS<bg::string>>(), last_updated, scalar.data(), true};
-        const auto input = bg::In<bg::TS<bg::string>>{input_data};
         const auto buffer = bg::util::buffer::chain(256);
         auto writer = bg::TimeSeriesTickWriter{buffer, value_memory};
 
-        REQUIRE(writer.write(input, time));
-        REQUIRE(writer.write(input, time));
+        {
+            const auto value = bg::ScalarValue<bg::string>{
+                std::string{"a retained string payload long enough to require allocated storage"}, value_memory};
+            const auto scalar = value.view();
+            const auto time = bg::MIN_DT + std::chrono::microseconds{1};
+            const auto last_updated = bg::TimeSeriesState{time};
+            const auto input_data = bg::TimeSeriesInputData{
+                bg::cpp_time_series_runtime_type<bg::TS<bg::string>>(), last_updated, scalar.data(), true};
+            const auto input = bg::In<bg::TS<bg::string>>{input_data};
+
+            REQUIRE(writer.write(input, time));
+            REQUIRE(writer.write(input, time));
+        }
+
         CHECK(retained_value_memory.allocations > 0);
+        CHECK(retained_value_memory.deallocations == 0);
 
         { auto reader = bg::TimeSeriesTickReader{buffer, bg::TS<bg::string>::type()}; }
+        CHECK(retained_value_memory.allocations == retained_value_memory.deallocations);
     }
 
     CHECK(retained_value_memory.allocations == retained_value_memory.deallocations);

@@ -9,7 +9,6 @@ from typing import Annotated, Any, get_args, get_origin, get_type_hints
 
 from . import operators
 from ._bg import (
-    Symbol,
     Dict,
     WiringPoint as _WiringPoint,
     _Type,
@@ -24,6 +23,7 @@ from ._bg import (
     _optional_type,
     _reference_type,
     _register_delta_types,
+    _register_symbol_type,
     _scalar_type,
     _test_graph,
     _time_series_dict_type,
@@ -36,9 +36,70 @@ from ._bg import (
     _switch,
     _wire_graph,
     _wire_node,
-    symbol,
     version,
 )
+
+
+class Symbol(str):
+    """An interned engine symbol represented as Python text."""
+
+    __slots__ = ("_is_null",)
+
+    _instances: dict[bytes | None, Symbol] = {}
+
+    def __new__(cls, value: str | None = None):
+        is_null = value is None or (isinstance(value, Symbol) and value._is_null)
+        text = "" if is_null else str(value)
+        key = None if is_null else text.encode("utf-8")
+        cached = cls._instances.get(key)
+        if cached is not None:
+            return cached
+
+        result = super().__new__(cls, text)
+        object.__setattr__(result, "_is_null", is_null)
+        cls._instances[key] = result
+        return result
+
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        raise TypeError("bg.Symbol cannot be subclassed")
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        if name == "_is_null":
+            raise AttributeError("bg.Symbol null state is immutable")
+        object.__setattr__(self, name, value)
+
+    def __delattr__(self, name: str) -> None:
+        if name == "_is_null":
+            raise AttributeError("bg.Symbol null state is immutable")
+        object.__delattr__(self, name)
+
+    def __str__(self) -> str:
+        return str.__str__(self)
+
+    def __repr__(self) -> str:
+        if self._is_null:
+            return "symbol()"
+        return f"symbol({str.__repr__(self)})"
+
+    def __eq__(self, other: Any) -> bool:
+        if not isinstance(other, str):
+            return NotImplemented
+        if self._is_null:
+            return isinstance(other, Symbol) and other._is_null
+        if isinstance(other, Symbol) and other._is_null:
+            return False
+        return str.__eq__(self, other)
+
+    def __ne__(self, other: Any) -> bool:
+        result = self.__eq__(other)
+        return NotImplemented if result is NotImplemented else not result
+
+    def __hash__(self) -> int:
+        return hash((Symbol, None)) if self._is_null else str.__hash__(self)
+
+
+_register_symbol_type(Symbol)
+symbol = Symbol
 
 
 class _Remove:

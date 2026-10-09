@@ -192,7 +192,8 @@ class Out<TS<T, Properties...>> {
             return;
         }
 
-        if constexpr (scalar_declaration_traits<T>::is_collection || details::hierarchical_scalar_declaration<T>) {
+        if constexpr (scalar_declaration_traits<T>::is_collection || details::hierarchical_scalar_declaration<T> ||
+                      details::scalar_uses_shared_handle<T>) {
             set_value(input.value_view());
         } else {
             set(input.value());

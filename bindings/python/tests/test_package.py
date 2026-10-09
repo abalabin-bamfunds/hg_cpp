@@ -56,17 +56,151 @@ def test_date_time_scalar_conversions_remain_available_to_extensions():
 def test_symbol_is_a_value_type():
     value = bg.symbol("price")
 
+    assert isinstance(value, str)
     assert value == bg.Symbol("price")
+    assert "price" == value
+    assert not (value != "price")
+    assert not ("price" != value)
     assert hash(value) == hash(bg.symbol("price"))
+    assert type(str(value)) is str
     assert str(value) == "price"
     assert repr(value) == "symbol('price')"
+    assert value.upper() == "PRICE"
+    assert value.startswith("pr")
+
+    values = {value: 1}
+    assert values["price"] == 1
+    assert values[bg.Symbol("price")] == 1
 
 
 def test_null_symbol_is_distinct_from_empty_symbol():
     null_symbol = bg.Symbol()
 
+    assert null_symbol == bg.Symbol()
     assert null_symbol != bg.symbol("")
+    assert bg.symbol("") != null_symbol
+    assert null_symbol != ""
+    assert "" != null_symbol
+    assert not (null_symbol == "")
+    assert not ("" == null_symbol)
+    values = {null_symbol: 1, "": 2}
+    assert len(values) == 2
+    assert values[null_symbol] == 1
+    assert values[""] == 2
+    assert str(null_symbol) == ""
+    assert type(str(null_symbol)) is str
     assert repr(null_symbol) == "symbol()"
+
+
+def test_symbol_scalar_inference_keeps_symbols_distinct_from_strings():
+    symbol = bg.symbol("name")
+
+    @bg.graph
+    def symbol_graph() -> bg.TS[bg.Symbol]:
+        return bg.operators.const_(symbol)
+
+    @bg.graph
+    def string_graph() -> bg.TS[str]:
+        return bg.operators.const_("name")
+
+    symbol_result = bg.test_graph(symbol_graph)
+    string_result = bg.test_graph(string_graph)
+
+    assert type(symbol_result[0]) is bg.Symbol
+    assert symbol_result[0] is symbol
+    assert type(string_result[0]) is str
+    assert string_result[0] == "name"
+
+
+def test_explicit_symbol_input_accepts_plain_python_text():
+    @bg.compute_node
+    def echo(trigger: bg.TS[int], label: bg.Symbol) -> bg.TS[bg.Symbol]:
+        return label
+
+    @bg.graph
+    def graph(trigger: bg.TS[int]) -> bg.TS[bg.Symbol]:
+        return echo(trigger, label="explicit symbol")
+
+    result = bg.test_graph(graph, [1])
+
+    assert type(result[0]) is bg.Symbol
+    assert result[0] == "explicit symbol"
+
+
+def test_symbol_time_series_input_accepts_plain_python_text():
+    @bg.compute_node
+    def identity(value: bg.TS[bg.Symbol]) -> bg.TS[bg.Symbol]:
+        return value.value
+
+    @bg.graph
+    def graph(value: bg.TS[bg.Symbol]) -> bg.TS[bg.Symbol]:
+        return identity(value)
+
+    result = bg.test_graph(graph, ["time series symbol"])
+
+    assert type(result[0]) is bg.Symbol
+    assert result[0] == "time series symbol"
+
+
+def test_symbol_as_string_input_is_normalized_to_plain_text():
+    @bg.compute_node
+    def identity(value: bg.TS[str]) -> bg.TS[str]:
+        return value.value
+
+    @bg.graph
+    def graph(value: bg.TS[str]) -> bg.TS[str]:
+        return identity(value)
+
+    result = bg.test_graph(graph, [bg.Symbol("plain text")])
+
+    assert result == ["plain text"]
+    assert type(result[0]) is str
+
+
+def test_symbol_round_trip_reuses_python_object_for_repeated_cpp_symbol():
+    value = bg.symbol("repeated")
+
+    @bg.compute_node
+    def identity(item: bg.TS[bg.Symbol]) -> bg.TS[bg.Symbol]:
+        return item.value
+
+    @bg.graph
+    def graph(item: bg.TS[bg.Symbol]) -> bg.TS[bg.Symbol]:
+        return identity(item)
+
+    result = bg.test_graph(graph, [value, value])
+
+    assert result == [value, value]
+    assert result[0] is value
+    assert result[0] is result[1]
+
+
+def test_null_symbol_round_trips_as_null():
+    @bg.compute_node
+    def identity(value: bg.TS[bg.Symbol]) -> bg.TS[bg.Symbol]:
+        return value.value
+
+    @bg.graph
+    def graph(value: bg.TS[bg.Symbol]) -> bg.TS[bg.Symbol]:
+        return identity(value)
+
+    null_symbol = bg.Symbol()
+    result = bg.test_graph(graph, [null_symbol])
+
+    assert result[0] is null_symbol
+    assert result[0]._is_null
+
+
+def test_symbol_cannot_be_subclassed():
+    with pytest.raises(TypeError, match="cannot be subclassed"):
+        class NamedSymbol(bg.Symbol):
+            pass
+
+    symbol = bg.symbol("fixed")
+    with pytest.raises(AttributeError, match="immutable"):
+        symbol._is_null = True
+    with pytest.raises(AttributeError, match="immutable"):
+        del symbol._is_null
 
 
 def test_graph_wires_python_nodes_and_runs_each_input_tick():
@@ -190,6 +324,109 @@ def test_python_string_and_symbol_scalar_arguments():
         return add_text(source(), text="market", label=bg.symbol("open"))
 
     assert bg.test_graph(graph) == [1 + len("market") + len("open")]
+
+
+def test_python_scalar_string_argument_outlives_wiring_allocator():
+    text = "wiring-owned café\x00市場"
+
+    @bg.source_node
+    def source() -> bg.TS[int]:
+        return 1
+
+    @bg.compute_node
+    def echo(value: bg.TS[int], text: str) -> bg.TS[str]:
+        return text
+
+    @bg.graph
+    def graph() -> bg.TS[str]:
+        return echo(source(), text)
+
+    assert bg.test_graph(graph) == [text]
+
+
+def test_python_string_time_series_source_input_and_output():
+    text = "café\x00市場"
+
+    @bg.source_node
+    def source() -> bg.TS[str]:
+        return text
+
+    @bg.compute_node
+    def append(value: bg.TS[str]) -> bg.TS[str]:
+        return value.value + "\x00done"
+
+    @bg.graph
+    def source_graph() -> bg.TS[str]:
+        return source()
+
+    @bg.graph
+    def input_graph(value: bg.TS[str]) -> bg.TS[str]:
+        return append(value)
+
+    source_result = bg.test_graph(source_graph)
+    assert source_result == [text]
+    assert source_result[0] is text
+    assert bg.test_graph(input_graph, [text]) == [text + "\x00done"]
+
+
+def test_python_string_time_series_round_trip_preserves_identity():
+    text = "reused string"
+
+    @bg.compute_node
+    def identity(value: bg.TS[str]) -> bg.TS[str]:
+        return value.value
+
+    @bg.graph
+    def graph(value: bg.TS[str]) -> bg.TS[str]:
+        return identity(value)
+
+    result = bg.test_graph(graph, [text])
+
+    assert result[0] is text
+
+
+def test_python_string_cache_releases_values_with_bg_storage():
+    class WeakString(str):
+        pass
+
+    text = WeakString("cache lifetime")
+    text_reference = weakref.ref(text)
+
+    @bg.compute_node
+    def identity(value: bg.TS[str]) -> bg.TS[str]:
+        return value.value
+
+    @bg.graph
+    def graph(value: bg.TS[str]) -> bg.TS[str]:
+        return identity(value)
+
+    result = bg.test_graph(graph, [text])
+    assert result[0] is text
+
+    del result
+    del text
+    gc.collect()
+    assert text_reference() is None
+
+
+def test_python_string_rejects_lone_surrogates():
+    @bg.compute_node
+    def identity(value: bg.TS[str]) -> bg.TS[str]:
+        return value.value
+
+    @bg.graph
+    def graph(value: bg.TS[str]) -> bg.TS[str]:
+        return identity(value)
+
+    with pytest.raises(UnicodeEncodeError):
+        bg.test_graph(graph, ["lone surrogate: \ud800"])
+
+
+def test_python_string_rejects_invalid_bg_utf8():
+    extension = pytest.importorskip("bg._bg_test_extension")
+
+    with pytest.raises(UnicodeDecodeError):
+        extension.decode_invalid_string()
 
 
 def test_input_view_expires_after_the_callback():

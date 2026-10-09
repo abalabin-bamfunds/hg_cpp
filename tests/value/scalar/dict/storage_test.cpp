@@ -34,7 +34,7 @@ TEST_CASE("resolved scalar dictionary storage supports mutation",
 
     REQUIRE(dict.item_count(storage) == 1);
     CHECK(dict.contains(storage, key));
-    CHECK(*static_cast<const std::pmr::string *>(dict.at(storage, key).data) == "second");
+    CHECK(bg::Scalar<bg::string>::from(value_storage, dict.at(storage, key).data).value() == "second");
     CHECK(dict.erase(storage, key, allocator));
     CHECK_FALSE(dict.erase(storage, key, allocator));
 
@@ -66,7 +66,7 @@ TEST_CASE("resolved dictionary storage owns nested collection values",
     const auto stored = dict.at(storage, key);
     const auto &list = static_cast<const bg::ScalarListRuntimeType &>(stored.runtime_type);
     REQUIRE(list.item_count(stored.data) == 2);
-    CHECK(*static_cast<const std::pmr::string *>(list.item(stored.data, 1)) == "two");
+    CHECK(bg::Scalar<bg::string>::from(item_storage, list.item(stored.data, 1)).value() == "two");
 
     dict.destroy(storage, allocator);
     allocator.deallocate_bytes(storage, dict.size(), dict.alignment());

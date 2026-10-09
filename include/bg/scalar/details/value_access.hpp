@@ -43,7 +43,7 @@ template <typename T> typename scalar_storage_traits<T>::value_type scalar_data_
         return *reinterpret_cast<const std::remove_cvref_t<Value> *>(source.data_word());
     }
     if (&source.runtime_type() == &cpp_scalar_runtime_type<T>()) {
-        return Traits::read(*reinterpret_cast<const Stored *>(source.data_word()));
+        return Traits::read(*reinterpret_cast<const Stored *>(source.data()));
     }
 
     if constexpr (std::is_reference_v<Value>) {

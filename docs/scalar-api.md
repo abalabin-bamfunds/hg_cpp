@@ -52,6 +52,13 @@ representations:
 - `timedelta_t` is `std::chrono::microseconds`.
 - `symbol` is the existing `util::symbol` representation.
 
+`string` stores immutable UTF-8 bytes in a reference-counted `StringStorage`.
+Its scalar and time-series read value is `std::string_view`. Construction from
+a `std::string_view` copies the bytes; copying a view of canonical string
+storage retains the same storage. A string is limited to 4,294,967,295 bytes
+(4 GiB minus one). Construction and builder growth reject larger values. The engine does not validate or
+transcode UTF-8.
+
 `std::byte` is the only source type that canonicalizes to `byte`. Character and
 eight-bit integer types do not canonicalize to it. The supported `int` and
 `float` declarations remain outside the built-in visitor list and use the
@@ -78,6 +85,11 @@ An explicit allocator defines the ownership of dynamic storage. Without
 one, dynamic storage created during a node invocation belongs to the runtime
 graph, and its `ScalarValue` must be destroyed in that invocation. This is
 required for graph memory accounting.
+
+String storage retains its allocation owner until the last handle is released.
+The allocator's upstream memory resource must still outlive every string value
+allocated from it. `StringBuilder` appends text into allocator-owned storage and
+`finish()` transfers that storage into a `ScalarValue<string>`.
 
 ## C++ source values
 

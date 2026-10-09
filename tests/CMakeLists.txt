@@ -107,6 +107,7 @@ add_executable(
     value/scalar/set/storage_test.cpp
     value/scalar/set/value_test.cpp
     value/scalar/storage_test.cpp
+    value/scalar/string_storage_test.cpp
     value/scalar/storage_traits_test.cpp
     value/scalar/struct_test.cpp
     value/scalar/test_scalar_provider.cpp

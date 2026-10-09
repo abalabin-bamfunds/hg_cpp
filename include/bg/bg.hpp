@@ -63,6 +63,7 @@
 #include <bg/scalar/struct/runtime_type.hpp>
 #include <bg/scalar/struct/scalar_type.hpp>
 #include <bg/scalar/string.hpp>
+#include <bg/scalar/string_builder.hpp>
 #include <bg/scalar/storage_traits.hpp>
 #include <bg/scalar/type.hpp>
 #include <bg/scalar/value.hpp>

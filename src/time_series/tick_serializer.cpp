@@ -130,7 +130,8 @@ void TimeSeriesTickDiscard::discard_scalar(const ScalarType &type) {
     if (const auto *builtin = type_cast<BuiltinScalarType>(&type)) {
         builtin->visit_builtin_type([&]<typename Builtin>() {
             using Stored = scalar_stored_t<Builtin>;
-            if constexpr (std::is_trivially_copyable_v<Stored>) {
+            if constexpr (std::is_trivially_copyable_v<Stored> &&
+                          !scalar_storage_traits<Builtin>::uses_shared_handle) {
                 reader_->consume(sizeof(Stored));
             } else {
                 reader_->skip<ScalarValue<>>();

@@ -238,11 +238,24 @@ input delta has lazy `added` and `removed` views. Collection item deltas recur
 through the same table.
 
 The currently accepted scalar annotations are `bool`, `int`, `float`, `str`,
-and `bg.Symbol`. Python node outputs currently support `bool`, `int`, `float`,
-and `bg.Symbol`; string time-series outputs are deferred. Python `int` maps to
-the engine's signed 64-bit integer type. `str` is supported as a scalar node
-argument. `bg.Symbol` is distinct from `str`; `bg.symbol` constructs one. A
-null `bg.Symbol()` differs from `bg.Symbol("")`.
+and `bg.Symbol`. `bg.Symbol` is a `str` subclass. Non-null symbols compare and
+hash like their text; `bg.Symbol()` represents a null symbol and differs from
+the empty string. `str(symbol)` returns ordinary Python text, so converting a
+null symbol produces `""`. `bg.Symbol` cannot be subclassed. Python `int` maps
+to the engine's signed 64-bit integer type.
+Python `str` maps to `bg::string` and supports scalar arguments and `TS[str]`
+inputs and outputs. Conversion uses strict UTF-8: lone surrogates raise
+`UnicodeEncodeError`, and invalid UTF-8 from C++ raises `UnicodeDecodeError`.
+C++ callers must provide valid UTF-8. For canonical strings whose storage has
+no other final-release hook, the extension retains the originating Python
+string object while the BG storage lives and removes the cache entry when that
+storage is released. `bg.Symbol` values infer the engine symbol type, while ordinary
+`str` values infer the engine string type. `bg.symbol` is an alias for the
+`bg.Symbol` constructor. A `Symbol` supplied to a `str`-typed input is
+normalized to ordinary Python text; a plain `str` supplied to a `Symbol`-typed
+input is interned as a non-null symbol. The Python class reuses objects
+produced from the same interned engine symbol while retaining the class-level
+cache.
 
 ## C++ extensions
 
@@ -271,6 +284,10 @@ view conversion uses the ordinary scalar-to-Python conversion. Runtime-specific
 handlers take precedence over handlers for the scalar type. Register handlers
 when the extension module initializes, before affected values are exposed to
 Python.
+
+Python-to-scalar conversion during wiring receives a temporary allocator. A
+conversion whose result can retain shared storage beyond wiring must allocate
+that storage from a longer-lived owner or the current runtime allocation context.
 
 Python wiring points are temporary proxies used while a graph is being
 constructed. They expire when graph construction returns.
@@ -315,9 +332,7 @@ acquires it for argument conversion, callback execution, and output
 conversion.
 
 The current package does not expose Python-object scalar storage, scalar bundle
-schemas, injected runtime services, or dynamic Python node inputs. Direct
-`TS[str]` output storage is also deferred; strings are supported as scalar
-wiring arguments.
+schemas, injected runtime services, or dynamic Python node inputs.
 
 Python definition wrappers retain their callbacks. A wired runtime graph also
 retains each Python node callback that it uses. Destroy these graphs before

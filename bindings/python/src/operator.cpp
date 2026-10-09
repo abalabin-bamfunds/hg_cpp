@@ -106,8 +106,16 @@ nb::object getitem(const PythonWiringPoint &collection, nb::handle key) {
                 return nb::cast<std::size_t>(key);
             }
 
-            const auto name = nb::isinstance<util::symbol>(key) ? nb::cast<util::symbol>(key)
-                                                                : util::symbol{nb::cast<std::string>(key)};
+            const auto name = [&] {
+                if (PyUnicode_Check(key.ptr())) {
+                    const auto &type = scalar_conversions().type_from_python(
+                        nb::handle{reinterpret_cast<PyObject *>(Py_TYPE(key.ptr()))});
+                    if (&type == &symbol_type() && nb::cast<bool>(key.attr("_is_null"))) {
+                        return util::symbol{};
+                    }
+                }
+                return util::symbol{nb::cast<std::string>(key)};
+            }();
             for (auto candidate = std::size_t{}; candidate < record->size(); ++candidate) {
                 if (record->item_name(candidate) == name) {
                     return candidate;

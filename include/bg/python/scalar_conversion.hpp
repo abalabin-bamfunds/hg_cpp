@@ -5,6 +5,7 @@
 #include <bg/scalar/dispatch.hpp>
 #include <bg/scalar/scalar.hpp>
 #include <bg/scalar/value.hpp>
+#include <bg/util/symbol.hpp>
 
 #include <nanobind/nanobind.h>
 
@@ -39,6 +40,7 @@ class BG_PYTHON_API PythonScalarConversions {
     // Selects an exact runtime handler before a semantic-type handler. Other values use structural conversion.
     ScalarToPython to_python_handler(const ScalarRuntimeType &runtime_type) const noexcept;
     nanobind::object to_python(Scalar<> value) const;
+    nanobind::object symbol_to_python(util::symbol value) const;
     // Produces a direct node argument. A borrowed result must use the supplied callback lifetime.
     nanobind::object to_python_view(Scalar<> value, const std::shared_ptr<CallbackLifetime> &lifetime,
                                     std::uint64_t generation) const;

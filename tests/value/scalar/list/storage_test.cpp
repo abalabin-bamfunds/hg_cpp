@@ -29,7 +29,7 @@ TEST_CASE("resolved scalar list storage supports mutation",
     list.erase(storage, 1, allocator);
 
     REQUIRE(list.item_count(storage) == 1);
-    CHECK(*static_cast<const std::pmr::string *>(list.item(storage, 0)) == "second");
+    CHECK(bg::Scalar<bg::string>::from(item, list.item(storage, 0)).value() == "second");
 
     list.clear(storage, allocator);
     CHECK(list.item_count(storage) == 0);
