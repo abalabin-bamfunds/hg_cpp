@@ -58,8 +58,9 @@ report an item becoming valid as an added key and an item becoming invalid as a
 removed key. The guarantee does not change the TSD or add per-input item
 history. With `all_valid`, only the TSD root must be valid. Item IDs from removal
 cursors remain usable until the outer-cycle boundary. `key_set()` returns the
-TSD's physical key set, and generic `visit()`
-does not preserve the filter.
+TSD's physical key set. The filter survives `visit()`, `as()`, runtime copy,
+and input-aware `all_valid()`. Runtime-type operations given only physical
+storage do not apply input-view guarantees.
 
 A TSS or TSD input view can become invalid when its reference is removed or
 selects an invalid target. An invalid view has no current collection value. A

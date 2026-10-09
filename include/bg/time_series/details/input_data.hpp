@@ -41,6 +41,7 @@ class TimeSeriesInputData {
     }
 
     const TimeSeriesRuntimeType *runtime_type_{};
+    // The tag bits describe this input binding, not the pointed-to TimeSeriesState.
     util::tagged_ptr<const TimeSeriesState, 2, std::uint8_t> last_updated_{&initial_time_series_state};
     const void *data_{};
 };
