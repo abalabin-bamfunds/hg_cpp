@@ -49,6 +49,27 @@ TEST_CASE("addition accepts scalar and time-series operands in either order",
     CHECK(testing::test_graph(scalar_right, std::array{1.0, 2.0}).equals<double>({3.0, 4.0}));
 }
 
+TEST_CASE("addition accepts typed and erased wiring points",
+          "[feature:operator][series:value][scalar:floating-point][shape:chain]") {
+    const auto graph = [](wp<TS<double>> lhs, wp<TS<double>> rhs) {
+        const auto erased = lhs + rhs;
+        return erased + lhs + 1.0;
+    };
+
+    CHECK(testing::test_graph(graph, std::array{1.0, 2.0}, std::array{10.0, 20.0})
+              .equals<double>({13.0, 25.0}));
+}
+
+TEST_CASE("addition accepts named time-series arguments",
+          "[feature:operator][series:value][shape:single-node]") {
+    const auto graph = [](wp<TS<double>> lhs, wp<TS<double>> rhs) {
+        return operators::add("rhs"_n = rhs, "lhs"_n = lhs);
+    };
+
+    CHECK(testing::test_graph(graph, std::array{1.0, 2.0}, std::array{10.0, 20.0})
+              .equals<double>({11.0, 22.0}));
+}
+
 TEST_CASE("addition does not convert an integer scalar to double",
           "[feature:operator][series:value][scalar:integer][scalar:floating-point]") {
     const auto graph = [](wp<TS<double>> value) { return value + 1; };
@@ -179,7 +200,44 @@ TEST_CASE("required addition invalidates and revalidates with its inputs",
     CHECK(actual.equals<bool>({true, false, true}));
 }
 
-TEST_CASE("addition accepts reference inputs with ordinary target guarantees",
+TEST_CASE("required addition follows reference target invalidation and revalidation",
+          "[feature:operator][feature:reference][feature:validity][series:value][validity:required]"
+          "[transition:invalidation][transition:revalidation][binding:reference-to-value]") {
+    struct invalidating_source {
+        In<TS<double>> input;
+        Out<TS<double>> output;
+
+        void evaluate() const {
+            if (*input < 0.0) {
+                output.invalidate();
+                return;
+            }
+
+            output.set(*input);
+        }
+    };
+    struct validity_observer {
+        In<TS<double>, optional> input;
+        Out<TS<bool>> output;
+
+        void evaluate() const { output.set(input.valid()); }
+    };
+
+    const auto source = node<invalidating_source>();
+    const auto observe = node<validity_observer>();
+    const auto pass_reference = node([](In<REF<TS<double>>> input, Out<REF<TS<double>>> output) {
+        output.copy(input);
+    });
+    const auto graph = [&](wp<TS<double>> lhs, wp<TS<double>> rhs) {
+        return observe(operators::add(pass_reference(source(lhs)), pass_reference(source(rhs))));
+    };
+
+    const auto actual = testing::test_graph(graph, std::array{1.0, -1.0, 3.0}, std::array{10.0, 10.0, 10.0});
+
+    CHECK(actual.equals<bool>({true, false, true}));
+}
+
+TEST_CASE("addition retargets an ordinary reference between ordinary targets",
           "[feature:operator][feature:reference][series:value][guarantee:ordinary]"
           "[binding:reference-to-value][transition:update]") {
     struct changing_reference {
@@ -203,11 +261,100 @@ TEST_CASE("addition accepts reference inputs with ordinary target guarantees",
     CHECK(actual.equals<double>({11.0, 22.0, 13.0}));
 }
 
+TEST_CASE("addition retargets an ordinary reference between final and const targets",
+          "[feature:operator][feature:reference][feature:type-system][series:value]"
+          "[guarantee:ordinary][guarantee:final][guarantee:const][binding:reference-to-value]"
+          "[transition:update]") {
+    struct final_value_source {
+        Scalar<double> value;
+        Out<TS<double, TimeSeriesGuarantee::final>> output;
+
+        void start() const { output.set(*value); }
+    };
+
+    struct changing_reference {
+        In<TS<bool>> select_right;
+        In<REF<TS<double, TimeSeriesGuarantee::final>, TimeSeriesGuarantee::ordinary>> lhs;
+        In<REF<TS<double, TimeSeriesGuarantee::final>, TimeSeriesGuarantee::ordinary>> rhs;
+        Out<REF<TS<double, TimeSeriesGuarantee::final>, TimeSeriesGuarantee::ordinary>> output;
+
+        void evaluate() const { output.copy(*select_right ? rhs : lhs); }
+    };
+
+    const auto select = node<changing_reference>();
+    const auto final_source = node<final_value_source>();
+    const auto graph = [&](wp<TS<bool>> select_right) {
+        const auto lhs = final_source(1.0);
+        const auto rhs = operators::const_(2.0).as<TS<double, TimeSeriesGuarantee::const_>>();
+        const auto reference = select(select_right, lhs, rhs);
+        const auto result = operators::add(reference, 1.0);
+        CHECK(&result.type() == &TS<double, TimeSeriesGuarantee::ordinary>::type());
+        return result;
+    };
+
+    const auto actual = testing::test_graph(graph, std::array{false, true, false, true});
+
+    CHECK(actual.equals<double>({2.0, 3.0, 2.0, 3.0}));
+}
+
+TEST_CASE("addition observes equal values from distinct deduplicated reference targets",
+          "[feature:operator][feature:reference][feature:type-system][series:value]"
+          "[guarantee:ordinary][guarantee:deduplicated][guarantee:final][guarantee:const]"
+          "[binding:reference-to-value][transition:update]") {
+    struct final_value_source {
+        Out<TS<double, TimeSeriesGuarantee::final>> output;
+
+        void start() const { output.set(4.0); }
+    };
+    struct changing_reference {
+        In<TS<bool>> select_const;
+        In<REF<TS<double, TimeSeriesGuarantee::final>, TimeSeriesGuarantee::deduplicated>> final_value;
+        In<REF<TS<double, TimeSeriesGuarantee::final>, TimeSeriesGuarantee::deduplicated>> const_value;
+        Out<REF<TS<double, TimeSeriesGuarantee::final>, TimeSeriesGuarantee::deduplicated>> output;
+
+        void evaluate() const { output.copy(*select_const ? const_value : final_value); }
+    };
+
+    const auto final_source = node<final_value_source>();
+    const auto select = node<changing_reference>();
+    const auto graph = [&](wp<TS<bool>> select_const) {
+        const auto final_value = final_source();
+        const auto const_value = operators::const_(4.0).as<TS<double, TimeSeriesGuarantee::const_>>();
+        const auto reference = select(select_const, final_value, const_value);
+        const auto result = operators::add(reference, 1.0);
+        CHECK(&result.type() == &TS<double, TimeSeriesGuarantee::ordinary>::type());
+        return result;
+    };
+
+    const auto actual = testing::test_graph(graph, std::array{false, true, false, true});
+
+    CHECK(actual.equals<double>({5.0, 5.0, 5.0, 5.0}));
+}
+
 TEST_CASE("addition runs inside a nested graph",
           "[feature:operator][feature:nested-graph][shape:nested][series:value][scalar:floating-point]") {
     const auto inner = graph(
         "name"_n = "inner_add", [](wp<TS<double>> lhs, wp<TS<double>> rhs) {
             return wp<TS<double>>{lhs + rhs};
+        });
+    const auto outer = [&](wp<TS<double>> lhs, wp<TS<double>> rhs, wp<TS<bool>> run) {
+        return nested(inner, run, lhs, rhs);
+    };
+
+    CHECK(testing::test_graph(outer, std::array{1.0, 2.0}, std::array{10.0, 20.0}, std::array{true, true})
+              .equals<double>({11.0, 22.0}));
+}
+
+TEST_CASE("addition consumes references across a nested graph boundary",
+          "[feature:operator][feature:reference][feature:nested-graph][shape:nested][series:value]"
+          "[scalar:floating-point][binding:reference-to-value]") {
+    const auto inner = graph(
+        "name"_n = "inner_add_references",
+        [](wp<REF<TS<double>, TimeSeriesGuarantee::const_>> lhs,
+           wp<REF<TS<double>, TimeSeriesGuarantee::const_>> rhs) -> wp<TS<double>> {
+            const auto result = lhs + rhs;
+            CHECK(&result.type() == &TS<double>::type());
+            return wp<TS<double>>{result};
         });
     const auto outer = [&](wp<TS<double>> lhs, wp<TS<double>> rhs, wp<TS<bool>> run) {
         return nested(inner, run, lhs, rhs);
