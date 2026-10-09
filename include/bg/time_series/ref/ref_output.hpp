@@ -27,6 +27,15 @@ template <typename Target, auto... Properties> class Out<REF<Target, Properties.
     Reference value() const noexcept { return stored_reference(); }
 
     template <auto... ReferenceProperties, auto... InputProperties>
+    void copy_tick(const In<REF<Target, ReferenceProperties...>, InputProperties...> &input) const {
+        if (input.last_updated() != state_->evaluation_time() ||
+            (!input.modified() && !input.became_invalid())) {
+            return;
+        }
+        copy(input);
+    }
+
+    template <auto... ReferenceProperties, auto... InputProperties>
     void copy(const In<REF<Target, ReferenceProperties...>, InputProperties...> &input) const {
         if (!input.valid()) {
             invalidate();

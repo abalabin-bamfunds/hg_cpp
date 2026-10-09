@@ -1,4 +1,6 @@
 #include <bg/time_series/tsd/tsd_runtime_type.hpp>
+#include <bg/time_series/tsd/tsd_input.hpp>
+#include <bg/time_series/tsd/tsd_output.hpp>
 
 #include <memory>
 #include <mutex>
@@ -6,6 +8,27 @@
 #include <vector>
 
 namespace bg::details {
+
+void TimeSeriesDictionaryRuntimeType::copy_tick(const TimeSeriesInputData &input,
+                                                OutputState &output) const {
+    if (input.valid() && type_cast<TimeSeriesDictionaryType>(&input.runtime_type().type()) == nullptr) {
+        throw std::invalid_argument{"time series dictionary copy requires a dictionary input"};
+    }
+
+    auto source = In<TSD<SCALAR, TS_T>>{input};
+    auto target = output_factory::make<Out<TSD<SCALAR, TS_T>>>(output);
+    target.copy_tick(source);
+}
+
+void TimeSeriesDictionaryRuntimeType::copy(const TimeSeriesInputData &input, OutputState &output) const {
+    if (input.valid() && type_cast<TimeSeriesDictionaryType>(&input.runtime_type().type()) == nullptr) {
+        throw std::invalid_argument{"time series dictionary copy requires a dictionary input"};
+    }
+
+    auto source = In<TSD<SCALAR, TS_T>>{input};
+    auto target = output_factory::make<Out<TSD<SCALAR, TS_T>>>(output);
+    target.copy(source);
+}
 
 const TimeSeriesRuntimeType &
 time_series_dictionary_runtime_type(const TimeSeriesDictionaryType &type, const ScalarRuntimeType &key,

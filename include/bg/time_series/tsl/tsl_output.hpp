@@ -5,6 +5,7 @@
 #include <bg/time_series/output_binding.hpp>
 #include <bg/time_series/details/output_state.hpp>
 #include <bg/time_series/time_series_output.hpp>
+#include <bg/time_series/tsl/tsl_input.hpp>
 #include <bg/time_series/tsl/tsl_runtime_type.hpp>
 #include <bg/time_series/tsl/tsl_storage.hpp>
 #include <bg/time_series/tsl/tsl_type.hpp>
@@ -44,6 +45,32 @@ template <typename Item, auto Size, auto... Properties> class Out<TSL<Item, Size
     }
 
     void invalidate() const { state_->invalidate(); }
+
+    template <typename InputItem, auto... InputTimeSeriesProperties, auto... InputProperties>
+    void copy_tick(const In<TSL<InputItem, Size, InputTimeSeriesProperties...>, InputProperties...> &input) const {
+        if (input.last_updated() != state_->evaluation_time() ||
+            (!input.modified() && !input.became_invalid())) {
+            return;
+        }
+        if (!input.valid()) {
+            invalidate();
+            return;
+        }
+
+        input.for_each_updated([&](item_id_t id) { (*this)[id].copy_tick(input[id]); });
+    }
+
+    template <typename InputItem, auto... InputTimeSeriesProperties, auto... InputProperties>
+    void copy(const In<TSL<InputItem, Size, InputTimeSeriesProperties...>, InputProperties...> &input) const {
+        if (!input.valid()) {
+            invalidate();
+            return;
+        }
+
+        for (auto index = std::size_t{}; index < size(); ++index) {
+            (*this)[index].copy(input[index]);
+        }
+    }
 
     const Out *operator->() const noexcept { return this; }
 

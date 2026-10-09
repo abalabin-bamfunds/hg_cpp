@@ -1,7 +1,11 @@
 #include <bg/time_series/time_series_runtime_type.hpp>
 
 #include <bg/scalar/runtime_type.hpp>
+#include <bg/node/details/output_factory.hpp>
 #include <bg/time_series/details/output_state.hpp>
+#include <bg/time_series/details/input_data.hpp>
+#include <bg/time_series/ts/ts_input.hpp>
+#include <bg/time_series/ts/ts_output.hpp>
 #include <bg/time_series/ref/ref_provider.hpp>
 #include <bg/time_series/ref/ref_runtime_type.hpp>
 #include <bg/time_series/tsb/tsb_runtime_type.hpp>
@@ -25,6 +29,28 @@
 namespace bg {
 
 TimeSeriesRuntimeType::~TimeSeriesRuntimeType() = default;
+
+void TimeSeriesRuntimeType::copy_tick(const TimeSeriesInputData &input, OutputState &output) const {
+    if (input.last_updated() != output.evaluation_time() ||
+        (!input.modified() && !input.became_invalid())) {
+        return;
+    }
+    copy(input, output);
+}
+
+void TimeSeriesRuntimeType::copy(const TimeSeriesInputData &, OutputState &) const {
+    throw std::logic_error{"time series runtime type does not support copying"};
+}
+
+void TimeSeriesValueRuntimeType::copy(const TimeSeriesInputData &input, OutputState &output) const {
+    if (input.valid() && type_cast<TimeSeriesValueType>(&input.runtime_type().type()) == nullptr) {
+        throw std::invalid_argument{"time series copy requires a value input"};
+    }
+
+    auto source = In<TS<SCALAR>>{input};
+    auto target = details::output_factory::make<Out<TS<SCALAR>>>(output);
+    target.copy(source);
+}
 
 namespace {
 

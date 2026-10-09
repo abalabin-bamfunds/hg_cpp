@@ -47,6 +47,7 @@ class In<TSL<Item, Size, TimeSeriesProperties...>, Properties...>
     bool became_invalid() const noexcept { return data_.became_invalid(); }
     bool modified() const noexcept { return data_.modified(); }
     EvaluationTime last_updated() const noexcept { return data_.last_updated(); }
+    const TimeSeriesInputData &input_data() const noexcept { return data_; }
     std::size_t size() const noexcept { return data_.runtime_type().item_count(data_.data()); }
 
     In<Item> operator[](std::size_t index) const {

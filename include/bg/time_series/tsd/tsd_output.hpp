@@ -8,6 +8,7 @@
 #include <bg/scalar/scalar.hpp>
 #include <bg/time_series/details/output_state.hpp>
 #include <bg/time_series/time_series_output.hpp>
+#include <bg/time_series/tsd/tsd_input.hpp>
 #include <bg/time_series/tsd/tsd_runtime_type.hpp>
 #include <bg/time_series/tsd/tsd_storage.hpp>
 #include <bg/time_series/tsd/tsd_type.hpp>
@@ -37,6 +38,7 @@ template <typename K, typename Item, auto... Properties> class Out<TSD<K, Item, 
     bool valid() const noexcept { return state_->valid(); }
     EvaluationTime last_updated() const noexcept { return state_->last_updated(); }
     const TimeSeriesRuntimeType &runtime_type() const noexcept { return state_->runtime_type(); }
+    void invalidate() const { state_->invalidate(); }
 
     Out<Item> operator[](const Scalar<K> &key) const { return item(details::scalar_data(key)); }
 
@@ -95,6 +97,53 @@ template <typename K, typename Item, auto... Properties> class Out<TSD<K, Item, 
             value.key_storage().last_updated.publish(state_->context().evaluation_time());
             state_->publish_item(state_->runtime_type(), key_set_item_id);
         }
+    }
+
+    template <typename InputItem, auto... InputTimeSeriesProperties, auto... InputProperties>
+    void copy_tick(const In<TSD<K, InputItem, InputTimeSeriesProperties...>, InputProperties...> &input) const {
+        if (input.last_updated() != state_->evaluation_time() ||
+            (!input.modified() && !input.became_invalid())) {
+            return;
+        }
+        if (!input.valid()) {
+            invalidate();
+            return;
+        }
+        if (!valid()) {
+            clear();
+        }
+
+        input.for_each_added([&](const auto &key) { (*this)[key].copy(input[key]); });
+        input.for_each_removed([&](const auto &key) { erase(key); });
+        input.for_each_modified([&](const auto &key) { (*this)[key].copy_tick(input[key]); });
+    }
+
+    template <typename InputItem, auto... InputTimeSeriesProperties, auto... InputProperties>
+    void copy(const In<TSD<K, InputItem, InputTimeSeriesProperties...>, InputProperties...> &input) const {
+        if (!input.valid()) {
+            invalidate();
+            return;
+        }
+
+        if (!valid()) {
+            clear();
+        }
+
+        const auto &runtime = dictionary_runtime_type();
+        auto id = runtime.next_item_id(state_->mutable_last_updated(), state_->data(),
+                                       details::TimeSeriesDictionaryRuntimeType::ItemRange::current, 0);
+        while (id != util::occupancy_index::npos) {
+            const auto next_id = runtime.next_item_id(state_->mutable_last_updated(), state_->data(),
+                                                     details::TimeSeriesDictionaryRuntimeType::ItemRange::current,
+                                                     id + 1);
+            const auto key = this->key(id);
+            if (!input.contains(key)) {
+                erase(key);
+            }
+            id = next_id;
+        }
+
+        input.for_each_key_value([&](const auto &key, const auto &item) { (*this)[key].copy(item); });
     }
 
     const Out *operator->() const noexcept { return this; }

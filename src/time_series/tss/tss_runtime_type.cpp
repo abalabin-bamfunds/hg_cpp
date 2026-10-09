@@ -1,4 +1,6 @@
 #include <bg/time_series/tss/tss_runtime_type.hpp>
+#include <bg/time_series/tss/tss_input.hpp>
+#include <bg/time_series/tss/tss_output.hpp>
 
 #include <memory>
 #include <mutex>
@@ -6,6 +8,26 @@
 #include <vector>
 
 namespace bg::details {
+
+void TimeSeriesSetRuntimeType::copy_tick(const TimeSeriesInputData &input, OutputState &output) const {
+    if (input.valid() && type_cast<TimeSeriesSetType>(&input.runtime_type().type()) == nullptr) {
+        throw std::invalid_argument{"time series set copy requires a set input"};
+    }
+
+    auto source = In<TSS<SCALAR>>{input};
+    auto target = output_factory::make<Out<TSS<SCALAR>>>(output);
+    target.copy_tick(source);
+}
+
+void TimeSeriesSetRuntimeType::copy(const TimeSeriesInputData &input, OutputState &output) const {
+    if (input.valid() && type_cast<TimeSeriesSetType>(&input.runtime_type().type()) == nullptr) {
+        throw std::invalid_argument{"time series set copy requires a set input"};
+    }
+
+    auto source = In<TSS<SCALAR>>{input};
+    auto target = output_factory::make<Out<TSS<SCALAR>>>(output);
+    target.copy(source);
+}
 
 std::size_t TimeSeriesSetRuntimeType::set_size(const void *value) const {
     return static_cast<const time_series_set_storage *>(value)->size();

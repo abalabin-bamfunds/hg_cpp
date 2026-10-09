@@ -389,12 +389,8 @@ using namespace bg::literals;
 inline const auto copy_prices = bg::node(
     "copy_prices",
     [](bg::In<bg::TSD<bg::string, bg::TS<float>>, "values"_n> values,
-       bg::Out<bg::TSD<bg::string, bg::TS<float>>> output) noexcept {
-        values.for_each_added(
-            [&](const auto& key) { output[key].set(*values[key]); });
-        values.for_each_modified(
-            [&](const auto& key) { output[key].set(*values[key]); });
-        values.for_each_removed([&](const auto& key) { output.erase(key); });
+       bg::Out<bg::TSD<bg::string, bg::TS<float>>> output) {
+        output.copy_tick(values);
     });
 ```
 
@@ -418,8 +414,26 @@ produce a valid empty collection.
 `Out<TS<T>>::set_value()` accepts a compatible scalar view. It assigns the value
 before it sets the last updated time.
 
-`Out<REF<TS_T>>::copy(input)` copies a reference input and propagates invalidity.
-`set_value(reference)` assigns a `Reference` directly.
+`Out<>::copy_tick(input)` applies the input's current-cycle changes to the output.
+It does nothing when the input has no change in the current evaluation cycle.
+Collection copies apply additions, removals, and changed items recursively.
+They do not replace unchanged items or reconstruct a missed earlier tick.
+
+`Out<>::copy(input)` copies the input's complete current value. It removes
+collection entries absent from the input and copies every current item.
+Use it when sampling a value rather than forwarding a tick.
+
+The input must have a compatible value shape. Its time series guarantees need
+not match the output's guarantees. Both operations use normal output mutation
+and guarantee behavior. Invalid inputs invalidate outputs that support
+invalidation. TSS and TSD outputs preserve their values, following the
+[validity design](time-series-validity.md).
+Reference copies copy the reference, not its target value.
+`Out<REF<TS_T>>::set_value(reference)` assigns a `Reference` directly.
+
+Typed TSD copying preserves `valid_items`. Runtime-dispatched copying uses the
+underlying input binding without that filter. This includes TSD fields copied
+as part of a whole TSB copy.
 
 A node function has either a returned output or one `Out<TS_T>` parameter.
 `std::optional` controls node API access or publication. It is not a graph

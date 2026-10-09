@@ -2,6 +2,7 @@
 
 #include <bg/evaluation_context.hpp>
 #include <bg/node/details/output_factory.hpp>
+#include <bg/node/input_fwd.hpp>
 #include <bg/time_series/output_binding.hpp>
 #include <bg/time_series/time_series_type.hpp>
 
@@ -42,6 +43,16 @@ template <details::time_series_variable Variable> class Out<Variable> {
     }
 
     void invalidate() const { state_->invalidate(); }
+
+    template <typename Input, auto... Properties>
+    void copy_tick(const In<Input, Properties...> &input) const {
+        state_->runtime_type().copy_tick(input.input_data(), state_.get());
+    }
+
+    template <typename Input, auto... Properties>
+    void copy(const In<Input, Properties...> &input) const {
+        state_->runtime_type().copy(input.input_data(), state_.get());
+    }
 
     template <typename Visitor, typename... Arguments>
         requires ddv::SerialVisitorType<std::remove_cvref_t<Visitor>>

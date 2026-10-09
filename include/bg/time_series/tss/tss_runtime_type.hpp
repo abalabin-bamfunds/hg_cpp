@@ -38,6 +38,8 @@ class TimeSeriesSetRuntimeType : public TimeSeriesRuntimeType {
     }
 
     void invalidate_output(const OutputState &) const override {}
+    void copy_tick(const TimeSeriesInputData &input, OutputState &output) const override;
+    void copy(const TimeSeriesInputData &input, OutputState &output) const override;
 
     void destroy_value(void *value, allocator &memory) const noexcept override {
         auto *storage = static_cast<time_series_set_storage *>(value);

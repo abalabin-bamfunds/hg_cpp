@@ -47,6 +47,7 @@ class In<TSS<K, TimeSeriesProperties...>, Properties...>
     bool became_invalid() const noexcept { return data_.became_invalid(); }
     bool modified() const noexcept { return data_.modified(); }
     EvaluationTime last_updated() const noexcept { return data_.last_updated(); }
+    const TimeSeriesInputData &input_data() const noexcept { return data_; }
     const TimeSeriesState &last_updated_state() const noexcept { return data_.last_updated_ref(); }
     std::size_t size() const noexcept {
         if (!valid()) {

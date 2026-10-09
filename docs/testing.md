@@ -213,6 +213,9 @@ graph compilation or evaluation.
   and typed, generic, and runtime node declarations
 - operation-specific handling of invalid `opt` arguments, including mixed required and optional inputs
 - output update and invalidation propagation
+- tick and complete-value copying through typed and generic outputs, current-cycle filtering,
+  collection reconciliation, empty first ticks, validity transitions, free collection inputs,
+  nested changes, reference values, input guarantees, output guarantees, and provider runtime dispatch
 - retained tick writing and replay through a one-cycle delay node, current-cycle filtering, delta-only collection
   replay from a matching baseline, nested key changes, empty first ticks, validity transitions, payload cleanup,
   provider scalar handlers, and unsupported references

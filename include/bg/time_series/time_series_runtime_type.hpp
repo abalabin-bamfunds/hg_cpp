@@ -15,6 +15,7 @@ namespace bg {
 
 class ScalarRuntimeType;
 class OutputState;
+class TimeSeriesInputData;
 namespace details {
 class ReferenceProvider;
 class ReferenceRepresentation;
@@ -93,6 +94,8 @@ class TimeSeriesRuntimeType : public RuntimeType {
     virtual void for_each_modified_item(const TimeSeriesState &, const void *, EvaluationTime, void *,
                                         ModifiedItemFunction) const {}
     virtual Reference reference(const void *) const;
+    virtual void copy_tick(const TimeSeriesInputData &input, OutputState &output) const;
+    virtual void copy(const TimeSeriesInputData &input, OutputState &output) const;
     virtual const details::ReferenceRepresentationFactory *reference_representation_factory() const noexcept {
         return nullptr;
     }
@@ -130,6 +133,7 @@ static_assert(sizeof(TimeSeriesRuntimeType) == sizeof(RuntimeType));
 class TimeSeriesValueRuntimeType : public TimeSeriesRuntimeType {
   public:
     const ScalarRuntimeType &scalar_runtime_type() const noexcept { return *scalar_; }
+    void copy(const TimeSeriesInputData &input, OutputState &output) const override;
 
   protected:
     TimeSeriesValueRuntimeType(const TimeSeriesType &type, const ScalarRuntimeType &scalar, std::size_t value_size,

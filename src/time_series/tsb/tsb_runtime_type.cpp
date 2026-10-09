@@ -1,4 +1,6 @@
 #include <bg/time_series/tsb/tsb_free_runtime_type.hpp>
+#include <bg/time_series/tsb/tsb_input.hpp>
+#include <bg/time_series/tsb/tsb_output.hpp>
 #include <bg/time_series/tsb/tsb_runtime_type.hpp>
 
 #include <memory>
@@ -7,6 +9,33 @@
 #include <vector>
 
 namespace bg::details {
+
+void TimeSeriesBundleRuntimeTypeBase::copy_tick(const TimeSeriesInputData &input,
+                                                OutputState &output) const {
+    if (input.valid()) {
+        const auto *source_type = type_cast<TimeSeriesBundleType>(&input.runtime_type().type());
+        if (source_type == nullptr || source_type->item_count() < item_count(output.data())) {
+            throw std::invalid_argument{"time series bundle copy requires all destination fields"};
+        }
+    }
+
+    auto source = In<TSB<SCHEMA>>{input};
+    auto target = output_factory::make<Out<TSB<SCHEMA>>>(output);
+    target.copy_tick(source);
+}
+
+void TimeSeriesBundleRuntimeTypeBase::copy(const TimeSeriesInputData &input, OutputState &output) const {
+    if (input.valid()) {
+        const auto *source_type = type_cast<TimeSeriesBundleType>(&input.runtime_type().type());
+        if (source_type == nullptr || source_type->item_count() < item_count(output.data())) {
+            throw std::invalid_argument{"time series bundle copy requires all destination fields"};
+        }
+    }
+
+    auto source = In<TSB<SCHEMA>>{input};
+    auto target = output_factory::make<Out<TSB<SCHEMA>>>(output);
+    target.copy(source);
+}
 
 Node free_bundle_node(const free_time_series_bundle_storage &storage) noexcept {
     return Node::from_output(*storage.node, const_cast<free_time_series_bundle_storage *>(&storage));

@@ -1,12 +1,25 @@
 #include <bg/time_series/ref/ref_runtime_type.hpp>
 
 #include <bg/time_series/details/output_state.hpp>
+#include <bg/time_series/ref/ref_input.hpp>
+#include <bg/time_series/ref/ref_output.hpp>
+#include <bg/node/details/output_factory.hpp>
 
 #include <memory>
 #include <mutex>
 #include <unordered_map>
 
 namespace bg {
+
+void TimeSeriesReferenceRuntimeType::copy(const TimeSeriesInputData &input, OutputState &output) const {
+    if (input.valid() && type_cast<TimeSeriesReferenceType>(&input.runtime_type().type()) == nullptr) {
+        throw std::invalid_argument{"reference copy requires a reference input"};
+    }
+
+    auto source = In<REF<TS_T>>{input};
+    auto target = details::output_factory::make<Out<REF<TS_T>>>(output);
+    target.copy(source);
+}
 
 void TimeSeriesReferenceRuntimeType::invalidate_output(const OutputState &output) const {
     *static_cast<Reference *>(output.mutable_data()) = nullptr;

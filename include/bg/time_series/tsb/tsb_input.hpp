@@ -73,6 +73,7 @@ class In<TSB<Schema, TimeSeriesProperties...>, Properties...>
     bool became_invalid() const noexcept { return data_.became_invalid(); }
     bool modified() const noexcept { return data_.modified(); }
     EvaluationTime last_updated() const noexcept { return data_.last_updated(); }
+    const TimeSeriesInputData &input_data() const noexcept { return data_; }
     const TimeSeriesRuntimeType &runtime_type() const noexcept { return data_.runtime_type(); }
     const fields_type *operator->() const noexcept { return &fields_; }
     const fields_type &fields() const noexcept { return fields_; }
@@ -128,6 +129,7 @@ class In<TSB<Schema, TimeSeriesProperties...>, Properties...>
     bool became_invalid() const noexcept { return data_.became_invalid(); }
     bool modified() const noexcept { return data_.modified(); }
     EvaluationTime last_updated() const noexcept { return data_.last_updated(); }
+    const TimeSeriesInputData &input_data() const noexcept { return data_; }
     std::size_t size() const noexcept { return data_.runtime_type().item_count(data_.data()); }
     util::symbol item_name(std::size_t index) const {
         return static_cast<const TimeSeriesBundleType &>(data_.runtime_type().type()).item_name(index);

@@ -57,6 +57,12 @@ class OutputState {
 
     bool valid() const noexcept { return last_updated_->valid(); }
     EvaluationTime last_updated() const noexcept { return last_updated_->time(); }
+    EvaluationTime evaluation_time() const noexcept {
+        if (auto *time = owner_.get<const EvaluationTime>()) {
+            return *time;
+        }
+        return context().evaluation_time();
+    }
     const TimeSeriesRuntimeType &runtime_type() const noexcept { return *runtime_type_; }
     bool suppresses_equal_updates() const noexcept { return runtime_type_.tag() == TimeSeriesGuarantee::deduplicated; }
     const void *data() const noexcept { return data_; }
@@ -103,13 +109,6 @@ class OutputState {
         if (auto *path = owner_.get<details::OutputPath>()) {
             details::publish_output_path(path);
         }
-    }
-
-    const EvaluationTime &evaluation_time() const noexcept {
-        if (auto *time = owner_.get<const EvaluationTime>()) {
-            return *time;
-        }
-        return context().evaluation_time();
     }
 
     util::tagged_ptr<const TimeSeriesRuntimeType, 2, TimeSeriesGuarantee> runtime_type_{};

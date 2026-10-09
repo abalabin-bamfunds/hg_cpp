@@ -42,6 +42,7 @@
 namespace provider {
 
 inline bool *view_invalidation_observer{};
+inline int copied_series_count{};
 inline int written_tick_count{};
 inline int replayed_tick_count{};
 inline int discarded_tick_count{};
@@ -208,6 +209,17 @@ class SeriesRuntimeType final : public bg::TimeSeriesRuntimeType {
     void destroy_value(void *value, bg::allocator &) const noexcept override {
         std::destroy_at(static_cast<bg::i64 *>(value));
     }
+
+    void copy(const bg::TimeSeriesInputData &input, bg::OutputState &output) const override {
+        ++copied_series_count;
+        if (!input.valid()) {
+            output.invalidate();
+            return;
+        }
+
+        *static_cast<bg::i64 *>(output.mutable_data()) = *static_cast<const bg::i64 *>(input.data());
+        output.publish();
+    }
 };
 
 const bg::TimeSeriesRuntimeType &series_runtime_type(const bg::TimeSeriesType &type) {
@@ -246,6 +258,14 @@ const bg::TimeSeriesRuntimeType &series_view_runtime_type(const bg::TimeSeriesTy
     }
     return *entry->second;
 }
+
+class UnsupportedCopyRuntimeType final : public bg::TimeSeriesRuntimeType {
+  public:
+    explicit UnsupportedCopyRuntimeType(const bg::TimeSeriesType &type) : TimeSeriesRuntimeType{type} {}
+
+    void construct_initial_value(void *) const noexcept override {}
+    void destroy_value(void *, bg::allocator &) const noexcept override {}
+};
 
 } // namespace provider
 
@@ -419,6 +439,37 @@ class Out<provider::Series<Item, Properties...>, provider::view>
 };
 
 } // namespace bg
+
+TEST_CASE("generic output copy uses the provider runtime for its output layout",
+          "[feature:node-api][feature:test-graph][series:generic][declaration:runtime][transition:update]") {
+    using Series = provider::Series<bg::i64>;
+    provider::copied_series_count = 0;
+
+    const auto provide = bg::node([](bg::In<bg::TS<bg::i64>> input,
+                                     bg::Out<Series, provider::view> output) { output.set(*input); });
+    const auto copy = bg::node([](bg::In<bg::TS_T> input, bg::Out<bg::TS_T> output) { output.copy(input); });
+    const auto consume = bg::node([](bg::In<Series> input, bg::Out<bg::TS<bg::i64>> output) {
+        output.set(input.value());
+    });
+    const auto graph = [&](bg::wp<bg::TS<bg::i64>> input) { return consume(copy(provide(input))); };
+
+    CHECK(bg::testing::test_graph(graph, std::array<bg::i64, 2>{41, 82}).equals<bg::i64>({41, 82}));
+    CHECK(provider::copied_series_count == 2);
+}
+
+TEST_CASE("a provider runtime without a copy implementation rejects copying",
+          "[feature:node-api][series:value][declaration:runtime][transition:update]") {
+    using Series = provider::Series<bg::i64>;
+    const auto &input_runtime = bg::cpp_time_series_runtime_type<bg::TS<bg::i64>>();
+    const auto runtime = provider::UnsupportedCopyRuntimeType{Series::type()};
+    auto input_state = bg::TimeSeriesState{};
+    input_state.publish(bg::MIN_DT + std::chrono::microseconds{1});
+    auto input_value = bg::i64{41};
+    const auto input = bg::TimeSeriesInputData{input_runtime, input_state, &input_value};
+    auto output = bg::OutputState{runtime};
+
+    CHECK_THROWS_AS(runtime.copy(input, output), std::logic_error);
+}
 
 struct RuntimeProviderViewDefinition {
     using output_time_series_type = provider::Series<bg::i64>;

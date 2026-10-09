@@ -287,6 +287,8 @@ class TimeSeriesDictionaryRuntimeType : public TimeSeriesRuntimeType {
     }
 
     void invalidate_output(const OutputState &) const override {}
+    void copy_tick(const TimeSeriesInputData &input, OutputState &output) const override;
+    void copy(const TimeSeriesInputData &input, OutputState &output) const override;
 
     void for_each_modified_item(const TimeSeriesState &last_updated, const void *value, EvaluationTime evaluation_time,
                                 void *context, ModifiedItemFunction function) const override {

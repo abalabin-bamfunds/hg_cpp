@@ -18,6 +18,7 @@ class TimeSeriesReferenceRuntimeType : public TimeSeriesRuntimeType {
     }
 
     void invalidate_output(const OutputState &output) const override;
+    void copy(const TimeSeriesInputData &input, OutputState &output) const override;
 
     Reference reference(const void *value) const override { return *static_cast<const Reference *>(value); }
 

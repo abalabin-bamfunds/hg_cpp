@@ -1,5 +1,7 @@
 #include <bg/time_series/tsl/tsl_runtime_type.hpp>
 #include <bg/time_series/tsl/tsl_free_runtime_type.hpp>
+#include <bg/time_series/tsl/tsl_input.hpp>
+#include <bg/time_series/tsl/tsl_output.hpp>
 
 #include <memory>
 #include <mutex>
@@ -7,6 +9,33 @@
 #include <vector>
 
 namespace bg::details {
+
+void FixedTimeSeriesListRuntimeType::copy_tick(const TimeSeriesInputData &input,
+                                              OutputState &output) const {
+    if (input.valid()) {
+        const auto *source_type = type_cast<TimeSeriesListType>(&input.runtime_type().type());
+        if (source_type == nullptr || source_type->item_count() != item_count(output.data())) {
+            throw std::invalid_argument{"time series list copy requires a matching item count"};
+        }
+    }
+
+    auto source = In<TSL<TS_T>>{input};
+    auto target = output_factory::make<Out<TSL<TS_T>>>(output);
+    target.copy_tick(source);
+}
+
+void FixedTimeSeriesListRuntimeType::copy(const TimeSeriesInputData &input, OutputState &output) const {
+    if (input.valid()) {
+        const auto *source_type = type_cast<TimeSeriesListType>(&input.runtime_type().type());
+        if (source_type == nullptr || source_type->item_count() != item_count(output.data())) {
+            throw std::invalid_argument{"time series list copy requires a matching item count"};
+        }
+    }
+
+    auto source = In<TSL<TS_T>>{input};
+    auto target = output_factory::make<Out<TSL<TS_T>>>(output);
+    target.copy(source);
+}
 
 Node free_list_node(const free_fixed_time_series_list_storage &storage) noexcept {
     return Node::from_output(*storage.node, const_cast<free_fixed_time_series_list_storage *>(&storage));

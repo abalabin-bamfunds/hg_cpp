@@ -5,8 +5,10 @@
 #include <bg/time_series/output_binding.hpp>
 #include <bg/time_series/details/output_state.hpp>
 #include <bg/time_series/time_series_output.hpp>
+#include <bg/time_series/tsb/tsb_input.hpp>
 #include <bg/time_series/tsb/tsb_runtime_type.hpp>
 #include <bg/time_series/tsb/tsb_type.hpp>
+#include <bg/time_series/schema_variable.hpp>
 #include <bg/type/time_series_bundle_type.hpp>
 
 namespace bg {
@@ -61,6 +63,18 @@ class Out<TSB<Schema, Properties...>> {
     const fields_type &fields() const noexcept { return fields_; }
     void invalidate() const { state_->invalidate(); }
 
+    template <template <template <typename, auto...> typename> typename InputSchema,
+              auto... InputTimeSeriesProperties, auto... InputProperties>
+    void copy_tick(const In<TSB<InputSchema, InputTimeSeriesProperties...>, InputProperties...> &input) const {
+        state_->runtime_type().copy_tick(input.input_data(), state_.get());
+    }
+
+    template <template <template <typename, auto...> typename> typename InputSchema,
+              auto... InputTimeSeriesProperties, auto... InputProperties>
+    void copy(const In<TSB<InputSchema, InputTimeSeriesProperties...>, InputProperties...> &input) const {
+        state_->runtime_type().copy(input.input_data(), state_.get());
+    }
+
     template <typename... Functions> decltype(auto) visit(Functions &&...functions) const {
         auto output = details::output_factory::make<Out<TS_T>>(state_.get());
         return output.visit(std::forward<Functions>(functions)...);
@@ -94,6 +108,40 @@ class Out<TSB<Schema, Properties...>> {
     }
 
     void invalidate() const { state_->invalidate(); }
+
+    template <template <template <typename, auto...> typename> typename InputSchema,
+              auto... InputTimeSeriesProperties, auto... InputProperties>
+        requires details::bundle_schema_variable_declaration<InputSchema<details::bundle_schema_field>>
+    void copy_tick(const In<TSB<InputSchema, InputTimeSeriesProperties...>, InputProperties...> &input) const {
+        if (input.last_updated() != state_->evaluation_time() ||
+            (!input.modified() && !input.became_invalid())) {
+            return;
+        }
+        if (!input.valid()) {
+            invalidate();
+            return;
+        }
+
+        input.for_each_updated([&](item_id_t id) {
+            if (id < size()) {
+                (*this)[id].copy_tick(input[id]);
+            }
+        });
+    }
+
+    template <template <template <typename, auto...> typename> typename InputSchema,
+              auto... InputTimeSeriesProperties, auto... InputProperties>
+        requires details::bundle_schema_variable_declaration<InputSchema<details::bundle_schema_field>>
+    void copy(const In<TSB<InputSchema, InputTimeSeriesProperties...>, InputProperties...> &input) const {
+        if (!input.valid()) {
+            invalidate();
+            return;
+        }
+
+        for (auto index = std::size_t{}; index < size(); ++index) {
+            (*this)[index].copy(input[index]);
+        }
+    }
     const Out *operator->() const noexcept { return this; }
 
     template <typename... Functions> decltype(auto) visit(Functions &&...functions) const {

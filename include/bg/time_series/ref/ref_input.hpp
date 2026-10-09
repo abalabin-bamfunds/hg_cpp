@@ -97,6 +97,7 @@ class In<REF<Target, TimeSeriesProperties...>, Properties...>
     bool became_invalid() const noexcept { return data_.became_invalid(); }
     bool modified() const noexcept { return data_.modified(); }
     EvaluationTime last_updated() const noexcept { return data_.last_updated(); }
+    const TimeSeriesInputData &input_data() const noexcept { return data_; }
     Reference value() const noexcept { return data_.runtime_type().reference(data_.data()); }
     const TimeSeriesRuntimeType &runtime_type() const noexcept { return data_.runtime_type(); }
     const void *data() const noexcept { return data_.data(); }

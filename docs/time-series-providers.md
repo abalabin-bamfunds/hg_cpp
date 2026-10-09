@@ -43,6 +43,14 @@ runtime describes storage, construction, destruction, invalidation, and any
 contained time series. Family-specific access and mutation operations belong
 to the provider's runtime interface.
 
+Generic output copying calls the output runtime type's `copy_tick()` or
+`copy()` with the input and output bindings. A provider implements these
+operations to support [tick and value copying](node-api.md#output-parameters).
+The input can use a different runtime representation. Copy through its input
+interface and publish through the output binding. The default `copy_tick()`
+calls `copy()` for a current-cycle change. Collection providers override it to
+copy only changed items. The default `copy()` reports that copying is unsupported.
+
 `time_series_runtime_traits<Declaration>::get(resolved_type)` supplies the
 canonical C++ runtime through `cpp_time_series_runtime_type<Declaration>()`.
 It must use the supplied resolved type, including inherited guarantees.
@@ -107,6 +115,10 @@ pointer. `InputProperties<Properties...>` supplies the declaration's input
 metadata. `InputActivityControl` implements activity changes for inputs that
 declare dynamic activity. Include `<bg/node/input_properties.hpp>` for these
 helpers.
+
+`input_data()` exposes the borrowed input binding to engine and extension
+adapters, including generic output copying. It is valid for the input view's
+invocation.
 
 An output accepts a move-only `TimeSeriesOutputBinding`. The binding owns or
 borrows an `OutputState` and releases owned invocation storage when destroyed.

@@ -37,6 +37,7 @@ class In<TS<Variable, TimeSeriesProperties...>, Properties...>
     bool became_invalid() const noexcept { return data_.became_invalid(); }
     bool modified() const noexcept { return data_.modified(); }
     EvaluationTime last_updated() const noexcept { return data_.last_updated(); }
+    const TimeSeriesInputData &input_data() const noexcept { return data_; }
     Scalar<Variable> value_view() const {
         return Scalar<Variable>::from(
             static_cast<const TimeSeriesValueRuntimeType &>(data_.runtime_type()).scalar_runtime_type(), data_.data());
@@ -98,6 +99,7 @@ class In<TS<T, TimeSeriesProperties...>, Properties...>
     bool became_invalid() const noexcept { return data_.became_invalid(); }
     bool modified() const noexcept { return data_.modified(); }
     EvaluationTime last_updated() const noexcept { return data_.last_updated(); }
+    const TimeSeriesInputData &input_data() const noexcept { return data_; }
 
     typename scalar_storage_traits<T>::value_type value() const
         requires(!scalar_declaration_traits<T>::is_collection && !details::hierarchical_scalar_declaration<T>)

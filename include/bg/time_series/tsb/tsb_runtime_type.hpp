@@ -104,6 +104,8 @@ class TimeSeriesBundleRuntimeTypeBase : public TimeSeriesRuntimeType {
     }
 
     void invalidate_output(const OutputState &output) const final { invalidate_output_items(output); }
+    void copy_tick(const TimeSeriesInputData &input, OutputState &output) const final;
+    void copy(const TimeSeriesInputData &input, OutputState &output) const final;
 
     [[nodiscard]] bool mark_item_modified(void *value, item_id_t id, EvaluationTime evaluation_time,
                                           const TimeSeriesState &, allocator &memory) const noexcept final {

@@ -8,6 +8,7 @@
 #include <bg/scalar/scalar.hpp>
 #include <bg/time_series/details/output_state.hpp>
 #include <bg/time_series/time_series_output.hpp>
+#include <bg/time_series/tss/tss_input.hpp>
 #include <bg/time_series/tss/tss_runtime_type.hpp>
 #include <bg/time_series/tss/tss_storage.hpp>
 #include <bg/time_series/tss/tss_type.hpp>
@@ -35,6 +36,7 @@ template <typename K, auto... Properties> class Out<TSS<K, Properties...>> {
     bool valid() const noexcept { return state_->valid(); }
     EvaluationTime last_updated() const noexcept { return state_->last_updated(); }
     const TimeSeriesRuntimeType &runtime_type() const noexcept { return state_->runtime_type(); }
+    void invalidate() const { state_->invalidate(); }
     bool insert(const Scalar<K> &item) const { return insert(details::scalar_data(item)); }
     bool erase(const Scalar<K> &item) const { return erase(details::scalar_data(item)); }
 
@@ -75,6 +77,51 @@ template <typename K, auto... Properties> class Out<TSS<K, Properties...>> {
         if (should_publish) {
             state_->publish();
         }
+    }
+
+    template <auto... InputTimeSeriesProperties, auto... InputProperties>
+    void copy_tick(const In<TSS<K, InputTimeSeriesProperties...>, InputProperties...> &input) const {
+        if (input.last_updated() != state_->evaluation_time() ||
+            (!input.modified() && !input.became_invalid())) {
+            return;
+        }
+        if (!input.valid()) {
+            invalidate();
+            return;
+        }
+        if (!valid()) {
+            clear();
+        }
+
+        input.for_each_added([&](const auto &item) { insert(item); });
+        input.for_each_removed([&](const auto &item) { erase(item); });
+    }
+
+    template <auto... InputTimeSeriesProperties, auto... InputProperties>
+    void copy(const In<TSS<K, InputTimeSeriesProperties...>, InputProperties...> &input) const {
+        if (!input.valid()) {
+            invalidate();
+            return;
+        }
+
+        const auto &runtime = static_cast<const details::TimeSeriesSetRuntimeType &>(state_->runtime_type());
+        if (!valid()) {
+            clear();
+        }
+
+        auto id = runtime.set_next_item_id(state_->mutable_last_updated(), state_->data(),
+                                           details::TimeSeriesSetRuntimeType::Range::current, 0);
+        while (id != util::occupancy_index::npos) {
+            const auto next_id = runtime.set_next_item_id(state_->mutable_last_updated(), state_->data(),
+                                                         details::TimeSeriesSetRuntimeType::Range::current, id + 1);
+            const auto item = Scalar<K>::from(key_runtime_type(), runtime.set_key(state_->data(), id));
+            if (!input.contains(item)) {
+                erase(item);
+            }
+            id = next_id;
+        }
+
+        input.for_each([&](const auto &item) { insert(item); });
     }
 
     const Out *operator->() const noexcept { return this; }
