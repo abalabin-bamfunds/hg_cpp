@@ -79,6 +79,8 @@ Use clear English and precise terminology.
 - Use a technical term only when it is more precise than plain language.
 - Do not restate the user's input unless you need clarification or identify a
   problem in the reasoning.
+- When explaining thngs use technical langauge and code, avoid narrative. "X calls Y",
+  "Z sets W.field", "K owns L" are useful patterns
 
 Follow [docs/terminology.md](docs/terminology.md). Do not add, change, or remove a
 dictionary entry without explicit approval from the project owner. Propose a new
