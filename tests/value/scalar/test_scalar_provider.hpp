@@ -33,6 +33,7 @@ struct value_view {
     const int *number{};
 
     int get() const noexcept { return number == nullptr ? 0 : *number; }
+    operator value() const noexcept { return value{get()}; }
 };
 
 inline value::operator value_view() const noexcept {

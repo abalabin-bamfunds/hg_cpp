@@ -75,9 +75,16 @@ consteval auto aggregate_parameter_runtime_type_uses(std::index_sequence<Index..
                 if constexpr (promoted_input_runtime_type_field<Field>::value) {
                     result[parameter] = AggregateRuntimeTypeUse::time_series;
                 }
+                if constexpr (scalar_input_runtime_type_field<Field>::value) {
+                    if (result[parameter] == AggregateRuntimeTypeUse::time_series) {
+                        result[parameter] = AggregateRuntimeTypeUse::either;
+                    } else {
+                        result[parameter] = AggregateRuntimeTypeUse::scalar;
+                    }
+                }
                 ++parameter;
             } else if constexpr (scalar_field<Field>::value) {
-                if constexpr (generic_scalar_input_field<Field>::value) {
+                if constexpr (scalar_input_runtime_type_field<Field>::value) {
                     result[parameter] = AggregateRuntimeTypeUse::scalar;
                 }
                 ++parameter;

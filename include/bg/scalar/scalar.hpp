@@ -111,7 +111,7 @@ template <typename T> class Scalar {
     template <typename Stored>
         requires(details::concrete_scalar_storage_matches<T, Stored>())
     [[nodiscard]] static Scalar from(const Stored &value) noexcept {
-        return Scalar{details::ScalarData{cpp_scalar_runtime_type<T>(), std::addressof(value)}};
+        return Scalar{cpp_scalar_runtime_type<T>().borrow(std::addressof(value))};
     }
 
     template <typename Stored>
@@ -121,7 +121,7 @@ template <typename T> class Scalar {
     template <typename Value>
         requires erased
     [[nodiscard]] static Scalar from(const details::scalar_stored_t<Value> &value) noexcept {
-        return Scalar{details::ScalarData{cpp_scalar_runtime_type<Value>(), std::addressof(value)}};
+        return Scalar{cpp_scalar_runtime_type<Value>().borrow(std::addressof(value))};
     }
 
     template <typename Value>

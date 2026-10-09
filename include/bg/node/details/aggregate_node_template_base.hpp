@@ -19,6 +19,7 @@ enum class AggregateRuntimeTypeUse : unsigned char {
     none = 0,
     time_series = 1,
     scalar = 2,
+    either = 3,
 };
 
 struct AggregateNodeDescriptor {

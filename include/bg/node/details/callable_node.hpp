@@ -127,14 +127,13 @@ auto make_callable_node_argument(Invocation invocation) {
             }
         }
 
-        const auto *data = invocation.scalar_data(Parameter);
+        const auto scalar = invocation.scalar(Parameter, invocation.scalar_input_index(Parameter));
         if constexpr (promoted_field<Field>::optional) {
-            if (data == nullptr) {
+            if (!scalar.has_value()) {
                 return Field{};
             }
         }
-        using Traits = scalar_storage_traits<ParameterScalar>;
-        auto value = scalar_api_value<Value>(Traits::read(*static_cast<const typename Traits::stored_type *>(data)));
+        auto value = scalar_api_value<Value>(scalar_cast<ParameterScalar>(scalar.value()).value());
         if constexpr (promoted_field<Field>::optional) {
             return Field{std::move(value)};
         } else {
