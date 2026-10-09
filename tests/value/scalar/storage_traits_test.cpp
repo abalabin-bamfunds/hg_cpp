@@ -3,9 +3,11 @@
 #include <bg/scalar/value.hpp>
 #include <bg/testing/test_graph.hpp>
 #include <bg/time_series/ts/ts_input.hpp>
+#include <bg/time_series/ts/ts_output.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <chrono>
 #include <concepts>
 #include <memory>
 #include <utility>
@@ -132,6 +134,81 @@ TEST_CASE("a scalar provider read type passes through a time series output",
     REQUIRE(result[1]);
     CHECK(result[0]->value().get() == 2);
     CHECK(result[1]->value().get() == 5);
+}
+
+TEST_CASE("a typed time-series output reads its provider value",
+          "[feature:node-api][feature:scalar-api][feature:scalar-storage][series:value][storage:fixed]"
+          "[declaration:concrete]") {
+    using Series = bg::TS<Value>;
+
+    const auto update_time = bg::MIN_DT + std::chrono::microseconds{1};
+    auto last_updated = bg::TimeSeriesState{update_time};
+    auto storage = Storage{42};
+    auto state = bg::details::OutputState{bg::cpp_time_series_runtime_type<Series>()};
+    state.bind(last_updated, &storage, update_time + std::chrono::microseconds{1});
+    const auto output = bg::Out<Series>{bg::TimeSeriesOutputBinding{state}};
+
+    const auto value = output.value();
+
+    CHECK(value.get() == 42);
+    CHECK(value.number == std::addressof(storage.number));
+}
+
+TEST_CASE("typed time-series leaf reads use provider hooks for alternative runtimes",
+          "[feature:node-api][feature:scalar-api][feature:scalar-storage][series:value][storage:fixed]"
+          "[declaration:runtime]") {
+    using Series = bg::TS<Value>;
+
+    const auto &scalar_runtime = test_scalar_provider::preserving_runtime_type();
+    const auto &runtime = bg::time_series_value_runtime_type(Series::type(), scalar_runtime);
+    const auto update_time = bg::MIN_DT + std::chrono::microseconds{1};
+    auto input_state = bg::TimeSeriesState{update_time};
+    auto input_storage = Storage{42};
+    const auto input = bg::In<Series>{bg::TimeSeriesInputData{runtime, input_state, &input_storage}};
+
+    auto reads_before = test_scalar_provider::alternative_runtime_read_count();
+    const auto input_value = input.value();
+    CHECK(input_value.get() == 42);
+    CHECK(input_value.number == std::addressof(input_storage.number));
+    CHECK(test_scalar_provider::alternative_runtime_read_count() == reads_before + 1);
+
+    auto output_state = bg::details::OutputState{runtime};
+    auto output_time = bg::TimeSeriesState{update_time};
+    auto output_storage = Storage{43};
+    output_state.bind(output_time, &output_storage, update_time + std::chrono::microseconds{1});
+    const auto output = bg::Out<Series>{bg::TimeSeriesOutputBinding{output_state}};
+
+    reads_before = test_scalar_provider::alternative_runtime_read_count();
+    const auto output_value = output.value();
+    CHECK(output_value.get() == 43);
+    CHECK(output_value.number == std::addressof(output_storage.number));
+    CHECK(test_scalar_provider::alternative_runtime_read_count() == reads_before + 1);
+}
+
+TEST_CASE("a deduplicated time-series output reads through provider hooks before suppressing an update",
+          "[feature:node-api][feature:scalar-api][feature:scalar-storage][series:value][storage:fixed]"
+          "[declaration:runtime][transition:update][guarantee:deduplicated]") {
+    using DeduplicatedSeries = bg::TS<Value, bg::TimeSeriesGuarantee::deduplicated>;
+
+    const auto &scalar_runtime = test_scalar_provider::preserving_runtime_type();
+    const auto &deduplicated_type = DeduplicatedSeries::type();
+    const auto &deduplicated_runtime =
+        bg::time_series_value_runtime_type(deduplicated_type, scalar_runtime);
+    const auto update_time = bg::MIN_DT + std::chrono::microseconds{1};
+    auto deduplicated_output_state = bg::details::OutputState{deduplicated_runtime};
+    auto deduplicated_output_time = bg::TimeSeriesState{update_time};
+    auto deduplicated_output_storage = Storage{42};
+    const auto requested_storage = Storage{42};
+    deduplicated_output_state.bind(deduplicated_output_time, &deduplicated_output_storage,
+                                   update_time + std::chrono::microseconds{1});
+    const auto deduplicated_output =
+        bg::Out<DeduplicatedSeries>{bg::TimeSeriesOutputBinding{deduplicated_output_state}};
+
+    const auto reads_before = test_scalar_provider::alternative_runtime_read_count();
+    deduplicated_output.set(ReadValue{std::addressof(requested_storage.number)});
+
+    CHECK(deduplicated_output_time.time() == update_time);
+    CHECK(test_scalar_provider::alternative_runtime_read_count() == reads_before + 1);
 }
 
 TEST_CASE("an alternative runtime writes a provider read value",

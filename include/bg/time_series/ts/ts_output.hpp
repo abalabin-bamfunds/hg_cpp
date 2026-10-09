@@ -119,7 +119,9 @@ class Out<TS<T, Properties...>> {
     value_type value() const
         requires(!scalar_declaration_traits<T>::is_collection && !details::hierarchical_scalar_declaration<T>)
     {
-        return Traits::read(*static_cast<const storage_type *>(state_->data()));
+        const auto &scalar_runtime_type =
+            static_cast<const TimeSeriesValueRuntimeType &>(state_->runtime_type()).scalar_runtime_type();
+        return Scalar<T>::from(scalar_runtime_type, state_->data()).value();
     }
 
     Scalar<T> value() const
@@ -139,8 +141,7 @@ class Out<TS<T, Properties...>> {
     void set(Value &&value) const {
         auto requested = std::remove_cvref_t<value_type>{std::forward<Value>(value)};
         if constexpr (Traits::supports_equality) {
-            if (state_->suppresses_equal_updates() && valid() &&
-                Traits::equals(Traits::read(*static_cast<const storage_type *>(state_->data())), requested)) {
+            if (state_->suppresses_equal_updates() && valid() && Traits::equals(this->value(), requested)) {
                 return;
             }
         }

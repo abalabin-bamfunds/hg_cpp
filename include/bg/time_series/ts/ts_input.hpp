@@ -103,7 +103,7 @@ class In<TS<T, TimeSeriesProperties...>, Properties...>
     typename scalar_storage_traits<T>::value_type value() const
         requires(!scalar_declaration_traits<T>::is_collection && !details::hierarchical_scalar_declaration<T>)
     {
-        return Traits::read(*static_cast<const Stored *>(data_.data()));
+        return value_view().value();
     }
 
     Scalar<T> value() const
