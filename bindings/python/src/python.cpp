@@ -1,6 +1,6 @@
 #include <bg/graph/details/variadic_wiring_operations.hpp>
 #include <bg/graph/details/variadic_wiring_record.hpp>
-#include <bg/library.hpp>
+#include <bg/library/operators.hpp>
 #include <bg/node/runtime_signature_node_template.hpp>
 #include <bg/operators.hpp>
 #include <bg/python/graph_definition.hpp>

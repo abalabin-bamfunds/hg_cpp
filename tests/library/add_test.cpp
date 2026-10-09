@@ -244,7 +244,7 @@ TEST_CASE("addition retargets an ordinary reference between ordinary targets",
         In<TS<bool>> select_right;
         In<REF<TS<double>>> lhs;
         In<REF<TS<double>>> rhs;
-        Out<REF<TS<double>>> output;
+        Out<REF<TS<double>, TimeSeriesGuarantee::ordinary>> output;
 
         void evaluate() const { output.copy(*select_right ? rhs : lhs); }
     };
@@ -252,6 +252,7 @@ TEST_CASE("addition retargets an ordinary reference between ordinary targets",
     const auto select = node<changing_reference>();
     const auto graph = [&](wp<TS<double>> lhs, wp<TS<double>> rhs, wp<TS<bool>> select_right) {
         const auto reference = select(select_right, lhs, rhs);
+        CHECK(&reference.type() == &REF<TS<double>, TimeSeriesGuarantee::ordinary>::type());
         return operators::add(reference, 1.0);
     };
 

@@ -6,7 +6,7 @@
 #include <bg/graph/details/variadic_wiring_record.hpp>
 #include <bg/graph/operator.hpp>
 #include <bg/graph/wiring_context.hpp>
-#include <bg/library.hpp>
+#include <bg/library/operators.hpp>
 #include <bg/operators.hpp>
 #include <bg/python/scalar_conversion.hpp>
 #include <bg/python/wiring_point.hpp>
