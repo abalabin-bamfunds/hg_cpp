@@ -10,8 +10,10 @@
 
 TEST_CASE("an erased scalar value copies a borrowed value",
           "[value][scalar][erased][feature:scalar-api][scalar:generic]") {
-    auto source = std::pmr::string{"value"};
-    const auto view = bg::Scalar<bg::SCALAR>::from<bg::string>(source);
+    auto source = std::string{"value"};
+    auto source_owner = bg::ScalarValue<bg::string>{source};
+    const auto source_view = source_owner.view();
+    const auto view = bg::Scalar<bg::SCALAR>::from(source_view);
     auto value = bg::ScalarValue<>{view};
 
     source.assign("changed");
@@ -98,9 +100,10 @@ TEST_CASE("scalar variable equality rejects a different semantic type",
     using VALUE = bg::ScalarVariable<"VALUE", bg::EqualityComparable>;
 
     const auto integer_value = std::int64_t{42};
-    const auto string_value = std::pmr::string{"42"};
+    const auto string_value = bg::ScalarValue<bg::string>{"42"};
     const auto integer = bg::Scalar<VALUE>::from<std::int64_t>(integer_value);
-    const auto string = bg::Scalar<VALUE>::from<bg::string>(string_value);
+    const auto string_view = string_value.view();
+    const auto string = bg::Scalar<VALUE>::from(string_view);
 
     CHECK_FALSE(integer == string);
     CHECK_FALSE(string == integer);

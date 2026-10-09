@@ -1,9 +1,13 @@
 #include <bg/node.hpp>
 #include <bg/operators.hpp>
+#include <bg/scalar/details/string_storage.hpp>
+#include <bg/scalar/details/value_access.hpp>
+#include <bg/scalar/value.hpp>
 #include <bg/testing/test_graph.hpp>
 #include <bg/time_series/cpp_runtime_type.hpp>
 #include <bg/time_series/details/input_data.hpp>
 #include <bg/time_series/details/output_state.hpp>
+#include <bg/time_series/output_binding.hpp>
 #include <bg/time_series/tsb/tsb.hpp>
 #include <bg/time_series/tsl/tsl.hpp>
 
@@ -13,6 +17,7 @@
 #include <chrono>
 #include <optional>
 #include <stdexcept>
+#include <string_view>
 
 using namespace bg;
 
@@ -106,6 +111,35 @@ TEST_CASE("copy propagates value invalidation and revalidation",
     const auto actual = testing::test_graph(graph, std::array{1, 0, 2});
 
     CHECK(actual.equals({1, std::nullopt, 2}));
+}
+
+TEST_CASE("copy of a string time series retains its storage",
+          "[feature:node-api][series:value][scalar:string][transition:update]") {
+    const auto time = MIN_DT + std::chrono::microseconds{1};
+    const auto &runtime_type = cpp_time_series_runtime_type<TS<string>>();
+    auto output_last_updated = TimeSeriesState{};
+    auto *output_value = static_cast<details::StringStorage *>(nullptr);
+    auto output_state = OutputState{runtime_type};
+    output_state.bind(output_last_updated, &output_value, time);
+    auto output = Out<TS<string>>{TimeSeriesOutputBinding{output_state}};
+    auto *source_storage = static_cast<details::StringStorage *>(nullptr);
+
+    {
+        auto source = ScalarValue<string>{"shared string"};
+        auto source_view = source.view();
+        source_storage = details::StringStorage::from(details::scalar_data(source_view));
+        const auto input_last_updated = TimeSeriesState{time};
+        const auto input = In<TS<string>>{TimeSeriesInputData{
+            runtime_type, input_last_updated, source_view.data(), true}};
+
+        output.copy(input);
+    }
+
+    CHECK(output_value == source_storage);
+    CHECK(output.value() == "shared string");
+
+    auto memory = allocator{};
+    cpp_scalar_runtime_type<string>().destroy(&output_value, memory);
 }
 
 TEST_CASE("copy copies every field of a time series bundle",

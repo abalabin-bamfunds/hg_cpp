@@ -184,7 +184,8 @@ class TimeSeriesTickWrite {
         if (const auto *builtin = type_cast<BuiltinScalarType>(&value.type())) {
             builtin->visit_builtin_type([&]<typename Builtin>() {
                 using Stored = details::scalar_stored_t<Builtin>;
-                if constexpr (std::is_trivially_copyable_v<Stored>) {
+                if constexpr (std::is_trivially_copyable_v<Stored> &&
+                              !scalar_storage_traits<Builtin>::uses_shared_handle) {
                     const auto canonical = scalar_cast<Builtin>(value).value();
                     write_bytes(*writer_, canonical);
                 } else {
@@ -376,7 +377,8 @@ class TimeSeriesTickReplay {
         if (const auto *builtin = type_cast<BuiltinScalarType>(&type)) {
             builtin->visit_builtin_type([&]<typename Builtin>() {
                 using Stored = details::scalar_stored_t<Builtin>;
-                if constexpr (std::is_trivially_copyable_v<Stored>) {
+                if constexpr (std::is_trivially_copyable_v<Stored> &&
+                              !scalar_storage_traits<Builtin>::uses_shared_handle) {
                     const auto stored = reader_->template read_raw<Stored>();
                     const auto value = Scalar<Builtin>::from(stored);
                     std::invoke(function, Scalar<>::from(value));

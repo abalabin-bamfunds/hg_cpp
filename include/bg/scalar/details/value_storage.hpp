@@ -23,6 +23,14 @@ struct ScalarValueAllocator {
     allocator memory;
 };
 
+template <typename T> inline constexpr bool scalar_uses_shared_handle = [] {
+    if constexpr (requires { scalar_storage_traits<T>::uses_shared_handle; }) {
+        return scalar_storage_traits<T>::uses_shared_handle;
+    } else {
+        return false;
+    }
+}();
+
 struct OwnedScalarData {
     const ScalarRuntimeType *runtime_type;
     std::uintptr_t data;
@@ -90,12 +98,30 @@ template <typename Construct>
     return {&runtime_type, reinterpret_cast<std::uintptr_t>(data), mode};
 }
 
+inline allocator scalar_value_allocator(allocator *requested_memory) {
+    if (requested_memory != nullptr) {
+        return *requested_memory;
+    }
+    if (const auto *owner = current_scalar_allocation_owner()) {
+        return owner->memory;
+    }
+    return allocator{};
+}
+
 void release_scalar_value(const ScalarData &value) noexcept;
 
 template <typename T, typename Source>
 [[nodiscard]] OwnedScalarData make_scalar_value(Source &&source, allocator *memory) {
     using Traits = scalar_storage_traits<T>;
     using Stored = typename Traits::stored_type;
+
+    if constexpr (scalar_uses_shared_handle<T>) {
+        auto storage = Stored{};
+        auto value_memory = scalar_value_allocator(memory);
+        Traits::construct(std::addressof(storage), std::forward<Source>(source), value_memory);
+        return {&cpp_scalar_runtime_type<T>(), reinterpret_cast<std::uintptr_t>(storage),
+                ScalarDataMode::shared_value};
+    }
 
     if constexpr (inline_scalar_value<T> && std::same_as<std::remove_cvref_t<Source>, typename Traits::value_type>) {
         auto data = std::uintptr_t{};
@@ -111,7 +137,21 @@ template <typename T, typename Source>
 
 template <typename T>
 [[nodiscard]] OwnedScalarData copy_scalar_value(const details::ScalarData &source, allocator *memory) {
-    if constexpr (hierarchical_scalar_declaration<T>) {
+    if constexpr (scalar_uses_shared_handle<T>) {
+        const auto &runtime_type = cpp_scalar_runtime_type<T>();
+        if (!runtime_type.accepts_input(source.runtime_type())) {
+            throw std::invalid_argument{"incompatible scalar runtime representations"};
+        }
+
+        auto shared_data = std::uintptr_t{};
+        if (const auto *shared_type = source.runtime_type().retain_shared(source, shared_data);
+            shared_type != nullptr) {
+            return {shared_type, shared_data, ScalarDataMode::shared_value};
+        }
+
+        auto value = scalar_data_value<T>(source);
+        return make_scalar_value<T>(value, memory);
+    } else if constexpr (hierarchical_scalar_declaration<T>) {
         if constexpr (scalar_declaration_traits<T>::generic) {
             const auto *hierarchical = type_cast<HierarchicalScalarType>(&source.type());
             if (hierarchical == nullptr || !hierarchical->is_resolved()) {

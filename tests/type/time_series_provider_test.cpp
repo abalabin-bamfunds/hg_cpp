@@ -542,7 +542,7 @@ void write_owned_payload_value(bg::ScalarBufferWriteContext &writer, bg::allocat
     writer.write_bytes(std::as_bytes(std::span{&count, std::size_t{1}}));
     const auto marker = bg::i64{17};
     writer.write_bytes(std::as_bytes(std::span{&marker, std::size_t{1}}));
-    const auto stored = bg::ScalarValue<bg::string>{std::move(value)};
+    const auto stored = bg::ScalarValue<bg::string>{std::move(value), memory};
     auto payload = bg::ScalarValue<>{stored, memory};
     writer.write(std::move(payload));
 }
@@ -560,9 +560,9 @@ void write_two_owned_payloads_then_fail(const bg::In<Series> &, bg::ScalarBuffer
     const auto marker = bg::i64{29};
     writer.write_bytes(std::as_bytes(std::span{&marker, std::size_t{1}}));
     const auto first_value = bg::ScalarValue<bg::string>{
-        std::string{"first provider-owned payload with allocated storage"}};
+        std::string{"first provider-owned payload with allocated storage"}, memory};
     const auto second_value = bg::ScalarValue<bg::string>{
-        std::string{"second provider-owned payload with allocated storage"}};
+        std::string{"second provider-owned payload with allocated storage"}, memory};
     auto first = bg::ScalarValue<>{first_value, memory};
     auto second = bg::ScalarValue<>{second_value, memory};
     writer.write(std::move(first));

@@ -2,6 +2,7 @@
 
 #include <bg/allocator.hpp>
 #include <bg/scalar/builtins.hpp>
+#include <bg/scalar/details/string_storage.hpp>
 #include <bg/scalar/opaque.hpp>
 #include <bg/scalar/string.hpp>
 #include <bg/scalar/struct/declaration.hpp>
@@ -29,6 +30,7 @@ template <typename T> struct scalar_storage_traits {
     static constexpr bool supports_hash = std::same_as<T, byte> || std::same_as<T, date_time_t> ||
                                           std::same_as<T, timedelta_t> || std::same_as<T, symbol> ||
                                           requires(value_type value) { std::hash<value_type>{}(value); };
+    static constexpr bool uses_shared_handle = false;
     static constexpr bool uses_variable_memory = false;
     static constexpr bool requires_finalization = !std::is_trivially_destructible_v<stored_type>;
     static constexpr bool assign_uses_memory_resource = false;
@@ -99,6 +101,7 @@ template <native_struct T> struct scalar_storage_traits<T> {
 
     static constexpr bool supports_equality = true;
     static constexpr bool supports_hash = true;
+    static constexpr bool uses_shared_handle = false;
     static constexpr bool uses_variable_memory = false;
     static constexpr bool requires_finalization = false;
     static constexpr bool assign_uses_memory_resource = false;
@@ -127,28 +130,49 @@ template <native_struct T> struct scalar_storage_traits<T> {
 };
 
 template <> struct scalar_storage_traits<string> {
-    using stored_type = std::pmr::string;
+    using stored_type = details::StringStorage *;
     using value_type = std::string_view;
 
     static constexpr bool supports_equality = true;
     static constexpr bool supports_hash = true;
+    static constexpr bool uses_shared_handle = true;
     static constexpr bool uses_variable_memory = true;
-    static constexpr bool requires_finalization = false;
-    static constexpr bool assign_uses_memory_resource = false;
+    static constexpr bool requires_finalization = true;
+    static constexpr bool assign_uses_memory_resource = true;
 
-    static value_type read(const stored_type &value) noexcept { return value; }
+    static value_type read(const stored_type &value) noexcept {
+        return value == nullptr ? std::string_view{} : value->value();
+    }
 
     static std::size_t hash(value_type value) noexcept { return std::hash<value_type>{}(value); }
 
     static bool equals(value_type left, value_type right) noexcept { return left == right; }
 
     static void construct(stored_type *destination, value_type value, allocator &memory) {
-        std::construct_at(destination, value, &memory.memory_resource());
+        std::construct_at(destination, details::StringStorage::copy(value, memory));
     }
 
-    static void assign(stored_type &destination, value_type value, allocator &) { destination.assign(value); }
+    static void copy_construct(stored_type *destination, const stored_type &source, allocator &) noexcept {
+        if (source != nullptr) {
+            source->retain();
+        }
+        std::construct_at(destination, source);
+    }
 
-    static void destroy(stored_type *value, allocator &) noexcept { std::destroy_at(value); }
+    static void assign(stored_type &destination, value_type value, allocator &memory) {
+        auto *replacement = details::StringStorage::copy(value, memory);
+        auto *previous = std::exchange(destination, replacement);
+        if (previous != nullptr) {
+            previous->release();
+        }
+    }
+
+    static void destroy(stored_type *value, allocator &) noexcept {
+        if (*value != nullptr) {
+            (*value)->release();
+            *value = nullptr;
+        }
+    }
 };
 
 template <typename T> struct scalar_storage_traits<Opaque<T>> {
@@ -158,6 +182,7 @@ template <typename T> struct scalar_storage_traits<Opaque<T>> {
 
     static constexpr bool supports_equality = false;
     static constexpr bool supports_hash = false;
+    static constexpr bool uses_shared_handle = false;
     static constexpr bool uses_variable_memory = false;
     static constexpr bool requires_finalization = !std::is_trivially_destructible_v<stored_type>;
     static constexpr bool assign_uses_memory_resource = false;

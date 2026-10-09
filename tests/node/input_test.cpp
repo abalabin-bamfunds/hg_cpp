@@ -1,5 +1,7 @@
 #include <bg/node/input.hpp>
 #include <bg/scalar/cpp_runtime_type.hpp>
+#include <bg/scalar/details/string_storage.hpp>
+#include <bg/scalar/value.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -84,13 +86,14 @@ TEST_CASE("an input reports whether its visible value was modified",
 TEST_CASE("a typed value input provides member access to its value", "[node_api][feature:node-api]") {
     auto updated = bg::TimeSeriesState{};
     updated.publish(bg::MIN_DT + std::chrono::microseconds{1});
-    const auto value = std::pmr::string{"value"};
-    const auto input = bg::In<bg::TS<bg::string>>{updated, &value};
+    const auto value = bg::ScalarValue<bg::string>{"value"};
+    auto *stored = bg::details::StringStorage::from(bg::details::scalar_data(value.view()));
+    const auto input = bg::In<bg::TS<bg::string>>{updated, &stored};
 
     STATIC_CHECK(HasArrowOperator<decltype(input)>);
     STATIC_CHECK(std::same_as<decltype(*input), std::string_view>);
-    CHECK(*input == value);
-    CHECK(input->size() == value.size());
+    CHECK(*input == "value");
+    CHECK(input->size() == std::string_view{"value"}.size());
     CHECK(input->starts_with("val"));
 }
 

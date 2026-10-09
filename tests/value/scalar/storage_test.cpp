@@ -1,4 +1,5 @@
 #include <bg/scalar/cpp_runtime_type.hpp>
+#include <bg/scalar/scalar.hpp>
 #include <bg/scalar/dict/type.hpp>
 #include <bg/scalar/list/type.hpp>
 #include <bg/scalar/opaque.hpp>
@@ -12,6 +13,7 @@
 #include <cstdint>
 #include <memory_resource>
 #include <string>
+#include <string_view>
 
 namespace {
 
@@ -53,11 +55,13 @@ TEST_CASE("C++ scalar storage copies into graph-owned memory", "[scalar][feature
     auto allocator = bg::allocator{graph_memory};
 
     void *storage = allocator.allocate_bytes(runtime_type.size(), runtime_type.alignment());
-    runtime_type.copy_construct(storage, &source, allocator);
+    const auto source_view = std::string_view{source};
+    runtime_type.construct_from_input(
+        storage, bg::details::ScalarData{runtime_type, std::addressof(source_view), bg::ScalarDataMode::source_view},
+        allocator);
 
-    const auto &copy = *static_cast<const std::pmr::string *>(storage);
-    CHECK(copy == source);
-    CHECK(copy.get_allocator().resource() == &graph_memory);
+    const auto copy = bg::Scalar<bg::string>::from(runtime_type, storage);
+    CHECK(copy.value() == source);
 
     runtime_type.destroy(storage, allocator);
     allocator.deallocate_bytes(storage, runtime_type.size(), runtime_type.alignment());
@@ -72,9 +76,9 @@ TEST_CASE("C++ scalar storage reports its destruction requirements", "[scalar][f
     CHECK_FALSE(float_runtime_type.requires_destruction());
     CHECK(float_runtime_type.supports_byte_copy_initialization());
     CHECK(string_runtime_type.uses_variable_memory());
-    CHECK_FALSE(string_runtime_type.requires_finalization());
+    CHECK(string_runtime_type.requires_finalization());
     CHECK(string_runtime_type.requires_destruction());
-    CHECK_FALSE(string_runtime_type.supports_byte_copy_initialization());
+    CHECK(string_runtime_type.supports_byte_copy_initialization());
 }
 
 TEST_CASE("scalar storage distinguishes variable memory from finalization",
@@ -86,7 +90,7 @@ TEST_CASE("scalar storage distinguishes variable memory from finalization",
     CHECK_FALSE(opaque.uses_variable_memory());
     CHECK(opaque.requires_finalization());
     CHECK(strings.uses_variable_memory());
-    CHECK_FALSE(strings.requires_finalization());
+    CHECK(strings.requires_finalization());
     CHECK(opaque_values.requires_finalization());
 
     auto finalization_count = 0;
