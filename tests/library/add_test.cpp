@@ -58,6 +58,18 @@ TEST_CASE("addition does not convert an integer scalar to double",
     CHECK_THROWS_AS(testing::test_graph(direct, std::array{2.0}), WiringError);
 }
 
+TEST_CASE("addition rejects optional inputs",
+          "[feature:operator][feature:validity][validity:optional][series:value][scalar:floating-point]") {
+    const auto direct = [](wp<TS<double>> value) { return operators::add(opt(value), 1.0); };
+    const auto graph = [](wp<TS<double>> value) { return opt(value) + 1.0; };
+    const auto reflected = [](wp<TS<double>> value) { return 1.0 + opt(value); };
+    const auto input = std::array{2.0};
+
+    CHECK_THROWS_AS(testing::test_graph(direct, input), WiringError);
+    CHECK_THROWS_AS(testing::test_graph(graph, input), WiringError);
+    CHECK_THROWS_AS(testing::test_graph(reflected, input), WiringError);
+}
+
 TEST_CASE("addition preserves the shared guarantee for direct time-series inputs",
           "[feature:operator][feature:type-system][series:value][guarantee:ordinary]"
           "[guarantee:deduplicated][guarantee:final][guarantee:const]") {
