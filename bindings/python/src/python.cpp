@@ -545,6 +545,9 @@ void bind_core(nb::module_ &module) {
         return scalar_conversions().add_python_type(python_type, symbol_type());
     });
 
+    details::bind_operators(module);
+    const auto add_operator = module.attr("operators").attr("add");
+
     nb::class_<TypeDescriptor>(module, "_Type")
         .def_prop_ro("is_time_series", [](const TypeDescriptor &value) { return value.type().is_time_series(); })
         .def_prop_ro("accepts_absent_scalar", &TypeDescriptor::accepts_absent_scalar);
@@ -557,7 +560,18 @@ void bind_core(nb::module_ &module) {
                          return result;
                      })
         .def("_as_optional", &PythonWiringPoint::as_optional)
-        .def("__getitem__", &details::getitem);
+        .def("__getitem__", &details::getitem)
+        .def(
+            "__add__",
+            [add_operator](const PythonWiringPoint &self, nb::handle other) {
+                return add_operator(nb::cast(self), other);
+            },
+            nb::is_operator())
+        .def("__radd__",
+             [add_operator](const PythonWiringPoint &self, nb::handle other) {
+                 return add_operator(other, nb::cast(self));
+             },
+             nb::is_operator());
     nb::class_<InputView>(module, "InputView")
         .def_prop_ro("valid", &InputView::valid)
         .def_prop_ro("modified", &InputView::modified)
@@ -639,7 +653,6 @@ void bind_core(nb::module_ &module) {
     nb::class_<PythonGraphDefinition>(module, "_PythonGraphDefinition");
 
     details::bind_higher_order(module);
-    details::bind_operators(module);
 }
 
 } // namespace bg::python

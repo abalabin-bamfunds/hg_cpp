@@ -6,6 +6,7 @@
 #include <bg/graph/details/variadic_wiring_record.hpp>
 #include <bg/graph/operator.hpp>
 #include <bg/graph/wiring_context.hpp>
+#include <bg/library.hpp>
 #include <bg/operators.hpp>
 #include <bg/python/scalar_conversion.hpp>
 #include <bg/python/wiring_point.hpp>
@@ -92,7 +93,9 @@ void bind_operators(nb::module_ &module) {
         .def("__repr__", [](const PythonOperator &operation) { return "operator_(" + operation.name() + ")"; });
 
     auto operators_module = module.def_submodule("operators", "Graph operators");
+    export_operator(operators_module, "add", operators::add);
     export_operator(operators_module, "const_", operators::const_);
+    export_operator(operators_module, "default_", operators::default_);
     export_operator(operators_module, "getitem", operators::getitem);
     export_operator(operators_module, "getattr", operators::getattr);
 }
