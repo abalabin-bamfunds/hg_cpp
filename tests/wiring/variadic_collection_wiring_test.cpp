@@ -6,6 +6,7 @@
 #include <bg/testing/test_graph.hpp>
 #include <bg/testing/test_wiring.hpp>
 #include <bg/time_series/tsb/tsb.hpp>
+#include <bg/time_series/tsl/details/wiring.hpp>
 #include <bg/time_series/tsl/tsl.hpp>
 #include <bg/type/scalar_variable.hpp>
 #include <bg/type/time_series_bundle_type.hpp>
@@ -116,6 +117,16 @@ TEST_CASE("an aggregate variadic TSL materializes as one runtime-sized list",
         testing::test_graph(tested, std::array<std::int64_t, 3>{1, 2, 3}, std::array<std::int64_t, 3>{4, 5, 6});
 
     CHECK(actual.equals({1, 2, 3}));
+}
+
+TEST_CASE("free TSL materialization rejects borrowed input bindings",
+          "[feature:wiring][feature:borrowed-input][series:fixed-tsl][representation:free]") {
+    auto wiring = GraphWiring{};
+    const auto context = WiringContext{wiring};
+    const auto input = wiring.borrowed_input(TS<std::int64_t>::type());
+    const auto list = details::make_free_fixed_time_series_list(std::array{input});
+
+    CHECK_THROWS_AS(wiring.materialize(list, list.type()), WiringError);
 }
 
 namespace {

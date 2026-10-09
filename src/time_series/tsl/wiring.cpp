@@ -117,6 +117,12 @@ const NodeTemplate &free_fixed_time_series_list_node_template(const TimeSeriesLi
 
 WiringPoint materialize_fixed_time_series_list(std::span<const WiringPoint> items,
                                                const TimeSeriesListType &type) {
+    if (std::ranges::any_of(items, [](WiringPoint item) {
+            const auto input = item.record()->input_binding();
+            return input && input->is_borrowed();
+        })) {
+        throw WiringError{"a free TSL cannot retain borrowed input bindings"};
+    }
     return *free_fixed_time_series_list_node_template(type)(items);
 }
 

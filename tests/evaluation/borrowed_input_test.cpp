@@ -8,6 +8,8 @@
 #include <bg/node.hpp>
 #include <bg/operators.hpp>
 #include <bg/time_series/time_series_runtime_type.hpp>
+#include <bg/time_series/tss/tss_input.hpp>
+#include <bg/time_series/tss/tss_storage.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -25,12 +27,15 @@ namespace {
 
 struct BorrowedInputSink {
     bg::In<bg::TS<bg::i64>> input;
+    bg::In<bg::TSS<bg::i64>> set_input;
 
     void stop(bg::EvaluationContext *context) const noexcept {
         stop_value = *input;
         stop_time = input.last_updated();
         stop_evaluation_time = context->evaluation_time();
         stop_valid = input.valid();
+        stop_set_valid = set_input.valid();
+        stop_set_size = set_input.size();
         ++stop_count;
     }
 
@@ -39,7 +44,10 @@ struct BorrowedInputSink {
                                 .time = input.last_updated(),
                                 .evaluation_time = context->evaluation_time(),
                                 .valid = input.valid(),
-                                .modified = input.modified()});
+                                .modified = input.modified(),
+                                .set_valid = set_input.valid(),
+                                .set_size = set_input.size(),
+                                .set_modified = set_input.modified()});
 
         if (check_nested_scope) {
             check_nested_scope = false;
@@ -62,6 +70,9 @@ struct BorrowedInputSink {
         bg::EvaluationTime evaluation_time;
         bool valid;
         bool modified;
+        bool set_valid;
+        std::size_t set_size;
+        bool set_modified;
     };
 
     inline static const bg::CompiledGraph *compiled_graph{};
@@ -70,6 +81,8 @@ struct BorrowedInputSink {
     inline static bg::EvaluationTime stop_time{};
     inline static bg::EvaluationTime stop_evaluation_time{};
     inline static bool stop_valid{};
+    inline static bool stop_set_valid{};
+    inline static std::size_t stop_set_size{};
     inline static std::size_t stop_count{};
     inline static bool check_nested_scope{};
     inline static bool nested_scope_rejected{};
@@ -89,7 +102,11 @@ struct BorrowedInputRunner {
                                        ? bg::resolve_time_series_runtime_type(
                                              bg::TS<bg::i64, bg::TimeSeriesGuarantee::deduplicated>::type())
                                        : bg::resolve_time_series_runtime_type(bg::TS<bg::i64>::type());
+        auto set_value = bg::details::time_series_set_storage{};
+        const auto &set_runtime_type = bg::resolve_time_series_runtime_type(bg::TSS<bg::i64>::type());
         const auto inputs = std::array{bg::BorrowedInput{&state, &value, &runtime_type,
+                                                         bg::BorrowedInputChange::update},
+                                       bg::BorrowedInput{&state, &set_value, &set_runtime_type,
                                                          bg::BorrowedInputChange::update}};
         auto section = bg::details::BorrowedInputSection{*child, inputs};
         auto child_context = context->child(section);
@@ -129,7 +146,12 @@ struct BorrowedInputRunner {
         }
 
         const auto &runtime_type = bg::resolve_time_series_runtime_type(bg::TS<bg::i64>::type());
-        const auto inputs = std::array{bg::BorrowedInput{&state, &value, &runtime_type, change}};
+        auto set_state = bg::TimeSeriesState{evaluation_time};
+        auto set_value = bg::details::time_series_set_storage{};
+        const auto &set_runtime_type = bg::resolve_time_series_runtime_type(bg::TSS<bg::i64>::type());
+        const auto inputs = std::array{bg::BorrowedInput{&state, &value, &runtime_type, change},
+                                       bg::BorrowedInput{&set_state, &set_value, &set_runtime_type,
+                                                         bg::BorrowedInputChange::update}};
         auto section = bg::details::BorrowedInputSection{*child, inputs};
         auto child_context = context->child(section);
         child->evaluate(child_context);
@@ -143,7 +165,11 @@ struct BorrowedInputRunner {
         auto state = bg::TimeSeriesState{context->evaluation_time()};
         auto value = bg::i64{33};
         const auto &runtime_type = bg::resolve_time_series_runtime_type(bg::TS<bg::i64>::type());
+        auto set_value = bg::details::time_series_set_storage{};
+        const auto &set_runtime_type = bg::resolve_time_series_runtime_type(bg::TSS<bg::i64>::type());
         const auto inputs = std::array{bg::BorrowedInput{&state, &value, &runtime_type,
+                                                         bg::BorrowedInputChange::unchanged},
+                                       bg::BorrowedInput{&state, &set_value, &set_runtime_type,
                                                          bg::BorrowedInputChange::unchanged}};
         auto section = bg::details::BorrowedInputSection{*child, inputs};
         auto child_context = context->child(section);
@@ -165,10 +191,11 @@ struct BorrowedInputRunner {
 bg::CompiledGraph make_borrowed_input_graph() {
     auto wiring = bg::GraphWiring{};
     const auto input = wiring.borrowed_input(bg::TS<bg::i64>::type());
+    const auto set_input = wiring.borrowed_input(bg::TSS<bg::i64>::type());
     const auto sink = bg::node<BorrowedInputSink>();
     {
         auto context = bg::WiringContext{wiring};
-        sink(bg::operators::default_(input, bg::i64{7}));
+        sink(bg::operators::default_(input, bg::i64{7}), set_input);
     }
     wiring.finalize();
     return bg::CompiledGraph{wiring};
@@ -177,7 +204,7 @@ bg::CompiledGraph make_borrowed_input_graph() {
 } // namespace
 
 TEST_CASE("borrowed inputs sample values and deliver update, invalidation, and revalidation",
-          "[evaluation][feature:borrowed-input][validity][shape:nested]") {
+          "[evaluation][feature:borrowed-input][series:tss][validity][shape:nested]") {
     auto child_graph = make_borrowed_input_graph();
     BorrowedInputSink::compiled_graph = &child_graph;
     BorrowedInputSink::observations.clear();
@@ -185,6 +212,8 @@ TEST_CASE("borrowed inputs sample values and deliver update, invalidation, and r
     BorrowedInputSink::stop_time = {};
     BorrowedInputSink::stop_evaluation_time = {};
     BorrowedInputSink::stop_valid = false;
+    BorrowedInputSink::stop_set_valid = false;
+    BorrowedInputSink::stop_set_size = 0;
     BorrowedInputSink::stop_count = 0;
     BorrowedInputSink::check_nested_scope = true;
     BorrowedInputSink::nested_scope_rejected = false;
@@ -219,6 +248,9 @@ TEST_CASE("borrowed inputs sample values and deliver update, invalidation, and r
     CHECK(BorrowedInputSink::observations[0].evaluation_time == time(1));
     CHECK(BorrowedInputSink::observations[0].valid);
     CHECK(BorrowedInputSink::observations[0].modified);
+    CHECK(BorrowedInputSink::observations[0].set_valid);
+    CHECK(BorrowedInputSink::observations[0].set_size == 0);
+    CHECK(BorrowedInputSink::observations[0].set_modified);
     CHECK(BorrowedInputSink::observations[1].value == 7);
     CHECK(BorrowedInputSink::observations[1].time == time(2));
     CHECK(BorrowedInputSink::observations[1].modified);
@@ -230,6 +262,8 @@ TEST_CASE("borrowed inputs sample values and deliver update, invalidation, and r
     CHECK(BorrowedInputSink::stop_time == time(3));
     CHECK(BorrowedInputSink::stop_evaluation_time == time(3));
     CHECK(BorrowedInputSink::stop_valid);
+    CHECK(BorrowedInputSink::stop_set_valid);
+    CHECK(BorrowedInputSink::stop_set_size == 0);
     CHECK(BorrowedInputSink::nested_scope_rejected);
 }
 

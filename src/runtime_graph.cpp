@@ -1370,20 +1370,23 @@ void RuntimeGraphEvaluator::stop(RuntimeGraph &graph, EvaluationContext &parent_
 
 bool RuntimeGraph::inputs_are_valid(const CompiledNode &node, const EvaluationContext &context) const {
     const auto runtime_node = Node{node, storage_};
+    const auto borrowed_bindings = compiled_graph_->borrowed_input_bindings();
+    const auto borrowed_inputs =
+        borrowed_bindings.empty() ? std::span<const BorrowedInput>{} : context.borrowed_inputs(*this);
     for (auto parameter_index = std::size_t{}; parameter_index < runtime_node.input_count(); ++parameter_index) {
         const auto &parameter = node.parameters()[parameter_index];
         if (parameter.mode() == ParameterBindingMode::scalar || parameter.validity() == optional) {
             continue;
         }
 
-        if (!runtime_node.input_last_updated(parameter_index, context).valid()) {
+        if (!runtime_node.input_last_updated(parameter_index, borrowed_inputs).valid()) {
             return false;
         }
     }
 
     for (const auto &descriptor : node.all_valid_input_descriptors()) {
-        const auto input = runtime_node.input_data(descriptor.parameter_index, context);
-        const auto &runtime_type = runtime_node.all_valid_input_runtime_type(descriptor, context);
+        const auto input = runtime_node.input_data(descriptor.parameter_index, borrowed_inputs);
+        const auto &runtime_type = runtime_node.all_valid_input_runtime_type(descriptor, borrowed_inputs);
         if (!runtime_type.all_valid(*input.last_updated, input.value, *descriptor.declared_type)) {
             return false;
         }

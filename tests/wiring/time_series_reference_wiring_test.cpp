@@ -58,3 +58,15 @@ TEST_CASE("wiring preserves an existing reference",
         CHECK(wiring.outputs()[input].node_index == 2);
     }
 }
+
+TEST_CASE("wiring rejects materializing a borrowed input as a reference",
+          "[wiring][reference][feature:borrowed-input]") {
+    const auto pass = bg::node<reference_wiring_pass>();
+    auto wiring = bg::GraphWiring{};
+    const auto context = bg::WiringContext{wiring};
+    const auto input = wiring.borrowed_input(bg::TS<bg::i64>::type());
+
+    (void)pass(input);
+    CHECK_THROWS_AS(wiring.finalize(), bg::WiringError);
+    CHECK(wiring.nodes().empty());
+}

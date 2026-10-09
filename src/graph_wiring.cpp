@@ -166,6 +166,8 @@ class BorrowedInputWiringRecord final : public WiringRecord {
     BorrowedInputWiringRecord(const TimeSeriesType &type, std::size_t index)
         : WiringRecord{type}, input_{WiredInput::borrowed(index)} {}
 
+    std::optional<WiredInput> input_binding() const noexcept override { return input_; }
+
     std::optional<WiredInput> input_binding(const TimeSeriesType &requested_type) const noexcept override {
         return type().accepts(requested_type) ? std::optional<WiredInput>{input_} : std::nullopt;
     }
@@ -810,6 +812,16 @@ WiringPoint GraphWiring::import_context_binding(util::symbol name, WiringPoint p
 WiredInput GraphWiring::wire_input(WiringPoint point, const TimeSeriesType &type) {
     if (&point.graph() != this) {
         throw WiringError{"a WiringPoint belongs to another GraphWiring"};
+    }
+
+    if (const auto input = point.record()->input_binding(); input && input->is_borrowed()) {
+        if (type_cast<TimeSeriesReferenceType>(&type) != nullptr) {
+            throw WiringError{"a borrowed input cannot be wired as a reference"};
+        }
+        if (!point.type().accepts(type)) {
+            throw WiringError{"a borrowed input is incompatible with the requested time series type"};
+        }
+        return *input;
     }
 
     const auto materialized = materialize(point, type);

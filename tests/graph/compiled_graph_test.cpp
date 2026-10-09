@@ -127,8 +127,8 @@ TEST_CASE("compiled nodes keep hot data in node-local sections", "[compiled_grap
 
     CHECK(parameter_address == node_address + sizeof(bg::CompiledNode));
     CHECK(scalar_address == parameter_address + parameters.size() * sizeof(bg::ParameterBinding));
-    // Fixed storage includes graph metadata, node records, and the initial runtime storage image.
-    CHECK(graph.fixed_storage_size() == 244);
+    // The direct borrowed-input metadata offset adds 4 bytes to the header and 4 bytes of alignment padding.
+    CHECK(graph.fixed_storage_size() == 252);
 }
 
 namespace {

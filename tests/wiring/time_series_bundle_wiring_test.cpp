@@ -4,6 +4,7 @@
 #include <bg/operators.hpp>
 #include <bg/testing/test_wiring.hpp>
 #include <bg/time_series/tsb/tsb.hpp>
+#include <bg/time_series/tsb/details/wiring.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -42,6 +43,17 @@ TEST_CASE("typed TSB construction supports an empty schema",
 
         STATIC_CHECK(std::same_as<std::remove_cvref_t<decltype(value)>, bg::wp<bg::TSB<EmptyBundle>>>);
     });
+}
+
+TEST_CASE("free TSB materialization rejects borrowed input bindings",
+          "[feature:wiring][feature:borrowed-input][series:tsb][representation:free]") {
+    auto wiring = bg::GraphWiring{};
+    const auto context = bg::WiringContext{wiring};
+    const auto input = wiring.borrowed_input(bg::TS<bg::i64>::type());
+    const auto fields = std::array{bg::details::NamedBundleWiringPoint{bg::util::symbol{"value"}, input}};
+    const auto bundle = bg::details::make_free_time_series_bundle(fields);
+
+    CHECK_THROWS_AS(wiring.materialize(bundle, bundle.type()), bg::WiringError);
 }
 
 TEST_CASE("a typed TSB wiring point exposes typed fields",
