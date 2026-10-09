@@ -170,28 +170,59 @@ ScalarValue<> from_python_double(nanobind::handle value, allocator &memory, cons
     return make_scalar<double>(nanobind::cast<double>(value), memory);
 }
 
-ScalarValue<> from_python_string(nanobind::handle value, allocator &, const PythonScalarConversions &) {
+ScalarValue<> from_python_string(nanobind::handle value, allocator &, const PythonScalarConversions &conversions) {
+    auto string_value = nanobind::object{};
+    auto *python_type = Py_TYPE(value.ptr());
+    if (python_type == &PyUnicode_Type ||
+        &conversions.type_from_python(nanobind::handle{python_type}) == &string_type()) {
+        string_value = nanobind::borrow<nanobind::object>(value);
+    } else {
+        string_value = nanobind::steal<nanobind::object>(PyUnicode_FromObject(value.ptr()));
+        if (!string_value) {
+            nanobind::raise_python_error();
+        }
+    }
+
     Py_ssize_t length{};
-    const auto *bytes = PyUnicode_AsUTF8AndSize(value.ptr(), &length);
+    const auto *bytes = PyUnicode_AsUTF8AndSize(string_value.ptr(), &length);
     if (bytes == nullptr) {
         nanobind::raise_python_error();
     }
 
     auto &cache = string_identity_cache();
-    if (auto *storage = cache.retain_python_string(value.ptr()); storage != nullptr) {
+    if (auto *storage = cache.retain_python_string(string_value.ptr()); storage != nullptr) {
         return scalar_from_string_storage(storage);
     }
 
     // Wiring may retain shared string storage after the conversion allocator expires.
     auto result = ScalarValue<>{ScalarValue<string>{std::string_view{bytes, static_cast<std::size_t>(length)}}};
     if (auto *storage = StringStorage::from(details::scalar_data(result)); storage != nullptr) {
-        cache.remember(storage, value);
+        cache.remember(storage, string_value);
     }
     return result;
 }
 
-ScalarValue<> from_python_symbol(nanobind::handle value, allocator &memory, const PythonScalarConversions &) {
-    return make_scalar<symbol>(nanobind::cast<symbol>(value), memory);
+ScalarValue<> from_python_symbol(nanobind::handle value, allocator &memory,
+                                 const PythonScalarConversions &conversions) {
+    if (!PyUnicode_Check(value.ptr())) {
+        PyErr_SetString(PyExc_TypeError, "expected text for a BG symbol");
+        nanobind::raise_python_error();
+    }
+
+    const auto &python_type = conversions.type_from_python(
+        nanobind::handle{reinterpret_cast<PyObject *>(Py_TYPE(value.ptr()))});
+    const auto is_null = &python_type == &symbol_type() &&
+                         nanobind::cast<bool>(nanobind::borrow<nanobind::object>(value).attr("_is_null"));
+    if (is_null) {
+        return make_scalar<symbol>(symbol{}, memory);
+    }
+
+    Py_ssize_t length{};
+    const auto *text = PyUnicode_AsUTF8AndSize(value.ptr(), &length);
+    if (text == nullptr) {
+        nanobind::raise_python_error();
+    }
+    return make_scalar<symbol>(symbol{std::string_view{text, static_cast<std::size_t>(length)}}, memory);
 }
 
 ScalarValue<> from_python_dict(const DictScalarType &type, nanobind::handle value, allocator &memory,
@@ -334,8 +365,8 @@ nanobind::object to_python_string(Scalar<> value, const PythonScalarConversions 
     return retained_python_string ? std::move(retained_python_string) : std::move(decoded);
 }
 
-nanobind::object to_python_symbol(Scalar<> value, const PythonScalarConversions &) {
-    return nanobind::cast(unchecked_scalar_cast<symbol>(value).value());
+nanobind::object to_python_symbol(Scalar<> value, const PythonScalarConversions &conversions) {
+    return conversions.symbol_to_python(unchecked_scalar_cast<symbol>(value).value());
 }
 
 nanobind::object to_python_structural(Scalar<> value, const PythonScalarConversions &conversions) {
@@ -395,6 +426,7 @@ struct NB_HIDDEN PythonScalarConversions::Impl {
     ScalarDispatch<ScalarToPython> to_python;
     ScalarDispatch<ScalarToPythonView> to_python_view;
     std::unordered_map<PyTypeObject *, PythonType> python_types;
+    Object symbol_python_type;
 };
 
 PythonScalarConversions::PythonScalarConversions() : impl_{std::make_unique<Impl>()} {
@@ -478,7 +510,11 @@ bool PythonScalarConversions::add_python_type(nanobind::handle python_type, cons
     }
 
     auto *type_key = reinterpret_cast<PyTypeObject *>(python_type.ptr());
-    return impl_->python_types.emplace(type_key, Impl::PythonType{Object{python_type}, &type}).second;
+    const auto added = impl_->python_types.emplace(type_key, Impl::PythonType{Object{python_type}, &type}).second;
+    if (added && &type == &symbol_type()) {
+        impl_->symbol_python_type = Object{python_type};
+    }
+    return added;
 }
 
 ScalarToPython PythonScalarConversions::to_python_handler(const ScalarRuntimeType &runtime_type) const noexcept {
@@ -490,6 +526,34 @@ ScalarToPython PythonScalarConversions::to_python_handler(const ScalarRuntimeTyp
 
 nanobind::object PythonScalarConversions::to_python(Scalar<> value) const {
     return to_python_handler(value.runtime_type())(value, *this);
+}
+
+nanobind::object PythonScalarConversions::symbol_to_python(util::symbol value) const {
+    if (!impl_->symbol_python_type) {
+        throw std::logic_error{"bg.Symbol must be registered before converting a symbol"};
+    }
+
+    auto symbol_class = nanobind::borrow<nanobind::object>(impl_->symbol_python_type.get());
+    auto cache = nanobind::borrow<nanobind::object>(symbol_class.attr("_instances"));
+    const auto text = value.text();
+    auto key = nanobind::object{};
+    if (value.has_value()) {
+        key = nanobind::steal<nanobind::object>(
+            PyBytes_FromStringAndSize(text.data(), static_cast<Py_ssize_t>(text.size())));
+        if (!key) {
+            nanobind::raise_python_error();
+        }
+    } else {
+        key = nanobind::none();
+    }
+
+    auto cached = cache.attr("get")(key);
+    if (!cached.is_none()) {
+        return cached;
+    }
+
+    auto result = value.has_value() ? symbol_class(decode_string(text)) : symbol_class();
+    return result;
 }
 
 nanobind::object PythonScalarConversions::to_python_view(

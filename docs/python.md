@@ -238,15 +238,24 @@ input delta has lazy `added` and `removed` views. Collection item deltas recur
 through the same table.
 
 The currently accepted scalar annotations are `bool`, `int`, `float`, `str`,
-and `bg.Symbol`. Python `int` maps to the engine's signed 64-bit integer type.
+and `bg.Symbol`. `bg.Symbol` is a `str` subclass. Non-null symbols compare and
+hash like their text; `bg.Symbol()` represents a null symbol and differs from
+the empty string. `str(symbol)` returns ordinary Python text, so converting a
+null symbol produces `""`. `bg.Symbol` cannot be subclassed. Python `int` maps
+to the engine's signed 64-bit integer type.
 Python `str` maps to `bg::string` and supports scalar arguments and `TS[str]`
 inputs and outputs. Conversion uses strict UTF-8: lone surrogates raise
 `UnicodeEncodeError`, and invalid UTF-8 from C++ raises `UnicodeDecodeError`.
 C++ callers must provide valid UTF-8. For canonical strings whose storage has
 no other final-release hook, the extension retains the originating Python
 string object while the BG storage lives and removes the cache entry when that
-storage is released. `bg.Symbol` is distinct from `str`; `bg.symbol` constructs
-one. A null `bg.Symbol()` differs from `bg.Symbol("")`.
+storage is released. `bg.Symbol` values infer the engine symbol type, while ordinary
+`str` values infer the engine string type. `bg.symbol` is an alias for the
+`bg.Symbol` constructor. A `Symbol` supplied to a `str`-typed input is
+normalized to ordinary Python text; a plain `str` supplied to a `Symbol`-typed
+input is interned as a non-null symbol. The Python class reuses objects
+produced from the same interned engine symbol while retaining the class-level
+cache.
 
 ## C++ extensions
 

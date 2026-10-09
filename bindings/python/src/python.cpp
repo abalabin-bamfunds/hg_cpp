@@ -537,6 +537,9 @@ void bind_core(nb::module_ &module) {
     module.def("_test_graph", &test_graph);
     module.def("_register_delta_types", &details::register_delta_types);
     module.def("_scalar_conversions_address", [] { return reinterpret_cast<std::uintptr_t>(&scalar_conversions()); });
+    module.def("_register_symbol_type", [](nb::handle python_type) {
+        return scalar_conversions().add_python_type(python_type, symbol_type());
+    });
 
     nb::class_<TypeDescriptor>(module, "_Type")
         .def_prop_ro("is_time_series", [](const TypeDescriptor &value) { return value.type().is_time_series(); })
@@ -631,33 +634,6 @@ void bind_core(nb::module_ &module) {
     nb::class_<PythonNodeDefinition>(module, "_PythonNodeDefinition");
     nb::class_<PythonGraphDefinition>(module, "_PythonGraphDefinition");
 
-    nb::class_<util::symbol>(module, "Symbol")
-        .def(nb::init<>())
-        .def(nb::init<std::string>())
-        .def("__str__", [](const util::symbol &value) { return std::string{value.text()}; })
-        .def("__repr__",
-             [](const util::symbol &value) {
-                 if (!value.has_value()) {
-                     return std::string{"symbol()"};
-                 }
-
-                 const auto symbol_text = value.text();
-                 const auto text = nb::str{symbol_text.data(), symbol_text.size()};
-                 return "symbol(" + nb::cast<std::string>(nb::repr(text)) + ")";
-             })
-        .def("__hash__",
-             [](const util::symbol &value) -> Py_hash_t {
-                 const auto symbol_text = value.text();
-                 const auto text = nb::str{symbol_text.data(), symbol_text.size()};
-                 return PyObject_Hash(text.ptr());
-             })
-        .def(
-            "__eq__", [](const util::symbol &left, const util::symbol &right) { return left == right; },
-            nb::is_operator());
-
-    (void)scalar_conversions().add_python_type(nb::type<util::symbol>(), symbol_type());
-
-    module.attr("symbol") = module.attr("Symbol");
     details::bind_higher_order(module);
     details::bind_operators(module);
 }
