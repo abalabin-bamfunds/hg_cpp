@@ -6,6 +6,7 @@
 
 #include <bg/scalar/builtins.hpp>
 #include <bg/scalar/bundle/scalar_type.hpp>
+#include <bg/scalar/details/string_storage.hpp>
 #include <bg/scalar/dict/scalar_type.hpp>
 #include <bg/scalar/dict/runtime_type.hpp>
 #include <bg/scalar/list/scalar_type.hpp>
@@ -14,10 +15,9 @@
 #include <bg/scalar/value.hpp>
 #include <bg/util/scope_exit.hpp>
 
-#include <nanobind/stl/string.h>
-
+#include <mutex>
 #include <stdexcept>
-#include <string>
+#include <string_view>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -25,9 +25,116 @@
 namespace bg::python {
 namespace {
 
+using details::StringStorage;
+using details::StringStorageFinalReleaseHook;
+
 template <typename T, typename Source> ScalarValue<> make_scalar(Source &&value, allocator &memory) {
     auto typed_value = ScalarValue<T>{std::forward<Source>(value), memory};
     return ScalarValue<>{typed_value, memory};
+}
+
+class StringIdentityCache {
+  public:
+    StringIdentityCache() : hook_{&StringIdentityCache::release_storage, this} {}
+
+    StringStorage *retain_python_string(PyObject *python_string) {
+        const std::lock_guard lock{mutex_};
+        const auto found = by_python_string_.find(python_string);
+        if (found == by_python_string_.end()) {
+            return nullptr;
+        }
+
+        auto *storage = found->second;
+        if (storage->try_retain()) {
+            return storage;
+        }
+
+        by_python_string_.erase(found);
+        return nullptr;
+    }
+
+    Object python_string(const StringStorage *storage) {
+        const std::lock_guard lock{mutex_};
+        const auto found = by_storage_.find(storage);
+        return found == by_storage_.end() ? Object{} : found->second;
+    }
+
+    nanobind::object remember(StringStorage *storage, nanobind::handle python_string) {
+        if (storage->install_final_release_hook(&hook_) != &hook_) {
+            return {};
+        }
+
+        auto retained_python_string = Object{python_string};
+        auto selected_python_string = Object{};
+        {
+            const std::lock_guard lock{mutex_};
+            const auto [stored, inserted] = by_storage_.try_emplace(storage, std::move(retained_python_string));
+            selected_python_string = stored->second;
+            if (inserted) {
+                by_python_string_.insert_or_assign(python_string.ptr(), storage);
+            }
+        }
+
+        return nanobind::borrow<nanobind::object>(selected_python_string.get());
+    }
+
+  private:
+    static void release_storage(void *context, const StringStorage *storage) noexcept {
+        static_cast<StringIdentityCache *>(context)->release(storage);
+    }
+
+    void release(const StringStorage *storage) noexcept {
+        auto released_python_string = Object{};
+        {
+            const std::lock_guard lock{mutex_};
+            const auto found = by_storage_.find(storage);
+            if (found == by_storage_.end()) {
+                return;
+            }
+
+            auto *python_string = found->second.get().ptr();
+            released_python_string = std::move(found->second);
+            by_storage_.erase(found);
+
+            const auto reverse = by_python_string_.find(python_string);
+            if (reverse != by_python_string_.end() && reverse->second == storage) {
+                by_python_string_.erase(reverse);
+            }
+        }
+    }
+
+    std::mutex mutex_;
+    std::unordered_map<const StringStorage *, Object> by_storage_;
+    std::unordered_map<PyObject *, StringStorage *> by_python_string_;
+    StringStorageFinalReleaseHook hook_;
+};
+
+StringIdentityCache &string_identity_cache() {
+    // StringStorage hooks may outlive PythonScalarConversions, so their cache context must remain valid.
+    static auto *cache = new StringIdentityCache{};
+    return *cache;
+}
+
+ScalarValue<> scalar_from_string_storage(StringStorage *storage) {
+    auto release_storage = util::scope_exit{[storage]() noexcept { storage->release(); }};
+    auto *handle = storage;
+    const auto value = Scalar<string>::from(cpp_scalar_runtime_type<string>(), &handle);
+    return ScalarValue<>{ScalarValue<string>{value}};
+}
+
+nanobind::object decode_string(std::string_view text) {
+    if (text.size() > static_cast<std::size_t>(PY_SSIZE_T_MAX)) {
+        PyErr_SetString(PyExc_OverflowError, "BG string is too large for Python");
+        nanobind::raise_python_error();
+    }
+
+    const auto *bytes = text.empty() ? "" : text.data();
+    auto result = nanobind::steal<nanobind::object>(
+        PyUnicode_DecodeUTF8(bytes, static_cast<Py_ssize_t>(text.size()), "strict"));
+    if (!result) {
+        nanobind::raise_python_error();
+    }
+    return result;
 }
 
 ScalarValue<> from_python_bool(nanobind::handle value, allocator &memory, const PythonScalarConversions &) {
@@ -63,8 +170,24 @@ ScalarValue<> from_python_double(nanobind::handle value, allocator &memory, cons
     return make_scalar<double>(nanobind::cast<double>(value), memory);
 }
 
-ScalarValue<> from_python_string(nanobind::handle value, allocator &memory, const PythonScalarConversions &) {
-    return make_scalar<string>(nanobind::cast<std::string>(value), memory);
+ScalarValue<> from_python_string(nanobind::handle value, allocator &, const PythonScalarConversions &) {
+    Py_ssize_t length{};
+    const auto *bytes = PyUnicode_AsUTF8AndSize(value.ptr(), &length);
+    if (bytes == nullptr) {
+        nanobind::raise_python_error();
+    }
+
+    auto &cache = string_identity_cache();
+    if (auto *storage = cache.retain_python_string(value.ptr()); storage != nullptr) {
+        return scalar_from_string_storage(storage);
+    }
+
+    // Wiring may retain shared string storage after the conversion allocator expires.
+    auto result = ScalarValue<>{ScalarValue<string>{std::string_view{bytes, static_cast<std::size_t>(length)}}};
+    if (auto *storage = StringStorage::from(details::scalar_data(result)); storage != nullptr) {
+        cache.remember(storage, value);
+    }
+    return result;
 }
 
 ScalarValue<> from_python_symbol(nanobind::handle value, allocator &memory, const PythonScalarConversions &) {
@@ -194,7 +317,21 @@ nanobind::object to_python_double(Scalar<> value, const PythonScalarConversions 
 
 nanobind::object to_python_string(Scalar<> value, const PythonScalarConversions &) {
     const auto text = unchecked_scalar_cast<string>(value).value();
-    return nanobind::str{text.data(), text.size()};
+    auto *storage = StringStorage::from(details::scalar_data(value));
+    if (storage == nullptr || !storage->try_retain()) {
+        return decode_string(text);
+    }
+
+    auto release_storage = util::scope_exit{[storage]() noexcept { storage->release(); }};
+    auto &cache = string_identity_cache();
+    auto cached_python_string = cache.python_string(storage);
+    if (cached_python_string) {
+        return nanobind::borrow<nanobind::object>(cached_python_string.get());
+    }
+
+    auto decoded = decode_string(text);
+    auto retained_python_string = cache.remember(storage, decoded);
+    return retained_python_string ? std::move(retained_python_string) : std::move(decoded);
 }
 
 nanobind::object to_python_symbol(Scalar<> value, const PythonScalarConversions &) {

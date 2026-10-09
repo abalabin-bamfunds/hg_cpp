@@ -192,6 +192,109 @@ def test_python_string_and_symbol_scalar_arguments():
     assert bg.test_graph(graph) == [1 + len("market") + len("open")]
 
 
+def test_python_scalar_string_argument_outlives_wiring_allocator():
+    text = "wiring-owned café\x00市場"
+
+    @bg.source_node
+    def source() -> bg.TS[int]:
+        return 1
+
+    @bg.compute_node
+    def echo(value: bg.TS[int], text: str) -> bg.TS[str]:
+        return text
+
+    @bg.graph
+    def graph() -> bg.TS[str]:
+        return echo(source(), text)
+
+    assert bg.test_graph(graph) == [text]
+
+
+def test_python_string_time_series_source_input_and_output():
+    text = "café\x00市場"
+
+    @bg.source_node
+    def source() -> bg.TS[str]:
+        return text
+
+    @bg.compute_node
+    def append(value: bg.TS[str]) -> bg.TS[str]:
+        return value.value + "\x00done"
+
+    @bg.graph
+    def source_graph() -> bg.TS[str]:
+        return source()
+
+    @bg.graph
+    def input_graph(value: bg.TS[str]) -> bg.TS[str]:
+        return append(value)
+
+    source_result = bg.test_graph(source_graph)
+    assert source_result == [text]
+    assert source_result[0] is text
+    assert bg.test_graph(input_graph, [text]) == [text + "\x00done"]
+
+
+def test_python_string_time_series_round_trip_preserves_identity():
+    text = "reused string"
+
+    @bg.compute_node
+    def identity(value: bg.TS[str]) -> bg.TS[str]:
+        return value.value
+
+    @bg.graph
+    def graph(value: bg.TS[str]) -> bg.TS[str]:
+        return identity(value)
+
+    result = bg.test_graph(graph, [text])
+
+    assert result[0] is text
+
+
+def test_python_string_cache_releases_values_with_bg_storage():
+    class WeakString(str):
+        pass
+
+    text = WeakString("cache lifetime")
+    text_reference = weakref.ref(text)
+
+    @bg.compute_node
+    def identity(value: bg.TS[str]) -> bg.TS[str]:
+        return value.value
+
+    @bg.graph
+    def graph(value: bg.TS[str]) -> bg.TS[str]:
+        return identity(value)
+
+    result = bg.test_graph(graph, [text])
+    assert result[0] is text
+
+    del result
+    del text
+    gc.collect()
+    assert text_reference() is None
+
+
+def test_python_string_rejects_lone_surrogates():
+    @bg.compute_node
+    def identity(value: bg.TS[str]) -> bg.TS[str]:
+        return value.value
+
+    @bg.graph
+    def graph(value: bg.TS[str]) -> bg.TS[str]:
+        return identity(value)
+
+    with pytest.raises(UnicodeEncodeError):
+        bg.test_graph(graph, ["lone surrogate: \ud800"])
+
+
+def test_python_string_rejects_invalid_bg_utf8():
+    extension = pytest.importorskip("bg._bg_test_extension")
+
+    with pytest.raises(UnicodeDecodeError):
+        extension.decode_invalid_string()
+
+
 def test_input_view_expires_after_the_callback():
     saved_inputs = []
 
