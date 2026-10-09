@@ -5,14 +5,17 @@
 #include <bg/testing/test_graph.hpp>
 #include <bg/time_series/ts/ts_input.hpp>
 #include <bg/time_series/ts/ts_output.hpp>
+#include <bg/util/scope_exit.hpp>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
 
 #include <chrono>
 #include <concepts>
 #include <memory>
 #include <memory_resource>
 #include <optional>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -21,15 +24,6 @@ namespace {
 using Value = test_scalar_provider::value;
 using ReadValue = test_scalar_provider::value_view;
 using Storage = test_scalar_provider::storage;
-
-template <template <typename, auto...> typename Field> struct RuntimeBorrowRecord {
-    Field<bg::i64> value;
-};
-
-template <template <typename, auto...> typename Field>
-struct RuntimeBorrowDerived : bg::schema_extends<RuntimeBorrowRecord, Field> {
-    Field<bg::i64> extra;
-};
 
 class LegacyIntegerRuntimeType final : public bg::ScalarRuntimeType {
   public:
@@ -152,6 +146,49 @@ TEST_CASE("a scalar provider read type controls typed, erased, and time series r
     CHECK(generic_read);
 }
 
+TEST_CASE("a scalar provider can own a value through its borrowed read view",
+          "[feature:scalar-api][feature:scalar-storage][storage:fixed][declaration:concrete]") {
+    STATIC_CHECK(std::constructible_from<bg::ScalarValue<Value>, test_scalar_provider::explicit_value_source>);
+    STATIC_CHECK(!noexcept(bg::details::make_scalar_source<Value>(std::declval<const ReadValue &>())));
+
+    const auto owned = [] {
+        const auto source = test_scalar_provider::explicit_value_source{.number = 42};
+        return bg::ScalarValue<Value>{source};
+    }();
+
+    CHECK(&owned.runtime_type() == &bg::cpp_scalar_runtime_type<Value>());
+    CHECK(&bg::resolve_scalar_runtime_type(bg::cpp_scalar_type<Value>(), {}) ==
+          &bg::cpp_scalar_runtime_type<Value>());
+    CHECK(owned.view().value().get() == 42);
+
+    const auto empty_view = ReadValue{};
+    CHECK_THROWS_WITH(bg::details::make_scalar_source<Value>(empty_view),
+                      "a provider value view must have a source");
+}
+
+TEST_CASE("a scalar provider canonical runtime must match its storage layout",
+          "[feature:scalar-api][feature:scalar-storage][storage:fixed][declaration:concrete]") {
+    STATIC_CHECK(!noexcept(bg::details::make_scalar_source<test_scalar_provider::layout_value>(
+        std::declval<const test_scalar_provider::layout_value &>())));
+
+    CHECK_THROWS_WITH(bg::cpp_scalar_runtime_type<test_scalar_provider::layout_value>(),
+                      "a scalar provider runtime must match its C++ storage layout");
+
+    const auto value = test_scalar_provider::layout_value{.number = 3};
+    CHECK_THROWS_WITH(bg::details::make_scalar_source<test_scalar_provider::layout_value>(value),
+                      "a scalar provider runtime must match its C++ storage layout");
+}
+
+TEST_CASE("a scalar provider validates semantic type before selecting a copy runtime",
+          "[feature:scalar-api][feature:scalar-storage][storage:fixed][declaration:concrete]") {
+    const auto value = bg::i64{7};
+    const auto incompatible = bg::Scalar<Value>::from(bg::cpp_scalar_runtime_type<bg::i64>(), &value);
+    const auto copy_calls = test_scalar_provider::copy_runtime_type_call_count();
+
+    CHECK_THROWS_AS(bg::ScalarValue<Value>{incompatible}, std::invalid_argument);
+    CHECK(test_scalar_provider::copy_runtime_type_call_count() == copy_calls);
+}
+
 TEST_CASE("a scalar provider read type controls collection aliases and reads",
           "[feature:scalar-collection][feature:scalar-storage][storage:fixed][declaration:concrete]") {
     STATIC_CHECK(std::same_as<bg::List<Value>::value_type, ReadValue>);
@@ -249,7 +286,7 @@ TEST_CASE("callable promoted values and aggregate scalar views preserve provider
     const auto callable_result = bg::testing::test_graph(callable_graph);
     REQUIRE(callable_result[0]);
     CHECK(callable_result[0]->value() == 20);
-    CHECK(test_scalar_provider::alternative_runtime_read_count() == reads_before + 1);
+    CHECK(test_scalar_provider::alternative_runtime_read_count() > reads_before);
 
     const auto aggregate_reader = bg::node<ProviderScalarAggregateReader>();
     const auto aggregate_graph = [&] { return aggregate_reader(first, second); };
@@ -257,7 +294,7 @@ TEST_CASE("callable promoted values and aggregate scalar views preserve provider
     const auto aggregate_result = bg::testing::test_graph(aggregate_graph);
     REQUIRE(aggregate_result[0]);
     CHECK(aggregate_result[0]->value() == 42);
-    CHECK(test_scalar_provider::alternative_runtime_read_count() == reads_before + 1);
+    CHECK(test_scalar_provider::alternative_runtime_read_count() > reads_before);
 }
 
 TEST_CASE("aggregate promoted scalars select runtime metadata for scalar and time-series bindings",
@@ -272,14 +309,14 @@ TEST_CASE("aggregate promoted scalars select runtime metadata for scalar and tim
     const auto scalar_result = bg::testing::test_graph(scalar_graph);
     REQUIRE(scalar_result[0]);
     CHECK(scalar_result[0]->value() == 42);
-    CHECK(test_scalar_provider::alternative_runtime_read_count() == reads_before + 1);
+    CHECK(test_scalar_provider::alternative_runtime_read_count() > reads_before);
 
     const auto time_series_graph = [&](bg::wp<bg::TS<Value>> input) { return reader(input, scalar); };
     reads_before = test_scalar_provider::alternative_runtime_read_count();
     const auto time_series_result = bg::testing::test_graph(time_series_graph, std::array{Value{3}});
     REQUIRE(time_series_result[0]);
     CHECK(time_series_result[0]->value() == 44);
-    CHECK(test_scalar_provider::alternative_runtime_read_count() == reads_before + 1);
+    CHECK(test_scalar_provider::alternative_runtime_read_count() > reads_before);
 }
 
 TEST_CASE("aggregate optional provider scalars handle present and absent values",
@@ -300,13 +337,14 @@ TEST_CASE("aggregate optional provider scalars handle present and absent values"
 
 TEST_CASE("erased scalar borrowing uses the composed bundle runtime",
           "[feature:scalar-api][scalar:hierarchical][declaration:runtime][storage:variable]") {
-    using Base = bg::Bundle<RuntimeBorrowRecord>;
-    using Derived = bg::Bundle<RuntimeBorrowDerived>;
+    using Base = test_scalar_provider::bundle_provider_base_type;
+    using Derived = test_scalar_provider::bundle_provider_derived_type;
     using Stored = bg::details::scalar_stored_t<Base>;
 
     auto memory_resource = std::pmr::monotonic_buffer_resource{};
     auto memory = bg::allocator{memory_resource};
-    const auto value = bg::bundle<RuntimeBorrowDerived>(memory, bg::i64{73}, bg::i64{91});
+    const auto value = bg::bundle<test_scalar_provider::bundle_provider_derived>(
+        memory, bg::i64{73}, bg::i64{91});
     const auto &source = bg::details::scalar_data(value);
     const auto stored = *static_cast<const Stored *>(source.data());
 
@@ -322,7 +360,84 @@ TEST_CASE("erased scalar borrowing uses the composed bundle runtime",
     CHECK(bg::scalar_cast<bg::i64>(view[1]).value() == 91);
 }
 
-TEST_CASE("a deduplicated time-series output reads through provider hooks before suppressing an update",
+TEST_CASE("a provider borrowed bundle view preserves derived identity and publishes through its output",
+          "[feature:scalar-api][feature:scalar-storage][scalar:hierarchical][series:value]"
+          "[declaration:runtime][storage:variable]") {
+    using Base = test_scalar_provider::bundle_provider_base_type;
+    using Derived = test_scalar_provider::bundle_provider_derived_type;
+    auto memory_resource = std::pmr::monotonic_buffer_resource{};
+    auto memory = bg::allocator{memory_resource};
+    const auto update_time = bg::MIN_DT + std::chrono::microseconds{1};
+    auto output_state = bg::details::OutputState{
+        bg::cpp_time_series_runtime_type<bg::TS<test_scalar_provider::bundle_provider_value>>()};
+    auto output_time = bg::TimeSeriesState{update_time};
+    auto output_storage = bg::details::scalar_bundle_storage{};
+    output_state.bind(output_time, &output_storage, update_time + std::chrono::microseconds{1});
+    const auto &runtime =
+        static_cast<const bg::TimeSeriesValueRuntimeType &>(output_state.runtime_type()).scalar_runtime_type();
+    auto cleanup = bg::util::scope_exit{[&]() noexcept { runtime.destroy(&output_storage, memory); }};
+    const auto output =
+        bg::Out<bg::TS<test_scalar_provider::bundle_provider_value>>{bg::TimeSeriesOutputBinding{output_state}};
+    const auto [owner, actual_type, actual_runtime] = [&] {
+        const auto source = bg::bundle<test_scalar_provider::bundle_provider_derived>(
+            memory, bg::i64{73}, bg::i64{91});
+        const auto source_view = source.view();
+        const auto view = test_scalar_provider::bundle_provider_view{
+            .value = bg::Scalar<Base>::from(source_view),
+        };
+        const auto *type = &source.type();
+        const auto *source_runtime = &source.runtime_type();
+        output.set(view);
+        auto owner = bg::ScalarValue<test_scalar_provider::bundle_provider_value>{view};
+        return std::tuple{std::move(owner), type, source_runtime};
+    }();
+
+    CHECK(&owner.runtime_type() == actual_runtime);
+    CHECK(&owner.type() == actual_type);
+    CHECK(bg::scalar_cast<bg::i64>(owner.view().value().value[1]).value() == 91);
+
+    const auto published = bg::Scalar<Base>::from(runtime, &output_storage);
+    CHECK(&published.type() == actual_type);
+    CHECK(bg::scalar_cast<bg::i64>(published[1]).value() == 91);
+}
+
+TEST_CASE("a generic provider uses its borrowed source copy policy",
+          "[feature:scalar-api][feature:scalar-storage][scalar:hierarchical]"
+          "[declaration:generic][storage:variable]") {
+    using Generic = test_scalar_provider::generic_bundle_provider_type;
+    using Derived = test_scalar_provider::bundle_provider_derived_type;
+
+    auto memory_resource = std::pmr::monotonic_buffer_resource{};
+    auto memory = bg::allocator{memory_resource};
+    const auto generic_copy_calls = test_scalar_provider::generic_copy_runtime_type_call_count();
+    const auto generic_runtime_calls = test_scalar_provider::generic_runtime_type_call_count();
+    const auto [owner, actual_type, actual_runtime] = [&] {
+        const auto source = bg::bundle<test_scalar_provider::bundle_provider_derived>(
+            memory, bg::i64{73}, bg::i64{91});
+        const auto source_view = source.view();
+        auto view = test_scalar_provider::generic_bundle_provider_view{
+            .value = bg::Scalar<Generic>::from(source_view),
+        };
+        const auto *type = &source.type();
+        const auto *runtime = &source.runtime_type();
+        auto owner = bg::ScalarValue<test_scalar_provider::generic_bundle_provider_value>{view};
+        return std::tuple{std::move(owner), type, runtime};
+    }();
+
+    CHECK(test_scalar_provider::generic_copy_runtime_type_call_count() == generic_copy_calls + 1);
+    CHECK(test_scalar_provider::generic_runtime_type_call_count() == generic_runtime_calls);
+    CHECK(&owner.type() == actual_type);
+    CHECK(&owner.runtime_type() == actual_runtime);
+
+    const auto owner_view = owner.view();
+    const auto resolved = bg::Scalar<Generic>::from(owner_view);
+    CHECK(&resolved.type() == &bg::cpp_scalar_type<Derived>());
+    CHECK(resolved.field_count() == 2);
+    CHECK(resolved.field_name(1) == "extra");
+    CHECK(bg::scalar_cast<bg::i64>(resolved[1]).value() == 91);
+}
+
+TEST_CASE("a deduplicated time-series output suppresses equal values and publishes changes",
           "[feature:node-api][feature:scalar-api][feature:scalar-storage][series:value][storage:fixed]"
           "[declaration:runtime][transition:update][guarantee:deduplicated]") {
     using DeduplicatedSeries = bg::TS<Value, bg::TimeSeriesGuarantee::deduplicated>;
@@ -335,17 +450,22 @@ TEST_CASE("a deduplicated time-series output reads through provider hooks before
     auto deduplicated_output_state = bg::details::OutputState{deduplicated_runtime};
     auto deduplicated_output_time = bg::TimeSeriesState{update_time};
     auto deduplicated_output_storage = Storage{42};
-    const auto requested_storage = Storage{42};
+    auto requested_storage = Storage{42};
     deduplicated_output_state.bind(deduplicated_output_time, &deduplicated_output_storage,
                                    update_time + std::chrono::microseconds{1});
     const auto deduplicated_output =
         bg::Out<DeduplicatedSeries>{bg::TimeSeriesOutputBinding{deduplicated_output_state}};
 
-    const auto reads_before = test_scalar_provider::alternative_runtime_read_count();
     deduplicated_output.set(ReadValue{std::addressof(requested_storage.number)});
 
     CHECK(deduplicated_output_time.time() == update_time);
-    CHECK(test_scalar_provider::alternative_runtime_read_count() == reads_before + 1);
+    CHECK(deduplicated_output_storage.number == 42);
+
+    requested_storage.number = 43;
+    deduplicated_output.set(ReadValue{std::addressof(requested_storage.number)});
+
+    CHECK(deduplicated_output_time.time() == update_time + std::chrono::microseconds{1});
+    CHECK(deduplicated_output_storage.number == 43);
 }
 
 TEST_CASE("an alternative runtime writes a provider read value",

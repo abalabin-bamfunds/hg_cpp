@@ -51,13 +51,34 @@ class AlternativeRuntimeType final : public bg::ScalarRuntimeType {
 
   private:
     void do_construct_from_input(void *destination, const bg::ScalarData &source, bg::allocator &) const override {
-        if (&source.runtime_type() == this) {
-            std::construct_at(static_cast<storage *>(destination), *static_cast<const storage *>(source.data()));
-            return;
-        }
-
         const auto read = bg::scalar_storage_traits<value>::read_value(source);
         std::construct_at(static_cast<storage *>(destination), storage{read.get()});
+    }
+
+    void do_assign_from_input(void *destination, const bg::ScalarData &source) const override {
+        const auto read = bg::scalar_storage_traits<value>::read_value(source);
+        static_cast<storage *>(destination)->number = read.get();
+    }
+
+    bool equals_same_type(const void *stored, const bg::ScalarData &other) const noexcept override {
+        return static_cast<const storage *>(stored)->number ==
+               bg::scalar_storage_traits<value>::read_value(other).get();
+    }
+};
+
+class MismatchedLayoutRuntimeType final : public bg::ScalarRuntimeType {
+  public:
+    MismatchedLayoutRuntimeType()
+        : ScalarRuntimeType{bg::cpp_scalar_type<layout_value>(), sizeof(int) + 1, alignof(int), false, false, true} {}
+
+    void construct_initial_value(void *) const noexcept override { std::terminate(); }
+    void copy_construct(void *, const void *, bg::allocator &) const override { std::terminate(); }
+    std::size_t hash(const void *) const noexcept override { return 0; }
+    void destroy(void *, bg::allocator &) const noexcept override { std::terminate(); }
+
+  private:
+    void do_construct_from_input(void *, const bg::ScalarData &, bg::allocator &) const override {
+        std::terminate();
     }
 
     void do_assign_from_input(void *, const bg::ScalarData &) const override { std::terminate(); }
@@ -72,6 +93,26 @@ const AlternativeRuntimeType &preserving_runtime() {
 const AlternativeRuntimeType &canonicalizing_runtime() {
     static const auto runtime = AlternativeRuntimeType{};
     return runtime;
+}
+
+const MismatchedLayoutRuntimeType &mismatched_layout_runtime() {
+    static const auto runtime = MismatchedLayoutRuntimeType{};
+    return runtime;
+}
+
+int &copy_runtime_calls() {
+    static auto count = 0;
+    return count;
+}
+
+int &generic_runtime_calls() {
+    static auto count = 0;
+    return count;
+}
+
+int &generic_copy_runtime_calls() {
+    static auto count = 0;
+    return count;
 }
 
 } // namespace
@@ -93,9 +134,29 @@ const bg::ScalarRuntimeType &canonicalizing_runtime_type() { return canonicalizi
 
 int alternative_runtime_read_count() { return preserving_runtime().read_count + canonicalizing_runtime().read_count; }
 
+int copy_runtime_type_call_count() noexcept { return copy_runtime_calls(); }
+
+void record_copy_runtime_type_call() noexcept { ++copy_runtime_calls(); }
+
+int generic_runtime_type_call_count() noexcept { return generic_runtime_calls(); }
+
+void record_generic_runtime_type_call() noexcept { ++generic_runtime_calls(); }
+
+int generic_copy_runtime_type_call_count() noexcept { return generic_copy_runtime_calls(); }
+
+void record_generic_copy_runtime_type_call() noexcept { ++generic_copy_runtime_calls(); }
+
 const bg::ScalarType &compound_semantic_type_from_provider() {
     return bg::cpp_scalar_type<compound_value>();
 }
+
+const bg::ScalarType &layout_semantic_type_from_provider() {
+    static const ExternalScalarType type;
+    [[maybe_unused]] static const auto &registration = bg::TypeRegistry::register_static(type);
+    return type;
+}
+
+const bg::ScalarRuntimeType &mismatched_layout_runtime_type() { return mismatched_layout_runtime(); }
 
 } // namespace test_scalar_provider
 
@@ -103,6 +164,25 @@ namespace bg {
 
 const ScalarType &scalar_type_traits<test_scalar_provider::value>::type() noexcept {
     return test_scalar_provider::semantic_type_from_provider();
+}
+
+const ScalarType &scalar_type_traits<test_scalar_provider::layout_value>::type() noexcept {
+    return test_scalar_provider::layout_semantic_type_from_provider();
+}
+
+const ScalarType &scalar_type_traits<test_scalar_provider::bundle_provider_value>::type() noexcept {
+    return cpp_scalar_type<test_scalar_provider::bundle_provider_base_type>();
+}
+
+const ScalarType &scalar_type_traits<test_scalar_provider::generic_bundle_provider_value>::type() noexcept {
+    return cpp_scalar_type<test_scalar_provider::generic_bundle_provider_type>();
+}
+
+const ScalarRuntimeType &scalar_storage_traits<test_scalar_provider::layout_value>::runtime_type(const ScalarType &type) {
+    if (&type != &cpp_scalar_type<test_scalar_provider::layout_value>()) {
+        throw std::invalid_argument{"unexpected scalar type"};
+    }
+    return test_scalar_provider::mismatched_layout_runtime_type();
 }
 
 template const ScalarRuntimeType &cpp_scalar_runtime_type<test_scalar_provider::value>();

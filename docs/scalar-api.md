@@ -236,7 +236,15 @@ A scalar provider defines three independent parts:
 - `scalar_storage_traits<T>` defines its canonical C++ stored object, read
   value, intrinsic equality and hashing, and storage lifecycle.
 - `cpp_scalar_runtime_type<T>()` returns the canonical `ScalarRuntimeType`
-  generated from those traits.
+  selected or generated from those traits.
+
+A provider can supply its canonical runtime by adding
+`static const ScalarRuntimeType &runtime_type(const ScalarType &type)` to
+`scalar_storage_traits<T>`. `cpp_scalar_runtime_type<T>()` calls this hook with
+the declaration's semantic type and registers the returned runtime. The runtime
+must identify that semantic type, match the declared stored representation,
+and have process lifetime. Repeated requests return the same canonical runtime.
+Without the hook, BG selects or generates its existing canonical runtime.
 
 The provider defines `scalar_type_traits<T>::type()` out of line. It also
 explicitly instantiates `cpp_scalar_runtime_type<T>()` in the provider library
@@ -297,6 +305,23 @@ retain path. Otherwise, BG constructs the selected runtime from the source;
 that runtime must accept the source representation. When the hook is absent,
 typed scalar copies keep their existing behavior, including hierarchical
 runtime preservation.
+
+A provider can describe the actual value behind a C++ read view by adding
+`static ScalarData borrow_value(const value_type &value)` to
+`scalar_storage_traits<T>`. The descriptor identifies the borrowed value's
+actual semantic type and physical representation. A Base-annotated view can
+therefore carry a Derived value through owning construction and time series
+publication. Typed owning construction applies the same copy policy as copying
+a `Scalar<T>`. Publication uses the output runtime's input assignment operation.
+Sources constructible as `value_type` use this borrowed path without requiring
+a separate trait `construct` overload.
+
+The hook borrows the view or its source owner. It must not return a pointer to
+a temporary created inside the hook or transfer ownership through the
+descriptor. BG keeps a converted C++ view alive through the synchronous copy
+or assignment. Without the hook, a C++ read view uses its declaration's
+canonical runtime. These operations are extension APIs; node code uses the
+ordinary scalar and time series APIs.
 
 A runtime type for a list, set, or dictionary semantic type derives from the
 matching collection runtime interface. Its component runtime types correspond

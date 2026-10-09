@@ -20,15 +20,19 @@ namespace details {
 class HierarchicalScalarValueFactory;
 
 template <typename T, typename Source>
-concept direct_scalar_source = scalar_storage_constructible_from<T, Source> && [] {
-    if constexpr (hierarchical_scalar_handle<Source>) {
-        return false;
-    } else if constexpr (scalar_source<Source>) {
-        return !std::same_as<canonical_scalar_t<Source>, T>;
-    } else {
-        return true;
-    }
-}();
+concept direct_scalar_source =
+    (scalar_storage_constructible_from<T, Source> ||
+     (scalar_storage_has_borrow_value<T> &&
+      std::constructible_from<typename scalar_storage_traits<T>::value_type, Source &&>)) &&
+    [] {
+        if constexpr (hierarchical_scalar_handle<Source>) {
+            return false;
+        } else if constexpr (scalar_source<Source>) {
+            return !std::same_as<canonical_scalar_t<Source>, T>;
+        } else {
+            return true;
+        }
+    }();
 
 } // namespace details
 

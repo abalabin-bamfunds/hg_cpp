@@ -44,6 +44,47 @@ concept scalar_storage_constructible_from =
         scalar_storage_traits<T>::construct(destination, std::forward<Source>(source), memory);
     };
 
+template <typename T>
+inline constexpr bool scalar_storage_has_borrow_value = [] {
+    if constexpr (std::same_as<T, void>) {
+        return false;
+    } else {
+        return requires(const typename scalar_storage_traits<T>::value_type &value) {
+            { scalar_storage_traits<T>::borrow_value(value) } -> std::same_as<ScalarData>;
+        };
+    }
+}();
+
+template <typename T>
+inline constexpr bool scalar_storage_has_copy_runtime_type = [] {
+    if constexpr (std::same_as<T, void>) {
+        return false;
+    } else {
+        return requires {
+            static_cast<const ScalarRuntimeType &(*)(const ScalarData &)>(
+                &scalar_storage_traits<T>::copy_runtime_type);
+        };
+    }
+}();
+
+template <typename T> consteval bool scalar_source_is_nothrow() {
+    using Traits = scalar_storage_traits<T>;
+    using Value = typename Traits::value_type;
+
+    if constexpr (scalar_storage_has_borrow_value<T>) {
+        return noexcept(Traits::borrow_value(std::declval<const Value &>()));
+    } else if constexpr (requires(const ScalarType &type) {
+                             { Traits::runtime_type(type) } -> std::same_as<const ScalarRuntimeType &>;
+                         }) {
+        return false;
+    } else {
+        return true;
+    }
+}
+
+[[nodiscard]] OwnedScalarData copy_scalar_value(const ScalarData &source, allocator *memory);
+
+template <typename T>
 [[nodiscard]] OwnedScalarData copy_scalar_value(const ScalarData &source, allocator *memory);
 
 inline std::size_t allocation_header_size(ScalarDataMode mode) noexcept {
@@ -110,8 +151,12 @@ inline allocator scalar_value_allocator(allocator *requested_memory) {
 
 void release_scalar_value(const ScalarData &value) noexcept;
 
+template <typename T>
+[[nodiscard]] ScalarData make_scalar_source(const typename scalar_storage_traits<T>::value_type &value)
+    noexcept(scalar_source_is_nothrow<T>());
+
 template <typename T, typename Source>
-[[nodiscard]] OwnedScalarData make_scalar_value(Source &&source, allocator *memory) {
+[[nodiscard]] OwnedScalarData make_scalar_value_from_value(Source &&source, allocator *memory) {
     using Traits = scalar_storage_traits<T>;
     using Stored = typename Traits::stored_type;
 
@@ -135,9 +180,57 @@ template <typename T, typename Source>
     });
 }
 
+template <typename T, typename Source>
+[[nodiscard]] OwnedScalarData make_scalar_value(Source &&source, allocator *memory) {
+    using Traits = scalar_storage_traits<T>;
+    using Value = typename Traits::value_type;
+
+    if constexpr (scalar_storage_has_borrow_value<T> && std::constructible_from<Value, Source &&>) {
+        Value requested(std::forward<Source>(source));
+        return copy_scalar_value<T>(make_scalar_source<T>(requested), memory);
+    } else {
+        return make_scalar_value_from_value<T>(std::forward<Source>(source), memory);
+    }
+}
+
 template <typename T>
 [[nodiscard]] OwnedScalarData copy_scalar_value(const details::ScalarData &source, allocator *memory) {
-    if constexpr (scalar_uses_shared_handle<T>) {
+    if constexpr (scalar_storage_has_copy_runtime_type<T> || scalar_storage_has_borrow_value<T>) {
+        const auto &declared_type = cpp_scalar_type<T>();
+        if (&declared_type != &source.type() && !declared_type.accepts(source.type())) {
+            throw std::invalid_argument{"incompatible scalar type"};
+        }
+    }
+
+    if constexpr (hierarchical_scalar_declaration<T>) {
+        if constexpr (scalar_declaration_traits<T>::generic) {
+            const auto *hierarchical = type_cast<HierarchicalScalarType>(&source.type());
+            if (hierarchical == nullptr || !hierarchical->is_resolved()) {
+                throw std::invalid_argument{"incompatible hierarchical scalar type"};
+            }
+        } else {
+            if (!cpp_scalar_runtime_type<T>().accepts_input(source.runtime_type())) {
+                throw std::invalid_argument{"incompatible hierarchical scalar type"};
+            }
+        }
+    }
+
+    if constexpr (scalar_storage_has_copy_runtime_type<T>) {
+        const auto &runtime_type = scalar_storage_traits<T>::copy_runtime_type(source);
+        if (&runtime_type == &source.runtime_type()) {
+            return copy_scalar_value(source, memory);
+        }
+
+        if constexpr (inline_scalar_value<T>) {
+            if (&runtime_type == &cpp_scalar_runtime_type<T>()) {
+                return make_scalar_value_from_value<T>(scalar_data_value<T>(source), memory);
+            }
+        }
+
+        return allocate_scalar_value(runtime_type, memory, [&](void *destination, allocator &resource) {
+            source.copy_construct(destination, runtime_type, resource);
+        });
+    } else if constexpr (scalar_uses_shared_handle<T>) {
         const auto &runtime_type = cpp_scalar_runtime_type<T>();
         if (!runtime_type.accepts_input(source.runtime_type())) {
             throw std::invalid_argument{"incompatible scalar runtime representations"};
@@ -152,51 +245,19 @@ template <typename T>
         auto value = scalar_data_value<T>(source);
         return make_scalar_value<T>(value, memory);
     } else if constexpr (hierarchical_scalar_declaration<T>) {
-        if constexpr (scalar_declaration_traits<T>::generic) {
-            const auto *hierarchical = type_cast<HierarchicalScalarType>(&source.type());
-            if (hierarchical == nullptr || !hierarchical->is_resolved()) {
-                throw std::invalid_argument{"incompatible hierarchical scalar type"};
-            }
-        } else {
-            if (!cpp_scalar_runtime_type<T>().accepts_input(source.runtime_type())) {
-                throw std::invalid_argument{"incompatible hierarchical scalar type"};
-            }
-        }
         return copy_scalar_value(source, memory);
     } else if constexpr (scalar_declaration_traits<T>::generic) {
         if (!cpp_scalar_type<T>().accepts(source.type())) {
             throw std::invalid_argument{"incompatible generic scalar type"};
         }
         return copy_scalar_value(source, memory);
+    } else if constexpr (inline_scalar_value<T>) {
+        return make_scalar_value_from_value<T>(scalar_data_value<T>(source), memory);
     } else {
-        if constexpr (requires {
-                          static_cast<const ScalarRuntimeType &(*)(const ScalarData &)>(
-                              &scalar_storage_traits<T>::copy_runtime_type);
-                      }) {
-            const auto &runtime_type = scalar_storage_traits<T>::copy_runtime_type(source);
-            if (&runtime_type == &source.runtime_type()) {
-                return copy_scalar_value(source, memory);
-            }
-
-            if constexpr (inline_scalar_value<T>) {
-                if (&runtime_type == &cpp_scalar_runtime_type<T>()) {
-                    return make_scalar_value<T>(scalar_data_value<T>(source), memory);
-                }
-            }
-
-            return allocate_scalar_value(runtime_type, memory, [&](void *destination, allocator &resource) {
-                source.copy_construct(destination, runtime_type, resource);
-            });
-        } else {
-            if constexpr (inline_scalar_value<T>) {
-                return make_scalar_value<T>(scalar_data_value<T>(source), memory);
-            }
-
-            const auto &runtime_type = cpp_scalar_runtime_type<T>();
-            return allocate_scalar_value(runtime_type, memory, [&](void *destination, allocator &resource) {
-                source.copy_construct(destination, runtime_type, resource);
-            });
-        }
+        const auto &runtime_type = cpp_scalar_runtime_type<T>();
+        return allocate_scalar_value(runtime_type, memory, [&](void *destination, allocator &resource) {
+            source.copy_construct(destination, runtime_type, resource);
+        });
     }
 }
 
@@ -220,8 +281,13 @@ template <typename T>
 }
 
 template <typename T>
-[[nodiscard]] ScalarData make_scalar_source(const typename scalar_storage_traits<T>::value_type &value) noexcept {
-    return {cpp_scalar_runtime_type<T>(), std::addressof(value), ScalarDataMode::source_view};
+[[nodiscard]] ScalarData make_scalar_source(
+    const typename scalar_storage_traits<T>::value_type &value) noexcept(scalar_source_is_nothrow<T>()) {
+    if constexpr (scalar_storage_has_borrow_value<T>) {
+        return scalar_storage_traits<T>::borrow_value(value);
+    } else {
+        return {cpp_scalar_runtime_type<T>(), std::addressof(value), ScalarDataMode::source_view};
+    }
 }
 
 } // namespace bg::details

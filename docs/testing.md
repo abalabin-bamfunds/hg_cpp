@@ -116,6 +116,8 @@ graph compilation or evaluation.
 - hierarchical scalar identity, schema metadata, inheritance, field narrowing, and container variance
 - schema-capturing hierarchical scalar views and construction, runtime field inspection through base annotations,
   shared-handle ownership, and programmatic field-count, type, and presence validation
+- provider-defined canonical and copy runtimes, borrowed read-view descriptors, generic source-runtime preservation,
+  and publication through time-series outputs
 - time series validity, update time, mutation, and invalidation
 - global state ownership, replacement, lookup, and allocation
 
