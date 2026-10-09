@@ -9,6 +9,15 @@
 
 namespace bg::details {
 
+bool TimeSeriesDictionaryRuntimeType::all_valid(const TimeSeriesInputData &input) const noexcept {
+    return input.valid_items() ? input.valid() : all_valid(input.last_updated_ref(), input.data());
+}
+
+bool TimeSeriesDictionaryRuntimeType::all_valid(const TimeSeriesInputData &input,
+                                                const TimeSeriesType &declared_type) const noexcept {
+    return input.valid_items() ? input.valid() : all_valid(input.last_updated_ref(), input.data(), declared_type);
+}
+
 void TimeSeriesDictionaryRuntimeType::copy_tick(const TimeSeriesInputData &input,
                                                 OutputState &output) const {
     if (input.valid() && type_cast<TimeSeriesDictionaryType>(&input.runtime_type().type()) == nullptr) {

@@ -221,8 +221,7 @@ class In<REF<Target, TimeSeriesProperties...>, Properties...>
     }
 
     template <typename... Functions> decltype(auto) visit(Functions &&...functions) const {
-        return In<TS_T>{data_.last_updated_ref(), data_.data(), data_.runtime_type(), data_.modified()}.visit(
-            std::forward<Functions>(functions)...);
+        return In<TS_T>{data_}.visit(std::forward<Functions>(functions)...);
     }
 
     using time_series_type = REF<Target, TimeSeriesProperties...>;

@@ -28,6 +28,8 @@ struct RetainedDictionaryKey {
 
 class TimeSeriesDictionaryRuntimeType : public TimeSeriesRuntimeType {
   public:
+    using TimeSeriesRuntimeType::all_valid;
+
     enum class ItemRange : std::uint8_t { current, added, removed, modified };
 
     TimeSeriesDictionaryRuntimeType(const TimeSeriesDictionaryType &type, const ScalarRuntimeType &key,
@@ -236,6 +238,9 @@ class TimeSeriesDictionaryRuntimeType : public TimeSeriesRuntimeType {
 
         return true;
     }
+
+    bool all_valid(const TimeSeriesInputData &input) const noexcept override;
+    bool all_valid(const TimeSeriesInputData &input, const TimeSeriesType &declared_type) const noexcept override;
 
     bool item_updated(const TimeSeriesState &last_updated, const void *value, item_id_t id) const override {
         const auto &storage = *static_cast<const time_series_dict_storage *>(value);

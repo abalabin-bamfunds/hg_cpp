@@ -251,6 +251,10 @@ bool TimeSeriesRuntimeType::all_valid(const TimeSeriesState &last_updated, const
     return current_items.valid;
 }
 
+bool TimeSeriesRuntimeType::all_valid(const TimeSeriesInputData &input) const noexcept {
+    return all_valid(input.last_updated_ref(), input.data());
+}
+
 bool TimeSeriesRuntimeType::all_valid(const TimeSeriesState &last_updated, const void *value,
                                       const TimeSeriesType &declared_type) const noexcept {
     const auto *declared_bundle = type_cast<TimeSeriesBundleType>(&declared_type);
@@ -274,6 +278,11 @@ bool TimeSeriesRuntimeType::all_valid(const TimeSeriesState &last_updated, const
     }
 
     return true;
+}
+
+bool TimeSeriesRuntimeType::all_valid(const TimeSeriesInputData &input,
+                                      const TimeSeriesType &declared_type) const noexcept {
+    return all_valid(input.last_updated_ref(), input.data(), declared_type);
 }
 
 Reference TimeSeriesRuntimeType::reference(const void *) const {

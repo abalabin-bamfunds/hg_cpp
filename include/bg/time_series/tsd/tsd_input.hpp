@@ -30,18 +30,24 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...>
 
     In() noexcept
         : activity_control{},
-          data_{cpp_time_series_runtime_type<TSD<K, Item, TimeSeriesProperties...>>(), initial_time_series_state, nullptr} {}
+          data_{cpp_time_series_runtime_type<TSD<K, Item, TimeSeriesProperties...>>(), initial_time_series_state,
+                nullptr, false, ParsedProperties::valid_items} {}
 
     In(const TimeSeriesState &last_updated, const void *value, const TimeSeriesRuntimeType &runtime_type,
        bool modified = false, bool *activity = nullptr) noexcept
-        : activity_control{activity}, data_{runtime_type, last_updated, value, modified} {}
+        : activity_control{activity},
+          data_{runtime_type, last_updated, value, modified, ParsedProperties::valid_items} {}
 
     explicit In(const TimeSeriesInputData &data, bool *activity = nullptr) noexcept
-        : activity_control{activity}, data_{data} {}
+        : activity_control{activity}, data_{data} {
+        if constexpr (ParsedProperties::valid_items) {
+            data_.set_valid_items(true);
+        }
+    }
 
     bool valid() const noexcept { return data_.valid(); }
     bool all_valid() const noexcept {
-        if constexpr (ParsedProperties::valid_items) {
+        if (uses_valid_items()) {
             return valid();
         }
         return data_.valid() && data_.runtime_type().all_valid(data_.last_updated_ref(), data_.data());
@@ -52,11 +58,11 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...>
     EvaluationTime last_updated() const noexcept { return data_.last_updated(); }
     const TimeSeriesInputData &input_data() const noexcept { return data_; }
     const TimeSeriesState &last_updated_state() const noexcept { return data_.last_updated_ref(); }
-    std::size_t size() const noexcept(!ParsedProperties::valid_items) {
+    std::size_t size() const {
         if (!valid()) {
             return 0;
         }
-        if constexpr (!ParsedProperties::valid_items) {
+        if (!uses_valid_items()) {
             return data_.runtime_type().item_count(data_.data());
         }
         auto count = std::size_t{};
@@ -126,8 +132,8 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...>
                                                   item.last_updated.time() == data_.last_updated()}};
     }
 
-    item_id_t next_item_id(item_id_t start) const noexcept(!ParsedProperties::valid_items) {
-        if constexpr (ParsedProperties::valid_items) {
+    item_id_t next_item_id(item_id_t start) const {
+        if (uses_valid_items()) {
             return next_valid_id(start);
         }
         return next(ItemRange::current, start);
@@ -142,7 +148,7 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...>
         return util::occupancy_index::npos;
     }
     item_id_t next_added_id(item_id_t start) const {
-        if constexpr (!ParsedProperties::valid_items) {
+        if (!uses_valid_items()) {
             return next(ItemRange::added, start);
         }
 
@@ -167,7 +173,7 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...>
         return added < modified ? added : modified;
     }
     item_id_t next_removed_id(item_id_t start) const {
-        if constexpr (!ParsedProperties::valid_items) {
+        if (!uses_valid_items()) {
             return next(ItemRange::removed, start);
         }
 
@@ -193,7 +199,7 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...>
     }
     item_id_t next_modified_id(item_id_t start) const {
         auto id = next(ItemRange::modified, start);
-        if constexpr (ParsedProperties::valid_items) {
+        if (uses_valid_items()) {
             while (id != util::occupancy_index::npos) {
                 const auto item = make_item(id);
                 if (item.valid() && was_valid_before_change(id)) {
@@ -231,7 +237,7 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...>
 
     template <typename Function> void for_each_added(Function &&function) const {
         if (valid()) {
-            if constexpr (ParsedProperties::valid_items) {
+            if (uses_valid_items()) {
                 apply_filtered_changes(ItemRange::added, function);
             } else {
                 apply_changes(&details::TimeSeriesDictionaryRuntimeType::for_each_added, function);
@@ -240,7 +246,7 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...>
     }
 
     template <typename Function> void for_each_removed(Function &&function) const {
-        if constexpr (ParsedProperties::valid_items) {
+        if (uses_valid_items()) {
             apply_filtered_changes(ItemRange::removed, function);
         } else {
             apply_changes(&details::TimeSeriesDictionaryRuntimeType::for_each_removed, function);
@@ -248,7 +254,7 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...>
     }
 
     template <typename Function> void for_each_modified(Function &&function) const {
-        if constexpr (ParsedProperties::valid_items) {
+        if (uses_valid_items()) {
             apply_filtered_changes(ItemRange::modified, function);
         } else {
             apply_changes(&details::TimeSeriesDictionaryRuntimeType::for_each_modified, function);
@@ -260,8 +266,7 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...>
     const In *operator->() const noexcept { return this; }
 
     template <typename... Functions> decltype(auto) visit(Functions &&...functions) const {
-        return In<TS_T>{data_.last_updated_ref(), data_.data(), data_.runtime_type(), data_.modified()}.visit(
-            std::forward<Functions>(functions)...);
+        return In<TS_T>{data_}.visit(std::forward<Functions>(functions)...);
     }
 
     using time_series_type = TSD<K, Item, TimeSeriesProperties...>;
@@ -281,8 +286,15 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...>
   private:
     using ItemRange = details::TimeSeriesDictionaryRuntimeType::ItemRange;
 
-    bool visible_item(item_id_t id) const {
+    bool uses_valid_items() const noexcept {
         if constexpr (ParsedProperties::valid_items) {
+            return true;
+        }
+        return data_.valid_items();
+    }
+
+    bool visible_item(item_id_t id) const {
+        if (uses_valid_items()) {
             return data_.data() != nullptr && dictionary_runtime_type().key_live(data_.data(), id) &&
                    make_item(id).valid();
         }
@@ -337,7 +349,7 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...>
         if (!valid()) {
             return false;
         }
-        if constexpr (ParsedProperties::valid_items) {
+        if (uses_valid_items()) {
             return find_change(ItemRange::modified, key) != util::occupancy_index::npos;
         }
         const auto id = dictionary_runtime_type().find_item(data_.data(), key);
@@ -354,7 +366,7 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...>
             return;
         }
 
-        if constexpr (!ParsedProperties::valid_items) {
+        if (!uses_valid_items()) {
             data_.runtime_type().for_each_item_id(data_.data(), std::addressof(function),
                                                   invoke_with_id<std::remove_reference_t<Function>>);
             return;
@@ -403,7 +415,7 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...>
         if (data_.data() == nullptr || (range != ItemRange::removed && !valid())) {
             return util::occupancy_index::npos;
         }
-        if constexpr (!ParsedProperties::valid_items) {
+        if (!uses_valid_items()) {
             if (range == ItemRange::added) {
                 return dictionary_runtime_type().find_added(last_updated_state(), data_.data(), key);
             }

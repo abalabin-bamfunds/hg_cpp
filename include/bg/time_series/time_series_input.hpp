@@ -37,11 +37,11 @@ class In<Variable, Properties...>
 
     bool valid() const noexcept { return data_.valid(); }
     bool all_valid() const noexcept {
-        return data_.valid() && data_.runtime_type().all_valid(data_.last_updated_ref(), data_.data());
+        return data_.valid() && data_.runtime_type().all_valid(data_);
     }
     // The declared type must accept this input's runtime type.
     bool all_valid(const TimeSeriesType &declared_type) const noexcept {
-        return data_.valid() && data_.runtime_type().all_valid(data_.last_updated_ref(), data_.data(), declared_type);
+        return data_.valid() && data_.runtime_type().all_valid(data_, declared_type);
     }
     bool became_valid() const noexcept { return data_.became_valid(); }
     bool became_invalid() const noexcept { return data_.became_invalid(); }
@@ -60,7 +60,7 @@ class In<Variable, Properties...>
             throw std::bad_cast{};
         }
 
-        return In<Target>{TimeSeriesInputData{runtime_type(), data_.last_updated_ref(), data(), data_.modified()}};
+        return In<Target>{data_};
     }
 
     template <typename Visitor, typename... Arguments>
@@ -128,31 +128,31 @@ auto In<Variable, Properties...>::visit(Visitor &&visitor, Arguments &&...argume
     auto &types = static_cast<TimeSeriesInputTypes &>(dispatch);
     runtime_type().type().visit(
         [&](const TimeSeriesValueType *) {
-            auto input = In<TS<SCALAR>>{data_.last_updated_ref(), data(), runtime_type(), data_.modified()};
+            auto input = In<TS<SCALAR>>{data_};
             types.visit(&input);
         },
         [&](const TimeSeriesListType *) {
-            auto input = In<TSL<TS_T, SIZE>>{data_.last_updated_ref(), data(), runtime_type(), data_.modified()};
+            auto input = In<TSL<TS_T, SIZE>>{data_};
             types.visit(&input);
         },
         [&](const TimeSeriesBundleType *) {
-            auto input = In<TSB<SCHEMA>>{data_.last_updated_ref(), data(), runtime_type(), data_.modified()};
+            auto input = In<TSB<SCHEMA>>{data_};
             types.visit(&input);
         },
         [&](const TimeSeriesSetType *) {
-            auto input = In<TSS<SCALAR>>{data_.last_updated_ref(), data(), runtime_type(), data_.modified()};
+            auto input = In<TSS<SCALAR>>{data_};
             types.visit(&input);
         },
         [&](const TimeSeriesDictionaryType *) {
-            auto input = In<TSD<SCALAR, TS_T>>{data_.last_updated_ref(), data(), runtime_type(), data_.modified()};
+            auto input = In<TSD<SCALAR, TS_T>>{data_};
             types.visit(&input);
         },
         [&](const TimeSeriesReferenceType *) {
-            auto input = In<REF<TS_T>>{data_.last_updated_ref(), data(), runtime_type(), data_.modified()};
+            auto input = In<REF<TS_T>>{data_};
             types.visit(&input);
         },
         [&] {
-            auto input = In<TS_T>{data_.last_updated_ref(), data(), runtime_type(), data_.modified()};
+            auto input = In<TS_T>{data_};
             types.visit(&input);
         });
 

@@ -84,8 +84,10 @@ class TimeSeriesRuntimeType : public RuntimeType {
     virtual bool item_updated(const TimeSeriesState &, const void *, item_id_t) const;
     virtual void for_each_updated_item(const TimeSeriesState &, const void *, void *, ItemIdFunction) const;
     virtual bool all_valid(const TimeSeriesState &, const void *) const noexcept;
+    virtual bool all_valid(const TimeSeriesInputData &) const noexcept;
     // The declared type must accept this runtime type; a bundle declaration limits the fields checked.
     virtual bool all_valid(const TimeSeriesState &, const void *, const TimeSeriesType &declared_type) const noexcept;
+    virtual bool all_valid(const TimeSeriesInputData &, const TimeSeriesType &declared_type) const noexcept;
     [[nodiscard]] virtual bool mark_item_modified(void *, item_id_t, EvaluationTime, const TimeSeriesState &,
                                                   allocator &) const noexcept {
         return false;

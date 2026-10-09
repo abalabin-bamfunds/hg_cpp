@@ -368,8 +368,7 @@ class In<provider::Series<Item, SeriesProperties...>, Properties...>
     const TimeSeriesRuntimeType &runtime_type() const noexcept { return data_.runtime_type(); }
 
     template <typename... Functions> decltype(auto) visit(Functions &&...functions) const {
-        return In<TS_T>{data_.last_updated_ref(), data_.data(), runtime_type(), data_.modified()}.visit(
-            std::forward<Functions>(functions)...);
+        return In<TS_T>{data_}.visit(std::forward<Functions>(functions)...);
     }
 
     static constexpr auto name = ParsedProperties::name;

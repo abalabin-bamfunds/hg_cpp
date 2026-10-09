@@ -138,6 +138,80 @@ struct one_invalid_key_dictionary_source_definition {
 
 } // namespace
 
+TEST_CASE("erased time series input preserves both input flags",
+          "[evaluation][tsd][feature:validity][feature:time-series-view][input-guarantee:valid-items]") {
+    static_assert(sizeof(bg::TimeSeriesInputData) == 3 * sizeof(void *));
+
+    using Dictionary = bg::TSD<std::int64_t, bg::TS<bg::i64>>;
+    const auto updated = bg::TimeSeriesState{bg::EvaluationTime{bg::EvaluationTime::duration{1}}};
+    auto data = bg::TimeSeriesInputData{bg::cpp_time_series_runtime_type<Dictionary>(), updated, nullptr, true, true};
+    auto erased = bg::In<bg::TS_T>{data};
+    const auto converted = erased.as<Dictionary>();
+
+    CHECK(converted.input_data().modified());
+    CHECK(converted.input_data().valid_items());
+    CHECK(erased.all_valid());
+    CHECK(erased.all_valid(Dictionary::type()));
+
+    auto visited = false;
+    erased.visit(
+        [&](const bg::In<bg::TSD<bg::SCALAR, bg::TS_T>> *dictionary) {
+            visited = true;
+            CHECK(dictionary->input_data().modified());
+            CHECK(dictionary->input_data().valid_items());
+            CHECK(dictionary->all_valid());
+        },
+        ddv::noop);
+
+    CHECK(visited);
+}
+
+TEST_CASE("valid_items survives erased input conversion",
+          "[evaluation][tsd][feature:validity][input-guarantee:valid-items][feature:time-series-view]"
+          "[feature:node-api]") {
+    const auto source = bg::node<valid_item_dictionary_reference_source_definition>();
+    const auto size_after_as = bg::node([](bg::In<bg::TSD<std::int64_t, bg::TS<bg::i64>>, bg::valid_items> input,
+                                           bg::Out<bg::TS<bg::i64>> output) {
+        const auto erased = bg::In<bg::TS_T>{input.input_data()};
+        const auto dictionary = erased.as<bg::TSD<std::int64_t, bg::TS<bg::i64>>>();
+        const auto visible_size = dictionary.size();
+        const auto physical_size = dictionary.runtime_type().item_count(dictionary.data());
+        output.set(static_cast<std::int64_t>(visible_size * 10 + physical_size));
+    });
+    const auto size_after_visit = bg::node([](bg::In<bg::TSD<std::int64_t, bg::TS<bg::i64>>, bg::valid_items> input,
+                                              bg::Out<bg::TS<bg::i64>> output) {
+        auto size = std::int64_t{-1};
+        input.visit([&](const bg::In<bg::TSD<bg::SCALAR, bg::TS_T>> *dictionary) {
+            size = static_cast<std::int64_t>(dictionary->size());
+        }, ddv::noop);
+        output.set(size);
+    });
+    const auto runtime_copy = bg::node([](bg::In<bg::TS_T, bg::passive>,
+                                          bg::In<bg::TSD<std::int64_t, bg::TS<bg::i64>>, bg::valid_items> input,
+                                          bg::Out<bg::TS_T> output) {
+        output.copy(bg::In<bg::TS_T>{input.input_data()});
+    });
+    const auto size_and_second_key = bg::node([](bg::In<bg::TSD<std::int64_t, bg::TS<bg::i64>>> input,
+                                                 bg::Out<bg::TS<bg::i64>> output) {
+        output.set(static_cast<std::int64_t>(input.size() * 10 + input.contains(2)));
+    });
+
+    SECTION("as") {
+        const auto actual = bg::testing::test_graph([&] { return size_after_as(source()); });
+        CHECK(actual.equals<bg::i64>({12}));
+    }
+
+    SECTION("visit") {
+        const auto actual = bg::testing::test_graph([&] { return size_after_visit(source()); });
+        CHECK(actual.equals<bg::i64>({1}));
+    }
+
+    SECTION("runtime copy") {
+        const auto actual = bg::testing::test_graph([&] { return size_and_second_key(runtime_copy(source(), source())); });
+        CHECK(actual.equals<bg::i64>({10}));
+    }
+}
+
 TEST_CASE("a valid_items dictionary input filters items and classifies validity changes",
           "[evaluation][tsd][feature:validity][series:tsd][transition:addition][transition:update]"
           "[transition:invalidation][input-guarantee:valid-items][binding:direct]") {
@@ -426,4 +500,3 @@ TEST_CASE("valid_items cursors include a sampled removal and invalidation sharin
 
     CHECK(actual.equals<bg::i64>({0, 23}));
 }
-
