@@ -34,6 +34,12 @@ template <typename T> typename scalar_storage_traits<T>::value_type scalar_data_
     using Stored = typename Traits::stored_type;
     using Value = typename Traits::value_type;
 
+    if constexpr (requires {
+                      static_cast<Value (*)(const ScalarData &)>(&Traits::read_value);
+                  }) {
+        return Traits::read_value(source);
+    }
+
     if constexpr (inline_scalar_value<T>) {
         if (source.mode() == ScalarDataMode::inline_value) {
             return inline_value<T>(source.data_word());

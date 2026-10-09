@@ -20,6 +20,12 @@
 
 namespace bg {
 
+class ScalarData;
+
+namespace details {
+using ScalarData = ::bg::ScalarData;
+}
+
 // Defines the canonical C++ storage, read view, intrinsic operations, and lifecycle for a scalar declaration.
 // Scalar providers specialize this trait in their public interface.
 template <typename T> struct scalar_storage_traits {

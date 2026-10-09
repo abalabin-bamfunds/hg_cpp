@@ -275,10 +275,28 @@ runtime type must outlive every descriptor that refers to it.
 
 `data_word()` returns the payload word. `data()` returns its address for inline
 and shared modes, and the payload pointer for the other modes. Providers must
-interpret the payload using its mode. To read another representation, call
-its runtime's `read_value(mode, data_word, destination)`. The destination is
-aligned, uninitialized storage for the canonical C++ read value; the caller
-destroys that value after use.
+interpret the payload using its mode. The default scalar read path calls the
+source runtime's `read_value(mode, data_word, destination)` into aligned,
+uninitialized storage for the provider's declared C++ read value, then destroys
+that value after use.
+
+A provider can specialize how a typed view reads runtime representations by
+adding `static value_type read_value(const details::ScalarData &source)` to
+`scalar_storage_traits<T>`. The hook returns exactly the trait's `value_type`
+and interprets the source runtime, payload, and mode. It handles the canonical
+runtime directly when that runtime delegates reads back through the trait; it
+must not call `source.runtime_type().read_value(...)` unconditionally in that
+case. These trait hooks are extension APIs; node code uses `Scalar` and
+`ScalarValue`.
+
+A provider can also add
+`static const ScalarRuntimeType &copy_runtime_type(const details::ScalarData &source)`.
+This selects the runtime type used when `ScalarValue<T>` copies a source. If it
+returns the source runtime, BG uses the existing actual-runtime copy or shared
+retain path. Otherwise, BG constructs the selected runtime from the source;
+that runtime must accept the source representation. When the hook is absent,
+typed scalar copies keep their existing behavior, including hierarchical
+runtime preservation.
 
 A runtime type for a list, set, or dictionary semantic type derives from the
 matching collection runtime interface. Its component runtime types correspond

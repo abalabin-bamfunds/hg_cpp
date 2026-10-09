@@ -169,14 +169,34 @@ template <typename T>
         }
         return copy_scalar_value(source, memory);
     } else {
-        if constexpr (inline_scalar_value<T>) {
-            return make_scalar_value<T>(scalar_data_value<T>(source), memory);
-        }
+        if constexpr (requires {
+                          static_cast<const ScalarRuntimeType &(*)(const ScalarData &)>(
+                              &scalar_storage_traits<T>::copy_runtime_type);
+                      }) {
+            const auto &runtime_type = scalar_storage_traits<T>::copy_runtime_type(source);
+            if (&runtime_type == &source.runtime_type()) {
+                return copy_scalar_value(source, memory);
+            }
 
-        const auto &runtime_type = cpp_scalar_runtime_type<T>();
-        return allocate_scalar_value(runtime_type, memory, [&](void *destination, allocator &resource) {
-            source.copy_construct(destination, runtime_type, resource);
-        });
+            if constexpr (inline_scalar_value<T>) {
+                if (&runtime_type == &cpp_scalar_runtime_type<T>()) {
+                    return make_scalar_value<T>(scalar_data_value<T>(source), memory);
+                }
+            }
+
+            return allocate_scalar_value(runtime_type, memory, [&](void *destination, allocator &resource) {
+                source.copy_construct(destination, runtime_type, resource);
+            });
+        } else {
+            if constexpr (inline_scalar_value<T>) {
+                return make_scalar_value<T>(scalar_data_value<T>(source), memory);
+            }
+
+            const auto &runtime_type = cpp_scalar_runtime_type<T>();
+            return allocate_scalar_value(runtime_type, memory, [&](void *destination, allocator &resource) {
+                source.copy_construct(destination, runtime_type, resource);
+            });
+        }
     }
 }
 

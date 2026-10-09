@@ -324,12 +324,14 @@ TEST_CASE("an owning base hierarchical scalar retains a derived value",
     auto from_view = std::optional<bg::ScalarValue<bg::Bundle<Instrument>>>{};
     auto from_value = std::optional<bg::ScalarValue<bg::Bundle<Instrument>>>{};
     const auto *derived_type = static_cast<const bg::ScalarType *>(nullptr);
+    const auto *derived_runtime_type = static_cast<const bg::ScalarRuntimeType *>(nullptr);
     {
         auto state = bg::GlobalState{};
         state.write([&](auto &) {
             const auto equity = bg::bundle<Equity>(bg::symbol{"ABC"}, 12.5, bg::i64{100});
 
             derived_type = &equity.type();
+            derived_runtime_type = &equity.runtime_type();
             from_view.emplace(equity.view());
             from_value.emplace(equity);
         });
@@ -338,7 +340,9 @@ TEST_CASE("an owning base hierarchical scalar retains a derived value",
     REQUIRE(from_view.has_value());
     REQUIRE(from_value.has_value());
     CHECK(&from_view->type() == derived_type);
+    CHECK(&from_view->runtime_type() == derived_runtime_type);
     CHECK(&from_value->type() == derived_type);
+    CHECK(&from_value->runtime_type() == derived_runtime_type);
     CHECK(bg::scalar_cast<bg::i64>(bg::scalar_cast<bg::Bundle<Equity>>(*from_view)[2]).value() == 100);
     CHECK(bg::scalar_cast<bg::i64>(bg::scalar_cast<bg::Bundle<Equity>>(*from_value)[2]).value() == 100);
 }
