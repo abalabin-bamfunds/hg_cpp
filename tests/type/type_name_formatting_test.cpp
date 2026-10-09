@@ -64,17 +64,21 @@ TEST_CASE("semantic types append their formal names", "[feature:type-system]") {
     CHECK(text == "prefix:float");
 
     auto generic_scalar_text = std::string{};
-    const auto generic_scalar = FallbackScalarType{};
+    static const auto generic_scalar = FallbackScalarType{};
+    [[maybe_unused]] static const auto &generic_scalar_registration =
+        bg::TypeRegistry::register_static(generic_scalar);
     generic_scalar.format_name(generic_scalar_text);
     CHECK(generic_scalar_text == "scalar");
 
     auto generic_type_text = std::string{};
-    const auto generic_type = FallbackType{};
+    static const auto generic_type = FallbackType{};
+    [[maybe_unused]] static const auto &generic_type_registration = bg::TypeRegistry::register_static(generic_type);
     generic_type.format_name(generic_type_text);
     CHECK(generic_type_text == "type");
 
     auto variable_text = std::string{};
-    const auto variable = bg::TypeVariableType<bg::Type>{bg::util::symbol{"VALUE"}};
+    static const auto variable = bg::TypeVariableType<bg::Type>{bg::util::symbol{"VALUE"}};
+    [[maybe_unused]] static const auto &variable_registration = bg::TypeRegistry::register_static(variable);
     const bg::Type &variable_type = variable;
     variable_type.format_name(variable_text);
     CHECK(variable_text == "VALUE");
@@ -115,9 +119,13 @@ TEST_CASE("built-in composite types format their arguments and guarantees", "[fe
     bg::type_of(value).format_name(type_value_text);
     CHECK(type_value_text == "Type<TS<float>>");
 
-    const auto &series_variable = bg::TypeVariableType<bg::TimeSeriesType>{bg::util::symbol{"SERIES"}};
-    const auto generic_time_series = bg::GenericTimeSeriesVariableType{series_variable,
-                                                                        bg::TimeSeriesGuarantee::final};
+    static const auto series_variable = bg::TypeVariableType<bg::TimeSeriesType>{bg::util::symbol{"SERIES"}};
+    [[maybe_unused]] static const auto &series_variable_registration =
+        bg::TypeRegistry::register_static(series_variable);
+    static const auto generic_time_series = bg::GenericTimeSeriesVariableType{series_variable,
+                                                                               bg::TimeSeriesGuarantee::final};
+    [[maybe_unused]] static const auto &generic_time_series_registration =
+        bg::TypeRegistry::register_static(generic_time_series);
     auto generic_time_series_text = std::string{};
     generic_time_series.format_name(generic_time_series_text);
     CHECK(generic_time_series_text == "SERIES, final");
