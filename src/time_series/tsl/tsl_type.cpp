@@ -82,6 +82,21 @@ const TimeSeriesType &TimeSeriesListType::with_guarantee(TimeSeriesGuarantee gua
     return TimeSeriesType::with_guarantee(guarantee);
 }
 
+const TimeSeriesType &TimeSeriesListType::with_guarantee_limit(TimeSeriesGuarantee limit) const {
+    if (!is_resolved()) {
+        return TimeSeriesType::with_guarantee_limit(limit);
+    }
+
+    const auto current = *guarantee().value();
+    const auto &limited_item = item_type().with_guarantee_limit(limit);
+    const auto limited_guarantee = weakest(current, limit);
+    if (&limited_item == &item_type() && limited_guarantee == current) {
+        return *this;
+    }
+
+    return time_series_list_type(limited_item, item_count(), limited_guarantee);
+}
+
 bool TimeSeriesListType::do_match(const Type &supplied, TypeMap &type_map) const {
     const auto *list = type_cast<TimeSeriesListType>(&supplied);
     if (list == nullptr || !list->is_resolved()) {

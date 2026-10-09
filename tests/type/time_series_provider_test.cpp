@@ -787,6 +787,16 @@ TEST_CASE("a provider declaration exposes public semantic and runtime customizat
     CHECK_THROWS_AS(bg::register_time_series_runtime_type(wrong_dictionary_component), std::invalid_argument);
 }
 
+TEST_CASE("an extension time series limits its leaf guarantee through its factory",
+          "[type][time_series][feature:type-system][declaration:runtime]"
+          "[guarantee:final][guarantee:const]") {
+    const auto &source = provider::series_type(bg::int64_type(), bg::TimeSeriesGuarantee::const_);
+
+    CHECK(&source.with_guarantee_limit(bg::TimeSeriesGuarantee::final) ==
+          &provider::series_type(bg::int64_type(), bg::TimeSeriesGuarantee::final));
+    CHECK(&source.with_guarantee_limit(bg::TimeSeriesGuarantee::const_) == &source);
+}
+
 TEST_CASE("provider inputs and configured outputs bind through public owners",
           "[value][time_series][feature:time-series-view]") {
     using Series = provider::Series<bg::i64>;

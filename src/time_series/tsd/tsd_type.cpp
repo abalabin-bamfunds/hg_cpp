@@ -40,6 +40,21 @@ const TimeSeriesType &TimeSeriesDictionaryType::with_guarantee(TimeSeriesGuarant
     return time_series_dictionary_type(key_type(), value_type(), guarantee);
 }
 
+const TimeSeriesType &TimeSeriesDictionaryType::with_guarantee_limit(TimeSeriesGuarantee limit) const {
+    if (!is_resolved()) {
+        return TimeSeriesType::with_guarantee_limit(limit);
+    }
+
+    const auto current = *guarantee().value();
+    const auto &limited_value = value_type().with_guarantee_limit(limit);
+    const auto limited_guarantee = weakest(current, limit);
+    if (&limited_value == &value_type() && limited_guarantee == current) {
+        return *this;
+    }
+
+    return time_series_dictionary_type(key_type(), limited_value, limited_guarantee);
+}
+
 bool TimeSeriesDictionaryType::requires_reference_representation_for(const TimeSeriesType &supplied) const noexcept {
     const auto *tsd = type_cast<TimeSeriesDictionaryType>(&supplied);
     if (tsd == nullptr) {

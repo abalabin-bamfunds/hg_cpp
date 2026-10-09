@@ -32,6 +32,21 @@ const TimeSeriesType &TimeSeriesType::with_guarantee(TimeSeriesGuarantee guarant
                               "an unresolved time series type cannot change guarantee"};
 }
 
+const TimeSeriesType &TimeSeriesType::with_guarantee_limit(TimeSeriesGuarantee limit) const {
+    if (!is_resolved()) {
+        throw TypeResolutionError{TypeResolutionErrorCode::invalid_type_map, util::symbol{"guarantee"},
+                                  "an unresolved time series type cannot limit its guarantee"};
+    }
+
+    const auto current = guarantee().value();
+    const auto limited = weakest(*current, limit);
+    if (limited == *current) {
+        return *this;
+    }
+
+    return with_guarantee(limited);
+}
+
 const TimeSeriesType *TimeSeriesType::common_type(const TimeSeriesType &other) const {
     const auto own_guarantee = guarantee().value();
     const auto other_guarantee = other.guarantee().value();

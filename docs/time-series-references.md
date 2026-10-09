@@ -21,7 +21,9 @@ The wiring layer selects one of these actions:
 
 Type resolution matches reference arguments through their targets. Wiring
 retains the original argument and selects the action after resolution. Node
-code receives the type declared by its signature.
+code receives the type declared by its signature. Transparent dereferencing
+limits the exposed guarantees according to the
+[reference guarantee rules](type-system.md#reference-guarantees).
 
 A node that handles a reference declares `In<REF<TS_T>>` or
 `Out<REF<TS_T>>`. A reference output selects or passes through an input

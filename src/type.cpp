@@ -20,7 +20,23 @@ bool Type::match(const Type &supplied, TypeMap &type_map) const {
     const auto *argument_reference = type_cast<TimeSeriesReferenceType>(&supplied);
 
     if (parameter_reference == nullptr) {
-        return do_match(argument_reference == nullptr ? supplied : argument_reference->target_type(), type_map);
+        if (argument_reference == nullptr) {
+            return do_match(supplied, type_map);
+        }
+
+        const auto &target = argument_reference->target_type();
+        if (!argument_reference->is_resolved() || !target.is_resolved()) {
+            return false;
+        }
+        const auto reference_guarantee = *argument_reference->guarantee().value();
+
+        auto guarantee_limit = TimeSeriesGuarantee::ordinary;
+        if (reference_guarantee == TimeSeriesGuarantee::final || reference_guarantee == TimeSeriesGuarantee::const_) {
+            guarantee_limit = reference_guarantee;
+        }
+
+        const auto &observed_target = target.with_guarantee_limit(guarantee_limit);
+        return do_match(observed_target, type_map);
     }
 
     const auto &argument_target = argument_reference == nullptr ? supplied : argument_reference->target_type();

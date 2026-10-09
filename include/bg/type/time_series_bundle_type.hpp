@@ -27,6 +27,7 @@ class TimeSeriesBundleType : public FixedItemTimeSeriesType {
     util::symbol item_name(std::size_t index) const;
     std::optional<std::size_t> find_item_index(util::symbol name) const;
     [[nodiscard]] const TimeSeriesType &with_guarantee(TimeSeriesGuarantee guarantee) const override;
+    const TimeSeriesType &with_guarantee_limit(TimeSeriesGuarantee limit) const override;
 
   protected:
     TimeSeriesBundleType(const SchemaType &schema, GuaranteeParameter guarantee);
@@ -34,6 +35,8 @@ class TimeSeriesBundleType : public FixedItemTimeSeriesType {
     [[nodiscard]] bool do_match(const Type &supplied, TypeMap &type_map) const override;
 
   private:
+    static const Schema &limit_schema_guarantees(const Schema &schema, TimeSeriesGuarantee limit);
+
     const SchemaType *schema_;
 };
 

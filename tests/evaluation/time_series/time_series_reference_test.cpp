@@ -14,6 +14,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <array>
 #include <chrono>
 #include <optional>
 #include <vector>
@@ -85,6 +86,130 @@ TEST_CASE("a dereferenced input subscribes directly to a fixed target",
 
     CHECK(reference_pass::evaluation_count == 1);
     CHECK(actual.equals({10, 20, std::nullopt, 30}));
+}
+
+TEST_CASE("an ordinary reference can retarget a value input between stronger targets",
+          "[feature:reference][feature:type-system][feature:test-graph][series:value][scalar:floating-point]"
+          "[guarantee:ordinary][guarantee:final][guarantee:const][binding:reference-to-value]"
+          "[shape:chain][transition:update][definition:function]") {
+    const auto final_value = bg::node([](bg::Out<bg::TS<double, bg::TimeSeriesGuarantee::final>> output) {
+        output.set(1.0);
+    });
+    const auto select = bg::node(
+        [](bg::In<bg::TS<bool>> use_constant,
+           bg::In<bg::REF<bg::TS<double, bg::TimeSeriesGuarantee::final>, bg::TimeSeriesGuarantee::ordinary>> first,
+           bg::In<bg::REF<bg::TS<double, bg::TimeSeriesGuarantee::final>, bg::TimeSeriesGuarantee::ordinary>> second,
+           bg::Out<bg::REF<bg::TS<double, bg::TimeSeriesGuarantee::final>, bg::TimeSeriesGuarantee::ordinary>> output) {
+            output.copy(*use_constant ? second : first);
+        });
+    const auto copy = bg::node(
+        [](bg::In<bg::TS<double, bg::guarantee_variable<"G">>> input,
+           bg::Out<bg::TS<double, bg::guarantee_variable<"G">>> output) {
+            output.set(*input);
+        });
+    const auto graph = [&](bg::wp<bg::TS<bool>> use_constant) {
+        const auto constant_value = bg::operators::const_(2.0).as<bg::TS<double, bg::TimeSeriesGuarantee::const_>>();
+        const auto selected = select(use_constant, final_value(), constant_value);
+        const auto output = copy(selected);
+
+        CHECK(&output.type() == &bg::TS<double>::type());
+        return output;
+    };
+
+    const auto actual = bg::testing::test_graph(graph, std::array{false, true, false, true});
+
+    CHECK(actual.equals<double>({1.0, 2.0, 1.0, 2.0}));
+}
+
+TEST_CASE("a deduplicated reference retarget samples equal constant values",
+          "[feature:reference][feature:type-system][feature:test-graph][series:value][scalar:floating-point]"
+          "[guarantee:deduplicated][guarantee:const][binding:reference-to-value]"
+          "[shape:chain][transition:update][definition:function]") {
+    const auto select = bg::node(
+        [](bg::In<bg::TS<bool>> use_second,
+           bg::In<bg::REF<bg::TS<double, bg::TimeSeriesGuarantee::const_>,
+                          bg::TimeSeriesGuarantee::deduplicated>> first,
+           bg::In<bg::REF<bg::TS<double, bg::TimeSeriesGuarantee::const_>,
+                          bg::TimeSeriesGuarantee::deduplicated>> second,
+           bg::Out<bg::REF<bg::TS<double, bg::TimeSeriesGuarantee::const_>,
+                           bg::TimeSeriesGuarantee::deduplicated>> output) {
+            output.copy(*use_second ? second : first);
+        });
+    const auto first = bg::node(
+        [](bg::Out<bg::TS<double, bg::TimeSeriesGuarantee::const_>> output) { output.set(4.0); });
+    const auto second = bg::node(
+        [](bg::Out<bg::TS<double, bg::TimeSeriesGuarantee::const_>> output) { output.set(4.0); });
+    const auto read = bg::node([](bg::In<bg::TS<double, bg::guarantee_variable<"G">>> input) { return *input; });
+    const auto graph = [&](bg::wp<bg::TS<bool>> use_second) {
+        return read(select(use_second, first(), second()));
+    };
+
+    const auto actual = bg::testing::test_graph(graph, std::array{false, true, false, true});
+
+    CHECK(actual.equals<double>({4.0, 4.0, 4.0, 4.0}));
+}
+
+TEST_CASE("a dereferenced list keeps the target runtime type when only guarantees differ",
+          "[evaluation][reference][tsl][feature:reference][series:fixed-tsl][guarantee:ordinary]"
+          "[guarantee:final][binding:reference-to-value]") {
+    const auto first = bg::node(
+        [](bg::Out<bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>> output) { output.set(1); });
+    const auto second = bg::node(
+        [](bg::Out<bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>> output) { output.set(2); });
+    const auto pass = bg::node(
+        [](bg::In<bg::REF<bg::TSL<bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>, 2>>> input,
+           bg::Out<bg::REF<bg::TSL<bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>, 2>>> output) {
+            output.copy(input);
+        });
+    auto target_type = static_cast<const bg::TimeSeriesType *>(nullptr);
+    auto received_type = static_cast<const bg::TimeSeriesType *>(nullptr);
+    const auto read = bg::node([&](bg::In<bg::TSL<bg::TS<bg::i64>, 2>> input) {
+        received_type = &input.runtime_type().type();
+        return *input[0] + *input[1];
+    });
+    const auto graph = [&] {
+        const auto values = bg::tsl(first(), second());
+        target_type = &values.type();
+        return read(pass(values));
+    };
+
+    const auto actual = bg::testing::test_graph(graph);
+
+    CHECK(actual.equals<bg::i64>({3}));
+    CHECK(received_type == target_type);
+}
+
+TEST_CASE("an ordinary list reference samples the selected list with final items",
+          "[evaluation][reference][feature:reference][series:fixed-tsl][guarantee:ordinary]"
+          "[guarantee:final][binding:reference-to-value][activity:active][transition:update][shape:chain]") {
+    const auto first_item = bg::node(
+        [](bg::Out<bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>> output) { output.set(10); });
+    const auto first_other_item = bg::node(
+        [](bg::Out<bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>> output) { output.set(11); });
+    const auto second_item = bg::node(
+        [](bg::Out<bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>> output) { output.set(20); });
+    const auto second_other_item = bg::node(
+        [](bg::Out<bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>> output) { output.set(21); });
+    const auto select = bg::node(
+        [](bg::In<bg::TS<bool>> use_second,
+           bg::In<bg::REF<bg::TSL<bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>, 2>,
+                          bg::TimeSeriesGuarantee::ordinary>> first,
+           bg::In<bg::REF<bg::TSL<bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>, 2>,
+                          bg::TimeSeriesGuarantee::ordinary>> second,
+           bg::Out<bg::REF<bg::TSL<bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>, 2>,
+                           bg::TimeSeriesGuarantee::ordinary>> output) {
+            output.copy(*use_second ? second : first);
+        });
+    const auto read = bg::node([](bg::In<bg::TSL<bg::TS<bg::i64>, 2>> input) { return *input[0]; });
+    const auto graph = [&](bg::wp<bg::TS<bool>> use_second) {
+        const auto first = bg::tsl(first_item(), first_other_item());
+        const auto second = bg::tsl(second_item(), second_other_item());
+        return read(select(use_second, first, second));
+    };
+
+    const auto actual = bg::testing::test_graph(graph, std::array{false, true, false, true});
+
+    CHECK(actual.equals<bg::i64>({10, 20, 10, 20}));
 }
 
 TEST_CASE("plain and notifying inputs share one sampled dictionary",

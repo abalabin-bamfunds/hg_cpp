@@ -121,6 +121,34 @@ const TimeSeriesType &TimeSeriesBundleType::with_guarantee(TimeSeriesGuarantee g
     return time_series_bundle_type(schema(), guarantee);
 }
 
+const TimeSeriesType &TimeSeriesBundleType::with_guarantee_limit(TimeSeriesGuarantee limit) const {
+    if (!is_resolved()) {
+        return TimeSeriesType::with_guarantee_limit(limit);
+    }
+
+    const auto current = *guarantee().value();
+    const auto &limited_schema = limit_schema_guarantees(schema(), limit);
+    const auto limited_guarantee = weakest(current, limit);
+    if (&limited_schema == &schema() && limited_guarantee == current) {
+        return *this;
+    }
+
+    return time_series_bundle_type(limited_schema, limited_guarantee);
+}
+
+const Schema &TimeSeriesBundleType::limit_schema_guarantees(const Schema &descriptor,
+                                                            TimeSeriesGuarantee limit) {
+    auto fields = std::vector<SchemaField>{};
+    fields.reserve(descriptor.direct_fields().size());
+    for (const auto &field : descriptor.direct_fields()) {
+        const auto &time_series = static_cast<const TimeSeriesType &>(*field.type);
+        fields.push_back({field.name, &time_series.with_guarantee_limit(limit), false});
+    }
+
+    const auto *base = descriptor.base() == nullptr ? nullptr : &limit_schema_guarantees(*descriptor.base(), limit);
+    return bg::schema(descriptor.name(), descriptor.identity(), base, fields);
+}
+
 bool TimeSeriesBundleType::do_match(const Type &supplied, TypeMap &type_map) const {
     const auto *bundle = type_cast<TimeSeriesBundleType>(&supplied);
     if (bundle == nullptr || !bundle->is_resolved()) {

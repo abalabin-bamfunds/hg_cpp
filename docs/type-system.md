@@ -415,10 +415,11 @@ reusable. A proxy that owns a temporary wiring construct is consumed by its
 wiring call.
 
 Reference matching is transparent at every level of a type. A non-reference
-parameter matches a reference target. A reference parameter matches the same
-target and also matches its own guarantee. A direct source contributes a
-`const` reference guarantee because its generated reference never changes
-target.
+parameter matches the target with the
+[reference guarantee limit](#reference-guarantees). A reference parameter
+matches the declared target and separately matches its own guarantee. A direct
+source contributes a `const` reference guarantee because its generated reference
+never changes target.
 
 Resolution retains the original argument type for graph compilation. This lets
 compilation preserve, create, or dereference a reference after type variables
@@ -545,8 +546,32 @@ collection has its complete observable value at its start time.
 ### Reference guarantees
 
 In `REF<TS_T, G>`, `G` applies to changes of the reference. The target `TS_T`
-retains its guarantee. Dereferencing and sampling preserve only guarantees
-proved for the resulting input view.
+retains its guarantee. When a non-reference parameter receives a reference,
+type resolution limits the guarantees exposed by the dereferenced input:
+
+| Reference guarantee | Limit on exposed guarantees |
+| --- | --- |
+| `ordinary` or `deduplicated` | `ordinary` |
+| `final` | `final` |
+| `const` | `const` |
+
+Each exposed guarantee becomes the weaker of its target guarantee and this
+limit. The limit applies recursively to collection items. At a contained
+explicit `REF`, it limits the reference's guarantee and preserves its target
+type. Matching an explicit reference parameter keeps the reference and target
+guarantees separate. Direct non-reference arguments keep their guarantees.
+
+For example, an ordinary reference to a final fixed TSL exposes ordinary items.
+Changing the reference can sample a different final list and publish another
+item value. A deduplicated reference can also select distinct targets with equal
+values: reference deduplication compares references, not sampled target values.
+
+`TimeSeriesType::with_guarantee_limit()` is the engine and extension operation
+for this calculation. It returns a canonical resolved type. Leaf types use the
+base implementation; collection types override it to limit their contained time
+series recursively. Reference types preserve their target type. This is
+required to resolve signatures from the input behavior defined by
+[reference sampling](time-series-references.md#input-sampling).
 
 ### Enforcement
 
