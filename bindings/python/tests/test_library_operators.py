@@ -16,6 +16,10 @@ def test_add_operator_accepts_double_scalars_and_time_series():
         return bg.operators.add(value, 2.5)
 
     @bg.graph
+    def reversed_mixed_add(value: bg.TS[float]) -> bg.TS[float]:
+        return bg.operators.add(2.5, value)
+
+    @bg.graph
     def series_add(lhs: bg.TS[float], rhs: bg.TS[float]) -> bg.TS[float]:
         return bg.operators.add(lhs, rhs)
 
@@ -23,10 +27,27 @@ def test_add_operator_accepts_double_scalars_and_time_series():
     def keyword_add(lhs: bg.TS[float], rhs: bg.TS[float]) -> bg.TS[float]:
         return bg.operators.add(rhs=rhs, lhs=lhs)
 
+    @bg.graph
+    def promoted_add(lhs: float, rhs: float) -> float:
+        return bg.operators.add(lhs, rhs)
+
     assert bg.test_graph(scalar_add) == [3.75]
     assert bg.test_graph(mixed_add, [1.0, 2.0]) == [3.5, 4.5]
+    assert bg.test_graph(reversed_mixed_add, [1.0, 2.0]) == [3.5, 4.5]
     assert bg.test_graph(series_add, [1.0, 2.0], [10.0, 20.0]) == [11.0, 22.0]
     assert bg.test_graph(keyword_add, [1.0], [10.0]) == [11.0]
+    assert bg.test_graph(promoted_add, [1.0, 2.0], [10.0, 20.0]) == [11.0, 22.0]
+
+
+def test_add_accepts_a_native_const_wiring_point_and_propagates_its_guarantee():
+    @bg.graph
+    def graph() -> bg.TS[float]:
+        constant = bg.operators.const_(4.0)
+        result = bg.operators.add(constant, 1.0)
+        assert result.type_name == "TS<double, const>"
+        return result
+
+    assert bg.test_graph(graph) == [5.0]
 
 
 def test_wiring_point_addition_uses_the_native_operator():
@@ -65,29 +86,52 @@ def test_add_operator_accepts_values_dereferenced_from_references():
     assert bg.test_graph(graph, [1.0, 2.0], [10.0, 20.0]) == [11.0, 22.0]
 
 
+def test_add_observes_retargeted_references_with_equal_values():
+    @bg.source_node
+    def first() -> bg.TS[float]:
+        return 4.0
+
+    @bg.source_node
+    def second() -> bg.TS[float]:
+        return 4.0
+
+    @bg.compute_node
+    def select(
+        use_second: bg.TS[bool],
+        lhs: bg.REF[bg.TS[float]],
+        rhs: bg.REF[bg.TS[float]],
+    ) -> bg.REF[bg.TS[float]]:
+        return (rhs if use_second.value else lhs).value
+
+    @bg.graph
+    def graph(use_second: bg.TS[bool]) -> bg.TS[float]:
+        selected = select(use_second, first(), second())
+        return bg.operators.add(selected, 1.0)
+
+    assert bg.test_graph(graph, [False, True, False, True]) == [5.0, 5.0, 5.0, 5.0]
+
+
 def test_reflected_add_preserves_operand_order_and_native_diagnostics():
     @bg.graph
-    def invalid(value: bg.TS[float]) -> bg.TS[float]:
+    def unsupported_direct(value: bg.TS[float]) -> bg.TS[float]:
         return bg.operators.add("unsupported", value)
 
-    direct = invalid
-
     @bg.graph
-    def invalid(value: bg.TS[float]) -> bg.TS[float]:
+    def unsupported_reflected(value: bg.TS[float]) -> bg.TS[float]:
         return "unsupported" + value
 
     with pytest.raises(ValueError, match="Cannot resolve operator add") as raised:
-        bg.test_graph(direct, [1.0])
+        bg.test_graph(unsupported_direct, [1.0])
 
     with pytest.raises(ValueError, match="Cannot resolve operator add") as reflected:
-        bg.test_graph(invalid, [1.0])
+        bg.test_graph(unsupported_reflected, [1.0])
 
     assert "Arguments: (lhs: string, rhs:" in str(raised.value)
     assert str(reflected.value) == str(raised.value)
 
 
 def test_add_operator_preserves_required_input_validity():
-    extension = pytest.importorskip("bg._bg_test_extension")
+    import bg._bg_test_extension as extension
 
     @bg.compute_node
     def to_double(value: bg.TS[int]) -> bg.TS[float]:
@@ -183,6 +227,9 @@ def test_add_reports_native_overload_diagnostics_for_unsupported_types():
 
 
 def test_operator_namespace_reexports_existing_higher_order_apis():
+    import bg._bg as native
+
+    assert bg.operators.add is native.operators.add
     assert bg.operators.map is bg.map
     assert bg.operators.mesh is bg.mesh
     assert bg.operators.switch_ is bg.switch_
