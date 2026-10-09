@@ -55,7 +55,8 @@ representations:
 `string` stores immutable UTF-8 bytes in a reference-counted `StringStorage`.
 Its scalar and time-series read value is `std::string_view`. Construction from
 a `std::string_view` copies the bytes; copying a view of canonical string
-storage retains the same storage. A string is limited to 4 GiB; construction
+storage retains the same storage. A string is limited to 4,294,967,295 bytes
+(4 GiB minus one); construction
 and builder growth reject larger values. The engine does not validate or
 transcode UTF-8.
 
