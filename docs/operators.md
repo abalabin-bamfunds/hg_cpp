@@ -67,8 +67,11 @@ precedence when it conflicts with a prototype name.
 auto result = add(lhs, rhs);
 ```
 
-Engine operators are declared in `bg::operators`. Each time series or scalar
-module registers the overloads it implements.
+Including `<bg/library.hpp>` and linking `bg::library` provides the common
+operator surface. It includes engine operators such as `const_`, `default_`,
+and `getitem`, alongside C++ library operators. Their implementation
+placement does not create a separate operator API for callers.
+Each time series or scalar module registers the overloads it implements.
 
 `const_(scalar)` lifts a scalar to `TS<scalar, const>`. Graph compilation stores
 the scalar once and binds its consumers directly to that storage.
@@ -83,12 +86,12 @@ independently of the source guarantee. A reference consumer uses a normal
 reference node over the adapter output. Nested graph outputs therefore use the
 reference path.
 
-The C++ library declares `bg::operators::add` in `<bg/library.hpp>` and
-registers overloads in the `bg::library` target. Its initial overloads add
-`double` scalars and time series in all scalar/time-series combinations. The
-result is a time series and retains the weakest time-series input guarantee.
-Adding two scalars creates a constant graph source. The C++ wiring-point
-`operator+` overloads are defined by the same library header.
+The library's initial `add` overloads add `double` scalars and time series in
+all scalar/time-series combinations. The result is a time series and retains
+the weakest guarantee observed by its time-series inputs; see
+[reference guarantees](type-system.md#reference-guarantees). Adding two scalars
+creates a constant graph source. The C++ wiring-point `operator+` overloads
+are defined by the same library header.
 
 An operator owns its registered overloads. Registration is permanent and is
 not concurrent with graph wiring. Adding an overload clears that operator's
