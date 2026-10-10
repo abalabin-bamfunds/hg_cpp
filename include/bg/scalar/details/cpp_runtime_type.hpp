@@ -57,7 +57,7 @@ template <typename T, typename Base> class CppScalarRuntimeTypeBase : public Bas
                           scalar_data_value<T>(ScalarData{*this, data, mode}));
     }
 
-    std::size_t hash(ScalarDataMode mode, std::uintptr_t data) const noexcept override {
+    std::size_t hash(ScalarDataMode mode, std::uintptr_t data) const override {
         if constexpr (Traits::supports_hash) {
             return Traits::hash(scalar_data_value<T>(ScalarData{*this, data, mode}));
         } else {
@@ -66,7 +66,7 @@ template <typename T, typename Base> class CppScalarRuntimeTypeBase : public Bas
     }
 
     bool equals(ScalarDataMode mode, std::uintptr_t data,
-                              const details::ScalarData &other) const noexcept override {
+                const details::ScalarData &other) const override {
         if constexpr (Traits::supports_equality) {
             return &this->type() == &other.type() &&
                    Traits::equals(scalar_data_value<T>(ScalarData{*this, data, mode}),
@@ -134,7 +134,7 @@ template <typename T, typename Base> class CppScalarRuntimeTypeBase : public Bas
         assign_from_value(destination, std::addressof(current));
     }
 
-    std::size_t hash(const void *value) const noexcept override {
+    std::size_t hash(const void *value) const override {
         if constexpr (Traits::supports_hash) {
             return Traits::hash(Traits::read(*static_cast<const Stored *>(value)));
         } else {
@@ -142,7 +142,7 @@ template <typename T, typename Base> class CppScalarRuntimeTypeBase : public Bas
         }
     }
 
-    bool equals_same_type(const void *value, const details::ScalarData &other) const noexcept override {
+    bool equals_same_type(const void *value, const details::ScalarData &other) const override {
         if constexpr (Traits::supports_equality) {
             return Traits::equals(Traits::read(*static_cast<const Stored *>(value)), scalar_data_value<T>(other));
         } else {

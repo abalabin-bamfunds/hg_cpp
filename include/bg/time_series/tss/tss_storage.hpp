@@ -11,6 +11,7 @@
 #include <bg/util/occupancy_index.hpp>
 #include <bg/util/runtime_bunch.hpp>
 #include <bg/util/scope_exit.hpp>
+#include <bg/util/sparse_bunch.hpp>
 
 #include <cstddef>
 #include <cstdint>
@@ -63,10 +64,13 @@ class time_series_set_storage {
             }};
 
             const auto hash = util::linear_hash_table::hash_code(key.hash());
+            hashes_.emplace_at(position, memory.memory_resource(), hash);
+            auto release_hash = util::scope_exit{[&]() noexcept { hashes_.erase_at(position, memory.memory_resource()); }};
             lookup_.insert(hash, position, memory);
             auto release_lookup = util::scope_exit{[&]() noexcept { lookup_.erase(hash, position, memory); }};
 
             release_lookup.release();
+            release_hash.release();
             release_key.release();
             release_position.release();
         }
@@ -180,12 +184,16 @@ class time_series_set_storage {
         auto release_item = util::scope_exit{[&]() noexcept { std::invoke(destroy_item, position); }};
 
         const auto hash = util::linear_hash_table::hash_code(key.hash());
+        hashes_.emplace_at(position, memory.memory_resource(), hash);
+        auto release_hash = util::scope_exit{[&]() noexcept { hashes_.erase_at(position, memory.memory_resource()); }};
         lookup_.insert(hash, position, memory);
         auto release_registration = util::scope_exit{[&]() noexcept {
             added_.reset(position);
             live_.reset(position);
             lookup_.erase(hash, position, memory);
+            hashes_.erase_at(position, memory.memory_resource());
         }};
+        release_hash.release();
         live_.set(position, memory);
         added_.set(position, memory);
 
@@ -269,6 +277,7 @@ class time_series_set_storage {
         keys_.release_with(positions_, key_layout, memory,
                            [&](void *value) noexcept { key_runtime_type.destroy(value, memory); });
         lookup_.release(memory);
+        hashes_.release(positions_, memory.memory_resource());
         positions_.release(memory);
         live_.release(memory);
         added_.release(memory);
@@ -351,9 +360,9 @@ class time_series_set_storage {
     void reclaim_position(Position position, const ScalarRuntimeType &key_runtime_type,
                           const util::runtime_item_layout &key_layout, allocator &memory,
                           Reclaim &&reclaim) noexcept {
-        auto *key = keys_.get(position, key_layout);
-        const auto hash = util::linear_hash_table::hash_code(key_runtime_type.hash(key));
+        const auto hash = hashes_[position];
         lookup_.erase(hash, position, memory);
+        hashes_.erase_at(position, memory.memory_resource());
         released_.reset(position);
         std::invoke(reclaim, position);
         keys_.erase_at_with(position, key_layout, memory,
@@ -364,6 +373,7 @@ class time_series_set_storage {
     util::occupancy_index positions_;
     util::runtime_sparse_bunch keys_;
     util::linear_hash_table lookup_;
+    util::sparse_bunch<util::linear_hash_table::hash_type> hashes_;
     util::index<> live_;
     util::index<> added_;
     util::index<> removed_;

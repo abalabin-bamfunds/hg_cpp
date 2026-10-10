@@ -46,7 +46,7 @@ template <typename T> class Scalar<Set<T>> {
         return Scalar<>::from(*this).visit(std::forward<Functions>(functions)...);
     }
 
-    std::size_t hash() const noexcept
+    std::size_t hash() const
         requires details::scalar_handle_traits<Set<T>>::supports_hash
     {
         return value_.hash();
@@ -55,7 +55,7 @@ template <typename T> class Scalar<Set<T>> {
     template <typename Other>
         requires requires(const Other &other) { details::scalar_data(other); } &&
                  details::scalar_handle_traits<Set<T>>::supports_equality
-    bool equals(const Other &other) const noexcept {
+    bool equals(const Other &other) const {
         return value_.equals(details::scalar_data(other));
     }
     [[nodiscard]] static Scalar from(const ScalarRuntimeType &runtime_type, const void *data) noexcept {

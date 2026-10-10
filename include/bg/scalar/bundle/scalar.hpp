@@ -41,7 +41,7 @@ class Scalar<Declaration> {
     }
     const void *data() const noexcept { return value_.data(); }
 
-    std::size_t hash() const noexcept
+    std::size_t hash() const
         requires details::scalar_handle_traits<Declaration>::supports_hash
     {
         return value_.hash();
@@ -50,7 +50,7 @@ class Scalar<Declaration> {
     template <typename Other>
         requires requires(const Other &other) { details::scalar_data(other); } &&
                  details::scalar_handle_traits<Declaration>::supports_equality
-    bool equals(const Other &other) const noexcept {
+    bool equals(const Other &other) const {
         return value_.equals(details::scalar_data(other));
     }
 

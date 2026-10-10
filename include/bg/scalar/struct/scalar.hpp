@@ -30,11 +30,11 @@ template <> class Scalar<STRUCT> {
     }
     const void *data() const noexcept { return value_.data(); }
 
-    std::size_t hash() const noexcept { return value_.hash(); }
+    std::size_t hash() const { return value_.hash(); }
 
     template <typename Other>
         requires requires(const Other &other) { details::scalar_data(other); }
-    bool equals(const Other &other) const noexcept {
+    bool equals(const Other &other) const {
         return value_.equals(details::scalar_data(other));
     }
 

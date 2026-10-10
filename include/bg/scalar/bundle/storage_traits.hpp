@@ -108,11 +108,11 @@ struct scalar_storage_traits<Bundle<Schema>> {
 
     static value_type read(const stored_type &value) noexcept { return value_type{value}; }
 
-    static std::size_t hash(value_type value) noexcept {
+    static std::size_t hash(value_type value) {
         return cpp_scalar_runtime_type<Declaration>().hash(value.storage_);
     }
 
-    static bool equals(value_type left, value_type right) noexcept {
+    static bool equals(value_type left, value_type right) {
         const auto &runtime_type = cpp_scalar_runtime_type<Declaration>();
         return runtime_type.equals(left.storage_, runtime_type.borrow(right.storage_));
     }

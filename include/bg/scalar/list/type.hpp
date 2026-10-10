@@ -47,7 +47,7 @@ template <typename T> class List {
         return ItemTraits::read(storage_->items[static_cast<std::uint32_t>(index)]);
     }
 
-    friend bool operator==(const List &left, const List &right) noexcept {
+    friend bool operator==(const List &left, const List &right) {
         if (left.size() != right.size()) {
             return false;
         }
@@ -91,7 +91,7 @@ template <typename T> inline constexpr bool generic_scalar<List<T>> = generic_sc
 } // namespace bg::details
 
 template <typename T> struct std::hash<bg::List<T>> {
-    std::size_t operator()(const bg::List<T> &value) const noexcept {
+    std::size_t operator()(const bg::List<T> &value) const {
         return bg::scalar_storage_traits<bg::List<T>>::hash(value);
     }
 };

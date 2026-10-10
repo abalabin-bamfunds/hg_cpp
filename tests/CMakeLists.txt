@@ -99,6 +99,7 @@ add_executable(
     value/scalar/dict/value_test.cpp
     value/scalar/dispatch_test.cpp
     value/scalar/erased_value_test.cpp
+    value/scalar/fallible_operations_test.cpp
     value/scalar/list/mutable_test.cpp
     value/scalar/list/storage_test.cpp
     value/scalar/list/value_test.cpp

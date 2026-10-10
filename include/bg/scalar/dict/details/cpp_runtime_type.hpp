@@ -45,7 +45,7 @@ class CppScalarRuntimeType<Dict<K, V>> final : public CppScalarRuntimeTypeBase<D
         static_cast<details::scalar_dict_storage<K, V> *>(destination)->items.swap(replacement.items);
     }
 
-    bool equals_same_type(const void *storage, const details::ScalarData &other) const noexcept override {
+    bool equals_same_type(const void *storage, const details::ScalarData &other) const override {
         const auto &source_type = static_cast<const ScalarDictRuntimeType &>(other.runtime_type());
         if (item_count(storage) != source_type.item_count(other.data())) {
             return false;

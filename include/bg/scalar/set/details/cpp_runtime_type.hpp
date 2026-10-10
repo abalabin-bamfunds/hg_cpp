@@ -44,7 +44,7 @@ class CppScalarRuntimeType<Set<T>> final : public CppScalarRuntimeTypeBase<Set<T
         static_cast<details::scalar_set_storage<T> *>(destination)->items.swap(replacement.items);
     }
 
-    bool equals_same_type(const void *storage, const details::ScalarData &other) const noexcept override {
+    bool equals_same_type(const void *storage, const details::ScalarData &other) const override {
         const auto &source_type = static_cast<const ScalarSetRuntimeType &>(other.runtime_type());
         if (item_count(storage) != source_type.item_count(other.data())) {
             return false;

@@ -36,10 +36,10 @@ class ScalarRuntimeType : public RuntimeType {
     }
 
     virtual void read_value(ScalarDataMode, std::uintptr_t, void *) const { std::terminate(); }
-    virtual std::size_t hash(ScalarDataMode, std::uintptr_t data) const noexcept {
+    virtual std::size_t hash(ScalarDataMode, std::uintptr_t data) const {
         return hash(reinterpret_cast<const void *>(data));
     }
-    virtual bool equals(ScalarDataMode, std::uintptr_t data, const ScalarData &other) const noexcept {
+    virtual bool equals(ScalarDataMode, std::uintptr_t data, const ScalarData &other) const {
         return equals(reinterpret_cast<const void *>(data), other);
     }
 
@@ -77,11 +77,11 @@ class ScalarRuntimeType : public RuntimeType {
     void assign_from_input(void *destination, const Value &value) const {
         assign_from_input(destination, details::scalar_data(value));
     }
-    virtual std::size_t hash(const void *value) const noexcept = 0;
-    virtual bool equals(const void *value, const ScalarData &other) const noexcept;
+    virtual std::size_t hash(const void *value) const = 0;
+    virtual bool equals(const void *value, const ScalarData &other) const;
     template <typename Value>
         requires requires(const Value &value) { details::scalar_data(value); }
-    bool equals(const void *value, const Value &other) const noexcept {
+    bool equals(const void *value, const Value &other) const {
         return equals(value, details::scalar_data(other));
     }
     virtual void destroy(void *value, allocator &memory) const noexcept = 0;
@@ -101,7 +101,7 @@ class ScalarRuntimeType : public RuntimeType {
     static constexpr auto shared_handle_flag = first_additional_flag;
 
   private:
-    virtual bool equals_same_type(const void *value, const ScalarData &other) const noexcept = 0;
+    virtual bool equals_same_type(const void *value, const ScalarData &other) const = 0;
 };
 
 // ScalarData uses the three low bits of a runtime type pointer to record its representation and ownership.

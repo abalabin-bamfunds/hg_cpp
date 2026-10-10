@@ -85,7 +85,7 @@ template <typename T> class Scalar {
     const ScalarRuntimeType &runtime_type() const noexcept { return value_.runtime_type(); }
     const void *data() const noexcept { return value_.data(); }
 
-    std::size_t hash() const noexcept
+    std::size_t hash() const
         requires supports_hash
     {
         return value_.hash();
@@ -93,7 +93,7 @@ template <typename T> class Scalar {
 
     template <typename Other>
         requires requires(const Other &other) { details::scalar_data(other); } && supports_equality
-    bool equals(const Other &other) const noexcept {
+    bool equals(const Other &other) const {
         return value_.equals(details::scalar_data(other));
     }
 

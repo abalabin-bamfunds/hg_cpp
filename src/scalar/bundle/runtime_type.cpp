@@ -54,12 +54,12 @@ class ComposedHierarchicalScalarRuntimeType final : public HierarchicalScalarRun
                                  allocator &memory) const override;
     void copy_construct(void *destination, const void *source, allocator &memory) const override;
     void do_assign_from_input(void *destination, const details::ScalarData &value) const override;
-    std::size_t hash(details::ScalarDataMode mode, std::uintptr_t data) const noexcept override;
+    std::size_t hash(details::ScalarDataMode mode, std::uintptr_t data) const override;
     bool equals(details::ScalarDataMode mode, std::uintptr_t data,
-                const details::ScalarData &other) const noexcept override;
-    std::size_t hash(const void *value) const noexcept override;
-    bool equals(const void *value, const details::ScalarData &other) const noexcept override;
-    bool equals_same_type(const void *value, const details::ScalarData &other) const noexcept override;
+                const details::ScalarData &other) const override;
+    std::size_t hash(const void *value) const override;
+    bool equals(const void *value, const details::ScalarData &other) const override;
+    bool equals_same_type(const void *value, const details::ScalarData &other) const override;
     void destroy(void *value, allocator &memory) const noexcept override;
 
     Storage *storage(const details::ScalarData &value) const noexcept;
@@ -70,7 +70,7 @@ class ComposedHierarchicalScalarRuntimeType final : public HierarchicalScalarRun
     void *field_storage(Storage &storage, std::size_t index) const noexcept;
     bool field_present(const Storage &storage, std::size_t index) const noexcept;
     void set_field_present(Storage &storage, std::size_t index) const noexcept;
-    std::size_t hash_storage(const Storage &storage) const noexcept;
+    std::size_t hash_storage(const Storage &storage) const;
     void destroy_storage(Storage &storage) const noexcept;
 
     std::vector<FieldLayout> fields_;
@@ -263,13 +263,13 @@ void ComposedHierarchicalScalarRuntimeType::do_assign_from_input(
 }
 
 std::size_t ComposedHierarchicalScalarRuntimeType::hash(details::ScalarDataMode mode,
-                                                        std::uintptr_t data) const noexcept {
+                                                        std::uintptr_t data) const {
     auto *stored = storage(details::ScalarData{*this, data, mode});
     return stored == nullptr ? 0 : stored->runtime_type->hash_storage(*stored);
 }
 
 bool ComposedHierarchicalScalarRuntimeType::equals(details::ScalarDataMode mode, std::uintptr_t data,
-                                                   const details::ScalarData &other) const noexcept {
+                                                   const details::ScalarData &other) const {
     const auto value = details::ScalarData{*this, data, mode};
     auto *left = storage(value);
     if (left == nullptr || &left->runtime_type->type() != &other.type()) {
@@ -291,12 +291,12 @@ bool ComposedHierarchicalScalarRuntimeType::equals(details::ScalarDataMode mode,
     return true;
 }
 
-std::size_t ComposedHierarchicalScalarRuntimeType::hash(const void *value) const noexcept {
+std::size_t ComposedHierarchicalScalarRuntimeType::hash(const void *value) const {
     auto *stored = stored_handle(value);
     return stored == nullptr ? 0 : stored->runtime_type->hash_storage(*stored);
 }
 
-std::size_t ComposedHierarchicalScalarRuntimeType::hash_storage(const Storage &storage) const noexcept {
+std::size_t ComposedHierarchicalScalarRuntimeType::hash_storage(const Storage &storage) const {
     auto result = std::hash<const HierarchicalScalarType *>{}(&storage.runtime_type->type());
     for (auto index = std::size_t{}; index < fields_.size(); ++index) {
         const auto present = field_present(storage, index);
@@ -311,7 +311,7 @@ std::size_t ComposedHierarchicalScalarRuntimeType::hash_storage(const Storage &s
     return result;
 }
 
-bool ComposedHierarchicalScalarRuntimeType::equals(const void *value, const details::ScalarData &other) const noexcept {
+bool ComposedHierarchicalScalarRuntimeType::equals(const void *value, const details::ScalarData &other) const {
     auto *stored = stored_handle(value);
     if (stored == nullptr) {
         return false;
@@ -321,7 +321,7 @@ bool ComposedHierarchicalScalarRuntimeType::equals(const void *value, const deta
 }
 
 bool ComposedHierarchicalScalarRuntimeType::equals_same_type(const void *value,
-                                                             const details::ScalarData &other) const noexcept {
+                                                             const details::ScalarData &other) const {
     return equals(value, other);
 }
 

@@ -37,7 +37,7 @@ template <typename T> struct scalar_storage_traits {
 
     static value_type read(const stored_type &value) noexcept { return value; }
 
-    static std::size_t hash(value_type value) noexcept {
+    static std::size_t hash(value_type value) {
         if constexpr (std::same_as<T, byte>) {
             return std::to_integer<std::size_t>(value);
         } else if constexpr (std::same_as<T, date_time_t>) {
@@ -51,7 +51,7 @@ template <typename T> struct scalar_storage_traits {
         }
     }
 
-    static bool equals(value_type left, value_type right) noexcept { return left == right; }
+    static bool equals(value_type left, value_type right) { return left == right; }
 
     static void construct(stored_type *destination, value_type value, allocator &) {
         std::construct_at(destination, std::move(value));
@@ -74,7 +74,7 @@ inline std::size_t combine_scalar_hash(std::size_t result, std::size_t field) no
 }
 
 template <native_struct T, std::size_t... Index>
-std::size_t hash_native_struct(const T &value, std::index_sequence<Index...>) noexcept {
+std::size_t hash_native_struct(const T &value, std::index_sequence<Index...>) {
     const auto members = util::aggregate_members(value);
     auto result = std::size_t{};
     ((result = combine_scalar_hash(
@@ -85,7 +85,7 @@ std::size_t hash_native_struct(const T &value, std::index_sequence<Index...>) no
 }
 
 template <native_struct T, std::size_t... Index>
-bool equal_native_struct(const T &left, const T &right, std::index_sequence<Index...>) noexcept {
+bool equal_native_struct(const T &left, const T &right, std::index_sequence<Index...>) {
     const auto left_members = util::aggregate_members(left);
     const auto right_members = util::aggregate_members(right);
     return (scalar_storage_traits<std::remove_cv_t<util::aggregate_member_type<Index, T>>>::equals(
@@ -108,11 +108,11 @@ template <native_struct T> struct scalar_storage_traits<T> {
 
     static value_type read(const stored_type &value) noexcept { return value; }
 
-    static std::size_t hash(const stored_type &value) noexcept {
+    static std::size_t hash(const stored_type &value) {
         return details::hash_native_struct(value, std::make_index_sequence<util::aggregate_member_count<T>>{});
     }
 
-    static bool equals(const stored_type &left, const stored_type &right) noexcept {
+    static bool equals(const stored_type &left, const stored_type &right) {
         return details::equal_native_struct(left, right,
                                             std::make_index_sequence<util::aggregate_member_count<T>>{});
     }
@@ -144,9 +144,9 @@ template <> struct scalar_storage_traits<string> {
         return value == nullptr ? std::string_view{} : value->value();
     }
 
-    static std::size_t hash(value_type value) noexcept { return std::hash<value_type>{}(value); }
+    static std::size_t hash(value_type value) { return std::hash<value_type>{}(value); }
 
-    static bool equals(value_type left, value_type right) noexcept { return left == right; }
+    static bool equals(value_type left, value_type right) { return left == right; }
 
     static void construct(stored_type *destination, value_type value, allocator &memory) {
         std::construct_at(destination, details::StringStorage::copy(value, memory));

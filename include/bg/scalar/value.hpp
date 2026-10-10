@@ -88,7 +88,7 @@ template <typename T> class ScalarValue {
     const ScalarType &type() const noexcept { return value_.type(); }
     const ScalarRuntimeType &runtime_type() const noexcept { return value_.runtime_type(); }
 
-    std::size_t hash() const noexcept
+    std::size_t hash() const
         requires requires(const Scalar<T> &value) { value.hash(); }
     {
         return value_.hash();
@@ -97,7 +97,7 @@ template <typename T> class ScalarValue {
     template <typename Other>
         requires requires(const Other &other) { details::scalar_data(other); } &&
                  details::scalar_handle_traits<T>::supports_equality
-    bool equals(const Other &other) const noexcept {
+    bool equals(const Other &other) const {
         return value_.equals(details::scalar_data(other));
     }
 
@@ -183,11 +183,11 @@ template <> class ScalarValue<> {
 
     const ScalarType &type() const noexcept { return value_.type(); }
     const ScalarRuntimeType &runtime_type() const noexcept { return value_.runtime_type(); }
-    std::size_t hash() const noexcept { return value_.hash(); }
+    std::size_t hash() const { return value_.hash(); }
 
     template <typename Other>
         requires requires(const Other &other) { details::scalar_data(other); }
-    bool equals(const Other &other) const noexcept {
+    bool equals(const Other &other) const {
         return value_.equals(details::scalar_data(other));
     }
 
@@ -251,7 +251,7 @@ concept EqualityComparableScalarHandle = ScalarHandle<T> && scalar_handle_suppor
 } // namespace details
 
 template <details::EqualityComparableScalarHandle Left, details::EqualityComparableScalarHandle Right>
-bool operator==(const Left &left, const Right &right) noexcept {
+bool operator==(const Left &left, const Right &right) {
     using LeftScalar = typename std::remove_cvref_t<Left>::scalar_type;
     using RightScalar = typename std::remove_cvref_t<Right>::scalar_type;
 
@@ -272,7 +272,7 @@ bool operator==(const Left &left, const Right &right) noexcept {
 struct ScalarHash {
     using is_transparent = void;
 
-    template <details::ScalarHandle Value> std::size_t operator()(const Value &value) const noexcept {
+    template <details::ScalarHandle Value> std::size_t operator()(const Value &value) const {
         return Scalar<>::from(value).hash();
     }
 };
@@ -281,7 +281,7 @@ struct ScalarEqual {
     using is_transparent = void;
 
     template <details::ScalarHandle Left, details::ScalarHandle Right>
-    bool operator()(const Left &left, const Right &right) const noexcept {
+    bool operator()(const Left &left, const Right &right) const {
         return Scalar<>::from(left).equals(Scalar<>::from(right));
     }
 };

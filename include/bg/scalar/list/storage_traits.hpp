@@ -23,7 +23,7 @@ template <typename T> struct scalar_storage_traits<List<T>> {
 
     static value_type read(const stored_type &value) noexcept { return value_type{value}; }
 
-    static std::size_t hash(value_type value) noexcept {
+    static std::size_t hash(value_type value) {
         constexpr auto combine_constant = std::size_t{0x9e3779b9};
         auto result = std::size_t{};
 
@@ -34,7 +34,7 @@ template <typename T> struct scalar_storage_traits<List<T>> {
         return result;
     }
 
-    static bool equals(value_type left, value_type right) noexcept { return left == right; }
+    static bool equals(value_type left, value_type right) { return left == right; }
 
     static void construct(stored_type *destination, value_type value, allocator &memory) {
         std::construct_at(destination);

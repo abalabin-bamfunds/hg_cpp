@@ -145,7 +145,7 @@ class ComposedListRuntimeType final : public ScalarListRuntimeType {
         storage(destination).swap(replacement);
     }
 
-    std::size_t hash(const void *value) const noexcept override {
+    std::size_t hash(const void *value) const override {
         constexpr auto combine_constant = std::size_t{0x9e3779b9};
         const auto &items = storage(value).items;
         auto result = std::size_t{};
@@ -156,7 +156,7 @@ class ComposedListRuntimeType final : public ScalarListRuntimeType {
         return result;
     }
 
-    bool equals_same_type(const void *value, const details::ScalarData &other) const noexcept override {
+    bool equals_same_type(const void *value, const details::ScalarData &other) const override {
         const auto source = Scalar<List<SCALAR>>::from(other.runtime_type(), other.data());
         const auto &items = storage(value).items;
         if (items.size() != source.size()) {
@@ -299,7 +299,7 @@ class ComposedSetRuntimeType final : public ScalarSetRuntimeType {
         storage(destination).swap(replacement);
     }
 
-    std::size_t hash(const void *value) const noexcept override {
+    std::size_t hash(const void *value) const override {
         auto result = std::size_t{};
         for (const auto position : storage(value).positions) {
             result ^= item_runtime_type().hash(storage(value).items.get(position, item_layout_));
@@ -307,7 +307,7 @@ class ComposedSetRuntimeType final : public ScalarSetRuntimeType {
         return result;
     }
 
-    bool equals_same_type(const void *value, const details::ScalarData &other) const noexcept override {
+    bool equals_same_type(const void *value, const details::ScalarData &other) const override {
         const auto source = Scalar<Set<SCALAR>>::from(other.runtime_type(), other.data());
         if (item_count(value) != source.size()) {
             return false;
@@ -407,7 +407,7 @@ class ComposedSetRuntimeType final : public ScalarSetRuntimeType {
         return *static_cast<const RuntimeSetStorage *>(value);
     }
 
-    std::uint32_t find(const RuntimeSetStorage &source, const details::ScalarData &item) const noexcept {
+    std::uint32_t find(const RuntimeSetStorage &source, const details::ScalarData &item) const {
         const auto hash = util::linear_hash_table::hash_code(item.hash());
         const auto result = source.lookup.find(hash, [&](auto position) {
             return item_runtime_type().equals(source.items.get(position, item_layout_), item);
@@ -514,7 +514,7 @@ class ComposedDictRuntimeType final : public ScalarDictRuntimeType {
         storage(destination).swap(replacement);
     }
 
-    std::size_t hash(const void *value) const noexcept override {
+    std::size_t hash(const void *value) const override {
         auto result = std::size_t{};
         for (const auto position : storage(value).positions) {
             result ^= key_runtime_type().hash(storage(value).keys.get(position, key_layout_)) ^
@@ -523,7 +523,7 @@ class ComposedDictRuntimeType final : public ScalarDictRuntimeType {
         return result;
     }
 
-    bool equals_same_type(const void *value, const details::ScalarData &other) const noexcept override {
+    bool equals_same_type(const void *value, const details::ScalarData &other) const override {
         const auto source = Scalar<Dict<SCALAR, SCALAR>>::from(other.runtime_type(), other.data());
         if (item_count(value) != source.size()) {
             return false;
@@ -698,7 +698,7 @@ class ComposedDictRuntimeType final : public ScalarDictRuntimeType {
         return *static_cast<const RuntimeDictStorage *>(value);
     }
 
-    std::uint32_t find_position(const RuntimeDictStorage &source, const details::ScalarData &key) const noexcept {
+    std::uint32_t find_position(const RuntimeDictStorage &source, const details::ScalarData &key) const {
         const auto hash = util::linear_hash_table::hash_code(key.hash());
         const auto result = source.lookup.find(hash, [&](auto position) {
             return key_runtime_type().equals(source.keys.get(position, key_layout_), key);
@@ -898,7 +898,7 @@ class ScalarRuntimeTypeResolver {
 
 } // namespace details
 
-bool ScalarRuntimeType::equals(const void *value, const details::ScalarData &other) const noexcept {
+bool ScalarRuntimeType::equals(const void *value, const details::ScalarData &other) const {
     return &type() == &other.type() && equals_same_type(value, other);
 }
 

@@ -52,8 +52,8 @@ class ScalarData {
     bool empty() const noexcept { return !runtime_type_; }
     std::uintptr_t data_word() const noexcept { return data_; }
 
-    std::size_t hash() const noexcept { return runtime_type().hash(mode(), data_); }
-    bool equals(const ScalarData &other) const noexcept { return runtime_type().equals(mode(), data_, other); }
+    std::size_t hash() const { return runtime_type().hash(mode(), data_); }
+    bool equals(const ScalarData &other) const { return runtime_type().equals(mode(), data_, other); }
 
     void copy_construct(void *destination, const ScalarRuntimeType &destination_runtime_type, allocator &memory) const {
         destination_runtime_type.construct_from_input(destination, *this, memory);
