@@ -94,6 +94,8 @@ graph compilation or evaluation.
 ### Utilities
 
 - compile-time strings, symbols, named arguments, aggregate reflection, and C++ schema reflection and construction
+- exact-type schema field offsets, const field references, shadowed fields, empty bases, multilevel inheritance,
+  aligned and tail-padded layouts, concurrent first use, and construction without intermediate base moves
 - buffer allocation, contiguous chunks, chain rollover, concurrent reservations, ordered commit visibility,
   ring-full rollover, and allocation-failure rollback
 - constant-size scalar value handles

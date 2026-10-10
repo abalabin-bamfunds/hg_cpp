@@ -5,7 +5,6 @@
 #include <cstddef>
 #include <string_view>
 #include <type_traits>
-#include <utility>
 
 namespace bg::details {
 
@@ -61,18 +60,10 @@ template <util::compile_time_string Name, template <template <typename, auto...>
 using bundle_field_time_series =
     typename bundle_schema_reflection<Schema>::template field_type<Name>::time_series_type;
 
-struct bundle_schema_construction {
-    template <template <template <typename, auto...> typename> typename Base,
-              template <typename, auto...> typename Field>
-    static bundle_extends<Base, Field> make_base(Base<Field> base) {
-        return bundle_extends<Base, Field>{std::move(base)};
-    }
-};
-
 template <template <template <typename, auto...> typename> typename Schema,
           template <typename, auto...> typename Field, typename Factory>
 [[nodiscard]] Schema<Field> make_bundle_fields(Factory &factory) {
-    return bundle_schema_reflection<Schema>::template make<Field, bundle_schema_construction>(factory);
+    return bundle_schema_reflection<Schema>::template make<Field>(factory);
 }
 
 } // namespace bg::details

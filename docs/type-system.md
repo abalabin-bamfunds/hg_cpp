@@ -152,6 +152,28 @@ declare one base with `schema_extends<Base, Field>`. A derived schema can add
 fields or redefine an inherited field. `bundle_extends` is a compatibility alias
 for `schema_extends`.
 
+`details::schema_reflection<Schema, ReflectionField>` provides engine and
+extension access to C++ schemas. Logical fields retain base order; a redefined
+field replaces the inherited field at its logical index. `field<Index>` and
+`field_name<Index>()` describe that order. `make<Field>(factory)` constructs the
+complete aggregate directly, including hidden base fields. The factory's
+`make<ReflectedField>(logical_index)` returns each field initializer.
+
+`fields(schema)` returns a tuple of references to the logical fields and
+preserves constness. The reflected field descriptor supplies
+`rebind<Field>`. Actual field wrappers support access by adding an implicit
+constructor taking `details::FieldProbe&`:
+
+```cpp
+Field(details::FieldProbe &probe) noexcept { probe.record(this); }
+```
+
+This constructor leaves the field valid and safely destructible without a
+usable wrapped value. `field_offsets<Field>()` captures offsets from a local
+`Schema<Field>` object and caches them once per schema and field wrapper.
+After cache initialization, obtaining a tuple reads the cache once and
+constructs no schema object.
+
 ## Scalar types
 
 Scalar types separate graph identity and compatibility from C++ storage. Each
