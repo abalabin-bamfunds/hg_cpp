@@ -24,6 +24,7 @@ namespace {
 using Value = test_scalar_provider::value;
 using ReadValue = test_scalar_provider::value_view;
 using Storage = test_scalar_provider::storage;
+using CopyOnlyValue = test_scalar_provider::copy_only_value;
 
 class LegacyIntegerRuntimeType final : public bg::ScalarRuntimeType {
   public:
@@ -98,9 +99,20 @@ struct OptionalProviderPromotedReader {
     void evaluate() const { output.set(value ? value->number : 0); }
 };
 
+struct CopyOnlyProviderAggregateReader {
+    static constexpr bool schedule_on_start = true;
+
+    bg::Scalar<CopyOnlyValue> view;
+    CopyOnlyValue promoted;
+    bg::Out<bg::TS<bg::i64>> output;
+
+    void evaluate() const { output.set(view.value().number + promoted.number); }
+};
+
 static_assert(bg::AggregateNodeClass<ProviderScalarAggregateReader>);
 static_assert(bg::AggregateNodeClass<MixedProviderPromotedReader>);
 static_assert(bg::AggregateNodeClass<OptionalProviderPromotedReader>);
+static_assert(bg::AggregateNodeClass<CopyOnlyProviderAggregateReader>);
 
 } // namespace
 
@@ -317,6 +329,28 @@ TEST_CASE("aggregate promoted scalars select runtime metadata for scalar and tim
     REQUIRE(time_series_result[0]);
     CHECK(time_series_result[0]->value() == 44);
     CHECK(test_scalar_provider::alternative_runtime_read_count() > reads_before);
+}
+
+TEST_CASE("aggregate scalar views and promoted inputs preserve a copy-only provider runtime",
+          "[feature:node-api][feature:scalar-storage][definition:aggregate][declaration:concrete]") {
+    STATIC_CHECK(sizeof(test_scalar_provider::copy_only_runtime_storage) >
+                 sizeof(test_scalar_provider::copy_only_storage));
+
+    auto storage = test_scalar_provider::copy_only_runtime_storage{
+        .prefix = {0xBAD0, 0xBAD1, 0xBAD2, 0xBAD3}, .value = {.number = 20}};
+    const auto source = bg::Scalar<CopyOnlyValue>::from(test_scalar_provider::preserving_copy_only_runtime_type(),
+                                                        &storage);
+    const auto preserved = bg::ScalarValue<CopyOnlyValue>{source};
+
+    CHECK(&preserved.runtime_type() == &test_scalar_provider::preserving_copy_only_runtime_type());
+    CHECK(preserved.view().value().number == 20);
+
+    const auto reader = bg::node<CopyOnlyProviderAggregateReader>();
+    const auto graph = [&] { return reader(preserved, preserved); };
+    const auto result = bg::testing::test_graph(graph);
+
+    REQUIRE(result[0]);
+    CHECK(result[0]->value() == 40);
 }
 
 TEST_CASE("aggregate optional provider scalars handle present and absent values",

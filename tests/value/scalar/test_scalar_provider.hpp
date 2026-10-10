@@ -8,6 +8,7 @@
 #include <bg/type/scalar_type.hpp>
 
 #include <array>
+#include <cstdint>
 #include <memory>
 #include <stdexcept>
 
@@ -47,6 +48,19 @@ struct explicit_value_source {
 
 struct layout_value {
     int number{};
+};
+
+struct copy_only_value {
+    int number{};
+};
+
+struct copy_only_storage {
+    int number{};
+};
+
+struct copy_only_runtime_storage {
+    std::array<std::uint32_t, 4> prefix{};
+    copy_only_value value;
 };
 
 template <template <typename, auto...> typename Field> struct bundle_provider_base {
@@ -98,6 +112,8 @@ void record_generic_copy_runtime_type_call() noexcept;
 const bg::ScalarType &compound_semantic_type_from_provider();
 const bg::ScalarType &layout_semantic_type_from_provider();
 const bg::ScalarRuntimeType &mismatched_layout_runtime_type();
+const bg::ScalarType &copy_only_semantic_type() noexcept;
+const bg::ScalarRuntimeType &preserving_copy_only_runtime_type();
 
 } // namespace test_scalar_provider
 
@@ -185,6 +201,36 @@ template <> struct scalar_storage_traits<test_scalar_provider::layout_value> {
     using value_type = test_scalar_provider::layout_value;
 
     static const ScalarRuntimeType &runtime_type(const ScalarType &type);
+};
+
+template <> struct scalar_type_traits<test_scalar_provider::copy_only_value> {
+    static const ScalarType &type() noexcept;
+};
+
+template <> struct scalar_storage_traits<test_scalar_provider::copy_only_value> {
+    using stored_type = test_scalar_provider::copy_only_storage;
+    using value_type = test_scalar_provider::copy_only_value;
+
+    static constexpr bool supports_equality = false;
+    static constexpr bool supports_hash = false;
+    static constexpr bool uses_shared_handle = false;
+    static constexpr bool uses_variable_memory = false;
+    static constexpr bool requires_finalization = false;
+    static constexpr bool assign_uses_memory_resource = false;
+
+    static value_type read(const stored_type &stored) noexcept { return {stored.number}; }
+
+    static void construct(stored_type *destination, value_type value, allocator &) {
+        std::construct_at(destination, stored_type{value.number});
+    }
+
+    static void assign(stored_type &destination, value_type value, allocator &) noexcept {
+        destination.number = value.number;
+    }
+
+    static void destroy(stored_type *stored, allocator &) noexcept { std::destroy_at(stored); }
+
+    static const ScalarRuntimeType &copy_runtime_type(const details::ScalarData &source);
 };
 
 template <> struct scalar_type_traits<test_scalar_provider::bundle_provider_value> {

@@ -250,17 +250,20 @@ struct output_runtime_type_field<Out<TimeSeries, Options...>>
     : std::bool_constant<output_requires_runtime_type<Out<TimeSeries, Options...>>> {};
 
 template <typename T>
-inline constexpr bool scalar_storage_reads_runtime = [] {
+inline constexpr bool scalar_storage_uses_runtime_type = [] {
     using Traits = scalar_storage_traits<T>;
     using Value = typename Traits::value_type;
-    return requires { static_cast<Value (*)(const ScalarData &)>(&Traits::read_value); };
+    return requires { static_cast<Value (*)(const ScalarData &)>(&Traits::read_value); } ||
+           requires {
+               static_cast<const ScalarRuntimeType &(*)(const ScalarData &)>(&Traits::copy_runtime_type);
+           };
 }();
 
 template <typename T> consteval bool scalar_input_requires_runtime_type() {
     if constexpr (generic_scalar_state<T> || hierarchical_scalar_declaration<T>) {
         return true;
     }
-    return scalar_storage_reads_runtime<T>;
+    return scalar_storage_uses_runtime_type<T>;
 }
 
 template <typename T> struct scalar_input_runtime_type_field : std::false_type {};
