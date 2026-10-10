@@ -60,6 +60,7 @@ TEST_CASE("service declarations retain their client signatures", "[feature:servi
 }
 
 TEST_CASE("service declarations reject incompatible signatures", "[feature:service][feature:wiring]") {
+    CHECK_THROWS((service<auto() -> double>{"scalar_result"}));
     CHECK_THROWS((reference_service<auto(TS<std::int64_t>)->TS<std::int64_t>>{"reference", {"value"}}));
     CHECK_THROWS((subscription_service<auto(std::int64_t)->TS<std::int64_t>>{"subscription", {"key"}}));
     CHECK_THROWS((subscription_service<auto(TS<std::int64_t>)->void>{"sink", {"key"}}));

@@ -13,9 +13,7 @@
 
 namespace bg::operators {
 
-extern BG_LIBRARY_EXPORT operator_<
-    auto(Union<"lhs", SCALAR, TS<SCALAR>>, Union<"rhs", SCALAR, TS<SCALAR>>) -> TS<SCALAR>>
-    add;
+extern BG_LIBRARY_EXPORT operator_<auto(SCALAR, SCALAR) -> SCALAR> add;
 
 using ::bg::map;
 using ::bg::mesh;

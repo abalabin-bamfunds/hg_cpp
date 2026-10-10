@@ -2,6 +2,7 @@
 #include <bg/graph/wiring_error.hpp>
 #include <bg/node.hpp>
 #include <bg/operator.hpp>
+#include <bg/operators.hpp>
 #include <bg/scalar/type.hpp>
 #include <bg/testing/test_graph.hpp>
 #include <bg/testing/test_wiring.hpp>
@@ -20,6 +21,61 @@
 using namespace bg::literals;
 
 namespace {
+
+TEST_CASE("operator scalar type-variable results retain their identity",
+          "[feature:operator][feature:type-system][declaration:generic][series:value][scalar:generic]") {
+    using VALUE = bg::ScalarVariable<"VALUE">;
+
+    const auto generic = bg::operator_<auto(bg::SCALAR) -> bg::SCALAR>{"generic_scalar_result", {"value"}};
+    auto named = bg::operator_<VALUE, auto(VALUE) -> VALUE>{"named_scalar_result", {"value"}};
+
+    CHECK(generic.signature().parameter(0).type == &bg::SCALAR::type());
+    CHECK(generic.signature().output() == &bg::TS<bg::SCALAR>::type());
+    CHECK(named.signature().parameter(0).type == &VALUE::type());
+    CHECK(named.signature().output() == &bg::TS<VALUE>::type());
+
+    named.overload(bg::graph("name"_n = "constant", [](double value) {
+        return bg::operators::const_(value).as<bg::TS<double, bg::TimeSeriesGuarantee::const_>>();
+    }));
+    bg::testing::test_wiring([&] {
+        const auto result = named[bg::type<VALUE> = bg::type<double>](2.5);
+        CHECK(&result.type() == &bg::TS<double, bg::TimeSeriesGuarantee::const_>::type());
+    });
+}
+
+TEST_CASE("operator concrete scalar results use canonical time-series declarations",
+          "[feature:operator][feature:type-system][declaration:concrete][series:value]"
+          "[scalar:floating-point][scalar:integer]") {
+    const auto double_result = bg::operator_<auto() -> double>{"double_scalar_result"};
+    const auto integer_result = bg::operator_<auto() -> int>{"integer_scalar_result"};
+
+    CHECK(double_result.signature().output() == &bg::TS<double>::type());
+    CHECK(integer_result.signature().output() == &bg::TS<bg::i64>::type());
+}
+
+TEST_CASE("operator scalar-result prototypes do not constrain overload arguments or outputs",
+          "[feature:operator][feature:wiring][series:value][guarantee:final][declaration:concrete]") {
+    auto operation = bg::operator_<auto(bg::SCALAR) -> bg::SCALAR>{"final_identity", {"value"}};
+    const auto implementation = bg::graph(
+        "name"_n = "final_identity",
+        [](bg::wp<bg::TS<double, bg::TimeSeriesGuarantee::final>> value) { return value; });
+    operation.overload(implementation);
+    const auto source = bg::node([](bg::Out<bg::TS<double, bg::TimeSeriesGuarantee::final>>) {});
+
+    bg::testing::test_wiring([&] {
+        const auto result = operation(source());
+        CHECK(&result.type() == &bg::TS<double, bg::TimeSeriesGuarantee::final>::type());
+    });
+}
+
+TEST_CASE("explicit time-series and sink operator prototypes keep their result form",
+          "[feature:operator][feature:wiring][series:value]") {
+    const auto time_series = bg::operator_<auto() -> bg::TS<double>>{"time_series_result"};
+    const auto sink = bg::operator_<void(double)>{"sink", {"value"}};
+
+    CHECK(time_series.signature().output() == &bg::TS<double>::type());
+    CHECK_FALSE(sink.signature().has_output());
+}
 
 TEST_CASE("an operator selects the least generic applicable overload",
           "[feature:operator][feature:wiring][declaration:generic]") {

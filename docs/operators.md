@@ -20,7 +20,7 @@ its name and parameter names:
 ```cpp
 namespace bg::operators {
 
-extern operator_<auto(TS_T, TS_T) -> TS_T> add;
+extern operator_<auto(SCALAR, SCALAR) -> SCALAR> add;
 
 } // namespace bg::operators
 
@@ -30,10 +30,15 @@ decltype(bg::operators::add) bg::operators::add{"add", {"lhs", "rhs"}};
 Local code uses the same declaration form:
 
 ```cpp
-auto add = bg::operator_<auto(bg::TS_T, bg::TS_T) -> bg::TS_T>{"add", {"lhs", "rhs"}};
+auto add = bg::operator_<auto(bg::SCALAR, bg::SCALAR) -> bg::SCALAR>{"add", {"lhs", "rhs"}};
 add.overload(bg::node<add_integers>());
 add.overload(add_numbers_graph);
 ```
+
+A scalar result `T` in an operator prototype means `TS<T>`. Native scalar
+results use their canonical type; for example, `int` means `TS<i64>`.
+The selected overload determines the actual output type and guarantee.
+Explicit time series results and `void` retain their normal meaning.
 
 An operator can declare ordered type parameters before its prototype. Calls can
 then supply positional type arguments or named mappings:
