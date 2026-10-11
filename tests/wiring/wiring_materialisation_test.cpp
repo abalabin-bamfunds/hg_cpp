@@ -13,7 +13,6 @@
 #include <bg/testing/test_graph.hpp>
 #include <bg/testing/test_wiring.hpp>
 #include <bg/type/signature.hpp>
-#include <bg/type/type_text.hpp>
 #include <bg/type/type_registry.hpp>
 #include <bg/time_series/tsb/tsb.hpp>
 #include <bg/time_series/tsl/tsl.hpp>
@@ -1667,8 +1666,8 @@ TEST_CASE("materialisation return type failures report expected and actual types
     } catch (const bg::WiringError &error) {
         auto expected = std::string{};
         auto actual = std::string{};
-        bg::append_type_text(expected, bg::TS<float>::type());
-        bg::append_type_text(actual, bg::TS<bool>::type());
+        bg::TS<float>::type().format_name(expected);
+        bg::TS<bool>::type().format_name(actual);
         CHECK(std::ranges::any_of(error.contexts(), [&](const auto &entry) {
             return entry.expected_type == expected && entry.actual_type == actual;
         }));

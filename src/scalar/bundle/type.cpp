@@ -19,6 +19,17 @@
 
 namespace bg {
 
+void HierarchicalScalarType::format_name(std::string &result) const {
+    if (is_resolved()) {
+        schema_type().format_name(result);
+        return;
+    }
+
+    result += "Bundle<";
+    schema_type().format_name(result);
+    result += '>';
+}
+
 GenericHierarchicalScalarType::GenericHierarchicalScalarType(const SchemaType &schema)
     : schema_{&schema} {}
 

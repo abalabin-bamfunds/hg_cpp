@@ -7,7 +7,6 @@
 #include <bg/graph/graph_wiring.hpp>
 #include <bg/graph/wiring_context.hpp>
 #include <bg/graph/wiring_error.hpp>
-#include <bg/type/type_text.hpp>
 #include <functional>
 #include <exception>
 #include <optional>
@@ -671,20 +670,20 @@ bool ServiceCatalogue::BuildOperation::run() {
                 auto message = "service '" + service_name + "' implementation produced an incompatible output";
                 if (output) {
                     message += "\n  expected: ";
-                    append_type_text(message, *expected_output);
+                    expected_output->format_name(message);
                     message += "\n  received: ";
-                    append_type_text(message, output->type());
+                    output->type().format_name(message);
                 } else {
                     message += "\n  expected: ";
-                    append_type_text(message, *expected_output);
+                    expected_output->format_name(message);
                     message += "\n  received no output";
                 }
                 auto error = service_error(std::move(message), instance);
                 if (output) {
                     auto actual = std::string{};
                     auto expected = std::string{};
-                    append_type_text(actual, output->type());
-                    append_type_text(expected, *expected_output);
+                    output->type().format_name(actual);
+                    expected_output->format_name(expected);
                     error = error.with_context({.stage = WiringFailureStage::type_match,
                                                 .operation = instance.signature.name,
                                                 .expected_type = std::move(expected),

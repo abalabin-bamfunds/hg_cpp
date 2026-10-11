@@ -29,6 +29,12 @@ class ResolvedSetScalarType final : public SetScalarType {
 
 } // namespace
 
+void SetScalarType::format_name(std::string &result) const {
+    result += "Set<";
+    item_type().format_name(result);
+    result += '>';
+}
+
 bool SetScalarType::do_match(const Type &supplied, TypeMap &type_map) const {
     const auto *set = type_cast<SetScalarType>(&supplied);
     if (set == nullptr || !set->is_resolved()) {

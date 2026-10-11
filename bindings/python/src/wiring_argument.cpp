@@ -5,7 +5,7 @@
 #include <bg/operators.hpp>
 #include <bg/python/scalar_conversion.hpp>
 #include <bg/python/wiring_point.hpp>
-#include <bg/type/type_text.hpp>
+#include <bg/type/type.hpp>
 
 #include <array>
 #include <stdexcept>
@@ -45,7 +45,7 @@ WiringArgument wiring_argument(const Type &expected, nb::handle value, allocator
             throw;
         } catch (const std::exception &error) {
             auto message = std::string{"cannot convert Python value to scalar type "};
-            append_type_text(message, *scalar_type);
+            scalar_type->format_name(message);
             message += ": ";
             message += error.what();
             throw std::invalid_argument{std::move(message)};

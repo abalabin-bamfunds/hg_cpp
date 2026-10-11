@@ -32,6 +32,7 @@ template <typename Category> class TypeVariableType final : public Category, pub
         : Variable(name), alternatives_(std::move(alternatives)), constraints_(std::move(constraints)) {}
 
     bool is_resolved() const noexcept override { return false; }
+    void format_name(std::string &result) const override { result += name().text(); }
 
     // Alternatives may constrain the reference itself; constraints and mappings observe its limited target.
     [[nodiscard]] bool match(const Type &supplied, TypeMap &type_map,

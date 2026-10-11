@@ -15,6 +15,7 @@ class TimeSeriesBundleType : public FixedItemTimeSeriesType {
   public:
     VISITOR_SUPPORT()
 
+    void format_name(std::string &result) const override;
     static const TimeSeriesBundleType &from_fields(
         std::span<const SchemaField> fields,
         TimeSeriesGuarantee guarantee = TimeSeriesGuarantee::ordinary);

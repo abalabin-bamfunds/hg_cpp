@@ -13,6 +13,7 @@ class ListScalarType : public ScalarType {
 
     VISITOR_SUPPORT()
 
+    void format_name(std::string &result) const override;
     virtual const ScalarType &item_type() const noexcept = 0;
 
     bool supports_equality() const noexcept final { return item_type().supports_equality(); }

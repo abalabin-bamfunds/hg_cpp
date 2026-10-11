@@ -28,6 +28,15 @@ class ResolvedTimeSeriesDictionaryType final : public TimeSeriesDictionaryType {
 
 } // namespace
 
+void TimeSeriesDictionaryType::format_name(std::string &result) const {
+    result += "TSD<";
+    key_type().format_name(result);
+    result += ", ";
+    value_type().format_name(result);
+    append_guarantee(result);
+    result += '>';
+}
+
 const TimeSeriesType &TimeSeriesDictionaryType::item_type(std::size_t index) const {
     if (index != 0) {
         throw std::out_of_range{"time series dictionary component index is out of range"};

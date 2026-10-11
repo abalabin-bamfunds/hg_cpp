@@ -20,6 +20,12 @@
 
 namespace bg {
 
+class ScalarData;
+
+namespace details {
+using ScalarData = ::bg::ScalarData;
+}
+
 // Defines the canonical C++ storage, read view, intrinsic operations, and lifecycle for a scalar declaration.
 // Scalar providers specialize this trait in their public interface.
 template <typename T> struct scalar_storage_traits {
@@ -30,6 +36,7 @@ template <typename T> struct scalar_storage_traits {
     static constexpr bool supports_hash = std::same_as<T, byte> || std::same_as<T, date_time_t> ||
                                           std::same_as<T, timedelta_t> || std::same_as<T, symbol> ||
                                           requires(value_type value) { std::hash<value_type>{}(value); };
+    static constexpr bool supports_alternative_layouts = false;
     static constexpr bool uses_shared_handle = false;
     static constexpr bool uses_variable_memory = false;
     static constexpr bool requires_finalization = !std::is_trivially_destructible_v<stored_type>;
@@ -101,6 +108,7 @@ template <native_struct T> struct scalar_storage_traits<T> {
 
     static constexpr bool supports_equality = true;
     static constexpr bool supports_hash = true;
+    static constexpr bool supports_alternative_layouts = false;
     static constexpr bool uses_shared_handle = false;
     static constexpr bool uses_variable_memory = false;
     static constexpr bool requires_finalization = false;
@@ -135,6 +143,7 @@ template <> struct scalar_storage_traits<string> {
 
     static constexpr bool supports_equality = true;
     static constexpr bool supports_hash = true;
+    static constexpr bool supports_alternative_layouts = false;
     static constexpr bool uses_shared_handle = true;
     static constexpr bool uses_variable_memory = true;
     static constexpr bool requires_finalization = true;
@@ -182,6 +191,7 @@ template <typename T> struct scalar_storage_traits<Opaque<T>> {
 
     static constexpr bool supports_equality = false;
     static constexpr bool supports_hash = false;
+    static constexpr bool supports_alternative_layouts = false;
     static constexpr bool uses_shared_handle = false;
     static constexpr bool uses_variable_memory = false;
     static constexpr bool requires_finalization = !std::is_trivially_destructible_v<stored_type>;
@@ -206,6 +216,14 @@ template <typename T> struct scalar_storage_traits<Opaque<T>> {
 namespace details {
 
 template <typename T> using scalar_stored_t = typename scalar_storage_traits<T>::stored_type;
+
+template <typename T> inline constexpr bool scalar_storage_supports_alternative_layouts = [] {
+    if constexpr (requires { scalar_storage_traits<T>::supports_alternative_layouts; }) {
+        return scalar_storage_traits<T>::supports_alternative_layouts;
+    } else {
+        return true;
+    }
+}();
 
 } // namespace details
 

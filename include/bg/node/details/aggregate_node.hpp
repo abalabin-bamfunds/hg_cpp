@@ -249,9 +249,29 @@ template <typename TimeSeries, auto... Options>
 struct output_runtime_type_field<Out<TimeSeries, Options...>>
     : std::bool_constant<output_requires_runtime_type<Out<TimeSeries, Options...>>> {};
 
-template <typename T> struct generic_scalar_input_field : std::false_type {};
+template <typename Definition, std::size_t... Index>
+consteval bool aggregate_uses_output_runtime_type(std::index_sequence<Index...>) {
+    return (output_runtime_type_field<std::remove_cv_t<util::aggregate_member_type<Index, Definition>>>::value ||
+            ...);
+}
 
-template <typename T> struct generic_scalar_input_field<Scalar<T>> : std::bool_constant<generic_scalar_state<T>> {};
+template <typename T> consteval bool scalar_input_requires_runtime_type() {
+    if constexpr (generic_scalar_state<T> || hierarchical_scalar_declaration<T>) {
+        return true;
+    }
+    return scalar_storage_supports_alternative_layouts<T>;
+}
+
+template <typename T> struct scalar_input_runtime_type_field : std::false_type {};
+
+template <typename T>
+struct scalar_input_runtime_type_field<Scalar<T>>
+    : std::bool_constant<scalar_input_requires_runtime_type<T>()> {};
+
+template <typename T>
+    requires(scalar_field<T>::value && !scalar_view<T>::value)
+struct scalar_input_runtime_type_field<T>
+    : std::bool_constant<scalar_input_requires_runtime_type<typename scalar_field<T>::parameter_type>()> {};
 
 template <typename T> struct scalar_variable_view : std::false_type {};
 
@@ -456,65 +476,12 @@ template <typename Definition, std::size_t Index> const TimeSeriesType &output_t
     }
 }
 
-template <typename Definition, std::size_t... Index>
-std::size_t aggregate_time_series_runtime_type_count(const CompiledNode &node, std::index_sequence<Index...>) {
-    auto count = std::size_t{};
-    auto parameter = std::size_t{};
-
-    (
-        [&] {
-            using Field = std::remove_cv_t<util::aggregate_member_type<Index, Definition>>;
-
-            if constexpr (input_field<Field>::value) {
-                if constexpr (!input_field<Field>::dynamic_binding) {
-                    if constexpr (input_runtime_type_field<Field>::value) {
-                        ++count;
-                    }
-                    ++parameter;
-                }
-            } else if constexpr (promoted_field<Field>::value) {
-                if constexpr (promoted_input_runtime_type_field<Field>::value) {
-                    if (node.parameters()[parameter].mode() != ParameterBindingMode::scalar) {
-                        ++count;
-                    }
-                }
-                ++parameter;
-            } else if constexpr (scalar_field<Field>::value) {
-                ++parameter;
-            }
-        }(),
-        ...);
-
-    return count;
-}
-
-template <typename Definition, std::size_t... Index>
-consteval std::size_t aggregate_generic_scalar_input_count(std::index_sequence<Index...>) {
-    return (std::size_t{} + ... +
-            static_cast<std::size_t>(
-                generic_scalar_input_field<std::remove_cv_t<util::aggregate_member_type<Index, Definition>>>::value));
-}
-
-template <typename Definition, std::size_t Target, std::size_t... Index>
-consteval std::size_t aggregate_generic_scalar_input_index(std::index_sequence<Index...>) {
-    return (std::size_t{} + ... +
-            static_cast<std::size_t>(
-                Index < Target &&
-                generic_scalar_input_field<std::remove_cv_t<util::aggregate_member_type<Index, Definition>>>::value));
-}
-
 template <typename Definition, std::size_t Target, std::size_t... Index>
 consteval std::size_t aggregate_dynamic_activity_input_index(std::index_sequence<Index...>) {
     return (std::size_t{} + ... +
             static_cast<std::size_t>(
                 Index < Target &&
                 input_field<std::remove_cv_t<util::aggregate_member_type<Index, Definition>>>::dynamic_activity));
-}
-
-template <typename Definition, std::size_t... Index>
-consteval bool aggregate_uses_output_runtime_type(std::index_sequence<Index...>) {
-    return (false || ... ||
-            output_runtime_type_field<std::remove_cv_t<util::aggregate_member_type<Index, Definition>>>::value);
 }
 
 template <typename Definition, std::size_t... Index>
@@ -736,19 +703,12 @@ template <typename Definition, std::size_t Index>
     if constexpr (input_field<Field>::value) {
         if constexpr (input_field<Field>::dynamic_binding) {
             constexpr auto MemberCount = util::aggregate_member_count<Definition>;
-            const auto TimeSeriesRuntimeTypeCount =
-                aggregate_time_series_runtime_type_count<Definition>(node, std::make_index_sequence<MemberCount>{});
-            constexpr auto GenericScalarInputCount =
-                aggregate_generic_scalar_input_count<Definition>(std::make_index_sequence<MemberCount>{});
-            constexpr auto UsesOutputRuntimeType =
-                aggregate_uses_output_runtime_type<Definition>(std::make_index_sequence<MemberCount>{});
             constexpr auto DynamicIndex =
                 dynamic_reference_input_index<Definition, Index>(std::make_index_sequence<MemberCount>{});
             const auto offset = dynamic_reference_input_offset<Definition, Index>(node);
             auto *state = static_cast<std::byte *>(runtime_node.state());
             auto &input = *reinterpret_cast<DynamicReferenceInputStorage *>(state + offset);
-            const auto &runtime_type = node.dynamic_reference_input_runtime_type(
-                TimeSeriesRuntimeTypeCount, GenericScalarInputCount, UsesOutputRuntimeType, DynamicIndex);
+            const auto &runtime_type = node.dynamic_reference_input_runtime_type(DynamicIndex);
             return Field{input, runtime_type, *context, node.state_offset() + offset};
         }
 
@@ -759,9 +719,7 @@ template <typename Definition, std::size_t Index>
         const auto modified = input.last_updated->valid() && input.last_updated->time() == context->evaluation_time();
 
         if constexpr (input_runtime_type_field<Field>::value) {
-            const auto RuntimeTypeIndex = aggregate_time_series_runtime_type_count<Definition>(
-                node, std::make_index_sequence<Index>{});
-            const auto &runtime_type = runtime_node.time_series_input_runtime_type(ParameterIndex, RuntimeTypeIndex);
+            const auto &runtime_type = runtime_node.time_series_input_runtime_type(ParameterIndex);
             const auto data = TimeSeriesInputData{runtime_type, *input.last_updated, input.value, modified};
             if constexpr (input_field<Field>::dynamic_activity) {
                 return Field{data, runtime_node.input_activity(ControlledInputIndex)};
@@ -792,8 +750,16 @@ template <typename Definition, std::size_t Index>
                 }
             }
 
-            using Traits = scalar_storage_traits<Parameter>;
-            auto value = scalar_api_value<Value>(Traits::read(*static_cast<const typename Traits::stored_type *>(data)));
+            auto value = [&] {
+                if constexpr (scalar_input_runtime_type_field<Field>::value) {
+                    const auto scalar = Scalar<>::from(node.scalar_input_runtime_type(ParameterIndex), data);
+                    return scalar_api_value<Value>(scalar_cast<Parameter>(scalar).value());
+                } else {
+                    using Traits = scalar_storage_traits<Parameter>;
+                    return scalar_api_value<Value>(
+                        Traits::read(*static_cast<const typename Traits::stored_type *>(data)));
+                }
+            }();
             if constexpr (promoted_field<Field>::optional) {
                 return Field{std::move(value)};
             } else {
@@ -816,10 +782,8 @@ template <typename Definition, std::size_t Index>
         using Input = In<TS<Parameter>>;
         const auto value = [&] {
             if constexpr (input_requires_runtime_type<Input>) {
-                const auto RuntimeTypeIndex = aggregate_time_series_runtime_type_count<Definition>(
-                    node, std::make_index_sequence<Index>{});
                 const auto &runtime_type =
-                    runtime_node.time_series_input_runtime_type(ParameterIndex, RuntimeTypeIndex);
+                    runtime_node.time_series_input_runtime_type(ParameterIndex);
                 return Input{TimeSeriesInputData{runtime_type, *input.last_updated, input.value, modified}};
             } else {
                 return Input{*input.last_updated,
@@ -845,24 +809,32 @@ template <typename Definition, std::size_t Index>
         using Value = typename scalar_field<Field>::value_type;
         using Parameter = typename scalar_field<Field>::parameter_type;
 
-        if constexpr (generic_scalar_input_field<Field>::value) {
-            const auto TimeSeriesRuntimeTypeCount = aggregate_time_series_runtime_type_count<Definition>(
-                node, std::make_index_sequence<util::aggregate_member_count<Definition>>{});
-            constexpr auto GenericScalarInputIndex = aggregate_generic_scalar_input_index<Definition, Index>(
-                std::make_index_sequence<util::aggregate_member_count<Definition>>{});
+        if constexpr (scalar_field<Field>::optional) {
+            if (data == nullptr) {
+                return Field{};
+            }
+        }
 
-            const auto &runtime_type =
-                node.scalar_input_runtime_type(TimeSeriesRuntimeTypeCount, GenericScalarInputIndex);
-            return Field::from(runtime_type, data);
+        if constexpr (scalar_input_runtime_type_field<Field>::value) {
+            const auto &runtime_type = node.scalar_input_runtime_type(ParameterIndex);
+
+            if constexpr (scalar_view<Field>::value) {
+                return Field::from(runtime_type, data);
+            } else if constexpr (scalar_field<Field>::optional) {
+                const auto scalar = Scalar<>::from(runtime_type, data);
+                return Field{scalar_api_value<Value>(scalar_cast<Parameter>(scalar).value())};
+            } else {
+                const auto scalar = Scalar<>::from(runtime_type, data);
+                return scalar_api_value<Value>(scalar_cast<Parameter>(scalar).value());
+            }
         } else {
             using Traits = scalar_storage_traits<Parameter>;
 
             if constexpr (scalar_view<Field>::value) {
                 return Field::from(*static_cast<const typename Traits::stored_type *>(data));
             } else if constexpr (scalar_field<Field>::optional) {
-                return data == nullptr ? Field{}
-                                       : Field{scalar_api_value<Value>(
-                                             Traits::read(*static_cast<const typename Traits::stored_type *>(data)))};
+                return Field{scalar_api_value<Value>(
+                    Traits::read(*static_cast<const typename Traits::stored_type *>(data)))};
             } else {
                 return scalar_api_value<Value>(Traits::read(*static_cast<const typename Traits::stored_type *>(data)));
             }
@@ -892,23 +864,10 @@ template <typename Definition, std::size_t Index>
     } else {
         auto &last_updated = runtime_node.output_last_updated();
 
-        if constexpr (output_view_field<Field>::value) {
-            const auto TimeSeriesRuntimeTypeCount = aggregate_time_series_runtime_type_count<Definition>(
-                node, std::make_index_sequence<util::aggregate_member_count<Definition>>{});
-            constexpr auto GenericScalarInputCount = aggregate_generic_scalar_input_count<Definition>(
-                std::make_index_sequence<util::aggregate_member_count<Definition>>{});
+        if constexpr (output_view_field<Field>::value || output_runtime_type_field<Field>::value) {
             return output_factory::make<Field>(
                 last_updated, runtime_node.output_value(),
-                node.output_runtime_type(TimeSeriesRuntimeTypeCount, GenericScalarInputCount), *context);
-        } else if constexpr (output_runtime_type_field<Field>::value) {
-            const auto TimeSeriesRuntimeTypeCount = aggregate_time_series_runtime_type_count<Definition>(
-                node, std::make_index_sequence<util::aggregate_member_count<Definition>>{});
-            constexpr auto GenericScalarInputCount = aggregate_generic_scalar_input_count<Definition>(
-                std::make_index_sequence<util::aggregate_member_count<Definition>>{});
-            auto &value = *static_cast<typename Field::storage_type *>(runtime_node.output_value());
-            return output_factory::make<Field>(
-                last_updated, value,
-                node.output_runtime_type(TimeSeriesRuntimeTypeCount, GenericScalarInputCount), *context);
+                node.output_runtime_type(), *context);
         } else {
             auto &value = *static_cast<typename Field::storage_type *>(runtime_node.output_value());
             return output_factory::make<Field>(last_updated, value, *context);

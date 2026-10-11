@@ -29,6 +29,12 @@ class ResolvedListScalarType final : public ListScalarType {
 
 } // namespace
 
+void ListScalarType::format_name(std::string &result) const {
+    result += "List<";
+    item_type().format_name(result);
+    result += '>';
+}
+
 bool ListScalarType::do_match(const Type &supplied, TypeMap &type_map) const {
     const auto *list = type_cast<ListScalarType>(&supplied);
 

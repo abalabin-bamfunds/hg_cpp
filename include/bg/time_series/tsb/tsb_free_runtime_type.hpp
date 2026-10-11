@@ -37,7 +37,7 @@ class FreeTimeSeriesBundleRuntimeType final : public TimeSeriesRuntimeType {
             throw std::out_of_range{"time series bundle item index is out of range"};
         }
         const auto node = free_bundle_node(storage);
-        const auto input = node.time_series_input(id, id);
+        const auto input = node.time_series_input(id);
         return {input.runtime_type(), node.input_last_updated(id), input.data()};
     }
 
@@ -73,7 +73,7 @@ class FreeTimeSeriesBundleRuntimeType final : public TimeSeriesRuntimeType {
         }
         const auto node = free_bundle_node(storage);
         const auto publish = [&](std::size_t index, const TimeSeriesState &item_last_updated) {
-            const auto input = node.time_series_input(index, index);
+            const auto input = node.time_series_input(index);
             function(context, {static_cast<item_id_t>(index), &input.runtime_type(), &item_last_updated,
                                input.data()});
         };

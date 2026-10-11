@@ -13,7 +13,6 @@
 #include <bg/type/time_series_reference_type.hpp>
 #include <bg/type/details/resolver_type_resolution_error.hpp>
 #include <bg/type/type_resolution_error.hpp>
-#include <bg/type/type_text.hpp>
 #include <bg/type/type_variable.hpp>
 
 #include <algorithm>
@@ -179,14 +178,14 @@ WiringCandidateDiagnostic matched_failure(const WiringTemplate &implementation, 
                                         ? signature.parameter(index).name
                                         : util::symbol{std::to_string(index)};
         auto offered_type = std::string{};
-        append_type_text(offered_type, *form.offered_type);
+        form.offered_type->format_name(offered_type);
         auto accepted_type = std::string{};
         if (index < resolution.parameters.size()) {
-            append_type_text(accepted_type, *resolution.parameters[index].type);
+            resolution.parameters[index].type->format_name(accepted_type);
         }
         auto materialisation_type = std::string{};
         if (form.materialisation_target != nullptr) {
-            append_type_text(materialisation_type, *form.materialisation_target);
+            form.materialisation_target->format_name(materialisation_type);
         }
         result.bindings.push_back({index, parameter_name, std::move(offered_type), std::move(accepted_type),
                                    std::move(materialisation_type), form.materialisation_cost});
@@ -226,7 +225,7 @@ WiringDiagnostic diagnostic(const Signature &prototype, std::vector<util::symbol
         auto argument = WiringParameterDiagnostic{name, &supplied[index].type(), validity};
         const auto append_form = [&](const Type &type, double cost, bool direct) {
             auto text = std::string{};
-            append_type_text(text, type);
+            type.format_name(text);
             argument.offered_forms.push_back({std::move(text), cost, direct});
         };
         if (!supplied[index].is_time_series()) {

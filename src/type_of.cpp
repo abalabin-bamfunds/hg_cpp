@@ -18,6 +18,12 @@ class ResolvedTypeScalarType final : public TypeScalarType {
 
 } // namespace
 
+void TypeScalarType::format_name(std::string &result) const {
+    result += "Type<";
+    type().format_name(result);
+    result += '>';
+}
+
 const TypeScalarType &type_of(const Type &type) {
     return TypeRegistry::instance().get_or_create<ResolvedTypeScalarType, std::hash<const Type *>>(
         &type, [&] { return std::make_unique<ResolvedTypeScalarType>(type); });

@@ -48,6 +48,7 @@ class HierarchicalScalarType : public ScalarType {
 
     VISITOR_SUPPORT()
 
+    void format_name(std::string &result) const override;
     virtual const SchemaType &schema_type() const noexcept = 0;
 
   protected:
@@ -123,6 +124,9 @@ inline bool is_hierarchical_scalar(const ScalarType &type) noexcept {
 
 template <typename Scalar, auto... Properties> struct hierarchical_scalar_schema_field {
     using scalar_type = Scalar;
+
+    template <template <typename, auto...> typename Field>
+    using rebind = Field<Scalar, Properties...>;
 
     static constexpr bool valid_properties =
         (std::same_as<std::remove_cv_t<decltype(Properties)>, Optionality> && ...);

@@ -10,6 +10,7 @@ class TimeSeriesSetType : public TimeSeriesType {
   public:
     VISITOR_SUPPORT()
 
+    void format_name(std::string &result) const override;
     const ScalarType &item_type() const noexcept { return *item_type_; }
     [[nodiscard]] const TimeSeriesType &with_guarantee(TimeSeriesGuarantee guarantee) const override;
     bool supports_invalidation() const noexcept final { return false; }

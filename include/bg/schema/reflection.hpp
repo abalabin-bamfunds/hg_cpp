@@ -20,6 +20,14 @@ template <template <template <typename, auto...> typename> typename Schema> stru
 
 struct no_schema_base {};
 
+// Field wrappers can record their address while schema_reflection captures a
+// schema's field offsets.
+struct FieldProbe {
+    const void *address{};
+
+    void record(const void *field_address) noexcept { address = field_address; }
+};
+
 template <template <template <typename, auto...> typename> typename Base> struct schema_base_marker {};
 
 template <template <typename, auto...> typename Field>
@@ -56,6 +64,92 @@ using bundle_extends = schema_extends<Base, Field>;
 namespace bg::details {
 
 inline constexpr auto missing_schema_field = static_cast<std::size_t>(-1);
+
+template <template <template <typename, auto...> typename> typename Schema,
+          template <typename, auto...> typename ReflectionField>
+class schema_reflection;
+
+template <typename... Values> struct schema_initializer_list {};
+
+template <typename Left, typename Right> struct schema_initializer_list_concat;
+
+template <typename... Left, typename... Right>
+struct schema_initializer_list_concat<schema_initializer_list<Left...>, schema_initializer_list<Right...>> {
+    using type = schema_initializer_list<Left..., Right...>;
+};
+
+template <typename ReflectedField, std::size_t ProbeIndex, std::size_t LogicalIndex>
+struct schema_field_initializer {
+    using reflected_field = ReflectedField;
+    static constexpr std::size_t probe_index = ProbeIndex;
+    static constexpr std::size_t logical_index = LogicalIndex;
+    static constexpr bool is_field = true;
+};
+
+template <template <template <typename, auto...> typename> typename Base> struct schema_empty_base_initializer {
+    template <template <typename, auto...> typename Field> using schema = Base<Field>;
+    static constexpr bool is_field = false;
+};
+
+template <template <template <typename, auto...> typename> typename Schema,
+          template <typename, auto...> typename ReflectionField, typename RootReflection,
+          std::size_t ProbeOffset, typename IndexSequence>
+struct schema_direct_initializers;
+
+template <template <template <typename, auto...> typename> typename Schema,
+          template <typename, auto...> typename ReflectionField, typename RootReflection,
+          std::size_t ProbeOffset, std::size_t... Index>
+struct schema_direct_initializers<Schema, ReflectionField, RootReflection, ProbeOffset,
+                                  std::index_sequence<Index...>> {
+    using Reflection = schema_reflection<Schema, ReflectionField>;
+
+    template <std::size_t FieldIndex>
+    using field_initializer = schema_field_initializer<
+        typename Reflection::template direct_field<FieldIndex>, ProbeOffset + FieldIndex,
+        RootReflection::field_index(Reflection::template direct_field_name<FieldIndex>())>;
+
+    using type = schema_initializer_list<field_initializer<Index>...>;
+};
+
+template <template <template <typename, auto...> typename> typename Schema,
+          template <typename, auto...> typename ReflectionField, typename RootReflection>
+struct schema_initializers {
+    using Reflection = schema_reflection<Schema, ReflectionField>;
+
+    static constexpr std::size_t base_probe_count = [] {
+        if constexpr (Reflection::has_base) {
+            using Base = typename Reflection::base_schema;
+            using BaseReflection = schema_reflection<Base::template apply, ReflectionField>;
+            if constexpr (BaseReflection::field_count == 0) {
+                return std::size_t{};
+            } else {
+                return schema_initializers<Base::template apply, ReflectionField, RootReflection>::probe_count;
+            }
+        }
+        return std::size_t{};
+    }();
+
+    using base_initializers = decltype([] {
+        if constexpr (!Reflection::has_base) {
+            return schema_initializer_list<>{};
+        } else {
+            using Base = typename Reflection::base_schema;
+            using BaseReflection = schema_reflection<Base::template apply, ReflectionField>;
+            if constexpr (BaseReflection::field_count == 0) {
+                return schema_initializer_list<schema_empty_base_initializer<Base::template apply>>{};
+            } else {
+                return typename schema_initializers<Base::template apply, ReflectionField,
+                                                    RootReflection>::type{};
+            }
+        }
+    }());
+
+    using direct_initializers = typename schema_direct_initializers<
+        Schema, ReflectionField, RootReflection, base_probe_count,
+        std::make_index_sequence<Reflection::direct_field_count>>::type;
+    using type = typename schema_initializer_list_concat<base_initializers, direct_initializers>::type;
+    static constexpr std::size_t probe_count = base_probe_count + Reflection::direct_field_count;
+};
 
 template <template <template <typename, auto...> typename> typename Schema,
           template <typename, auto...> typename ReflectionField>
@@ -99,26 +193,94 @@ class schema_reflection {
         }
     }
 
-    template <template <template <typename, auto...> typename> typename Root,
-              template <template <typename, auto...> typename> typename Current,
-              template <typename, auto...> typename Field,
-              typename Construction, typename Factory, std::size_t... Index>
-    static Current<Field> construct(Factory &factory, std::index_sequence<Index...>) {
-        using CurrentReflection = schema_reflection<Current, ReflectionField>;
-        if constexpr (CurrentReflection::has_base) {
-            using Base = typename CurrentReflection::base_schema;
-            auto base = construct<Root, Base::template apply, Field, Construction>(
-                factory, std::make_index_sequence<schema_reflection<Base::template apply, ReflectionField>::
-                                                      direct_field_count>{});
-            return Current<Field>{Construction::template make_base<Base::template apply, Field>(std::move(base)),
-                                  factory.template make<typename CurrentReflection::template direct_field<Index>>(
-                                      schema_reflection<Root, ReflectionField>::field_index(
-                                          CurrentReflection::template direct_field_name<Index>()))...};
+    using initializers = schema_initializers<Schema, ReflectionField, schema_reflection>;
+
+    template <typename Descriptor, template <typename, auto...> typename Field, typename Factory>
+    static decltype(auto) make_initializer(Factory &factory) {
+        if constexpr (Descriptor::is_field) {
+            return factory.template make<typename Descriptor::reflected_field>(Descriptor::logical_index);
         } else {
-            return Current<Field>{
-                factory.template make<typename CurrentReflection::template direct_field<Index>>(
-                    schema_reflection<Root, ReflectionField>::field_index(
-                        CurrentReflection::template direct_field_name<Index>()))...};
+            return typename Descriptor::template schema<Field>{};
+        }
+    }
+
+    template <template <typename, auto...> typename Field, typename Factory, typename... Descriptor>
+    static Schema<Field> make_fields(Factory &factory, schema_initializer_list<Descriptor...>) {
+        return Schema<Field>{make_initializer<Descriptor, Field>(factory)...};
+    }
+
+    template <typename Descriptor, template <typename, auto...> typename Field, std::size_t Size>
+    static decltype(auto) probe_initializer(std::array<FieldProbe, Size> &probes) {
+        if constexpr (Descriptor::is_field) {
+            return (probes[Descriptor::probe_index]);
+        } else {
+            return typename Descriptor::template schema<Field>{};
+        }
+    }
+
+    template <typename Descriptor, typename Sample, typename Probes, typename Offsets>
+    static void record_offset(const Sample &sample, const Probes &probes, Offsets &offsets) {
+        if constexpr (Descriptor::is_field) {
+            const auto *object = reinterpret_cast<const std::byte *>(std::addressof(sample));
+            const auto *field = reinterpret_cast<const std::byte *>(probes[Descriptor::probe_index].address);
+            offsets[Descriptor::logical_index] = static_cast<std::size_t>(field - object);
+        }
+    }
+
+    template <template <typename, auto...> typename Field, typename... Descriptor>
+    static auto capture_offsets(schema_initializer_list<Descriptor...>) {
+        std::array<FieldProbe, initializers::probe_count> probes{};
+        Schema<Field> sample{probe_initializer<Descriptor, Field>(probes)...};
+        std::array<std::size_t, field_count> offsets{};
+        (record_offset<Descriptor>(sample, probes, offsets), ...);
+        return offsets;
+    }
+
+    template <template <typename, auto...> typename Field, std::size_t... Index>
+    static auto fields(Schema<Field> &schema, std::index_sequence<Index...>) {
+        auto *object = reinterpret_cast<std::byte *>(std::addressof(schema));
+        const auto &offsets = field_offsets<Field>();
+        return std::tuple<typename field<Index>::template rebind<Field> &...>{
+            *reinterpret_cast<typename field<Index>::template rebind<Field> *>(object + offsets[Index])...};
+    }
+
+    template <template <typename, auto...> typename Field, std::size_t... Index>
+    static auto fields(const Schema<Field> &schema, std::index_sequence<Index...>) {
+        const auto *object = reinterpret_cast<const std::byte *>(std::addressof(schema));
+        const auto &offsets = field_offsets<Field>();
+        return std::tuple<const typename field<Index>::template rebind<Field> &...>{
+            *reinterpret_cast<const typename field<Index>::template rebind<Field> *>(object + offsets[Index])...};
+    }
+
+    template <std::size_t LogicalIndex, std::size_t DirectIndex = 0>
+    static consteval std::string_view field_name_identity() {
+        if constexpr (DirectIndex < direct_field_count) {
+            if constexpr (direct_field_logical_index(DirectIndex) == LogicalIndex) {
+                return direct_field_name<DirectIndex>();
+            } else {
+                return field_name_identity<LogicalIndex, DirectIndex + 1>();
+            }
+        } else if constexpr (has_base) {
+            using BaseReflection = schema_reflection<base_schema::template apply, ReflectionField>;
+            return BaseReflection::template field_name<LogicalIndex>();
+        } else {
+            static_assert(LogicalIndex == missing_schema_field, "schema has no field with this index");
+        }
+    }
+
+    template <std::size_t LogicalIndex, std::size_t DirectIndex = 0>
+    static consteval auto field_type_identity() {
+        if constexpr (DirectIndex < direct_field_count) {
+            if constexpr (direct_field_logical_index(DirectIndex) == LogicalIndex) {
+                return std::type_identity<direct_field<DirectIndex>>{};
+            } else {
+                return field_type_identity<LogicalIndex, DirectIndex + 1>();
+            }
+        } else if constexpr (has_base) {
+            using BaseReflection = schema_reflection<base_schema::template apply, ReflectionField>;
+            return std::type_identity<typename BaseReflection::template field<LogicalIndex>>{};
+        } else {
+            static_assert(LogicalIndex == missing_schema_field, "schema has no field with this index");
         }
     }
 
@@ -185,10 +347,30 @@ class schema_reflection {
     template <util::compile_time_string Name>
     using field_type = typename decltype(field_type_identity<Name>())::type;
 
-    template <template <typename, auto...> typename Field, typename Construction, typename Factory>
+    template <std::size_t Index>
+    using field = typename decltype(field_type_identity<Index>())::type;
+
+    template <std::size_t Index> static consteval std::string_view field_name() {
+        static_assert(Index < field_count, "schema has no field with this index");
+        return field_name_identity<Index>();
+    }
+
+    template <template <typename, auto...> typename Field> static const auto &field_offsets() {
+        static const auto offsets = capture_offsets<Field>(typename initializers::type{});
+        return offsets;
+    }
+
+    template <template <typename, auto...> typename Field> static auto fields(Schema<Field> &schema) {
+        return fields(schema, std::make_index_sequence<field_count>{});
+    }
+
+    template <template <typename, auto...> typename Field> static auto fields(const Schema<Field> &schema) {
+        return fields(schema, std::make_index_sequence<field_count>{});
+    }
+
+    template <template <typename, auto...> typename Field, typename Factory>
     [[nodiscard]] static Schema<Field> make(Factory &factory) {
-        return construct<Schema, Schema, Field, Construction>(
-            factory, std::make_index_sequence<direct_field_count>{});
+        return make_fields<Field>(factory, typename initializers::type{});
     }
 };
 

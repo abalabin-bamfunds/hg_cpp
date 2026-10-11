@@ -119,7 +119,13 @@ class Out<TS<T, Properties...>> {
     value_type value() const
         requires(!scalar_declaration_traits<T>::is_collection && !details::hierarchical_scalar_declaration<T>)
     {
-        return Traits::read(*static_cast<const storage_type *>(state_->data()));
+        if constexpr (!details::scalar_storage_supports_alternative_layouts<T>) {
+            return Traits::read(*static_cast<const storage_type *>(state_->data()));
+        } else {
+            const auto &scalar_runtime_type =
+                static_cast<const TimeSeriesValueRuntimeType &>(state_->runtime_type()).scalar_runtime_type();
+            return Scalar<T>::from(scalar_runtime_type, state_->data()).value();
+        }
     }
 
     Scalar<T> value() const
@@ -133,24 +139,31 @@ class Out<TS<T, Properties...>> {
     template <typename Value>
         requires(!scalar_declaration_traits<T>::is_collection && !details::hierarchical_scalar_declaration<T>) &&
                 std::constructible_from<std::remove_cvref_t<value_type>, Value &&> &&
-                requires(storage_type &target, const std::remove_cvref_t<value_type> &source, allocator &memory) {
-                    Traits::assign(target, source, memory);
-                }
+                (details::scalar_storage_has_borrow_value<T> ||
+                 details::scalar_storage_supports_alternative_layouts<T> ||
+                 requires(storage_type &target, const std::remove_cvref_t<value_type> &source, allocator &memory) {
+                     Traits::assign(target, source, memory);
+                 })
     void set(Value &&value) const {
-        auto requested = std::remove_cvref_t<value_type>{std::forward<Value>(value)};
-        if constexpr (Traits::supports_equality) {
-            if (state_->suppresses_equal_updates() && valid() &&
-                Traits::equals(Traits::read(*static_cast<const storage_type *>(state_->data())), requested)) {
-                return;
+        auto requested = std::remove_cvref_t<value_type>(std::forward<Value>(value));
+        if constexpr (details::scalar_storage_has_borrow_value<T> ||
+                      details::scalar_storage_supports_alternative_layouts<T>) {
+            const auto source = details::make_scalar_source<T>(requested);
+            set_scalar_data(source);
+        } else {
+            if constexpr (Traits::supports_equality) {
+                if (state_->suppresses_equal_updates() && valid() && Traits::equals(this->value(), requested)) {
+                    return;
+                }
             }
-        }
 
-        auto allocator = bg::allocator{};
-        if constexpr (Traits::assign_uses_memory_resource) {
-            allocator = state_->allocator();
+            auto allocator = bg::allocator{};
+            if constexpr (Traits::assign_uses_memory_resource) {
+                allocator = state_->allocator();
+            }
+            Traits::assign(*static_cast<storage_type *>(state_->mutable_data()), requested, allocator);
+            state_->publish();
         }
-        Traits::assign(*static_cast<storage_type *>(state_->mutable_data()), requested, allocator);
-        state_->publish();
     }
 
     template <details::hierarchical_scalar_handle Value>
@@ -160,20 +173,7 @@ class Out<TS<T, Properties...>> {
     }
 
     template <typename Value> void set_value(const Scalar<Value> &value) const {
-        const auto &source = details::scalar_data(value);
-        const auto &runtime_type =
-            static_cast<const TimeSeriesValueRuntimeType &>(state_->runtime_type()).scalar_runtime_type();
-        if (state_->suppresses_equal_updates()) {
-            if (!runtime_type.accepts_input(source.runtime_type())) {
-                throw std::invalid_argument{"incompatible scalar runtime representations"};
-            }
-            if (valid() && runtime_type.equals(state_->data(), source)) {
-                return;
-            }
-        }
-
-        runtime_type.assign_from_input(state_->mutable_data(), source);
-        state_->publish();
+        set_scalar_data(details::scalar_data(value));
     }
 
     template <auto... TimeSeriesProperties, auto... InputProperties>
@@ -213,6 +213,22 @@ class Out<TS<T, Properties...>> {
 
   private:
     TimeSeriesOutputBinding state_;
+
+    void set_scalar_data(const details::ScalarData &source) const {
+        const auto &runtime_type =
+            static_cast<const TimeSeriesValueRuntimeType &>(state_->runtime_type()).scalar_runtime_type();
+        if (state_->suppresses_equal_updates()) {
+            if (!runtime_type.accepts_input(source.runtime_type())) {
+                throw std::invalid_argument{"incompatible scalar runtime representations"};
+            }
+            if (valid() && runtime_type.equals(state_->data(), source)) {
+                return;
+            }
+        }
+
+        runtime_type.assign_from_input(state_->mutable_data(), source);
+        state_->publish();
+    }
 };
 
 static_assert(sizeof(Out<TS<i64>>) == sizeof(void *));

@@ -111,7 +111,7 @@ bg::details::GraphWiringStructure structure(const ScalarGraph &graph) {
 
 } // namespace
 
-TEST_CASE("node template identity propagates operation exceptions", "[wiring][identity][scalar]") {
+TEST_CASE("node template identity propagates operation exceptions", "[feature:wiring][wiring][identity][scalar]") {
     using Value = test_identity::fallible_value;
 
     const auto left = bg::NodeTemplateIdentity::from_value(Value{1});
@@ -130,7 +130,7 @@ TEST_CASE("node template identity propagates operation exceptions", "[wiring][id
     test_identity::throw_on_cacheability = false;
 }
 
-TEST_CASE("graph structure propagates scalar hash and equality exceptions", "[wiring][identity][scalar]") {
+TEST_CASE("graph structure propagates scalar hash and equality exceptions", "[feature:wiring][wiring][identity][scalar]") {
     auto graph = make_scalar_graph();
     test_identity::throw_on_hash = true;
     CHECK_THROWS_AS(structure(graph), std::runtime_error);

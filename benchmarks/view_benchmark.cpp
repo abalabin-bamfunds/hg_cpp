@@ -4,12 +4,15 @@
 #include <bg/graph/runtime_graph.hpp>
 #include <bg/graph/wiring_context.hpp>
 #include <bg/node.hpp>
+#include <bg/scalar/value.hpp>
+#include <bg/time_series/time_series_runtime_type.hpp>
 #include <bg/time_series/tsl/tsl.hpp>
 
 #include <algorithm>
 #include <array>
 #include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <iomanip>
 #include <iostream>
 #include <string_view>
@@ -32,6 +35,14 @@ volatile std::size_t benchmark_result;
 
 BG_BENCHMARK_NOINLINE void consume(std::size_t value) noexcept {
     benchmark_result = value;
+}
+
+BG_BENCHMARK_NOINLINE std::size_t read_runtime_scalar(const bg::Scalar<bg::SCALAR> &value) noexcept {
+    return bg::Scalar<>::from(value).hash();
+}
+
+BG_BENCHMARK_NOINLINE std::size_t read_runtime_input(const bg::In<bg::TS_T> &input) noexcept {
+    return reinterpret_cast<std::uintptr_t>(input.data()) ^ input.runtime_type().value_size();
 }
 
 #undef BG_BENCHMARK_NOINLINE
@@ -207,6 +218,7 @@ struct measurement {
 
 [[nodiscard]] measurement measure(bg::GraphWiring &wiring, std::size_t invocation_size, std::size_t warmup_cycles,
                                   std::size_t measured_cycles) {
+    wiring.finalize();
     const auto compiled = bg::CompiledGraph{wiring};
     auto global_state = bg::GlobalState{};
     auto runtime = bg::RuntimeGraph{compiled, global_state};
@@ -248,6 +260,27 @@ template <typename Definition, std::size_t InputCount>
     return measure(wiring, sizeof(Definition), warmup_cycles, measured_cycles);
 }
 
+[[nodiscard]] measurement benchmark_mixed_runtime_invocation(std::size_t warmup_cycles,
+                                                              std::size_t measured_cycles) {
+    const auto source = bg::node<value_source_definition>();
+    const auto sink = bg::node([](bg::Scalar<bg::SCALAR> scalar_0, bg::In<bg::TS_T> input_1,
+                                  bg::Scalar<bg::SCALAR> scalar_2, bg::In<bg::TS_T> input_3) {
+        consume(read_runtime_scalar(scalar_0) + read_runtime_input(input_1) + read_runtime_scalar(scalar_2) +
+                read_runtime_input(input_3));
+    });
+    auto scalar_0 = bg::ScalarValue<>{std::string{"runtime scalar one"}};
+    auto scalar_2 = bg::ScalarValue<>{std::string{"runtime scalar two"}};
+    auto wiring = bg::GraphWiring{};
+    {
+        auto context = bg::WiringContext{wiring};
+        const auto value = source();
+        (void)sink(std::move(scalar_0), value, std::move(scalar_2), value);
+    }
+
+    constexpr auto InvocationSize = 2 * sizeof(bg::Scalar<bg::SCALAR>) + 2 * sizeof(bg::In<bg::TS_T>);
+    return measure(wiring, InvocationSize, warmup_cycles, measured_cycles);
+}
+
 template <typename Definition>
 [[nodiscard]] measurement benchmark_list_access(bool free_list, std::size_t warmup_cycles,
                                                 std::size_t measured_cycles) {
@@ -285,6 +318,8 @@ int main() {
               << sizeof(bg::Out<bg::TS<bg::i64>>) << " bytes\n";
     report("value invocation", "1 input", benchmark_value_invocation<value_sink_1, 1>(WarmupCycles, MeasuredCycles));
     report("value invocation", "4 inputs", benchmark_value_invocation<value_sink_4, 4>(WarmupCycles, MeasuredCycles));
+    report("mixed runtime input", "4 inputs",
+           benchmark_mixed_runtime_invocation(WarmupCycles, MeasuredCycles));
     report("value invocation", "8 inputs", benchmark_value_invocation<value_sink_8, 8>(WarmupCycles, MeasuredCycles));
     report("value invocation", "16 inputs",
            benchmark_value_invocation<value_sink_16, 16>(WarmupCycles, MeasuredCycles));

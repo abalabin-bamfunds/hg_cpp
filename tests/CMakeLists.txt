@@ -62,6 +62,7 @@ add_executable(
     testing/test_graph_test.cpp
     type/type_system_test.cpp
     type/type_registry_test.cpp
+    type/type_name_formatting_test.cpp
     type/hierarchical_scalar_type_test.cpp
     type/schema_test.cpp
     type/test_hierarchical_scalar_provider.cpp

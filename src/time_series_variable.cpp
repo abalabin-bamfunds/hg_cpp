@@ -4,6 +4,11 @@
 
 namespace bg {
 
+void GenericTimeSeriesVariableType::format_name(std::string &result) const {
+    variable().format_name(result);
+    append_guarantee(result);
+}
+
 bool GenericTimeSeriesVariableType::do_match(const Type &supplied, TypeMap &type_map) const {
     return do_match(supplied, type_map, std::nullopt);
 }

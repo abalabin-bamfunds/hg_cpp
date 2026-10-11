@@ -1,5 +1,6 @@
 #pragma once
 
+#include <bg/scalar/storage_traits.hpp>
 #include <bg/time_series/details/time_series_properties.hpp>
 #include <bg/time_series/details/type_access.hpp>
 #include <bg/time_series/time_series_variable.hpp>
@@ -46,6 +47,16 @@ template <typename T, auto... Properties> struct time_series_value<TS<T, Propert
 };
 
 template <typename T> using time_series_value_t = typename time_series_value<std::remove_cv_t<T>>::type;
+
+template <typename TimeSeries>
+inline constexpr bool time_series_scalar_supports_alternative_layouts = [] {
+    using Value = time_series_value_t<TimeSeries>;
+    if constexpr (std::is_void_v<Value>) {
+        return false;
+    } else {
+        return scalar_storage_supports_alternative_layouts<Value>;
+    }
+}();
 
 template <typename T> struct time_series_reference : std::false_type {};
 

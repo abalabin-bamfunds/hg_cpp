@@ -13,6 +13,11 @@ categories are scalar, time series, and graph types. Each type exposes its
 structure through the applicable interface. Matching and resolution use virtual
 operations on these interfaces.
 
+`Type::format_name(result)` appends the type's formal diagnostic name to
+`result`. Built-in types format their own names and nested type arguments.
+Extensions can override the same operation. The default `Type` name is `type`,
+and the default `ScalarType` name is `scalar`.
+
 `type_cast<T>()` casts between the structural categories in `TypeVisitor`.
 Pointer casts return null on mismatch. Reference casts throw `std::bad_cast`.
 
@@ -146,6 +151,28 @@ A C++ schema declares fields through a supplied field template. A schema can
 declare one base with `schema_extends<Base, Field>`. A derived schema can add
 fields or redefine an inherited field. `bundle_extends` is a compatibility alias
 for `schema_extends`.
+
+`details::schema_reflection<Schema, ReflectionField>` provides engine and
+extension access to C++ schemas. Logical fields retain base order; a redefined
+field replaces the inherited field at its logical index. `field<Index>` and
+`field_name<Index>()` describe that order. `make<Field>(factory)` constructs the
+complete aggregate directly, including hidden base fields. The factory's
+`make<ReflectedField>(logical_index)` returns each field initializer.
+
+`fields(schema)` returns a tuple of references to the logical fields and
+preserves constness. The reflected field descriptor supplies
+`rebind<Field>`. Actual field wrappers support access by adding an implicit
+constructor taking `details::FieldProbe&`:
+
+```cpp
+Field(details::FieldProbe &probe) noexcept { probe.record(this); }
+```
+
+This constructor leaves the field valid and safely destructible without a
+usable wrapped value. `field_offsets<Field>()` captures offsets from a local
+`Schema<Field>` object and caches them once per schema and field wrapper.
+After cache initialization, obtaining a tuple reads the cache once and
+constructs no schema object.
 
 ## Scalar types
 

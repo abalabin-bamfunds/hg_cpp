@@ -81,6 +81,28 @@ struct promoted_dynamic_reference_aggregate {
     }
 };
 
+struct compiled_runtime_metadata_aggregate {
+    int offset;
+    In<TS<i64>> input;
+    Scalar<SCALAR> factor;
+    In<TS<bool>> select_second;
+    In<REF<TSL<TS<i64, TimeSeriesGuarantee::ordinary>, 2, TimeSeriesGuarantee::ordinary>,
+           TimeSeriesGuarantee::ordinary>>
+        collection;
+    In<REF<TS<i64, TimeSeriesGuarantee::ordinary>, TimeSeriesGuarantee::ordinary>, dynamic_binding, optional,
+       "selected"_n>
+        selected;
+    Out<REF<TS<SCALAR>>> output;
+
+    void evaluate() const {
+        const auto factor_value = scalar_cast<i64>(factor).value();
+        const auto input_value = *input;
+        const auto use_second = ((*select_second) != ((offset + input_value * factor_value) % 2 == 0));
+        selected.bind(collection[use_second ? 1 : 0]);
+        output.set_value(selected.value());
+    }
+};
+
 } // namespace
 
 TEST_CASE("callable plain parameters accept scalar and time-series arguments",
@@ -266,4 +288,21 @@ TEST_CASE("promoted fields coexist with aggregate dynamic reference inputs",
 
     CHECK(testing::test_graph(scalar_graph, {1, 2}).equals({6, 7}));
     CHECK(testing::test_graph(time_series_graph, {1, 2}).equals({2, 4}));
+}
+
+TEST_CASE("compiled runtime metadata locates interleaved parameters, output, and dynamic reference slots",
+          "[feature:node-api][definition:aggregate][series:value][scalar:integer][feature:reference]") {
+    const auto combine = node<compiled_runtime_metadata_aggregate>();
+    const auto read = node([](i64 value) { return value; });
+    const auto graph = [=](wp<TS<i64>> input, wp<TS<bool>> select_second, wp<TS<i64>> first,
+                           wp<TS<i64>> second) {
+        return read(combine(5, input, 3, select_second, tsl(first, second)));
+    };
+
+    const auto input = std::array<std::optional<int>, 5>{1, 2, std::nullopt, std::nullopt, std::nullopt};
+    const auto select_second = std::array<std::optional<bool>, 5>{false, false, std::nullopt, true, std::nullopt};
+    const auto first = std::array<std::optional<int>, 5>{10, 20, 30, 40, std::nullopt};
+    const auto second = std::array<std::optional<int>, 5>{100, 200, 300, std::nullopt, 400};
+
+    CHECK(testing::test_graph(graph, input, select_second, first, second).equals({100, 20, 30, 300, 400}));
 }

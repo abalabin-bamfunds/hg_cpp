@@ -40,14 +40,14 @@ bool AggregateNodeTemplateBase::uses_time_series_input_runtime_type(const Resolv
                                                                     std::size_t parameter_index) const noexcept {
     const auto uses = descriptor_->parameter_runtime_type_uses[parameter_index];
     return signature.parameters[parameter_index].type->is_time_series() &&
-           uses == AggregateRuntimeTypeUse::time_series;
+           (uses == AggregateRuntimeTypeUse::time_series || uses == AggregateRuntimeTypeUse::either);
 }
 
 bool AggregateNodeTemplateBase::uses_scalar_input_runtime_type(const ResolvedSignature &signature,
                                                                std::size_t parameter_index) const noexcept {
     const auto uses = descriptor_->parameter_runtime_type_uses[parameter_index];
     return signature.parameters[parameter_index].type->is_scalar() &&
-           uses == AggregateRuntimeTypeUse::scalar;
+           (uses == AggregateRuntimeTypeUse::scalar || uses == AggregateRuntimeTypeUse::either);
 }
 
 bool AggregateNodeTemplateBase::uses_output_runtime_type() const noexcept {

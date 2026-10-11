@@ -163,6 +163,7 @@ class StorageLayout {
 
 struct FixedNodeLayout {
     std::size_t offset{};
+    StorageSection compiled_node;
     StorageSection parameters;
     StorageSection input_node_indices;
     StorageSection controlled_inputs;
@@ -178,6 +179,7 @@ struct FixedNodeLayout {
     StorageSection generic_state_runtime_types;
     StorageSection invalidation_function;
     StorageSection node_invocation_metadata;
+    StorageSection runtime_type_metadata;
     StorageSection runtime_types;
     StorageSection all_valid_metadata;
     StorageSection all_valid_inputs;
@@ -1041,13 +1043,16 @@ std::size_t item_subscriber_size(const ItemSubscriptionPlan &item) {
 }
 
 struct RuntimeTypeCounts {
-    std::size_t time_series_inputs{};
-    std::size_t scalar_inputs{};
+    std::size_t parameter_slots{};
     std::size_t dynamic_reference_inputs{};
     bool output{};
 
+    std::size_t dynamic_reference_begin() const noexcept {
+        return parameter_slots + static_cast<std::size_t>(output);
+    }
+
     std::size_t total() const noexcept {
-        return time_series_inputs + scalar_inputs + dynamic_reference_inputs + static_cast<std::size_t>(output);
+        return dynamic_reference_begin() + dynamic_reference_inputs;
     }
 };
 
@@ -1055,10 +1060,11 @@ RuntimeTypeCounts runtime_type_counts(const WiredNode &node) {
     auto result = RuntimeTypeCounts{.dynamic_reference_inputs = node.dynamic_reference_input_types().size(),
                                     .output = node.node_template().uses_output_runtime_type()};
     for (auto parameter = std::size_t{}; parameter < node.signature().parameters.size(); ++parameter) {
-        result.time_series_inputs += static_cast<std::size_t>(
-            node.node_template().uses_time_series_input_runtime_type(node.signature(), parameter));
-        result.scalar_inputs +=
-            static_cast<std::size_t>(node.node_template().uses_scalar_input_runtime_type(node.signature(), parameter));
+        if (node.node_template().uses_time_series_input_runtime_type(node.signature(), parameter) ||
+            node.node_template().uses_scalar_input_runtime_type(node.signature(), parameter)) {
+            result.parameter_slots = node.signature().parameters.size();
+            break;
+        }
     }
     return result;
 }
@@ -1077,9 +1083,23 @@ RuntimeTypeCounts runtime_type_counts(const WiredNode &node) {
     }
 
     auto storage = StorageLayout{};
-    (void)storage.add<CompiledNode>();
-
     auto result = FixedNodeLayout{};
+    const auto runtime_types = runtime_type_counts(node);
+    const auto all_valid_input_count = std::ranges::count_if(
+        node_plan.time_series_inputs, [&](const auto &input) {
+            return node.signature().parameters[input.parameter].validity == InputValidity::all_valid &&
+                   !input.constant_binding;
+        });
+    if (all_valid_input_count != 0) {
+        result.all_valid_inputs = storage.add<AllValidInputDescriptor>(all_valid_input_count);
+        result.all_valid_metadata = storage.add_bytes(sizeof(const RuntimeType *), alignof(const RuntimeType *), 1);
+    }
+    result.runtime_types = storage.add<const RuntimeType *>(runtime_types.total());
+    if (runtime_types.total() != 0 || all_valid_input_count != 0) {
+        result.runtime_type_metadata = storage.add<RuntimeTypeMetadata>();
+    }
+    result.compiled_node = storage.add<CompiledNode>();
+
     result.parameters = storage.add<ParameterBinding>(node.signature().parameters.size());
     if (!node_plan.input_node_indices.empty()) {
         result.input_node_indices = storage.add<std::uint32_t>(node_plan.input_node_indices.size());
@@ -1119,24 +1139,6 @@ RuntimeTypeCounts runtime_type_counts(const WiredNode &node) {
     }
     if (node.node_template().uses_node_invocation()) {
         result.node_invocation_metadata = storage.add<NodeInvocationMetadata>();
-    }
-
-    const auto all_valid_input_count = std::ranges::count_if(
-        node_plan.time_series_inputs, [&](const auto &input) {
-            return node.signature().parameters[input.parameter].validity == InputValidity::all_valid &&
-                   !input.constant_binding;
-        });
-    const auto runtime_types = runtime_type_counts(node);
-    if (all_valid_input_count != 0 &&
-        runtime_types.total() > CompiledNode::max_all_valid_runtime_type_count) {
-        throw std::length_error{"a node has too many runtime types for all_valid input metadata"};
-    }
-    if (runtime_types.total() != 0 || all_valid_input_count != 0) {
-        result.runtime_types = storage.add<const RuntimeType *>(runtime_types.total());
-    }
-    if (all_valid_input_count != 0) {
-        result.all_valid_metadata = storage.add<AllValidInputMetadata>();
-        result.all_valid_inputs = storage.add<AllValidInputDescriptor>(all_valid_input_count);
     }
 
     result.scalar_offsets.reserve(node.scalar_values().size());
@@ -1948,10 +1950,17 @@ class CompiledGraphBuilder {
         const auto &layout = plan.node_plans[node_index].fixed;
         auto *node_storage = storage + layout.offset;
         auto runtime_types = layout.runtime_types.objects<const RuntimeType *>(node_storage);
+        const auto counts = runtime_type_counts(node);
+        if (layout.runtime_type_metadata.count != 0) {
+            std::construct_at(layout.runtime_type_metadata.objects<RuntimeTypeMetadata>(node_storage).data(),
+                              RuntimeTypeMetadata{static_cast<std::uint32_t>(layout.runtime_types.count),
+                                                  static_cast<std::uint32_t>(counts.dynamic_reference_begin())});
+        }
+        std::ranges::fill(runtime_types, nullptr);
+        const auto set_runtime_type = [&](std::size_t index, const RuntimeType *runtime_type) {
+            runtime_types[runtime_types.size() - index - 1] = runtime_type;
+        };
         auto all_valid_inputs = layout.all_valid_inputs.objects<AllValidInputDescriptor>(node_storage);
-        const auto runtime_type_count = runtime_type_counts(node);
-        auto time_series_runtime_type_index = std::size_t{};
-        auto scalar_runtime_type_index = std::size_t{};
         auto all_valid_runtime_type_index = std::size_t{};
         auto input_index = std::size_t{};
         auto scalar_index = std::size_t{};
@@ -1970,8 +1979,7 @@ class CompiledGraphBuilder {
                             static_cast<const ScalarType &>(*node.signature().parameters[parameter_index].type);
                         return &resolve_scalar_runtime_type(type, {});
                     }();
-                    runtime_types[runtime_type_count.time_series_inputs + scalar_runtime_type_index] = runtime_type;
-                    ++scalar_runtime_type_index;
+                    set_runtime_type(parameter_index, runtime_type);
                 }
                 continue;
             }
@@ -2013,19 +2021,18 @@ class CompiledGraphBuilder {
             }
 
             if (needs_runtime_type) {
-                runtime_types[time_series_runtime_type_index++] = runtime_type;
+                set_runtime_type(parameter_index, runtime_type);
             }
         }
 
         if (node.node_template().uses_output_runtime_type()) {
             const auto *runtime_type = plan.node_plans[node_index].output.runtime_type;
-            runtime_types[runtime_type_count.time_series_inputs + runtime_type_count.scalar_inputs] = runtime_type;
+            set_runtime_type(counts.dynamic_reference_begin() - 1, runtime_type);
         }
 
-        auto dynamic_reference_input_index = runtime_type_count.time_series_inputs + runtime_type_count.scalar_inputs +
-                                             static_cast<std::size_t>(runtime_type_count.output);
+        auto dynamic_reference_input_index = counts.dynamic_reference_begin();
         for (const auto *type : node.dynamic_reference_input_types()) {
-            runtime_types[dynamic_reference_input_index++] = &resolve_time_series_runtime_type(*type);
+            set_runtime_type(dynamic_reference_input_index++, &resolve_time_series_runtime_type(*type));
         }
 
         if (!layout.all_valid_metadata.objects<AllValidInputMetadata>(node_storage).empty()) {
@@ -2292,11 +2299,13 @@ class CompiledGraphBuilder {
             }
             if (node.node_template().uses_node_invocation()) {
                 const auto parameter_offset =
-                    packed_offset(layout.node_invocation_parameters.offset, "compiled node metadata reaches 1 GiB");
+                    packed_offset(layout.node_invocation_parameters.offset - layout.compiled_node.offset,
+                                  "compiled node metadata reaches 1 GiB");
                 const auto compiled_data_offset =
                     node_plan.compiled_data.size == 0
                         ? std::uint32_t{}
-                        : packed_offset(layout.compiled_data.offset, "compiled node data reaches 1 GiB");
+                        : packed_offset(layout.compiled_data.offset - layout.compiled_node.offset,
+                                        "compiled node data reaches 1 GiB");
                 std::construct_at(layout.node_invocation_metadata.objects<NodeInvocationMetadata>(node_storage).data(),
                                   NodeInvocationMetadata{parameter_offset, compiled_data_offset,
                                                          node_plan.compiled_data.destruction_function});
@@ -2338,7 +2347,7 @@ class CompiledGraphBuilder {
             construct_runtime_types(plan, i, storage);
 
             std::construct_at(
-                reinterpret_cast<CompiledNode *>(node_storage),
+                reinterpret_cast<CompiledNode *>(node_storage + layout.compiled_node.offset),
                 CompiledNode{node.node_template().evaluation_function(node.signature()),
                              node_plan.output.last_updated_offset, node_plan.output.value_offset,
                              static_cast<std::uint32_t>(node.signature().parameters.size()),
@@ -2349,12 +2358,11 @@ class CompiledGraphBuilder {
                              !node_plan.subscriptions.input_subscribers.empty(),
                              !node_plan.item_subscriptions.empty(), node.node_template().uses_node_invocation(),
                              layout.all_valid_metadata.count != 0,
-                             static_cast<std::uint32_t>(layout.runtime_types.count),
-                             static_cast<std::uint32_t>(node_plan.time_series_inputs.size()),
                              static_cast<std::uint32_t>(layout.controlled_inputs.count),
                              !node_plan.input_node_indices.empty(), node_plan.invalidation.mode});
             std::construct_at(node_offsets.data() + compiled_node,
-                              packed_offset(layout.offset, "compiled fixed storage reaches 1 GiB"));
+                              packed_offset(layout.offset + layout.compiled_node.offset,
+                                            "compiled fixed storage reaches 1 GiB"));
         }
     }
 };

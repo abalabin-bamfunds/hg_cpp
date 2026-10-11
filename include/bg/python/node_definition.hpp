@@ -40,7 +40,6 @@ class BG_PYTHON_API PythonNodeDefinition {
 
     struct ParameterConversion {
         ParameterMode mode;
-        std::size_t runtime_type_index;
     };
 
     struct CompiledData {

@@ -243,7 +243,27 @@ class CppScalarRuntimeType<Opaque<T>> final : public CppScalarRuntimeTypeBase<Op
 namespace bg {
 
 template <typename T> const ScalarRuntimeType &cpp_scalar_runtime_type() {
-    if constexpr (details::hierarchical_scalar_declaration<T>) {
+    if constexpr (requires(const ScalarType &type) {
+                      { scalar_storage_traits<T>::runtime_type(type) } -> std::same_as<const ScalarRuntimeType &>;
+                  }) {
+        static const auto &runtime_type = []() -> const ScalarRuntimeType & {
+            using Stored = typename scalar_storage_traits<T>::stored_type;
+
+            const auto &type = cpp_scalar_type<T>();
+            const auto &runtime_type = scalar_storage_traits<T>::runtime_type(type);
+            if (&runtime_type.type() != &type) {
+                throw std::invalid_argument{"a scalar provider runtime must match its C++ scalar type"};
+            }
+            if (runtime_type.size() != sizeof(Stored) || runtime_type.alignment() != alignof(Stored)) {
+                throw std::invalid_argument{"a scalar provider runtime must match its C++ storage layout"};
+            }
+            return runtime_type;
+        }();
+        static const auto registered = (register_scalar_runtime_type(runtime_type), true);
+        (void)registered;
+
+        return runtime_type;
+    } else if constexpr (details::hierarchical_scalar_declaration<T>) {
         return resolve_scalar_runtime_type(cpp_scalar_type<T>(), {});
     } else {
         static const details::CppScalarRuntimeType<T> runtime_type;

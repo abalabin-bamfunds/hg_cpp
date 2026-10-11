@@ -94,6 +94,8 @@ graph compilation or evaluation.
 ### Utilities
 
 - compile-time strings, symbols, named arguments, aggregate reflection, and C++ schema reflection and construction
+- exact-type schema field offsets, const field references, shadowed fields, empty bases, multilevel inheritance,
+  aligned and tail-padded layouts, concurrent first use, and construction without intermediate base moves
 - buffer allocation, contiguous chunks, chain rollover, concurrent reservations, ordered commit visibility,
   ring-full rollover, and allocation-failure rollback
 - constant-size scalar value handles
@@ -116,6 +118,8 @@ graph compilation or evaluation.
 - hierarchical scalar identity, schema metadata, inheritance, field narrowing, and container variance
 - schema-capturing hierarchical scalar views and construction, runtime field inspection through base annotations,
   shared-handle ownership, and programmatic field-count, type, and presence validation
+- provider-defined canonical and copy runtimes, borrowed read-view descriptors, generic source-runtime preservation,
+  and publication through time-series outputs
 - time series validity, update time, mutation, and invalidation
 - global state ownership, replacement, lookup, and allocation
 
@@ -124,6 +128,7 @@ graph compilation or evaluation.
 - resolved type identity and scalar or time series classification
 - process-owned dynamic declarations and type-pointer validity after graph or wiring-template destruction
 - canonical factory cache identity, nested construction, failed factory retries, and concurrent cold misses
+- formal type-name formatting through `Type`, including nested extension types
 - registration of primitive, generic, extension, and graph types; allocation-free primitive registration;
   independent variable identities and failed-registration rollback
 - type variables, constraints, repeated variables, and lower bounds

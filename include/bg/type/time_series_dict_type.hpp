@@ -12,6 +12,7 @@ class TimeSeriesDictionaryType : public FixedItemTimeSeriesType {
   public:
     VISITOR_SUPPORT()
 
+    void format_name(std::string &result) const override;
     const ScalarType &key_type() const noexcept { return *key_type_; }
     const TimeSeriesType &value_type() const noexcept { return *value_type_; }
     const TimeSeriesType &key_set_type() const noexcept { return *key_set_type_; }

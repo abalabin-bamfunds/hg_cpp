@@ -82,15 +82,27 @@ It contains:
 - active-input scheduling and input-validity data
 - required-input invalidation mode and an optional function entry point
 - subscribers and optional output-notification metadata
-- one runtime type pointer for each input whose layout is selected during graph compilation
+- a runtime type table indexed by parameter position when any input requires runtime metadata
 - declared and runtime type pointers for `all_valid` input checks, independent of input-view construction metadata
 - the selected runtime type pointer for an output whose layout is selected during graph compilation
 - optional data required by a runtime-signature node definition
 
 The data is immutable and shared by runtime graphs with the same wiring. Each
-compiled node starts one aligned section of the compiled graph's fixed
+compiled node occupies one aligned section of the compiled graph's fixed
 allocation. Its parameter bindings, subscribers, and fixed scalar objects
 follow it in the same section. Sections use topological order.
+
+Nodes requiring runtime or `all_valid` metadata store an eight-byte runtime
+header immediately before `CompiledNode`. Runtime pointers precede that header
+in reverse logical order. Logical slots contain parameters, an optional output,
+then dynamic references. A parameter slot is therefore at a fixed indexed
+offset before the node. The header stores the complete pointer count and the
+first dynamic reference slot. `all_valid` descriptors and their count precede
+the runtime pointers.
+
+The table reserves one slot per parameter only when input runtime metadata is
+required. Unused parameter slots contain null pointers. Nodes without runtime
+or `all_valid` requirements store no runtime header or table.
 
 Graph-level arrays contain node lookup, start, stop, destruction, and diagnostic
 data. Evaluation does not load these arrays unless it needs the corresponding

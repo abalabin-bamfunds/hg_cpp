@@ -10,7 +10,6 @@
 #include <bg/node/node_template.hpp>
 #include <bg/type/type_variable.hpp>
 #include <bg/type/type_resolution_error.hpp>
-#include <bg/type/type_text.hpp>
 #include <bg/type/time_series_reference_type.hpp>
 #include <bg/util/scope_exit.hpp>
 
@@ -156,7 +155,7 @@ namespace {
 WiringErrorContext request_context(const WiringRequestOrigin &origin, const TimeSeriesType *requested_type) {
     auto requested_text = std::string{};
     if (requested_type != nullptr) {
-        append_type_text(requested_text, *requested_type);
+        requested_type->format_name(requested_text);
     }
     return {.stage = WiringFailureStage::requirement,
             .path = origin.path,
@@ -168,7 +167,7 @@ WiringErrorContext request_context(const WiringRequestOrigin &origin, const Time
 WiringErrorContext dependency_context(const details::MaterialisationDependency &dependency) {
     auto requested_text = std::string{};
     if (dependency.target_type != nullptr) {
-        append_type_text(requested_text, *dependency.target_type);
+        dependency.target_type->format_name(requested_text);
     }
     return {.stage = WiringFailureStage::requirement,
             .path = dependency.path,
@@ -234,7 +233,7 @@ class DeferredWiringRecord final : public details::WiringRecord {
             return std::nullopt;
         }
         auto requested_text = std::string{};
-        append_type_text(requested_text, target_type);
+        target_type.format_name(requested_text);
         return WiringErrorContext{.stage = WiringFailureStage::callback,
                                   .path = path_ == nullptr ? std::string{} : path_->text(),
                                   .operation = option->input_signature.name(),
@@ -676,7 +675,7 @@ WiringPoint GraphWiring::expand_materialisation(WiringPoint point, const TimeSer
         util::scope_exit{[&]() noexcept { active_materialisation_expansions_.pop_back(); }};
 
     auto requested_text = std::string{};
-    append_type_text(requested_text, target_type);
+    target_type.format_name(requested_text);
     auto expansion_context = record->materialisation_context(target_type).value_or(
         WiringErrorContext{.stage = WiringFailureStage::callback, .requested_type = std::move(requested_text)});
     auto diagnostic_context = details::WiringDiagnosticContext{*this, std::span{&expansion_context, std::size_t{1}}};
@@ -722,8 +721,8 @@ WiringPoint GraphWiring::expand_materialisation(WiringPoint point, const TimeSer
     }
     if (!target_type.accepts(result.type())) {
         auto context = expansion_context;
-        append_type_text(context.expected_type, target_type);
-        append_type_text(context.actual_type, result.type());
+        target_type.format_name(context.expected_type);
+        result.type().format_name(context.actual_type);
         throw WiringError{"materialisation expansion returned an incompatible type"}.with_context(std::move(context));
     }
 

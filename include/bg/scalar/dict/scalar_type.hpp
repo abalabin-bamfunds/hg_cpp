@@ -13,6 +13,7 @@ class DictScalarType : public ScalarType {
 
     VISITOR_SUPPORT()
 
+    void format_name(std::string &result) const override;
     virtual const ScalarType &key_type() const noexcept = 0;
     virtual const ScalarType &mapped_type() const noexcept = 0;
 

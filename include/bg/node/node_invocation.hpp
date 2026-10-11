@@ -20,10 +20,8 @@ class NodeInvocationParameter {
     const Type &parameter_type() const noexcept { return *metadata().type; }
 
   protected:
-    NodeInvocationParameter(const CompiledNode &node, std::byte *runtime_storage, std::size_t parameter_index,
-                            std::size_t runtime_type_index) noexcept
-        : node_{&node}, runtime_storage_{runtime_storage}, parameter_index_{parameter_index},
-          runtime_type_index_{runtime_type_index} {}
+    NodeInvocationParameter(const CompiledNode &node, std::byte *runtime_storage, std::size_t parameter_index) noexcept
+        : node_{&node}, runtime_storage_{runtime_storage}, parameter_index_{parameter_index} {}
 
     const ParameterBinding &binding() const noexcept { return node_->parameters()[parameter_index_]; }
 
@@ -34,36 +32,36 @@ class NodeInvocationParameter {
     const CompiledNode *node_;
     std::byte *runtime_storage_;
     std::size_t parameter_index_;
-    std::size_t runtime_type_index_;
 };
 
 class NodeInvocationInput final : public NodeInvocationParameter {
   public:
-    NodeInvocationInput(const CompiledNode &node, std::byte *runtime_storage, std::size_t parameter_index,
-                        std::size_t runtime_type_index) noexcept
-        : NodeInvocationParameter{node, runtime_storage, parameter_index, runtime_type_index} {}
+    NodeInvocationInput(const CompiledNode &node, std::byte *runtime_storage, std::size_t parameter_index) noexcept
+        : NodeInvocationParameter{node, runtime_storage, parameter_index} {}
 
     In<TS_T> value() const {
-        return Node{*node_, runtime_storage_}.time_series_input(parameter_index_, runtime_type_index_);
+        return Node{*node_, runtime_storage_}.time_series_input(parameter_index_);
     }
 };
 
 class NodeInvocationScalar final : public NodeInvocationParameter {
   public:
-    NodeInvocationScalar(const CompiledNode &node, std::byte *runtime_storage, std::size_t parameter_index,
-                         std::size_t runtime_type_index, std::size_t time_series_input_count) noexcept
-        : NodeInvocationParameter{node, runtime_storage, parameter_index, runtime_type_index},
-          time_series_input_count_{time_series_input_count} {}
+    NodeInvocationScalar(const CompiledNode &node, std::byte *runtime_storage, std::size_t parameter_index) noexcept
+        : NodeInvocationParameter{node, runtime_storage, parameter_index} {}
 
     bool has_value() const noexcept { return binding().scalar_data() != nullptr; }
 
     Scalar<> value() const {
-        return Scalar<>::from(node_->scalar_input_runtime_type(time_series_input_count_, runtime_type_index_),
-                              binding().scalar_data());
+        return Scalar<>::from(node_->scalar_input_runtime_type(parameter_index_), binding().scalar_data());
     }
 
-  private:
-    std::size_t time_series_input_count_;
+    template <typename T>
+        requires(!scalar_declaration_traits<T>::generic && !details::hierarchical_scalar_declaration<T> &&
+                 !details::scalar_storage_supports_alternative_layouts<T>)
+    typename scalar_storage_traits<T>::value_type value() const {
+        using Traits = scalar_storage_traits<T>;
+        return Traits::read(*static_cast<const typename Traits::stored_type *>(binding().scalar_data()));
+    }
 };
 
 template <bool TimeSeries> class NodeInvocationParameterRange {
@@ -75,24 +73,17 @@ template <bool TimeSeries> class NodeInvocationParameterRange {
         using difference_type = std::ptrdiff_t;
         using iterator_category = std::input_iterator_tag;
 
-        Iterator(const CompiledNode &node, std::byte *runtime_storage, std::size_t time_series_input_count,
-                 std::size_t parameter_index, std::size_t runtime_type_index) noexcept
-            : node_{&node}, runtime_storage_{runtime_storage}, time_series_input_count_{time_series_input_count},
-              parameter_index_{parameter_index}, runtime_type_index_{runtime_type_index} {
+        Iterator(const CompiledNode &node, std::byte *runtime_storage, std::size_t parameter_index) noexcept
+            : node_{&node}, runtime_storage_{runtime_storage}, parameter_index_{parameter_index} {
             advance_to_category();
         }
 
         value_type operator*() const noexcept {
-            if constexpr (TimeSeries) {
-                return {*node_, runtime_storage_, parameter_index_, runtime_type_index_};
-            } else {
-                return {*node_, runtime_storage_, parameter_index_, runtime_type_index_, time_series_input_count_};
-            }
+            return {*node_, runtime_storage_, parameter_index_};
         }
 
         Iterator &operator++() noexcept {
             ++parameter_index_;
-            ++runtime_type_index_;
             advance_to_category();
             return *this;
         }
@@ -112,24 +103,20 @@ template <bool TimeSeries> class NodeInvocationParameterRange {
 
         const CompiledNode *node_;
         std::byte *runtime_storage_;
-        std::size_t time_series_input_count_;
         std::size_t parameter_index_;
-        std::size_t runtime_type_index_;
     };
 
-    Iterator begin() const noexcept { return Iterator{*node_, runtime_storage_, time_series_input_count_, 0, 0}; }
+    Iterator begin() const noexcept { return Iterator{*node_, runtime_storage_, 0}; }
     std::default_sentinel_t end() const noexcept { return {}; }
 
   private:
     template <typename, typename> friend class NodeInvocation;
 
-    NodeInvocationParameterRange(const CompiledNode &node, std::byte *runtime_storage,
-                                 std::size_t time_series_input_count) noexcept
-        : node_{&node}, runtime_storage_{runtime_storage}, time_series_input_count_{time_series_input_count} {}
+    NodeInvocationParameterRange(const CompiledNode &node, std::byte *runtime_storage) noexcept
+        : node_{&node}, runtime_storage_{runtime_storage} {}
 
     const CompiledNode *node_;
     std::byte *runtime_storage_;
-    std::size_t time_series_input_count_;
 };
 
 template <typename CompiledData = void, typename State = void> class NodeInvocation {
@@ -145,43 +132,23 @@ template <typename CompiledData = void, typename State = void> class NodeInvocat
         return node_->parameters()[parameter_index].mode() != ParameterBindingMode::scalar;
     }
 
-    std::size_t time_series_input_index(std::size_t parameter_index) const noexcept {
-        const auto parameters = node_->parameters();
-        auto index = std::size_t{};
-        for (auto current = std::size_t{}; current < parameter_index; ++current) {
-            index += static_cast<std::size_t>(parameters[current].mode() != ParameterBindingMode::scalar);
-        }
-        return index;
-    }
-
-    std::size_t scalar_input_index(std::size_t parameter_index) const noexcept {
-        const auto parameters = node_->parameters();
-        auto index = std::size_t{};
-        for (auto current = std::size_t{}; current < parameter_index; ++current) {
-            index += static_cast<std::size_t>(parameters[current].mode() == ParameterBindingMode::scalar);
-        }
-        return index;
-    }
-
     const void *scalar_data(std::size_t parameter_index) const noexcept {
         return node_->parameters()[parameter_index].scalar_data();
     }
 
-    auto inputs() const noexcept -> NodeInvocationParameterRange<true> { return {*node_, runtime_storage_, 0}; }
+    auto inputs() const noexcept -> NodeInvocationParameterRange<true> { return {*node_, runtime_storage_}; }
 
-    auto scalars() const noexcept -> NodeInvocationParameterRange<false> {
-        return {*node_, runtime_storage_, node_->node_invocation_time_series_input_count()};
-    }
+    auto scalars() const noexcept -> NodeInvocationParameterRange<false> { return {*node_, runtime_storage_}; }
 
     Out<TS_T> output() const {
         const auto runtime_node = Node{*node_, runtime_storage_};
         return details::output_factory::make<Out<TS_T>>(runtime_node.output_last_updated(),
                                                         runtime_node.output_value(),
-                                                        node_->node_invocation_output_runtime_type(), *context_);
+                                                        node_->output_runtime_type(), *context_);
     }
 
     template <typename Input, std::size_t ControlledInputIndex = ::bg::ControlledInput::no_control>
-    Input input(std::size_t parameter_index, std::size_t runtime_type_index) const {
+    Input input(std::size_t parameter_index) const {
         const auto runtime_node = Node{*node_, runtime_storage_};
         auto *activity = static_cast<bool *>(nullptr);
         if constexpr (Input::dynamic_activity) {
@@ -209,15 +176,14 @@ template <typename CompiledData = void, typename State = void> class NodeInvocat
                          activity};
         } else {
             const auto data = TimeSeriesInputData{
-                runtime_node.time_series_input_runtime_type(parameter_index, runtime_type_index), *input.last_updated,
+                runtime_node.time_series_input_runtime_type(parameter_index), *input.last_updated,
                 input.value, modified};
             return Input{data, activity};
         }
     }
 
-    NodeInvocationScalar scalar(std::size_t parameter_index, std::size_t runtime_type_index) const noexcept {
-        return {*node_, runtime_storage_, parameter_index, runtime_type_index,
-                node_->node_invocation_time_series_input_count()};
+    NodeInvocationScalar scalar(std::size_t parameter_index) const noexcept {
+        return {*node_, runtime_storage_, parameter_index};
     }
 
     template <typename TimeSeries> Out<TimeSeries> output() const {
@@ -226,26 +192,21 @@ template <typename CompiledData = void, typename State = void> class NodeInvocat
 
     template <typename Output> Output output_as() const {
         const auto runtime_node = Node{*node_, runtime_storage_};
-        if constexpr (details::direct_time_series_output<Output>) {
+        if constexpr (details::direct_time_series_output<Output> && !details::output_requires_runtime_type<Output>) {
             auto &value = *static_cast<typename Output::storage_type *>(runtime_node.output_value());
-            if constexpr (details::output_requires_runtime_type<Output>) {
-                return details::output_factory::make<Output>(
-                    runtime_node.output_last_updated(), value, node_->node_invocation_output_runtime_type(), *context_);
-            } else {
-                return details::output_factory::make<Output>(
-                    runtime_node.output_last_updated(), value, *context_);
-            }
+            return details::output_factory::make<Output>(
+                runtime_node.output_last_updated(), value, *context_);
         } else {
             return details::output_factory::make<Output>(
                 runtime_node.output_last_updated(), runtime_node.output_value(),
-                node_->node_invocation_output_runtime_type(), *context_);
+                node_->output_runtime_type(), *context_);
         }
     }
 
     void initialize_output_reference(details::RootReference &reference) const noexcept {
         reference.owner_graph = &context_->runtime_graph();
         reference.set_output_node(*node_);
-        reference.referenced_runtime_type = &node_->node_invocation_output_runtime_type();
+        reference.referenced_runtime_type = &node_->output_runtime_type();
     }
 
     template <typename Value = CompiledData>

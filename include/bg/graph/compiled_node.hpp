@@ -52,6 +52,11 @@ struct AllValidInputMetadata {
     std::uint32_t input_count;
 };
 
+struct RuntimeTypeMetadata {
+    std::uint32_t runtime_type_count;
+    std::uint32_t dynamic_reference_begin;
+};
+
 struct AllValidInputDescriptor {
     std::uint32_t parameter_index;
     const TimeSeriesRuntimeType *runtime_type;
@@ -338,10 +343,10 @@ struct DefaultInputDescriptor {
                                OutputChange change);
 };
 
-// Begins a packed node record. Parameters, optional input node indices, subscribers, and other metadata follow.
+// Runtime metadata may precede the node. Parameters, optional input node indices, subscribers, and other metadata
+// follow it.
 class CompiledNode {
   public:
-    static constexpr std::uint32_t max_all_valid_runtime_type_count = (std::uint32_t{1} << 10) - 2;
     static constexpr std::uint32_t no_input_node_index = std::numeric_limits<std::uint32_t>::max();
 
     bool has_output() const noexcept { return (output_last_updated_offset_ & no_output_flag) == 0; }
@@ -448,8 +453,12 @@ class CompiledNode {
         return *reinterpret_cast<const NodeFunction *>(address);
     }
 
-    const TimeSeriesRuntimeType &time_series_input_runtime_type(std::size_t index) const noexcept {
-        return static_cast<const TimeSeriesRuntimeType &>(runtime_type(index));
+    const RuntimeType &parameter_runtime_type(std::size_t parameter_index) const noexcept {
+        return runtime_type(parameter_index);
+    }
+
+    const TimeSeriesRuntimeType &time_series_input_runtime_type(std::size_t parameter_index) const noexcept {
+        return static_cast<const TimeSeriesRuntimeType &>(parameter_runtime_type(parameter_index));
     }
 
     std::span<const AllValidInputDescriptor> all_valid_input_descriptors() const noexcept {
@@ -458,41 +467,27 @@ class CompiledNode {
         }
 
         const auto &metadata = all_valid_input_metadata();
-        auto address = align(reinterpret_cast<std::uintptr_t>(&metadata + 1), alignof(AllValidInputDescriptor));
-        return {reinterpret_cast<const AllValidInputDescriptor *>(address),
-                metadata.input_count};
+        const auto address = reinterpret_cast<std::uintptr_t>(&metadata) -
+                             metadata.input_count * sizeof(AllValidInputDescriptor);
+        return {reinterpret_cast<const AllValidInputDescriptor *>(address), metadata.input_count};
     }
 
     bool has_all_valid_input_metadata() const noexcept {
-        return (flags_ & all_valid_runtime_type_count_mask) != 0;
+        return (flags_ & all_valid_input_metadata_flag) != 0;
     }
 
-    const ScalarRuntimeType &scalar_input_runtime_type(std::size_t time_series_input_count,
-                                                       std::size_t index) const noexcept {
-        return static_cast<const ScalarRuntimeType &>(runtime_type(time_series_input_count + index));
+    const ScalarRuntimeType &scalar_input_runtime_type(std::size_t parameter_index) const noexcept {
+        return static_cast<const ScalarRuntimeType &>(parameter_runtime_type(parameter_index));
     }
 
-    const TimeSeriesRuntimeType &output_runtime_type(std::size_t time_series_input_count,
-                                                     std::size_t scalar_input_count) const noexcept {
-        return static_cast<const TimeSeriesRuntimeType &>(runtime_type(time_series_input_count + scalar_input_count));
-    }
-
-    const TimeSeriesRuntimeType &dynamic_reference_input_runtime_type(std::size_t time_series_input_count,
-                                                                      std::size_t scalar_input_count,
-                                                                      bool uses_output_runtime_type,
-                                                                      std::size_t index) const noexcept {
-        const auto output_count = static_cast<std::size_t>(uses_output_runtime_type);
+    const TimeSeriesRuntimeType &output_runtime_type() const noexcept {
         return static_cast<const TimeSeriesRuntimeType &>(
-            runtime_type(time_series_input_count + scalar_input_count + output_count + index));
+            runtime_type(runtime_type_metadata().dynamic_reference_begin - 1));
     }
 
-    const TimeSeriesRuntimeType &node_invocation_output_runtime_type() const noexcept {
-        const auto time_series_inputs = node_invocation_time_series_input_count();
-        return output_runtime_type(time_series_inputs, parameters().size() - time_series_inputs);
-    }
-
-    std::size_t node_invocation_time_series_input_count() const noexcept {
-        return (flags_ & node_invocation_time_series_input_count_mask) >> node_invocation_time_series_input_count_shift;
+    const TimeSeriesRuntimeType &dynamic_reference_input_runtime_type(std::size_t index) const noexcept {
+        return static_cast<const TimeSeriesRuntimeType &>(
+            runtime_type(runtime_type_metadata().dynamic_reference_begin + index));
     }
 
     const NodeInvocationMetadata *node_invocation_metadata() const noexcept {
@@ -521,22 +516,15 @@ class CompiledNode {
     static constexpr std::uint32_t state_metadata_flag = std::uint32_t{1} << 31;
     static constexpr std::uint32_t state_offset_mask = state_destruction_flag - 1;
     static constexpr std::uint32_t node_invocation_flag = std::uint32_t{1};
-    static constexpr std::uint32_t node_invocation_time_series_input_count_shift = 1;
-    static constexpr std::uint32_t node_invocation_time_series_input_count_mask =
-        parameter_count_mask << node_invocation_time_series_input_count_shift;
     static constexpr std::uint32_t controlled_input_count_shift = 11;
     static constexpr std::uint32_t controlled_input_count_mask = parameter_count_mask << controlled_input_count_shift;
-    // Zero means no metadata; otherwise store the existing runtime-type pointer count plus one.
-    static constexpr std::uint32_t all_valid_runtime_type_count_shift = 21;
-    static constexpr std::uint32_t all_valid_runtime_type_count_mask =
-        ((std::uint32_t{1} << 10) - 1) << all_valid_runtime_type_count_shift;
+    static constexpr std::uint32_t all_valid_input_metadata_flag = std::uint32_t{1} << 21;
     static constexpr std::uint32_t input_node_indices_flag = std::uint32_t{1} << 31;
 
     CompiledNode(EvaluationFunction evaluation_function, std::uint32_t output_last_updated_offset,
                  std::uint32_t output_value_offset, std::uint32_t parameter_count, std::uint32_t subscriber_count,
                  bool has_output, bool has_state, bool has_output_notification, bool has_item_subscriptions,
-                 bool uses_node_invocation, bool has_all_valid_input_metadata, std::uint32_t runtime_type_count,
-                 std::uint32_t time_series_input_count, std::uint32_t controlled_input_count,
+                 bool uses_node_invocation, bool has_all_valid_input_metadata, std::uint32_t controlled_input_count,
                  bool has_input_node_indices, InvalidationMode invalidation_mode) noexcept
         : evaluation_function_(evaluation_function),
           output_last_updated_offset_(output_last_updated_offset | (has_output ? std::uint32_t{} : no_output_flag) |
@@ -547,11 +535,8 @@ class CompiledNode {
                   (has_output_notification ? output_notification_flag : std::uint32_t{}) |
                   (has_item_subscriptions ? item_subscriptions_flag : std::uint32_t{})),
           flags_((uses_node_invocation ? node_invocation_flag : std::uint32_t{}) |
-                 (uses_node_invocation ? time_series_input_count << node_invocation_time_series_input_count_shift
-                                       : std::uint32_t{}) |
                  (controlled_input_count << controlled_input_count_shift) |
-                 ((has_all_valid_input_metadata ? runtime_type_count + 1 : std::uint32_t{})
-                  << all_valid_runtime_type_count_shift) |
+                 (has_all_valid_input_metadata ? all_valid_input_metadata_flag : std::uint32_t{}) |
                  (has_input_node_indices ? input_node_indices_flag : std::uint32_t{})) {}
 
     bool has_input_node_indices() const noexcept { return (flags_ & input_node_indices_flag) != 0; }
@@ -637,25 +622,25 @@ class CompiledNode {
         return address;
     }
 
-    const RuntimeType &runtime_type(std::size_t index) const noexcept {
-        return *reinterpret_cast<const RuntimeType *const *>(runtime_types_address())[index];
+    const RuntimeTypeMetadata &runtime_type_metadata() const noexcept {
+        const auto address = reinterpret_cast<std::uintptr_t>(this) - sizeof(RuntimeTypeMetadata);
+        return *reinterpret_cast<const RuntimeTypeMetadata *>(address);
     }
 
     std::uintptr_t runtime_types_address() const noexcept {
-        auto address = after_invalidation_metadata_address();
-        if ((flags_ & node_invocation_flag) != 0) {
-            address = align(address, alignof(NodeInvocationMetadata)) + sizeof(NodeInvocationMetadata);
-        }
-
-        return align(address, alignof(const RuntimeType *));
+        return reinterpret_cast<std::uintptr_t>(&runtime_type_metadata()) -
+               runtime_type_metadata().runtime_type_count * sizeof(const RuntimeType *);
     }
 
     const AllValidInputMetadata &all_valid_input_metadata() const noexcept {
-        const auto runtime_type_count =
-            ((flags_ & all_valid_runtime_type_count_mask) >> all_valid_runtime_type_count_shift) - 1;
-        auto address = runtime_types_address() + runtime_type_count * sizeof(const RuntimeType *);
-        address = align(address, alignof(AllValidInputMetadata));
+        const auto address = runtime_types_address() - sizeof(const RuntimeType *);
         return *reinterpret_cast<const AllValidInputMetadata *>(address);
+    }
+
+    const RuntimeType &runtime_type(std::size_t index) const noexcept {
+        const auto address = reinterpret_cast<std::uintptr_t>(&runtime_type_metadata()) -
+                             (index + 1) * sizeof(const RuntimeType *);
+        return **reinterpret_cast<const RuntimeType *const *>(address);
     }
 
     std::uintptr_t after_invalidation_metadata_address() const noexcept {

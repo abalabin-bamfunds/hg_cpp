@@ -236,7 +236,15 @@ A scalar provider defines three independent parts:
 - `scalar_storage_traits<T>` defines its canonical C++ stored object, read
   value, intrinsic equality and hashing, and storage lifecycle.
 - `cpp_scalar_runtime_type<T>()` returns the canonical `ScalarRuntimeType`
-  generated from those traits.
+  selected or generated from those traits.
+
+A provider can supply its canonical runtime by adding
+`static const ScalarRuntimeType &runtime_type(const ScalarType &type)` to
+`scalar_storage_traits<T>`. `cpp_scalar_runtime_type<T>()` calls this hook with
+the declaration's semantic type and registers the returned runtime. The runtime
+must identify that semantic type, match the declared stored representation,
+and have process lifetime. Repeated requests return the same canonical runtime.
+Without the hook, BG selects or generates its existing canonical runtime.
 
 The provider defines `scalar_type_traits<T>::type()` out of line. It also
 explicitly instantiates `cpp_scalar_runtime_type<T>()` in the provider library
@@ -251,6 +259,32 @@ value. Its `generic` flag identifies declarations containing type variables.
 Providers enumerate those variables through
 `declaration_variable_traits<T>::for_each`. The defaults describe a concrete
 ordinary leaf scalar.
+
+`scalar_storage_traits<T>::supports_alternative_layouts` states whether typed
+reads must interpret different stored layouts. `false` requires every runtime
+used for a typed `T` read to expose the trait's `stored_type` layout. Runtime
+objects can differ while sharing that layout. BG's ordinary fixed-layout traits
+declare `false`. A provider specialization that omits the member is treated as
+supporting alternative layouts.
+
+Fixed-layout typed scalar and `TS<T>` reads call the trait's `read()` directly.
+Scalar reads still interpret their descriptor mode: a source view contains the
+C++ read value, an inline value contains value bytes, and a shared descriptor
+contains its representation's handle. Generic and hierarchical views retain
+the actual runtime type.
+
+Providers can supply these storage-trait operations:
+
+| Operation | Contract |
+| --- | --- |
+| `runtime_type(const ScalarType&)` | Select the runtime for a resolved semantic type. |
+| `read_value(const ScalarData&)` | Read an actual runtime descriptor as the provider's C++ read value. |
+| `copy_runtime_type(const ScalarData&)` | Select the destination runtime for a typed owning copy. |
+| `borrow_value(const value_type&)` | Return a descriptor borrowing the read value's runtime and payload. |
+
+These operations are extension-facing APIs. Node code uses the typed value
+interfaces. A borrowed descriptor retains no ownership; its payload must remain
+valid for the operation that consumes it.
 
 ### Alternative runtime types
 
@@ -275,10 +309,50 @@ runtime type must outlive every descriptor that refers to it.
 
 `data_word()` returns the payload word. `data()` returns its address for inline
 and shared modes, and the payload pointer for the other modes. Providers must
-interpret the payload using its mode. To read another representation, call
-its runtime's `read_value(mode, data_word, destination)`. The destination is
-aligned, uninitialized storage for the canonical C++ read value; the caller
-destroys that value after use.
+interpret the payload using its mode. For a non-reference read without a trait
+hook, an alternative runtime constructs the provider's declared C++ read value
+through `read_value(mode, data_word, destination)` in aligned, uninitialized
+storage. BG destroys that value after use, including when moving it throws.
+
+A provider can specialize how a typed view reads runtime representations by
+adding `static value_type read_value(const details::ScalarData &source)` to
+`scalar_storage_traits<T>`. The hook returns exactly the trait's `value_type`
+and interprets the source runtime, payload, and mode. It handles the canonical
+runtime directly when that runtime delegates reads back through the trait; it
+must not call `source.runtime_type().read_value(...)` unconditionally in that
+case. These trait hooks are extension APIs; node code uses `Scalar` and
+`ScalarValue`.
+
+A provider supporting alternative layouts with a reference-valued `value_type`
+must supply this hook. It returns a reference to an existing source-owned object.
+BG checks the hook requirement when compiling typed reads. Fixed-layout
+reference reads use the trait's `read()` directly.
+
+A provider can also add
+`static const ScalarRuntimeType &copy_runtime_type(const details::ScalarData &source)`.
+This selects the runtime type used when `ScalarValue<T>` copies a source. If it
+returns the source runtime, BG uses the existing actual-runtime copy or shared
+retain path. Otherwise, BG constructs the selected runtime from the source;
+that runtime must accept the source representation. When the hook is absent,
+typed scalar copies keep their existing behavior, including hierarchical
+runtime preservation.
+
+A provider can describe the actual value behind a C++ read view by adding
+`static ScalarData borrow_value(const value_type &value)` to
+`scalar_storage_traits<T>`. The descriptor identifies the borrowed value's
+actual semantic type and physical representation. A Base-annotated view can
+therefore carry a Derived value through owning construction and time series
+publication. Typed owning construction applies the same copy policy as copying
+a `Scalar<T>`. Publication uses the output runtime's input assignment operation.
+Sources constructible as `value_type` use this borrowed path without requiring
+a separate trait `construct` overload.
+
+The hook borrows the view or its source owner. It must not return a pointer to
+a temporary created inside the hook or transfer ownership through the
+descriptor. BG keeps a converted C++ view alive through the synchronous copy
+or assignment. Without the hook, a C++ read view uses its declaration's
+canonical runtime. These operations are extension APIs; node code uses the
+ordinary scalar and time series APIs.
 
 A runtime type for a list, set, or dictionary semantic type derives from the
 matching collection runtime interface. Its component runtime types correspond

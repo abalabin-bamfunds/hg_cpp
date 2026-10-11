@@ -26,6 +26,7 @@ class StructScalarType : public ScalarType {
 
     VISITOR_SUPPORT()
 
+    void format_name(std::string &result) const override { result += name_.text(); }
     util::symbol full_name() const noexcept { return full_name_; }
     util::symbol name() const noexcept { return name_; }
     std::size_t size() const noexcept { return size_; }

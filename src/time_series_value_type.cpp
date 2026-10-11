@@ -37,6 +37,13 @@ struct TimeSeriesValueTypeKeyHash {
 
 } // namespace
 
+void TimeSeriesValueType::format_name(std::string &result) const {
+    result += "TS<";
+    value_type().format_name(result);
+    append_guarantee(result);
+    result += '>';
+}
+
 const TimeSeriesValueType &time_series_value_type(const ScalarType &value_type, TimeSeriesGuarantee guarantee) {
     if (guarantee == TimeSeriesGuarantee::deduplicated && !value_type.supports_equality()) {
         throw std::invalid_argument{"a deduplicated time series requires a scalar type that supports equality"};
