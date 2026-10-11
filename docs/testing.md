@@ -123,6 +123,8 @@ graph compilation or evaluation.
   shared-handle ownership, and programmatic field-count, type, and presence validation
 - provider-defined canonical and copy runtimes, borrowed read-view descriptors, generic source-runtime preservation,
   and publication through time-series outputs
+- erased owning-copy runtime selection, typed selector priority, independent snapshot storage, destination
+  size and alignment, and construction-failure cleanup
 - time series validity, update time, mutation, and invalidation
 - global state ownership, replacement, lookup, and allocation
 

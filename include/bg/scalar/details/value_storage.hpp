@@ -56,13 +56,13 @@ inline constexpr bool scalar_storage_has_borrow_value = [] {
 }();
 
 template <typename T>
-inline constexpr bool scalar_storage_has_copy_runtime_type = [] {
+inline constexpr bool scalar_storage_has_runtime_type_for_copy = [] {
     if constexpr (std::same_as<T, void>) {
         return false;
     } else {
         return requires {
             static_cast<const ScalarRuntimeType &(*)(const ScalarData &)>(
-                &scalar_storage_traits<T>::copy_runtime_type);
+                &scalar_storage_traits<T>::runtime_type_for_copy);
         };
     }
 }();
@@ -139,6 +139,27 @@ template <typename Construct>
     return {&runtime_type, reinterpret_cast<std::uintptr_t>(data), mode};
 }
 
+[[nodiscard]] inline OwnedScalarData copy_scalar_value(const ScalarData &source,
+                                                       const ScalarRuntimeType &runtime_type,
+                                                       allocator *memory) {
+    if (&runtime_type == &source.runtime_type()) {
+        if (source.mode() == ScalarDataMode::shared_view || source.mode() == ScalarDataMode::shared_value) {
+            auto shared_data = std::uintptr_t{};
+            const auto *shared_type = source.runtime_type().retain_shared(source, shared_data);
+            return {shared_type, shared_data, ScalarDataMode::shared_value};
+        }
+
+        auto inline_data = std::uintptr_t{};
+        if (source.runtime_type().copy_inline(source.mode(), source.data_word(), inline_data)) {
+            return {&runtime_type, inline_data, ScalarDataMode::inline_value};
+        }
+    }
+
+    return allocate_scalar_value(runtime_type, memory, [&](void *destination, allocator &resource) {
+        runtime_type.construct_from_input(destination, source, resource);
+    });
+}
+
 inline allocator scalar_value_allocator(allocator *requested_memory) {
     if (requested_memory != nullptr) {
         return *requested_memory;
@@ -195,7 +216,7 @@ template <typename T, typename Source>
 
 template <typename T>
 [[nodiscard]] OwnedScalarData copy_scalar_value(const details::ScalarData &source, allocator *memory) {
-    if constexpr (scalar_storage_has_copy_runtime_type<T> || scalar_storage_has_borrow_value<T>) {
+    if constexpr (scalar_storage_has_runtime_type_for_copy<T> || scalar_storage_has_borrow_value<T>) {
         const auto &declared_type = cpp_scalar_type<T>();
         if (&declared_type != &source.type() && !declared_type.accepts(source.type())) {
             throw std::invalid_argument{"incompatible scalar type"};
@@ -215,10 +236,10 @@ template <typename T>
         }
     }
 
-    if constexpr (scalar_storage_has_copy_runtime_type<T>) {
-        const auto &runtime_type = scalar_storage_traits<T>::copy_runtime_type(source);
+    if constexpr (scalar_storage_has_runtime_type_for_copy<T>) {
+        const auto &runtime_type = scalar_storage_traits<T>::runtime_type_for_copy(source);
         if (&runtime_type == &source.runtime_type()) {
-            return copy_scalar_value(source, memory);
+            return copy_scalar_value(source, runtime_type, memory);
         }
 
         if constexpr (inline_scalar_value<T>) {
@@ -227,9 +248,7 @@ template <typename T>
             }
         }
 
-        return allocate_scalar_value(runtime_type, memory, [&](void *destination, allocator &resource) {
-            source.copy_construct(destination, runtime_type, resource);
-        });
+        return copy_scalar_value(source, runtime_type, memory);
     } else if constexpr (scalar_uses_shared_handle<T>) {
         const auto &runtime_type = cpp_scalar_runtime_type<T>();
         if (!runtime_type.accepts_input(source.runtime_type())) {
@@ -255,29 +274,14 @@ template <typename T>
         return make_scalar_value_from_value<T>(scalar_data_value<T>(source), memory);
     } else {
         const auto &runtime_type = cpp_scalar_runtime_type<T>();
-        return allocate_scalar_value(runtime_type, memory, [&](void *destination, allocator &resource) {
-            source.copy_construct(destination, runtime_type, resource);
-        });
+        return copy_scalar_value(source, runtime_type, memory);
     }
 }
 
 [[nodiscard]] inline OwnedScalarData copy_scalar_value(const details::ScalarData &source,
                                                        allocator *memory) {
-    if (source.mode() == ScalarDataMode::shared_view || source.mode() == ScalarDataMode::shared_value) {
-        auto shared_data = std::uintptr_t{};
-        const auto *shared_type = source.runtime_type().retain_shared(source, shared_data);
-        return {shared_type, shared_data, ScalarDataMode::shared_value};
-    }
-
-    auto inline_data = std::uintptr_t{};
-    if (source.runtime_type().copy_inline(source.mode(), source.data_word(), inline_data)) {
-        return {&source.runtime_type(), inline_data, ScalarDataMode::inline_value};
-    }
-
-    const auto &runtime_type = source.runtime_type();
-    return allocate_scalar_value(runtime_type, memory, [&](void *destination, allocator &resource) {
-        source.copy_construct(destination, runtime_type, resource);
-    });
+    const auto &runtime_type = source.runtime_type().runtime_type_for_copy(source);
+    return copy_scalar_value(source, runtime_type, memory);
 }
 
 template <typename T>

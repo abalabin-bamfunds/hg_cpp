@@ -279,7 +279,7 @@ Providers can supply these storage-trait operations:
 | --- | --- |
 | `runtime_type(const ScalarType&)` | Select the runtime for a resolved semantic type. |
 | `read_value(const ScalarData&)` | Read an actual runtime descriptor as the provider's C++ read value. |
-| `copy_runtime_type(const ScalarData&)` | Select the destination runtime for a typed owning copy. |
+| `runtime_type_for_copy(const ScalarData&)` | Select the destination runtime for a typed owning copy. |
 | `borrow_value(const value_type&)` | Return a descriptor borrowing the read value's runtime and payload. |
 
 These operations are extension-facing APIs. Node code uses the typed value
@@ -329,13 +329,30 @@ BG checks the hook requirement when compiling typed reads. Fixed-layout
 reference reads use the trait's `read()` directly.
 
 A provider can also add
-`static const ScalarRuntimeType &copy_runtime_type(const details::ScalarData &source)`.
-This selects the runtime type used when `ScalarValue<T>` copies a source. If it
-returns the source runtime, BG uses the existing actual-runtime copy or shared
-retain path. Otherwise, BG constructs the selected runtime from the source;
-that runtime must accept the source representation. When the hook is absent,
-typed scalar copies keep their existing behavior, including hierarchical
-runtime preservation.
+`static const ScalarRuntimeType &runtime_type_for_copy(const ScalarData &source)`.
+This selects the destination runtime when `ScalarValue<T>` copies a source.
+The trait's selection takes priority over the runtime's selection, including
+when the trait returns the source runtime. When the trait hook is absent,
+typed scalar copies keep their existing canonical or actual-runtime copy policy.
+
+`ScalarRuntimeType::runtime_type_for_copy(const ScalarData&) const` selects the
+destination runtime for an erased owning copy. Its default returns the source
+runtime. Providers override it when the owning representation differs from the
+borrowed representation. The runtime selector preserves the source's actual
+semantic type, including its actual schema.
+
+BG selects the destination once. If it is the source runtime, BG can use the
+existing inline-copy or shared-retain operations. Otherwise, BG allocates using
+the destination's size and alignment and calls its `construct_from_input()`;
+the destination must accept the source representation. A constructed owning
+value records the selected destination runtime. Shared retain records the actual
+runtime returned by `retain_shared()`. Both selectors are extension-facing APIs.
+Node code constructs `ScalarValue` through its normal constructors.
+
+An owning copy of mutable borrowed data must capture independent value storage.
+An immutable representation can retain shared storage. Selecting a runtime does
+not retain the source or perform the copy; construction supplies the ownership
+required by the selected representation.
 
 A provider can describe the actual value behind a C++ read view by adding
 `static ScalarData borrow_value(const value_type &value)` to

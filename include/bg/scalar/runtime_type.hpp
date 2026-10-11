@@ -31,6 +31,10 @@ class ScalarRuntimeType : public RuntimeType {
     ~ScalarRuntimeType() override;
 
     const ScalarType &type() const noexcept { return static_cast<const ScalarType &>(RuntimeType::type()); }
+    // Selects the owning-copy destination while preserving the source's actual semantic type.
+    virtual const ScalarRuntimeType &runtime_type_for_copy(const ScalarData &) const {
+        return *this;
+    }
     [[nodiscard]] virtual bool copy_inline(ScalarDataMode, std::uintptr_t, std::uintptr_t &) const noexcept {
         return false;
     }

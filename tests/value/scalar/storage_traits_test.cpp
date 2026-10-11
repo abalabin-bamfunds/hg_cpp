@@ -308,6 +308,35 @@ using ReadValue = test_scalar_provider::value_view;
 using Storage = test_scalar_provider::storage;
 using CopyOnlyValue = test_scalar_provider::copy_only_value;
 
+class scalar_copy_memory_resource final : public std::pmr::memory_resource {
+  public:
+    std::size_t allocations{};
+    std::size_t deallocations{};
+    std::size_t allocation_size{};
+    std::size_t allocation_alignment{};
+    std::size_t deallocation_size{};
+    std::size_t deallocation_alignment{};
+
+  private:
+    void *do_allocate(std::size_t size, std::size_t alignment) override {
+        ++allocations;
+        allocation_size = size;
+        allocation_alignment = alignment;
+        return std::pmr::new_delete_resource()->allocate(size, alignment);
+    }
+
+    void do_deallocate(void *value, std::size_t size, std::size_t alignment) override {
+        ++deallocations;
+        deallocation_size = size;
+        deallocation_alignment = alignment;
+        std::pmr::new_delete_resource()->deallocate(value, size, alignment);
+    }
+
+    bool do_is_equal(const std::pmr::memory_resource &other) const noexcept override {
+        return this == &other;
+    }
+};
+
 class LegacyIntegerRuntimeType final : public bg::ScalarRuntimeType {
   public:
     LegacyIntegerRuntimeType()
@@ -477,10 +506,10 @@ TEST_CASE("a scalar provider validates semantic type before selecting a copy run
           "[feature:scalar-api][feature:scalar-storage][storage:fixed][declaration:concrete]") {
     const auto value = bg::i64{7};
     const auto incompatible = bg::Scalar<Value>::from(bg::cpp_scalar_runtime_type<bg::i64>(), &value);
-    const auto copy_calls = test_scalar_provider::copy_runtime_type_call_count();
+    const auto trait_selector_calls = test_scalar_provider::trait_runtime_type_for_copy_call_count();
 
     CHECK_THROWS_AS(bg::ScalarValue<Value>{incompatible}, std::invalid_argument);
-    CHECK(test_scalar_provider::copy_runtime_type_call_count() == copy_calls);
+    CHECK(test_scalar_provider::trait_runtime_type_for_copy_call_count() == trait_selector_calls);
 }
 
 TEST_CASE("a scalar provider read type controls collection aliases and reads",
@@ -813,7 +842,7 @@ TEST_CASE("a generic provider uses its borrowed source copy policy",
 
     auto memory_resource = std::pmr::monotonic_buffer_resource{};
     auto memory = bg::allocator{memory_resource};
-    const auto generic_copy_calls = test_scalar_provider::generic_copy_runtime_type_call_count();
+    const auto generic_trait_selector_calls = test_scalar_provider::generic_trait_runtime_type_for_copy_call_count();
     const auto generic_runtime_calls = test_scalar_provider::generic_runtime_type_call_count();
     const auto [owner, actual_type, actual_runtime] = [&] {
         const auto source = bg::bundle<test_scalar_provider::bundle_provider_derived>(
@@ -828,7 +857,7 @@ TEST_CASE("a generic provider uses its borrowed source copy policy",
         return std::tuple{std::move(owner), type, runtime};
     }();
 
-    CHECK(test_scalar_provider::generic_copy_runtime_type_call_count() == generic_copy_calls + 1);
+    CHECK(test_scalar_provider::generic_trait_runtime_type_for_copy_call_count() == generic_trait_selector_calls + 1);
     CHECK(test_scalar_provider::generic_runtime_type_call_count() == generic_runtime_calls);
     CHECK(&owner.type() == actual_type);
     CHECK(&owner.runtime_type() == actual_runtime);
@@ -888,14 +917,76 @@ TEST_CASE("an alternative runtime writes a provider read value",
     CHECK(test_scalar_provider::alternative_runtime_read_count() == reads_before + 1);
 }
 
+TEST_CASE("an erased owner snapshots a borrowed value using its selected runtime",
+          "[feature:scalar-api][feature:scalar-storage][storage:fixed][declaration:runtime]") {
+    using SnapshotStorage = test_scalar_provider::immutable_snapshot_storage;
+
+    STATIC_CHECK(sizeof(SnapshotStorage) > sizeof(Storage));
+    STATIC_CHECK(alignof(SnapshotStorage) > alignof(Storage));
+
+    auto resource = scalar_copy_memory_resource{};
+    auto memory = bg::allocator{resource};
+    const auto source_selector_calls = test_scalar_provider::source_runtime_type_for_copy_call_count();
+    const auto source_type = std::addressof(bg::cpp_scalar_type<Value>());
+
+    {
+        const auto owner = [&] {
+            auto storage = Storage{42};
+            const auto source = bg::Scalar<Value>::from(test_scalar_provider::preserving_runtime_type(), &storage);
+            auto copy = bg::ScalarValue<>{source, memory};
+            CHECK(std::addressof(copy.runtime_type()) ==
+                  std::addressof(test_scalar_provider::immutable_snapshot_runtime_type()));
+            storage.number = 7;
+            return copy;
+        }();
+
+        CHECK(std::addressof(owner.type()) == source_type);
+        CHECK(bg::unchecked_scalar_cast<Value>(owner.view()).value().get() == 42);
+        const auto &owned_data = bg::details::scalar_data(owner);
+        const auto *snapshot = static_cast<const SnapshotStorage *>(owned_data.data());
+        CHECK(snapshot->number == 42);
+        CHECK(reinterpret_cast<std::uintptr_t>(snapshot) % alignof(SnapshotStorage) == 0);
+        CHECK(resource.allocations == 1);
+        CHECK(resource.allocation_alignment == alignof(SnapshotStorage));
+        CHECK(resource.allocation_size ==
+              bg::details::allocation_value_offset(test_scalar_provider::immutable_snapshot_runtime_type(),
+                                                   bg::ScalarDataMode::owned_explicit_allocator) +
+                  sizeof(SnapshotStorage));
+    }
+
+    CHECK(test_scalar_provider::source_runtime_type_for_copy_call_count() == source_selector_calls + 1);
+    CHECK(resource.deallocations == 1);
+    CHECK(resource.deallocation_size == resource.allocation_size);
+    CHECK(resource.deallocation_alignment == resource.allocation_alignment);
+}
+
+TEST_CASE("an erased owner releases its selected runtime allocation when construction throws",
+          "[feature:scalar-api][feature:scalar-storage][storage:fixed][declaration:runtime]") {
+    auto storage = Storage{42};
+    const auto source = bg::Scalar<Value>::from(test_scalar_provider::preserving_runtime_type(), &storage);
+    auto resource = scalar_copy_memory_resource{};
+    auto memory = bg::allocator{resource};
+    auto restore = bg::util::scope_exit{[]() noexcept { test_scalar_provider::set_snapshot_construct_throws(false); }};
+    test_scalar_provider::set_snapshot_construct_throws(true);
+
+    CHECK_THROWS_WITH((bg::ScalarValue<>{source, memory}), "snapshot construction failed");
+
+    CHECK(resource.allocations == 1);
+    CHECK(resource.deallocations == 1);
+    CHECK(resource.deallocation_size == resource.allocation_size);
+    CHECK(resource.deallocation_alignment == resource.allocation_alignment);
+}
+
 TEST_CASE("a typed owner can retain an extension-selected source runtime",
           "[feature:scalar-api][feature:scalar-storage][storage:fixed][declaration:runtime]") {
     auto storage = Storage{42};
     const auto &runtime = test_scalar_provider::preserving_runtime_type();
     const auto source = bg::Scalar<Value>::from(runtime, std::addressof(storage));
+    const auto runtime_selector_calls = test_scalar_provider::source_runtime_type_for_copy_call_count();
     const auto copy = bg::ScalarValue<Value>{source};
 
     CHECK(&copy.runtime_type() == &runtime);
+    CHECK(test_scalar_provider::source_runtime_type_for_copy_call_count() == runtime_selector_calls);
     storage.number = 7;
     CHECK(copy.view().value().get() == 42);
 }
@@ -905,10 +996,12 @@ TEST_CASE("a typed owner can copy an alternative runtime into the canonical runt
     auto storage = Storage{42};
     const auto &source_runtime = test_scalar_provider::canonicalizing_runtime_type();
     const auto source = bg::Scalar<Value>::from(source_runtime, std::addressof(storage));
+    const auto runtime_selector_calls = test_scalar_provider::source_runtime_type_for_copy_call_count();
     const auto copy = bg::ScalarValue<Value>{source};
 
     CHECK(&copy.runtime_type() == &bg::cpp_scalar_runtime_type<Value>());
     CHECK(&copy.type() == &source.type());
+    CHECK(test_scalar_provider::source_runtime_type_for_copy_call_count() == runtime_selector_calls);
     storage.number = 7;
     CHECK(copy.view().value().get() == 42);
 }

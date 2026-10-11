@@ -28,6 +28,11 @@ struct storage {
     int number;
 };
 
+struct alignas(64) immutable_snapshot_storage {
+    const std::array<std::uint32_t, 4> prefix{};
+    const int number{};
+};
+
 struct large_source_view {
     std::array<const void *, 4> padding{};
     const int *number{};
@@ -102,13 +107,17 @@ const bg::ScalarType &semantic_type_from_provider() noexcept;
 const bg::ScalarRuntimeType &runtime_type_from_provider();
 const bg::ScalarRuntimeType &preserving_runtime_type();
 const bg::ScalarRuntimeType &canonicalizing_runtime_type();
+const bg::ScalarRuntimeType &immutable_snapshot_runtime_type();
 int alternative_runtime_read_count();
-int copy_runtime_type_call_count() noexcept;
-void record_copy_runtime_type_call() noexcept;
+int trait_runtime_type_for_copy_call_count() noexcept;
+void record_trait_runtime_type_for_copy_call() noexcept;
+int source_runtime_type_for_copy_call_count() noexcept;
+void record_source_runtime_type_for_copy_call() noexcept;
+void set_snapshot_construct_throws(bool) noexcept;
 int generic_runtime_type_call_count() noexcept;
 void record_generic_runtime_type_call() noexcept;
-int generic_copy_runtime_type_call_count() noexcept;
-void record_generic_copy_runtime_type_call() noexcept;
+int generic_trait_runtime_type_for_copy_call_count() noexcept;
+void record_generic_trait_runtime_type_for_copy_call() noexcept;
 const bg::ScalarType &compound_semantic_type_from_provider();
 const bg::ScalarType &layout_semantic_type_from_provider();
 const bg::ScalarRuntimeType &mismatched_layout_runtime_type();
@@ -138,7 +147,8 @@ template <> struct scalar_storage_traits<test_scalar_provider::value> {
             return *static_cast<const value_type *>(source.data());
         }
         if (&source.runtime_type() == &test_scalar_provider::preserving_runtime_type() ||
-            &source.runtime_type() == &test_scalar_provider::canonicalizing_runtime_type()) {
+            &source.runtime_type() == &test_scalar_provider::canonicalizing_runtime_type() ||
+            &source.runtime_type() == &test_scalar_provider::immutable_snapshot_runtime_type()) {
             alignas(test_scalar_provider::large_source_view)
                 std::byte storage[sizeof(test_scalar_provider::large_source_view)];
             source.runtime_type().read_value(source.mode(), source.data_word(), storage);
@@ -167,8 +177,8 @@ template <> struct scalar_storage_traits<test_scalar_provider::value> {
 
     static value_type read(const stored_type &stored) noexcept { return {std::addressof(stored.number)}; }
 
-    static const ScalarRuntimeType &copy_runtime_type(const details::ScalarData &source) {
-        test_scalar_provider::record_copy_runtime_type_call();
+    static const ScalarRuntimeType &runtime_type_for_copy(const details::ScalarData &source) {
+        test_scalar_provider::record_trait_runtime_type_for_copy_call();
         if (&source.runtime_type() == &test_scalar_provider::preserving_runtime_type()) {
             return source.runtime_type();
         }
@@ -231,7 +241,7 @@ template <> struct scalar_storage_traits<test_scalar_provider::copy_only_value> 
 
     static void destroy(stored_type *stored, allocator &) noexcept { std::destroy_at(stored); }
 
-    static const ScalarRuntimeType &copy_runtime_type(const details::ScalarData &source);
+    static const ScalarRuntimeType &runtime_type_for_copy(const details::ScalarData &source);
 };
 
 template <> struct scalar_type_traits<test_scalar_provider::bundle_provider_value> {
@@ -275,7 +285,7 @@ template <> struct scalar_storage_traits<test_scalar_provider::bundle_provider_v
         return cpp_scalar_runtime_type<test_scalar_provider::bundle_provider_base_type>();
     }
 
-    static const ScalarRuntimeType &copy_runtime_type(const details::ScalarData &source) {
+    static const ScalarRuntimeType &runtime_type_for_copy(const details::ScalarData &source) {
         return source.runtime_type();
     }
 };
@@ -310,8 +320,8 @@ template <> struct scalar_storage_traits<test_scalar_provider::generic_bundle_pr
         throw std::invalid_argument{"a generic bundle provider has no canonical runtime"};
     }
 
-    static const ScalarRuntimeType &copy_runtime_type(const details::ScalarData &source) {
-        test_scalar_provider::record_generic_copy_runtime_type_call();
+    static const ScalarRuntimeType &runtime_type_for_copy(const details::ScalarData &source) {
+        test_scalar_provider::record_generic_trait_runtime_type_for_copy_call();
         return source.runtime_type();
     }
 };
