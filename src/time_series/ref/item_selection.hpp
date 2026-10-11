@@ -140,12 +140,11 @@ template <typename Derived, typename RuntimeType> class ItemSelectionSubscriptio
         return *entry;
     }
 
+    // The caller validates collection identity and retention; an empty resolution clears the selection.
     bool refresh(Selection &entry, const ResolvedTimeSeries &resolved, EvaluationTime evaluation_time) {
         auto &collection = *entry.collection;
         auto value = Reference{};
-        if (resolved.runtime_type == collection.view_runtime_type &&
-            derived().retention_matches(collection, resolved) &&
-            derived().contains_item(collection, resolved, entry.id)) {
+        if (resolved.storage != nullptr && derived().contains_item(collection, resolved, entry.id)) {
             const auto item = collection.view_runtime_type->item(resolved.storage, entry.id);
             if (item.last_updated.valid()) {
                 value = entry.stores_reference() ? item.runtime_type.reference(item.value)
@@ -168,7 +167,8 @@ template <typename Derived, typename RuntimeType> class ItemSelectionSubscriptio
     template <typename Result>
     Result input(Selection &entry, const ResolvedTimeSeries &resolved,
                  const TimeSeriesRuntimeType &item_reference_runtime_type) {
-        refresh(entry, resolved, provider_->owner().evaluation_time());
+        const auto current = matches_collection(*entry.collection, resolved) ? resolved : ResolvedTimeSeries{};
+        refresh(entry, current, provider_->owner().evaluation_time());
         queue_release(entry);
 
         return {&entry.selection_time, &item_reference_runtime_type, ReferenceBinding{&entry, binding_type()},
@@ -209,7 +209,8 @@ template <typename Derived, typename RuntimeType> class ItemSelectionSubscriptio
                     resolved = ResolvedTimeSeries::resolve(reference);
                     did_resolve = true;
                 }
-                refresh_selection(context, *entry, resolved);
+                const auto current = matches_collection(*collection, resolved) ? resolved : ResolvedTimeSeries{};
+                refresh_selection(context, *entry, current);
             }
         }
     }
@@ -275,6 +276,11 @@ template <typename Derived, typename RuntimeType> class ItemSelectionSubscriptio
                    candidate->runtime_type == &runtime_type && candidate->storage == storage;
         });
         return found == collections_.end() ? nullptr : *found;
+    }
+
+    bool matches_collection(const Collection &collection, const ResolvedTimeSeries &resolved) noexcept {
+        return resolved.runtime_type == collection.view_runtime_type &&
+               derived().retention_matches(collection, resolved);
     }
 
     void queue_release(Selection &entry) noexcept {
@@ -370,8 +376,7 @@ template <typename Derived, typename RuntimeType> class ItemSelectionSubscriptio
         }
 
         const auto resolved = ResolvedTimeSeries::resolve(collection.reference);
-        if (resolved.runtime_type != collection.view_runtime_type ||
-            !derived().retention_matches(collection, resolved)) {
+        if (!matches_collection(collection, resolved)) {
             invalidate_all(context, collection);
             release_all_item_retention(collection);
             return;
@@ -407,7 +412,8 @@ template <typename Derived, typename RuntimeType> class ItemSelectionSubscriptio
         }
     }
 
-    void notify_updated_items(OutputChangeContext &context, Collection &collection, ResolvedTimeSeries resolved) {
+    void notify_updated_items(OutputChangeContext &context, Collection &collection,
+                              const ResolvedTimeSeries &resolved) {
         struct Callback {
             ItemSelectionSubscriptions *owner;
             Collection *collection;
