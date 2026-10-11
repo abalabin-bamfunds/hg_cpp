@@ -81,7 +81,7 @@ std::size_t endpoint_path_hash(const Endpoint &endpoint) noexcept {
     return result;
 }
 
-bool same_scalar(const StoredScalar &left, const StoredScalar &right) noexcept {
+bool same_scalar(const StoredScalar &left, const StoredScalar &right) {
     if (left.runtime_type != right.runtime_type || left.value.has_value() != right.value.has_value()) {
         return false;
     }
@@ -97,7 +97,7 @@ bool same_node_label(const NodeShape &left, const NodeShape &right) {
            left.service_bindings == right.service_bindings;
 }
 
-std::size_t node_label_hash(const NodeShape &node) noexcept {
+std::size_t node_label_hash(const NodeShape &node) {
     auto result = node.identity.hash();
     for (const auto &parameter : node.parameters) {
         combine_pointer(result, parameter.type);

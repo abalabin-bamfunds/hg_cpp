@@ -34,8 +34,8 @@ class NodeTemplateIdentity {
         return NodeTemplateIdentity{std::make_shared<Model<Stored>>(std::forward<Value>(value))};
     }
 
-    std::size_t hash() const noexcept { return value_ == nullptr ? 0 : value_->hash(); }
-    bool cacheable() const noexcept { return value_ != nullptr && value_->cacheable(); }
+    std::size_t hash() const { return value_ == nullptr ? 0 : value_->hash(); }
+    bool cacheable() const { return value_ != nullptr && value_->cacheable(); }
 
     friend bool operator==(const NodeTemplateIdentity &left, const NodeTemplateIdentity &right) {
         if (left.value_ == right.value_) {
@@ -47,17 +47,17 @@ class NodeTemplateIdentity {
   private:
     struct Interface {
         virtual ~Interface() = default;
-        virtual std::size_t hash() const noexcept = 0;
-        virtual bool cacheable() const noexcept = 0;
+        virtual std::size_t hash() const = 0;
+        virtual bool cacheable() const = 0;
         virtual bool equals(const Interface &) const = 0;
     };
 
     template <typename Value> struct Model final : Interface {
         template <typename Source> explicit Model(Source &&source) : value{std::forward<Source>(source)} {}
 
-        std::size_t hash() const noexcept override { return value.hash(); }
+        std::size_t hash() const override { return value.hash(); }
 
-        bool cacheable() const noexcept override {
+        bool cacheable() const override {
             if constexpr (requires { { value.cacheable() } -> std::convertible_to<bool>; }) {
                 return value.cacheable();
             }

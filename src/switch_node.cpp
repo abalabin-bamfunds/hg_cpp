@@ -66,7 +66,7 @@ struct SwitchNodeIdentity {
 
     std::vector<Case> cases;
 
-    std::size_t hash() const noexcept {
+    std::size_t hash() const {
         auto result = std::size_t{};
         const auto combine = [&](std::size_t value) {
             result ^= value + 0x9e3779b97f4a7c15ULL + (result << 6) + (result >> 2);
