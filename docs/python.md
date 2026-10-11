@@ -263,6 +263,8 @@ defines scalar compatibility, including multiple inheritance; a derived value
 retains its actual Python object when stored through a base annotation. Existing
 built-in mappings and explicit extension registrations take precedence during
 type inference.
+Python `None` remains a sentinel for no output change and skipped test-input
+updates, not a Python-object scalar value.
 
 Python object scalars retain their Python object by reference. Copying and
 releasing an existing scalar handle does not acquire the Global Interpreter

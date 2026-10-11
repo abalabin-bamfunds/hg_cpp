@@ -251,9 +251,18 @@ class PythonObjectRuntimeTypes {
 
         auto runtime_type = std::make_unique<PythonObjectScalarRuntimeType>(type);
         auto *result = runtime_type.get();
-        register_scalar_runtime_type(*result);
         runtime_types_.push_back(std::move(runtime_type));
-        by_type_.emplace(&type, result);
+        auto remove_runtime_type = util::scope_exit{[this]() noexcept { runtime_types_.pop_back(); }};
+
+        const auto [entry, inserted] = by_type_.emplace(&type, result);
+        if (!inserted) {
+            throw std::logic_error{"a Python object runtime type was registered twice"};
+        }
+        auto remove_type_entry = util::scope_exit{[this, entry]() noexcept { by_type_.erase(entry); }};
+
+        register_scalar_runtime_type(*result);
+        remove_type_entry.release();
+        remove_runtime_type.release();
         return *result;
     }
 
@@ -790,10 +799,6 @@ const ScalarType &PythonScalarConversions::add_python_type(nanobind::handle pyth
     const auto count = PyTuple_GET_SIZE(method_resolution_order.ptr());
     for (auto index = Py_ssize_t{1}; index < count; ++index) {
         auto *base = reinterpret_cast<PyTypeObject *>(PyTuple_GET_ITEM(method_resolution_order.ptr(), index));
-        if (base == &PyBaseObject_Type) {
-            continue;
-        }
-
         const auto found = impl_->python_types.find(base);
         if (found != impl_->python_types.end()) {
             bases.push_back(found->second.scalar_type);
@@ -938,6 +943,9 @@ ScalarValue<> PythonScalarConversions::from_python(const ScalarType &type, nanob
 }
 
 bool PythonScalarConversions::can_from_python(const ScalarType &type) const noexcept {
+    if (impl_->python_object_types.contains(&type)) {
+        return true;
+    }
     if (impl_->from_python.find(type) != nullptr) {
         return true;
     }

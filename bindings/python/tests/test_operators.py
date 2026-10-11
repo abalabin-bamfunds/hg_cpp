@@ -40,11 +40,14 @@ def test_extension_can_register_a_python_scalar_type():
         def __float__(self):
             return 1.5
 
+    class DerivedMeasure(Measure):
+        pass
+
     assert extension.register_double_type(Measure)
 
     @bg.graph
     def value() -> bg.TS[float]:
-        return bg.operators.const_(Measure())
+        return bg.operators.const_(DerivedMeasure())
 
     assert bg.test_graph(value) == [1.5]
 

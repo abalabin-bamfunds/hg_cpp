@@ -1,7 +1,7 @@
 import pytest
 
 import bg
-from bg._bg_test_extension import copy_release_python_scalar_without_gil
+from bg._bg_test_extension import can_convert_python_type, copy_release_python_scalar_without_gil
 
 
 def test_python_objects_keep_identity_through_base_typed_time_series():
@@ -24,6 +24,52 @@ def test_python_objects_keep_identity_through_base_typed_time_series():
 
     assert bg.test_graph(derived_to_base, [value])[0] is value
     assert bg.test_graph(base_to_base, [value])[0] is value
+
+
+def test_python_object_scalars_support_multiple_inheritance():
+    class Left:
+        pass
+
+    class Right:
+        pass
+
+    class Derived(Left, Right):
+        pass
+
+    value = Derived()
+
+    @bg.graph
+    def as_left(value: bg.TS[Derived]) -> bg.TS[Left]:
+        return value
+
+    @bg.graph
+    def as_right(value: bg.TS[Derived]) -> bg.TS[Right]:
+        return value
+
+    assert bg.test_graph(as_left, [value])[0] is value
+    assert bg.test_graph(as_right, [value])[0] is value
+
+
+def test_object_annotation_accepts_a_previously_registered_python_class():
+    class Value:
+        pass
+
+    assert can_convert_python_type(Value)
+
+    @bg.graph
+    def graph(value: bg.TS[object]) -> bg.TS[object]:
+        return value
+
+    value = Value()
+    assert bg.test_graph(graph, [value])[0] is value
+
+
+def test_can_from_python_recognizes_python_object_and_builtin_scalar_types():
+    class Value:
+        pass
+
+    assert can_convert_python_type(Value)
+    assert can_convert_python_type(int)
 
 
 def test_python_object_constants_copy_without_changing_identity():
@@ -65,6 +111,15 @@ def test_python_node_returning_none_produces_no_tick_for_object_scalars():
     result = bg.test_graph(graph, [1, 2])
     assert result[0] is value
     assert result[1] is None
+
+
+def test_none_is_not_a_python_object_scalar_value():
+    @bg.graph
+    def graph() -> bg.TS[type(None)]:
+        return bg.operators.const_(None)
+
+    with pytest.raises(ValueError, match="None does not identify a scalar type"):
+        bg.test_graph(graph)
 
 
 def test_tss_base_keys_use_python_hash_and_equality_across_classes():
