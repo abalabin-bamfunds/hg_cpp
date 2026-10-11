@@ -30,12 +30,17 @@ class FixedItemSubscriptions final
     FixedItemReferenceInput input(Reference reference, item_id_t id, ResolvedTimeSeries resolved,
                                   const TimeSeriesRuntimeType &item_runtime_type) {
         const auto &reference_runtime_type = item_reference_runtime_type(item_runtime_type);
-        auto &collection = require_collection(reference, *resolved.runtime_type, resolved.storage);
+        auto &collection = require_collection(reference, *resolved.runtime_type, *resolved.runtime_type,
+                                              resolved.storage);
         return Base::input<FixedItemReferenceInput>(
             require_selection(collection, id, item_runtime_type.is_reference()), reference_runtime_type);
     }
 
-    static bool contains_item(const Collection &, item_id_t) noexcept { return true; }
+    static bool retention_matches(const Collection &collection, ResolvedTimeSeries resolved) noexcept {
+        return resolved.storage == collection.storage;
+    }
+
+    static bool contains_item(const Collection &, ResolvedTimeSeries, item_id_t) noexcept { return true; }
 
     static void release_item_retention(Collection &, Selection &) noexcept {}
 };
@@ -61,7 +66,7 @@ const TimeSeriesRuntimeType &fixed_item_reference_runtime_type(const TimeSeriesT
 
 using FixedObservedItems = ObservedItemCollection<FixedItemSubscriptions, TimeSeriesRuntimeType>;
 static_assert(sizeof(ItemSelection<FixedObservedItems>) == 5 * sizeof(void *));
-static_assert(sizeof(FixedObservedItems) == 32 * sizeof(void *));
+static_assert(sizeof(FixedObservedItems) == 33 * sizeof(void *));
 static_assert(sizeof(FixedItemSubscriptions) == 14 * sizeof(void *));
 
 } // namespace bg::details

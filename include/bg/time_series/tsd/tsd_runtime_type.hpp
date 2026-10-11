@@ -20,6 +20,7 @@ struct DictionaryKeyStorage {
     void *value{};
 };
 
+// Release a retained ID through this returned runtime type and storage; a view can rebind to different storage.
 struct RetainedDictionaryKey {
     const TimeSeriesDictionaryRuntimeType *runtime_type{};
     void *value{};
@@ -34,17 +35,23 @@ class TimeSeriesDictionaryRuntimeType : public TimeSeriesRuntimeType {
 
     TimeSeriesDictionaryRuntimeType(const TimeSeriesDictionaryType &type, const ScalarRuntimeType &key,
                                     const TimeSeriesRuntimeType &item)
-        : TimeSeriesRuntimeType{type,
-                                sizeof(time_series_dict_storage),
-                                alignof(time_series_dict_storage),
-                                true,
-                                key.requires_finalization() || item.requires_finalization(),
-                                true},
+        : TimeSeriesDictionaryRuntimeType{type, key, item, sizeof(time_series_dict_storage),
+                                          alignof(time_series_dict_storage), true,
+                                          key.requires_finalization() || item.requires_finalization(), true} {}
+
+  protected:
+    TimeSeriesDictionaryRuntimeType(const TimeSeriesDictionaryType &type, const ScalarRuntimeType &key,
+                                    const TimeSeriesRuntimeType &item, std::size_t value_size,
+                                    std::size_t value_alignment, bool uses_variable_memory,
+                                    bool requires_finalization, bool supports_byte_copy_initialization)
+        : TimeSeriesRuntimeType{type, value_size, value_alignment, uses_variable_memory, requires_finalization,
+                                supports_byte_copy_initialization},
           key_{&key},
           keys_{&time_series_set_runtime_type(static_cast<const TimeSeriesSetType &>(type.key_set_type()), key)},
           item_{&item}, key_layout_{key.size(), key.alignment()}, item_layout_{contained_time_series_layout(item)},
           item_value_offset_{contained_time_series_value_offset(item)} {}
 
+  public:
     const ScalarRuntimeType &key_runtime_type() const noexcept { return *key_; }
     const TimeSeriesRuntimeType &key_set_runtime_type() const noexcept { return *keys_; }
     const TimeSeriesRuntimeType &item_runtime_type() const noexcept { return *item_; }

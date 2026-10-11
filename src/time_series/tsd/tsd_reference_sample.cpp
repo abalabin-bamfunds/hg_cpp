@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <exception>
 #include <memory>
 #include <mutex>
 #include <ranges>
@@ -22,7 +23,8 @@ class SampledDictionaryRuntimeType final : public TimeSeriesDictionaryRuntimeTyp
   public:
     explicit SampledDictionaryRuntimeType(const TimeSeriesDictionaryRuntimeType &shape)
         : TimeSeriesDictionaryRuntimeType{static_cast<const TimeSeriesDictionaryType &>(shape.type()),
-                                          shape.key_runtime_type(), shape.item_runtime_type()} {}
+                                          shape.key_runtime_type(), shape.item_runtime_type(), 0, 1, false, false,
+                                          false} {}
     static const SampledDictionaryRuntimeType &for_shape(const TimeSeriesDictionaryRuntimeType &shape);
 
     DictionaryKeyStorage retention_storage(void *value) const noexcept override;
@@ -52,6 +54,11 @@ class SampledDictionaryRuntimeType final : public TimeSeriesDictionaryRuntimeTyp
     bool collection_valid(const void *value) const noexcept override;
     void for_each_modified_item(const TimeSeriesState &, const void *, EvaluationTime, void *,
                                 ModifiedItemFunction) const override;
+    ItemLayout item_layout(item_id_t) const override;
+    bool mark_item_modified(void *, item_id_t, EvaluationTime, const TimeSeriesState &, allocator &) const
+        noexcept override;
+    void construct_initial_value(void *) const noexcept override;
+    void destroy_value(void *, allocator &) const noexcept override;
 
   private:
     bool item_in_range(const TimeSeriesState &, const void *, ItemRange, item_id_t) const override;
@@ -271,6 +278,19 @@ SampledDictionary *SampledDictionary::create(ResolvedTimeSeries previous, Resolv
     const auto &shape = current_type != nullptr ? *current_type : *previous_type;
     return memory.new_object<SampledDictionary>(shape, previous, current, evaluation_time, memory);
 }
+
+TimeSeriesRuntimeType::ItemLayout SampledDictionaryRuntimeType::item_layout(item_id_t) const {
+    throw std::logic_error{"sampled dictionary items do not have a packed output layout"};
+}
+
+bool SampledDictionaryRuntimeType::mark_item_modified(void *, item_id_t, EvaluationTime, const TimeSeriesState &,
+                                                       allocator &) const noexcept {
+    std::terminate();
+}
+
+void SampledDictionaryRuntimeType::construct_initial_value(void *) const noexcept { std::terminate(); }
+
+void SampledDictionaryRuntimeType::destroy_value(void *, allocator &) const noexcept { std::terminate(); }
 
 SampledDictionary::~SampledDictionary() {
     for (const auto child : children) {

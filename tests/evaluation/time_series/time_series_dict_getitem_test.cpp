@@ -3,7 +3,9 @@
 #include <bg/node.hpp>
 #include <bg/operators.hpp>
 #include <bg/testing/test_graph.hpp>
+#include <bg/time_series/tsd/tsd_runtime_type.hpp>
 #include <bg/time_series/tsd/tsd_type.hpp>
+#include <bg/type/time_series_dict_type.hpp>
 #include <bg/type/time_series_reference_type.hpp>
 
 #include <catch2/catch_test_macros.hpp>
@@ -277,21 +279,30 @@ TEST_CASE("dictionary reference getitem ignores another item",
     CHECK(actual.equals({1, std::nullopt, std::nullopt}));
 }
 
-TEST_CASE("a value dictionary provides final item references",
+TEST_CASE("a value dictionary provides stable final item references",
           "[evaluation][series:tsd][series:value][reference][feature:reference][feature:sampling]"
           "[binding:value-to-reference][guarantee:final]") {
     const auto make_dictionary =
         node([](In<TS<i64>> input, Out<TSD<std::int64_t, TS<i64>>> output) { output[1].set(*input); });
-    const auto inspect = node([](In<TSD<std::int64_t, REF<TS<i64>>>> input, Out<TS<bool>> output) {
+    const details::TimeSeriesDictionaryRuntimeType *observed_runtime_type{};
+    const auto inspect = node([&](In<TSD<std::int64_t, REF<TS<i64>>>> input, Out<TS<bool>> output) {
+        observed_runtime_type = &static_cast<const details::TimeSeriesDictionaryRuntimeType &>(input.runtime_type());
+        const auto &dictionary_type = static_cast<const TimeSeriesDictionaryType &>(input.runtime_type().type());
+        const auto &dictionary_item_type = static_cast<const TimeSeriesReferenceType &>(dictionary_type.value_type());
         const auto item = input[1];
         const auto &type = static_cast<const TimeSeriesReferenceType &>(item.runtime_type().type());
-        output.set(type.guarantee().value() == TimeSeriesGuarantee::final);
+        output.set(dictionary_item_type.guarantee().value() == TimeSeriesGuarantee::final &&
+                   type.guarantee().value() == TimeSeriesGuarantee::final);
     });
     const auto graph = [&](wp<TS<i64>> input) { return inspect(make_dictionary(input)); };
 
     const auto actual = testing::test_graph(graph, std::array{1});
 
     CHECK(actual.equals({true}));
+    REQUIRE(observed_runtime_type != nullptr);
+    const auto &dictionary_type = static_cast<const TimeSeriesDictionaryType &>(observed_runtime_type->type());
+    const auto &dictionary_item_type = static_cast<const TimeSeriesReferenceType &>(dictionary_type.value_type());
+    CHECK(dictionary_item_type.guarantee().value() == TimeSeriesGuarantee::final);
 }
 
 TEST_CASE("a dereferenced dictionary follows a target that is initially invalid",

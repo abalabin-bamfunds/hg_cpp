@@ -68,12 +68,14 @@ template <typename Owner, typename RuntimeType> struct ObservedItemCollection {
     using Selection = ItemSelection<ObservedItemCollection>;
     using SelectionMap = util::hash_dictionary<item_id_t, Selection>;
 
-    ObservedItemCollection(Owner &owner, Reference reference, const RuntimeType &runtime_type,
-                           const void *storage) noexcept
-        : owner{&owner}, reference{reference}, runtime_type{&runtime_type}, storage{storage} {}
+    ObservedItemCollection(Owner &owner, Reference reference, const RuntimeType &view_runtime_type,
+                           const RuntimeType &runtime_type, const void *storage) noexcept
+        : owner{&owner}, reference{reference}, view_runtime_type{&view_runtime_type}, runtime_type{&runtime_type},
+          storage{storage} {}
 
     Owner *owner;
     Reference reference;
+    const RuntimeType *view_runtime_type;
     const RuntimeType *runtime_type;
     const void *storage;
     SelectionMap items;
@@ -91,12 +93,13 @@ template <typename Derived, typename RuntimeType> class ItemSelectionSubscriptio
 
     ~ItemSelectionSubscriptions() override { assert(collections_.empty()); }
 
-    Collection &require_collection(Reference reference, const RuntimeType &runtime_type, const void *storage) {
-        if (auto *existing = find_collection(reference, runtime_type, storage)) {
+    Collection &require_collection(Reference reference, const RuntimeType &view_runtime_type,
+                                   const RuntimeType &runtime_type, const void *storage) {
+        if (auto *existing = find_collection(reference, view_runtime_type, runtime_type, storage)) {
             return *existing;
         }
 
-        auto *result = memory_.new_object<Collection>(derived(), reference, runtime_type, storage);
+        auto *result = memory_.new_object<Collection>(derived(), reference, view_runtime_type, runtime_type, storage);
         auto release = util::scope_exit{[&]() noexcept { release_collection(*result); }};
         collections_.push_back(result);
         auto remove_entry = util::scope_exit{[&]() noexcept { collections_.pop_back(); }};
@@ -140,8 +143,11 @@ template <typename Derived, typename RuntimeType> class ItemSelectionSubscriptio
     bool refresh(Selection &entry, EvaluationTime evaluation_time) {
         auto &collection = *entry.collection;
         auto value = Reference{};
-        if (derived().contains_item(collection, entry.id)) {
-            const auto item = collection.runtime_type->item(collection.storage, entry.id);
+        const auto resolved = ResolvedTimeSeries::resolve(collection.reference);
+        if (resolved.runtime_type == collection.view_runtime_type &&
+            derived().retention_matches(collection, resolved) &&
+            derived().contains_item(collection, resolved, entry.id)) {
+            const auto item = collection.view_runtime_type->item(resolved.storage, entry.id);
             if (item.last_updated.valid()) {
                 value = entry.stores_reference() ? item.runtime_type.reference(item.value)
                                                  : Reference{entry.selection.value_item_reference};
@@ -256,10 +262,11 @@ template <typename Derived, typename RuntimeType> class ItemSelectionSubscriptio
 
     Derived &derived() noexcept { return static_cast<Derived &>(*this); }
 
-    Collection *find_collection(Reference reference, const RuntimeType &runtime_type, const void *storage) const {
+    Collection *find_collection(Reference reference, const RuntimeType &view_runtime_type,
+                                const RuntimeType &runtime_type, const void *storage) const {
         const auto found = std::ranges::find_if(collections_, [&](const auto *candidate) {
-            return candidate->reference == reference && candidate->runtime_type == &runtime_type &&
-                   candidate->storage == storage;
+            return candidate->reference == reference && candidate->view_runtime_type == &view_runtime_type &&
+                   candidate->runtime_type == &runtime_type && candidate->storage == storage;
         });
         return found == collections_.end() ? nullptr : *found;
     }
@@ -357,7 +364,8 @@ template <typename Derived, typename RuntimeType> class ItemSelectionSubscriptio
         }
 
         const auto resolved = ResolvedTimeSeries::resolve(collection.reference);
-        if (resolved.runtime_type != collection.runtime_type || resolved.storage != collection.storage) {
+        if (resolved.runtime_type != collection.view_runtime_type ||
+            !derived().retention_matches(collection, resolved)) {
             invalidate_all(context, collection);
             release_all_item_retention(collection);
             return;
@@ -400,14 +408,13 @@ template <typename Derived, typename RuntimeType> class ItemSelectionSubscriptio
             OutputChangeContext *context;
         } callback{this, &collection, &context};
 
-        collection.runtime_type->for_each_updated_item(*resolved.last_updated, resolved.storage, &callback,
-                                                       [](void *value, item_id_t id) {
-                                                           auto &callback = *static_cast<Callback *>(value);
-                                                           if (auto *entry = callback.collection->items.find(id)) {
-                                                               callback.owner->refresh_selection(*callback.context,
-                                                                                                 *entry);
-                                                           }
-                                                       });
+        collection.view_runtime_type->for_each_updated_item(
+            *resolved.last_updated, resolved.storage, &callback, [](void *value, item_id_t id) {
+                auto &callback = *static_cast<Callback *>(value);
+                if (auto *entry = callback.collection->items.find(id)) {
+                    callback.owner->refresh_selection(*callback.context, *entry);
+                }
+            });
     }
 
     void refresh_selection(OutputChangeContext &context, Selection &entry) {
