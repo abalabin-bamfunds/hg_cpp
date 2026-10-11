@@ -3,6 +3,7 @@
 #include <bg/operators.hpp>
 #include <bg/python/input_view.hpp>
 #include <bg/python/operator.hpp>
+#include <bg/python/object.hpp>
 #include <bg/python/scalar_conversion.hpp>
 #include <bg/python/wiring_point.hpp>
 #include <bg/scalar/builtins.hpp>
@@ -14,6 +15,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string_view>
 
 namespace {
@@ -98,6 +100,20 @@ NB_MODULE(_bg_test_extension, module) {
     });
     module.def("register_double_type", [](nanobind::handle python_type) {
         return bg::python::scalar_conversions().add_python_type(python_type, bg::double_type());
+    });
+    module.def("copy_release_python_scalar_without_gil", [](nanobind::handle value) {
+        auto memory = bg::allocator{};
+        auto original = std::optional<bg::ScalarValue<>>{};
+        original.emplace(bg::python::scalar_conversions().from_python(value, memory));
+        {
+            auto release_gil = nanobind::gil_scoped_release{};
+            {
+                auto copy = bg::ScalarValue<>{original->view()};
+                original.reset();
+            }
+        }
+        bg::python::Object::drain_deferred_releases();
+        return true;
     });
     module.def("runtime_conversion_overrides_type_conversion", [] {
         auto conversions = bg::python::PythonScalarConversions{};

@@ -237,8 +237,8 @@ key maps to `REMOVE`; added and modified keys map to their item deltas. A TSS
 input delta has lazy `added` and `removed` views. Collection item deltas recur
 through the same table.
 
-The currently accepted scalar annotations are `bool`, `int`, `float`, `str`,
-and `bg.Symbol`. `bg.Symbol` is a `str` subclass. Non-null symbols compare and
+The built-in scalar annotations are `bool`, `int`, `float`, `str`, and
+`bg.Symbol`. `bg.Symbol` is a `str` subclass. Non-null symbols compare and
 hash like their text; `bg.Symbol()` represents a null symbol and differs from
 the empty string. `str(symbol)` returns ordinary Python text, so converting a
 null symbol produces `""`. `bg.Symbol` cannot be subclassed. Python `int` maps
@@ -256,6 +256,21 @@ normalized to ordinary Python text; a plain `str` supplied to a `Symbol`-typed
 input is interned as a non-null symbol. The Python class reuses objects
 produced from the same interned engine symbol while retaining the class-level
 cache.
+
+Other Python classes can be used as scalar annotations and values. The first
+use registers one semantic scalar type for that exact class. Python inheritance
+defines scalar compatibility, including multiple inheritance; a derived value
+retains its actual Python object when stored through a base annotation. Existing
+built-in mappings and explicit extension registrations take precedence during
+type inference.
+
+Python object scalars retain their Python object by reference. Copying and
+releasing an existing scalar handle does not acquire the Global Interpreter
+Lock (GIL). A final Python reference is released immediately when the GIL is
+held; otherwise, release is deferred and drained at `test_graph` boundaries.
+Python `__hash__` and `__eq__` run with the GIL and their exceptions propagate.
+Python objects used as graph scalars must be immutable, including any state
+that affects equality or hashing.
 
 ## C++ extensions
 
@@ -331,8 +346,8 @@ releases the GIL while native graph evaluation runs. Each Python node callback
 acquires it for argument conversion, callback execution, and output
 conversion.
 
-The current package does not expose Python-object scalar storage, scalar bundle
-schemas, injected runtime services, or dynamic Python node inputs.
+The current package does not expose scalar bundle schemas, injected runtime
+services, or dynamic Python node inputs.
 
 Python definition wrappers retain their callbacks. A wired runtime graph also
 retains each Python node callback that it uses. Destroy these graphs before

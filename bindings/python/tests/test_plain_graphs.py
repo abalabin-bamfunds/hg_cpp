@@ -289,7 +289,7 @@ def test_plain_graph_return_rejects_an_incompatible_scalar():
     def graph() -> int:
         return "wrong"
 
-    with pytest.raises(RuntimeError, match="cannot convert Python value to scalar type"):
+    with pytest.raises(TypeError, match="expected an integer for bg.i64"):
         bg.test_graph(graph)
 
 

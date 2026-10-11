@@ -361,6 +361,8 @@ nb::object wire_node(const PythonNodeDefinition &definition, nb::sequence fixed_
         const auto result =
             static_cast<const WiringTemplate &>(*node_template)(std::span<const WiringArgument>{arguments});
         return result ? nb::cast(PythonWiringPoint{*result, PythonWiringScope::current()}) : nb::none();
+    } catch (nb::python_error &) {
+        throw;
     } catch (const TypeResolutionError &error) {
         auto message = std::string{"cannot wire Python node: "} + error.what() + " for argument '" +
                        std::string{error.subject().text()} + "'";
@@ -388,6 +390,8 @@ nb::object wire_graph(const PythonGraphDefinition &definition, nb::sequence fixe
     try {
         const auto result = static_cast<const WiringTemplate &>(definition)(std::span<const WiringArgument>{arguments});
         return result ? nb::cast(PythonWiringPoint{*result, PythonWiringScope::current()}) : nb::none();
+    } catch (nb::python_error &) {
+        throw;
     } catch (const TypeResolutionError &error) {
         auto message = std::string{"cannot wire Python graph: "} + error.what() + " for argument '" +
                        std::string{error.subject().text()} + "'";

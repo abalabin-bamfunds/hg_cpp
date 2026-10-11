@@ -36,6 +36,7 @@ class BG_PYTHON_API PythonScalarConversions {
     [[nodiscard]] bool add(const ScalarRuntimeType &runtime_type, ScalarToPython conversion);
     [[nodiscard]] bool add(const ScalarType &type, ScalarToPythonView conversion);
     [[nodiscard]] bool add(const ScalarRuntimeType &runtime_type, ScalarToPythonView conversion);
+    [[nodiscard]] const ScalarType &add_python_type(nanobind::handle python_type);
     [[nodiscard]] bool add_python_type(nanobind::handle python_type, const ScalarType &type);
     // Selects an exact runtime handler before a semantic-type handler. Other values use structural conversion.
     ScalarToPython to_python_handler(const ScalarRuntimeType &runtime_type) const noexcept;

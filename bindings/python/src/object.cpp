@@ -48,6 +48,8 @@ void Object::release(PyObject *value) noexcept {
     }
 }
 
+void Object::release_reference(PyObject *value) noexcept { release(value); }
+
 void Object::drain_deferred_releases() {
     if (!Py_IsInitialized()) {
         return;

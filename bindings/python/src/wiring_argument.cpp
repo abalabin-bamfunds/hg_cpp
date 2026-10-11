@@ -41,6 +41,8 @@ WiringArgument wiring_argument(const Type &expected, nb::handle value, allocator
     auto scalar = [&] {
         try {
             return scalar_conversions().from_python(*scalar_type, value, memory);
+        } catch (nb::python_error &) {
+            throw;
         } catch (const std::exception &error) {
             auto message = std::string{"cannot convert Python value to scalar type "};
             append_type_text(message, *scalar_type);

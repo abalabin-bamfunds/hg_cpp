@@ -23,6 +23,9 @@ class BG_PYTHON_API Object {
     // Drain deferred releases at Python execution boundaries while the GIL is held.
     static void drain_deferred_releases();
 
+    // Releases a new reference immediately when the GIL is held or defers it otherwise.
+    static void release_reference(PyObject *value) noexcept;
+
   private:
     static void release(PyObject *value) noexcept;
 

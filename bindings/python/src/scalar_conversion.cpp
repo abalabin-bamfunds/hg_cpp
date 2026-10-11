@@ -13,11 +13,15 @@
 #include <bg/scalar/set/scalar_type.hpp>
 #include <bg/scalar/struct/scalar_type.hpp>
 #include <bg/scalar/value.hpp>
+#include <bg/type/type_registry.hpp>
 #include <bg/util/scope_exit.hpp>
 
+#include <algorithm>
+#include <atomic>
 #include <mutex>
 #include <stdexcept>
 #include <string_view>
+#include <typeinfo>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -27,6 +31,252 @@ namespace {
 
 using details::StringStorage;
 using details::StringStorageFinalReleaseHook;
+
+class PythonObjectScalarType final : public ScalarType {
+  public:
+    VISITOR_SUPPORT()
+
+    PythonObjectScalarType(std::vector<const ScalarType *> bases, bool hashable)
+        : bases_{std::move(bases)}, hashable_{hashable} {}
+
+    bool is_resolved() const noexcept override { return true; }
+    const Type &resolve(const TypeMap &) const override { return *this; }
+    bool supports_equality() const noexcept override { return true; }
+    bool supports_hash() const noexcept override { return hashable_; }
+
+    bool accepts_type(const ScalarType &supplied) const noexcept {
+        if (&supplied == this) {
+            return true;
+        }
+        if (typeid(supplied) != typeid(PythonObjectScalarType)) {
+            return false;
+        }
+
+        const auto &derived = static_cast<const PythonObjectScalarType &>(supplied);
+        return std::ranges::find(derived.bases_, this) != derived.bases_.end();
+    }
+
+  protected:
+    bool do_match(const Type &supplied, TypeMap &) const override {
+        const auto *scalar = type_cast<ScalarType>(&supplied);
+        return scalar != nullptr && accepts_type(*scalar);
+    }
+
+  private:
+    std::vector<const ScalarType *> bases_;
+    bool hashable_;
+};
+
+// Use the process heap because copied scalar handles can outlive any one graph allocator.
+class PythonObjectStorage {
+  public:
+    explicit PythonObjectStorage(PyObject *value) : value_{value} {
+        auto gil = nanobind::gil_scoped_acquire{};
+        Py_INCREF(value_);
+    }
+
+    PythonObjectStorage(const PythonObjectStorage &) = delete;
+    PythonObjectStorage &operator=(const PythonObjectStorage &) = delete;
+
+    PyObject *value() const noexcept { return value_; }
+
+    void retain() noexcept {
+        if (references_.fetch_add(1, std::memory_order_relaxed) == 0) {
+            std::terminate();
+        }
+    }
+
+    void release() noexcept {
+        if (references_.fetch_sub(1, std::memory_order_acq_rel) != 1) {
+            return;
+        }
+
+        auto *value = value_;
+        delete this;
+        Object::release_reference(value);
+    }
+
+  private:
+    std::atomic_size_t references_{1};
+    PyObject *value_;
+};
+
+class PythonObjectScalarRuntimeType final : public ScalarRuntimeType {
+  public:
+    explicit PythonObjectScalarRuntimeType(const PythonObjectScalarType &type)
+        : ScalarRuntimeType{type, sizeof(PythonObjectStorage *), alignof(PythonObjectStorage *), false, true, true,
+                            shared_handle_flag},
+          object_type_{type} {}
+
+    bool accepts_input(const ScalarRuntimeType &source) const noexcept override {
+        return object_type_.accepts_type(source.type());
+    }
+
+    void construct_initial_value(void *destination) const noexcept override {
+        std::construct_at(static_cast<PythonObjectStorage **>(destination), nullptr);
+    }
+
+    void construct_from_value(void *destination, const void *value, allocator &) const override {
+        std::construct_at(static_cast<PythonObjectStorage **>(destination),
+                          new PythonObjectStorage{*static_cast<PyObject *const *>(value)});
+    }
+
+    void copy_construct(void *destination, const void *source, allocator &) const override {
+        auto *value = *static_cast<PythonObjectStorage *const *>(source);
+        if (value != nullptr) {
+            value->retain();
+        }
+        std::construct_at(static_cast<PythonObjectStorage **>(destination), value);
+    }
+
+    void do_construct_from_input(void *destination, const details::ScalarData &source,
+                                 allocator &) const override {
+        auto *value = storage(source.mode(), source.data_word());
+        if (value != nullptr) {
+            value->retain();
+        }
+        std::construct_at(static_cast<PythonObjectStorage **>(destination), value);
+    }
+
+    void do_assign_from_input(void *destination, const details::ScalarData &source) const override {
+        auto *replacement = storage(source.mode(), source.data_word());
+        if (replacement != nullptr) {
+            replacement->retain();
+        }
+        auto *previous = std::exchange(*static_cast<PythonObjectStorage **>(destination), replacement);
+        if (previous != nullptr) {
+            previous->release();
+        }
+    }
+
+    std::size_t hash(ScalarDataMode mode, std::uintptr_t data) const override {
+        auto *value = storage(mode, data);
+        if (value == nullptr) {
+            throw std::logic_error{"cannot hash an empty Python scalar"};
+        }
+
+        auto gil = nanobind::gil_scoped_acquire{};
+        const auto hash = PyObject_Hash(value->value());
+        if (hash == -1 && PyErr_Occurred() != nullptr) {
+            nanobind::raise_python_error();
+        }
+        return static_cast<std::size_t>(hash);
+    }
+
+    bool equals(ScalarDataMode mode, std::uintptr_t data, const details::ScalarData &other) const override {
+        if (typeid(other.runtime_type()) != typeid(PythonObjectScalarRuntimeType)) {
+            return false;
+        }
+
+        auto *left = storage(mode, data);
+        auto *right = storage(other.mode(), other.data_word());
+        if (left == nullptr || right == nullptr) {
+            return left == right;
+        }
+
+        auto gil = nanobind::gil_scoped_acquire{};
+        const auto equal = PyObject_RichCompareBool(left->value(), right->value(), Py_EQ);
+        if (equal < 0) {
+            nanobind::raise_python_error();
+        }
+        return equal != 0;
+    }
+
+    std::size_t hash(const void *value) const override {
+        return hash(ScalarDataMode::stored_view, reinterpret_cast<std::uintptr_t>(value));
+    }
+
+    bool equals(const void *value, const details::ScalarData &other) const override {
+        return equals(ScalarDataMode::stored_view, reinterpret_cast<std::uintptr_t>(value), other);
+    }
+
+    void destroy(void *value, allocator &) const noexcept override {
+        auto *storage_value = std::exchange(*static_cast<PythonObjectStorage **>(value), nullptr);
+        if (storage_value != nullptr) {
+            storage_value->release();
+        }
+    }
+
+    details::ScalarData borrow_shared(const void *storage) const noexcept override {
+        const auto *value = static_cast<PythonObjectStorage *const *>(storage);
+        return { *this, reinterpret_cast<std::uintptr_t>(*value), ScalarDataMode::shared_view };
+    }
+
+    const ScalarRuntimeType *retain_shared(const details::ScalarData &source,
+                                           std::uintptr_t &data) const noexcept override {
+        auto *value = storage(source.mode(), source.data_word());
+        if (value == nullptr) {
+            data = 0;
+            return this;
+        }
+        value->retain();
+        data = reinterpret_cast<std::uintptr_t>(value);
+        return this;
+    }
+
+    void release_shared(std::uintptr_t data) const noexcept override {
+        auto *value = reinterpret_cast<PythonObjectStorage *>(data);
+        if (value != nullptr) {
+            value->release();
+        }
+    }
+
+    PyObject *python_object(const details::ScalarData &value) const noexcept {
+        auto *storage_value = storage(value.mode(), value.data_word());
+        return storage_value == nullptr ? nullptr : storage_value->value();
+    }
+
+  private:
+    static PythonObjectStorage *storage(ScalarDataMode mode, std::uintptr_t data) noexcept {
+        if (mode == ScalarDataMode::shared_view || mode == ScalarDataMode::shared_value) {
+            return reinterpret_cast<PythonObjectStorage *>(data);
+        }
+        return *reinterpret_cast<PythonObjectStorage *const *>(data);
+    }
+
+    bool equals_same_type(const void *value, const details::ScalarData &other) const override {
+        return equals(ScalarDataMode::stored_view, reinterpret_cast<std::uintptr_t>(value), other);
+    }
+
+    const PythonObjectScalarType &object_type_;
+};
+
+class PythonObjectRuntimeTypes {
+  public:
+    const PythonObjectScalarRuntimeType &get(const PythonObjectScalarType &type) {
+        const auto lock = std::lock_guard{mutex_};
+        if (const auto found = by_type_.find(&type); found != by_type_.end()) {
+            return *found->second;
+        }
+
+        auto runtime_type = std::make_unique<PythonObjectScalarRuntimeType>(type);
+        auto *result = runtime_type.get();
+        register_scalar_runtime_type(*result);
+        runtime_types_.push_back(std::move(runtime_type));
+        by_type_.emplace(&type, result);
+        return *result;
+    }
+
+  private:
+    std::mutex mutex_;
+    std::unordered_map<const PythonObjectScalarType *, const PythonObjectScalarRuntimeType *> by_type_;
+    std::vector<std::unique_ptr<PythonObjectScalarRuntimeType>> runtime_types_;
+};
+
+PythonObjectRuntimeTypes &python_object_runtime_types() {
+    // Scalar runtime registration stores process-lifetime pointers to these runtime types.
+    static auto *runtime_types = new PythonObjectRuntimeTypes{};
+    return *runtime_types;
+}
+
+nanobind::object to_python_python_object(Scalar<> value, const PythonScalarConversions &) {
+    const auto &runtime_type = static_cast<const PythonObjectScalarRuntimeType &>(value.runtime_type());
+    auto *python_object = runtime_type.python_object(details::scalar_data(value));
+    if (python_object == nullptr) {
+        throw std::logic_error{"cannot convert an empty Python scalar"};
+    }
+    return nanobind::borrow<nanobind::object>(python_object);
+}
 
 template <typename T, typename Source> ScalarValue<> make_scalar(Source &&value, allocator &memory) {
     auto typed_value = ScalarValue<T>{std::forward<Source>(value), memory};
@@ -420,12 +670,14 @@ struct NB_HIDDEN PythonScalarConversions::Impl {
     struct PythonType {
         Object type;
         const ScalarType *scalar_type;
+        bool explicit_mapping;
     };
 
     ScalarDispatch<PythonToScalar> from_python;
     ScalarDispatch<ScalarToPython> to_python;
     ScalarDispatch<ScalarToPythonView> to_python_view;
     std::unordered_map<PyTypeObject *, PythonType> python_types;
+    std::unordered_map<const ScalarType *, const PythonObjectScalarRuntimeType *> python_object_types;
     Object symbol_python_type;
 };
 
@@ -458,7 +710,7 @@ PythonScalarConversions::PythonScalarConversions() : impl_{std::make_unique<Impl
 
     const auto add_python_builtin = [this](PyTypeObject &python_type, const ScalarType &scalar_type) {
         auto type = nanobind::handle{reinterpret_cast<PyObject *>(&python_type)};
-        impl_->python_types.emplace(&python_type, Impl::PythonType{Object{type}, &scalar_type});
+        impl_->python_types.emplace(&python_type, Impl::PythonType{Object{type}, &scalar_type, true});
     };
 
     add_python_builtin(PyBool_Type, bool_type());
@@ -510,11 +762,56 @@ bool PythonScalarConversions::add_python_type(nanobind::handle python_type, cons
     }
 
     auto *type_key = reinterpret_cast<PyTypeObject *>(python_type.ptr());
-    const auto added = impl_->python_types.emplace(type_key, Impl::PythonType{Object{python_type}, &type}).second;
+    const auto added =
+        impl_->python_types.emplace(type_key, Impl::PythonType{Object{python_type}, &type, true}).second;
     if (added && &type == &symbol_type()) {
         impl_->symbol_python_type = Object{python_type};
     }
     return added;
+}
+
+const ScalarType &PythonScalarConversions::add_python_type(nanobind::handle python_type) {
+    if (!PyType_Check(python_type.ptr())) {
+        throw std::invalid_argument{"a Python scalar type registration requires a Python type"};
+    }
+
+    auto *python_type_key = reinterpret_cast<PyTypeObject *>(python_type.ptr());
+    if (const auto found = impl_->python_types.find(python_type_key); found != impl_->python_types.end()) {
+        return *found->second.scalar_type;
+    }
+
+    auto method_resolution_order =
+        nanobind::steal<nanobind::object>(PyObject_GetAttrString(python_type.ptr(), "__mro__"));
+    if (!method_resolution_order) {
+        nanobind::raise_python_error();
+    }
+
+    auto bases = std::vector<const ScalarType *>{};
+    const auto count = PyTuple_GET_SIZE(method_resolution_order.ptr());
+    for (auto index = Py_ssize_t{1}; index < count; ++index) {
+        auto *base = reinterpret_cast<PyTypeObject *>(PyTuple_GET_ITEM(method_resolution_order.ptr(), index));
+        if (base == &PyBaseObject_Type) {
+            continue;
+        }
+
+        const auto found = impl_->python_types.find(base);
+        if (found != impl_->python_types.end()) {
+            bases.push_back(found->second.scalar_type);
+        } else {
+            bases.push_back(&add_python_type(nanobind::handle{reinterpret_cast<PyObject *>(base)}));
+        }
+    }
+
+    auto scalar_type = std::make_unique<PythonObjectScalarType>(std::move(bases),
+                                                                 python_type_key->tp_hash != PyObject_HashNotImplemented);
+    const auto &registered_type = TypeRegistry::instance().register_owned(std::move(scalar_type));
+    const auto &runtime_type = python_object_runtime_types().get(static_cast<const PythonObjectScalarType &>(registered_type));
+    impl_->python_object_types.emplace(&registered_type, &runtime_type);
+    if (!impl_->to_python.add(runtime_type, &to_python_python_object)) {
+        throw std::logic_error{"a Python object runtime type was registered twice"};
+    }
+    impl_->python_types.emplace(python_type_key, Impl::PythonType{Object{python_type}, &registered_type, false});
+    return registered_type;
 }
 
 ScalarToPython PythonScalarConversions::to_python_handler(const ScalarRuntimeType &runtime_type) const noexcept {
@@ -579,16 +876,21 @@ const ScalarType &PythonScalarConversions::type_from_python(nanobind::handle pyt
         nanobind::raise_python_error();
     }
 
+    auto *python_type_key = reinterpret_cast<PyTypeObject *>(python_type.ptr());
+    if (const auto found = impl_->python_types.find(python_type_key); found != impl_->python_types.end()) {
+        return *found->second.scalar_type;
+    }
+
     const auto count = PyTuple_GET_SIZE(method_resolution_order.ptr());
-    for (auto index = Py_ssize_t{}; index < count; ++index) {
+    for (auto index = Py_ssize_t{1}; index < count; ++index) {
         auto *type = reinterpret_cast<PyTypeObject *>(PyTuple_GET_ITEM(method_resolution_order.ptr(), index));
         const auto found = impl_->python_types.find(type);
-        if (found != impl_->python_types.end()) {
+        if (found != impl_->python_types.end() && found->second.explicit_mapping) {
             return *found->second.scalar_type;
         }
     }
 
-    throw std::invalid_argument{"no scalar type is registered for this Python type"};
+    return const_cast<PythonScalarConversions *>(this)->add_python_type(python_type);
 }
 
 ScalarValue<> PythonScalarConversions::from_python(nanobind::handle value, allocator &memory) const {
@@ -602,6 +904,27 @@ ScalarValue<> PythonScalarConversions::from_python(nanobind::handle value, alloc
 
 ScalarValue<> PythonScalarConversions::from_python(const ScalarType &type, nanobind::handle value,
                                                    allocator &memory) const {
+    if (const auto found = impl_->python_object_types.find(&type); found != impl_->python_object_types.end()) {
+        const auto &actual_type = type_from_python(
+            nanobind::handle{reinterpret_cast<PyObject *>(Py_TYPE(value.ptr()))});
+        if (!type.accepts(actual_type)) {
+            PyErr_SetString(PyExc_TypeError, "Python object is not an instance of the annotated scalar class");
+            nanobind::raise_python_error();
+        }
+
+        const auto runtime = impl_->python_object_types.find(&actual_type);
+        if (runtime == impl_->python_object_types.end()) {
+            PyErr_SetString(PyExc_TypeError, "Python object has no compatible scalar storage");
+            nanobind::raise_python_error();
+        }
+
+        auto *storage = new PythonObjectStorage{value.ptr()};
+        auto release_storage = util::scope_exit{[storage]() noexcept { storage->release(); }};
+        auto *handle = storage;
+        const auto scalar = Scalar<>::from(*runtime->second, &handle);
+        return ScalarValue<>{scalar};
+    }
+
     const auto *conversion = impl_->from_python.find(type);
     if (conversion != nullptr) {
         return (*conversion)(value, memory, *this);
