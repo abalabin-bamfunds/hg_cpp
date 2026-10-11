@@ -260,6 +260,32 @@ Providers enumerate those variables through
 `declaration_variable_traits<T>::for_each`. The defaults describe a concrete
 ordinary leaf scalar.
 
+`scalar_storage_traits<T>::supports_alternative_layouts` states whether typed
+reads must interpret different stored layouts. `false` requires every runtime
+used for a typed `T` read to expose the trait's `stored_type` layout. Runtime
+objects can differ while sharing that layout. BG's ordinary fixed-layout traits
+declare `false`. A provider specialization that omits the member is treated as
+supporting alternative layouts.
+
+Fixed-layout typed scalar and `TS<T>` reads call the trait's `read()` directly.
+Scalar reads still interpret their descriptor mode: a source view contains the
+C++ read value, an inline value contains value bytes, and a shared descriptor
+contains its representation's handle. Generic and hierarchical views retain
+the actual runtime type.
+
+Providers can supply these storage-trait operations:
+
+| Operation | Contract |
+| --- | --- |
+| `runtime_type(const ScalarType&)` | Select the runtime for a resolved semantic type. |
+| `read_value(const ScalarData&)` | Read an actual runtime descriptor as the provider's C++ read value. |
+| `copy_runtime_type(const ScalarData&)` | Select the destination runtime for a typed owning copy. |
+| `borrow_value(const value_type&)` | Return a descriptor borrowing the read value's runtime and payload. |
+
+These operations are extension-facing APIs. Node code uses the typed value
+interfaces. A borrowed descriptor retains no ownership; its payload must remain
+valid for the operation that consumes it.
+
 ### Alternative runtime types
 
 A provider implements another physical representation by deriving from
@@ -283,10 +309,10 @@ runtime type must outlive every descriptor that refers to it.
 
 `data_word()` returns the payload word. `data()` returns its address for inline
 and shared modes, and the payload pointer for the other modes. Providers must
-interpret the payload using its mode. The default scalar read path calls the
-source runtime's `read_value(mode, data_word, destination)` into aligned,
-uninitialized storage for the provider's declared C++ read value, then destroys
-that value after use.
+interpret the payload using its mode. For a non-reference read without a trait
+hook, an alternative runtime constructs the provider's declared C++ read value
+through `read_value(mode, data_word, destination)` in aligned, uninitialized
+storage. BG destroys that value after use, including when moving it throws.
 
 A provider can specialize how a typed view reads runtime representations by
 adding `static value_type read_value(const details::ScalarData &source)` to
@@ -296,6 +322,11 @@ runtime directly when that runtime delegates reads back through the trait; it
 must not call `source.runtime_type().read_value(...)` unconditionally in that
 case. These trait hooks are extension APIs; node code uses `Scalar` and
 `ScalarValue`.
+
+A provider supporting alternative layouts with a reference-valued `value_type`
+must supply this hook. It returns a reference to an existing source-owned object.
+BG checks the hook requirement when compiling typed reads. Fixed-layout
+reference reads use the trait's `read()` directly.
 
 A provider can also add
 `static const ScalarRuntimeType &copy_runtime_type(const details::ScalarData &source)`.

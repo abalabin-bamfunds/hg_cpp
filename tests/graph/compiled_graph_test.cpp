@@ -124,7 +124,7 @@ TEST_CASE("compiled nodes keep hot data in node-local sections", "[compiled_grap
     CHECK(graph.fixed_storage_size() == 244);
 }
 
-TEST_CASE("all_valid metadata follows an empty runtime-type array at pointer alignment",
+TEST_CASE("an empty runtime-type table preserves all_valid metadata alignment",
           "[compiled_graph][feature:validity][validity:all-valid][layout]") {
     struct source_definition {
         bg::Out<bg::TS<bg::i64>> output;

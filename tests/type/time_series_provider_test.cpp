@@ -482,7 +482,7 @@ struct RuntimeProviderViewDefinition {
     const bg::Signature &signature() const { return signature_; }
 
     static void evaluate(bg::NodeInvocation<> invocation) {
-        const auto input = invocation.input<bg::In<bg::TS<bg::i64>>>(0, 0);
+        const auto input = invocation.input<bg::In<bg::TS<bg::i64>>>(0);
         const auto output = invocation.output_as<output_declaration_type>();
         if (*input == 0) {
             output.invalidate();

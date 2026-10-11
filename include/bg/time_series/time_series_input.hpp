@@ -3,6 +3,7 @@
 #include <bg/node/details/input_properties.hpp>
 #include <bg/node/input_fwd.hpp>
 #include <bg/node/input_properties.hpp>
+#include <bg/scalar/storage_traits.hpp>
 #include <bg/time_series/details/guarantee_variable_traits.hpp>
 #include <bg/time_series/details/input_data.hpp>
 #include <bg/time_series/time_series_runtime_type.hpp>
@@ -110,7 +111,8 @@ inline constexpr bool input_requires_runtime_type = true;
 template <typename TimeSeries, auto... Properties>
 inline constexpr bool input_requires_runtime_type<In<TimeSeries, Properties...>> =
     !direct_time_series_input<In<TimeSeries, Properties...>> || generic_time_series<TimeSeries> ||
-    contains_guarantee_variable_v<TimeSeries> || is_time_series_set<TimeSeries>;
+    contains_guarantee_variable_v<TimeSeries> || is_time_series_set<TimeSeries> ||
+    time_series_scalar_supports_alternative_layouts<TimeSeries>;
 
 } // namespace bg::details
 

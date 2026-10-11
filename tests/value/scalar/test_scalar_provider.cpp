@@ -126,11 +126,8 @@ class PreservingCopyOnlyRuntimeType final : public bg::ScalarRuntimeType {
     }
 
     void do_assign_from_input(void *destination, const bg::ScalarData &source) const override {
-        if (&source.runtime_type() != this) {
-            std::terminate();
-        }
-        *static_cast<copy_only_runtime_storage *>(destination) =
-            *static_cast<const copy_only_runtime_storage *>(source.data());
+        static_cast<copy_only_runtime_storage *>(destination)->value =
+            bg::details::scalar_data_value<copy_only_value>(source);
     }
 
     bool equals_same_type(const void *, const bg::ScalarData &) const noexcept override { return false; }

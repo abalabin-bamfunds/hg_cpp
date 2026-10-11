@@ -71,20 +71,19 @@ class Node {
 
     const void *input_value(std::size_t parameter_index) const noexcept { return input_data(parameter_index).value; }
 
-    const TimeSeriesRuntimeType &time_series_input_runtime_type(std::size_t parameter_index,
-                                                                std::size_t runtime_type_index) const noexcept {
+    const TimeSeriesRuntimeType &time_series_input_runtime_type(std::size_t parameter_index) const noexcept {
         const auto &binding = compiled_node_->parameters()[parameter_index];
         if (binding.mode() == ParameterBindingMode::default_value) {
             const auto &descriptor = default_descriptor(binding);
             if (!binding_data(descriptor.source, descriptor.source.mode()).last_updated->valid()) {
-                return compiled_node_->time_series_input_runtime_type(runtime_type_index);
+                return compiled_node_->time_series_input_runtime_type(parameter_index);
             }
         }
         if (const auto *runtime_type = bound_reference_runtime_type(parameter_index)) {
             return *runtime_type;
         }
 
-        return compiled_node_->time_series_input_runtime_type(runtime_type_index);
+        return compiled_node_->time_series_input_runtime_type(parameter_index);
     }
 
     const TimeSeriesRuntimeType &all_valid_input_runtime_type(
@@ -110,10 +109,9 @@ class Node {
         return details::ResolvedTimeSeries::resolve(input->value).runtime_type;
     }
 
-    In<TS_T> time_series_input(std::size_t parameter_index, std::size_t runtime_type_index,
-                               EvaluationTime evaluation_time = MIN_DT) const noexcept {
+    In<TS_T> time_series_input(std::size_t parameter_index, EvaluationTime evaluation_time = MIN_DT) const noexcept {
         const auto input = input_data(parameter_index);
-        return {*input.last_updated, input.value, time_series_input_runtime_type(parameter_index, runtime_type_index),
+        return {*input.last_updated, input.value, time_series_input_runtime_type(parameter_index),
                 input.last_updated->valid() && input.last_updated->time() == evaluation_time};
     }
 

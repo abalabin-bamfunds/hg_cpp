@@ -3,12 +3,14 @@
 #include <bg/scalar/details/data.hpp>
 #include <bg/scalar/storage_traits.hpp>
 #include <bg/scalar/runtime_type.hpp>
+#include <bg/util/scope_exit.hpp>
 
 #include <array>
 #include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <exception>
 #include <memory>
 #include <type_traits>
 #include <utility>
@@ -34,33 +36,51 @@ template <typename T> typename scalar_storage_traits<T>::value_type scalar_data_
     using Stored = typename Traits::stored_type;
     using Value = typename Traits::value_type;
 
-    if constexpr (requires {
-                      static_cast<Value (*)(const ScalarData &)>(&Traits::read_value);
-                  }) {
-        return Traits::read_value(source);
-    }
-
-    if constexpr (inline_scalar_value<T>) {
-        if (source.mode() == ScalarDataMode::inline_value) {
-            return inline_value<T>(source.data_word());
+    if constexpr (!scalar_storage_supports_alternative_layouts<T>) {
+        if (source.mode() == ScalarDataMode::source_view) {
+            return *reinterpret_cast<const std::remove_cvref_t<Value> *>(source.data_word());
         }
-    }
-    if (source.mode() == ScalarDataMode::source_view) {
-        return *reinterpret_cast<const std::remove_cvref_t<Value> *>(source.data_word());
-    }
-    if (&source.runtime_type() == &cpp_scalar_runtime_type<T>()) {
-        return Traits::read(*reinterpret_cast<const Stored *>(source.data()));
-    }
 
-    if constexpr (std::is_reference_v<Value>) {
-        return *static_cast<const std::remove_cvref_t<Value> *>(source.data());
+        if (source.mode() == ScalarDataMode::inline_value) {
+            if constexpr (inline_scalar_value<T>) {
+                return inline_value<T>(source.data_word());
+            }
+            return Traits::read(*static_cast<const Stored *>(source.data()));
+        }
+
+        if (source.mode() == ScalarDataMode::shared_view || source.mode() == ScalarDataMode::shared_value) {
+            if constexpr (std::is_pointer_v<Stored> && requires { Traits::uses_shared_handle; }) {
+                if constexpr (Traits::uses_shared_handle) {
+                    return Traits::read(reinterpret_cast<Stored>(source.data_word()));
+                }
+            }
+        }
+
+        return Traits::read(*static_cast<const Stored *>(source.data()));
+    } else if constexpr (requires {
+                             static_cast<Value (*)(const ScalarData &)>(&Traits::read_value);
+                         }) {
+        return Traits::read_value(source);
+    } else if constexpr (std::is_reference_v<Value>) {
+        static_assert(!std::is_reference_v<Value>,
+                      "alternative-layout scalar storage traits with a reference value_type must provide "
+                      "read_value(const ScalarData &)");
+        std::terminate();
     } else {
+        if constexpr (inline_scalar_value<T>) {
+            if (source.mode() == ScalarDataMode::inline_value) {
+                return inline_value<T>(source.data_word());
+            }
+        }
+        if (&source.runtime_type() == &cpp_scalar_runtime_type<T>()) {
+            return Traits::read(*reinterpret_cast<const Stored *>(source.data()));
+        }
+
         alignas(Value) std::byte storage[sizeof(Value)];
         source.runtime_type().read_value(source.mode(), source.data_word(), storage);
         auto *value = reinterpret_cast<Value *>(storage);
-        auto result = std::move(*value);
-        std::destroy_at(value);
-        return result;
+        [[maybe_unused]] const auto cleanup = util::scope_exit{[value]() noexcept { std::destroy_at(value); }};
+        return std::move(*value);
     }
 }
 

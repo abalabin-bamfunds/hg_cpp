@@ -21,6 +21,7 @@ template <typename K, typename V> struct scalar_storage_traits<Dict<K, V>> {
         details::scalar_handle_traits<K>::supports_equality && details::scalar_handle_traits<V>::supports_equality;
     static constexpr bool supports_hash =
         details::scalar_handle_traits<K>::supports_hash && details::scalar_handle_traits<V>::supports_hash;
+    static constexpr bool supports_alternative_layouts = true;
     static constexpr bool uses_variable_memory = true;
     static constexpr bool requires_finalization =
         KeyTraits::requires_finalization || ValueTraits::requires_finalization;

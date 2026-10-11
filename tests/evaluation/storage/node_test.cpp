@@ -74,11 +74,11 @@ TEST_CASE("a runtime node locates output and input data", "[evaluation][storage]
     CHECK(recovered.output_value() == source_node.output_value());
     CHECK(&recovered.output_last_updated() == &source_node.output_last_updated());
 
-    const auto direct_input = runtime.node(direct_sink_index).time_series_input(0, 0);
+    const auto direct_input = runtime.node(direct_sink_index).time_series_input(0);
     CHECK(direct_input.data() == source_node.output_value());
     CHECK(direct_input.last_updated() == time(1));
 
-    const auto reference_input = runtime.node(reference_sink_index).time_series_input(0, 0);
+    const auto reference_input = runtime.node(reference_sink_index).time_series_input(0);
     CHECK(reference_input.data() == source_node.output_value());
     CHECK(reference_input.last_updated() == time(1));
     CHECK(&reference_input.runtime_type() == &direct_input.runtime_type());

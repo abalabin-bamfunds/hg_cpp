@@ -119,9 +119,13 @@ class Out<TS<T, Properties...>> {
     value_type value() const
         requires(!scalar_declaration_traits<T>::is_collection && !details::hierarchical_scalar_declaration<T>)
     {
-        const auto &scalar_runtime_type =
-            static_cast<const TimeSeriesValueRuntimeType &>(state_->runtime_type()).scalar_runtime_type();
-        return Scalar<T>::from(scalar_runtime_type, state_->data()).value();
+        if constexpr (!details::scalar_storage_supports_alternative_layouts<T>) {
+            return Traits::read(*static_cast<const storage_type *>(state_->data()));
+        } else {
+            const auto &scalar_runtime_type =
+                static_cast<const TimeSeriesValueRuntimeType &>(state_->runtime_type()).scalar_runtime_type();
+            return Scalar<T>::from(scalar_runtime_type, state_->data()).value();
+        }
     }
 
     Scalar<T> value() const
@@ -136,12 +140,14 @@ class Out<TS<T, Properties...>> {
         requires(!scalar_declaration_traits<T>::is_collection && !details::hierarchical_scalar_declaration<T>) &&
                 std::constructible_from<std::remove_cvref_t<value_type>, Value &&> &&
                 (details::scalar_storage_has_borrow_value<T> ||
+                 details::scalar_storage_supports_alternative_layouts<T> ||
                  requires(storage_type &target, const std::remove_cvref_t<value_type> &source, allocator &memory) {
                      Traits::assign(target, source, memory);
                  })
     void set(Value &&value) const {
         auto requested = std::remove_cvref_t<value_type>(std::forward<Value>(value));
-        if constexpr (details::scalar_storage_has_borrow_value<T>) {
+        if constexpr (details::scalar_storage_has_borrow_value<T> ||
+                      details::scalar_storage_supports_alternative_layouts<T>) {
             const auto source = details::make_scalar_source<T>(requested);
             set_scalar_data(source);
         } else {

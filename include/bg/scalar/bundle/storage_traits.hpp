@@ -102,6 +102,7 @@ struct scalar_storage_traits<Bundle<Schema>> {
 
     static constexpr bool supports_equality = details::scalar_handle_traits<Declaration>::supports_equality;
     static constexpr bool supports_hash = details::scalar_handle_traits<Declaration>::supports_hash;
+    static constexpr bool supports_alternative_layouts = true;
     static constexpr bool uses_variable_memory = true;
     static constexpr bool requires_finalization = false;
     static constexpr bool assign_uses_memory_resource = false;

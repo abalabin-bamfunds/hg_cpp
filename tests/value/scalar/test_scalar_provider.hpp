@@ -214,6 +214,7 @@ template <> struct scalar_storage_traits<test_scalar_provider::copy_only_value> 
     static constexpr bool supports_equality = false;
     static constexpr bool supports_hash = false;
     static constexpr bool uses_shared_handle = false;
+    static constexpr bool supports_alternative_layouts = true;
     static constexpr bool uses_variable_memory = false;
     static constexpr bool requires_finalization = false;
     static constexpr bool assign_uses_memory_resource = false;

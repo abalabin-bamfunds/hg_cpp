@@ -760,7 +760,7 @@ void RuntimeGraph::initialize_constant_output(std::size_t node_index, Scalar<> v
     const auto &compiled_node = compiled_graph_->node(node_index);
     const auto runtime_node = node(compiled_node);
     const auto &runtime_type =
-        static_cast<const TimeSeriesValueRuntimeType &>(compiled_node.node_invocation_output_runtime_type());
+        static_cast<const TimeSeriesValueRuntimeType &>(compiled_node.output_runtime_type());
     runtime_type.scalar_runtime_type().assign_from_input(runtime_node.output_value(), value);
     runtime_node.output_last_updated().publish(evaluation_time);
     publish_output(compiled_node, OutputChange::revalidation);

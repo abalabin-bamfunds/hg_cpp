@@ -199,12 +199,12 @@ nanobind::object PythonNodeDefinition::CompiledData::argument(Invocation invocat
                                                               CallbackScope &callback) const {
     const auto &parameter = parameters[index];
     if (parameter.mode == ParameterMode::input_view) {
-        auto input = invocation.input<In<TS_T>>(index, parameter.runtime_type_index);
+        auto input = invocation.input<In<TS_T>>(index);
         return make_input_view(input, scalar_conversions(), lifetime, callback.generation());
     }
 
     if (parameter.mode != ParameterMode::scalar) {
-        auto input = invocation.input<In<TS<SCALAR>>>(index, parameter.runtime_type_index);
+        auto input = invocation.input<In<TS<SCALAR>>>(index);
         if (!input.valid()) {
             return nanobind::none();
         }
@@ -213,7 +213,7 @@ nanobind::object PythonNodeDefinition::CompiledData::argument(Invocation invocat
         return scalar_conversions().to_python_view(Scalar<>::from(value), lifetime, callback.generation());
     }
 
-    const auto scalar = invocation.scalar(index, parameter.runtime_type_index);
+    const auto scalar = invocation.scalar(index);
     if (!scalar.has_value()) {
         return nanobind::none();
     }
@@ -297,8 +297,6 @@ PythonNodeDefinition::CompiledData PythonNodeDefinition::compile(const ResolvedS
         throw std::logic_error{"a Python node callback was not retained by its graph wiring"};
     }
 
-    auto time_series_runtime_type_index = std::size_t{};
-    auto scalar_runtime_type_index = std::size_t{};
     auto parameter_conversions = std::vector<ParameterConversion>{};
     parameter_conversions.reserve(signature.parameters.size());
 
@@ -317,8 +315,7 @@ PythonNodeDefinition::CompiledData PythonNodeDefinition::compile(const ResolvedS
             mode = ParameterMode::time_series_value;
         }
 
-        auto &runtime_type_index = time_series ? time_series_runtime_type_index : scalar_runtime_type_index;
-        parameter_conversions.push_back({mode, runtime_type_index++});
+        parameter_conversions.push_back({mode});
     }
 
     auto result = CompiledData{};

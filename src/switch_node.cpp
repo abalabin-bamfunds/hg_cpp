@@ -354,7 +354,7 @@ class SwitchNodeDefinition {
   private:
     template <typename Invocation>
     static SwitchSelection select_case(const CompiledSwitch &compiled, Invocation invocation) {
-        const auto key = invocation.template input<In<TS<SCALAR>>>(0, 0);
+        const auto key = invocation.template input<In<TS<SCALAR>>>(0);
         if (key.valid()) {
             for (auto index = std::uint32_t{}; index < compiled.cases.size(); ++index) {
                 const auto &item = compiled.cases[index];
@@ -374,7 +374,7 @@ class SwitchNodeDefinition {
 
     template <typename Invocation>
     static NestedGraphInput input_reference(Invocation invocation, std::size_t parameter_index) {
-        const auto input = invocation.template input<In<REF<TS_T>>>(parameter_index, parameter_index);
+        const auto input = invocation.template input<In<REF<TS_T>>>(parameter_index);
         return {input.valid() ? input.value() : Reference{}};
     }
 

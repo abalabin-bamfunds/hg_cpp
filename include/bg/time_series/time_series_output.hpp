@@ -3,6 +3,7 @@
 #include <bg/evaluation_context.hpp>
 #include <bg/node/details/output_factory.hpp>
 #include <bg/node/input_fwd.hpp>
+#include <bg/scalar/storage_traits.hpp>
 #include <bg/time_series/output_binding.hpp>
 #include <bg/time_series/time_series_type.hpp>
 
@@ -94,7 +95,8 @@ inline constexpr bool output_requires_runtime_type = true;
 
 template <typename TimeSeries>
 inline constexpr bool output_requires_runtime_type<Out<TimeSeries>> =
-    !direct_time_series_output<Out<TimeSeries>> || contains_guarantee_variable_v<TimeSeries>;
+    !direct_time_series_output<Out<TimeSeries>> || contains_guarantee_variable_v<TimeSeries> ||
+    time_series_scalar_supports_alternative_layouts<TimeSeries>;
 
 } // namespace bg::details
 

@@ -16,6 +16,7 @@ template <typename T> struct scalar_storage_traits<Set<T>> {
 
     static constexpr bool supports_equality = details::scalar_handle_traits<T>::supports_equality;
     static constexpr bool supports_hash = details::scalar_handle_traits<T>::supports_hash;
+    static constexpr bool supports_alternative_layouts = true;
     static constexpr bool uses_variable_memory = true;
     static constexpr bool requires_finalization = ItemTraits::requires_finalization;
     static constexpr bool assign_uses_memory_resource = true;

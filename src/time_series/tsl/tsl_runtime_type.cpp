@@ -82,7 +82,7 @@ TimeSeriesRuntimeType::ConstItem FreeFixedTimeSeriesListRuntimeType::item(const 
 
     const auto &storage = *static_cast<const free_fixed_time_series_list_storage *>(value);
     const auto node = free_list_node(storage);
-    const auto input = node.time_series_input(id, id);
+    const auto input = node.time_series_input(id);
     return {input.runtime_type(), node.input_last_updated(id), input.data()};
 }
 
@@ -121,7 +121,7 @@ void FreeFixedTimeSeriesListRuntimeType::for_each_modified_item(
 
     const auto node = free_list_node(storage);
     const auto publish = [&](std::size_t index, const TimeSeriesState &item_last_updated) {
-        const auto input = node.time_series_input(index, index);
+        const auto input = node.time_series_input(index);
         function(context, {static_cast<item_id_t>(index), &input.runtime_type(), &item_last_updated, input.data()});
     };
 

@@ -203,7 +203,7 @@ class ServiceRequestClient {
         const auto parameter_count = invocation.parameter_count() / 2;
         auto any_valid = false;
         for (auto input_index = std::size_t{}; input_index < parameter_count; ++input_index) {
-            any_valid |= invocation.input<In<SERVICE_ARGUMENT>>(input_index * 2, input_index * 2).valid();
+            any_valid |= invocation.input<In<SERVICE_ARGUMENT>>(input_index * 2).valid();
         }
 
         auto output = invocation.output<TS<service_client_id_t, TimeSeriesGuarantee::deduplicated>>();
@@ -259,7 +259,7 @@ class ServiceRequestClient {
                         }
 
                         const auto reference =
-                            invocation.input<In<REF<SERVICE_ARGUMENT>>>(parameter * 2 + 1, parameter * 2 + 1).value();
+                            invocation.input<In<REF<SERVICE_ARGUMENT>>>(parameter * 2 + 1).value();
                         if (!reference) {
                             throw std::logic_error{"a valid service input has no reference"};
                         }

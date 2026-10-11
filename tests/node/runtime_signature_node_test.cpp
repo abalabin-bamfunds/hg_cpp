@@ -129,7 +129,7 @@ struct RuntimeDynamicActivityDefinition {
     [[nodiscard]] const bg::Signature &signature() const { return signature_; }
 
     static void evaluate(bg::NodeInvocation<> invocation) {
-        auto input = invocation.template input<bg::In<bg::TS<std::int64_t>, bg::dynamic_activity>>(0, 0);
+        auto input = invocation.template input<bg::In<bg::TS<std::int64_t>, bg::dynamic_activity>>(0);
         input.make_passive();
         invocation.output().visit([&](bg::Out<bg::TS<bg::SCALAR>> *output) { output->set_value(input.value_view()); },
                                   ddv::noop);

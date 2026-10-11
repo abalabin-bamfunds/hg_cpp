@@ -2,9 +2,11 @@
 
 #include <bg/scalar/value.hpp>
 #include <bg/scalar/bundle/value.hpp>
+#include <bg/scalar/cpp_runtime_type.hpp>
 #include <bg/testing/test_graph.hpp>
 #include <bg/time_series/ts/ts_input.hpp>
 #include <bg/time_series/ts/ts_output.hpp>
+#include <bg/type/type_registry.hpp>
 #include <bg/util/scope_exit.hpp>
 
 #include <catch2/catch_test_macros.hpp>
@@ -18,6 +20,286 @@
 #include <tuple>
 #include <utility>
 #include <vector>
+
+namespace throwing_scalar_read_test {
+
+struct ThrowingValue {
+    explicit ThrowingValue(int value) noexcept : number{value} {}
+    ThrowingValue(const ThrowingValue &other) noexcept : number{other.number} {}
+    ThrowingValue(ThrowingValue &&other);
+    ~ThrowingValue();
+
+    inline static bool throw_on_move{};
+    inline static int destructor_count{};
+    int number;
+};
+
+struct Storage {
+    int number;
+};
+
+const bg::ScalarType &semantic_type() noexcept;
+const bg::ScalarRuntimeType &alternate_runtime();
+
+} // namespace throwing_scalar_read_test
+
+namespace bg {
+
+template <> struct scalar_type_traits<throwing_scalar_read_test::ThrowingValue> {
+    static const ScalarType &type() noexcept;
+};
+
+template <> struct scalar_storage_traits<throwing_scalar_read_test::ThrowingValue> {
+    using stored_type = throwing_scalar_read_test::Storage;
+    using value_type = throwing_scalar_read_test::ThrowingValue;
+
+    static constexpr bool supports_equality = false;
+    static constexpr bool supports_hash = false;
+    static constexpr bool supports_alternative_layouts = true;
+    static constexpr bool uses_shared_handle = false;
+    static constexpr bool uses_variable_memory = false;
+    static constexpr bool requires_finalization = false;
+    static constexpr bool assign_uses_memory_resource = false;
+
+    static value_type read(const stored_type &stored) noexcept { return value_type{stored.number}; }
+    static void construct(stored_type *destination, value_type value, allocator &) {
+        std::construct_at(destination, stored_type{value.number});
+    }
+    static void assign(stored_type &destination, value_type value, allocator &) noexcept {
+        destination.number = value.number;
+    }
+    static void destroy(stored_type *stored, allocator &) noexcept { std::destroy_at(stored); }
+    static const ScalarRuntimeType &runtime_type(const ScalarType &type);
+};
+
+} // namespace bg
+
+namespace throwing_scalar_read_test {
+
+namespace {
+
+class SemanticType final : public bg::ScalarType {
+  public:
+    bool is_resolved() const noexcept override { return true; }
+    const bg::Type &resolve(const bg::TypeMap &) const override { return *this; }
+};
+
+class CanonicalRuntime final
+    : public bg::details::CppScalarRuntimeTypeBase<ThrowingValue, bg::ScalarRuntimeType> {
+    using Base = bg::details::CppScalarRuntimeTypeBase<ThrowingValue, bg::ScalarRuntimeType>;
+
+  public:
+    CanonicalRuntime() : Base{semantic_type()} {}
+};
+
+class AlternateRuntime final
+    : public bg::details::CppScalarRuntimeTypeBase<ThrowingValue, bg::ScalarRuntimeType> {
+    using Base = bg::details::CppScalarRuntimeTypeBase<ThrowingValue, bg::ScalarRuntimeType>;
+
+  public:
+    AlternateRuntime() : Base{semantic_type()} {}
+
+    void read_value(bg::ScalarDataMode, std::uintptr_t data, void *destination) const override {
+        const auto *source = reinterpret_cast<const Storage *>(data);
+        std::construct_at(static_cast<ThrowingValue *>(destination), source->number);
+    }
+};
+
+const bg::ScalarType &make_semantic_type() noexcept {
+    static const auto type = SemanticType{};
+    [[maybe_unused]] static const auto &registration = bg::TypeRegistry::register_static(type);
+    return type;
+}
+
+const bg::ScalarRuntimeType &canonical_runtime() {
+    static const auto runtime = CanonicalRuntime{};
+    return runtime;
+}
+
+} // namespace
+
+ThrowingValue::ThrowingValue(ThrowingValue &&other) {
+    if (throw_on_move) {
+        throw std::runtime_error{"throwing scalar read move"};
+    }
+    number = other.number;
+}
+
+ThrowingValue::~ThrowingValue() { ++destructor_count; }
+
+const bg::ScalarType &semantic_type() noexcept { return make_semantic_type(); }
+
+const bg::ScalarRuntimeType &alternate_runtime() {
+    static const auto runtime = AlternateRuntime{};
+    return runtime;
+}
+
+} // namespace throwing_scalar_read_test
+
+namespace bg {
+
+const ScalarType &scalar_type_traits<throwing_scalar_read_test::ThrowingValue>::type() noexcept {
+    return throwing_scalar_read_test::semantic_type();
+}
+
+const ScalarRuntimeType &
+scalar_storage_traits<throwing_scalar_read_test::ThrowingValue>::runtime_type(const ScalarType &type) {
+    if (&type != &throwing_scalar_read_test::semantic_type()) {
+        throw std::invalid_argument{"unexpected throwing scalar type"};
+    }
+    return throwing_scalar_read_test::canonical_runtime();
+}
+
+} // namespace bg
+
+namespace reference_scalar_read_test {
+
+struct Object {
+    int number;
+};
+
+struct Value {};
+
+struct CanonicalStorage {
+    Object object;
+};
+
+struct AlternateStorage {
+    std::array<std::uint32_t, 4> prefix{};
+    Object object;
+};
+
+const bg::ScalarType &semantic_type() noexcept;
+const bg::ScalarRuntimeType &alternate_runtime();
+
+} // namespace reference_scalar_read_test
+
+namespace bg {
+
+template <> struct scalar_type_traits<reference_scalar_read_test::Value> {
+    static const ScalarType &type() noexcept;
+};
+
+template <> struct scalar_storage_traits<reference_scalar_read_test::Value> {
+    using stored_type = reference_scalar_read_test::CanonicalStorage;
+    using value_type = const reference_scalar_read_test::Object &;
+
+    static constexpr bool supports_equality = false;
+    static constexpr bool supports_hash = false;
+    static constexpr bool supports_alternative_layouts = true;
+    static constexpr bool uses_shared_handle = false;
+    static constexpr bool uses_variable_memory = false;
+    static constexpr bool requires_finalization = false;
+    static constexpr bool assign_uses_memory_resource = false;
+
+    static value_type read(const stored_type &stored) noexcept { return stored.object; }
+    static value_type read_value(const details::ScalarData &source);
+
+    static void construct(stored_type *destination, const reference_scalar_read_test::Object &value, allocator &) {
+        std::construct_at(destination, stored_type{value});
+    }
+
+    static void assign(stored_type &destination, const reference_scalar_read_test::Object &value, allocator &) {
+        destination.object = value;
+    }
+
+    static void destroy(stored_type *stored, allocator &) noexcept { std::destroy_at(stored); }
+};
+
+} // namespace bg
+
+namespace reference_scalar_read_test {
+
+namespace {
+
+class SemanticType final : public bg::ScalarType {
+  public:
+    bool is_resolved() const noexcept override { return true; }
+    const bg::Type &resolve(const bg::TypeMap &) const override { return *this; }
+};
+
+class AlternateRuntime final : public bg::ScalarRuntimeType {
+  public:
+    AlternateRuntime()
+        : ScalarRuntimeType{semantic_type(), sizeof(AlternateStorage), alignof(AlternateStorage), false, false, true} {
+    }
+
+    void construct_initial_value(void *destination) const noexcept override {
+        std::construct_at(static_cast<AlternateStorage *>(destination));
+    }
+
+    void read_value(bg::ScalarDataMode mode, std::uintptr_t data, void *destination) const override {
+        const auto source = bg::details::ScalarData{*this, data, mode};
+        std::construct_at(static_cast<Object *>(destination), bg::scalar_storage_traits<Value>::read_value(source));
+    }
+
+    void copy_construct(void *destination, const void *source, bg::allocator &) const override {
+        std::construct_at(static_cast<AlternateStorage *>(destination),
+                          *static_cast<const AlternateStorage *>(source));
+    }
+
+    std::size_t hash(const void *) const noexcept override { std::terminate(); }
+
+    void destroy(void *value, bg::allocator &) const noexcept override {
+        std::destroy_at(static_cast<AlternateStorage *>(value));
+    }
+
+  private:
+    void do_construct_from_input(void *destination, const bg::details::ScalarData &source,
+                                 bg::allocator &) const override {
+        std::construct_at(static_cast<AlternateStorage *>(destination),
+                          AlternateStorage{.object = bg::scalar_storage_traits<Value>::read_value(source)});
+    }
+
+    void do_assign_from_input(void *destination, const bg::details::ScalarData &source) const override {
+        static_cast<AlternateStorage *>(destination)->object = bg::scalar_storage_traits<Value>::read_value(source);
+    }
+
+    bool equals_same_type(const void *, const bg::details::ScalarData &) const noexcept override {
+        std::terminate();
+    }
+};
+
+const SemanticType &make_semantic_type() noexcept {
+    static const auto type = SemanticType{};
+    [[maybe_unused]] static const auto &registration = bg::TypeRegistry::register_static(type);
+    return type;
+}
+
+} // namespace
+
+const bg::ScalarType &semantic_type() noexcept { return make_semantic_type(); }
+
+const bg::ScalarRuntimeType &alternate_runtime() {
+    static const auto runtime = AlternateRuntime{};
+    return runtime;
+}
+
+} // namespace reference_scalar_read_test
+
+namespace bg {
+
+const ScalarType &scalar_type_traits<reference_scalar_read_test::Value>::type() noexcept {
+    return reference_scalar_read_test::semantic_type();
+}
+
+scalar_storage_traits<reference_scalar_read_test::Value>::value_type
+scalar_storage_traits<reference_scalar_read_test::Value>::read_value(const details::ScalarData &source) {
+    using namespace reference_scalar_read_test;
+
+    if (source.mode() == ScalarDataMode::source_view) {
+        return *static_cast<const Object *>(source.data());
+    }
+    if (&source.runtime_type() == &alternate_runtime()) {
+        return static_cast<const AlternateStorage *>(source.data())->object;
+    }
+    if (&source.runtime_type() == &cpp_scalar_runtime_type<reference_scalar_read_test::Value>()) {
+        return read(*static_cast<const stored_type *>(source.data()));
+    }
+    throw std::invalid_argument{"unsupported reference scalar runtime"};
+}
+
+} // namespace bg
 
 namespace {
 
@@ -279,6 +561,48 @@ TEST_CASE("typed time-series leaf reads use provider hooks for alternative runti
     CHECK(test_scalar_provider::alternative_runtime_read_count() == reads_before + 1);
 }
 
+TEST_CASE("reference-valued scalar providers read canonical, source, and alternative layouts",
+          "[feature:node-api][feature:scalar-api][feature:scalar-storage][series:value][declaration:runtime]") {
+    using T = reference_scalar_read_test::Value;
+    using Object = reference_scalar_read_test::Object;
+    using CanonicalStorage = reference_scalar_read_test::CanonicalStorage;
+    using AlternateStorage = reference_scalar_read_test::AlternateStorage;
+    using Series = bg::TS<T>;
+
+    auto canonical_storage = CanonicalStorage{.object = Object{.number = 11}};
+    const auto canonical = bg::Scalar<T>::from(bg::cpp_scalar_runtime_type<T>(), &canonical_storage);
+    const auto &canonical_value = canonical.value();
+    CHECK(&canonical_value == &canonical_storage.object);
+
+    auto alternate_storage = AlternateStorage{.object = Object{.number = 22}};
+    const auto &alternate_runtime = reference_scalar_read_test::alternate_runtime();
+    const auto alternate = bg::Scalar<T>::from(alternate_runtime, &alternate_storage);
+    const auto &alternate_value = alternate.value();
+    CHECK(&alternate_value == &alternate_storage.object);
+
+    const auto source_view = Object{.number = 33};
+    const auto source = bg::details::make_scalar_source<T>(source_view);
+    CHECK(source.mode() == bg::ScalarDataMode::source_view);
+    CHECK(&bg::details::scalar_data_value<T>(source) == &source_view);
+
+    const auto &runtime = bg::time_series_value_runtime_type(Series::type(), alternate_runtime);
+    const auto update_time = bg::MIN_DT + std::chrono::microseconds{1};
+    auto input_state = bg::TimeSeriesState{update_time};
+    const auto input = bg::In<Series>{bg::TimeSeriesInputData{runtime, input_state, &alternate_storage}};
+    CHECK(&input.value() == &alternate_storage.object);
+
+    auto output_state = bg::details::OutputState{runtime};
+    auto output_time = bg::TimeSeriesState{update_time};
+    auto output_storage = AlternateStorage{.object = Object{.number = 44}};
+    output_state.bind(output_time, &output_storage, update_time + std::chrono::microseconds{1});
+    const auto output = bg::Out<Series>{bg::TimeSeriesOutputBinding{output_state}};
+
+    CHECK(&output.value() == &output_storage.object);
+    output.set(source_view);
+    CHECK(&output.value() == &output_storage.object);
+    CHECK(output.value().number == 33);
+}
+
 TEST_CASE("callable promoted values and aggregate scalar views preserve provider runtime reads",
           "[feature:node-api][feature:scalar-api][feature:scalar-storage][definition:function][definition:aggregate]"
           "[declaration:concrete]") {
@@ -351,6 +675,26 @@ TEST_CASE("aggregate scalar views and promoted inputs preserve a copy-only provi
 
     REQUIRE(result[0]);
     CHECK(result[0]->value() == 40);
+}
+
+TEST_CASE("typed output writes through a prefixed scalar runtime layout",
+          "[feature:node-api][feature:scalar-api][feature:scalar-storage][series:value][declaration:runtime]") {
+    using Series = bg::TS<CopyOnlyValue>;
+    const auto &runtime = bg::time_series_value_runtime_type(
+        Series::type(), test_scalar_provider::preserving_copy_only_runtime_type());
+    const auto update_time = bg::MIN_DT + std::chrono::microseconds{1};
+    auto last_updated = bg::TimeSeriesState{update_time};
+    auto storage = test_scalar_provider::copy_only_runtime_storage{
+        .prefix = {0xBAD0, 0xBAD1, 0xBAD2, 0xBAD3}, .value = {.number = 20}};
+    auto state = bg::details::OutputState{runtime};
+    state.bind(last_updated, &storage, update_time + std::chrono::microseconds{1});
+    const auto output = bg::Out<Series>{bg::TimeSeriesOutputBinding{state}};
+
+    output.set(CopyOnlyValue{42});
+
+    CHECK((storage.prefix == std::array<std::uint32_t, 4>{0xBAD0, 0xBAD1, 0xBAD2, 0xBAD3}));
+    CHECK(storage.value.number == 42);
+    CHECK(output.value().number == 42);
 }
 
 TEST_CASE("aggregate optional provider scalars handle present and absent values",
@@ -553,12 +897,45 @@ TEST_CASE("a provider without source-aware hooks keeps its alternative-runtime b
     CHECK(copy.view().value() == 42);
 }
 
+TEST_CASE("a callable typed scalar view keeps an erased input runtime descriptor",
+          "[feature:node-api][feature:scalar-api][feature:scalar-storage][definition:function][declaration:runtime]") {
+    const bg::i64 source_value{42};
+    const auto source = bg::Scalar<bg::i64>::from(legacy_integer_runtime(), std::addressof(source_value));
+    auto erased = bg::ScalarValue<>{source};
+    const bg::ScalarRuntimeType *received_runtime{};
+    const auto read = bg::node([&](bg::Scalar<bg::i64> input, bg::Out<bg::TS<bg::i64>> output) {
+        received_runtime = std::addressof(input.runtime_type());
+        output.set(input.value());
+    });
+    const auto graph = [&] { return read(std::move(erased)); };
+
+    CHECK(std::addressof(erased.runtime_type()) == std::addressof(legacy_integer_runtime()));
+    CHECK(bg::testing::test_graph(graph).equals({42}));
+    CHECK(received_runtime == std::addressof(legacy_integer_runtime()));
+}
+
+TEST_CASE("an alternative scalar read destroys its temporary when moving the value throws",
+          "[feature:scalar-api][feature:scalar-storage][declaration:runtime]") {
+    using Value = throwing_scalar_read_test::ThrowingValue;
+
+    Value::destructor_count = 0;
+    Value::throw_on_move = true;
+    const auto storage = throwing_scalar_read_test::Storage{42};
+    const auto source = bg::Scalar<Value>::from(throwing_scalar_read_test::alternate_runtime(), &storage);
+
+    CHECK_THROWS_AS(source.value(), std::runtime_error);
+    CHECK(Value::destructor_count == 1);
+    Value::throw_on_move = false;
+}
+
 TEST_CASE("an opaque scalar containing ScalarData keeps its ordinary stored-value read",
           "[feature:scalar-api][feature:scalar-storage][scalar:opaque][storage:fixed]") {
     const bg::i64 payload{42};
     const auto descriptor = bg::details::ScalarData{bg::cpp_scalar_runtime_type<bg::i64>(), &payload};
     const auto value = bg::ScalarValue<bg::Opaque<bg::ScalarData>>{descriptor};
+    const auto view = value.view();
 
-    CHECK(&value.view().value().runtime_type() == &bg::cpp_scalar_runtime_type<bg::i64>());
-    CHECK(value.view().value().data() == &payload);
+    CHECK(&view.value() == static_cast<const bg::ScalarData *>(view.data()));
+    CHECK(&view.value().runtime_type() == &bg::cpp_scalar_runtime_type<bg::i64>());
+    CHECK(view.value().data() == &payload);
 }
