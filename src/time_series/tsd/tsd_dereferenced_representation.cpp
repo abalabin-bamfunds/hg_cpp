@@ -21,12 +21,17 @@ class DereferencedTimeSeriesDictionaryRepresentation final : public TimeSeriesDi
                                                    const TimeSeriesRuntimeType &item_runtime_type)
         : TimeSeriesDictionaryRepresentation{base_reference, type, base_runtime_type, item_runtime_type},
           provider_{&provider}, item_runtime_type_{&item_runtime_type},
-          last_updated_{*ResolvedTimeSeries::resolve(base_reference).last_updated},
           item_references_{&provider.allocation().memory_resource()} {
         const auto base_time_series = ResolvedTimeSeries::resolve(base_reference);
-        base_runtime_type.for_each_item_id(base_time_series.storage, this, [](void *context, item_id_t id) {
-            auto &self = *static_cast<DereferencedTimeSeriesDictionaryRepresentation *>(context);
-            self.add_item(id, self.last_updated_.time());
+        last_updated_ = *base_time_series.last_updated;
+        struct Callback {
+            DereferencedTimeSeriesDictionaryRepresentation *representation;
+            const ResolvedTimeSeries *base_time_series;
+        } callback{this, &base_time_series};
+        base_runtime_type.for_each_item_id(base_time_series.storage, &callback, [](void *context, item_id_t id) {
+            auto &callback = *static_cast<Callback *>(context);
+            callback.representation->add_item(id, callback.representation->last_updated_.time(),
+                                              *callback.base_time_series);
         });
     }
 
@@ -51,31 +56,34 @@ class DereferencedTimeSeriesDictionaryRepresentation final : public TimeSeriesDi
 
         const auto base_time_series = ResolvedTimeSeries::resolve(base_reference());
         const auto input_time = base_time_series.last_updated->time();
+        const auto &input_runtime_type = base_runtime_type(base_time_series);
         struct AddCallback {
             DereferencedTimeSeriesDictionaryRepresentation *representation;
+            const ResolvedTimeSeries *base_time_series;
             EvaluationTime input_time;
-        } add_callback{this, input_time};
-        base_runtime_type().for_each_added(*base_time_series.last_updated, base_time_series.storage, &add_callback,
+        } add_callback{this, &base_time_series, input_time};
+        input_runtime_type.for_each_added(*base_time_series.last_updated, base_time_series.storage, &add_callback,
                                            [](void *value, item_id_t id) {
                                                auto &callback = *static_cast<AddCallback *>(value);
-                                               callback.representation->add_item(id, callback.input_time);
+                                               callback.representation->add_item(
+                                                   id, callback.input_time, *callback.base_time_series);
                                            });
-        base_runtime_type().for_each_modified(
-            *base_time_series.last_updated, base_time_series.storage, this, [](void *value, item_id_t id) {
-                auto &self = *static_cast<DereferencedTimeSeriesDictionaryRepresentation *>(value);
-                self.bind_item(id, self.current_base_item(id),
-                               ResolvedTimeSeries::resolve(self.base_reference()).last_updated->time());
+        input_runtime_type.for_each_modified(
+            *base_time_series.last_updated, base_time_series.storage, &add_callback, [](void *value, item_id_t id) {
+                auto &callback = *static_cast<AddCallback *>(value);
+                auto &self = *callback.representation;
+                self.bind_item(id, self.current_base_item(id, *callback.base_time_series), callback.input_time);
                 self.modified_.set(id, self.provider_->allocation());
             });
         struct RemoveCallback {
             DereferencedTimeSeriesDictionaryRepresentation *representation;
             EvaluationTime evaluation_time;
         } remove_callback{this, context.evaluation_time()};
-        base_runtime_type().for_each_removed(*base_time_series.last_updated, base_time_series.storage, &remove_callback,
-                                             [](void *value, item_id_t id) {
-                                                 auto &callback = *static_cast<RemoveCallback *>(value);
-                                                 callback.representation->remove_item(id, callback.evaluation_time);
-                                             });
+        input_runtime_type.for_each_removed(*base_time_series.last_updated, base_time_series.storage, &remove_callback,
+                                            [](void *value, item_id_t id) {
+                                                auto &callback = *static_cast<RemoveCallback *>(value);
+                                                callback.representation->remove_item(id, callback.evaluation_time);
+                                            });
 
         const auto was_valid = last_updated_.valid();
         const auto now_valid = base_time_series.valid();
@@ -124,9 +132,11 @@ class DereferencedTimeSeriesDictionaryRepresentation final : public TimeSeriesDi
             return false;
         }
         const auto base = base_time_series();
-        return base.storage != nullptr &&
-               (base_runtime_type().item_updated(last_updated, base.storage, id) ||
-                item_modified(last_updated, id));
+        if (base.storage == nullptr) {
+            return false;
+        }
+        const auto &runtime_type = base_runtime_type(base);
+        return runtime_type.item_updated(last_updated, base.storage, id) || item_modified(last_updated, id, base);
     }
 
     bool item_modified(const TimeSeriesState &last_updated, item_id_t id) const noexcept override {
@@ -134,9 +144,7 @@ class DereferencedTimeSeriesDictionaryRepresentation final : public TimeSeriesDi
             return false;
         }
         const auto base = base_time_series();
-        return base.storage != nullptr && modified_.contains(id) &&
-               base_runtime_type().next_item_id(last_updated, base.storage,
-                                                TimeSeriesDictionaryRuntimeType::ItemRange::added, id) != id;
+        return item_modified(last_updated, id, base);
     }
 
     item_id_t next_modified_item_id(const TimeSeriesState &last_updated, item_id_t start) const noexcept override {
@@ -147,19 +155,20 @@ class DereferencedTimeSeriesDictionaryRepresentation final : public TimeSeriesDi
         if (base.storage == nullptr) {
             return util::occupancy_index::npos;
         }
-        auto id = modified_.first_set(start);
-        while (id != modified_.size() &&
-               base_runtime_type().next_item_id(last_updated, base.storage,
-                                                TimeSeriesDictionaryRuntimeType::ItemRange::added, id) == id) {
-            id = modified_.first_set(id + 1);
-        }
-        return id == modified_.size() ? util::occupancy_index::npos : id;
+        return next_modified_item_id(last_updated, start, base);
     }
 
     void for_each_modified(const TimeSeriesState &last_updated, void *context,
                            TimeSeriesRuntimeType::ItemIdFunction function) const override {
-        for (auto id = next_modified_item_id(last_updated, 0); id != util::occupancy_index::npos;
-             id = next_modified_item_id(last_updated, id + 1)) {
+        if (!last_updated.valid() || change_time_ != last_updated.time()) {
+            return;
+        }
+        const auto base = base_time_series();
+        if (base.storage == nullptr) {
+            return;
+        }
+        for (auto id = next_modified_item_id(last_updated, 0, base); id != util::occupancy_index::npos;
+             id = next_modified_item_id(last_updated, id + 1, base)) {
             function(context, id);
         }
     }
@@ -173,12 +182,13 @@ class DereferencedTimeSeriesDictionaryRepresentation final : public TimeSeriesDi
         if (base.storage == nullptr) {
             return;
         }
+        const auto &runtime_type = base_runtime_type(base);
 
-        base_runtime_type().for_each_updated_item(last_updated, base.storage, context, function);
+        runtime_type.for_each_updated_item(last_updated, base.storage, context, function);
 
-        for (auto id = next_modified_item_id(last_updated, 0); id != util::occupancy_index::npos;
-             id = next_modified_item_id(last_updated, id + 1)) {
-            if (!base_runtime_type().item_updated(last_updated, base.storage, id)) {
+        for (auto id = next_modified_item_id(last_updated, 0, base); id != util::occupancy_index::npos;
+             id = next_modified_item_id(last_updated, id + 1, base)) {
+            if (!runtime_type.item_updated(last_updated, base.storage, id)) {
                 function(context, id);
             }
         }
@@ -191,9 +201,10 @@ class DereferencedTimeSeriesDictionaryRepresentation final : public TimeSeriesDi
             return;
         }
         const auto &storage = *static_cast<const time_series_dict_storage *>(base.storage);
+        const auto &runtime_type = base_runtime_type(base);
         const auto &keys = storage.key_storage().value;
         if (!last_updated.valid()) {
-            const auto key_set = base_runtime_type().item(base.storage, key_set_item_id);
+            const auto key_set = runtime_type.item(base.storage, key_set_item_id);
             function(context, {key_set_item_id, &key_set.runtime_type, &last_updated, key_set.value});
             for (const auto id : keys.removed()) {
                 const auto previous = item(id);
@@ -206,7 +217,7 @@ class DereferencedTimeSeriesDictionaryRepresentation final : public TimeSeriesDi
         }
 
         if (storage.key_storage().last_updated.time() == evaluation_time) {
-            const auto key_set = base_runtime_type().item(base.storage, key_set_item_id);
+            const auto key_set = runtime_type.item(base.storage, key_set_item_id);
             function(context, {key_set_item_id, &key_set.runtime_type, &key_set.last_updated, key_set.value});
         }
         if (storage.change_time() == evaluation_time) {
@@ -220,8 +231,8 @@ class DereferencedTimeSeriesDictionaryRepresentation final : public TimeSeriesDi
             }
         }
         if (change_time_ == evaluation_time) {
-            for (auto id = next_modified_item_id(last_updated, 0); id != util::occupancy_index::npos;
-                 id = next_modified_item_id(last_updated, id + 1)) {
+            for (auto id = next_modified_item_id(last_updated, 0, base); id != util::occupancy_index::npos;
+                 id = next_modified_item_id(last_updated, id + 1, base)) {
                 const auto current = item(id);
                 function(context, {id, &current.runtime_type, &current.last_updated, current.value});
             }
@@ -231,6 +242,31 @@ class DereferencedTimeSeriesDictionaryRepresentation final : public TimeSeriesDi
     const util::index<> &modified() const noexcept { return modified_; }
 
   private:
+    bool item_modified(const TimeSeriesState &last_updated, item_id_t id,
+                       const ResolvedTimeSeries &base) const noexcept {
+        if (id == key_set_item_id || !last_updated.valid() || change_time_ != last_updated.time() ||
+            base.storage == nullptr || !modified_.contains(id)) {
+            return false;
+        }
+        return base_runtime_type(base).next_item_id(last_updated, base.storage,
+                                                    TimeSeriesDictionaryRuntimeType::ItemRange::added, id) != id;
+    }
+
+    item_id_t next_modified_item_id(const TimeSeriesState &last_updated, item_id_t start,
+                                    const ResolvedTimeSeries &base) const noexcept {
+        if (!last_updated.valid() || change_time_ != last_updated.time() || base.storage == nullptr) {
+            return util::occupancy_index::npos;
+        }
+        const auto &runtime_type = base_runtime_type(base);
+        auto id = modified_.first_set(start);
+        while (id != modified_.size() &&
+               runtime_type.next_item_id(last_updated, base.storage,
+                                         TimeSeriesDictionaryRuntimeType::ItemRange::added, id) == id) {
+            id = modified_.first_set(id + 1);
+        }
+        return id == modified_.size() ? util::occupancy_index::npos : id;
+    }
+
     void invalidate(OutputChangeContext &context) {
         if (!last_updated_.valid()) {
             return;
@@ -261,12 +297,14 @@ class DereferencedTimeSeriesDictionaryRepresentation final : public TimeSeriesDi
         const auto base_time_series = ResolvedTimeSeries::resolve(base_reference());
         struct Callback {
             DereferencedTimeSeriesDictionaryRepresentation *representation;
+            const ResolvedTimeSeries *base_time_series;
             EvaluationTime evaluation_time;
-        } callback{this, context.evaluation_time()};
-        base_runtime_type().for_each_item_id(base_time_series.storage, &callback, [](void *value, item_id_t id) {
+        } callback{this, &base_time_series, context.evaluation_time()};
+        base_runtime_type(base_time_series).for_each_item_id(base_time_series.storage, &callback,
+                                                              [](void *value, item_id_t id) {
             auto &callback = *static_cast<Callback *>(value);
             auto &self = *callback.representation;
-            self.add_item(id, callback.evaluation_time);
+            self.add_item(id, callback.evaluation_time, *callback.base_time_series);
             self.modified_.set(id, self.provider_->allocation());
         });
 
@@ -274,16 +312,15 @@ class DereferencedTimeSeriesDictionaryRepresentation final : public TimeSeriesDi
         ReferenceProvider::notify(reference(), context, OutputChange::revalidation);
     }
 
-    TimeSeriesRuntimeType::ConstItem current_base_item(item_id_t id) const {
-        const auto base = base_time_series();
-        return base_runtime_type().item(base.storage, id);
+    TimeSeriesRuntimeType::ConstItem current_base_item(item_id_t id, const ResolvedTimeSeries &base) const {
+        return base_runtime_type(base).item(base.storage, id);
     }
 
-    void add_item(item_id_t id, EvaluationTime sample_time) {
+    void add_item(item_id_t id, EvaluationTime sample_time, const ResolvedTimeSeries &base) {
         if (item_references_.size() <= id) {
             item_references_.resize(static_cast<std::size_t>(id) + 1);
         }
-        bind_item(id, current_base_item(id), sample_time);
+        bind_item(id, current_base_item(id, base), sample_time);
     }
 
     void remove_item(item_id_t id, EvaluationTime evaluation_time) {
@@ -435,8 +472,7 @@ class DereferencedTimeSeriesDictionaryRepresentation final : public TimeSeriesDi
     EvaluationTime change_time_{MIN_DT};
     bool sample_cleanup_registered_{};
 
-    const TimeSeriesDictionaryRuntimeType &base_runtime_type() const noexcept {
-        const auto base = base_time_series();
+    const TimeSeriesDictionaryRuntimeType &base_runtime_type(const ResolvedTimeSeries &base) const noexcept {
         return static_cast<const TimeSeriesDictionaryRuntimeType &>(*base.runtime_type);
     }
 };

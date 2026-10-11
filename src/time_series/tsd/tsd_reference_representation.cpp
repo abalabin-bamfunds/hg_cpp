@@ -27,14 +27,14 @@ class TimeSeriesDictionaryRepresentationRuntimeType final : public TimeSeriesDic
         const auto base = view.base_time_series();
         return base.storage == nullptr
                    ? DictionaryKeyStorage{}
-                   : base_runtime_type(view).retention_storage(const_cast<void *>(base.storage));
+                   : base_runtime_type(base).retention_storage(const_cast<void *>(base.storage));
     }
 
     RetainedDictionaryKey retain_key(void *value, const ScalarData &key, allocator &memory) const override {
         const auto &view = representation(value);
         const auto base = view.base_time_series();
         return base.storage == nullptr ? RetainedDictionaryKey{}
-                                       : base_runtime_type(view).retain_key(const_cast<void *>(base.storage), key,
+                                       : base_runtime_type(base).retain_key(const_cast<void *>(base.storage), key,
                                                                             memory);
     }
 
@@ -46,19 +46,19 @@ class TimeSeriesDictionaryRepresentationRuntimeType final : public TimeSeriesDic
         const auto &view = representation(value);
         const auto base = view.base_time_series();
         return base.storage == nullptr ? util::occupancy_index::npos
-                                       : base_runtime_type(view).find_key(base.storage, key);
+                                       : base_runtime_type(base).find_key(base.storage, key);
     }
 
     bool key_live(const void *value, item_id_t id) const noexcept override {
         const auto &view = representation(value);
         const auto base = view.base_time_series();
-        return base.storage != nullptr && base_runtime_type(view).key_live(base.storage, id);
+        return base.storage != nullptr && base_runtime_type(base).key_live(base.storage, id);
     }
 
     const void *key(const void *value, item_id_t id) const noexcept override {
         const auto &view = representation(value);
         const auto base = view.base_time_series();
-        return base.storage == nullptr ? nullptr : base_runtime_type(view).key(base.storage, id);
+        return base.storage == nullptr ? nullptr : base_runtime_type(base).key(base.storage, id);
     }
 
     void for_each_added(const TimeSeriesState &last_updated, const void *value, void *context,
@@ -66,7 +66,7 @@ class TimeSeriesDictionaryRepresentationRuntimeType final : public TimeSeriesDic
         const auto &view = representation(value);
         const auto base = view.base_time_series();
         if (base.storage != nullptr) {
-            base_runtime_type(view).for_each_added(last_updated, base.storage, context, function);
+            base_runtime_type(base).for_each_added(last_updated, base.storage, context, function);
         }
     }
 
@@ -75,7 +75,7 @@ class TimeSeriesDictionaryRepresentationRuntimeType final : public TimeSeriesDic
         const auto &view = representation(value);
         const auto base = view.base_time_series();
         if (base.storage != nullptr) {
-            base_runtime_type(view).for_each_removed(last_updated, base.storage, context, function);
+            base_runtime_type(base).for_each_removed(last_updated, base.storage, context, function);
         }
     }
 
@@ -93,7 +93,7 @@ class TimeSeriesDictionaryRepresentationRuntimeType final : public TimeSeriesDic
         const auto base = view.base_time_series();
         return base.storage == nullptr
                    ? util::occupancy_index::npos
-                   : base_runtime_type(view).next_item_id(last_updated, base.storage, range, start);
+                   : base_runtime_type(base).next_item_id(last_updated, base.storage, range, start);
     }
 
     bool item_modified(const TimeSeriesState &last_updated, const void *value, item_id_t id) const override {
@@ -108,7 +108,7 @@ class TimeSeriesDictionaryRepresentationRuntimeType final : public TimeSeriesDic
     std::size_t item_count(const void *value) const override {
         const auto &view = representation(value);
         const auto base = view.base_time_series();
-        return base.storage == nullptr ? 0 : base_runtime_type(view).item_count(base.storage);
+        return base.storage == nullptr ? 0 : base_runtime_type(base).item_count(base.storage);
     }
 
     ConstItem item(const void *value, item_id_t id) const override {
@@ -118,7 +118,7 @@ class TimeSeriesDictionaryRepresentationRuntimeType final : public TimeSeriesDic
         }
         const auto base = view.base_time_series();
         return base.storage == nullptr ? ConstItem{key_set_runtime_type(), initial_time_series_state, nullptr}
-                                       : base_runtime_type(view).item(base.storage, id);
+                                       : base_runtime_type(base).item(base.storage, id);
     }
 
     MutableItem item(void *, item_id_t) const override {
@@ -142,7 +142,7 @@ class TimeSeriesDictionaryRepresentationRuntimeType final : public TimeSeriesDic
         const auto &view = representation(value);
         const auto base = view.base_time_series();
         if (base.storage != nullptr) {
-            base_runtime_type(view).for_each_item_id(base.storage, context, function);
+            base_runtime_type(base).for_each_item_id(base.storage, context, function);
         }
     }
 
@@ -158,7 +158,7 @@ class TimeSeriesDictionaryRepresentationRuntimeType final : public TimeSeriesDic
     bool collection_valid(const void *value) const noexcept override {
         const auto &view = representation(value);
         const auto base = view.base_time_series();
-        return base.storage != nullptr && base_runtime_type(view).collection_valid(base.storage);
+        return base.storage != nullptr && base_runtime_type(base).collection_valid(base.storage);
     }
 
     void for_each_modified_item(const TimeSeriesState &last_updated, const void *value,
@@ -180,9 +180,7 @@ class TimeSeriesDictionaryRepresentationRuntimeType final : public TimeSeriesDic
     }
 
   private:
-    static const TimeSeriesDictionaryRuntimeType &base_runtime_type(
-        const TimeSeriesDictionaryRepresentation &view) noexcept {
-        const auto base = view.base_time_series();
+    static const TimeSeriesDictionaryRuntimeType &base_runtime_type(const ResolvedTimeSeries &base) noexcept {
         return static_cast<const TimeSeriesDictionaryRuntimeType &>(*base.runtime_type);
     }
 

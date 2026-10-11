@@ -54,7 +54,7 @@ class TsdKeySubscriptions final
             release_retention.release();
         }
 
-        return Base::input<TsdItemReferenceInput>(entry, reference_runtime_type);
+        return Base::input<TsdItemReferenceInput>(entry, resolved, reference_runtime_type);
     }
 
     static bool retention_matches(const Collection &tsd, ResolvedTimeSeries resolved) noexcept {

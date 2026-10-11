@@ -140,10 +140,9 @@ template <typename Derived, typename RuntimeType> class ItemSelectionSubscriptio
         return *entry;
     }
 
-    bool refresh(Selection &entry, EvaluationTime evaluation_time) {
+    bool refresh(Selection &entry, const ResolvedTimeSeries &resolved, EvaluationTime evaluation_time) {
         auto &collection = *entry.collection;
         auto value = Reference{};
-        const auto resolved = ResolvedTimeSeries::resolve(collection.reference);
         if (resolved.runtime_type == collection.view_runtime_type &&
             derived().retention_matches(collection, resolved) &&
             derived().contains_item(collection, resolved, entry.id)) {
@@ -167,8 +166,9 @@ template <typename Derived, typename RuntimeType> class ItemSelectionSubscriptio
     }
 
     template <typename Result>
-    Result input(Selection &entry, const TimeSeriesRuntimeType &item_reference_runtime_type) {
-        refresh(entry, provider_->owner().evaluation_time());
+    Result input(Selection &entry, const ResolvedTimeSeries &resolved,
+                 const TimeSeriesRuntimeType &item_reference_runtime_type) {
+        refresh(entry, resolved, provider_->owner().evaluation_time());
         queue_release(entry);
 
         return {&entry.selection_time, &item_reference_runtime_type, ReferenceBinding{&entry, binding_type()},
@@ -198,12 +198,18 @@ template <typename Derived, typename RuntimeType> class ItemSelectionSubscriptio
     }
 
     void notify_item_bindings(Reference reference, item_id_t id, OutputChangeContext &context) final {
+        auto resolved = ResolvedTimeSeries{};
+        auto did_resolve = false;
         for (auto *collection : collections_) {
             if (collection->reference != reference) {
                 continue;
             }
             if (auto *entry = collection->items.find(id)) {
-                refresh_selection(context, *entry);
+                if (!did_resolve) {
+                    resolved = ResolvedTimeSeries::resolve(reference);
+                    did_resolve = true;
+                }
+                refresh_selection(context, *entry, resolved);
             }
         }
     }
@@ -377,7 +383,7 @@ template <typename Derived, typename RuntimeType> class ItemSelectionSubscriptio
         }
 
         for (const auto item : collection.items) {
-            refresh_selection(context, item.value);
+            refresh_selection(context, item.value, resolved);
         }
     }
 
@@ -406,20 +412,21 @@ template <typename Derived, typename RuntimeType> class ItemSelectionSubscriptio
             ItemSelectionSubscriptions *owner;
             Collection *collection;
             OutputChangeContext *context;
-        } callback{this, &collection, &context};
+            const ResolvedTimeSeries *resolved;
+        } callback{this, &collection, &context, &resolved};
 
         collection.view_runtime_type->for_each_updated_item(
             *resolved.last_updated, resolved.storage, &callback, [](void *value, item_id_t id) {
                 auto &callback = *static_cast<Callback *>(value);
                 if (auto *entry = callback.collection->items.find(id)) {
-                    callback.owner->refresh_selection(*callback.context, *entry);
+                    callback.owner->refresh_selection(*callback.context, *entry, *callback.resolved);
                 }
             });
     }
 
-    void refresh_selection(OutputChangeContext &context, Selection &entry) {
+    void refresh_selection(OutputChangeContext &context, Selection &entry, const ResolvedTimeSeries &resolved) {
         const auto was_valid = static_cast<bool>(entry.selected_reference);
-        const auto value_changed = refresh(entry, context.evaluation_time());
+        const auto value_changed = refresh(entry, resolved, context.evaluation_time());
         const auto is_valid = static_cast<bool>(entry.selected_reference);
 
         if (entry.stores_reference() && !value_changed) {

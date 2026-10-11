@@ -33,7 +33,7 @@ class FixedItemSubscriptions final
         auto &collection = require_collection(reference, *resolved.runtime_type, *resolved.runtime_type,
                                               resolved.storage);
         return Base::input<FixedItemReferenceInput>(
-            require_selection(collection, id, item_runtime_type.is_reference()), reference_runtime_type);
+            require_selection(collection, id, item_runtime_type.is_reference()), resolved, reference_runtime_type);
     }
 
     static bool retention_matches(const Collection &collection, ResolvedTimeSeries resolved) noexcept {
