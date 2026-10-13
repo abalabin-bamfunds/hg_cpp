@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <functional>
+#include <optional>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -53,11 +54,20 @@ template <typename Option> bool callable_wiring_deduplication(const Option &opti
     return true;
 }
 
-template <typename Option> bool callable_schedule_on_start(const Option &option) noexcept {
-    if constexpr (is_callable_start_scheduling_v<Option>) {
-        return option.enabled;
-    }
-    return false;
+template <typename... Options>
+std::optional<bool> callable_schedule_on_start_option(const std::tuple<Options...> &options) noexcept {
+    auto result = std::optional<bool>{};
+    std::apply(
+        [&](const auto &...option) {
+            (([&] {
+                 if constexpr (is_callable_start_scheduling_v<decltype(option)>) {
+                     result = option.enabled;
+                 }
+             }()),
+             ...);
+        },
+        options);
+    return result;
 }
 
 template <typename Function, std::size_t Target, std::size_t... Index>
@@ -154,13 +164,14 @@ template <typename Function, typename... Options> class CallableNodeDefinition {
   public:
     using compiled_data_type = std::conditional_t<stores_function, Function, void>;
     using output_declaration_type = callable_output_declaration_t<Function>;
-    using output_time_series_type = callable_output_t<Function>;
+    using output_time_series_type = callable_wiring_output_t<Function>;
     using Invocation = NodeInvocation<compiled_data_type>;
 
     explicit CallableNodeDefinition(Function function, Options... options)
         : function_{std::move(function)}, options_{std::move(options)...},
           signature_{make_callable_signature<Function, Function>(util::symbol{util::unqualified_type_name<Function>()},
-                                                                 callable_resolvers(options_))} {}
+                                                                 callable_resolvers(options_),
+                                                                 callable_schedule_on_start_option(options_))} {}
 
     const Signature &signature() const { return signature_; }
 
@@ -170,9 +181,8 @@ template <typename Function, typename... Options> class CallableNodeDefinition {
     }
 
     bool schedule_on_start(const ResolvedSignature &signature) const noexcept {
-        if constexpr ((is_callable_start_scheduling_v<Options> || ...)) {
-            return std::apply(
-                [](const auto &...option) { return (callable_schedule_on_start(option) || ...); }, options_);
+        if (const auto option = callable_schedule_on_start_option(options_); option.has_value()) {
+            return *option;
         }
 
         return std::ranges::all_of(signature.parameters,

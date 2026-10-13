@@ -146,11 +146,13 @@ validity constraint. Mixing plain parameters with `In<>` or `Scalar<>` does not
 disable scalar-or-time-series resolution. Matching captures the incoming time
 series guarantee independently for each plain parameter.
 
-A callable scalar return declares a `TS<canonical T>` output. A disengaged
-`std::optional<T>` return leaves the output unchanged. A callable `bool` return
-publishes a Boolean value; the completion Boolean described above applies to
-aggregate and runtime-signature `evaluate()` functions. A callable with an
-`Out<>` parameter returns `void`.
+A callable scalar return declares a `TS<canonical T>` output. Eligible
+callables infer its guarantee during wiring; see
+[callable output inference](type-system.md#callable-output-inference).
+A disengaged `std::optional<T>` return leaves the output unchanged. A callable
+`bool` return publishes a Boolean value; the completion Boolean described above
+applies to aggregate and runtime-signature `evaluate()` functions. A callable
+with an `Out<>` parameter returns `void`.
 
 Only resolved time series inputs create graph dependencies and subscriptions or
 participate in validity gating. Scalars remain immutable shared wired-node data.

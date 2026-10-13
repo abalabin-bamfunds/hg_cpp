@@ -54,9 +54,9 @@ assert bg.test_graph(example) == [3]
 `bg.operators` is the shared namespace for engine and library operators,
 including higher-order graph operators. Native operators use C++ overload
 resolution for both explicit calls and wiring-point special methods.
-`WiringPoint` addition uses the native `add` operator exposed as
-`bg.operators.add` and preserves operand order. The initial overloads accept
-`float` scalars and `TS[float]` in any combination.
+Wiring-point arithmetic and comparison methods call the native operators and
+preserve operand order. See the [standard library](library.md) for supported
+types and wiring syntax.
 Positional and named arguments can contain wiring points or registered Python
 scalar values. A sink operator returns `None`. The higher-order operators are
 the same objects as `bg.map`, `bg.mesh`, and `bg.switch_`.

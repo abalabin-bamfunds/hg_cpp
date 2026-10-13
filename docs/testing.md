@@ -69,9 +69,9 @@ the tags and write `test-coverage.md` to the build directory.
 - `tests/wiring`: graph construction and wiring-template calls
 - `tests/graph`: graph compilation and compiled layout
 - `tests/evaluation`: evaluation context, engines, lifecycle, scheduling, storage, time series, and validity
-- `tests/library`: public C++ library operators
 - `tests/node`: node declaration and invocation interfaces
 - `tests/testing`: test utilities
+- `tests/library`: standard library overloads, in the separate `bg_library_tests` binary
 
 Name a test file after the feature it covers. Split node and graph behavior by
 value type when the type changes the expected behavior. Keep each test case
@@ -149,6 +149,9 @@ graph compilation or evaluation.
 - operator signature specificity and ambiguity
 - types passed as scalars
 - guarantee compatibility, propagation, and enforcement
+- callable scalar-return guarantee inference across scalars, time series,
+  references, passive inputs, optional values, explicit outputs, startup
+  scheduling, equality support, and nested graph boundaries
 - neutral type declarations, input matching, and output defaults through
   collections and reference targets, for callable and aggregate definitions
 - reference guarantee limits through collections and unions, explicit reference
@@ -171,6 +174,9 @@ graph compilation or evaluation.
 - node-call deduplication, opt-out, and identity inputs
 - operator overload applicability, selection, on-demand metadata and requirement resolvers, error handling, and caching
 - `opt` argument matching, required-input preference, cache separation, named arguments, and variadic forwarding
+- required scalar preference over absence-accepting parameters, including
+  promoted forms, absent arguments, type specificity, conflicting preferences,
+  and mixed scalar and time series calls
 - context time series declaration, lexical binding, snapshot capture and activation, explicit arguments, type
   resolution, diagnostics, and caching
 - graph arguments, including signature type resolution, repeated variables, exact and pattern matching,
@@ -284,10 +290,20 @@ For each reusable node and graph, test:
 - supported graph shapes
 - reported errors
 
-### C++ library operators
+### Standard library
 
-- declarations, scalar and time-series overloads, guarantee propagation, validity changes, reference inputs, nested
-  graphs, and unsupported scalar types
+- arithmetic across scalar and time series arguments, exact type matching,
+  integer and temporal wraparound, and borrowed string construction
+- optional addition and multiplication, initial invalidity, invalidation,
+  revalidation, startup scheduling, and distinctions from explicit defaults
+- scalar equality through built-in, compound, collection, and extension views;
+  ordering and Boolean operations
+- guarantee propagation, equal-result tick selection, reference bindings,
+  scalar-only first-cycle evaluation and compiled node counts, and nested graph composition
+- C++ and Python wiring syntax, named arguments, diagnostics, lifetime checks,
+  native operator exports, and installed library use
+- Boolean graph operators, required-input gating, evaluation of both C++ operand
+  expressions, rejection of native truth conversion, and explicit output-presence checks
 
 ### Python integration
 

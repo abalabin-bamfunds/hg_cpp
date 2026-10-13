@@ -39,6 +39,137 @@ def test_add_operator_accepts_double_scalars_and_time_series():
     assert bg.test_graph(promoted_add, [1.0, 2.0], [10.0, 20.0]) == [11.0, 22.0]
 
 
+def test_add_operator_accepts_i64_scalars_and_time_series():
+    @bg.graph
+    def scalar_add() -> bg.TS[int]:
+        return bg.operators.add(2, 3)
+
+    @bg.graph
+    def series_plus_scalar(value: bg.TS[int]) -> bg.TS[int]:
+        return bg.operators.add(value, 3)
+
+    @bg.graph
+    def scalar_plus_series(value: bg.TS[int]) -> bg.TS[int]:
+        return bg.operators.add(3, value)
+
+    assert bg.test_graph(scalar_add) == [5]
+    assert bg.test_graph(series_plus_scalar, [1, -2]) == [4, 1]
+    assert bg.test_graph(scalar_plus_series, [1, -2]) == [4, 1]
+
+
+def test_i64_arithmetic_wraps_at_signed_boundaries():
+    minimum = -(1 << 63)
+    maximum = (1 << 63) - 1
+
+    @bg.graph
+    def add(lhs: bg.TS[int], rhs: bg.TS[int]) -> bg.TS[int]:
+        return lhs + rhs
+
+    @bg.graph
+    def subtract(lhs: bg.TS[int], rhs: bg.TS[int]) -> bg.TS[int]:
+        return lhs - rhs
+
+    @bg.graph
+    def multiply(lhs: bg.TS[int], rhs: bg.TS[int]) -> bg.TS[int]:
+        return lhs * rhs
+
+    @bg.graph
+    def negate(value: bg.TS[int]) -> bg.TS[int]:
+        return -value
+
+    @bg.graph
+    def absolute(value: bg.TS[int]) -> bg.TS[int]:
+        return abs(value)
+
+    assert bg.test_graph(add, [maximum, minimum], [1, -1]) == [minimum, maximum]
+    assert bg.test_graph(subtract, [minimum, maximum], [1, -1]) == [maximum, minimum]
+    assert bg.test_graph(multiply, [maximum, minimum], [2, -1]) == [-2, minimum]
+    assert bg.test_graph(negate, [minimum, maximum]) == [minimum, -maximum]
+    assert bg.test_graph(absolute, [minimum, -maximum]) == [minimum, maximum]
+
+
+def test_python_operator_syntax_and_named_boolean_operators():
+    @bg.graph
+    def arithmetic(lhs: bg.TS[float], rhs: bg.TS[float]) -> bg.TS[float]:
+        return abs(-(lhs - rhs) * rhs)
+
+    @bg.graph
+    def comparison(lhs: bg.TS[int], rhs: bg.TS[int]) -> bg.TS[bool]:
+        return bg.operators.and_(lhs < rhs, bg.operators.not_(rhs < 0))
+
+    assert bg.test_graph(arithmetic, [5.0, 2.0], [2.0, 3.0]) == [6.0, 3.0]
+    assert bg.test_graph(comparison, [1, 4, 3], [2, 3, -1]) == [True, False, False]
+
+
+def test_symbol_equality_handles_scalar_mixed_and_time_series_inputs():
+    @bg.graph
+    def scalar_equal() -> bg.TS[bool]:
+        return bg.operators.eq(bg.Symbol(), bg.symbol(""))
+
+    @bg.graph
+    def scalar_not_equal() -> bg.TS[bool]:
+        return bg.operators.ne(bg.Symbol(), bg.symbol(""))
+
+    @bg.graph
+    def mixed_equal(value: bg.TS[bg.Symbol]) -> bg.TS[bool]:
+        return bg.operators.eq(value, bg.symbol(""))
+
+    @bg.graph
+    def mixed_not_equal(value: bg.TS[bg.Symbol]) -> bg.TS[bool]:
+        return bg.operators.ne(value, bg.symbol(""))
+
+    @bg.graph
+    def series_equal(lhs: bg.TS[bg.Symbol], rhs: bg.TS[bg.Symbol]) -> bg.TS[bool]:
+        return bg.operators.eq(lhs, rhs)
+
+    @bg.graph
+    def series_not_equal(lhs: bg.TS[bg.Symbol], rhs: bg.TS[bg.Symbol]) -> bg.TS[bool]:
+        return bg.operators.ne(lhs, rhs)
+
+    values = [bg.Symbol(), bg.symbol(""), bg.symbol("bid")]
+    same_or_different = [bg.symbol(""), bg.symbol(""), bg.symbol("ask")]
+
+    assert bg.test_graph(scalar_equal) == [False]
+    assert bg.test_graph(scalar_not_equal) == [True]
+    assert bg.test_graph(mixed_equal, values) == [False, True, False]
+    assert bg.test_graph(mixed_not_equal, values) == [True, False, True]
+    assert bg.test_graph(series_equal, values, same_or_different) == [False, True, False]
+    assert bg.test_graph(series_not_equal, values, same_or_different) == [True, False, True]
+
+
+@pytest.mark.parametrize(
+    "expression",
+    [
+        bool,
+        lambda point: point and point,
+        lambda point: point or point,
+        lambda point: not point,
+        lambda point: point < 3 < point,
+    ],
+    ids=["bool", "and", "or", "not", "chained-comparison"],
+)
+def test_python_wiring_points_reject_truth_conversion(expression):
+    @bg.graph
+    def graph(value: bg.TS[int]) -> bg.TS[int]:
+        return expression(value)
+
+    with pytest.raises(TypeError, match="wiring point has no Python truth value"):
+        bg.test_graph(graph, [1])
+
+
+def test_add_operator_concatenates_python_strings():
+    @bg.graph
+    def scalar_add() -> bg.TS[str]:
+        return bg.operators.add("left", "right")
+
+    @bg.graph
+    def series_add(value: bg.TS[str]) -> bg.TS[str]:
+        return bg.operators.add(value, "\x00suffix")
+
+    assert bg.test_graph(scalar_add) == ["leftright"]
+    assert bg.test_graph(series_add, ["a\x00b", "café"]) == ["a\x00b\x00suffix", "café\x00suffix"]
+
+
 def test_add_accepts_a_native_const_wiring_point_and_propagates_its_guarantee():
     @bg.graph
     def graph() -> bg.TS[float]:
@@ -161,22 +292,85 @@ def test_default_operator_is_available_with_native_fallback_behavior():
     assert bg.test_graph(graph, [None, 1.0, 3.0]) == [5.0, 1.0, 3.0]
 
 
-def test_add_rejects_optional_input_qualifiers_without_an_optional_overload():
+def test_add_optional_overload_substitutes_zero_for_invalid_inputs():
+    import bg._bg_test_extension as extension
+
+    @bg.node
+    def to_double(value: int) -> float:
+        return float(value)
+
     @bg.graph
-    def graph(value: bg.TS[float]) -> bg.TS[float]:
+    def optional_series_plus_scalar(value: bg.TS[int]) -> bg.TS[float]:
+        value = to_double(extension.invalidate_on_zero(value))
         return bg.operators.add(bg.opt(value), 1.0)
 
-    with pytest.raises(ValueError, match="an opt-qualified argument requires an optional input parameter"):
-        bg.test_graph(graph, [1.0])
-
-
-def test_wiring_point_addition_rejects_optional_inputs_without_an_optional_overload():
     @bg.graph
-    def graph(value: bg.TS[float]) -> bg.TS[float]:
+    def scalar_plus_optional_series(value: bg.TS[int]) -> bg.TS[float]:
+        value = to_double(extension.invalidate_on_zero(value))
+        return 1.0 + bg.opt(value)
+
+    @bg.graph
+    def optional_series_plus_series(lhs: bg.TS[int], rhs: bg.TS[int]) -> bg.TS[float]:
+        lhs = to_double(extension.invalidate_on_zero(lhs))
+        rhs = to_double(extension.invalidate_on_zero(rhs))
+        return bg.opt(lhs) + rhs
+
+    assert bg.test_graph(optional_series_plus_scalar, [2, 0, 3]) == [3.0, 1.0, 4.0]
+    assert bg.test_graph(scalar_plus_optional_series, [2, 0, 3]) == [3.0, 1.0, 4.0]
+    assert bg.test_graph(optional_series_plus_series, [2, 0, 3], [10, 20, 0]) == [12.0, 20.0, 3.0]
+
+
+def test_add_optional_i64_overload_substitutes_zero_for_invalid_inputs():
+    import bg._bg_test_extension as extension
+
+    @bg.graph
+    def graph(lhs: bg.TS[int], rhs: bg.TS[int]) -> bg.TS[int]:
+        return bg.opt(extension.invalidate_on_zero(lhs)) + bg.opt(extension.invalidate_on_zero(rhs))
+
+    assert bg.test_graph(graph, [1, 0, 3, 0], [10, 20, 0, 0]) == [11, 20, 3, 0]
+
+
+def test_add_optional_string_overload_substitutes_empty_string_for_invalid_inputs():
+    import bg._bg_test_extension as extension
+
+    @bg.node
+    def to_string(value: int) -> str:
+        return str(value)
+
+    @bg.graph
+    def graph(lhs: bg.TS[int], rhs: bg.TS[int]) -> bg.TS[str]:
+        left = to_string(extension.invalidate_on_zero(lhs))
+        right = to_string(extension.invalidate_on_zero(rhs))
+        return bg.opt(left) + right
+
+    assert bg.test_graph(graph, [1, 0, 3, 0], [10, 20, 0, 0]) == ["110", "20", "3", ""]
+
+
+def test_optional_string_addition_waits_for_ticks_and_retains_latest_inputs():
+    @bg.node
+    def to_string(value: int) -> str:
+        return str(value)
+
+    @bg.graph
+    def graph(lhs: bg.TS[int], rhs: bg.TS[int]) -> bg.TS[str]:
+        return bg.opt(to_string(lhs)) + bg.opt(to_string(rhs))
+
+    assert bg.test_graph(graph, [None, 1, None, 2], [None, None, 3, None]) == [None, "1", "13", "23"]
+
+
+def test_wiring_point_addition_selects_optional_overload():
+    import bg._bg_test_extension as extension
+
+    @bg.node
+    def to_double(value: int) -> float:
+        return float(value)
+
+    @bg.graph
+    def graph(value: bg.TS[int]) -> bg.TS[float]:
+        value = to_double(extension.invalidate_on_zero(value))
         return bg.opt(value) + 1.0
 
-    with pytest.raises(ValueError, match="an opt-qualified argument requires an optional input parameter"):
-        bg.test_graph(graph, [1.0])
+    assert bg.test_graph(graph, [2, 0, 3]) == [3.0, 1.0, 4.0]
 
 
 def test_wiring_point_addition_does_not_depend_on_python_operator_attributes():
@@ -212,11 +406,11 @@ assert bg.test_graph(reflected, [3.0]) == [5.0]
 
 def test_add_reports_native_overload_diagnostics_for_unsupported_types():
     @bg.graph
-    def graph(lhs: bg.TS[int], rhs: bg.TS[int]) -> bg.TS[int]:
+    def graph(lhs: bg.TS[bool], rhs: bg.TS[bool]) -> bg.TS[bool]:
         return bg.operators.add(lhs, rhs)
 
     with pytest.raises(ValueError, match="Cannot resolve operator add"):
-        bg.test_graph(graph, [1], [2])
+        bg.test_graph(graph, [True], [False])
 
     @bg.graph
     def mixed(lhs: bg.TS[float], rhs: bg.TS[int]) -> bg.TS[float]:

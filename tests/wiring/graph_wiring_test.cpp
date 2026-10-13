@@ -12,6 +12,7 @@
 #include <bg/type/time_series_reference_type.hpp>
 #include <bg/type/time_series_value_type.hpp>
 #include <bg/type/type_registry.hpp>
+#include <bg/type/type_resolution_error.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
@@ -616,7 +617,14 @@ TEST_CASE("required scalar parameters reject absence", "[graph_wiring][feature:w
     bg::GraphWiring wiring;
     const bg::WiringContext context{wiring};
 
-    CHECK_THROWS_AS(required_scalar(std::optional<int>{}), bg::WiringError);
+    try {
+        (void)required_scalar(std::optional<int>{});
+        FAIL("expected a required scalar to reject absence");
+    } catch (const bg::TypeResolutionError &error) {
+        CHECK(error.code() == bg::TypeResolutionErrorCode::mismatch);
+        CHECK(error.subject().text() == "value");
+        CHECK(std::string{error.what()}.contains("required scalar parameter has no value"));
+    }
     CHECK_NOTHROW(wiring.finalize());
     CHECK(wiring.nodes().empty());
 }

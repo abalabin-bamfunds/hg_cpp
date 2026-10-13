@@ -66,9 +66,14 @@ const auto scale = node(
     });
 ```
 
-Use an aggregate for persistent state or lifecycle functions. Use a
-runtime-signature definition when its parameter structure becomes known only
-at runtime. The [node API](node-api.md) defines each form and the lifecycle
+Use an aggregate for persistent state or lifecycle functions. Use an explicit
+`Out<>` parameter or field for direct construction of an allocator-owned
+output. String concatenation can borrow `std::string_view` parameters and
+publish a `StringBuilder` result through `Out<>` without constructing an
+intermediate `std::string`.
+
+Use a runtime-signature definition when its parameter structure becomes known
+only at runtime. The [node API](node-api.md) defines each form and the lifecycle
 restrictions on plain promoted parameters.
 
 Use a dedicated node when graph composition has a demonstrated execution or
@@ -100,12 +105,8 @@ Use `optional` when invalidity has a defined meaning for the operation:
 
 ```cpp
 const auto add_optional = node(
-    [](In<TS<double>, optional> lhs,
-       In<TS<double>, optional> rhs) {
-        const auto left = lhs.valid() ? *lhs : 0.0;
-        const auto right = rhs.valid() ? *rhs : 0.0;
-
-        return left + right;
+    [](std::optional<double> lhs, std::optional<double> rhs) {
+        return lhs.value_or(0.0) + rhs.value_or(0.0);
     });
 ```
 
@@ -184,13 +185,23 @@ scheduling, lifecycle, cleanup, and failure behavior.
 
 ## Propagate output guarantees
 
-Use a guarantee variable when the complete behavior supports retaining the
-input guarantee:
+Use a plain scalar return for a required, input-driven callable. Wiring infers
+the weakest observed input guarantee:
+
+```cpp
+const auto negate = node([](double value) { return -value; });
+```
+
+See [callable output inference](type-system.md#callable-output-inference) for
+eligibility and scheduling rules.
+
+Use an explicit output and a guarantee variable when another definition form
+or output operation supports retaining the input guarantee:
 
 ```cpp
 inline constexpr auto G = guarantee_variable<"G">;
 
-const auto negate = node(
+const auto negate_explicit = node(
     [](In<TS<double, G>> value, Out<TS<double, G>> output) {
         output.set(-*value);
     });

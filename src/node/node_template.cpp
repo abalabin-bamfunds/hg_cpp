@@ -99,11 +99,6 @@ std::optional<WiringPoint> NodeTemplate::wire(GraphWiring &wiring, ResolvedSigna
     if (std::ranges::any_of(arguments, &WiringArgument::is_graph)) {
         throw WiringError{"a graph argument cannot be stored by a node"};
     }
-    for (std::size_t index = 0; index < arguments.size(); ++index) {
-        if (!arguments[index].present() && !signature.parameters[index].accepts_absent_scalar) {
-            throw WiringError{"a required scalar parameter has no value"};
-        }
-    }
 
     auto selected_output_runtime_type = static_cast<const TimeSeriesRuntimeType *>(nullptr);
     if (signature.output != nullptr) {

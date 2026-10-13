@@ -153,7 +153,13 @@ set_target_properties(
         SOVERSION ${PROJECT_VERSION_MAJOR}
 )
 
-add_library(bg_library SHARED src/library/operators.cpp)
+add_library(
+    bg_library SHARED
+    src/library/logical.cpp
+    src/library/numeric.cpp
+    src/library/operators.cpp
+    src/library/string.cpp
+)
 add_library(bg::library ALIAS bg_library)
 
 target_compile_features(bg_library PUBLIC cxx_std_23)

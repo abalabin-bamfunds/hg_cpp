@@ -7,22 +7,111 @@
 #include <utility>
 
 namespace bg {
+namespace details {
 
-template <typename LHS, auto... LHS_PROPERTIES, typename RHS, auto... RHS_PROPERTIES>
-auto operator+(wp<LHS, LHS_PROPERTIES...> lhs, wp<RHS, RHS_PROPERTIES...> rhs) {
-    return operators::add(lhs, rhs);
+template <typename T>
+inline constexpr bool wiring_point_operand = is_typed_wiring_point<std::remove_cvref_t<T>>;
+
+template <typename T>
+inline constexpr bool scalar_wiring_operand = supported_scalar_argument<T> || supported_scalar_value_argument<T>;
+
+template <typename LHS, typename RHS>
+concept library_binary_wiring_operands =
+    (wiring_point_operand<LHS> || wiring_point_operand<RHS>) &&
+    (wiring_point_operand<LHS> || scalar_wiring_operand<LHS>) &&
+    (wiring_point_operand<RHS> || scalar_wiring_operand<RHS>);
+
+} // namespace details
+
+template <typename LHS, typename RHS>
+    requires details::library_binary_wiring_operands<LHS, RHS>
+auto operator+(LHS &&lhs, RHS &&rhs) {
+    return operators::add(std::forward<LHS>(lhs), std::forward<RHS>(rhs));
 }
 
-template <typename TIME_SERIES, auto... PROPERTIES, typename SCALAR>
-    requires(details::supported_scalar_argument<SCALAR> || details::supported_scalar_value_argument<SCALAR>)
-auto operator+(wp<TIME_SERIES, PROPERTIES...> lhs, SCALAR &&rhs) {
-    return operators::add(lhs, std::forward<SCALAR>(rhs));
+template <typename LHS, typename RHS>
+    requires details::library_binary_wiring_operands<LHS, RHS>
+auto operator-(LHS &&lhs, RHS &&rhs) {
+    return operators::sub(std::forward<LHS>(lhs), std::forward<RHS>(rhs));
 }
 
-template <typename SCALAR, typename TIME_SERIES, auto... PROPERTIES>
-    requires(details::supported_scalar_argument<SCALAR> || details::supported_scalar_value_argument<SCALAR>)
-auto operator+(SCALAR &&lhs, wp<TIME_SERIES, PROPERTIES...> rhs) {
-    return operators::add(std::forward<SCALAR>(lhs), rhs);
+template <typename LHS, typename RHS>
+    requires details::library_binary_wiring_operands<LHS, RHS>
+auto operator*(LHS &&lhs, RHS &&rhs) {
+    return operators::mul(std::forward<LHS>(lhs), std::forward<RHS>(rhs));
+}
+
+template <typename LHS, typename RHS>
+    requires details::library_binary_wiring_operands<LHS, RHS>
+auto operator==(LHS &&lhs, RHS &&rhs) {
+    return operators::eq(std::forward<LHS>(lhs), std::forward<RHS>(rhs));
+}
+
+template <typename LHS, typename RHS>
+    requires details::library_binary_wiring_operands<LHS, RHS>
+auto operator!=(LHS &&lhs, RHS &&rhs) {
+    return operators::ne(std::forward<LHS>(lhs), std::forward<RHS>(rhs));
+}
+
+template <typename LHS, typename RHS>
+    requires details::library_binary_wiring_operands<LHS, RHS>
+auto operator<(LHS &&lhs, RHS &&rhs) {
+    return operators::lt(std::forward<LHS>(lhs), std::forward<RHS>(rhs));
+}
+
+template <typename LHS, typename RHS>
+    requires details::library_binary_wiring_operands<LHS, RHS>
+auto operator<=(LHS &&lhs, RHS &&rhs) {
+    return operators::le(std::forward<LHS>(lhs), std::forward<RHS>(rhs));
+}
+
+template <typename LHS, typename RHS>
+    requires details::library_binary_wiring_operands<LHS, RHS>
+auto operator>(LHS &&lhs, RHS &&rhs) {
+    return operators::gt(std::forward<LHS>(lhs), std::forward<RHS>(rhs));
+}
+
+template <typename LHS, typename RHS>
+    requires details::library_binary_wiring_operands<LHS, RHS>
+auto operator>=(LHS &&lhs, RHS &&rhs) {
+    return operators::ge(std::forward<LHS>(lhs), std::forward<RHS>(rhs));
+}
+
+template <typename POINT>
+    requires details::wiring_point_operand<POINT>
+auto operator+(POINT &&value) {
+    return operators::pos(std::forward<POINT>(value));
+}
+
+template <typename POINT>
+    requires details::wiring_point_operand<POINT>
+auto operator-(POINT &&value) {
+    return operators::neg(std::forward<POINT>(value));
+}
+
+template <typename POINT>
+    requires details::wiring_point_operand<POINT>
+auto operator!(POINT &&value) {
+    return operators::not_(std::forward<POINT>(value));
+}
+
+// Logical wiring operators wire both operands. They do not short-circuit.
+template <typename LHS, typename RHS>
+    requires details::library_binary_wiring_operands<LHS, RHS>
+auto operator&&(LHS &&lhs, RHS &&rhs) {
+    return operators::and_(std::forward<LHS>(lhs), std::forward<RHS>(rhs));
+}
+
+template <typename LHS, typename RHS>
+    requires details::library_binary_wiring_operands<LHS, RHS>
+auto operator||(LHS &&lhs, RHS &&rhs) {
+    return operators::or_(std::forward<LHS>(lhs), std::forward<RHS>(rhs));
+}
+
+template <typename POINT>
+    requires details::wiring_point_operand<POINT>
+auto abs(POINT &&value) {
+    return operators::abs(std::forward<POINT>(value));
 }
 
 } // namespace bg

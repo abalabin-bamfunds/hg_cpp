@@ -64,6 +64,14 @@ nb::object PythonOperator::call(nb::handle lhs, nb::handle rhs) const {
     return invoke(arguments);
 }
 
+nb::object PythonOperator::call(nb::handle value) const {
+    auto &wiring = WiringContext::current().wiring();
+    auto temporary_memory = std::pmr::unsynchronized_pool_resource{};
+    auto memory = allocator{temporary_memory};
+    const auto arguments = std::array{wiring_argument(value, memory, wiring)};
+    return invoke(arguments);
+}
+
 nb::object PythonOperator::invoke(std::span<const WiringArgument> arguments) const {
     try {
         const auto result = static_cast<const WiringTemplate &>(*operation_)(arguments);
@@ -98,6 +106,20 @@ void bind_operators(nb::module_ &module) {
 
     auto operators_module = module.def_submodule("operators", "Graph operators");
     export_operator(operators_module, "add", operators::add);
+    export_operator(operators_module, "sub", operators::sub);
+    export_operator(operators_module, "mul", operators::mul);
+    export_operator(operators_module, "pos", operators::pos);
+    export_operator(operators_module, "neg", operators::neg);
+    export_operator(operators_module, "abs", operators::abs);
+    export_operator(operators_module, "eq", operators::eq);
+    export_operator(operators_module, "ne", operators::ne);
+    export_operator(operators_module, "lt", operators::lt);
+    export_operator(operators_module, "le", operators::le);
+    export_operator(operators_module, "gt", operators::gt);
+    export_operator(operators_module, "ge", operators::ge);
+    export_operator(operators_module, "and_", operators::and_);
+    export_operator(operators_module, "or_", operators::or_);
+    export_operator(operators_module, "not_", operators::not_);
     export_operator(operators_module, "const_", operators::const_);
     export_operator(operators_module, "default_", operators::default_);
     export_operator(operators_module, "getitem", operators::getitem);

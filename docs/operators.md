@@ -62,7 +62,8 @@ invoke an overload itself.
 The prototype determines the C++ return type. An output operator returns `wp<>`
 because overloads can produce different output types. A sink overload returns
 an empty `wp<>`. An outputless operator returns `void` and accepts only sink
-overloads.
+overloads. Use `has_output()` to test whether the returned `wp<>` identifies an
+output.
 
 Prototype parameter names are public keyword aliases for the overload
 parameters at the same positions. An overload's own parameter name takes
@@ -91,12 +92,8 @@ independently of the source guarantee. A reference consumer uses a normal
 reference node over the adapter output. Nested graph outputs therefore use the
 reference path.
 
-The library's initial `add` overloads add `double` scalars and time series in
-all scalar/time-series combinations. The result is a time series and retains
-the weakest guarantee observed by its time-series inputs; see
-[reference guarantees](type-system.md#reference-guarantees). Adding two scalars
-creates a constant graph source. The C++ wiring-point `operator+` overloads
-are defined by the same library header.
+The [standard library](library.md) defines supported operators, scalar types,
+optional behavior, and C++ and Python wiring syntax.
 
 An operator owns its registered overloads. Registration is permanent and is
 not concurrent with graph wiring. Adding an overload clears that operator's
@@ -112,7 +109,7 @@ The operator performs overload resolution within its wiring call.
 
 For each candidate, resolution proceeds in this order:
 
-1. Match its parameters against the supplied argument types.
+1. Validate argument qualifiers and scalar presence, then match the supplied types.
 2. Resolve its parameter and output types. This demands only mappings those types use.
 3. Resolve any additional types needed by the wiring template's metadata.
 4. Run the requirement while resolver lookup remains active.
@@ -168,11 +165,18 @@ without an applicable optional-input overload reports a wiring error.
 When applicable overloads have equivalent parameter types, `required` and
 `all_valid` time series parameters are equally preferred over `optional` for
 unmarked arguments. Otherwise equivalent `required` and `all_valid` overloads
-remain ambiguous. One overload must be at least
-as preferred at every parameter and strictly preferred at one. Conflicting
-validity preferences remain ambiguous. Type specificity precedes this
-preference. This preference applies only to time series parameters; scalar
-absence keeps its existing matching rules.
+remain ambiguous.
+
+For a supplied scalar value, a parameter that requires presence is preferred
+over an otherwise equivalent parameter that accepts absence. This applies to
+scalar-only declarations and scalar-or-time-series parameters resolved as
+scalars. An absent scalar rejects a parameter that requires presence before
+overload ranking. Omitting a fixed argument remains an argument-count error.
+
+One overload must be at least as preferred at every parameter and strictly
+preferred at one. Conflicting preferences remain ambiguous, including conflicts
+between scalar presence and time series validity. Type specificity precedes
+these preferences.
 
 Optional inputs retain their declared activity. To publish a result while every
 input is initially invalid, an implementation must request
@@ -279,9 +283,9 @@ Otherwise the call is ambiguous.
 
 Comparison includes parameter types, constraints, literal components, and
 relationships created by repeated variables. It does not include output types,
-parameter names, input activity, or requirement functions. Input validity
-constraints break ties between equivalent parameter types as described in
-[Optional arguments](#optional-arguments).
+parameter names, input activity, or requirement functions. Time series validity
+and scalar presence requirements break ties between equivalent parameter types
+as described in [Optional arguments](#optional-arguments).
 The implementation must compare complete signatures rather than add numeric
 scores for individual parameters.
 

@@ -14,11 +14,13 @@
 #include <bg/type/type_variable.hpp>
 #include <bg/type/time_series_reference_type.hpp>
 #include <bg/type/time_series_value_type.hpp>
+#include <bg/type/type_resolution_error.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
 #include <array>
+#include <optional>
 #include <stdexcept>
 #include <string>
 
@@ -300,6 +302,165 @@ TEST_CASE("opt selects optional inputs and keeps that choice distinct in the cac
         (void)operation(value);
         CHECK(selected == "required");
     });
+}
+
+TEST_CASE("scalar-only overloads prefer presence and keep absent calls distinct in the cache",
+          "[feature:operator][feature:wiring][scalar:integer][definition:function]") {
+    const auto required = bg::graph("name"_n = "requires_presence", [](bg::i64 value) {
+        return bg::operators::const_(value + 10).as<bg::TS<bg::i64, bg::TimeSeriesGuarantee::const_>>();
+    });
+    const auto optional = bg::graph("name"_n = "accepts_absence", [](std::optional<bg::i64> value) {
+        return bg::operators::const_(value.value_or(0) + 20).as<bg::TS<bg::i64, bg::TimeSeriesGuarantee::const_>>();
+    });
+
+    auto required_first = bg::operator_<auto(bg::i64) -> bg::TS<bg::i64>>{"presence", {"value"}};
+    required_first.overload(required);
+    required_first.overload(optional);
+
+    auto optional_first = bg::operator_<auto(bg::i64) -> bg::TS<bg::i64>>{"presence", {"value"}};
+    optional_first.overload(optional);
+    optional_first.overload(required);
+
+    const auto required_first_graph = [&] { return required_first(bg::i64{1}).as<bg::TS<bg::i64>>(); };
+    const auto required_first_absent = [&] {
+        return required_first(std::optional<bg::i64>{}).as<bg::TS<bg::i64>>();
+    };
+    const auto optional_first_graph = [&] { return optional_first(bg::i64{1}).as<bg::TS<bg::i64>>(); };
+    const auto optional_first_absent = [&] {
+        return optional_first(std::optional<bg::i64>{}).as<bg::TS<bg::i64>>();
+    };
+
+    CHECK(bg::testing::test_graph(required_first_graph).equals({11}));
+    CHECK(bg::testing::test_graph(required_first_absent).equals({20}));
+    CHECK(bg::testing::test_graph(required_first_graph).equals({11}));
+    CHECK(bg::testing::test_graph(optional_first_graph).equals({11}));
+    CHECK(bg::testing::test_graph(optional_first_absent).equals({20}));
+}
+
+TEST_CASE("promoted node overloads prefer presence for scalar arguments",
+          "[feature:operator][feature:wiring][scalar:integer][definition:function]") {
+    const auto required = bg::node([](int value) { return value + 10; });
+    const auto optional = bg::node([](std::optional<int> value) { return value.value_or(0) + 20; });
+    auto operation = bg::operator_<auto(bg::i64) -> bg::TS<bg::i64>>{"promoted_presence", {"value"}};
+    operation.overload(required);
+    operation.overload(optional);
+
+    const auto required_graph = [&] { return operation(bg::i64{1}).as<bg::TS<bg::i64>>(); };
+    const auto absent_graph = [&] { return operation(std::optional<bg::i64>{}).as<bg::TS<bg::i64>>(); };
+
+    CHECK(bg::testing::test_graph(required_graph).equals({11}));
+    CHECK(bg::testing::test_graph(absent_graph).equals({20}));
+    CHECK(bg::testing::test_graph(required_graph).equals({11}));
+}
+
+TEST_CASE("type specificity precedes scalar presence preference",
+          "[feature:operator][feature:wiring][scalar:integer][definition:function]") {
+    const auto promoted = bg::node([](int value) { return value + 100; });
+    const auto explicit_scalar = bg::graph("name"_n = "optional_scalar", [](std::optional<bg::i64> value) {
+        return bg::operators::const_(value.value_or(0) + 200).as<bg::TS<bg::i64, bg::TimeSeriesGuarantee::const_>>();
+    });
+    auto operation = bg::operator_<auto(bg::i64) -> bg::TS<bg::i64>>{"specificity", {"value"}};
+    operation.overload(promoted);
+    operation.overload(explicit_scalar);
+
+    const auto graph = [&] { return operation(bg::i64{1}).as<bg::TS<bg::i64>>(); };
+    CHECK(bg::testing::test_graph(graph).equals({201}));
+}
+
+TEST_CASE("conflicting scalar presence preferences remain ambiguous",
+          "[feature:operator][feature:wiring][scalar:integer][definition:function]") {
+    auto operation = bg::operator_<auto(bg::i64, bg::i64) -> bg::TS<bg::i64>>{"presence", {"lhs", "rhs"}};
+    operation.overload(bg::graph("name"_n = "required_lhs", [](bg::i64 lhs, std::optional<bg::i64>) {
+        return bg::operators::const_(lhs).as<bg::TS<bg::i64, bg::TimeSeriesGuarantee::const_>>();
+    }));
+    operation.overload(bg::graph("name"_n = "required_rhs", [](std::optional<bg::i64>, bg::i64 rhs) {
+        return bg::operators::const_(rhs).as<bg::TS<bg::i64, bg::TimeSeriesGuarantee::const_>>();
+    }));
+
+    try {
+        bg::testing::test_wiring([&] { (void)operation(bg::i64{1}, bg::i64{2}); });
+        FAIL("expected conflicting scalar presence preferences to remain ambiguous");
+    } catch (const bg::WiringError &error) {
+        REQUIRE(error.diagnostic());
+        CHECK(error.diagnostic()->ambiguous);
+        CHECK(error.diagnostic()->candidates.size() == 2);
+    }
+}
+
+TEST_CASE("scalar presence and time-series validity preferences share one partial order",
+          "[feature:operator][feature:wiring][scalar:integer][validity:optional][series:value]"
+          "[definition:function]") {
+    auto selected = std::string{};
+    auto operation = bg::operator_<auto(bg::i64, bg::TS<bg::i64>) -> bg::TS<bg::i64>>{
+        "presence_and_validity", {"value", "trigger"}};
+    operation.overload(bg::graph("name"_n = "required_scalar", [&](bg::i64 value,
+                                                                      bg::wp<bg::TS<bg::i64>, bg::optional>) {
+        selected = "required_scalar";
+        return bg::operators::const_(value).as<bg::TS<bg::i64, bg::TimeSeriesGuarantee::const_>>();
+    }));
+    operation.overload(bg::graph("name"_n = "optional_scalar", [&](std::optional<bg::i64> value,
+                                                                       bg::wp<bg::TS<bg::i64>>) {
+        selected = "optional_scalar";
+        return bg::operators::const_(value.value_or(0)).as<bg::TS<bg::i64, bg::TimeSeriesGuarantee::const_>>();
+    }));
+
+    const auto trigger = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
+    try {
+        bg::testing::test_wiring([&] { (void)operation(bg::i64{1}, trigger()); });
+        FAIL("expected scalar and time-series preferences to conflict");
+    } catch (const bg::WiringError &error) {
+        REQUIRE(error.diagnostic());
+        CHECK(error.diagnostic()->ambiguous);
+        CHECK(error.diagnostic()->candidates.size() == 2);
+    }
+
+    bg::testing::test_wiring([&] {
+        const auto optional_trigger = bg::opt(trigger());
+        const auto result = operation(bg::i64{1}, optional_trigger);
+        CHECK(result.has_output());
+        CHECK(result.type().accepts(bg::TS<bg::i64, bg::TimeSeriesGuarantee::const_>::type()));
+        CHECK(selected == "required_scalar");
+    });
+}
+
+TEST_CASE("a required scalar graph rejects absence before running its body",
+          "[feature:operator][feature:wiring][scalar:integer][definition:function]") {
+    auto body_calls = 0;
+    const auto graph = bg::graph("name"_n = "required_scalar", [&](bg::i64 value) {
+        ++body_calls;
+        return bg::operators::const_(value).as<bg::TS<bg::i64, bg::TimeSeriesGuarantee::const_>>();
+    });
+
+    try {
+        bg::testing::test_wiring([&] { (void)graph(std::optional<bg::i64>{}); });
+        FAIL("expected an absent scalar to be rejected");
+    } catch (const bg::TypeResolutionError &error) {
+        CHECK(error.code() == bg::TypeResolutionErrorCode::mismatch);
+        CHECK(std::string{error.what()}.contains("required scalar parameter has no value"));
+    }
+    CHECK(body_calls == 0);
+}
+
+TEST_CASE("an operator rejects absent required scalars before overload wiring",
+          "[feature:operator][feature:wiring][scalar:integer]") {
+    auto overload_calls = 0;
+    auto operation = bg::operator_<auto(bg::i64) -> bg::TS<bg::i64>>{"required", {"value"}};
+    operation.overload(bg::graph("name"_n = "required", [&](bg::i64 value) {
+        ++overload_calls;
+        return bg::operators::const_(value).as<bg::TS<bg::i64, bg::TimeSeriesGuarantee::const_>>();
+    }));
+
+    try {
+        bg::testing::test_wiring([&] { (void)operation(std::optional<bg::i64>{}); });
+        FAIL("expected an absent scalar to be rejected");
+    } catch (const bg::WiringError &error) {
+        REQUIRE(error.diagnostic());
+        REQUIRE(error.diagnostic()->candidates.size() == 1);
+        CHECK(error.diagnostic()->candidates.front().stage == bg::WiringFailureStage::type_match);
+        CHECK(error.diagnostic()->candidates.front().message.find("required scalar parameter has no value") !=
+              std::string::npos);
+    }
+    CHECK(overload_calls == 0);
 }
 
 TEST_CASE("all_valid is preferred over optional for an unmarked input",

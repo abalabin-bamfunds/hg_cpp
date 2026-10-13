@@ -330,7 +330,6 @@ TEST_CASE("a sink map returns a wiring point without an output",
         const auto result = map(sink, values());
 
         CHECK_FALSE(result.has_output());
-        CHECK_FALSE(static_cast<bool>(result));
         CHECK_THROWS_WITH(result.type(), "a wiring point has no output");
         CHECK_THROWS_WITH(result.graph(), "a wiring point has no output");
         CHECK_THROWS_WITH(result.as<TS<i64>>(), "a wiring point has no output");

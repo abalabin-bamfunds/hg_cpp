@@ -108,6 +108,33 @@ struct RuntimeSinkDefinition {
     bg::Signature signature_;
 };
 
+struct EmptyInvocationSourceDefinition {
+    static constexpr bool schedule_on_start = true;
+
+    EmptyInvocationSourceDefinition()
+        : signature_{bg::util::symbol{"empty_invocation_source"}, {}, bg::TS<bg::i64>::type()} {}
+
+    const bg::Signature &signature() const noexcept { return signature_; }
+
+    static void evaluate(bg::NodeInvocation<> invocation) {
+        CHECK(invocation.parameter_count() == 0);
+        CHECK(invocation.inputs().begin() == invocation.inputs().end());
+        CHECK(invocation.scalars().begin() == invocation.scalars().end());
+        invocation.output().visit([](bg::Out<bg::TS<bg::SCALAR>> *output) {
+            const auto value = bg::i64{1};
+            output->set_value(bg::Scalar<bg::i64>::from(value));
+        }, ddv::noop);
+    }
+
+    bg::Signature signature_;
+};
+
+TEST_CASE("a runtime-signature node with no parameters exposes empty input and scalar ranges",
+          "[node][runtime-signature][definition:runtime][feature:node-api]") {
+    const auto source = bg::node(EmptyInvocationSourceDefinition{});
+    CHECK(bg::testing::test_graph(source).equals<bg::i64>({1}));
+}
+
 TEST_CASE("a runtime-signature node can omit its output",
           "[node][runtime-signature][definition:runtime][output][feature:node-api][declaration:runtime]") {
     const auto sink = bg::node(RuntimeSinkDefinition{});

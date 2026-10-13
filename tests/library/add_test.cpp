@@ -10,34 +10,38 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <array>
+#include <chrono>
+#include <limits>
 #include <optional>
+#include <stdexcept>
+#include <string>
+#include <string_view>
 #include <vector>
 
 using namespace bg;
 using namespace bg::literals;
 
-TEST_CASE("scalar addition creates a constant graph source",
+TEST_CASE("scalar addition runs once at startup",
           "[feature:operator][shape:source][scalar:floating-point][guarantee:const]") {
-    const auto graph = [] {
-        const auto result = operators::add("lhs"_n = 1.5, "rhs"_n = 2.5);
-        CHECK(&result.type() == &TS<double, TimeSeriesGuarantee::const_>::type());
-        return result;
-    };
-
-    const auto actual = testing::test_graph(graph);
-
-    CHECK(actual.equals<double>({4.0}));
+    const auto scalar_addition = [](wp<TS<bool>>) { return operators::add(1.5, 2.5); };
+    CHECK(testing::test_graph(scalar_addition, std::array{true, false, true})
+              .equals<double>({4.0, std::nullopt, std::nullopt}));
 
     auto wiring = GraphWiring{};
     {
         auto context = WiringContext{wiring};
-        (void)operators::add(1.5, 2.5);
+        const auto result = operators::add("lhs"_n = 1.5, "rhs"_n = 2.5);
+        CHECK(&result.type() == &TS<double, TimeSeriesGuarantee::const_>::type());
     }
 
     wiring.finalize();
     const auto compiled = CompiledGraph{wiring};
-    CHECK(wiring.nodes().size() == 1);
-    CHECK(compiled.node_count() == 0);
+    REQUIRE(compiled.node_count() == 1);
+    CHECK(compiled.node(0).has_output());
+    CHECK(compiled.node(0).evaluation_function() != nullptr);
+    REQUIRE(compiled.node(0).parameters().size() == 2);
+    CHECK(compiled.node(0).parameters()[0].mode() == ParameterBindingMode::scalar);
+    CHECK(compiled.node(0).parameters()[1].mode() == ParameterBindingMode::scalar);
 }
 
 TEST_CASE("addition accepts scalar and time-series operands in either order",
@@ -70,6 +74,189 @@ TEST_CASE("addition accepts named time-series arguments",
               .equals<double>({11.0, 22.0}));
 }
 
+TEST_CASE("string addition concatenates scalar and time-series values",
+          "[feature:operator][series:value][scalar:string][shape:source][shape:single-node]") {
+    const auto constant = [] {
+        const auto result = operators::add(std::string_view{"left"}, std::string_view{"right"});
+        CHECK(&result.type() == &TS<string, TimeSeriesGuarantee::const_>::type());
+        return result;
+    };
+    const auto prefix = [](wp<TS<string>> value) { return operators::add(std::string_view{"prefix:"}, value); };
+    const auto suffix = [](wp<TS<string>> value) { return operators::add(value, std::string_view{" :suffix"}); };
+    const auto left = std::array<std::string_view, 2>{"one", "two"};
+
+    CHECK(testing::test_graph(constant).equals<string>({"leftright"}));
+    CHECK(testing::test_graph(prefix, left).equals<string>({"prefix:one", "prefix:two"}));
+    CHECK(testing::test_graph(suffix, left).equals<string>({"one :suffix", "two :suffix"}));
+}
+
+TEST_CASE("string addition preserves embedded nulls and supports long values",
+          "[feature:operator][series:value][scalar:string]") {
+    const auto input = std::array{std::string_view{"a\0b", 3}};
+    const auto embedded_null = [](wp<TS<string>> value) { return operators::add(value, std::string_view{"\0c", 2}); };
+
+    auto lhs = std::string(128, 'a');
+    auto rhs = std::string(160, 'b');
+    const auto long_lhs = std::array{std::string_view{lhs}};
+    const auto long_rhs = std::array{std::string_view{rhs}};
+    const auto long_add = [](wp<TS<string>> left, wp<TS<string>> right) { return operators::add(left, right); };
+    auto expected_long = lhs + rhs;
+    const auto long_scalar_add = [&] {
+        return operators::add(std::string_view{lhs}, std::string_view{rhs});
+    };
+
+    CHECK(testing::test_graph(embedded_null, input).equals<string>({std::string_view{"a\0b\0c", 5}}));
+    CHECK(testing::test_graph(long_add, long_lhs, long_rhs).equals<string>({expected_long}));
+    CHECK(testing::test_graph(long_scalar_add).equals<string>({expected_long}));
+}
+
+TEST_CASE("string addition propagates time-series guarantees",
+          "[feature:operator][feature:type-system][series:value][scalar:string]"
+          "[guarantee:ordinary][guarantee:deduplicated][guarantee:final][guarantee:const]") {
+    struct deduplicated_source {
+        In<TS<string>> input;
+        Out<TS<string, TimeSeriesGuarantee::deduplicated>> output;
+
+        void evaluate() const { output.set(*input); }
+    };
+    struct final_source {
+        Scalar<string> value;
+        Out<TS<string, TimeSeriesGuarantee::final>> output;
+
+        void start() const { output.set(*value); }
+    };
+    const auto pass_reference = node([](In<REF<TS<string, TimeSeriesGuarantee::final>>> input,
+                                        Out<REF<TS<string, TimeSeriesGuarantee::final>>> output) {
+        output.copy(input);
+    });
+
+    const auto ordinary = [](wp<TS<string, TimeSeriesGuarantee::ordinary>> lhs,
+                             wp<TS<string, TimeSeriesGuarantee::ordinary>> rhs) {
+        const auto result = operators::add(lhs, rhs);
+        CHECK(&result.type() == &TS<string, TimeSeriesGuarantee::ordinary>::type());
+        return result;
+    };
+    const auto make_deduplicated = node<deduplicated_source>();
+    const auto deduplicated = [&](wp<TS<string>> lhs) {
+        const auto result = operators::add(make_deduplicated(lhs), std::string_view{"!"});
+        CHECK(&result.type() == &TS<string, TimeSeriesGuarantee::deduplicated>::type());
+        return result;
+    };
+    const auto make_final = node<final_source>();
+    const auto final = [&](wp<TS<string>> ordinary_value) {
+        const auto result = operators::add(make_final(std::string_view{"final"}), ordinary_value);
+        CHECK(&result.type() == &TS<string, TimeSeriesGuarantee::ordinary>::type());
+        return result;
+    };
+    const auto final_pair = [&] {
+        const auto result = operators::add(make_final(std::string_view{"left"}),
+                                           make_final(std::string_view{"right"}));
+        CHECK(&result.type() == &TS<string, TimeSeriesGuarantee::final>::type());
+        return result;
+    };
+    const auto final_plus_deduplicated = [&](wp<TS<string>> ordinary_value) {
+        const auto result = operators::add(make_final(std::string_view{"final"}),
+                                           make_deduplicated(ordinary_value));
+        CHECK(&result.type() == &TS<string, TimeSeriesGuarantee::deduplicated>::type());
+        return result;
+    };
+    const auto concatenated_deduplication = [&](wp<TS<string>> lhs, wp<TS<string>> rhs) {
+        const auto result = operators::add(make_deduplicated(lhs), make_deduplicated(rhs));
+        CHECK(&result.type() == &TS<string, TimeSeriesGuarantee::deduplicated>::type());
+        return result;
+    };
+    const auto reference = [&](wp<TS<string>> ordinary_value) {
+        const auto final_value = make_final(std::string_view{"reference"});
+        const auto result = operators::add(pass_reference(final_value), std::string_view{"!"});
+        CHECK(&result.type() == &TS<string, TimeSeriesGuarantee::ordinary>::type());
+        return operators::add(result, ordinary_value);
+    };
+    const auto constant = [] {
+        const auto result = operators::add(operators::const_(std::string_view{"a"}),
+                                           operators::const_(std::string_view{"b"}));
+        CHECK(&result.type() == &TS<string, TimeSeriesGuarantee::const_>::type());
+        return result;
+    };
+    const auto input = std::array<std::string_view, 2>{"x", "y"};
+
+    CHECK(testing::test_graph(ordinary, input, input).equals<string>({"xx", "yy"}));
+    CHECK(testing::test_graph(deduplicated, input).equals<string>({"x!", "y!"}));
+    CHECK(testing::test_graph(final, input).equals<string>({"finalx", "finaly"}));
+    CHECK(testing::test_graph(final_pair).equals<string>({"leftright"}));
+    CHECK(testing::test_graph(final_plus_deduplicated, input).equals<string>({"finalx", "finaly"}));
+    CHECK(testing::test_graph(concatenated_deduplication,
+                              std::array<std::string_view, 2>{"ab", "a"},
+                              std::array<std::string_view, 2>{"c", "bc"})
+              .equals<string>({"abc", std::nullopt}));
+    CHECK(testing::test_graph(reference, input).equals<string>({"reference!x", "reference!y"}));
+    CHECK(testing::test_graph(constant).equals<string>({"ab"}));
+}
+
+TEST_CASE("string optional addition substitutes the empty string for invalid operands",
+          "[feature:operator][feature:validity][validity:optional][series:value][scalar:string]") {
+    struct invalidating_source {
+        In<TS<string>> value;
+        In<TS<bool>> invalidate;
+        Out<TS<string>> output;
+
+        void evaluate() const {
+            if (*invalidate) {
+                output.invalidate();
+                return;
+            }
+
+            output.copy(value);
+        }
+    };
+
+    const auto source = node<invalidating_source>();
+    const auto strict = [&](wp<TS<string>> lhs, wp<TS<bool>> invalidate_lhs,
+                            wp<TS<string>> rhs, wp<TS<bool>> invalidate_rhs) {
+        return source(lhs, invalidate_lhs) + source(rhs, invalidate_rhs);
+    };
+    const auto optional_lhs = [&](wp<TS<string>> lhs, wp<TS<bool>> invalidate_lhs,
+                                  wp<TS<string>> rhs, wp<TS<bool>> invalidate_rhs) {
+        return opt(source(lhs, invalidate_lhs)) + source(rhs, invalidate_rhs);
+    };
+    const auto optional_rhs = [&](wp<TS<string>> lhs, wp<TS<bool>> invalidate_lhs,
+                                  wp<TS<string>> rhs, wp<TS<bool>> invalidate_rhs) {
+        return source(lhs, invalidate_lhs) + opt(source(rhs, invalidate_rhs));
+    };
+    const auto optional_plus_scalar = [&](wp<TS<string>> value, wp<TS<bool>> invalidate) {
+        return opt(source(value, invalidate)) + std::string_view{"!"};
+    };
+    const auto scalar_plus_optional = [&](wp<TS<string>> value, wp<TS<bool>> invalidate) {
+        return std::string_view{"!"} + opt(source(value, invalidate));
+    };
+    const auto lhs = std::array<std::string_view, 4>{"a", "b", "c", "d"};
+    const auto rhs = std::array<std::string_view, 4>{"x", "y", "z", "q"};
+    const auto invalidate_lhs = std::array{false, true, false, true};
+    const auto invalidate_rhs = std::array{false, false, true, true};
+    CHECK(testing::test_graph(strict, lhs, invalidate_lhs, rhs, invalidate_rhs)
+              .equals<string>({"ax", std::nullopt, std::nullopt, std::nullopt}));
+    CHECK(testing::test_graph(optional_lhs, lhs, invalidate_lhs, rhs, invalidate_rhs)
+              .equals<string>({"ax", "y", "c", ""}));
+    CHECK(testing::test_graph(optional_rhs, lhs, invalidate_lhs, rhs, invalidate_rhs)
+              .equals<string>({"ax", "y", "c", ""}));
+    CHECK(testing::test_graph(optional_plus_scalar, lhs, invalidate_lhs)
+              .equals<string>({"a!", "!", "c!", "!"}));
+    CHECK(testing::test_graph(scalar_plus_optional, lhs, invalidate_lhs)
+              .equals<string>({"!a", "!", "!c", "!"}));
+}
+
+TEST_CASE("string optional addition waits for ticks and retains the latest input values",
+          "[feature:operator][feature:validity][validity:optional][series:value][scalar:string]") {
+    const auto optional_add = [](wp<TS<string>> lhs, wp<TS<string>> rhs) {
+        return opt(lhs) + opt(rhs);
+    };
+    const auto lhs = std::vector<std::optional<std::string_view>>{
+        std::nullopt, std::string_view{"a"}, std::nullopt, std::string_view{"b"}};
+    const auto rhs = std::vector<std::optional<std::string_view>>{
+        std::nullopt, std::nullopt, std::string_view{"x"}, std::nullopt};
+
+    CHECK(testing::test_graph(optional_add, lhs, rhs).equals<string>({std::nullopt, "a", "ax", "bx"}));
+}
+
 TEST_CASE("addition does not convert an integer scalar to double",
           "[feature:operator][series:value][scalar:integer][scalar:floating-point]") {
     const auto graph = [](wp<TS<double>> value) { return value + 1; };
@@ -79,16 +266,130 @@ TEST_CASE("addition does not convert an integer scalar to double",
     CHECK_THROWS_AS(testing::test_graph(direct, std::array{2.0}), WiringError);
 }
 
-TEST_CASE("addition rejects optional inputs",
+TEST_CASE("opt selects addition that substitutes zero for either invalid operand",
           "[feature:operator][feature:validity][validity:optional][series:value][scalar:floating-point]") {
-    const auto direct = [](wp<TS<double>> value) { return operators::add(opt(value), 1.0); };
-    const auto graph = [](wp<TS<double>> value) { return opt(value) + 1.0; };
-    const auto reflected = [](wp<TS<double>> value) { return 1.0 + opt(value); };
-    const auto input = std::array{2.0};
+    struct invalidating_source {
+        In<TS<double>> value;
+        In<TS<bool>> invalidate;
+        Out<TS<double>> output;
 
-    CHECK_THROWS_AS(testing::test_graph(direct, input), WiringError);
-    CHECK_THROWS_AS(testing::test_graph(graph, input), WiringError);
-    CHECK_THROWS_AS(testing::test_graph(reflected, input), WiringError);
+        void evaluate() const {
+            if (*invalidate) {
+                output.invalidate();
+                return;
+            }
+
+            output.copy(value);
+        }
+    };
+
+    const auto source = node<invalidating_source>();
+    const auto strict = [](wp<TS<double>> lhs, wp<TS<double>> rhs) { return lhs + rhs; };
+    const auto optional_lhs = [&](wp<TS<double>> lhs, wp<TS<bool>> invalidate_lhs,
+                                  wp<TS<double>> rhs, wp<TS<bool>> invalidate_rhs) {
+        return opt(source(lhs, invalidate_lhs)) + source(rhs, invalidate_rhs);
+    };
+    const auto optional_rhs = [&](wp<TS<double>> lhs, wp<TS<bool>> invalidate_lhs,
+                                  wp<TS<double>> rhs, wp<TS<bool>> invalidate_rhs) {
+        return source(lhs, invalidate_lhs) + opt(source(rhs, invalidate_rhs));
+    };
+    const auto strict_graph = [&](wp<TS<double>> lhs, wp<TS<bool>> invalidate_lhs,
+                                  wp<TS<double>> rhs, wp<TS<bool>> invalidate_rhs) {
+        return strict(source(lhs, invalidate_lhs), source(rhs, invalidate_rhs));
+    };
+    const auto optional_series_plus_scalar = [&](wp<TS<double>> value, wp<TS<bool>> invalidate) {
+        return opt(source(value, invalidate)) + 2.0;
+    };
+    const auto scalar_plus_optional_series = [&](wp<TS<double>> value, wp<TS<bool>> invalidate) {
+        return 2.0 + opt(source(value, invalidate));
+    };
+    const auto lhs = std::array{1.0, 2.0, 3.0, 4.0};
+    const auto rhs = std::array{10.0, 20.0, 30.0, 40.0};
+    const auto invalidate_lhs = std::array{false, true, false, true};
+    const auto invalidate_rhs = std::array{false, false, true, true};
+
+    CHECK(testing::test_graph(strict_graph, lhs, invalidate_lhs, rhs, invalidate_rhs)
+              .equals<double>({11.0, std::nullopt, std::nullopt, std::nullopt}));
+    CHECK(testing::test_graph(optional_lhs, lhs, invalidate_lhs, rhs, invalidate_rhs)
+              .equals<double>({11.0, 20.0, 3.0, 0.0}));
+    CHECK(testing::test_graph(optional_rhs, lhs, invalidate_lhs, rhs, invalidate_rhs)
+              .equals<double>({11.0, 20.0, 3.0, 0.0}));
+    CHECK(testing::test_graph(optional_series_plus_scalar, lhs, invalidate_lhs).equals<double>({3.0, 2.0, 5.0, 2.0}));
+    CHECK(testing::test_graph(scalar_plus_optional_series, lhs, invalidate_lhs).equals<double>({3.0, 2.0, 5.0, 2.0}));
+}
+
+TEST_CASE("optional addition does not evaluate before either input ticks",
+          "[feature:operator][feature:validity][validity:optional][series:value][scalar:floating-point]") {
+    const auto optional_add = [](wp<TS<double>> lhs, wp<TS<double>> rhs) {
+        return opt(lhs) + opt(rhs);
+    };
+    const auto no_updates = std::array<std::optional<double>, 2>{std::nullopt, std::nullopt};
+
+    CHECK(testing::test_graph(optional_add, no_updates, no_updates).equals<double>({std::nullopt, std::nullopt}));
+}
+
+TEST_CASE("integer and duration optional pairs substitute zero for invalid inputs",
+          "[feature:operator][feature:validity][validity:optional][series:value]"
+          "[scalar:i64][scalar:timedelta]") {
+    const auto invalidate_integer = node([](In<TS<i64>> value, In<TS<bool>> invalidate, Out<TS<i64>> output) {
+        if (*invalidate) {
+            output.invalidate();
+            return;
+        }
+
+        output.copy(value);
+    });
+    const auto invalidate_duration = node([](In<TS<timedelta_t>> value, In<TS<bool>> invalidate,
+                                             Out<TS<timedelta_t>> output) {
+        if (*invalidate) {
+            output.invalidate();
+            return;
+        }
+
+        output.copy(value);
+    });
+
+    const auto optional_integer_add = [&](wp<TS<i64>> lhs, wp<TS<bool>> invalidate_lhs,
+                                          wp<TS<i64>> rhs, wp<TS<bool>> invalidate_rhs) {
+        return opt(invalidate_integer(lhs, invalidate_lhs)) + opt(invalidate_integer(rhs, invalidate_rhs));
+    };
+    const auto optional_duration_add = [&](wp<TS<timedelta_t>> lhs, wp<TS<bool>> invalidate_lhs,
+                                           wp<TS<timedelta_t>> rhs, wp<TS<bool>> invalidate_rhs) {
+        return opt(invalidate_duration(lhs, invalidate_lhs)) + opt(invalidate_duration(rhs, invalidate_rhs));
+    };
+    const auto integer_lhs = std::array<i64, 4>{1, 2, 3, 4};
+    const auto integer_rhs = std::array<i64, 4>{10, 20, 30, 40};
+    const auto duration_lhs = std::array{timedelta_t{1}, timedelta_t{2}, timedelta_t{3}, timedelta_t{4}};
+    const auto duration_rhs = std::array{timedelta_t{10}, timedelta_t{20}, timedelta_t{30}, timedelta_t{40}};
+    const auto invalidate_lhs = std::array{false, true, false, true};
+    const auto invalidate_rhs = std::array{false, false, true, true};
+
+    CHECK(testing::test_graph(optional_integer_add, integer_lhs, invalidate_lhs, integer_rhs, invalidate_rhs)
+              .equals<i64>({11, 20, 3, 0}));
+    CHECK(testing::test_graph(optional_duration_add, duration_lhs, invalidate_lhs, duration_rhs, invalidate_rhs)
+              .equals<timedelta_t>({timedelta_t{11}, timedelta_t{20}, timedelta_t{3}, timedelta_t{0}}));
+}
+
+TEST_CASE("optional final inputs can produce multiple ordinary results",
+          "[feature:operator][feature:validity][validity:optional][series:value]"
+          "[scalar:i64][guarantee:final][guarantee:ordinary]") {
+    struct final_on_tick {
+        In<TS<i64>> input;
+        Out<TS<i64, TimeSeriesGuarantee::final>> output;
+
+        void evaluate() const { output.set(*input); }
+    };
+
+    const auto final_source = node<final_on_tick>();
+    const auto graph = [&](wp<TS<i64>> lhs, wp<TS<i64>> rhs) {
+        const auto result = operators::add(opt(final_source(lhs)), opt(final_source(rhs)));
+        CHECK(&result.type() == &TS<i64>::type());
+        return result;
+    };
+    const auto lhs = std::array<std::optional<i64>, 3>{i64{2}, std::nullopt, std::nullopt};
+    const auto rhs = std::array<std::optional<i64>, 3>{std::nullopt, i64{3}, std::nullopt};
+
+    CHECK(testing::test_graph(graph, lhs, rhs).equals<i64>({2, 5, std::nullopt}));
 }
 
 TEST_CASE("addition preserves the shared guarantee for direct time-series inputs",
@@ -164,6 +465,133 @@ TEST_CASE("addition preserves the shared guarantee for direct time-series inputs
     CHECK(testing::test_graph(final_plus_deduplicated, std::array{1.0, 2.0, 2.0, 3.0})
               .equals<double>({3.0, 4.0, std::nullopt, 5.0}));
     CHECK(testing::test_graph(constant).equals<double>({5.0}));
+}
+
+TEST_CASE("timestamp addition requires strict inputs",
+          "[feature:operator][feature:validity][validity:required][series:value]"
+          "[scalar:evaluation-time][scalar:timedelta]") {
+    const auto optional_inputs = [](wp<TS<date_time_t>> timestamp, wp<TS<timedelta_t>> duration) {
+        return operators::add(opt(timestamp), opt(duration));
+    };
+
+    CHECK_THROWS_AS(testing::test_graph(optional_inputs, std::array{MIN_DT}, std::array{timedelta_t{1}}),
+                    WiringError);
+}
+
+TEST_CASE("addition handles signed integer, duration, and timestamp values",
+          "[feature:operator][series:value][scalar:i64][scalar:evaluation-time][scalar:timedelta]") {
+    const auto integers = std::array<i64, 2>{10, -4};
+    const auto integer_series_plus_scalar = [](wp<TS<i64>> value) { return operators::add(value, i64{3}); };
+    const auto scalar_plus_integer_series = [](wp<TS<i64>> value) { return operators::add(i64{3}, value); };
+    CHECK(testing::test_graph(integer_series_plus_scalar, integers).equals<i64>({13, -1}));
+    CHECK(testing::test_graph(scalar_plus_integer_series, integers).equals<i64>({13, -1}));
+
+    const auto durations = std::array{timedelta_t{10}, timedelta_t{-4}};
+    const auto duration_series_plus_scalar = [](wp<TS<timedelta_t>> value) {
+        return operators::add(value, timedelta_t{3});
+    };
+    const auto scalar_plus_duration_series = [](wp<TS<timedelta_t>> value) {
+        return operators::add(timedelta_t{3}, value);
+    };
+    CHECK(testing::test_graph(duration_series_plus_scalar, durations)
+              .equals<timedelta_t>({timedelta_t{13}, timedelta_t{-1}}));
+    CHECK(testing::test_graph(scalar_plus_duration_series, durations)
+              .equals<timedelta_t>({timedelta_t{13}, timedelta_t{-1}}));
+
+    const auto timestamp = MIN_DT + timedelta_t{10};
+    const auto timestamps = std::array{timestamp, MIN_DT + timedelta_t{-4}};
+    const auto timestamp_series_plus_scalar = [](wp<TS<date_time_t>> value) {
+        return operators::add(value, timedelta_t{3});
+    };
+    const auto scalar_plus_timestamp_series = [](wp<TS<date_time_t>> value) {
+        return operators::add(timedelta_t{3}, value);
+    };
+    CHECK(testing::test_graph(timestamp_series_plus_scalar, timestamps)
+              .equals<date_time_t>({MIN_DT + timedelta_t{13}, MIN_DT + timedelta_t{-1}}));
+    CHECK(testing::test_graph(scalar_plus_timestamp_series, timestamps)
+              .equals<date_time_t>({MIN_DT + timedelta_t{13}, MIN_DT + timedelta_t{-1}}));
+
+    const auto duration_series_plus_timestamp_scalar = [timestamp](wp<TS<timedelta_t>> value) {
+        return operators::add(value, timestamp);
+    };
+    const auto timestamp_scalar_plus_duration_series = [timestamp](wp<TS<timedelta_t>> value) {
+        return operators::add(timestamp, value);
+    };
+    const auto expected = std::array{timestamp + timedelta_t{10}, timestamp + timedelta_t{-4}};
+    CHECK(testing::test_graph(duration_series_plus_timestamp_scalar, durations).equals<date_time_t>(
+        {expected[0], expected[1]}));
+    CHECK(testing::test_graph(timestamp_scalar_plus_duration_series, durations).equals<date_time_t>(
+        {expected[0], expected[1]}));
+
+    const auto strict_series_pair = [](wp<TS<date_time_t>> value, wp<TS<timedelta_t>> duration) {
+        return operators::add(value, duration);
+    };
+    const auto reversed_series_pair = [](wp<TS<timedelta_t>> duration, wp<TS<date_time_t>> value) {
+        return operators::add(duration, value);
+    };
+    CHECK(testing::test_graph(strict_series_pair, timestamps, durations).equals<date_time_t>(
+        {timestamp + timedelta_t{10}, MIN_DT + timedelta_t{-8}}));
+    CHECK(testing::test_graph(reversed_series_pair, durations, timestamps).equals<date_time_t>(
+        {timestamp + timedelta_t{10}, MIN_DT + timedelta_t{-8}}));
+
+    const auto scalar_pair = [timestamp] { return operators::add(timestamp, timedelta_t{3}); };
+    const auto reversed_scalar_pair = [timestamp] { return operators::add(timedelta_t{3}, timestamp); };
+    const auto duration_scalar_pair = [] { return operators::add(timedelta_t{2}, timedelta_t{3}); };
+    CHECK(testing::test_graph(scalar_pair).equals<date_time_t>({timestamp + timedelta_t{3}}));
+    CHECK(testing::test_graph(reversed_scalar_pair).equals<date_time_t>({timestamp + timedelta_t{3}}));
+    CHECK(testing::test_graph(duration_scalar_pair).equals<timedelta_t>({timedelta_t{5}}));
+}
+
+TEST_CASE("integer, duration, and timestamp arithmetic wraps at signed boundaries",
+          "[feature:operator][series:value][scalar:i64][scalar:evaluation-time][scalar:timedelta]") {
+    constexpr auto I64_MIN = std::numeric_limits<i64>::min();
+    constexpr auto I64_MAX = std::numeric_limits<i64>::max();
+    const auto add_integer = [](wp<TS<i64>> lhs, wp<TS<i64>> rhs) { return operators::add(lhs, rhs); };
+    const auto subtract_integer = [](wp<TS<i64>> lhs, wp<TS<i64>> rhs) { return operators::sub(lhs, rhs); };
+    const auto optional_add_integer = [](wp<TS<i64>> lhs, wp<TS<i64>> rhs) {
+        return opt(lhs) + opt(rhs);
+    };
+    CHECK(testing::test_graph(add_integer, std::array{I64_MAX, I64_MIN}, std::array<i64, 2>{1, -1})
+              .equals<i64>({I64_MIN, I64_MAX}));
+    CHECK(testing::test_graph(subtract_integer, std::array{I64_MIN, I64_MAX}, std::array<i64, 2>{1, -1})
+              .equals<i64>({I64_MAX, I64_MIN}));
+    CHECK(testing::test_graph(optional_add_integer, std::array{I64_MAX}, std::array<i64, 1>{1})
+              .equals<i64>({I64_MIN}));
+
+    const auto add_duration = [](wp<TS<timedelta_t>> lhs, wp<TS<timedelta_t>> rhs) {
+        return operators::add(lhs, rhs);
+    };
+    const auto subtract_duration = [](wp<TS<timedelta_t>> lhs, wp<TS<timedelta_t>> rhs) {
+        return operators::sub(lhs, rhs);
+    };
+    CHECK(testing::test_graph(add_duration,
+                              std::array{timedelta_t::max(), timedelta_t::min()},
+                              std::array{timedelta_t{1}, timedelta_t{-1}})
+              .equals<timedelta_t>({timedelta_t::min(), timedelta_t::max()}));
+    CHECK(testing::test_graph(subtract_duration,
+                              std::array{timedelta_t::min(), timedelta_t::max()},
+                              std::array{timedelta_t{1}, timedelta_t{-1}})
+              .equals<timedelta_t>({timedelta_t::max(), timedelta_t::min()}));
+
+    const auto add_timestamp = [](wp<TS<date_time_t>> timestamp, wp<TS<timedelta_t>> duration) {
+        return operators::add(timestamp, duration);
+    };
+    const auto subtract_duration_from_timestamp = [](wp<TS<date_time_t>> timestamp,
+                                                      wp<TS<timedelta_t>> duration) {
+        return operators::sub(timestamp, duration);
+    };
+    const auto subtract_timestamp = [](wp<TS<date_time_t>> lhs, wp<TS<date_time_t>> rhs) {
+        return operators::sub(lhs, rhs);
+    };
+    const auto timestamps = std::array{date_time_t{timedelta_t::max()}, date_time_t{timedelta_t::min()}};
+    const auto durations = std::array{timedelta_t{1}, timedelta_t{-1}};
+    const auto reversed_timestamps = std::array{timestamps[1], timestamps[0]};
+    CHECK(testing::test_graph(add_timestamp, timestamps, durations)
+              .equals<date_time_t>({date_time_t{timedelta_t::min()}, date_time_t{timedelta_t::max()}}));
+    CHECK(testing::test_graph(subtract_duration_from_timestamp, reversed_timestamps, durations)
+              .equals<date_time_t>({date_time_t{timedelta_t::max()}, date_time_t{timedelta_t::min()}}));
+    CHECK(testing::test_graph(subtract_timestamp, timestamps, std::array{timestamps[1], timestamps[0]})
+              .equals<timedelta_t>({timedelta_t{-1}, timedelta_t{1}}));
 }
 
 TEST_CASE("required addition invalidates and revalidates with its inputs",

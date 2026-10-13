@@ -517,7 +517,7 @@ TEST_CASE("direct graph calls select lazy forms without adding graph-boundary de
 
     const auto result = identity(deferred);
 
-    REQUIRE(result);
+    REQUIRE(result.has_output());
     CHECK(static_cast<bg::WiringPoint>(result).record() != static_cast<bg::WiringPoint>(deferred).record());
     CHECK(&result.type() == &bg::TS<float>::type());
     CHECK_FALSE(wiring.materialisation_required(deferred, bg::TS<float>::type()));
@@ -556,7 +556,7 @@ TEST_CASE("direct graph Union inputs keep the original point and its other forms
 
     const auto result = identity(deferred);
 
-    REQUIRE(result);
+    REQUIRE(result.has_output());
     CHECK(observed_record == original_record);
     CHECK(observed_options == 1);
     CHECK_FALSE(wiring.materialisation_required(deferred, bg::TS<float>::type()));
@@ -585,7 +585,7 @@ TEST_CASE("a direct graph Union input preserves its actual reference point",
 
     const auto result = identity(reference);
 
-    REQUIRE(result);
+    REQUIRE(result.has_output());
     CHECK(observed_record == original_point.record());
     CHECK(observed_type == &original_point.type());
 }
@@ -628,13 +628,13 @@ TEST_CASE("direct graph form ties use reference affinity",
     });
 
     const auto value_result = value_graph(deferred);
-    REQUIRE(value_result);
+    REQUIRE(value_result.has_output());
     CHECK(value_argument_type == &bg::TS<bg::i64>::type());
     CHECK(value_builder_calls == 0);
     CHECK(reference_builder_calls == 0);
 
     const auto reference_result = reference_graph(deferred);
-    REQUIRE(reference_result);
+    REQUIRE(reference_result.has_output());
     CHECK(reference_argument_type == &REFERENCE::type());
     CHECK(value_builder_calls == 0);
     CHECK(reference_builder_calls == 0);
@@ -933,7 +933,7 @@ TEST_CASE("operator materialisation selects the cheapest concrete form and adapt
     }));
 
     const auto result = operation(deferred);
-    REQUIRE(result);
+    REQUIRE(result.has_output());
     CHECK(selected == "bool");
     CHECK(wiring.materialisation_required(deferred, bg::TS<bool>::type()));
     CHECK(wiring.materialisation_required(static_cast<bg::WiringPoint>(result), bg::TS<bool>::type()));
@@ -988,7 +988,7 @@ TEST_CASE("operator cache hits rebind concrete demands to the current source",
         deferred.materialisation_option<bg::TS<float>>(
             [float_source](bg::wp<bg::TS<bg::i64>>) { return float_source(); }, 0.0);
         const auto output = operation(deferred);
-        REQUIRE(output);
+        REQUIRE(output.has_output());
         CHECK(wiring.materialisation_required(deferred, bg::TS<float>::type()));
     };
 

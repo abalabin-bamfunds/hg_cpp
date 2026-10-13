@@ -19,6 +19,7 @@ class PythonOperator {
     explicit PythonOperator(const Operator &operation) noexcept;
 
     nanobind::object call(nanobind::args positional, nanobind::kwargs named) const;
+    nanobind::object call(nanobind::handle value) const;
     nanobind::object call(nanobind::handle lhs, nanobind::handle rhs) const;
     nanobind::object invoke(std::span<const WiringArgument> arguments) const;
     std::string name() const;

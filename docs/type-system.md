@@ -531,18 +531,18 @@ series. A reference target is a neutral declaration, not an output owned by
 that reference. For example, `Out<TSD<K, REF<V>>>` defaults its item references
 to `deduplicated`; `Out<REF<TSD<K, REF<V>>>>` defaults only the root reference.
 
-For example, a plain callable `add(float, float)` captures each input guarantee
-independently:
+For example, a plain callable `add(double, double)` captures each input guarantee
+independently and infers its output guarantee:
 
 ```text
-lhs:    TypeVar<Type, float, TS<float, G1>>
-rhs:    TypeVar<Type, float, TS<float, G2>>
-output: TS<float, ordinary>
+lhs:    TypeVar<Type, double, TS<double, G1>>
+rhs:    TypeVar<Type, double, TS<double, G2>>
+output: TS<double, weakest observed input guarantee>
 ```
 
-Plain return inference uses the default output guarantee. Explicit declarations
-can share a guarantee variable between inputs and output to propagate the
-weakest input guarantee. Output publication enforces the resolved guarantee.
+Explicit declarations can share a guarantee variable between inputs and output
+to propagate the weakest input guarantee. Output publication enforces the
+resolved guarantee.
 
 The start time is when a time series becomes observable: the first outer cycle
 for a fixed graph output, the inner graph start cycle for an inner graph output,
@@ -565,6 +565,27 @@ the template.
 
 The calculation includes input activity, validity constraints, and every way
 the node can schedule evaluation.
+
+### Callable output inference
+
+A C++ callable returning a plain scalar infers the weakest observed input
+guarantee when every time series input is `required`, scalar values are
+required, activity is static, and evaluation is input-driven. Scalars
+contribute `const`. Passive inputs also contribute their observed guarantee.
+Reference inputs follow normal [reference matching](#signature-resolution).
+
+Scalar-only calls use default first-cycle scheduling and infer `const`.
+Disabling that scheduling gives an ordinary output. With time series inputs,
+an inferred `const` output requires an active input to schedule its first
+update; otherwise the output is ordinary.
+
+Optional inputs or returns, dynamic activity, and independent startup
+scheduling with time series inputs retain an ordinary output. An explicit
+`Out<>` supplies its declared guarantee. Aggregate, runtime-signature, and
+Python node declarations retain their output rules.
+
+If inference selects `deduplicated` but the result scalar lacks equality,
+the output is ordinary. An explicit deduplicated output requires equality.
 
 ### Collection guarantees
 
