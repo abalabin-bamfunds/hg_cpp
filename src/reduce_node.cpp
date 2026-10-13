@@ -116,7 +116,7 @@ class ReduceRuntime {
     ReduceRuntime &operator=(const ReduceRuntime &) = delete;
 
     bool evaluate(const CompiledReduceGraph &compiled, ReduceInvocation invocation) {
-        const auto values = invocation.template input<In<TSD<SCALAR, TS_T>>>(compiled.dictionary_parameter, 0);
+        const auto values = invocation.template input<In<TSD<SCALAR, TS_T>>>(compiled.dictionary_parameter);
         if (!values.valid()) {
             selected_keys_.clear();
             selected_references_.clear();
@@ -593,7 +593,7 @@ class ReduceRuntime {
         const auto runtime_node = Node{compiled_node, compact_pair_storage(tree_node.pair_index)};
         const auto &state = runtime_node.output_last_updated();
         return {invalid_compact_reduce_node, state, state.valid() ? runtime_node.output_value() : nullptr,
-                &compiled_node.node_invocation_output_runtime_type()};
+                &compiled_node.output_runtime_type()};
     }
 
     bool evaluate_compact_branch(CompactReduceNodeIndex index, const CompiledReduceGraph &compiled,
@@ -760,7 +760,7 @@ class ReduceRuntime {
             return true;
         }
         if (compiled.default_parameter) {
-            const auto fallback = invocation.scalar(*compiled.default_parameter, 0);
+            const auto fallback = invocation.scalar(*compiled.default_parameter);
             if (!fallback.has_value()) {
                 output.invalidate();
                 using_default_ = false;

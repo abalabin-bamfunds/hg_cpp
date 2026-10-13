@@ -83,7 +83,10 @@ ReduceGraphArgumentWiring build_reduce_graph_argument_wiring(const WiringTemplat
     auto wiring = std::make_shared<GraphWiring>(WiringContext::current().wiring());
     auto context = WiringContext{*wiring};
 
-    auto boundaries = std::array{wire_nested_input(reducer_input_type), wire_nested_input(reducer_input_type)};
+    const auto &reducer_input_reference =
+        time_series_reference_type(reducer_input_type, TimeSeriesGuarantee::ordinary);
+    auto boundaries = std::array{wire_nested_input(reducer_input_reference),
+                                 wire_nested_input(reducer_input_reference)};
     auto arguments = std::array{WiringArgument{boundaries[0]}, WiringArgument{boundaries[1]}};
     const auto result = function(type_map, std::span<const WiringArgument>{arguments});
     if (!result) {

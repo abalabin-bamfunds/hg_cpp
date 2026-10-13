@@ -100,7 +100,7 @@ ReduceNodeDefinition::compiled_data_type ReduceNodeDefinition::compile(const Res
             auto output_input = std::optional<std::size_t>{};
             auto compatible_output = true;
             if (output_node) {
-                const auto &output_runtime_type = graph->node(*output_node).node_invocation_output_runtime_type();
+                const auto &output_runtime_type = graph->node(*output_node).output_runtime_type();
                 compatible_output = std::ranges::all_of(wiring_.compact_graph->input_indices,
                                                         [&](const auto input_index) {
                                                             return input_index < inputs.size() &&
