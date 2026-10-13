@@ -894,6 +894,7 @@ int run(const Arguments &arguments) {
         (void)map(stage_b, mapped_a, inputs->bias, "__key_arg__"_n = 1);
         (void)map(parent_graph, inputs->parents, inputs->bias, "__key_arg__"_n = 1);
     });
+    wiring->finalize();
 
     auto compiled = std::optional<CompiledGraph>{};
     const auto compilation_nanoseconds = elapsed_nanoseconds([&] { compiled.emplace(*wiring); });

@@ -55,4 +55,47 @@ TEST_CASE("an evaluation context scratch pad uses caller-owned storage first",
     bg::run_graph([&] { scratch_pad_source(); });
 }
 
+struct scratch_reuse_source_definition {
+    bg::Out<bg::TS<bg::i64>> output;
+
+    void start(bg::EvaluationContext *context) const { context->schedule_now(); }
+
+    void evaluate(bg::EvaluationContext *context) const {
+        allocation = context->scratch().allocate(sizeof(bg::i64), alignof(bg::i64));
+        node_index = context->node_index();
+        output.set(42);
+    }
+
+    inline static void *allocation{};
+    inline static std::size_t node_index{};
+};
+
+struct scratch_reuse_sink_definition {
+    bg::In<bg::TS<bg::i64>> input;
+
+    void evaluate(bg::EvaluationContext *context) const {
+        allocation = context->scratch().allocate(sizeof(bg::i64), alignof(bg::i64));
+        node_index = context->node_index();
+        value = input.value();
+    }
+
+    inline static void *allocation{};
+    inline static std::size_t node_index{};
+    inline static bg::i64 value{};
+};
+
+TEST_CASE("evaluation contexts reset node scratch before publishing output",
+          "[evaluation][context][scratch][feature:evaluation-context]") {
+    const auto source = bg::node<scratch_reuse_source_definition>();
+    const auto sink = bg::node<scratch_reuse_sink_definition>();
+    scratch_reuse_source_definition::allocation = nullptr;
+    scratch_reuse_sink_definition::allocation = nullptr;
+
+    bg::run_graph([&] { sink(source()); });
+
+    CHECK(scratch_reuse_sink_definition::value == 42);
+    CHECK(scratch_reuse_sink_definition::allocation == scratch_reuse_source_definition::allocation);
+    CHECK(scratch_reuse_sink_definition::node_index != scratch_reuse_source_definition::node_index);
+}
+
 } // namespace

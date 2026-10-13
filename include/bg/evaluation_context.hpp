@@ -74,6 +74,8 @@ class EvaluationContext {
           runtime_graph_(parent.runtime_graph_), node_index_(parent.node_index_),
           global_state_(parent.global_state_), scratch_{parent.scratch_.evaluation_scratch_}, sections_(&section) {}
 
+    void reset_scratch() noexcept { scratch_.reset(); }
+
     EvaluationTime evaluation_time_;
     const WallClock *wall_clock_;
     RuntimeGraph *runtime_graph_;

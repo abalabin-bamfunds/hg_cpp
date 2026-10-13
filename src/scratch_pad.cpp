@@ -2,13 +2,12 @@
 
 #include <bg/details/evaluation_scratch.hpp>
 
+#include <cassert>
+
 namespace bg {
 
 ScratchPad::~ScratchPad() {
-    if (frame_ != nullptr) {
-        auto &frame = *static_cast<details::EvaluationScratch::Frame *>(frame_);
-        frame.scratch->pop_frame(frame);
-    }
+    reset();
 }
 
 ScratchPad::ScratchPad(ScratchPad &&other) noexcept
@@ -36,6 +35,17 @@ void ScratchPad::ensure_frame() {
     if (frame_ == nullptr) {
         frame_ = &evaluation_scratch_->push_frame();
     }
+}
+
+void ScratchPad::reset() noexcept {
+    assert(local_storage_ == nullptr);
+    if (frame_ == nullptr) {
+        return;
+    }
+
+    auto &frame = *static_cast<details::EvaluationScratch::Frame *>(frame_);
+    frame.scratch->pop_frame(frame);
+    frame_ = nullptr;
 }
 
 } // namespace bg

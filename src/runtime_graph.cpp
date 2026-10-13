@@ -1175,6 +1175,7 @@ bool RuntimeGraphEvaluator::evaluate(RuntimeGraph &graph, EvaluationContext &par
         graph.stopped_ = true;
         graph.stop_nodes(graph.compiled_graph_->node_count(), context);
     }};
+    auto node_context = EvaluationContext{context, graph, 0};
 
     for (auto scheduled_node = resuming ? scheduled.begin(graph.paused_node_index_) : scheduled.begin();
          scheduled_node != std::default_sentinel;) {
@@ -1208,10 +1209,12 @@ bool RuntimeGraphEvaluator::evaluate(RuntimeGraph &graph, EvaluationContext &par
 
         const auto output_was_valid = has_output && Node{node, graph.storage_}.output_last_updated().valid();
         if (const auto evaluate = node.evaluation_function(); evaluate != nullptr) {
-            EvaluationContext node_context{context, graph, node_index};
+            node_context.node_index_ = node_index;
             const auto allocation_context = details::ScalarAllocationContext{
                 graph.allocator_, context.global_state().bundle_allocation_owner(), &graph, node_index};
-            if (!evaluate(node, graph.storage_, &node_context)) {
+            const auto evaluation_completed = evaluate(node, graph.storage_, &node_context);
+            node_context.reset_scratch();
+            if (!evaluation_completed) {
                 graph.paused_node_index_ = static_cast<std::uint32_t>(node_index);
                 advance.release();
                 stop_on_failure.release();

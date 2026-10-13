@@ -65,6 +65,7 @@ class ScratchPad {
     [[nodiscard]] void *allocate_from_storage(std::size_t size, std::size_t alignment);
     void release_last_from_storage(void *address, std::size_t size) noexcept;
     void ensure_frame();
+    void reset() noexcept;
 
     details::EvaluationScratch *evaluation_scratch_;
     void *frame_{};
