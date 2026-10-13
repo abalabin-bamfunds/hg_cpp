@@ -18,6 +18,7 @@ struct CompiledReduceGraph {
         std::array<std::size_t, 2> input_indices;
         std::optional<std::size_t> output_node;
         std::optional<std::size_t> output_input;
+        const TimeSeriesRuntimeType *output_runtime_type;
     };
 
     CompiledNestedGraph nested;

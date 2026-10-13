@@ -6,6 +6,7 @@
 #include <bg/scalar/value.hpp>
 #include <bg/time_series/time_series_runtime_type.hpp>
 #include <bg/type/scalar_type.hpp>
+#include <bg/type/time_series_reference_type.hpp>
 
 #include <algorithm>
 #include <cstdint>
@@ -603,6 +604,31 @@ bool equivalent_wiring_bodies(const GraphWiring &left, std::span<const WiringPoi
                                                  : right_result ? std::optional{WiredInput::output(right.output_index(*right_result))}
                                                                 : std::nullopt,
                                      right_result ? &right_result->type() : nullptr);
+    const auto normalize_reference_boundaries = [&](GraphWiringStructure::Data &data,
+                                                    std::span<const WiringPoint> inputs) {
+        const auto normalize_endpoint = [&](Endpoint &endpoint) {
+            if (!endpoint.dereference || endpoint.kind != EndpointKind::boundary ||
+                !endpoint.path.empty() || endpoint.index >= inputs.size()) {
+                return;
+            }
+
+            const auto *reference = type_cast<TimeSeriesReferenceType>(&inputs[endpoint.index].type());
+            if (reference != nullptr && &reference->target_type() == input_types[endpoint.index]) {
+                endpoint.dereference = false;
+            }
+        };
+
+        for (auto &node : data.nodes) {
+            for (auto &input : node.inputs) {
+                normalize_endpoint(input);
+            }
+        }
+        if (data.result) {
+            normalize_endpoint(*data.result);
+        }
+    };
+    normalize_reference_boundaries(*left_data, left_inputs);
+    normalize_reference_boundaries(*right_data, right_inputs);
     if (left_data->cacheable) {
         left_data->hash = structure_hash(*left_data);
     }

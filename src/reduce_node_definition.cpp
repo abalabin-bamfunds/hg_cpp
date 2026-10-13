@@ -100,12 +100,11 @@ ReduceNodeDefinition::compiled_data_type ReduceNodeDefinition::compile(const Res
             auto output_input = std::optional<std::size_t>{};
             auto compatible_output = true;
             if (output_node) {
-                const auto &output_runtime_type = graph->node(*output_node).output_runtime_type();
                 compatible_output = std::ranges::all_of(wiring_.compact_graph->input_indices,
                                                         [&](const auto input_index) {
                                                             return input_index < inputs.size() &&
                                                                    inputs[input_index].runtime_type ==
-                                                                       &output_runtime_type;
+                                                                       wiring_.compact_graph->output_runtime_type;
                                                         });
             } else if (wiring_.compact_graph->output_input) {
                 const auto returned_input = *wiring_.compact_graph->output_input;
@@ -125,6 +124,7 @@ ReduceNodeDefinition::compiled_data_type ReduceNodeDefinition::compile(const Res
                     .input_indices = wiring_.compact_graph->input_indices,
                     .output_node = output_node,
                     .output_input = output_input,
+                    .output_runtime_type = wiring_.compact_graph->output_runtime_type,
                 });
             }
         }

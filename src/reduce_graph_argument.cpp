@@ -7,6 +7,7 @@
 #include <bg/graph/wiring_context.hpp>
 #include <bg/graph/wiring_error.hpp>
 #include <bg/graph/wiring_template.hpp>
+#include <bg/time_series/time_series_runtime_type.hpp>
 #include <bg/time_series/time_series_type.hpp>
 #include <bg/type/time_series_dict_type.hpp>
 #include <bg/type/scalar_type.hpp>
@@ -72,7 +73,8 @@ bool accepts_compact_inputs(const WiringTemplate &function, const TimeSeriesType
 
 ReduceGraphArgumentWiring build_reduce_graph_argument_wiring(const WiringTemplate &function,
                                                               const TimeSeriesType &item_type,
-                                                              const TypeMap &type_map) {
+                                                              const TypeMap &type_map,
+                                                              bool item_values_require_reference_subscriptions) {
     const auto *item_value_type = type_cast<TimeSeriesValueType>(&item_type);
     if (item_value_type == nullptr) {
         throw WiringError{"reduce requires TSD items to be scalar-valued time series"};
@@ -103,7 +105,8 @@ ReduceGraphArgumentWiring build_reduce_graph_argument_wiring(const WiringTemplat
 
     auto compact_graph = std::optional<ReduceCompactGraphWiring>{};
     const auto reducer_input_types = std::array<const TimeSeriesType *, 2>{&reducer_input_type, &reducer_input_type};
-    if (wiring->inherited_requirements().empty() && wiring->service_binding_requirements().empty()) {
+    if (!item_values_require_reference_subscriptions && wiring->inherited_requirements().empty() &&
+        wiring->service_binding_requirements().empty()) {
         if (accepts_compact_inputs(function, reducer_input_type)) {
             try {
                 auto compact_wiring = std::make_shared<GraphWiring>();
@@ -132,8 +135,13 @@ ReduceGraphArgumentWiring build_reduce_graph_argument_wiring(const WiringTemplat
                                 };
                                 auto output_input = std::optional<std::size_t>{};
                                 auto compact_output_node = std::optional<std::size_t>{};
-                                const auto &compact_output =
-                                    compact_wiring->outputs()[compact_wiring->output_index(concrete_compact_result)];
+                                const auto &compact_output = compact_wiring->outputs()[
+                                    compact_wiring->output_index(concrete_compact_result)];
+                                const auto *compact_output_runtime_type = compact_output.runtime_type;
+                                if (compact_output_runtime_type == nullptr) {
+                                    compact_output_runtime_type =
+                                        &resolve_time_series_runtime_type(*compact_output.type);
+                                }
                                 if (compact_output.node_index == WiredOutput::npos) {
                                     output_input = compact_wiring->runtime_input_index(concrete_compact_result);
                                 } else {
@@ -148,6 +156,7 @@ ReduceGraphArgumentWiring build_reduce_graph_argument_wiring(const WiringTemplat
                                     .input_indices = compact_input_indices,
                                     .output_node = compact_output_node,
                                     .output_input = output_input,
+                                    .output_runtime_type = compact_output_runtime_type,
                                     .structure = compact_structure,
                                 });
                             }

@@ -593,7 +593,7 @@ class ReduceRuntime {
         const auto runtime_node = Node{compiled_node, compact_pair_storage(tree_node.pair_index)};
         const auto &state = runtime_node.output_last_updated();
         return {invalid_compact_reduce_node, state, state.valid() ? runtime_node.output_value() : nullptr,
-                &compiled_node.output_runtime_type()};
+                compact.output_runtime_type};
     }
 
     bool evaluate_compact_branch(CompactReduceNodeIndex index, const CompiledReduceGraph &compiled,

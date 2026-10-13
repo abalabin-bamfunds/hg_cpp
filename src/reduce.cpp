@@ -42,7 +42,8 @@ GraphArgument build_reduce_graph_argument(const WiringTemplate &function, const 
     }
 
     const auto &item_type = dictionary_type_value->value_type().target_type();
-    auto built = build_reduce_graph_argument_wiring(function, item_type, type_map);
+    auto built = build_reduce_graph_argument_wiring(
+        function, item_type, type_map, dictionary_type_value->value_type().contains_reference());
     const auto *output_value_type = type_cast<TimeSeriesValueType>(&item_type);
     if (output_value_type == nullptr) {
         throw WiringError{"reduce graph output must have a scalar-valued time series type"};
