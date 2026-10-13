@@ -546,11 +546,8 @@ void plan_time_series_inputs(CompilationPlan &plan, const GraphWiring &wiring) {
                 default_value = true;
             }
             if (input.is_inherited()) {
-                input = wiring.resolve_inherited_input(input.index());
+                input = wiring.resolve_inherited_input(input);
             }
-            const auto output_is_reference =
-                input.is_inherited() || type_cast<TimeSeriesReferenceType>(plan.outputs[input.index()].type) != nullptr;
-            const auto input_is_reference = type_cast<TimeSeriesReferenceType>(parameter.type) != nullptr;
             const auto constant_binding =
                 !default_value && !input.is_inherited() && plan.constant_for_output(input.index()) != nullptr;
             plan.node_plans[node_index].time_series_inputs.push_back({
@@ -559,8 +556,8 @@ void plan_time_series_inputs(CompilationPlan &plan, const GraphWiring &wiring) {
                 .fallback = fallback,
                 .default_value = default_value,
                 .constant_binding = constant_binding,
-                .dereferences_reference = output_is_reference && !input_is_reference,
-                .sampled_reference = output_is_reference && !input_is_reference &&
+                .dereferences_reference = input.dereferences_reference(),
+                .sampled_reference = input.dereferences_reference() &&
                                      (type_cast<TimeSeriesSetType>(parameter.type) != nullptr ||
                                       type_cast<TimeSeriesDictionaryType>(parameter.type) != nullptr),
                 .dynamic_activity = parameter.dynamic_activity,
@@ -2046,8 +2043,7 @@ class CompiledGraphBuilder {
         const auto node_index = plan.wired_node_indices[subscriber.node_index];
         const auto &input = plan.node_plans[node_index].time_series_inputs[subscriber.input_index];
         const auto &parameter = *plan.nodes[node_index].signature().parameters[input.parameter].type;
-        const auto &requested_type = type_cast<TimeSeriesType>(parameter).target_type();
-        return resolve_time_series_runtime_type(requested_type);
+        return resolve_time_series_runtime_type(type_cast<TimeSeriesType>(parameter));
     }
 
     static std::byte *construct_output_notifications(const CompilationPlan &plan, const SubscriptionPlan &subscribers,

@@ -66,6 +66,13 @@ A service call resolves its client-facing signature and result type before an
 implementation is selected. An unresolved result type is a wiring error unless the
 caller supplies the required type mapping explicitly.
 
+Service clients do not assume that an implementation reply is a const reference.
+Wiring fixes a reference form with the declared output guarantee before
+implementation selection. The selected implementation may supply a direct time
+series or a reference. Its output is adapted to the inherited boundary transport
+when the implementation is wired. Reference target changes then reach clients
+through normal reference notifications, including across nested graphs.
+
 The root `GraphWiring` stores requirements from outer and inner graph wiring.
 Finalization groups compatible requirements, selects and wires their implementations,
 and repeats until implementation graphs introduce no new requirements. It reports

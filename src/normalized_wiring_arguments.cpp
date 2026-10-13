@@ -343,9 +343,9 @@ NormalizedWiringArguments normalize_prepared(const Signature &signature, std::ve
 }
 
 NormalizedWiringArguments normalize(const Signature &signature, std::span<const WiringArgument> arguments,
-                                    allocator *memory, WiringRecordOverlay *temporary_records,
+                                    bool import_contexts, allocator *memory, WiringRecordOverlay *temporary_records,
                                     const Signature *parameter_aliases) {
-    return normalize_prepared(signature, prepare_arguments(signature, arguments, memory != nullptr, parameter_aliases),
+    return normalize_prepared(signature, prepare_arguments(signature, arguments, import_contexts, parameter_aliases),
                               memory, temporary_records);
 }
 
@@ -354,13 +354,13 @@ NormalizedWiringArguments normalize(const Signature &signature, std::span<const 
 NormalizedWiringArguments normalize_wiring_arguments(const Signature &signature,
                                                      std::span<const WiringArgument> arguments, allocator &memory,
                                                      const Signature *parameter_aliases) {
-    return normalize(signature, arguments, &memory, nullptr, parameter_aliases);
+    return normalize(signature, arguments, true, &memory, nullptr, parameter_aliases);
 }
 
 NormalizedWiringArguments probe_wiring_arguments(const Signature &signature, std::span<const WiringArgument> arguments,
                                                  WiringRecordOverlay &records,
                                                  const Signature *parameter_aliases) {
-    return normalize(signature, arguments, nullptr, &records, parameter_aliases);
+    return normalize(signature, arguments, false, nullptr, &records, parameter_aliases);
 }
 
 } // namespace bg::details

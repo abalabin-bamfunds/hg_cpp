@@ -55,6 +55,13 @@ const TimeSeriesReferenceType &time_series_reference_type(const TimeSeriesType &
         [&] { return std::make_unique<ResolvedTimeSeriesReferenceType>(target_type, guarantee); });
 }
 
+const TimeSeriesReferenceType &details::inherited_reference_transport_type(
+    const TimeSeriesReferenceType &target_type) {
+    return TypeRegistry::instance().get_or_create<ResolvedTimeSeriesReferenceType, ReferenceTypeKeyHash>(
+        ReferenceTypeKey{&target_type, TimeSeriesGuarantee::const_},
+        [&] { return std::make_unique<ResolvedTimeSeriesReferenceType>(target_type, TimeSeriesGuarantee::const_); });
+}
+
 const TimeSeriesType &TimeSeriesReferenceType::dereferenced_type() const {
     if (!is_resolved() || !target_type().is_resolved() || !guarantee().value()) {
         throw TypeResolutionError{TypeResolutionErrorCode::invalid_type_map, util::symbol{"REF"},
