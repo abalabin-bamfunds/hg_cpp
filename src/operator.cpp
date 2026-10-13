@@ -89,7 +89,12 @@ bool preferred(const WiringTemplate &candidate, const ResolvedSignature &candida
             return reference_affinity == std::partial_ordering::less;
         }
         if (candidate_fixed == other_fixed) {
-            const auto specificity = compare_specificity(candidate.signature(), other.signature());
+            const auto parameter_count = candidate.signature().parameter_count();
+            const auto specificity = parameter_count == other.signature().parameter_count()
+                                        ? details::compare_parameter_specificity(
+                                              candidate.signature(), other.signature(), candidate_arguments,
+                                              other_arguments, parameter_count)
+                                        : std::partial_ordering::unordered;
             if (specificity != std::partial_ordering::equivalent) {
                 return specificity == std::partial_ordering::less;
             }
@@ -100,8 +105,8 @@ bool preferred(const WiringTemplate &candidate, const ResolvedSignature &candida
                                                      shared_parameters) == std::partial_ordering::less;
         }
 
-        const auto shared_specificity =
-            details::compare_parameter_specificity(candidate.signature(), other.signature(), shared_fixed);
+        const auto shared_specificity = details::compare_parameter_specificity(
+            candidate.signature(), other.signature(), candidate_arguments, other_arguments, shared_fixed);
         const auto prefix_length =
             candidate_fixed > other_fixed ? std::partial_ordering::less : std::partial_ordering::greater;
         const auto preferences_agree =
@@ -114,7 +119,12 @@ bool preferred(const WiringTemplate &candidate, const ResolvedSignature &candida
     if (reference_affinity != std::partial_ordering::equivalent) {
         return reference_affinity == std::partial_ordering::less;
     }
-    const auto specificity = compare_specificity(candidate.signature(), other.signature());
+    const auto parameter_count = candidate.signature().parameter_count();
+    const auto specificity = parameter_count == other.signature().parameter_count()
+                                 ? details::compare_parameter_specificity(candidate.signature(), other.signature(),
+                                                                         candidate_arguments, other_arguments,
+                                                                         parameter_count)
+                                 : std::partial_ordering::unordered;
     if (specificity != std::partial_ordering::equivalent) {
         return specificity == std::partial_ordering::less;
     }
