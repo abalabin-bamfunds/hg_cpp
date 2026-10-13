@@ -18,7 +18,8 @@ Use `[dimension:value]` for each applicable dimension:
   `scalar-collection`, `global-state`, `visitor`, `type-system`,
   `node-api`, `state`, `wiring`, `context-time-series`, `graph-compilation`, `test-graph`, `evaluation-context`,
   `evaluation-scratch`, `borrowed-input`,
-  `lifecycle`, `finalization`, `scheduling`, `timed-scheduling`, `simulation`, `wall-clock`, `input-activity`, `validity`,
+  `lifecycle`, `finalization`, `scheduling`, `timed-scheduling`, `simulation`, `wall-clock`, `profiling`,
+  `input-activity`, `validity`,
   `invalidation`, `operator`, `constant`, `graph-argument`, `map`, `switch`,
   `time-series-storage`, `time-series-view`, `collection-change`, `reference`, `sampling`, `feedback`,
   `item-id-remapping`, `service`, `getitem`, `getattr`, `nested-graph`, `mesh`,
@@ -263,6 +264,8 @@ graph compilation or evaluation.
 - timed scheduling, cancellation, ordering, and coalescing
 - simulation time progression and termination
 - system and injected wall-clock access during lifecycle, nested evaluation, invalidation, and failure cleanup
+- profile records for completed outer cycles, nested graph instances, graph lifetime, polling visibility,
+  and rollback after evaluation failure; plain evaluation without a profile
 - outer and inner graph failure behavior
 - cycle callbacks and deferred storage reclamation
 - global state shared by outer and inner graphs

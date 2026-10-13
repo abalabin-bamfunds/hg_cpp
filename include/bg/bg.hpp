@@ -1,6 +1,7 @@
 #pragma once
 
 #include <bg/evaluation_context.hpp>
+#include <bg/evaluation_profile.hpp>
 #include <bg/evaluation_time.hpp>
 #include <bg/feedback.hpp>
 #include <bg/wall_clock.hpp>

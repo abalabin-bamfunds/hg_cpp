@@ -26,6 +26,7 @@ class ServiceRequestBinding;
 class NestedGraph;
 class RuntimeGraphEvaluator;
 class TimeSeriesRuntimeType;
+class EvaluationProfile;
 
 class RuntimeGraph {
   public:
@@ -57,10 +58,21 @@ class RuntimeGraph {
     void start(EvaluationTime evaluation_time, const RuntimeGraphInput *inputs = nullptr);
     void start(EvaluationTime evaluation_time, GlobalState &global_state,
                const RuntimeGraphInput *inputs = nullptr);
+    void start(EvaluationTime evaluation_time, EvaluationProfile &profile,
+               const RuntimeGraphInput *inputs = nullptr);
+    void start(EvaluationTime evaluation_time, GlobalState &global_state, EvaluationProfile &profile,
+               const RuntimeGraphInput *inputs = nullptr);
     void stop(const RuntimeGraphInput *inputs = nullptr) noexcept;
     void stop(GlobalState &global_state, const RuntimeGraphInput *inputs = nullptr) noexcept;
+    void stop(EvaluationProfile &profile, const RuntimeGraphInput *inputs = nullptr) noexcept;
+    void stop(GlobalState &global_state, EvaluationProfile &profile,
+              const RuntimeGraphInput *inputs = nullptr) noexcept;
     void evaluate(EvaluationTime evaluation_time, const RuntimeGraphInput *inputs = nullptr);
     void evaluate(EvaluationTime evaluation_time, GlobalState &global_state,
+                  const RuntimeGraphInput *inputs = nullptr);
+    void evaluate(EvaluationTime evaluation_time, EvaluationProfile &profile,
+                  const RuntimeGraphInput *inputs = nullptr);
+    void evaluate(EvaluationTime evaluation_time, GlobalState &global_state, EvaluationProfile &profile,
                   const RuntimeGraphInput *inputs = nullptr);
     std::optional<EvaluationTime> next_scheduled_time() const noexcept;
     EvaluationTime evaluation_time() const noexcept { return evaluation_time_; }

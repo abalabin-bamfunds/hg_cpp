@@ -223,6 +223,40 @@ outer cycle. It then advances to each next scheduled time and calls
 A later real-time evaluation engine can wait for each scheduled time while
 using the same runtime graph interface.
 
+## Evaluation profiling
+
+`EvaluationProfile` records evaluation work when supplied to
+`SimulationEvaluationEngine::run()` or to every `RuntimeGraph` start, evaluate,
+and stop call in a run. A run uses one profile throughout. Without a profile,
+the evaluator does not execute the recording path.
+
+The caller transfers the recording buffer once with `take_recording()` and can
+poll it through `EvaluationProfileReader` on another thread. A completed outer
+cycle commits its records together. An incomplete outer cycle is rolled back
+and disables further recording. The profile emits node paths once per
+definition ID, graph start and stop records for each runtime graph instance,
+outer-cycle boundaries, and a checkpoint for each completed evaluation request,
+including one for a node with no evaluation function. A graph start identifies its
+compiled graph, parent graph instance, and owning node. Runtime graph IDs
+distinguish sibling instances; the stream does not label map branches by key.
+
+On x86, node checkpoints use the timestamp counter. Other targets use
+`steady_clock` nanoseconds. Each cycle boundary also records the evaluation
+time, `WallClock::now()`, and a steady-clock reading. A node checkpoint marks
+completion before output publication. The interval since the preceding
+checkpoint includes intervening publication and scheduling, so it is not an
+isolated node-function duration. Timestamp-counter values are comparable across
+thread migration only when the system synchronizes its counters across cores.
+The reader reports the checkpoint clock.
+
+The caller calls `finish()` after stop to publish remaining lifecycle records
+and checks `failed()` to detect an incomplete recording. Recording failure or
+an aborted outer cycle does not stop graph evaluation; later evaluations use
+the plain path. The committed stream may end without stop records. The reader
+does not aggregate records or retain performance history; a monitoring
+consumer can compute cumulative and time-window reports
+from the committed stream.
+
 ## Deferred cleanup
 
 Runtime subsystems register cleanup callbacks on demand. The outer graph runs

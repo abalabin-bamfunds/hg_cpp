@@ -1,4 +1,5 @@
 #include <bg/evaluation_context.hpp>
+#include <bg/evaluation_profile.hpp>
 #include <bg/global_state.hpp>
 #include <bg/graph.hpp>
 #include <bg/graph/compiled_graph.hpp>
@@ -26,6 +27,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -839,6 +841,7 @@ void print_latency(std::string_view name, const LatencySummary &summary, bool tr
 struct Arguments {
     std::string_view profile_name{"250k"};
     std::size_t cycles{10'000};
+    bool record_evaluations{};
     bool verify_workload{};
     bool help{};
 };
@@ -858,6 +861,8 @@ Arguments parse_arguments(int argument_count, char **argument_values) {
         const auto argument = std::string_view{argument_values[index]};
         if (argument == "--help") {
             result.help = true;
+        } else if (argument == "--record-evaluations") {
+            result.record_evaluations = true;
         } else if (argument == "--verify-workload") {
             result.verify_workload = true;
         } else if (argument == "--profile" && index + 1 < argument_count) {
@@ -903,10 +908,41 @@ int run(const Arguments &arguments) {
     auto global_state = GlobalState{};
     auto runtime = std::optional<RuntimeGraph>{};
     const auto runtime_construction_nanoseconds = elapsed_nanoseconds([&] { runtime.emplace(*compiled, global_state); });
-    const auto start_nanoseconds = elapsed_nanoseconds([&] { runtime->start(benchmark_start_time); });
+    auto evaluation_profile = std::optional<EvaluationProfile>{};
+    auto profile_reader = std::optional<EvaluationProfileReader>{};
+    auto profile_reader_thread = std::jthread{};
+    if (arguments.record_evaluations) {
+        evaluation_profile.emplace();
+        profile_reader.emplace(evaluation_profile->take_recording());
+    }
+
+    const auto start_nanoseconds = elapsed_nanoseconds([&] {
+        if (evaluation_profile) {
+            runtime->start(benchmark_start_time, *evaluation_profile);
+        } else {
+            runtime->start(benchmark_start_time);
+        }
+    });
+    if (profile_reader) {
+        profile_reader_thread = std::jthread{[&](std::stop_token stop) {
+            while (!stop.stop_requested()) {
+                while (profile_reader->read()) {
+                }
+                std::this_thread::sleep_for(std::chrono::seconds{1});
+            }
+            while (profile_reader->read()) {
+            }
+        }};
+    }
     const auto empty_started_rss = current_rss();
 
-    const auto population_nanoseconds = elapsed_nanoseconds([&] { runtime->evaluate(benchmark_start_time); });
+    const auto population_nanoseconds = elapsed_nanoseconds([&] {
+        if (evaluation_profile) {
+            runtime->evaluate(benchmark_start_time, *evaluation_profile);
+        } else {
+            runtime->evaluate(benchmark_start_time);
+        }
+    });
     const auto populated_rss = current_rss();
 
     auto ordinary_latencies = std::vector<double>{};
@@ -923,40 +959,68 @@ int run(const Arguments &arguments) {
     broadcast_latencies.reserve(arguments.cycles / 1'000 + 1);
 
     benchmark_control.measuring = true;
-    const auto run_start = clock_type::now();
-    for (auto cycle = std::size_t{}; cycle < arguments.cycles; ++cycle) {
-        benchmark_control.cycle = cycle;
-        const auto cycle_start = clock_type::now();
-        runtime->evaluate(benchmark_start_time + std::chrono::microseconds{cycle + 1});
-        const auto elapsed = nanoseconds{clock_type::now() - cycle_start}.count();
+    auto run_nanoseconds = std::uint64_t{};
+    auto measure_cycles = [&]<bool Profiled>() {
+        const auto run_start = clock_type::now();
+        for (auto cycle = std::size_t{}; cycle < arguments.cycles; ++cycle) {
+            benchmark_control.cycle = cycle;
+            const auto cycle_start = clock_type::now();
+            const auto evaluation_time = benchmark_start_time + std::chrono::microseconds{cycle + 1};
+            if constexpr (Profiled) {
+                runtime->evaluate(evaluation_time, *evaluation_profile);
+            } else {
+                runtime->evaluate(evaluation_time);
+            }
+            const auto elapsed = nanoseconds{clock_type::now() - cycle_start}.count();
 
-        switch (latency_class(workload.cycles[cycle])) {
-        case LatencyClass::ordinary:
-            ordinary_latencies.push_back(elapsed);
-            break;
-        case LatencyClass::flat_parent_removal:
-            flat_parent_removal_latencies.push_back(elapsed);
-            break;
-        case LatencyClass::flat_parent_restoration_cleanup:
-            flat_parent_restoration_cleanup_latencies.push_back(elapsed);
-            break;
-        case LatencyClass::child_removal:
-            child_removal_latencies.push_back(elapsed);
-            break;
-        case LatencyClass::child_restoration_cleanup:
-            child_restoration_cleanup_latencies.push_back(elapsed);
-            break;
-        case LatencyClass::broadcast:
-            broadcast_latencies.push_back(elapsed);
-            break;
+            switch (latency_class(workload.cycles[cycle])) {
+            case LatencyClass::ordinary:
+                ordinary_latencies.push_back(elapsed);
+                break;
+            case LatencyClass::flat_parent_removal:
+                flat_parent_removal_latencies.push_back(elapsed);
+                break;
+            case LatencyClass::flat_parent_restoration_cleanup:
+                flat_parent_restoration_cleanup_latencies.push_back(elapsed);
+                break;
+            case LatencyClass::child_removal:
+                child_removal_latencies.push_back(elapsed);
+                break;
+            case LatencyClass::child_restoration_cleanup:
+                child_restoration_cleanup_latencies.push_back(elapsed);
+                break;
+            case LatencyClass::broadcast:
+                broadcast_latencies.push_back(elapsed);
+                break;
+            }
         }
+        run_nanoseconds = static_cast<std::uint64_t>(
+            std::chrono::duration_cast<std::chrono::nanoseconds>(clock_type::now() - run_start).count());
+    };
+    if (evaluation_profile) {
+        measure_cycles.template operator()<true>();
+    } else {
+        measure_cycles.template operator()<false>();
     }
-    const auto run_nanoseconds = static_cast<std::uint64_t>(
-        std::chrono::duration_cast<std::chrono::nanoseconds>(clock_type::now() - run_start).count());
     const auto process_peak_rss = peak_rss();
 
     benchmark_control.measuring = false;
-    const auto final_stop_nanoseconds = elapsed_nanoseconds([&] { runtime->stop(); });
+    const auto final_stop_nanoseconds = elapsed_nanoseconds([&] {
+        if (evaluation_profile) {
+            runtime->stop(*evaluation_profile);
+            evaluation_profile->finish();
+        } else {
+            runtime->stop();
+        }
+    });
+    if (profile_reader_thread.joinable()) {
+        profile_reader_thread.request_stop();
+        profile_reader_thread.join();
+    }
+    if (evaluation_profile && evaluation_profile->failed()) {
+        throw std::runtime_error{"evaluation profile recording failed"};
+    }
+    const auto profile_recorded_bytes = evaluation_profile ? evaluation_profile->recorded_bytes() : 0;
     const auto after_stop_rss = current_rss();
 
     const auto ordinary = summarize(std::move(ordinary_latencies));
@@ -986,6 +1050,7 @@ int run(const Arguments &arguments) {
     std::cout << "  \"engine\": \"bg\",\n";
     std::cout << "  \"runtime\": \"native-cpp\",\n";
     std::cout << "  \"profile\": \"" << workload.selected_profile.name << "\",\n";
+    std::cout << "  \"record_evaluations\": " << (evaluation_profile ? "true" : "false") << ",\n";
     std::cout << "  \"value_type\": \"int64_nonnegative\",\n";
     std::cout << "  \"topology\": {\"flat_items\": " << workload.selected_profile.flat_count
               << ", \"parents\": " << workload.selected_profile.parent_count
@@ -1004,6 +1069,7 @@ int run(const Arguments &arguments) {
               << ", \"runtime_start_ns\": " << start_nanoseconds << ", \"population_ns\": " << population_nanoseconds
               << ", \"measured_cycles_ns\": " << static_cast<std::uint64_t>(measured_cycles_nanoseconds)
               << ", \"wall_run_ns\": " << run_nanoseconds << ", \"final_stop_ns\": " << final_stop_nanoseconds
+              << ", \"profile_recorded_bytes\": " << profile_recorded_bytes
               << "},\n";
     std::cout << "  \"throughput\": {\"cycles_per_second\": " << cycles_per_second
               << ", \"output_events_per_second\": " << events_per_second << "},\n";
@@ -1038,7 +1104,7 @@ int main(int argument_count, char **argument_values) {
         const auto arguments = parse_arguments(argument_count, argument_values);
         if (arguments.help) {
             std::cout << "usage: bg_high_count_map_benchmark [--profile smoke|25k|100k|250k] [--cycles N] "
-                         "[--verify-workload]\n";
+                         "[--record-evaluations] [--verify-workload]\n";
             return EXIT_SUCCESS;
         }
         if (arguments.verify_workload) {

@@ -15,6 +15,7 @@ class RuntimeGraph;
 class RuntimeGraphEvaluator;
 class GlobalState;
 class SimulationEvaluationEngine;
+class EvaluationProfile;
 namespace details {
 class EvaluationScratch;
 class NodeScheduler;
@@ -62,26 +63,31 @@ class EvaluationContext {
     friend details::NodeScheduler;
 
     EvaluationContext(EvaluationTime evaluation_time, RuntimeGraph &runtime_graph, GlobalState &global_state,
-                      details::EvaluationScratch &evaluation_scratch, const WallClock &wall_clock) noexcept
+                      details::EvaluationScratch &evaluation_scratch, const WallClock &wall_clock,
+                      EvaluationProfile *evaluation_profile = nullptr) noexcept
         : evaluation_time_(evaluation_time), wall_clock_(&wall_clock), runtime_graph_(&runtime_graph), node_index_{},
-          global_state_{&global_state}, scratch_{&evaluation_scratch} {}
+          global_state_{&global_state}, scratch_{&evaluation_scratch}, evaluation_profile_{evaluation_profile} {}
     EvaluationContext(EvaluationTime evaluation_time, RuntimeGraph &runtime_graph, std::size_t node_index,
                       GlobalState &global_state, details::EvaluationScratch *evaluation_scratch,
                       const WallClock &wall_clock,
-                      const details::EvaluationContextSection *sections = nullptr) noexcept;
+                      const details::EvaluationContextSection *sections = nullptr,
+                      EvaluationProfile *evaluation_profile = nullptr) noexcept;
     EvaluationContext(EvaluationContext &parent, RuntimeGraph &runtime_graph, std::size_t node_index) noexcept
         : evaluation_time_(parent.evaluation_time_), wall_clock_(parent.wall_clock_), runtime_graph_(&runtime_graph),
           node_index_(node_index), global_state_(parent.global_state_),
-          scratch_{parent.scratch_.evaluation_scratch_}, sections_(parent.sections_) {}
+          scratch_{parent.scratch_.evaluation_scratch_}, sections_(parent.sections_),
+          evaluation_profile_{parent.evaluation_profile_} {}
     EvaluationContext(RuntimeGraph &runtime_graph, EvaluationContext &parent,
                       const RuntimeGraphInput *runtime_graph_inputs) noexcept
         : evaluation_time_(parent.evaluation_time_), wall_clock_(parent.wall_clock_), runtime_graph_(&runtime_graph),
           node_index_{}, global_state_(parent.global_state_), scratch_{parent.scratch_.evaluation_scratch_},
-          sections_(parent.sections_), runtime_graph_inputs_{runtime_graph_inputs} {}
+          sections_(parent.sections_), runtime_graph_inputs_{runtime_graph_inputs},
+          evaluation_profile_{parent.evaluation_profile_} {}
     EvaluationContext(EvaluationContext &parent, const details::EvaluationContextSection &section) noexcept
         : evaluation_time_(parent.evaluation_time_), wall_clock_(parent.wall_clock_),
           runtime_graph_(parent.runtime_graph_), node_index_(parent.node_index_),
-          global_state_(parent.global_state_), scratch_{parent.scratch_.evaluation_scratch_}, sections_(&section) {}
+          global_state_(parent.global_state_), scratch_{parent.scratch_.evaluation_scratch_}, sections_(&section),
+          evaluation_profile_{parent.evaluation_profile_} {}
 
     void reset_scratch() noexcept { scratch_.reset(); }
 
@@ -93,6 +99,7 @@ class EvaluationContext {
     ScratchPad scratch_;
     const details::EvaluationContextSection *sections_{};
     const RuntimeGraphInput *runtime_graph_inputs_{};
+    EvaluationProfile *evaluation_profile_{};
 };
 
 } // namespace bg

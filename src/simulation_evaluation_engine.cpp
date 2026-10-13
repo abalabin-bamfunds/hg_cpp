@@ -2,6 +2,7 @@
 
 #include <bg/details/evaluation_scratch.hpp>
 #include <bg/evaluation_context.hpp>
+#include <bg/evaluation_profile.hpp>
 #include <bg/graph/runtime_graph.hpp>
 
 #include <stdexcept>
@@ -22,15 +23,26 @@ class SimulationWallClock final : public WallClock {
 } // namespace
 
 void SimulationEvaluationEngine::run(RuntimeGraph &runtime_graph, EvaluationTime start_time) const {
+    run(runtime_graph, start_time, nullptr);
+}
+
+void SimulationEvaluationEngine::run(RuntimeGraph &runtime_graph, EvaluationTime start_time,
+                                     EvaluationProfile &profile) const {
+    run(runtime_graph, start_time, &profile);
+}
+
+void SimulationEvaluationEngine::run(RuntimeGraph &runtime_graph, EvaluationTime start_time,
+                                     EvaluationProfile *profile) const {
     auto scratch = details::EvaluationScratch{runtime_graph.allocation().memory_resource()};
     auto wall_clock = SimulationWallClock{};
     wall_clock.set_time(start_time);
     auto start_context =
-        EvaluationContext{start_time, runtime_graph, runtime_graph.global_state(), scratch, wall_clock};
+        EvaluationContext{start_time, runtime_graph, runtime_graph.global_state(), scratch, wall_clock, profile};
     runtime_graph.start(start_context);
 
     const auto evaluate = [&](EvaluationTime time) {
-        auto context = EvaluationContext{time, runtime_graph, runtime_graph.global_state(), scratch, wall_clock};
+        auto context =
+            EvaluationContext{time, runtime_graph, runtime_graph.global_state(), scratch, wall_clock, profile};
         if (!runtime_graph.evaluate(context)) {
             throw std::logic_error{"a pending evaluation escaped the outer graph"};
         }
@@ -43,7 +55,8 @@ void SimulationEvaluationEngine::run(RuntimeGraph &runtime_graph, EvaluationTime
     }
 
     const auto stop_time = runtime_graph.evaluation_time();
-    auto stop_context = EvaluationContext{stop_time, runtime_graph, runtime_graph.global_state(), scratch, wall_clock};
+    auto stop_context =
+        EvaluationContext{stop_time, runtime_graph, runtime_graph.global_state(), scratch, wall_clock, profile};
     runtime_graph.stop(stop_context);
 }
 

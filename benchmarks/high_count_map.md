@@ -163,6 +163,12 @@ Run the comparison profile:
 taskset -c 0 build/benchmark/benchmarks/bg_high_count_map_benchmark --profile 250k --cycles 10000
 ```
 
+To measure the cost of BG evaluation profiling, repeat the same command with
+`--record-evaluations`. A reader polls the committed recording once per second.
+Compare `measured_cycles_ns` and peak RSS with the plain run from the same
+build; `profile_recorded_bytes` reports the recording volume. This mode is a BG
+instrumentation comparison, not an engine-neutral workload metric.
+
 Use an available CPU instead of CPU 0 when required. Redirect standard output
 to a temporary file only after the process exits successfully. Add the source
 commit and environment metadata required by the results format before moving
