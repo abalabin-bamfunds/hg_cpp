@@ -8,6 +8,7 @@
 #include <bg/graph/wiring_error.hpp>
 #include <bg/graph/wiring_point.hpp>
 #include <bg/node/node_template.hpp>
+#include <bg/node/runtime_signature_node_template.hpp>
 #include <bg/time_series/ref/ref_provider.hpp>
 #include <bg/time_series/ref/ref_runtime_type.hpp>
 #include <bg/type/time_series_reference_type.hpp>
@@ -86,6 +87,29 @@ class ReferenceNodeTemplate final : public NodeTemplate {
     bool uses_cycle_callbacks_;
 };
 
+class InheritedReferenceForwarder {
+  public:
+    explicit InheritedReferenceForwarder(const TimeSeriesReferenceType &type)
+        : signature_{util::symbol{"inherited_reference_forwarder"},
+                     {{util::symbol{"value"}, &type, active, optional}}, type} {}
+
+    const Signature &signature() const noexcept { return signature_; }
+
+    NodeTemplateIdentity definition_identity() const {
+        static constexpr unsigned char identity{};
+        return NodeTemplateIdentity::persistent(&identity);
+    }
+
+    static void evaluate(NodeInvocation<> invocation) {
+        const auto input = invocation.input<In<REF<TS_T>>>(0);
+        auto output = invocation.output<REF<TS_T>>();
+        output.copy(input);
+    }
+
+  private:
+    Signature signature_;
+};
+
 } // namespace
 
 const NodeTemplate &reference_node_template(const TimeSeriesType &argument, const TimeSeriesReferenceType &type) {
@@ -140,13 +164,50 @@ WiringPoint materialize_reference(WiringPoint argument, const TimeSeriesType &re
     return argument;
 }
 
-WiringPoint materialize_boundary_reference(WiringPoint argument) {
+WiringPoint materialize_inherited_reference(WiringPoint argument) {
     const auto *argument_reference = type_cast<TimeSeriesReferenceType>(&argument.type());
-    const auto &target_type = argument_reference == nullptr ? argument.type() : argument_reference->target_type();
-    const auto &reference_type = time_series_reference_type(target_type, TimeSeriesGuarantee::const_);
-    const auto result = reference_node_template(target_type, reference_type)(argument);
+    if (argument_reference == nullptr) {
+        const auto &reference_type = time_series_reference_type(argument.type(), TimeSeriesGuarantee::const_);
+        const auto result = reference_node_template(argument.type(), reference_type)(argument);
+        if (!result) {
+            throw WiringError{"an inherited reference node produced no output"};
+        }
+        return *result;
+    }
+    if (argument_reference->guarantee().value() == TimeSeriesGuarantee::const_) {
+        return argument;
+    }
+
+    const auto &transport_type = inherited_reference_transport_type(*argument_reference);
+    const auto result = reference_node_template(*argument_reference, transport_type)(argument);
     if (!result) {
-        throw WiringError{"a boundary reference node produced no output"};
+        throw WiringError{"an inherited reference transport node produced no output"};
+    }
+    return *result;
+}
+
+WiringPoint materialize_late_inherited_reference(WiringPoint argument, const TimeSeriesType &transport_type) {
+    if (type_cast<TimeSeriesReferenceType>(&argument.type()) == nullptr) {
+        argument = materialize_inherited_reference(argument);
+    }
+
+    const auto &reference = type_cast<TimeSeriesReferenceType>(argument.type());
+    const auto &transport = type_cast<TimeSeriesReferenceType>(transport_type);
+    const auto result = reference_node_template(reference, transport)(argument);
+    if (!result) {
+        throw WiringError{"a late inherited reference transport node produced no output"};
+    }
+    return *result;
+}
+
+WiringPoint forward_inherited_reference(WiringPoint source, const TimeSeriesReferenceType &type) {
+    auto &wiring = source.record()->wiring();
+    auto node_template = std::make_unique<RuntimeSignatureNodeTemplate<InheritedReferenceForwarder>>(
+        InheritedReferenceForwarder{type});
+    const auto &owned = wiring.own_node_template(std::move(node_template));
+    const auto result = owned(source);
+    if (!result) {
+        throw WiringError{"an inherited reference forwarder produced no output"};
     }
     return *result;
 }

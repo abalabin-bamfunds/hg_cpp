@@ -4,6 +4,7 @@
 #include <bg/graph/node_call_identity.hpp>
 #include <bg/graph/wiring_error.hpp>
 #include <bg/graph/wiring_point.hpp>
+#include <bg/graph/wired_input.hpp>
 #include <bg/time_series/item_id.hpp>
 #include <bg/util/symbol.hpp>
 
@@ -68,9 +69,11 @@ class WiringRecord {
     virtual std::optional<NodeCallIdentity> node_call_identity() const noexcept { return std::nullopt; }
     virtual const WiringRecord *source_identity() const noexcept { return this; }
     std::size_t wired_output_index() const noexcept { return output_; }
+    // A record can bind an input directly to storage that has no wired output, such as an inherited slot.
+    virtual std::optional<WiredInput> input_binding(const TimeSeriesType &) const noexcept { return std::nullopt; }
 
     // Returns a compatible point in this graph; it may still be lazy. GraphWiring completes lazy results to a wired
-    // output and validates their graph and type before returning them to a consumer.
+    // output or direct input binding and validates their graph and type before returning them to a consumer.
     virtual WiringPoint materialize(const TimeSeriesType &requested_type) const = 0;
     virtual void add_materialisation_option(const TimeSeriesType &target_type, double cost,
                                             Signature input_signature,

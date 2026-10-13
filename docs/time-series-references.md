@@ -219,6 +219,12 @@ consumers subscribe directly to the target. Passing an input reference through
 an inner graph copies the reference and removes the inner graph from the
 value-update path.
 
+The engine uses `REF<REF<TS_T>>` only to transport a changing reference-valued
+context or a late-bound service reply across an inherited graph boundary. It is
+not a graph-authoring type.
+The inner graph's forwarding node subscribes to the outer reference output and
+publishes its current `REF<TS_T>` to ordinary consumers.
+
 When an outer consumer requests a compatible type that the inner graph did not
 request during compilation, the runtime graph that owns the target creates or
 returns the shared representation for that type.

@@ -6,14 +6,18 @@
 #include <bg/scalar/type.hpp>
 #include <bg/testing/test_graph.hpp>
 #include <bg/testing/test_wiring.hpp>
+#include <bg/type/guarantee_variable.hpp>
+#include <bg/type/scalar_variable.hpp>
 #include <bg/time_series/time_series_type.hpp>
 #include <bg/time_series/tsd/tsd_type.hpp>
 #include <bg/time_series/tsl/tsl_type.hpp>
+#include <bg/type/type_variable.hpp>
 #include <bg/type/time_series_reference_type.hpp>
 #include <bg/type/time_series_value_type.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <array>
 #include <stdexcept>
 #include <string>
@@ -96,6 +100,80 @@ TEST_CASE("an operator selects the least generic applicable overload",
 
     CHECK(bg::testing::test_graph(float_graph, std::array{1.0F, 2.0F}, std::array{10.0F, 20.0F}).equals({1.0F, 2.0F}));
     CHECK(bg::testing::test_graph(double_graph, std::array{1.0, 2.0}, std::array{10.0, 20.0}).equals({10.0, 20.0}));
+}
+
+TEST_CASE("operator specificity is independent of overload registration order",
+          "[feature:operator][feature:wiring][declaration:generic][series:value]") {
+    using EQUALITY_SCALAR = bg::ScalarVariable<"EQUALITY_SCALAR", bg::EqualityComparable>;
+    constexpr auto G = bg::guarantee_variable<"G">;
+
+    const auto check_registration_orders = [&](auto order, bg::i64 expected_result, std::size_t selected_overload) {
+        do {
+            auto selected = std::array<int, 4>{};
+            auto operation = bg::operator_<auto(bg::TS_T) -> bg::TS<bg::i64>>{"specificity_order", {"value"}};
+            const auto exact_result = bg::node([](bg::Out<bg::TS<bg::i64>> output) { output.set(1); });
+            const auto equality_result = bg::node([](bg::Out<bg::TS<bg::i64>> output) { output.set(3); });
+            const auto scalar_result = bg::node([](bg::Out<bg::TS<bg::i64>> output) { output.set(4); });
+            const auto promoted = bg::node([&](bg::i64 value) {
+                ++selected[1];
+                return value + 10;
+            });
+
+            const auto add_overload = [&](int index) {
+                switch (index) {
+                case 0:
+                    operation.overload(bg::graph("name"_n = "exact", [&, exact_result](bg::wp<bg::TS<bg::i64, G>>) {
+                        ++selected[0];
+                        return exact_result();
+                    }));
+                    break;
+                case 1:
+                    operation.overload(promoted);
+                    break;
+                case 2:
+                    operation.overload(
+                        bg::graph("name"_n = "equality", [&, equality_result](bg::wp<bg::TS<EQUALITY_SCALAR, G>>) {
+                            ++selected[2];
+                            return equality_result();
+                        }));
+                    break;
+                case 3:
+                    operation.overload(
+                        bg::graph("name"_n = "scalar", [&, scalar_result](bg::wp<bg::TS<bg::SCALAR, G>>) {
+                            ++selected[3];
+                            return scalar_result();
+                        }));
+                    break;
+                }
+            };
+
+            for (const auto index : order) {
+                add_overload(index);
+            }
+
+            const auto graph = [&](bg::wp<bg::TS<bg::i64>> value) -> bg::wp<bg::TS<bg::i64>> {
+                (void)operation("value"_n = value);
+                return operation("value"_n = value).as<bg::TS<bg::i64>>();
+            };
+            const auto result = bg::testing::test_graph(graph, std::array<bg::i64, 1>{1});
+
+            CHECK(result.equals({expected_result}));
+            for (auto index = std::size_t{}; index < selected.size(); ++index) {
+                if (index != selected_overload) {
+                    CHECK(selected[index] == 0);
+                } else if (index == 1) {
+                    CHECK(selected[index] > 0);
+                } else {
+                    CHECK(selected[index] == 2);
+                }
+            }
+        } while (std::ranges::next_permutation(order).found);
+    };
+
+    check_registration_orders(std::array{0, 1, 2, 3}, 1, 0);
+    check_registration_orders(std::array{1, 2, 3}, 11, 1);
+    check_registration_orders(std::array{2, 3}, 3, 2);
+    check_registration_orders(std::array{3}, 4, 3);
 }
 
 TEST_CASE("an operator prefers the overload requiring the stronger guarantee",

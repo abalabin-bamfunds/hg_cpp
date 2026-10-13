@@ -7,9 +7,11 @@
 #include <bg/graph/graph_wiring.hpp>
 #include <bg/graph/runtime_graph.hpp>
 #include <bg/graph/wiring_error.hpp>
+#include <bg/operators.hpp>
 #include <bg/node/node_template.hpp>
 #include <bg/time_series/tsl/tsl_free_runtime_type.hpp>
 #include <bg/type/time_series_list_type.hpp>
+#include <bg/type/time_series_reference_type.hpp>
 #include <bg/type/type_map.hpp>
 #include <bg/type/type_resolution_error.hpp>
 
@@ -328,6 +330,12 @@ WiringPoint time_series_list_item(WiringPoint list, std::size_t index) {
     }
     if (index >= semantic_type->item_count()) {
         throw WiringError{"time series list index is out of range"};
+    }
+
+    if (list.record()->input_binding(*semantic_type)) {
+        const auto &reference_type = time_series_reference_type(*semantic_type, TimeSeriesGuarantee::const_);
+        const auto reference = list.record()->wiring().materialize(list, reference_type);
+        return static_cast<WiringPoint>(operators::getitem(reference, static_cast<std::int64_t>(index)));
     }
 
     const auto &list_record = *list.record();

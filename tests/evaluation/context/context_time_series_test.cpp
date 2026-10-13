@@ -11,6 +11,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 
@@ -82,6 +83,31 @@ TEST_CASE("a nested graph can return a context time series directly",
     const auto actual = testing::test_graph(tested, std::array<std::int64_t, 3>{2, 4, 8}, std::array{true, true, true});
 
     CHECK(actual.equals({2, 4, 8}));
+}
+
+TEST_CASE("a nested graph can return a changing reference context directly",
+          "[feature:context-time-series][feature:nested-graph][feature:switch][series:reference]") {
+    const auto inner = graph("name"_n = "returned_reference_context",
+                             [](wp<TS<std::int64_t>, "value"_n, context> value) -> wp<TS<std::int64_t>> {
+                                 return value.as<TS<std::int64_t>>();
+                             });
+    const auto tested = [&](wp<TS<std::int64_t>> selector, wp<TS<std::int64_t>> first,
+                            wp<TS<std::int64_t>> second, wp<TS<bool>> run) {
+        const auto selected = switch_(selector,
+                                      cases{
+                                          case_(std::int64_t{1}, [](auto value, auto) { return value; }),
+                                          case_(std::int64_t{2}, [](auto, auto value) { return value; }),
+                                      },
+                                      first, second);
+        return with_context("value"_n = selected, [&] { return nested(inner, run); });
+    };
+
+    const auto actual = testing::test_graph(tested, std::array<std::int64_t, 4>{1, 2, 1, 2},
+                                            std::array<std::int64_t, 4>{10, 11, 12, 13},
+                                            std::array<std::int64_t, 4>{20, 21, 22, 23},
+                                            std::array{true, true, true, true});
+
+    CHECK(actual.equals({10, 21, 12, 23}));
 }
 
 TEST_CASE("a nested graph can select an item from a context TSL during wiring",
@@ -247,6 +273,66 @@ TEST_CASE("a context time series is available to map branches",
     CHECK(actual.equals({10, 20, 30}));
 }
 
+TEST_CASE("a changing reference context evaluates only consuming map switch branches",
+          "[feature:context-time-series][feature:map][feature:switch][feature:reference]"
+          "[series:tss][series:reference][shape:doubly-nested][transition:update]") {
+    constexpr auto branch_count = std::size_t{100};
+    auto evaluations = std::array<std::size_t, branch_count>{};
+    const auto keys = node([](In<TS<bool>> initialize, Out<TSS<std::int64_t>> output) {
+        if (!*initialize) {
+            return;
+        }
+        for (auto key = std::int64_t{}; key < static_cast<std::int64_t>(branch_count); ++key) {
+            output.insert(key);
+        }
+    });
+    const auto consuming = node([&](In<TS<std::int64_t>, "value"_n, context> value,
+                                    In<TS<std::int64_t, TimeSeriesGuarantee::const_>> key,
+                                    Out<TS<std::int64_t>> output) {
+        ++evaluations[static_cast<std::size_t>(*key)];
+        output.set(*value);
+    });
+    const auto non_consuming = node([&](In<TS<std::int64_t, TimeSeriesGuarantee::const_>> key,
+                                        Out<TS<std::int64_t>> output) {
+        ++evaluations[static_cast<std::size_t>(*key)];
+        output.set(-1);
+    });
+    const auto tested = [&](wp<TS<std::int64_t>> selector, wp<TS<std::int64_t>> first,
+                            wp<TS<std::int64_t>> second, wp<TS<bool>> initialize) {
+        const auto selected = switch_(selector,
+                                      cases{
+                                          case_(std::int64_t{1}, [](auto value, auto) { return value; }),
+                                          case_(std::int64_t{2}, [](auto, auto value) { return value; }),
+                                      },
+                                      first, second);
+        return with_context("value"_n = selected, [&] {
+            return map([&](auto key) -> wp<TS<std::int64_t>> {
+                       return switch_(key,
+                                      cases{
+                                          case_(std::int64_t{0}, [&](auto branch_key) { return consuming(branch_key); }),
+                                          case_(DEFAULT, [&](auto branch_key) { return non_consuming(branch_key); }),
+                                      },
+                                      key)
+                           .template as<TS<std::int64_t>>();
+                   },
+                   keys(initialize))[std::int64_t{0}]
+                .as<TS<std::int64_t>>();
+        });
+    };
+
+    const auto actual = testing::test_graph(
+        tested, std::array<std::int64_t, 3>{1, 2, 1},
+        std::array<std::optional<std::int64_t>, 3>{10, std::nullopt, std::nullopt},
+        std::array<std::optional<std::int64_t>, 3>{20, std::nullopt, std::nullopt},
+        std::array<std::optional<bool>, 3>{true, std::nullopt, std::nullopt});
+
+    CHECK(actual.equals({10, 20, 10}));
+    auto expected = std::array<std::size_t, branch_count>{};
+    expected.fill(1);
+    expected[0] = 3;
+    CHECK(evaluations == expected);
+}
+
 TEST_CASE("a context time series is available to switch branches",
           "[feature:context-time-series][feature:switch][feature:nested-graph]") {
     const auto tested = [&](wp<TS<std::int64_t>> key, wp<TS<std::int64_t>> value) {
@@ -300,6 +386,33 @@ TEST_CASE("a context time series follows a reference that changes target",
         std::array<std::int64_t, 4>{20, 21, 22, 23}, std::array{true, true, true, true});
 
     CHECK(actual.equals({10, 11, 22, 13}));
+}
+
+TEST_CASE("a changing reference context updates through two nested boundaries in the same cycle",
+          "[feature:context-time-series][feature:nested-graph][series:reference][shape:doubly-nested]") {
+    const auto leaf =
+        graph("name"_n = "reference_context_leaf", []() -> wp<TS<std::int64_t>> { return copy_context(); });
+    const auto middle = graph("name"_n = "reference_context_middle", [&](wp<TS<bool>> run) {
+        return nested(leaf, run).as<TS<std::int64_t>>();
+    });
+    const auto tested = [&](wp<TS<std::int64_t>> selector, wp<TS<std::int64_t>> first,
+                            wp<TS<std::int64_t>> second, wp<TS<bool>> run) {
+        const auto selected = switch_(selector,
+                                      cases{
+                                          case_(std::int64_t{1}, [](auto value, auto) { return value; }),
+                                          case_(std::int64_t{2}, [](auto, auto value) { return value; }),
+                                      },
+                                      first, second);
+        return with_context("value"_n = selected, [&] { return nested(middle, run, run); });
+    };
+
+    const auto actual = testing::test_graph(
+        tested, std::array<std::int64_t, 4>{1, 2, 1, 2},
+        std::array<std::optional<std::int64_t>, 4>{10, std::nullopt, std::nullopt, std::nullopt},
+        std::array<std::optional<std::int64_t>, 4>{20, std::nullopt, std::nullopt, std::nullopt},
+        std::array{true, true, true, true});
+
+    CHECK(actual.equals({10, 20, 10, 20}));
 }
 
 TEST_CASE("a context time series preserves invalidation and revalidation",

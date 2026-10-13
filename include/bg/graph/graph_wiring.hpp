@@ -69,6 +69,7 @@ class GraphWiring {
         util::symbol name;
         const TimeSeriesType *type;
         WiringPoint provider;
+        WiringPoint consumer_point;
 
         const TimeSeriesType &boundary_input_type() const;
     };
@@ -129,7 +130,7 @@ class GraphWiring {
                                                             const TimeSeriesType &type);
     void provide_inherited_time_series(const details::NestedBindingIdentity &identity, const TimeSeriesType &type,
                                        WiringPoint provider);
-    [[nodiscard]] WiredInput resolve_inherited_input(std::size_t requirement) const;
+    [[nodiscard]] WiredInput resolve_inherited_input(WiredInput input) const;
     void order_after_consumers(WiringPoint consumed, WiringPoint ordered_output);
     bool input_consumes(WiredInput input, WiringPoint point) const;
     void register_service_binding_consumer(const details::NestedBindingIdentity &identity, NodeCallIdentity consumer);
@@ -238,6 +239,9 @@ class GraphWiring {
     enum class FinalizationState : std::uint8_t { open, finalizing, finalized, failed };
     FinalizationState finalization_state_{FinalizationState::open};
     void ensure_open() const;
+    [[nodiscard]] WiringPoint import_context_binding(util::symbol name, WiringPoint provider, bool consume);
+    [[nodiscard]] WiringPoint require_inherited_binding(details::NestedBindingIdentity identity, util::symbol name,
+                                                        const TimeSeriesType &type, bool consume);
     bool drain_pending_wiring();
     bool run_service_build_session();
     const void *service_catalogue_identity_{};
@@ -305,6 +309,7 @@ class GraphWiring {
         const TimeSeriesType *type;
         WiringPoint source_provider;
         WiringPoint provider;
+        WiringPoint transport;
         WiringPoint point;
     };
     std::vector<InheritedTimeSeriesRequirement> inherited_requirements_;

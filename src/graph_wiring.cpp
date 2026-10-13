@@ -53,8 +53,17 @@ struct GraphWiring::PendingNodeCall {
 };
 
 const TimeSeriesType &GraphWiring::InheritedTimeSeriesRequirement::boundary_input_type() const {
-    if (type_cast<TimeSeriesReferenceType>(type) != nullptr) {
-        return *type;
+    if (identity.is_object()) {
+        const auto *existing_reference = type_cast<TimeSeriesReferenceType>(type);
+        const auto &reference = existing_reference == nullptr
+                                    ? time_series_reference_type(*type, *type->guarantee().value())
+                                    : *existing_reference;
+        return details::inherited_reference_transport_type(reference);
+    }
+    if (const auto *reference = type_cast<TimeSeriesReferenceType>(type)) {
+        return reference->guarantee().value() == TimeSeriesGuarantee::const_
+                   ? *type
+                   : details::inherited_reference_transport_type(*reference);
     }
     return time_series_reference_type(*type, TimeSeriesGuarantee::const_);
 }
@@ -63,12 +72,92 @@ namespace details {
 
 class InheritedTimeSeriesWiringRecord final : public WiringRecord {
   public:
-    explicit InheritedTimeSeriesWiringRecord(const TimeSeriesType &type) : WiringRecord{type} {}
+    InheritedTimeSeriesWiringRecord(const TimeSeriesType &type, std::size_t requirement)
+        : WiringRecord{type}, requirement_{requirement} {}
+
+    std::optional<WiredInput> input_binding(const TimeSeriesType &requested_type) const noexcept override {
+        return WiredInput::inherited(requirement_, type_cast<TimeSeriesReferenceType>(&requested_type) == nullptr);
+    }
 
   private:
-    WiringPoint materialize(const TimeSeriesType &) const override {
-        return materialize_boundary_reference(point(*this));
+    WiringPoint materialize(const TimeSeriesType &) const override { return point(*this); }
+
+    std::size_t requirement_;
+};
+
+class InheritedReferenceInputWiringRecord final : public WiringRecord {
+  public:
+    InheritedReferenceInputWiringRecord(const TimeSeriesReferenceType &type, std::size_t requirement)
+        : WiringRecord{type}, requirement_{requirement} {}
+
+    std::optional<WiredInput> input_binding(const TimeSeriesType &) const noexcept override {
+        return WiredInput::inherited(requirement_, true);
     }
+
+  private:
+    WiringPoint materialize(const TimeSeriesType &) const override { return point(*this); }
+
+    std::size_t requirement_;
+};
+
+class ContextUseWiringRecord final : public WiringRecord {
+  public:
+    ContextUseWiringRecord(const TimeSeriesType &type, WiringPoint transport, std::size_t requirement)
+        : WiringRecord{type}, transport_{transport}, requirement_{requirement} {}
+
+    std::optional<WiredInput> input_binding(const TimeSeriesType &requested_type) const noexcept override {
+        const auto *reference = type_cast<TimeSeriesReferenceType>(&type());
+        if (reference != nullptr && reference->guarantee().value() != TimeSeriesGuarantee::const_) {
+            return std::nullopt;
+        }
+        return WiredInput::inherited(requirement_, type_cast<TimeSeriesReferenceType>(&requested_type) == nullptr);
+    }
+
+  private:
+    WiringPoint materialize(const TimeSeriesType &requested_type) const override {
+        const auto *reference = type_cast<TimeSeriesReferenceType>(&type());
+        if (reference != nullptr && reference->guarantee().value() != TimeSeriesGuarantee::const_) {
+            if (!forwarded_) {
+                const auto input = wiring().register_record(
+                    std::make_unique<InheritedReferenceInputWiringRecord>(*reference, requirement_));
+                forwarded_ = forward_inherited_reference(input, *reference);
+            }
+            return *forwarded_;
+        }
+        if (reference == nullptr && type_cast<TimeSeriesReferenceType>(&requested_type) != nullptr) {
+            return transport_;
+        }
+        return point(*this);
+    }
+
+    WiringPoint transport_;
+    std::size_t requirement_;
+    mutable std::optional<WiringPoint> forwarded_;
+};
+
+class LateInheritedUseWiringRecord final : public WiringRecord {
+  public:
+    LateInheritedUseWiringRecord(const TimeSeriesType &type, WiringPoint transport, std::size_t requirement)
+        : WiringRecord{type}, transport_{transport}, requirement_{requirement} {}
+
+  private:
+    WiringPoint materialize(const TimeSeriesType &requested_type) const override {
+        if (&requested_type == &transport_.type()) {
+            return transport_;
+        }
+        if (!forwarded_) {
+            const auto &reference = type_cast<TimeSeriesReferenceType>(transport_.type()).target_type();
+            const auto input = wiring().register_record(
+                std::make_unique<InheritedReferenceInputWiringRecord>(
+                    type_cast<TimeSeriesReferenceType>(reference), requirement_));
+            forwarded_ = forward_inherited_reference(input, type_cast<TimeSeriesReferenceType>(reference));
+        }
+        return *forwarded_;
+    }
+
+    WiringPoint transport_;
+    std::size_t requirement_;
+    mutable std::optional<WiringPoint> forwarded_;
 };
 
 class PendingNodeOutputWiringRecord final : public WiringRecord {
@@ -639,8 +728,8 @@ WiringPoint GraphWiring::add_inherited_requirement(details::NestedBindingIdentit
                                                    const TimeSeriesType &type, WiringPoint provider) {
     const auto requirement_index = inherited_requirements_.size();
     const auto requirement = InheritedTimeSeriesRequirement{std::move(identity), name, &type, provider};
-    auto point =
-        register_record(std::make_unique<details::InheritedTimeSeriesWiringRecord>(requirement.boundary_input_type()));
+    auto point = register_record(std::make_unique<details::InheritedTimeSeriesWiringRecord>(
+        requirement.boundary_input_type(), requirement_index));
     inherited_requirements_.push_back(requirement);
     inherited_records_.push_back({point.record(), requirement_index});
     return point;
@@ -651,6 +740,10 @@ WiringPoint GraphWiring::inherited_requirement_point(std::size_t index) const {
 }
 
 WiringPoint GraphWiring::import_context(util::symbol name, WiringPoint provider) {
+    return import_context_binding(name, provider, true);
+}
+
+WiringPoint GraphWiring::import_context_binding(util::symbol name, WiringPoint provider, bool consume) {
     if (&provider.graph() == this) {
         return provider;
     }
@@ -659,7 +752,7 @@ WiringPoint GraphWiring::import_context(util::symbol name, WiringPoint provider)
     }
 
     if (&provider.graph() != parent_) {
-        provider = parent_->import_context(name, provider);
+        provider = parent_->import_context_binding(name, provider, false);
     }
 
     const auto source_provider = provider;
@@ -674,17 +767,21 @@ WiringPoint GraphWiring::import_context(util::symbol name, WiringPoint provider)
                requirement.source_provider.record() == source_provider.record();
     });
     if (existing != context_bindings_.end()) {
-        return existing->point;
+        return consume ? existing->point : existing->transport;
     }
 
     if (inherited == parent_->inherited_records_.end()) {
         auto context = WiringContext{*parent_};
-        provider = details::materialize_boundary_reference(source_provider);
+        provider = details::materialize_inherited_reference(source_provider);
     }
 
-    auto point = add_inherited_requirement(details::NestedBindingIdentity::named(name), name, *source_type, provider);
-    context_bindings_.push_back({name, source_type, source_provider, provider, point});
-    return point;
+    const auto transport =
+        add_inherited_requirement(details::NestedBindingIdentity::named(name), name, *source_type, provider);
+    const auto requirement_index = inherited_requirements_.size() - 1;
+    const auto point = register_record(
+        std::make_unique<details::ContextUseWiringRecord>(*source_type, transport, requirement_index));
+    context_bindings_.push_back({name, source_type, source_provider, provider, transport, point});
+    return consume ? point : transport;
 }
 
 WiredInput GraphWiring::wire_input(WiringPoint point, const TimeSeriesType &type) {
@@ -692,22 +789,22 @@ WiredInput GraphWiring::wire_input(WiringPoint point, const TimeSeriesType &type
         throw WiringError{"a WiringPoint belongs to another GraphWiring"};
     }
 
-    const auto inherited = std::ranges::find(inherited_records_, point.record(), &InheritedRecord::record);
-    if (inherited != inherited_records_.end()) {
-        return WiredInput::inherited(inherited->requirement);
-    }
-
     const auto materialized = materialize(point, type);
-    return WiredInput::output(output_index(materialized));
+    if (const auto binding = materialized.record()->input_binding(type)) {
+        return *binding;
+    }
+    const auto dereference = type_cast<TimeSeriesReferenceType>(&materialized.type()) != nullptr &&
+                             type_cast<TimeSeriesReferenceType>(&type) == nullptr;
+    return WiredInput::output(output_index(materialized), dereference);
 }
 
-WiredInput GraphWiring::resolve_inherited_input(std::size_t index) const {
-    const auto &requirement = inherited_requirements_.at(index);
+WiredInput GraphWiring::resolve_inherited_input(WiredInput input) const {
+    const auto &requirement = inherited_requirements_.at(input.index());
     if (!requirement.provider.has_output() || &requirement.provider.graph() != this) {
-        return WiredInput::inherited(index);
+        return input;
     }
 
-    return WiredInput::output(output_index(requirement.provider));
+    return WiredInput::output(output_index(requirement.provider), input.dereferences_reference());
 }
 
 void GraphWiring::order_after_consumers(WiringPoint consumed, WiringPoint ordered_output) {
@@ -734,7 +831,13 @@ bool GraphWiring::input_consumes(WiredInput input, WiringPoint point) const {
     }
 
     if (input.is_inherited()) {
-        return input.index() < inherited_records_.size() && inherited_records_[input.index()].record == point.record();
+        if (input.index() >= inherited_requirements_.size()) {
+            return false;
+        }
+        const auto &requirement = inherited_requirements_[input.index()];
+        return inherited_records_[input.index()].record == point.record() ||
+               (!input.dereferences_reference() && requirement.consumer_point.has_output() &&
+                requirement.consumer_point.record() == point.record());
     }
 
     if (input.index() >= output_records_.size()) {
@@ -869,21 +972,42 @@ namespace bg {
 
 WiringPoint GraphWiring::require_inherited_time_series(details::NestedBindingIdentity identity, util::symbol name,
                                                        const TimeSeriesType &type) {
+    return require_inherited_binding(std::move(identity), name, type, true);
+}
+
+WiringPoint GraphWiring::require_inherited_binding(details::NestedBindingIdentity identity, util::symbol name,
+                                                   const TimeSeriesType &type, bool consume) {
     ensure_open();
     const auto existing = std::ranges::find_if(inherited_requirements_, [&](const auto &requirement) {
         return requirement.identity == identity && requirement.type == &type;
     });
     if (existing != inherited_requirements_.end()) {
         const auto index = static_cast<std::size_t>(existing - inherited_requirements_.begin());
+        if (consume && existing->consumer_point.has_output()) {
+            return existing->consumer_point;
+        }
         return inherited_requirement_point(index);
     }
 
     auto provider = WiringPoint{};
     if (parent_ != nullptr) {
-        provider = parent_->require_inherited_time_series(identity, name, type);
+        provider = parent_->require_inherited_binding(identity, name, type, false);
     }
 
-    return add_inherited_requirement(std::move(identity), name, type, provider);
+    const auto late_bound = identity.is_object();
+    const auto transport = add_inherited_requirement(std::move(identity), name, type, provider);
+    if (!late_bound) {
+        return transport;
+    }
+
+    const auto index = inherited_requirements_.size() - 1;
+    const auto *reference = type_cast<TimeSeriesReferenceType>(&type);
+    const auto &use_type = reference == nullptr ? time_series_reference_type(type, *type.guarantee().value())
+                                                : *reference;
+    const auto consumer_point =
+        register_record(std::make_unique<details::LateInheritedUseWiringRecord>(use_type, transport, index));
+    inherited_requirements_[index].consumer_point = consumer_point;
+    return consume ? consumer_point : transport;
 }
 
 void GraphWiring::provide_inherited_time_series(const details::NestedBindingIdentity &identity,
@@ -908,13 +1032,15 @@ void GraphWiring::provide_inherited_time_series(const details::NestedBindingIden
     if (found->provider.has_output()) {
         throw WiringError{"the inherited time series requirement already has a provider"};
     }
-
-    if (!found->boundary_input_type().accepts(provider.type())) {
+    if (!type.accepts(provider.type())) {
         throw WiringError{"the inherited time series provider has an incompatible type"};
     }
 
     auto context = WiringContext{*this};
-    auto reference = details::materialize_boundary_reference(provider);
+    auto reference = details::materialize_late_inherited_reference(provider, found->boundary_input_type());
+    if (!found->boundary_input_type().accepts(reference.type())) {
+        throw WiringError{"the inherited time series provider has an incompatible type"};
+    }
     found->provider = reference;
 }
 

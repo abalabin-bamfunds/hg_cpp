@@ -50,8 +50,17 @@ it.
 
 Before an inner graph starts, its owner places the provider references in a
 child evaluation-context section. `RuntimeGraph::start()` initializes each
-compiled context slot with its reference. Consumers subscribe to those slots
-through ordinary reference inputs.
+compiled context slot with its reference. Wiring records the input binding
+action for each use of a slot. A direct value or const reference needs no
+forwarding node in the inner graph.
+
+A context supplied by a reference whose target can change crosses each
+boundary through an engine-only `REF<REF<T>>`. The reference-making node in the
+outer graph observes changes to the supplied reference. An inner forwarding
+node binds through the context slot, subscribes to those changes, and publishes
+the current `REF<T>`. Consumers bind to that output through ordinary reference
+inputs. This keeps target changes observable in the current outer cycle, even
+when the consumer is several graph levels below the provider.
 
 The owning `nested`, `map`, `mesh`, or `switch_` node does not observe or
 forward context changes. Graph structure identity includes each context name

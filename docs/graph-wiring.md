@@ -21,10 +21,10 @@ collection. A call without an output returns `void`.
 
 A wiring record owns behavior required to materialize its value. A record may
 return a compatible lazy point; `GraphWiring::materialize` follows it until it
-reaches a wired output and caches the original point-to-output mapping. It
-checks graph ownership, type compatibility, and the final wired output before
-returning. Graph compilation consumes only wired outputs and does not depend on
-wiring-record behavior. A node template can identify a wired output for
+reaches a wired output or a direct input binding. It checks graph ownership,
+type compatibility, and the final binding before returning. Graph compilation
+consumes the resulting input bindings and does not depend on wiring-record
+behavior. A node template can identify a wired output for
 compiler lowering without changing its wiring representation.
 A materialized record whose layout differs from the normal layout for its
 semantic type stores its runtime type on the wired output. Graph compilation

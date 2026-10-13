@@ -3,7 +3,7 @@
 ## Purpose
 
 An operator gives graph code one stable name for behavior that can have several
-node or graph implementations. Wiring selects the unique least-generic
+node or graph implementations. Wiring selects the unique most-specific
 applicable overload matching the supplied arguments.
 
 ## Declaration and registration
@@ -273,9 +273,9 @@ Callable declarations use the same protocol through `bg::require`.
 
 ## Specificity
 
-Applicable signatures form a partial order from more generic to less generic.
-The operator selects a candidate only when it is strictly less generic than
-every other applicable candidate. Otherwise the call is ambiguous.
+The operator compares applicable signatures as declarations. It selects a
+candidate only when it is more specific than every other applicable candidate.
+Otherwise the call is ambiguous.
 
 Comparison includes parameter types, constraints, literal components, and
 relationships created by repeated variables. It does not include output types,
@@ -285,25 +285,42 @@ constraints break ties between equivalent parameter types as described in
 The implementation must compare complete signatures rather than add numeric
 scores for individual parameters.
 
-Specificity follows these rules:
+Comparison recursively applies one rule: a declaration is more specific when
+it narrows the accepted types or variable relationships, with no conflicting
+preference elsewhere in the signature. An exact type narrows a variable; adding
+a capability constraint narrows an unconstrained variable. Collection items and
+graph boundaries use the same comparison. Repeated variables, literal sizes,
+literal guarantees, and derived types also narrow their corresponding generic
+or base declarations. Applicable literal guarantees follow `const`, `final`,
+`deduplicated`, then `ordinary`.
 
-1. An exact type is less generic than a variable that accepts it.
-2. A constrained variable is less generic than an unconstrained variable when
-   its accepted set is a strict subset.
-3. A specific time series form is less generic than a time series variable.
-4. Repeated use of one variable is less generic than independent variables.
-5. Two signatures that constrain different parameter positions are unordered.
-6. A literal fixed collection size is less generic than a size variable.
-7. Applicable literal guarantees follow `const`, `final`, `deduplicated`, then
-   `ordinary`; a literal is less generic than a guarantee variable.
-8. A derived scalar type is less generic than an accepted base scalar type.
-9. Unrelated capability constraints are unordered.
-10. Identical signatures remain ambiguous when more than one requirement
-    succeeds.
+Union comparison uses each candidate's supplied argument types to identify its
+applicable alternatives. It compares those alternatives as declarations, not
+as their resolved types. Conflicting applicable alternatives remain unordered.
+When applicable alternatives compare equivalent, declared containment still
+distinguishes an exact declaration from a union containing it. Partially
+overlapping concrete unions remain unordered.
+
+For a supplied `TS<i64>`, with equivalent guarantees and variable relationships,
+the declarations have this order, from most to least specific:
+
+```cpp
+TS<i64>
+Union<"VALUE", i64, TS<i64>>
+TS<EQUALITY_SCALAR> // ScalarVariable<"EQUALITY_SCALAR", EqualityComparable>
+TS<SCALAR>
+```
+
+Constraints on different parameters can conflict. Unrelated capability
+constraints and identical signatures do not establish a strict preference.
+For supplied `(i64, i64)`, `(i64, R)` and `(T, T)` remain unordered: the first
+fixes one parameter type; the second requires both parameter types to match.
+Declaration-only comparisons remain conservative when no supplied types are
+available to identify applicable union alternatives.
 
 A fixed overload is preferred over a variadic overload. Among variadic
 overloads, reference affinity and type specificity compare their shared fixed
-parameters. A longer compatible fixed prefix is less generic.
+parameters. A longer compatible fixed prefix is more specific.
 
 ## Graph arguments
 

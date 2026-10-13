@@ -28,6 +28,10 @@ class GenericTimeSeriesReferenceType;
 
 const TimeSeriesReferenceType &time_series_reference_type(const TimeSeriesType &target_type,
                                                           TimeSeriesGuarantee guarantee);
+namespace details {
+// Engine-only transport for a changing reference-valued output across an inherited graph boundary.
+const TimeSeriesReferenceType &inherited_reference_transport_type(const TimeSeriesReferenceType &target_type);
+}
 // The returned type has process lifetime. The target type must also have process lifetime.
 const GenericTimeSeriesReferenceType &generic_time_series_reference_type(
     const TimeSeriesType &target_type, TimeSeriesGuarantee guarantee);

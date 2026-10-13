@@ -12,6 +12,7 @@
 #include <bg/operators.hpp>
 #include <bg/time_series/tsb/tsb_free_runtime_type.hpp>
 #include <bg/type/time_series_bundle_type.hpp>
+#include <bg/type/time_series_reference_type.hpp>
 
 #include <algorithm>
 #include <cstdint>
@@ -325,6 +326,12 @@ WiringPoint time_series_bundle_field(WiringPoint bundle, std::size_t index) {
     }
     if (index >= type->item_count()) {
         throw WiringError{"time series bundle field index is out of range"};
+    }
+
+    if (bundle.record()->input_binding(*type)) {
+        const auto &reference_type = time_series_reference_type(*type, TimeSeriesGuarantee::const_);
+        const auto reference = bundle.record()->wiring().materialize(bundle, reference_type);
+        return static_cast<WiringPoint>(operators::getattr(reference, type->item_name(index)));
     }
 
     const auto &record = *bundle.record();

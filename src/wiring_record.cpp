@@ -131,14 +131,18 @@ WiringPoint GraphWiring::materialize(WiringPoint point, const TimeSeriesType &ty
         throw WiringError{"wiring-point materialization returned a temporary wiring record"};
     }
     if (!type.accepts(result.type())) {
-        throw WiringError{"wiring-point materialization produced an incompatible type"};
+        auto requested = std::string{};
+        auto produced = std::string{};
+        type.format_name(requested);
+        result.type().format_name(produced);
+        throw WiringError{"wiring-point materialization requested " + requested + " but produced " + produced};
     }
 
-    if (!result.record()->has_wired_output()) {
+    if (!result.record()->has_wired_output() && !result.record()->input_binding(type)) {
         result = materialize(result, type);
     }
-    if (!result.record()->has_wired_output()) {
-        throw WiringError{"wiring-point materialization produced no wired output"};
+    if (!result.record()->has_wired_output() && !result.record()->input_binding(type)) {
+        throw WiringError{"wiring-point materialization produced no input binding"};
     }
 
     if (result.record() != &record) {
