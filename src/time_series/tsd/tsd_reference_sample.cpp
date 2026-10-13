@@ -27,7 +27,6 @@ class SampledDictionaryRuntimeType final : public TimeSeriesDictionaryRuntimeTyp
                                           false} {}
     static const SampledDictionaryRuntimeType &for_shape(const TimeSeriesDictionaryRuntimeType &shape);
 
-    DictionaryKeyStorage retention_storage(void *value) const noexcept override;
     RetainedDictionaryKey retain_key(void *, const ScalarData &, allocator &) const override;
     void release_key(void *, item_id_t, allocator &) const noexcept override;
     item_id_t find_key(const void *value, const ScalarData &key) const override;
@@ -345,16 +344,6 @@ RetainedDictionaryKey SampledDictionaryRuntimeType::retain_key(void *value, cons
     }
 
     return runtime_type->retain_key(const_cast<void *>(sample.current.storage), key, memory);
-}
-
-DictionaryKeyStorage SampledDictionaryRuntimeType::retention_storage(void *value) const noexcept {
-    auto &sample = *static_cast<SampledDictionary *>(value);
-    auto *runtime_type = dictionary_runtime_type(sample.current);
-    if (runtime_type == nullptr || sample.current.storage == nullptr) {
-        return {};
-    }
-
-    return runtime_type->retention_storage(const_cast<void *>(sample.current.storage));
 }
 
 void SampledDictionaryRuntimeType::release_key(void *, item_id_t, allocator &) const noexcept {

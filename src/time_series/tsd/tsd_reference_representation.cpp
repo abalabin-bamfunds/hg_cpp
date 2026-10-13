@@ -22,14 +22,6 @@ class TimeSeriesDictionaryRepresentationRuntimeType final : public TimeSeriesDic
                                                   const TimeSeriesRuntimeType &item)
         : TimeSeriesDictionaryRuntimeType{type, key, item, 0, 1, false, false, false} {}
 
-    DictionaryKeyStorage retention_storage(void *value) const noexcept override {
-        const auto &view = representation(value);
-        const auto base = view.base_time_series();
-        return base.storage == nullptr
-                   ? DictionaryKeyStorage{}
-                   : base_runtime_type(base).retention_storage(const_cast<void *>(base.storage));
-    }
-
     RetainedDictionaryKey retain_key(void *value, const ScalarData &key, allocator &memory) const override {
         const auto &view = representation(value);
         const auto base = view.base_time_series();

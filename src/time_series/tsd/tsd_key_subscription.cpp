@@ -57,15 +57,6 @@ class TsdKeySubscriptions final
         return Base::input<TsdItemReferenceInput>(entry, resolved, reference_runtime_type);
     }
 
-    static bool retention_matches(const Collection &tsd, ResolvedTimeSeries resolved) noexcept {
-        if (resolved.storage == nullptr) {
-            return false;
-        }
-        const auto &view = static_cast<const TimeSeriesDictionaryRuntimeType &>(*resolved.runtime_type);
-        const auto retention = view.retention_storage(const_cast<void *>(resolved.storage));
-        return retention.runtime_type == tsd.runtime_type && retention.value == tsd.storage;
-    }
-
     static bool contains_item(const Collection &tsd, ResolvedTimeSeries resolved, item_id_t id) noexcept {
         return tsd.view_runtime_type->key_live(resolved.storage, id);
     }

@@ -15,12 +15,7 @@ namespace bg::details {
 
 class TimeSeriesDictionaryRuntimeType;
 
-struct DictionaryKeyStorage {
-    const TimeSeriesDictionaryRuntimeType *runtime_type{};
-    void *value{};
-};
-
-// Release a retained ID through this returned runtime type and storage; a view can rebind to different storage.
+// Identifies the dictionary storage that owns this key retention.
 struct RetainedDictionaryKey {
     const TimeSeriesDictionaryRuntimeType *runtime_type{};
     void *value{};
@@ -55,8 +50,6 @@ class TimeSeriesDictionaryRuntimeType : public TimeSeriesRuntimeType {
     const ScalarRuntimeType &key_runtime_type() const noexcept { return *key_; }
     const TimeSeriesRuntimeType &key_set_runtime_type() const noexcept { return *keys_; }
     const TimeSeriesRuntimeType &item_runtime_type() const noexcept { return *item_; }
-
-    virtual DictionaryKeyStorage retention_storage(void *value) const noexcept { return {this, value}; }
 
     virtual RetainedDictionaryKey retain_key(void *value, const ScalarData &key, allocator &memory) const {
         auto &keys = static_cast<time_series_dict_storage *>(value)->key_storage().value;

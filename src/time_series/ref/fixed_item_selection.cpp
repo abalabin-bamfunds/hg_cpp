@@ -36,10 +36,6 @@ class FixedItemSubscriptions final
             require_selection(collection, id, item_runtime_type.is_reference()), resolved, reference_runtime_type);
     }
 
-    static bool retention_matches(const Collection &collection, ResolvedTimeSeries resolved) noexcept {
-        return resolved.storage == collection.storage;
-    }
-
     static bool contains_item(const Collection &, ResolvedTimeSeries, item_id_t) noexcept { return true; }
 
     static void release_item_retention(Collection &, Selection &) noexcept {}

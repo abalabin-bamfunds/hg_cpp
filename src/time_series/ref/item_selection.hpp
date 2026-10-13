@@ -140,7 +140,7 @@ template <typename Derived, typename RuntimeType> class ItemSelectionSubscriptio
         return *entry;
     }
 
-    // The caller validates collection identity and retention; an empty resolution clears the selection.
+    // An empty resolution clears the selection.
     bool refresh(Selection &entry, const ResolvedTimeSeries &resolved, EvaluationTime evaluation_time) {
         auto &collection = *entry.collection;
         auto value = Reference{};
@@ -167,7 +167,8 @@ template <typename Derived, typename RuntimeType> class ItemSelectionSubscriptio
     template <typename Result>
     Result input(Selection &entry, const ResolvedTimeSeries &resolved,
                  const TimeSeriesRuntimeType &item_reference_runtime_type) {
-        const auto current = matches_collection(*entry.collection, resolved) ? resolved : ResolvedTimeSeries{};
+        const auto current = resolved.runtime_type == entry.collection->view_runtime_type ? resolved
+                                                                                         : ResolvedTimeSeries{};
         refresh(entry, current, provider_->owner().evaluation_time());
         queue_release(entry);
 
@@ -209,7 +210,8 @@ template <typename Derived, typename RuntimeType> class ItemSelectionSubscriptio
                     resolved = ResolvedTimeSeries::resolve(reference);
                     did_resolve = true;
                 }
-                const auto current = matches_collection(*collection, resolved) ? resolved : ResolvedTimeSeries{};
+                const auto current = resolved.runtime_type == collection->view_runtime_type ? resolved
+                                                                                            : ResolvedTimeSeries{};
                 refresh_selection(context, *entry, current);
             }
         }
@@ -276,11 +278,6 @@ template <typename Derived, typename RuntimeType> class ItemSelectionSubscriptio
                    candidate->runtime_type == &runtime_type && candidate->storage == storage;
         });
         return found == collections_.end() ? nullptr : *found;
-    }
-
-    bool matches_collection(const Collection &collection, const ResolvedTimeSeries &resolved) noexcept {
-        return resolved.runtime_type == collection.view_runtime_type &&
-               derived().retention_matches(collection, resolved);
     }
 
     void queue_release(Selection &entry) noexcept {
@@ -376,7 +373,7 @@ template <typename Derived, typename RuntimeType> class ItemSelectionSubscriptio
         }
 
         const auto resolved = ResolvedTimeSeries::resolve(collection.reference);
-        if (!matches_collection(collection, resolved)) {
+        if (resolved.runtime_type != collection.view_runtime_type) {
             invalidate_all(context, collection);
             release_all_item_retention(collection);
             return;
