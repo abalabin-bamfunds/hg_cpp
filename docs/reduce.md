@@ -25,11 +25,15 @@ When a TSD stores references, target updates, invalidations, and revalidations
 update the reduction even when the TSD membership and stored references do not
 change.
 
-When the reducer graph supports borrowed evaluation and the runtime
-representations are compatible, reduce uses a compact path. It stores valid
-items in a compressed binary Patricia tree keyed by their physical TSD item IDs.
-Item changes update affected paths; membership changes and physical-ID
-remapping update the tree structure.
+Reduce selects its execution path during wiring. It uses compact evaluation
+when the reducer supports borrowed evaluation and both compiled reducer input
+runtime-type pointers and its output runtime-type pointer exactly match the
+source TSD item's runtime-type pointer. Final-guarantee items therefore use
+nested evaluation with the ordinary-guarantee reducer graph. A reference-wrapped
+TSD also uses nested evaluation when sampled items can have different runtime
+types. Compact evaluation stores valid items in a compressed binary Patricia
+tree keyed by their physical TSD item IDs. Item changes update affected paths;
+membership changes and physical-ID remapping update the tree structure.
 
 Other reducer graphs use nested runtime graphs arranged in adjacent pairs by
 TSD iteration order. A membership change rebuilds that graph set. Stopped

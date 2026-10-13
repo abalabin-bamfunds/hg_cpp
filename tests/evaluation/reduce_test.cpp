@@ -118,8 +118,8 @@ TEST_CASE("reduce carries an odd item to the next level of its tree",
     CHECK(actual.equals<i64>({12, 15}));
 }
 
-TEST_CASE("reduce combines final TSD items with an ordinary compact reducer",
-          "[feature:reduce][series:tsd][shape:single-node][guarantee:final]") {
+TEST_CASE("reduce combines final TSD items with a nested reducer",
+          "[feature:reduce][feature:nested-graph][series:tsd][shape:nested][guarantee:final]") {
     const auto final_dictionary_from_values = node(
         [](In<TS<i64>> left, In<TS<i64>> right,
            Out<TSD<std::int64_t, TS<i64, TimeSeriesGuarantee::final>>> output) {
@@ -220,8 +220,8 @@ TEST_CASE("compact reduce does not republish an unchanged root when membership c
     CHECK(fallback_output.equals<i64>({10, std::nullopt}));
 }
 
-TEST_CASE("compact reduce wiring preserves the reducer selected for reference-backed inputs",
-          "[feature:reduce][series:tsd][shape:single-node][binding:reference-to-value]") {
+TEST_CASE("nested reduce preserves the reducer selected for reference-backed inputs",
+          "[feature:reduce][series:tsd][shape:nested][binding:reference-to-value]") {
     const auto tested = [](wp<TS<i64>> left, wp<TS<i64>> right) {
         return reduce(representation_sensitive_graph,
                       dictionary_from_two_values(left, right, operators::const_(true), operators::const_(true)));
@@ -232,8 +232,9 @@ TEST_CASE("compact reduce wiring preserves the reducer selected for reference-ba
     CHECK(actual.equals<i64>({7}));
 }
 
-TEST_CASE("compact reduce tracks keys when a sampled TSD reassigns physical item IDs",
-          "[feature:reduce][series:tsd][series:reference][feature:item-id-remapping][transition:rebind]") {
+TEST_CASE("nested reduce tracks keys when a sampled TSD reassigns physical item IDs",
+          "[feature:reduce][series:tsd][series:reference][feature:item-id-remapping][transition:rebind]"
+          "[shape:nested]") {
     const auto first_dictionary = node([](In<TS<bool>>, Out<TSD<std::int64_t, TS<i64>>> output) {
         output[10].set(2);
         output[20].set(3);

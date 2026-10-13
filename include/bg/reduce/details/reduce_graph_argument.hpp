@@ -10,6 +10,7 @@
 namespace bg {
 
 class GraphWiring;
+class CompiledGraph;
 class TimeSeriesType;
 class TimeSeriesRuntimeType;
 class WiringTemplate;
@@ -18,7 +19,7 @@ class TypeMap;
 namespace details {
 
 struct ReduceCompactGraphWiring {
-    std::shared_ptr<const GraphWiring> wiring;
+    std::shared_ptr<const CompiledGraph> graph;
     std::array<std::size_t, 2> input_indices;
     std::optional<std::size_t> output_node;
     std::optional<std::size_t> output_input;
@@ -26,10 +27,14 @@ struct ReduceCompactGraphWiring {
     GraphWiringStructure structure;
 };
 
-struct ReduceGraphWiring {
+struct ReduceNestedGraphWiring {
     std::shared_ptr<const GraphWiring> wiring;
     std::array<std::size_t, 2> input_nodes;
     std::size_t output_node;
+};
+
+struct ReduceGraphWiring {
+    ReduceNestedGraphWiring nested;
     std::optional<ReduceCompactGraphWiring> compact_graph;
 };
 
@@ -41,7 +46,7 @@ struct ReduceGraphArgumentWiring {
 ReduceGraphArgumentWiring build_reduce_graph_argument_wiring(const WiringTemplate &function,
                                                               const TimeSeriesType &item_type,
                                                               const TypeMap &type_map,
-                                                              bool item_values_require_reference_subscriptions = false);
+                                                              bool item_runtime_type_is_fixed = true);
 
 } // namespace details
 } // namespace bg

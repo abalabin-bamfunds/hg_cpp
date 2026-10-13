@@ -2,6 +2,7 @@
 #include <bg/graph/details/nested.hpp>
 #include <bg/node.hpp>
 #include <bg/reduce.hpp>
+#include <bg/reduce/details/default_reduce_wiring.hpp>
 #include <bg/reduce/details/reduce_graph_argument.hpp>
 #include <bg/service.hpp>
 #include <bg/testing/test_wiring.hpp>
@@ -20,6 +21,7 @@ using namespace bg;
 using namespace bg::literals;
 
 const auto dictionary_source = node([](Out<TSD<std::int64_t, TS<std::int64_t>>>) {});
+const auto reference_dictionary_source = node([](Out<REF<TSD<std::int64_t, TS<std::int64_t>>>>) {});
 const auto final_item_dictionary_source =
     node([](Out<TSD<std::int64_t, TS<std::int64_t, TimeSeriesGuarantee::final>>>) {});
 const auto add_values = node([](In<TS<std::int64_t>>, In<TS<std::int64_t>>, Out<TS<std::int64_t>>) {});
@@ -42,9 +44,9 @@ TEST_CASE("reduce wiring records a binary graph over TSD item values",
             reducer, dictionary_type.value_type(), TypeMap{});
 
         CHECK(built.structure.boundary_count() == 2);
-        CHECK(built.graph.input_nodes[0] != built.graph.input_nodes[1]);
-        CHECK(built.graph.output_node != built.graph.input_nodes[0]);
-        CHECK(built.graph.output_node != built.graph.input_nodes[1]);
+        CHECK(built.graph.nested.input_nodes[0] != built.graph.nested.input_nodes[1]);
+        CHECK(built.graph.nested.output_node != built.graph.nested.input_nodes[0]);
+        CHECK(built.graph.nested.output_node != built.graph.nested.input_nodes[1]);
 
         const auto *left_reference = type_cast<TimeSeriesReferenceType>(&built.structure.boundary_type(0));
         const auto *right_reference = type_cast<TimeSeriesReferenceType>(&built.structure.boundary_type(1));
@@ -57,6 +59,24 @@ TEST_CASE("reduce wiring records a binary graph over TSD item values",
         REQUIRE(result_value != nullptr);
         CHECK(&result_value->value_type() ==
               &type_cast<TimeSeriesValueType>(dictionary_type.value_type()).value_type());
+    });
+}
+
+TEST_CASE("reduce selects nested wiring for a reference-wrapped TSD",
+          "[feature:reduce][feature:wiring][series:tsd][series:reference][shape:nested]") {
+    const auto reducer = graph("name"_n = "add_values", [](wp<TS<std::int64_t>> left,
+                                                              wp<TS<std::int64_t>> right) {
+        return add_values(left, right);
+    });
+
+    testing::test_wiring([&] {
+        const auto dictionary = reference_dictionary_source();
+        const auto argument = details::build_reduce_graph_argument(
+            reducer, WiringArgument{dictionary}, std::nullopt, TypeMap{});
+        const auto &built = details::DefaultReduceWiring::from(argument);
+
+        CHECK(built.graph.nested.wiring != nullptr);
+        CHECK_FALSE(built.graph.compact_graph.has_value());
     });
 }
 
@@ -74,7 +94,7 @@ TEST_CASE("reduce wiring records a graph whose result forwards one of its inputs
         REQUIRE(built.graph.compact_graph.has_value());
         CHECK_FALSE(built.graph.compact_graph->output_node.has_value());
         CHECK(built.graph.compact_graph->output_input.has_value());
-        CHECK(built.graph.output_node != built.graph.input_nodes[0]);
+        CHECK(built.graph.nested.output_node != built.graph.nested.input_nodes[0]);
     });
 }
 
@@ -152,7 +172,7 @@ TEST_CASE("reduce wiring preserves inherited context requirements",
         const auto built = details::build_reduce_graph_argument_wiring(
             reducer, dictionary_type.value_type(), TypeMap{});
 
-        CHECK(built.graph.wiring->inherited_requirements().size() == 1);
+        CHECK(built.graph.nested.wiring->inherited_requirements().size() == 1);
         CHECK(built.structure.cacheable());
     });
 }
@@ -179,7 +199,7 @@ TEST_CASE("an isolated compact reducer rejects context requirements without chan
             representation_sensitive, dictionary_type.value_type(), TypeMap{});
 
         CHECK_FALSE(built.graph.compact_graph.has_value());
-        CHECK(built.graph.wiring->inherited_requirements().empty());
+        CHECK(built.graph.nested.wiring->inherited_requirements().empty());
         CHECK(outer.inherited_requirements().empty());
     });
 }
@@ -205,7 +225,7 @@ TEST_CASE("an isolated compact reducer rejects service requirements without chan
             representation_sensitive, dictionary_type.value_type(), TypeMap{});
 
         CHECK_FALSE(built.graph.compact_graph.has_value());
-        CHECK(built.graph.wiring->inherited_requirements().empty());
+        CHECK(built.graph.nested.wiring->inherited_requirements().empty());
         CHECK(outer.service_requirements() == nullptr);
     });
 }
@@ -242,7 +262,7 @@ TEST_CASE("reduce accepts final TSD items and keeps an ordinary output guarantee
         const auto &dictionary_type = type_cast<TimeSeriesDictionaryType>(dictionary.type());
         const auto built = details::build_reduce_graph_argument_wiring(
             reducer, dictionary_type.value_type().target_type(), TypeMap{});
-        CHECK(built.graph.compact_graph.has_value());
+        CHECK_FALSE(built.graph.compact_graph.has_value());
 
         const auto result = reduce(reducer, dictionary);
         const auto *result_type = type_cast<TimeSeriesValueType>(&result.type());

@@ -12,37 +12,55 @@
 
 namespace bg::details {
 
-struct CompiledReduceGraph {
-    struct CompactGraph {
-        std::shared_ptr<const CompiledGraph> graph;
-        std::array<std::size_t, 2> input_indices;
-        std::optional<std::size_t> output_node;
-        std::optional<std::size_t> output_input;
-        const TimeSeriesRuntimeType *output_runtime_type;
-    };
-
-    CompiledNestedGraph nested;
-    std::optional<CompactGraph> compact_graph;
+struct CompiledCompactReduceGraph {
+    std::shared_ptr<const CompiledGraph> graph;
+    std::array<std::size_t, 2> input_indices;
+    std::optional<std::size_t> output_node;
+    std::optional<std::size_t> output_input;
+    const TimeSeriesRuntimeType *output_runtime_type;
     std::uint32_t dictionary_parameter{};
     std::optional<std::uint32_t> default_parameter;
 };
 
-class ReduceNodeDefinition {
-  public:
-    using compiled_data_type = CompiledReduceGraph;
+struct CompiledNestedReduceGraph {
+    CompiledNestedGraph nested;
+    std::uint32_t dictionary_parameter{};
+    std::optional<std::uint32_t> default_parameter;
+};
 
-    ReduceNodeDefinition(ReduceGraphWiring wiring, const ResolvedSignature &signature,
-                         std::uint32_t dictionary_parameter,
-                         std::optional<std::uint32_t> default_parameter);
+class NestedReduceNodeDefinition {
+  public:
+    using compiled_data_type = CompiledNestedReduceGraph;
+
+    NestedReduceNodeDefinition(ReduceNestedGraphWiring wiring, const ResolvedSignature &signature,
+                               std::uint32_t dictionary_parameter,
+                               std::optional<std::uint32_t> default_parameter);
 
     const Signature &signature() const noexcept { return *signature_; }
     NodeTemplateIdentity definition_identity() const;
     compiled_data_type compile(const ResolvedSignature &, allocator &memory) const;
 
   private:
-    void validate() const;
+    ReduceNestedGraphWiring wiring_;
+    std::unique_ptr<Signature> signature_;
+    std::uint32_t dictionary_parameter_;
+    std::optional<std::uint32_t> default_parameter_;
+};
 
-    ReduceGraphWiring wiring_;
+class CompactReduceNodeDefinition {
+  public:
+    using compiled_data_type = CompiledCompactReduceGraph;
+
+    CompactReduceNodeDefinition(ReduceCompactGraphWiring wiring, const ResolvedSignature &signature,
+                                std::uint32_t dictionary_parameter,
+                                std::optional<std::uint32_t> default_parameter);
+
+    const Signature &signature() const noexcept { return *signature_; }
+    NodeTemplateIdentity definition_identity() const;
+    compiled_data_type compile(const ResolvedSignature &, allocator &) const;
+
+  private:
+    ReduceCompactGraphWiring wiring_;
     std::unique_ptr<Signature> signature_;
     std::uint32_t dictionary_parameter_;
     std::optional<std::uint32_t> default_parameter_;

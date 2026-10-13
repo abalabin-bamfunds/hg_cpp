@@ -37,13 +37,19 @@
 namespace bg::details {
 namespace {
 
-struct ReduceRuntime;
+struct CompactReduceRuntime;
+struct NestedReduceRuntime;
 
-struct ReduceNodeState {
-    ReduceRuntime *runtime{};
+struct CompactReduceNodeState {
+    CompactReduceRuntime *runtime{};
 };
 
-using ReduceInvocation = NodeInvocation<CompiledReduceGraph, ReduceNodeState>;
+struct NestedReduceNodeState {
+    NestedReduceRuntime *runtime{};
+};
+
+using CompactReduceInvocation = NodeInvocation<CompiledCompactReduceGraph, CompactReduceNodeState>;
+using NestedReduceInvocation = NodeInvocation<CompiledNestedReduceGraph, NestedReduceNodeState>;
 
 using CompactReduceNodeIndex = util::occupancy_index::size_type;
 inline constexpr auto invalid_compact_reduce_node = util::occupancy_index::npos;
@@ -94,207 +100,48 @@ struct CompactReducePairState {
     bool initialized{};
 };
 
-class ReduceRuntime {
+class CompactReduceRuntime {
   public:
-    ReduceRuntime(allocator memory, EvaluationContext &context)
-        : memory_{memory},
-          selected_keys_{&memory_.memory_resource()},
-          selected_references_{&memory_.memory_resource()},
-          selected_values_{&memory_.memory_resource()},
-          candidate_keys_{&memory_.memory_resource()},
-          candidate_references_{&memory_.memory_resource()},
-          candidate_values_{&memory_.memory_resource()},
-          current_level_{&memory_.memory_resource()},
-          next_level_{&memory_.memory_resource()},
-          compact_pair_blocks_{&memory_.memory_resource()},
-          graphs_{&memory_.memory_resource()},
-          owned_graphs_{&memory_.memory_resource()} {
-        evaluator_.bind_owner(context.runtime_graph(), context.node_index());
-    }
+    explicit CompactReduceRuntime(allocator memory)
+        : memory_{memory}, compact_pair_blocks_{&memory_.memory_resource()} {}
 
-    ReduceRuntime(const ReduceRuntime &) = delete;
-    ReduceRuntime &operator=(const ReduceRuntime &) = delete;
+    CompactReduceRuntime(const CompactReduceRuntime &) = delete;
+    CompactReduceRuntime &operator=(const CompactReduceRuntime &) = delete;
 
-    bool evaluate(const CompiledReduceGraph &compiled, ReduceInvocation invocation) {
+    void evaluate(const CompiledCompactReduceGraph &compiled, CompactReduceInvocation invocation) {
         const auto values = invocation.template input<In<TSD<SCALAR, TS_T>>>(compiled.dictionary_parameter);
         if (!values.valid()) {
-            selected_keys_.clear();
-            selected_references_.clear();
-            selected_values_.clear();
-            retire_graphs(invocation.context());
-            dictionary_valid_ = false;
+            clear_compact_graph();
+            initialized_ = false;
             invocation.template output<TS_T>().invalidate();
             using_default_ = false;
-            return true;
-        }
-        dictionary_valid_ = true;
-
-        if (rebuilding_) {
-            if (!continue_rebuild(compiled, invocation)) {
-                return false;
-            }
-            return publish_result(compiled, invocation, true);
+            return;
         }
 
-        auto compact_fallback_required = false;
-        if (compact_active_) {
-            if (update_compact_graph(compiled, values, invocation)) {
-                if (!evaluate_compact_graph(compiled, values, invocation)) {
-                    return false;
+        auto force_publish = false;
+        if (!initialized_) {
+            build_compact_graph(compiled);
+            values.for_each_id_value([&](const auto id, const auto &item) {
+                if (item.valid()) {
+                    insert_compact_leaf(id);
                 }
-                return publish_compact_result(compiled, values, invocation, false);
-            }
-            clear_compact_graph();
-            compact_active_ = false;
-            compact_fallback_required = true;
+            });
+            initialized_ = true;
+            force_publish = true;
+        } else {
+            update_compact_graph(values);
         }
 
-        collect_valid_items(values);
-
-        const auto use_compact_graph = compact_graph_is_usable(compiled, candidate_values_);
-        const auto needs_item_references = !use_compact_graph && candidate_values_.size() > 1;
-        if (needs_item_references) {
-            collect_item_references(invocation.bound_reference(compiled.dictionary_parameter));
-        }
-
-        const auto membership_changed = !same_membership(needs_item_references);
-        const auto compact_mode_changed = use_compact_graph != compact_active_;
-        if (!membership_changed && !compact_fallback_required) {
-            selected_values_.swap(candidate_values_);
-        }
-        if (membership_changed || compact_mode_changed || compact_fallback_required) {
-            selected_keys_.swap(candidate_keys_);
-            selected_references_.swap(candidate_references_);
-            selected_values_.swap(candidate_values_);
-
-            retire_graphs(invocation.context());
-            compact_active_ = use_compact_graph;
-
-            if (compact_active_) {
-                build_compact_graph(compiled);
-                if (!evaluate_compact_graph(compiled, values, invocation)) {
-                    return false;
-                }
-                return publish_compact_result(compiled, values, invocation, true);
-            }
-
-            current_level_.assign(selected_references_.begin(), selected_references_.end());
-            next_level_.clear();
-            next_pair_ = 0;
-            building_pair_ = false;
-            rebuilding_ = current_level_.size() > 1;
-            const auto graph_count = current_level_.empty() ? std::size_t{} : current_level_.size() - 1;
-            graphs_.reserve(graph_count);
-            owned_graphs_.reserve(owned_graphs_.size() + graph_count);
-
-            if (rebuilding_ && !continue_rebuild(compiled, invocation)) {
-                return false;
-            }
-            return publish_result(compiled, invocation, true);
-        }
-
-        while (evaluation_graph_index_ < graphs_.size()) {
-            if (!graphs_[evaluation_graph_index_]->evaluate(invocation.context())) {
-                return false;
-            }
-            ++evaluation_graph_index_;
-        }
-        evaluation_graph_index_ = 0;
-
-        return publish_result(compiled, invocation, false);
+        evaluate_compact_graph(values, invocation);
+        publish_compact_result(compiled, values, invocation, force_publish);
     }
 
-    void stop(EvaluationContext &context) noexcept { retire_graphs(context); }
-
-    void destroy(EvaluationContext &context) noexcept {
-        context.runtime_graph().remove_cycle_callback(this);
-        destroy_graphs(context);
+    void destroy() noexcept {
+        clear_compact_graph();
         memory_.delete_object(this);
     }
 
   private:
-    template <typename ValueDictionary> void collect_valid_items(const ValueDictionary &values) {
-        candidate_keys_.clear();
-        candidate_references_.clear();
-        candidate_values_.clear();
-
-        values.for_each_id_value([&](const auto id, const auto &item) {
-            if (!item.valid()) {
-                return;
-            }
-
-            const auto key = values.key_at(id);
-            candidate_keys_.emplace_back(Scalar<>::from(key), memory_);
-            const auto value = values.runtime_type().item(values.data(), id);
-            candidate_values_.push_back({id, value.last_updated, value.value, &value.runtime_type});
-        });
-    }
-
-    void collect_item_references(Reference dictionary_reference) {
-        candidate_references_.clear();
-        for (const auto &key : candidate_keys_) {
-            const auto key_value = key.view();
-            const auto scalar_key = Scalar<>::from(key_value);
-            const auto item = tsd_item_reference_input(dictionary_reference, scalar_key);
-            candidate_references_.push_back(item.binding.value());
-        }
-    }
-
-    bool same_membership(bool compare_references) const noexcept {
-        if (selected_keys_.size() != candidate_keys_.size() ||
-            (compare_references && selected_references_.size() != candidate_references_.size())) {
-            return false;
-        }
-
-        for (auto index = std::size_t{}; index < selected_keys_.size(); ++index) {
-            if (!selected_keys_[index].equals(candidate_keys_[index].view()) ||
-                (compare_references && selected_references_[index] != candidate_references_[index])) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    bool compact_graph_is_usable(const CompiledReduceGraph &compiled,
-                                 std::span<const CompactReduceInput> values) const {
-        if (!compiled.compact_graph) {
-            return false;
-        }
-
-        const auto &compact = *compiled.compact_graph;
-        if (!compact.output_node) {
-            return compact.output_input.has_value();
-        }
-
-        const auto inputs = compact.graph->runtime_inputs();
-        for (const auto &value : values) {
-            if (!value.last_updated.valid() || value.value == nullptr) {
-                return false;
-            }
-            for (const auto input_index : compact.input_indices) {
-                if (input_index >= inputs.size() || value.runtime_type != inputs[input_index].runtime_type) {
-                    return false;
-                }
-            }
-        }
-        return true;
-    }
-
-    bool compact_input_accepts(const CompiledReduceGraph::CompactGraph &compact,
-                               const CompactReduceInput &value) const {
-        if (!value.last_updated.valid() || value.value == nullptr) {
-            return false;
-        }
-
-        const auto inputs = compact.graph->runtime_inputs();
-        for (const auto input_index : compact.input_indices) {
-            if (input_index >= inputs.size() || value.runtime_type != inputs[input_index].runtime_type) {
-                return false;
-            }
-        }
-        return true;
-    }
-
     template <typename Values> CompactReduceInput compact_item(const Values &values, item_id_t id) const {
         const auto &runtime_type =
             static_cast<const TimeSeriesDictionaryRuntimeType &>(values.runtime_type());
@@ -521,9 +368,9 @@ class ReduceRuntime {
         return true;
     }
 
-    void build_compact_graph(const CompiledReduceGraph &compiled) {
+    void build_compact_graph(const CompiledCompactReduceGraph &compiled) {
         clear_compact_graph();
-        compact_graph_ = &*compiled.compact_graph;
+        compact_graph_ = &compiled;
         compact_has_output_node_ = compact_graph_->output_node.has_value();
         compact_root_changed_ = true;
         if (compact_has_output_node_) {
@@ -547,9 +394,6 @@ class ReduceRuntime {
             }
             compact_storage_block_bytes_ = compact_storage_slots_per_block_ * compact_storage_stride_;
         }
-        for (const auto &value : selected_values_) {
-            insert_compact_leaf(value.id);
-        }
     }
 
     void clear_compact_graph() noexcept {
@@ -571,6 +415,7 @@ class ReduceRuntime {
         compact_storage_slots_per_block_ = 0;
         compact_storage_block_bytes_ = 0;
         compact_graph_ = nullptr;
+        initialized_ = false;
         compact_has_output_node_ = false;
         compact_root_changed_ = false;
         compact_root_ = invalid_compact_reduce_node;
@@ -578,7 +423,7 @@ class ReduceRuntime {
 
     template <typename Values>
     CompactReduceInput compact_tree_output(CompactReduceNodeIndex index, const Values &values,
-                                           const CompiledReduceGraph::CompactGraph &compact) const {
+                                           const CompiledCompactReduceGraph &compact) const {
         auto current = index;
         while (!compact_nodes_[current].is_leaf() && !compact.output_node) {
             const auto &branch = compact_nodes_[current];
@@ -596,8 +441,8 @@ class ReduceRuntime {
                 compact.output_runtime_type};
     }
 
-    bool evaluate_compact_branch(CompactReduceNodeIndex index, const CompiledReduceGraph &compiled,
-                                 const auto &values, ReduceInvocation invocation) {
+    bool evaluate_compact_branch(CompactReduceNodeIndex index, const CompiledCompactReduceGraph &compiled,
+                                 const auto &values, CompactReduceInvocation invocation) {
         auto &branch = compact_nodes_[index];
         const auto evaluation_time = invocation.context().evaluation_time();
         if (branch.is_leaf()) {
@@ -607,14 +452,14 @@ class ReduceRuntime {
         const auto dirty = (branch.flags & (CompactReduceTreeNode::left_changed_flag |
                                             CompactReduceTreeNode::right_changed_flag)) != 0;
         if (!dirty) {
-            const auto &compiled_node = compiled.compact_graph->graph->node(*compiled.compact_graph->output_node);
+            const auto &compiled_node = compiled.graph->node(*compiled.output_node);
             const auto runtime_node = Node{compiled_node, compact_pair_storage(branch.pair_index)};
             return runtime_node.output_last_updated().time() == evaluation_time;
         }
 
         const auto left_changed = evaluate_compact_branch(branch.left, compiled, values, invocation);
         const auto right_changed = evaluate_compact_branch(branch.right, compiled, values, invocation);
-        const auto &compact = *compiled.compact_graph;
+        const auto &compact = compiled;
         auto &pair_state = compact_pair_states_[branch.pair_index];
         const auto left = compact_tree_output(branch.left, values, compact);
         const auto right = compact_tree_output(branch.right, values, compact);
@@ -658,32 +503,11 @@ class ReduceRuntime {
         return runtime_node.output_last_updated().time() == evaluation_time;
     }
 
-    bool update_compact_graph(const CompiledReduceGraph &compiled, const auto &values,
-                              ReduceInvocation invocation) {
+    void update_compact_graph(const auto &values) {
         compact_root_changed_ = false;
         if (!values.modified()) {
-            return true;
+            return;
         }
-        const auto &compact = *compiled.compact_graph;
-        auto compatible = true;
-        const auto check = [&](item_id_t id) {
-            if (!compatible) {
-                return;
-            }
-            const auto item = compact_item(values, id);
-            if (item.last_updated.valid() && !compact_input_accepts(compact, item)) {
-                compatible = false;
-            }
-        };
-        values.for_each_item_id_remapping([&](item_id_t, item_id_t new_id) { check(new_id); });
-        for (auto id = values.next_added_id(0); id != util::occupancy_index::npos; id = values.next_added_id(id + 1)) {
-            check(id);
-        }
-        values.for_each_modified([&](const auto &key) { check(values.find_item_id(key)); });
-        if (!compatible) {
-            return false;
-        }
-
         values.for_each_removed_physical_id([&](item_id_t id) { remove_compact_leaf(id); });
         values.for_each_item_id_remapping([&](item_id_t old_id, item_id_t) { remove_compact_leaf(old_id); });
 
@@ -711,37 +535,34 @@ class ReduceRuntime {
                 insert_compact_leaf(id);
             }
         });
-
-        return true;
     }
 
-    bool evaluate_compact_graph(const CompiledReduceGraph &compiled, const auto &values,
-                                ReduceInvocation invocation) {
+    void evaluate_compact_graph(const auto &values, CompactReduceInvocation invocation) {
         if (compact_root_ == invalid_compact_reduce_node || !compact_has_output_node_) {
-            return true;
+            return;
         }
-        evaluate_compact_branch(compact_root_, compiled, values, invocation);
-        return true;
+        evaluate_compact_branch(compact_root_, *compact_graph_, values, invocation);
     }
 
-    bool publish_compact_result(const CompiledReduceGraph &compiled, const auto &values,
-                                ReduceInvocation invocation, bool force) {
+    void publish_compact_result(const CompiledCompactReduceGraph &compiled, const auto &values,
+                                CompactReduceInvocation invocation, bool force) {
         auto output = invocation.template output<TS_T>();
         if (compact_root_ == invalid_compact_reduce_node) {
             compact_root_changed_ = false;
-            return publish_empty_result(compiled, invocation, output);
+            publish_empty_result(compiled, invocation, output);
+            return;
         }
 
-        const auto sample = compact_tree_output(compact_root_, values, *compiled.compact_graph);
+        const auto sample = compact_tree_output(compact_root_, values, compiled);
         if (!sample.last_updated.valid()) {
             output.invalidate();
             using_default_ = false;
             compact_root_changed_ = false;
-            return true;
+            return;
         }
         if (!force && !compact_root_changed_ &&
             sample.last_updated.time() != invocation.context().evaluation_time()) {
-            return true;
+            return;
         }
 
         const auto &value_type = static_cast<const TimeSeriesValueRuntimeType &>(*sample.runtime_type);
@@ -749,16 +570,181 @@ class ReduceRuntime {
         output.visit([&](Out<TS<SCALAR>> *target) { target->set_value(value); }, ddv::noop);
         using_default_ = false;
         compact_root_changed_ = false;
+    }
+
+    template <typename Output>
+    void publish_empty_result(const CompiledCompactReduceGraph &compiled, CompactReduceInvocation invocation,
+                              Output &output) {
+        if (compiled.default_parameter) {
+            const auto fallback = invocation.scalar(*compiled.default_parameter);
+            if (!fallback.has_value()) {
+                output.invalidate();
+                using_default_ = false;
+                return;
+            }
+            if (!using_default_) {
+                output.visit([&](Out<TS<SCALAR>> *value) { value->set_value(fallback.value()); }, ddv::noop);
+            }
+            using_default_ = true;
+        } else {
+            output.invalidate();
+            using_default_ = false;
+        }
+    }
+
+    allocator memory_;
+    util::hash_dictionary<item_id_t, CompactReduceNodeIndex> compact_leaf_by_id_;
+    util::occupancy_index compact_node_positions_;
+    util::sparse_bunch<CompactReduceTreeNode> compact_nodes_;
+    util::occupancy_index compact_pair_positions_;
+    util::sparse_bunch<CompactReducePairState> compact_pair_states_;
+    std::pmr::vector<std::byte *> compact_pair_blocks_;
+    const CompiledCompactReduceGraph *compact_graph_{};
+    std::size_t compact_storage_size_{};
+    std::size_t compact_storage_alignment_{};
+    std::size_t compact_storage_stride_{};
+    std::size_t compact_storage_slots_per_block_{};
+    std::size_t compact_storage_block_bytes_{};
+    CompactReduceNodeIndex compact_root_{invalid_compact_reduce_node};
+    bool initialized_{};
+    bool using_default_{};
+    bool compact_has_output_node_{};
+    bool compact_root_changed_{};
+};
+
+class NestedReduceRuntime {
+  public:
+    NestedReduceRuntime(allocator memory, EvaluationContext &context)
+        : memory_{memory},
+          selected_keys_{&memory_.memory_resource()},
+          selected_references_{&memory_.memory_resource()},
+          selected_values_{&memory_.memory_resource()},
+          candidate_keys_{&memory_.memory_resource()},
+          candidate_references_{&memory_.memory_resource()},
+          candidate_values_{&memory_.memory_resource()},
+          current_level_{&memory_.memory_resource()},
+          next_level_{&memory_.memory_resource()},
+          graphs_{&memory_.memory_resource()},
+          owned_graphs_{&memory_.memory_resource()} {
+        evaluator_.bind_owner(context.runtime_graph(), context.node_index());
+    }
+
+    NestedReduceRuntime(const NestedReduceRuntime &) = delete;
+    NestedReduceRuntime &operator=(const NestedReduceRuntime &) = delete;
+
+    bool evaluate(const CompiledNestedReduceGraph &compiled, NestedReduceInvocation invocation) {
+        const auto values = invocation.template input<In<TSD<SCALAR, TS_T>>>(compiled.dictionary_parameter);
+        if (!values.valid()) {
+            selected_keys_.clear();
+            selected_references_.clear();
+            selected_values_.clear();
+            retire_graphs(invocation.context());
+            invocation.template output<TS_T>().invalidate();
+            using_default_ = false;
+            return true;
+        }
+        if (rebuilding_) {
+            if (!continue_rebuild(compiled, invocation)) {
+                return false;
+            }
+            return publish_result(compiled, invocation, true);
+        }
+
+        collect_valid_items(values);
+        const auto needs_item_references = candidate_values_.size() > 1;
+        if (needs_item_references) {
+            collect_item_references(invocation.bound_reference(compiled.dictionary_parameter));
+        }
+
+        const auto membership_changed = !same_membership(needs_item_references);
+        if (!membership_changed) {
+            selected_values_.swap(candidate_values_);
+        } else {
+            selected_keys_.swap(candidate_keys_);
+            selected_references_.swap(candidate_references_);
+            selected_values_.swap(candidate_values_);
+
+            retire_graphs(invocation.context());
+            current_level_.assign(selected_references_.begin(), selected_references_.end());
+            next_level_.clear();
+            next_pair_ = 0;
+            building_pair_ = false;
+            rebuilding_ = current_level_.size() > 1;
+            const auto graph_count = current_level_.empty() ? std::size_t{} : current_level_.size() - 1;
+            graphs_.reserve(graph_count);
+            owned_graphs_.reserve(owned_graphs_.size() + graph_count);
+
+            if (rebuilding_ && !continue_rebuild(compiled, invocation)) {
+                return false;
+            }
+            return publish_result(compiled, invocation, true);
+        }
+
+        while (evaluation_graph_index_ < graphs_.size()) {
+            if (!graphs_[evaluation_graph_index_]->evaluate(invocation.context())) {
+                return false;
+            }
+            ++evaluation_graph_index_;
+        }
+        evaluation_graph_index_ = 0;
+
+        return publish_result(compiled, invocation, false);
+    }
+
+    void stop(EvaluationContext &context) noexcept { retire_graphs(context); }
+
+    void destroy(EvaluationContext &context) noexcept {
+        context.runtime_graph().remove_cycle_callback(this);
+        destroy_graphs(context);
+        memory_.delete_object(this);
+    }
+
+  private:
+    template <typename ValueDictionary> void collect_valid_items(const ValueDictionary &values) {
+        candidate_keys_.clear();
+        candidate_references_.clear();
+        candidate_values_.clear();
+
+        values.for_each_id_value([&](const auto id, const auto &item) {
+            if (!item.valid()) {
+                return;
+            }
+
+            const auto key = values.key_at(id);
+            candidate_keys_.emplace_back(Scalar<>::from(key), memory_);
+            const auto value = values.runtime_type().item(values.data(), id);
+            candidate_values_.push_back({id, value.last_updated, value.value, &value.runtime_type});
+        });
+    }
+
+    void collect_item_references(Reference dictionary_reference) {
+        candidate_references_.clear();
+        for (const auto &key : candidate_keys_) {
+            const auto key_value = key.view();
+            const auto scalar_key = Scalar<>::from(key_value);
+            const auto item = tsd_item_reference_input(dictionary_reference, scalar_key);
+            candidate_references_.push_back(item.binding.value());
+        }
+    }
+
+    bool same_membership(bool compare_references) const noexcept {
+        if (selected_keys_.size() != candidate_keys_.size() ||
+            (compare_references && selected_references_.size() != candidate_references_.size())) {
+            return false;
+        }
+
+        for (auto index = std::size_t{}; index < selected_keys_.size(); ++index) {
+            if (!selected_keys_[index].equals(candidate_keys_[index].view()) ||
+                (compare_references && selected_references_[index] != candidate_references_[index])) {
+                return false;
+            }
+        }
         return true;
     }
 
     template <typename Output>
-    bool publish_empty_result(const CompiledReduceGraph &compiled, ReduceInvocation invocation, Output &output) {
-        if (!dictionary_valid_) {
-            output.invalidate();
-            using_default_ = false;
-            return true;
-        }
+    bool publish_empty_result(const CompiledNestedReduceGraph &compiled, NestedReduceInvocation invocation,
+                              Output &output) {
         if (compiled.default_parameter) {
             const auto fallback = invocation.scalar(*compiled.default_parameter);
             if (!fallback.has_value()) {
@@ -777,7 +763,7 @@ class ReduceRuntime {
         return true;
     }
 
-    bool continue_rebuild(const CompiledReduceGraph &compiled, ReduceInvocation invocation) {
+    bool continue_rebuild(const CompiledNestedReduceGraph &compiled, NestedReduceInvocation invocation) {
         auto &context = invocation.context();
         while (current_level_.size() > 1) {
             const auto pair_count = current_level_.size() / 2;
@@ -844,12 +830,10 @@ class ReduceRuntime {
         building_pair_ = false;
         rebuilding_ = false;
         evaluation_graph_index_ = 0;
-        clear_compact_graph();
-        compact_active_ = false;
     }
 
     static void release_retired_graphs_callback(void *receiver, EvaluationContext &context) noexcept {
-        static_cast<ReduceRuntime *>(receiver)->release_retired_graphs(context);
+        static_cast<NestedReduceRuntime *>(receiver)->release_retired_graphs(context);
     }
 
     void release_retired_graphs(EvaluationContext &context) noexcept {
@@ -881,11 +865,9 @@ class ReduceRuntime {
         building_pair_ = false;
         rebuilding_ = false;
         evaluation_graph_index_ = 0;
-        clear_compact_graph();
-        compact_active_ = false;
     }
 
-    bool publish_result(const CompiledReduceGraph &compiled, ReduceInvocation invocation, bool force) {
+    bool publish_result(const CompiledNestedReduceGraph &compiled, NestedReduceInvocation invocation, bool force) {
         auto output = invocation.template output<TS_T>();
         if (selected_values_.size() == 1) {
             const auto &value = selected_values_.front();
@@ -942,57 +924,69 @@ class ReduceRuntime {
     std::pmr::vector<CompactReduceInput> candidate_values_;
     std::pmr::vector<Reference> current_level_;
     std::pmr::vector<Reference> next_level_;
-    util::hash_dictionary<item_id_t, CompactReduceNodeIndex> compact_leaf_by_id_;
-    util::occupancy_index compact_node_positions_;
-    util::sparse_bunch<CompactReduceTreeNode> compact_nodes_;
-    util::occupancy_index compact_pair_positions_;
-    util::sparse_bunch<CompactReducePairState> compact_pair_states_;
-    std::pmr::vector<std::byte *> compact_pair_blocks_;
     std::pmr::vector<NestedGraph *> graphs_;
     std::pmr::vector<NestedGraph *> owned_graphs_;
-    const CompiledReduceGraph::CompactGraph *compact_graph_{};
-    std::size_t compact_storage_size_{};
-    std::size_t compact_storage_alignment_{};
-    std::size_t compact_storage_stride_{};
-    std::size_t compact_storage_slots_per_block_{};
-    std::size_t compact_storage_block_bytes_{};
-    CompactReduceNodeIndex compact_root_{invalid_compact_reduce_node};
     std::size_t next_pair_{};
     std::size_t evaluation_graph_index_{};
     std::size_t retired_graph_count_{};
     bool rebuilding_{};
     bool building_pair_{};
-    bool dictionary_valid_{};
     bool using_default_{};
-    bool compact_active_{};
-    bool compact_has_output_node_{};
-    bool compact_root_changed_{};
 };
 
-class DefaultReduceNodeDefinition : public ReduceNodeDefinition {
+class CompactReduceNodeTemplate : public details::CompactReduceNodeDefinition {
   public:
-    using state_type = ReduceNodeState;
+    using state_type = CompactReduceNodeState;
+
+    using details::CompactReduceNodeDefinition::CompactReduceNodeDefinition;
+
+    static void start(CompactReduceInvocation invocation) {
+        auto &runtime = invocation.state().runtime;
+        if (runtime == nullptr) {
+            auto memory = invocation.context().runtime_graph().allocation();
+            runtime = memory.new_object<CompactReduceRuntime>(memory);
+        }
+    }
+
+    static void evaluate(CompactReduceInvocation invocation) {
+        invocation.state().runtime->evaluate(invocation.compiled_data(), invocation);
+    }
+
+    static void destroy_state(CompactReduceInvocation invocation) noexcept {
+        if (invocation.state().runtime != nullptr) {
+            invocation.state().runtime->destroy();
+            invocation.state().runtime = nullptr;
+        }
+    }
+};
+
+class NestedReduceNodeTemplate : public details::NestedReduceNodeDefinition {
+  public:
+    using state_type = NestedReduceNodeState;
     static constexpr bool uses_cycle_callbacks = true;
     static constexpr bool uses_timed_scheduling = true;
 
-    using ReduceNodeDefinition::ReduceNodeDefinition;
+    using details::NestedReduceNodeDefinition::NestedReduceNodeDefinition;
 
-    static bool evaluate(ReduceInvocation invocation) {
-        auto &state = invocation.state();
-        if (state.runtime == nullptr) {
+    static void start(NestedReduceInvocation invocation) {
+        auto &runtime = invocation.state().runtime;
+        if (runtime == nullptr) {
             auto memory = invocation.context().runtime_graph().allocation();
-            state.runtime = memory.new_object<ReduceRuntime>(memory, invocation.context());
+            runtime = memory.new_object<NestedReduceRuntime>(memory, invocation.context());
         }
-        return state.runtime->evaluate(invocation.compiled_data(), invocation);
     }
 
-    static void stop(ReduceInvocation invocation) noexcept {
+    static bool evaluate(NestedReduceInvocation invocation) {
+        return invocation.state().runtime->evaluate(invocation.compiled_data(), invocation);
+    }
+
+    static void stop(NestedReduceInvocation invocation) noexcept {
         if (invocation.state().runtime != nullptr) {
             invocation.state().runtime->stop(invocation.context());
         }
     }
 
-    static void destroy_state(ReduceInvocation invocation) noexcept {
+    static void destroy_state(NestedReduceInvocation invocation) noexcept {
         if (invocation.state().runtime != nullptr) {
             invocation.state().runtime->destroy(invocation.context());
             invocation.state().runtime = nullptr;
@@ -1002,11 +996,20 @@ class DefaultReduceNodeDefinition : public ReduceNodeDefinition {
 
 } // namespace
 
-std::unique_ptr<NodeTemplate> make_reduce_node(ReduceGraphWiring wiring, const ResolvedSignature &signature,
-                                               std::uint32_t dictionary_parameter,
-                                               std::optional<std::uint32_t> default_parameter) {
-    return std::make_unique<RuntimeSignatureNodeTemplate<DefaultReduceNodeDefinition>>(
-        DefaultReduceNodeDefinition{std::move(wiring), signature, dictionary_parameter, default_parameter});
+std::unique_ptr<NodeTemplate> make_nested_reduce_node(ReduceNestedGraphWiring wiring,
+                                                      const ResolvedSignature &signature,
+                                                      std::uint32_t dictionary_parameter,
+                                                      std::optional<std::uint32_t> default_parameter) {
+    return std::make_unique<RuntimeSignatureNodeTemplate<NestedReduceNodeTemplate>>(
+        NestedReduceNodeTemplate{std::move(wiring), signature, dictionary_parameter, default_parameter});
+}
+
+std::unique_ptr<NodeTemplate> make_compact_reduce_node(ReduceCompactGraphWiring wiring,
+                                                       const ResolvedSignature &signature,
+                                                       std::uint32_t dictionary_parameter,
+                                                       std::optional<std::uint32_t> default_parameter) {
+    return std::make_unique<RuntimeSignatureNodeTemplate<CompactReduceNodeTemplate>>(
+        CompactReduceNodeTemplate{std::move(wiring), signature, dictionary_parameter, default_parameter});
 }
 
 } // namespace bg::details

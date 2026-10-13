@@ -42,8 +42,11 @@ GraphArgument build_reduce_graph_argument(const WiringTemplate &function, const 
     }
 
     const auto &item_type = dictionary_type_value->value_type().target_type();
+    const auto item_runtime_type_is_fixed =
+        type_cast<TimeSeriesReferenceType>(&dictionary.type()) == nullptr &&
+        !dictionary_type_value->value_type().contains_reference();
     auto built = build_reduce_graph_argument_wiring(
-        function, item_type, type_map, dictionary_type_value->value_type().contains_reference());
+        function, item_type, type_map, item_runtime_type_is_fixed);
     const auto *output_value_type = type_cast<TimeSeriesValueType>(&item_type);
     if (output_value_type == nullptr) {
         throw WiringError{"reduce graph output must have a scalar-valued time series type"};
@@ -70,7 +73,7 @@ GraphArgument build_reduce_graph_argument(const WiringTemplate &function, const 
         outer_arguments.back().clear_name();
     }
 
-    for (const auto &requirement : built.graph.wiring->inherited_requirements()) {
+    for (const auto &requirement : built.graph.nested.wiring->inherited_requirements()) {
         parameters.push_back({requirement.name, &requirement.boundary_input_type(), passive, optional});
         outer_arguments.emplace_back(requirement.provider);
     }
@@ -97,7 +100,11 @@ const DefaultReduceWiring &DefaultReduceWiring::from(const GraphArgument &argume
 }
 
 std::optional<WiringPoint> DefaultReduceWiring::wire() const {
-    auto node_template = make_reduce_node(graph, outer_signature, dictionary_parameter, default_parameter);
+    auto node_template = graph.compact_graph
+                             ? make_compact_reduce_node(*graph.compact_graph, outer_signature, dictionary_parameter,
+                                                        default_parameter)
+                             : make_nested_reduce_node(graph.nested, outer_signature, dictionary_parameter,
+                                                       default_parameter);
     auto &outer = WiringContext::current().wiring();
     auto arguments = std::vector<WiringArgument>{};
     arguments.reserve(outer_arguments.size());
@@ -115,7 +122,7 @@ std::optional<WiringPoint> DefaultReduceWiring::wire() const {
 
     const auto &owned = outer.own_node_template(std::move(node_template));
     const auto invocation = outer.invoke_node(owned, std::span<const WiringArgument>{arguments});
-    outer.register_nested_service_consumers(*graph.wiring, invocation.identity);
+    outer.register_nested_service_consumers(*graph.nested.wiring, invocation.identity);
     return invocation.output;
 }
 
