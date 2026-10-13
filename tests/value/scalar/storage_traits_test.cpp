@@ -518,10 +518,11 @@ TEST_CASE("a typed time-series output reads its provider value",
     using Series = bg::TS<Value>;
 
     const auto update_time = bg::MIN_DT + std::chrono::microseconds{1};
+    const auto evaluation_time = update_time + std::chrono::microseconds{1};
     auto last_updated = bg::TimeSeriesState{update_time};
     auto storage = Storage{42};
     auto state = bg::details::OutputState{bg::cpp_time_series_runtime_type<Series>()};
-    state.bind(last_updated, &storage, update_time + std::chrono::microseconds{1});
+    state.bind(last_updated, &storage, evaluation_time);
     const auto output = bg::Out<Series>{bg::TimeSeriesOutputBinding{state}};
 
     const auto value = output.value();
@@ -538,6 +539,7 @@ TEST_CASE("typed time-series leaf reads use provider hooks for alternative runti
     const auto &scalar_runtime = test_scalar_provider::preserving_runtime_type();
     const auto &runtime = bg::time_series_value_runtime_type(Series::type(), scalar_runtime);
     const auto update_time = bg::MIN_DT + std::chrono::microseconds{1};
+    const auto evaluation_time = update_time + std::chrono::microseconds{1};
     auto input_state = bg::TimeSeriesState{update_time};
     auto input_storage = Storage{42};
     const auto input = bg::In<Series>{bg::TimeSeriesInputData{runtime, input_state, &input_storage}};
@@ -551,7 +553,7 @@ TEST_CASE("typed time-series leaf reads use provider hooks for alternative runti
     auto output_state = bg::details::OutputState{runtime};
     auto output_time = bg::TimeSeriesState{update_time};
     auto output_storage = Storage{43};
-    output_state.bind(output_time, &output_storage, update_time + std::chrono::microseconds{1});
+    output_state.bind(output_time, &output_storage, evaluation_time);
     const auto output = bg::Out<Series>{bg::TimeSeriesOutputBinding{output_state}};
 
     reads_before = test_scalar_provider::alternative_runtime_read_count();
@@ -587,6 +589,7 @@ TEST_CASE("reference-valued scalar providers read canonical, source, and alterna
 
     const auto &runtime = bg::time_series_value_runtime_type(Series::type(), alternate_runtime);
     const auto update_time = bg::MIN_DT + std::chrono::microseconds{1};
+    const auto evaluation_time = update_time + std::chrono::microseconds{1};
     auto input_state = bg::TimeSeriesState{update_time};
     const auto input = bg::In<Series>{bg::TimeSeriesInputData{runtime, input_state, &alternate_storage}};
     CHECK(&input.value() == &alternate_storage.object);
@@ -594,7 +597,7 @@ TEST_CASE("reference-valued scalar providers read canonical, source, and alterna
     auto output_state = bg::details::OutputState{runtime};
     auto output_time = bg::TimeSeriesState{update_time};
     auto output_storage = AlternateStorage{.object = Object{.number = 44}};
-    output_state.bind(output_time, &output_storage, update_time + std::chrono::microseconds{1});
+    output_state.bind(output_time, &output_storage, evaluation_time);
     const auto output = bg::Out<Series>{bg::TimeSeriesOutputBinding{output_state}};
 
     CHECK(&output.value() == &output_storage.object);
@@ -683,11 +686,12 @@ TEST_CASE("typed output writes through a prefixed scalar runtime layout",
     const auto &runtime = bg::time_series_value_runtime_type(
         Series::type(), test_scalar_provider::preserving_copy_only_runtime_type());
     const auto update_time = bg::MIN_DT + std::chrono::microseconds{1};
+    const auto evaluation_time = update_time + std::chrono::microseconds{1};
     auto last_updated = bg::TimeSeriesState{update_time};
     auto storage = test_scalar_provider::copy_only_runtime_storage{
         .prefix = {0xBAD0, 0xBAD1, 0xBAD2, 0xBAD3}, .value = {.number = 20}};
     auto state = bg::details::OutputState{runtime};
-    state.bind(last_updated, &storage, update_time + std::chrono::microseconds{1});
+    state.bind(last_updated, &storage, evaluation_time);
     const auto output = bg::Out<Series>{bg::TimeSeriesOutputBinding{state}};
 
     output.set(CopyOnlyValue{42});
@@ -746,11 +750,12 @@ TEST_CASE("a provider borrowed bundle view preserves derived identity and publis
     auto memory_resource = std::pmr::monotonic_buffer_resource{};
     auto memory = bg::allocator{memory_resource};
     const auto update_time = bg::MIN_DT + std::chrono::microseconds{1};
+    const auto evaluation_time = update_time + std::chrono::microseconds{1};
     auto output_state = bg::details::OutputState{
         bg::cpp_time_series_runtime_type<bg::TS<test_scalar_provider::bundle_provider_value>>()};
     auto output_time = bg::TimeSeriesState{update_time};
     auto output_storage = bg::details::scalar_bundle_storage{};
-    output_state.bind(output_time, &output_storage, update_time + std::chrono::microseconds{1});
+    output_state.bind(output_time, &output_storage, evaluation_time);
     const auto &runtime =
         static_cast<const bg::TimeSeriesValueRuntimeType &>(output_state.runtime_type()).scalar_runtime_type();
     auto cleanup = bg::util::scope_exit{[&]() noexcept { runtime.destroy(&output_storage, memory); }};
@@ -825,12 +830,13 @@ TEST_CASE("a deduplicated time-series output suppresses equal values and publish
     const auto &deduplicated_runtime =
         bg::time_series_value_runtime_type(deduplicated_type, scalar_runtime);
     const auto update_time = bg::MIN_DT + std::chrono::microseconds{1};
+    const auto evaluation_time = update_time + std::chrono::microseconds{1};
     auto deduplicated_output_state = bg::details::OutputState{deduplicated_runtime};
     auto deduplicated_output_time = bg::TimeSeriesState{update_time};
     auto deduplicated_output_storage = Storage{42};
     auto requested_storage = Storage{42};
     deduplicated_output_state.bind(deduplicated_output_time, &deduplicated_output_storage,
-                                   update_time + std::chrono::microseconds{1});
+                                   evaluation_time);
     const auto deduplicated_output =
         bg::Out<DeduplicatedSeries>{bg::TimeSeriesOutputBinding{deduplicated_output_state}};
 
@@ -842,7 +848,7 @@ TEST_CASE("a deduplicated time-series output suppresses equal values and publish
     requested_storage.number = 43;
     deduplicated_output.set(ReadValue{std::addressof(requested_storage.number)});
 
-    CHECK(deduplicated_output_time.time() == update_time + std::chrono::microseconds{1});
+    CHECK(deduplicated_output_time.time() == evaluation_time);
     CHECK(deduplicated_output_storage.number == 43);
 }
 
