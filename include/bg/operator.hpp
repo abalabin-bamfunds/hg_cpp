@@ -3,6 +3,7 @@
 #include <bg/graph/details/typed_signature.hpp>
 #include <bg/graph/operator.hpp>
 #include <bg/graph/type_mapping.hpp>
+#include <bg/time_series/time_series_type.hpp>
 
 #include <array>
 #include <concepts>
@@ -18,6 +19,15 @@
 #include <vector>
 
 namespace bg::details {
+
+template <typename Prototype> struct operator_typed_prototype;
+
+template <typename Result, typename... Arguments>
+struct operator_typed_prototype<Result(Arguments...)>
+    : typed_prototype<std::conditional_t<
+          scalar_type_mapped<canonical_scalar_type_t<Result>> &&
+              scalar_declaration_traits<canonical_scalar_type_t<Result>>::supports_time_series,
+          TS<canonical_scalar_type_t<Result>>, Result>(Arguments...)> {};
 
 struct default_operator_implementation {
     template <typename SelectOverload, typename... Arguments>
@@ -45,7 +55,7 @@ class OperatorTemplate final
     using TypeMapping::operator[];
 
     explicit OperatorTemplate(std::string_view name, std::span<const std::string_view> parameter_names = {})
-        : Operator(details::typed_prototype<Prototype>::signature(util::symbol{name}, parameter_names)) {}
+        : Operator(details::operator_typed_prototype<Prototype>::signature(util::symbol{name}, parameter_names)) {}
 
     OperatorTemplate(std::string_view name, std::initializer_list<std::string_view> parameter_names)
         : OperatorTemplate(name, std::span<const std::string_view>{parameter_names}) {}
@@ -84,7 +94,7 @@ class OperatorTemplate final
 
   private:
     static auto public_result(std::optional<WiringPoint> result) {
-        if constexpr (details::typed_prototype<Prototype>::has_output) {
+        if constexpr (details::operator_typed_prototype<Prototype>::has_output) {
             return result ? wp<>{*result} : wp<>{};
         } else if (result) {
             throw std::logic_error{"an outputless operator overload produced an output"};

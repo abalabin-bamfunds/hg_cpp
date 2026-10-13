@@ -1,0 +1,40 @@
+#pragma once
+
+#include <bg/library/export.hpp>
+
+#include <bg/map.hpp>
+#include <bg/mesh.hpp>
+#include <bg/operators.hpp>
+#include <bg/switch.hpp>
+#include <bg/time_series/time_series_type.hpp>
+#include <bg/time_series/time_series_variable.hpp>
+#include <bg/type/scalar_variable.hpp>
+#include <bg/type/type_variable.hpp>
+
+namespace bg::operators {
+
+using EQUALITY_SCALAR = ScalarVariable<"EQUALITY_SCALAR", EqualityComparable>;
+using ORDERED_SCALAR = ScalarVariable<"ORDERED_SCALAR", i64, double, string, date_time_t, timedelta_t>;
+using BOOL = ScalarVariable<"BOOL", bool>;
+
+extern BG_LIBRARY_EXPORT operator_<auto(SCALAR, SCALAR) -> SCALAR> add;
+extern BG_LIBRARY_EXPORT operator_<auto(SCALAR, SCALAR) -> SCALAR> sub;
+extern BG_LIBRARY_EXPORT operator_<auto(SCALAR, SCALAR) -> SCALAR> mul;
+extern BG_LIBRARY_EXPORT operator_<auto(SCALAR) -> SCALAR> pos;
+extern BG_LIBRARY_EXPORT operator_<auto(SCALAR) -> SCALAR> neg;
+extern BG_LIBRARY_EXPORT operator_<auto(SCALAR) -> SCALAR> abs;
+extern BG_LIBRARY_EXPORT operator_<EQUALITY_SCALAR, auto(EQUALITY_SCALAR, EQUALITY_SCALAR) -> bool> eq;
+extern BG_LIBRARY_EXPORT operator_<EQUALITY_SCALAR, auto(EQUALITY_SCALAR, EQUALITY_SCALAR) -> bool> ne;
+extern BG_LIBRARY_EXPORT operator_<ORDERED_SCALAR, auto(ORDERED_SCALAR, ORDERED_SCALAR) -> bool> lt;
+extern BG_LIBRARY_EXPORT operator_<ORDERED_SCALAR, auto(ORDERED_SCALAR, ORDERED_SCALAR) -> bool> le;
+extern BG_LIBRARY_EXPORT operator_<ORDERED_SCALAR, auto(ORDERED_SCALAR, ORDERED_SCALAR) -> bool> gt;
+extern BG_LIBRARY_EXPORT operator_<ORDERED_SCALAR, auto(ORDERED_SCALAR, ORDERED_SCALAR) -> bool> ge;
+extern BG_LIBRARY_EXPORT operator_<BOOL, auto(BOOL, BOOL) -> bool> and_;
+extern BG_LIBRARY_EXPORT operator_<BOOL, auto(BOOL, BOOL) -> bool> or_;
+extern BG_LIBRARY_EXPORT operator_<BOOL, auto(BOOL) -> bool> not_;
+
+using ::bg::map;
+using ::bg::mesh;
+using ::bg::switch_;
+
+} // namespace bg::operators

@@ -3,6 +3,7 @@
 #include <bg/graph/graph_wiring.hpp>
 #include <bg/graph/wiring_context.hpp>
 #include <bg/node.hpp>
+#include <bg/testing/test_graph.hpp>
 #include <bg/type/scalar_type.hpp>
 #include <bg/type/time_series_list_type.hpp>
 #include <bg/type/time_series_value_type.hpp>
@@ -96,6 +97,19 @@ TEST_CASE("a graph template can omit its output", "[graph_template][feature:wiri
     REQUIRE(nodes.size() == 2);
     REQUIRE(nodes[1].path().parent != nullptr);
     CHECK(nodes[1].path().parent->name.text() == "scale_sink_graph");
+}
+
+TEST_CASE("callable output guarantee inference is local to its node signature",
+          "[graph_template][feature:wiring][feature:node-api][definition:function][series:value]") {
+    const auto increment = bg::node([](double value) { return value + 1.0; });
+    const auto inferred_output_graph = bg::graph("name"_n = "inferred_callable_output",
+                                                 [=](bg::wp<bg::TS<double>> input) { return increment(input); });
+    const auto forwarding_graph = bg::graph("name"_n = "forward_inferred_callable_output",
+                                            [=](bg::wp<bg::TS<double>> input) { return inferred_output_graph(input); });
+
+    const auto inputs = std::array{1.0, 2.0, 3.0};
+    CHECK(bg::testing::test_graph(inferred_output_graph, inputs).equals<double>({2.0, 3.0, 4.0}));
+    CHECK(bg::testing::test_graph(forwarding_graph, inputs).equals<double>({2.0, 3.0, 4.0}));
 }
 
 TEST_CASE("a graph reference output defaults to deduplicated",

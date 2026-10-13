@@ -615,6 +615,11 @@ def test_graph(definition: GraphDefinition, *inputs: Any) -> Any:
     return _test_graph(definition._native_definition, inputs)
 
 
+operators.map = map
+operators.mesh = mesh
+operators.switch_ = switch_
+
+
 __all__ = [
     "GraphDefinition",
     "DEFAULT",

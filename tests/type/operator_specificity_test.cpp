@@ -1,16 +1,22 @@
 #include <bg/time_series/size_variable.hpp>
+#include <bg/time_series/tsd/tsd_type.hpp>
 #include <bg/time_series/time_series_type.hpp>
 #include <bg/time_series/tsl/tsl_type.hpp>
+#include <bg/scalar/dict/type.hpp>
 #include <bg/type/scalar_type.hpp>
 #include <bg/type/scalar_variable.hpp>
 #include <bg/type/signature.hpp>
+#include <bg/type/type_of.hpp>
 #include <bg/type/time_series_reference_type.hpp>
 #include <bg/type/time_series_value_type.hpp>
 #include <bg/type/type_variable.hpp>
+#include <bg/graph/graph_argument.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <array>
 #include <compare>
+#include <vector>
 
 TEST_CASE("an exact parameter is less generic than a type variable",
           "[feature:operator][feature:type-system][declaration:generic]") {
@@ -50,6 +56,42 @@ TEST_CASE("a repeated variable is less generic than independent variables",
 
     CHECK(bg::compare_specificity(same, independent) == std::partial_ordering::less);
     CHECK(bg::compare_specificity(independent, same) == std::partial_ordering::greater);
+}
+
+TEST_CASE("same time-series declarations retain repeated-variable specificity",
+          "[feature:operator][feature:type-system][declaration:generic][series:value]") {
+    using T = bg::ScalarVariable<"T">;
+    using R = bg::ScalarVariable<"R">;
+
+    const auto repeated = bg::Signature{
+        bg::util::symbol{"repeated"},
+        {{bg::util::symbol{"first"}, &bg::TS<T>::type()}, {bg::util::symbol{"second"}, &bg::TS<T>::type()}}};
+    const auto independent = bg::Signature{
+        bg::util::symbol{"independent"},
+        {{bg::util::symbol{"first"}, &bg::TS<T>::type()}, {bg::util::symbol{"second"}, &bg::TS<R>::type()}}};
+
+    CHECK(bg::compare_specificity(repeated, independent) == std::partial_ordering::less);
+    CHECK(bg::compare_specificity(independent, repeated) == std::partial_ordering::greater);
+}
+
+TEST_CASE("repeated variables contribute specificity as one declaration relationship",
+          "[feature:operator][feature:type-system][declaration:generic]") {
+    using T = bg::ScalarVariable<"T">;
+    using R = bg::ScalarVariable<"R">;
+
+    const auto repeated = bg::Signature{
+        bg::util::symbol{"repeated"},
+        {{bg::util::symbol{"first"}, &T::type()}, {bg::util::symbol{"second"}, &T::type()}}};
+    const auto partly_concrete = bg::Signature{
+        bg::util::symbol{"partly_concrete"},
+        {{bg::util::symbol{"first"}, &bg::int64_type()}, {bg::util::symbol{"second"}, &R::type()}}};
+    const auto concrete = bg::Signature{
+        bg::util::symbol{"concrete"},
+        {{bg::util::symbol{"first"}, &bg::int64_type()}, {bg::util::symbol{"second"}, &bg::int64_type()}}};
+
+    CHECK(bg::compare_specificity(repeated, partly_concrete) == std::partial_ordering::unordered);
+    CHECK(bg::compare_specificity(partly_concrete, repeated) == std::partial_ordering::unordered);
+    CHECK(bg::compare_specificity(concrete, repeated) == std::partial_ordering::less);
 }
 
 TEST_CASE("constraints on different parameters are unordered",
@@ -109,6 +151,28 @@ TEST_CASE("a literal list size is less generic than a size variable",
 
     CHECK(bg::compare_specificity(fixed, generic) == std::partial_ordering::less);
     CHECK(bg::compare_specificity(generic, fixed) == std::partial_ordering::greater);
+}
+
+TEST_CASE("size specificity compares declaration relationships, not numeric order",
+          "[feature:operator][feature:type-system][declaration:generic][series:fixed-tsl]") {
+    using M = bg::SizeVariableDeclaration<"M">;
+    using SAME_SIZE = bg::TSL<bg::TS<bg::i64>, bg::SIZE>;
+    using SIZE_THREE = bg::TSL<bg::TS<bg::i64>, 3>;
+    using SIZE_M = bg::TSL<bg::TS<bg::i64>, M{}>;
+
+    const auto repeated = bg::Signature{
+        bg::util::symbol{"repeated"},
+        {{bg::util::symbol{"first"}, &SAME_SIZE::type()}, {bg::util::symbol{"second"}, &SAME_SIZE::type()}}};
+    const auto three_and_independent = bg::Signature{
+        bg::util::symbol{"three_and_independent"},
+        {{bg::util::symbol{"first"}, &SIZE_THREE::type()}, {bg::util::symbol{"second"}, &SIZE_M::type()}}};
+    const auto fixed = bg::Signature{
+        bg::util::symbol{"fixed"},
+        {{bg::util::symbol{"first"}, &SIZE_THREE::type()}, {bg::util::symbol{"second"}, &SIZE_THREE::type()}}};
+
+    CHECK(bg::compare_specificity(repeated, three_and_independent) == std::partial_ordering::unordered);
+    CHECK(bg::compare_specificity(three_and_independent, repeated) == std::partial_ordering::unordered);
+    CHECK(bg::compare_specificity(fixed, repeated) == std::partial_ordering::less);
 }
 
 TEST_CASE("unrelated scalar capability constraints are unordered",
@@ -201,4 +265,292 @@ TEST_CASE("specificity preserves guarantee-variable relationships through promot
 
     CHECK(bg::compare_specificity(shared_guarantee, independent_guarantees) == std::partial_ordering::less);
     CHECK(bg::compare_specificity(independent_guarantees, shared_guarantee) == std::partial_ordering::greater);
+}
+
+TEST_CASE("independent guarantee variables do not impose a repeated guarantee requirement",
+          "[feature:operator][feature:type-system][declaration:generic][series:value]") {
+    constexpr auto G1 = bg::guarantee_variable<"G1">;
+    constexpr auto G2 = bg::guarantee_variable<"G2">;
+    constexpr auto G = bg::guarantee_variable<"G">;
+
+    const auto repeated = bg::Signature{
+        bg::util::symbol{"repeated"},
+        {{bg::util::symbol{"first"}, &bg::TS<bg::i64, G>::type()},
+         {bg::util::symbol{"second"}, &bg::TS<bg::i64, G>::type()}}};
+    const auto independent = bg::Signature{
+        bg::util::symbol{"independent"},
+        {{bg::util::symbol{"first"}, &bg::TS<bg::i64, G1>::type()},
+         {bg::util::symbol{"second"}, &bg::TS<bg::i64, G2>::type()}}};
+
+    CHECK(bg::compare_specificity(repeated, independent) == std::partial_ordering::less);
+}
+
+TEST_CASE("invariant dictionary keys do not become projected key variables",
+          "[feature:operator][feature:type-system][declaration:generic][series:tsd]") {
+    using DICTIONARY_ONE = bg::Union<"DICTIONARY_ONE", bg::TSD<bg::i64, bg::TS<bg::i64>>,
+                                     bg::TSD<bg::i64, bg::TS<double>>>;
+    using DICTIONARY_TWO = bg::Union<"DICTIONARY_TWO", bg::TSD<bg::i64, bg::TS<bg::i64>>,
+                                     bg::TSD<bg::i64, bg::TS<double>>>;
+    using KEY = bg::ScalarVariable<"KEY">;
+    using VALUE = bg::ScalarVariable<"VALUE">;
+    using OTHER_VALUE = bg::ScalarVariable<"OTHER_VALUE">;
+
+    const auto unions = bg::Signature{
+        bg::util::symbol{"unions"},
+        {{bg::util::symbol{"first"}, &DICTIONARY_ONE::type()},
+         {bg::util::symbol{"second"}, &DICTIONARY_TWO::type()}}};
+    const auto repeated_key = bg::Signature{
+        bg::util::symbol{"repeated_key"},
+        {{bg::util::symbol{"first"}, &bg::TSD<KEY, bg::TS<VALUE>>::type()},
+         {bg::util::symbol{"second"}, &bg::TSD<KEY, bg::TS<OTHER_VALUE>>::type()}}};
+    const auto supplied = std::array<const bg::Type *, 2>{
+        &bg::TSD<bg::i64, bg::TS<bg::i64>>::type(), &bg::TSD<bg::i64, bg::TS<bg::i64>>::type()};
+
+    CHECK(bg::details::compare_parameter_specificity(unions, repeated_key, supplied, supplied, 2) ==
+          std::partial_ordering::less);
+}
+
+TEST_CASE("ambiguous union narrowing falls back to declaration comparison",
+          "[feature:operator][feature:type-system][declaration:generic]") {
+    using T = bg::ScalarVariable<"T">;
+    using R = bg::ScalarVariable<"R">;
+    using DICTIONARY_UNION = bg::Union<"DICTIONARY_UNION", bg::Dict<T, R>, bg::Dict<R, T>>;
+    using KEY = bg::ScalarVariable<"KEY">;
+    using VALUE = bg::ScalarVariable<"VALUE">;
+
+    const auto union_signature = bg::Signature{
+        bg::util::symbol{"union"}, {{bg::util::symbol{"value"}, &DICTIONARY_UNION::type()}}};
+    const auto generic_signature = bg::Signature{
+        bg::util::symbol{"generic"}, {{bg::util::symbol{"value"}, &bg::cpp_scalar_type<bg::Dict<KEY, VALUE>>()}}};
+    const auto supplied = std::array<const bg::Type *, 1>{&bg::cpp_scalar_type<bg::Dict<bg::i64, double>>()};
+    auto type_map = bg::TypeMap{};
+    REQUIRE(T::type().match(bg::int64_type(), type_map));
+    REQUIRE(R::type().match(bg::double_type(), type_map));
+    REQUIRE_NOTHROW(union_signature.resolve_with_type_map(supplied, type_map));
+
+    CHECK_NOTHROW(bg::details::compare_parameter_specificity(union_signature, generic_signature, supplied, supplied,
+                                                             1));
+}
+
+TEST_CASE("contextual specificity orders a concrete type, its union, and constrained types",
+          "[feature:operator][feature:type-system][declaration:generic]") {
+    using PROMOTED = bg::Union<"PROMOTED", bg::i64, bg::TS<bg::i64>>;
+    using EQUALITY_SCALAR = bg::ScalarVariable<"EQUALITY_SCALAR", bg::EqualityComparable>;
+    using SCALAR = bg::ScalarVariable<"SCALAR">;
+
+    const auto concrete = bg::Signature{bg::util::symbol{"concrete"},
+                                        {{bg::util::symbol{"value"}, &bg::TS<bg::i64>::type()}}};
+    const auto promoted = bg::Signature{bg::util::symbol{"promoted"},
+                                        {{bg::util::symbol{"value"}, &PROMOTED::type()}}};
+    const auto equality = bg::Signature{
+        bg::util::symbol{"equality"},
+        {{bg::util::symbol{"value"}, &bg::TS<EQUALITY_SCALAR>::type()}}};
+    const auto scalar = bg::Signature{bg::util::symbol{"scalar"},
+                                      {{bg::util::symbol{"value"}, &bg::TS<SCALAR>::type()}}};
+    const auto supplied = std::array<const bg::Type *, 1>{&bg::TS<bg::i64>::type()};
+    const auto matches_supplied = [&](const bg::Type &pattern) {
+        auto mapping = bg::TypeMap{};
+        return pattern.match(*supplied[0], mapping);
+    };
+    REQUIRE(matches_supplied(bg::TS<bg::i64>::type()));
+    REQUIRE(matches_supplied(PROMOTED::type()));
+    REQUIRE(matches_supplied(bg::TS<EQUALITY_SCALAR>::type()));
+    REQUIRE(matches_supplied(bg::TS<SCALAR>::type()));
+    REQUIRE_NOTHROW(concrete.resolve(supplied));
+    REQUIRE_NOTHROW(promoted.resolve(supplied));
+    REQUIRE_NOTHROW(equality.resolve(supplied));
+    REQUIRE_NOTHROW(scalar.resolve(supplied));
+    const auto compare = [&](const auto &left, const auto &right) {
+        return bg::details::compare_parameter_specificity(left, right, supplied, supplied, 1);
+    };
+
+    CHECK(compare(concrete, promoted) == std::partial_ordering::less);
+    CHECK(compare(promoted, equality) == std::partial_ordering::less);
+    CHECK(compare(equality, scalar) == std::partial_ordering::less);
+    CHECK(compare(concrete, scalar) == std::partial_ordering::less);
+}
+
+TEST_CASE("contextual specificity preserves partial overlap and conflicting alternatives",
+          "[feature:operator][feature:type-system][declaration:generic]") {
+    using LEFT = bg::Union<"LEFT", bg::i64, float>;
+    using RIGHT = bg::Union<"RIGHT", float, double>;
+    using MIXED_LEFT = bg::Union<"MIXED_LEFT", bg::SCALAR, bg::i64>;
+    using EQUALITY_SCALAR = bg::ScalarVariable<"EQUALITY_SCALAR", bg::EqualityComparable>;
+    using HASH_SCALAR = bg::ScalarVariable<"HASH_SCALAR", bg::Hashable>;
+    using MIXED_RIGHT = bg::Union<"MIXED_RIGHT", EQUALITY_SCALAR, HASH_SCALAR>;
+
+    const auto left = bg::Signature{bg::util::symbol{"left"}, {{bg::util::symbol{"value"}, &LEFT::type()}}};
+    const auto right = bg::Signature{bg::util::symbol{"right"}, {{bg::util::symbol{"value"}, &RIGHT::type()}}};
+    const auto mixed_left =
+        bg::Signature{bg::util::symbol{"mixed_left"}, {{bg::util::symbol{"value"}, &MIXED_LEFT::type()}}};
+    const auto mixed_right =
+        bg::Signature{bg::util::symbol{"mixed_right"}, {{bg::util::symbol{"value"}, &MIXED_RIGHT::type()}}};
+    const auto supplied_float = std::array<const bg::Type *, 1>{&bg::float_type()};
+    const auto supplied_integer = std::array<const bg::Type *, 1>{&bg::int64_type()};
+    auto mixed_left_mapping = bg::TypeMap{};
+    auto mixed_right_mapping = bg::TypeMap{};
+    REQUIRE(MIXED_LEFT::type().match(*supplied_integer[0], mixed_left_mapping));
+    REQUIRE(MIXED_RIGHT::type().match(*supplied_integer[0], mixed_right_mapping));
+
+    CHECK(bg::details::compare_parameter_specificity(left, right, supplied_float, supplied_float, 1) ==
+          std::partial_ordering::unordered);
+    CHECK(bg::details::compare_parameter_specificity(right, left, supplied_float, supplied_float, 1) ==
+          std::partial_ordering::unordered);
+    CHECK(bg::details::compare_parameter_specificity(mixed_left, mixed_right, supplied_integer, supplied_integer, 1) ==
+          std::partial_ordering::unordered);
+    CHECK(bg::details::compare_parameter_specificity(mixed_right, mixed_left, supplied_integer, supplied_integer, 1) ==
+          std::partial_ordering::unordered);
+}
+
+TEST_CASE("contextual narrowing retains repeated-variable relationships",
+          "[feature:operator][feature:type-system][declaration:generic]") {
+    using LEFT = bg::Union<"LEFT", bg::i64, double>;
+    using RIGHT = bg::Union<"RIGHT", bg::i64, double>;
+    using T = bg::ScalarVariable<"T">;
+
+    const auto independent = bg::Signature{
+        bg::util::symbol{"independent"},
+        {{bg::util::symbol{"first"}, &LEFT::type()}, {bg::util::symbol{"second"}, &RIGHT::type()}}};
+    const auto repeated = bg::Signature{
+        bg::util::symbol{"repeated"},
+        {{bg::util::symbol{"first"}, &T::type()}, {bg::util::symbol{"second"}, &T::type()}}};
+    const auto supplied = std::array<const bg::Type *, 2>{&bg::int64_type(), &bg::int64_type()};
+    const auto matches_supplied = [&](const bg::Type &pattern, const bg::Type &argument) {
+        auto mapping = bg::TypeMap{};
+        return pattern.match(argument, mapping);
+    };
+    REQUIRE(matches_supplied(LEFT::type(), *supplied[0]));
+    REQUIRE(matches_supplied(RIGHT::type(), *supplied[1]));
+    REQUIRE(matches_supplied(T::type(), *supplied[0]));
+    REQUIRE(matches_supplied(T::type(), *supplied[1]));
+    REQUIRE_NOTHROW(independent.resolve(supplied));
+    REQUIRE_NOTHROW(repeated.resolve(supplied));
+
+    CHECK(bg::details::compare_parameter_specificity(independent, repeated, supplied, supplied, 2) ==
+          std::partial_ordering::unordered);
+    CHECK(bg::details::compare_parameter_specificity(repeated, independent, supplied, supplied, 2) ==
+          std::partial_ordering::unordered);
+}
+
+TEST_CASE("contextual narrowing preserves nested repeated-variable relationships",
+          "[feature:operator][feature:type-system][declaration:generic][series:value]") {
+    using LEFT = bg::Union<"LEFT", bg::TS<bg::i64>, bg::TS<double>>;
+    using RIGHT = bg::Union<"RIGHT", bg::TS<bg::i64>, bg::TS<double>>;
+    using T = bg::ScalarVariable<"T">;
+
+    const auto independent = bg::Signature{
+        bg::util::symbol{"independent"},
+        {{bg::util::symbol{"first"}, &LEFT::type()}, {bg::util::symbol{"second"}, &RIGHT::type()}}};
+    const auto repeated = bg::Signature{
+        bg::util::symbol{"repeated"},
+        {{bg::util::symbol{"first"}, &bg::TS<T>::type()}, {bg::util::symbol{"second"}, &bg::TS<T>::type()}}};
+    const auto supplied = std::array<const bg::Type *, 2>{&bg::TS<bg::i64>::type(), &bg::TS<bg::i64>::type()};
+    const auto matches_supplied = [&](const bg::Type &pattern, const bg::Type &argument) {
+        auto mapping = bg::TypeMap{};
+        return pattern.match(argument, mapping);
+    };
+    REQUIRE(matches_supplied(LEFT::type(), *supplied[0]));
+    REQUIRE(matches_supplied(RIGHT::type(), *supplied[1]));
+    REQUIRE(matches_supplied(*repeated.parameter(0).type, *supplied[0]));
+    REQUIRE(matches_supplied(*repeated.parameter(1).type, *supplied[1]));
+    REQUIRE_NOTHROW(independent.resolve(supplied));
+    REQUIRE_NOTHROW(repeated.resolve(supplied));
+
+    CHECK(bg::details::compare_parameter_specificity(independent, repeated, supplied, supplied, 2) ==
+          std::partial_ordering::unordered);
+    CHECK(bg::details::compare_parameter_specificity(repeated, independent, supplied, supplied, 2) ==
+          std::partial_ordering::unordered);
+}
+
+TEST_CASE("nested type specificity is consistent across a declaration matrix",
+          "[feature:operator][feature:type-system][declaration:generic][series:value]") {
+    using T = bg::ScalarVariable<"T">;
+    using R = bg::ScalarVariable<"R">;
+    using SCALAR = bg::ScalarVariable<"SCALAR">;
+    using TIME_SERIES_CHOICE = bg::Union<"TIME_SERIES_CHOICE", bg::TS<bg::i64>, bg::TS<double>>;
+
+    const auto declarations = std::array<const bg::Type *, 6>{
+        &bg::TS<bg::i64>::type(), &bg::TS<T>::type(), &bg::TS<R>::type(), &TIME_SERIES_CHOICE::type(),
+        &bg::TS<SCALAR>::type(), &bg::TS_T::type()};
+    const auto supplied = std::array<const bg::Type *, 2>{&bg::TS<bg::i64>::type(), &bg::TS<bg::i64>::type()};
+    auto signatures = std::vector<bg::Signature>{};
+    for (const auto *first : declarations) {
+        for (const auto *second : declarations) {
+            signatures.emplace_back(bg::util::symbol{"candidate"},
+                                    std::vector<bg::Parameter>{{bg::util::symbol{"first"}, first},
+                                                               {bg::util::symbol{"second"}, second}});
+            REQUIRE_NOTHROW(signatures.back().resolve(supplied));
+        }
+    }
+
+    auto specificity = std::vector<std::vector<std::partial_ordering>>(
+        signatures.size(), std::vector<std::partial_ordering>(signatures.size(), std::partial_ordering::equivalent));
+    for (auto left = std::size_t{}; left < signatures.size(); ++left) {
+        for (auto right = std::size_t{}; right < signatures.size(); ++right) {
+            specificity[left][right] = bg::details::compare_parameter_specificity(
+                signatures[left], signatures[right], supplied, supplied, 2);
+        }
+    }
+
+    for (auto left = std::size_t{}; left < signatures.size(); ++left) {
+        for (auto right = std::size_t{}; right < signatures.size(); ++right) {
+            const auto reverse = specificity[left][right] == std::partial_ordering::less
+                                     ? std::partial_ordering::greater
+                                 : specificity[left][right] == std::partial_ordering::greater
+                                     ? std::partial_ordering::less
+                                     : specificity[left][right];
+            CHECK(specificity[right][left] == reverse);
+        }
+    }
+
+    for (auto first = std::size_t{}; first < signatures.size(); ++first) {
+        for (auto second = std::size_t{}; second < signatures.size(); ++second) {
+            if (specificity[first][second] != std::partial_ordering::less) {
+                continue;
+            }
+            for (auto third = std::size_t{}; third < signatures.size(); ++third) {
+                if (specificity[second][third] == std::partial_ordering::less) {
+                    CHECK(specificity[first][third] == std::partial_ordering::less);
+                }
+            }
+        }
+    }
+}
+
+TEST_CASE("projected graph parameters ignore alternatives with different boundary shapes",
+          "[feature:operator][feature:type-system][declaration:partially-generic][shape:nested]") {
+    const auto one_parameter = std::array<const bg::Type *, 1>{&bg::TS<bg::i64>::type()};
+    const auto two_parameters = std::array<const bg::Type *, 2>{&bg::TS<bg::i64>::type(), &bg::TS<double>::type()};
+    const auto &one_parameter_graph = bg::graph_argument_type(one_parameter, &bg::TS<bg::i64>::type());
+    const auto &two_parameter_graph = bg::graph_argument_type(two_parameters, &bg::TS<bg::i64>::type());
+    const auto graph_union = bg::TypeVariableType<bg::Type>{
+        bg::util::symbol{"GRAPH"}, {&one_parameter_graph, &two_parameter_graph}};
+    const auto generic = bg::Signature{bg::util::symbol{"generic"}, {{bg::util::symbol{"function"}, &graph_union}}};
+    const auto concrete =
+        bg::Signature{bg::util::symbol{"concrete"}, {{bg::util::symbol{"function"}, &one_parameter_graph}}};
+    const auto supplied = std::array<const bg::Type *, 1>{&one_parameter_graph};
+
+    REQUIRE_NOTHROW(generic.resolve(supplied));
+    CHECK(bg::details::compare_parameter_specificity(concrete, generic, supplied, supplied, 1) ==
+          std::partial_ordering::less);
+}
+
+TEST_CASE("extension predicates retain conservative function-identity ordering",
+          "[feature:operator][feature:type-system][declaration:generic][scalar:generic]") {
+    const auto accepts_any = +[](const bg::ScalarType &) noexcept { return true; };
+    const auto also_accepts_any = +[](const bg::ScalarType &) noexcept { return true; };
+    const auto first = bg::TypeVariableType<bg::ScalarType>{bg::util::symbol{"FIRST"}, {}, {accepts_any}};
+    const auto same_predicate =
+        bg::TypeVariableType<bg::ScalarType>{bg::util::symbol{"SAME_PREDICATE"}, {}, {accepts_any}};
+    const auto other_predicate =
+        bg::TypeVariableType<bg::ScalarType>{bg::util::symbol{"OTHER_PREDICATE"}, {}, {also_accepts_any}};
+    const auto first_signature =
+        bg::Signature{bg::util::symbol{"first"}, {{bg::util::symbol{"value"}, &first}}};
+    const auto same_signature =
+        bg::Signature{bg::util::symbol{"same"}, {{bg::util::symbol{"value"}, &same_predicate}}};
+    const auto other_signature =
+        bg::Signature{bg::util::symbol{"other"}, {{bg::util::symbol{"value"}, &other_predicate}}};
+
+    CHECK(bg::compare_specificity(first_signature, same_signature) == std::partial_ordering::equivalent);
+    CHECK(bg::compare_specificity(first_signature, other_signature) == std::partial_ordering::unordered);
 }

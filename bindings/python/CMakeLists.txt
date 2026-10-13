@@ -50,7 +50,7 @@ target_include_directories(
 )
 target_link_libraries(
     bg_python
-    PUBLIC bg::bg Python::Module
+    PUBLIC bg::library Python::Module
     PRIVATE "$<BUILD_INTERFACE:$<TARGET_LINKER_FILE:nanobind>>"
 )
 add_dependencies(bg_python nanobind)
@@ -92,11 +92,13 @@ if(WIN32)
         TARGET _bg
         POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:bg>" "$<TARGET_FILE_DIR:_bg>"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:bg_library>" "$<TARGET_FILE_DIR:_bg>"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:bg_python>" "$<TARGET_FILE_DIR:_bg>"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:nanobind>" "$<TARGET_FILE_DIR:_bg>"
         VERBATIM
     )
     install(FILES "$<TARGET_FILE:bg>" DESTINATION bg)
+    install(FILES "$<TARGET_FILE:bg_library>" DESTINATION bg)
     install(FILES "$<TARGET_FILE:bg_python>" DESTINATION bg)
     install(FILES "$<TARGET_FILE:nanobind>" DESTINATION bg)
 endif()

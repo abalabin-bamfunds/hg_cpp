@@ -477,6 +477,10 @@ void Signature::validate_wiring_arguments(std::span<const WiringArgument> argume
                                       "an opt-qualified argument requires an optional input parameter",
                                       parameter.type, &argument.type()};
         }
+        if (argument.is_scalar() && !argument.present() && !parameter.accepts_absent_scalar) {
+            throw TypeResolutionError{TypeResolutionErrorCode::mismatch, parameter.name,
+                                      "a required scalar parameter has no value", parameter.type, &argument.type()};
+        }
     }
 }
 

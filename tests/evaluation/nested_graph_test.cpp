@@ -98,6 +98,21 @@ TEST_CASE("a nested graph can be stopped and started repeatedly",
     CHECK(LifecycleIncrement::stops == 3);
 }
 
+TEST_CASE("nested graph supports inferred callable output guarantees",
+          "[evaluation][nested][feature:nested-graph][feature:node-api][definition:function][series:value]"
+          "[guarantee:ordinary]") {
+    const auto increment = bg::node([](bg::i64 value) { return value + 1; });
+    const auto inner = bg::graph("name"_n = "inferred_callable_nested_graph",
+                                 [=](bg::wp<bg::TS<bg::i64>> input) { return increment(input); });
+    const auto outer = [=](bg::wp<bg::TS<bg::i64>> input, bg::wp<bg::TS<bool>> run) {
+        return bg::nested(inner, run, input);
+    };
+
+    const auto inputs = std::array{1, 2, 3};
+    const auto running = std::array{true, true, true};
+    CHECK(bg::testing::test_graph(outer, inputs, running).equals<bg::i64>({2, 3, 4}));
+}
+
 TEST_CASE("nested reference signature types outlive their node templates",
           "[wiring][nested][reference][feature:type-system][declaration:generic]") {
     const auto wiring = std::make_shared<bg::GraphWiring>();

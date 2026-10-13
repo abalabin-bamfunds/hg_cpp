@@ -3,7 +3,7 @@
 ## Purpose
 
 An operator gives graph code one stable name for behavior that can have several
-node or graph implementations. Wiring selects the unique least-generic
+node or graph implementations. Wiring selects the unique most-specific
 applicable overload matching the supplied arguments.
 
 ## Declaration and registration
@@ -20,7 +20,7 @@ its name and parameter names:
 ```cpp
 namespace bg::operators {
 
-extern operator_<auto(TS_T, TS_T) -> TS_T> add;
+extern operator_<auto(SCALAR, SCALAR) -> SCALAR> add;
 
 } // namespace bg::operators
 
@@ -30,10 +30,15 @@ decltype(bg::operators::add) bg::operators::add{"add", {"lhs", "rhs"}};
 Local code uses the same declaration form:
 
 ```cpp
-auto add = bg::operator_<auto(bg::TS_T, bg::TS_T) -> bg::TS_T>{"add", {"lhs", "rhs"}};
+auto add = bg::operator_<auto(bg::SCALAR, bg::SCALAR) -> bg::SCALAR>{"add", {"lhs", "rhs"}};
 add.overload(bg::node<add_integers>());
 add.overload(add_numbers_graph);
 ```
+
+A scalar result `T` in an operator prototype means `TS<T>`. Native scalar
+results use their canonical type; for example, `int` means `TS<i64>`.
+The selected overload determines the actual output type and guarantee.
+Explicit time series results and `void` retain their normal meaning.
 
 An operator can declare ordered type parameters before its prototype. Calls can
 then supply positional type arguments or named mappings:
@@ -57,7 +62,8 @@ invoke an overload itself.
 The prototype determines the C++ return type. An output operator returns `wp<>`
 because overloads can produce different output types. A sink overload returns
 an empty `wp<>`. An outputless operator returns `void` and accepts only sink
-overloads.
+overloads. Use `has_output()` to test whether the returned `wp<>` identifies an
+output.
 
 Prototype parameter names are public keyword aliases for the overload
 parameters at the same positions. An overload's own parameter name takes
@@ -67,8 +73,11 @@ precedence when it conflicts with a prototype name.
 auto result = add(lhs, rhs);
 ```
 
-Engine operators are declared in `bg::operators`. Each time series or scalar
-module registers the overloads it implements.
+Including `<bg/library.hpp>` and linking `bg::library` provides the common
+operator surface. It includes engine operators such as `const_`, `default_`,
+and `getitem`, alongside C++ library operators. Their implementation
+placement does not create a separate operator API for callers.
+Each time series or scalar module registers the overloads it implements.
 
 `const_(scalar)` lifts a scalar to `TS<scalar, const>`. Graph compilation stores
 the scalar once and binds its consumers directly to that storage.
@@ -82,6 +91,9 @@ time series because switching between `source` and `fallback` can add updates
 independently of the source guarantee. A reference consumer uses a normal
 reference node over the adapter output. Nested graph outputs therefore use the
 reference path.
+
+The [standard library](library.md) defines supported operators, scalar types,
+optional behavior, and C++ and Python wiring syntax.
 
 An operator owns its registered overloads. Registration is permanent and is
 not concurrent with graph wiring. Adding an overload clears that operator's
@@ -97,7 +109,7 @@ The operator performs overload resolution within its wiring call.
 
 For each candidate, resolution proceeds in this order:
 
-1. Match its parameters against the supplied argument types.
+1. Validate argument qualifiers and scalar presence, then match the supplied types.
 2. Resolve its parameter and output types. This demands only mappings those types use.
 3. Resolve any additional types needed by the wiring template's metadata.
 4. Run the requirement while resolver lookup remains active.
@@ -153,11 +165,18 @@ without an applicable optional-input overload reports a wiring error.
 When applicable overloads have equivalent parameter types, `required` and
 `all_valid` time series parameters are equally preferred over `optional` for
 unmarked arguments. Otherwise equivalent `required` and `all_valid` overloads
-remain ambiguous. One overload must be at least
-as preferred at every parameter and strictly preferred at one. Conflicting
-validity preferences remain ambiguous. Type specificity precedes this
-preference. This preference applies only to time series parameters; scalar
-absence keeps its existing matching rules.
+remain ambiguous.
+
+For a supplied scalar value, a parameter that requires presence is preferred
+over an otherwise equivalent parameter that accepts absence. This applies to
+scalar-only declarations and scalar-or-time-series parameters resolved as
+scalars. An absent scalar rejects a parameter that requires presence before
+overload ranking. Omitting a fixed argument remains an argument-count error.
+
+One overload must be at least as preferred at every parameter and strictly
+preferred at one. Conflicting preferences remain ambiguous, including conflicts
+between scalar presence and time series validity. Type specificity precedes
+these preferences.
 
 Optional inputs retain their declared activity. To publish a result while every
 input is initially invalid, an implementation must request
@@ -258,37 +277,54 @@ Callable declarations use the same protocol through `bg::require`.
 
 ## Specificity
 
-Applicable signatures form a partial order from more generic to less generic.
-The operator selects a candidate only when it is strictly less generic than
-every other applicable candidate. Otherwise the call is ambiguous.
+The operator compares applicable signatures as declarations. It selects a
+candidate only when it is more specific than every other applicable candidate.
+Otherwise the call is ambiguous.
 
 Comparison includes parameter types, constraints, literal components, and
 relationships created by repeated variables. It does not include output types,
-parameter names, input activity, or requirement functions. Input validity
-constraints break ties between equivalent parameter types as described in
-[Optional arguments](#optional-arguments).
+parameter names, input activity, or requirement functions. Time series validity
+and scalar presence requirements break ties between equivalent parameter types
+as described in [Optional arguments](#optional-arguments).
 The implementation must compare complete signatures rather than add numeric
 scores for individual parameters.
 
-Specificity follows these rules:
+Comparison recursively applies one rule: a declaration is more specific when
+it narrows the accepted types or variable relationships, with no conflicting
+preference elsewhere in the signature. An exact type narrows a variable; adding
+a capability constraint narrows an unconstrained variable. Collection items and
+graph boundaries use the same comparison. Repeated variables, literal sizes,
+literal guarantees, and derived types also narrow their corresponding generic
+or base declarations. Applicable literal guarantees follow `const`, `final`,
+`deduplicated`, then `ordinary`.
 
-1. An exact type is less generic than a variable that accepts it.
-2. A constrained variable is less generic than an unconstrained variable when
-   its accepted set is a strict subset.
-3. A specific time series form is less generic than a time series variable.
-4. Repeated use of one variable is less generic than independent variables.
-5. Two signatures that constrain different parameter positions are unordered.
-6. A literal fixed collection size is less generic than a size variable.
-7. Applicable literal guarantees follow `const`, `final`, `deduplicated`, then
-   `ordinary`; a literal is less generic than a guarantee variable.
-8. A derived scalar type is less generic than an accepted base scalar type.
-9. Unrelated capability constraints are unordered.
-10. Identical signatures remain ambiguous when more than one requirement
-    succeeds.
+Union comparison uses each candidate's supplied argument types to identify its
+applicable alternatives. It compares those alternatives as declarations, not
+as their resolved types. Conflicting applicable alternatives remain unordered.
+When applicable alternatives compare equivalent, declared containment still
+distinguishes an exact declaration from a union containing it. Partially
+overlapping concrete unions remain unordered.
+
+For a supplied `TS<i64>`, with equivalent guarantees and variable relationships,
+the declarations have this order, from most to least specific:
+
+```cpp
+TS<i64>
+Union<"VALUE", i64, TS<i64>>
+TS<EQUALITY_SCALAR> // ScalarVariable<"EQUALITY_SCALAR", EqualityComparable>
+TS<SCALAR>
+```
+
+Constraints on different parameters can conflict. Unrelated capability
+constraints and identical signatures do not establish a strict preference.
+For supplied `(i64, i64)`, `(i64, R)` and `(T, T)` remain unordered: the first
+fixes one parameter type; the second requires both parameter types to match.
+Declaration-only comparisons remain conservative when no supplied types are
+available to identify applicable union alternatives.
 
 A fixed overload is preferred over a variadic overload. Among variadic
 overloads, reference affinity and type specificity compare their shared fixed
-parameters. A longer compatible fixed prefix is less generic.
+parameters. A longer compatible fixed prefix is more specific.
 
 ## Graph arguments
 

@@ -42,23 +42,32 @@ WiringFailureStage failure_stage(TypeResolutionErrorCode code) noexcept {
     return WiringFailureStage::resolver;
 }
 
-std::partial_ordering compare_input_validity_preference(const ResolvedSignature &left, const ResolvedSignature &right,
-                                                        std::span<const InputValidity> left_arguments,
-                                                        std::span<const InputValidity> right_arguments,
-                                                        std::size_t parameter_count) noexcept {
+std::partial_ordering compare_input_requirement_preference(const ResolvedSignature &left,
+                                                           const ResolvedSignature &right,
+                                                           std::span<const InputValidity> left_arguments,
+                                                           std::span<const InputValidity> right_arguments,
+                                                           std::size_t parameter_count) noexcept {
     auto left_better = false;
     auto right_better = false;
     for (auto index = std::size_t{}; index < parameter_count; ++index) {
-        if (type_cast<TimeSeriesType>(left.parameters[index].type) == nullptr ||
-            type_cast<TimeSeriesType>(right.parameters[index].type) == nullptr) {
+        const auto &left_parameter = left.parameters[index];
+        const auto &right_parameter = right.parameters[index];
+        if (left_parameter.type->is_scalar() && right_parameter.type->is_scalar()) {
+            const auto left_requires_presence = !left_parameter.accepts_absent_scalar;
+            const auto right_requires_presence = !right_parameter.accepts_absent_scalar;
+            left_better |= left_requires_presence && !right_requires_presence;
+            right_better |= right_requires_presence && !left_requires_presence;
+            continue;
+        }
+        if (!left_parameter.type->is_time_series() || !right_parameter.type->is_time_series()) {
             continue;
         }
         if (left_arguments[index] == optional || right_arguments[index] == optional) {
             continue;
         }
 
-        const auto left_required = left.parameters[index].validity != optional;
-        const auto right_required = right.parameters[index].validity != optional;
+        const auto left_required = left_parameter.validity != optional;
+        const auto right_required = right_parameter.validity != optional;
         left_better |= left_required && !right_required;
         right_better |= right_required && !left_required;
     }
@@ -89,19 +98,24 @@ bool preferred(const WiringTemplate &candidate, const ResolvedSignature &candida
             return reference_affinity == std::partial_ordering::less;
         }
         if (candidate_fixed == other_fixed) {
-            const auto specificity = compare_specificity(candidate.signature(), other.signature());
+            const auto parameter_count = candidate.signature().parameter_count();
+            const auto specificity = parameter_count == other.signature().parameter_count()
+                                        ? details::compare_parameter_specificity(
+                                              candidate.signature(), other.signature(), candidate_arguments,
+                                              other_arguments, parameter_count)
+                                        : std::partial_ordering::unordered;
             if (specificity != std::partial_ordering::equivalent) {
                 return specificity == std::partial_ordering::less;
             }
             const auto shared_parameters =
                 std::min(candidate_signature.parameters.size(), other_signature.parameters.size());
-            return compare_input_validity_preference(candidate_signature, other_signature,
-                                                     candidate_argument_validity, other_argument_validity,
-                                                     shared_parameters) == std::partial_ordering::less;
+            return compare_input_requirement_preference(candidate_signature, other_signature,
+                                                        candidate_argument_validity, other_argument_validity,
+                                                        shared_parameters) == std::partial_ordering::less;
         }
 
-        const auto shared_specificity =
-            details::compare_parameter_specificity(candidate.signature(), other.signature(), shared_fixed);
+        const auto shared_specificity = details::compare_parameter_specificity(
+            candidate.signature(), other.signature(), candidate_arguments, other_arguments, shared_fixed);
         const auto prefix_length =
             candidate_fixed > other_fixed ? std::partial_ordering::less : std::partial_ordering::greater;
         const auto preferences_agree =
@@ -114,12 +128,17 @@ bool preferred(const WiringTemplate &candidate, const ResolvedSignature &candida
     if (reference_affinity != std::partial_ordering::equivalent) {
         return reference_affinity == std::partial_ordering::less;
     }
-    const auto specificity = compare_specificity(candidate.signature(), other.signature());
+    const auto parameter_count = candidate.signature().parameter_count();
+    const auto specificity = parameter_count == other.signature().parameter_count()
+                                 ? details::compare_parameter_specificity(candidate.signature(), other.signature(),
+                                                                         candidate_arguments, other_arguments,
+                                                                         parameter_count)
+                                 : std::partial_ordering::unordered;
     if (specificity != std::partial_ordering::equivalent) {
         return specificity == std::partial_ordering::less;
     }
-    return compare_input_validity_preference(candidate_signature, other_signature, candidate_argument_validity,
-                                             other_argument_validity, shared_parameters) ==
+    return compare_input_requirement_preference(candidate_signature, other_signature, candidate_argument_validity,
+                                                other_argument_validity, shared_parameters) ==
            std::partial_ordering::less;
 }
 

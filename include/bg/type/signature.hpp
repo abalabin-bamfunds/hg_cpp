@@ -187,6 +187,9 @@ class Signature {
 namespace details {
 [[nodiscard]] std::partial_ordering compare_parameter_specificity(const Signature &left, const Signature &right,
                                                                   std::size_t parameter_count);
+[[nodiscard]] std::partial_ordering compare_parameter_specificity(
+    const Signature &left, const Signature &right, std::span<const Type *const> left_supplied_types,
+    std::span<const Type *const> right_supplied_types, std::size_t parameter_count);
 }
 
 } // namespace bg

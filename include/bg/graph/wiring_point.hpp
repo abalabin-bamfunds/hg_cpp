@@ -101,7 +101,6 @@ template <typename TimeSeries, auto... Properties> class wp {
     operator WiringPoint() const noexcept { return point_; }
 
     bool has_output() const noexcept { return point_.has_output(); }
-    explicit operator bool() const noexcept { return has_output(); }
 
     const GraphWiring &graph() const { return point_.graph(); }
     const TimeSeriesType &type() const { return point_.type(); }

@@ -1,5 +1,6 @@
 #include <bg/graph/details/variadic_wiring_operations.hpp>
 #include <bg/graph/details/variadic_wiring_record.hpp>
+#include <bg/library/operators.hpp>
 #include <bg/node/runtime_signature_node_template.hpp>
 #include <bg/operators.hpp>
 #include <bg/python/graph_definition.hpp>
@@ -545,6 +546,20 @@ void bind_core(nb::module_ &module) {
         return scalar_conversions().add_python_type(python_type, symbol_type());
     });
 
+    details::bind_operators(module);
+    const auto add_operator = details::PythonOperator{operators::add};
+    const auto sub_operator = details::PythonOperator{operators::sub};
+    const auto mul_operator = details::PythonOperator{operators::mul};
+    const auto pos_operator = details::PythonOperator{operators::pos};
+    const auto neg_operator = details::PythonOperator{operators::neg};
+    const auto abs_operator = details::PythonOperator{operators::abs};
+    const auto eq_operator = details::PythonOperator{operators::eq};
+    const auto ne_operator = details::PythonOperator{operators::ne};
+    const auto lt_operator = details::PythonOperator{operators::lt};
+    const auto le_operator = details::PythonOperator{operators::le};
+    const auto gt_operator = details::PythonOperator{operators::gt};
+    const auto ge_operator = details::PythonOperator{operators::ge};
+
     nb::class_<TypeDescriptor>(module, "_Type")
         .def_prop_ro("is_time_series", [](const TypeDescriptor &value) { return value.type().is_time_series(); })
         .def_prop_ro("accepts_absent_scalar", &TypeDescriptor::accepts_absent_scalar);
@@ -556,8 +571,78 @@ void bind_core(nb::module_ &module) {
                          point.type().format_name(result);
                          return result;
                      })
+        .def("__bool__", [](const PythonWiringPoint &) -> bool {
+            throw nb::type_error("A wiring point has no Python truth value; use 'has_output' for output presence.");
+        })
         .def("_as_optional", &PythonWiringPoint::as_optional)
-        .def("__getitem__", &details::getitem);
+        .def("__getitem__", &details::getitem)
+        .def(
+            "__add__",
+            [add_operator](const PythonWiringPoint &self, nb::handle other) {
+                return add_operator.call(nb::cast(self), other);
+            },
+            nb::is_operator())
+        .def("__radd__",
+             [add_operator](const PythonWiringPoint &self, nb::handle other) {
+                 return add_operator.call(other, nb::cast(self));
+             },
+             nb::is_operator())
+        .def("__sub__",
+             [sub_operator](const PythonWiringPoint &self, nb::handle other) {
+                 return sub_operator.call(nb::cast(self), other);
+             },
+             nb::is_operator())
+        .def("__rsub__",
+             [sub_operator](const PythonWiringPoint &self, nb::handle other) {
+                 return sub_operator.call(other, nb::cast(self));
+             },
+             nb::is_operator())
+        .def("__mul__",
+             [mul_operator](const PythonWiringPoint &self, nb::handle other) {
+                 return mul_operator.call(nb::cast(self), other);
+             },
+             nb::is_operator())
+        .def("__rmul__",
+             [mul_operator](const PythonWiringPoint &self, nb::handle other) {
+                 return mul_operator.call(other, nb::cast(self));
+             },
+             nb::is_operator())
+        .def("__pos__", [pos_operator](const PythonWiringPoint &self) { return pos_operator.call(nb::cast(self)); },
+             nb::is_operator())
+        .def("__neg__", [neg_operator](const PythonWiringPoint &self) { return neg_operator.call(nb::cast(self)); },
+             nb::is_operator())
+        .def("__abs__", [abs_operator](const PythonWiringPoint &self) { return abs_operator.call(nb::cast(self)); },
+             nb::is_operator())
+        .def("__eq__",
+             [eq_operator](const PythonWiringPoint &self, nb::handle other) {
+                 return eq_operator.call(nb::cast(self), other);
+             },
+             nb::is_operator())
+        .def("__ne__",
+             [ne_operator](const PythonWiringPoint &self, nb::handle other) {
+                 return ne_operator.call(nb::cast(self), other);
+             },
+             nb::is_operator())
+        .def("__lt__",
+             [lt_operator](const PythonWiringPoint &self, nb::handle other) {
+                 return lt_operator.call(nb::cast(self), other);
+             },
+             nb::is_operator())
+        .def("__le__",
+             [le_operator](const PythonWiringPoint &self, nb::handle other) {
+                 return le_operator.call(nb::cast(self), other);
+             },
+             nb::is_operator())
+        .def("__gt__",
+             [gt_operator](const PythonWiringPoint &self, nb::handle other) {
+                 return gt_operator.call(nb::cast(self), other);
+             },
+             nb::is_operator())
+        .def("__ge__",
+             [ge_operator](const PythonWiringPoint &self, nb::handle other) {
+                 return ge_operator.call(nb::cast(self), other);
+             },
+             nb::is_operator());
     nb::class_<InputView>(module, "InputView")
         .def_prop_ro("valid", &InputView::valid)
         .def_prop_ro("modified", &InputView::modified)
@@ -639,7 +724,6 @@ void bind_core(nb::module_ &module) {
     nb::class_<PythonGraphDefinition>(module, "_PythonGraphDefinition");
 
     details::bind_higher_order(module);
-    details::bind_operators(module);
 }
 
 } // namespace bg::python
