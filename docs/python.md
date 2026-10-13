@@ -57,6 +57,17 @@ resolution for both explicit calls and wiring-point special methods.
 Wiring-point arithmetic and comparison methods call the native operators and
 preserve operand order. See the [standard library](library.md) for supported
 types and wiring syntax.
+
+Wiring points support `/`, `//`, `%`, and `**`; `round(point, ndigits)` and
+`abs(point)` call the corresponding operators. `bg.operators.convert` takes an
+explicit full result type descriptor:
+
+```python
+converted = bg.operators.convert[bg.TS[float]](integer_value)
+```
+
+The built-in conversions support `int` and `float`. C++ overload registration
+can extend `convert` to other time-series inputs and collection outputs.
 Positional and named arguments can contain wiring points or registered Python
 scalar values. A sink operator returns `None`. The higher-order operators are
 the same objects as `bg.map`, `bg.mesh`, and `bg.switch_`.

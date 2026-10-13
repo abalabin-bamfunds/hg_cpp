@@ -16,10 +16,18 @@ namespace bg::operators {
 using EQUALITY_SCALAR = ScalarVariable<"EQUALITY_SCALAR", EqualityComparable>;
 using ORDERED_SCALAR = ScalarVariable<"ORDERED_SCALAR", i64, double, string, date_time_t, timedelta_t>;
 using BOOL = ScalarVariable<"BOOL", bool>;
+using NUMERIC = ScalarVariable<"NUMERIC", i64, double>;
+using CONVERT_RESULT = TimeSeriesVariable<"CONVERT_RESULT">;
 
 extern BG_LIBRARY_EXPORT operator_<auto(SCALAR, SCALAR) -> SCALAR> add;
 extern BG_LIBRARY_EXPORT operator_<auto(SCALAR, SCALAR) -> SCALAR> sub;
 extern BG_LIBRARY_EXPORT operator_<auto(SCALAR, SCALAR) -> SCALAR> mul;
+extern BG_LIBRARY_EXPORT operator_<auto(NUMERIC, NUMERIC) -> double> div;
+extern BG_LIBRARY_EXPORT operator_<auto(NUMERIC, NUMERIC) -> NUMERIC> floordiv;
+extern BG_LIBRARY_EXPORT operator_<auto(NUMERIC, NUMERIC) -> NUMERIC> mod;
+extern BG_LIBRARY_EXPORT operator_<auto(NUMERIC, NUMERIC) -> NUMERIC> pow;
+extern BG_LIBRARY_EXPORT operator_<auto(double, i64) -> double> round;
+extern BG_LIBRARY_EXPORT operator_<CONVERT_RESULT, auto(TS_T) -> CONVERT_RESULT> convert;
 extern BG_LIBRARY_EXPORT operator_<auto(SCALAR) -> SCALAR> pos;
 extern BG_LIBRARY_EXPORT operator_<auto(SCALAR) -> SCALAR> neg;
 extern BG_LIBRARY_EXPORT operator_<auto(SCALAR) -> SCALAR> abs;

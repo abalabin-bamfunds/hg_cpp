@@ -70,6 +70,13 @@ class WiringArguments {
 
     const Type &resolved_type(std::string_view name) const { return resolved_type(argument_index(name)); }
 
+    const TimeSeriesType *resolved_output_type() const {
+        if (!signature_->has_output()) {
+            return nullptr;
+        }
+        return type_cast<TimeSeriesType>(&signature_->output()->resolve(*type_map_));
+    }
+
     const TypeMap &type_map() const noexcept { return *type_map_; }
 
     std::optional<Scalar<>> scalar(std::size_t index) const {

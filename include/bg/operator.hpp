@@ -4,6 +4,7 @@
 #include <bg/graph/operator.hpp>
 #include <bg/graph/type_mapping.hpp>
 #include <bg/time_series/time_series_type.hpp>
+#include <bg/type/type_parameter.hpp>
 
 #include <array>
 #include <concepts>
@@ -53,6 +54,10 @@ class OperatorTemplate final
 
   public:
     using TypeMapping::operator[];
+
+    auto explicit_type_parameters() const {
+        return std::array<const Type *, sizeof...(TypeParameters)>{&details::type_parameter<TypeParameters>()...};
+    }
 
     explicit OperatorTemplate(std::string_view name, std::span<const std::string_view> parameter_names = {})
         : Operator(details::operator_typed_prototype<Prototype>::signature(util::symbol{name}, parameter_names)) {}

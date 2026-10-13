@@ -35,6 +35,11 @@ types; an integer operand does not convert to double to match an overload.
 | `add` | `i64`, `double`, `timedelta_t`, `string`; timestamp plus duration in either order |
 | `sub` | `i64`, `double`, `timedelta_t`; timestamp minus duration or timestamp |
 | `mul` | `i64`, `double` |
+| `div` | `i64`, `double`; result is `double` |
+| `floordiv` | `i64` to `i64`, `double` to `double` |
+| `mod` | `i64` to `i64`, `double` to `double` |
+| `pow` | `i64` to `i64`, `double` to `double` |
+| `round` | `double`, with an optional decimal digit count; result is `double` |
 | `neg`, `pos`, `abs` | `i64`, `double`, `timedelta_t` |
 | `eq`, `ne` | Compatible values of an equality-comparable scalar type |
 | `lt`, `le`, `gt`, `ge` | `i64`, `double`, `string`, `date_time_t`, `timedelta_t` |
@@ -51,6 +56,31 @@ that same minimum value. Floating-point arithmetic uses normal C++ operations.
 String operations process bytes, including embedded NUL bytes. Temporal
 operators are native C++ overloads; Python temporal conversions are not yet
 supplied.
+
+Integer division rounds the exact quotient to the nearest `double`, with ties
+rounded to even. It preserves the sign of a zero result. Division, floor
+division, and modulo reject a zero divisor during evaluation.
+Dividing the `i64` minimum by `-1` returns the positive quotient as `double`;
+integer floor division wraps the corresponding quotient, and modulo returns
+zero. Integer power wraps at `i64` width and rejects negative exponents.
+Floating power rejects zero raised to a negative exponent and negative bases
+with fractional exponents. `round` returns `double`, uses ties-to-even rounding
+at the requested decimal position, preserves non-finite values, and preserves
+the sign of zero.
+
+`convert` requires an explicit full result time-series type:
+
+```cpp
+operators::convert[type<TS<double>>](integer_value);
+```
+
+The built-in overloads convert between `i64` and `double`. Converting `double`
+to `i64` truncates toward zero; NaN raises `domain_error`, and infinities or
+values outside the `i64` range raise `overflow_error`. The public operator
+accepts overloads for other source time-series types, including collections;
+each overload's output must be compatible with the requested result type. The
+requested type checks compatibility and does not replace the overload's
+inferred output guarantee.
 
 Required operands gate evaluation. Their invalidation invalidates the result,
 and revalidation permits another calculation. Equal results from ordinary
@@ -83,8 +113,10 @@ arithmetic. Other operators reject `opt()` arguments.
 
 ## Wiring syntax
 
-C++ wiring points support binary `+`, `-`, `*`, unary `+` and `-`, and
-`==`, `!=`, `<`, `<=`, `>`, `>=`. Use `operators::abs()` for absolute value.
+C++ wiring points support binary `+`, `-`, `*`, `/`, `%`, unary `+` and `-`,
+and `==`, `!=`, `<`, `<=`, `>`, `>=`. Use `operators::floordiv()`,
+`operators::pow()`, `operators::round()`, and `operators::abs()` for operations
+without C++ wiring syntax.
 These operations also accept scalar operands and return `wp<>`.
 
 For Boolean graph operations, C++ `!`, `&&`, and `||` call `not_`, `and_`, and
@@ -95,9 +127,10 @@ auto bounded = (x > i64{0}) && (x < i64{10});
 auto negated = !bounded;
 ```
 
-Python uses the named Boolean operators because its `and`, `or`, and `not`
-keywords cannot be overloaded. It uses `abs(point)` for absolute value and
-writes two comparisons explicitly:
+Python uses `/`, `//`, `%`, and `**` for division, floor division, modulo, and
+power. `round(point, ndigits)` and `abs(point)` call their corresponding
+operators. Python uses the named Boolean operators because its `and`, `or`,
+and `not` keywords cannot be overloaded. Write two comparisons explicitly:
 
 ```python
 bounded = bg.operators.and_(x > 0, x < 10)

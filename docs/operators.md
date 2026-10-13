@@ -202,7 +202,8 @@ Resolvers and requirements receive a read-only wiring-argument view. It
 provides argument names and presence, original argument types, available
 resolved types, the current type map, and wired scalar values. Arguments can be
 addressed by index or name. Scalar access through this view records the reads
-required by the resolution cache.
+required by the resolution cache. `resolved_output_type()` returns the resolved
+time-series output type, or `nullptr` for a sink signature.
 
 `WiringTemplate::resolve_additional_types` is the engine- and extension-facing
 hook for type mappings needed by template metadata. It runs after signature

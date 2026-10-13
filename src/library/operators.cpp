@@ -7,6 +7,12 @@ namespace bg::operators {
 decltype(add) add{"add", {"lhs", "rhs"}};
 decltype(sub) sub{"sub", {"lhs", "rhs"}};
 decltype(mul) mul{"mul", {"lhs", "rhs"}};
+decltype(div) div{"div", {"lhs", "rhs"}};
+decltype(floordiv) floordiv{"floordiv", {"lhs", "rhs"}};
+decltype(mod) mod{"mod", {"lhs", "rhs"}};
+decltype(pow) pow{"pow", {"lhs", "rhs"}};
+decltype(round) round{"round", {"value", "ndigits"}};
+decltype(convert) convert{"convert", {"value"}};
 decltype(pos) pos{"pos", {"value"}};
 decltype(neg) neg{"neg", {"value"}};
 decltype(abs) abs{"abs", {"value"}};

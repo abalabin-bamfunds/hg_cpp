@@ -411,6 +411,13 @@ nb::object wire_graph(const PythonGraphDefinition &definition, nb::sequence fixe
 
 } // namespace
 
+const Type &details::python_type_argument(nb::handle value) {
+    if (nb::isinstance<TypeDescriptor>(value)) {
+        return nb::cast<const TypeDescriptor &>(value).type();
+    }
+    return scalar_conversions().type_from_python(value);
+}
+
 void bind_core(nb::module_ &module) {
     if (!nb::register_module(module)) {
         nb::raise_python_error();
@@ -550,6 +557,11 @@ void bind_core(nb::module_ &module) {
     const auto add_operator = details::PythonOperator{operators::add};
     const auto sub_operator = details::PythonOperator{operators::sub};
     const auto mul_operator = details::PythonOperator{operators::mul};
+    const auto div_operator = details::PythonOperator{operators::div};
+    const auto floordiv_operator = details::PythonOperator{operators::floordiv};
+    const auto mod_operator = details::PythonOperator{operators::mod};
+    const auto pow_operator = details::PythonOperator{operators::pow};
+    const auto round_operator = details::PythonOperator{operators::round};
     const auto pos_operator = details::PythonOperator{operators::pos};
     const auto neg_operator = details::PythonOperator{operators::neg};
     const auto abs_operator = details::PythonOperator{operators::abs};
@@ -607,12 +619,60 @@ void bind_core(nb::module_ &module) {
                  return mul_operator.call(other, nb::cast(self));
              },
              nb::is_operator())
+        .def("__truediv__",
+             [div_operator](const PythonWiringPoint &self, nb::handle other) {
+                 return div_operator.call(nb::cast(self), other);
+             },
+             nb::is_operator())
+        .def("__rtruediv__",
+             [div_operator](const PythonWiringPoint &self, nb::handle other) {
+                 return div_operator.call(other, nb::cast(self));
+             },
+             nb::is_operator())
+        .def("__floordiv__",
+             [floordiv_operator](const PythonWiringPoint &self, nb::handle other) {
+                 return floordiv_operator.call(nb::cast(self), other);
+             },
+             nb::is_operator())
+        .def("__rfloordiv__",
+             [floordiv_operator](const PythonWiringPoint &self, nb::handle other) {
+                 return floordiv_operator.call(other, nb::cast(self));
+             },
+             nb::is_operator())
+        .def("__mod__",
+             [mod_operator](const PythonWiringPoint &self, nb::handle other) {
+                 return mod_operator.call(nb::cast(self), other);
+             },
+             nb::is_operator())
+        .def("__rmod__",
+             [mod_operator](const PythonWiringPoint &self, nb::handle other) {
+                 return mod_operator.call(other, nb::cast(self));
+             },
+             nb::is_operator())
+        .def("__pow__",
+             [pow_operator](const PythonWiringPoint &self, nb::handle other) {
+                 return pow_operator.call(nb::cast(self), other);
+             },
+             nb::is_operator())
+        .def("__rpow__",
+             [pow_operator](const PythonWiringPoint &self, nb::handle other) {
+                 return pow_operator.call(other, nb::cast(self));
+             },
+             nb::is_operator())
         .def("__pos__", [pos_operator](const PythonWiringPoint &self) { return pos_operator.call(nb::cast(self)); },
              nb::is_operator())
         .def("__neg__", [neg_operator](const PythonWiringPoint &self) { return neg_operator.call(nb::cast(self)); },
              nb::is_operator())
         .def("__abs__", [abs_operator](const PythonWiringPoint &self) { return abs_operator.call(nb::cast(self)); },
              nb::is_operator())
+        .def("__round__",
+             [round_operator](const PythonWiringPoint &self, nb::object ndigits) {
+                 if (ndigits.is_none()) {
+                     return round_operator.call(nb::cast(self));
+                 }
+                 return round_operator.call(nb::cast(self), ndigits);
+             },
+             "ndigits"_a = nb::none(), nb::is_operator())
         .def("__eq__",
              [eq_operator](const PythonWiringPoint &self, nb::handle other) {
                  return eq_operator.call(nb::cast(self), other);

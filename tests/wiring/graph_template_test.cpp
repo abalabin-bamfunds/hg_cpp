@@ -3,6 +3,7 @@
 #include <bg/graph/graph_wiring.hpp>
 #include <bg/graph/wiring_context.hpp>
 #include <bg/node.hpp>
+#include <bg/operator.hpp>
 #include <bg/testing/test_graph.hpp>
 #include <bg/type/scalar_type.hpp>
 #include <bg/type/time_series_list_type.hpp>
@@ -14,6 +15,7 @@
 #include <concepts>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <utility>
 
 namespace {
@@ -97,6 +99,103 @@ TEST_CASE("a graph template can omit its output", "[graph_template][feature:wiri
     REQUIRE(nodes.size() == 2);
     REQUIRE(nodes[1].path().parent != nullptr);
     CHECK(nodes[1].path().parent->name.text() == "scale_sink_graph");
+}
+
+TEST_CASE("callable graph requirements reject before wiring the body",
+          "[graph_template][feature:wiring][feature:operator]") {
+    auto requirement_calls = 0;
+    auto body_calls = 0;
+    const auto positive_only = bg::graph(
+        "name"_n = "positive_only",
+        bg::require = [&](const bg::WiringArguments &arguments) {
+            ++requirement_calls;
+            return arguments.resolved_output_type() == &bg::TS<float>::type() &&
+                   bg::scalar_cast<bg::i64>(*arguments.scalar(0)).value() > 0;
+        },
+        [&](bg::i64) {
+            ++body_calls;
+            return source();
+        });
+
+    auto wiring = bg::GraphWiring{};
+    {
+        const auto context = bg::WiringContext{wiring};
+        (void)positive_only(1);
+        CHECK_THROWS_AS(positive_only(-1), bg::WiringError);
+    }
+    CHECK(requirement_calls == 2);
+    CHECK(body_calls == 1);
+
+    const auto sink = bg::graph(
+        "name"_n = "requirement_sink",
+        bg::require = [](const bg::WiringArguments &arguments) { return arguments.resolved_output_type() == nullptr; },
+        [](bg::i64) {});
+    {
+        const auto context = bg::WiringContext{wiring};
+        (void)sink(1);
+    }
+
+    auto operation = bg::operator_<auto(bg::SCALAR) -> bg::TS<float>>{"requirement_fallback", {"value"}};
+    auto selected = std::string_view{};
+    operation.overload(bg::graph(
+        "name"_n = "positive",
+        bg::require = [](const bg::WiringArguments &arguments) {
+            return bg::scalar_cast<bg::i64>(*arguments.scalar(0)).value() > 0;
+        },
+        [&](bg::i64) {
+            selected = "positive";
+            return source();
+        }));
+    operation.overload(bg::graph(
+        "name"_n = "fallback",
+        bg::require = [](const bg::WiringArguments &arguments) {
+            return bg::scalar_cast<bg::i64>(*arguments.scalar(0)).value() <= 0;
+        },
+        [&](bg::i64) {
+            selected = "fallback";
+            return source();
+        }));
+
+    {
+        const auto context = bg::WiringContext{wiring};
+        (void)operation(2);
+        CHECK(selected == "positive");
+        (void)operation(-2);
+        CHECK(selected == "fallback");
+    }
+}
+
+TEST_CASE("callable graph requirements return rejection diagnostics with graph labels",
+          "[graph_template][feature:wiring]") {
+    const auto guarded = bg::graph(
+        "name"_n = "guarded",
+        "label"_n = [](bg::i64 value) { return std::string{"value="} + std::to_string(value); },
+        bg::require = [](const bg::WiringArguments &) { return bg::reject("value is not accepted"); },
+        [](bg::i64) { return source(); });
+
+    auto wiring = bg::GraphWiring{};
+    const auto context = bg::WiringContext{wiring};
+    try {
+        (void)guarded(3);
+        FAIL("expected graph requirement rejection");
+    } catch (const bg::WiringError &error) {
+        CHECK(std::string{error.what()}.contains("value is not accepted"));
+    }
+
+    const auto accepted = bg::graph(
+        "name"_n = "accepted_label",
+        "label"_n = [](bg::i64 value) { return std::string{"value="} + std::to_string(value); },
+        bg::require = [](const bg::WiringArguments &) { return bg::accept; },
+        [](bg::i64) { return source(); });
+    auto accepted_wiring = bg::GraphWiring{};
+    {
+        const auto accepted_context = bg::WiringContext{accepted_wiring};
+        (void)accepted(4);
+    }
+    (void)accepted_wiring.complete_pending_wiring();
+    REQUIRE(accepted_wiring.nodes().size() == 1);
+    REQUIRE(accepted_wiring.nodes()[0].path().parent != nullptr);
+    CHECK(accepted_wiring.nodes()[0].path().parent->label.text() == "value=4");
 }
 
 TEST_CASE("callable output guarantee inference is local to its node signature",

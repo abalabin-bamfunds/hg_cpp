@@ -1,3 +1,5 @@
+import math
+import random
 import subprocess
 import sys
 
@@ -99,6 +101,157 @@ def test_python_operator_syntax_and_named_boolean_operators():
 
     assert bg.test_graph(arithmetic, [5.0, 2.0], [2.0, 3.0]) == [6.0, 3.0]
     assert bg.test_graph(comparison, [1, 4, 3], [2, 3, -1]) == [True, False, False]
+
+
+def test_numeric_operator_syntax_and_explicit_convert_target():
+    @bg.graph
+    def divide(lhs: bg.TS[int], rhs: bg.TS[int]) -> bg.TS[float]:
+        return lhs / rhs
+
+    @bg.graph
+    def floor_divide(lhs: bg.TS[int], rhs: bg.TS[int]) -> bg.TS[int]:
+        return lhs // rhs
+
+    @bg.graph
+    def modulo(lhs: bg.TS[int], rhs: bg.TS[int]) -> bg.TS[int]:
+        return lhs % rhs
+
+    @bg.graph
+    def power(value: bg.TS[float]) -> bg.TS[float]:
+        return value**2.0
+
+    @bg.graph
+    def round_value(value: bg.TS[float]) -> bg.TS[float]:
+        return round(value, 2)
+
+    @bg.graph
+    def convert(value: bg.TS[int]) -> bg.TS[float]:
+        return bg.operators.convert[bg.TS[float]](value)
+
+    assert bg.test_graph(divide, [-7], [3]) == [-7.0 / 3.0]
+    assert bg.test_graph(floor_divide, [-7, 7], [3, -3]) == [-3, -3]
+    assert bg.test_graph(modulo, [-7, 7], [3, -3]) == [2, -2]
+    assert bg.test_graph(power, [-2.0, 3.0]) == [4.0, 9.0]
+    assert bg.test_graph(round_value, [2.675, 1.125, 1.375]) == [2.67, 1.12, 1.38]
+    assert bg.test_graph(convert, [2, -3]) == [2.0, -3.0]
+
+
+def test_integer_division_matches_python_for_full_i64_domain():
+    @bg.graph
+    def divide(lhs: bg.TS[int], rhs: bg.TS[int]) -> bg.TS[float]:
+        return lhs / rhs
+
+    minimum = -(1 << 63)
+    maximum = (1 << 63) - 1
+    two_to_53 = 1 << 53
+    two_to_54 = 1 << 54
+    lhs = [
+        two_to_53 + 1,
+        two_to_53 + 3,
+        9007199254740993,
+        two_to_54 - 1,
+        maximum,
+        minimum,
+        1,
+        0,
+        27021597764222979,
+    ]
+    rhs = [two_to_53, two_to_53, 3, 1, 1, -1, maximum, minimum, 864691128455135232]
+
+    random_values = random.Random(0xD1_2026)
+    for _ in range(2048):
+        lhs.append(random_values.randint(minimum, maximum))
+        denominator = random_values.randint(minimum, maximum)
+        rhs.append(denominator or 1)
+
+    for _ in range(2048):
+        lhs_bits = random_values.randrange(1, 64)
+        rhs_bits = random_values.randrange(1, 64)
+        numerator = (1 << (lhs_bits - 1)) | random_values.getrandbits(lhs_bits - 1)
+        denominator = (1 << (rhs_bits - 1)) | random_values.getrandbits(rhs_bits - 1)
+        lhs.append(-numerator if random_values.getrandbits(1) else numerator)
+        rhs.append(-denominator if random_values.getrandbits(1) else denominator)
+
+    actual = bg.test_graph(divide, lhs, rhs)
+    expected = [numerator / denominator for numerator, denominator in zip(lhs, rhs)]
+    assert [value.hex() for value in actual] == [value.hex() for value in expected]
+
+    negative_zero = bg.test_graph(divide, [0], [minimum])[0]
+    assert negative_zero == 0.0
+    assert math.copysign(1.0, negative_zero) == -1.0
+
+
+def test_reflected_numeric_operator_syntax():
+    @bg.graph
+    def divide(value: bg.TS[int]) -> bg.TS[float]:
+        return 7 / value
+
+    @bg.graph
+    def floor_divide(value: bg.TS[int]) -> bg.TS[int]:
+        return 7 // value
+
+    @bg.graph
+    def modulo(value: bg.TS[int]) -> bg.TS[int]:
+        return 7 % value
+
+    @bg.graph
+    def power(value: bg.TS[int]) -> bg.TS[int]:
+        return 2**value
+
+    assert bg.test_graph(divide, [2, -2]) == [3.5, -3.5]
+    assert bg.test_graph(floor_divide, [2, -2]) == [3, -4]
+    assert bg.test_graph(modulo, [3, -3]) == [1, -2]
+    assert bg.test_graph(power, [2, 3]) == [4, 8]
+
+
+def test_mapped_python_operator_wrappers_are_reusable_and_isolated():
+    to_float = bg.operators.convert[bg.TS[float]]
+
+    @bg.graph
+    def convert_first(value: bg.TS[int]) -> bg.TS[float]:
+        return to_float(value)
+
+    @bg.graph
+    def convert_second(value: bg.TS[int]) -> bg.TS[float]:
+        return to_float(value)
+
+    assert bg.test_graph(convert_first, [1, 2]) == [1.0, 2.0]
+    assert bg.test_graph(convert_second, [3, 4]) == [3.0, 4.0]
+    with pytest.raises(ValueError, match="does not match operator parameter"):
+        to_float[bg.TS[int]]
+
+    @bg.graph
+    def explicit_constant() -> bg.TS[bool]:
+        return bg.operators.eq[int](1, 1)
+
+    assert bg.test_graph(explicit_constant) == [True]
+
+
+def test_round_matches_python_for_deterministic_binary64_samples():
+    @bg.graph
+    def round_value(value: bg.TS[float], digits: bg.TS[int]) -> bg.TS[float]:
+        return round(value, digits)
+
+    random_values = random.Random(0xB6_2026)
+    values = [random_values.uniform(-1e120, 1e120) for _ in range(1000)]
+    digits = [random_values.randrange(-100, 101) for _ in values]
+    assert bg.test_graph(round_value, values, digits) == [round(value, ndigits) for value, ndigits in zip(values, digits)]
+
+
+def test_convert_requires_a_compatible_explicit_full_time_series_type():
+    @bg.graph
+    def missing_target(value: bg.TS[int]) -> bg.TS[float]:
+        return bg.operators.convert(value)
+
+    @bg.graph
+    def wrong_target(value: bg.TS[int]) -> bg.TS[str]:
+        return bg.operators.convert[bg.TS[str]](value)
+
+    with pytest.raises(ValueError, match="Cannot resolve operator convert"):
+        bg.test_graph(missing_target, [1])
+
+    with pytest.raises(ValueError, match="Cannot resolve operator convert"):
+        bg.test_graph(wrong_target, [1])
 
 
 def test_symbol_equality_handles_scalar_mixed_and_time_series_inputs():

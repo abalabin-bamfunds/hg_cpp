@@ -361,7 +361,8 @@ declarations attach their constraints automatically. Matching checks both the
 parameter type and its constraint before invoking the graph function.
 
 A lambda graph requires a `"name"_n` argument. Its optional label uses
-`"label"_n`. The graph function is the only positional argument:
+`"label"_n`; its optional requirement uses `bg::require`. The graph function is
+the only positional argument:
 
 ```cpp
 using namespace bg::literals;
@@ -371,6 +372,9 @@ inline const auto scaled = bg::graph(
     "label"_n = [](bg::wp<bg::TS<float>>, float factor) {
         return std::to_string(factor);
     },
+    bg::require = [](const bg::WiringArguments &arguments) {
+        return bg::scalar_cast<float>(*arguments.scalar(1)).value() > 0.0F;
+    },
     [](bg::wp<bg::TS<float>> input,
        float factor) -> bg::wp<bg::TS<float>> {
         return scale(input, factor);
@@ -378,7 +382,10 @@ inline const auto scaled = bg::graph(
 ```
 
 The label function receives the graph function's arguments. Lambda signature
-parameters use their zero-based positions as names.
+parameters use their zero-based positions as names. The requirement receives a
+`WiringArguments` view after signature resolution and before graph-body wiring.
+See [operator requirements](operators.md#requirements) for the shared callback
+protocol and caching rules.
 
 An aggregate struct provides the graph name and parameter names through
 reflection. Its fields declare the parameters. Its `wire()` function constructs

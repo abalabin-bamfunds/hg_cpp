@@ -2,6 +2,7 @@
 #include <bg/graph/compiled_graph.hpp>
 #include <bg/graph/graph_wiring.hpp>
 #include <bg/graph/wiring_context.hpp>
+#include <bg/graph/wiring_error.hpp>
 #include <bg/library.hpp>
 #include <bg/scalar/value.hpp>
 #include <bg/time_series/tsb/tsb.hpp>
@@ -12,12 +13,15 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <array>
+#include <cmath>
 #include <concepts>
+#include <cstdint>
 #include <limits>
 #include <optional>
 #include <stdexcept>
 
 using namespace bg;
+using namespace bg::literals;
 
 namespace {
 
@@ -42,6 +46,343 @@ template <typename T>
 concept DirectListInitializableAsBool = requires(const T &value) { bool{value}; };
 
 } // namespace
+
+TEST_CASE("numeric division, floor division, and modulo follow signed arithmetic",
+          "[feature:operator][series:value][scalar:i64][scalar:floating-point]") {
+    const auto integer_division = [](wp<TS<i64>> lhs, wp<TS<i64>> rhs) { return operators::div(lhs, rhs); };
+    const auto cxx_integer_division = [](wp<TS<i64>> lhs, wp<TS<i64>> rhs) { return lhs / rhs; };
+    const auto cxx_scalar_left_division = [](wp<TS<i64>> rhs) { return i64{-7} / rhs; };
+    const auto floor_division = [](wp<TS<i64>> lhs, wp<TS<i64>> rhs) { return operators::floordiv(lhs, rhs); };
+    const auto modulo = [](wp<TS<i64>> lhs, wp<TS<i64>> rhs) { return operators::mod(lhs, rhs); };
+    const auto cxx_modulo = [](wp<TS<i64>> lhs, wp<TS<i64>> rhs) { return lhs % rhs; };
+    const auto cxx_scalar_left_modulo = [](wp<TS<i64>> rhs) { return i64{-7} % rhs; };
+    const auto lhs = std::array<i64, 4>{-7, 7, -7, 7};
+    const auto rhs = std::array<i64, 4>{3, -3, -3, 3};
+
+    CHECK(testing::test_graph(integer_division, lhs, rhs)
+              .equals<double>({-7.0 / 3.0, -7.0 / 3.0, 7.0 / 3.0, 7.0 / 3.0}));
+    CHECK(testing::test_graph(cxx_integer_division, lhs, rhs)
+              .equals<double>({-7.0 / 3.0, -7.0 / 3.0, 7.0 / 3.0, 7.0 / 3.0}));
+    CHECK(testing::test_graph(cxx_scalar_left_division, std::array<i64, 2>{3, -3})
+              .equals<double>({-7.0 / 3.0, -7.0 / -3.0}));
+    CHECK(testing::test_graph(floor_division, lhs, rhs).equals<i64>({-3, -3, 2, 2}));
+    CHECK(testing::test_graph(modulo, lhs, rhs).equals<i64>({2, -2, -1, 1}));
+    CHECK(testing::test_graph(cxx_modulo, lhs, rhs).equals<i64>({2, -2, -1, 1}));
+    CHECK(testing::test_graph(cxx_scalar_left_modulo, std::array<i64, 2>{3, -3}).equals<i64>({2, -1}));
+
+    const auto mixed_division = [](wp<TS<i64>> value) { return operators::div(value, 2.0); };
+    const auto optional_division = [](wp<TS<i64>> lhs, wp<TS<i64>> rhs) { return operators::div(opt(lhs), rhs); };
+    const auto optional_modulo = [](wp<TS<i64>> lhs, wp<TS<i64>> rhs) { return operators::mod(opt(lhs), rhs); };
+    CHECK_THROWS_AS(testing::test_graph(mixed_division, std::array<i64, 1>{7}), WiringError);
+    CHECK_THROWS_AS(testing::test_graph(optional_division, lhs, rhs), WiringError);
+    CHECK_THROWS_AS(testing::test_graph(optional_modulo, lhs, rhs), WiringError);
+
+    const auto min_over_negative_one = [] { return operators::div(std::numeric_limits<i64>::min(), i64{-1}); };
+    const auto floor_min_over_negative_one = [] {
+        return operators::floordiv(std::numeric_limits<i64>::min(), i64{-1});
+    };
+    const auto modulo_min_over_negative_one = [] {
+        return operators::mod(std::numeric_limits<i64>::min(), i64{-1});
+    };
+    CHECK(testing::test_graph(min_over_negative_one)
+              .equals<double>({static_cast<double>(std::uint64_t{1} << 63)}));
+    CHECK(testing::test_graph(floor_min_over_negative_one).equals<i64>({std::numeric_limits<i64>::min()}));
+    CHECK(testing::test_graph(modulo_min_over_negative_one).equals<i64>({0}));
+
+    const auto divide_by_zero = [] { return operators::div(i64{1}, i64{0}); };
+    const auto floor_divide_by_zero = [] { return operators::floordiv(i64{1}, i64{0}); };
+    const auto modulo_by_zero = [] { return operators::mod(i64{1}, i64{0}); };
+    const auto divide_by_negative_zero = [] { return operators::div(1.0, -0.0); };
+    const auto floor_divide_by_negative_zero = [] { return operators::floordiv(1.0, -0.0); };
+    const auto modulo_by_negative_zero = [] { return operators::mod(1.0, -0.0); };
+    CHECK_THROWS_AS(testing::test_graph(divide_by_zero), std::domain_error);
+    CHECK_THROWS_AS(testing::test_graph(floor_divide_by_zero), std::domain_error);
+    CHECK_THROWS_AS(testing::test_graph(modulo_by_zero), std::domain_error);
+    CHECK_THROWS_AS(testing::test_graph(divide_by_negative_zero), std::domain_error);
+    CHECK_THROWS_AS(testing::test_graph(floor_divide_by_negative_zero), std::domain_error);
+    CHECK_THROWS_AS(testing::test_graph(modulo_by_negative_zero), std::domain_error);
+}
+
+TEST_CASE("integer division rounds the exact quotient to binary64",
+          "[feature:operator][series:value][scalar:i64][scalar:floating-point]") {
+    const auto divide = [](wp<TS<i64>> lhs, wp<TS<i64>> rhs) { return operators::div(lhs, rhs); };
+    constexpr auto two_to_53 = i64{1} << 53;
+    constexpr auto two_to_54 = i64{1} << 54;
+    const auto lhs = std::array<i64, 9>{
+        two_to_53 + 1,
+        two_to_53 + 3,
+        9007199254740993,
+        two_to_54 - 1,
+        std::numeric_limits<i64>::max(),
+        std::numeric_limits<i64>::min(),
+        1,
+        0,
+        27021597764222979,
+    };
+    const auto rhs = std::array<i64, 9>{
+        two_to_53,
+        two_to_53,
+        3,
+        1,
+        1,
+        -1,
+        std::numeric_limits<i64>::max(),
+        std::numeric_limits<i64>::min(),
+        864691128455135232,
+    };
+
+    const auto result = testing::test_graph(divide, lhs, rhs);
+    CHECK(result.equals<double>({1.0, 1.0 + std::ldexp(1.0, -51), 3002399751580331.0,
+                                 std::ldexp(1.0, 54), std::ldexp(1.0, 63), std::ldexp(1.0, 63),
+                                 std::ldexp(1.0, -63), -0.0, 0.03125}));
+    CHECK(std::signbit(scalar_cast<double>(*result[7]).value()));
+}
+
+TEST_CASE("floating floor division preserves Python quotient and modulo rules",
+          "[feature:operator][series:value][scalar:floating-point]") {
+    const auto floor_division = [](wp<TS<double>> lhs, wp<TS<double>> rhs) { return operators::floordiv(lhs, rhs); };
+    const auto modulo = [](wp<TS<double>> lhs, wp<TS<double>> rhs) { return operators::mod(lhs, rhs); };
+    const auto lhs = std::array{1.0, -1.0, 1.0, -1.0};
+    const auto rhs = std::array{0.1, 0.1, -0.1, -0.1};
+
+    CHECK(testing::test_graph(floor_division, lhs, rhs).equals<double>({9.0, -10.0, -10.0, 9.0}));
+    const auto result = testing::test_graph(modulo, lhs, rhs);
+    CHECK(result.equals<double>({std::fmod(1.0, 0.1), 0.1 - std::fmod(1.0, 0.1),
+                                 -0.1 + std::fmod(1.0, 0.1), -std::fmod(1.0, 0.1)}));
+}
+
+TEST_CASE("power and round preserve numeric result types and decimal rules",
+          "[feature:operator][series:value][scalar:i64][scalar:floating-point]") {
+    const auto integer_power = [](wp<TS<i64>> lhs, wp<TS<i64>> rhs) { return operators::pow(lhs, rhs); };
+    const auto floating_power = [](wp<TS<double>> lhs, wp<TS<double>> rhs) { return operators::pow(lhs, rhs); };
+    const auto round_two = [](wp<TS<double>> value) { return operators::round(value, 2); };
+    const auto round_negative = [](wp<TS<double>> value) { return operators::round(value, -23); };
+    const auto round_negative_24 = [](wp<TS<double>> value) { return operators::round(value, -24); };
+    const auto round_negative_25 = [](wp<TS<double>> value) { return operators::round(value, -25); };
+    const auto round_negative_308 = [](wp<TS<double>> value) { return operators::round(value, -308); };
+    const auto round_tens = [](wp<TS<double>> value) { return operators::round(value, -1); };
+    const auto round_hundreds = [](wp<TS<double>> value) { return operators::round(value, -2); };
+    const auto round_scalar = [] { return operators::round(2.675, 2); };
+
+    CHECK(testing::test_graph(integer_power, std::array<i64, 3>{2, -2, 3}, std::array<i64, 3>{10, 3, 0})
+              .equals<i64>({1024, -8, 1}));
+    const auto wrapping_power = [] { return operators::pow(i64{2}, i64{63}); };
+    CHECK(testing::test_graph(wrapping_power).equals<i64>({std::numeric_limits<i64>::min()}));
+    CHECK(testing::test_graph(floating_power, std::array{2.0, -2.0}, std::array{3.0, 4.0})
+              .equals<double>({8.0, 16.0}));
+    CHECK(testing::test_graph(round_scalar).equals<double>({2.67}));
+    CHECK(testing::test_graph(round_two, std::array{2.675, 1.125, 1.375}).equals<double>({2.67, 1.12, 1.38}));
+    CHECK(testing::test_graph(round_negative, std::array{5.0000000000000004e22}).equals<double>({1e23}));
+    CHECK(testing::test_graph(round_negative_24, std::array{1.5e24}).equals<double>({1e24}));
+    CHECK(testing::test_graph(round_negative_25, std::array{2.5e25}).equals<double>({3e25}));
+    CHECK(testing::test_graph(round_negative, std::array{1.5e23}).equals<double>({2e23}));
+    CHECK_THROWS_AS(testing::test_graph(round_negative_308, std::array{1.79e308}), std::overflow_error);
+    CHECK_THROWS_AS(testing::test_graph(round_negative_308, std::array{1.5e308}), std::overflow_error);
+    const auto infinity = std::numeric_limits<double>::infinity();
+    CHECK(testing::test_graph(round_tens,
+                              std::array{std::nextafter(5.0, 0.0), 5.0, std::nextafter(5.0, infinity),
+                                         std::nextafter(25.0, 0.0), 25.0, std::nextafter(25.0, infinity),
+                                         std::nextafter(35.0, 0.0), 35.0, std::nextafter(35.0, infinity)})
+              .equals<double>({0.0, 0.0, 10.0, 20.0, 20.0, 30.0, 30.0, 40.0, 40.0}));
+    CHECK(testing::test_graph(round_hundreds,
+                              std::array{std::nextafter(50.0, 0.0), 50.0, std::nextafter(50.0, infinity)})
+              .equals<double>({0.0, 0.0, 100.0}));
+    const auto round_signed_zero = [](wp<TS<double>> value) { return operators::round(value, 0); };
+    const auto rounded_zero = testing::test_graph(round_signed_zero, std::array{-0.0, -0.1, 0.1});
+    REQUIRE(rounded_zero.size() == 3);
+    CHECK(std::signbit(scalar_cast<double>(*rounded_zero[0]).value()));
+    CHECK(std::signbit(scalar_cast<double>(*rounded_zero[1]).value()));
+    CHECK_FALSE(std::signbit(scalar_cast<double>(*rounded_zero[2]).value()));
+
+    const auto negative_integer_exponent = [] { return operators::pow(i64{2}, i64{-1}); };
+    const auto zero_to_negative_power = [] { return operators::pow(0.0, -1.0); };
+    const auto complex_power = [] { return operators::pow(-2.0, 0.5); };
+    CHECK_THROWS_AS(testing::test_graph(negative_integer_exponent), std::domain_error);
+    CHECK_THROWS_AS(testing::test_graph(zero_to_negative_power), std::domain_error);
+    CHECK_THROWS_AS(testing::test_graph(complex_power), std::domain_error);
+}
+
+TEST_CASE("convert maps a full target type and permits collection overloads",
+          "[feature:operator][feature:type-system][series:value][series:fixed-tsl]") {
+    const auto to_double = [](wp<TS<i64>> value) { return operators::convert[type<TS<double>>](value); };
+    const auto to_integer_from_integer = [](wp<TS<i64>> value) {
+        return operators::convert[type<TS<i64>>](value);
+    };
+    const auto to_integer = [](wp<TS<double>> value) { return operators::convert[type<TS<i64>>](value); };
+    const auto convert_without_target = [](wp<TS<i64>> value) { return operators::convert(value); };
+    CHECK(testing::test_graph(to_double, std::array<i64, 2>{2, -3}).equals<double>({2.0, -3.0}));
+    CHECK(testing::test_graph(to_integer_from_integer, std::array<i64, 2>{2, -3}).equals<i64>({2, -3}));
+    CHECK(testing::test_graph(to_integer, std::array{2.9, -2.9}).equals<i64>({2, -2}));
+    CHECK_THROWS_AS(testing::test_graph(convert_without_target, std::array<i64, 1>{7}), WiringError);
+
+    const auto target_matches = [](const WiringArguments &arguments, const Type &target) {
+        const auto *mapping = arguments.type_map().find(details::type_parameter<operators::CONVERT_RESULT>());
+        const auto *requested = mapping == nullptr ? nullptr : std::get_if<const Type *>(mapping);
+        return requested != nullptr && *requested == &target;
+    };
+    const auto convert_to_integer_list = operators::convert[type<TSL<TS<i64>, 2>>];
+    const auto convert_to_floating_list = operators::convert[type<TSL<TS<double>, 2>>];
+    static auto integer_requirement_calls = 0;
+    static auto integer_body_calls = 0;
+    static auto floating_requirement_calls = 0;
+    static auto floating_body_calls = 0;
+    operators::convert.overload(graph<operators::CONVERT_RESULT>(
+        "name"_n = "fixed_list_integer",
+        require = [target_matches](const WiringArguments &arguments) {
+            ++integer_requirement_calls;
+            return target_matches(arguments, TSL<TS<i64>, 2>::type());
+        },
+        [](wp<TSL<TS<i64>, 2>> value) -> wp<operators::CONVERT_RESULT> {
+            ++integer_body_calls;
+            return wp<operators::CONVERT_RESULT>{value};
+        }));
+    operators::convert.overload(graph<operators::CONVERT_RESULT>(
+        "name"_n = "fixed_list_floating",
+        require = [target_matches](const WiringArguments &arguments) {
+            ++floating_requirement_calls;
+            return target_matches(arguments, TSL<TS<double>, 2>::type());
+        },
+        [](wp<TSL<TS<i64>, 2>> value) -> wp<operators::CONVERT_RESULT> {
+            ++floating_body_calls;
+            return wp<operators::CONVERT_RESULT>{tsl(
+                operators::convert[type<TS<double>>](value[0].as<TS<i64>>()),
+                operators::convert[type<TS<double>>](value[1].as<TS<i64>>()))};
+        }));
+    testing::test_wiring([&] {
+        const auto source = node([](Out<TS<i64>>) {});
+        const auto input = tsl(source(), source());
+        const auto integer_result = convert_to_integer_list(input);
+        const auto integer_calls_after_first_wiring = integer_requirement_calls;
+        const auto repeated_integer_result = convert_to_integer_list(input);
+        CHECK(integer_requirement_calls == integer_calls_after_first_wiring);
+        const auto floating_result = convert_to_floating_list(input);
+
+        CHECK(&integer_result.type() == &TSL<TS<i64>, 2>::type());
+        CHECK(&repeated_integer_result.type() == &TSL<TS<i64>, 2>::type());
+        CHECK(&floating_result.type() == &TSL<TS<double>, 2>::type());
+        CHECK(integer_body_calls > 0);
+        CHECK(floating_body_calls > 0);
+
+        const auto body_calls_before_rejection = integer_body_calls + floating_body_calls;
+        CHECK_THROWS_AS((operators::convert[type<TSL<TS<bool>, 2>>](input)), WiringError);
+        CHECK(integer_body_calls + floating_body_calls == body_calls_before_rejection);
+    });
+
+    testing::test_wiring([&] {
+        const auto const_input = operators::convert[type<TS<i64>>](i64{7});
+        CHECK(&const_input.type() == &TS<i64, TimeSeriesGuarantee::const_>::type());
+    });
+
+    testing::test_wiring([&] {
+        const auto source = node([](Out<TS<i64>>) {});
+        const auto input = source();
+        CHECK_THROWS_AS((operators::convert[type<TS<bool>>](input)), WiringError);
+        CHECK_THROWS_AS((operators::convert[type<TS<bool>>](opt(input))), WiringError);
+    });
+
+    const auto stronger_target = [](wp<TS<i64>> value) {
+        return operators::convert[type<TS<i64, TimeSeriesGuarantee::const_>>](value);
+    };
+    CHECK_THROWS_AS(testing::test_graph(stronger_target, std::array<i64, 1>{7}), WiringError);
+}
+
+TEST_CASE("conversion and division preserve resolved time-series guarantees",
+          "[feature:operator][feature:type-system][feature:wiring][series:value]"
+          "[guarantee:ordinary][guarantee:deduplicated][guarantee:final][guarantee:const]") {
+    const auto ordinary_source = node([](Out<TS<i64>>) {});
+    const auto deduplicated_source = node([](Out<TS<i64, TimeSeriesGuarantee::deduplicated>>) {});
+    const auto final_source = node([](Out<TS<i64, TimeSeriesGuarantee::final>>) {});
+    const auto constant_source = node([](Out<TS<i64, TimeSeriesGuarantee::const_>>) {});
+
+    testing::test_wiring([&] {
+        const auto ordinary_input = ordinary_source();
+        const auto ordinary_conversion = operators::convert[type<TS<double>>](ordinary_input);
+        const auto ordinary_quotient = operators::div(ordinary_input, ordinary_input);
+        CHECK(&ordinary_conversion.type() == &TS<double>::type());
+        CHECK(&ordinary_quotient.type() == &TS<double>::type());
+
+        const auto deduplicated_input = deduplicated_source();
+        const auto deduplicated_conversion =
+            operators::convert[type<TS<double, TimeSeriesGuarantee::deduplicated>>](deduplicated_input);
+        const auto weakened_deduplicated_conversion = operators::convert[type<TS<double>>](deduplicated_input);
+        const auto deduplicated_quotient = operators::div(deduplicated_input, deduplicated_input);
+        CHECK(&deduplicated_conversion.type() == &TS<double, TimeSeriesGuarantee::deduplicated>::type());
+        CHECK(&weakened_deduplicated_conversion.type() == &TS<double, TimeSeriesGuarantee::deduplicated>::type());
+        CHECK(&deduplicated_quotient.type() == &TS<double, TimeSeriesGuarantee::deduplicated>::type());
+
+        const auto final_input = final_source();
+        const auto final_conversion =
+            operators::convert[type<TS<double, TimeSeriesGuarantee::final>>](final_input);
+        const auto weakened_final_conversion = operators::convert[type<TS<double>>](final_input);
+        const auto final_quotient = operators::div(final_input, final_input);
+        CHECK(&final_conversion.type() == &TS<double, TimeSeriesGuarantee::final>::type());
+        CHECK(&weakened_final_conversion.type() == &TS<double, TimeSeriesGuarantee::final>::type());
+        CHECK(&final_quotient.type() == &TS<double, TimeSeriesGuarantee::final>::type());
+
+        const auto constant_input = constant_source();
+        const auto constant_conversion =
+            operators::convert[type<TS<double, TimeSeriesGuarantee::const_>>](constant_input);
+        const auto constant_quotient = operators::div(constant_input, constant_input);
+        CHECK(&constant_conversion.type() == &TS<double, TimeSeriesGuarantee::const_>::type());
+        CHECK(&constant_quotient.type() == &TS<double, TimeSeriesGuarantee::const_>::type());
+    });
+}
+
+TEST_CASE("conversion observes the guarantee of a referenced value",
+          "[feature:operator][feature:reference][feature:type-system][series:value]"
+          "[guarantee:ordinary][guarantee:final][binding:reference-to-value]") {
+    const auto source = node([](Out<TS<i64, TimeSeriesGuarantee::final>>) {});
+    const auto reference = node([](In<REF<TS<i64, TimeSeriesGuarantee::final>>> input,
+                                   Out<REF<TS<i64, TimeSeriesGuarantee::final>>> output) { output.copy(input); });
+
+    testing::test_wiring([&] {
+        const auto input = reference(source());
+        const auto ordinary_conversion = operators::convert[type<TS<double>>](input);
+        CHECK(&ordinary_conversion.type() == &TS<double>::type());
+        CHECK_THROWS_AS((operators::convert[type<TS<double, TimeSeriesGuarantee::final>>](input)), WiringError);
+    });
+}
+
+TEST_CASE("conversion revalidates after an invalid input and emits equal values",
+          "[feature:operator][feature:validity][series:value][validity:required]"
+          "[transition:invalidation][transition:revalidation]") {
+    struct invalidating_source {
+        In<TS<i64>> value;
+        In<TS<bool>> invalidate;
+        Out<TS<i64>> output;
+
+        void evaluate() const {
+            if (*invalidate) {
+                output.invalidate();
+                return;
+            }
+
+            output.set(*value);
+        }
+    };
+
+    const auto source = node<invalidating_source>();
+    const auto convert = [&](wp<TS<i64>> value, wp<TS<bool>> invalidate) {
+        return operators::convert[type<TS<double>>](source(value, invalidate));
+    };
+
+    CHECK(testing::test_graph(convert, std::array<i64, 4>{1, 1, 1, 1}, std::array{false, true, false, false})
+              .equals<double>({1.0, std::nullopt, 1.0, 1.0}));
+}
+
+TEST_CASE("numeric conversion checks i64 boundaries and non-finite values",
+          "[feature:operator][series:value][scalar:i64][scalar:floating-point]") {
+    const auto to_integer = [](wp<TS<double>> value) { return operators::convert[type<TS<i64>>](value); };
+    const auto minimum = -std::ldexp(1.0, 63);
+    CHECK(testing::test_graph(to_integer, std::array{minimum}).equals<i64>({std::numeric_limits<i64>::min()}));
+    CHECK_THROWS_AS(testing::test_graph(to_integer, std::array{std::ldexp(1.0, 63)}), std::overflow_error);
+    CHECK_THROWS_AS(testing::test_graph(to_integer, std::array{std::numeric_limits<double>::infinity()}),
+                    std::overflow_error);
+    CHECK_THROWS_AS(testing::test_graph(to_integer, std::array{-std::numeric_limits<double>::infinity()}),
+                    std::overflow_error);
+    CHECK_THROWS_AS(testing::test_graph(to_integer, std::array{std::numeric_limits<double>::quiet_NaN()}),
+                    std::domain_error);
+}
 
 TEST_CASE("subtraction handles values and timestamp differences",
           "[feature:operator][series:value][scalar:i64][scalar:evaluation-time][scalar:timedelta]") {

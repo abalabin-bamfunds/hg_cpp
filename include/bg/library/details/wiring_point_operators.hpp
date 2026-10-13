@@ -43,6 +43,18 @@ auto operator*(LHS &&lhs, RHS &&rhs) {
 
 template <typename LHS, typename RHS>
     requires details::library_binary_wiring_operands<LHS, RHS>
+auto operator/(LHS &&lhs, RHS &&rhs) {
+    return operators::div(std::forward<LHS>(lhs), std::forward<RHS>(rhs));
+}
+
+template <typename LHS, typename RHS>
+    requires details::library_binary_wiring_operands<LHS, RHS>
+auto operator%(LHS &&lhs, RHS &&rhs) {
+    return operators::mod(std::forward<LHS>(lhs), std::forward<RHS>(rhs));
+}
+
+template <typename LHS, typename RHS>
+    requires details::library_binary_wiring_operands<LHS, RHS>
 auto operator==(LHS &&lhs, RHS &&rhs) {
     return operators::eq(std::forward<LHS>(lhs), std::forward<RHS>(rhs));
 }

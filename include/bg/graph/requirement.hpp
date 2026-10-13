@@ -2,6 +2,7 @@
 
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <utility>
 
 namespace bg {
@@ -31,5 +32,28 @@ inline const RequirementResult accept{true};
 [[nodiscard]] inline RequirementResult requirement_result(bool accepted) {
     return {accepted};
 }
+
+namespace details {
+
+template <typename Function> struct CallableRequirement {
+    Function function;
+};
+
+template <typename T> struct is_callable_requirement : std::false_type {};
+
+template <typename Function> struct is_callable_requirement<CallableRequirement<Function>> : std::true_type {};
+
+template <typename T>
+inline constexpr bool is_callable_requirement_v = is_callable_requirement<std::remove_cvref_t<T>>::value;
+
+struct CallableRequirementName {
+    template <typename Function> constexpr auto operator=(Function &&function) const {
+        return CallableRequirement<std::decay_t<Function>>{std::forward<Function>(function)};
+    }
+};
+
+} // namespace details
+
+inline constexpr auto require = details::CallableRequirementName{};
 
 } // namespace bg

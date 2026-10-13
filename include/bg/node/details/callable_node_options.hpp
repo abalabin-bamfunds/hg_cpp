@@ -1,5 +1,7 @@
 #pragma once
 
+#include <bg/graph/requirement.hpp>
+
 #include <concepts>
 #include <type_traits>
 #include <utility>
@@ -7,10 +9,6 @@
 namespace bg::details {
 
 template <typename Function> struct CallableEvaluation {
-    Function function;
-};
-
-template <typename Function> struct CallableRequirement {
     Function function;
 };
 
@@ -27,13 +25,6 @@ struct CallableWiringDeduplication {
 struct CallableStartScheduling {
     bool enabled;
 };
-
-template <typename T> struct is_callable_requirement : std::false_type {};
-
-template <typename Function> struct is_callable_requirement<CallableRequirement<Function>> : std::true_type {};
-
-template <typename T>
-inline constexpr bool is_callable_requirement_v = is_callable_requirement<std::remove_cvref_t<T>>::value;
 
 template <typename T> struct is_callable_resolver : std::false_type {};
 
@@ -66,12 +57,6 @@ struct CallableEvaluationName {
     }
 };
 
-struct CallableRequirementName {
-    template <typename Function> constexpr auto operator=(Function &&function) const {
-        return CallableRequirement<std::decay_t<Function>>{std::forward<Function>(function)};
-    }
-};
-
 struct CallableWiringDeduplicationName {
     constexpr auto operator=(bool enabled) const noexcept { return CallableWiringDeduplication{enabled}; }
 };
@@ -91,7 +76,6 @@ template <typename Declaration> struct CallableResolverName {
 namespace bg {
 
 inline constexpr auto eval = details::CallableEvaluationName{};
-inline constexpr auto require = details::CallableRequirementName{};
 inline constexpr auto deduplicate_wiring = details::CallableWiringDeduplicationName{};
 inline constexpr auto schedule_on_start = details::CallableStartSchedulingName{};
 

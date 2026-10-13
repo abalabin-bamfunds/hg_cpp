@@ -173,6 +173,7 @@ graph compilation or evaluation.
 - wiring paths, labels, and diagnostics
 - node-call deduplication, opt-out, and identity inputs
 - operator overload applicability, selection, on-demand metadata and requirement resolvers, error handling, and caching
+- graph requirements, including resolved scalar inspection, rejection before body wiring, overload fallback, and diagnostics
 - `opt` argument matching, required-input preference, cache separation, named arguments, and variadic forwarding
 - required scalar preference over absence-accepting parameters, including
   promoted forms, absent arguments, type specificity, conflicting preferences,
@@ -297,6 +298,9 @@ For each reusable node and graph, test:
 
 - arithmetic across scalar and time series arguments, exact type matching,
   integer and temporal wraparound, and borrowed string construction
+- conversion between scalar time series, full target type matching including
+  guarantees and collection results, reference-observed guarantees, and
+  rejection of unsupported targets
 - optional addition and multiplication, initial invalidity, invalidation,
   revalidation, startup scheduling, and distinctions from explicit defaults
 - scalar equality through built-in, compound, collection, and extension views;

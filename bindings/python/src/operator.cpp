@@ -26,7 +26,23 @@ namespace nb = nanobind;
 namespace bg::python {
 namespace details {
 
-PythonOperator::PythonOperator(const Operator &operation) noexcept : operation_{&operation} {}
+PythonOperator::PythonOperator(const Operator &operation) : operation_{&operation} {}
+
+PythonOperator::PythonOperator(const Operator &operation,
+                               std::span<const Type *const> type_parameters)
+    : operation_{&operation}, type_parameters_{type_parameters.begin(), type_parameters.end()} {}
+
+PythonOperator::PythonOperator(const PythonOperator &other)
+    : operation_{other.operation_}, type_parameters_{other.type_parameters_}, type_map_{other.type_map_.copy()} {}
+
+PythonOperator &PythonOperator::operator=(const PythonOperator &other) {
+    if (this != &other) {
+        operation_ = other.operation_;
+        type_parameters_ = other.type_parameters_;
+        type_map_ = other.type_map_.copy();
+    }
+    return *this;
+}
 
 nb::object PythonOperator::call(nb::args positional, nb::kwargs named) const {
     auto &wiring = WiringContext::current().wiring();
@@ -74,7 +90,7 @@ nb::object PythonOperator::call(nb::handle value) const {
 
 nb::object PythonOperator::invoke(std::span<const WiringArgument> arguments) const {
     try {
-        const auto result = static_cast<const WiringTemplate &>(*operation_)(arguments);
+        const auto result = static_cast<const WiringTemplate &>(*operation_)(type_map_, arguments);
         if (!result) {
             return nb::none();
         }
@@ -86,6 +102,41 @@ nb::object PythonOperator::invoke(std::span<const WiringArgument> arguments) con
     }
 }
 
+PythonOperator PythonOperator::map_type_arguments(nb::handle arguments) const {
+    auto values = std::vector<const Type *>{};
+    const auto tuple = PyTuple_Check(arguments.ptr());
+    const auto size = tuple ? PyTuple_GET_SIZE(arguments.ptr()) : Py_ssize_t{1};
+    values.reserve(static_cast<std::size_t>(size));
+    for (auto index = Py_ssize_t{}; index < size; ++index) {
+        const auto value = tuple ? nb::handle{PyTuple_GET_ITEM(arguments.ptr(), index)} : arguments;
+        const auto &type = python_type_argument(value);
+        if (!type.is_resolved()) {
+            throw std::invalid_argument{"an explicit operator type argument must be resolved"};
+        }
+        values.push_back(&type);
+    }
+
+    if (values.size() > type_parameters_.size()) {
+        throw std::invalid_argument{"too many positional type arguments for this operator"};
+    }
+    if (values.empty()) {
+        throw std::invalid_argument{"an operator type argument list cannot be empty"};
+    }
+
+    auto type_map = type_map_.copy();
+    for (auto index = std::size_t{}; index < values.size(); ++index) {
+        if (!type_parameters_[index]->match(*values[index], type_map)) {
+            auto parameter_name = std::string{};
+            type_parameters_[index]->format_name(parameter_name);
+            throw std::invalid_argument{"type argument does not match operator parameter '" + parameter_name + "'"};
+        }
+    }
+
+    auto result = PythonOperator{*operation_, std::span<const Type *const>{type_parameters_}};
+    result.type_map_ = std::move(type_map);
+    return result;
+}
+
 std::string PythonOperator::name() const { return std::string{operation_->signature().name().text()}; }
 
 } // namespace details
@@ -95,12 +146,19 @@ void export_operator(nb::module_ &module, std::string_view python_name, const Op
     module.attr(name.c_str()) = nb::cast(details::PythonOperator{operation});
 }
 
+void export_operator(nb::module_ &module, std::string_view python_name, const Operator &operation,
+                     std::span<const Type *const> type_parameters) {
+    const auto name = std::string{python_name};
+    module.attr(name.c_str()) = nb::cast(details::PythonOperator{operation, type_parameters});
+}
+
 namespace details {
 
 void bind_operators(nb::module_ &module) {
     nb::class_<PythonOperator>(module, "_Operator")
         .def("__call__", static_cast<nb::object (PythonOperator::*)(nb::args, nb::kwargs) const>(
                              &PythonOperator::call))
+        .def("__getitem__", &PythonOperator::map_type_arguments)
         .def_prop_ro("name", &PythonOperator::name)
         .def("__repr__", [](const PythonOperator &operation) { return "operator_(" + operation.name() + ")"; });
 
@@ -108,6 +166,12 @@ void bind_operators(nb::module_ &module) {
     export_operator(operators_module, "add", operators::add);
     export_operator(operators_module, "sub", operators::sub);
     export_operator(operators_module, "mul", operators::mul);
+    export_operator(operators_module, "div", operators::div);
+    export_operator(operators_module, "floordiv", operators::floordiv);
+    export_operator(operators_module, "mod", operators::mod);
+    export_operator(operators_module, "pow", operators::pow);
+    export_operator(operators_module, "round", operators::round);
+    export_operator(operators_module, "convert", operators::convert);
     export_operator(operators_module, "pos", operators::pos);
     export_operator(operators_module, "neg", operators::neg);
     export_operator(operators_module, "abs", operators::abs);
