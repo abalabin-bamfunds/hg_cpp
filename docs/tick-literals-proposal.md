@@ -44,6 +44,10 @@ For example, `{{"a", 2}}` contains one two-element sequence. The expected type
 determines whether that sequence describes a scalar dictionary entry, a time
 series dictionary update, or another supported structure.
 
+`Literal{}` is an empty sequence. `Literal{1}` contains one scalar;
+`Literal(1)` is a scalar leaf. `Literal{{}}` contains one empty sequence.
+Consumers preserve these shapes when interpreting nested values.
+
 Scalar sources retain their source type and representation. Interpretation
 uses the existing [scalar construction rules](scalar-api.md#c-source-values).
 An explicit scalar view or owner retains its semantic type. Unsupported
@@ -286,6 +290,11 @@ accepts copy-list initialization. Use the existing [free collection
 construction](graph-wiring.md#wiring-points) used by `bundle()` and
 `tsl()`. The active `GraphWiring` owns the resulting wiring records; `wp` remains
 pointer-sized. Item values and updates come from the connected upstream outputs.
+
+Preserve existing `wp<TimeSeries>{point}` and cross-declaration re-annotation
+calls: they retain the supplied wiring identity. Collection brace construction
+must distinguish these calls from composition despite C++ initializer-list
+constructor precedence.
 
 Resolve TSB entries by field name. Require each schema field exactly once;
 reject unknown fields and incompatible wiring points. Require the declared
