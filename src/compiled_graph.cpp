@@ -1134,7 +1134,7 @@ RuntimeTypeCounts runtime_type_counts(const WiredNode &node) {
     if (node_plan.invalidation.mode == InvalidationMode::invoke) {
         result.invalidation_function = storage.add<NodeFunction>();
     }
-    if (node.node_template().uses_node_invocation()) {
+    if (node.node_template().uses_node_invocation_parameters() || node_plan.compiled_data.size != 0) {
         result.node_invocation_metadata = storage.add<NodeInvocationMetadata>();
     }
 
@@ -1150,17 +1150,19 @@ RuntimeTypeCounts runtime_type_counts(const WiredNode &node) {
         result.scalar_offsets.push_back(value.offset);
     }
 
-    if (node.node_template().uses_node_invocation()) {
-        result.node_invocation_parameters =
-            storage.add<NodeInvocationParameterMetadata>(node.signature().parameters.size());
+    if (node.node_template().uses_node_invocation_parameters()) {
+        if (!node.signature().parameters.empty()) {
+            result.node_invocation_parameters =
+                storage.add<NodeInvocationParameterMetadata>(node.signature().parameters.size());
+        }
         if (std::ranges::any_of(node_plan.time_series_inputs,
                                 [](const auto &input) { return input.dynamic_activity; })) {
             result.node_invocation_controlled_input_indices =
                 storage.add<std::uint16_t>(node.signature().parameters.size());
         }
-        if (node_plan.compiled_data.size != 0) {
-            result.compiled_data = storage.add_bytes(node_plan.compiled_data.size, node_plan.compiled_data.alignment);
-        }
+    }
+    if (node_plan.compiled_data.size != 0) {
+        result.compiled_data = storage.add_bytes(node_plan.compiled_data.size, node_plan.compiled_data.alignment);
     }
 
     if (default_input_count != 0) {
@@ -2293,10 +2295,12 @@ class CompiledGraphBuilder {
                 std::construct_at(layout.invalidation_function.objects<NodeFunction>(node_storage).data(),
                                   node_plan.invalidation.function);
             }
-            if (node.node_template().uses_node_invocation()) {
-                const auto parameter_offset =
-                    packed_offset(layout.node_invocation_parameters.offset - layout.compiled_node.offset,
-                                  "compiled node metadata reaches 1 GiB");
+            if (layout.node_invocation_metadata.count != 0) {
+                const auto parameter_offset = layout.node_invocation_parameters.count == 0
+                                                  ? std::uint32_t{}
+                                                  : packed_offset(layout.node_invocation_parameters.offset -
+                                                                      layout.compiled_node.offset,
+                                                                  "compiled node metadata reaches 1 GiB");
                 const auto compiled_data_offset =
                     node_plan.compiled_data.size == 0
                         ? std::uint32_t{}
@@ -2305,7 +2309,9 @@ class CompiledGraphBuilder {
                 std::construct_at(layout.node_invocation_metadata.objects<NodeInvocationMetadata>(node_storage).data(),
                                   NodeInvocationMetadata{parameter_offset, compiled_data_offset,
                                                          node_plan.compiled_data.destruction_function});
+            }
 
+            if (node.node_template().uses_node_invocation_parameters()) {
                 auto parameters =
                     layout.node_invocation_parameters.objects<NodeInvocationParameterMetadata>(node_storage);
                 auto controlled_input_indices =
@@ -2331,13 +2337,13 @@ class CompiledGraphBuilder {
                         controlled_input_indices[parameter] = static_cast<std::uint16_t>(controlled);
                     }
                 }
+            }
 
-                if (node_plan.compiled_data.size != 0) {
-                    auto *data = node_storage + layout.compiled_data.offset;
-                    node.node_template().construct_compiled_data(node.signature(), data, compiled_allocator);
-                    if (node_plan.compiled_data.destruction_function != nullptr) {
-                        constructed_node_data.push_back({node_plan.compiled_data.destruction_function, data});
-                    }
+            if (node_plan.compiled_data.size != 0) {
+                auto *data = node_storage + layout.compiled_data.offset;
+                node.node_template().construct_compiled_data(node.signature(), data, compiled_allocator);
+                if (node_plan.compiled_data.destruction_function != nullptr) {
+                    constructed_node_data.push_back({node_plan.compiled_data.destruction_function, data});
                 }
             }
             construct_runtime_types(plan, i, storage);
@@ -2352,7 +2358,7 @@ class CompiledGraphBuilder {
                              !node_plan.subscriptions.controlled_inputs.empty() ||
                                  !node_plan.subscriptions.reference_inputs.empty() ||
                              !node_plan.subscriptions.input_subscribers.empty(),
-                             !node_plan.item_subscriptions.empty(), node.node_template().uses_node_invocation(),
+                             !node_plan.item_subscriptions.empty(), layout.node_invocation_metadata.count != 0,
                              layout.all_valid_metadata.count != 0,
                              static_cast<std::uint32_t>(layout.controlled_inputs.count),
                              !node_plan.input_node_indices.empty(), node_plan.invalidation.mode});

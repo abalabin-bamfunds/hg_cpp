@@ -207,15 +207,26 @@ class RuntimeSignatureNodeTemplate final
 
     bool uses_time_series_input_runtime_type(const ResolvedSignature &signature,
                                              std::size_t parameter_index) const noexcept override {
+        if constexpr (requires { definition_.uses_time_series_input_runtime_type(signature, parameter_index); }) {
+            return definition_.uses_time_series_input_runtime_type(signature, parameter_index);
+        }
         return signature.parameters[parameter_index].type->is_time_series();
     }
 
     bool uses_scalar_input_runtime_type(const ResolvedSignature &signature,
                                         std::size_t parameter_index) const noexcept override {
+        if constexpr (requires { definition_.uses_scalar_input_runtime_type(signature, parameter_index); }) {
+            return definition_.uses_scalar_input_runtime_type(signature, parameter_index);
+        }
         return signature.parameters[parameter_index].type->is_scalar();
     }
 
-    bool uses_output_runtime_type() const noexcept override { return definition_.signature().has_output(); }
+    bool uses_output_runtime_type() const noexcept override {
+        if constexpr (requires { definition_.uses_output_runtime_type(); }) {
+            return definition_.uses_output_runtime_type();
+        }
+        return definition_.signature().has_output();
+    }
 
     const TimeSeriesRuntimeType *output_runtime_type(const ResolvedSignature &signature) const override {
         if constexpr (requires { typename Definition::output_declaration_type; }) {
@@ -227,7 +238,12 @@ class RuntimeSignatureNodeTemplate final
         return nullptr;
     }
 
-    bool uses_node_invocation() const noexcept override { return true; }
+    bool uses_node_invocation_parameters() const noexcept override {
+        if constexpr (requires { definition_.uses_node_invocation_parameters(); }) {
+            return definition_.uses_node_invocation_parameters();
+        }
+        return true;
+    }
 
     bool uses_input_node_indices() const noexcept override {
         if constexpr (requires { Definition::uses_input_node_indices; }) {

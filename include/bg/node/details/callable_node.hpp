@@ -148,8 +148,13 @@ auto make_callable_node_argument(Invocation invocation) {
                 return Field{scalar_api_value<Value>(scalar.template value<ParameterScalar>())};
             }
         } else if constexpr (scalar_view<Field>::value) {
-            const auto value = scalar.value();
-            return Field::from(value.runtime_type(), value.data());
+            if constexpr (scalar_input_requires_runtime_type<ParameterScalar>()) {
+                const auto value = scalar.value();
+                return Field::from(value.runtime_type(), value.data());
+            } else {
+                using Stored = scalar_stored_t<ParameterScalar>;
+                return Field::from(*static_cast<const Stored *>(invocation.scalar_data(ParameterIndex)));
+            }
         } else if constexpr (scalar_input_requires_runtime_type<ParameterScalar>()) {
             return scalar_api_value<Value>(scalar_cast<ParameterScalar>(scalar.value()).value());
         } else {
@@ -240,6 +245,23 @@ template <typename Function, typename... Options> class CallableNodeDefinition {
         invocation.template output_as<output_declaration_type>().invalidate();
     }
 
+    bool uses_node_invocation_parameters() const noexcept { return false; }
+
+    bool uses_time_series_input_runtime_type(const ResolvedSignature &, std::size_t parameter_index) const noexcept {
+        return parameter_uses_runtime_type<true>(parameter_index,
+                                                 std::make_index_sequence<callable<Function>::argument_count>{});
+    }
+
+    bool uses_scalar_input_runtime_type(const ResolvedSignature &, std::size_t parameter_index) const noexcept {
+        return parameter_uses_runtime_type<false>(parameter_index,
+                                                  std::make_index_sequence<callable<Function>::argument_count>{});
+    }
+
+    bool uses_output_runtime_type() const noexcept {
+        return !std::same_as<output_declaration_type, void> &&
+               output_requires_runtime_type<output_declaration_type>;
+    }
+
   private:
     template <std::size_t... Index>
     static decltype(auto) invoke(const Function &function, Invocation invocation, std::index_sequence<Index...>) {
@@ -253,6 +275,31 @@ template <typename Function, typename... Options> class CallableNodeDefinition {
             static const auto value = Function{};
             return value;
         }
+    }
+
+    template <bool TimeSeries, std::size_t... Index>
+    static bool parameter_uses_runtime_type(std::size_t parameter_index, std::index_sequence<Index...>) noexcept {
+        auto result = false;
+        (([&] {
+             using Field = callable_field<Function, Index>;
+             if constexpr (!output_field<Field>::value) {
+                 if (callable_parameter_index<Function, Index>(
+                     std::make_index_sequence<callable<Function>::argument_count>{}) == parameter_index) {
+                     if constexpr (TimeSeries && input_field<Field>::value) {
+                         result = input_requires_runtime_type<Field>;
+                     } else if constexpr (TimeSeries && promoted_field<Field>::value) {
+                         using Input = In<TS<typename promoted_field<Field>::parameter_type>>;
+                         result = input_requires_runtime_type<Input>;
+                     } else if constexpr (!TimeSeries && promoted_field<Field>::value) {
+                         result = scalar_input_requires_runtime_type<typename promoted_field<Field>::parameter_type>();
+                     } else if constexpr (!TimeSeries && scalar_field<Field>::value) {
+                         result = scalar_input_requires_runtime_type<typename scalar_field<Field>::parameter_type>();
+                     }
+                 }
+             }
+         }()),
+         ...);
+        return result;
     }
 
     [[no_unique_address]] Function function_;

@@ -636,6 +636,27 @@ TEST_CASE("callable promoted values and aggregate scalar views preserve provider
     CHECK(test_scalar_provider::alternative_runtime_read_count() > reads_before);
 }
 
+TEST_CASE("typed callable scalar inputs preserve provider runtime reads",
+          "[feature:node-api][feature:scalar-api][feature:scalar-storage][definition:function][declaration:concrete]") {
+    auto storage = Storage{20};
+    const auto source = bg::Scalar<Value>::from(test_scalar_provider::preserving_runtime_type(), &storage);
+    const auto scalar = bg::ScalarValue<Value>{source};
+    const bg::ScalarRuntimeType *received_runtime{};
+    const auto reader = bg::node([&](bg::Scalar<Value> value, bg::Out<bg::TS<bg::i64>> output) {
+        received_runtime = std::addressof(value.runtime_type());
+        output.set(value.value().get());
+    });
+    const auto graph = [&] { return reader(scalar); };
+
+    const auto reads_before = test_scalar_provider::alternative_runtime_read_count();
+    const auto result = bg::testing::test_graph(graph);
+
+    REQUIRE(result[0]);
+    CHECK(result[0]->value() == 20);
+    CHECK(received_runtime == std::addressof(test_scalar_provider::preserving_runtime_type()));
+    CHECK(test_scalar_provider::alternative_runtime_read_count() > reads_before);
+}
+
 TEST_CASE("aggregate promoted scalars select runtime metadata for scalar and time-series bindings",
           "[feature:node-api][feature:scalar-storage][definition:aggregate][declaration:runtime]") {
     auto storage = Storage{41};
@@ -903,8 +924,8 @@ TEST_CASE("a provider without source-aware hooks keeps its alternative-runtime b
     CHECK(copy.view().value() == 42);
 }
 
-TEST_CASE("a callable typed scalar view keeps an erased input runtime descriptor",
-          "[feature:node-api][feature:scalar-api][feature:scalar-storage][definition:function][declaration:runtime]") {
+TEST_CASE("a typed callable scalar view uses its declared storage without alternative layouts",
+          "[feature:node-api][feature:scalar-api][feature:scalar-storage][definition:function][declaration:concrete]") {
     const bg::i64 source_value{42};
     const auto source = bg::Scalar<bg::i64>::from(legacy_integer_runtime(), std::addressof(source_value));
     auto erased = bg::ScalarValue<>{source};
@@ -917,7 +938,7 @@ TEST_CASE("a callable typed scalar view keeps an erased input runtime descriptor
 
     CHECK(std::addressof(erased.runtime_type()) == std::addressof(legacy_integer_runtime()));
     CHECK(bg::testing::test_graph(graph).equals({42}));
-    CHECK(received_runtime == std::addressof(legacy_integer_runtime()));
+    CHECK(received_runtime == std::addressof(bg::cpp_scalar_runtime_type<bg::i64>()));
 }
 
 TEST_CASE("an alternative scalar read destroys its temporary when moving the value throws",

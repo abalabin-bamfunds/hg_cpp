@@ -11,11 +11,15 @@
 #include <bg/type/type_registry.hpp>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
 
+#include <array>
 #include <chrono>
 #include <cstddef>
 #include <memory>
 #include <memory_resource>
+#include <stdexcept>
+#include <utility>
 
 namespace {
 
@@ -122,6 +126,143 @@ TEST_CASE("compiled nodes keep hot data in node-local sections", "[compiled_grap
     CHECK(scalar_address == parameter_address + parameters.size() * sizeof(bg::ParameterBinding));
     // Fixed storage includes graph metadata, node records, and the initial runtime storage image.
     CHECK(graph.fixed_storage_size() == 244);
+}
+
+namespace {
+
+struct runtime_signature_identity_definition {
+    using output_declaration_type = bg::Out<bg::TS<bg::i64>>;
+
+    runtime_signature_identity_definition()
+        : signature_{bg::util::symbol{"runtime_identity"},
+                     {{bg::util::symbol{"input"}, &bg::TS<bg::i64>::type()}}, bg::TS<bg::i64>::type()} {}
+
+    const bg::Signature &signature() const noexcept { return signature_; }
+
+    static void evaluate(bg::NodeInvocation<>) {}
+
+    bg::Signature signature_;
+};
+
+} // namespace
+
+TEST_CASE("typed callable nodes omit runtime-signature metadata",
+          "[compiled_graph][feature:graph-compilation][definition:runtime]") {
+    const auto typed_identity = bg::node([](bg::In<bg::TS<bg::i64>>, bg::Out<bg::TS<bg::i64>>) {});
+    const auto runtime_identity = bg::node(runtime_signature_identity_definition{});
+    const auto input_types = std::array<const bg::Type *, 1>{&bg::TS<bg::i64>::type()};
+    const auto typed_signature = typed_identity.signature().resolve(input_types);
+    const auto runtime_signature = runtime_identity.signature().resolve(input_types);
+
+    CHECK_FALSE(typed_identity.uses_node_invocation_parameters());
+    CHECK(runtime_identity.uses_node_invocation_parameters());
+    CHECK_FALSE(typed_identity.uses_time_series_input_runtime_type(typed_signature, 0));
+    CHECK(typed_identity.uses_output_runtime_type() == false);
+    CHECK(runtime_identity.uses_time_series_input_runtime_type(runtime_signature, 0));
+    CHECK(runtime_identity.uses_output_runtime_type());
+
+    const auto compiled_sizes = [](const auto &transform) {
+        auto wiring = bg::GraphWiring{};
+        const auto source = bg::node<integer_source_definition>();
+        {
+            auto context = bg::WiringContext{wiring};
+            (void)transform(source());
+        }
+        wiring.finalize();
+        const auto graph = bg::CompiledGraph{wiring};
+        return std::pair{graph.fixed_storage_size(), graph.runtime_storage_size()};
+    };
+
+    const auto typed_sizes = compiled_sizes(typed_identity);
+    const auto runtime_sizes = compiled_sizes(runtime_identity);
+    CHECK(typed_sizes.first < runtime_sizes.first);
+    CHECK(typed_sizes.second == runtime_sizes.second);
+}
+
+TEST_CASE("capturing callables keep compiled data without parameter descriptors",
+          "[compiled_graph][feature:graph-compilation][feature:lifecycle][definition:function][lifetime]") {
+    const auto token = std::make_shared<int>(0);
+    const auto source = bg::node<integer_source_definition>();
+    const auto copy = bg::node([token](bg::In<bg::TS<bg::i64>, bg::dynamic_activity> input,
+                                       bg::Out<bg::TS<bg::i64>> output) {
+        static_cast<void>(token);
+        output.copy(input);
+    });
+    auto wiring = bg::GraphWiring{};
+    {
+        auto context = bg::WiringContext{wiring};
+        (void)copy(source());
+    }
+    wiring.finalize();
+
+    const auto use_count_before_compilation = token.use_count();
+    {
+        const auto graph = bg::CompiledGraph{wiring};
+        CHECK(token.use_count() == use_count_before_compilation + 1);
+
+        const auto &compiled_copy = graph.node(1);
+        const auto *metadata = compiled_copy.node_invocation_metadata();
+        REQUIRE(metadata != nullptr);
+        CHECK(compiled_copy.controlled_inputs().size() == 1);
+        CHECK(metadata->parameters(compiled_copy).empty());
+        CHECK(metadata->controlled_input_indices(compiled_copy).empty());
+        CHECK(metadata->compiled_data(compiled_copy) != nullptr);
+    }
+    CHECK(token.use_count() == use_count_before_compilation);
+}
+
+namespace {
+
+struct failing_compiled_data_definition {
+    using compiled_data_type = std::size_t;
+
+    failing_compiled_data_definition(std::shared_ptr<int> token, std::shared_ptr<long> baseline,
+                                     std::shared_ptr<bool> capture_was_constructed)
+        : token_{std::move(token)}, baseline_{std::move(baseline)},
+          capture_was_constructed_{std::move(capture_was_constructed)},
+          signature_{bg::util::symbol{"failing_compile"},
+                     {{bg::util::symbol{"input"}, &bg::TS<bg::i64>::type()}}, bg::TS<bg::i64>::type()} {}
+
+    const bg::Signature &signature() const noexcept { return signature_; }
+
+    compiled_data_type compile(const bg::ResolvedSignature &, bg::allocator &) const {
+        *capture_was_constructed_ = token_.use_count() > *baseline_;
+        throw std::runtime_error{"requested compilation failure"};
+    }
+
+    static void evaluate(bg::NodeInvocation<compiled_data_type>) {}
+
+    std::shared_ptr<int> token_;
+    std::shared_ptr<long> baseline_;
+    std::shared_ptr<bool> capture_was_constructed_;
+    bg::Signature signature_;
+};
+
+} // namespace
+
+TEST_CASE("compiled callable captures are destroyed when a later node fails compilation",
+          "[compiled_graph][feature:graph-compilation][feature:lifecycle][definition:function][lifetime][failure]") {
+    const auto token = std::make_shared<int>(0);
+    const auto baseline = std::make_shared<long>();
+    const auto capture_was_constructed = std::make_shared<bool>();
+    const auto source = bg::node<integer_source_definition>();
+    const auto copy = bg::node([token](bg::In<bg::TS<bg::i64>> input, bg::Out<bg::TS<bg::i64>> output) {
+        static_cast<void>(token);
+        output.copy(input);
+    });
+    const auto fail = bg::node(failing_compiled_data_definition{token, baseline, capture_was_constructed});
+
+    auto wiring = bg::GraphWiring{};
+    {
+        auto context = bg::WiringContext{wiring};
+        (void)fail(copy(source()));
+    }
+    wiring.finalize();
+    *baseline = token.use_count();
+
+    CHECK_THROWS_WITH(bg::CompiledGraph{wiring}, "requested compilation failure");
+    CHECK(*capture_was_constructed);
+    CHECK(token.use_count() == *baseline);
 }
 
 TEST_CASE("an empty runtime-type table preserves all_valid metadata alignment",

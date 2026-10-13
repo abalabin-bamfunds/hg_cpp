@@ -524,7 +524,8 @@ class CompiledNode {
     CompiledNode(EvaluationFunction evaluation_function, std::uint32_t output_last_updated_offset,
                  std::uint32_t output_value_offset, std::uint32_t parameter_count, std::uint32_t subscriber_count,
                  bool has_output, bool has_state, bool has_output_notification, bool has_item_subscriptions,
-                 bool uses_node_invocation, bool has_all_valid_input_metadata, std::uint32_t controlled_input_count,
+                 bool has_node_invocation_metadata, bool has_all_valid_input_metadata,
+                 std::uint32_t controlled_input_count,
                  bool has_input_node_indices, InvalidationMode invalidation_mode) noexcept
         : evaluation_function_(evaluation_function),
           output_last_updated_offset_(output_last_updated_offset | (has_output ? std::uint32_t{} : no_output_flag) |
@@ -534,7 +535,7 @@ class CompiledNode {
           counts_(parameter_count | (subscriber_count << parameter_count_bits) |
                   (has_output_notification ? output_notification_flag : std::uint32_t{}) |
                   (has_item_subscriptions ? item_subscriptions_flag : std::uint32_t{})),
-          flags_((uses_node_invocation ? node_invocation_flag : std::uint32_t{}) |
+          flags_((has_node_invocation_metadata ? node_invocation_flag : std::uint32_t{}) |
                  (controlled_input_count << controlled_input_count_shift) |
                  (has_all_valid_input_metadata ? all_valid_input_metadata_flag : std::uint32_t{}) |
                  (has_input_node_indices ? input_node_indices_flag : std::uint32_t{})) {}
@@ -676,6 +677,10 @@ static_assert(sizeof(ParameterBinding) % alignof(Subscriber) == 0);
 
 inline std::span<const NodeInvocationParameterMetadata>
 NodeInvocationMetadata::parameters(const CompiledNode &node) const noexcept {
+    if (parameters_offset == 0) {
+        return {};
+    }
+
     const auto *storage = reinterpret_cast<const std::byte *>(&node);
     return {reinterpret_cast<const NodeInvocationParameterMetadata *>(storage + parameters_offset),
             node.parameters().size()};
@@ -683,6 +688,10 @@ NodeInvocationMetadata::parameters(const CompiledNode &node) const noexcept {
 
 inline std::span<const std::uint16_t>
 NodeInvocationMetadata::controlled_input_indices(const CompiledNode &node) const noexcept {
+    if (parameters_offset == 0) {
+        return {};
+    }
+
     const auto parameters = this->parameters(node);
     return {reinterpret_cast<const std::uint16_t *>(parameters.data() + parameters.size()), parameters.size()};
 }

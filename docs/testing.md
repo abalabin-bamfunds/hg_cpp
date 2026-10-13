@@ -209,6 +209,9 @@ graph compilation or evaluation.
 - start, stop, invalidation, and timed scheduling metadata
 - repeated compilation and independent runtime graphs
 - scalar and state destruction
+- callable capture destruction after compiled graph release and compilation
+  failure; typed callable metadata omission with dynamic activity and provider
+  runtime access
 - const nodes and their direct bindings
 - `default_` adapter-node lowering, reference materialization, nested graph returns, and fallback identity
 - service binding metadata alongside inherited time series metadata

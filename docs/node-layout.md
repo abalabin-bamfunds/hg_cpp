@@ -86,6 +86,7 @@ It contains:
 - declared and runtime type pointers for `all_valid` input checks, independent of input-view construction metadata
 - the selected runtime type pointer for an output whose layout is selected during graph compilation
 - optional data required by a runtime-signature node definition
+- immutable callable captures and their destruction function when present
 
 The data is immutable and shared by runtime graphs with the same wiring. Each
 compiled node occupies one aligned section of the compiled graph's fixed
@@ -185,6 +186,13 @@ identify shared scalar data, a direct runtime input, or a reference-bound
 runtime input. The evaluation entry point uses these records to pack the C++
 arguments. Runtime graphs share the records and scalar values.
 
+C++ callables use compile-time parameter positions and activity-control
+indices. Their compiled nodes omit parameter names, type descriptions, and the
+parameter-to-activity-control lookup. They retain runtime type pointers only
+when constructing a declared view requires them. A capturing callable stores
+its immutable function object and required destruction function once in compiled
+data. An empty, default-constructible callable stores no function object there.
+
 For an aggregate class declaration, the evaluation entry point constructs a
 temporary class value. It binds each `In<>` field from the corresponding
 compiled parameter record, copies each scalar field from compiled scalar data,
@@ -194,9 +202,9 @@ point, and the temporary value can be replaced by its individual fields during o
 
 For a runtime-signature declaration, the evaluation entry point creates a
 `NodeInvocation`. It exposes lazy ranges over input and scalar parameter
-bindings and binds views as the implementation requests them. Parameter names
-and immutable implementation data are stored only for nodes that use this
-declaration form.
+bindings and binds views as the implementation requests them. Its compiled
+node retains parameter names, resolved types, and activity-control lookup data
+for runtime inspection.
 
 ## Concurrency
 
