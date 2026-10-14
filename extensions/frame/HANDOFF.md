@@ -1,9 +1,11 @@
 # Frame foundation handoff
 
-Updated: 2026-10-14. The frame foundation includes generic Row/RowPatch field
-support. It is based on integrated main `bf338ca5`; the foundation checkpoint
-`bd6d9cc5` records the completed row work. The active lane has been rebuilt and
-tested against the integrated main install.
+Updated: 2026-10-14. The active lane is based on integrated main `a16f4761`.
+The generic Row/RowPatch foundation checkpoint is `bd6d9cc5`. Commit `8e6bd52d`
+separates logical row identity from physical slots; `69d1f643` retains native
+owner/domain validation for borrowed views. Mixed computed/view outputs are
+implemented and pass the Arrow-enabled suites. Output-runtime-hook coverage and
+the implementation commit are being completed before independent review.
 
 ## Work locations
 
@@ -12,8 +14,8 @@ completed lane retirement, and consumer verification.
 
 | Work | Location / branch | State |
 | --- | --- | --- |
-| Main | `/home/abalabin/_bg`, `main` at `bf338ca5` | Scalar copy, output-runtime selection, and borrowed inputs integrated |
-| Active frame work | `.lanes/frame-field-access`, `agent/frame-field-access` | Based on main `bf338ca5` |
+| Main | `/home/abalabin/_bg`, `main` at `a16f4761` | Scalar copy, output-runtime selection, and borrowed inputs integrated; persistent runtime inputs removed |
+| Active frame work | `.lanes/frame-field-access`, `agent/frame-field-access` | Based on main `a16f4761` |
 | Numeric value extraction | Separate work | Held; frame does not depend on it |
 | Historical frame work | `extensions/frame/archive/` | Proposals, probe sources, and benchmark results preserved; see its README |
 | Schema field reflection | Main | Integrated and covered by BG schema reflection tests |
@@ -88,6 +90,22 @@ Typed wrappers translate arguments and access columns. The shared view storage
 keeps child states, column mappings, and modified-row indexes at fixed offsets.
 Ordinary incremental bindings process deltas without traversing every row.
 
+`NativeRows` owns logical row identity and membership deltas. `NativeRowSlots`
+owns physical slot occupancy and the two ID/slot mappings. A computed column
+can use local slots with the source logical RowSet and explicit deltas. Native
+bindings retain their owner's row domain; local-slot bindings have no native
+logical owner. Scalar and time-series traversal preserve visible source order
+independently of local slot order.
+
+Mixed outputs use `Out<TSF<Schema>, frame::computed<"mid">>`. The shared
+runtime-schema view backend owns computed cell buffers and one local slot map;
+remaining columns retain source bindings. `bind(source)` matches borrowed
+columns by name and type and applies membership changes directly to computed
+storage. New computed cells start null. `set<Name>` and `set_batch<Name>` update
+computed cells and publish their child columns. Batch preflight completes before
+cell writes and publication occurs once. Set-only later invocations refresh the
+column delta timestamp. Accepted equal-value writes follow ordinary semantics.
+
 The TSF scalar adapter borrows persistent output storage. It is not registered
 as default scalar storage. The default is the immutable snapshot runtime,
 which stores one `FrameSnapshotOwner*`. Owners retain their actual schema,
@@ -131,17 +149,20 @@ runtime descriptors, source and column buffer identity, nullable cells, and
 row and column deltas across invocations. Test checkpoint: `bf4d9483`.
 
 BG main `6051cc63` previously passed its complete C++ and Python suite:
-1,720/1,720. Current verification uses a fresh Debug BG installation built from
-`bf338ca5` in `/home/abalabin/_bg/build/frame-dependency/bg-build`, with testing,
-Python, and benchmarks disabled. The complete BG suite was not repeated.
-Dependency configure, build, and install logs are under
-`/home/abalabin/_bg/build/frame-dependency`, named `configure-bf338ca5.log`,
-`build-bf338ca5.log`, and `install-bf338ca5.log`.
+1,720/1,720. Current verification uses a refreshed Debug BG installation built
+from `a16f4761` in `/home/abalabin/_bg/build/frame-dependency/bg-build`, with
+testing, Python, and benchmarks disabled. The complete BG suite was not repeated.
+Its build and install logs are `build-a16f4761.log` and
+`install-a16f4761.log` under `build/frame-dependency` in the root checkout.
+The rebased frame lane and row-slot commits passed all five Arrow-enabled
+Release suites against this installation.
 
 All three consumer caches resolve BG, ddvisitor, and tpack from the installed
 prefix. Conda supplies unrelated dependencies including Arrow 24.0.0. Arrow-on
 Release regenerated its CMake configuration during its build. The other two
 consumers were explicitly reconfigured with their existing settings.
+
+Previous consumer verification at main `bf338ca5`:
 
 | Consumer | Build | Test |
 | --- | --- | --- |
@@ -154,7 +175,7 @@ UBSAN_OPTIONS=halt_on_error=1. Leak detection remains disabled because of
 environment ptrace restrictions. The sanitizer frame build links the Debug BG
 dependency. Clang and MSVC have not been tested.
 
-Current build and test logs are `build-bf338ca5.log` and `test-bf338ca5.log` in
+The previous build and test logs are `build-bf338ca5.log` and `test-bf338ca5.log` in
 each consumer build directory. Explicit configure logs are
 `configure-bf338ca5.log` in `cc4-checkpoint-off` and `cc4-lifetime`.
 Earlier verification logs remain preserved. No retired-worktree paths occur
@@ -193,6 +214,28 @@ conditions are documented in the archive README. These results inform the
 design; they do not replace the consumer verification recorded above.
 
 ## Agreed next work
+
+Arrow-off and sanitizer builds have not yet been repeated for the row-slot
+commits.
+
+Fixed-name `Out<TSF<Schema>, frame::computed<"mid">>` outputs are implemented
+through the shared runtime-schema view backend. Dedicated Arrow-on tests cover
+concrete and runtime schemas, independent computed buffers, shared slot maps,
+row removal and reuse, null batches, validation before mutation, downstream
+views, set-only later invocations, cache identity, and child revalidation.
+Arrow-off and sanitizer gates will be repeated after standalone computed-column
+support.
+
+Standalone row-preserving column outputs use the approved declaration
+`Out<TSC<T>, frame::computed<>>`. They preserve source row identity and own
+result cells. The intended operations are `bind(source)`, `set(id, value)`,
+and `set_batch(ids, ColumnBatch<T>)`.
+
+Public API decisions remain pending: the declaration for computed frame names
+selected during wiring and whether to expose BG's existing integer division
+function for column arithmetic. Fixed computed names can be used with runtime
+schemas independently of the first decision. The numeric extraction remains
+held; do not duplicate its exact integer division implementation.
 
 The two BG changes integrated in this task are scalar copy runtime selection
 and wiring-time output runtime selection. The frame extension uses scalar copy

@@ -24,6 +24,7 @@
 #include <bg/util/compile_time_string.hpp>
 #include <bg/util/reflection.hpp>
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <deque>
@@ -180,6 +181,11 @@ struct NativeFrameFieldLayout {
     using bind_view_storage_function = void (*)(void *, const FrameColumnReadBinding &, RowSet,
                                                 const util::index<> *, const util::index<> *,
                                                 const util::index<> *, EvaluationTime);
+    using set_slots_function = bool (*)(void *, const NativeRowSlots &, const util::index<> &, row_id_t,
+                                        const void *, allocator);
+    using bind_computed_storage_function = void (*)(void *, const void *, const NativeRowSlots &, RowSet,
+                                                    const util::index<> *, const util::index<> *,
+                                                    const util::index<> *, EvaluationTime);
     using read_binding_function = FrameColumnReadBinding (*)(const void *);
     using copy_snapshot_column_function = void *(*)(const FrameColumnReadBinding &, std::size_t, allocator);
     using release_snapshot_column_function = void (*)(void *);
@@ -212,6 +218,8 @@ struct NativeFrameFieldLayout {
     bind_column_view_function bind_column_view{};
     bind_column_series_view_function bind_column_series_view{};
     bind_view_storage_function bind_view_storage{};
+    set_slots_function set_slots{};
+    bind_computed_storage_function bind_computed_storage{};
     read_binding_function read_binding{};
     copy_snapshot_column_function copy_snapshot_column{};
     release_snapshot_column_function release_snapshot_column{};
@@ -1434,6 +1442,16 @@ void bind_frame_view_storage(void *destination, const FrameColumnReadBinding &so
     column.change_time = time;
 }
 
+template <cell_type Cell>
+void bind_frame_computed_storage(void *destination, const void *native, const NativeRowSlots &physical_rows,
+                                RowSet visible_rows, const util::index<> *added,
+                                const util::index<> *modified, const util::index<> *removed,
+                                EvaluationTime time) {
+    *static_cast<ColumnStorage<Cell> *>(destination) = ColumnStorage<Cell>{
+        *static_cast<const NativeColumnData<Cell> *>(native), physical_rows, visible_rows,
+        *added, *modified, *removed, time};
+}
+
 inline FrameColumnReadBinding runtime_frame_column_binding(const ColumnView<> &column) {
     const auto &type = column.cell_type();
     if (std::addressof(type) == std::addressof(cpp_scalar_type<i64>()))
@@ -1607,6 +1625,12 @@ template <cell_type Cell> NativeFrameFieldLayout make_native_frame_field_layout(
         .bind_column_view = &bind_frame_column_view<Cell>,
         .bind_column_series_view = &bind_frame_column_series_view<Cell>,
         .bind_view_storage = &bind_frame_view_storage<Cell>,
+        .set_slots = [](void *field, const NativeRowSlots &rows, const util::index<> &added, row_id_t id,
+                        const void *value, allocator memory) {
+            return static_cast<NativeColumnData<Cell> *>(field)->set(
+                rows, added, id, *static_cast<const std::optional<Cell> *>(value), memory);
+        },
+        .bind_computed_storage = &bind_frame_computed_storage<Cell>,
         .read_binding = &frame_column_read_binding<Cell>,
         .copy_snapshot_column = &copy_frame_snapshot_column<Cell>,
         .release_snapshot_column = &release_frame_snapshot_column<Cell>,
@@ -1630,12 +1654,16 @@ struct RuntimeFrameViewFieldLayout {
     std::size_t bookkeeping_offset{};
     std::size_t state_offset{};
     std::size_t column_storage_offset{};
+    std::size_t native_offset{};
+    bool computed{};
 };
 
 struct RuntimeFrameViewLayout {
     const bg::Schema *schema{};
     std::size_t size{};
     std::size_t alignment{};
+    std::size_t computed_rows_offset{};
+    bool has_computed_fields{};
     std::vector<RuntimeFrameViewFieldLayout> fields;
 };
 
@@ -1676,7 +1704,14 @@ class RuntimeFrameViewOutputStorage {
 
     void initialize(const RuntimeFrameViewLayout &runtime_layout) noexcept {
         layout = std::addressof(runtime_layout);
+        if (layout->has_computed_fields)
+            std::construct_at(computed_rows(this));
+        for (std::size_t index = 0; index != layout->fields.size(); ++index)
+            if (layout->fields[index].computed)
+                layout->fields[index].column.construct(native_field(this, index));
     }
+
+    bool is_computed(std::size_t index) const noexcept { return layout->fields[index].computed; }
 
     std::size_t field_index(util::symbol name) const {
         const auto fields = layout->schema->fields();
@@ -1703,6 +1738,53 @@ class RuntimeFrameViewOutputStorage {
     }
     const void *column_storage(const void *base, std::size_t index) const noexcept {
         return static_cast<const std::byte *>(base) + layout->fields[index].column_storage_offset;
+    }
+
+    void *native_field(void *base, std::size_t index) const noexcept {
+        return static_cast<std::byte *>(base) + layout->fields[index].native_offset;
+    }
+    const void *native_field(const void *base, std::size_t index) const noexcept {
+        return static_cast<const std::byte *>(base) + layout->fields[index].native_offset;
+    }
+    NativeRowSlots *computed_rows(void *base) const noexcept {
+        return reinterpret_cast<NativeRowSlots *>(static_cast<std::byte *>(base) + layout->computed_rows_offset);
+    }
+    const NativeRowSlots *computed_rows(const void *base) const noexcept {
+        return reinterpret_cast<const NativeRowSlots *>(static_cast<const std::byte *>(base) +
+                                                        layout->computed_rows_offset);
+    }
+
+    bool set_computed(std::size_t index, row_id_t id, const void *value, EvaluationTime time, allocator memory) {
+        if (!is_computed(index))
+            throw std::invalid_argument{"frame output field is not computed"};
+        if (!valid || !source_rows.has(id))
+            throw std::out_of_range{"computed frame cell row ID"};
+        if (value == nullptr)
+            throw std::invalid_argument{"computed frame cell value is absent"};
+        begin_cycle(time);
+        const auto changed = write_computed(index, id, value, memory);
+        finish_computed_updates(index, time, changed);
+        return changed;
+    }
+
+    bool write_computed(std::size_t index, row_id_t id, const void *value, allocator memory) {
+        const auto changed = layout->fields[index].column.set_slots(
+            native_field(this, index), *computed_rows(this), added_rows, id, value, memory);
+        if (!changed)
+            return false;
+        changed_rows.set(id, memory.memory_resource());
+        changed_columns.set(index, memory.memory_resource());
+        return true;
+    }
+
+    void finish_computed_updates(std::size_t index, EvaluationTime time, bool changed) {
+        const auto &field = layout->fields[index];
+        const auto *native_modified = field.column.modified(native_field(this, index));
+        field.column.bind_computed_storage(
+            column_storage(this, index), native_field(this, index), *computed_rows(this), source_rows,
+            std::addressof(added_rows), native_modified, std::addressof(removed_rows), time);
+        if (changed)
+            child_state(this, index).publish(time);
     }
 
     bool bind(const FrameReadStorage &input, std::span<const std::size_t> source_indices,
@@ -1732,6 +1814,8 @@ class RuntimeFrameViewOutputStorage {
         const auto input_delta_current = input.modified && input.change_time == input.last_updated;
         auto predicate_mapping_changed = false;
         for (std::size_t index = 0; index != layout->fields.size(); ++index) {
+            if (is_computed(index))
+                continue;
             const auto binding = input.column(source_index(index));
             const auto &field = layout->fields[index].column;
             if (binding.cell_type != field.cell_type || binding.payload == nullptr ||
@@ -1768,6 +1852,8 @@ class RuntimeFrameViewOutputStorage {
             if (predicate_index == index)
                 predicate_mapping_changed = mapping_changed;
         }
+        if (row_domain_changed)
+            clear_computed_fields(memory);
 
         const auto new_cycle = !valid || delta_time != time;
         const auto rebuild_predicate = predicate_index.has_value() &&
@@ -1779,8 +1865,11 @@ class RuntimeFrameViewOutputStorage {
             removed_rows.clear();
             changed_rows.clear();
             changed_columns.clear();
-            for (std::size_t index = 0; index != layout->fields.size(); ++index)
+            for (std::size_t index = 0; index != layout->fields.size(); ++index) {
                 field_state(this, index).modified_rows.clear();
+                if (is_computed(index))
+                    layout->fields[index].column.reset(native_field(this, index));
+            }
             delta_time = time;
         }
         predicate_rows.clear();
@@ -1792,6 +1881,7 @@ class RuntimeFrameViewOutputStorage {
         const auto remove_filter_row = [&](row_id_t id, bool preserve_domain_removal) {
             if (!selected_rows.exclude(id))
                 return;
+            remove_computed_row(id, memory);
             if (preserve_domain_removal || !added_rows.reset(id))
                 removed_rows.set(id, memory.memory_resource());
             changed_rows.reset(id);
@@ -1800,17 +1890,20 @@ class RuntimeFrameViewOutputStorage {
         const auto add_filter_row = [&](row_id_t id, bool preserve_domain_addition) {
             if (!selected_rows.include(id, memory))
                 return;
+            add_computed_row(id, memory);
             if (preserve_domain_addition || !removed_rows.reset(id))
                 added_rows.set(id, memory.memory_resource());
             changed_rows.set(id, memory.memory_resource());
         };
         const auto remove_projection_row = [&](row_id_t id, bool preserve_domain_removal) {
+            remove_computed_row(id, memory);
             if (preserve_domain_removal || !added_rows.reset(id))
                 removed_rows.set(id, memory.memory_resource());
             changed_rows.reset(id);
             clear_modified(id);
         };
         const auto add_projection_row = [&](row_id_t id, bool preserve_domain_addition) {
+            add_computed_row(id, memory);
             if (preserve_domain_addition || !removed_rows.reset(id))
                 added_rows.set(id, memory.memory_resource());
             changed_rows.set(id, memory.memory_resource());
@@ -1901,6 +1994,22 @@ class RuntimeFrameViewOutputStorage {
         for (std::size_t index = 0; index != layout->fields.size(); ++index) {
             auto &state = field_state(this, index);
             auto &output_modified = state.modified_rows;
+            if (is_computed(index)) {
+                state.mapping = {};
+                const auto *native_modified = layout->fields[index].column.modified(native_field(this, index));
+                for (auto id : *native_modified)
+                    changed_rows.set(id, memory.memory_resource());
+                if (!valid || !native_modified->empty() || membership_changed) {
+                    changed_columns.set(index, memory.memory_resource());
+                    child_state(this, index).publish(time);
+                    any_change = true;
+                }
+                const auto &field = layout->fields[index];
+                field.column.bind_computed_storage(
+                    column_storage(this, index), native_field(this, index), *computed_rows(this), output_rows,
+                    std::addressof(added_rows), native_modified, std::addressof(removed_rows), time);
+                continue;
+            }
             const auto binding = input.column(source_index(index));
             const auto mapping = ColumnMapping{binding.native, binding.rows, binding.physical_rows, binding.snapshot,
                                                binding.visible_rows.context, binding.visible_rows.identity,
@@ -1936,7 +2045,8 @@ class RuntimeFrameViewOutputStorage {
         return any_change;
     }
 
-    void invalidate() noexcept {
+    void invalidate(allocator memory) noexcept {
+        clear_computed_fields(memory);
         previous_rows.clear();
         previous_rows.bind({});
         selected_rows.clear();
@@ -1951,6 +2061,8 @@ class RuntimeFrameViewOutputStorage {
             auto &field = field_state(this, index);
             field.modified_rows.clear();
             field.mapping = {};
+            if (is_computed(index))
+                layout->fields[index].column.reset(native_field(this, index));
         }
         valid = false;
     }
@@ -1967,9 +2079,65 @@ class RuntimeFrameViewOutputStorage {
             auto &field = field_state(this, index);
             field.modified_rows.release(memory.memory_resource());
             field.mapping = {};
+            if (is_computed(index))
+                layout->fields[index].column.release(native_field(this, index), memory);
         }
+        if (layout->has_computed_fields)
+            computed_rows(this)->release(memory);
         source_rows = {};
         valid = false;
+    }
+
+    void begin_cycle(EvaluationTime time) {
+        if (delta_time == time)
+            return;
+        added_rows.clear();
+        removed_rows.clear();
+        changed_rows.clear();
+        changed_columns.clear();
+        for (std::size_t index = 0; index != layout->fields.size(); ++index) {
+            field_state(this, index).modified_rows.clear();
+            if (is_computed(index))
+                layout->fields[index].column.reset(native_field(this, index));
+        }
+        delta_time = time;
+    }
+
+    void clear_computed_fields(allocator memory) noexcept {
+        if (!layout->has_computed_fields)
+            return;
+        auto &rows = *computed_rows(this);
+        auto slot_iterator = rows.live_slots().begin();
+        while (slot_iterator != rows.live_slots().end()) {
+            const auto slot = *slot_iterator;
+            ++slot_iterator;
+            const auto id = rows.id_at_slot(slot);
+            for (std::size_t index = 0; index != layout->fields.size(); ++index)
+                if (is_computed(index))
+                    layout->fields[index].column.erase(native_field(this, index), slot, id, memory);
+            rows.erase(id);
+        }
+    }
+
+    void remove_computed_row(row_id_t id, allocator memory) {
+        if (!layout->has_computed_fields)
+            return;
+        auto &rows = *computed_rows(this);
+        if (!rows.contains(id))
+            return;
+        const auto slot = rows.slot_of(id);
+        for (std::size_t index = 0; index != layout->fields.size(); ++index)
+            if (is_computed(index))
+                layout->fields[index].column.erase(native_field(this, index), slot, id, memory);
+        rows.erase(id);
+    }
+
+    void add_computed_row(row_id_t id, allocator memory) {
+        if (!layout->has_computed_fields)
+            return;
+        auto &rows = *computed_rows(this);
+        if (!rows.contains(id))
+            rows.insert(id, memory);
     }
 };
 
@@ -2143,9 +2311,11 @@ class RuntimeSchemaFrameViewSeriesRuntimeType final : public FrameSeriesRuntimeT
     using ItemIdFunction = TimeSeriesRuntimeType::ItemIdFunction;
     using ModifiedItemFunction = TimeSeriesRuntimeType::ModifiedItemFunction;
 
-    explicit RuntimeSchemaFrameViewSeriesRuntimeType(const TimeSeriesType &type)
-        : FrameSeriesRuntimeType{type, make_layout(type).size, make_layout(type).alignment, true, true, true},
-          layout_{make_layout(type)} {
+    explicit RuntimeSchemaFrameViewSeriesRuntimeType(const TimeSeriesType &type,
+                                                     std::vector<std::size_t> computed_fields = {})
+        : FrameSeriesRuntimeType{type, make_layout(type, computed_fields).size,
+                                 make_layout(type, computed_fields).alignment, true, true, true},
+          layout_{make_layout(type, computed_fields)}, computed_fields_{std::move(computed_fields)} {
         for (const auto &field : layout_.fields)
             fields_.emplace_back(*field.column.column_runtime, field.state_offset, field.column_storage_offset);
     }
@@ -2256,13 +2426,14 @@ class RuntimeSchemaFrameViewSeriesRuntimeType final : public FrameSeriesRuntimeT
     }
     void invalidate_output(const OutputState &output) const override {
         auto &storage = *static_cast<Storage *>(output.mutable_data());
-        storage.invalidate();
+        storage.invalidate(output.allocator());
         this->invalidate_output_items(output);
         this->invalidate_output_value(output);
     }
 
   private:
-    static RuntimeFrameViewLayout make_layout(const TimeSeriesType &type) {
+    static RuntimeFrameViewLayout make_layout(const TimeSeriesType &type,
+                                              std::span<const std::size_t> computed_fields) {
         const auto *series = dynamic_cast<const FrameSeriesType *>(std::addressof(type));
         if (series == nullptr || !series->is_resolved() ||
             series->guarantee().value() != TimeSeriesGuarantee::ordinary)
@@ -2272,12 +2443,27 @@ class RuntimeSchemaFrameViewSeriesRuntimeType final : public FrameSeriesRuntimeT
         result.schema = native.schema;
         result.alignment = alignof(Storage);
         auto offset = sizeof(Storage);
+        result.has_computed_fields = !computed_fields.empty();
+        if (result.has_computed_fields) {
+            result.alignment = std::max(result.alignment, alignof(NativeRowSlots));
+            offset = (offset + alignof(NativeRowSlots) - 1) / alignof(NativeRowSlots) * alignof(NativeRowSlots);
+            result.computed_rows_offset = offset;
+            offset += sizeof(NativeRowSlots);
+        }
         result.fields.reserve(native.fields.size());
-        for (const auto &column : native.fields) {
+        for (std::size_t index = 0; index != native.fields.size(); ++index) {
+            const auto &column = native.fields[index];
+            const auto is_computed = std::ranges::find(computed_fields, index) != computed_fields.end();
             const auto align = [&](std::size_t alignment) {
                 result.alignment = std::max(result.alignment, alignment);
                 offset = (offset + alignment - 1) / alignment * alignment;
             };
+            auto native_offset = std::size_t{};
+            if (is_computed) {
+                align(column.native_alignment);
+                native_offset = offset;
+                offset += column.native_size;
+            }
             align(alignof(Storage::FieldState));
             const auto bookkeeping_offset = offset;
             offset += sizeof(Storage::FieldState);
@@ -2287,7 +2473,8 @@ class RuntimeSchemaFrameViewSeriesRuntimeType final : public FrameSeriesRuntimeT
             align(column.column_storage_alignment);
             const auto column_storage_offset = offset;
             offset += column.column_storage_size;
-            result.fields.push_back({column, bookkeeping_offset, state_offset, column_storage_offset});
+            result.fields.push_back(
+                {column, bookkeeping_offset, state_offset, column_storage_offset, native_offset, is_computed});
         }
         result.size = (offset + result.alignment - 1) / result.alignment * result.alignment;
         return result;
@@ -2295,9 +2482,12 @@ class RuntimeSchemaFrameViewSeriesRuntimeType final : public FrameSeriesRuntimeT
 
     static const util::index<> *modified_column(const void *context, std::size_t index) noexcept {
         const auto &storage = *static_cast<const Storage *>(context);
-        return index < storage.layout->fields.size()
-                   ? std::addressof(storage.field_state(context, index).modified_rows)
-                   : nullptr;
+        if (index >= storage.layout->fields.size())
+            return nullptr;
+        const auto &field = storage.layout->fields[index];
+        if (field.computed)
+            return field.column.modified(storage.native_field(context, index));
+        return std::addressof(storage.field_state(context, index).modified_rows);
     }
     static FrameColumnReadBinding column_binding(const void *context, std::size_t index) {
         const auto &storage = *static_cast<const Storage *>(context);
@@ -2307,7 +2497,11 @@ class RuntimeSchemaFrameViewSeriesRuntimeType final : public FrameSeriesRuntimeT
     }
 
     RuntimeFrameViewLayout layout_;
+    std::vector<std::size_t> computed_fields_;
     std::vector<ItemLayout> fields_;
+
+  public:
+    const std::vector<std::size_t> &computed_fields() const noexcept { return computed_fields_; }
 };
 
 class FrameSeriesScalarRuntimeType final : public FrameScalarRuntimeType {
@@ -2447,24 +2641,79 @@ const TimeSeriesRuntimeType &frame_time_series_runtime_type(const TimeSeriesType
     return runtime;
 }
 
+namespace details {
+const TimeSeriesRuntimeType &canonical_frame_view_runtime_type(const TimeSeriesType &type,
+                                                               std::vector<std::size_t> computed_fields);
+}
+
 template <template <template <typename, auto...> typename> typename Schema>
 const TimeSeriesRuntimeType &frame_view_time_series_runtime_type(const TimeSeriesType &type) {
     const auto *series = dynamic_cast<const FrameSeriesType *>(std::addressof(type));
     if (series == nullptr || !series->is_resolved() ||
         series->guarantee().value() != TimeSeriesGuarantee::ordinary)
         throw std::invalid_argument{"TSF view runtime requires a resolved ordinary type"};
-    static auto mutex = std::mutex{};
-    static auto runtimes =
-        std::unordered_map<const TimeSeriesType *, std::unique_ptr<details::RuntimeSchemaFrameViewSeriesRuntimeType>>{};
-    const auto lock = std::lock_guard{mutex};
-    auto found = runtimes.find(std::addressof(type));
-    if (found == runtimes.end()) {
-        auto runtime = std::make_unique<details::RuntimeSchemaFrameViewSeriesRuntimeType>(type);
-        found = runtimes.emplace(std::addressof(type), std::move(runtime)).first;
-    }
-    frame_series_scalar_runtime_type(*found->second);
-    return *found->second;
+    return details::canonical_frame_view_runtime_type(type, {});
 }
+
+namespace details {
+
+inline const TimeSeriesRuntimeType &canonical_frame_view_runtime_type(
+    const TimeSeriesType &type, std::vector<std::size_t> computed_fields) {
+    static auto mutex = std::mutex{};
+    static auto runtimes = std::unordered_map<
+        const TimeSeriesType *, std::vector<std::unique_ptr<RuntimeSchemaFrameViewSeriesRuntimeType>>>{};
+    const auto lock = std::lock_guard{mutex};
+    auto &candidates = runtimes[std::addressof(type)];
+    for (const auto &candidate : candidates)
+        if (candidate->computed_fields() == computed_fields) {
+            frame_series_scalar_runtime_type(*candidate);
+            return *candidate;
+        }
+    candidates.push_back(std::make_unique<RuntimeSchemaFrameViewSeriesRuntimeType>(type, std::move(computed_fields)));
+    frame_series_scalar_runtime_type(*candidates.back());
+    return *candidates.back();
+}
+
+} // namespace details
+
+template <template <template <typename, auto...> typename> typename Schema,
+          util::compile_time_string... Names>
+const TimeSeriesRuntimeType &frame_computed_time_series_runtime_type(const TimeSeriesType &type,
+                                                                     computed_option<Names...>) {
+    const auto *series = dynamic_cast<const FrameSeriesType *>(std::addressof(type));
+    if (series == nullptr || !series->is_resolved() ||
+        series->guarantee().value() != TimeSeriesGuarantee::ordinary)
+        throw std::invalid_argument{"computed TSF runtime requires a resolved ordinary type"};
+    const auto &schema = static_cast<const bg::Schema &>(series->schema_type());
+    auto indices = std::vector<std::size_t>{};
+    indices.reserve(sizeof...(Names));
+    const auto add = [&](util::symbol name) {
+        auto index = std::size_t{};
+        while (index != schema.field_count() && schema.field(index).name != name)
+            ++index;
+        if (index == schema.field_count())
+            throw std::invalid_argument{"computed frame field name is absent from its resolved schema"};
+        if (std::ranges::find(indices, index) != indices.end())
+            throw std::invalid_argument{"computed frame field name is duplicated"};
+        indices.push_back(index);
+    };
+    (add(util::symbol{Names.view()}), ...);
+    std::ranges::sort(indices);
+    return details::canonical_frame_view_runtime_type(type, std::move(indices));
+}
+
+namespace details {
+
+template <typename Option> struct ComputedFrameRuntime;
+
+template <util::compile_time_string... Names> struct ComputedFrameRuntime<computed_option<Names...>> {
+    template <template <template <typename, auto...> typename> typename Schema>
+    static const TimeSeriesRuntimeType &get(const TimeSeriesType &type) {
+        return frame_computed_time_series_runtime_type<Schema>(type, computed_option<Names...>{});
+    }
+};
+
+} // namespace details
 
 } // namespace bg::frame
 
@@ -2880,15 +3129,138 @@ class Out<frame::TSF<Schema, Properties...>> {
     TimeSeriesOutputBinding binding_;
 };
 
-template <template <template <typename, auto...> typename> typename Schema, auto... Properties>
-class Out<frame::TSF<Schema, Properties...>, frame::view> {
+namespace frame::details {
+
+class FrameViewOutputImplementation {
   public:
-    explicit Out(TimeSeriesOutputBinding binding) noexcept : binding_{std::move(binding)} {}
+    explicit FrameViewOutputImplementation(TimeSeriesOutputBinding binding) noexcept : binding_{std::move(binding)} {}
 
     const bg::Schema &schema() const {
         return static_cast<const bg::Schema &>(
-            static_cast<const frame::FrameSeriesType &>(binding_->runtime_type().type()).schema_type());
+            static_cast<const ::bg::frame::FrameSeriesType &>(binding_->runtime_type().type()).schema_type());
     }
+
+    void invalidate() const { binding_->invalidate(); }
+    bool valid() const noexcept { return binding_->valid(); }
+    const TimeSeriesRuntimeType &runtime_type() const noexcept { return binding_->runtime_type(); }
+
+  protected:
+    template <template <template <typename, auto...> typename> typename SourceSchema,
+              auto... SeriesProperties, auto... InputProperties>
+    bool bind_source(const In<::bg::frame::TSF<SourceSchema, SeriesProperties...>, InputProperties...> &source) const {
+        const auto input = source.extension_descriptor();
+        auto &output = runtime_storage();
+        if (input.schema == nullptr)
+            throw std::logic_error{"TSF view has no resolved source schema"};
+        if (!input.valid) {
+            if (output.valid)
+                binding_->invalidate();
+            return false;
+        }
+        const auto changed = output.bind(input, {}, std::nullopt, nullptr, nullptr,
+                                         binding_->context().evaluation_time(), binding_->allocator());
+        if (changed) {
+            for (auto index : output.changed_columns)
+                binding_->publish_item(binding_->runtime_type(), static_cast<item_id_t>(index));
+            binding_->publish();
+        }
+        return changed;
+    }
+
+    template <util::compile_time_string Name, ::bg::frame::cell_type Cell>
+    void set_computed_cell(::bg::frame::row_id_t id, std::optional<Cell> value) const {
+        auto &output = runtime_storage();
+        const auto index = output.field_index(util::symbol{Name.view()});
+        if (!output.is_computed(index))
+            throw std::invalid_argument{"frame output field is not declared computed"};
+        if (output.layout->schema->field(index).type != std::addressof(cpp_scalar_type<Cell>()))
+            throw std::invalid_argument{"computed frame cell type does not match its schema"};
+        if (output.set_computed(index, id, std::addressof(value), binding_->context().evaluation_time(),
+                                binding_->allocator())) {
+            binding_->publish_item(binding_->runtime_type(), static_cast<item_id_t>(index));
+            binding_->publish();
+        }
+    }
+
+    template <util::compile_time_string Name>
+    void set_computed_null(::bg::frame::row_id_t id) const {
+        auto &output = runtime_storage();
+        const auto index = output.field_index(util::symbol{Name.view()});
+        if (!output.is_computed(index))
+            throw std::invalid_argument{"frame output field is not declared computed"};
+        auto value = std::variant<std::optional<i64>, std::optional<double>>{};
+        const void *cell = nullptr;
+        if (output.layout->schema->field(index).type == std::addressof(cpp_scalar_type<i64>()))
+            cell = std::addressof(value.emplace<0>());
+        else if (output.layout->schema->field(index).type == std::addressof(cpp_scalar_type<double>()))
+            cell = std::addressof(value.emplace<1>());
+        else
+            throw std::invalid_argument{"computed frame schema has an unsupported cell type"};
+        if (output.set_computed(index, id, cell, binding_->context().evaluation_time(), binding_->allocator())) {
+            binding_->publish_item(binding_->runtime_type(), static_cast<item_id_t>(index));
+            binding_->publish();
+        }
+    }
+
+    template <util::compile_time_string Name, ::bg::frame::cell_type Cell>
+    void set_computed_batch(std::span<const ::bg::frame::row_id_t> ids,
+                            const ::bg::frame::ColumnBatch<Cell> &batch) const {
+        if (batch.size != ids.size())
+            throw std::invalid_argument{"computed frame batch length does not match its row IDs"};
+        auto &output = runtime_storage();
+        const auto index = output.field_index(util::symbol{Name.view()});
+        if (!output.is_computed(index))
+            throw std::invalid_argument{"frame output field is not declared computed"};
+        if (output.layout->schema->field(index).type != std::addressof(cpp_scalar_type<Cell>()))
+            throw std::invalid_argument{"computed frame batch type does not match its schema"};
+        auto has_valid_cell = false;
+        for (std::size_t position = 0; position != ids.size(); ++position) {
+            if (!output.source_rows.has(ids[position]))
+                throw std::out_of_range{"computed frame batch row ID"};
+            has_valid_cell = has_valid_cell || batch.is_valid(position);
+        }
+        if (has_valid_cell && batch.values == nullptr)
+            throw std::invalid_argument{"computed frame batch has valid cells but no values"};
+        if (ids.empty())
+            return;
+
+        const auto time = binding_->context().evaluation_time();
+        output.begin_cycle(time);
+        auto changed = false;
+        for (std::size_t position = 0; position != ids.size(); ++position) {
+            auto value = std::optional<Cell>{};
+            if (batch.is_valid(position))
+                value = batch.values[position];
+            changed = output.write_computed(index, ids[position], std::addressof(value),
+                                            binding_->allocator()) || changed;
+        }
+        output.finish_computed_updates(index, time, changed);
+        if (changed) {
+            binding_->publish_item(binding_->runtime_type(), static_cast<item_id_t>(index));
+            binding_->publish();
+        }
+    }
+
+    ::bg::frame::RuntimeFrameViewOutputStorage &runtime_storage() const noexcept {
+        return *static_cast<::bg::frame::RuntimeFrameViewOutputStorage *>(binding_->mutable_data());
+    }
+
+    TimeSeriesOutputBinding binding_;
+};
+
+} // namespace frame::details
+
+template <template <template <typename, auto...> typename> typename Schema, auto... Properties>
+class Out<frame::TSF<Schema, Properties...>, frame::view>
+    : private frame::details::FrameViewOutputImplementation {
+    using Base = frame::details::FrameViewOutputImplementation;
+
+  public:
+    using Base::Base;
+    using Base::invalidate;
+    using Base::runtime_type;
+    using Base::schema;
+    using Base::valid;
 
     template <template <template <typename, auto...> typename> typename SourceSchema,
               auto... SeriesProperties, auto... InputProperties>
@@ -2977,18 +3349,54 @@ class Out<frame::TSF<Schema, Properties...>, frame::view> {
         return changed;
     }
 
-    void invalidate() const { binding_->invalidate(); }
-    bool valid() const noexcept { return binding_->valid(); }
-    const TimeSeriesRuntimeType &runtime_type() const noexcept { return binding_->runtime_type(); }
-
     using time_series_type = frame::TSF<Schema, Properties...>;
 
   private:
-    frame::RuntimeFrameViewOutputStorage &runtime_storage() const noexcept {
-        return *static_cast<frame::RuntimeFrameViewOutputStorage *>(binding_->mutable_data());
+    using Base::binding_;
+    using Base::runtime_storage;
+};
+
+template <template <template <typename, auto...> typename> typename Schema, auto... Properties, auto Option>
+    requires frame::is_computed_option<std::remove_cv_t<decltype(Option)>>::value
+class Out<frame::TSF<Schema, Properties...>, Option>
+    : private frame::details::FrameViewOutputImplementation {
+    using Base = frame::details::FrameViewOutputImplementation;
+    using OptionType = std::remove_cv_t<decltype(Option)>;
+
+  public:
+    static_assert(OptionType::field_count != 0, "computed TSF output requires at least one field name");
+    using Base::Base;
+    using Base::invalidate;
+    using Base::runtime_type;
+    using Base::schema;
+    using Base::valid;
+    using time_series_type = frame::TSF<Schema, Properties...>;
+
+    template <template <template <typename, auto...> typename> typename SourceSchema,
+              auto... SeriesProperties, auto... InputProperties>
+    bool bind(const In<frame::TSF<SourceSchema, SeriesProperties...>, InputProperties...> &source) const {
+        return this->bind_source(source);
     }
 
-    TimeSeriesOutputBinding binding_;
+    template <util::compile_time_string Name, frame::cell_type Cell>
+    void set(frame::row_id_t id, std::optional<Cell> value) const {
+        this->template set_computed_cell<Name>(id, std::move(value));
+    }
+
+    template <util::compile_time_string Name, frame::cell_type Cell>
+    void set(frame::row_id_t id, Cell value) const {
+        this->template set_computed_cell<Name>(id, std::optional<Cell>{std::move(value)});
+    }
+
+    template <util::compile_time_string Name>
+    void set(frame::row_id_t id, std::nullopt_t) const {
+        this->template set_computed_null<Name>(id);
+    }
+
+    template <util::compile_time_string Name, frame::cell_type Cell>
+    void set_batch(std::span<const frame::row_id_t> ids, const frame::ColumnBatch<Cell> &batch) const {
+        this->template set_computed_batch<Name>(ids, batch);
+    }
 };
 
 template <template <template <typename, auto...> typename> typename Schema, auto... Properties>
@@ -3043,6 +3451,15 @@ struct output_declaration_traits<Out<frame::TSF<Schema, Properties...>, frame::v
     using time_series_type = frame::TSF<Schema, Properties...>;
     static const TimeSeriesRuntimeType &runtime(const TimeSeriesType &type) {
         return frame::frame_view_time_series_runtime_type<Schema>(type);
+    }
+};
+
+template <template <template <typename, auto...> typename> typename Schema, auto... Properties, auto Option>
+    requires frame::is_computed_option<std::remove_cv_t<decltype(Option)>>::value
+struct output_declaration_traits<Out<frame::TSF<Schema, Properties...>, Option>> {
+    using time_series_type = frame::TSF<Schema, Properties...>;
+    static const TimeSeriesRuntimeType &runtime(const TimeSeriesType &type) {
+        return frame::details::ComputedFrameRuntime<std::remove_cv_t<decltype(Option)>>::template get<Schema>(type);
     }
 };
 

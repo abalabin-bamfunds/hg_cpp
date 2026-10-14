@@ -37,6 +37,12 @@ template <template <typename, auto...> typename Field> struct ReorderedQuotes {
     Field<double> bid;
 };
 
+template <template <typename, auto...> typename Field> struct ComputedQuote {
+    Field<double> mid;
+    Field<double> ask;
+    Field<double> bid;
+};
+
 template <template <typename, auto...> typename Field> struct GenericQuote {
     Field<bg::SCALAR> bid;
 };
@@ -94,6 +100,7 @@ concept accepts_frame_set = requires(const Output &output, const Argument &argum
 
 static_assert(complete_type<Out<TSF<Quotes>>>);
 static_assert(complete_type<Out<TSF<Quotes>, bg::frame::view>>);
+static_assert(complete_type<Out<TSF<ComputedQuote>, bg::frame::computed<"mid">>>);
 static_assert(complete_type<Out<TSC<bg::i64>>>);
 static_assert(complete_type<Out<TSC<bg::i64>, bg::frame::view>>);
 static_assert(!complete_type<Out<TS<bg::i64>, bg::frame::view>>);
@@ -1778,6 +1785,116 @@ struct filter_writer {
     }
 };
 
+struct computed_frame_writer_state {
+    row_id_t first{no_row};
+};
+
+struct computed_frame_writer {
+    In<TS<i64>> command;
+    State<computed_frame_writer_state> state;
+    Out<TSF<Quotes>> output;
+
+    void evaluate() const {
+        switch (*command) {
+        case 0:
+            output.clear();
+            return;
+        case 1:
+            state->first = output.add(
+                Quotes<Cell>{.size = Cell<i64>{5}, .bid = Cell<double>{10.0}, .ask = Cell<double>{12.0}});
+            return;
+        case 2:
+            output.set(state->first, RowPatch<Quotes>{.bid = 12.0});
+            return;
+        case 3:
+            static_cast<void>(output.add(RowPatch<Quotes>{}));
+            return;
+        case 4:
+        case 5:
+        case 11:
+            return;
+        case 6:
+            require(output.erase(state->first), "computed TSF writer could not remove its first row");
+            return;
+        case 7: {
+            const auto recycled = output.add(
+                Quotes<Cell>{.size = Cell<i64>{9}, .bid = Cell<double>{30.0}, .ask = Cell<double>{32.0}});
+            require(recycled == state->first, "computed TSF writer did not reuse its retired row ID");
+            return;
+        }
+        case 8:
+            output.invalidate();
+            return;
+        case 9:
+            output.clear();
+            return;
+        case 10:
+            static_cast<void>(output.add(
+                Quotes<Cell>{.size = Cell<i64>{11}, .bid = Cell<double>{40.0}, .ask = Cell<double>{42.0}}));
+            return;
+        default:
+            throw std::runtime_error{"unknown computed TSF writer command"};
+        }
+    }
+};
+
+struct computed_quote_node {
+    In<TSF<Quotes>> input;
+    In<TS<i64>> command;
+    Out<TSF<ComputedQuote>, frame::computed<"mid">> output;
+
+    void evaluate() const {
+        static_cast<void>(command);
+        if (*command != 5)
+            output.bind(input);
+        if (!input.valid())
+            return;
+
+        auto ids = std::vector<row_id_t>{};
+        auto values = std::vector<double>{};
+        auto valid = std::vector<std::uint8_t>{};
+        input.for_each_row([&](row_id_t id, std::size_t position) {
+            if (position % 8 == 0)
+                valid.push_back(0);
+            ids.push_back(id);
+            const auto bid = input.cell<1>(id);
+            const auto ask = input.cell<2>(id);
+            if (bid && ask) {
+                values.push_back((*bid + *ask) / 2.0);
+                valid.back() |= std::uint8_t{1} << (position % 8);
+            } else {
+                values.push_back(0.0);
+            }
+        });
+
+        if (*command == 11) {
+            require(!ids.empty(), "computed TSF batch validation test has no source row");
+            const auto invalid_ids = std::array{ids.front(), no_row};
+            const auto invalid_values = std::array{999.0, 1000.0};
+            auto rejected = false;
+            try {
+                output.template set_batch<"mid">(
+                    invalid_ids,
+                    ColumnBatch<double>{0, invalid_ids.size(), invalid_values.data(),
+                                        ColumnBatch<double>::Validity::all_valid()});
+            } catch (const std::out_of_range &) {
+                rejected = true;
+            }
+            require(rejected, "computed TSF batch accepted a row outside its source domain");
+            return;
+        }
+
+        if (*command == 3) {
+            output.template set_batch<"mid">(
+                ids, ColumnBatch<double>{0, ids.size(), nullptr, ColumnBatch<double>::Validity::all_invalid()});
+            return;
+        }
+        output.template set_batch<"mid">(
+            ids, ColumnBatch<double>{0, ids.size(), values.empty() ? nullptr : values.data(),
+                                     ColumnBatch<double>::Validity::from_bitmap(valid.data(), 0)});
+    }
+};
+
 struct frame_command_source {
     int slot;
     Out<TS<i64>> output;
@@ -3278,6 +3395,351 @@ void test_filter_greater_than_composes_with_column_projection() {
             "nested filter and projection views did not propagate selection membership changes");
 }
 
+void test_computed_tsf_outputs_and_downstream_views() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    struct observation {
+        bool source_valid{};
+        bool aggregate_valid{};
+        bool mid_valid{};
+        bool aggregate_modified{};
+        bool mid_modified{};
+        EvaluationTime mid_last_updated{MIN_DT};
+        EvaluationTime mid_storage_change_time{MIN_DT};
+        const void *source_row_domain{};
+        const void *aggregate_row_domain{};
+        const void *source_bid{};
+        const void *aggregate_bid{};
+        const void *aggregate_mid{};
+        const void *copied_bid{};
+        const void *copied_mid{};
+        std::vector<row_id_t> rows;
+        std::vector<row_id_t> changed;
+        std::vector<row_id_t> removed;
+        std::vector<row_id_t> mid_modified_rows;
+        std::vector<row_id_t> computed_slots;
+        std::vector<std::optional<double>> mids;
+        std::vector<row_id_t> filtered_rows;
+        std::vector<std::optional<double>> filtered_mids;
+    };
+    auto observations = std::vector<observation>{};
+    const auto write = node<computed_frame_writer>();
+    const auto compute = node<computed_quote_node>();
+    const auto copy = node([](In<TSF<ComputedQuote>> input,
+                              Out<TSF<ComputedQuote>, frame::computed<"mid">> output) {
+        output.bind(input);
+        if (!input.valid())
+            return;
+        input.for_each_row([&](row_id_t id, std::size_t) { output.template set<"mid">(id, input.cell<0>(id)); });
+    });
+    const auto observe = node([&](In<TSF<Quotes>, optional> source, In<TSF<ComputedQuote>, optional> aggregate,
+                                  In<TSF<ComputedQuote>, optional> copied, In<TSC<double>, optional> filtered,
+                                  In<TS<i64>> tick, Out<TS<i64>> output) {
+        auto result = observation{.source_valid = source.valid(),
+                                  .aggregate_valid = aggregate.valid(),
+                                  .aggregate_modified = aggregate.modified()};
+        const auto source_storage = source.valid() ? source.extension_descriptor() : FrameReadStorage{};
+        const auto aggregate_storage = aggregate.valid() ? aggregate.extension_descriptor() : FrameReadStorage{};
+        result.source_row_domain = source_storage.rows.identity;
+        result.aggregate_row_domain = aggregate_storage.rows.identity;
+        if (source.valid() && aggregate.valid()) {
+            result.source_bid = source_storage.column(source_storage.field_index(util::symbol{"bid"})).native;
+            const auto bid_index = aggregate_storage.field_index(util::symbol{"bid"});
+            const auto mid_index = aggregate_storage.field_index(util::symbol{"mid"});
+            const auto bid_binding = aggregate_storage.column(bid_index);
+            const auto mid_binding = aggregate_storage.column(mid_index);
+            result.aggregate_bid = bid_binding.native;
+            result.aggregate_mid = mid_binding.native;
+            result.mid_storage_change_time = static_cast<const ColumnStorage<double> *>(mid_binding.payload)->change_time;
+            const auto mid_column = aggregate.column("mid");
+            result.mid_valid = mid_column.valid();
+            result.mid_modified = mid_column.modified();
+            result.mid_last_updated = mid_column.last_updated();
+            aggregate.for_each_row([&](row_id_t id, std::size_t) {
+                result.rows.push_back(id);
+                result.mids.push_back(aggregate.cell<0>(id));
+                if (mid_binding.physical_rows != nullptr && mid_binding.physical_rows->contains(id))
+                    result.computed_slots.push_back(mid_binding.physical_rows->slot_of(id));
+            });
+            aggregate.for_each_changed([&](row_id_t id) { result.changed.push_back(id); });
+            aggregate.for_each_removed([&](row_id_t id) { result.removed.push_back(id); });
+            aggregate.for_each_modified<0>([&](row_id_t id) { result.mid_modified_rows.push_back(id); });
+        }
+        if (copied.valid()) {
+            const auto copied_storage = copied.extension_descriptor();
+            result.copied_bid = copied_storage.column(copied_storage.field_index(util::symbol{"bid"})).native;
+            result.copied_mid = copied_storage.column(copied_storage.field_index(util::symbol{"mid"})).native;
+        }
+        if (filtered.valid()) {
+            filtered.for_each_row([&](row_id_t id, std::size_t) {
+                result.filtered_rows.push_back(id);
+                result.filtered_mids.push_back(filtered.cell(id));
+            });
+        }
+        observations.push_back(std::move(result));
+        output.set(*tick);
+    });
+    const auto graph = [&](wp<TS<i64>> command, wp<TS<i64>> tick) {
+        const auto source = write(command);
+        const auto aggregate = compute(source, command);
+        const auto copied = copy(aggregate);
+        const auto filtered = filter_greater_than<"mid">(copied, 20.0);
+        return observe(source, aggregate, copied, select_column<"mid">(filtered), tick);
+    };
+    const auto commands = std::array<i64, 12>{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
+    const auto ticks = commands;
+    const auto result = testing::test_graph(graph, commands, ticks);
+
+    require(result.size() == commands.size() && observations.size() == commands.size(),
+            "computed TSF graph missed a command cycle");
+    require(observations[0].source_valid && observations[0].aggregate_valid && observations[0].mid_valid &&
+                observations[0].rows.empty() && observations[1].source_valid &&
+                observations[1].aggregate_valid && observations[1].rows == std::vector<row_id_t>{0} &&
+                observations[1].mids == std::vector<std::optional<double>>{11.0},
+            "computed TSF aggregate output did not initialize its rows and computed cells");
+    require(observations[1].source_row_domain == observations[1].aggregate_row_domain &&
+                observations[1].source_bid == observations[1].aggregate_bid &&
+                observations[1].aggregate_mid != observations[1].source_bid &&
+                observations[1].copied_bid == observations[1].aggregate_bid &&
+                observations[1].copied_mid != observations[1].aggregate_mid &&
+                observations[1].computed_slots == std::vector<row_id_t>{0},
+            "computed TSF did not borrow source columns and own computed columns");
+    require(observations[2].mids == std::vector<std::optional<double>>{12.0} &&
+                observations[2].mid_modified_rows == std::vector<row_id_t>{0},
+            "computed TSF did not publish a computed cell modification");
+    require(observations[3].rows == std::vector<row_id_t>{0, 1} &&
+                observations[3].mids == std::vector<std::optional<double>>{std::nullopt, std::nullopt} &&
+                observations[3].changed == std::vector<row_id_t>{0, 1} &&
+                observations[3].mid_modified_rows == std::vector<row_id_t>{0},
+            "computed TSF all-null batch did not preserve nullable row semantics");
+    require(observations[4].mids == std::vector<std::optional<double>>{12.0, std::nullopt},
+            "computed TSF did not restore its computed cells after an all-null batch");
+    require(observations[4].mid_modified_rows == std::vector<row_id_t>{0, 1},
+            "computed TSF did not publish the restored computed row delta");
+    require(observations[4].filtered_rows.empty(),
+            "downstream computed-column filter selected a row below its threshold");
+    require(observations[5].aggregate_modified && observations[5].mid_modified &&
+                observations[5].mid_last_updated > observations[4].mid_last_updated &&
+                observations[5].mid_storage_change_time > observations[4].mid_storage_change_time,
+            "set-only computed output did not publish its row delta and advance column timestamps");
+    require(observations[6].rows == std::vector<row_id_t>{1} &&
+                observations[6].removed == std::vector<row_id_t>{0},
+            "computed TSF did not remove computed storage with its source row");
+    require(observations[7].rows == std::vector<row_id_t>{0, 1} &&
+                observations[7].mids == std::vector<std::optional<double>>{31.0, std::nullopt} &&
+                observations[7].computed_slots == std::vector<row_id_t>{0, 1} &&
+                observations[7].computed_slots.front() == observations[1].computed_slots.front() &&
+                observations[7].filtered_rows == std::vector<row_id_t>{0} &&
+                observations[7].filtered_mids == std::vector<std::optional<double>>{31.0},
+            "computed TSF did not reuse a removed row ID or support downstream filter and projection");
+    require(!observations[8].source_valid && !observations[8].aggregate_valid &&
+                observations[8].aggregate_row_domain == nullptr && observations[9].source_valid &&
+                observations[9].aggregate_valid && observations[9].mid_valid && observations[9].rows.empty() &&
+                observations[10].mids == std::vector<std::optional<double>>{41.0} &&
+                observations[11].mids == std::vector<std::optional<double>>{41.0} &&
+                observations[11].mid_modified_rows.empty() && !observations[11].mid_modified &&
+                observations[11].mid_last_updated == observations[10].mid_last_updated,
+            "computed TSF did not invalidate and revalidate with its source");
+}
+
+void test_computed_tsf_runtime_cache_and_source_rebinding() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    const auto &series_type = frame_time_series_type<ComputedQuote>(TimeSeriesGuarantee::ordinary);
+    const auto &runtime = frame_computed_time_series_runtime_type<ComputedQuote>(
+        series_type, computed_option<"mid", "bid">{});
+    const auto &same_runtime = frame_computed_time_series_runtime_type<ComputedQuote>(
+        series_type, computed_option<"bid", "mid">{});
+    require(std::addressof(runtime) == std::addressof(same_runtime),
+            "computed TSF runtime cache depended on computed field name order");
+
+    auto missing_rejected = false;
+    try {
+        static_cast<void>(frame_computed_time_series_runtime_type<ComputedQuote>(
+            series_type, computed_option<"missing">{}));
+    } catch (const std::invalid_argument &) {
+        missing_rejected = true;
+    }
+    auto duplicate_rejected = false;
+    try {
+        static_cast<void>(frame_computed_time_series_runtime_type<ComputedQuote>(
+            series_type, computed_option<"mid", "mid">{}));
+    } catch (const std::invalid_argument &) {
+        duplicate_rejected = true;
+    }
+    require(missing_rejected && duplicate_rejected,
+            "computed TSF runtime accepted a missing or duplicate computed field name");
+
+    auto memory = allocator{};
+    auto first = NativeFrame<Quotes>{};
+    auto second = NativeFrame<Quotes>{};
+    auto release_frames = util::scope_exit{[&]() noexcept {
+        first.release(memory);
+        second.release(memory);
+    }};
+    const auto first_time = MIN_DT + EvaluationTime::duration{1};
+    const auto second_time = first_time + EvaluationTime::duration{1};
+    const auto first_id = first.add(
+        Quotes<Cell>{.size = Cell<i64>{1}, .bid = Cell<double>{10.0}, .ask = Cell<double>{12.0}}, first_time,
+        memory);
+    const auto second_id = second.add(
+        Quotes<Cell>{.size = Cell<i64>{2}, .bid = Cell<double>{20.0}, .ask = Cell<double>{22.0}}, second_time,
+        memory);
+    require(first_id == second_id && first.rows().identity() != second.rows().identity(),
+            "computed TSF rebind test did not create equal row IDs in distinct source domains");
+
+    auto *allocation = ::operator new(runtime.value_size(), std::align_val_t{runtime.value_alignment()});
+    runtime.construct_initial_value(allocation);
+    auto release_output = util::scope_exit{[&]() noexcept {
+        runtime.destroy_value(allocation, memory);
+        ::operator delete(allocation, std::align_val_t{runtime.value_alignment()});
+    }};
+    auto &output = *static_cast<RuntimeFrameViewOutputStorage *>(allocation);
+    auto first_input = native_frame_input(first);
+    require(output.bind(first_input, {}, std::nullopt, nullptr, nullptr, first_time, memory),
+            "computed TSF output did not bind its first source domain");
+    auto first_mid = std::optional<double>{11.0};
+    require(output.set_computed(0, first_id, std::addressof(first_mid), first_time, memory),
+            "computed TSF output did not write its first computed cell");
+    auto first_bid = std::optional<double>{10.5};
+    require(output.set_computed(2, first_id, std::addressof(first_bid), first_time, memory),
+            "computed TSF output did not write its second computed column");
+    const auto first_output_storage = static_cast<const FrameSeriesRuntimeType &>(runtime).input_storage(allocation);
+    const auto first_mid_binding = first_output_storage.column(0);
+    const auto first_bid_binding = first_output_storage.column(2);
+    require(first_mid_binding.physical_rows == first_bid_binding.physical_rows &&
+                first_mid_binding.physical_rows->slot_of(first_id) == 0 &&
+                first_output_storage.generic_column(0).view<double>().cell(0) == 11.0 &&
+                first_output_storage.generic_column(2).view<double>().cell(0) == 10.5,
+            "computed TSF columns did not share their row-to-slot mapping");
+
+    auto second_input = native_frame_input(second);
+    require(output.bind(second_input, {}, std::nullopt, nullptr, nullptr, second_time, memory) &&
+                output.added_rows.contains(second_id) && output.removed_rows.contains(first_id),
+            "computed TSF output did not report a source row-domain rebind");
+    const auto output_storage = static_cast<const FrameSeriesRuntimeType &>(runtime).input_storage(allocation);
+    require(output_storage.rows.count() == 1 && output_storage.rows.has(second_id) &&
+                !output_storage.generic_column(0).view<double>().cell(0),
+            "computed TSF source-domain rebind retained a prior source cell");
+    auto second_mid = std::optional<double>{21.0};
+    require(output.set_computed(0, second_id, std::addressof(second_mid), second_time, memory) &&
+                output_storage.generic_column(0).view<double>().cell(0) == 21.0 &&
+                output_storage.column(0).physical_rows == output_storage.column(2).physical_rows,
+            "computed TSF output did not accept a computed cell after source-domain rebind");
+}
+
+void test_runtime_schema_computed_tsf_output() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    struct observation {
+        std::vector<row_id_t> rows;
+        std::vector<std::optional<double>> bids;
+        std::vector<std::optional<double>> asks;
+        std::vector<std::optional<double>> mids;
+        bool computed_columns_share_slots{};
+    };
+    auto observations = std::vector<observation>{};
+    const auto schema_fields = std::array{
+        SchemaField{util::symbol{"bid"}, &cpp_scalar_type<double>()},
+        SchemaField{util::symbol{"ask"}, &cpp_scalar_type<double>()},
+        SchemaField{util::symbol{"mid"}, &cpp_scalar_type<double>()},
+    };
+    const auto &schema = anonymous_schema(schema_fields);
+    auto empty_bid = Column<double>{std::vector<std::optional<double>>{}};
+    auto empty_ask = Column<double>{std::vector<std::optional<double>>{}};
+    auto empty_mid = Column<double>{std::vector<std::optional<double>>{}};
+    const auto seed_columns = std::array{ColumnView<>{empty_bid.view()}, ColumnView<>{empty_ask.view()},
+                                         ColumnView<>{empty_mid.view()}};
+    auto memory = allocator{};
+    auto seed = make_frame_value(memory, schema, 0, seed_columns);
+    auto erased_seed = ScalarValue<>{seed, memory};
+    const auto commands = std::array<i64, 2>{0, 1};
+    auto seed_ticks = std::vector<std::optional<ScalarValue<>>>{};
+    auto command_ticks = std::vector<std::optional<ScalarValue<>>>{};
+    for (const auto command : commands) {
+        seed_ticks.emplace_back(erased_seed.view());
+        command_ticks.emplace_back(ScalarValue<i64>{command});
+    }
+    const auto inputs = std::array{
+        testing::TestGraphInput{erased_seed.runtime_type(), seed_ticks},
+        testing::TestGraphInput{cpp_scalar_runtime_type<i64>(), command_ticks},
+    };
+
+    const auto source = node([](In<TS<Frame<SCHEMA>>> schema_seed, In<TS<i64>> command, Out<TSF<SCHEMA>> output) {
+        static_cast<void>(schema_seed);
+        if (*command == 0) {
+            output.clear();
+            return;
+        }
+        const auto bid_value = 10.0;
+        const auto ask_value = 12.0;
+        const auto bid = Scalar<double>::from(bid_value);
+        const auto ask = Scalar<double>::from(ask_value);
+        const auto null_mid = std::optional<Scalar<>>{};
+        const auto row = std::array<std::optional<Scalar<>>, 3>{Scalar<>::from(bid), Scalar<>::from(ask), null_mid};
+        static_cast<void>(output.add(row));
+    });
+    const auto compute = node([](In<TSF<SCHEMA>> input,
+                                 Out<TSF<SCHEMA>, frame::computed<"mid", "bid">> output) {
+        output.bind(input);
+        if (!input.valid())
+            return;
+
+        const auto bids = input.column("bid").view<double>();
+        const auto asks = input.column("ask").view<double>();
+        auto ids = std::vector<row_id_t>{};
+        auto bids_out = std::vector<double>{};
+        auto mids_out = std::vector<double>{};
+        input.for_each_row([&](row_id_t id, std::size_t) {
+            ids.push_back(id);
+            const auto bid = bids.cell(id);
+            const auto ask = asks.cell(id);
+            bids_out.push_back(bid.value_or(0.0) + 1.0);
+            mids_out.push_back((bid.value_or(0.0) + ask.value_or(0.0)) / 2.0);
+        });
+        output.template set_batch<"bid">(
+            ids, ColumnBatch<double>{0, ids.size(), bids_out.data(), ColumnBatch<double>::Validity::all_valid()});
+        output.template set_batch<"mid">(
+            ids, ColumnBatch<double>{0, ids.size(), mids_out.data(), ColumnBatch<double>::Validity::all_valid()});
+    });
+    const auto observe = node([&](In<TSF<SCHEMA>> input, In<TS<i64>> command, Out<TS<i64>> output) {
+        auto result = observation{};
+        if (input.valid()) {
+            const auto bids = input.column("bid").view<double>();
+            const auto asks = input.column("ask").view<double>();
+            const auto mids = input.column("mid").view<double>();
+            const auto frame = input.extension_descriptor();
+            const auto bid_binding = frame.column(frame.field_index(util::symbol{"bid"}));
+            const auto mid_binding = frame.column(frame.field_index(util::symbol{"mid"}));
+            result.computed_columns_share_slots = bid_binding.physical_rows == mid_binding.physical_rows;
+            input.for_each_row([&](row_id_t id, std::size_t) {
+                result.rows.push_back(id);
+                result.bids.push_back(bids.cell(id));
+                result.asks.push_back(asks.cell(id));
+                result.mids.push_back(mids.cell(id));
+            });
+        }
+        observations.push_back(std::move(result));
+        output.set(*command);
+    });
+    using namespace bg::literals;
+    const auto graph = bg::graph("name"_n = "runtime_schema_computed_tsf_output", [&](wp<TS<Frame<SCHEMA>>> seed_input,
+                                                                                           wp<TS<i64>> command) {
+        return observe(compute(source(seed_input, command)), command);
+    });
+    const auto result = testing::test_graph(graph, std::span<const testing::TestGraphInput>{inputs});
+    require(result.size() == commands.size() && observations.size() == commands.size() &&
+                observations[1].rows == std::vector<row_id_t>{0} &&
+                observations[1].bids == std::vector<std::optional<double>>{11.0} &&
+                observations[1].asks == std::vector<std::optional<double>>{12.0} &&
+                observations[1].mids == std::vector<std::optional<double>>{11.0} &&
+                observations[1].computed_columns_share_slots,
+            "runtime-schema computed TSF output did not materialize its fields on shared row slots");
+}
+
 } // namespace
 
 int main() {
@@ -3314,6 +3776,9 @@ int main() {
         test_filtered_column_coverage_rejects_a_different_row_set();
         test_incremental_numeric_filter();
         test_filter_greater_than_composes_with_column_projection();
+        test_computed_tsf_outputs_and_downstream_views();
+        test_computed_tsf_runtime_cache_and_source_rebinding();
+        test_runtime_schema_computed_tsf_output();
         test_scalar_variable_frame_input();
     } catch (const std::exception &error) {
         std::cerr << "bg_frame_frame_test: " << error.what() << '\n';

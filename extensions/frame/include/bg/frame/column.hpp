@@ -11,6 +11,7 @@
 #include <bg/type/scalar_type.hpp>
 #include <bg/type/type_map.hpp>
 #include <bg/type/time_series_type.hpp>
+#include <bg/util/compile_time_string.hpp>
 #include <bg/util/index.hpp>
 #include <bg/util/occupancy_index.hpp>
 #include <bg/util/scope_exit.hpp>
@@ -26,6 +27,7 @@
 #include <optional>
 #include <span>
 #include <stdexcept>
+#include <type_traits>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -33,6 +35,14 @@
 namespace bg::frame {
 struct view_option {};
 inline constexpr view_option view{};
+template <util::compile_time_string... Names> struct computed_option {
+    static constexpr auto field_count = sizeof...(Names);
+};
+template <util::compile_time_string... Names>
+inline constexpr computed_option<Names...> computed{};
+template <typename T> struct is_computed_option : std::false_type {};
+template <util::compile_time_string... Names>
+struct is_computed_option<computed_option<Names...>> : std::true_type {};
 
 using row_id_t = std::uint32_t;
 inline constexpr auto no_row = std::numeric_limits<row_id_t>::max();

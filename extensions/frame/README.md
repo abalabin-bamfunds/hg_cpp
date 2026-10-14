@@ -106,6 +106,7 @@ Include `<bg/frame/frame.hpp>` for concrete and runtime-schema frames.
 | Delta | `for_each_changed`, `for_each_removed`, `for_each_modified<Index>` |
 | `Out<TSF<Schema>>` | `schema`, `add`, `set`, `erase`, `clear`, `invalidate` |
 | `Out<TSF<Schema>, frame::view>` | `schema`, `bind_projection(source, ordinals/names/columns<...>())`, `invalidate` |
+| `Out<TSF<Schema>, frame::computed<"mid">>` | `schema`, `bind(source)`, `set<"mid">`, `set_batch<"mid">`, `invalidate` |
 | Column selection | `select_column<"bid">(frame)` returns a `wp<TSC<T>>` |
 | Projection helper | `project<TargetSchema, "bid", "ask">(frame)` |
 | Filter helper | `filter_greater_than<"size">(frame, threshold)` |
@@ -130,6 +131,39 @@ added, including overlapping numeric IDs.
 A valid TSF view output uses either projection or filtering. Switching between
 these operations throws `std::logic_error`; invalidate the output before
 changing its operation.
+
+### Mixed computed and borrowed columns
+
+`Out<TSF<Schema>, frame::computed<Names...>>` owns the named computed columns
+and borrows the remaining columns. `bind(source)` matches borrowed fields by
+name and exact cell type. The source can omit computed fields and use a different
+schema order. Both concrete and runtime schemas use the same output implementation.
+Computed names must be distinct and present in the resolved output schema;
+wiring rejects invalid names.
+
+The output preserves source row IDs, row domain, and current traversal order.
+Computed columns share one local physical slot map. New computed cells start
+null. Removing a row clears its computed cells before releasing its slot.
+Rebinding to a different domain clears computed cells and reports the old rows
+removed and the new rows added. See the
+[storage decision](docs/decisions/computed-column-storage.md).
+
+Use `set<Name>(id, value)` with a numeric value, `std::optional<T>`, or
+`std::nullopt`. `set_batch<Name>(ids, batch)` writes a `ColumnBatch<T>` after
+validating its cell type, row IDs, length, and value-buffer presence. An all-null
+batch can use a null value pointer. Batch publication occurs once. Accepted
+writes publish even when the cell value is equal, following ordinary time-series
+semantics. Cell writes publish their computed column and the frame. Membership
+changes publish every column. A later cell write can publish without another
+`bind` when membership is unchanged.
+
+```cpp
+output.bind(source);
+output.set<"mid">(row, 101.5);
+output.set_batch<"mid">(rows, batch);
+```
+
+### Projection and filtering helpers
 
 `project<TargetSchema, "bid", "ask">(frame)` creates a projection node that
 binds the named source columns to the target schema in order. The projection
