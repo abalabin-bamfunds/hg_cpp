@@ -20,15 +20,17 @@ WiringTemplate::~WiringTemplate() = default;
 
 std::optional<WiringPoint> WiringTemplate::invoke_resolved(GraphWiring &wiring, SignatureResolution resolution,
                                                            std::span<const WiringArgument> arguments,
+                                                           std::span<const details::WiringArgumentDescriptor> descriptors,
                                                            util::symbol path_name) const {
-    return wiring.invoke_resolved(*this, std::move(resolution), arguments, path_name);
+    return wiring.invoke_resolved(*this, std::move(resolution), arguments, descriptors, path_name);
 }
 
 std::optional<WiringPoint> WiringTemplate::invoke_resolved(GraphWiring &wiring, const WiringTemplate &implementation,
                                                            SignatureResolution resolution,
                                                            std::span<const WiringArgument> arguments,
+                                                           std::span<const details::WiringArgumentDescriptor> descriptors,
                                                            util::symbol path_name) const {
-    return wiring.invoke_resolved(implementation, std::move(resolution), arguments, path_name);
+    return wiring.invoke_resolved(implementation, std::move(resolution), arguments, descriptors, path_name);
 }
 
 std::optional<WiringPoint> WiringTemplate::invoke(GraphWiring &wiring,
@@ -174,7 +176,7 @@ std::optional<WiringPoint> WiringTemplate::invoke(GraphWiring &wiring,
     details::bind_materialisation_forms(wiring, *this, committed.arguments, selected_forms);
     return invoke_resolved(wiring, SignatureResolution{std::move(selected.resolution.signature),
                                                        std::move(selected.resolution.type_map)},
-                           committed.arguments, path_name);
+                           committed.arguments, committed.descriptors, path_name);
 }
 
 } // namespace bg

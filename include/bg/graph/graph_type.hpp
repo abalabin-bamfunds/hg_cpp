@@ -159,7 +159,7 @@ class GraphPatternTemplate<Result(Arguments...), Pattern> final : public WiringT
         }
     }
 
-    std::optional<WiringPoint> wire(GraphWiring &, ResolvedSignature, const TypeMap &,
+    std::optional<WiringPoint> wire(GraphWiring &, ResolvedSignature, const WiringArguments &,
                                     std::span<const WiringArgument> arguments) const final {
         return invoke(arguments, std::index_sequence_for<Arguments...>{});
     }

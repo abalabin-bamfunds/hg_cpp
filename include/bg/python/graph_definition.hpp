@@ -23,7 +23,7 @@ class BG_PYTHON_API PythonGraphDefinition final : public WiringTemplate {
     }
 
   private:
-    std::optional<WiringPoint> wire(GraphWiring &, ResolvedSignature, const TypeMap &,
+    std::optional<WiringPoint> wire(GraphWiring &, ResolvedSignature, const WiringArguments &,
                                     std::span<const WiringArgument> arguments) const override;
 
     std::shared_ptr<const PythonNodeDefinition::SignatureDefinition> signature_;

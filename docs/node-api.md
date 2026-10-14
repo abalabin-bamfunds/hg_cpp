@@ -401,10 +401,39 @@ output type provides its mutation operations.
 
 Built-in outputs use `Out<Declaration>`. A time series provider can define additional
 `Out` specializations with its own options. The complete output declaration
-selects its interface and runtime representation during wiring. Consumers see
+selects its interface and default runtime representation during wiring. Consumers see
 its semantic time series type. Input representations do not select output
 storage. See the [provider contract](time-series-providers.md#output-declarations)
 for the extension customization points.
+
+A definition can select its output runtime type from wiring arguments. An aggregate
+declares a static hook:
+
+```cpp
+static const bg::TimeSeriesRuntimeType &
+output_runtime_type(const bg::WiringArguments &arguments);
+```
+
+A callable supplies `bg::output_runtime_type = callback` together with
+`bg::eval = callable`. A runtime-signature definition supplies
+`output_runtime_type(const WiringArguments &) const`.
+
+BG calls the hook after selecting the overload and resolving its signature,
+before recording the node call. The hook replaces output-trait runtime selection
+for that call. Its result must remain alive while the graph uses it, have the
+resolved output's exact semantic type, and implement the declared `Out` interface.
+The hook must return the same runtime type for the same node definition and wiring
+arguments. BG uses the existing node-call identity for deduplication.
+BG reports a semantic type mismatch during wiring. Compilation stores the selected
+runtime type and uses it for output allocation and `Out` construction, including
+concrete outputs. Evaluation uses it without calling the hook again. Outputs that
+use direct access to a fixed layout retain that layout requirement and direct
+scalar access. Definitions without a hook use the output declaration's default
+runtime selection.
+
+The hook receives the same fixed and flattened variadic argument view as
+requirements and resolvers. Use `resolved_type()`, `resolved_output_type()`, and
+`scalar()` to inspect resolved types and scalar configuration.
 
 `Out<TS<T>>::set(value)` assigns the value and sets its last updated time to the
 current evaluation time. Invalidatable output types provide `invalidate()` with

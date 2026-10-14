@@ -112,6 +112,13 @@ Runtime-signature definitions declare `output_declaration_type` for runtime
 selection and use `NodeInvocation::output_as<Output>()` for binding.
 `output<Declaration>()` binds the ordinary `Out<Declaration>`.
 
+The [node output-runtime hook](node-api.md#output-parameters) replaces trait
+selection when the representation depends on wiring arguments. Custom node
+templates implement `NodeTemplate::output_runtime_type(const WiringArguments &)`;
+BG calls it during wiring and retains its result for compilation.
+The [wiring callback](graph-wiring.md#wiring-template-call) receives this borrowed
+argument view alongside the normalized arguments used for forwarding.
+
 ## Views and publication
 
 The provider supplies `In<Declaration, Properties...>` and `Out<Declaration>`

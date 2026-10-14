@@ -61,7 +61,7 @@ class DefaultValueTemplate final : public WiringTemplate {
     }
 
   private:
-    std::optional<WiringPoint> wire(GraphWiring &, ResolvedSignature, const TypeMap &,
+    std::optional<WiringPoint> wire(GraphWiring &, ResolvedSignature, const WiringArguments &,
                                     std::span<const WiringArgument> arguments) const override {
         const auto fallback = std::array{arguments[1]};
         const auto result = static_cast<const WiringTemplate &>(const_)(std::span<const WiringArgument>{fallback});

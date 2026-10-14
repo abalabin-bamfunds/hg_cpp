@@ -36,7 +36,7 @@ class SwitchCacheOverload final : public WiringTemplate {
     }
 
   private:
-    std::optional<WiringPoint> wire(GraphWiring &, ResolvedSignature, const TypeMap &,
+    std::optional<WiringPoint> wire(GraphWiring &, ResolvedSignature, const WiringArguments &,
                                     std::span<const WiringArgument>) const final {
         return integer_source();
     }

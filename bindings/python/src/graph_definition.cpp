@@ -62,7 +62,7 @@ PythonGraphDefinition::PythonGraphDefinition(
 }
 
 std::optional<WiringPoint> PythonGraphDefinition::wire(GraphWiring &wiring, ResolvedSignature resolved_signature,
-                                                       const TypeMap &,
+                                                       const WiringArguments &,
                                                        std::span<const WiringArgument> arguments) const {
     if (&WiringContext::current().wiring() != &wiring) {
         throw std::logic_error{"a Python graph must wire in its active graph context"};

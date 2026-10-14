@@ -1,6 +1,7 @@
 #pragma once
 
 #include <bg/graph/requirement.hpp>
+#include <bg/graph/wiring_arguments.hpp>
 #include <bg/node/details/callable_node_options.hpp>
 #include <bg/node/details/callable_signature.hpp>
 #include <bg/node/details/resolver.hpp>
@@ -69,6 +70,10 @@ std::optional<bool> callable_schedule_on_start_option(const std::tuple<Options..
         options);
     return result;
 }
+
+template <typename... Options>
+inline constexpr bool callable_has_output_runtime_type_option =
+    (false || ... || is_callable_output_runtime_type_v<Options>);
 
 template <typename Function, std::size_t Target, std::size_t... Index>
 consteval std::size_t callable_parameter_index(std::index_sequence<Index...>) {
@@ -172,6 +177,10 @@ template <typename Function, typename... Options> class CallableNodeDefinition {
     using output_time_series_type = callable_wiring_output_t<Function>;
     using Invocation = NodeInvocation<compiled_data_type>;
 
+    static_assert(!callable_has_output_runtime_type_option<Options...> ||
+                      !std::same_as<output_declaration_type, void>,
+                  "an output runtime type option requires a callable output declaration");
+
     explicit CallableNodeDefinition(Function function, Options... options)
         : function_{std::move(function)}, options_{std::move(options)...},
           signature_{make_callable_signature<Function, Function>(util::symbol{util::unqualified_type_name<Function>()},
@@ -259,7 +268,27 @@ template <typename Function, typename... Options> class CallableNodeDefinition {
 
     bool uses_output_runtime_type() const noexcept {
         return !std::same_as<output_declaration_type, void> &&
-               output_requires_runtime_type<output_declaration_type>;
+               (output_requires_runtime_type<output_declaration_type> ||
+                callable_has_output_runtime_type_option<Options...>);
+    }
+
+    const TimeSeriesRuntimeType &output_runtime_type(const WiringArguments &arguments) const
+        requires(!std::same_as<output_declaration_type, void> &&
+                 callable_has_output_runtime_type_option<Options...>)
+    {
+        const auto *selected = static_cast<const TimeSeriesRuntimeType *>(nullptr);
+        std::apply(
+            [&](const auto &...option) {
+                (([&] {
+                     if constexpr (is_callable_output_runtime_type_v<decltype(option)>) {
+                         selected = std::addressof(std::invoke(option.function, arguments));
+                     }
+                 }()),
+                 ...);
+            },
+            options_);
+
+        return *selected;
     }
 
   private:

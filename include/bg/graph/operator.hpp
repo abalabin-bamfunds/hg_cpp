@@ -35,7 +35,7 @@ class Operator : public WiringTemplate {
     [[nodiscard]] std::optional<WiringPoint> invoke(GraphWiring &wiring,
                                                     std::span<const WiringArgument> arguments,
                                                     const TypeMap *seed_type_map) const final;
-    [[nodiscard]] std::optional<WiringPoint> wire(GraphWiring &, ResolvedSignature, const TypeMap &,
+    [[nodiscard]] std::optional<WiringPoint> wire(GraphWiring &, ResolvedSignature, const WiringArguments &,
                                                   std::span<const WiringArgument>) const final;
 
     Signature prototype_;

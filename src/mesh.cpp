@@ -97,7 +97,7 @@ class DefaultValueMeshTemplate final : public WiringTemplate {
     const Signature &signature() const noexcept final { return signature_; }
 
   private:
-    std::optional<WiringPoint> wire(GraphWiring &, ResolvedSignature, const TypeMap &,
+    std::optional<WiringPoint> wire(GraphWiring &, ResolvedSignature, const WiringArguments &,
                                     std::span<const WiringArgument> arguments) const final {
         return DefaultMeshWiring::from(arguments.front().graph()).wire();
     }
@@ -119,7 +119,7 @@ class DefaultSinkMeshTemplate final : public WiringTemplate {
     }
 
   private:
-    std::optional<WiringPoint> wire(GraphWiring &, ResolvedSignature, const TypeMap &,
+    std::optional<WiringPoint> wire(GraphWiring &, ResolvedSignature, const WiringArguments &,
                                     std::span<const WiringArgument> arguments) const final {
         return DefaultMeshWiring::from(arguments.front().graph()).wire();
     }

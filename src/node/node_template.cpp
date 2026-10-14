@@ -2,6 +2,7 @@
 
 #include <bg/graph/details/wiring_record.hpp>
 #include <bg/graph/graph_wiring.hpp>
+#include <bg/graph/wiring_arguments.hpp>
 #include <bg/graph/wiring_context.hpp>
 #include <bg/graph/wiring_error.hpp>
 #include <bg/scalar/scalar.hpp>
@@ -71,7 +72,8 @@ std::optional<std::size_t> node_hash(const NodeTemplate &node_template, const Re
 
 } // namespace
 
-std::optional<WiringPoint> NodeTemplate::wire(GraphWiring &wiring, ResolvedSignature signature, const TypeMap &type_map,
+std::optional<WiringPoint> NodeTemplate::wire(GraphWiring &wiring, ResolvedSignature signature,
+                                              const WiringArguments &argument_view,
                                               std::span<const WiringArgument> arguments) const {
     for (auto index = std::size_t{}; index < this->signature().parameter_count(); ++index) {
         const auto *variable = dynamic_cast<const TypeVariableType<Type> *>(this->signature().parameter(index).type);
@@ -102,13 +104,21 @@ std::optional<WiringPoint> NodeTemplate::wire(GraphWiring &wiring, ResolvedSigna
 
     auto selected_output_runtime_type = static_cast<const TimeSeriesRuntimeType *>(nullptr);
     if (signature.output != nullptr) {
-        selected_output_runtime_type = output_runtime_type(signature);
+        selected_output_runtime_type = output_runtime_type(argument_view);
         if (selected_output_runtime_type != nullptr && &selected_output_runtime_type->type() != signature.output) {
-            throw WiringError{"a selected output runtime type has a different semantic type"};
+            auto context = WiringErrorContext{
+                .stage = WiringFailureStage::type_match,
+                .path = WiringContext::current().path() == nullptr ? std::string{}
+                                                                   : WiringContext::current().path()->text(),
+                .operation = signature.name};
+            signature.output->format_name(context.expected_type);
+            selected_output_runtime_type->type().format_name(context.actual_type);
+            throw WiringError{"a selected output runtime type has a different semantic type"}
+                .with_context(std::move(context));
         }
     }
 
-    auto output = wiring.defer_node_call(*this, std::move(signature), type_map, arguments,
+    auto output = wiring.defer_node_call(*this, std::move(signature), argument_view.type_map(), arguments,
                                          selected_output_runtime_type);
     if (!output) {
         return std::nullopt;

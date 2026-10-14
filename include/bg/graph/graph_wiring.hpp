@@ -41,6 +41,7 @@ class WiringTemplate;
 
 namespace details {
 class WiringRecord;
+class WiringArgumentDescriptor;
 class GraphWiringStructure;
 class ContextScope;
 class ServiceRequirements;
@@ -148,6 +149,7 @@ class GraphWiring {
     [[nodiscard]] std::optional<WiringPoint> invoke_resolved(const WiringTemplate &wiring_template,
                                                              SignatureResolution resolution,
                                                              std::span<const WiringArgument> arguments,
+                                                             std::span<const details::WiringArgumentDescriptor> descriptors,
                                                              util::symbol path_name);
     [[nodiscard]] WiringPoint defer_node_call(const NodeTemplate &node_template, ResolvedSignature signature,
                                               const TypeMap &type_map,

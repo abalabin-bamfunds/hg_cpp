@@ -495,6 +495,8 @@ class CompiledNode {
         return (flags_ & all_valid_input_metadata_flag) != 0;
     }
 
+    bool has_output_runtime_type() const noexcept { return (flags_ & output_runtime_type_flag) != 0; }
+
     const ScalarRuntimeType &scalar_input_runtime_type(std::size_t parameter_index) const noexcept {
         return static_cast<const ScalarRuntimeType &>(parameter_runtime_type(parameter_index));
     }
@@ -538,13 +540,14 @@ class CompiledNode {
     static constexpr std::uint32_t controlled_input_count_shift = 11;
     static constexpr std::uint32_t controlled_input_count_mask = parameter_count_mask << controlled_input_count_shift;
     static constexpr std::uint32_t all_valid_input_metadata_flag = std::uint32_t{1} << 21;
+    static constexpr std::uint32_t output_runtime_type_flag = std::uint32_t{1} << 22;
     static constexpr std::uint32_t input_node_indices_flag = std::uint32_t{1} << 31;
 
     CompiledNode(EvaluationFunction evaluation_function, std::uint32_t output_last_updated_offset,
                  std::uint32_t output_value_offset, std::uint32_t parameter_count, std::uint32_t subscriber_count,
                  bool has_output, bool has_state, bool has_output_notification, bool has_item_subscriptions,
                  bool has_node_invocation_metadata, bool has_all_valid_input_metadata,
-                 std::uint32_t controlled_input_count,
+                 bool has_output_runtime_type, std::uint32_t controlled_input_count,
                  bool has_input_node_indices, InvalidationMode invalidation_mode) noexcept
         : evaluation_function_(evaluation_function),
           output_last_updated_offset_(output_last_updated_offset | (has_output ? std::uint32_t{} : no_output_flag) |
@@ -557,6 +560,7 @@ class CompiledNode {
           flags_((has_node_invocation_metadata ? node_invocation_flag : std::uint32_t{}) |
                  (controlled_input_count << controlled_input_count_shift) |
                  (has_all_valid_input_metadata ? all_valid_input_metadata_flag : std::uint32_t{}) |
+                 (has_output_runtime_type ? output_runtime_type_flag : std::uint32_t{}) |
                  (has_input_node_indices ? input_node_indices_flag : std::uint32_t{})) {}
 
     bool has_input_node_indices() const noexcept { return (flags_ & input_node_indices_flag) != 0; }

@@ -11,6 +11,7 @@
 #include <bg/graph/runtime_graph.hpp>
 #include <bg/graph/wiring_argument.hpp>
 #include <bg/graph/wiring_context.hpp>
+#include <bg/graph/wiring_arguments.hpp>
 #include <bg/graph/wiring_error.hpp>
 #include <bg/graph/wiring_template.hpp>
 #include <bg/node.hpp>
@@ -346,7 +347,7 @@ void ServiceDefinition::implementation_replies(const TypeMap &type_map, WiringPo
 }
 
 std::optional<WiringPoint> ServiceDefinition::wire(GraphWiring &wiring, ResolvedSignature signature,
-                                                   const TypeMap &type_map,
+                                                   const WiringArguments &argument_view,
                                                    std::span<const WiringArgument> arguments) const {
     for (const auto &parameter : signature.parameters) {
         if (const auto *time_series = type_cast<TimeSeriesType>(parameter.type);
@@ -358,7 +359,7 @@ std::optional<WiringPoint> ServiceDefinition::wire(GraphWiring &wiring, Resolved
         throw WiringError{"service signatures cannot contain reference types"};
     }
 
-    return wire_client(wiring, std::move(signature), type_map, arguments);
+    return wire_client(wiring, std::move(signature), argument_view.type_map(), arguments);
 }
 
 Service::Service(Signature signature) : ServiceDefinition{std::move(signature)} {

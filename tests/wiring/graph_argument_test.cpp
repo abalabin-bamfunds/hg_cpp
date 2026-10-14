@@ -274,7 +274,7 @@ class GraphOverload final : public WiringTemplate {
     }
 
   private:
-    std::optional<WiringPoint> wire(GraphWiring &, ResolvedSignature, const TypeMap &,
+    std::optional<WiringPoint> wire(GraphWiring &, ResolvedSignature, const WiringArguments &,
                                     std::span<const WiringArgument>) const final {
         *selected_ = signature_.name().text();
         if (!output_) {

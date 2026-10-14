@@ -52,7 +52,7 @@ class OutputRuntimeSelectorNode final : public bg::NodeTemplate {
     bg::EvaluationFunction evaluation_function(const bg::ResolvedSignature &) const noexcept final { return nullptr; }
     bool uses_output_runtime_type() const noexcept final { return true; }
 
-    const bg::TimeSeriesRuntimeType *output_runtime_type(const bg::ResolvedSignature &) const final {
+    const bg::TimeSeriesRuntimeType *output_runtime_type(const bg::WiringArguments &) const final {
         ++*selector_calls_;
         return selected_runtime_type_;
     }
@@ -61,6 +61,23 @@ class OutputRuntimeSelectorNode final : public bg::NodeTemplate {
     bg::Signature signature_;
     const bg::TimeSeriesRuntimeType *selected_runtime_type_;
     int *selector_calls_;
+};
+
+class ThrowingOutputRuntimeSelectorNode final : public bg::NodeTemplate {
+  public:
+    ThrowingOutputRuntimeSelectorNode()
+        : signature_{bg::util::symbol{"throwing_output_runtime_selector"}, {}, bg::TS<float>::type()} {}
+
+    const bg::Signature &signature() const final { return signature_; }
+    bg::EvaluationFunction evaluation_function(const bg::ResolvedSignature &) const noexcept final { return nullptr; }
+    bool uses_output_runtime_type() const noexcept final { return true; }
+
+    const bg::TimeSeriesRuntimeType *output_runtime_type(const bg::WiringArguments &) const final {
+        throw std::runtime_error{"output descriptor selection failed"};
+    }
+
+  private:
+    bg::Signature signature_;
 };
 
 static_assert(sizeof(bg::WiringPoint) == sizeof(void *));
@@ -655,6 +672,27 @@ TEST_CASE("node output runtime selector runs at the call and its result is reuse
     REQUIRE(wiring.nodes().size() == 1);
     REQUIRE(wiring.outputs().size() == 1);
     CHECK(wiring.outputs()[0].runtime_type == &matching_runtime_type);
+}
+
+TEST_CASE("an output runtime callback failure retains the node's wiring context",
+          "[graph_wiring][feature:wiring][feature:node-api]") {
+    const auto node = ThrowingOutputRuntimeSelectorNode{};
+    auto wiring = bg::GraphWiring{};
+    const bg::WiringContext context{wiring};
+
+    try {
+        (void)node();
+        FAIL("expected output runtime selection to fail");
+    } catch (const bg::WiringError &error) {
+        CHECK(std::string{error.what()}.contains("output descriptor selection failed"));
+        REQUIRE(error.contexts().size() == 1);
+        CHECK(error.contexts().front().stage == bg::WiringFailureStage::callback);
+        CHECK(error.contexts().front().operation.text() == "throwing_output_runtime_selector");
+        CHECK_FALSE(error.contexts().front().path.empty());
+    }
+
+    CHECK(wiring.nodes().empty());
+    CHECK(wiring.outputs().empty());
 }
 
 TEST_CASE("explicit scalar values preserve their declared graph type",

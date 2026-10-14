@@ -1,6 +1,8 @@
 #include <bg/graph.hpp>
+#include <bg/graph/compiled_graph.hpp>
 #include <bg/node.hpp>
 #include <bg/run_graph.hpp>
+#include <bg/scalar/cpp_runtime_type.hpp>
 #include <bg/testing/test_graph.hpp>
 #include <bg/time_series/time_series_runtime_type.hpp>
 #include <bg/time_series/tsb/tsb.hpp>
@@ -11,10 +13,117 @@
 
 #include <array>
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
+#include <map>
+#include <memory>
 #include <optional>
 
 namespace {
+
+struct alignas(std::max_align_t) PaddedScalarValue {
+    bg::i64 value{};
+    bg::i64 padding{};
+};
+
+class SelectedOutputRuntimeType final : public bg::TimeSeriesValueRuntimeType {
+  public:
+    SelectedOutputRuntimeType(const bg::TimeSeriesType &type, bg::i64 layout)
+        : TimeSeriesValueRuntimeType{type, bg::cpp_scalar_runtime_type<bg::i64>(), value_size(layout),
+                                    value_alignment(layout), false, false, true}, layout_{layout} {}
+
+    void construct_initial_value(void *destination) const noexcept override {
+        if (layout_ == 1) {
+            std::construct_at(static_cast<bg::i64 *>(destination));
+        } else {
+            std::construct_at(static_cast<PaddedScalarValue *>(destination));
+        }
+    }
+
+    void destroy_value(void *value, bg::allocator &) const noexcept override {
+        if (layout_ == 1) {
+            std::destroy_at(static_cast<bg::i64 *>(value));
+        } else {
+            std::destroy_at(static_cast<PaddedScalarValue *>(value));
+        }
+    }
+
+  private:
+    bg::i64 layout_;
+
+    static std::size_t value_size(bg::i64 layout) noexcept {
+        return layout == 1 ? sizeof(bg::i64) : sizeof(PaddedScalarValue);
+    }
+
+    static std::size_t value_alignment(bg::i64 layout) noexcept {
+        return layout == 1 ? alignof(bg::i64) : alignof(PaddedScalarValue);
+    }
+};
+
+const bg::TimeSeriesRuntimeType &selected_output_runtime_type(const bg::TimeSeriesType &type,
+                                                               bg::i64 layout) {
+    static auto runtime_types =
+        std::map<std::pair<const bg::TimeSeriesType *, bg::i64>, std::unique_ptr<SelectedOutputRuntimeType>>{};
+    const auto key = std::pair{&type, layout};
+    const auto [entry, inserted] = runtime_types.try_emplace(key);
+    if (inserted) {
+        entry->second = std::make_unique<SelectedOutputRuntimeType>(type, layout);
+    }
+    return *entry->second;
+}
+
+using CALLABLE_SCALAR = bg::ScalarVariable<"CALLABLE_SCALAR">;
+
+struct valid_output_runtime_type_callback {
+    const bg::TimeSeriesRuntimeType &operator()(const bg::WiringArguments &) const;
+};
+
+struct invalid_output_runtime_type_callback {
+    bg::i64 operator()(const bg::WiringArguments &) const;
+};
+
+template <typename Function>
+concept can_make_output_runtime_type_option = requires(Function &&function) {
+    bg::output_runtime_type = std::forward<Function>(function);
+};
+
+using OutputRuntimeTypeOption = bg::details::CallableOutputRuntimeType<valid_output_runtime_type_callback>;
+
+static_assert(bg::details::callable_node_options<OutputRuntimeTypeOption>);
+static_assert(!bg::details::callable_node_options<OutputRuntimeTypeOption, OutputRuntimeTypeOption>);
+static_assert(can_make_output_runtime_type_option<valid_output_runtime_type_callback>);
+static_assert(!can_make_output_runtime_type_option<invalid_output_runtime_type_callback>);
+
+struct InstanceOutputRuntimeDefinition {
+    explicit InstanceOutputRuntimeDefinition(bg::i64 layout)
+        : layout_{layout},
+          signature_{bg::util::symbol{"instance_output_runtime"},
+                     {{bg::util::symbol{"input"}, &bg::TS<bg::i64>::type()}}, bg::TS<bg::i64>::type()} {}
+
+    const bg::Signature &signature() const { return signature_; }
+
+    const bg::TimeSeriesRuntimeType &output_runtime_type(const bg::WiringArguments &arguments) const {
+        ++selector_calls;
+        CHECK(arguments.size() == 1);
+        CHECK(&arguments.resolved_type(0) == &bg::TS<bg::i64>::type());
+        return selected_output_runtime_type(*arguments.resolved_output_type(), layout_);
+    }
+
+    static void evaluate(bg::NodeInvocation<> invocation) {
+        const auto input = invocation.input<bg::In<bg::TS<bg::i64>>>(0);
+        const auto output = invocation.output_as<bg::Out<bg::TS<bg::i64>>>();
+        CHECK(&output.runtime_type() == &selected_output_runtime_type(output.runtime_type().type(), expected_layout));
+        output.set(input.value());
+        CHECK(output.value() == input.value());
+    }
+
+    inline static int selector_calls{};
+    static constexpr bg::i64 expected_layout = 2;
+
+  private:
+    bg::i64 layout_;
+    bg::Signature signature_;
+};
 
 template <template <typename, auto...> typename Field> struct RuntimeValidityBaseBundle {
     Field<bg::i64> value;
@@ -83,6 +192,177 @@ TEST_CASE("a runtime-signature node exposes resolved parameters, compiled data, 
     };
 
     CHECK(bg::testing::test_graph(graph, {1, 2, 3}).equals({3, 6, 9}));
+}
+
+TEST_CASE("a callable selects its output runtime type from wiring arguments",
+          "[feature:node-api][series:value][declaration:generic][definition:function]") {
+    auto selector_calls = 0;
+    const auto compute = bg::node(
+        bg::eval = [](bg::In<bg::TS<CALLABLE_SCALAR>> input, bg::i64 layout,
+                      bg::Out<bg::TS<CALLABLE_SCALAR>> output) {
+            CHECK(&output.runtime_type() ==
+                  &selected_output_runtime_type(output.runtime_type().type(), layout));
+            output.set_value(input.value_view());
+        },
+        bg::output_runtime_type = [&selector_calls](const bg::WiringArguments &arguments)
+            -> const bg::TimeSeriesRuntimeType & {
+            ++selector_calls;
+            REQUIRE(arguments.size() == 2);
+            CHECK(&arguments.resolved_type(0) == &bg::TS<bg::i64>::type());
+            CHECK(&arguments.resolved_type(1) == &bg::int64_type());
+            const auto layout = bg::scalar_cast<bg::i64>(*arguments.scalar(1)).value();
+            return selected_output_runtime_type(*arguments.resolved_output_type(), layout);
+        });
+
+    const auto run = [&](bg::i64 layout) {
+        const auto graph = [&](bg::wp<bg::TS<bg::i64>> input) -> bg::wp<bg::TS<bg::i64>> {
+            return bg::wp<bg::TS<bg::i64>>{compute(input, layout)};
+        };
+        return bg::testing::test_graph(graph, std::array<bg::i64, 2>{4, 5});
+    };
+
+    CHECK(run(1).equals<bg::i64>({4, 5}));
+    CHECK(selector_calls == 1);
+    CHECK(run(2).equals<bg::i64>({4, 5}));
+    CHECK(selector_calls == 2);
+}
+
+TEST_CASE("a concrete callable evaluates using its selected output runtime type",
+          "[feature:node-api][series:value][declaration:concrete][definition:function]") {
+    auto selector_calls = 0;
+    const auto compute = bg::node(
+        bg::eval = [](bg::In<bg::TS<bg::i64>> input, bg::i64 layout, bg::Out<bg::TS<bg::i64>> output) {
+            CHECK(&output.runtime_type() == &selected_output_runtime_type(output.runtime_type().type(), layout));
+            output.set(input.value());
+            CHECK(output.value() == input.value());
+        },
+        bg::output_runtime_type = [&selector_calls](const bg::WiringArguments &arguments)
+            -> const bg::TimeSeriesRuntimeType & {
+            ++selector_calls;
+            REQUIRE(arguments.size() == 2);
+            CHECK(&arguments.resolved_type(0) == &bg::TS<bg::i64>::type());
+            CHECK(&arguments.resolved_type(1) == &bg::int64_type());
+            const auto layout = bg::scalar_cast<bg::i64>(*arguments.scalar(1)).value();
+            return selected_output_runtime_type(*arguments.resolved_output_type(), layout);
+        });
+
+    const auto run = [&](bg::i64 layout) {
+        const auto graph = [&](bg::wp<bg::TS<bg::i64>> input) -> bg::wp<bg::TS<bg::i64>> {
+            return bg::wp<bg::TS<bg::i64>>{compute(input, layout)};
+        };
+        return bg::testing::test_graph(graph, std::array<bg::i64, 2>{4, 5});
+    };
+
+    CHECK(run(1).equals<bg::i64>({4, 5}));
+    CHECK(selector_calls == 1);
+    CHECK(run(2).equals<bg::i64>({4, 5}));
+    CHECK(selector_calls == 2);
+}
+
+TEST_CASE("operator cache hits pass current scalar arguments to output runtime hooks",
+          "[feature:operator][feature:node-api][feature:wiring][series:value][definition:function]") {
+    auto requirement_calls = 0;
+    auto selector_calls = 0;
+    auto operation = bg::operator_<auto(bg::TS<bg::i64>, bg::i64) -> bg::TS<bg::i64>>{
+        "runtime_layout", {"input", "layout"}};
+    operation.overload(bg::node(
+        bg::eval = [](bg::In<bg::TS<CALLABLE_SCALAR>> input, bg::i64,
+                      bg::Out<bg::TS<CALLABLE_SCALAR>> output) { output.set_value(input.value_view()); },
+        bg::require = [&](const bg::WiringArguments &arguments) {
+            ++requirement_calls;
+            return &arguments.resolved_type(1) == &bg::int64_type();
+        },
+        bg::output_runtime_type = [&](const bg::WiringArguments &arguments)
+            -> const bg::TimeSeriesRuntimeType & {
+            ++selector_calls;
+            const auto layout = bg::scalar_cast<bg::i64>(*arguments.scalar(1)).value();
+            return selected_output_runtime_type(*arguments.resolved_output_type(), layout);
+        }));
+
+    const auto source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
+    auto wiring = bg::GraphWiring{};
+    {
+        const bg::WiringContext context{wiring};
+        const auto input = source();
+        const auto first = static_cast<bg::WiringPoint>(operation(input, 1));
+        const auto second = static_cast<bg::WiringPoint>(operation(input, 2));
+
+        CHECK(first.has_output());
+        CHECK(second.has_output());
+        CHECK(first.record() != second.record());
+    }
+
+    CHECK(selector_calls == 2);
+    CHECK(requirement_calls == 1);
+    CHECK_NOTHROW(wiring.finalize());
+    REQUIRE(wiring.outputs().size() == 3);
+    CHECK(wiring.outputs()[1].runtime_type ==
+          &selected_output_runtime_type(bg::TS<bg::i64>::type(), 1));
+    CHECK(wiring.outputs()[2].runtime_type ==
+          &selected_output_runtime_type(bg::TS<bg::i64>::type(), 2));
+}
+
+TEST_CASE("a callable's repeated identical invocation reuses its output record",
+          "[feature:node-api][feature:wiring][series:value][definition:function]") {
+    auto selector_calls = 0;
+    const auto compute = bg::node(
+        bg::eval = [](bg::In<bg::TS<CALLABLE_SCALAR>> input, bg::i64,
+                      bg::Out<bg::TS<CALLABLE_SCALAR>> output) { output.set_value(input.value_view()); },
+        bg::output_runtime_type = [&](const bg::WiringArguments &arguments)
+            -> const bg::TimeSeriesRuntimeType & {
+            ++selector_calls;
+            const auto layout = bg::scalar_cast<bg::i64>(*arguments.scalar(1)).value();
+            return selected_output_runtime_type(*arguments.resolved_output_type(), layout);
+        });
+    const auto source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
+    auto wiring = bg::GraphWiring{};
+    auto first = bg::WiringPoint{};
+    auto repeated = bg::WiringPoint{};
+    {
+        const bg::WiringContext context{wiring};
+        const auto input = source();
+        first = static_cast<bg::WiringPoint>(compute(input, 1));
+        repeated = static_cast<bg::WiringPoint>(compute(input, 1));
+    }
+
+    CHECK(selector_calls == 2);
+    CHECK_NOTHROW(wiring.finalize());
+    REQUIRE(wiring.outputs().size() == 2);
+    CHECK(wiring.outputs()[1].runtime_type == &selected_output_runtime_type(bg::TS<bg::i64>::type(), 1));
+    CHECK(wiring.output_index(first) == wiring.output_index(repeated));
+    CHECK(wiring.output_node_index(first) == wiring.output_node_index(repeated));
+}
+
+TEST_CASE("a callable without an output runtime hook uses the declaration runtime type",
+          "[feature:node-api][series:value][declaration:concrete][definition:function]") {
+    const auto copy = bg::node([](bg::In<bg::TS<bg::i64>> input, bg::Out<bg::TS<bg::i64>> output) {
+        output.set_value(input.value_view());
+    });
+    const auto source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
+    auto wiring = bg::GraphWiring{};
+    auto output = bg::WiringPoint{};
+    {
+        const bg::WiringContext context{wiring};
+        output = static_cast<bg::WiringPoint>(copy(source()));
+    }
+
+    wiring.finalize();
+    REQUIRE(wiring.outputs().size() == 2);
+    CHECK(wiring.outputs()[1].runtime_type == &bg::cpp_time_series_runtime_type<bg::TS<bg::i64>>());
+    const auto compiled = bg::CompiledGraph{wiring};
+    CHECK_FALSE(compiled.node(wiring.output_node_index(output)).has_output_runtime_type());
+}
+
+TEST_CASE("a runtime-signature definition can select an output runtime type from its instance",
+          "[feature:node-api][series:value][declaration:runtime][definition:runtime]") {
+    InstanceOutputRuntimeDefinition::selector_calls = 0;
+    const auto node = bg::node(InstanceOutputRuntimeDefinition{InstanceOutputRuntimeDefinition::expected_layout});
+    const auto graph = [&](bg::wp<bg::TS<bg::i64>> input) -> bg::wp<bg::TS<bg::i64>> {
+        return bg::wp<bg::TS<bg::i64>>{*node(input)};
+    };
+
+    CHECK(bg::testing::test_graph(graph, std::array<bg::i64, 3>{1, 2, 3}).equals<bg::i64>({1, 2, 3}));
+    CHECK(InstanceOutputRuntimeDefinition::selector_calls == 1);
 }
 
 TEST_CASE("graph wiring owns a temporary runtime-signature node template",

@@ -2,10 +2,12 @@
 
 #include <bg/graph/details/wiring_callable.hpp>
 #include <bg/graph/type_mapping.hpp>
+#include <bg/graph/wiring_arguments.hpp>
 #include <bg/graph/wiring_error.hpp>
 #include <bg/node/details/aggregate_node_descriptor.hpp>
 
 #include <stdexcept>
+#include <memory>
 
 namespace bg {
 
@@ -63,10 +65,17 @@ class AggregateNodeTemplate final
     template <typename... Mappings> auto operator[](Mappings...) && = delete;
 
   private:
-    const TimeSeriesRuntimeType *output_runtime_type(const ResolvedSignature &signature) const override {
+    const TimeSeriesRuntimeType *output_runtime_type(const WiringArguments &arguments) const override {
         if constexpr (details::aggregate_node_has_output<Definition>()) {
-            using Output = details::aggregate_output_declaration_t<Definition>;
-            return &output_declaration_traits<Output>::runtime(*signature.output);
+            if constexpr (requires(const WiringArguments &wiring_arguments) {
+                              { Definition::output_runtime_type(wiring_arguments) } ->
+                                  std::same_as<const TimeSeriesRuntimeType &>;
+                          }) {
+                return std::addressof(Definition::output_runtime_type(arguments));
+            } else {
+                using Output = details::aggregate_output_declaration_t<Definition>;
+                return &output_declaration_traits<Output>::runtime(*arguments.resolved_output_type());
+            }
         }
         return nullptr;
     }

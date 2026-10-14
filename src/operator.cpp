@@ -563,7 +563,7 @@ std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const
             require_concrete_materialisation_forms(wiring, *entry.implementation, committed.arguments,
                                                    entry.argument_forms);
             return invoke_resolved(wiring, *entry.implementation, std::move(resolution), committed.arguments,
-                                   prototype_.name());
+                                   committed.descriptors, prototype_.name());
         }
     }
 
@@ -837,10 +837,10 @@ std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const
     details::bind_materialisation_forms(wiring, *selected->implementation, committed.arguments, selected_forms);
     require_concrete_materialisation_forms(wiring, *selected->implementation, committed.arguments, selected_forms);
     return invoke_resolved(wiring, *selected->implementation, std::move(selected->resolution), committed.arguments,
-                           prototype_.name());
+                           committed.descriptors, prototype_.name());
 }
 
-std::optional<WiringPoint> Operator::wire(GraphWiring &, ResolvedSignature, const TypeMap &,
+std::optional<WiringPoint> Operator::wire(GraphWiring &, ResolvedSignature, const WiringArguments &,
                                           std::span<const WiringArgument>) const {
     throw std::logic_error{"an operator must select an overload before wiring"};
 }

@@ -59,7 +59,7 @@ class PatternMapOverload final : public WiringTemplate {
                          output_type};
     }
 
-    std::optional<WiringPoint> wire(GraphWiring &, ResolvedSignature, const TypeMap &,
+    std::optional<WiringPoint> wire(GraphWiring &, ResolvedSignature, const WiringArguments &,
                                     std::span<const WiringArgument> arguments) const final {
         return arguments[forwarded_argument_].time_series();
     }
@@ -104,7 +104,7 @@ class MapOptionOverload final : public WiringTemplate {
             TSD<std::int64_t, TS<i64>>::type()};
     }
 
-    std::optional<WiringPoint> wire(GraphWiring &, ResolvedSignature, const TypeMap &,
+    std::optional<WiringPoint> wire(GraphWiring &, ResolvedSignature, const WiringArguments &,
                                     std::span<const WiringArgument> arguments) const final {
         *selected_ = true;
         return arguments[1].time_series();

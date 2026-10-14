@@ -2,6 +2,7 @@
 
 #include <bg/evaluation_context.hpp>
 #include <bg/graph/details/variadic_wiring_operations.hpp>
+#include <bg/graph/wiring_arguments.hpp>
 #include <bg/graph/node.hpp>
 #include <bg/node/details/aggregate_resolver.hpp>
 #include <bg/node/input.hpp>
@@ -251,8 +252,14 @@ struct output_runtime_type_field<Out<TimeSeries, Options...>>
 
 template <typename Definition, std::size_t... Index>
 consteval bool aggregate_uses_output_runtime_type(std::index_sequence<Index...>) {
-    return (output_runtime_type_field<std::remove_cv_t<util::aggregate_member_type<Index, Definition>>>::value ||
-            ...);
+    constexpr auto output_field_uses_runtime_type =
+        (output_runtime_type_field<std::remove_cv_t<util::aggregate_member_type<Index, Definition>>>::value || ...);
+    constexpr auto definition_selects_runtime_type =
+        !std::same_as<aggregate_output_declaration_t<Definition>, void> &&
+        requires(const WiringArguments &arguments) {
+            { Definition::output_runtime_type(arguments) } -> std::same_as<const TimeSeriesRuntimeType &>;
+        };
+    return output_field_uses_runtime_type || definition_selects_runtime_type;
 }
 
 template <typename T> consteval bool scalar_input_requires_runtime_type() {
@@ -863,8 +870,12 @@ template <typename Definition, std::size_t Index>
         }
     } else {
         auto &last_updated = runtime_node.output_last_updated();
+        constexpr auto definition_selects_output_runtime_type = requires(const WiringArguments &arguments) {
+            { Definition::output_runtime_type(arguments) } -> std::same_as<const TimeSeriesRuntimeType &>;
+        };
 
-        if constexpr (output_view_field<Field>::value || output_runtime_type_field<Field>::value) {
+        if constexpr (definition_selects_output_runtime_type || output_view_field<Field>::value ||
+                      output_runtime_type_field<Field>::value) {
             return output_factory::make<Field>(
                 last_updated, runtime_node.output_value(),
                 node.output_runtime_type(), *context);

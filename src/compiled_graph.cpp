@@ -2521,6 +2521,7 @@ class CompiledGraphBuilder {
                              !node_plan.subscriptions.input_subscribers.empty(),
                              !node_plan.item_subscriptions.empty(), layout.node_invocation_metadata.count != 0,
                              layout.all_valid_metadata.count != 0,
+                             node.node_template().uses_output_runtime_type(),
                              static_cast<std::uint32_t>(layout.controlled_inputs.count),
                              !node_plan.input_node_indices.empty(), node_plan.invalidation.mode});
             std::construct_at(node_offsets.data() + compiled_node,

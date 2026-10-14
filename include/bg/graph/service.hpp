@@ -35,7 +35,7 @@ class ServiceDefinition : public WiringTemplate {
 
   private:
     [[nodiscard]] std::optional<WiringPoint> wire(GraphWiring &wiring, ResolvedSignature signature,
-                                                  const TypeMap &type_map,
+                                                  const WiringArguments &argument_view,
                                                   std::span<const WiringArgument> arguments) const final;
     virtual std::optional<WiringPoint> wire_client(GraphWiring &wiring, ResolvedSignature signature,
                                                    const TypeMap &type_map,

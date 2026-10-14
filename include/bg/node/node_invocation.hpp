@@ -197,14 +197,16 @@ template <typename CompiledData = void, typename State = void> class NodeInvocat
     template <typename Output> Output output_as() const {
         const auto runtime_node = Node{*node_, runtime_storage_};
         if constexpr (details::direct_time_series_output<Output> && !details::output_requires_runtime_type<Output>) {
-            auto &value = *static_cast<typename Output::storage_type *>(runtime_node.output_value());
-            return details::output_factory::make<Output>(
-                runtime_node.output_last_updated(), value, *context_);
-        } else {
-            return details::output_factory::make<Output>(
-                runtime_node.output_last_updated(), runtime_node.output_value(),
-                node_->output_runtime_type(), *context_);
+            if (!node_->has_output_runtime_type()) {
+                auto &value = *static_cast<typename Output::storage_type *>(runtime_node.output_value());
+                return details::output_factory::make<Output>(
+                    runtime_node.output_last_updated(), value, *context_);
+            }
         }
+
+        return details::output_factory::make<Output>(
+            runtime_node.output_last_updated(), runtime_node.output_value(),
+            node_->output_runtime_type(), *context_);
     }
 
     void initialize_output_reference(details::RootReference &reference) const noexcept {

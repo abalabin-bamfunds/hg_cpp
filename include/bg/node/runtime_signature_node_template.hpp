@@ -2,6 +2,8 @@
 
 #include <bg/node/node_invocation.hpp>
 #include <bg/node/node_template.hpp>
+#include <bg/node/output_declaration_traits.hpp>
+#include <bg/graph/wiring_arguments.hpp>
 #include <bg/graph/type_mapping.hpp>
 #include <bg/util/byte_copy.hpp>
 
@@ -231,17 +233,35 @@ class RuntimeSignatureNodeTemplate final
     }
 
     bool uses_output_runtime_type() const noexcept override {
+        if (!definition_.signature().has_output()) {
+            return false;
+        }
+        if constexpr (requires(const Definition &definition, const WiringArguments &arguments) {
+                          { definition.output_runtime_type(arguments) } ->
+                              std::same_as<const TimeSeriesRuntimeType &>;
+                      }) {
+            return true;
+        }
         if constexpr (requires { definition_.uses_output_runtime_type(); }) {
             return definition_.uses_output_runtime_type();
         }
         return definition_.signature().has_output();
     }
 
-    const TimeSeriesRuntimeType *output_runtime_type(const ResolvedSignature &signature) const override {
-        if constexpr (requires { typename Definition::output_declaration_type; }) {
+    const TimeSeriesRuntimeType *output_runtime_type(const WiringArguments &arguments) const override {
+        if (arguments.resolved_output_type() == nullptr) {
+            return nullptr;
+        }
+        if constexpr (requires(const Definition &definition, const WiringArguments &wiring_arguments) {
+                          { definition.output_runtime_type(wiring_arguments) } ->
+                              std::same_as<const TimeSeriesRuntimeType &>;
+                      }) {
+            return std::addressof(definition_.output_runtime_type(arguments));
+        } else if constexpr (requires { typename Definition::output_declaration_type; }) {
             using Output = typename Definition::output_declaration_type;
             if constexpr (!std::same_as<Output, void>) {
-                return &output_declaration_traits<Output>::runtime(*signature.output);
+                return std::addressof(
+                    output_declaration_traits<Output>::runtime(*arguments.resolved_output_type()));
             }
         }
         return nullptr;

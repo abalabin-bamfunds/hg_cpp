@@ -5,6 +5,7 @@
 #include <bg/graph/details/wiring_record.hpp>
 #include <bg/graph/context.hpp>
 #include <bg/graph/wiring_context.hpp>
+#include <bg/graph/wiring_arguments.hpp>
 #include <bg/graph/wiring_error.hpp>
 #include <bg/graph/wiring_template.hpp>
 #include <bg/node/node_template.hpp>
@@ -348,6 +349,7 @@ GraphWiring::NodeCallResult GraphWiring::invoke_node(const NodeTemplate &node_te
 std::optional<WiringPoint> GraphWiring::invoke_resolved(const WiringTemplate &wiring_template,
                                                         SignatureResolution resolution,
                                                         std::span<const WiringArgument> arguments,
+                                                        std::span<const details::WiringArgumentDescriptor> descriptors,
                                                         util::symbol path_name) {
     if (finalization_state_ == FinalizationState::finalized || finalization_state_ == FinalizationState::failed) {
         throw WiringError{"a finalized GraphWiring cannot accept more calls"};
@@ -364,8 +366,9 @@ std::optional<WiringPoint> GraphWiring::invoke_resolved(const WiringTemplate &wi
                                            .operation = signature.name};
     auto diagnostics = details::WiringDiagnosticContext{*this, std::span{&call_context, std::size_t{1}}};
     auto output = std::optional<WiringPoint>{};
+    auto argument_view = WiringArguments{wiring_template.signature(), resolution.type_map, descriptors};
     try {
-        output = wiring_template.wire(*this, std::move(signature), resolution.type_map, arguments);
+        output = wiring_template.wire(*this, std::move(signature), argument_view, arguments);
     } catch (...) {
         throw WiringError::from_exception("wiring callback failed", call_context, std::current_exception());
     }

@@ -967,7 +967,7 @@ TEST_CASE("operator cache hits rebind concrete demands to the current source",
             return bg::accept;
         }
         std::optional<bg::WiringPoint> wire(bg::GraphWiring &, bg::ResolvedSignature,
-                                            const bg::TypeMap &,
+                                            const bg::WiringArguments &,
                                             std::span<const bg::WiringArgument> arguments) const final {
             return arguments.front().time_series();
         }
@@ -1017,7 +1017,8 @@ TEST_CASE("rejected overload diagnostics distinguish offered forms from the join
             ++*requirement_calls_;
             return bg::reject("rejected after form matching");
         }
-        std::optional<bg::WiringPoint> wire(bg::GraphWiring &, bg::ResolvedSignature, const bg::TypeMap &,
+        std::optional<bg::WiringPoint> wire(bg::GraphWiring &, bg::ResolvedSignature,
+                                            const bg::WiringArguments &,
                                             std::span<const bg::WiringArgument> arguments) const final {
             return arguments.front().time_series();
         }

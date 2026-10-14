@@ -57,7 +57,7 @@ class NodeTemplate : public WiringTemplate {
     }
     virtual bool uses_scalar_input_runtime_type(const ResolvedSignature &, std::size_t) const noexcept { return false; }
     virtual bool uses_output_runtime_type() const noexcept { return false; }
-    virtual const TimeSeriesRuntimeType *output_runtime_type(const ResolvedSignature &) const { return nullptr; }
+    virtual const TimeSeriesRuntimeType *output_runtime_type(const WiringArguments &) const { return nullptr; }
     // Retains parameter names, resolved types, and runtime activity-index lookup for inspection APIs.
     virtual bool uses_node_invocation_parameters() const noexcept { return false; }
     // Enables CompiledNode::input_node_index and stores one index per parameter on this compiled node.
@@ -102,9 +102,9 @@ class NodeTemplate : public WiringTemplate {
     explicit NodeTemplate(NodeTemplateIdentity identity) : definition_identity_{std::move(identity)} {}
 
   private:
-    [[nodiscard]] std::optional<WiringPoint> wire(GraphWiring &wiring, ResolvedSignature signature,
-                                                  const TypeMap &type_map,
-                                                  std::span<const WiringArgument> arguments) const final;
+    [[nodiscard]] std::optional<WiringPoint>
+    wire(GraphWiring &wiring, ResolvedSignature signature, const WiringArguments &argument_view,
+         std::span<const WiringArgument> arguments) const final;
 
     NodeTemplateIdentity definition_identity_;
 };

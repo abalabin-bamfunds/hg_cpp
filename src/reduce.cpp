@@ -169,7 +169,7 @@ class DefaultReduceTemplate final : public WiringTemplate {
     }
 
   private:
-    std::optional<WiringPoint> wire(GraphWiring &, ResolvedSignature, const TypeMap &,
+    std::optional<WiringPoint> wire(GraphWiring &, ResolvedSignature, const WiringArguments &,
                                     std::span<const WiringArgument> arguments) const final {
         return details::DefaultReduceWiring::from(arguments.front().graph()).wire();
     }

@@ -161,6 +161,9 @@ graph compilation or evaluation.
 - collection types and nested types
 - external declarations, public variable enumeration, runtime registration, and selection of supplied representations
 - extension-owned configured output declarations, runtime selection, semantic compatibility, and preservation through invocation and invalidation
+- definition output-runtime hooks for aggregate, callable, and runtime-signature nodes; resolved scalar configuration,
+  flattened variadic arguments, operator cache hits, early semantic mismatch, default trait selection, node-call
+  deduplication, and descriptor preservation through compilation and evaluation
 - default output representations independent of input representations, including collection children
 
 ### Wiring

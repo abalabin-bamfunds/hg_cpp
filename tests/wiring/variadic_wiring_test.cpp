@@ -538,6 +538,30 @@ TEST_CASE("requirements and resolvers see fixed, positional, then named argument
     CHECK(resolver_calls == 1);
 }
 
+TEST_CASE("an output runtime hook sees flattened named variadic arguments",
+          "[feature:wiring][feature:variadic-wiring][series:tsb][schema:generic][definition:function]") {
+    auto selector_calls = 0;
+    const auto tested = node(
+        eval = [](int, In<TSB<ARGS>, var_args>, In<TSB<KWARGS>, var_kwargs>, Out<TS<VARIADIC_RESULT>>) {},
+        resolve<VARIADIC_RESULT> = [](const WiringArguments &) -> const ScalarType & { return int64_type(); },
+        output_runtime_type = [&](const WiringArguments &arguments) -> const TimeSeriesRuntimeType & {
+            ++selector_calls;
+            REQUIRE(arguments.size() == 4);
+            CHECK(arguments.argument_name(1).text() == "1");
+            CHECK(arguments.argument_name(2).text() == "2");
+            CHECK(arguments.argument_name(3).text() == "named");
+            CHECK(scalar_cast<std::int64_t>(*arguments.scalar(0)).value() == 0);
+            CHECK(scalar_cast<std::int64_t>(*arguments.scalar(1)).value() == 1);
+            CHECK(scalar_cast<std::int64_t>(*arguments.scalar(2)).value() == 2);
+            CHECK(scalar_cast<std::int64_t>(*arguments.scalar(3)).value() == 3);
+            return cpp_time_series_runtime_type<TS<i64>>(*arguments.resolved_output_type());
+        });
+
+    testing::test_wiring([&] { (void)tested(0, 1, 2, "named"_n = 3); });
+
+    CHECK(selector_calls == 1);
+}
+
 TEST_CASE("a fixed parameter cannot follow a variadic parameter",
           "[feature:wiring][feature:variadic-wiring][definition:function][series:tsb][schema:generic]") {
     const auto graph_function = [](wp<TSB<SCHEMA>, var_args>, int) {};

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <bg/graph/details/wiring_argument_descriptor.hpp>
 #include <bg/graph/graph_wiring.hpp>
 #include <bg/graph/requirement.hpp>
 #include <bg/graph/wiring_context.hpp>
@@ -31,9 +32,9 @@ class WiringTemplate {
         return default_label;
     }
 
-    [[nodiscard]] virtual std::optional<WiringPoint> wire(GraphWiring &wiring, ResolvedSignature signature,
-                                                          const TypeMap &type_map,
-                                                          std::span<const WiringArgument> arguments) const = 0;
+    [[nodiscard]] virtual std::optional<WiringPoint>
+    wire(GraphWiring &wiring, ResolvedSignature signature, const WiringArguments &argument_view,
+         std::span<const WiringArgument> arguments) const = 0;
 
     template <typename... Arguments>
         requires(details::graph_code_argument<Arguments> && ...)
@@ -93,10 +94,12 @@ class WiringTemplate {
   protected:
     [[nodiscard]] std::optional<WiringPoint> invoke_resolved(GraphWiring &wiring, SignatureResolution resolution,
                                                              std::span<const WiringArgument> arguments,
+                                                             std::span<const details::WiringArgumentDescriptor> descriptors,
                                                              util::symbol path_name) const;
     [[nodiscard]] std::optional<WiringPoint> invoke_resolved(GraphWiring &wiring, const WiringTemplate &implementation,
                                                              SignatureResolution resolution,
                                                              std::span<const WiringArgument> arguments,
+                                                             std::span<const details::WiringArgumentDescriptor> descriptors,
                                                              util::symbol path_name) const;
 
 };

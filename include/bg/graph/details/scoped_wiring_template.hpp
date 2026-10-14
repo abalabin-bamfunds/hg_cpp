@@ -24,10 +24,11 @@ template <typename ScopeFactory> class ScopedWiringTemplate final : public Wirin
         return target_->label(signature, arguments, default_label);
     }
 
-    std::optional<WiringPoint> wire(GraphWiring &wiring, ResolvedSignature signature, const TypeMap &type_map,
+    std::optional<WiringPoint> wire(GraphWiring &wiring, ResolvedSignature signature,
+                                    const WiringArguments &argument_view,
                                     std::span<const WiringArgument> arguments) const final {
         auto scope = std::invoke(scope_factory_, signature);
-        return target_->wire(wiring, std::move(signature), type_map, arguments);
+        return target_->wire(wiring, std::move(signature), argument_view, arguments);
     }
 
     const WiringTemplate *target_;

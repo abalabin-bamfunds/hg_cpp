@@ -6,6 +6,7 @@
 #include <bg/graph/details/wiring_record.hpp>
 #include <bg/graph/graph_wiring.hpp>
 #include <bg/graph/runtime_graph.hpp>
+#include <bg/graph/wiring_arguments.hpp>
 #include <bg/graph/wiring_error.hpp>
 #include <bg/operators.hpp>
 #include <bg/node/node_template.hpp>
@@ -36,8 +37,9 @@ class FreeFixedTimeSeriesListNodeTemplate final : public NodeTemplate {
         return &evaluate;
     }
     NodeFunction start_function(const ResolvedSignature &) const noexcept override { return &start; }
-    const TimeSeriesRuntimeType *output_runtime_type(const ResolvedSignature &signature) const override {
-        return &free_fixed_time_series_list_runtime_type(static_cast<const TimeSeriesListType &>(*signature.output));
+    const TimeSeriesRuntimeType *output_runtime_type(const WiringArguments &arguments) const override {
+        return &free_fixed_time_series_list_runtime_type(
+            static_cast<const TimeSeriesListType &>(*arguments.resolved_output_type()));
     }
     bool uses_time_series_input_runtime_type(const ResolvedSignature &, std::size_t) const noexcept override {
         return true;

@@ -28,8 +28,8 @@ behavior. A node template can identify a wired output for
 compiler lowering without changing its wiring representation.
 A materialized record whose layout differs from the normal layout for its
 semantic type stores its runtime type on the wired output. Graph compilation
-resolves the runtime type of other outputs from their resolved semantic types
-and input runtime types.
+uses a retained output runtime type or resolves the default from the output's
+semantic type.
 
 Each `WiringPoint` argument to a node call must belong to the active
 `GraphWiring`. Inner graph boundaries provide local wiring points for their
@@ -293,6 +293,20 @@ call:
 
 A node template adds one wired node. A graph template invokes its graph function
 and can add any number of wired nodes.
+
+Engine and extension implementations override:
+
+```cpp
+std::optional<WiringPoint> wire(GraphWiring &, ResolvedSignature,
+                               const WiringArguments &argument_view,
+                               std::span<const WiringArgument> arguments) const;
+```
+
+`argument_view` provides resolved mappings and the fixed and flattened variadic
+arguments used by requirements and resolvers. `arguments` contains one normalized
+argument per signature parameter for forwarding and node storage. Both are
+borrowed for the duration of the callback. Use `argument_view.type_map()` to
+access the resolved mappings.
 
 An [operator](operators.md) selects a node template or graph template before
 invoking its ordinary wiring behavior. Overload resolution remains internal to
