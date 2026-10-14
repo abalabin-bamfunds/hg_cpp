@@ -121,6 +121,24 @@ TEST_CASE("a stronger literal guarantee is less generic",
     CHECK(bg::compare_specificity(final_signature, ordinary_signature) == std::partial_ordering::less);
 }
 
+TEST_CASE("a literal guarantee is more specific than a variable with the same minimum",
+          "[feature:operator][feature:type-system][declaration:generic][series:value]"
+          "[guarantee:deduplicated]") {
+    constexpr auto G = bg::guarantee_variable<"SPECIFICITY_G", bg::TimeSeriesGuarantee::deduplicated>;
+    constexpr auto G_NO_MINIMUM = bg::guarantee_variable<"SPECIFICITY_G">;
+    const auto literal = bg::Signature{
+        bg::util::symbol{"literal"},
+        {{bg::util::symbol{"value"}, &bg::TS<bg::i64, bg::TimeSeriesGuarantee::deduplicated>::type()}}};
+    const auto constrained = bg::Signature{
+        bg::util::symbol{"constrained"}, {{bg::util::symbol{"value"}, &bg::TS<bg::i64, G>::type()}}};
+    const auto unconstrained = bg::Signature{
+        bg::util::symbol{"unconstrained"}, {{bg::util::symbol{"value"}, &bg::TS<bg::i64, G_NO_MINIMUM>::type()}}};
+
+    CHECK(bg::compare_specificity(literal, constrained) == std::partial_ordering::less);
+    CHECK(bg::compare_specificity(constrained, literal) == std::partial_ordering::greater);
+    CHECK(bg::compare_specificity(constrained, unconstrained) == std::partial_ordering::less);
+}
+
 TEST_CASE("reference shape does not affect specificity",
           "[feature:operator][feature:type-system][feature:reference][binding:reference-to-value]") {
     const auto &value = bg::TS<bg::i64>::type();

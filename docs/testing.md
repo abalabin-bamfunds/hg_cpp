@@ -152,7 +152,8 @@ graph compilation or evaluation.
   canonical type identity shared by C++ declarations and programmatic schema construction
 - operator signature specificity and ambiguity
 - types passed as scalars
-- guarantee compatibility, propagation, and enforcement
+- guarantee compatibility, propagation, and enforcement; C++ variable minima,
+  preservation of stronger guarantees, repeated-variable resolution, and overload ordering
 - callable scalar-return guarantee inference across scalars, time series,
   references, passive inputs, optional values, explicit outputs, startup
   scheduling, equality support, and nested graph boundaries

@@ -120,6 +120,81 @@ TEST_CASE("a generic time-series type retains its guarantee variable",
           &bg::details::guarantee_variable_instance<bg::guarantee_variable<"G">>());
 }
 
+TEST_CASE("guarantee variable declarations retain their minimum guarantee",
+          "[type_system][feature:type-system][declaration:generic][guarantee:deduplicated][guarantee:final]"
+          "[guarantee:const]") {
+    using UNCONSTRAINED = decltype(bg::guarantee_variable<"MINIMUM_G">);
+    using ORDINARY = decltype(bg::guarantee_variable<"MINIMUM_G", bg::TimeSeriesGuarantee::ordinary>);
+    using DEDUPLICATED = decltype(bg::guarantee_variable<"MINIMUM_G", bg::TimeSeriesGuarantee::deduplicated>);
+
+    const auto &unconstrained = bg::details::guarantee_variable_instance<UNCONSTRAINED>();
+    const auto &ordinary = bg::details::guarantee_variable_instance<ORDINARY>();
+    const auto &deduplicated = bg::details::guarantee_variable_instance<DEDUPLICATED>();
+
+    CHECK(unconstrained.minimum() == std::nullopt);
+    CHECK(ordinary.minimum() == bg::TimeSeriesGuarantee::ordinary);
+    CHECK(deduplicated.minimum() == bg::TimeSeriesGuarantee::deduplicated);
+    CHECK(&unconstrained != &ordinary);
+    CHECK(&unconstrained != &deduplicated);
+    CHECK(&ordinary != &deduplicated);
+
+    for (auto supplied : {bg::TimeSeriesGuarantee::ordinary, bg::TimeSeriesGuarantee::deduplicated,
+                          bg::TimeSeriesGuarantee::final, bg::TimeSeriesGuarantee::const_}) {
+        auto type_map = bg::TypeMap{};
+        REQUIRE(unconstrained.match(supplied, type_map));
+        CHECK(unconstrained.resolve(type_map) == supplied);
+    }
+
+    const auto check_minimum = []<bg::TimeSeriesGuarantee Minimum>(auto declaration) {
+        const auto &variable = bg::details::guarantee_variable_instance<decltype(declaration)>();
+        CHECK(variable.minimum() == Minimum);
+
+        for (auto supplied : {bg::TimeSeriesGuarantee::ordinary, bg::TimeSeriesGuarantee::deduplicated,
+                              bg::TimeSeriesGuarantee::final, bg::TimeSeriesGuarantee::const_}) {
+            auto type_map = bg::TypeMap{};
+            const auto accepted = bg::satisfies(supplied, Minimum);
+            CHECK(variable.match(supplied, type_map) == accepted);
+            if (accepted) {
+                CHECK(variable.resolve(type_map) == supplied);
+            }
+        }
+    };
+
+    check_minimum.template operator()<bg::TimeSeriesGuarantee::ordinary>(
+        bg::guarantee_variable<"ORDINARY_MINIMUM_G", bg::TimeSeriesGuarantee::ordinary>);
+    check_minimum.template operator()<bg::TimeSeriesGuarantee::deduplicated>(
+        bg::guarantee_variable<"DEDUPLICATED_MINIMUM_G", bg::TimeSeriesGuarantee::deduplicated>);
+    check_minimum.template operator()<bg::TimeSeriesGuarantee::final>(
+        bg::guarantee_variable<"FINAL_MINIMUM_G", bg::TimeSeriesGuarantee::final>);
+    check_minimum.template operator()<bg::TimeSeriesGuarantee::const_>(
+        bg::guarantee_variable<"CONST_MINIMUM_G", bg::TimeSeriesGuarantee::const_>);
+}
+
+TEST_CASE("a constrained guarantee variable resolves to the weakest accepted supplied guarantee",
+          "[type_system][feature:type-system][declaration:generic][guarantee:deduplicated]"
+          "[guarantee:final][guarantee:const]") {
+    using DEDUPLICATED = bg::TS<bg::i64,
+                                bg::guarantee_variable<"REPEATED_MINIMUM_G", bg::TimeSeriesGuarantee::deduplicated>>;
+    const auto &generic = DEDUPLICATED::type();
+
+    for (auto supplied : {bg::TimeSeriesGuarantee::deduplicated, bg::TimeSeriesGuarantee::final,
+                          bg::TimeSeriesGuarantee::const_}) {
+        auto type_map = bg::TypeMap{};
+        const auto &concrete = bg::TS<bg::i64>::type().with_guarantee(supplied);
+
+        REQUIRE(generic.match(concrete, type_map));
+        CHECK(&generic.resolve(type_map) == &concrete);
+    }
+
+    auto type_map = bg::TypeMap{};
+    CHECK_FALSE(generic.match(bg::TS<bg::i64>::type(), type_map));
+
+    type_map = bg::TypeMap{};
+    REQUIRE(generic.match(bg::TS<bg::i64, bg::TimeSeriesGuarantee::const_>::type(), type_map));
+    REQUIRE(generic.match(bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>::type(), type_map));
+    CHECK(&generic.resolve(type_map) == &bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>::type());
+}
+
 TEST_CASE("generic C++ declarations expose their semantic types",
           "[type_system][feature:type-system][declaration:generic]") {
     struct SignatureScope {};

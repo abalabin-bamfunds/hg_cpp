@@ -204,6 +204,45 @@ TEST_CASE("an operator prefers the overload requiring the stronger guarantee",
     });
 }
 
+TEST_CASE("literal guarantee overloads outrank variables with the same minimum in either registration order",
+          "[feature:operator][feature:wiring][declaration:generic][series:value]"
+          "[guarantee:deduplicated]") {
+    constexpr auto G = bg::guarantee_variable<"OVERLOAD_GUARANTEE", bg::TimeSeriesGuarantee::deduplicated>;
+    const auto source = bg::node([](bg::Out<bg::TS<bg::i64, bg::TimeSeriesGuarantee::deduplicated>>) {});
+
+    const auto check_registration_order = [&](bool variable_first) {
+        auto selected = std::string{};
+        auto operation = bg::operator_<auto(bg::TS_T)->bg::TS_T>{"minimum_guarantee_specificity", {"value"}};
+        const auto literal_result = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
+        const auto variable_result = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
+        const auto literal = bg::graph("name"_n = "literal", [&](bg::wp<bg::TS<bg::i64,
+                                                                            bg::TimeSeriesGuarantee::deduplicated>>) {
+            selected = "literal";
+            return literal_result();
+        });
+        const auto variable = bg::graph("name"_n = "variable", [&](bg::wp<bg::TS<bg::i64, G>>) {
+            selected = "variable";
+            return variable_result();
+        });
+
+        if (variable_first) {
+            operation.overload(variable);
+            operation.overload(literal);
+        } else {
+            operation.overload(literal);
+            operation.overload(variable);
+        }
+
+        bg::testing::test_wiring([&] {
+            CHECK(&operation(source()).type() == &bg::TS<bg::i64>::type());
+            CHECK(selected == "literal");
+        });
+    };
+
+    check_registration_order(true);
+    check_registration_order(false);
+}
+
 TEST_CASE("registering an overload clears cached selections", "[feature:operator][feature:wiring]") {
     auto selected = std::string{};
     auto operation = bg::operator_<auto(bg::TS_T)->bg::TS_T>{"identity", {"value"}};

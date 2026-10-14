@@ -18,6 +18,7 @@ namespace bg::details {
 
 template <typename Scope> struct CallableOutputGuarantee {
     static constexpr util::compile_time_string name{"callable_output"};
+    static constexpr std::optional<TimeSeriesGuarantee> minimum{};
 };
 
 template <typename Scope>

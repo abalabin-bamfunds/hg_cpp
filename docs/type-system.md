@@ -342,6 +342,16 @@ In<T::with<G>> input;
 `T` and `G` retain separate mappings. A literal guarantee in `T::with<G>`
 requires that guarantee or a stronger one.
 
+Use a guarantee variable with a minimum to restrict inputs while capturing
+their actual guarantee:
+
+```cpp
+inline constexpr auto G = guarantee_variable<"G", TimeSeriesGuarantee::deduplicated>;
+```
+
+This accepts deduplicated, final, and const inputs. Omitting the minimum leaves
+the variable unconstrained.
+
 `SizeVariableDeclaration<Name>` declares a fixed time series list size
 variable. `SIZE` is the default declaration. For example,
 `TSL<TS_T, SIZE>` captures both the item time series type and the list size.
