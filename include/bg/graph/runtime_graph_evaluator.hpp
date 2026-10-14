@@ -37,8 +37,8 @@ class RuntimeGraphEvaluator {
     void require_owner(RuntimeGraph &graph, std::size_t node_index, void *receiver,
                        const RuntimeGraphSchedulingCallbacks *callbacks);
     template <bool Profiled>
-    bool evaluate_graph(RuntimeGraph &graph, EvaluationContext &context, EvaluationProfile *profile,
-                        std::uint32_t graph_id, const RuntimeGraphInput *inputs);
+    static bool evaluate_graph(RuntimeGraph &graph, EvaluationContext &context, EvaluationProfile *profile,
+                               std::uint32_t graph_id, const RuntimeGraphInput *inputs);
     void notify_scheduled(RuntimeGraph &graph) noexcept;
     void notify_timed_schedule_changed(RuntimeGraph &graph, std::optional<EvaluationTime> previous);
     RuntimeGraph &outer_graph(RuntimeGraph &graph) const noexcept;

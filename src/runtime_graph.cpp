@@ -1373,14 +1373,14 @@ bool RuntimeGraphEvaluator::evaluate_graph(RuntimeGraph &graph, EvaluationContex
     }
 
     if constexpr (Profiled) {
-        if (!resuming && !parent_) {
+        if (!resuming && !graph.evaluator_->owner_bound()) {
             profile->begin_cycle(graph_id, evaluation_time, context.wall_clock().now());
         }
     }
 
     auto abort_profile_cycle = util::scope_exit{[&]() noexcept {
         if constexpr (Profiled) {
-            if (!parent_) {
+            if (!graph.evaluator_->owner_bound()) {
                 profile->abort_cycle();
             }
         }
@@ -1442,7 +1442,7 @@ bool RuntimeGraphEvaluator::evaluate_graph(RuntimeGraph &graph, EvaluationContex
                 advance.release();
                 stop_on_failure.release();
                 if constexpr (Profiled) {
-                    if (parent_) {
+                    if (graph.evaluator_->owner_bound()) {
                         abort_profile_cycle.release();
                     }
                 }
@@ -1463,7 +1463,7 @@ bool RuntimeGraphEvaluator::evaluate_graph(RuntimeGraph &graph, EvaluationContex
     stop_on_failure.release();
     graph.paused_node_index_ = std::numeric_limits<std::uint32_t>::max();
     if constexpr (Profiled) {
-        if (!parent_) {
+        if (!graph.evaluator_->owner_bound()) {
             profile->end_cycle(graph_id, evaluation_time, context.wall_clock().now());
         }
     }
