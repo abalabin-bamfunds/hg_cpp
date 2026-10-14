@@ -869,6 +869,117 @@ void test_aligned_batches_gather_distinct_mappings_and_validate_before_callback(
     }
     require(wrong_domain && !callback_invoked, "aligned batches accepted a different logical row domain");
 }
+
+void test_aligned_batches_gather_more_than_two_scratch_batches() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    auto resource = std::pmr::monotonic_buffer_resource{};
+    const auto memory = allocator{resource};
+    auto rows = NativeRows{};
+    auto left_rows = NativeRowSlots{};
+    auto right_rows = NativeRowSlots{};
+    auto left_cells = NativeColumnData<i64>{};
+    auto right_cells = NativeColumnData<i64>{};
+    auto release = util::scope_exit{[&]() noexcept {
+        right_cells.release(memory);
+        left_cells.release(memory);
+        right_rows.release(memory);
+        left_rows.release(memory);
+        rows.release(memory);
+    }};
+
+    constexpr auto row_count = std::size_t{300};
+    const auto time = MIN_DT + EvaluationTime::duration{1};
+    auto ids = std::array<row_id_t, row_count>{};
+    for (auto position = std::size_t{}; position != row_count; ++position)
+        ids[position] = rows.add(time, memory);
+    for (const auto id : ids)
+        left_rows.insert(id, memory);
+    for (auto position = row_count; position != 0; --position)
+        right_rows.insert(ids[position - 1], memory);
+
+    for (auto position = std::size_t{}; position != row_count; ++position) {
+        const auto id = ids[position];
+        const auto left_value = position == 127 || position == 255 ? std::nullopt : std::optional<i64>{id + 10};
+        const auto right_value = position == 128 || position == 256 ? std::nullopt : std::optional<i64>{id + 20};
+        left_cells.add(left_rows, id, left_value, memory);
+        right_cells.add(right_rows, id, right_value, memory);
+    }
+
+    const auto visible = RowSet::native(rows);
+    auto left_storage = ColumnStorage<i64>{left_cells, left_rows, visible, rows.added(), left_cells.modified(),
+                                           rows.removed(), time};
+    auto right_storage = ColumnStorage<i64>{right_cells, right_rows, visible, rows.added(), right_cells.modified(),
+                                            rows.removed(), time};
+    auto left = ColumnSeriesView<i64>{left_storage};
+    auto right = ColumnSeriesView<i64>{right_storage};
+
+    auto visited = std::size_t{};
+    auto batches = std::size_t{};
+    left.for_each_aligned_batch(right, [&](const auto &batch) {
+        ++batches;
+        for (auto offset = std::size_t{}; offset != batch.ids.size(); ++offset) {
+            const auto position = visited + offset;
+            require(batch.ids[offset] == ids[position], "multi-batch gathering changed logical row order");
+            const auto left_valid = position != 127 && position != 255;
+            const auto right_valid = position != 128 && position != 256;
+            require(batch.left.is_valid(offset) == left_valid && batch.right.is_valid(offset) == right_valid,
+                    "multi-batch gathering retained stale validity bits across scratch batches");
+            if (left_valid)
+                require(batch.left.values[offset] == ids[position] + 10,
+                        "multi-batch gathering read a left value from the wrong physical slot");
+            if (right_valid)
+                require(batch.right.values[offset] == ids[position] + 20,
+                        "multi-batch gathering read a right value from the wrong physical slot");
+        }
+        visited += batch.ids.size();
+    });
+
+    require(visited == row_count && batches == 3,
+            "gathering did not flush and reset fixed-size scratch batches across more than 256 rows");
+}
+
+void test_aligned_batches_keep_null_only_blocks_unreadable() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    auto resource = std::pmr::monotonic_buffer_resource{};
+    const auto memory = allocator{resource};
+    auto rows = NativeRows{};
+    auto left_cells = NativeColumnData<i64>{};
+    auto right_cells = NativeColumnData<double>{};
+    auto release = util::scope_exit{[&]() noexcept {
+        right_cells.release(memory);
+        left_cells.release(memory);
+        rows.release(memory);
+    }};
+
+    constexpr auto row_count = std::size_t{300};
+    const auto time = MIN_DT + EvaluationTime::duration{1};
+    for (auto position = std::size_t{}; position != row_count; ++position) {
+        const auto id = rows.add(time, memory);
+        left_cells.add(rows, id, std::nullopt, memory);
+        right_cells.add(rows, id, std::nullopt, memory);
+    }
+
+    auto left = ColumnSeriesView<i64>{ColumnStorage<i64>{left_cells, rows}};
+    auto right = ColumnSeriesView<double>{ColumnStorage<double>{right_cells, rows}};
+    auto visited = std::size_t{};
+    auto batches = std::size_t{};
+    left.for_each_aligned_batch(right, [&](const auto &batch) {
+        ++batches;
+        require(batch.left.values == nullptr && batch.right.values == nullptr,
+                "an all-null native block exposed a value buffer");
+        for (auto offset = std::size_t{}; offset != batch.ids.size(); ++offset) {
+            require(!batch.left.is_valid(offset) && !batch.right.is_valid(offset),
+                    "an all-null native block marked a value valid");
+            ++visited;
+        }
+    });
+
+    require(visited == row_count && batches > 1, "all-null native blocks were omitted from aligned traversal");
+}
 } // namespace
 
 int main() {
@@ -890,6 +1001,8 @@ int main() {
         test_tsc_view_clears_modified_rows_removed_during_the_same_cycle();
         test_aligned_batches_borrow_shared_mapping_and_accept_requested_subsets();
         test_aligned_batches_gather_distinct_mappings_and_validate_before_callback();
+        test_aligned_batches_gather_more_than_two_scratch_batches();
+        test_aligned_batches_keep_null_only_blocks_unreadable();
         std::cout << "bg_frame_column_test passed\n";
     } catch (const std::exception &error) {
         std::cerr << "bg_frame_column_test: " << error.what() << '\n';
