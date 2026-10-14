@@ -161,6 +161,26 @@ class LateInheritedUseWiringRecord final : public WiringRecord {
     mutable std::optional<WiringPoint> forwarded_;
 };
 
+class BorrowedInputWiringRecord final : public WiringRecord {
+  public:
+    BorrowedInputWiringRecord(const TimeSeriesType &type, std::size_t index)
+        : WiringRecord{type}, input_{WiredInput::borrowed(index)} {}
+
+    std::optional<WiredInput> input_binding(const TimeSeriesType &requested_type) const noexcept override {
+        return type().accepts(requested_type) ? std::optional<WiredInput>{input_} : std::nullopt;
+    }
+
+  private:
+    WiringPoint materialize(const TimeSeriesType &requested_type) const override {
+        if (!type().accepts(requested_type)) {
+            throw WiringError{"a borrowed input is incompatible with the requested time series type"};
+        }
+        return point(*this);
+    }
+
+    WiredInput input_;
+};
+
 class PendingNodeOutputWiringRecord final : public WiringRecord {
   public:
     PendingNodeOutputWiringRecord(const TimeSeriesType &type, std::size_t identity)
@@ -799,6 +819,17 @@ WiredInput GraphWiring::wire_input(WiringPoint point, const TimeSeriesType &type
     const auto dereference = type_cast<TimeSeriesReferenceType>(&materialized.type()) != nullptr &&
                              type_cast<TimeSeriesReferenceType>(&type) == nullptr;
     return WiredInput::output(output_index(materialized), dereference);
+}
+
+WiringPoint GraphWiring::borrowed_input(const TimeSeriesType &type) {
+    ensure_open();
+    if (borrowed_input_types_.size() >= (std::size_t{1} << 30)) {
+        throw WiringError{"a graph cannot contain more than 2^30 borrowed inputs"};
+    }
+    const auto index = borrowed_input_types_.size();
+    auto result = register_record(std::make_unique<details::BorrowedInputWiringRecord>(type, index));
+    borrowed_input_types_.push_back(&type);
+    return result;
 }
 
 WiredInput GraphWiring::resolve_inherited_input(WiredInput input) const {

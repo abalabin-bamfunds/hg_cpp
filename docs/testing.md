@@ -17,7 +17,7 @@ Use `[dimension:value]` for each applicable dimension:
 - `feature`: `compilation`, `compilation-order`, `inherited-time-series`, `scalar-api`, `scalar-storage`,
   `scalar-collection`, `global-state`, `visitor`, `type-system`,
   `node-api`, `state`, `wiring`, `context-time-series`, `graph-compilation`, `test-graph`, `evaluation-context`,
-  `evaluation-scratch`,
+  `evaluation-scratch`, `borrowed-input`,
   `lifecycle`, `finalization`, `scheduling`, `timed-scheduling`, `simulation`, `wall-clock`, `input-activity`, `validity`,
   `invalidation`, `operator`, `constant`, `graph-argument`, `map`, `switch`,
   `time-series-storage`, `time-series-view`, `collection-change`, `reference`, `sampling`, `feedback`,
@@ -225,6 +225,7 @@ graph compilation or evaluation.
 - const nodes and their direct bindings
 - `default_` adapter-node lowering, reference materialization, nested graph returns, and fallback identity
 - service binding metadata alongside inherited time series metadata
+- borrowed input slot metadata and bindings
 
 ### Evaluation
 
@@ -242,6 +243,8 @@ graph compilation or evaluation.
   and typed, generic, and runtime node declarations
 - operation-specific handling of invalid `opt` arguments, including mixed required and optional inputs
 - output update and invalidation propagation
+- borrowed inputs supplied per runtime graph invocation, runtime-type access, update/invalidation/revalidation,
+  and isolation between nested instances of the same compiled graph
 - tick and complete-value copying through typed and generic outputs, current-cycle filtering,
   collection reconciliation, empty first ticks, validity transitions, free collection inputs,
   nested changes, reference values, input guarantees, output guarantees, and provider runtime dispatch

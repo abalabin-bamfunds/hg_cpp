@@ -66,6 +66,7 @@ class WiringRecord {
     bool has_wired_output() const noexcept { return output_ != no_output; }
     bool graph_owned() const noexcept { return graph_owned_; }
     virtual bool has_default_materialisation() const noexcept { return true; }
+    virtual std::optional<WiredInput> input_binding() const noexcept { return std::nullopt; }
     virtual std::optional<NodeCallIdentity> node_call_identity() const noexcept { return std::nullopt; }
     virtual const WiringRecord *source_identity() const noexcept { return this; }
     std::size_t wired_output_index() const noexcept { return output_; }

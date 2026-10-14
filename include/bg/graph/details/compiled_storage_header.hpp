@@ -7,6 +7,7 @@
 
 namespace bg {
 class TimeSeriesRuntimeType;
+class TimeSeriesType;
 }
 
 namespace bg::details {
@@ -66,6 +67,31 @@ struct RuntimeInputDescriptor {
 
 static_assert(sizeof(RuntimeInputDescriptor) == 24);
 static_assert(std::is_trivially_copyable_v<RuntimeInputDescriptor>);
+
+struct BorrowedInputMetadata {
+    std::uint32_t bindings_offset;
+    std::uint32_t binding_count;
+};
+
+static_assert(sizeof(BorrowedInputMetadata) == 8);
+static_assert(std::is_trivially_copyable_v<BorrowedInputMetadata>);
+
+struct BorrowedInputBinding {
+    const TimeSeriesRuntimeType *runtime_type;
+    std::uint32_t subscribers_offset;
+    std::uint32_t subscriber_count;
+    std::uint32_t notification_offset;
+    std::uint32_t flags;
+
+    static constexpr std::uint32_t exact_runtime_type_flag = 1;
+
+    bool requires_exact_runtime_type() const noexcept { return (flags & exact_runtime_type_flag) != 0; }
+};
+
+static_assert(sizeof(BorrowedInputBinding) == 24);
+static_assert(alignof(BorrowedInputBinding) == alignof(const TimeSeriesRuntimeType *));
+static_assert(offsetof(BorrowedInputBinding, flags) == 20);
+static_assert(std::is_trivially_copyable_v<BorrowedInputBinding>);
 
 // Describes the variable sections of compiled graph storage. Node offsets, paths, and optional metadata follow.
 struct CompiledStorageHeader {
@@ -141,6 +167,7 @@ struct CompiledStorageHeader {
     std::uint32_t output_destruction_count;
     std::uint32_t variable_memory_offset;
     std::uint32_t initial_runtime_image_offset;
+    std::uint32_t borrowed_input_metadata_offset;
 
     // Fixed-storage offsets stay below 1 GiB, leaving the high two bits for metadata flags.
     static constexpr std::uint32_t runtime_inputs_flag = std::uint32_t{1} << 31;
@@ -148,7 +175,8 @@ struct CompiledStorageHeader {
     static constexpr std::uint32_t offset_mask = borrowed_evaluation_flag - 1;
 };
 
-static_assert(sizeof(CompiledStorageHeader) == 40);
+static_assert(sizeof(CompiledStorageHeader) == 44);
 static_assert(std::is_trivially_copyable_v<CompiledStorageHeader>);
 
-} // namespace bg::details
+} // namespace details
+} // namespace bg

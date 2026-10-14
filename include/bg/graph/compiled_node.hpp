@@ -78,6 +78,7 @@ class ControlledInput {
 enum class ParameterBindingMode : std::uint8_t {
     time_series,
     reference,
+    borrowed,
     scalar,
     constant,
     default_value,
@@ -231,6 +232,9 @@ class ParameterBinding {
             }
             return (value_offset_ & constant_flag) == 0 ? ParameterBindingMode::scalar : ParameterBindingMode::constant;
         }
+        if ((value_offset_ & (reference_flag | runtime_input_flag)) == (reference_flag | runtime_input_flag)) {
+            return ParameterBindingMode::borrowed;
+        }
         if ((value_offset_ & runtime_input_flag) != 0) {
             return ParameterBindingMode::runtime_input;
         }
@@ -272,6 +276,8 @@ class ParameterBinding {
                (value_offset_ & reference_dynamic_activity_flag) != 0;
     }
 
+    std::size_t borrowed_input_index() const noexcept { return value_offset_ & value_location_mask; }
+
   private:
     friend class CompiledGraphBuilder;
 
@@ -282,6 +288,7 @@ class ParameterBinding {
     static constexpr std::uint32_t runtime_input_flag = std::uint32_t{1} << 30;
     static constexpr std::uint32_t constant_flag = reference_flag;
     static constexpr std::uint32_t default_flag = std::uint32_t{1} << 30;
+    static constexpr std::uint32_t borrowed_flag = reference_flag | runtime_input_flag;
     // Reference input slots are aligned, so their low bits store metadata without growing the binding.
     static constexpr std::uint32_t reference_dynamic_activity_flag = 1;
     static constexpr std::uint32_t reference_sample_flag = 2;
@@ -317,6 +324,10 @@ class ParameterBinding {
 
     static ParameterBinding runtime_input(std::uint32_t slot_offset, InputValidity validity) noexcept {
         return ParameterBinding{0, slot_offset | runtime_input_flag, validity};
+    }
+
+    static ParameterBinding borrowed(std::uint32_t input_index, InputValidity validity) noexcept {
+        return ParameterBinding{0, input_index | borrowed_flag, validity};
     }
 
     struct constant_binding_t {};

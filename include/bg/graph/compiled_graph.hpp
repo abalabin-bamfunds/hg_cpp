@@ -63,6 +63,11 @@ class CompiledGraph {
     runtime_input_subscribers(const details::RuntimeInputDescriptor &binding) const noexcept;
     const OutputNotification *runtime_input_notification(
         const details::RuntimeInputDescriptor &binding) const noexcept;
+    std::span<const details::BorrowedInputBinding> borrowed_input_bindings() const noexcept;
+    std::span<const Subscriber> borrowed_input_subscribers(
+        const details::BorrowedInputBinding &binding) const noexcept;
+    const OutputNotification *borrowed_input_notification(
+        const details::BorrowedInputBinding &binding) const noexcept;
 
     struct NodeFunctions {
         std::span<const NodeFunction> functions;
@@ -160,6 +165,12 @@ class CompiledGraph {
         }
 
         return storage_header().constant_metadata(node_count());
+    }
+
+    const details::BorrowedInputMetadata *borrowed_input_metadata() const noexcept {
+        const auto offset = storage_header().borrowed_input_metadata_offset;
+        return offset == 0 ? nullptr
+                           : reinterpret_cast<const details::BorrowedInputMetadata *>(fixed_storage_ + offset);
     }
 
     std::size_t fixed_storage_alignment() const noexcept {

@@ -20,8 +20,9 @@ class NodeInvocationParameter {
     const Type &parameter_type() const noexcept { return *metadata().type; }
 
   protected:
-    NodeInvocationParameter(const CompiledNode &node, std::byte *runtime_storage, std::size_t parameter_index) noexcept
-        : node_{&node}, runtime_storage_{runtime_storage}, parameter_index_{parameter_index} {}
+    NodeInvocationParameter(const CompiledNode &node, std::byte *runtime_storage, std::size_t parameter_index,
+                            EvaluationContext *context = nullptr) noexcept
+        : node_{&node}, runtime_storage_{runtime_storage}, parameter_index_{parameter_index}, context_{context} {}
 
     const ParameterBinding &binding() const noexcept { return node_->parameters()[parameter_index_]; }
 
@@ -32,15 +33,18 @@ class NodeInvocationParameter {
     const CompiledNode *node_;
     std::byte *runtime_storage_;
     std::size_t parameter_index_;
+    EvaluationContext *context_;
 };
 
 class NodeInvocationInput final : public NodeInvocationParameter {
   public:
-    NodeInvocationInput(const CompiledNode &node, std::byte *runtime_storage, std::size_t parameter_index) noexcept
-        : NodeInvocationParameter{node, runtime_storage, parameter_index} {}
+    NodeInvocationInput(const CompiledNode &node, std::byte *runtime_storage, std::size_t parameter_index,
+                        EvaluationContext &context) noexcept
+        : NodeInvocationParameter{node, runtime_storage, parameter_index, &context} {}
 
     In<TS_T> value() const {
-        return Node{*node_, runtime_storage_}.time_series_input(parameter_index_);
+        return Node{*node_, runtime_storage_}.time_series_input(parameter_index_, context_->evaluation_time(),
+                                                                *context_);
     }
 };
 
@@ -73,13 +77,18 @@ template <bool TimeSeries> class NodeInvocationParameterRange {
         using difference_type = std::ptrdiff_t;
         using iterator_category = std::input_iterator_tag;
 
-        Iterator(const CompiledNode &node, std::byte *runtime_storage, std::size_t parameter_index) noexcept
-            : node_{&node}, runtime_storage_{runtime_storage}, parameter_index_{parameter_index} {
+        Iterator(const CompiledNode &node, std::byte *runtime_storage, std::size_t parameter_index,
+                 EvaluationContext *context) noexcept
+            : node_{&node}, runtime_storage_{runtime_storage}, parameter_index_{parameter_index}, context_{context} {
             advance_to_category();
         }
 
         value_type operator*() const noexcept {
-            return {*node_, runtime_storage_, parameter_index_};
+            if constexpr (TimeSeries) {
+                return {*node_, runtime_storage_, parameter_index_, *context_};
+            } else {
+                return {*node_, runtime_storage_, parameter_index_};
+            }
         }
 
         Iterator &operator++() noexcept {
@@ -104,19 +113,22 @@ template <bool TimeSeries> class NodeInvocationParameterRange {
         const CompiledNode *node_;
         std::byte *runtime_storage_;
         std::size_t parameter_index_;
+        EvaluationContext *context_;
     };
 
-    Iterator begin() const noexcept { return Iterator{*node_, runtime_storage_, 0}; }
+    Iterator begin() const noexcept { return Iterator{*node_, runtime_storage_, 0, context_}; }
     std::default_sentinel_t end() const noexcept { return {}; }
 
   private:
     template <typename, typename> friend class NodeInvocation;
 
-    NodeInvocationParameterRange(const CompiledNode &node, std::byte *runtime_storage) noexcept
-        : node_{&node}, runtime_storage_{runtime_storage} {}
+    NodeInvocationParameterRange(const CompiledNode &node, std::byte *runtime_storage,
+                                 EvaluationContext *context) noexcept
+        : node_{&node}, runtime_storage_{runtime_storage}, context_{context} {}
 
     const CompiledNode *node_;
     std::byte *runtime_storage_;
+    EvaluationContext *context_;
 };
 
 template <typename CompiledData = void, typename State = void> class NodeInvocation {
@@ -140,9 +152,13 @@ template <typename CompiledData = void, typename State = void> class NodeInvocat
         return node_->parameters()[parameter_index].scalar_data();
     }
 
-    auto inputs() const noexcept -> NodeInvocationParameterRange<true> { return {*node_, runtime_storage_}; }
+    auto inputs() const noexcept -> NodeInvocationParameterRange<true> {
+        return {*node_, runtime_storage_, context_};
+    }
 
-    auto scalars() const noexcept -> NodeInvocationParameterRange<false> { return {*node_, runtime_storage_}; }
+    auto scalars() const noexcept -> NodeInvocationParameterRange<false> {
+        return {*node_, runtime_storage_, context_};
+    }
 
     Out<TS_T> output() const {
         const auto runtime_node = Node{*node_, runtime_storage_};
@@ -173,14 +189,14 @@ template <typename CompiledData = void, typename State = void> class NodeInvocat
                 activity = runtime_node.input_activity(ControlledInputIndex);
             }
         }
-        const auto input = runtime_node.input_data(parameter_index);
+        const auto input = runtime_node.input_data(parameter_index, *context_);
         const auto modified = input.last_updated->valid() && input.last_updated->time() == context_->evaluation_time();
         if constexpr (details::direct_time_series_input<Input> && !details::input_requires_runtime_type<Input>) {
             return Input{*input.last_updated, static_cast<const typename Input::storage_type *>(input.value), modified,
                          activity};
         } else {
             const auto data = TimeSeriesInputData{
-                runtime_node.time_series_input_runtime_type(parameter_index), *input.last_updated,
+                runtime_node.time_series_input_runtime_type(parameter_index, *context_), *input.last_updated,
                 input.value, modified};
             return Input{data, activity};
         }

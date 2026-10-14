@@ -137,6 +137,14 @@ The context provides:
 - cancellation of timed scheduling
 - registration of outer-cycle callbacks
 
+A runtime graph can declare borrowed time-series input slots. Each invocation
+supplies the slot values through an `EvaluationContext` section keyed to that
+`RuntimeGraph` instance. A slot provides its value, runtime type, time-series
+state, and change for the current invocation. Compiled input bindings store the
+slot index; the runtime does not retain the supplied values. The caller keeps
+their storage alive through the invocation. Slot changes use the normal input
+notification and validity paths.
+
 An inner runtime graph receives a child `EvaluationContext` derived from the
 context used to evaluate its owning node. This preserves evaluation services
 and internal sections through any number of nested graph owners.

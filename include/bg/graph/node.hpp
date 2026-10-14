@@ -1,6 +1,8 @@
 #pragma once
 
 #include <bg/graph/compiled_node.hpp>
+#include <bg/graph/borrowed_input.hpp>
+#include <bg/evaluation_context.hpp>
 #include <bg/time_series/ref/ref_input_storage.hpp>
 #include <bg/time_series/ref/ref_input_sample.hpp>
 #include <bg/time_series/ref/ref_storage.hpp>
@@ -8,6 +10,8 @@
 #include <bg/time_series/time_series_input.hpp>
 
 #include <cstddef>
+#include <span>
+#include <stdexcept>
 #include <type_traits>
 
 namespace bg {
@@ -42,8 +46,19 @@ class Node {
         return *input_data(parameter_index).last_updated;
     }
 
+    const TimeSeriesState &input_last_updated(std::size_t parameter_index,
+                                              std::span<const BorrowedInput> borrowed_inputs) const {
+        return *input_data(parameter_index, borrowed_inputs).last_updated;
+    }
+
     bool input_modified(std::size_t parameter_index, EvaluationTime evaluation_time) const noexcept {
         const auto &state = input_last_updated(parameter_index);
+        return state.valid() && state.time() == evaluation_time;
+    }
+
+    bool input_modified(std::size_t parameter_index, EvaluationTime evaluation_time,
+                        std::span<const BorrowedInput> borrowed_inputs) const {
+        const auto &state = input_last_updated(parameter_index, borrowed_inputs);
         return state.valid() && state.time() == evaluation_time;
     }
 
@@ -69,6 +84,37 @@ class Node {
         return binding_data(binding, mode);
     }
 
+    InputData input_data(std::size_t parameter_index, std::span<const BorrowedInput> borrowed_inputs) const {
+        const auto &binding = compiled_node_->parameters()[parameter_index];
+        const auto mode = binding.mode();
+        if (mode == ParameterBindingMode::borrowed) {
+            return borrowed_input_data(binding, borrowed_inputs);
+        }
+        if (mode == ParameterBindingMode::default_value) {
+            const auto &descriptor = default_descriptor(binding);
+            if (descriptor.source.mode() == ParameterBindingMode::borrowed) {
+                const auto source_data = borrowed_input_data(descriptor.source, borrowed_inputs);
+                const auto *last_updated = &default_input(binding).last_updated;
+                if (!last_updated->valid()) {
+                    last_updated = reinterpret_cast<const TimeSeriesState *>(runtime_storage_ +
+                                                                            descriptor.start_time_offset);
+                }
+                return {last_updated, source_data.last_updated->valid() ? source_data.value : descriptor.fallback};
+            }
+        }
+        return input_data(parameter_index);
+    }
+
+    InputData input_data(std::size_t parameter_index, const EvaluationContext &context) const {
+        const auto &binding = compiled_node_->parameters()[parameter_index];
+        if (binding.mode() == ParameterBindingMode::borrowed ||
+            (binding.mode() == ParameterBindingMode::default_value &&
+             default_descriptor(binding).source.mode() == ParameterBindingMode::borrowed)) {
+            return input_data(parameter_index, context.borrowed_inputs());
+        }
+        return input_data(parameter_index);
+    }
+
     const void *input_value(std::size_t parameter_index) const noexcept { return input_data(parameter_index).value; }
 
     const TimeSeriesRuntimeType &time_series_input_runtime_type(std::size_t parameter_index) const noexcept {
@@ -86,6 +132,36 @@ class Node {
         return compiled_node_->time_series_input_runtime_type(parameter_index);
     }
 
+    const TimeSeriesRuntimeType &time_series_input_runtime_type(
+        std::size_t parameter_index, std::span<const BorrowedInput> borrowed_inputs) const {
+        const auto &binding = compiled_node_->parameters()[parameter_index];
+        if (binding.mode() == ParameterBindingMode::borrowed) {
+            return *borrowed_input(binding, borrowed_inputs).runtime_type;
+        }
+        if (binding.mode() == ParameterBindingMode::default_value) {
+            const auto &source = default_descriptor(binding).source;
+            if (source.mode() == ParameterBindingMode::borrowed) {
+                const auto &input = borrowed_input(source, borrowed_inputs);
+                if (input.last_updated->valid()) {
+                    return *input.runtime_type;
+                }
+                return compiled_node_->time_series_input_runtime_type(parameter_index);
+            }
+        }
+        return time_series_input_runtime_type(parameter_index);
+    }
+
+    const TimeSeriesRuntimeType &time_series_input_runtime_type(
+        std::size_t parameter_index, const EvaluationContext &context) const {
+        const auto &binding = compiled_node_->parameters()[parameter_index];
+        if (binding.mode() == ParameterBindingMode::borrowed ||
+            (binding.mode() == ParameterBindingMode::default_value &&
+             default_descriptor(binding).source.mode() == ParameterBindingMode::borrowed)) {
+            return time_series_input_runtime_type(parameter_index, context.borrowed_inputs());
+        }
+        return time_series_input_runtime_type(parameter_index);
+    }
+
     const TimeSeriesRuntimeType &all_valid_input_runtime_type(
         const AllValidInputDescriptor &descriptor) const noexcept {
         if (!descriptor.runtime_type->is_reference()) {
@@ -95,6 +171,22 @@ class Node {
         }
 
         return *descriptor.runtime_type;
+    }
+
+    const TimeSeriesRuntimeType &all_valid_input_runtime_type(const AllValidInputDescriptor &descriptor,
+                                                              const EvaluationContext &context) const {
+        const auto &binding = compiled_node_->parameters()[descriptor.parameter_index];
+        if (binding.mode() == ParameterBindingMode::borrowed) {
+            return *borrowed_input(binding, context.borrowed_inputs()).runtime_type;
+        }
+        if (binding.mode() == ParameterBindingMode::default_value &&
+            default_descriptor(binding).source.mode() == ParameterBindingMode::borrowed) {
+            const auto &source = default_descriptor(binding).source;
+            if (borrowed_input(source, context.borrowed_inputs()).last_updated->valid()) {
+                return *borrowed_input(source, context.borrowed_inputs()).runtime_type;
+            }
+        }
+        return all_valid_input_runtime_type(descriptor);
     }
 
     const TimeSeriesRuntimeType *bound_reference_runtime_type(std::size_t parameter_index) const noexcept {
@@ -112,6 +204,13 @@ class Node {
     In<TS_T> time_series_input(std::size_t parameter_index, EvaluationTime evaluation_time = MIN_DT) const noexcept {
         const auto input = input_data(parameter_index);
         return {*input.last_updated, input.value, time_series_input_runtime_type(parameter_index),
+                input.last_updated->valid() && input.last_updated->time() == evaluation_time};
+    }
+
+    In<TS_T> time_series_input(std::size_t parameter_index, EvaluationTime evaluation_time,
+                               const EvaluationContext &context) const {
+        const auto input = input_data(parameter_index, context);
+        return {*input.last_updated, input.value, time_series_input_runtime_type(parameter_index, context),
                 input.last_updated->valid() && input.last_updated->time() == evaluation_time};
     }
 
@@ -162,6 +261,24 @@ class Node {
     void *state() const noexcept { return runtime_storage_ + compiled_node_->state_offset(); }
 
   private:
+    const BorrowedInput &borrowed_input(const ParameterBinding &binding,
+                                        std::span<const BorrowedInput> borrowed_inputs) const {
+        if (binding.borrowed_input_index() >= borrowed_inputs.size()) {
+            throw std::logic_error{"a borrowed input binding requires its evaluation context"};
+        }
+        const auto &input = borrowed_inputs[binding.borrowed_input_index()];
+        if (input.last_updated == nullptr || input.runtime_type == nullptr) {
+            throw std::logic_error{"a borrowed input slot must provide its state and runtime type"};
+        }
+        return input;
+    }
+
+    InputData borrowed_input_data(const ParameterBinding &binding,
+                                  std::span<const BorrowedInput> borrowed_inputs) const {
+        const auto &input = borrowed_input(binding, borrowed_inputs);
+        return {input.last_updated, input.value};
+    }
+
     InputData binding_data(const ParameterBinding &binding, ParameterBindingMode mode) const noexcept {
         if (mode == ParameterBindingMode::time_series) {
             const auto &last_updated =

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <bg/evaluation_time.hpp>
+#include <bg/graph/borrowed_input.hpp>
 
 #include <cstddef>
 #include <cstdint>
@@ -30,8 +31,11 @@ class OutputChangeContext {
 
     RuntimeGraph &runtime_graph() const noexcept { return *runtime_graph_; }
     EvaluationTime evaluation_time() const noexcept;
+    std::span<const BorrowedInput> borrowed_inputs() const noexcept {
+        return borrowed_inputs_ == nullptr ? std::span<const BorrowedInput>{} : borrowed_inputs_->inputs;
+    }
     OutputChangeContext for_graph(RuntimeGraph &graph) const noexcept {
-        return OutputChangeContext{graph, evaluation_time_};
+        return OutputChangeContext{graph, evaluation_time_, nullptr};
     }
 
     void schedule_validity_check(RuntimeGraph &graph, std::size_t node_index) const noexcept;
@@ -39,8 +43,13 @@ class OutputChangeContext {
     void notify_subscribers(details::DynamicSubscribers *subscribers, OutputChange change) const;
 
   private:
+    OutputChangeContext(RuntimeGraph &runtime_graph, EvaluationTime evaluation_time,
+                        const details::BorrowedInputSection *borrowed_inputs) noexcept
+        : runtime_graph_{&runtime_graph}, evaluation_time_{evaluation_time}, borrowed_inputs_{borrowed_inputs} {}
+
     RuntimeGraph *runtime_graph_;
     EvaluationTime evaluation_time_;
+    const details::BorrowedInputSection *borrowed_inputs_{};
 };
 
 using OutputChangeHandler = void (*)(OutputChangeContext &, const TimeSeriesRuntimeType *, const void *, OutputChange,

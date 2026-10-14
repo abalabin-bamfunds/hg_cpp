@@ -43,7 +43,9 @@ OutputChangeContext::OutputChangeContext(RuntimeGraph &runtime_graph) noexcept
     : runtime_graph_{&runtime_graph}, evaluation_time_{runtime_graph.evaluation_time()} {}
 
 OutputChangeContext::OutputChangeContext(const EvaluationContext &evaluation_context) noexcept
-    : runtime_graph_{&evaluation_context.runtime_graph()}, evaluation_time_{evaluation_context.evaluation_time()} {}
+    : runtime_graph_{&evaluation_context.runtime_graph()}, evaluation_time_{evaluation_context.evaluation_time()},
+      borrowed_inputs_{static_cast<const details::BorrowedInputSection *>(
+          evaluation_context.find_section(&evaluation_context.runtime_graph()))} {}
 
 ScheduleHandle RuntimeGraphSchedulingContext::schedule_at(EvaluationTime time) const {
     return graph_->schedule_at(node_index_, time);
@@ -555,6 +557,83 @@ void RuntimeGraph::initialize_inherited_time_series(std::size_t index, Reference
         notification->notify(context, nullptr, &stored_reference, OutputChange::revalidation);
     }
     notify_subscribers(compiled_graph_->inherited_time_series_subscribers(binding), OutputChange::revalidation);
+}
+
+void RuntimeGraph::validate_borrowed_inputs(const EvaluationContext &context) const {
+    const auto bindings = compiled_graph_->borrowed_input_bindings();
+    if (bindings.empty()) {
+        return;
+    }
+    const auto inputs = context.borrowed_inputs(*this);
+    if (inputs.size() != bindings.size()) {
+        throw std::invalid_argument{"the runtime graph received the wrong number of borrowed inputs"};
+    }
+
+    for (auto index = std::size_t{}; index < inputs.size(); ++index) {
+        const auto &input = inputs[index];
+        const auto &binding = bindings[index];
+        if (input.last_updated == nullptr || input.runtime_type == nullptr || binding.runtime_type == nullptr) {
+            throw std::invalid_argument{"a borrowed input must provide its state and runtime type"};
+        }
+        if (!binding.runtime_type->type().accepts(input.runtime_type->type())) {
+            throw std::invalid_argument{"a borrowed input has an incompatible runtime type"};
+        }
+        if (binding.requires_exact_runtime_type() && input.runtime_type != binding.runtime_type) {
+            throw std::invalid_argument{"a borrowed input has a different runtime type than its compiled binding"};
+        }
+        if (input.last_updated->valid() && input.value == nullptr) {
+            throw std::invalid_argument{"a valid borrowed input must provide its value"};
+        }
+        if (input.change == BorrowedInputChange::update || input.change == BorrowedInputChange::revalidation) {
+            if (!input.last_updated->valid()) {
+                throw std::invalid_argument{"an updated or revalidated borrowed input must be valid"};
+            }
+        } else if (input.change == BorrowedInputChange::invalidation) {
+            if (input.last_updated->valid()) {
+                throw std::invalid_argument{"an invalidated borrowed input must be invalid"};
+            }
+        } else if (input.change != BorrowedInputChange::unchanged) {
+            throw std::invalid_argument{"a borrowed input has an unknown change class"};
+        }
+        if (input.change != BorrowedInputChange::unchanged && input.last_updated->time() != context.evaluation_time()) {
+            throw std::invalid_argument{"a changed borrowed input must be sampled at the evaluation time"};
+        }
+    }
+}
+
+void RuntimeGraph::notify_borrowed_inputs(EvaluationContext &evaluation_context) {
+    const auto bindings = compiled_graph_->borrowed_input_bindings();
+    if (bindings.empty()) {
+        return;
+    }
+    const auto inputs = evaluation_context.borrowed_inputs(*this);
+    auto graph_context = EvaluationContext{evaluation_context, *this, 0};
+    auto context = OutputChangeContext{graph_context};
+
+    for (auto index = std::size_t{}; index < inputs.size(); ++index) {
+        const auto &input = inputs[index];
+        if (input.change == BorrowedInputChange::unchanged) {
+            continue;
+        }
+
+        auto change = OutputChange::update;
+        switch (input.change) {
+        case BorrowedInputChange::update:
+            break;
+        case BorrowedInputChange::invalidation:
+            change = OutputChange::invalidation;
+            break;
+        case BorrowedInputChange::revalidation:
+            change = OutputChange::revalidation;
+            break;
+        case BorrowedInputChange::unchanged:
+            continue;
+        }
+        if (const auto *notification = compiled_graph_->borrowed_input_notification(bindings[index])) {
+            notification->notify(context, input.runtime_type, input.value, change);
+        }
+        notify_subscribers(compiled_graph_->borrowed_input_subscribers(bindings[index]), change);
+    }
 }
 
 std::span<details::ServiceRequestBinding *> RuntimeGraph::service_bindings() noexcept {
@@ -1180,6 +1259,7 @@ void RuntimeGraphEvaluator::start(RuntimeGraph &graph, EvaluationContext &parent
 
     auto binding_context = ServiceBindingContext{parent_context, bindings};
     auto &context = binding_context.context();
+    graph.validate_borrowed_inputs(context);
 
     graph.started_ = true;
     graph.evaluation_time_ = context.evaluation_time();
@@ -1193,6 +1273,7 @@ void RuntimeGraphEvaluator::start(RuntimeGraph &graph, EvaluationContext &parent
     for (auto index = std::size_t{}; index < inherited_references.size(); ++index) {
         graph.initialize_inherited_time_series(index, inherited_references[index]);
     }
+    graph.notify_borrowed_inputs(context);
     if (const auto offset = graph.compiled_graph_->constant_start_time_offset()) {
         reinterpret_cast<TimeSeriesState *>(graph.storage_ + *offset)->publish(graph.evaluation_time_);
     }
@@ -1287,7 +1368,7 @@ void RuntimeGraphEvaluator::stop(RuntimeGraph &graph, EvaluationContext &parent_
     graph.clear_cycle_callbacks(context);
 }
 
-bool RuntimeGraph::inputs_are_valid(const CompiledNode &node) const noexcept {
+bool RuntimeGraph::inputs_are_valid(const CompiledNode &node, const EvaluationContext &context) const {
     const auto runtime_node = Node{node, storage_};
     for (auto parameter_index = std::size_t{}; parameter_index < runtime_node.input_count(); ++parameter_index) {
         const auto &parameter = node.parameters()[parameter_index];
@@ -1295,14 +1376,14 @@ bool RuntimeGraph::inputs_are_valid(const CompiledNode &node) const noexcept {
             continue;
         }
 
-        if (!runtime_node.input_last_updated(parameter_index).valid()) {
+        if (!runtime_node.input_last_updated(parameter_index, context).valid()) {
             return false;
         }
     }
 
     for (const auto &descriptor : node.all_valid_input_descriptors()) {
-        const auto input = runtime_node.input_data(descriptor.parameter_index);
-        const auto &runtime_type = runtime_node.all_valid_input_runtime_type(descriptor);
+        const auto input = runtime_node.input_data(descriptor.parameter_index, context);
+        const auto &runtime_type = runtime_node.all_valid_input_runtime_type(descriptor, context);
         if (!runtime_type.all_valid(*input.last_updated, input.value, *descriptor.declared_type)) {
             return false;
         }
@@ -1339,6 +1420,7 @@ bool RuntimeGraphEvaluator::evaluate(RuntimeGraph &graph, EvaluationContext &par
 
     auto binding_context = ServiceBindingContext{parent_context, graph.service_bindings()};
     auto &context = binding_context.context();
+    graph.validate_borrowed_inputs(context);
     const auto evaluation_time = context.evaluation_time();
     const auto resuming = graph.paused_node_index_ != std::numeric_limits<std::uint32_t>::max();
     if (!resuming) {
@@ -1349,6 +1431,7 @@ bool RuntimeGraphEvaluator::evaluate(RuntimeGraph &graph, EvaluationContext &par
         graph.run_cycle_callbacks(context);
         graph.last_evaluation_time_ = evaluation_time;
         graph.evaluation_time_ = evaluation_time;
+        graph.notify_borrowed_inputs(context);
         graph.activate_scheduled(evaluation_time);
     } else if (evaluation_time != graph.evaluation_time_) {
         throw std::invalid_argument{"a paused runtime graph must resume in the same outer cycle"};
@@ -1375,7 +1458,7 @@ bool RuntimeGraphEvaluator::evaluate(RuntimeGraph &graph, EvaluationContext &par
 
         if (validity_check_requested ||
             (evaluation_requested && (!inputs_valid || node.has_all_valid_input_metadata()))) {
-            inputs_valid = graph.inputs_are_valid(node);
+            inputs_valid = graph.inputs_are_valid(node, context);
             scheduling.inputs_valid(mask, inputs_valid);
         }
 

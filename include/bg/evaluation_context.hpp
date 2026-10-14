@@ -2,6 +2,7 @@
 
 #include <bg/details/evaluation_context.hpp>
 #include <bg/evaluation_time.hpp>
+#include <bg/graph/borrowed_input.hpp>
 #include <bg/schedule_handle.hpp>
 #include <bg/scratch_pad.hpp>
 #include <bg/wall_clock.hpp>
@@ -50,6 +51,16 @@ class EvaluationContext {
 
     const details::EvaluationContextSection *find_section(const void *type,
                                                           std::size_t depth = 0) const noexcept;
+
+    std::span<const BorrowedInput> borrowed_inputs() const noexcept {
+        return borrowed_inputs(*runtime_graph_);
+    }
+
+    std::span<const BorrowedInput> borrowed_inputs(const RuntimeGraph &graph) const noexcept {
+        const auto *section = find_section(&graph);
+        return section == nullptr ? std::span<const BorrowedInput>{}
+                                  : static_cast<const details::BorrowedInputSection *>(section)->inputs;
+    }
 
   private:
     friend RuntimeGraph;

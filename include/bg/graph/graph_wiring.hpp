@@ -165,6 +165,10 @@ class GraphWiring {
                                                    std::unique_ptr<details::WiringRecord> record);
     [[nodiscard]] WiringPoint register_output(WiredOutput output);
     [[nodiscard]] WiringPoint register_output(WiredOutput output, std::unique_ptr<details::WiringRecord> record);
+    [[nodiscard]] WiringPoint borrowed_input(const TimeSeriesType &type);
+    [[nodiscard]] std::span<const TimeSeriesType *const> borrowed_input_types() const noexcept {
+        return borrowed_input_types_;
+    }
     // Extension-facing creation and expansion for deferred wiring points.
     template <typename TimeSeries, typename... Arguments>
     [[nodiscard]] wp<TimeSeries> create_wp(Arguments &&...arguments);
@@ -269,6 +273,7 @@ class GraphWiring {
     std::vector<const details::WiringRecord *> output_records_;
     std::vector<std::size_t> runtime_input_outputs_;
     std::vector<const details::WiringRecord *> node_output_records_;
+    std::vector<const TimeSeriesType *> borrowed_input_types_;
     util::linear_hash_table wired_nodes_;
     util::linear_hash_table output_items_;
     struct MaterializedWiring {
