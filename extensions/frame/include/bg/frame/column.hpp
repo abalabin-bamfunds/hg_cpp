@@ -69,6 +69,7 @@ template <typename T> class ColumnSeriesView;
 template <typename T> class Column;
 template <typename T> class ColumnReadSource;
 class NativeRows;
+class NativeRowSlots;
 template <typename T> struct ColumnStorage;
 struct RowSet {
     using size_function = std::size_t (*)(const void *) noexcept;
@@ -273,8 +274,12 @@ template <typename T = void> class ColumnView {
     bool is_native() const noexcept { return native_ != nullptr; }
     template <typename Function> void batches(Function &&function) const {
         if (native_ != nullptr) {
-            native_->for_each_batch(*rows_, visible_rows_,
-                                    [&](const auto &batch) { std::invoke(function, batch.cells); });
+            if (rows_ != nullptr)
+                native_->for_each_batch(*rows_, visible_rows_,
+                                        [&](const auto &batch) { std::invoke(function, batch.cells); });
+            else
+                native_->for_each_batch(*physical_rows_, visible_rows_,
+                                        [&](const auto &batch) { std::invoke(function, batch.cells); });
             return;
         }
         if (snapshot_ != nullptr && snapshot_->size() != 0)
@@ -299,6 +304,7 @@ template <typename T = void> class ColumnView {
     explicit ColumnView(const ColumnSnapshot<T> *snapshot) noexcept : snapshot_{snapshot} {}
     const NativeColumnData<T> *native_{};
     const NativeRows *rows_{};
+    const NativeRowSlots *physical_rows_{};
     const ColumnSnapshot<T> *snapshot_{};
     const ColumnReadSource<T> *source_{};
     RowSet visible_rows_{};
@@ -366,16 +372,20 @@ template <typename T> struct ColumnStorage {
     static constexpr bool supports_byte_copy_initialization = true;
     ColumnStorage() = default;
     ColumnStorage(bg::details::FieldProbe &probe) noexcept { probe.record(this); }
-    explicit ColumnStorage(const NativeColumnData<T> &value, const NativeRows &rows) noexcept
-        : native{&value}, rows{&rows}, visible_rows{RowSet::native(rows)}, coverage{visible_rows} {}
+    explicit ColumnStorage(const NativeColumnData<T> &value, const NativeRows &rows) noexcept;
     explicit ColumnStorage(ColumnSnapshot<T> *value) noexcept : snapshot{value} {}
     ColumnStorage(const NativeColumnData<T> &value, const NativeRows &physical_rows, RowSet visible,
                   const util::index<> *added = nullptr, const util::index<> *modified = nullptr,
-                  const util::index<> *removed = nullptr, EvaluationTime time = MIN_DT) noexcept
-        : native{&value}, rows{&physical_rows}, visible_rows{visible}, coverage{visible}, added{added}, modified{modified},
-          removed{removed}, change_time{time} {}
+                  const util::index<> *removed = nullptr, EvaluationTime time = MIN_DT) noexcept;
+    ColumnStorage(const NativeColumnData<T> &value, const NativeRowSlots &physical_rows, RowSet visible,
+                  const util::index<> &added, const util::index<> &modified, const util::index<> &removed,
+                  EvaluationTime time) noexcept
+        : native{&value}, physical_rows{&physical_rows}, visible_rows{visible}, coverage{visible},
+          added{std::addressof(added)}, modified{std::addressof(modified)}, removed{std::addressof(removed)},
+          change_time{time} {}
     const NativeColumnData<T> *native{};
     const NativeRows *rows{};
+    const NativeRowSlots *physical_rows{};
     ColumnSnapshot<T> *snapshot{};
     RowSet visible_rows{};
     RowSet coverage{};
@@ -463,13 +473,12 @@ template <typename T> class Column {
     ColumnSnapshot<T> *snapshot_{};
 };
 
-class NativeRows {
+class NativeRowSlots {
   public:
     static constexpr bool supports_byte_copy_initialization = true;
-    NativeRows() noexcept = default;
-    NativeRows(const NativeRows &) = delete;
+    NativeRowSlots() noexcept = default;
+    NativeRowSlots(const NativeRowSlots &) = delete;
 
-    const void *identity() const noexcept { return std::addressof(domain_); }
     std::size_t size() const noexcept { return live_slots_.size(); }
     bool contains(row_id_t id) const noexcept { return id < id_extent_ && ids_to_slots_[id] != no_row; }
     row_id_t id_at(std::size_t position) const {
@@ -488,77 +497,35 @@ class NativeRows {
     }
     row_id_t id_at_slot(row_id_t slot) const noexcept { return slots_to_ids_[slot]; }
     const util::occupancy_index &live_slots() const noexcept { return live_slots_; }
-    const util::index<> &added() const noexcept { return added_; }
-    const util::index<> &removed() const noexcept { return removed_; }
-    EvaluationTime change_time() const noexcept { return change_time_; }
-
-    bool reset_changes(EvaluationTime time) {
-        if (time == change_time_)
-            return false;
-        domain_.recycle();
-        added_.clear();
-        removed_.clear();
-        change_time_ = time;
-        return true;
-    }
-
-    row_id_t add(EvaluationTime time, allocator memory) {
-        reset_changes(time);
-        const auto id = domain_.acquire(memory);
-        auto release_id = util::scope_exit{[&]() noexcept { domain_.release(id); }};
+    row_id_t insert(row_id_t id, allocator memory) {
+        if (id == no_row)
+            throw std::out_of_range{"frame row ID"};
+        if (contains(id))
+            throw std::invalid_argument{"frame row ID is already mapped"};
         const auto slot = live_slots_.acquire(memory.memory_resource());
         auto release_slot = util::scope_exit{[&]() noexcept { live_slots_.reset(slot); }};
         ensure_mapping(id, slot, memory);
-        added_.set(id, memory.memory_resource());
         ids_to_slots_[id] = slot;
         slots_to_ids_[slot] = id;
         release_slot.release();
-        release_id.release();
-        return id;
+        return slot;
     }
 
-    void rollback_add(row_id_t id) noexcept {
-        const auto slot = ids_to_slots_[id];
-        live_slots_.reset(slot);
-        ids_to_slots_[id] = no_row;
-        slots_to_ids_[slot] = no_row;
-        added_.reset(id);
-        domain_.release(id);
-    }
-
-    bool erase(row_id_t id, EvaluationTime time, allocator memory) {
-        reset_changes(time);
+    void erase(row_id_t id) noexcept {
         if (!contains(id))
-            return false;
+            return;
         const auto slot = ids_to_slots_[id];
-        domain_.retire(id, memory);
-        auto cancel_retirement = util::scope_exit{[&]() noexcept { domain_.cancel_retire(id); }};
-        const auto add_removal = !added_.contains(id);
-        if (add_removal)
-            removed_.set(id, memory.memory_resource());
-        auto remove_change = util::scope_exit{[&]() noexcept {
-            if (add_removal)
-                removed_.reset(id);
-        }};
         live_slots_.reset(slot);
         ids_to_slots_[id] = no_row;
         slots_to_ids_[slot] = no_row;
-        added_.reset(id);
-        remove_change.release();
-        cancel_retirement.release();
-        return true;
     }
 
     void release(allocator memory) noexcept {
         live_slots_.release(memory.memory_resource());
         slots_to_ids_.release_prefix(slot_extent_, memory.memory_resource());
         ids_to_slots_.release_prefix(id_extent_, memory.memory_resource());
-        domain_.release(memory);
-        added_.release(memory.memory_resource());
-        removed_.release(memory.memory_resource());
         slot_extent_ = 0;
         id_extent_ = 0;
-        change_time_ = MIN_DT;
     }
 
     util::storage_block ids_block_containing(row_id_t slot) const noexcept {
@@ -577,13 +544,107 @@ class NativeRows {
         }
     }
 
-    RowDomain domain_;
     util::occupancy_index live_slots_;
     util::sparse_bunch<row_id_t> slots_to_ids_, ids_to_slots_;
     row_id_t slot_extent_{}, id_extent_{};
+};
+
+class NativeRows {
+  public:
+    static constexpr bool supports_byte_copy_initialization = true;
+    NativeRows() noexcept = default;
+    NativeRows(const NativeRows &) = delete;
+
+    const void *identity() const noexcept { return std::addressof(domain_); }
+    std::size_t size() const noexcept { return slots_.size(); }
+    bool contains(row_id_t id) const noexcept { return slots_.contains(id); }
+    row_id_t id_at(std::size_t position) const { return slots_.id_at(position); }
+    row_id_t slot_of(row_id_t id) const { return slots_.slot_of(id); }
+    row_id_t id_at_slot(row_id_t slot) const noexcept { return slots_.id_at_slot(slot); }
+    const util::occupancy_index &live_slots() const noexcept { return slots_.live_slots(); }
+    const util::index<> &added() const noexcept { return added_; }
+    const util::index<> &removed() const noexcept { return removed_; }
+    EvaluationTime change_time() const noexcept { return change_time_; }
+    const NativeRowSlots &slots() const noexcept { return slots_; }
+
+    bool reset_changes(EvaluationTime time) {
+        if (time == change_time_)
+            return false;
+        domain_.recycle();
+        added_.clear();
+        removed_.clear();
+        change_time_ = time;
+        return true;
+    }
+
+    row_id_t add(EvaluationTime time, allocator memory) {
+        reset_changes(time);
+        const auto id = domain_.acquire(memory);
+        auto release_id = util::scope_exit{[&]() noexcept { domain_.release(id); }};
+        slots_.insert(id, memory);
+        auto erase_slot = util::scope_exit{[&]() noexcept { slots_.erase(id); }};
+        added_.set(id, memory.memory_resource());
+        erase_slot.release();
+        release_id.release();
+        return id;
+    }
+
+    void rollback_add(row_id_t id) noexcept {
+        slots_.erase(id);
+        added_.reset(id);
+        domain_.release(id);
+    }
+
+    bool erase(row_id_t id, EvaluationTime time, allocator memory) {
+        reset_changes(time);
+        if (!contains(id))
+            return false;
+        domain_.retire(id, memory);
+        auto cancel_retirement = util::scope_exit{[&]() noexcept { domain_.cancel_retire(id); }};
+        const auto add_removal = !added_.contains(id);
+        if (add_removal)
+            removed_.set(id, memory.memory_resource());
+        auto remove_change = util::scope_exit{[&]() noexcept {
+            if (add_removal)
+                removed_.reset(id);
+        }};
+        slots_.erase(id);
+        added_.reset(id);
+        remove_change.release();
+        cancel_retirement.release();
+        return true;
+    }
+
+    void release(allocator memory) noexcept {
+        slots_.release(memory);
+        domain_.release(memory);
+        added_.release(memory.memory_resource());
+        removed_.release(memory.memory_resource());
+        change_time_ = MIN_DT;
+    }
+
+    util::storage_block ids_block_containing(row_id_t slot) const noexcept {
+        return slots_.ids_block_containing(slot);
+    }
+
+  private:
+    RowDomain domain_;
+    NativeRowSlots slots_;
     util::index<> added_, removed_;
     EvaluationTime change_time_{MIN_DT};
 };
+
+template <typename T>
+ColumnStorage<T>::ColumnStorage(const NativeColumnData<T> &value, const NativeRows &rows) noexcept
+    : native{&value}, rows{&rows}, physical_rows{&rows.slots()}, visible_rows{RowSet::native(rows)},
+      coverage{visible_rows} {}
+
+template <typename T>
+ColumnStorage<T>::ColumnStorage(const NativeColumnData<T> &value, const NativeRows &physical_rows, RowSet visible,
+                                const util::index<> *added, const util::index<> *modified,
+                                const util::index<> *removed, EvaluationTime time) noexcept
+    : native{&value}, rows{&physical_rows}, physical_rows{&physical_rows.slots()}, visible_rows{visible},
+      coverage{visible}, added{added}, modified{modified}, removed{removed}, change_time{time} {}
 
 inline RowSet RowSet::native(const NativeRows &rows) noexcept {
     return RowSet{std::addressof(rows), std::addressof(rows), rows.identity(),
@@ -648,7 +709,8 @@ template <typename T> class NativeColumnData {
     std::size_t size(const NativeRows &rows) const noexcept { return rows.size(); }
     row_id_t id_at(const NativeRows &rows, std::size_t position) const { return rows.id_at(position); }
     bool contains(const NativeRows &rows, row_id_t id) const noexcept { return rows.contains(id); }
-    cell_type cell(const NativeRows &rows, row_id_t id) const {
+    cell_type cell(const NativeRows &rows, row_id_t id) const { return cell(rows.slots(), id); }
+    cell_type cell(const NativeRowSlots &rows, row_id_t id) const {
         const auto slot = rows.slot_of(id);
         return valid_cells_.contains(slot) ? cell_type{cells_[slot]} : std::nullopt;
     }
@@ -657,10 +719,16 @@ template <typename T> class NativeColumnData {
     const util::index<> &valid_cells() const noexcept { return valid_cells_; }
     EvaluationTime change_time(const NativeRows &rows) const noexcept { return rows.change_time(); }
     util::storage_block block_containing(const NativeRows &rows, row_id_t id) const noexcept {
-        return contains(rows, id) ? cells_.block_containing(rows.slot_of(id)) : util::storage_block{};
+        return block_containing(rows.slots(), id);
+    }
+    util::storage_block block_containing(const NativeRowSlots &rows, row_id_t id) const noexcept {
+        return rows.contains(id) ? cells_.block_containing(rows.slot_of(id)) : util::storage_block{};
     }
     void reset_changes() noexcept { modified_.clear(); }
     void add(NativeRows &rows, row_id_t id, cell_type value, allocator memory) {
+        add(rows.slots(), id, value, memory);
+    }
+    void add(const NativeRowSlots &rows, row_id_t id, cell_type value, allocator memory) {
         const auto slot = rows.slot_of(id);
         if (!value)
             return;
@@ -677,10 +745,14 @@ template <typename T> class NativeColumnData {
         erase_cell.release();
     }
     bool set(const NativeRows &rows, row_id_t id, cell_type value, allocator memory) {
+        return set(rows.slots(), rows.added(), id, value, memory);
+    }
+    bool set(const NativeRowSlots &rows, const util::index<> &added, row_id_t id, cell_type value,
+             allocator memory) {
         if (!rows.contains(id))
             throw std::out_of_range{"frame row ID"};
         const auto slot = rows.slot_of(id);
-        const auto add_change = !rows.added().contains(id) && !modified_.contains(id);
+        const auto add_change = !added.contains(id) && !modified_.contains(id);
         if (add_change)
             modified_.set(id, memory.memory_resource());
         auto remove_change = util::scope_exit{[&]() noexcept {
@@ -734,7 +806,7 @@ template <typename T> class NativeColumnData {
         modified_.release(memory.memory_resource());
     }
     template <typename Function> void for_each_batch(const NativeRows &rows, Function &&function) const {
-        live_slots(rows).for_each_run([&](row_id_t first, row_id_t end) {
+        rows.live_slots().for_each_run([&](row_id_t first, row_id_t end) {
             while (first != end) {
                 const auto cell_block = cells_.block_containing(first);
                 const auto id_block = rows.ids_block_containing(first);
@@ -742,10 +814,9 @@ template <typename T> class NativeColumnData {
                     static_cast<row_id_t>(std::min({std::uint64_t{end}, cell_block.end, id_block.end}));
                 const auto *values =
                     cell_block.data == nullptr ? nullptr
-                                                : static_cast<const T *>(cell_block.data) + first - cell_block.first;
+                                               : static_cast<const T *>(cell_block.data) + first - cell_block.first;
                 const auto ids = std::span<const row_id_t>{
-                    static_cast<const row_id_t *>(id_block.data) + first - id_block.first,
-                                                           batch_end - first};
+                    static_cast<const row_id_t *>(id_block.data) + first - id_block.first, batch_end - first};
                 const auto cells = ColumnBatch<T>{first, static_cast<std::size_t>(batch_end - first), values,
                                                   ColumnBatch<T>::Validity::from_index(valid_cells_)};
                 std::invoke(function, Batch{ids, cells});
@@ -754,13 +825,8 @@ template <typename T> class NativeColumnData {
         });
     }
 
-    template <typename Function>
-    void for_each_batch(const NativeRows &rows, const RowSet &visible_rows, Function &&function) const {
-        if (visible_rows.native_rows == std::addressof(rows)) {
-            for_each_batch(rows, std::forward<Function>(function));
-            return;
-        }
-
+    template <typename Function> void for_each_batch(const NativeRowSlots &rows, const RowSet &visible_rows,
+                                                     Function &&function) const {
         auto has_batch = false;
         auto first_slot = row_id_t{};
         auto end_slot = std::uint64_t{};
@@ -800,6 +866,15 @@ template <typename T> class NativeColumnData {
         flush();
     }
 
+    template <typename Function> void for_each_batch(const NativeRows &rows, const RowSet &visible_rows,
+                                                     Function &&function) const {
+        if (visible_rows.native_rows == std::addressof(rows)) {
+            for_each_batch(rows, std::forward<Function>(function));
+            return;
+        }
+        for_each_batch(rows.slots(), visible_rows, std::forward<Function>(function));
+    }
+
   private:
     util::occupancy_index constructed_cells_;
     util::sparse_bunch<T> cells_;
@@ -814,41 +889,56 @@ template <typename T> class ColumnSeriesView {
 
     ColumnSeriesView(const NativeColumnData<T> &cells, const NativeRows &rows,
                      const ColumnStorage<T> &storage) noexcept
-        : cells_{&cells}, rows_{&rows}, storage_{storage}, scalar_storage_{std::addressof(storage)} {}
+        : cells_{&cells}, rows_{&rows}, physical_rows_{std::addressof(rows.slots())}, storage_{storage},
+          scalar_storage_{std::addressof(storage)} {}
     explicit ColumnSeriesView(const ColumnStorage<T> &storage) noexcept
-        : cells_{storage.native}, rows_{storage.rows}, storage_{storage}, scalar_storage_{std::addressof(storage)} {}
+        : cells_{storage.native}, rows_{storage.rows}, physical_rows_{storage.physical_rows},
+          storage_{storage}, scalar_storage_{std::addressof(storage)} {}
 
     std::size_t size() const noexcept { return storage_.visible_rows.count(); }
     bool contains(row_id_t id) const noexcept {
-        return storage_.visible_rows.has(id) && storage_.coverage.has(id) && rows_->contains(id);
+        return storage_.visible_rows.has(id) && storage_.coverage.has(id) && physical_rows_ != nullptr &&
+               physical_rows_->contains(id);
     }
     row_id_t id_at(std::size_t position) const { return storage_.visible_rows.at(position); }
     cell_type cell(row_id_t id) const {
         if (!contains(id))
             throw std::out_of_range{"column row ID"};
-        return cells_->cell(*rows_, id);
+        return cells_->cell(*physical_rows_, id);
     }
     cell_type cell_at(std::size_t position) const { return cell(id_at(position)); }
     const void *row_domain() const noexcept { return storage_.visible_rows.identity; }
-    const util::index<> &added() const noexcept { return storage_.added == nullptr ? rows_->added() : *storage_.added; }
+    const util::index<> &added() const noexcept {
+        if (storage_.added != nullptr)
+            return *storage_.added;
+        return rows_->added();
+    }
     const util::index<> &modified() const noexcept {
-        return storage_.modified == nullptr ? cells_->modified() : *storage_.modified;
+        if (storage_.modified != nullptr)
+            return *storage_.modified;
+        return cells_->modified();
     }
     const util::index<> &removed() const noexcept {
-        return storage_.removed == nullptr ? rows_->removed() : *storage_.removed;
+        if (storage_.removed != nullptr)
+            return *storage_.removed;
+        return rows_->removed();
     }
     EvaluationTime change_time() const noexcept {
-        return storage_.change_time == MIN_DT ? rows_->change_time() : storage_.change_time;
+        return rows_ != nullptr && storage_.change_time == MIN_DT ? rows_->change_time() : storage_.change_time;
     }
     const ColumnStorage<T> &scalar_storage() const noexcept { return *scalar_storage_; }
 
     template <typename Function> void for_each_batch(Function &&function) const {
-        cells_->for_each_batch(*rows_, storage_.visible_rows, std::forward<Function>(function));
+        if (rows_ != nullptr)
+            cells_->for_each_batch(*rows_, storage_.visible_rows, std::forward<Function>(function));
+        else
+            cells_->for_each_batch(*physical_rows_, storage_.visible_rows, std::forward<Function>(function));
     }
 
   private:
     const NativeColumnData<T> *cells_;
     const NativeRows *rows_;
+    const NativeRowSlots *physical_rows_;
     ColumnStorage<T> storage_;
     const ColumnStorage<T> *scalar_storage_;
 };
@@ -857,6 +947,7 @@ template <typename T> struct ColumnViewOutputStorage {
     struct Mapping {
         const void *native{};
         const NativeRows *rows{};
+        const NativeRowSlots *physical_rows{};
         const void *snapshot{};
         const void *visible_context{};
         const void *visible_identity{};
@@ -877,19 +968,17 @@ template <typename T> struct ColumnViewOutputStorage {
 
     bool bind(const ColumnStorage<T> &input, bool source_modified, EvaluationTime source_last_updated,
               EvaluationTime time, allocator memory) {
-        if (input.native == nullptr || input.rows == nullptr ||
-            input.rows->identity() != input.visible_rows.identity)
+        if (input.native == nullptr || input.physical_rows == nullptr || input.visible_rows.identity == nullptr)
             throw std::invalid_argument{"TSC view source has no consistent physical row domain"};
+        const auto exact_native_coverage = input.rows != nullptr &&
+                                           std::addressof(input.rows->slots()) == input.physical_rows &&
+                                           input.coverage.context == input.visible_rows.context &&
+                                           input.coverage.identity == input.visible_rows.identity;
         const auto exact_coverage = input.coverage.context == input.visible_rows.context &&
                                     input.coverage.identity == input.visible_rows.identity;
-        if (!exact_coverage)
-            input.visible_rows.each([&](row_id_t id) {
-                if (!input.coverage.has(id) || !input.rows->contains(id))
-                    throw std::invalid_argument{"TSC view source does not cover every visible row"};
-            });
 
-        const auto next_mapping = Mapping{input.native, input.rows, input.snapshot, input.visible_rows.context,
-                                          input.visible_rows.identity, input.coverage.context,
+        const auto next_mapping = Mapping{input.native, input.rows, input.physical_rows, input.snapshot,
+                                          input.visible_rows.context, input.visible_rows.identity, input.coverage.context,
                                           input.coverage.identity};
         const auto mapping_changed = !valid || mapping != next_mapping;
         const auto previous_row_set = previous_rows.source();
@@ -898,7 +987,25 @@ template <typename T> struct ColumnViewOutputStorage {
         const auto row_set_rebound = !valid || previous_row_set.context != input.visible_rows.context;
         const auto new_cycle = !valid || time != delta_time;
         auto source_view = ColumnSeriesView<T>{input};
-        const auto input_changes_current = source_modified && source_view.change_time() == source_last_updated;
+        const auto has_source_deltas = input.rows != nullptr ||
+                                       (input.added != nullptr && input.modified != nullptr && input.removed != nullptr);
+        const auto input_changes_current = source_modified && has_source_deltas &&
+                                           source_view.change_time() == source_last_updated;
+        if (!exact_native_coverage) {
+            const auto validate_row = [&](row_id_t id) {
+                if (!input.coverage.has(id) || !input.physical_rows->contains(id))
+                    throw std::invalid_argument{"TSC view source does not cover every visible row"};
+            };
+            const auto full_validation = !exact_coverage || mapping_changed || row_domain_changed || row_set_rebound ||
+                                         (source_modified && !input_changes_current);
+            if (full_validation) {
+                input.visible_rows.each(validate_row);
+            } else if (input_changes_current) {
+                for (auto id : source_view.added())
+                    if (input.visible_rows.has(id))
+                        validate_row(id);
+            }
+        }
 
         if (new_cycle) {
             added_rows.clear();
@@ -1095,14 +1202,14 @@ template <typename T>
 inline ColumnView<T>::ColumnView(const Column<T> &column) noexcept : snapshot_{column.snapshot_} {}
 template <typename T>
 inline ColumnView<T>::ColumnView(const ColumnStorage<T> &storage) noexcept
-    : native_{storage.native}, rows_{storage.rows}, snapshot_{storage.snapshot},
-      visible_rows_{storage.visible_rows}, coverage_{storage.coverage} {}
+    : native_{storage.native}, rows_{storage.rows}, physical_rows_{storage.physical_rows},
+      snapshot_{storage.snapshot}, visible_rows_{storage.visible_rows}, coverage_{storage.coverage} {}
 template <typename T> inline typename ColumnView<T>::cell_type ColumnView<T>::cell(std::size_t position) const {
     if (native_ != nullptr) {
         const auto id = visible_rows_.at(position);
-        if (!coverage_.has(id) || !rows_->contains(id))
+        if (!coverage_.has(id) || physical_rows_ == nullptr || !physical_rows_->contains(id))
             throw std::out_of_range{"frame column row ID"};
-        return native_->cell(*rows_, id);
+        return native_->cell(*physical_rows_, id);
     }
     if (snapshot_ != nullptr) {
         if (position >= snapshot_->size())

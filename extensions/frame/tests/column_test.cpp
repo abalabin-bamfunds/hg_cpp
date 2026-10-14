@@ -18,6 +18,32 @@
 namespace {
 void require(bool condition, const char *message) { if (!condition) throw std::runtime_error{message}; }
 
+struct RowTraversalCounter {
+    const bg::frame::NativeRows *rows{};
+    mutable std::size_t traversals{};
+
+    bg::frame::RowSet row_set() const noexcept {
+        return {this,
+                nullptr,
+                rows->identity(),
+                [](const void *context) noexcept {
+                    return static_cast<const RowTraversalCounter *>(context)->rows->size();
+                },
+                [](const void *context, bg::frame::row_id_t id) noexcept {
+                    return static_cast<const RowTraversalCounter *>(context)->rows->contains(id);
+                },
+                [](const void *context, std::size_t position) {
+                    return static_cast<const RowTraversalCounter *>(context)->rows->id_at(position);
+                },
+                [](const void *context, void *target, bg::frame::RowSet::visit_function visit) {
+                    const auto &counter = *static_cast<const RowTraversalCounter *>(context);
+                    ++counter.traversals;
+                    for (auto slot : counter.rows->live_slots())
+                        visit(target, counter.rows->id_at_slot(slot));
+                }};
+    }
+};
+
 class CountingResource final : public std::pmr::memory_resource {
   public:
     std::size_t allocations{};
@@ -440,6 +466,118 @@ void test_snapshot_lifetime_and_sparse_batches() {
     const auto erased_view = erased->view();
     require(bg::Scalar<Column>::from(erased_view)->size() == 22, "erased snapshot did not outlive native resource");
 }
+
+void test_native_row_slots_map_external_ids_and_reuse_clean_cells() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    auto resource = std::pmr::monotonic_buffer_resource{};
+    const auto memory = allocator{resource};
+    auto physical_rows = NativeRowSlots{};
+    auto cells = NativeColumnData<i64>{};
+    auto release = util::scope_exit{[&]() noexcept {
+        cells.release(memory);
+        physical_rows.release(memory);
+    }};
+
+    constexpr auto first_id = row_id_t{47};
+    constexpr auto second_id = row_id_t{9};
+    const auto first_slot = physical_rows.insert(first_id, memory);
+    cells.add(physical_rows, first_id, i64{47}, memory);
+    physical_rows.erase(no_row);
+    physical_rows.erase(second_id);
+    require(physical_rows.contains(first_id) && physical_rows.slot_of(first_id) == first_slot &&
+                cells.cell(physical_rows, first_id) == i64{47},
+            "erasing an unmapped external row ID changed another physical mapping");
+
+    cells.erase_slot(first_slot, first_id, memory);
+    physical_rows.erase(first_id);
+    const auto reused_slot = physical_rows.insert(second_id, memory);
+    cells.add(physical_rows, second_id, i64{9}, memory);
+    require(reused_slot == first_slot && !physical_rows.contains(first_id) &&
+                cells.cell(physical_rows, second_id) == i64{9},
+            "physical slot reuse retained a stale cell or external row mapping");
+}
+
+void test_tsc_view_uses_logical_order_and_validates_added_local_rows() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    auto resource = std::pmr::monotonic_buffer_resource{};
+    const auto memory = allocator{resource};
+    auto logical_rows = NativeRows{};
+    auto physical_rows = NativeRowSlots{};
+    auto cells = NativeColumnData<i64>{};
+    auto release = util::scope_exit{[&]() noexcept {
+        cells.release(memory);
+        physical_rows.release(memory);
+        logical_rows.release(memory);
+    }};
+
+    const auto first_time = MIN_DT + EvaluationTime::duration{1};
+    const auto first_id = logical_rows.add(first_time, memory);
+    const auto second_id = logical_rows.add(first_time, memory);
+    physical_rows.insert(second_id, memory);
+    cells.add(physical_rows, second_id, std::nullopt, memory);
+    physical_rows.insert(first_id, memory);
+    cells.add(physical_rows, first_id, i64{10}, memory);
+
+    auto traversal = RowTraversalCounter{std::addressof(logical_rows)};
+    auto visible_rows = traversal.row_set();
+    auto input = ColumnStorage<i64>{cells, physical_rows, visible_rows, logical_rows.added(), cells.modified(),
+                                    logical_rows.removed(), first_time};
+    const auto minimum_time_input = ColumnStorage<i64>{cells, physical_rows, visible_rows, logical_rows.added(),
+                                                       cells.modified(), logical_rows.removed(), MIN_DT};
+    require(ColumnSeriesView<i64>{minimum_time_input}.change_time() == MIN_DT,
+            "local TSC binding did not preserve an explicit minimum change time");
+    auto output = ColumnViewOutputStorage<i64>{};
+    require(output.bind(input, true, first_time, first_time, memory), "TSC view did not bind its local row mapping");
+    auto view = ColumnSeriesView<i64>{output.scalar};
+    require(view.id_at(0) == first_id && view.id_at(1) == second_id && view.cell_at(0) == i64{10} &&
+                !view.cell_at(1),
+            "TSC view exposed physical slot order instead of logical row order");
+    auto batch_ids = std::vector<row_id_t>{};
+    auto batch_values = std::vector<std::optional<i64>>{};
+    view.for_each_batch([&](const auto &batch) {
+        for (auto position = std::size_t{}; position != batch.cells.size; ++position) {
+            batch_ids.push_back(batch.ids[position]);
+            batch_values.push_back(batch.cells.is_valid(position)
+                                       ? std::optional<i64>{batch.cells.values[position]}
+                                       : std::nullopt);
+        }
+    });
+    require(batch_ids == std::vector<row_id_t>{first_id, second_id} &&
+                batch_values == std::vector<std::optional<i64>>{i64{10}, std::nullopt},
+            "local physical batches lost source ID order or nullable cell alignment");
+
+    const auto second_time = first_time + EvaluationTime::duration{1};
+    const auto third_id = logical_rows.add(second_time, memory);
+    physical_rows.insert(third_id, memory);
+    cells.add(physical_rows, third_id, i64{30}, memory);
+    visible_rows = traversal.row_set();
+    input = ColumnStorage<i64>{cells, physical_rows, visible_rows, logical_rows.added(), cells.modified(),
+                               logical_rows.removed(), second_time};
+    traversal.traversals = 0;
+    require(output.bind(input, true, second_time, second_time, memory) && traversal.traversals == 0,
+            "TSC view traversed unchanged local rows instead of validating the added row delta");
+    view = ColumnSeriesView<i64>{output.scalar};
+    require(view.cell_at(2) == i64{30}, "TSC view did not read a newly added local physical slot");
+
+    const auto third_time = second_time + EvaluationTime::duration{1};
+    static_cast<void>(logical_rows.add(third_time, memory));
+    visible_rows = traversal.row_set();
+    input = ColumnStorage<i64>{cells, physical_rows, visible_rows, logical_rows.added(), cells.modified(),
+                               logical_rows.removed(), third_time};
+    traversal.traversals = 0;
+    auto rejected = false;
+    try {
+        static_cast<void>(output.bind(input, true, third_time, third_time, memory));
+    } catch (const std::invalid_argument &) {
+        rejected = true;
+    }
+    require(rejected && traversal.traversals == 0,
+            "TSC view accepted a new logical row without a local physical mapping");
+}
 } // namespace
 
 int main() {
@@ -454,6 +592,8 @@ int main() {
         test_null_only_blocks_and_cleanup();
         test_failed_mutations_leave_rows_unchanged();
         test_snapshot_lifetime_and_sparse_batches();
+        test_native_row_slots_map_external_ids_and_reuse_clean_cells();
+        test_tsc_view_uses_logical_order_and_validates_added_local_rows();
         std::cout << "bg_frame_column_test passed\n";
     } catch (const std::exception &error) {
         std::cerr << "bg_frame_column_test: " << error.what() << '\n';

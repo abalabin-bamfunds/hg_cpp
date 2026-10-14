@@ -268,6 +268,7 @@ struct FrameColumnReadBinding {
     const void *snapshot{};
     RowSet visible_rows{};
     RowSet coverage{};
+    const NativeRowSlots *physical_rows{};
 };
 
 // Extension-facing borrowed descriptor. Copies retain no owner; the source owner controls its lifetime. Descriptors
@@ -512,7 +513,7 @@ template <cell_type Cell> FrameColumnReadBinding frame_column_read_binding(const
     const auto &column = *static_cast<const ColumnStorage<Cell> *>(payload);
     return {std::addressof(cpp_scalar_type<Cell>()), payload, &bind_frame_column_view<Cell>,
             &bind_frame_column_series_view<Cell>, &copy_frame_column_storage<Cell>, column.native,
-            column.rows, column.snapshot, column.visible_rows, column.coverage};
+            column.rows, column.snapshot, column.visible_rows, column.coverage, column.physical_rows};
 }
 
 template <cell_type Cell>
@@ -1646,6 +1647,7 @@ class RuntimeFrameViewOutputStorage {
     struct ColumnMapping {
         const void *native{};
         const NativeRows *rows{};
+        const NativeRowSlots *physical_rows{};
         const void *snapshot{};
         const void *visible_context{};
         const void *visible_identity{};
@@ -1724,33 +1726,49 @@ class RuntimeFrameViewOutputStorage {
                 return index;
             return input.field_index(layout->schema->fields()[index].name);
         };
+        const auto previous = previous_rows.source();
+        const auto row_domain_changed = previous.identity != nullptr && previous.identity != input.rows.identity;
+        const auto row_set_rebound = !valid || previous.context != input.rows.context;
+        const auto input_delta_current = input.modified && input.change_time == input.last_updated;
         auto predicate_mapping_changed = false;
         for (std::size_t index = 0; index != layout->fields.size(); ++index) {
             const auto binding = input.column(source_index(index));
             const auto &field = layout->fields[index].column;
             if (binding.cell_type != field.cell_type || binding.payload == nullptr ||
-                binding.copy_column_storage == nullptr || binding.native == nullptr || binding.rows == nullptr ||
-                binding.rows->identity() != input.rows.identity)
+                binding.copy_column_storage == nullptr || binding.native == nullptr ||
+                binding.physical_rows == nullptr || binding.visible_rows.identity != input.rows.identity)
                 throw std::invalid_argument{"frame view column does not match the resolved schema or row domain"};
-            const auto exact_coverage = binding.coverage.context == input.rows.context &&
-                                        binding.coverage.identity == input.rows.identity;
-            if (!exact_coverage)
-                input.rows.each([&](row_id_t id) {
-                    if (!binding.coverage.has(id) || !binding.rows->contains(id))
-                        throw std::invalid_argument{"frame view column does not cover every source row"};
-                });
-            const auto mapping = ColumnMapping{binding.native, binding.rows, binding.snapshot,
+            const auto exact_native_coverage = binding.rows != nullptr &&
+                                               std::addressof(binding.rows->slots()) == binding.physical_rows &&
+                                               binding.coverage.context == input.rows.context &&
+                                               binding.coverage.identity == input.rows.identity;
+            const auto mapping = ColumnMapping{binding.native, binding.rows, binding.physical_rows, binding.snapshot,
                                                binding.visible_rows.context, binding.visible_rows.identity,
                                                binding.coverage.context, binding.coverage.identity};
+            const auto mapping_changed = !valid || field_state(this, index).mapping != mapping;
+            const auto exact_coverage = binding.coverage.context == input.rows.context &&
+                                        binding.coverage.identity == input.rows.identity;
+            if (!exact_native_coverage) {
+                const auto validate_row = [&](row_id_t id) {
+                    if (!binding.coverage.has(id) || !binding.physical_rows->contains(id))
+                        throw std::invalid_argument{"frame view column does not cover every source row"};
+                };
+                const auto full_validation = !exact_coverage || mapping_changed || row_domain_changed ||
+                                             row_set_rebound ||
+                                             (input.modified && (!input_delta_current || input.added == nullptr));
+                if (full_validation) {
+                    input.rows.each(validate_row);
+                } else if (input_delta_current) {
+                    for (auto id : *input.added)
+                        if (input.rows.has(id))
+                            validate_row(id);
+                }
+            }
             if (predicate_index == index)
-                predicate_mapping_changed = !valid || field_state(this, index).mapping != mapping;
+                predicate_mapping_changed = mapping_changed;
         }
 
-        const auto previous = previous_rows.source();
-        const auto row_domain_changed = previous.identity != nullptr && previous.identity != input.rows.identity;
-        const auto row_set_rebound = !valid || previous.context != input.rows.context;
         const auto new_cycle = !valid || delta_time != time;
-        const auto input_delta_current = input.modified && input.change_time == input.last_updated;
         const auto rebuild_predicate = predicate_index.has_value() &&
                                        (!valid || row_set_rebound || row_domain_changed ||
                                         predicate_mapping_changed ||
@@ -1883,7 +1901,7 @@ class RuntimeFrameViewOutputStorage {
             auto &state = field_state(this, index);
             auto &output_modified = state.modified_rows;
             const auto binding = input.column(source_index(index));
-            const auto mapping = ColumnMapping{binding.native, binding.rows, binding.snapshot,
+            const auto mapping = ColumnMapping{binding.native, binding.rows, binding.physical_rows, binding.snapshot,
                                                binding.visible_rows.context, binding.visible_rows.identity,
                                                binding.coverage.context, binding.coverage.identity};
             const auto mapping_changed = !valid || state.mapping != mapping;

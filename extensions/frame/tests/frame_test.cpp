@@ -2955,6 +2955,77 @@ void test_view_updates_do_not_traverse_source_rows() {
     });
 }
 
+void test_tsf_view_uses_local_physical_rows_incrementally() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    auto resource = std::pmr::monotonic_buffer_resource{};
+    const auto memory = allocator{resource};
+    auto source = NativeFrame<Quotes>{};
+    auto source_release = util::scope_exit{[&]() noexcept { source.release(memory); }};
+    auto physical_rows = NativeRowSlots{};
+    auto local_bid = NativeColumnData<double>{};
+    auto local_release = util::scope_exit{[&]() noexcept {
+        local_bid.release(memory);
+        physical_rows.release(memory);
+    }};
+
+    const auto first_time = MIN_DT + EvaluationTime::duration{1};
+    const auto first_id = source.add(Quotes<Cell>{.size = Cell<i64>{5}, .bid = Cell<double>{10.5},
+                                                   .ask = Cell<double>{11.0}},
+                                    first_time, memory);
+    const auto second_id = source.add(Quotes<Cell>{.size = Cell<i64>{8}, .bid = Cell<double>{20.5},
+                                                    .ask = Cell<double>{21.0}},
+                                     first_time, memory);
+    physical_rows.insert(second_id, memory);
+    local_bid.add(physical_rows, second_id, double{20.5}, memory);
+    physical_rows.insert(first_id, memory);
+    local_bid.add(physical_rows, first_id, double{10.5}, memory);
+
+    const auto row_counter = RowTraversalCounter{std::addressof(source.rows())};
+    auto bindings = FrameReadBindings{};
+    const auto bid_index = std::size_t{1};
+    auto local_column = ColumnStorage<double>{};
+    auto make_input = [&](EvaluationTime time) {
+        auto input = native_frame_input(source);
+        const auto rows = row_counter.row_set();
+        input.rows = rows;
+        local_column = ColumnStorage<double>{local_bid, physical_rows, rows, source.rows().added(),
+                                             local_bid.modified(), source.rows().removed(), time};
+        bindings.source = input;
+        bindings.overridden_index = bid_index;
+        bindings.overridden_binding = frame::details::frame_column_read_binding<double>(std::addressof(local_column));
+        bindings.apply(input);
+        return input;
+    };
+
+    auto input = make_input(first_time);
+    const auto bid_field = std::array{bid_index};
+    with_runtime_view_storage<BidOnly>(memory, [&](auto &projection, const auto &runtime) {
+        require(projection.bind(input, bid_field, std::nullopt, nullptr, nullptr, first_time, memory),
+                "TSF view did not bind a local physical row mapping");
+        auto projected = runtime.input_storage(std::addressof(projection));
+        auto column = projected.generic_column(0).template view<double>();
+        require(column.cell(0) == 10.5 && column.cell(1) == 20.5,
+                "TSF view exposed local physical slot order instead of source row order");
+
+        const auto second_time = first_time + EvaluationTime::duration{1};
+        const auto third_id = source.add(Quotes<Cell>{.size = Cell<i64>{9}, .bid = Cell<double>{30.5},
+                                                       .ask = Cell<double>{31.0}},
+                                        second_time, memory);
+        physical_rows.insert(third_id, memory);
+        local_bid.add(physical_rows, third_id, double{30.5}, memory);
+        input = make_input(second_time);
+        row_counter.traversals = 0;
+        require(projection.bind(input, bid_field, std::nullopt, nullptr, nullptr, second_time, memory) &&
+                    row_counter.traversals == 0,
+                "TSF view traversed existing local rows instead of validating the added row delta");
+        projected = runtime.input_storage(std::addressof(projection));
+        column = projected.generic_column(0).template view<double>();
+        require(column.cell(2) == 30.5, "TSF view did not read a newly added local physical slot");
+    });
+}
+
 void test_filtered_column_coverage_rejects_a_different_row_set() {
     using namespace bg;
     using namespace bg::frame;
@@ -3192,6 +3263,7 @@ int main() {
         test_tsf_projection_rejects_invalid_mappings_before_invalidation();
         test_tsf_projection_rejects_empty_row_domain_mismatch();
         test_view_updates_do_not_traverse_source_rows();
+        test_tsf_view_uses_local_physical_rows_incrementally();
         test_filtered_column_coverage_rejects_a_different_row_set();
         test_incremental_numeric_filter();
         test_filter_greater_than_composes_with_column_projection();
