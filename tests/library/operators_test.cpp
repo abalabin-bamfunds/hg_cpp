@@ -103,7 +103,17 @@ TEST_CASE("numeric division, floor division, and modulo follow signed arithmetic
     CHECK_THROWS_AS(testing::test_graph(modulo_by_negative_zero), std::domain_error);
 }
 
-TEST_CASE("integer division rounds the exact quotient to binary64",
+TEST_CASE("floating division preserves signed zero",
+          "[feature:operator][series:value][scalar:floating-point]") {
+    const auto divide = [](wp<TS<double>> lhs, wp<TS<double>> rhs) { return operators::div(lhs, rhs); };
+    const auto result = testing::test_graph(divide, std::array{-7.0, -0.0, 0.0}, std::array{2.0, 2.0, -2.0});
+
+    CHECK(result.equals<double>({-3.5, -0.0, -0.0}));
+    CHECK(std::signbit(scalar_cast<double>(*result[1]).value()));
+    CHECK(std::signbit(scalar_cast<double>(*result[2]).value()));
+}
+
+TEST_CASE("integer division converts its operands to binary64",
           "[feature:operator][series:value][scalar:i64][scalar:floating-point]") {
     const auto divide = [](wp<TS<i64>> lhs, wp<TS<i64>> rhs) { return operators::div(lhs, rhs); };
     constexpr auto two_to_53 = i64{1} << 53;
@@ -132,9 +142,9 @@ TEST_CASE("integer division rounds the exact quotient to binary64",
     };
 
     const auto result = testing::test_graph(divide, lhs, rhs);
-    CHECK(result.equals<double>({1.0, 1.0 + std::ldexp(1.0, -51), 3002399751580331.0,
+    CHECK(result.equals<double>({1.0, 1.0 + std::ldexp(1.0, -51), 3002399751580330.5,
                                  std::ldexp(1.0, 54), std::ldexp(1.0, 63), std::ldexp(1.0, 63),
-                                 std::ldexp(1.0, -63), -0.0, 0.03125}));
+                                 std::ldexp(1.0, -63), -0.0, 0.03125000000000001}));
     CHECK(std::signbit(scalar_cast<double>(*result[7]).value()));
 }
 

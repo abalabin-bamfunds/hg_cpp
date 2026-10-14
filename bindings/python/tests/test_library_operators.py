@@ -136,7 +136,7 @@ def test_numeric_operator_syntax_and_explicit_convert_target():
     assert bg.test_graph(convert, [2, -3]) == [2.0, -3.0]
 
 
-def test_integer_division_matches_python_for_full_i64_domain():
+def test_integer_division_converts_operands_to_binary64_for_full_i64_domain():
     @bg.graph
     def divide(lhs: bg.TS[int], rhs: bg.TS[int]) -> bg.TS[float]:
         return lhs / rhs
@@ -173,7 +173,7 @@ def test_integer_division_matches_python_for_full_i64_domain():
         rhs.append(-denominator if random_values.getrandbits(1) else denominator)
 
     actual = bg.test_graph(divide, lhs, rhs)
-    expected = [numerator / denominator for numerator, denominator in zip(lhs, rhs)]
+    expected = [float(numerator) / float(denominator) for numerator, denominator in zip(lhs, rhs)]
     assert [value.hex() for value in actual] == [value.hex() for value in expected]
 
     negative_zero = bg.test_graph(divide, [0], [minimum])[0]

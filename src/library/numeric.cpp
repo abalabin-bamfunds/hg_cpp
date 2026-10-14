@@ -8,7 +8,6 @@
 
 #include <algorithm>
 #include <array>
-#include <bit>
 #include <cmath>
 #include <charconv>
 #include <cstdint>
@@ -87,77 +86,18 @@ struct numeric_overloads {
     }};
 
     // Division.
-    static double integer_division(i64 lhs, i64 rhs) {
+    overload<div> divide_integer{[](i64 lhs, i64 rhs) {
         if (rhs == 0) {
             throw std::domain_error{"division by zero"};
         }
-
-        const auto negative = (lhs < 0) != (rhs < 0);
-        if (lhs == 0) {
-            return std::copysign(0.0, negative ? -1.0 : 1.0);
-        }
-
-        const auto lhs_magnitude = lhs < 0 ? std::uint64_t{} - static_cast<std::uint64_t>(lhs)
-                                           : static_cast<std::uint64_t>(lhs);
-        const auto rhs_magnitude = rhs < 0 ? std::uint64_t{} - static_cast<std::uint64_t>(rhs)
-                                           : static_cast<std::uint64_t>(rhs);
-        constexpr auto exact_integer_limit = std::uint64_t{1} << 53;
-        // Both casts are exact in this range, so hardware division rounds the exact quotient.
-        if (lhs_magnitude <= exact_integer_limit && rhs_magnitude <= exact_integer_limit) {
-            return static_cast<double>(lhs) / static_cast<double>(rhs);
-        }
-
-        // Scale the positive ratio into [1, 2), retaining its power-of-two exponent.
-        auto exponent = static_cast<int>(std::bit_width(lhs_magnitude)) -
-                        static_cast<int>(std::bit_width(rhs_magnitude));
-        if (exponent >= 0) {
-            if (lhs_magnitude < (rhs_magnitude << exponent)) {
-                --exponent;
-            }
-        } else if ((lhs_magnitude << -exponent) < rhs_magnitude) {
-            --exponent;
-        }
-
-        auto scaled_numerator = lhs_magnitude;
-        auto scaled_denominator = rhs_magnitude;
-        if (exponent >= 0) {
-            scaled_denominator <<= exponent;
-        } else {
-            scaled_numerator <<= -exponent;
-        }
-
-        auto remainder = scaled_numerator - scaled_denominator;
-        auto significand = std::uint64_t{1};
-        // Generate the 52 fraction bits without overflowing the 64-bit remainder.
-        for (auto bit = 0; bit < 52; ++bit) {
-            significand <<= 1;
-            if (remainder >= scaled_denominator - remainder) {
-                remainder -= scaled_denominator - remainder;
-                significand |= 1;
-            } else {
-                remainder += remainder;
-            }
-        }
-
-        // The exact remainder decides nearest rounding and ties-to-even.
-        if (remainder > scaled_denominator - remainder ||
-            (remainder == scaled_denominator - remainder && (significand & 1U) != 0)) {
-            ++significand;
-        }
-
-        const auto result = std::ldexp(static_cast<double>(significand), exponent - 52);
-        return std::copysign(result, negative ? -1.0 : 1.0);
-    }
-
-    static double float_division(double lhs, double rhs) {
+        return static_cast<double>(lhs) / static_cast<double>(rhs);
+    }};
+    overload<div> divide_double{[](double lhs, double rhs) {
         if (rhs == 0.0) {
             throw std::domain_error{"division by zero"};
         }
         return lhs / rhs;
-    }
-
-    overload<div> divide_integer{[](i64 lhs, i64 rhs) { return integer_division(lhs, rhs); }};
-    overload<div> divide_double{[](double lhs, double rhs) { return float_division(lhs, rhs); }};
+    }};
 
     // Floor division.
     static i64 integer_floor_division(i64 lhs, i64 rhs) {

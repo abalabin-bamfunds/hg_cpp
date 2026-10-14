@@ -57,9 +57,11 @@ String operations process bytes, including embedded NUL bytes. Temporal
 operators are native C++ overloads; Python temporal conversions are not yet
 supplied.
 
-Integer division rounds the exact quotient to the nearest `double`, with ties
-rounded to even. It preserves the sign of a zero result. Division, floor
-division, and modulo reject a zero divisor during evaluation.
+Integer division converts both operands to `double` and uses native floating-point
+division. Conversion can round operands outside the consecutive-integer range,
+so large-integer results can differ from Python integer true division. It preserves
+the sign of a zero result. Division, floor division, and modulo reject a zero divisor
+during evaluation.
 Dividing the `i64` minimum by `-1` returns the positive quotient as `double`;
 integer floor division wraps the corresponding quotient, and modulo returns
 zero. Integer power wraps at `i64` width and rejects negative exponents.

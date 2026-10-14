@@ -1,6 +1,6 @@
 # Library integer division
 
-Status: accepted
+Status: superseded by [native floating-point integer division](0060-native-integer-division.md).
 
 ## Context
 
