@@ -36,6 +36,8 @@ class EvaluationContext {
 
     RuntimeGraph &runtime_graph() const noexcept { return *runtime_graph_; }
 
+    EvaluationProfile *evaluation_profile() const noexcept { return evaluation_profile_; }
+
     GlobalState &global_state() const noexcept;
 
     std::size_t node_index() const noexcept { return node_index_; }
@@ -76,6 +78,7 @@ class EvaluationContext {
         : evaluation_time_(parent.evaluation_time_), wall_clock_(parent.wall_clock_), runtime_graph_(&runtime_graph),
           node_index_(node_index), global_state_(parent.global_state_),
           scratch_{parent.scratch_.evaluation_scratch_}, sections_(parent.sections_),
+          runtime_graph_inputs_{parent.runtime_graph_inputs_},
           evaluation_profile_{parent.evaluation_profile_} {}
     EvaluationContext(RuntimeGraph &runtime_graph, EvaluationContext &parent,
                       const RuntimeGraphInput *runtime_graph_inputs) noexcept
@@ -83,10 +86,17 @@ class EvaluationContext {
           node_index_{}, global_state_(parent.global_state_), scratch_{parent.scratch_.evaluation_scratch_},
           sections_(parent.sections_), runtime_graph_inputs_{runtime_graph_inputs},
           evaluation_profile_{parent.evaluation_profile_} {}
+    EvaluationContext(EvaluationContext &parent, EvaluationProfile *evaluation_profile) noexcept
+        : evaluation_time_(parent.evaluation_time_), wall_clock_(parent.wall_clock_),
+          runtime_graph_(parent.runtime_graph_), node_index_(parent.node_index_), global_state_(parent.global_state_),
+          scratch_{parent.scratch_.evaluation_scratch_}, sections_(parent.sections_),
+          runtime_graph_inputs_{parent.runtime_graph_inputs_},
+          evaluation_profile_{evaluation_profile} {}
     EvaluationContext(EvaluationContext &parent, const details::EvaluationContextSection &section) noexcept
         : evaluation_time_(parent.evaluation_time_), wall_clock_(parent.wall_clock_),
           runtime_graph_(parent.runtime_graph_), node_index_(parent.node_index_),
           global_state_(parent.global_state_), scratch_{parent.scratch_.evaluation_scratch_}, sections_(&section),
+          runtime_graph_inputs_{parent.runtime_graph_inputs_},
           evaluation_profile_{parent.evaluation_profile_} {}
 
     void reset_scratch() noexcept { scratch_.reset(); }

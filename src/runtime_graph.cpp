@@ -410,7 +410,8 @@ RuntimeGraph::RuntimeGraph(const CompiledGraph &compiled_graph, GlobalState &glo
 
 RuntimeGraph::RuntimeGraph(const CompiledGraph &compiled_graph, allocator memory, GlobalState &global_state)
     : compiled_graph_(&compiled_graph), allocator_(memory),
-      evaluator_{allocator_.new_object<RuntimeGraphEvaluator>()}, root_global_state_{&global_state},
+      evaluator_{allocator_.new_object<RuntimeGraphEvaluator>()}, instance_id_{GraphInstanceIdAllocator::allocate()},
+      root_global_state_{&global_state},
       owns_evaluator_{true}, owns_storage_{true} {
     try {
         initialize_storage();
@@ -422,7 +423,8 @@ RuntimeGraph::RuntimeGraph(const CompiledGraph &compiled_graph, allocator memory
 
 RuntimeGraph::RuntimeGraph(const CompiledGraph &compiled_graph, allocator memory, RuntimeGraphEvaluator &evaluator,
                            RuntimeGraphSchedulingCallbacks::token_type owner_token)
-    : compiled_graph_(&compiled_graph), allocator_(memory), evaluator_{&evaluator}, owner_token_{owner_token},
+    : compiled_graph_(&compiled_graph), allocator_(memory), evaluator_{&evaluator},
+      instance_id_{GraphInstanceIdAllocator::allocate()}, owner_token_{owner_token},
       owns_storage_{true} {
     assert(evaluator.owner_bound());
     initialize_storage();
@@ -431,8 +433,14 @@ RuntimeGraph::RuntimeGraph(const CompiledGraph &compiled_graph, allocator memory
 RuntimeGraph::RuntimeGraph(const CompiledGraph &compiled_graph, allocator memory, std::span<std::byte> storage,
                            GlobalState &global_state,
                            std::optional<CompiledGraph::ScheduleWord> previous_input_validity)
-    : compiled_graph_(&compiled_graph), allocator_(memory), evaluator_{}, storage_{storage.data()},
-      root_global_state_{&global_state}, started_{true} {
+    : RuntimeGraph(compiled_graph, memory, storage, global_state, GraphInstanceIdAllocator::allocate(),
+                   previous_input_validity) {}
+
+RuntimeGraph::RuntimeGraph(const CompiledGraph &compiled_graph, allocator memory, std::span<std::byte> storage,
+                           GlobalState &global_state, GraphInstanceId instance_id,
+                           std::optional<CompiledGraph::ScheduleWord> previous_input_validity)
+    : compiled_graph_(&compiled_graph), allocator_(memory), evaluator_{}, instance_id_{instance_id},
+      storage_{storage.data()}, root_global_state_{&global_state}, started_{true} {
     if (!compiled_graph.supports_borrowed_evaluation()) {
         throw std::invalid_argument{"the compiled graph does not support borrowed evaluation"};
     }
@@ -1067,33 +1075,44 @@ void RuntimeGraph::start(EvaluationTime evaluation_time, GlobalState &global_sta
 }
 
 void RuntimeGraph::start(EvaluationTime evaluation_time, EvaluationProfile &profile,
-                         const RuntimeGraphInput *inputs) {
-    start(evaluation_time, global_state(), profile, inputs);
+                         std::optional<Scalar<>> label, const RuntimeGraphInput *inputs) {
+    start(evaluation_time, global_state(), profile, std::move(label), inputs);
 }
 
 void RuntimeGraph::start(EvaluationTime evaluation_time, GlobalState &global_state, EvaluationProfile &profile,
-                         const RuntimeGraphInput *inputs) {
+                         std::optional<Scalar<>> label, const RuntimeGraphInput *inputs) {
     auto scratch = details::EvaluationScratch{allocator_.memory_resource()};
     auto context =
         EvaluationContext{evaluation_time, *this, global_state, scratch, SystemWallClock::instance(), &profile};
-    start(context, inputs);
+    start(context, inputs, std::move(label));
 }
 
-void RuntimeGraph::start(EvaluationContext &parent_context, const RuntimeGraphInput *inputs) {
+void RuntimeGraph::start(EvaluationContext &parent_context, const RuntimeGraphInput *inputs,
+                         std::optional<Scalar<>> label) {
     if (evaluator_ == nullptr) {
         throw std::logic_error{"a borrowed runtime graph view cannot be started"};
     }
-    evaluator_->start(*this, parent_context, inputs);
+    evaluator_->start(*this, parent_context, inputs, std::move(label));
 }
 
 void RuntimeGraphEvaluator::start(RuntimeGraph &graph, EvaluationContext &parent_context,
-                                  const RuntimeGraphInput *inputs) {
+                                  const RuntimeGraphInput *inputs, std::optional<Scalar<>> label) {
     if (graph.started_ || graph.stopped_) {
         throw std::logic_error{"a runtime graph can only be started once"};
     }
     if (&parent_context.runtime_graph() == &graph &&
         !TimeSeriesState::can_represent(parent_context.evaluation_time())) {
         throw std::invalid_argument{"evaluation time cannot be represented by a time series"};
+    }
+    auto *profile = parent_context.evaluation_profile();
+    if (&parent_context.runtime_graph() != &graph) {
+        auto *parent_evaluator = parent_context.runtime_graph().evaluator_;
+        if (parent_evaluator != nullptr && parent_evaluator->profile_ != profile) {
+            throw std::logic_error{"a nested runtime graph must use its parent's evaluation profile"};
+        }
+    }
+    if (profile_ != nullptr && profile_ != profile) {
+        throw std::logic_error{"runtime graphs owned by one node must use the same evaluation profile"};
     }
 
     const auto inherited_time_series = graph.compiled_graph_->inherited_time_series();
@@ -1137,12 +1156,14 @@ void RuntimeGraphEvaluator::start(RuntimeGraph &graph, EvaluationContext &parent
     auto context = EvaluationContext{graph, binding_context.context(), inputs};
     graph.started_ = true;
     graph.evaluation_time_ = context.evaluation_time();
-    auto *profile = context.evaluation_profile_;
+    profile = context.evaluation_profile();
+    profile_ = profile;
     if (profile != nullptr) {
-        const auto parent_graph_id = parent_ ? profile->graph_id(*parent_.get()) : 0;
+        const auto parent_graph_id = parent_ ? parent_.get()->instance_id() : GraphInstanceId{};
         const auto owner_node_index = parent_ ? static_cast<std::uint32_t>(owner_node_index_)
                                               : std::numeric_limits<std::uint32_t>::max();
-        profile->start_graph(graph, *graph.compiled_graph_, parent_graph_id, owner_node_index);
+        profile->start_graph(graph.instance_id(), *graph.compiled_graph_, parent_graph_id, owner_node_index,
+                             std::move(label));
     }
     const auto starts = graph.compiled_graph_->start_functions();
     auto started_node_count = std::size_t{};
@@ -1150,7 +1171,7 @@ void RuntimeGraphEvaluator::start(RuntimeGraph &graph, EvaluationContext &parent
         graph.stopped_ = true;
         graph.stop_nodes(started_node_count, context);
         if (profile != nullptr) {
-            profile->stop_graph(graph);
+            profile->stop_graph(graph.instance_id());
         }
     }};
 
@@ -1247,7 +1268,8 @@ void RuntimeGraphEvaluator::stop(RuntimeGraph &graph, EvaluationContext &parent_
         return;
     }
 
-    auto binding_context = ServiceBindingContext{parent_context, graph.service_bindings()};
+    auto run_context = EvaluationContext{parent_context, profile_};
+    auto binding_context = ServiceBindingContext{run_context, graph.service_bindings()};
     auto context = EvaluationContext{graph, binding_context.context(), inputs};
     graph.stopped_ = true;
 
@@ -1266,8 +1288,8 @@ void RuntimeGraphEvaluator::stop(RuntimeGraph &graph, EvaluationContext &parent_
 
     graph.clear_timed_schedule();
     graph.clear_cycle_callbacks(context);
-    if (auto *profile = context.evaluation_profile_; profile != nullptr) {
-        profile->stop_graph(graph);
+    if (profile_ != nullptr) {
+        profile_->stop_graph(graph.instance_id());
     }
 }
 
@@ -1335,25 +1357,28 @@ bool RuntimeGraphEvaluator::evaluate(RuntimeGraph &graph, EvaluationContext &par
         throw std::logic_error{"a runtime graph must be running to evaluate"};
     }
 
-    auto *profile = parent_context.evaluation_profile_;
+    auto *profile = parent_context.evaluation_profile();
+    if (graph.evaluator_ != nullptr && profile != graph.evaluator_->profile_) {
+        throw std::logic_error{"runtime graph must use the evaluation profile selected at start"};
+    }
     if (profile == nullptr) {
-        return evaluate_graph<false>(graph, parent_context, nullptr, 0, inputs);
+        return evaluate_graph<false>(graph, parent_context, nullptr, {}, inputs);
     }
 
     if (profile->failed()) {
-        return evaluate_graph<false>(graph, parent_context, nullptr, 0, inputs);
+        return evaluate_graph<false>(graph, parent_context, nullptr, {}, inputs);
     }
 
-    const auto graph_id = profile->graph_id(graph);
-    if (graph_id == 0) {
-        throw std::logic_error{"runtime graph was not started with this evaluation profile"};
+    const auto graph_id = graph.instance_id();
+    if (graph_id.value == 0) {
+        throw std::logic_error{"runtime graph has no evaluation profile identity"};
     }
     return evaluate_graph<true>(graph, parent_context, profile, graph_id, inputs);
 }
 
 template <bool Profiled>
 bool RuntimeGraphEvaluator::evaluate_graph(RuntimeGraph &graph, EvaluationContext &parent_context,
-                                           EvaluationProfile *profile, std::uint32_t graph_id,
+                                           EvaluationProfile *profile, GraphInstanceId graph_id,
                                            const RuntimeGraphInput *inputs) {
     if (&parent_context.runtime_graph() == &graph &&
         !TimeSeriesState::can_represent(parent_context.evaluation_time())) {
@@ -1364,6 +1389,7 @@ bool RuntimeGraphEvaluator::evaluate_graph(RuntimeGraph &graph, EvaluationContex
     auto context = EvaluationContext{graph, binding_context.context(), inputs};
     const auto evaluation_time = context.evaluation_time();
     const auto resuming = graph.paused_node_index_ != std::numeric_limits<std::uint32_t>::max();
+    const auto outer_graph_evaluation = graph.evaluator_ != nullptr && !graph.evaluator_->owner_bound();
     if (!resuming) {
         if (evaluation_time <= graph.last_evaluation_time_) {
             throw std::invalid_argument{"evaluation time must increase between outer cycles"};
@@ -1373,14 +1399,25 @@ bool RuntimeGraphEvaluator::evaluate_graph(RuntimeGraph &graph, EvaluationContex
     }
 
     if constexpr (Profiled) {
-        if (!resuming && !graph.evaluator_->owner_bound()) {
+        if (!outer_graph_evaluation) {
+            profile->enter_graph(graph_id);
+        }
+        if (!resuming && outer_graph_evaluation) {
             profile->begin_cycle(graph_id, evaluation_time, context.wall_clock().now());
         }
     }
 
+    auto leave_profiled_graph = util::scope_exit{[&]() noexcept {
+        if constexpr (Profiled) {
+            if (!outer_graph_evaluation) {
+                profile->exit_graph(graph_id);
+            }
+        }
+    }};
+
     auto abort_profile_cycle = util::scope_exit{[&]() noexcept {
         if constexpr (Profiled) {
-            if (!graph.evaluator_->owner_bound()) {
+            if (outer_graph_evaluation) {
                 profile->abort_cycle();
             }
         }
@@ -1442,7 +1479,7 @@ bool RuntimeGraphEvaluator::evaluate_graph(RuntimeGraph &graph, EvaluationContex
                 advance.release();
                 stop_on_failure.release();
                 if constexpr (Profiled) {
-                    if (graph.evaluator_->owner_bound()) {
+                    if (!outer_graph_evaluation) {
                         abort_profile_cycle.release();
                     }
                 }
@@ -1451,7 +1488,7 @@ bool RuntimeGraphEvaluator::evaluate_graph(RuntimeGraph &graph, EvaluationContex
         }
 
         if constexpr (Profiled) {
-            profile->record_node(graph_id, node_index);
+            profile->record_node(node_index);
         }
 
         if (has_output) {
@@ -1463,8 +1500,8 @@ bool RuntimeGraphEvaluator::evaluate_graph(RuntimeGraph &graph, EvaluationContex
     stop_on_failure.release();
     graph.paused_node_index_ = std::numeric_limits<std::uint32_t>::max();
     if constexpr (Profiled) {
-        if (!graph.evaluator_->owner_bound()) {
-            profile->end_cycle(graph_id, evaluation_time, context.wall_clock().now());
+        if (outer_graph_evaluation) {
+            profile->end_cycle(context.wall_clock().now());
         }
     }
     abort_profile_cycle.release();

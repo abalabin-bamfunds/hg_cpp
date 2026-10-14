@@ -40,6 +40,7 @@ add_library(
     src/context.cpp
     src/evaluation_profile.cpp
     src/global_state.cpp
+    src/graph_instance_id.cpp
     src/graph_argument.cpp
     src/graph_wiring.cpp
     src/graph_wiring_structure.cpp

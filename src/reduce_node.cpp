@@ -4,6 +4,7 @@
 #include <bg/graph/details/compiled_graph_builder.hpp>
 #include <bg/graph/details/graph_wiring_structure.hpp>
 #include <bg/graph/details/nested_graph_context.hpp>
+#include <bg/evaluation_profile.hpp>
 #include <bg/graph/runtime_graph.hpp>
 #include <bg/graph/runtime_graph_evaluator.hpp>
 #include <bg/node/node_invocation.hpp>
@@ -99,6 +100,7 @@ struct CompactReducePairState {
     CompiledGraph::ScheduleWord input_validity{};
     std::array<TimeSeriesState, 2> input_states{};
     bool initialized{};
+    bool profile_started{};
 };
 
 class CompactReduceRuntime {
@@ -137,7 +139,23 @@ class CompactReduceRuntime {
         publish_compact_result(compiled, values, invocation, force_publish);
     }
 
+    void start(EvaluationContext &context) noexcept {
+        profile_ = context.evaluation_profile();
+        parent_graph_id_ = context.runtime_graph().instance_id();
+        owner_node_index_ = static_cast<std::uint32_t>(context.node_index());
+    }
+
+    void stop() noexcept {
+        if (profile_ != nullptr) {
+            for (const auto pair_index : compact_pair_positions_) {
+                stop_compact_pair(pair_index);
+            }
+        }
+        profile_ = nullptr;
+    }
+
     void destroy() noexcept {
+        profile_ = nullptr;
         clear_compact_graph();
         memory_.delete_object(this);
     }
@@ -173,6 +191,7 @@ class CompactReduceRuntime {
         try {
             compact_pair_states_.emplace_at(index, memory);
             initialize_compact_pair_storage(index);
+            start_compact_pair(index);
         } catch (...) {
             if (compact_pair_states_.get(index, compact_pair_positions_) != nullptr) {
                 compact_pair_states_.erase_at(index, memory);
@@ -184,8 +203,30 @@ class CompactReduceRuntime {
     }
 
     void release_compact_pair(CompactReduceNodeIndex index) noexcept {
+        stop_compact_pair(index);
         compact_pair_states_.erase_at(index, memory_.memory_resource());
         compact_pair_positions_.reset(index);
+    }
+
+    void start_compact_pair(CompactReduceNodeIndex index) noexcept {
+        if (profile_ == nullptr) {
+            return;
+        }
+
+        const auto graph_id = GraphInstanceId{compact_graph_id_base_.value + index};
+        profile_->start_graph(graph_id, *compact_graph_->graph, parent_graph_id_, owner_node_index_, std::nullopt);
+        compact_pair_states_[index].profile_started = true;
+    }
+
+    void stop_compact_pair(CompactReduceNodeIndex index) noexcept {
+        auto &pair_state = compact_pair_states_[index];
+        if (!pair_state.profile_started || profile_ == nullptr) {
+            return;
+        }
+
+        const auto graph_id = GraphInstanceId{compact_graph_id_base_.value + index};
+        profile_->stop_graph(graph_id);
+        pair_state.profile_started = false;
     }
 
     std::byte *compact_pair_storage(CompactReduceNodeIndex index) const noexcept {
@@ -377,6 +418,7 @@ class CompactReduceRuntime {
         if (compact_has_output_node_) {
             compact_storage_size_ = RuntimeGraph::borrowed_storage_size(*compact_graph_->graph);
             compact_storage_alignment_ = RuntimeGraph::borrowed_storage_alignment(*compact_graph_->graph);
+            compact_graph_id_base_ = GraphInstanceIdAllocator::reserve(std::uint64_t{1} << 32).at(0);
         }
         if (compact_has_output_node_) {
             if (compact_storage_size_ > std::numeric_limits<std::size_t>::max() - (compact_storage_alignment_ - 1)) {
@@ -399,6 +441,9 @@ class CompactReduceRuntime {
 
     void clear_compact_graph() noexcept {
         auto &memory = memory_.memory_resource();
+        for (const auto pair_index : compact_pair_positions_) {
+            stop_compact_pair(pair_index);
+        }
         compact_leaf_by_id_.release(memory);
         compact_nodes_.release(compact_node_positions_, memory);
         compact_node_positions_.release(memory);
@@ -465,7 +510,8 @@ class CompactReduceRuntime {
         const auto left = compact_tree_output(branch.left, values, compact);
         const auto right = compact_tree_output(branch.right, values, compact);
         const auto storage = std::span{compact_pair_storage(branch.pair_index), compact_storage_size_};
-        auto runtime = RuntimeGraph{*compact.graph, memory_, storage, invocation.context().global_state(),
+        const auto graph_id = GraphInstanceId{compact_graph_id_base_.value + branch.pair_index};
+        auto runtime = RuntimeGraph{*compact.graph, memory_, storage, invocation.context().global_state(), graph_id,
                                    pair_state.initialized ? std::optional{pair_state.input_validity} : std::nullopt};
         auto runtime_graph_inputs = std::array<RuntimeGraphInput, 2>{};
         const auto bind_input = [&](std::size_t side, std::size_t binding_index,
@@ -593,6 +639,10 @@ class CompactReduceRuntime {
     util::sparse_bunch<CompactReducePairState> compact_pair_states_;
     std::pmr::vector<std::byte *> compact_pair_blocks_;
     const CompiledCompactReduceGraph *compact_graph_{};
+    EvaluationProfile *profile_{};
+    GraphInstanceId parent_graph_id_{};
+    std::uint32_t owner_node_index_{};
+    GraphInstanceId compact_graph_id_base_{};
     std::size_t compact_storage_size_{};
     std::size_t compact_storage_alignment_{};
     std::size_t compact_storage_stride_{};
@@ -939,10 +989,15 @@ class CompactReduceNodeTemplate : public details::CompactReduceNodeDefinition {
             auto memory = invocation.context().runtime_graph().allocation();
             runtime = memory.new_object<CompactReduceRuntime>(memory);
         }
+        runtime->start(invocation.context());
     }
 
     static void evaluate(CompactReduceInvocation invocation) {
         invocation.state().runtime->evaluate(invocation.compiled_data(), invocation);
+    }
+
+    static void stop(CompactReduceInvocation invocation) noexcept {
+        invocation.state().runtime->stop();
     }
 
     static void destroy_state(CompactReduceInvocation invocation) noexcept {

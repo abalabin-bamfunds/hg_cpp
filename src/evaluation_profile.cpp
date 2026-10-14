@@ -2,9 +2,11 @@
 
 #include <bg/graph/compiled_graph.hpp>
 #include <bg/graph/runtime_graph.hpp>
+#include <bg/util/scope_exit.hpp>
 
+#include <array>
 #include <chrono>
-#include <limits>
+#include <cstring>
 #include <span>
 #include <stdexcept>
 #include <type_traits>
@@ -23,27 +25,20 @@ constexpr auto record_value_mask = ~record_tag_mask;
 constexpr auto node_tag = std::uint32_t{0} << record_tag_shift;
 constexpr auto cycle_tag = std::uint32_t{1} << record_tag_shift;
 constexpr auto graph_tag = std::uint32_t{2} << record_tag_shift;
-constexpr auto definition_tag = std::uint32_t{3} << record_tag_shift;
 constexpr auto cycle_start_event = cycle_tag | 1;
 constexpr auto cycle_end_event = cycle_tag | 2;
 constexpr auto graph_start_event = graph_tag | 1;
-constexpr auto graph_stop_event = graph_tag | 2;
-constexpr auto definition_start_event = definition_tag | 1;
-constexpr auto node_metadata_event = definition_tag | 2;
+constexpr auto graph_start_with_label_event = graph_tag | 2;
+constexpr auto graph_stop_event = graph_tag | 3;
+constexpr auto graph_entry_event = graph_tag | 4;
+constexpr auto graph_exit_event = graph_tag | 5;
 constexpr auto stream_magic = std::uint64_t{0x424750524f46494c};
-constexpr auto stream_version = std::uint32_t{1};
-constexpr auto no_owner_node = std::numeric_limits<std::uint32_t>::max();
+constexpr auto stream_version = std::uint32_t{3};
 
 struct StreamHeader {
     std::uint64_t magic;
     std::uint32_t version;
     std::uint32_t clock;
-};
-
-struct RecordHeader {
-    std::uint32_t graph_id;
-    std::uint32_t event;
-    std::uint64_t checkpoint;
 };
 
 struct CycleMetadata {
@@ -52,19 +47,17 @@ struct CycleMetadata {
     std::int64_t steady_clock_nanoseconds;
 };
 
-struct GraphStartMetadata {
-    std::uint32_t parent_graph_id;
-    std::uint32_t owner_node_index;
+struct CycleEndMetadata {
+    std::int64_t wall_clock_time_microseconds;
+    std::int64_t steady_clock_nanoseconds;
 };
 
 static_assert(sizeof(StreamHeader) == 16);
-static_assert(sizeof(RecordHeader) == 16);
 static_assert(sizeof(CycleMetadata) == 24);
-static_assert(sizeof(GraphStartMetadata) == 8);
+static_assert(sizeof(CycleEndMetadata) == 16);
 static_assert(std::is_trivially_copyable_v<StreamHeader>);
-static_assert(std::is_trivially_copyable_v<RecordHeader>);
 static_assert(std::is_trivially_copyable_v<CycleMetadata>);
-static_assert(std::is_trivially_copyable_v<GraphStartMetadata>);
+static_assert(std::is_trivially_copyable_v<CycleEndMetadata>);
 
 constexpr auto checkpoint_clock = [] {
 #if (defined(__i386__) || defined(__x86_64__)) && (defined(__GNUC__) || defined(__clang__))
@@ -99,10 +92,6 @@ std::int64_t steady_clock_nanoseconds() noexcept {
         .count();
 }
 
-template <typename T> void write_object(util::buffer_writer &writer, const T &value) {
-    writer.write_bytes(std::as_bytes(std::span{&value, std::size_t{1}}));
-}
-
 template <typename T> T read_object(util::buffer_reader &reader) {
     auto value = T{};
     reader.read_bytes(std::as_writable_bytes(std::span{&value, std::size_t{1}}));
@@ -124,71 +113,110 @@ EvaluationProfileReader::EvaluationProfileReader(util::buffer recording) : reade
     clock_ = static_cast<EvaluationProfileClock>(header.clock);
 }
 
+EvaluationProfileReader::~EvaluationProfileReader() {
+    try {
+        while (read()) {
+        }
+    } catch (...) {
+    }
+}
+
 std::optional<EvaluationProfileRecord> EvaluationProfileReader::read() {
     if (reader_.readable().empty()) {
         return std::nullopt;
     }
 
-    const auto record = read_object<RecordHeader>(reader_);
-    const auto tag = record.event & record_tag_mask;
-    const auto value = record.event & record_value_mask;
+    const auto event = reader_.read_raw<std::uint32_t>();
+    const auto tag = event & record_tag_mask;
+    const auto value = event & record_value_mask;
     if (tag == node_tag) {
-        return EvaluationProfileNode{record.graph_id, value, record.checkpoint};
+        if (active_graphs_.empty()) {
+            throw std::runtime_error{"evaluation profile node record is outside a graph evaluation"};
+        }
+        return EvaluationProfileNode{active_graphs_.back(), value, reader_.read_raw<std::uint64_t>()};
     }
     if (tag == cycle_tag) {
         if (value != 1 && value != 2) {
             throw std::runtime_error{"invalid evaluation profile cycle event"};
         }
-        const auto metadata = read_object<CycleMetadata>(reader_);
-        return EvaluationProfileCycle{record.graph_id,
-                                      value == 1 ? EvaluationProfileCycle::Boundary::start
-                                                 : EvaluationProfileCycle::Boundary::end,
-                                      EvaluationTime{std::chrono::microseconds{metadata.evaluation_time_microseconds}},
-                                      EvaluationTime{std::chrono::microseconds{metadata.wall_clock_time_microseconds}},
-                                      record.checkpoint,
+        if (value == 1) {
+            if (cycle_graph_id_.value != 0) {
+                throw std::runtime_error{"evaluation profile cycle start is nested"};
+            }
+            cycle_graph_id_ = GraphInstanceId{reader_.read_raw<std::uint64_t>()};
+            if (cycle_graph_id_.value == 0) {
+                throw std::runtime_error{"evaluation profile cycle has no graph identity"};
+            }
+            active_graphs_.push_back(cycle_graph_id_);
+            const auto checkpoint = reader_.read_raw<std::uint64_t>();
+            const auto metadata = read_object<CycleMetadata>(reader_);
+            cycle_evaluation_time_ =
+                EvaluationTime{std::chrono::microseconds{metadata.evaluation_time_microseconds}};
+            return EvaluationProfileCycle{cycle_graph_id_,
+                                          EvaluationProfileCycle::Boundary::start,
+                                          cycle_evaluation_time_,
+                                          EvaluationTime{std::chrono::microseconds{
+                                              metadata.wall_clock_time_microseconds}},
+                                          checkpoint,
+                                          metadata.steady_clock_nanoseconds};
+        }
+
+        if (cycle_graph_id_.value == 0 || active_graphs_.empty() || active_graphs_.back() != cycle_graph_id_) {
+            throw std::runtime_error{"evaluation profile cycle end has no matching start"};
+        }
+        const auto checkpoint = reader_.read_raw<std::uint64_t>();
+        const auto metadata = read_object<CycleEndMetadata>(reader_);
+        const auto graph_id = cycle_graph_id_;
+        active_graphs_.pop_back();
+        cycle_graph_id_ = {};
+        return EvaluationProfileCycle{graph_id,
+                                      EvaluationProfileCycle::Boundary::end,
+                                      cycle_evaluation_time_,
+                                      EvaluationTime{std::chrono::microseconds{
+                                          metadata.wall_clock_time_microseconds}},
+                                      checkpoint,
                                       metadata.steady_clock_nanoseconds};
     }
     if (tag == graph_tag) {
-        if (value == 1) {
-            if (record.checkpoint == 0 || record.checkpoint > std::numeric_limits<std::uint32_t>::max()) {
-                throw std::runtime_error{"invalid evaluation profile definition id"};
+        if (value == 1 || value == 2) {
+            const auto graph_id = GraphInstanceId{reader_.read_raw<std::uint64_t>()};
+            const auto *compiled_graph = reader_.read_raw<const CompiledGraph *>();
+            const auto parent_graph_id = GraphInstanceId{reader_.read_raw<std::uint64_t>()};
+            const auto owner_node_index = reader_.read_raw<std::uint32_t>();
+            auto label = std::optional<ScalarValue<>>{};
+            if (value == 2) {
+                label.emplace(reader_.read<ScalarValue<>>());
             }
-            const auto metadata = read_object<GraphStartMetadata>(reader_);
-            return EvaluationProfileGraph{record.graph_id, static_cast<std::uint32_t>(record.checkpoint),
-                                          metadata.parent_graph_id, metadata.owner_node_index};
+            return EvaluationProfileGraph{graph_id, compiled_graph, parent_graph_id, owner_node_index, std::move(label)};
         }
-        if (value == 2) {
-            return EvaluationProfileGraphStop{record.graph_id};
+        if (value == 3) {
+            return EvaluationProfileGraphStop{GraphInstanceId{reader_.read_raw<std::uint64_t>()}};
+        }
+        if (value == 4) {
+            const auto graph_id = GraphInstanceId{reader_.read_raw<std::uint64_t>()};
+            const auto checkpoint = reader_.read_raw<std::uint64_t>();
+            active_graphs_.push_back(graph_id);
+            return EvaluationProfileGraphEntry{graph_id, checkpoint};
+        }
+        if (value == 5) {
+            if (active_graphs_.empty()) {
+                throw std::runtime_error{"evaluation profile graph exit has no matching entry"};
+            }
+            const auto checkpoint = reader_.read_raw<std::uint64_t>();
+            const auto graph_id = active_graphs_.back();
+            active_graphs_.pop_back();
+            return EvaluationProfileGraphExit{graph_id, checkpoint};
         }
         throw std::runtime_error{"invalid evaluation profile graph event"};
-    }
-    if (tag == definition_tag) {
-        if (value == 1) {
-            if (record.checkpoint > record_value_mask) {
-                throw std::runtime_error{"invalid evaluation profile node count"};
-            }
-            return EvaluationProfileDefinition{record.graph_id, static_cast<std::uint32_t>(record.checkpoint)};
-        }
-        if (value == 2) {
-            if (record.checkpoint > record_value_mask) {
-                throw std::runtime_error{"invalid evaluation profile node index"};
-            }
-            const auto path_size = read_object<std::uint32_t>(reader_);
-            auto path = std::string(path_size, '\0');
-            reader_.read_bytes(std::as_writable_bytes(std::span{path.data(), path.size()}));
-            return EvaluationProfileNodeMetadata{record.graph_id, static_cast<std::uint32_t>(record.checkpoint),
-                                                 std::move(path)};
-        }
-        throw std::runtime_error{"invalid evaluation profile definition event"};
     }
 
     throw std::runtime_error{"unknown evaluation profile event"};
 }
 
 EvaluationProfile::EvaluationProfile(std::size_t block_capacity, allocator memory)
-    : recording_{util::buffer::chain(block_capacity, memory)}, writer_{recording_} {
+    : memory_{memory}, recording_{util::buffer::chain(block_capacity, memory)}, writer_{recording_} {
     const auto header = StreamHeader{stream_magic, stream_version, static_cast<std::uint32_t>(checkpoint_clock)};
-    write_object(writer_, header);
+    writer_.write_bytes(std::as_bytes(std::span{&header, std::size_t{1}}));
     writer_.commit();
     recorded_bytes_ = sizeof(header);
     committed_bytes_ = sizeof(header);
@@ -199,96 +227,111 @@ util::buffer EvaluationProfile::take_recording() {
         throw std::logic_error{"evaluation profile recording has already been taken"};
     }
     recording_taken_ = true;
+    labels_.erase(labels_.begin(), labels_.begin() + static_cast<std::ptrdiff_t>(committed_label_count_));
+    committed_label_count_ = 0;
     return std::move(recording_);
 }
 
-std::uint32_t EvaluationProfile::definition_id(const CompiledGraph &compiled_graph) {
-    if (const auto found = definitions_.find(&compiled_graph); found != definitions_.end()) {
-        return found->second.definition_id;
-    }
-    if (next_definition_id_ == 0 || compiled_graph.node_count() > record_value_mask) {
-        throw std::length_error{"evaluation profile definition id or node count limit exceeded"};
-    }
-
-    const auto id = next_definition_id_++;
-    definitions_.emplace(&compiled_graph, GraphDefinition{id, 0});
-    write_record(id, definition_start_event, compiled_graph.node_count());
-    for (auto node_index = std::size_t{}; node_index < compiled_graph.node_count(); ++node_index) {
-        const auto path = compiled_graph.wiring_path(node_index).text();
-        if (path.size() > std::numeric_limits<std::uint32_t>::max()) {
-            throw std::length_error{"evaluation profile node path is too long"};
-        }
-
-        const auto node = RecordHeader{id, node_metadata_event, node_index};
-        const auto path_size = static_cast<std::uint32_t>(path.size());
-        write_object(writer_, node);
-        write_object(writer_, path_size);
-        writer_.write_bytes(std::as_bytes(std::span{path.data(), path.size()}));
-        recorded_bytes_ += sizeof(node) + sizeof(path_size) + path.size();
-    }
-    return id;
-}
-
-std::uint32_t EvaluationProfile::start_graph(RuntimeGraph &graph, const CompiledGraph &compiled_graph,
-                                             std::uint32_t parent_graph_id,
-                                             std::uint32_t owner_node_index) noexcept {
-    if (failed_ || finished_) {
-        return 0;
-    }
-    if (graph_ids_.contains(&graph) || next_graph_id_ == 0 ||
-        (owner_node_index != no_owner_node && owner_node_index > record_value_mask)) {
-        fail();
-        return 0;
-    }
-
-    const auto graph_id = next_graph_id_++;
-    try {
-        const auto instance = graph_ids_.emplace(&graph, GraphInstance{graph_id, nullptr}).first;
-        const auto graph_definition_id = definition_id(compiled_graph);
-        write_record(graph_id, graph_start_event, graph_definition_id);
-        write_object(writer_, GraphStartMetadata{parent_graph_id, owner_node_index});
-        recorded_bytes_ += sizeof(GraphStartMetadata);
-        instance->second.compiled_graph = &compiled_graph;
-        ++definitions_.at(&compiled_graph).active_graph_count;
-    } catch (...) {
-        fail();
-        return 0;
-    }
-    return graph_id;
-}
-
-void EvaluationProfile::stop_graph(RuntimeGraph &graph) noexcept {
-    const auto found = graph_ids_.find(&graph);
-    if (found == graph_ids_.end()) {
-        return;
-    }
-
-    const auto [graph_id, compiled_graph] = found->second;
-    graph_ids_.erase(found);
-    if (compiled_graph != nullptr) {
-        if (auto definition = definitions_.find(compiled_graph);
-            definition != definitions_.end() && --definition->second.active_graph_count == 0) {
-            definitions_.erase(compiled_graph);
-        }
-    }
+void EvaluationProfile::start_graph(GraphInstanceId graph_id, const CompiledGraph &compiled_graph,
+                                    GraphInstanceId parent_graph_id, std::uint32_t owner_node_index,
+                                    std::optional<Scalar<>> label) noexcept {
     if (failed_ || finished_) {
         return;
     }
+    if (graph_id.value == 0 || compiled_graph.node_count() > record_value_mask) {
+        fail();
+        return;
+    }
+
     try {
-        write_record(graph_id, graph_stop_event, 0);
+        const auto event = label ? graph_start_with_label_event : graph_start_event;
+        const auto compiled_graph_pointer = &compiled_graph;
+        auto bytes = std::array<std::byte, 32>{};
+        std::memcpy(bytes.data(), &event, sizeof(event));
+        std::memcpy(bytes.data() + 4, &graph_id.value, sizeof(graph_id.value));
+        std::memcpy(bytes.data() + 12, &compiled_graph_pointer, sizeof(compiled_graph_pointer));
+        std::memcpy(bytes.data() + 20, &parent_graph_id.value, sizeof(parent_graph_id.value));
+        std::memcpy(bytes.data() + 28, &owner_node_index, sizeof(owner_node_index));
+        writer_.write_bytes(std::span{std::as_const(bytes)});
+        recorded_bytes_ += bytes.size();
+
+        if (label) {
+            auto &stored_label = writer_.emplace<ScalarValue<>>(label.value(), memory_);
+            auto destroy_label = util::scope_exit{[&]() noexcept { std::destroy_at(&stored_label); }};
+            labels_.push_back(&stored_label);
+            destroy_label.release();
+            recorded_bytes_ += sizeof(stored_label);
+        }
     } catch (...) {
         fail();
     }
 }
 
-std::uint32_t EvaluationProfile::graph_id(const RuntimeGraph &graph) const noexcept {
-    const auto found = graph_ids_.find(&graph);
-    return found == graph_ids_.end() ? 0 : found->second.graph_id;
+void EvaluationProfile::write_graph_stop(GraphInstanceId graph_id) {
+    const auto event = graph_stop_event;
+    const auto record = std::array<std::byte, 12>{};
+    auto bytes = record;
+    std::memcpy(bytes.data(), &event, sizeof(event));
+    std::memcpy(bytes.data() + 4, &graph_id.value, sizeof(graph_id.value));
+    writer_.write_bytes(std::span{std::as_const(bytes)});
+    recorded_bytes_ += bytes.size();
 }
 
-void EvaluationProfile::begin_cycle(std::uint32_t graph_id, EvaluationTime evaluation_time,
-                                     EvaluationTime wall_clock_time) noexcept {
+void EvaluationProfile::stop_graph(GraphInstanceId graph_id) noexcept {
     if (failed_ || finished_) {
+        return;
+    }
+    try {
+        write_graph_stop(graph_id);
+    } catch (...) {
+        fail();
+    }
+}
+
+void EvaluationProfile::enter_graph(GraphInstanceId graph_id) noexcept {
+    if (failed_ || finished_) {
+        return;
+    }
+    try {
+        const auto event = graph_entry_event;
+        const auto checkpoint = read_checkpoint();
+        const auto record = std::array<std::byte, 20>{};
+        auto bytes = record;
+        std::memcpy(bytes.data(), &event, sizeof(event));
+        std::memcpy(bytes.data() + 4, &graph_id.value, sizeof(graph_id.value));
+        std::memcpy(bytes.data() + 12, &checkpoint, sizeof(checkpoint));
+        writer_.write_bytes(std::span{std::as_const(bytes)});
+        recorded_bytes_ += bytes.size();
+    } catch (...) {
+        fail();
+    }
+}
+
+void EvaluationProfile::exit_graph(GraphInstanceId graph_id) noexcept {
+    if (failed_ || finished_) {
+        return;
+    }
+    try {
+        const auto event = graph_exit_event;
+        const auto checkpoint = read_checkpoint();
+        const auto record = std::array<std::byte, 12>{};
+        auto bytes = record;
+        std::memcpy(bytes.data(), &event, sizeof(event));
+        std::memcpy(bytes.data() + 4, &checkpoint, sizeof(checkpoint));
+        writer_.write_bytes(std::span{std::as_const(bytes)});
+        recorded_bytes_ += bytes.size();
+    } catch (...) {
+        fail();
+    }
+}
+
+void EvaluationProfile::begin_cycle(GraphInstanceId graph_id, EvaluationTime evaluation_time,
+                                    EvaluationTime wall_clock_time) noexcept {
+    if (failed_ || finished_) {
+        return;
+    }
+    if (graph_id.value == 0) {
+        fail();
         return;
     }
     if (cycle_open_) {
@@ -297,34 +340,36 @@ void EvaluationProfile::begin_cycle(std::uint32_t graph_id, EvaluationTime evalu
     }
     cycle_open_ = true;
     try {
-        write_cycle(graph_id, cycle_start_event, evaluation_time, wall_clock_time);
+        write_cycle_start(graph_id, evaluation_time, wall_clock_time);
     } catch (...) {
         fail();
     }
 }
 
-void EvaluationProfile::record_node(std::uint32_t graph_id, std::size_t node_index) noexcept {
-    if (failed_ || finished_ || graph_id == 0) {
-        return;
-    }
-    if (node_index > record_value_mask) {
-        fail();
+void EvaluationProfile::record_node(std::size_t node_index) noexcept {
+    if (failed_ || finished_) {
         return;
     }
     try {
-        write_record(graph_id, node_tag | static_cast<std::uint32_t>(node_index), read_checkpoint());
+        const auto event = node_tag | static_cast<std::uint32_t>(node_index);
+        const auto checkpoint = read_checkpoint();
+        const auto record = std::array<std::byte, 12>{};
+        auto bytes = record;
+        std::memcpy(bytes.data(), &event, sizeof(event));
+        std::memcpy(bytes.data() + 4, &checkpoint, sizeof(checkpoint));
+        writer_.write_bytes(std::span{std::as_const(bytes)});
+        recorded_bytes_ += bytes.size();
     } catch (...) {
         fail();
     }
 }
 
-void EvaluationProfile::end_cycle(std::uint32_t graph_id, EvaluationTime evaluation_time,
-                                  EvaluationTime wall_clock_time) noexcept {
+void EvaluationProfile::end_cycle(EvaluationTime wall_clock_time) noexcept {
     if (failed_ || finished_ || !cycle_open_) {
         return;
     }
     try {
-        write_cycle(graph_id, cycle_end_event, evaluation_time, wall_clock_time);
+        write_cycle_end(wall_clock_time);
         commit();
         cycle_open_ = false;
     } catch (...) {
@@ -337,34 +382,60 @@ void EvaluationProfile::abort_cycle() noexcept {
         return;
     }
 
+    destroy_uncommitted_labels();
     writer_.rollback();
     recorded_bytes_ = committed_bytes_;
     cycle_open_ = false;
     failed_ = true;
-    graph_ids_.clear();
-    definitions_.clear();
 }
 
-void EvaluationProfile::write_record(std::uint32_t graph_id, std::uint32_t event, std::uint64_t checkpoint) {
-    write_object(writer_, RecordHeader{graph_id, event, checkpoint});
-    recorded_bytes_ += sizeof(RecordHeader);
-}
-
-void EvaluationProfile::write_cycle(std::uint32_t graph_id, std::uint32_t boundary, EvaluationTime evaluation_time,
-                                    EvaluationTime wall_clock_time) {
-    const auto record = RecordHeader{graph_id, boundary, read_checkpoint()};
+void EvaluationProfile::write_cycle_start(GraphInstanceId graph_id, EvaluationTime evaluation_time,
+                                          EvaluationTime wall_clock_time) {
+    const auto checkpoint = read_checkpoint();
     const auto metadata = CycleMetadata{
         std::chrono::duration_cast<std::chrono::microseconds>(evaluation_time.time_since_epoch()).count(),
         std::chrono::duration_cast<std::chrono::microseconds>(wall_clock_time.time_since_epoch()).count(),
         steady_clock_nanoseconds()};
-    write_object(writer_, record);
-    write_object(writer_, metadata);
-    recorded_bytes_ += sizeof(record) + sizeof(metadata);
+    const auto record = std::array<std::byte, 44>{};
+    auto bytes = record;
+    std::memcpy(bytes.data(), &cycle_start_event, sizeof(cycle_start_event));
+    std::memcpy(bytes.data() + 4, &graph_id.value, sizeof(graph_id.value));
+    std::memcpy(bytes.data() + 12, &checkpoint, sizeof(checkpoint));
+    std::memcpy(bytes.data() + 20, &metadata, sizeof(metadata));
+    writer_.write_bytes(std::span{std::as_const(bytes)});
+    recorded_bytes_ += bytes.size();
+}
+
+void EvaluationProfile::write_cycle_end(EvaluationTime wall_clock_time) {
+    const auto checkpoint = read_checkpoint();
+    const auto metadata = CycleEndMetadata{
+        std::chrono::duration_cast<std::chrono::microseconds>(wall_clock_time.time_since_epoch()).count(),
+        steady_clock_nanoseconds()};
+    const auto record = std::array<std::byte, 28>{};
+    auto bytes = record;
+    std::memcpy(bytes.data(), &cycle_end_event, sizeof(cycle_end_event));
+    std::memcpy(bytes.data() + 4, &checkpoint, sizeof(checkpoint));
+    std::memcpy(bytes.data() + 12, &metadata, sizeof(metadata));
+    writer_.write_bytes(std::span{std::as_const(bytes)});
+    recorded_bytes_ += bytes.size();
+}
+
+void EvaluationProfile::destroy_uncommitted_labels() noexcept {
+    while (labels_.size() > committed_label_count_) {
+        std::destroy_at(labels_.back());
+        labels_.pop_back();
+    }
 }
 
 void EvaluationProfile::commit() noexcept {
     writer_.commit();
     committed_bytes_ = recorded_bytes_;
+    if (recording_taken_) {
+        labels_.clear();
+        committed_label_count_ = 0;
+        return;
+    }
+    committed_label_count_ = labels_.size();
 }
 
 void EvaluationProfile::fail() noexcept {
@@ -372,11 +443,10 @@ void EvaluationProfile::fail() noexcept {
         return;
     }
     failed_ = true;
+    destroy_uncommitted_labels();
     writer_.rollback();
     recorded_bytes_ = committed_bytes_;
     cycle_open_ = false;
-    graph_ids_.clear();
-    definitions_.clear();
 }
 
 void EvaluationProfile::finish() noexcept {
@@ -384,17 +454,26 @@ void EvaluationProfile::finish() noexcept {
         return;
     }
     if (cycle_open_) {
+        destroy_uncommitted_labels();
         writer_.rollback();
         recorded_bytes_ = committed_bytes_;
         cycle_open_ = false;
         failed_ = true;
-        graph_ids_.clear();
-        definitions_.clear();
     } else if (!failed_) {
-        writer_.commit();
-        committed_bytes_ = recorded_bytes_;
+        commit();
     }
     finished_ = true;
+}
+
+EvaluationProfile::~EvaluationProfile() noexcept {
+    if (recording_taken_) {
+        destroy_uncommitted_labels();
+        return;
+    }
+    while (!labels_.empty()) {
+        std::destroy_at(labels_.back());
+        labels_.pop_back();
+    }
 }
 
 } // namespace bg

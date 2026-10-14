@@ -4,6 +4,7 @@
 #include <bg/evaluation_context.hpp>
 #include <bg/global_state.hpp>
 #include <bg/graph/compiled_graph.hpp>
+#include <bg/graph/graph_instance_id.hpp>
 #include <bg/graph/dynamic_node_subscriber.hpp>
 #include <bg/graph/node.hpp>
 #include <bg/graph/runtime_graph_scheduling.hpp>
@@ -41,6 +42,9 @@ class RuntimeGraph {
     RuntimeGraph(const CompiledGraph &compiled_graph, allocator memory, std::span<std::byte> storage,
                  GlobalState &global_state,
                  std::optional<CompiledGraph::ScheduleWord> previous_input_validity = std::nullopt);
+    RuntimeGraph(const CompiledGraph &compiled_graph, allocator memory, std::span<std::byte> storage,
+                 GlobalState &global_state, GraphInstanceId instance_id,
+                 std::optional<CompiledGraph::ScheduleWord> previous_input_validity = std::nullopt);
     ~RuntimeGraph();
 
     // Borrowed storage is initialized once per runtime-graph instance and reused by temporary graph views. The caller
@@ -59,9 +63,9 @@ class RuntimeGraph {
     void start(EvaluationTime evaluation_time, GlobalState &global_state,
                const RuntimeGraphInput *inputs = nullptr);
     void start(EvaluationTime evaluation_time, EvaluationProfile &profile,
-               const RuntimeGraphInput *inputs = nullptr);
+               std::optional<Scalar<>> label = std::nullopt, const RuntimeGraphInput *inputs = nullptr);
     void start(EvaluationTime evaluation_time, GlobalState &global_state, EvaluationProfile &profile,
-               const RuntimeGraphInput *inputs = nullptr);
+               std::optional<Scalar<>> label = std::nullopt, const RuntimeGraphInput *inputs = nullptr);
     void stop(const RuntimeGraphInput *inputs = nullptr) noexcept;
     void stop(GlobalState &global_state, const RuntimeGraphInput *inputs = nullptr) noexcept;
     void stop(EvaluationProfile &profile, const RuntimeGraphInput *inputs = nullptr) noexcept;
@@ -76,6 +80,7 @@ class RuntimeGraph {
                   const RuntimeGraphInput *inputs = nullptr);
     std::optional<EvaluationTime> next_scheduled_time() const noexcept;
     EvaluationTime evaluation_time() const noexcept { return evaluation_time_; }
+    GraphInstanceId instance_id() const noexcept { return instance_id_; }
     GlobalState &global_state() const noexcept;
     bg::allocator &allocation() noexcept { return allocator_; }
     const bg::allocator &allocation() const noexcept { return allocator_; }
@@ -84,7 +89,8 @@ class RuntimeGraph {
     Node node(const CompiledNode &compiled_node) noexcept { return {compiled_node, storage_}; }
     const CompiledNode &compiled_node(std::size_t index) const noexcept { return compiled_graph_->node(index); }
 
-    void start(EvaluationContext &context, const RuntimeGraphInput *inputs = nullptr);
+    void start(EvaluationContext &context, const RuntimeGraphInput *inputs = nullptr,
+               std::optional<Scalar<>> label = std::nullopt);
     bool evaluate(EvaluationContext &context, const RuntimeGraphInput *inputs = nullptr);
     void stop(EvaluationContext &context, const RuntimeGraphInput *inputs = nullptr) noexcept;
     void finalize(EvaluationContext &context) noexcept;
@@ -170,6 +176,7 @@ class RuntimeGraph {
     const CompiledGraph *compiled_graph_;
     bg::allocator allocator_;
     RuntimeGraphEvaluator *evaluator_;
+    GraphInstanceId instance_id_;
     std::byte *storage_{};
     EvaluationTime last_evaluation_time_{MIN_DT};
     EvaluationTime evaluation_time_{MIN_DT};
@@ -188,6 +195,6 @@ class RuntimeGraph {
     SchedulingInfo inline_scheduling_{};
 };
 
-static_assert(sizeof(RuntimeGraph) == 88);
+static_assert(sizeof(RuntimeGraph) == 96);
 
 } // namespace bg

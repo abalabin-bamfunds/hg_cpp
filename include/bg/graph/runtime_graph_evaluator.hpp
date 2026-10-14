@@ -27,7 +27,8 @@ class RuntimeGraphEvaluator {
     void bind_owner(RuntimeGraph &graph, std::size_t node_index, RuntimeGraphSchedulingHandler handler);
     bool owner_bound() const noexcept { return parent_.get() != nullptr; }
 
-    void start(RuntimeGraph &graph, EvaluationContext &context, const RuntimeGraphInput *inputs);
+    void start(RuntimeGraph &graph, EvaluationContext &context, const RuntimeGraphInput *inputs,
+               std::optional<Scalar<>> label);
     static bool evaluate(RuntimeGraph &graph, EvaluationContext &context, const RuntimeGraphInput *inputs);
     void stop(RuntimeGraph &graph, EvaluationContext &context, const RuntimeGraphInput *inputs) noexcept;
 
@@ -38,7 +39,7 @@ class RuntimeGraphEvaluator {
                        const RuntimeGraphSchedulingCallbacks *callbacks);
     template <bool Profiled>
     static bool evaluate_graph(RuntimeGraph &graph, EvaluationContext &context, EvaluationProfile *profile,
-                               std::uint32_t graph_id, const RuntimeGraphInput *inputs);
+                               GraphInstanceId graph_id, const RuntimeGraphInput *inputs);
     void notify_scheduled(RuntimeGraph &graph) noexcept;
     void notify_timed_schedule_changed(RuntimeGraph &graph, std::optional<EvaluationTime> previous);
     RuntimeGraph &outer_graph(RuntimeGraph &graph) const noexcept;
@@ -62,8 +63,9 @@ class RuntimeGraphEvaluator {
     // The tag selects the callback owner; an untagged parent uses direct scheduling.
     util::tagged_ptr<RuntimeGraph, 1, bool> parent_;
     std::size_t owner_node_index_{};
+    EvaluationProfile *profile_{};
 };
 
-static_assert(sizeof(RuntimeGraphEvaluator) == 4 * sizeof(void *));
+static_assert(sizeof(RuntimeGraphEvaluator) == 5 * sizeof(void *));
 
 } // namespace bg

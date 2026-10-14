@@ -38,11 +38,11 @@ struct NestedGraphConstantInput {
 class NestedGraph {
   public:
     void start(const CompiledNestedGraph &compiled, RuntimeGraphEvaluator &evaluator, EvaluationContext &context,
-               std::span<const NestedGraphInput> inputs,
-               std::size_t child_token = 0);
+               std::span<const NestedGraphInput> inputs, std::size_t child_token = 0,
+               std::optional<Scalar<>> label = std::nullopt);
     void start(const CompiledNestedGraph &compiled, RuntimeGraphEvaluator &evaluator, EvaluationContext &context,
                std::span<const NestedGraphInput> inputs, std::span<const NestedGraphConstantInput> constants,
-               std::size_t child_token = 0);
+               std::size_t child_token = 0, std::optional<Scalar<>> label = std::nullopt);
     void update_inputs(const CompiledNestedGraph &compiled, std::span<const NestedGraphInput> inputs,
                        EvaluationContext &context);
     void update_input(const CompiledNestedGraph &compiled, std::size_t input_index, NestedGraphInput input,

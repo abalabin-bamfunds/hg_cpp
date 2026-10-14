@@ -120,6 +120,7 @@ The context provides:
 
 - the evaluation time
 - a wall-clock observation through `WallClock::now()`
+- the active `EvaluationProfile`, or `nullptr` when profiling is disabled
 - the current runtime graph and node index
 - access to the runtime graph's `bg::allocator`
 - temporary scratch storage for the current node invocation
@@ -233,21 +234,34 @@ the evaluator does not execute the recording path.
 The caller transfers the recording buffer once with `take_recording()` and can
 poll it through `EvaluationProfileReader` on another thread. A completed outer
 cycle commits its records together. An incomplete outer cycle is rolled back
-and disables further recording. The profile emits node paths once per
-definition ID, graph start and stop records for each runtime graph instance,
-outer-cycle boundaries, and a checkpoint for each completed evaluation request,
-including one for a node with no evaluation function. A graph start identifies its
-compiled graph, parent graph instance, and owning node. Runtime graph IDs
-distinguish sibling instances; the stream does not label map branches by key.
+and disables further recording. The profile writes graph start and stop records
+for each runtime graph instance, graph-entry and graph-exit records for nested
+graph evaluation calls, outer-cycle boundaries, and a checkpoint after each
+scheduled node with valid inputs and an evaluation request, including nodes
+with no evaluation function. Nested graph entry and exit records also bracket
+pending and resumed evaluations. The outer-cycle boundaries establish and
+release the root graph scope; the reader uses that scope and the nested graph
+stack to associate node checkpoints with graph instances.
+
+A graph-start record identifies its `CompiledGraph`, parent graph instance, and
+owning node. It can also carry a scalar label; map branches use their key as the
+label. The `CompiledGraph` objects must remain alive until the reader has
+consumed records that refer to them. Labels are typed values stored in the
+recording. The reader destroys unread labels when it is destroyed. If the
+caller transfers a recording containing labels, it must consume it through a
+reader; dropping the raw buffer without a reader does not destroy typed labels.
+`recorded_bytes()` counts record payload bytes and excludes buffer alignment
+padding and unused block capacity.
 
 On x86, node checkpoints use the timestamp counter. Other targets use
-`steady_clock` nanoseconds. Each cycle boundary also records the evaluation
-time, `WallClock::now()`, and a steady-clock reading. A node checkpoint marks
-completion before output publication. The interval since the preceding
-checkpoint includes intervening publication and scheduling, so it is not an
-isolated node-function duration. Timestamp-counter values are comparable across
-thread migration only when the system synchronizes its counters across cores.
-The reader reports the checkpoint clock.
+`steady_clock` nanoseconds. The cycle-start record stores evaluation time,
+`WallClock::now()`, and a steady-clock reading. The cycle-end record stores the
+two clock readings; the reader carries evaluation time from the start record.
+A node checkpoint marks completion before output publication. The interval
+since the preceding checkpoint includes intervening publication and
+scheduling, so it is not an isolated node-function duration. Timestamp-counter
+values are comparable across thread migration only when the system synchronizes
+its counters across cores. The reader reports the checkpoint clock.
 
 The caller calls `finish()` after stop to publish remaining lifecycle records
 and checks `failed()` to detect an incomplete recording. Recording failure or

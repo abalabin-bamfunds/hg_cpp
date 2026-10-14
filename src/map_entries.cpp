@@ -26,7 +26,7 @@ void MapEntries::bind_evaluator(EvaluationContext &context, RuntimeGraphScheduli
 
 void MapEntries::start(Entry &entry, const CompiledNestedGraph &compiled, EvaluationContext &context,
                        std::span<const NestedGraphInput> inputs, std::span<const NestedGraphConstantInput> constants) {
-    entry.inner_graph.start(compiled, evaluator_, context, inputs, constants, entry.branch_id);
+    entry.inner_graph.start(compiled, evaluator_, context, inputs, constants, entry.branch_id, key(entry));
     mark_ready(entry);
 }
 

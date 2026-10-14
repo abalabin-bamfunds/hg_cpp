@@ -71,6 +71,45 @@ TEST_CASE("an unsized write spanning blocks becomes readable on commit", "[cover
     CHECK(reader.readable().empty());
 }
 
+TEST_CASE("a fixed-size write copies within the current block", "[coverage-exempt]") {
+    auto data = bg::util::buffer::contiguous(8);
+    bg::util::buffer_writer writer{data};
+    const auto expected = std::array{std::byte{1}, std::byte{2}, std::byte{3}, std::byte{4},
+                                     std::byte{5}, std::byte{6}, std::byte{7}, std::byte{8}};
+
+    writer.write_bytes(std::span{std::as_const(expected)});
+    writer.commit();
+
+    CHECK(data.size() == expected.size());
+    CHECK(std::memcmp(data.bytes().data(), expected.data(), expected.size()) == 0);
+}
+
+TEST_CASE("a fixed-size write falls back to split a chain write", "[coverage-exempt]") {
+    auto data = bg::util::buffer::chain(4);
+    bg::util::buffer_writer writer{data};
+    bg::util::buffer_reader reader{data};
+    const auto expected = std::array{std::byte{1}, std::byte{2}, std::byte{3}, std::byte{4}, std::byte{5},
+                                     std::byte{6}, std::byte{7}, std::byte{8}, std::byte{9}, std::byte{10}};
+
+    writer.write_bytes(std::span{std::as_const(expected)});
+    CHECK(reader.readable().empty());
+    writer.commit();
+
+    auto actual = std::array<std::byte, expected.size()>{};
+    reader.read_bytes(actual);
+    CHECK(actual == expected);
+}
+
+TEST_CASE("a fixed-size write rejects insufficient contiguous capacity", "[coverage-exempt]") {
+    auto data = bg::util::buffer::contiguous(8);
+    bg::util::buffer_writer writer{data};
+    const auto bytes = std::array<std::byte, 9>{};
+
+    CHECK_THROWS_AS(writer.write_bytes(std::span{std::as_const(bytes)}), std::length_error);
+    writer.commit();
+    CHECK(data.size() == 0);
+}
+
 TEST_CASE("a buffer writer rolls back an uncommitted chain write", "[coverage-exempt]") {
     auto data = bg::util::buffer::chain(16);
     bg::util::buffer_writer writer{data};

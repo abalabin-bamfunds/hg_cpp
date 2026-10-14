@@ -11,14 +11,14 @@ namespace bg {
 
 void NestedGraph::start(const CompiledNestedGraph &compiled, RuntimeGraphEvaluator &evaluator,
                         EvaluationContext &context, std::span<const NestedGraphInput> inputs,
-                        std::size_t child_token) {
-    start(compiled, evaluator, context, inputs, {}, child_token);
+                        std::size_t child_token, std::optional<Scalar<>> label) {
+    start(compiled, evaluator, context, inputs, {}, child_token, std::move(label));
 }
 
 void NestedGraph::start(const CompiledNestedGraph &compiled, RuntimeGraphEvaluator &evaluator,
                         EvaluationContext &context,
                         std::span<const NestedGraphInput> inputs, std::span<const NestedGraphConstantInput> constants,
-                        std::size_t child_token) {
+                        std::size_t child_token, std::optional<Scalar<>> label) {
     if (active_ != nullptr) {
         throw std::logic_error{"the nested graph is already running"};
     }
@@ -43,7 +43,7 @@ void NestedGraph::start(const CompiledNestedGraph &compiled, RuntimeGraphEvaluat
         active_->initialize_constant_output(compiled.constant_input_nodes[i], constants[i].value,
                                             context.evaluation_time());
     }
-    active_->start(context);
+    active_->start(context, nullptr, std::move(label));
     active_->set_owner_scheduling_suppressed(false);
     rollback.release();
 }

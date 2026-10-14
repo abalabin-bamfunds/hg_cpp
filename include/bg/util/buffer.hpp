@@ -281,6 +281,22 @@ class buffer_writer {
         }
     }
 
+    template <std::size_t Size> void write_bytes(std::span<const std::byte, Size> bytes) {
+        if constexpr (Size == 0) {
+            return;
+        }
+
+        auto *block = pending_tail_ == nullptr ? block_.pointer().base_block() : pending_tail_;
+        const auto available = buffer::block_end(block) - position_;
+        if (Size <= available) {
+            std::memcpy(block->at(position_), bytes.data(), Size);
+            position_ += Size;
+            return;
+        }
+
+        write_bytes(std::span<const std::byte>{bytes.data(), Size});
+    }
+
     template <typename T, typename... Args> T &emplace(Args &&...args) {
         details::require_supported_alignment(alignof(T));
 
