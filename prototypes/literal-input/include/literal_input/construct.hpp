@@ -10,7 +10,7 @@
 #include <span>
 #include <stdexcept>
 
-namespace literal_input {
+namespace literal {
 namespace details {
 
 class ConstructionContext {
@@ -78,4 +78,4 @@ template <typename T> [[nodiscard]] bg::ScalarValue<T> construct(const ScalarLit
                                                 memory);
 }
 
-} // namespace literal_input
+} // namespace literal

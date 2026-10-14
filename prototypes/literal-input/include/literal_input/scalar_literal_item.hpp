@@ -12,7 +12,7 @@
 #include <type_traits>
 #include <utility>
 
-namespace literal_input {
+namespace literal {
 
 class ScalarLiteralItem {
   private:
@@ -95,4 +95,4 @@ class ScalarLiteralItem {
 
 static_assert(sizeof(ScalarLiteralItem) == 2 * sizeof(void *));
 
-} // namespace literal_input
+} // namespace literal

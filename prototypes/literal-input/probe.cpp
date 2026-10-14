@@ -66,13 +66,13 @@ void free_function_visitor(const bg::Scalar<std::int64_t> *source) {
     ++free_function_visits;
 }
 
-void visit_tree(const literal_input::ScalarLiteral &element, bg::ScalarVisitTypes &scalar_types,
+void visit_tree(const literal::ScalarLiteral &element, bg::ScalarVisitTypes &scalar_types,
                 std::int64_t &sum, std::size_t &leaves) {
     element.visit(
-        [&](const literal_input::ScalarLiteralItem &source) {
+        [&](const literal::ScalarLiteralItem &source) {
             source.accept(scalar_types);
         },
-        [&](std::span<const literal_input::ScalarLiteral> children) {
+        [&](std::span<const literal::ScalarLiteral> children) {
             for (const auto &child : children) {
                 visit_tree(child, scalar_types, sum, leaves);
             }
@@ -88,7 +88,7 @@ struct NoncopyableLeafVisitor {
     NoncopyableLeafVisitor(const NoncopyableLeafVisitor &) = delete;
     NoncopyableLeafVisitor(NoncopyableLeafVisitor &&) noexcept = default;
 
-    void operator()(const literal_input::ScalarLiteralItem &) const { ++*calls; }
+    void operator()(const literal::ScalarLiteralItem &) const { ++*calls; }
 };
 
 struct ShapeStats {
@@ -147,10 +147,10 @@ struct ListItemConstruction {
     }
 };
 
-void inspect_shape(const literal_input::ScalarLiteral &element, ShapeStats &stats) {
+void inspect_shape(const literal::ScalarLiteral &element, ShapeStats &stats) {
     element.visit(
-        [&](const literal_input::ScalarLiteralItem &) { ++stats.leaves; },
-        [&](std::span<const literal_input::ScalarLiteral> children) {
+        [&](const literal::ScalarLiteralItem &) { ++stats.leaves; },
+        [&](std::span<const literal::ScalarLiteral> children) {
             ++stats.sequences;
             if (children.empty()) {
                 ++stats.empty_sequences;
@@ -161,13 +161,13 @@ void inspect_shape(const literal_input::ScalarLiteral &element, ShapeStats &stat
         });
 }
 
-ShapeStats inspect_shape(const literal_input::ScalarLiteral &element) {
+ShapeStats inspect_shape(const literal::ScalarLiteral &element) {
     auto stats = ShapeStats{};
     inspect_shape(element, stats);
     return stats;
 }
 
-void require_same_descriptor(const literal_input::ScalarLiteralItem &source, const bg::ScalarData &expected) {
+void require_same_descriptor(const literal::ScalarLiteralItem &source, const bg::ScalarData &expected) {
     source.visit([&](auto *view) {
         const auto &actual = bg::details::scalar_data(*view);
         require(&actual.runtime_type() == &expected.runtime_type(), "runtime type identity was not preserved");
@@ -245,20 +245,20 @@ void verify_scalar_dispatch() {
     const auto hierarchical = bg::bundle<ProbeBundle>(memory);
     const auto provider_value = value{42};
 
-    literal_input::ScalarLiteralItem{byte}.visit(visitor);
-    literal_input::ScalarLiteralItem{boolean}.visit(visitor);
-    literal_input::ScalarLiteralItem{builtin}.visit(visitor);
-    literal_input::ScalarLiteralItem{real}.visit(visitor);
-    literal_input::ScalarLiteralItem{date_time}.visit(visitor);
-    literal_input::ScalarLiteralItem{timedelta}.visit(visitor);
-    literal_input::ScalarLiteralItem{string}.visit(visitor);
-    literal_input::ScalarLiteralItem{symbol}.visit(visitor);
-    literal_input::ScalarLiteralItem{list}.visit(visitor);
-    literal_input::ScalarLiteralItem{set}.visit(visitor);
-    literal_input::ScalarLiteralItem{dict}.visit(visitor);
-    literal_input::ScalarLiteralItem{structure}.visit(visitor);
-    literal_input::ScalarLiteralItem{hierarchical}.visit(visitor);
-    literal_input::ScalarLiteralItem{provider_value}.visit(visitor);
+    literal::ScalarLiteralItem{byte}.visit(visitor);
+    literal::ScalarLiteralItem{boolean}.visit(visitor);
+    literal::ScalarLiteralItem{builtin}.visit(visitor);
+    literal::ScalarLiteralItem{real}.visit(visitor);
+    literal::ScalarLiteralItem{date_time}.visit(visitor);
+    literal::ScalarLiteralItem{timedelta}.visit(visitor);
+    literal::ScalarLiteralItem{string}.visit(visitor);
+    literal::ScalarLiteralItem{symbol}.visit(visitor);
+    literal::ScalarLiteralItem{list}.visit(visitor);
+    literal::ScalarLiteralItem{set}.visit(visitor);
+    literal::ScalarLiteralItem{dict}.visit(visitor);
+    literal::ScalarLiteralItem{structure}.visit(visitor);
+    literal::ScalarLiteralItem{hierarchical}.visit(visitor);
+    literal::ScalarLiteralItem{provider_value}.visit(visitor);
 
     require(byte_called, "byte scalar view was not dispatched");
     require(boolean_called, "boolean scalar view was not dispatched");
@@ -276,7 +276,7 @@ void verify_scalar_dispatch() {
     require(extension_called, "extension scalar fallback was not dispatched through borrow_value");
 
     const auto native_structure = ReferenceAggregate{.quantity = 11, .price = 12.5};
-    literal_input::ScalarLiteralItem{native_structure}.visit(
+    literal::ScalarLiteralItem{native_structure}.visit(
         [&](const bg::Scalar<bg::STRUCT> *view) {
             const auto &descriptor = bg::details::scalar_data(*view);
             require(descriptor.data_word() == reinterpret_cast<std::uintptr_t>(&native_structure),
@@ -287,7 +287,7 @@ void verify_scalar_dispatch() {
         ddv::noop);
 
     const auto same_type_provider = copy_only_value{73};
-    literal_input::ScalarLiteralItem{same_type_provider}.visit(
+    literal::ScalarLiteralItem{same_type_provider}.visit(
         [&](const bg::Scalar<> *view) {
             const auto &descriptor = bg::details::scalar_data(*view);
             require(descriptor.data_word() == reinterpret_cast<std::uintptr_t>(&same_type_provider),
@@ -299,7 +299,7 @@ void verify_scalar_dispatch() {
 }
 
 void verify_literal_construction() {
-    using literal_input::ScalarLiteral;
+    using literal::ScalarLiteral;
     using Inner = bg::List<bg::i64>;
     using Nested = bg::List<Inner>;
 
@@ -316,8 +316,8 @@ void verify_literal_construction() {
     auto resource = CountingMemoryResource{};
     auto memory = bg::allocator{resource};
     {
-        const auto runtime_only = literal_input::construct(composed_outer, {{1, 2}, {}, {3, 4}}, memory);
-        const auto typed = literal_input::construct<Nested>({{1, 2}, {}, {3, 4}}, memory);
+        const auto runtime_only = literal::construct(composed_outer, {{1, 2}, {}, {3, 4}}, memory);
+        const auto typed = literal::construct<Nested>({{1, 2}, {}, {3, 4}}, memory);
         const auto runtime_view = bg::unchecked_scalar_cast<Nested>(runtime_only.view());
         require(runtime_view.size() == 3 && runtime_view[0].size() == 2 &&
                     runtime_view[0][1].value() == 2 && runtime_view[1].empty() &&
@@ -329,21 +329,21 @@ void verify_literal_construction() {
         require(typed.view()[1].empty(), "empty nested literal was not preserved");
         require(typed.view()[2][1].value() == 4, "nested literal produced the wrong final value");
 
-        const auto empty = literal_input::construct<bg::List<bg::i64>>(ScalarLiteral{}, memory);
+        const auto empty = literal::construct<bg::List<bg::i64>>(ScalarLiteral{}, memory);
         require(empty.view().empty(), "empty literal did not construct an empty list");
-        const auto nested_empty = literal_input::construct<Nested>(ScalarLiteral{{}, {}}, memory);
+        const auto nested_empty = literal::construct<Nested>(ScalarLiteral{{}, {}}, memory);
         require(nested_empty.view().size() == 2 && nested_empty.view()[0].empty() &&
                     nested_empty.view()[1].empty(),
                 "nested empty lists were not preserved");
 
-        const auto deeper = literal_input::construct<bg::List<bg::List<Inner>>>(
+        const auto deeper = literal::construct<bg::List<bg::List<Inner>>>(
             ScalarLiteral{{{1, 2}, {}}, {}, {{3}}}, memory);
         require(deeper.view().size() == 3 && deeper.view()[0].size() == 2 &&
                     deeper.view()[0][0].size() == 2 && deeper.view()[0][1].empty() &&
                     deeper.view()[1].empty() && deeper.view()[2][0][0].value() == 3,
                 "three-level list literal did not preserve its nested shape");
 
-        const auto text = literal_input::construct<bg::List<bg::string>>(
+        const auto text = literal::construct<bg::List<bg::string>>(
             ScalarLiteral{std::string{"temporary text"}, std::string{"another temporary"}}, memory);
         require(text.view().size() == 2 && text.view()[0].value() == "temporary text" &&
                     text.view()[1].value() == "another temporary",
@@ -351,7 +351,7 @@ void verify_literal_construction() {
 
         auto shape_mismatch_threw = false;
         try {
-            (void)literal_input::construct<bg::i64>(ScalarLiteral{1, 2}, memory);
+            (void)literal::construct<bg::i64>(ScalarLiteral{1, 2}, memory);
         } catch (const std::invalid_argument &) {
             shape_mismatch_threw = true;
         }
@@ -359,7 +359,7 @@ void verify_literal_construction() {
 
         auto child_failure_threw = false;
         try {
-            (void)literal_input::construct<bg::List<bg::i64>>(
+            (void)literal::construct<bg::List<bg::i64>>(
                 ScalarLiteral{std::string{"not an integer"}}, memory);
         } catch (const std::invalid_argument &) {
             child_failure_threw = true;
@@ -377,13 +377,13 @@ void verify_literal_construction() {
         bg::resolve_scalar_runtime_type(provider_type, provider_available));
     auto provider_storage = test_scalar_provider::storage{.number = 47};
     const auto provider_view = bg::Scalar<ProviderValue>::from(provider_runtime, &provider_storage);
-    const auto provider_result = literal_input::construct(composed_provider, ScalarLiteral{provider_view});
+    const auto provider_result = literal::construct(composed_provider, ScalarLiteral{provider_view});
     const auto provider_list = bg::unchecked_scalar_cast<bg::List<ProviderValue>>(provider_result.view());
     require(&provider_list[0].runtime_type() == &provider_runtime,
             "runtime-only list construction lost the provider runtime identity");
     require(provider_list[0].value().get() == 47, "runtime-only provider list changed the leaf value");
 
-    const auto raw_provider_result = literal_input::construct(
+    const auto raw_provider_result = literal::construct(
         test_scalar_provider::immutable_snapshot_runtime_type(),
         ScalarLiteral(ProviderValue{.number = 51}));
     require(&raw_provider_result.runtime_type() == &test_scalar_provider::immutable_snapshot_runtime_type(),
@@ -394,7 +394,7 @@ void verify_literal_construction() {
     auto alternative_storage = test_scalar_provider::storage{.number = 53};
     const auto alternative_source = bg::Scalar<ProviderValue>::from(
         test_scalar_provider::canonicalizing_runtime_type(), &alternative_storage);
-    const auto alternative_result = literal_input::construct(
+    const auto alternative_result = literal::construct(
         test_scalar_provider::immutable_snapshot_runtime_type(), ScalarLiteral(alternative_source));
     require(bg::details::scalar_data(alternative_source).mode() == bg::ScalarDataMode::stored_view &&
                 &bg::details::scalar_data(alternative_source).runtime_type() ==
@@ -417,7 +417,7 @@ void verify_literal_construction() {
     auto tracked_resource = CountingMemoryResource{};
     auto tracked_memory = bg::allocator{tracked_resource};
     {
-        const auto tracked = literal_input::construct<ItemList>(
+        const auto tracked = literal::construct<ItemList>(
             ScalarLiteral{sources[0], sources[1], sources[2], sources[3], sources[4],
                           sources[5], sources[6], sources[7], sources[8]},
             tracked_memory);
@@ -436,7 +436,7 @@ void verify_literal_construction() {
     const auto destructions_before_failure = CopyTracked::destructions;
     auto partial_failure_threw = false;
     try {
-        (void)literal_input::construct<ItemList>(
+        (void)literal::construct<ItemList>(
             ScalarLiteral{sources[0], sources[1], std::string{"incompatible child"}}, failure_memory);
     } catch (const std::invalid_argument &) {
         partial_failure_threw = true;
@@ -456,7 +456,7 @@ void verify_literal_construction() {
     const auto nested_destructions_before = CopyTracked::destructions;
     auto nested_failure_threw = false;
     try {
-        (void)literal_input::construct<NestedItemList>(
+        (void)literal::construct<NestedItemList>(
             ScalarLiteral{{sources[0]}, {sources[1], std::string{"incompatible nested child"}}},
             nested_failure_memory);
     } catch (const std::invalid_argument &) {
@@ -505,7 +505,7 @@ void verify_late_list_emplacement_failure(const bg::ScalarListRuntimeType &runti
 }
 
 void verify_list_emplacement_failure_cleanup() {
-    using literal_input::ScalarLiteral;
+    using literal::ScalarLiteral;
     const auto integer = bg::ScalarValue<bg::i64>{37};
     verify_late_list_emplacement_failure(
         static_cast<const bg::ScalarListRuntimeType &>(bg::cpp_scalar_runtime_type<bg::List<bg::i64>>()),
@@ -610,8 +610,8 @@ void operator delete[](void *memory, std::size_t, std::align_val_t alignment) no
 }
 
 int main() {
-    using literal_input::ScalarLiteral;
-    using literal_input::ScalarLiteralItem;
+    using literal::ScalarLiteral;
+    using literal::ScalarLiteralItem;
 
     const auto input = std::int64_t{41};
     allocation_count.store(0, std::memory_order_relaxed);

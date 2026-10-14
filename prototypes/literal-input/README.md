@@ -44,7 +44,7 @@ runtime-only overload takes the destination runtime type. Both use the engine's
 borrowed `ScalarConstruction` callback and recursively initialize nested lists:
 
 ```cpp
-auto nested = literal_input::construct<bg::List<bg::List<bg::i64>>>(
+auto nested = literal::construct<bg::List<bg::List<bg::i64>>>(
     {{1, 2}, {}, {3}});
 
 const auto &item_runtime = bg::cpp_scalar_runtime_type<bg::i64>();
@@ -54,7 +54,7 @@ const auto &inner_runtime = bg::resolve_scalar_runtime_type(inner_type, inner_av
 const auto &outer_type = bg::list_scalar_type(inner_type);
 const auto outer_available = std::array<const bg::ScalarRuntimeType *, 1>{&inner_runtime};
 const auto &runtime_type = bg::resolve_scalar_runtime_type(outer_type, outer_available);
-auto erased = literal_input::construct(runtime_type, {{1, 2}, {}, {3}});
+auto erased = literal::construct(runtime_type, {{1, 2}, {}, {3}});
 ```
 
 Construction dispatches each scalar leaf through `ScalarRuntimeType::construct_from_input`.

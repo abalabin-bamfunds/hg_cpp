@@ -3,8 +3,8 @@
 #include <literal_input/literal.hpp>
 #include <literal_input/scalar_literal_item.hpp>
 
-namespace literal_input {
+namespace literal {
 
 using ScalarLiteral = Literal<ScalarLiteralItem>;
 
-} // namespace literal_input
+} // namespace literal

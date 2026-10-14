@@ -9,7 +9,7 @@
 #include <utility>
 #include <variant>
 
-namespace literal_input {
+namespace literal {
 
 template <typename Leaf> class Literal {
   public:
@@ -40,4 +40,4 @@ template <typename Leaf> class Literal {
     std::variant<Leaf, sequence_type> value_{std::in_place_index<1>};
 };
 
-} // namespace literal_input
+} // namespace literal
