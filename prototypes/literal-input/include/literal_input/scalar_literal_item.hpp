@@ -7,8 +7,8 @@
 #include <bg/scalar/value.hpp>
 
 #include <concepts>
-#include <functional>
 #include <memory>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 
@@ -16,13 +16,19 @@ namespace literal_input {
 
 class ScalarLiteralItem {
   private:
-    using ErasedVisitor = void (*)(void *, const bg::ScalarData &);
-    using Visit = void (*)(const void *, void *, ErasedVisitor);
+    using Visit = void (*)(const void *, bg::ScalarVisitTypes &);
+
+    template <typename Source>
+    static constexpr bool supported_provider =
+        bg::scalar_type_mapped<Source> && requires(const Source &source) {
+            typename bg::scalar_storage_traits<Source>::value_type;
+            requires std::constructible_from<typename bg::scalar_storage_traits<Source>::value_type, const Source &>;
+        };
 
     template <typename Source>
     static constexpr bool supported_source =
         bg::scalar_source<Source> || std::same_as<Source, bg::ScalarData> ||
-        requires(const Source &source) { bg::details::scalar_data(source); };
+        requires(const Source &source) { bg::details::scalar_data(source); } || supported_provider<Source>;
 
   public:
     template <typename Source>
@@ -30,29 +36,56 @@ class ScalarLiteralItem {
     ScalarLiteralItem(const Source &source) noexcept
         : source_{std::addressof(source)}, visit_{&visit_source<std::remove_cv_t<Source> >} {}
 
-    template <typename Visitor> void visit(Visitor &&visitor) const {
-        using VisitorType = std::remove_reference_t<Visitor>;
-        struct VisitorContext {
-            VisitorType *visitor;
-        } visitor_context{std::addressof(visitor)};
-        visit_(source_, std::addressof(visitor_context), [](void *context, const bg::ScalarData &source) {
-            auto &visitor = *static_cast<VisitorContext *>(context)->visitor;
-            std::invoke(visitor, source);
-        });
+    void accept(bg::ScalarVisitTypes &visitor) const { visit_(source_, visitor); }
+
+    template <typename Visitor, typename... Arguments>
+        requires ddv::SerialVisitorType<std::remove_cvref_t<Visitor>>
+    auto visit(Visitor &&visitor, Arguments &&...arguments) const {
+        auto dispatch = ddv::make_visitable_visitor<bg::ScalarVisitTypes>(
+            std::forward_as_tuple(std::forward<Arguments>(arguments)...), std::forward<Visitor>(visitor));
+        auto &types = static_cast<bg::ScalarVisitTypes &>(dispatch);
+        accept(types);
+        if constexpr (!decltype(dispatch)::is_result_void) {
+            return *dispatch;
+        }
+    }
+
+    template <typename Function, typename... Functions>
+    decltype(auto) visit(Function &&function, Functions &&...functions) const {
+        return visit(ddv::serial{std::forward<Function>(function), std::forward<Functions>(functions)...});
     }
 
   private:
-    template <typename Source> static void visit_source(const void *source, void *context, ErasedVisitor visitor) {
+    template <typename ScalarType, typename Source>
+    static void visit_value(const Source &source, bg::ScalarVisitTypes &visitor) {
+        using Value = typename bg::scalar_storage_traits<ScalarType>::value_type;
+        if constexpr (std::same_as<std::remove_cvref_t<Source>, std::remove_cvref_t<Value>>) {
+            const auto descriptor = bg::details::make_scalar_source<ScalarType>(source);
+            auto scalar = bg::Scalar<>::from(descriptor);
+            scalar.accept(visitor);
+        } else {
+            Value adapted(source);
+            const auto descriptor = bg::details::make_scalar_source<ScalarType>(adapted);
+            auto scalar = bg::Scalar<>::from(descriptor);
+            scalar.accept(visitor);
+        }
+    }
+
+    template <typename Source> static void visit_source(const void *source, bg::ScalarVisitTypes &visitor) {
         const auto &value = *static_cast<const Source *>(source);
         if constexpr (std::same_as<Source, bg::ScalarData>) {
-            visitor(context, value);
+            auto scalar = bg::Scalar<>::from(value);
+            scalar.accept(visitor);
         } else if constexpr (requires { bg::details::scalar_data(value); }) {
-            visitor(context, bg::details::scalar_data(value));
-        } else {
+            auto scalar = bg::Scalar<>::from(bg::details::scalar_data(value));
+            scalar.accept(visitor);
+        } else if constexpr (bg::scalar_source<Source>) {
             using ScalarType = bg::canonical_scalar_t<Source>;
             decltype(auto) canonical = bg::canonical_scalar(value);
-            const auto descriptor = bg::details::make_scalar_source<ScalarType>(canonical);
-            visitor(context, descriptor);
+            visit_value<ScalarType>(canonical, visitor);
+        } else {
+            using ScalarType = std::remove_cv_t<Source>;
+            visit_value<ScalarType>(value, visitor);
         }
     }
 

@@ -40,6 +40,14 @@ typed atomic view. Other leaf scalar types use the erased view. Generic node cod
 can use this interface without inspecting the semantic type. The selected view
 is valid for the visitor callback.
 
+`Scalar<>::accept(ScalarVisitTypes&)` is the engine entry point for a
+caller-owned DDV mux, which can be reused across values. `Scalar::visit()`
+constructs a DDV adapter and delegates dispatch to it.
+
+`Scalar<>::from(const ScalarData&)` is an engine and provider API. It requires a
+non-empty descriptor and preserves its runtime type, mode, and payload. The
+view retains no owner; referenced storage must remain valid while it is used.
+
 ## Built-in declarations
 
 The built-in atomic declarations are `byte`, `bool`, `i64`, `double`,

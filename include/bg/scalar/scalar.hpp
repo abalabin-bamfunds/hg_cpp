@@ -19,6 +19,20 @@ namespace bg {
 
 template <typename T> class Scalar;
 template <typename T = void> class ScalarValue;
+template <typename T> class List;
+template <typename T> class Set;
+template <typename K, typename V> class Dict;
+
+namespace details {
+
+template <typename... Builtins>
+auto scalar_visit_types(tp::tpack<Builtins...>)
+    -> ddv::mux<Scalar<List<SCALAR>>, Scalar<Set<SCALAR>>, Scalar<Dict<SCALAR, SCALAR>>, Scalar<HIERARCHICAL>,
+                Scalar<STRUCT>, Scalar<Builtins>..., Scalar<>>;
+
+} // namespace details
+
+using ScalarVisitTypes = decltype(details::scalar_visit_types(details::builtin_scalar_declarations));
 
 namespace details {
 
@@ -101,6 +115,9 @@ template <typename T> class Scalar {
         requires ddv::SerialVisitorType<std::remove_cvref_t<Visitor>>
     auto visit(Visitor &&visitor, Arguments &&...arguments) const;
 
+    // Dispatch this scalar to a reusable visitor mux. Providers use this when they own the mux lifecycle.
+    void accept(ScalarVisitTypes &visitor) const;
+
     template <typename Function, typename... Functions>
     decltype(auto) visit(Function &&function, Functions &&...functions) const {
         return visit(ddv::serial{std::forward<Function>(function), std::forward<Functions>(functions)...});
@@ -140,6 +157,13 @@ template <typename T> class Scalar {
 
     template <typename Source> static Scalar from(const ScalarValue<Source> &&) = delete;
 
+    // Borrow an existing runtime descriptor without changing its representation or ownership mode.
+    [[nodiscard]] static Scalar from(const ScalarData &value) noexcept
+        requires std::same_as<T, void>
+    {
+        return Scalar{value};
+    }
+
     [[nodiscard]] static Scalar from(const ScalarRuntimeType &runtime_type, const void *data) noexcept {
         return Scalar{runtime_type.borrow(data)};
     }
@@ -164,24 +188,7 @@ template <typename T> class Scalar {
 
 namespace bg {
 
-namespace details {
-
-template <typename... Builtins>
-auto scalar_visit_types(tp::tpack<Builtins...>)
-    -> ddv::mux<Scalar<List<SCALAR>>, Scalar<Set<SCALAR>>, Scalar<Dict<SCALAR, SCALAR>>, Scalar<HIERARCHICAL>,
-                Scalar<STRUCT>, Scalar<Builtins>..., Scalar<>>;
-
-} // namespace details
-
-using ScalarVisitTypes = decltype(details::scalar_visit_types(details::builtin_scalar_declarations));
-
-template <typename T>
-template <typename Visitor, typename... Arguments>
-    requires ddv::SerialVisitorType<std::remove_cvref_t<Visitor>>
-auto Scalar<T>::visit(Visitor &&visitor, Arguments &&...arguments) const {
-    auto dispatch = ddv::make_visitable_visitor<ScalarVisitTypes>(
-        std::forward_as_tuple(std::forward<Arguments>(arguments)...), std::forward<Visitor>(visitor));
-    auto &types = static_cast<ScalarVisitTypes &>(dispatch);
+template <typename T> void Scalar<T>::accept(ScalarVisitTypes &types) const {
     const auto &semantic_type = type();
     semantic_type.visit(
         [&]<typename RuntimeType>(const RuntimeType *runtime_type) {
@@ -200,6 +207,16 @@ auto Scalar<T>::visit(Visitor &&visitor, Arguments &&...arguments) const {
             }
         },
         ddv::noop);
+}
+
+template <typename T>
+template <typename Visitor, typename... Arguments>
+    requires ddv::SerialVisitorType<std::remove_cvref_t<Visitor>>
+auto Scalar<T>::visit(Visitor &&visitor, Arguments &&...arguments) const {
+    auto dispatch = ddv::make_visitable_visitor<ScalarVisitTypes>(
+        std::forward_as_tuple(std::forward<Arguments>(arguments)...), std::forward<Visitor>(visitor));
+    auto &types = static_cast<ScalarVisitTypes &>(dispatch);
+    accept(types);
     if constexpr (!decltype(dispatch)::is_result_void) {
         return *dispatch;
     }

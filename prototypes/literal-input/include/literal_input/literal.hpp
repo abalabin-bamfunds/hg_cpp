@@ -1,7 +1,8 @@
 #pragma once
 
+#include <ddv/serial_visitor.h>
+
 #include <concepts>
-#include <functional>
 #include <initializer_list>
 #include <span>
 #include <type_traits>
@@ -24,18 +25,15 @@ template <typename Leaf> class Literal {
                  (!std::same_as<std::remove_cvref_t<Source>, Literal>)
     Literal(Source &&source) : value_{std::in_place_index<0>, std::forward<Source>(source)} {}
 
-    template <typename LeafVisitor, typename SequenceVisitor>
-    void visit(LeafVisitor &&visit_leaf, SequenceVisitor &&visit_sequence) const {
-        std::visit(
-            [&](const auto &value) {
-                using Value = std::remove_cvref_t<decltype(value)>;
-                if constexpr (std::same_as<Value, Leaf>) {
-                    std::invoke(visit_leaf, value);
-                } else {
-                    std::invoke(visit_sequence, value);
-                }
-            },
-            value_);
+    template <typename Visitor, typename... Arguments>
+        requires ddv::SerialVisitorType<std::remove_cvref_t<Visitor>>
+    decltype(auto) visit(Visitor &&visitor, Arguments &&...arguments) const {
+        return std::forward<Visitor>(visitor).visit(value_, std::forward<Arguments>(arguments)...);
+    }
+
+    template <typename Function, typename... Functions>
+    decltype(auto) visit(Function &&function, Functions &&...functions) const {
+        return visit(ddv::serial{std::forward<Function>(function), std::forward<Functions>(functions)...});
     }
 
   private:

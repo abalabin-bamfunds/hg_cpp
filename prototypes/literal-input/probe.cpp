@@ -1,9 +1,13 @@
 #include <literal_input/scalar_literal.hpp>
 
 #include <bg/scalar/details/value_access.hpp>
+#include <bg/scalar/bundle/value.hpp>
 #include <bg/scalar/value.hpp>
+#include "test_scalar_provider.hpp"
 
 #include <atomic>
+#include <array>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
@@ -16,13 +20,24 @@
 #include <string>
 #include <string_view>
 #include <type_traits>
+#include <tuple>
 #include <utility>
+#include <vector>
 
 #ifdef _MSC_VER
 #include <malloc.h>
 #endif
 
 namespace {
+
+struct ReferenceAggregate {
+    bg::i64 quantity;
+    double price;
+};
+
+static_assert(bg::native_struct<ReferenceAggregate>);
+static_assert(std::same_as<typename bg::scalar_storage_traits<ReferenceAggregate>::value_type,
+                           const ReferenceAggregate &>);
 
 std::atomic_size_t allocation_count{};
 std::atomic_bool count_allocations{};
@@ -43,26 +58,35 @@ template <typename T> T read_value(const bg::ScalarData &source) {
     return result;
 }
 
-void free_function_visitor(const bg::ScalarData &source) {
-    require(read_value<std::int64_t>(source) == 41, "function pointer visitor received the wrong value");
+void free_function_visitor(const bg::Scalar<std::int64_t> *source) {
+    require(source->value() == 41, "function pointer visitor received the wrong value");
     ++free_function_visits;
 }
 
-void visit_tree(const literal_input::ScalarLiteral &element,
+void visit_tree(const literal_input::ScalarLiteral &element, bg::ScalarVisitTypes &scalar_types,
                 std::int64_t &sum, std::size_t &leaves) {
     element.visit(
         [&](const literal_input::ScalarLiteralItem &source) {
-            source.visit([&](const bg::ScalarData &scalar) {
-                sum += read_value<std::int64_t>(scalar);
-                ++leaves;
-            });
+            source.accept(scalar_types);
         },
         [&](std::span<const literal_input::ScalarLiteral> children) {
             for (const auto &child : children) {
-                visit_tree(child, sum, leaves);
+                visit_tree(child, scalar_types, sum, leaves);
             }
         });
 }
+
+template <template <typename, auto...> typename Field> struct ProbeBundle {};
+
+struct NoncopyableLeafVisitor {
+    int *calls;
+
+    explicit NoncopyableLeafVisitor(int *calls) noexcept : calls{calls} {}
+    NoncopyableLeafVisitor(const NoncopyableLeafVisitor &) = delete;
+    NoncopyableLeafVisitor(NoncopyableLeafVisitor &&) noexcept = default;
+
+    void operator()(const literal_input::ScalarLiteralItem &) const { ++*calls; }
+};
 
 struct ShapeStats {
     std::size_t sequences{};
@@ -91,11 +115,134 @@ ShapeStats inspect_shape(const literal_input::ScalarLiteral &element) {
 }
 
 void require_same_descriptor(const literal_input::ScalarLiteralItem &source, const bg::ScalarData &expected) {
-    source.visit([&](const bg::ScalarData &actual) {
+    source.visit([&](auto *view) {
+        const auto &actual = bg::details::scalar_data(*view);
         require(&actual.runtime_type() == &expected.runtime_type(), "runtime type identity was not preserved");
         require(actual.data_word() == expected.data_word(), "scalar data pointer was not aliased");
         require(actual.mode() == expected.mode(), "scalar data mode was not preserved");
     });
+}
+
+void verify_scalar_dispatch() {
+    using namespace test_scalar_provider;
+
+    auto builtin_called = false;
+    auto byte_called = false;
+    auto boolean_called = false;
+    auto double_called = false;
+    auto date_time_called = false;
+    auto timedelta_called = false;
+    auto string_called = false;
+    auto symbol_called = false;
+    auto list_called = false;
+    auto set_called = false;
+    auto dict_called = false;
+    auto struct_called = false;
+    auto hierarchical_called = false;
+    auto extension_called = false;
+    auto visitor = ddv::serial{
+        [&](const bg::Scalar<bg::byte> *view) { byte_called = view->value() == std::byte{0x2a}; },
+        [&](const bg::Scalar<bool> *view) { boolean_called = view->value(); },
+        [&](const bg::Scalar<bg::i64> *view) {
+            builtin_called = view->value() == 41;
+        },
+        [&](const bg::Scalar<double> *view) { double_called = view->value() == 2.5; },
+        [&](const bg::Scalar<bg::date_time_t> *view) {
+            date_time_called = view->value() == bg::date_time_t{std::chrono::microseconds{8}};
+        },
+        [&](const bg::Scalar<bg::timedelta_t> *view) {
+            timedelta_called = view->value() == bg::timedelta_t{9};
+        },
+        [&](const bg::Scalar<bg::string> *view) { string_called = view->value() == "literal"; },
+        [&](const bg::Scalar<bg::symbol> *view) { symbol_called = view->value().text() == "name"; },
+        [&](const bg::Scalar<bg::List<bg::SCALAR>> *view) {
+            list_called = view->size() == 1;
+        },
+        [&](const bg::Scalar<bg::Set<bg::SCALAR>> *view) {
+            set_called = view->size() == 1;
+        },
+        [&](const bg::Scalar<bg::Dict<bg::SCALAR, bg::SCALAR>> *view) {
+            dict_called = view->size() == 1;
+        },
+        [&](const bg::Scalar<bg::STRUCT> *) { struct_called = true; },
+        [&](const bg::Scalar<bg::HIERARCHICAL> *view) {
+            hierarchical_called = view->field_count() == 0;
+        },
+        [&](const bg::Scalar<> *view) {
+            const auto read = bg::scalar_storage_traits<value>::read_value(bg::details::scalar_data(*view));
+            extension_called = read.get() == 42;
+        },
+        ddv::noop,
+    };
+
+    const auto byte = bg::ScalarValue<bg::byte>{std::byte{0x2a}};
+    const auto boolean = bg::ScalarValue<bool>{true};
+    const auto builtin = bg::ScalarValue<bg::i64>{41};
+    const auto real = bg::ScalarValue<double>{2.5};
+    const auto date_time = bg::ScalarValue<bg::date_time_t>{bg::date_time_t{std::chrono::microseconds{8}}};
+    const auto timedelta = bg::ScalarValue<bg::timedelta_t>{bg::timedelta_t{9}};
+    const auto string = bg::ScalarValue<bg::string>{"literal"};
+    const auto symbol = bg::ScalarValue<bg::symbol>{bg::symbol{"name"}};
+    const auto list = bg::ScalarValue<bg::List<bg::i64>>{std::vector<bg::i64>{1}};
+    const auto set = bg::ScalarValue<bg::Set<bg::i64>>{std::vector<bg::i64>{2}};
+    const auto dict = bg::ScalarValue<bg::Dict<bg::i64, bg::i64>>{
+        std::vector<std::pair<bg::i64, bg::i64>>{{3, 4}}};
+    const auto structure = bg::ScalarValue<compound_value>{compound_value{.quantity = 5, .price = 6.0}};
+    auto memory = bg::allocator{};
+    const auto hierarchical = bg::bundle<ProbeBundle>(memory);
+    const auto provider_value = value{42};
+
+    literal_input::ScalarLiteralItem{byte}.visit(visitor);
+    literal_input::ScalarLiteralItem{boolean}.visit(visitor);
+    literal_input::ScalarLiteralItem{builtin}.visit(visitor);
+    literal_input::ScalarLiteralItem{real}.visit(visitor);
+    literal_input::ScalarLiteralItem{date_time}.visit(visitor);
+    literal_input::ScalarLiteralItem{timedelta}.visit(visitor);
+    literal_input::ScalarLiteralItem{string}.visit(visitor);
+    literal_input::ScalarLiteralItem{symbol}.visit(visitor);
+    literal_input::ScalarLiteralItem{list}.visit(visitor);
+    literal_input::ScalarLiteralItem{set}.visit(visitor);
+    literal_input::ScalarLiteralItem{dict}.visit(visitor);
+    literal_input::ScalarLiteralItem{structure}.visit(visitor);
+    literal_input::ScalarLiteralItem{hierarchical}.visit(visitor);
+    literal_input::ScalarLiteralItem{provider_value}.visit(visitor);
+
+    require(byte_called, "byte scalar view was not dispatched");
+    require(boolean_called, "boolean scalar view was not dispatched");
+    require(builtin_called, "builtin scalar view was not dispatched");
+    require(double_called, "double scalar view was not dispatched");
+    require(date_time_called, "date-time scalar view was not dispatched");
+    require(timedelta_called, "time-delta scalar view was not dispatched");
+    require(string_called, "string scalar view was not dispatched");
+    require(symbol_called, "symbol scalar view was not dispatched");
+    require(list_called, "list scalar view was not dispatched");
+    require(set_called, "set scalar view was not dispatched");
+    require(dict_called, "dictionary scalar view was not dispatched");
+    require(struct_called, "struct scalar view was not dispatched");
+    require(hierarchical_called, "hierarchical scalar view was not dispatched");
+    require(extension_called, "extension scalar fallback was not dispatched through borrow_value");
+
+    const auto native_structure = ReferenceAggregate{.quantity = 11, .price = 12.5};
+    literal_input::ScalarLiteralItem{native_structure}.visit(
+        [&](const bg::Scalar<bg::STRUCT> *view) {
+            const auto &descriptor = bg::details::scalar_data(*view);
+            require(descriptor.data_word() == reinterpret_cast<std::uintptr_t>(&native_structure),
+                    "reference-valued native struct source was copied instead of borrowed");
+            require(descriptor.mode() == bg::ScalarDataMode::source_view,
+                    "reference-valued native struct source used an unexpected data mode");
+        },
+        ddv::noop);
+
+    const auto same_type_provider = copy_only_value{73};
+    literal_input::ScalarLiteralItem{same_type_provider}.visit(
+        [&](const bg::Scalar<> *view) {
+            const auto &descriptor = bg::details::scalar_data(*view);
+            require(descriptor.data_word() == reinterpret_cast<std::uintptr_t>(&same_type_provider),
+                    "same-type provider source was copied instead of borrowed");
+            require(descriptor.mode() == bg::ScalarDataMode::source_view,
+                    "same-type provider source used an unexpected data mode");
+        },
+        ddv::noop);
 }
 
 } // namespace
@@ -196,12 +343,13 @@ int main() {
 
     allocation_count.store(0, std::memory_order_relaxed);
     count_allocations.store(true, std::memory_order_relaxed);
-    source.visit([](const bg::ScalarData &) {});
+    source.visit([](auto *) {});
     count_allocations.store(false, std::memory_order_relaxed);
     const auto first_visit_allocations = allocation_count.load(std::memory_order_relaxed);
 
     auto observed = std::int64_t{};
-    const auto const_lvalue_visitor = [&](const bg::ScalarData &data) {
+    const auto const_lvalue_visitor = [&](auto *view) {
+        const auto &data = bg::details::scalar_data(*view);
         observed = read_value<std::int64_t>(data);
     };
     allocation_count.store(0, std::memory_order_relaxed);
@@ -214,14 +362,25 @@ int main() {
     require(observed == input, "const lvalue visitor received the wrong value");
 
     auto *function_pointer = &free_function_visitor;
-    source.visit(function_pointer);
+    source.visit(function_pointer, ddv::noop);
     require(free_function_visits == 1, "function pointer visitor was not called");
-    source.visit(free_function_visitor);
+    source.visit(free_function_visitor, ddv::noop);
     require(free_function_visits == 2, "plain function visitor was not called");
+
+    auto increment = std::int64_t{1};
+    auto argument_visitor = ddv::serial{
+        [](const bg::Scalar<std::int64_t> *view, std::int64_t &increment) {
+            return view->value() + increment;
+        },
+        ddv::noop,
+    };
+    const auto outcome = source.visit(argument_visitor, increment);
+    require(outcome == 42 && increment == 1, "scalar visitor arguments or nonvoid result were not forwarded");
 
     std::string lvalue_string{"an lvalue string"};
     auto string_view_data = std::string_view{};
-    ScalarLiteralItem{lvalue_string}.visit([&](const bg::ScalarData &data) {
+    ScalarLiteralItem{lvalue_string}.visit([&](auto *view) {
+        const auto &data = bg::details::scalar_data(*view);
         string_view_data = read_value<std::string_view>(data);
     });
     require(string_view_data == lvalue_string, "lvalue string contents were not preserved");
@@ -230,26 +389,32 @@ int main() {
     std::string mutable_string{"before"};
     const ScalarLiteralItem mutable_string_source{mutable_string};
     mutable_string.replace(0, mutable_string.size(), "after!");
-    mutable_string_source.visit([&](const bg::ScalarData &data) {
-        const auto view = read_value<std::string_view>(data);
-        require(view == mutable_string, "source did not observe a later lvalue mutation");
-        require(view.data() == mutable_string.data(), "mutable lvalue string storage was copied");
+    mutable_string_source.visit([&](auto *view) {
+        const auto &data = bg::details::scalar_data(*view);
+        const auto string_value = read_value<std::string_view>(data);
+        require(string_value == mutable_string, "source did not observe a later lvalue mutation");
+        require(string_value.data() == mutable_string.data(), "mutable lvalue string storage was copied");
     });
 
-    std::string temporary_string_result;
-    ScalarLiteralItem{std::string{"a temporary string"}}.visit([&](const bg::ScalarData &data) {
-        temporary_string_result = read_value<std::string_view>(data);
+    auto temporary_string_seen = false;
+    ScalarLiteralItem{std::string{"a temporary string"}}.visit([&](auto *view) {
+        const auto &data = bg::details::scalar_data(*view);
+        require(read_value<std::string_view>(data) == "a temporary string",
+                "temporary string was not alive during its callback");
+        temporary_string_seen = true;
     });
-    require(temporary_string_result == "a temporary string", "temporary string contents were not preserved");
+    require(temporary_string_seen, "temporary string callback did not run");
 
     const auto lvalue_view = std::string_view{"an lvalue string view"};
     auto observed_view = std::string_view{};
-    ScalarLiteralItem{lvalue_view}.visit([&](const bg::ScalarData &data) {
+    ScalarLiteralItem{lvalue_view}.visit([&](auto *view) {
+        const auto &data = bg::details::scalar_data(*view);
         observed_view = read_value<std::string_view>(data);
     });
     require(observed_view.data() == lvalue_view.data(), "lvalue string_view storage was copied");
 
-    ScalarLiteralItem{std::string_view{"a temporary string_view"}}.visit([&](const bg::ScalarData &data) {
+    ScalarLiteralItem{std::string_view{"a temporary string_view"}}.visit([&](auto *view) {
+        const auto &data = bg::details::scalar_data(*view);
         require(read_value<std::string_view>(data) == "a temporary string_view",
                 "temporary string_view contents were not preserved");
     });
@@ -263,9 +428,16 @@ int main() {
 
     auto sum = std::int64_t{};
     auto leaves = std::size_t{};
+    auto scalar_dispatch = ddv::make_visitable_visitor<bg::ScalarVisitTypes>(
+        std::tuple<>{}, [&](auto *view) {
+            const auto &scalar = bg::details::scalar_data(*view);
+            sum += read_value<std::int64_t>(scalar);
+            ++leaves;
+        });
+    auto &scalar_types = static_cast<bg::ScalarVisitTypes &>(scalar_dispatch);
     allocation_count.store(0, std::memory_order_relaxed);
     count_allocations.store(true, std::memory_order_relaxed);
-    visit_tree(ScalarLiteral{{1, {{2, 3}, 4}, {{5}}}}, sum, leaves);
+    visit_tree(ScalarLiteral{{1, {{2, 3}, 4}, {{5}}}}, scalar_types, sum, leaves);
     count_allocations.store(false, std::memory_order_relaxed);
     const auto recursive_allocations = allocation_count.load(std::memory_order_relaxed);
     require(recursive_allocations == 0, "recursive literal construction/traversal called global operator new");
@@ -285,6 +457,27 @@ int main() {
             "one-element sequence shape was not preserved");
     require(scalar_leaf_shape.sequences == 0 && scalar_leaf_shape.leaves == 1,
             "scalar leaf shape was not preserved");
+
+    auto leaf_calls = 0;
+    auto noncopyable_visitor = ddv::serial{NoncopyableLeafVisitor{&leaf_calls}, ddv::noop};
+    ScalarLiteral(8).visit(noncopyable_visitor);
+    ScalarLiteral(9).visit(noncopyable_visitor);
+    require(leaf_calls == 2, "a reusable noncopyable serial visitor was copied or skipped");
+
+    auto result_visitor = ddv::serial{
+        [](const ScalarLiteralItem &, int offset) { return offset + 1; },
+        [](std::span<const ScalarLiteral> children, int offset) { return offset + static_cast<int>(children.size()); },
+    };
+    const auto leaf_result = ScalarLiteral(8).visit(result_visitor, 4);
+    const auto sequence_result = ScalarLiteral{8, 9}.visit(result_visitor, 4);
+    require(leaf_result == 5 && sequence_result == 6, "literal variant visitor lost forwarded arguments or results");
+
+    const auto callable_list_result = ScalarLiteral(8).visit(
+        [](const ScalarLiteralItem &) { return 10; },
+        [](std::span<const ScalarLiteral>) { return 0; });
+    require(callable_list_result == 10, "literal callable-list visitor lost its result");
+
+    verify_scalar_dispatch();
 
     std::cout << "ScalarLiteralItem size/alignment: " << sizeof(ScalarLiteralItem) << '/' << alignof(ScalarLiteralItem)
               << '\n';
