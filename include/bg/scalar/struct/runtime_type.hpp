@@ -1,5 +1,6 @@
 #pragma once
 
+#include <bg/scalar/construction.hpp>
 #include <bg/scalar/runtime_type.hpp>
 #include <bg/scalar/struct/scalar_type.hpp>
 
@@ -12,6 +13,10 @@ class StructScalarRuntimeType : public ScalarRuntimeType {
     const StructScalarType &type() const noexcept {
         return static_cast<const StructScalarType &>(ScalarRuntimeType::type());
     }
+
+    // Constructs every required field in schema order. A false callback result reports a missing field.
+    virtual void construct_fields_with(void *destination, allocator &memory,
+                                       ScalarFieldConstruction construction) const = 0;
 
   protected:
     StructScalarRuntimeType(const StructScalarType &type, std::size_t size, std::size_t alignment,

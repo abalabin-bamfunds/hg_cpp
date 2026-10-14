@@ -85,6 +85,24 @@ class CppScalarRuntimeType<Set<T>> final : public CppScalarRuntimeTypeBase<Set<T
             .second;
     }
 
+    [[nodiscard]] bool insert_with(void *storage, allocator &memory,
+                                   ScalarConstruction construction) const override {
+        auto &items = static_cast<details::scalar_set_storage<T> *>(storage)->items;
+        return items
+            .insert_constructed_with(
+                memory.memory_resource(),
+                [&](const auto &item) { return this->item_runtime_type().hash(std::addressof(item)); },
+                [&](const auto &stored, const auto &candidate) {
+                    const auto candidate_data = this->item_runtime_type().borrow(std::addressof(candidate));
+                    return this->item_runtime_type().equals(std::addressof(stored), candidate_data);
+                },
+                [&](auto *destination) {
+                    construction.construct(construction.context, this->item_runtime_type(), destination, memory);
+                },
+                [&](auto *destination) noexcept { scalar_storage_traits<T>::destroy(destination, memory); })
+            .second;
+    }
+
     [[nodiscard]] bool erase(void *storage, const details::ScalarData &value,
                              allocator &memory) const override {
         auto &items = static_cast<details::scalar_set_storage<T> *>(storage)->items;

@@ -2,6 +2,8 @@
 
 #include <bg/allocator.hpp>
 
+#include <cstddef>
+
 namespace bg {
 
 class ScalarRuntimeType;
@@ -13,6 +15,15 @@ class ScalarRuntimeType;
 struct ScalarConstruction {
     void *context;
     void (*construct)(void *context, const ScalarRuntimeType &runtime_type, void *destination, allocator &memory);
+};
+
+// Constructs scalar fields synchronously by index in runtime-selected destinations. Return true only when the
+// destination contains a complete value. Return false or throw only when it contains no live object or owned
+// resources. The context and all borrowed inputs must remain valid until the callback returns.
+struct ScalarFieldConstruction {
+    void *context;
+    bool (*construct)(void *context, std::size_t field_index, const ScalarRuntimeType &runtime_type,
+                      void *destination, allocator &memory);
 };
 
 } // namespace bg

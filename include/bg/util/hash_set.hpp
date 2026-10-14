@@ -60,6 +60,17 @@ template <typename Key, typename Hash = std::hash<Key>, typename Equal = std::eq
         return {&keys_.key_at(result.position), result.inserted};
     }
 
+    template <typename HashFunction, typename Predicate, typename Constructor, typename Destructor>
+    std::pair<const Key *, bool> insert_constructed_with(std::pmr::memory_resource &memory, HashFunction &&hash_key,
+                                                         Predicate &&matches, Constructor &&construct,
+                                                         Destructor &&destroy) {
+        const auto result = keys_.insert_constructed_with(
+            memory, std::forward<HashFunction>(hash_key), std::forward<Predicate>(matches),
+            std::forward<Constructor>(construct), std::forward<Destructor>(destroy));
+
+        return {&keys_.key_at(result.position), result.inserted};
+    }
+
     template <typename Lookup> bool erase(const Lookup &key, std::pmr::memory_resource &memory) {
         return keys_.erase(key, memory);
     }

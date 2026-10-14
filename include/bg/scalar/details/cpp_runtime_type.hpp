@@ -9,11 +9,13 @@
 #include <bg/scalar/struct/runtime_type.hpp>
 #include <bg/type/scalar_type.hpp>
 #include <bg/util/byte_copy.hpp>
+#include <bg/util/scope_exit.hpp>
 
 #include <array>
 #include <exception>
 #include <memory>
 #include <stdexcept>
+#include <tuple>
 #include <type_traits>
 
 namespace bg::details {
@@ -182,6 +184,16 @@ class CppScalarRuntimeType<T> final : public CppScalarRuntimeTypeBase<T, StructS
     using Base = CppScalarRuntimeTypeBase<T, StructScalarRuntimeType>;
     using FieldFunction = ScalarData (*)(const ScalarData &);
 
+    template <typename Field> struct FieldStorage {
+        alignas(Field) std::byte bytes[sizeof(Field)];
+
+        void *storage() noexcept { return bytes; }
+        Field *value() noexcept { return std::launder(reinterpret_cast<Field *>(bytes)); }
+    };
+
+    template <std::size_t Index>
+    using Field = std::remove_cv_t<util::aggregate_member_type<Index, T>>;
+
     template <std::size_t Index> static ScalarData field_value(const ScalarData &source) {
         using Field = std::remove_cv_t<util::aggregate_member_type<Index, T>>;
 
@@ -221,6 +233,44 @@ class CppScalarRuntimeType<T> final : public CppScalarRuntimeTypeBase<T, StructS
   public:
     CppScalarRuntimeType() : Base{static_cast<const StructScalarType &>(cpp_scalar_type<T>())} {
         static_assert(sizeof(CppScalarRuntimeType) == sizeof(StructScalarRuntimeType));
+    }
+
+    void construct_fields_with(void *destination, allocator &memory,
+                               ScalarFieldConstruction construction) const override {
+        constexpr auto indices = std::make_index_sequence<util::aggregate_member_count<T>>{};
+        construct_fields(static_cast<T *>(destination), memory, construction, indices);
+    }
+
+  private:
+    template <std::size_t Index, typename Slots>
+    void construct_staged_field(Slots &slots, std::array<bool, util::aggregate_member_count<T>> &constructed,
+                                allocator &memory, ScalarFieldConstruction construction) const {
+        const auto &runtime_type = cpp_scalar_runtime_type<Field<Index>>();
+        auto *field = std::get<Index>(slots).storage();
+        if (!construction.construct(construction.context, Index, runtime_type, field, memory)) {
+            throw std::invalid_argument{"a required compound scalar field was not supplied"};
+        }
+        constructed[Index] = true;
+    }
+
+    template <std::size_t Index, typename Slots>
+    void destroy_staged_field(Slots &slots, const std::array<bool, util::aggregate_member_count<T>> &constructed,
+                              allocator &memory) const noexcept {
+        if (constructed[Index]) {
+            cpp_scalar_runtime_type<Field<Index>>().destroy(std::get<Index>(slots).value(), memory);
+        }
+    }
+
+    template <std::size_t... Index>
+    void construct_fields(T *destination, allocator &memory, ScalarFieldConstruction construction,
+                          std::index_sequence<Index...>) const {
+        auto slots = std::tuple<FieldStorage<Field<Index>>...>{};
+        auto constructed = std::array<bool, sizeof...(Index)>{};
+        auto destroy_slots = util::scope_exit{[&]() noexcept {
+            (destroy_staged_field<Index>(slots, constructed, memory), ...);
+        }};
+        (construct_staged_field<Index>(slots, constructed, memory, construction), ...);
+        std::construct_at(destination, *std::get<Index>(slots).value()...);
     }
 };
 

@@ -369,6 +369,38 @@ class ComposedSetRuntimeType final : public ScalarSetRuntimeType {
         return true;
     }
 
+    [[nodiscard]] bool insert_with(void *value, allocator &memory,
+                                   ScalarConstruction construction) const override {
+        auto &target = storage(value);
+        const auto position = target.positions.acquire(memory);
+        auto release_position = util::scope_exit{[&]() noexcept {
+            (void)target.positions.reset(position);
+            target.positions.trim(memory);
+        }};
+
+        target.items.emplace_at_with(position, item_layout_, memory, [&](void *stored) {
+            construction.construct(construction.context, item_runtime_type(), stored, memory);
+        });
+        auto release_item = util::scope_exit{[&]() noexcept {
+            target.items.erase_at_with(position, item_layout_, memory,
+                                       [&](void *stored) noexcept { item_runtime_type().destroy(stored, memory); });
+        }};
+
+        const auto *constructed_item = target.items.get(position, item_layout_);
+        const auto hash = util::linear_hash_table::hash_code(item_runtime_type().hash(constructed_item));
+        const auto candidate_data = item_runtime_type().borrow(constructed_item);
+        if (target.lookup.find(hash, [&](auto existing_position) {
+                return item_runtime_type().equals(target.items.get(existing_position, item_layout_), candidate_data);
+            })) {
+            return false;
+        }
+
+        target.lookup.insert(hash, position, memory);
+        release_item.release();
+        release_position.release();
+        return true;
+    }
+
     [[nodiscard]] bool erase(void *value, const details::ScalarData &item, allocator &memory) const override {
         auto &target = storage(value);
         const auto hash = util::linear_hash_table::hash_code(item.hash());

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <bg/scalar/bundle/scalar_type.hpp>
+#include <bg/scalar/construction.hpp>
 #include <bg/scalar/runtime_type.hpp>
 
 #include <cstddef>
@@ -28,6 +29,8 @@ class HierarchicalScalarRuntimeType : public ScalarRuntimeType {
         return static_cast<const ResolvedHierarchicalScalarType &>(ScalarRuntimeType::type());
     }
 
+    virtual void construct_fields_with(void *destination, allocator &memory,
+                                       ScalarFieldConstruction construction) const = 0;
     virtual details::ScalarData field(const details::ScalarData &value, std::size_t index) const = 0;
     virtual bool field_present(const details::ScalarData &value, std::size_t index) const = 0;
 };

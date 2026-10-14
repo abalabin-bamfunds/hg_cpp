@@ -1,6 +1,7 @@
 #include <bg/scalar/bundle/runtime_type.hpp>
 
 #include <bg/scalar/bundle/details/allocation_owner.hpp>
+#include <bg/scalar/details/allocation_context.hpp>
 #include <bg/scalar/details/data.hpp>
 #include <bg/scalar/details/value_storage.hpp>
 #include <bg/scalar/storage_traits.hpp>
@@ -28,6 +29,8 @@ class ComposedHierarchicalScalarRuntimeType final : public HierarchicalScalarRun
     explicit ComposedHierarchicalScalarRuntimeType(const ResolvedHierarchicalScalarType &type) noexcept;
 
     void initialize(std::span<const ScalarRuntimeType *const> fields);
+    void construct_fields_with(void *destination, allocator &memory,
+                               ScalarFieldConstruction construction) const override;
     details::ScalarData field(const details::ScalarData &value, std::size_t index) const override;
     bool field_present(const details::ScalarData &value, std::size_t index) const override;
     bool accepts_input(const ScalarRuntimeType &source) const noexcept override;
@@ -35,6 +38,10 @@ class ComposedHierarchicalScalarRuntimeType final : public HierarchicalScalarRun
                                     details::BundleAllocationOwner &owner) const;
 
   private:
+    struct FieldCopyContext {
+        std::span<const details::ScalarData *const> fields;
+    };
+
     struct Storage;
 
     struct FieldLayout {
@@ -65,6 +72,10 @@ class ComposedHierarchicalScalarRuntimeType final : public HierarchicalScalarRun
     Storage *storage(const details::ScalarData &value) const noexcept;
     static Storage *stored_handle(const void *value) noexcept;
     static void store_handle(void *destination, Storage *storage) noexcept;
+    static bool copy_field(void *context, std::size_t index, const ScalarRuntimeType &runtime_type,
+                           void *destination, allocator &memory);
+    std::uintptr_t construct_shared(ScalarFieldConstruction construction,
+                                    details::BundleAllocationOwner &owner, allocator &memory) const;
     static std::size_t align_up(std::size_t offset, std::size_t alignment) noexcept;
     const void *field_storage(const Storage &storage, std::size_t index) const noexcept;
     void *field_storage(Storage &storage, std::size_t index) const noexcept;
@@ -157,7 +168,19 @@ ComposedHierarchicalScalarRuntimeType::construct_shared(std::span<const details:
         throw std::invalid_argument{"hierarchical scalar field count does not match its type"};
     }
 
+    auto context = FieldCopyContext{fields};
+    const auto construction = ScalarFieldConstruction{&context, &ComposedHierarchicalScalarRuntimeType::copy_field};
     auto memory = owner.memory();
+    return construct_shared(construction, owner, memory);
+}
+
+std::uintptr_t ComposedHierarchicalScalarRuntimeType::construct_shared(
+    ScalarFieldConstruction construction, details::BundleAllocationOwner &owner, allocator &memory) const {
+    const auto *previous = details::current_scalar_allocation_owner();
+    const auto graph = previous == nullptr ? nullptr : previous->graph;
+    const auto node_index = previous == nullptr ? std::size_t{} : previous->node_index;
+    const auto allocation_context = details::ScalarAllocationContext{memory, owner, graph, node_index};
+
     auto *bytes = static_cast<std::byte *>(memory.allocate_bytes(allocation_size_, allocation_alignment_));
     owner.retain();
     auto *stored = std::construct_at(reinterpret_cast<Storage *>(bytes), owner, *this);
@@ -175,25 +198,68 @@ ComposedHierarchicalScalarRuntimeType::construct_shared(std::span<const details:
         owner.release();
     }};
 
-    for (; constructed < fields.size(); ++constructed) {
-        const auto *source = fields[constructed];
+    for (; constructed < fields_.size(); ++constructed) {
         const auto &semantic_field = type().field(constructed);
-        if (source == nullptr) {
+        const auto supplied = construction.construct(construction.context, constructed,
+                                                     *fields_[constructed].runtime_type,
+                                                     field_storage(*stored, constructed), memory);
+        if (!supplied) {
             if (!semantic_field.optional) {
                 throw std::invalid_argument{"required hierarchical scalar field is absent"};
             }
             continue;
         }
-        if (!fields_[constructed].runtime_type->accepts_input(source->runtime_type())) {
-            throw std::invalid_argument{"hierarchical scalar field has an incompatible runtime representation"};
-        }
-
-        fields_[constructed].runtime_type->construct_from_input(field_storage(*stored, constructed), *source, memory);
         set_field_present(*stored, constructed);
     }
 
     rollback.release();
     return reinterpret_cast<std::uintptr_t>(stored);
+}
+
+bool ComposedHierarchicalScalarRuntimeType::copy_field(void *context, std::size_t index,
+                                                       const ScalarRuntimeType &runtime_type, void *destination,
+                                                       allocator &memory) {
+    const auto &fields = static_cast<const FieldCopyContext *>(context)->fields;
+    if (index >= fields.size()) {
+        throw std::out_of_range{"hierarchical scalar field index"};
+    }
+    if (fields[index] == nullptr) {
+        return false;
+    }
+
+    const auto &source = *fields[index];
+    if (!runtime_type.accepts_input(source.runtime_type())) {
+        throw std::invalid_argument{"hierarchical scalar field has an incompatible runtime representation"};
+    }
+    runtime_type.construct_from_input(destination, source, memory);
+    return true;
+}
+
+void ComposedHierarchicalScalarRuntimeType::construct_fields_with(
+    void *destination, allocator &memory, ScalarFieldConstruction construction) const {
+    auto *owner = static_cast<details::BundleAllocationOwner *>(nullptr);
+    auto owns_owner = false;
+    if (const auto *current = details::current_scalar_allocation_owner()) {
+        auto owner_memory = current->bundle_owner->memory();
+        if (&memory.memory_resource() == &current->memory.memory_resource() ||
+            &memory.memory_resource() == &owner_memory.memory_resource()) {
+            owner = current->bundle_owner;
+        }
+    }
+
+    if (owner == nullptr) {
+        owner = details::BundleAllocationOwner::create(memory);
+        owns_owner = true;
+    }
+    auto release_owner = util::scope_exit{[&]() noexcept {
+        if (owns_owner) {
+            owner->release();
+        }
+    }};
+
+    auto owner_memory = owner->memory();
+    const auto data = construct_shared(construction, *owner, owner_memory);
+    store_handle(destination, reinterpret_cast<Storage *>(data));
 }
 
 details::ScalarData ComposedHierarchicalScalarRuntimeType::borrow_shared(const void *value) const noexcept {

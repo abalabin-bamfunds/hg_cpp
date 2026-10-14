@@ -8,6 +8,7 @@
 #include "test_scalar_provider.hpp"
 
 #include <atomic>
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cstddef>
@@ -16,6 +17,7 @@
 #include <exception>
 #include <functional>
 #include <iostream>
+#include <limits>
 #include <memory>
 #include <memory_resource>
 #include <new>
@@ -39,9 +41,50 @@ struct ReferenceAggregate {
     double price;
 };
 
+struct NestedLiteralAggregate {
+    bg::i64 quantity;
+    double price;
+};
+
+struct ConstLiteralAggregate {
+    const bg::i64 identifier;
+    const NestedLiteralAggregate nested;
+};
+
+struct alignas(128) OveralignedLiteralAggregate {
+    bg::i64 identifier;
+    double quantity;
+};
+
+struct OveralignedNativeAggregate {
+    OveralignedLiteralAggregate nested;
+    bg::i64 tail;
+};
+
+template <template <typename, auto...> typename Field> struct LiteralBundle {
+    Field<bg::i64> quantity;
+    Field<bg::List<bg::i64>> values;
+    Field<bg::i64, bg::optional> note;
+};
+
+template <template <typename, auto...> typename Field> struct NestedLiteralBundle {
+    Field<bg::Bundle<LiteralBundle>> inner;
+};
+
+template <template <typename, auto...> typename Field> struct OptionalLiteralBundle {
+    Field<bg::i64, bg::optional> value;
+};
+
+template <template <typename, auto...> typename Field> struct ProviderLiteralBundle {
+    Field<test_scalar_provider::value> value;
+};
+
 static_assert(bg::native_struct<ReferenceAggregate>);
 static_assert(std::same_as<typename bg::scalar_storage_traits<ReferenceAggregate>::value_type,
                            const ReferenceAggregate &>);
+static_assert(bg::native_struct<ConstLiteralAggregate>);
+static_assert(bg::native_struct<OveralignedLiteralAggregate>);
+static_assert(bg::native_struct<OveralignedNativeAggregate>);
 
 std::atomic_size_t allocation_count{};
 std::atomic_bool count_allocations{};
@@ -186,6 +229,218 @@ struct ScalarConstructionProbe {
             throw std::runtime_error{"scalar construction failed"};
         }
         runtime_type.construct_from_input(destination, *construction.source, memory);
+    }
+};
+
+struct IndexedNativeFieldConstruction {
+    const bg::i64 *identifier;
+    const NestedLiteralAggregate *nested;
+    std::size_t fail_on{std::numeric_limits<std::size_t>::max()};
+    bool omit_on_failure{};
+    std::array<void *, 2> destinations{};
+    std::size_t calls{};
+
+    static bool callback(void *context, std::size_t index, const bg::ScalarRuntimeType &runtime_type,
+                         void *destination, bg::allocator &memory) {
+        auto &construction = *static_cast<IndexedNativeFieldConstruction *>(context);
+        ++construction.calls;
+        construction.destinations[index] = destination;
+        if (index == construction.fail_on) {
+            if (construction.omit_on_failure) {
+                return false;
+            }
+            throw std::runtime_error{"indexed native field construction failed"};
+        }
+
+        if (index == 0) {
+            runtime_type.construct_from_value(destination, construction.identifier, memory);
+        } else {
+            runtime_type.construct_from_value(destination, construction.nested, memory);
+        }
+        return true;
+    }
+};
+
+struct OveralignedNativeFieldConstruction {
+    const OveralignedLiteralAggregate *nested;
+    const bg::i64 *tail;
+    std::array<void *, 2> destinations{};
+
+    static bool callback(void *context, std::size_t index, const bg::ScalarRuntimeType &runtime_type,
+                         void *destination, bg::allocator &memory) {
+        auto &construction = *static_cast<OveralignedNativeFieldConstruction *>(context);
+        construction.destinations[index] = destination;
+        runtime_type.construct_from_value(destination, index == 0 ? static_cast<const void *>(construction.nested)
+                                                                  : static_cast<const void *>(construction.tail),
+                                          memory);
+        return true;
+    }
+};
+
+struct IndexedHierarchicalFieldConstruction {
+    std::array<const bg::ScalarData *, 3> fields{};
+    std::size_t fail_on{std::numeric_limits<std::size_t>::max()};
+    std::size_t calls{};
+
+    static bool callback(void *context, std::size_t index, const bg::ScalarRuntimeType &runtime_type,
+                         void *destination, bg::allocator &memory) {
+        auto &construction = *static_cast<IndexedHierarchicalFieldConstruction *>(context);
+        ++construction.calls;
+        if (index == construction.fail_on) {
+            throw std::runtime_error{"indexed hierarchical field construction failed"};
+        }
+        if (construction.fields[index] == nullptr) {
+            return false;
+        }
+        runtime_type.construct_from_input(destination, *construction.fields[index], memory);
+        return true;
+    }
+};
+
+struct HierarchicalScalarConstruction {
+    bg::ScalarFieldConstruction fields;
+
+    static void callback(void *context, const bg::ScalarRuntimeType &runtime_type, void *destination,
+                         bg::allocator &memory) {
+        static_cast<const bg::HierarchicalScalarRuntimeType &>(runtime_type).construct_fields_with(
+            destination, memory, static_cast<const HierarchicalScalarConstruction *>(context)->fields);
+    }
+};
+
+struct DistinctNestedBundleAllocatorConstruction {
+    bg::allocator *nested_memory;
+    bg::i64 quantity{77};
+
+    static void callback(void *context, const bg::ScalarRuntimeType &runtime_type, void *destination,
+                         bg::allocator &memory) {
+        const auto construction = bg::ScalarFieldConstruction{context, &outer_field};
+        static_cast<const bg::HierarchicalScalarRuntimeType &>(runtime_type).construct_fields_with(
+            destination, memory, construction);
+    }
+
+    static bool outer_field(void *context, std::size_t index, const bg::ScalarRuntimeType &runtime_type,
+                            void *destination, bg::allocator &) {
+        auto &construction = *static_cast<DistinctNestedBundleAllocatorConstruction *>(context);
+        require(index == 0 && bg::details::current_scalar_allocation_owner() != nullptr,
+                "outer Bundle field callback did not run in its scalar allocation context");
+        const auto fields = bg::ScalarFieldConstruction{&construction, &inner_field};
+        static_cast<const bg::HierarchicalScalarRuntimeType &>(runtime_type).construct_fields_with(
+            destination, *construction.nested_memory, fields);
+        return true;
+    }
+
+    static bool inner_field(void *context, std::size_t index, const bg::ScalarRuntimeType &runtime_type,
+                            void *destination, bg::allocator &memory) {
+        auto &construction = *static_cast<DistinctNestedBundleAllocatorConstruction *>(context);
+        if (index == 0) {
+            runtime_type.construct_from_value(destination, &construction.quantity, memory);
+            return true;
+        }
+        if (index == 1) {
+            static_cast<const bg::ScalarListRuntimeType &>(runtime_type).construct_runtime_value(destination, memory);
+            return true;
+        }
+        return false;
+    }
+};
+
+class ThrowingIntegerRuntime final : public bg::ScalarRuntimeType {
+  public:
+    ThrowingIntegerRuntime()
+        : ScalarRuntimeType{bg::cpp_scalar_type<bg::i64>(), sizeof(bg::i64), alignof(bg::i64), false, false, true} {}
+
+    bool throw_hash{};
+    bool throw_equals{};
+    mutable std::size_t destructions{};
+
+    void construct_initial_value(void *destination) const noexcept override {
+        std::construct_at(static_cast<bg::i64 *>(destination), bg::i64{});
+    }
+
+    void copy_construct(void *destination, const void *source, bg::allocator &) const override {
+        std::construct_at(static_cast<bg::i64 *>(destination), *static_cast<const bg::i64 *>(source));
+    }
+
+    std::size_t hash(const void *value) const override {
+        if (throw_hash) {
+            throw std::runtime_error{"integer hash failed"};
+        }
+        return std::hash<bg::i64>{}(*static_cast<const bg::i64 *>(value));
+    }
+
+    void destroy(void *value, bg::allocator &) const noexcept override {
+        ++destructions;
+        std::destroy_at(static_cast<bg::i64 *>(value));
+    }
+
+  private:
+    void do_construct_from_input(void *destination, const bg::ScalarData &source,
+                                 bg::allocator &) const override {
+        auto value = bg::i64{};
+        source.runtime_type().read_value(source.mode(), source.data_word(), &value);
+        std::construct_at(static_cast<bg::i64 *>(destination), value);
+    }
+
+    void do_assign_from_input(void *destination, const bg::ScalarData &source) const override {
+        source.runtime_type().read_value(source.mode(), source.data_word(), destination);
+    }
+
+    bool equals_same_type(const void *value, const bg::ScalarData &other) const override {
+        if (throw_equals) {
+            throw std::runtime_error{"integer equality failed"};
+        }
+        auto other_value = bg::i64{};
+        other.runtime_type().read_value(other.mode(), other.data_word(), &other_value);
+        return *static_cast<const bg::i64 *>(value) == other_value;
+    }
+};
+
+template <typename Value> class AlternateNameRuntime final : public bg::ScalarRuntimeType {
+    static_assert(std::is_trivially_destructible_v<Value>);
+
+  public:
+    explicit AlternateNameRuntime(const bg::ScalarType &type)
+        : ScalarRuntimeType{type, sizeof(Value), alignof(Value), false, false, true} {}
+
+    void construct_initial_value(void *destination) const noexcept override {
+        std::construct_at(static_cast<Value *>(destination));
+    }
+
+    void read_value(bg::ScalarDataMode, std::uintptr_t data, void *destination) const override {
+        std::construct_at(static_cast<Value *>(destination), *reinterpret_cast<const Value *>(data));
+    }
+
+    void copy_construct(void *destination, const void *source, bg::allocator &) const override {
+        std::construct_at(static_cast<Value *>(destination), *static_cast<const Value *>(source));
+    }
+
+    std::size_t hash(const void *value) const override {
+        if constexpr (std::same_as<Value, bg::symbol>) {
+            return bg::scalar_storage_traits<Value>::hash(*static_cast<const Value *>(value));
+        } else {
+            return std::hash<Value>{}(*static_cast<const Value *>(value));
+        }
+    }
+
+    void destroy(void *value, bg::allocator &) const noexcept override {
+        std::destroy_at(static_cast<Value *>(value));
+    }
+
+  private:
+    void do_construct_from_input(void *destination, const bg::ScalarData &source, bg::allocator &) const override {
+        source.runtime_type().read_value(source.mode(), source.data_word(), destination);
+    }
+
+    void do_assign_from_input(void *destination, const bg::ScalarData &source) const override {
+        alignas(Value) std::byte storage[sizeof(Value)];
+        source.runtime_type().read_value(source.mode(), source.data_word(), storage);
+        *static_cast<Value *>(destination) = *std::launder(reinterpret_cast<const Value *>(storage));
+    }
+
+    bool equals_same_type(const void *value, const bg::ScalarData &other) const override {
+        alignas(Value) std::byte storage[sizeof(Value)];
+        other.runtime_type().read_value(other.mode(), other.data_word(), storage);
+        return *static_cast<const Value *>(value) == *std::launder(reinterpret_cast<const Value *>(storage));
     }
 };
 
@@ -358,6 +613,153 @@ void verify_literal_construction() {
     auto resource = CountingMemoryResource{};
     auto memory = bg::allocator{resource};
     {
+        const auto const_record = literal::construct<ConstLiteralAggregate>(
+            {{"nested", {{"price", 2.5}, {"quantity", 18}}}, {"identifier", 7}}, memory);
+        require(const_record.view().value().identifier == 7 && const_record.view().value().nested.quantity == 18 &&
+                    const_record.view().value().nested.price == 2.5,
+                "named native struct literal did not construct nested const fields");
+        const auto runtime_const_record = literal::construct(
+            bg::cpp_scalar_runtime_type<ConstLiteralAggregate>(),
+            {{"identifier", 8}, {"nested", {{"quantity", 19}, {"price", 3.5}}}}, memory);
+        require(bg::unchecked_scalar_cast<ConstLiteralAggregate>(runtime_const_record.view()).value().identifier == 8,
+                "runtime-only named native struct literal produced the wrong value");
+        const auto overaligned_record = literal::construct<OveralignedNativeAggregate>(
+            {{"nested", {{"identifier", 12}, {"quantity", 4.5}}}, {"tail", 15}}, memory);
+        const auto &overaligned_value = overaligned_record.view().value();
+        require(reinterpret_cast<std::uintptr_t>(std::addressof(overaligned_value)) % alignof(OveralignedNativeAggregate) == 0 &&
+                    overaligned_value.nested.identifier == 12 && overaligned_value.nested.quantity == 4.5 &&
+                    overaligned_value.tail == 15,
+                "named literal did not construct an over-aligned native aggregate");
+
+        using BundleValue = bg::Bundle<LiteralBundle>;
+        using OuterBundleValue = bg::Bundle<NestedLiteralBundle>;
+        using OptionalBundleValue = bg::Bundle<OptionalLiteralBundle>;
+        auto root_bundle_allocator_required = false;
+        try {
+            (void)literal::construct<BundleValue>({{"quantity", 3}, {"values", {4, 5}}});
+        } catch (const std::logic_error &) {
+            root_bundle_allocator_required = true;
+        }
+        require(root_bundle_allocator_required,
+                "a root Bundle literal did not require an explicit allocator");
+
+        const auto bundle = literal::construct<BundleValue>(
+            {{bg::symbol{"quantity"}, 9}, {"values", {2, 4, 6}}}, memory);
+        require(bg::scalar_cast<bg::i64>(bundle.view()[0]).value() == 9 &&
+                    bg::scalar_cast<bg::List<bg::i64>>(bundle.view()[1]).size() == 3 &&
+                    !bundle.view().present(2),
+                "named Bundle literal did not construct required fields or omit an optional field");
+
+        const auto bundle_list = literal::construct<bg::List<BundleValue>>(
+            ScalarLiteral{{{"quantity", 1}, {"values", {2, 3}}},
+                          {{"quantity", 4}, {"values", {5}}}},
+            memory);
+        const auto first_bundle = bg::scalar_cast<BundleValue>(bundle_list.view()[0]);
+        const auto second_bundle = bg::scalar_cast<BundleValue>(bundle_list.view()[1]);
+        require(bundle_list.view().size() == 2 &&
+                    bg::scalar_cast<bg::i64>(first_bundle[0]).value() == 1 &&
+                    bg::scalar_cast<bg::List<bg::i64>>(first_bundle[1])[1].value() == 3 &&
+                    bg::scalar_cast<bg::i64>(second_bundle[0]).value() == 4 &&
+                    bg::scalar_cast<bg::List<bg::i64>>(second_bundle[1])[0].value() == 5,
+                "list literal did not construct nested Bundles with an explicit allocator");
+
+        using ProviderBundle = bg::Bundle<ProviderLiteralBundle>;
+        using ProviderValue = test_scalar_provider::value;
+        const auto &provider_runtime = test_scalar_provider::preserving_runtime_type();
+        auto provider_storage = test_scalar_provider::storage{.number = 59};
+        const auto provider_view = bg::Scalar<ProviderValue>::from(provider_runtime, &provider_storage);
+        const auto provider_bundle = literal::construct<ProviderBundle>({{"value", provider_view}}, memory);
+        const auto provider_field = bg::unchecked_scalar_cast<ProviderValue>(provider_bundle.view()[0]);
+        require(&provider_field.runtime_type() == &provider_runtime && provider_field.value().get() == 59,
+                "named Bundle literal did not construct a raw provider field");
+
+        const auto runtime_bundle = literal::construct(bg::cpp_scalar_runtime_type<BundleValue>(),
+                                                       {{"quantity", 10}, {"values", {}}}, memory);
+        require(bg::scalar_cast<BundleValue>(runtime_bundle.view()).field_count() == 3,
+                "runtime-only named Bundle literal produced the wrong type");
+        const auto empty_optional_bundle = literal::construct<OptionalBundleValue>(literal::ScalarLiteral{}, memory);
+        require(empty_optional_bundle.view().field_count() == 1 && !empty_optional_bundle.view().present(0),
+                "empty Bundle literal did not preserve an omitted optional field");
+
+        auto missing_required_field_threw = false;
+        try {
+            (void)literal::construct<BundleValue>({{"values", {2, 4}}}, memory);
+        } catch (const std::invalid_argument &) {
+            missing_required_field_threw = true;
+        }
+        require(missing_required_field_threw, "named Bundle literal accepted a missing required field");
+
+        auto unknown_field_threw = false;
+        try {
+            (void)literal::construct<BundleValue>({{"quantity", 3}, {"values", {}}, {"extra", 5}}, memory);
+        } catch (const std::invalid_argument &) {
+            unknown_field_threw = true;
+        }
+        require(unknown_field_threw, "named Bundle literal accepted an unknown field");
+
+        auto duplicate_field_threw = false;
+        try {
+            (void)literal::construct<BundleValue>({{"quantity", 3}, {"quantity", 5}, {"values", {}}}, memory);
+        } catch (const std::invalid_argument &) {
+            duplicate_field_threw = true;
+        }
+        require(duplicate_field_threw, "named Bundle literal accepted a duplicate field");
+
+        auto numeric_field_name_threw = false;
+        try {
+            (void)literal::construct<BundleValue>({{3, 3}, {"values", {}}}, memory);
+        } catch (const std::invalid_argument &) {
+            numeric_field_name_threw = true;
+        }
+        require(numeric_field_name_threw, "named Bundle literal accepted a numeric field name");
+
+        auto alternate_string_runtime = AlternateNameRuntime<std::string_view>{bg::cpp_scalar_type<bg::string>()};
+        auto alternate_symbol_runtime = AlternateNameRuntime<bg::symbol>{bg::cpp_scalar_type<bg::symbol>()};
+        const auto alternate_string_name = std::string_view{"quantity"};
+        const auto alternate_symbol_name = bg::symbol{"values"};
+        const auto string_name_view =
+            bg::Scalar<bg::string>::from(alternate_string_runtime, &alternate_string_name);
+        const auto symbol_name_view = bg::Scalar<bg::symbol>::from(alternate_symbol_runtime, &alternate_symbol_name);
+        const auto alternate_name_bundle = literal::construct<BundleValue>(
+            {{string_name_view, 13}, {symbol_name_view, {}}}, memory);
+        require(bg::scalar_cast<bg::i64>(alternate_name_bundle.view()[0]).value() == 13 &&
+                    bg::scalar_cast<bg::List<bg::i64>>(alternate_name_bundle.view()[1]).empty(),
+                "named Bundle literal did not read provider-backed string and symbol field names");
+
+        auto mixed_name_duplicate_threw = false;
+        try {
+            (void)literal::construct<BundleValue>(
+                {{string_name_view, 13}, {"quantity", 14}, {"values", {}}}, memory);
+        } catch (const std::invalid_argument &) {
+            mixed_name_duplicate_threw = true;
+        }
+        require(mixed_name_duplicate_threw, "string and symbol field names did not compare by text");
+
+        auto malformed_field_threw = false;
+        try {
+            (void)literal::construct<BundleValue>({{"quantity", 3}, {"values"}}, memory);
+        } catch (const std::invalid_argument &) {
+            malformed_field_threw = true;
+        }
+        require(malformed_field_threw, "named Bundle literal accepted a malformed field entry");
+
+        const auto nested_bundle = literal::construct<OuterBundleValue>(
+            {{"inner", {{"quantity", 11}, {"values", {1, 3}}}}}, memory);
+        const auto nested_inner = bg::scalar_cast<BundleValue>(nested_bundle.view()[0]);
+        require(bg::scalar_cast<bg::i64>(nested_inner[0]).value() == 11 &&
+                    bg::scalar_cast<bg::List<bg::i64>>(nested_inner[1])[1].value() == 3 &&
+                    bg::details::current_scalar_allocation_owner() == nullptr,
+                "nested Bundle literal failed to construct or restore allocation context");
+
+        auto nested_missing_field_threw = false;
+        try {
+            (void)literal::construct<OuterBundleValue>({{"inner", {{"quantity", 11}}}}, memory);
+        } catch (const std::invalid_argument &) {
+            nested_missing_field_threw = true;
+        }
+        require(nested_missing_field_threw && bg::details::current_scalar_allocation_owner() == nullptr,
+                "nested Bundle failure did not restore allocation context");
+
         const auto runtime_only = literal::construct(composed_outer, {{1, 2}, {}, {3, 4}}, memory);
         const auto typed = literal::construct<Nested>({{1, 2}, {}, {3, 4}}, memory);
         const auto runtime_view = bg::unchecked_scalar_cast<Nested>(runtime_only.view());
@@ -384,6 +786,76 @@ void verify_literal_construction() {
                     deeper.view()[0][0].size() == 2 && deeper.view()[0][1].empty() &&
                     deeper.view()[1].empty() && deeper.view()[2][0][0].value() == 3,
                 "three-level list literal did not preserve its nested shape");
+
+        const auto integers = literal::construct<bg::Set<bg::i64>>({1, 2, 2, 3}, memory);
+        require(integers.view().size() == 3 && integers.view().contains(1) && integers.view().contains(2) &&
+                    integers.view().contains(3),
+                "set literal did not deduplicate repeated values");
+
+        using ListSet = bg::Set<Inner>;
+        const auto lists = literal::construct<ListSet>({{1, 2}, {1, 2}, {3}}, memory);
+        require(lists.view().size() == 2, "set literal did not deduplicate nested list values");
+        auto saw_first_list = false;
+        auto saw_second_list = false;
+        lists.view().for_each([&](const bg::Scalar<Inner> &item) {
+            if (item.size() == 2 && item[0].value() == 1 && item[1].value() == 2) {
+                saw_first_list = true;
+            }
+            if (item.size() == 1 && item[0].value() == 3) {
+                saw_second_list = true;
+            }
+        });
+        require(saw_first_list && saw_second_list, "set literal changed nested list values");
+
+        using IntDict = bg::Dict<bg::i64, bg::i64>;
+        using DictSet = bg::Set<IntDict>;
+        const auto dictionaries = literal::construct<DictSet>(ScalarLiteral{{{1, 2}}, {{1, 2}}, {{3, 4}}}, memory);
+        require(dictionaries.view().size() == 2, "set literal did not deduplicate nested dictionary values");
+        auto saw_first_dictionary = false;
+        auto saw_second_dictionary = false;
+        dictionaries.view().for_each([&](const bg::Scalar<IntDict> &item) {
+            if (item.size() == 1 && item.contains(1) && item.at(1).value() == 2) {
+                saw_first_dictionary = true;
+            }
+            if (item.size() == 1 && item.contains(3) && item.at(3).value() == 4) {
+                saw_second_dictionary = true;
+            }
+        });
+        require(saw_first_dictionary && saw_second_dictionary, "set literal changed nested dictionary values");
+
+        const auto &integer_set_type = bg::set_scalar_type(item_runtime.type());
+        const auto integer_set_available = std::array<const bg::ScalarRuntimeType *, 1>{&item_runtime};
+        const auto &composed_integer_set = static_cast<const bg::ScalarSetRuntimeType &>(
+            bg::resolve_scalar_runtime_type(integer_set_type, integer_set_available));
+        const auto runtime_integers = literal::construct(composed_integer_set, {4, 5, 5}, memory);
+        const auto runtime_integer_view = bg::unchecked_scalar_cast<bg::Set<bg::i64>>(runtime_integers.view());
+        require(runtime_integer_view.size() == 2 && runtime_integer_view.contains(4) &&
+                    runtime_integer_view.contains(5),
+                "runtime-only set literal did not deduplicate values");
+
+        const auto &list_set_type = bg::set_scalar_type(inner_type);
+        const auto list_set_available = std::array<const bg::ScalarRuntimeType *, 1>{&composed_inner};
+        const auto &composed_list_set = static_cast<const bg::ScalarSetRuntimeType &>(
+            bg::resolve_scalar_runtime_type(list_set_type, list_set_available));
+        const auto runtime_lists = literal::construct(composed_list_set, {{6, 7}, {6, 7}, {8}}, memory);
+        const auto runtime_list_view = bg::unchecked_scalar_cast<ListSet>(runtime_lists.view());
+        require(runtime_list_view.size() == 2,
+                "runtime-only set literal did not deduplicate nested list values");
+
+        const auto &integer_dict_type = bg::dict_scalar_type(item_runtime.type(), item_runtime.type());
+        const auto integer_available = std::array<const bg::ScalarRuntimeType *, 1>{&item_runtime};
+        const auto &composed_integer_dict = static_cast<const bg::ScalarDictRuntimeType &>(
+            bg::resolve_scalar_runtime_type(integer_dict_type, integer_available));
+        const auto &integer_dict_set_type = bg::set_scalar_type(integer_dict_type);
+        const auto integer_dict_set_available =
+            std::array<const bg::ScalarRuntimeType *, 1>{&composed_integer_dict};
+        const auto &composed_integer_dict_set = static_cast<const bg::ScalarSetRuntimeType &>(
+            bg::resolve_scalar_runtime_type(integer_dict_set_type, integer_dict_set_available));
+        const auto runtime_dictionaries = literal::construct(
+            composed_integer_dict_set, ScalarLiteral{{{5, 6}}, {{5, 6}}, {{7, 8}}}, memory);
+        const auto runtime_dictionary_view = bg::unchecked_scalar_cast<DictSet>(runtime_dictionaries.view());
+        require(runtime_dictionary_view.size() == 2,
+                "runtime-only set literal did not deduplicate nested dictionary values");
 
         using IntList = bg::List<bg::i64>;
         using StringListDict = bg::Dict<bg::string, IntList>;
@@ -424,18 +896,19 @@ void verify_literal_construction() {
 
         using ProviderValue = test_scalar_provider::value;
         using ProviderDict = bg::Dict<bg::i64, ProviderValue>;
-        const auto &provider_runtime = test_scalar_provider::preserving_runtime_type();
-        const auto &provider_dict_type = bg::dict_scalar_type(item_runtime.type(), provider_runtime.type());
+        const auto &provider_dict_runtime = test_scalar_provider::preserving_runtime_type();
+        const auto &provider_dict_type = bg::dict_scalar_type(item_runtime.type(), provider_dict_runtime.type());
         const auto provider_dict_available =
-            std::array<const bg::ScalarRuntimeType *, 2>{&item_runtime, &provider_runtime};
+            std::array<const bg::ScalarRuntimeType *, 2>{&item_runtime, &provider_dict_runtime};
         const auto &composed_provider_dict = static_cast<const bg::ScalarDictRuntimeType &>(
             bg::resolve_scalar_runtime_type(provider_dict_type, provider_dict_available));
-        auto provider_storage = test_scalar_provider::storage{.number = 83};
-        const auto provider_view = bg::Scalar<ProviderValue>::from(provider_runtime, &provider_storage);
+        auto provider_dict_storage = test_scalar_provider::storage{.number = 83};
+        const auto provider_dict_view_source =
+            bg::Scalar<ProviderValue>::from(provider_dict_runtime, &provider_dict_storage);
         const auto provider_dict_value =
-            literal::construct(composed_provider_dict, ScalarLiteral{{9, provider_view}}, memory);
+            literal::construct(composed_provider_dict, ScalarLiteral{{9, provider_dict_view_source}}, memory);
         const auto provider_dict_view = bg::unchecked_scalar_cast<ProviderDict>(provider_dict_value.view());
-        require(&provider_dict_view.at(9).runtime_type() == &provider_runtime &&
+        require(&provider_dict_view.at(9).runtime_type() == &provider_dict_runtime &&
                     provider_dict_view.at(9).value().get() == 83,
                 "runtime-only dictionary construction lost a provider mapped runtime");
 
@@ -658,6 +1131,163 @@ void verify_literal_construction() {
             "nested partial construction leaked owner or list bunch allocations");
 }
 
+void verify_indexed_field_construction() {
+    auto memory = bg::allocator{};
+    const auto &native_runtime = static_cast<const bg::StructScalarRuntimeType &>(
+        bg::cpp_scalar_runtime_type<ConstLiteralAggregate>());
+    const auto identifier = bg::i64{17};
+    const auto nested = NestedLiteralAggregate{.quantity = 23, .price = 2.75};
+    auto native_construction = IndexedNativeFieldConstruction{&identifier, &nested};
+    alignas(ConstLiteralAggregate) std::array<std::byte, sizeof(ConstLiteralAggregate)> native_storage{};
+    native_runtime.construct_fields_with(
+        native_storage.data(), memory,
+        {&native_construction, &IndexedNativeFieldConstruction::callback});
+    const auto *native_value = std::launder(reinterpret_cast<const ConstLiteralAggregate *>(native_storage.data()));
+    require(native_value->identifier == identifier && native_value->nested.quantity == nested.quantity &&
+                native_value->nested.price == nested.price &&
+                native_construction.destinations[0] != std::addressof(native_value->identifier) &&
+                native_construction.destinations[1] != std::addressof(native_value->nested),
+            "native struct fields were not constructed in staged indexed destinations");
+    native_runtime.destroy(native_storage.data(), memory);
+
+    auto verify_native_failure = [&](bool omitted) {
+        native_storage.fill(std::byte{0xa5});
+        native_construction = IndexedNativeFieldConstruction{&identifier, &nested, 1, omitted};
+        auto threw = false;
+        try {
+            native_runtime.construct_fields_with(
+                native_storage.data(), memory,
+                {&native_construction, &IndexedNativeFieldConstruction::callback});
+        } catch (const std::invalid_argument &) {
+            threw = true;
+        } catch (const std::runtime_error &) {
+            threw = true;
+        }
+        require(threw && native_construction.calls == 2 &&
+                    std::all_of(native_storage.begin(), native_storage.end(),
+                                [](std::byte value) { return value == std::byte{0xa5}; }),
+                "native struct field failure changed destination storage or skipped rollback");
+    };
+    verify_native_failure(true);
+    verify_native_failure(false);
+
+    const auto &overaligned_runtime = static_cast<const bg::StructScalarRuntimeType &>(
+        bg::cpp_scalar_runtime_type<OveralignedNativeAggregate>());
+    const auto nested_value = OveralignedLiteralAggregate{.identifier = 41, .quantity = 6.25};
+    const auto tail = bg::i64{43};
+    auto overaligned_construction = OveralignedNativeFieldConstruction{&nested_value, &tail};
+    alignas(OveralignedNativeAggregate)
+        std::array<std::byte, sizeof(OveralignedNativeAggregate)> overaligned_storage{};
+    overaligned_runtime.construct_fields_with(
+        overaligned_storage.data(), memory,
+        {&overaligned_construction, &OveralignedNativeFieldConstruction::callback});
+    const auto *overaligned_result =
+        std::launder(reinterpret_cast<const OveralignedNativeAggregate *>(overaligned_storage.data()));
+    require(reinterpret_cast<std::uintptr_t>(overaligned_construction.destinations[0]) %
+                    alignof(OveralignedLiteralAggregate) ==
+                0 &&
+                reinterpret_cast<std::uintptr_t>(overaligned_result) % alignof(OveralignedNativeAggregate) == 0 &&
+                overaligned_result->nested.identifier == nested_value.identifier &&
+                overaligned_result->nested.quantity == nested_value.quantity && overaligned_result->tail == tail,
+            "native compound construction did not align its staged field or aggregate");
+    overaligned_runtime.destroy(overaligned_storage.data(), memory);
+
+    using BundleValue = bg::Bundle<LiteralBundle>;
+    const auto &bundle_runtime = bg::cpp_scalar_runtime_type<BundleValue>();
+    auto resource = CountingMemoryResource{};
+    auto bundle_memory = bg::allocator{resource};
+    const auto quantity = bg::ScalarValue<bg::i64>{31, bundle_memory};
+    const auto values = literal::construct<bg::List<bg::i64>>({5, 7}, bundle_memory);
+    auto fields = IndexedHierarchicalFieldConstruction{
+        {&bg::details::scalar_data(quantity), &bg::details::scalar_data(values), nullptr}};
+    const auto field_construction = bg::ScalarFieldConstruction{
+        &fields, &IndexedHierarchicalFieldConstruction::callback};
+    auto outer_construction = HierarchicalScalarConstruction{field_construction};
+    const auto baseline = resource.outstanding;
+    {
+        const auto value = bg::ScalarValue<>::from_construction(
+            bundle_runtime, {&outer_construction, &HierarchicalScalarConstruction::callback}, bundle_memory);
+        const auto view = bg::unchecked_scalar_cast<BundleValue>(value.view());
+        require(bg::scalar_cast<bg::i64>(view[0]).value() == 31 &&
+                    bg::scalar_cast<bg::List<bg::i64>>(view[1])[1].value() == 7 && !view.present(2),
+                "indexed Bundle field callback did not allow an absent optional field");
+    }
+    require(resource.outstanding == baseline && bg::details::current_scalar_allocation_owner() == nullptr,
+            "successful indexed Bundle construction did not release its allocation context");
+
+    fields.fields[1] = nullptr;
+    auto missing_required_threw = false;
+    try {
+        (void)bg::ScalarValue<>::from_construction(
+            bundle_runtime, {&outer_construction, &HierarchicalScalarConstruction::callback}, bundle_memory);
+    } catch (const std::invalid_argument &) {
+        missing_required_threw = true;
+    }
+    require(missing_required_threw && resource.outstanding == baseline &&
+                bg::details::current_scalar_allocation_owner() == nullptr,
+            "missing indexed Bundle field leaked storage or failed to restore allocation context");
+
+    fields.fields[1] = &bg::details::scalar_data(values);
+    fields.fail_on = 1;
+    fields.calls = 0;
+    auto construction_threw = false;
+    try {
+        (void)bg::ScalarValue<>::from_construction(
+            bundle_runtime, {&outer_construction, &HierarchicalScalarConstruction::callback}, bundle_memory);
+    } catch (const std::runtime_error &) {
+        construction_threw = true;
+    }
+    require(construction_threw && fields.calls == 2 && resource.outstanding == baseline &&
+                bg::details::current_scalar_allocation_owner() == nullptr,
+            "throwing indexed Bundle callback leaked storage or failed to restore allocation context");
+}
+
+void verify_nested_bundle_retained_child() {
+    using Inner = bg::Bundle<LiteralBundle>;
+    using Outer = bg::Bundle<NestedLiteralBundle>;
+    auto resource = CountingMemoryResource{};
+    auto memory = bg::allocator{resource};
+    auto retained = std::optional<bg::ScalarValue<Inner>>{};
+    {
+        const auto outer = literal::construct<Outer>(
+            {{"inner", {{"quantity", 37}, {"values", {8, 9}}}}}, memory);
+        const auto child = bg::scalar_cast<Inner>(outer.view()[0]);
+        retained.emplace(child);
+    }
+
+    require(retained.has_value() && resource.outstanding != 0 &&
+                bg::scalar_cast<bg::i64>(retained->view()[0]).value() == 37 &&
+                bg::scalar_cast<bg::List<bg::i64>>(retained->view()[1])[1].value() == 9,
+            "retained nested Bundle child did not outlive its parent");
+    retained.reset();
+    require(resource.outstanding == 0 && bg::details::current_scalar_allocation_owner() == nullptr,
+            "retained nested Bundle child did not release its shared allocation owner");
+}
+
+void verify_nested_bundle_distinct_allocator() {
+    using Outer = bg::Bundle<NestedLiteralBundle>;
+    auto outer_resource = CountingMemoryResource{};
+    auto nested_resource = CountingMemoryResource{};
+    auto outer_memory = bg::allocator{outer_resource};
+    auto nested_memory = bg::allocator{nested_resource};
+    auto construction = DistinctNestedBundleAllocatorConstruction{&nested_memory};
+    const auto &runtime_type = bg::cpp_scalar_runtime_type<Outer>();
+    {
+        const auto value = bg::ScalarValue<>::from_construction(
+            runtime_type, {&construction, &DistinctNestedBundleAllocatorConstruction::callback}, outer_memory);
+        const auto outer = bg::unchecked_scalar_cast<Outer>(value.view());
+        const auto inner = bg::scalar_cast<bg::Bundle<LiteralBundle>>(outer[0]);
+        require(bg::scalar_cast<bg::i64>(inner[0]).value() == 77 &&
+                    bg::scalar_cast<bg::List<bg::i64>>(inner[1]).empty(),
+                "nested Bundle construction with a distinct allocator produced incorrect fields");
+        require(outer_resource.outstanding != 0 && nested_resource.outstanding != 0,
+                "nested Bundle construction did not allocate through both allocator resources");
+    }
+    require(outer_resource.outstanding == 0 && nested_resource.outstanding == 0 &&
+                bg::details::current_scalar_allocation_owner() == nullptr,
+            "nested Bundle construction with a distinct allocator leaked storage or context");
+}
+
 void verify_late_list_emplacement_failure(const bg::ScalarListRuntimeType &runtime_type,
                                           const bg::ScalarData &source) {
     auto resource = CountingMemoryResource{};
@@ -792,6 +1422,83 @@ void verify_dictionary_emplacement_failure_cleanup(const bg::ScalarDictRuntimeTy
     }
     require(resource.outstanding == 0 && resource.allocations == resource.deallocations,
             "dictionary emplacement failures leaked storage or allocator metadata");
+}
+
+void verify_set_emplacement(const bg::ScalarSetRuntimeType &runtime_type, const bg::ScalarData &source) {
+    auto resource = CountingMemoryResource{};
+    auto memory = bg::allocator{resource};
+    {
+        auto *storage = memory.allocate_bytes(runtime_type.size(), runtime_type.alignment());
+        runtime_type.construct_runtime_value(storage, memory);
+        auto release = bg::util::scope_exit{[&]() noexcept {
+            runtime_type.destroy(storage, memory);
+            memory.deallocate_bytes(storage, runtime_type.size(), runtime_type.alignment());
+        }};
+
+        auto construction = ScalarConstructionProbe{&source};
+        const auto callback = bg::ScalarConstruction{&construction, &ScalarConstructionProbe::callback};
+        require(runtime_type.insert_with(storage, memory, callback), "set rejected a new constructed item");
+        require(runtime_type.item_count(storage) == 1, "set did not commit its constructed item");
+
+        auto stored_address = static_cast<const void *>(nullptr);
+        runtime_type.for_each(storage, &stored_address, [](void *context, bg::ScalarSetRuntimeType::Item item) {
+            *static_cast<const void **>(context) = item.data;
+        });
+        require(stored_address == construction.destination,
+                "set copied the constructed item instead of using its final slot");
+
+        const auto allocations_before_duplicate = resource.outstanding;
+        auto duplicate_construction = ScalarConstructionProbe{&source};
+        const auto duplicate_callback =
+            bg::ScalarConstruction{&duplicate_construction, &ScalarConstructionProbe::callback};
+        require(!runtime_type.insert_with(storage, memory, duplicate_callback),
+                "set inserted a duplicate constructed item");
+        require(runtime_type.item_count(storage) == 1 && duplicate_construction.calls == 1 &&
+                    resource.outstanding == allocations_before_duplicate,
+                "set did not destroy its duplicate candidate or changed existing storage");
+
+        auto failed_construction = ScalarConstructionProbe{.source = &source, .fail = true};
+        const auto failed_callback =
+            bg::ScalarConstruction{&failed_construction, &ScalarConstructionProbe::callback};
+        auto construction_threw = false;
+        try {
+            (void)runtime_type.insert_with(storage, memory, failed_callback);
+        } catch (const std::runtime_error &) {
+            construction_threw = true;
+        }
+        require(construction_threw && runtime_type.item_count(storage) == 1 &&
+                    resource.outstanding == allocations_before_duplicate,
+                "failed set item construction changed existing storage or leaked allocations");
+    }
+    require(resource.outstanding == 0 && resource.allocations == resource.deallocations,
+            "set emplacement leaked allocator-owned storage");
+}
+
+void verify_set_allocation_failure_cleanup(const bg::ScalarSetRuntimeType &runtime_type,
+                                           const bg::ScalarData &source) {
+    auto resource = FailNextAllocationResource{};
+    auto memory = bg::allocator{resource};
+    {
+        auto *storage = memory.allocate_bytes(runtime_type.size(), runtime_type.alignment());
+        runtime_type.construct_runtime_value(storage, memory);
+        auto release = bg::util::scope_exit{[&]() noexcept {
+            runtime_type.destroy(storage, memory);
+            memory.deallocate_bytes(storage, runtime_type.size(), runtime_type.alignment());
+        }};
+
+        auto construction = ScalarConstructionProbe{&source};
+        const auto callback = bg::ScalarConstruction{&construction, &ScalarConstructionProbe::callback};
+        resource.fail_next = true;
+        auto allocation_threw = false;
+        try {
+            (void)runtime_type.insert_with(storage, memory, callback);
+        } catch (const std::bad_alloc &) {
+            allocation_threw = true;
+        }
+        require(allocation_threw && construction.calls == 0 && runtime_type.item_count(storage) == 0,
+                "set allocation failure invoked construction or committed an item");
+    }
+    require(resource.outstanding == 0, "set allocation failure leaked allocator-owned storage");
 }
 
 void verify_dictionary_allocation_failure_cleanup(const bg::ScalarDictRuntimeType &runtime_type) {
@@ -1203,8 +1910,21 @@ int main() {
         [](std::span<const ScalarLiteral>) { return 0; });
     require(callable_list_result == 10, "literal callable-list visitor lost its result");
 
+    auto generic_sequence_visitor_seen_span = false;
+    ScalarLiteral{8, 9}.visit([&](const auto &value) {
+        using Value = std::remove_cvref_t<decltype(value)>;
+        if constexpr (std::same_as<Value, std::span<const ScalarLiteral>>) {
+            generic_sequence_visitor_seen_span = value.size() == 2;
+        }
+    });
+    require(generic_sequence_visitor_seen_span,
+            "generic Literal visitor did not receive a span for a sequence");
+
     verify_scalar_dispatch();
     verify_literal_construction();
+    verify_indexed_field_construction();
+    verify_nested_bundle_retained_child();
+    verify_nested_bundle_distinct_allocator();
     verify_list_emplacement_failure_cleanup();
     const auto &integer_runtime = bg::cpp_scalar_runtime_type<bg::i64>();
     const auto &integer_dict_type = bg::dict_scalar_type(integer_runtime.type(), integer_runtime.type());
@@ -1217,6 +1937,22 @@ int main() {
     verify_dictionary_allocation_failure_cleanup(
         static_cast<const bg::ScalarDictRuntimeType &>(bg::cpp_scalar_runtime_type<bg::Dict<bg::i64, bg::i64>>()));
     verify_dictionary_allocation_failure_cleanup(composed_integer_dict);
+
+    using ListItem = bg::List<bg::i64>;
+    using ListSet = bg::Set<ListItem>;
+    const auto list_item = literal::construct<ListItem>({1, 2});
+    const auto &list_runtime = bg::cpp_scalar_runtime_type<ListItem>();
+    const auto &list_set = static_cast<const bg::ScalarSetRuntimeType &>(
+        bg::cpp_scalar_runtime_type<ListSet>());
+    const auto &list_set_type = bg::set_scalar_type(list_runtime.type());
+    const auto list_set_available = std::array<const bg::ScalarRuntimeType *, 1>{&list_runtime};
+    const auto &composed_list_set = static_cast<const bg::ScalarSetRuntimeType &>(
+        bg::resolve_scalar_runtime_type(list_set_type, list_set_available));
+    const auto &list_data = bg::details::scalar_data(list_item);
+    verify_set_emplacement(list_set, list_data);
+    verify_set_emplacement(composed_list_set, list_data);
+    verify_set_allocation_failure_cleanup(composed_list_set, list_data);
+
     verify_constructed_hash_dictionary_failure_cleanup();
 
     std::cout << "ScalarLiteralItem size/alignment: " << sizeof(ScalarLiteralItem) << '/' << alignof(ScalarLiteralItem)

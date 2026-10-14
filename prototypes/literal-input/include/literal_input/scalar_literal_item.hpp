@@ -35,7 +35,7 @@ class ScalarLiteralItem {
 
   public:
     template <typename Source>
-        requires (supported_source<Source>) && (!std::same_as<std::remove_cvref_t<Source>, ScalarLiteralItem>)
+        requires (!std::same_as<std::remove_cvref_t<Source>, ScalarLiteralItem>) && supported_source<Source>
     ScalarLiteralItem(const Source &source) noexcept
         : source_{std::addressof(source)}, visit_{&visit_source<std::remove_cv_t<Source> >} {}
 

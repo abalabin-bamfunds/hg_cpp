@@ -112,6 +112,10 @@ class AlternateHierarchicalRuntimeType final : public bg::HierarchicalScalarRunt
     explicit AlternateHierarchicalRuntimeType(const bg::ResolvedHierarchicalScalarType &type) noexcept
         : HierarchicalScalarRuntimeType{type, sizeof(void *), alignof(void *), false, false, true} {}
 
+    void construct_fields_with(void *, bg::allocator &, bg::ScalarFieldConstruction) const override {
+        throw std::logic_error{"alternate hierarchical runtime does not support field construction"};
+    }
+
     bg::details::ScalarData field(const bg::details::ScalarData &, std::size_t) const override {
         std::terminate();
     }

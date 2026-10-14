@@ -110,6 +110,30 @@ returns `false`, destroys the candidate key, and skips mapped construction.
 Success returns `true`. An exception destroys the partial entry and preserves
 existing entries. Storage can retain allocation capacity after a failed insertion.
 
+`ScalarSetRuntimeType::insert_with(storage, memory, construction)` constructs
+an item in its final slot before hashing and duplicate lookup. A duplicate
+returns `false` and destroys the candidate. An exception destroys the candidate
+and preserves existing items.
+
+`ScalarFieldConstruction` constructs one field by schema index. Its callback
+receives the field runtime type, sized and aligned uninitialized storage, and
+the allocator. Return `true` after complete construction. Return `false` for
+an absent field. A `false` result or exception must leave no live object or
+owned resources in that field's storage. The callback runs synchronously and
+borrows its context.
+
+`StructScalarRuntimeType::construct_fields_with` and
+`HierarchicalScalarRuntimeType::construct_fields_with` invoke field callbacks
+in schema order and destroy completed fields on failure. Compound scalars
+require every field; hierarchical scalars allow absent optional fields.
+Native compounds stage their trivial fields in fixed stack storage, then
+initialize the aggregate once. Field callback storage may be temporary.
+Composed hierarchical scalars construct fields in final storage and publish
+the shared handle after successful construction. Construction reuses the
+active allocation owner when the allocator uses the context's memory resource
+or the owner's pool resource. A different resource creates a separate owner.
+Nested fields use their owner's pool, so a retained child can outlive its parent.
+
 An explicit allocator defines the ownership of dynamic storage. Without
 one, dynamic storage created during a node invocation belongs to the runtime
 graph, and its `ScalarValue` must be destroyed in that invocation. This is

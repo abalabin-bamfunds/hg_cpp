@@ -3,6 +3,7 @@
 #include <ddv/serial_visitor.h>
 
 #include <concepts>
+#include <cstddef>
 #include <initializer_list>
 #include <span>
 #include <type_traits>
@@ -18,17 +19,26 @@ template <typename Leaf> class Literal {
     Literal() noexcept = default;
 
     Literal(std::initializer_list<Literal> elements) noexcept
-        : value_{std::in_place_index<1>, elements.begin(), elements.size()} {}
+        : value_{std::in_place_index<1>, SequenceStorage{elements.begin(), elements.size()}} {}
 
     template <typename Source>
-        requires std::constructible_from<Leaf, Source &&> &&
-                 (!std::same_as<std::remove_cvref_t<Source>, Literal>)
+        requires (!std::same_as<std::remove_cvref_t<Source>, Literal>) && std::constructible_from<Leaf, Source &&>
     Literal(Source &&source) : value_{std::in_place_index<0>, std::forward<Source>(source)} {}
 
     template <typename Visitor, typename... Arguments>
         requires ddv::SerialVisitorType<std::remove_cvref_t<Visitor>>
     decltype(auto) visit(Visitor &&visitor, Arguments &&...arguments) const {
-        return std::forward<Visitor>(visitor).visit(value_, std::forward<Arguments>(arguments)...);
+        return std::visit(
+            [&visitor, &arguments...](const auto &value) -> decltype(auto) {
+                using Value = std::remove_cvref_t<decltype(value)>;
+                if constexpr (std::same_as<Value, SequenceStorage>) {
+                    return std::forward<Visitor>(visitor).visit(
+                        sequence_type{value.data, value.size}, std::forward<Arguments>(arguments)...);
+                } else {
+                    return std::forward<Visitor>(visitor).visit(value, std::forward<Arguments>(arguments)...);
+                }
+            },
+            value_);
     }
 
     template <typename Function, typename... Functions>
@@ -37,7 +47,12 @@ template <typename Leaf> class Literal {
     }
 
   private:
-    std::variant<Leaf, sequence_type> value_{std::in_place_index<1>};
+    struct SequenceStorage {
+        const Literal *data;
+        std::size_t size;
+    };
+
+    std::variant<Leaf, SequenceStorage> value_{std::in_place_index<1>};
 };
 
 } // namespace literal
