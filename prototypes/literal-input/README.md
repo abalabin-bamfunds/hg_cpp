@@ -10,6 +10,8 @@ cmake -S prototypes/literal-input -B build/prototypes/literal-input -G Ninja \
   -DFETCHCONTENT_SOURCE_DIR_DDVISITOR=/home/abalabin/_bg/.lanes/literal-implementation/build/dev/_deps/ddvisitor-src
 cmake --build build/prototypes/literal-input --target literal_input_probe -j2
 build/prototypes/literal-input/literal_input_probe
+cmake --build build/prototypes/literal-input --target literal_time_series_apply_probe -j2
+build/prototypes/literal-input/literal_time_series_apply_probe
 ```
 
 The probe covers scalar visitor dispatch, named native struct and Bundle
@@ -124,6 +126,35 @@ structural types to their generic views. Other declarations reach the
 `Scalar<>` extension callback, where the consumer owns extension behavior,
 optionally through `ScalarDispatch`; see [the scalar API](../../docs/scalar-api.md#optional-operations).
 
+`time_series_apply.hpp` provides `literal::apply(output, literal)` for typed
+and runtime-selected scalar time series and fixed TSL outputs:
+
+```cpp
+#include <literal_input/time_series_apply.hpp>
+
+literal::apply(scalar_output, 42);
+literal::apply(list_output, {{0, 10}, {2, 30}});
+literal::apply(nested_list_output, {{1, {{0, 10}}}});
+```
+
+Scalar leaves use `Out::set_value()` directly, without an owning intermediate.
+TSL entries are `{index, child_delta}` pairs. Indices must be nonnegative
+integers other than Boolean values. At each list, the consumer validates entry
+shape, index range, and duplicate indices before applying that list's children.
+Validation uses an allocation-free scan of earlier entries. Omitted indices
+retain their state. Empty deltas perform no updates. Child outputs own validity,
+guarantees, notifications, and containing paths. Nested deltas apply recursively;
+a child application failure can leave earlier children published, as defined
+by [evaluation](../../docs/evaluation.md#exceptions).
+
+Scalar time series reject brace sequences with `std::invalid_argument`. TSB,
+TSD, and TSS output updates are not supported by this prototype.
+
+The `literal_time_series_apply_probe` target checks typed and generic output
+dispatch, nested TSL updates, notifications, validity, deduplicated outputs,
+borrowed scalar views, provider-backed rvalue leaves, malformed deltas, and
+unsupported output types.
+
 The probe reports object layout and counts global `operator new` calls for
 source construction, first visit, warmed visit, and recursive construction
 and traversal. It does not count allocations made directly through the engine
@@ -157,6 +188,24 @@ c++ -std=c++23 -fsanitize=address,undefined -fsanitize-address-use-after-scope \
   -o build/prototypes/literal-input/literal_input_probe_asan
 ASAN_OPTIONS=detect_stack_use_after_return=1:detect_stack_use_after_scope=1:detect_leaks=0 \
   UBSAN_OPTIONS=print_stacktrace=1 build/prototypes/literal-input/literal_input_probe_asan
+```
+
+The time-series probe can also run under ASan and UBSan while linking the
+normal lane-local engine library:
+
+```sh
+/home/abalabin/miniforge3/envs/bg-build/bin/c++ -std=c++23 \
+  -fsanitize=address,undefined -fsanitize-address-use-after-scope \
+  -fno-omit-frame-pointer \
+  -Iprototypes/literal-input/include -Iinclude -Itests/value/scalar \
+  -I/home/abalabin/_bg/.lanes/literal-implementation/build/dev/_deps/ddvisitor-src/include \
+  -I/home/abalabin/_bg/.lanes/literal-implementation/build/dev/_deps/tpack-src/include \
+  prototypes/literal-input/time_series_apply_probe.cpp tests/value/scalar/test_scalar_provider.cpp \
+  -Lbuild/prototypes/literal-input/bg \
+  -Wl,-rpath,/home/abalabin/_bg/.lanes/literal-input-prototype/build/prototypes/literal-input/bg \
+  -lbg -o build/prototypes/literal-input/literal_time_series_apply_probe_asan
+ASAN_OPTIONS=detect_stack_use_after_return=1:detect_stack_use_after_scope=1:detect_leaks=0 \
+  UBSAN_OPTIONS=print_stacktrace=1 build/prototypes/literal-input/literal_time_series_apply_probe_asan
 ```
 
 Leak detection is disabled because LeakSanitizer aborts in this environment.
