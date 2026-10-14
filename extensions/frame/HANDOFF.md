@@ -1,27 +1,26 @@
 # Frame foundation handoff
 
-Updated: 2026-10-14. The frame foundation, including generic Row/RowPatch field
-support, is committed on `agent/frame-field-access` at `e65c2cb3` and rebased
-onto main `052a7f0b`. The lane is clean. BG integration and the final consumer
-rebuild remain outstanding.
+Updated: 2026-10-14. The frame foundation includes generic Row/RowPatch field
+support. It is based on integrated main `6051cc63`; the foundation checkpoint
+`e65c2cb3` records the completed row work. The active lane has been rebuilt and
+tested against the integrated main install.
 
 ## Work locations
 
-[CONSOLIDATION.md](CONSOLIDATION.md) records the selected BG integration scope
-and the remaining consumer verification.
+[CONSOLIDATION.md](CONSOLIDATION.md) records the integrated BG changes, archive,
+lane-retirement plan, and consumer verification.
 
 | Work | Location / branch | State |
 | --- | --- | --- |
-| Main | `/home/abalabin/_bg`, `main` | Root integrates scalar copy selection and output-runtime selection |
-| Active frame work | `.lanes/frame-field-access`, `agent/frame-field-access` | Clean at `e65c2cb3`, based on main `052a7f0b` |
+| Main | `/home/abalabin/_bg`, `main` at `6051cc63` | Scalar copy and output-runtime changes integrated |
+| Active frame work | `.lanes/frame-field-access`, `agent/frame-field-access` | Based on main `6051cc63` |
 | Numeric value extraction | Separate work | Held; frame does not depend on it |
 | Historical frame work | `extensions/frame/archive/` | Proposals, probe sources, and benchmark results preserved; see its README |
 | Schema field reflection | Main | Integrated and covered by BG schema reflection tests |
 
-The standalone consumer caches still reference prior lane installations.
-Reconfigure them after root provides the integrated main prefix. Do not reuse
-their current cache paths as final verification, and do not configure a root BG
-build in the frame lane.
+The standalone consumers use `/home/abalabin/_bg/build/frame-dependency/install`
+for BG, ddvisitor, and tpack. Conda provides unrelated dependencies. Each
+consumer cache was cleared of the prior package paths before reconfiguration.
 
 Preserve the recovery stashes, including the checkpoint made before this rebase:
 
@@ -31,10 +30,11 @@ Preserve the recovery stashes, including the checkpoint made before this rebase:
 f650a30a79bd707b8f566242c7bbe2d48020e578
 ```
 
-Root owns design decisions, BG integration, independent verification, and
-retirement of superseded lanes. Recovery stashes and the external recovery
-archive at `/home/abalabin/_bg/build/frame-lane-recovery/2026-10-14` remain
-intact; do not remove them during frame verification.
+Root retired eight superseded frame checkouts and branches, plus the scalar-copy
+and output-runtime integration checkouts and branches. The active frame lane is
+`.lanes/frame-field-access`. All 11 recovery stashes remain unchanged. The
+recovery archive and retirement manifest are under
+`/home/abalabin/_bg/build/frame-lane-recovery/2026-10-14`.
 
 ## Selected design
 
@@ -128,22 +128,31 @@ Row/RowPatch writes. Tests cover schema/type validation before mutation,
 nullable cells, all-null insertions, inherited and shadowed fields, generic
 type variables, and ownership after graph destruction.
 
-The last complete frame test run was on 2026-10-14 with GCC C++23 and all three
-required configurations:
+BG main 6051cc63 passed its complete C++ and Python suite: 1,720/1,720.
+The three frame consumers were configured with
+CMAKE_PREFIX_PATH=/home/abalabin/_bg/build/frame-dependency/install;/home/abalabin/miniforge3/envs/bg-build.
+Each configure removed cached bg_DIR, ddvisitor_DIR, and tpack_DIR before
+package discovery. All three packages resolve from the installed main prefix;
+Conda supplies unrelated dependencies including Arrow.
 
-| Configuration | Result |
-| --- | --- |
-| Release, Arrow enabled | 5/5 suites passed |
-| Release, Arrow disabled | 4/4 suites passed |
-| Debug, Arrow enabled, AddressSanitizer and UndefinedBehaviorSanitizer | 5/5 suites passed; no sanitizer diagnostics |
+| Consumer | Build | Test |
+| --- | --- | --- |
+| build/field-access-on, Release, Arrow enabled | Passed with -j12 | 5/5 suites passed |
+| build/cc4-checkpoint-off, Release, Arrow disabled | Passed with -j12 | 4/4 suites passed |
+| build/cc4-lifetime, Debug, Arrow enabled, ASan/UBSan | Passed with -j12 | 5/5 suites passed; no sanitizer diagnostics |
 
-These runs used the prior BG package and are not final verification for the
-current main base. The consumer caches still point to old lane installations.
-After root integrates the two approved BG changes, reconfigure all three
-consumers against the supplied main prefix, remove cached BG, ddvisitor, and
-tpack paths to old lanes, and rerun the build and tests with -j12. Record that
-final prefix and its results here. Leak detection was disabled in earlier runs
-because of environment ptrace restrictions; Clang and MSVC have not been tested.
+The sanitizer test used ASAN_OPTIONS=detect_leaks=0 and
+UBSAN_OPTIONS=halt_on_error=1. Leak detection remains disabled because of
+environment ptrace restrictions. Clang and MSVC have not been tested.
+
+Configure, build, and test logs are stored in each consumer build directory as
+reconfigure-main.log, build-main.log, and test-main.log. A scan of all three
+build trees found no references to retired worktrees. Frame shared-library
+RPATHs point to the installed main prefix and Conda libraries, plus the local
+frame build directory for the Arrow adapter. Root reran all three CTest
+configurations after lane retirement: Arrow on 5/5, Arrow off 4/4, and ASan/UBSan
+5/5, with no sanitizer diagnostics. Those logs are named
+root-after-retirement-ctest.log in each consumer build directory.
 
 ## Performance artifacts
 
@@ -164,27 +173,19 @@ current API completion.
 The earlier schema-hooks comparison and direct sparse-bunch PyArrow probe are
 preserved under `extensions/frame/archive/`. Their source and measurement
 conditions are documented in the archive README. These results inform the
-design; they do not replace the pending consumer verification.
+design; they do not replace the consumer verification recorded above.
 
 ## Agreed next work
 
-The current BG integration contains exactly two changes: scalar copy runtime
-selection and wiring-time output runtime selection. The frame extension uses
-scalar copy selection for owning frame copies. It will use the output hook to
-select frame-specific output storage. Frame output layout options remain in the
-extension and on Out; BG does not define frame types or layouts.
+Main contains exactly two BG changes needed by the current frame foundation:
+scalar copy runtime selection and wiring-time output runtime selection. The
+frame extension uses scalar copy selection for owning frame copies and the
+output hook to select frame-specific output storage. Frame output layout options
+remain extension-owned; BG does not define frame types or layouts.
 
-Do not integrate or depend on the shared numeric function extraction. It is
-held. Frame block mathematics must be
-designed before implementing expressions, filtering kernels, or computed
-columns. Do not add frame APIs while this design is open.
-
-After root provides the integrated main install prefix, reconfigure the Arrow-on,
-Arrow-off, and sanitizer consumers listed above. Remove every cached BG,
-ddvisitor, and tpack path that points into scalar lanes. Resolve BG and its
-installed dependencies from that same prefix, then build and test with -j12.
-Record the actual prefix and results here. Report a required BG API repair or an
-unexpected design issue instead of adding a frame-side workaround.
+The shared numeric function extraction is held. Block arithmetic design and
+implementation are next. Whether that work should reuse the held extraction
+depends on the design and implementation.
 
 Previous-value subscriptions, strings and symbols, compaction, capacity
 trimming, and delta transport remain later work. Previous-cell capture, if

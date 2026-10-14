@@ -1,57 +1,63 @@
 # Frame lane consolidation
 
-Updated on 2026-10-14. The active frame lane is
-`.lanes/frame-field-access`, branch `agent/frame-field-access`, commit
-`e65c2cb3`, based on main `052a7f0b`. The lane is clean. Keep it as the sole
-active frame lane. Root owns BG integration and lane retirement.
+Updated 2026-10-14. The frame implementation lane is based on integrated main
+`6051cc63`. The foundation checkpoint `e65c2cb3` contains the generic
+Row/RowPatch work. Keep `.lanes/frame-field-access` as the active frame lane.
 
-## Current BG scope
+## BG changes
 
-Integrate these BG changes onto main:
+Main contains the two BG changes required by the frame extension:
 
-- scalar copy runtime selection, required by immutable frame snapshots and
-  erased Arrow copies;
-- wiring-time output runtime selection, required for frame output storage.
+- scalar copy runtime selection, integrated in `a194846e`;
+- wiring-time output runtime selection, integrated in `ea8077c2`.
 
-Hold the shared numeric function extraction. Do not integrate it with this BG
-change or make the frame extension depend on it.
-Design frame block mathematics before implementing expression or computed
-column nodes. Do not add frame APIs while that design is open.
+The final BG correction is `6051cc63`; its complete C++ and Python suite passed
+1,720/1,720. The frame-specific output layout remains extension-owned and is
+selected through the output hook.
 
-The frame-specific `Out` specification remains extension-owned. BG does not
-define frame output layouts or know frame runtime types.
+The shared numeric function extraction is held. Frame block arithmetic design
+and implementation is next. Whether that work should reuse the held extraction
+depends on the design and implementation.
 
-## Lane and archive disposition
+## Archive and lane retirement
 
-Keep `.lanes/frame-field-access` as the frame implementation lane. Do not
-delete any old lane in this task. Root created an additional recovery archive
-at `/home/abalabin/_bg/build/frame-lane-recovery/2026-10-14`, including source
-snapshots, manifests, patches, and bundles for unique commit series.
+[`archive/`](archive/README.md) preserves the original Arrow proposals, probe
+source and results, frame-schema benchmark comparisons, active shared-view
+sample, and schema offset probe. The nine proposal documents are unchanged and
+marked historical. Only the probe README and runnable scripts use paths suited
+to their archived location.
 
-The extension archive in [`archive/`](archive/README.md) preserves the original
-Arrow proposals, experiment sources and results, frame-schema benchmark
-comparisons, the active shared-view benchmark sample, and the schema offset
-probe. Proposal documents remain unchanged and are labeled historical. The
-probe scripts were updated only for the archive location.
+An additional recovery archive exists at
+`/home/abalabin/_bg/build/frame-lane-recovery/2026-10-14`; it preserves
+uncommitted source snapshots, manifests, patches, and unique commit bundles.
+The retirement manifest is
+`/home/abalabin/_bg/build/frame-lane-recovery/2026-10-14/retirement.json`.
+Root retired eight superseded frame checkouts and branches, plus the scalar-copy
+and output-runtime integration checkouts and branches. All 11 existing stashes
+remain unchanged. `.lanes/frame-field-access` is the only active frame lane.
 
-The old frame lanes remain present until root finishes integration and final
-consumer verification. Do not remove them from this lane.
+## Consumer verification
 
-## Consumer verification after BG integration
+All three standalone consumers were reconfigured against
+`/home/abalabin/_bg/build/frame-dependency/install`. The Conda environment is
+also on `CMAKE_PREFIX_PATH` for unrelated dependencies such as Arrow.
 
-After root provides the integrated main prefix, reconfigure all three
-standalone consumers:
-
-| Consumer | Required configuration |
+| Consumer | Build and test result |
 | --- | --- |
-| Arrow on | Release, Arrow enabled |
-| Arrow off | Release, Arrow disabled |
-| Sanitizer | Debug, Arrow enabled, AddressSanitizer and UndefinedBehaviorSanitizer |
+| Arrow enabled, Release | Build passed; 5/5 suites passed |
+| Arrow disabled, Release | Build passed; 4/4 suites passed |
+| Arrow enabled, Debug with ASan/UBSan | Build passed; 5/5 suites passed |
 
-Remove every cached BG, `ddvisitor`, and `tpack` path that points into scalar
-lanes. Resolve BG and its installed dependencies from the same supplied main
-prefix. Build and test with `-j12`. Update [`HANDOFF.md`](HANDOFF.md) with the
-actual prefix, configure commands, build results, and test results.
+All builds used `-j12`. The sanitizer test used
+`ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1`. CMake resolved
+`bg`, `ddvisitor`, and `tpack` from the supplied prefix in every consumer. No
+references to old scalar-lane installs remain in the three build trees. Frame
+shared-library RPATHs point to the supplied prefix and Conda libraries, plus
+the local frame build directory for the Arrow adapter.
 
-Report a required BG API repair or an unexpected design issue to root. Do not
-work around it in the frame extension.
+Root reran all three test configurations after lane retirement. CMake caches,
+generated target files, and frame shared-library RPATHs contain no references
+to the retired checkouts.
+
+Configure, build, and test logs are under the corresponding ignored build
+directories: `reconfigure-main.log`, `build-main.log`, and `test-main.log`.
