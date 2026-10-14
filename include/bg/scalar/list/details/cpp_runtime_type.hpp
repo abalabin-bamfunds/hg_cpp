@@ -6,6 +6,9 @@
 #include <bg/util/byte_copy.hpp>
 #include <bg/util/scope_exit.hpp>
 
+#include <cstddef>
+#include <memory>
+
 namespace bg::details {
 
 template <typename T>
@@ -24,7 +27,7 @@ class CppScalarRuntimeType<List<T>> final : public CppScalarRuntimeTypeBase<List
     void do_construct_from_input(void *destination, const details::ScalarData &value,
                                  allocator &memory) const override {
         construct_initial_value(destination);
-        auto rollback = util::scope_exit{[&]() noexcept { clear(destination, memory); }};
+        auto rollback = util::scope_exit{[&]() noexcept { this->destroy(destination, memory); }};
         const auto &source_type = static_cast<const ScalarListRuntimeType &>(value.runtime_type());
         for (auto index = std::size_t{}; index < source_type.item_count(value.data()); ++index) {
             append(destination, {source_type.item_runtime_type(), source_type.item(value.data(), index)}, memory);
@@ -33,15 +36,12 @@ class CppScalarRuntimeType<List<T>> final : public CppScalarRuntimeTypeBase<List
     }
 
     void do_assign_from_input(void *destination, const details::ScalarData &value) const override {
-        auto memory = current_scalar_allocator();
-        auto replacement = details::scalar_list_storage<T>{};
-        auto release_replacement = util::scope_exit{[&]() noexcept { clear(&replacement, memory); }};
-        const auto &source_type = static_cast<const ScalarListRuntimeType &>(value.runtime_type());
-        for (auto index = std::size_t{}; index < source_type.item_count(value.data()); ++index) {
-            append(&replacement, {source_type.item_runtime_type(), source_type.item(value.data(), index)}, memory);
-        }
-
-        static_cast<details::scalar_list_storage<T> *>(destination)->items.swap(replacement.items);
+        auto input = value;
+        const auto construct = [](void *context, const ScalarRuntimeType &runtime_type, void *target,
+                                  allocator &memory) {
+            runtime_type.construct_from_input(target, *static_cast<const details::ScalarData *>(context), memory);
+        };
+        (void)assign_with(destination, {&input, construct}, false);
     }
 
     bool equals_same_type(const void *storage, const details::ScalarData &other) const override {
@@ -81,6 +81,24 @@ class CppScalarRuntimeType<List<T>> final : public CppScalarRuntimeTypeBase<List
         });
     }
 
+    bool assign_with(void *destination, ScalarConstruction construction, bool suppress_equal) const override {
+        auto memory = current_scalar_allocator();
+        alignas(details::scalar_list_storage<T>) std::byte replacement_bytes[sizeof(details::scalar_list_storage<T>)];
+        construction.construct(construction.context, *this, replacement_bytes, memory);
+        auto *replacement = std::launder(
+            reinterpret_cast<details::scalar_list_storage<T> *>(replacement_bytes));
+        auto release_replacement = util::scope_exit{[&]() noexcept { this->destroy(replacement, memory); }};
+        const auto source = details::ScalarData{*this, replacement};
+
+        if (suppress_equal && this->ScalarRuntimeType::equals(destination, source)) {
+            return false;
+        }
+
+        auto &target_items = static_cast<details::scalar_list_storage<T> *>(destination)->items;
+        target_items.swap(replacement->items);
+        return true;
+    }
+
     void append(void *storage, const details::ScalarData &value, allocator &memory) const override {
         auto &items = static_cast<details::scalar_list_storage<T> *>(storage)->items;
         items.emplace_back_with(
@@ -98,7 +116,8 @@ class CppScalarRuntimeType<List<T>> final : public CppScalarRuntimeTypeBase<List
         auto replacement = details::scalar_list_storage<T>{};
         auto rollback = util::scope_exit{[&]() noexcept {
             replacement.items.release_with(
-                memory.memory_resource(), [&](auto *item) noexcept { scalar_storage_traits<T>::destroy(item, memory); });
+                memory.memory_resource(),
+                [&](auto *item) noexcept { scalar_storage_traits<T>::destroy(item, memory); });
         }};
         for (auto position = std::uint32_t{}; position < items.size(); ++position) {
             if (position == index) {
@@ -115,6 +134,7 @@ class CppScalarRuntimeType<List<T>> final : public CppScalarRuntimeTypeBase<List
         static_cast<details::scalar_list_storage<T> *>(storage)->items.release_with(
             memory.memory_resource(), [&](auto *item) noexcept { scalar_storage_traits<T>::destroy(item, memory); });
     }
+
 };
 
 } // namespace bg::details

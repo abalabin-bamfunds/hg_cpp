@@ -1,7 +1,7 @@
 #pragma once
 
-#include <literal_input/literal.hpp>
-#include <literal_input/scalar_literal_item.hpp>
+#include <bg/literal/literal.hpp>
+#include <bg/literal/scalar_literal_item.hpp>
 
 namespace literal {
 

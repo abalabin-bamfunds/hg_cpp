@@ -1,6 +1,6 @@
 #pragma once
 
-#include <literal_input/scalar_literal.hpp>
+#include <bg/literal/scalar_literal.hpp>
 
 #include <bg/node/output.hpp>
 #include <bg/time_series/time_series_output.hpp>
@@ -86,13 +86,7 @@ template <typename Variable>
 void apply_time_series(const bg::Out<Variable> &output, const ScalarLiteral &literal);
 
 inline void apply_output(const bg::Out<bg::TS<bg::SCALAR>> &output, const ScalarLiteral &literal) {
-    literal.visit(
-        [&](const ScalarLiteralItem &item) {
-            item.visit([&](const auto *source) { output.set_value(*source); }, ddv::noop);
-        },
-        [](std::span<const ScalarLiteral>) {
-            throw std::invalid_argument{"a scalar time-series sequence update is not supported"};
-        });
+    output.apply(literal);
 }
 
 template <typename Item, auto Size>

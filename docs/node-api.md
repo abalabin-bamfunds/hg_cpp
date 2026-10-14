@@ -445,6 +445,25 @@ produce a valid empty collection.
 `Out<TS<T>>::set_value()` accepts a compatible scalar view. It assigns the value
 before it sets the last updated time.
 
+`Out<TS<T>>::apply(const literal::ScalarLiteral&)` assigns a borrowed scalar
+leaf through `set_value()`. For a scalar list output, a brace sequence replaces
+the complete list; nested items use the actual destination runtime types.
+An empty sequence publishes a valid empty list. Equal replacements are
+suppressed only while a deduplicated output is valid, so applying an equal value
+after invalidation revalidates it. Concrete and generic TS outputs preserve the
+selected runtime representation and their containing output path.
+
+```cpp
+void replace_list(Out<TS<List<i64>>> output) {
+    output.apply({1, 2, 3});
+}
+```
+
+`Out<TS_T>::apply()` dispatches to its resolved scalar time series output.
+Sequence assignment currently requires a scalar list; other sequence destinations
+and other time series kinds throw `std::invalid_argument`.
+Follow the [literal lifetime and construction contract](scalar-api.md#literals).
+
 `Out<>::copy_tick(input)` applies the input's current-cycle changes to the output.
 It does nothing when the input has no change in the current evaluation cycle.
 Collection copies apply additions, removals, and changed items recursively.

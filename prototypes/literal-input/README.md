@@ -1,4 +1,8 @@
-# Borrowed literal input prototype
+# Literal probes
+
+The shared headers live in `include/bg/literal/`. See the
+[literal API](../../docs/scalar-api.md#literals) for source lifetimes and scalar
+construction, and the [node API](../../docs/node-api.md) for `Out::apply()`.
 
 Configure and build from this lane's root. The engine target and build output
 are local to this lane; the dependency source paths may point to existing
@@ -19,25 +23,6 @@ construction, over-aligned native fields, provider-backed Bundle fields,
 recursive list, set, and dictionary construction, and rollback after
 construction failures. It also checks nested Bundles constructed with a
 different allocator while an outer scalar allocation context is active.
-
-The prototype separates a borrowed scalar literal item from recursive literal
-storage. `ScalarLiteralItem` stores a source address and a typed visit function
-pointer. It canonicalizes raw C++ values during dispatch, then calls the existing
-`details::make_scalar_source` utility while the canonical value remains alive.
-`Scalar`, `ScalarValue`, and `ScalarData` use direct descriptor access.
-`ScalarLiteralItem` borrows its source, which must remain alive through
-dispatch. A descriptor passed to `Scalar<>::from(const ScalarData&)` must be
-non-empty, and storage referenced by the descriptor must remain valid while the
-resulting scalar view is used. A typed scalar view created during visitor
-dispatch is callback-scoped and must not be retained.
-
-`Literal<Leaf>` stores either one leaf or borrowed pointer-and-size sequence
-storage. Sequence visitation converts it to `std::span<const Literal<Leaf>>`.
-Sequence storage refers to initializer-list backing storage.
-`ScalarLiteral` aliases `Literal<ScalarLiteralItem>` for recursive scalar
-input. Construct, traverse, and consume a literal within the full expression
-that created its initializer lists and temporary scalar sources. Do not retain
-it beyond that expression.
 
 `visit()` constructs a DDV adapter for one dispatch. `accept()` reuses a
 caller-owned scalar visitor mux:
@@ -87,39 +72,8 @@ const auto &runtime_type = bg::resolve_scalar_runtime_type(outer_type, outer_ava
 auto erased = literal::construct(runtime_type, {{1, 2}, {}, {3}});
 ```
 
-Construction dispatches each scalar leaf through `ScalarRuntimeType::construct_from_input`.
-List runtimes acquire item storage and commit each item only after its callback
-returns successfully. A thrown callback leaves the destination slot unconstructed;
-the enclosing list destroys all previously committed items.
-
-A dictionary sequence contains entries with exactly two literals: a key and
-a mapped value. Each literal is interpreted recursively by its destination
-runtime. Dictionary construction rejects duplicate keys with
-`std::invalid_argument`. The dictionary runtime constructs each key in its
-final slot before hashing and duplicate lookup. A duplicate destroys the
-candidate key and skips mapped construction. Any failed entry destroys the
-enclosing dictionary and its committed entries.
-
-A set sequence contains item literals and deduplicates equal destination
-values. Each item is constructed in its final slot before hashing; a duplicate
-candidate is destroyed.
-
-Compound scalar and bundle sequences contain named pairs. Names are strings
-or symbols, and entry order is independent of schema order. Unknown names,
-duplicate names, malformed pairs, and missing required fields throw
-`std::invalid_argument`. Omitted optional bundle fields remain absent. An
-empty sequence constructs an empty bundle or a bundle with only optional
-fields.
-
-`ScalarFieldConstruction` lets the runtime own field layout and cleanup.
-Native compounds stage trivial fields in fixed stack storage and initialize
-the aggregate once, including const fields. Bundles construct fields directly
-in their shared control block. Nested bundles share the allocation owner, so
-a child copied out of a bundle can outlive its parent. Creating a bundle
-sequence outside a scalar allocation context requires an explicit allocator;
-copying an existing bundle leaf uses its existing shared ownership. An
-explicit allocator also applies to bundles nested inside lists, sets, and
-dictionaries. Its memory resource must outlive the resulting values.
+Sequence syntax, field validation, allocator ownership, and failure cleanup
+follow the [scalar API](../../docs/scalar-api.md#literals).
 
 `ScalarVisitTypes` dispatches built-in atomic types to typed scalar views and
 structural types to their generic views. Other declarations reach the
@@ -130,14 +84,17 @@ optionally through `ScalarDispatch`; see [the scalar API](../../docs/scalar-api.
 and runtime-selected scalar time series and fixed TSL outputs:
 
 ```cpp
-#include <literal_input/time_series_apply.hpp>
+#include <bg/literal/scalar_literal.hpp>
+#include "literal_input/time_series_apply.hpp"
 
 literal::apply(scalar_output, 42);
 literal::apply(list_output, {{0, 10}, {2, 30}});
 literal::apply(nested_list_output, {{1, {{0, 10}}}});
 ```
 
-Scalar leaves use `Out::set_value()` directly, without an owning intermediate.
+Scalar TS outputs delegate to `Out::apply()`. Scalar leaves use `set_value()`
+without an owning intermediate; scalar list sequences replace the complete list
+through the actual destination runtime.
 TSL entries are `{index, child_delta}` pairs. Indices must be nonnegative
 integers other than Boolean values. At each list, the consumer validates entry
 shape, index range, and duplicate indices before applying that list's children.
@@ -147,13 +104,18 @@ guarantees, notifications, and containing paths. Nested deltas apply recursively
 a child application failure can leave earlier children published, as defined
 by [evaluation](../../docs/evaluation.md#exceptions).
 
-Scalar time series reject brace sequences with `std::invalid_argument`. TSB,
-TSD, and TSS output updates are not supported by this prototype.
+Scalar time series accept list replacement sequences. Other scalar sequence
+destinations, TSB, TSD, and TSS output updates remain unsupported.
 
 The `literal_time_series_apply_probe` target checks typed and generic output
 dispatch, nested TSL updates, notifications, validity, deduplicated outputs,
 borrowed scalar views, provider-backed rvalue leaves, malformed deltas, and
-unsupported output types.
+unsupported output types. Scalar list checks cover native and composed runtimes,
+three nested list levels, empty replacements, deduplicated revalidation, provider
+items, and failed later-item construction preserving previous values and
+timestamps. Native and composed replacements each construct two supplied items
+with exactly two item copies and one collection allocation. The scalar storage
+regression checks the default provider assignment fallback and its cleanup.
 
 The probe reports object layout and counts global `operator new` calls for
 source construction, first visit, warmed visit, and recursive construction

@@ -1,7 +1,10 @@
 #include <bg/scalar/cpp_runtime_type.hpp>
+#include <bg/scalar/details/allocation_context.hpp>
 #include <bg/scalar/list/runtime_type.hpp>
 #include <bg/scalar/list/scalar_type.hpp>
 #include <bg/scalar/value.hpp>
+#include <bg/scalar/bundle/details/allocation_owner.hpp>
+#include <bg/util/scope_exit.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -11,8 +14,11 @@
 #include <cstdint>
 #include <memory_resource>
 #include <new>
+#include <stdexcept>
 #include <string_view>
 #include <vector>
+
+#include "../test_scalar_provider.hpp"
 
 TEST_CASE("resolved scalar list storage supports mutation",
           "[value][scalar][list][scalar:list][storage][feature:scalar-storage]") {
@@ -40,6 +46,73 @@ TEST_CASE("resolved scalar list storage supports mutation",
 
     list.destroy(storage, allocator);
     allocator.deallocate_bytes(storage, list.size(), list.alignment());
+}
+
+TEST_CASE("the default scalar list assignment constructs before replacing provider values",
+          "[value][scalar][list][scalar:list][storage][feature:scalar-storage]") {
+    using Value = test_scalar_provider::value;
+    using List = bg::List<Value>;
+
+    const auto &runtime = bg::cpp_scalar_runtime_type<List>();
+    const auto &list_runtime = static_cast<const bg::ScalarListRuntimeType &>(runtime);
+    auto scalar_memory = counting_memory_resource{};
+    auto scalar_allocator = bg::allocator{scalar_memory};
+    auto *allocation_owner = bg::details::BundleAllocationOwner::create(scalar_allocator);
+    auto release_allocation_owner = bg::util::scope_exit{[&]() noexcept { allocation_owner->release(); }};
+    auto value_memory = std::pmr::unsynchronized_pool_resource{};
+    auto value_allocator = bg::allocator{value_memory};
+    auto *destination = value_allocator.allocate_bytes(runtime.size(), runtime.alignment());
+    runtime.construct_initial_value(destination);
+
+    auto destroy_destination = bg::util::scope_exit{[&]() noexcept {
+        runtime.destroy(destination, scalar_allocator);
+        value_allocator.deallocate_bytes(destination, runtime.size(), runtime.alignment());
+    }};
+
+    const auto first_source = bg::ScalarValue<List>{std::array<Value, 1>{Value{42}}};
+    const auto first_view = first_source.view();
+    auto first_data = bg::details::scalar_data(first_view);
+    const auto construct_from_source = [](void *context, const bg::ScalarRuntimeType &runtime_type, void *target,
+                                          bg::allocator &memory) {
+        runtime_type.construct_from_input(target, *static_cast<const bg::details::ScalarData *>(context), memory);
+    };
+    const auto first_construction = bg::ScalarConstruction{&first_data, construct_from_source};
+
+    {
+        auto context = bg::details::ScalarAllocationContext{scalar_allocator, *allocation_owner, nullptr, 0};
+        CHECK(list_runtime.ScalarListRuntimeType::assign_with(destination, first_construction, false));
+        const auto values = bg::Scalar<List>::from(runtime, destination);
+        REQUIRE(values.size() == 1);
+        CHECK(values[0].value().get() == 42);
+
+        const auto fail = [](void *, const bg::ScalarRuntimeType &, void *, bg::allocator &) {
+            throw std::runtime_error{"list construction failed"};
+        };
+        const auto allocations_before_failure = scalar_memory.allocations();
+        CHECK_THROWS_AS(list_runtime.ScalarListRuntimeType::assign_with(destination, {nullptr, fail}, false),
+                        std::runtime_error);
+        CHECK(scalar_memory.allocations() == allocations_before_failure);
+        CHECK(values[0].value().get() == 42);
+
+        CHECK_FALSE(list_runtime.ScalarListRuntimeType::assign_with(destination, first_construction, true));
+        CHECK(values[0].value().get() == 42);
+
+        const auto second_source = bg::ScalarValue<List>{std::array<Value, 1>{Value{43}}};
+        const auto second_view = second_source.view();
+        auto second_data = bg::details::scalar_data(second_view);
+        const auto second_construction = bg::ScalarConstruction{&second_data, construct_from_source};
+        CHECK(list_runtime.ScalarListRuntimeType::assign_with(destination, second_construction, false));
+        const auto updated = bg::Scalar<List>::from(runtime, destination);
+        CHECK(updated[0].value().get() == 43);
+
+        runtime.destroy(destination, scalar_allocator);
+        value_allocator.deallocate_bytes(destination, runtime.size(), runtime.alignment());
+        destroy_destination.release();
+    }
+
+    allocation_owner->release();
+    release_allocation_owner.release();
+    CHECK(scalar_memory.allocations() == 0);
 }
 
 namespace {

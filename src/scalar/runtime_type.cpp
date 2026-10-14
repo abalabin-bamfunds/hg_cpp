@@ -42,6 +42,25 @@ bool ScalarListRuntimeType::accepts_input(const ScalarRuntimeType &source) const
     return item_runtime_type().accepts_input(source_list.item_runtime_type());
 }
 
+bool ScalarListRuntimeType::assign_with(void *destination, ScalarConstruction construction,
+                                        bool suppress_equal) const {
+    auto memory = details::current_scalar_allocator();
+    auto *replacement = memory.allocate_bytes(size(), alignment());
+    auto release_replacement = util::scope_exit{[&]() noexcept {
+        memory.deallocate_bytes(replacement, size(), alignment());
+    }};
+    construction.construct(construction.context, *this, replacement, memory);
+    auto destroy_replacement = util::scope_exit{[&]() noexcept { destroy(replacement, memory); }};
+    const auto source = details::ScalarData{*this, replacement};
+
+    if (suppress_equal && equals(destination, source)) {
+        return false;
+    }
+
+    assign_from_input(destination, source);
+    return true;
+}
+
 bool ScalarDictRuntimeType::accepts_input(const ScalarRuntimeType &source) const noexcept {
     const auto *source_type = type_cast<DictScalarType>(&source.type());
     const auto &destination_type = static_cast<const DictScalarType &>(type());
@@ -133,16 +152,28 @@ class ComposedListRuntimeType final : public ScalarListRuntimeType {
     void assign_from_value(void *, const void *) const override { std::terminate(); }
 
     void do_assign_from_input(void *destination, const details::ScalarData &value) const override {
+        auto input = value;
+        const auto construct = [](void *context, const ScalarRuntimeType &runtime_type, void *target,
+                                  allocator &memory) {
+            runtime_type.construct_from_input(target, *static_cast<const details::ScalarData *>(context), memory);
+        };
+        (void)assign_with(destination, {&input, construct}, false);
+    }
+
+    bool assign_with(void *destination, ScalarConstruction construction, bool suppress_equal) const override {
         auto memory = details::current_scalar_allocator();
-        auto replacement = RuntimeListStorage{};
-        const auto release_replacement = util::scope_exit{[&]() noexcept { clear(&replacement, memory); }};
-        const auto source = Scalar<List<SCALAR>>::from(value.runtime_type(), value.data());
-        for (auto index = std::size_t{}; index < source.size(); ++index) {
-            const auto item = source[index];
-            append(&replacement, details::scalar_data(item), memory);
+        alignas(RuntimeListStorage) std::byte replacement_bytes[sizeof(RuntimeListStorage)];
+        construction.construct(construction.context, *this, replacement_bytes, memory);
+        auto *replacement = std::launder(reinterpret_cast<RuntimeListStorage *>(replacement_bytes));
+        auto release_replacement = util::scope_exit{[&]() noexcept { destroy(replacement, memory); }};
+        const auto source = details::ScalarData{*this, replacement};
+
+        if (suppress_equal && equals(destination, source)) {
+            return false;
         }
 
-        storage(destination).swap(replacement);
+        storage(destination).swap(*replacement);
+        return true;
     }
 
     std::size_t hash(const void *value) const override {

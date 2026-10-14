@@ -1,6 +1,6 @@
 #pragma once
 
-#include <literal_input/scalar_literal.hpp>
+#include <bg/literal/scalar_literal.hpp>
 
 #include <bg/scalar/dict/runtime_type.hpp>
 #include <bg/scalar/dict/type.hpp>

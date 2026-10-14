@@ -1,5 +1,5 @@
-#include <literal_input/scalar_literal.hpp>
-#include <literal_input/construct.hpp>
+#include <bg/literal/scalar_literal.hpp>
+#include <bg/literal/construct.hpp>
 
 #include <bg/scalar/details/value_access.hpp>
 #include <bg/scalar/bundle/value.hpp>

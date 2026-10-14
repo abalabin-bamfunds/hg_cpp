@@ -90,7 +90,7 @@ Use `ScalarValue` when a value must outlive a borrowed view. A constructor can
 accept a `bg::allocator` for owned storage.
 
 `ScalarConstruction` is an engine and scalar-provider interface for constructing
-an owned value directly in its final storage. `ScalarValue<T>::from_construction`
+one owned value in runtime-selected storage. `ScalarValue<T>::from_construction`
 selects the runtime type for a concrete scalar declaration. The erased
 `ScalarValue<>::from_construction(runtime_type, construction)` form uses an
 explicit runtime type. Both forms accept an optional allocator.
@@ -102,6 +102,15 @@ live object or owned resources. The callback context is borrowed and must remain
 valid until it returns. `ScalarListRuntimeType::emplace_back_with` applies the
 same callback contract to an item slot and commits the slot only after successful
 construction.
+
+`ScalarListRuntimeType::assign_with(destination, construction, suppress_equal)`
+constructs a replacement with the active scalar allocator and the same callback
+contract. It returns `false` when equality suppression skips assignment and
+`true` after assignment. Construction or comparison failure preserves the
+existing list and releases candidate storage. Native and composed list runtimes
+construct items once and swap their storage headers. The default provider
+implementation allocates runtime-sized, aligned candidate storage and calls
+`assign_from_input`; this fallback can copy the completed list once more.
 
 `ScalarDictRuntimeType::try_emplace_with(storage, memory, key, mapped)` uses
 these callbacks to construct a key and mapped value in their final slots. It
@@ -158,6 +167,43 @@ type. For a generic declaration, wiring uses the value's resolved type.
 `ScalarValue<Opaque<T>>` owns a copy of private C++ data without adding graph
 operations. `T` must be copy constructible and destructible. For `Opaque<T*>`,
 ownership of the pointed-to object remains with the caller.
+
+## Literals
+
+`<bg/literal/scalar_literal.hpp>` defines `literal::ScalarLiteral` as
+`literal::Literal<literal::ScalarLiteralItem>`. A scalar item borrows a C++ source,
+`Scalar`, `ScalarValue`, or `ScalarData`. A sequence borrows its recursive
+initializer-list storage. `Literal` allocates no owning tree.
+
+Consume a literal in the full expression that creates its initializer lists and
+temporary sources. Rvalue sources remain alive through that expression. Retaining
+a literal does not extend their lifetime. Scalar views delivered by its DDV
+visitor are callback-scoped. Extension behavior belongs to the visitor consumer
+and the source's scalar storage traits.
+
+`<bg/literal/construct.hpp>` provides `literal::construct<T>(literal)` and
+`literal::construct(runtime_type, literal)`. Both return an owning `ScalarValue`
+and have overloads taking an allocator as the final argument. Destination runtime
+types interpret sequences recursively and own their construction and cleanup:
+
+| Destination | Sequence syntax | Conditions |
+| --- | --- | --- |
+| List | `{item, ...}` | Items follow sequence order. |
+| Set | `{item, ...}` | Equal items are deduplicated. |
+| Dictionary | `{{key, value}, ...}` | Entries have exactly two values; duplicate keys are rejected. |
+| Compound scalar or bundle | `{{name, value}, ...}` | Names are strings or symbols; each supplied name is unique and known. |
+
+Named fields can appear in any order. Required fields must be supplied; omitted
+optional bundle fields remain absent. Malformed sequences throw
+`std::invalid_argument`.
+
+Bundle sequence construction outside a scalar allocation context requires an
+explicit allocator, including bundles nested in collections. See the
+[ownership contract](#ownership).
+
+```cpp
+auto values = literal::construct<bg::List<bg::List<bg::i64>>>({{1, 2}, {}, {3}});
+```
 
 ## Lists
 

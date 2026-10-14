@@ -1,11 +1,14 @@
 #pragma once
 
 #include <bg/evaluation_context.hpp>
+#include <bg/literal/construct.hpp>
 #include <bg/node/details/output_factory.hpp>
 #include <bg/time_series/output_binding.hpp>
 #include <bg/scalar/cpp_runtime_type.hpp>
 #include <bg/scalar/details/allocation_context.hpp>
 #include <bg/scalar/details/value_storage.hpp>
+#include <bg/scalar/list/runtime_type.hpp>
+#include <bg/scalar/list/scalar_type.hpp>
 #include <bg/scalar/scalar.hpp>
 #include <bg/time_series/cpp_runtime_type.hpp>
 #include <bg/time_series/details/output_state.hpp>
@@ -48,6 +51,31 @@ class Out<TS<Variable, Properties...>> {
     }
 
     void invalidate() const { state_->invalidate(); }
+
+    void apply(const literal::ScalarLiteral &literal) const {
+        const auto &scalar_runtime_type =
+            static_cast<const TimeSeriesValueRuntimeType &>(state_->runtime_type()).scalar_runtime_type();
+        literal.visit(
+            [&](const literal::ScalarLiteralItem &item) {
+                item.visit([&](const auto *source) { set_value(*source); }, ddv::noop);
+            },
+            [&](std::span<const literal::ScalarLiteral>) {
+                scalar_runtime_type.type().visit(
+                    [&](const ListScalarType *) {
+                        const auto &list_runtime_type = static_cast<const ScalarListRuntimeType &>(scalar_runtime_type);
+                        auto construction = literal::details::ScalarConstructionContext{literal, true};
+                        if (list_runtime_type.assign_with(
+                                state_->mutable_data(),
+                                {&construction, &literal::details::ScalarConstructionContext::callback},
+                                state_->suppresses_equal_updates() && valid())) {
+                            state_->publish();
+                        }
+                    },
+                    [&](const auto *) {
+                        throw std::invalid_argument{"a scalar list literal requires a list time-series output"};
+                    });
+            });
+    }
 
     template <typename Input, auto... TimeSeriesProperties, auto... InputProperties>
     void copy_tick(const In<TS<Input, TimeSeriesProperties...>, InputProperties...> &input) const {
@@ -176,6 +204,11 @@ class Out<TS<T, Properties...>> {
         set_scalar_data(details::scalar_data(value));
     }
 
+    void apply(const literal::ScalarLiteral &literal) const {
+        auto output = details::output_factory::make<Out<TS<SCALAR>>>(state_.get());
+        output.apply(literal);
+    }
+
     template <auto... TimeSeriesProperties, auto... InputProperties>
     void copy_tick(const In<TS<T, TimeSeriesProperties...>, InputProperties...> &input) const {
         if (input.last_updated() != state_->evaluation_time() ||
@@ -232,5 +265,12 @@ class Out<TS<T, Properties...>> {
 };
 
 static_assert(sizeof(Out<TS<i64>>) == sizeof(void *));
+
+template <details::time_series_variable Variable>
+void Out<Variable>::apply(const literal::ScalarLiteral &literal) const {
+    visit([&](Out<TS<SCALAR>> *output) { output->apply(literal); }, [](const auto *) {
+        throw std::invalid_argument{"a scalar list literal requires a scalar time-series output"};
+    });
+}
 
 } // namespace bg

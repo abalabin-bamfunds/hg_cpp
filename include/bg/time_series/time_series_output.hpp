@@ -1,6 +1,7 @@
 #pragma once
 
 #include <bg/evaluation_context.hpp>
+#include <bg/literal/scalar_literal.hpp>
 #include <bg/node/details/output_factory.hpp>
 #include <bg/node/input_fwd.hpp>
 #include <bg/scalar/storage_traits.hpp>
@@ -44,6 +45,8 @@ template <details::time_series_variable Variable> class Out<Variable> {
     }
 
     void invalidate() const { state_->invalidate(); }
+
+    void apply(const literal::ScalarLiteral &literal) const;
 
     template <typename Input, auto... Properties>
     void copy_tick(const In<Input, Properties...> &input) const {
