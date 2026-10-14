@@ -28,6 +28,7 @@
 #include <memory>
 #include <memory_resource>
 #include <optional>
+#include <ranges>
 #include <span>
 #include <stdexcept>
 #include <type_traits>
@@ -998,11 +999,167 @@ template <typename T> class ColumnSeriesView {
         for_each_aligned_batch(other, storage_.visible_rows, std::forward<Function>(function));
     }
 
+    // Aligns homogeneous columns over requested rows and passes borrowed value batches in column order. The requested
+    // row order is preserved, and every requested row must belong to every column.
+    template <typename Function>
+    static void for_each_aligned_batch(std::span<const ColumnSeriesView<T>> columns, const RowSet &requested_rows,
+                                       std::pmr::memory_resource &memory, Function &&function) {
+        if (columns.empty())
+            throw std::invalid_argument{"aligned column batches require at least one column"};
+
+        const auto domain = columns.front().row_domain();
+        if (domain == nullptr || requested_rows.identity != domain)
+            throw std::invalid_argument{"aligned columns must use the same row domain"};
+        for (const auto &column : columns) {
+            if (column.row_domain() != domain || column.cells_ == nullptr || column.physical_rows_ == nullptr ||
+                column.scalar_storage().native == nullptr)
+                throw std::invalid_argument{"aligned column batches require native columns in one row domain"};
+        }
+
+        const auto *physical_rows = columns.front().physical_rows_;
+        const auto shared_map = std::ranges::all_of(columns, [physical_rows](const auto &column) {
+            return column.physical_rows_ == physical_rows;
+        });
+        const auto full_native_rows = shared_map && requested_rows.native_rows != nullptr &&
+                                      physical_rows == std::addressof(requested_rows.native_rows->slots()) &&
+                                      std::ranges::all_of(columns, [&](const auto &column) {
+                                          return same_rows(requested_rows, column.storage_.visible_rows) &&
+                                                 same_rows(requested_rows, column.storage_.coverage);
+                                      });
+        if (!full_native_rows) {
+            requested_rows.each([&](row_id_t id) {
+                for (const auto &column : columns)
+                    if (!column.contains(id))
+                        throw std::invalid_argument{"aligned columns do not contain every requested row"};
+            });
+        }
+        if (shared_map) {
+            if (full_native_rows) {
+                auto value_blocks = std::pmr::vector<util::storage_block>{columns.size(), &memory};
+                auto batches = std::pmr::vector<ColumnBatch<T>>{columns.size(), &memory};
+                physical_rows->live_slots().for_each_run([&](row_id_t run_first, row_id_t run_end) {
+                    auto first = run_first;
+                    while (first != run_end) {
+                        const auto id_block = physical_rows->ids_block_containing(first);
+                        const auto id = physical_rows->id_at_slot(first);
+                        auto end = id_block.end;
+                        for (auto index = std::size_t{}; index != columns.size(); ++index) {
+                            value_blocks[index] = columns[index].cells_->block_containing(*physical_rows, id);
+                            end = std::min(end, value_blocks[index].end);
+                        }
+                        const auto batch_end = static_cast<row_id_t>(std::min<std::uint64_t>(run_end, end));
+                        invoke_aligned_columns(columns, first, batch_end, id_block, value_blocks, batches, function);
+                        first = batch_end;
+                    }
+                });
+                return;
+            }
+
+            auto has_batch = false;
+            auto first_slot = row_id_t{};
+            auto end_slot = std::uint64_t{};
+            auto id_block = util::storage_block{};
+            auto value_blocks = std::pmr::vector<util::storage_block>{columns.size(), &memory};
+            auto next_blocks = std::pmr::vector<util::storage_block>{columns.size(), &memory};
+            auto batches = std::pmr::vector<ColumnBatch<T>>{columns.size(), &memory};
+            auto flush = [&] {
+                if (!has_batch)
+                    return;
+                invoke_aligned_columns(columns, first_slot, static_cast<row_id_t>(end_slot), id_block,
+                                       value_blocks, batches, function);
+                has_batch = false;
+            };
+
+            requested_rows.each([&](row_id_t id) {
+                const auto slot = physical_rows->slot_of(id);
+                const auto next_id_block = physical_rows->ids_block_containing(slot);
+                for (auto index = std::size_t{}; index != columns.size(); ++index) {
+                    next_blocks[index] = columns[index].cells_->block_containing(*physical_rows, id);
+                }
+
+                auto same_blocks = has_batch && static_cast<std::uint64_t>(slot) == end_slot &&
+                                   next_id_block.first == id_block.first && next_id_block.data == id_block.data &&
+                                   end_slot < id_block.end;
+                for (auto index = std::size_t{}; same_blocks && index != columns.size(); ++index) {
+                    const auto &current = value_blocks[index];
+                    const auto &next = next_blocks[index];
+                    same_blocks = next.first == current.first && next.data == current.data && end_slot < current.end;
+                }
+                if (same_blocks) {
+                    ++end_slot;
+                    return;
+                }
+
+                flush();
+                id_block = physical_rows->ids_block_containing(slot);
+                std::ranges::copy(next_blocks, value_blocks.begin());
+                first_slot = slot;
+                end_slot = static_cast<std::uint64_t>(slot) + 1;
+                has_batch = true;
+            });
+            flush();
+            return;
+        }
+
+        static constexpr auto capacity = std::size_t{128};
+        static constexpr auto validity_bytes = (capacity + 7) / 8;
+        auto ids = std::array<row_id_t, capacity>{};
+        auto values = std::pmr::vector<std::array<T, capacity>>{columns.size(), &memory};
+        auto validity = std::pmr::vector<std::array<std::uint8_t, validity_bytes>>{columns.size(), &memory};
+        auto batches = std::pmr::vector<ColumnBatch<T>>{columns.size(), &memory};
+        auto size = std::size_t{};
+        auto flush = [&] {
+            if (size == 0)
+                return;
+            for (auto index = std::size_t{}; index != columns.size(); ++index) {
+                batches.data()[index] = ColumnBatch<T>{
+                    0, size, values[index].data(), ColumnBatch<T>::Validity::from_bitmap(validity[index].data(), 0)};
+            }
+            std::invoke(function, std::span<const row_id_t>{ids.data(), size},
+                        std::span<const ColumnBatch<T>>{batches});
+            for (auto &bits : validity)
+                bits.fill(0);
+            size = 0;
+        };
+
+        requested_rows.each([&](row_id_t id) {
+            ids[size] = id;
+            for (auto index = std::size_t{}; index != columns.size(); ++index) {
+                if (const auto value = columns[index].cell(id)) {
+                    values[index][size] = *value;
+                    validity[index][size / 8] |= std::uint8_t{1} << (size % 8);
+                }
+            }
+            if (++size == capacity)
+                flush();
+        });
+        flush();
+    }
+
   private:
     static bool same_rows(const RowSet &left, const RowSet &right) noexcept {
         return left.context == right.context && left.native_rows == right.native_rows &&
                left.identity == right.identity && left.size == right.size && left.contains == right.contains &&
                left.id_at == right.id_at && left.for_each == right.for_each;
+    }
+
+    template <typename Function>
+    static void invoke_aligned_columns(std::span<const ColumnSeriesView<T>> columns, row_id_t first, row_id_t end,
+                                       util::storage_block id_block,
+                                       std::span<const util::storage_block> value_blocks,
+                                       std::span<ColumnBatch<T>> batches, Function &function) {
+        const auto size = static_cast<std::size_t>(end - first);
+        const auto *ids = static_cast<const row_id_t *>(id_block.data) + first - id_block.first;
+        for (auto index = std::size_t{}; index != columns.size(); ++index) {
+            const auto &column = columns[index];
+            const auto block = value_blocks[index];
+            const auto *values = block.data == nullptr
+                                     ? nullptr
+                                     : static_cast<const T *>(block.data) + first - block.first;
+            batches[index] = ColumnBatch<T>{first, size, values,
+                                             ColumnBatch<T>::Validity::from_index(column.cells_->valid_cells())};
+        }
+        std::invoke(function, std::span<const row_id_t>{ids, size}, std::span<const ColumnBatch<T>>{batches});
     }
 
     template <typename U, typename Function>

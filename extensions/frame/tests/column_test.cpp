@@ -781,6 +781,71 @@ void test_aligned_batches_borrow_shared_mapping_and_accept_requested_subsets() {
             "aligned traversal invoked its callback before validating every requested row");
 }
 
+void test_aligned_batches_stop_at_shared_id_and_cell_block_boundaries() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    auto resource = std::pmr::monotonic_buffer_resource{};
+    const auto memory = allocator{resource};
+    auto rows = NativeRows{};
+    auto first_cells = NativeColumnData<double>{};
+    auto second_cells = NativeColumnData<double>{};
+    auto third_cells = NativeColumnData<double>{};
+    auto release = util::scope_exit{[&]() noexcept {
+        third_cells.release(memory);
+        second_cells.release(memory);
+        first_cells.release(memory);
+        rows.release(memory);
+    }};
+
+    const auto time = MIN_DT + EvaluationTime::duration{1};
+    auto ids = std::array<row_id_t, 12>{};
+    for (auto position = std::size_t{}; position != ids.size(); ++position) {
+        ids[position] = rows.add(time, memory);
+        first_cells.add(rows, ids[position], static_cast<double>(position + 1), memory);
+        second_cells.add(rows, ids[position], static_cast<double>(position + 11), memory);
+        third_cells.add(rows, ids[position], static_cast<double>(position + 21), memory);
+    }
+
+    const auto visible = RowSet::native(rows);
+    auto selected = SelectedRows{};
+    auto release_selected = util::scope_exit{[&]() noexcept { selected.release(memory); }};
+    selected.bind(visible);
+    for (auto position = std::size_t{6}; position != 10; ++position)
+        selected.include(ids[position], memory);
+
+    const auto first_storage = ColumnStorage<double>{first_cells, rows};
+    const auto second_storage = ColumnStorage<double>{second_cells, rows};
+    const auto third_storage = ColumnStorage<double>{third_cells, rows};
+    const auto columns = std::array{ColumnSeriesView<double>{first_storage},
+                                    ColumnSeriesView<double>{second_storage},
+                                    ColumnSeriesView<double>{third_storage}};
+    auto scratch = std::pmr::monotonic_buffer_resource{};
+    auto observed_batches = std::size_t{};
+    auto observed_rows = std::size_t{};
+    ColumnSeriesView<double>::for_each_aligned_batch(columns, selected.rows(), scratch,
+                                                      [&](std::span<const row_id_t> batch_ids,
+                                                          std::span<const ColumnBatch<double>> batches) {
+        require(batch_ids.size() == 2 && batches.size() == columns.size(),
+                "aligned n-ary batches crossed a shared storage-block boundary");
+        for (auto position = std::size_t{}; position != batch_ids.size(); ++position) {
+            const auto expected = 6 + observed_rows + position;
+            require(batch_ids[position] == ids[expected], "aligned n-ary batches changed requested row order");
+            require(batches[0].is_valid(position) && batches[1].is_valid(position) &&
+                        batches[2].is_valid(position),
+                    "aligned n-ary batches lost a valid cell");
+            require(batches[0].values[position] == static_cast<double>(expected + 1) &&
+                        batches[1].values[position] == static_cast<double>(expected + 11) &&
+                        batches[2].values[position] == static_cast<double>(expected + 21),
+                    "aligned n-ary batches read through a different storage block");
+        }
+        observed_rows += batch_ids.size();
+        ++observed_batches;
+    });
+    require(observed_batches == 2 && observed_rows == 4,
+            "aligned n-ary batches did not split at the ID and cell storage-block boundaries");
+}
+
 void test_aligned_batches_gather_distinct_mappings_and_validate_before_callback() {
     using namespace bg;
     using namespace bg::frame;
@@ -791,9 +856,11 @@ void test_aligned_batches_gather_distinct_mappings_and_validate_before_callback(
     auto left_rows = NativeRowSlots{};
     auto right_rows = NativeRowSlots{};
     auto left_cells = NativeColumnData<i64>{};
+    auto aligned_cells = NativeColumnData<i64>{};
     auto right_cells = NativeColumnData<double>{};
     auto release = util::scope_exit{[&]() noexcept {
         right_cells.release(memory);
+        aligned_cells.release(memory);
         left_cells.release(memory);
         right_rows.release(memory);
         left_rows.release(memory);
@@ -812,14 +879,18 @@ void test_aligned_batches_gather_distinct_mappings_and_validate_before_callback(
         const auto id = ids[position - 1];
         right_rows.insert(id, memory);
         right_cells.add(right_rows, id, id == ids[3] ? std::nullopt : std::optional<double>{id + 20.5}, memory);
+        aligned_cells.add(right_rows, id, id == ids[3] ? std::nullopt : std::optional<i64>{id + 30}, memory);
     }
 
     const auto visible = RowSet::native(rows);
     auto left_storage = ColumnStorage<i64>{left_cells, left_rows, visible, rows.added(), left_cells.modified(),
                                            rows.removed(), time};
+    auto aligned_storage = ColumnStorage<i64>{aligned_cells, right_rows, visible, rows.added(), aligned_cells.modified(),
+                                              rows.removed(), time};
     auto right_storage = ColumnStorage<double>{right_cells, right_rows, visible, rows.added(), right_cells.modified(),
                                                rows.removed(), time};
     auto left = ColumnSeriesView<i64>{left_storage};
+    auto aligned = ColumnSeriesView<i64>{aligned_storage};
     auto right = ColumnSeriesView<double>{right_storage};
     auto request = SelectedRows{};
     auto release_selected = util::scope_exit{[&]() noexcept { request.release(memory); }};
@@ -842,9 +913,31 @@ void test_aligned_batches_gather_distinct_mappings_and_validate_before_callback(
     });
     require(visited == 2, "gathered batches omitted requested rows");
 
+    const auto aligned_columns = std::array{left, aligned};
+    auto scratch = std::pmr::monotonic_buffer_resource{};
+    auto aligned_rows = std::size_t{};
+    ColumnSeriesView<i64>::for_each_aligned_batch(
+        std::span<const ColumnSeriesView<i64>>{aligned_columns}, request.rows(), scratch,
+        [&](std::span<const row_id_t> batch_ids, std::span<const ColumnBatch<i64>> batches) {
+            require(batch_ids.size() == 2 && batches.size() == aligned_columns.size() &&
+                        batch_ids[0] == ids[1] && batch_ids[1] == ids[3],
+                    "n-ary gathered batches changed requested row order");
+            require(!batches[0].is_valid(0) && batches[0].is_valid(1) && batches[1].is_valid(0) &&
+                        !batches[1].is_valid(1),
+                    "n-ary gathered batches produced an incorrect null bitmap");
+            require(batches[0].values[1] == ids[3] + 10 && batches[1].values[0] == ids[1] + 30,
+                    "n-ary gathered batches read a value from the wrong physical slot");
+            require(batches[0].values != left_cells.block_containing(left_rows, ids[1]).data &&
+                        batches[1].values != aligned_cells.block_containing(right_rows, ids[1]).data,
+                    "n-ary gathered batches did not gather distinct physical mappings");
+            aligned_rows += batch_ids.size();
+        });
+    require(aligned_rows == 2, "n-ary gathered batches omitted requested rows");
+
     const auto missing_id = ids[1];
     const auto missing_slot = right_rows.slot_of(missing_id);
     right_cells.erase_slot(missing_slot, missing_id, memory);
+    aligned_cells.erase_slot(missing_slot, missing_id, memory);
     right_rows.erase(missing_id);
     auto callback_invoked = false;
     auto rejected = false;
@@ -855,6 +948,17 @@ void test_aligned_batches_gather_distinct_mappings_and_validate_before_callback(
     }
     require(rejected && !callback_invoked,
             "aligned gathered batches invoked their callback before validating requested row coverage");
+
+    rejected = false;
+    try {
+        ColumnSeriesView<i64>::for_each_aligned_batch(
+            std::span<const ColumnSeriesView<i64>>{aligned_columns}, request.rows(), scratch,
+            [&](std::span<const row_id_t>, std::span<const ColumnBatch<i64>>) { callback_invoked = true; });
+    } catch (const std::invalid_argument &) {
+        rejected = true;
+    }
+    require(rejected && !callback_invoked,
+            "n-ary gathered batches invoked their callback before validating requested row coverage");
 
     auto foreign_rows = NativeRows{};
     auto release_foreign = util::scope_exit{[&]() noexcept { foreign_rows.release(memory); }};
@@ -949,7 +1053,9 @@ void test_aligned_batches_keep_null_only_blocks_unreadable() {
     auto rows = NativeRows{};
     auto left_cells = NativeColumnData<i64>{};
     auto right_cells = NativeColumnData<double>{};
+    auto third_cells = NativeColumnData<double>{};
     auto release = util::scope_exit{[&]() noexcept {
+        third_cells.release(memory);
         right_cells.release(memory);
         left_cells.release(memory);
         rows.release(memory);
@@ -961,10 +1067,12 @@ void test_aligned_batches_keep_null_only_blocks_unreadable() {
         const auto id = rows.add(time, memory);
         left_cells.add(rows, id, std::nullopt, memory);
         right_cells.add(rows, id, std::nullopt, memory);
+        third_cells.add(rows, id, std::nullopt, memory);
     }
 
     auto left_storage = ColumnStorage<i64>{left_cells, rows};
     auto right_storage = ColumnStorage<double>{right_cells, rows};
+    auto third_storage = ColumnStorage<double>{third_cells, rows};
     auto left = ColumnSeriesView<i64>{left_storage};
     auto right = ColumnSeriesView<double>{right_storage};
     auto visited = std::size_t{};
@@ -981,6 +1089,28 @@ void test_aligned_batches_keep_null_only_blocks_unreadable() {
     });
 
     require(visited == row_count && batches > 1, "all-null native blocks were omitted from aligned traversal");
+
+    const auto columns = std::array{right, ColumnSeriesView<double>{third_storage}};
+    auto scratch = std::pmr::monotonic_buffer_resource{};
+    visited = 0;
+    batches = 0;
+    ColumnSeriesView<double>::for_each_aligned_batch(
+        std::span<const ColumnSeriesView<double>>{columns}, RowSet::native(rows), scratch,
+        [&](std::span<const row_id_t> batch_ids, std::span<const ColumnBatch<double>> column_batches) {
+            ++batches;
+            require(column_batches.size() == columns.size(), "all-null n-ary batch omitted a column");
+            for (auto column = std::size_t{}; column != column_batches.size(); ++column) {
+                require(column_batches[column].values == nullptr,
+                        "an all-null n-ary native block exposed a value buffer");
+                for (auto offset = std::size_t{}; offset != batch_ids.size(); ++offset) {
+                    require(!column_batches[column].is_valid(offset),
+                            "an all-null n-ary native block marked a value valid");
+                    ++visited;
+                }
+            }
+        });
+    require(visited == row_count * columns.size() && batches > 1,
+            "all-null n-ary native blocks were omitted from aligned traversal");
 }
 } // namespace
 
@@ -1002,6 +1132,7 @@ int main() {
         test_tsc_view_revalidates_coverage_when_mapping_changes();
         test_tsc_view_clears_modified_rows_removed_during_the_same_cycle();
         test_aligned_batches_borrow_shared_mapping_and_accept_requested_subsets();
+        test_aligned_batches_stop_at_shared_id_and_cell_block_boundaries();
         test_aligned_batches_gather_distinct_mappings_and_validate_before_callback();
         test_aligned_batches_gather_more_than_two_scratch_batches();
         test_aligned_batches_keep_null_only_blocks_unreadable();
