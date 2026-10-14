@@ -665,7 +665,7 @@ TEST_CASE("callable promoted values and aggregate scalar views preserve provider
     CHECK(test_scalar_provider::alternative_runtime_read_count() > reads_before);
 }
 
-TEST_CASE("typed callable scalar inputs preserve provider runtime reads",
+TEST_CASE("typed callable scalar inputs use the selected snapshot runtime for provider reads",
           "[feature:node-api][feature:scalar-api][feature:scalar-storage][definition:function][declaration:concrete]") {
     auto storage = Storage{20};
     const auto source = bg::Scalar<Value>::from(test_scalar_provider::preserving_runtime_type(), &storage);
@@ -682,7 +682,7 @@ TEST_CASE("typed callable scalar inputs preserve provider runtime reads",
 
     REQUIRE(result[0]);
     CHECK(result[0]->value() == 20);
-    CHECK(received_runtime == std::addressof(test_scalar_provider::preserving_runtime_type()));
+    CHECK(received_runtime == std::addressof(test_scalar_provider::immutable_snapshot_runtime_type()));
     CHECK(test_scalar_provider::alternative_runtime_read_count() > reads_before);
 }
 
