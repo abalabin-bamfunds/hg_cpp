@@ -12,21 +12,26 @@ decltype(floordiv) floordiv{"floordiv", {"lhs", "rhs"}};
 decltype(mod) mod{"mod", {"lhs", "rhs"}};
 decltype(pow) pow{"pow", {"lhs", "rhs"}};
 decltype(round) round{"round", {"value", "ndigits"}};
-decltype(convert) convert{"convert", {"value"}};
 decltype(pos) pos{"pos", {"value"}};
 decltype(neg) neg{"neg", {"value"}};
 decltype(abs) abs{"abs", {"value"}};
+
+decltype(convert) convert{"convert", {"value"}};
+
 decltype(eq) eq{"eq", {"lhs", "rhs"}};
 decltype(ne) ne{"ne", {"lhs", "rhs"}};
 decltype(lt) lt{"lt", {"lhs", "rhs"}};
 decltype(le) le{"le", {"lhs", "rhs"}};
 decltype(gt) gt{"gt", {"lhs", "rhs"}};
 decltype(ge) ge{"ge", {"lhs", "rhs"}};
+
 decltype(and_) and_{"and_", {"lhs", "rhs"}};
 decltype(or_) or_{"or_", {"lhs", "rhs"}};
 decltype(not_) not_{"not_", {"value"}};
+
 decltype(valid) valid{"valid", {"value"}};
 decltype(all_valid) all_valid{"all_valid", {"value"}};
+
 decltype(sample) sample{"sample", {"signal", "value"}};
 decltype(dedup) dedup{"dedup", {"value"}};
 

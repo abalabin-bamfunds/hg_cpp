@@ -25,6 +25,7 @@ struct TimeSeriesVariable : details::time_series_type_access<TimeSeriesVariable<
 };
 
 using TS_T = TimeSeriesVariable<"TS_T">;
+using OUT = TimeSeriesVariable<"OUT">;
 
 namespace details {
 

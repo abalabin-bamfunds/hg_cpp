@@ -17,9 +17,11 @@ using EQUALITY_SCALAR = ScalarVariable<"EQUALITY_SCALAR", EqualityComparable>;
 using ORDERED_SCALAR = ScalarVariable<"ORDERED_SCALAR", i64, double, string, date_time_t, timedelta_t>;
 using BOOL = ScalarVariable<"BOOL", bool>;
 using NUMERIC = ScalarVariable<"NUMERIC", i64, double>;
+
 using CONVERT_RESULT = TimeSeriesVariable<"CONVERT_RESULT">;
 using SIGNAL = TimeSeriesVariable<"SIGNAL">;
 
+// Arithmetic and unary operators.
 extern BG_LIBRARY_EXPORT operator_<auto(SCALAR, SCALAR) -> SCALAR> add;
 extern BG_LIBRARY_EXPORT operator_<auto(SCALAR, SCALAR) -> SCALAR> sub;
 extern BG_LIBRARY_EXPORT operator_<auto(SCALAR, SCALAR) -> SCALAR> mul;
@@ -28,24 +30,35 @@ extern BG_LIBRARY_EXPORT operator_<auto(NUMERIC, NUMERIC) -> NUMERIC> floordiv;
 extern BG_LIBRARY_EXPORT operator_<auto(NUMERIC, NUMERIC) -> NUMERIC> mod;
 extern BG_LIBRARY_EXPORT operator_<auto(NUMERIC, NUMERIC) -> NUMERIC> pow;
 extern BG_LIBRARY_EXPORT operator_<auto(double, i64) -> double> round;
-extern BG_LIBRARY_EXPORT operator_<CONVERT_RESULT, auto(TS_T) -> CONVERT_RESULT> convert;
 extern BG_LIBRARY_EXPORT operator_<auto(SCALAR) -> SCALAR> pos;
 extern BG_LIBRARY_EXPORT operator_<auto(SCALAR) -> SCALAR> neg;
 extern BG_LIBRARY_EXPORT operator_<auto(SCALAR) -> SCALAR> abs;
+
+// Conversion.
+extern BG_LIBRARY_EXPORT operator_<CONVERT_RESULT, auto(TS_T) -> CONVERT_RESULT> convert;
+
+// Comparisons.
 extern BG_LIBRARY_EXPORT operator_<EQUALITY_SCALAR, auto(EQUALITY_SCALAR, EQUALITY_SCALAR) -> bool> eq;
 extern BG_LIBRARY_EXPORT operator_<EQUALITY_SCALAR, auto(EQUALITY_SCALAR, EQUALITY_SCALAR) -> bool> ne;
 extern BG_LIBRARY_EXPORT operator_<ORDERED_SCALAR, auto(ORDERED_SCALAR, ORDERED_SCALAR) -> bool> lt;
 extern BG_LIBRARY_EXPORT operator_<ORDERED_SCALAR, auto(ORDERED_SCALAR, ORDERED_SCALAR) -> bool> le;
 extern BG_LIBRARY_EXPORT operator_<ORDERED_SCALAR, auto(ORDERED_SCALAR, ORDERED_SCALAR) -> bool> gt;
 extern BG_LIBRARY_EXPORT operator_<ORDERED_SCALAR, auto(ORDERED_SCALAR, ORDERED_SCALAR) -> bool> ge;
+
+// Boolean operators.
 extern BG_LIBRARY_EXPORT operator_<BOOL, auto(BOOL, BOOL) -> bool> and_;
 extern BG_LIBRARY_EXPORT operator_<BOOL, auto(BOOL, BOOL) -> bool> or_;
 extern BG_LIBRARY_EXPORT operator_<BOOL, auto(BOOL) -> bool> not_;
+
+// Validity queries.
 extern BG_LIBRARY_EXPORT operator_<auto(TS_T) -> bool> valid;
 extern BG_LIBRARY_EXPORT operator_<auto(TS_T) -> bool> all_valid;
+
+// Tick selection.
 extern BG_LIBRARY_EXPORT operator_<auto(SIGNAL, TS_T) -> TS_T> sample;
 extern BG_LIBRARY_EXPORT operator_<auto(TS_T) -> TS_T> dedup;
 
+// Nested graph operators.
 using ::bg::map;
 using ::bg::mesh;
 using ::bg::switch_;
