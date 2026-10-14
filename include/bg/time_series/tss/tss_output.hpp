@@ -88,11 +88,10 @@ template <typename K, auto... Properties> class Out<TSS<K, Properties...>> {
             (!input.modified() && !input.became_invalid())) {
             return;
         }
-        if (!input.valid()) {
-            invalidate();
+        if (!input.valid() && !valid()) {
             return;
         }
-        if (!valid()) {
+        if (input.valid() && !valid()) {
             clear();
         }
 
@@ -103,7 +102,9 @@ template <typename K, auto... Properties> class Out<TSS<K, Properties...>> {
     template <auto... InputTimeSeriesProperties, auto... InputProperties>
     void copy(const In<TSS<K, InputTimeSeriesProperties...>, InputProperties...> &input) const {
         if (!input.valid()) {
-            invalidate();
+            if (valid()) {
+                clear();
+            }
             return;
         }
 

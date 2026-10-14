@@ -109,7 +109,9 @@ template <typename K, typename Item, auto... Properties> class Out<TSD<K, Item, 
             return;
         }
         if (!input.valid()) {
-            invalidate();
+            if (valid()) {
+                input.for_each_removed([&](const auto &key) { erase(key); });
+            }
             return;
         }
         if (!valid()) {
@@ -124,7 +126,9 @@ template <typename K, typename Item, auto... Properties> class Out<TSD<K, Item, 
     template <typename InputItem, auto... InputTimeSeriesProperties, auto... InputProperties>
     void copy(const In<TSD<K, InputItem, InputTimeSeriesProperties...>, InputProperties...> &input) const {
         if (!input.valid()) {
-            invalidate();
+            if (valid()) {
+                clear();
+            }
             return;
         }
 
